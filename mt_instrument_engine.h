@@ -40,6 +40,10 @@ namespace mt
         virtual void noteOff( int Note )                = 0;
         virtual void allNotesOff()                      = 0;
 
+        /// Optional performance controls. Pitch bend in semitones (signed), mod wheel 0..1.
+        virtual void pitchBend( float /*Semitones*/ ) {}
+        virtual void modWheel( float /*Amount*/ ) {}
+
         /// Writes (does not add) NumSamples into each of the NumChannels outputs.
         virtual void process( float* const* Out, int NumChannels, int NumSamples ) = 0;
 
