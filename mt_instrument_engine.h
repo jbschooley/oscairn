@@ -50,6 +50,20 @@ namespace mt
         /// Fixed for the engine's lifetime; may be read from any thread.
         virtual const std::vector<InstrumentParam>& getParams() const = 0;
         virtual void                                setParam( int Index, float Value ) = 0;
+
+        // Optional: engines whose sound is a patch (a ValueTree) rather than only the
+        // fixed parameter list. The program stores the patch in the project as a child
+        // of type getPatchType() and passes every change to setPatch(), including undo
+        // and redo. With no stored patch, the engine plays preset 0.
+        // All of these run on the message thread.
+
+        /// An invalid identifier means the engine has no patch.
+        virtual juce::Identifier  getPatchType() const { return {}; }
+        virtual juce::StringArray getPresetNames() const { return {}; }
+        /// A fresh copy of a factory patch.
+        virtual juce::ValueTree createPreset( int /*Index*/ ) const { return {}; }
+        /// An invalid tree means "no stored patch".
+        virtual void setPatch( const juce::ValueTree& /*Patch*/ ) {}
     };
 
     /// Engines available in this build, by name.
