@@ -253,4 +253,224 @@ namespace mt::modular
     {
         return presets[(size_t)juce::jlimit( 0, (int)presets.size() - 1, Index )].make();
     }
+
+    //==============================================================================
+    namespace
+    {
+        bool gridBefore( const juce::ValueTree& A, const juce::ValueTree& B )
+        {
+            return std::make_tuple( (int)A.getProperty( PatchIDs::col ), (int)A.getProperty( PatchIDs::row ), (int)A.getProperty( PatchIDs::id ) )
+                 < std::make_tuple( (int)B.getProperty( PatchIDs::col ), (int)B.getProperty( PatchIDs::row ), (int)B.getProperty( PatchIDs::id ) );
+        }
+
+        juce::String builtinSourceName( int Source )
+        {
+            switch( Source )
+            {
+                case kVelocity: return "Velocity";
+                case kNote: return "Note";
+                case kGate: return "Gate";
+                case kModWheel: return "Mod Wheel";
+                case kBend: return "Pitch Bend";
+                default: break;
+            }
+            return "Macro " + juce::String( Source - kMacro1 + 1 );
+        }
+    } // namespace
+
+    juce::ValueTree PatchEditor::module( int Id ) const
+    {
+        for( const auto& m : patch )
+            if( m.hasType( PatchIDs::MODULE ) && (int)m.getProperty( PatchIDs::id ) == Id )
+                return m;
+        return {};
+    }
+
+    juce::ValueTree PatchEditor::moduleAt( int Col, int Row ) const
+    {
+        for( const auto& m : patch )
+            if( m.hasType( PatchIDs::MODULE ) && (int)m.getProperty( PatchIDs::col ) == Col && (int)m.getProperty( PatchIDs::row ) == Row )
+                return m;
+        return {};
+    }
+
+    const ModuleSpec* PatchEditor::specOf( const juce::ValueTree& Module ) { return findModuleSpec( Module.getProperty( PatchIDs::type ).toString() ); }
+
+    int PatchEditor::nextId() const
+    {
+        int id = 0;
+        for( const auto& m : patch )
+            id = juce::jmax( id, (int)m.getProperty( PatchIDs::id ) );
+        return id + 1;
+    }
+
+    void PatchEditor::markEdited()
+    {
+        const auto name = patch.getProperty( PatchIDs::name ).toString();
+        if( getPresetNames().contains( name ) )
+            patch.setProperty( PatchIDs::name, name + " *", um );
+    }
+
+    int PatchEditor::addModule( const juce::String& Type, int Col, int Row )
+    {
+        if( !patch.isValid() || !findModuleSpec( Type ) || moduleAt( Col, Row ).isValid() )
+            return 0;
+
+        markEdited();
+        juce::ValueTree m( PatchIDs::MODULE );
+        const auto      id = nextId();
+        m.setProperty( PatchIDs::id, id, nullptr );
+        m.setProperty( PatchIDs::type, Type, nullptr );
+        m.setProperty( PatchIDs::col, Col, nullptr );
+        m.setProperty( PatchIDs::row, Row, nullptr );
+        patch.appendChild( m, um ); // values are left out: they read as the defaults
+        return id;
+    }
+
+    void PatchEditor::removeModule( int Id )
+    {
+        auto m = module( Id );
+        if( !m.isValid() )
+            return;
+
+        markEdited();
+        const auto source = PatchBuilder::module( Id );
+        for( auto other : patch )
+            for( int i = other.getNumChildren(); --i >= 0; )
+                if( auto r = other.getChild( i ); r.hasType( PatchIDs::MOD ) && r.getProperty( PatchIDs::source ).toString() == source )
+                    other.removeChild( r, um );
+        patch.removeChild( m, um );
+    }
+
+    void PatchEditor::moveModule( int Id, int Col, int Row )
+    {
+        auto m = module( Id );
+        if( !m.isValid() )
+            return;
+        const int fromCol = m.getProperty( PatchIDs::col ), fromRow = m.getProperty( PatchIDs::row );
+        if( fromCol == Col && fromRow == Row )
+            return;
+
+        markEdited();
+        if( auto other = moduleAt( Col, Row ); other.isValid() )
+        {
+            other.setProperty( PatchIDs::col, fromCol, um );
+            other.setProperty( PatchIDs::row, fromRow, um );
+        }
+        m.setProperty( PatchIDs::col, Col, um );
+        m.setProperty( PatchIDs::row, Row, um );
+    }
+
+    float PatchEditor::getValue( int Id, const juce::String& Param ) const
+    {
+        const auto  m    = module( Id );
+        const auto* spec = specOf( m );
+        const auto  p    = spec ? spec->findParam( Param ) : -1;
+        if( p < 0 )
+            return 0.f;
+        const auto& ps = spec->params[(size_t)p];
+        return juce::jlimit( ps.minValue, ps.maxValue, (float)m.getProperty( juce::Identifier( Param ), ps.defaultValue ) );
+    }
+
+    void PatchEditor::setValue( int Id, const juce::String& Param, float Value )
+    {
+        auto        m    = module( Id );
+        const auto* spec = specOf( m );
+        const auto  p    = spec ? spec->findParam( Param ) : -1;
+        if( p < 0 )
+            return;
+        const auto& ps = spec->params[(size_t)p];
+        Value          = juce::jlimit( ps.minValue, ps.maxValue, ps.curve == Curve::Steps ? std::round( Value ) : Value );
+        if( Value == getValue( Id, Param ) && m.hasProperty( juce::Identifier( Param ) ) )
+            return;
+        markEdited();
+        m.setProperty( juce::Identifier( Param ), Value, um );
+    }
+
+    juce::ValueTree PatchEditor::addMod( int Target, const juce::String& Param, const juce::String& Source, float Depth )
+    {
+        auto        m    = module( Target );
+        const auto* spec = specOf( m );
+        if( !spec || spec->findParam( Param ) < 0 )
+            return {};
+
+        markEdited();
+        juce::ValueTree r( PatchIDs::MOD );
+        r.setProperty( PatchIDs::param, Param, nullptr );
+        r.setProperty( PatchIDs::source, Source, nullptr );
+        r.setProperty( PatchIDs::depth, juce::jlimit( -1.f, 1.f, Depth ), nullptr );
+        m.appendChild( r, um );
+        return r;
+    }
+
+    void PatchEditor::setModDepth( juce::ValueTree Mod, float Depth )
+    {
+        if( !Mod.isValid() )
+            return;
+        markEdited();
+        Mod.setProperty( PatchIDs::depth, juce::jlimit( -1.f, 1.f, Depth ), um );
+    }
+
+    void PatchEditor::removeMod( juce::ValueTree Mod )
+    {
+        if( auto parent = Mod.getParent(); parent.isValid() )
+        {
+            markEdited();
+            parent.removeChild( Mod, um );
+        }
+    }
+
+    int PatchEditor::getVoices() const { return juce::jlimit( 1, maxVoices, (int)patch.getProperty( PatchIDs::voices, defaultVoices ) ); }
+
+    void PatchEditor::setVoices( int Voices )
+    {
+        Voices = juce::jlimit( 1, maxVoices, Voices );
+        if( Voices == getVoices() )
+            return;
+        markEdited();
+        patch.setProperty( PatchIDs::voices, Voices, um );
+    }
+
+    std::vector<std::pair<juce::String, juce::String>> PatchEditor::getSources() const
+    {
+        std::vector<std::pair<juce::String, juce::String>> sources;
+        for( int s = 0; s < kNumBuiltinSources; ++s )
+            sources.push_back( { builtinSourceId( s ), builtinSourceName( s ) } );
+
+        std::vector<juce::ValueTree> modulators;
+        for( const auto& m : patch )
+            if( const auto* spec = specOf( m ); spec && spec->role == Role::Modulator )
+                modulators.push_back( m );
+        std::sort( modulators.begin(), modulators.end(), gridBefore );
+        for( const auto& m : modulators )
+        {
+            const int id = m.getProperty( PatchIDs::id );
+            sources.push_back( { PatchBuilder::module( id ), moduleLabel( id ) } );
+        }
+        return sources;
+    }
+
+    juce::String PatchEditor::moduleLabel( int Id ) const
+    {
+        const auto  m    = module( Id );
+        const auto* spec = specOf( m );
+        if( !spec )
+            return {};
+
+        int number = 1;
+        for( const auto& other : patch )
+            if( other.hasType( PatchIDs::MODULE ) && other.getProperty( PatchIDs::type ) == m.getProperty( PatchIDs::type ) && gridBefore( other, m ) )
+                ++number;
+        return spec->name + " " + juce::String( number );
+    }
+
+    juce::String PatchEditor::sourceLabel( const juce::String& Source ) const
+    {
+        if( const auto b = findBuiltinSource( Source ); b >= 0 )
+            return builtinSourceName( b );
+        if( Source.startsWith( "module:" ) )
+            if( const auto label = moduleLabel( Source.fromFirstOccurrenceOf( ":", false, false ).getIntValue() ); label.isNotEmpty() )
+                return label;
+        return "?";
+    }
 } // namespace mt::modular

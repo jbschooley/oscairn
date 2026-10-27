@@ -97,4 +97,51 @@ namespace mt::modular
 
     juce::StringArray getPresetNames();
     juce::ValueTree   createPreset( int Index ); // index 0 is the default patch
+
+    /// Edits a stored patch the way the editor screen does: every call is a tree
+    /// change through the undo manager (the caller begins transactions), and the
+    /// program forwards it to the engine. The first edit of a factory preset marks
+    /// its name ("FM Bell *") so it no longer reads as the untouched preset.
+    class PatchEditor
+    {
+    public:
+        PatchEditor( juce::ValueTree Patch, juce::UndoManager* UM ) : patch( std::move( Patch ) ), um( UM ) {}
+
+        bool isValid() const { return patch.isValid(); }
+
+        juce::ValueTree module( int Id ) const;
+        juce::ValueTree moduleAt( int Col, int Row ) const;
+        static const ModuleSpec* specOf( const juce::ValueTree& Module );
+
+        /// Returns the new module's id, or 0 if the cell is taken or the type unknown.
+        int  addModule( const juce::String& Type, int Col, int Row );
+        /// Also removes the modulations it fed.
+        void removeModule( int Id );
+        /// Moves a module; one already in the target cell takes its old place.
+        void moveModule( int Id, int Col, int Row );
+
+        float getValue( int Id, const juce::String& Param ) const;
+        void  setValue( int Id, const juce::String& Param, float Value );
+
+        juce::ValueTree addMod( int Target, const juce::String& Param, const juce::String& Source, float Depth );
+        void            setModDepth( juce::ValueTree Mod, float Depth );
+        void            removeMod( juce::ValueTree Mod );
+
+        int  getVoices() const;
+        void setVoices( int Voices );
+
+        /// Modulation sources this patch offers: the built-ins, then its modulator
+        /// modules, as { stored id, display name }.
+        std::vector<std::pair<juce::String, juce::String>> getSources() const;
+        /// "LFO 2": type name, numbered in grid order among modules of that type.
+        juce::String moduleLabel( int Id ) const;
+        juce::String sourceLabel( const juce::String& Source ) const;
+
+    private:
+        void markEdited();
+        int  nextId() const;
+
+        juce::ValueTree    patch;
+        juce::UndoManager* um;
+    };
 } // namespace mt::modular
