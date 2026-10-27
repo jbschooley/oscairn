@@ -504,6 +504,193 @@ namespace mt::modular
         {
         };
 
+        //==========================================================================
+        // Effects: stereo, one instance each, after the voices are mixed.
+
+        // Linear-interpolated read D samples behind Write in a circular buffer.
+        inline float readDelay( const std::vector<float>& Buf, int Write, float D )
+        {
+            const auto size = (int)Buf.size();
+            auto       r    = (float)Write - D;
+            while( r < 0.f )
+                r += (float)size;
+            const auto i0   = (int)r % size;
+            const auto frac = r - std::floor( r );
+            const auto i1   = i0 + 1 < size ? i0 + 1 : 0;
+            return Buf[(size_t)i0] + frac * ( Buf[(size_t)i1] - Buf[(size_t)i0] );
+        }
+
+        class StereoDelay : public Module
+        {
+        public:
+            enum { kTime, kFeedback, kPingPong, kDamp, kMix };
+
+            void prepare( double SampleRate ) override
+            {
+                sampleRate = SampleRate;
+                left.assign( (size_t)( SampleRate * 2.0 ) + 4, 0.f );
+                right = left;
+                reset();
+            }
+            void reset() override
+            {
+                std::fill( left.begin(), left.end(), 0.f );
+                std::fill( right.begin(), right.end(), 0.f );
+                write = 0;
+                lpL = lpR = 0;
+            }
+
+            void processStereo( const float* P, float* L, float* R, int N ) override
+            {
+                const auto size = (int)left.size();
+                if( size < 4 )
+                    return;
+                const auto d    = juce::jlimit( 1.f, (float)size - 2.f, P[kTime] * 0.001f * (float)sampleRate );
+                const auto fb   = P[kFeedback];
+                const auto damp = 1.f - 0.9f * P[kDamp];
+                const auto mix  = P[kMix];
+                const bool ping = P[kPingPong] > 0.5f;
+
+                for( int i = 0; i < N; ++i )
+                {
+                    const auto yl = readDelay( left, write, d ), yr = readDelay( right, write, d );
+                    lpL += ( yl - lpL ) * damp;
+                    lpR += ( yr - lpR ) * damp;
+                    if( ping ) // the mono input enters on the left and bounces across
+                    {
+                        left[(size_t)write]  = 0.5f * ( L[i] + R[i] ) + fb * lpR;
+                        right[(size_t)write] = fb * lpL;
+                    }
+                    else
+                    {
+                        left[(size_t)write]  = L[i] + fb * lpL;
+                        right[(size_t)write] = R[i] + fb * lpR;
+                    }
+                    if( ++write >= size )
+                        write = 0;
+                    L[i] = L[i] * ( 1.f - mix ) + yl * mix;
+                    R[i] = R[i] * ( 1.f - mix ) + yr * mix;
+                }
+            }
+
+        private:
+            double             sampleRate{ 48000 };
+            std::vector<float> left, right;
+            int                write{ 0 };
+            float              lpL{ 0 }, lpR{ 0 };
+        };
+
+        class Chorus : public Module
+        {
+        public:
+            enum { kRate, kDepth, kMix };
+
+            void prepare( double SampleRate ) override
+            {
+                sampleRate = SampleRate;
+                left.assign( (size_t)( SampleRate * 0.05 ) + 4, 0.f );
+                right = left;
+                reset();
+            }
+            void reset() override
+            {
+                std::fill( left.begin(), left.end(), 0.f );
+                std::fill( right.begin(), right.end(), 0.f );
+                write = 0;
+                phase = 0;
+            }
+
+            void processStereo( const float* P, float* L, float* R, int N ) override
+            {
+                const auto size = (int)left.size();
+                if( size < 4 )
+                    return;
+                const auto msToSamples = (float)sampleRate * 0.001f;
+                const auto inc         = P[kRate] / (float)sampleRate;
+                const auto depth       = 6.f * P[kDepth];
+                const auto mix         = P[kMix];
+
+                for( int i = 0; i < N; ++i )
+                {
+                    left[(size_t)write]  = L[i];
+                    right[(size_t)write] = R[i];
+                    // Two taps a quarter cycle apart, 12 ms +- up to 6 ms.
+                    const auto dl = ( 12.f + depth * std::sin( twoPi * phase ) ) * msToSamples;
+                    const auto dr = ( 12.f + depth * std::sin( twoPi * ( phase + 0.25f ) ) ) * msToSamples;
+                    const auto yl = readDelay( left, write, dl ), yr = readDelay( right, write, dr );
+                    if( ++write >= size )
+                        write = 0;
+                    phase += inc;
+                    if( phase >= 1.f )
+                        phase -= 1.f;
+                    L[i] = L[i] * ( 1.f - 0.5f * mix ) + yl * mix * 0.7f;
+                    R[i] = R[i] * ( 1.f - 0.5f * mix ) + yr * mix * 0.7f;
+                }
+            }
+
+        private:
+            double             sampleRate{ 48000 };
+            std::vector<float> left, right;
+            int                write{ 0 };
+            float              phase{ 0 };
+        };
+
+        class Reverb : public Module
+        {
+        public:
+            enum { kSize, kDamp, kWidth, kMix };
+
+            void prepare( double SampleRate ) override
+            {
+                reverb.setSampleRate( SampleRate );
+                reverb.reset();
+            }
+            void reset() override { reverb.reset(); }
+
+            void processStereo( const float* P, float* L, float* R, int N ) override
+            {
+                juce::Reverb::Parameters p;
+                p.roomSize = P[kSize];
+                p.damping  = P[kDamp];
+                p.width    = P[kWidth];
+                p.wetLevel = 0.5f * P[kMix];          // juce scales wet by 3
+                p.dryLevel = 0.5f * ( 1.f - P[kMix] ); // and dry by 2
+                reverb.setParameters( p );             // smoothed inside
+                reverb.processStereo( L, R, N );
+            }
+
+        private:
+            juce::Reverb reverb;
+        };
+
+        class Saturator : public Module
+        {
+        public:
+            enum { kDrive, kTone, kLevel };
+
+            void prepare( double SampleRate ) override { sampleRate = SampleRate; }
+            void reset() override { lpL = lpR = 0; }
+
+            void processStereo( const float* P, float* L, float* R, int N ) override
+            {
+                const auto gain  = juce::Decibels::decibelsToGain( 30.f * P[kDrive] );
+                const auto norm  = 1.f / std::tanh( gain ); // a full-scale input stays full scale
+                const auto coef  = 1.f - std::exp( -twoPi * P[kTone] / (float)sampleRate );
+                const auto level = P[kLevel];
+                for( int i = 0; i < N; ++i )
+                {
+                    lpL += ( std::tanh( gain * L[i] ) * norm - lpL ) * coef;
+                    lpR += ( std::tanh( gain * R[i] ) * norm - lpR ) * coef;
+                    L[i] = lpL * level;
+                    R[i] = lpR * level;
+                }
+            }
+
+        private:
+            double sampleRate{ 48000 };
+            float  lpL{ 0 }, lpR{ 0 };
+        };
+
         template <typename T>
         std::function<std::unique_ptr<Module>()> maker()
         {
@@ -607,11 +794,50 @@ namespace mt::modular
         return specs;
     }
 
+    const std::vector<ModuleSpec>& getEffectSpecs()
+    {
+        static const std::vector<ModuleSpec> specs = {
+            { "fxdelay", "Stereo Delay", Role::Effect,
+              {
+                  { "time", "Time", "ms", 10, 2000, 375, Curve::Log },
+                  { "feedback", "Feedback", "", 0, 0.95f, 0.4f },
+                  { "pingpong", "Ping-Pong", "", 0, 1, 1, Curve::Steps, { "Off", "On" } },
+                  { "damp", "Damping", "", 0, 1, 0.3f },
+                  { "mix", "Mix", "", 0, 1, 0.3f },
+              },
+              maker<StereoDelay>() },
+            { "chorus", "Chorus", Role::Effect,
+              {
+                  { "rate", "Rate", "Hz", 0.05f, 5, 0.4f, Curve::Log },
+                  { "depth", "Depth", "", 0, 1, 0.5f },
+                  { "mix", "Mix", "", 0, 1, 0.5f },
+              },
+              maker<Chorus>() },
+            { "reverb", "Reverb", Role::Effect,
+              {
+                  { "size", "Size", "", 0, 1, 0.6f },
+                  { "damp", "Damping", "", 0, 1, 0.4f },
+                  { "width", "Width", "", 0, 1, 1 },
+                  { "mix", "Mix", "", 0, 1, 0.25f },
+              },
+              maker<Reverb>() },
+            { "fxdrive", "Saturator", Role::Effect,
+              {
+                  { "drive", "Drive", "", 0, 1, 0.3f },
+                  { "tone", "Tone", "Hz", 200, 20000, 8000, Curve::Log },
+                  { "level", "Level", "", 0, 1, 0.8f },
+              },
+              maker<Saturator>() },
+        };
+        return specs;
+    }
+
     const ModuleSpec* findModuleSpec( const juce::String& Type )
     {
-        for( auto& s : getModuleSpecs() )
-            if( s.type == Type )
-                return &s;
+        for( auto* list : { &getModuleSpecs(), &getEffectSpecs() } )
+            for( auto& s : *list )
+                if( s.type == Type )
+                    return &s;
         return nullptr;
     }
 

@@ -20,21 +20,29 @@ namespace mt
             std::array<float, 8> macros{};
         };
 
-        /// Calls F( module index, parameter index, source index, depth ) for every
-        /// usable modulation, in patch order. Mods naming an unknown parameter or a
-        /// source that is not a modulator are ignored.
+        /// Calls F( index, parameter index, source index, depth ) for every usable
+        /// modulation, in patch order: modules first (index into D.modules), then
+        /// effects (index D.modules.size() + effect). Mods naming an unknown
+        /// parameter or an unusable source are ignored; effects only take sources
+        /// that are the same for every voice.
         template <typename Fn>
         void forEachRoute( const PatchDesc& D, Fn&& F )
         {
-            for( int i = 0; i < (int)D.modules.size(); ++i )
-                for( const auto& m : D.modules[(size_t)i].mods )
+            const auto numModules = (int)D.modules.size();
+            for( int i = 0; i < numModules + (int)D.effects.size(); ++i )
+            {
+                const bool  isEffect = i >= numModules;
+                const auto& node     = isEffect ? D.effects[(size_t)( i - numModules )] : D.modules[(size_t)i];
+                for( const auto& m : node.mods )
                 {
-                    const auto p = D.modules[(size_t)i].spec->findParam( m.param );
+                    const auto p = node.spec->findParam( m.param );
                     if( p < 0 )
                         continue;
 
                     auto source = findBuiltinSource( m.source );
-                    if( source < 0 && m.source.startsWith( "module:" ) )
+                    if( isEffect && source >= 0 && !isGlobalSource( source ) )
+                        source = -1;
+                    if( source < 0 && !isEffect && m.source.startsWith( "module:" ) )
                     {
                         const auto n = D.indexOf( m.source.fromFirstOccurrenceOf( ":", false, false ).getIntValue() );
                         if( n >= 0 && D.modules[(size_t)n].spec->role == Role::Modulator )
@@ -42,6 +50,22 @@ namespace mt
                     }
                     if( source >= 0 )
                         F( i, p, source, m.depth );
+                }
+            }
+        }
+
+        /// Calls F( target module index, source module index, amount ) for every usable
+        /// cable, in patch order: both ends must be audio modules, and not the same one.
+        template <typename Fn>
+        void forEachCable( const PatchDesc& D, Fn&& F )
+        {
+            auto isAudio = [&D]( int I ) { return I >= 0 && D.modules[(size_t)I].spec->role != Role::Modulator; };
+            for( int i = 0; i < (int)D.modules.size(); ++i )
+                for( const auto& c : D.modules[(size_t)i].cables )
+                {
+                    const auto n = c.source.startsWith( "module:" ) ? D.indexOf( c.source.fromFirstOccurrenceOf( ":", false, false ).getIntValue() ) : -1;
+                    if( n != i && isAudio( n ) && isAudio( i ) )
+                        F( i, n, c.amount );
                 }
         }
     } // namespace
@@ -67,11 +91,25 @@ namespace mt
             int              panNode{ -1 };
         };
 
+        struct Cable
+        {
+            int sourceNode;
+            int amountIndex;
+        };
+
+        struct Effect
+        {
+            const ModuleSpec*       spec;
+            int                     firstParam;
+            std::unique_ptr<Module> processor; // one, shared by all voices
+        };
+
         struct Voice
         {
             std::vector<std::unique_ptr<Module>> modules; // one per node
             std::vector<float>                   cur, prev; // parameter values now / one sub-block ago
             std::vector<float>                   src;       // built-in sources, then one per node
+            std::vector<std::array<float, subBlock>> outputs; // each node's last sub-block, for cables
             int                                  note{ 60 };
             float                                velocity{ 0 };
             bool                                 gate{ false }, active{ false }, fading{ false };
@@ -88,14 +126,19 @@ namespace mt
         std::vector<const ParamSpec*> paramSpecs;
         std::vector<int>              routeBegin; // per parameter, plus an end marker
         std::vector<Route>            routes;
-        std::vector<int>              modulated; // parameters with at least one route
+        std::vector<int>              modulated; // module parameters with at least one route
+        std::vector<std::vector<Cable>> cables;  // per node: the cables into it
+        std::vector<Effect>           effects;   // slot order; their parameters follow the modules'
+        int                           numModuleParams{ 0 };
 
         // Written by the message thread for value-only edits.
-        std::unique_ptr<std::atomic<float>[]> base;  // normalised knob positions
-        std::unique_ptr<std::atomic<float>[]> depth; // per route, in patch order
+        std::unique_ptr<std::atomic<float>[]> base;   // normalised knob positions
+        std::unique_ptr<std::atomic<float>[]> depth;  // per route, in patch order
+        std::unique_ptr<std::atomic<float>[]> amount; // per cable, in patch order
 
         // Audio thread.
-        std::vector<float> baseNorm, baseReal, depthNow;
+        std::vector<float> baseNorm, baseReal, depthNow, amountNow;
+        std::vector<float> effectValues; // indexed like the flat parameter list
         std::vector<Voice> voices;
         uint64_t           noteCounter{ 0 };
 
@@ -110,6 +153,14 @@ namespace mt
                     m->prepare( SampleRate );
                 freeVoice( v );
             }
+            for( auto& e : effects )
+                e.processor->prepare( SampleRate );
+        }
+
+        void resetEffects()
+        {
+            for( auto& e : effects )
+                e.processor->reset();
         }
 
         void refreshValues()
@@ -121,6 +172,8 @@ namespace mt
             }
             for( size_t r = 0; r < depthNow.size(); ++r )
                 depthNow[r] = depth[r].load( std::memory_order_relaxed );
+            for( size_t c = 0; c < amountNow.size(); ++c )
+                amountNow[c] = amount[c].load( std::memory_order_relaxed );
         }
 
         VoiceContext context( const Voice& V, const Globals& G ) const
@@ -228,6 +281,8 @@ namespace mt
             V.fade                       = 1.f;
             for( auto& m : V.modules )
                 m->reset();
+            for( auto& o : V.outputs )
+                o.fill( 0.f );
         }
 
         void renderVoice( Voice& V, const Globals& G, float* L, float* R, int N )
@@ -244,8 +299,19 @@ namespace mt
                 std::fill( buf.begin(), buf.begin() + N, 0.f );
                 for( auto n : c.nodes )
                 {
+                    // Cables add into the input. A source already run this sub-block gives
+                    // this sub-block's audio; one further right gives the previous one.
+                    for( const auto& cable : cables[(size_t)n] )
+                    {
+                        const auto& from = V.outputs[(size_t)cable.sourceNode];
+                        const auto  amt  = amountNow[(size_t)cable.amountIndex];
+                        for( int i = 0; i < N; ++i )
+                            buf[(size_t)i] += amt * from[(size_t)i];
+                    }
+
                     const auto first = (size_t)nodes[(size_t)n].firstParam;
                     V.modules[(size_t)n]->process( ctx, &V.prev[first], &V.cur[first], buf.data(), N );
+                    std::copy( buf.begin(), buf.begin() + N, V.outputs[(size_t)n].begin() );
                 }
 
                 // Equal-power pan.
@@ -303,6 +369,27 @@ namespace mt
             for( auto& v : voices )
                 for( int start = 0; start < N && v.active; start += subBlock )
                     renderVoice( v, G, L + start, R ? R + start : nullptr, juce::jmin( subBlock, N - start ) );
+
+            // Effects run every block, voices or not, so their tails ring out.
+            if( effects.empty() || !R )
+                return; // effects are stereo; a mono render skips them
+            std::array<float, kNumBuiltinSources> global{};
+            global[kModWheel] = G.modWheel;
+            global[kBend]     = juce::jlimit( -1.f, 1.f, G.bendSemitones / bendRange );
+            for( int m = 0; m < 8; ++m )
+                global[(size_t)( modular::kMacro1 + m )] = G.macros[(size_t)m];
+
+            for( auto& e : effects )
+            {
+                for( int p = e.firstParam; p < e.firstParam + (int)e.spec->params.size(); ++p )
+                {
+                    auto n = baseNorm[(size_t)p];
+                    for( int r = routeBegin[(size_t)p]; r < routeBegin[(size_t)p + 1]; ++r )
+                        n += depthNow[(size_t)routes[(size_t)r].depthIndex] * global[(size_t)routes[(size_t)r].source];
+                    effectValues[(size_t)p] = paramSpecs[(size_t)p]->fromNormal( n );
+                }
+                e.processor->processStereo( &effectValues[(size_t)e.firstParam], L, R, N );
+            }
         }
     };
 
@@ -317,8 +404,17 @@ namespace mt
                 for( size_t p = 0; p < m.values.size(); ++p )
                     G.base[first + p].store( m.spec->params[p].toNormal( m.values[p] ), std::memory_order_relaxed );
             }
+            for( size_t e = 0; e < D.effects.size(); ++e )
+            {
+                const auto& fx    = D.effects[e];
+                const auto  first = (size_t)G.effects[e].firstParam;
+                for( size_t p = 0; p < fx.values.size(); ++p )
+                    G.base[first + p].store( fx.spec->params[p].toNormal( fx.values[p] ), std::memory_order_relaxed );
+            }
             size_t k = 0;
             forEachRoute( D, [&]( int, int, int, float Depth ) { G.depth[k++].store( Depth, std::memory_order_relaxed ); } );
+            size_t c = 0;
+            forEachCable( D, [&]( int, int, float Amount ) { G.amount[c++].store( Amount, std::memory_order_relaxed ); } );
         }
 
         std::unique_ptr<ModularEngine::Graph> buildGraph( const PatchDesc& D, double SampleRate )
@@ -349,15 +445,30 @@ namespace mt
                     g->columns.back().panNode = i;
             }
 
+            g->numModuleParams = g->numParams();
+            for( const auto& e : D.effects )
+            {
+                g->effects.push_back( { e.spec, g->numParams(), e.spec->create() } );
+                g->effects.back().processor->prepare( SampleRate );
+                for( const auto& p : e.spec->params )
+                    g->paramSpecs.push_back( &p );
+            }
+
             // Routes, grouped by the parameter they modulate.
             struct Pending
             {
                 int param, source, depthIndex;
             };
             std::vector<Pending> pending;
+            const auto           numModules = (int)D.modules.size();
             forEachRoute( D, [&]( int Index, int Param, int Source, float ) {
-                pending.push_back( { g->nodes[(size_t)Index].firstParam + Param, Source, (int)pending.size() } );
+                const auto first = Index < numModules ? g->nodes[(size_t)Index].firstParam : g->effects[(size_t)( Index - numModules )].firstParam;
+                pending.push_back( { first + Param, Source, (int)pending.size() } );
             } );
+
+            g->cables.resize( g->nodes.size() );
+            int numCables = 0;
+            forEachCable( D, [&]( int Target, int Source, float ) { g->cables[(size_t)Target].push_back( { Source, numCables++ } ); } );
             std::stable_sort( pending.begin(), pending.end(), []( const Pending& A, const Pending& B ) { return A.param < B.param; } );
 
             g->routeBegin.assign( (size_t)g->numParams() + 1, 0 );
@@ -368,13 +479,16 @@ namespace mt
             }
             for( int p = 0; p < g->numParams(); ++p )
             {
-                if( g->routeBegin[(size_t)p + 1] > 0 )
-                    g->modulated.push_back( p );
+                if( g->routeBegin[(size_t)p + 1] > 0 && p < g->numModuleParams )
+                    g->modulated.push_back( p ); // effects evaluate their own, once per block
                 g->routeBegin[(size_t)p + 1] += g->routeBegin[(size_t)p];
             }
 
             g->base  = std::make_unique<std::atomic<float>[]>( (size_t)g->numParams() );
-            g->depth = std::make_unique<std::atomic<float>[]>( pending.size() );
+            g->depth  = std::make_unique<std::atomic<float>[]>( pending.size() );
+            g->amount = std::make_unique<std::atomic<float>[]>( (size_t)numCables );
+            g->amountNow.assign( (size_t)numCables, 0.f );
+            g->effectValues.assign( (size_t)g->numParams(), 0.f );
             g->baseNorm.assign( (size_t)g->numParams(), 0.f );
             g->baseReal.assign( (size_t)g->numParams(), 0.f );
             g->depthNow.assign( pending.size(), 0.f );
@@ -391,6 +505,7 @@ namespace mt
                 }
                 v.cur = v.prev = g->baseReal;
                 v.src.assign( (size_t)( kNumBuiltinSources + (int)g->nodes.size() ), 0.f );
+                v.outputs.assign( g->nodes.size(), {} );
             }
             if( !g->voices.empty() )
                 for( int n = 0; n < (int)g->nodes.size(); ++n )
@@ -427,8 +542,11 @@ namespace mt
     {
         const juce::SpinLock::ScopedLockType lock( graphLock );
         if( graph )
+        {
             for( auto& v : graph->voices )
                 graph->freeVoice( v );
+            graph->resetEffects();
+        }
     }
 
     namespace

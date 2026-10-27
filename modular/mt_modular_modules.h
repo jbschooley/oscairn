@@ -7,7 +7,12 @@
  * and instead offer an output that can modulate any knob in the patch.
  *
  * Every module instance belongs to one voice. Signals are mono inside a column;
- * a Pan module places the column in the stereo field.
+ * a Pan module places the column in the stereo field. A cable adds another
+ * audio module's output to a module's input (FM, routing between columns).
+ *
+ * Effects are different: one stereo instance each, in a chain after the voices
+ * are mixed (delay, chorus, reverb...). Only voice-independent sources (macros,
+ * mod wheel, bend) can modulate them.
  *
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
@@ -47,7 +52,8 @@ namespace mt::modular
     {
         Source,
         Processor,
-        Modulator
+        Modulator,
+        Effect
     };
 
     /// What a module sees of its voice for one sub-block.
@@ -82,6 +88,9 @@ namespace mt::modular
         /// Modulators: advance N samples and return the output (N = 0 just reads it).
         virtual float modulate( const VoiceContext&, const float* /*P*/, int /*N*/ ) { return 0.f; }
 
+        /// Effects: process the mixed voices in place, once per block.
+        virtual void processStereo( const float* /*P*/, float* /*L*/, float* /*R*/, int /*N*/ ) {}
+
         /// Envelopes: still running. A voice ends once its gate is off and none is.
         virtual bool isEnvelope() const { return false; }
         virtual bool isActive() const { return false; }
@@ -100,7 +109,10 @@ namespace mt::modular
 
     /// Every module type, in the order a module picker should list them.
     const std::vector<ModuleSpec>& getModuleSpecs();
-    const ModuleSpec*              findModuleSpec( const juce::String& Type );
+    /// Effect types for the chain after the voices.
+    const std::vector<ModuleSpec>& getEffectSpecs();
+    /// Searches modules, then effects.
+    const ModuleSpec* findModuleSpec( const juce::String& Type );
 
     //==============================================================================
     /// Modulation sources other than modulator modules, in source-index order.
@@ -118,4 +130,6 @@ namespace mt::modular
     /// Stored names, e.g. "velocity", "macro3"; a module output is "module:<id>".
     juce::String builtinSourceId( int Source );
     int          findBuiltinSource( const juce::String& Id ); // -1 if not a builtin
+    /// The same for every voice, so it can modulate effects.
+    inline bool isGlobalSource( int Source ) { return Source == kModWheel || Source == kBend || ( Source >= kMacro1 && Source < kNumBuiltinSources ); }
 } // namespace mt::modular

@@ -12,17 +12,18 @@ namespace mt::modular
 
         for( const auto& m : Patch )
         {
-            if( !m.hasType( PatchIDs::MODULE ) )
+            const bool isEffect = m.hasType( PatchIDs::FX );
+            if( !isEffect && !m.hasType( PatchIDs::MODULE ) )
                 continue;
             const auto* spec = findModuleSpec( m.getProperty( PatchIDs::type ).toString() );
-            if( !spec )
+            if( !spec || isEffect != ( spec->role == Role::Effect ) )
                 continue; // from a newer build, or a typo: skip it rather than fail the patch
 
             Module mod;
             mod.id   = (int)m.getProperty( PatchIDs::id );
             mod.spec = spec;
-            mod.col  = (int)m.getProperty( PatchIDs::col );
-            mod.row  = (int)m.getProperty( PatchIDs::row );
+            mod.col  = (int)m.getProperty( isEffect ? PatchIDs::slot : PatchIDs::col );
+            mod.row  = isEffect ? 0 : (int)m.getProperty( PatchIDs::row );
             for( const auto& p : spec->params )
                 mod.values.push_back( juce::jlimit( p.minValue, p.maxValue, (float)m.getProperty( juce::Identifier( p.id ), p.defaultValue ) ) );
 
@@ -30,13 +31,16 @@ namespace mt::modular
                 if( r.hasType( PatchIDs::MOD ) )
                     mod.mods.push_back( { r.getProperty( PatchIDs::param ).toString(), r.getProperty( PatchIDs::source ).toString(),
                                           juce::jlimit( -1.f, 1.f, (float)r.getProperty( PatchIDs::depth ) ) } );
+                else if( r.hasType( PatchIDs::CABLE ) && !isEffect )
+                    mod.cables.push_back( { r.getProperty( PatchIDs::source ).toString(), juce::jlimit( -1.f, 1.f, (float)r.getProperty( PatchIDs::amount, 1.f ) ) } );
 
-            d.modules.push_back( std::move( mod ) );
+            ( isEffect ? d.effects : d.modules ).push_back( std::move( mod ) );
         }
 
-        std::stable_sort( d.modules.begin(), d.modules.end(), []( const Module& A, const Module& B ) {
-            return std::tie( A.col, A.row, A.id ) < std::tie( B.col, B.row, B.id );
-        } );
+        for( auto* list : { &d.modules, &d.effects } )
+            std::stable_sort( list->begin(), list->end(), []( const Module& A, const Module& B ) {
+                return std::tie( A.col, A.row, A.id ) < std::tie( B.col, B.row, B.id );
+            } );
         return d;
     }
 
@@ -48,6 +52,14 @@ namespace mt::modular
         {
             k << "|" << m.id << ":" << m.spec->type << "@" << m.col << "," << m.row;
             for( const auto& r : m.mods )
+                k << ";" << r.param << "<" << r.source;
+            for( const auto& c : m.cables )
+                k << ";in<" << c.source;
+        }
+        for( const auto& e : effects )
+        {
+            k << "|fx" << e.id << ":" << e.spec->type << "@" << e.col;
+            for( const auto& r : e.mods )
                 k << ";" << r.param << "<" << r.source;
         }
         return k;
@@ -84,6 +96,39 @@ namespace mt::modular
         }
         tree.appendChild( m, nullptr );
         return id;
+    }
+
+    int PatchBuilder::addEffect( const juce::String& Type, int Slot, std::initializer_list<std::pair<const char*, float>> Values )
+    {
+        juce::ValueTree e( PatchIDs::FX );
+        const auto      id = nextId++;
+        e.setProperty( PatchIDs::id, id, nullptr );
+        e.setProperty( PatchIDs::type, Type, nullptr );
+        e.setProperty( PatchIDs::slot, Slot, nullptr );
+        for( const auto& [param, value] : Values )
+        {
+            jassert( findModuleSpec( Type ) && findModuleSpec( Type )->findParam( param ) >= 0 );
+            e.setProperty( juce::Identifier( param ), value, nullptr );
+        }
+        tree.appendChild( e, nullptr );
+        return id;
+    }
+
+    PatchBuilder& PatchBuilder::cable( int Target, int Source, float Amount )
+    {
+        auto m = tree.getChildWithProperty( PatchIDs::id, Target );
+        jassert( m.isValid() );
+        juce::ValueTree c( PatchIDs::CABLE );
+        c.setProperty( PatchIDs::source, module( Source ), nullptr );
+        c.setProperty( PatchIDs::amount, Amount, nullptr );
+        m.appendChild( c, nullptr );
+        return *this;
+    }
+
+    PatchBuilder& PatchBuilder::macroName( int Macro, const juce::String& Name )
+    {
+        tree.setProperty( PatchIDs::macroName( Macro ), Name, nullptr );
+        return *this;
     }
 
     PatchBuilder& PatchBuilder::mod( int Target, const juce::String& Param, const juce::String& Source, float Depth )
@@ -145,6 +190,8 @@ namespace mt::modular
             auto amp   = b.add( "adsr", 1, 1, { { "attack", 0.001f }, { "decay", 1 }, { "sustain", 1 }, { "release", 0.5f }, { "velocity", 0.3f } } );
             b.mod( burst, "gain", B::module( benv ), 1 ).mod( vca, "gain", B::module( amp ), 1 );
             b.mod( comb, "damp", "macro1", 0.6f ).mod( noise, "color", "macro2", 1 );
+            const auto echo = b.addEffect( "fxdelay", 0, { { "time", 375 }, { "feedback", 0.35f }, { "mix", 0.25f } } );
+            b.mod( echo, "mix", "macro3", 0.5f );
             return b.tree;
         }
 
@@ -160,6 +207,9 @@ namespace mt::modular
             b.mod( vca, "gain", B::module( amp ), 1 );
             b.mod( modOsc, "level", B::module( index ), 0.6f ).mod( modOsc, "level", "macro1", 0.4f );
             b.mod( modOsc, "tune", "macro2", 0.125f ); // up to an octave higher
+            b.macroName( 0, "Brightness" ).macroName( 1, "Ratio" );
+            const auto verb = b.addEffect( "reverb", 0, { { "size", 0.75f }, { "mix", 0.3f } } );
+            b.mod( verb, "mix", "macro3", 0.5f ).macroName( 2, "Reverb" );
             return b.tree;
         }
 
@@ -220,6 +270,27 @@ namespace mt::modular
             b.mod( flt, "cutoff", B::module( lfo ), 0.12f ).mod( flt, "cutoff", B::module( rnd ), 0.12f );
             b.mod( pan, "pan", B::module( rnd ), 0.35f );
             b.mod( flt, "cutoff", "macro1", 0.4f ).mod( amp, "attack", "macro2", -0.3f );
+            b.addEffect( "chorus", 0, { { "rate", 0.3f }, { "depth", 0.6f }, { "mix", 0.4f } } );
+            const auto verb = b.addEffect( "reverb", 1, { { "size", 0.85f }, { "mix", 0.35f } } );
+            b.mod( verb, "mix", "macro3", 0.4f );
+            return b.tree;
+        }
+
+        // Column 1's oscillator phase-modulates column 0's through a cable; the VCA
+        // at the bottom of column 1 (gain 0) keeps the modulator out of the mix.
+        juce::ValueTree crossFm()
+        {
+            B    b( "Cross FM", 6 );
+            auto carrier = b.add( "osc", 0, 0, { { "wave", 0 }, { "input", 1 }, { "pm", 1 }, { "level", 0.6f } } );
+            auto vca     = b.add( "vca", 0, 1, { { "gain", 0 } } );
+            auto modOsc  = b.add( "osc", 1, 0, { { "wave", 0 }, { "tune", 12 }, { "level", 0.5f } } );
+            b.add( "vca", 1, 1, { { "gain", 0 } } );
+            auto amp   = b.add( "adsr", 2, 0, { { "attack", 0.002f }, { "decay", 1.2f }, { "sustain", 0.4f }, { "release", 0.5f } } );
+            auto index = b.add( "adsr", 2, 1, { { "attack", 0.001f }, { "decay", 0.4f }, { "sustain", 0.2f }, { "release", 0.4f }, { "velocity", 0.8f } } );
+            b.cable( carrier, modOsc, 1.f );
+            b.mod( vca, "gain", B::module( amp ), 1 ).mod( modOsc, "level", B::module( index ), 0.5f );
+            b.mod( modOsc, "level", "macro1", 0.5f ).mod( modOsc, "tune", "macro2", 0.07f );
+            b.macroName( 0, "FM Amount" ).macroName( 1, "Ratio" );
             return b.tree;
         }
 
@@ -229,7 +300,7 @@ namespace mt::modular
             juce::ValueTree ( *make )();
         };
 
-        const std::array<Preset, 8> presets{ {
+        const std::array<Preset, 9> presets{ {
             { "Init", init },
             { "Basic Poly", basicPoly },
             { "Pluck String", pluckString },
@@ -238,6 +309,7 @@ namespace mt::modular
             { "Fold Lead", foldLead },
             { "Noise Hat", noiseHat },
             { "Random Pad", randomPad },
+            { "Cross FM", crossFm },
         } };
     } // namespace
 
@@ -281,9 +353,119 @@ namespace mt::modular
     juce::ValueTree PatchEditor::module( int Id ) const
     {
         for( const auto& m : patch )
-            if( m.hasType( PatchIDs::MODULE ) && (int)m.getProperty( PatchIDs::id ) == Id )
+            if( ( m.hasType( PatchIDs::MODULE ) || m.hasType( PatchIDs::FX ) ) && (int)m.getProperty( PatchIDs::id ) == Id )
                 return m;
         return {};
+    }
+
+    juce::ValueTree PatchEditor::effectAt( int Slot ) const
+    {
+        for( const auto& m : patch )
+            if( m.hasType( PatchIDs::FX ) && (int)m.getProperty( PatchIDs::slot ) == Slot )
+                return m;
+        return {};
+    }
+
+    int PatchEditor::addEffect( const juce::String& Type, int Slot )
+    {
+        const auto* spec = findModuleSpec( Type );
+        if( !patch.isValid() || !spec || spec->role != Role::Effect || !juce::isPositiveAndBelow( Slot, effectSlots ) || effectAt( Slot ).isValid() )
+            return 0;
+
+        markEdited();
+        juce::ValueTree e( PatchIDs::FX );
+        const auto      id = nextId();
+        e.setProperty( PatchIDs::id, id, nullptr );
+        e.setProperty( PatchIDs::type, Type, nullptr );
+        e.setProperty( PatchIDs::slot, Slot, nullptr );
+        patch.appendChild( e, um );
+        return id;
+    }
+
+    bool PatchEditor::isAudioModule( int Id ) const
+    {
+        const auto  m    = module( Id );
+        const auto* spec = specOf( m );
+        return m.hasType( PatchIDs::MODULE ) && spec && ( spec->role == Role::Source || spec->role == Role::Processor );
+    }
+
+    juce::ValueTree PatchEditor::addCable( int Target, const juce::String& Source, float Amount )
+    {
+        const auto sourceId = Source.fromFirstOccurrenceOf( ":", false, false ).getIntValue();
+        if( !isAudioModule( Target ) || !Source.startsWith( "module:" ) || !isAudioModule( sourceId ) || sourceId == Target )
+            return {};
+
+        markEdited();
+        juce::ValueTree c( PatchIDs::CABLE );
+        c.setProperty( PatchIDs::source, Source, nullptr );
+        c.setProperty( PatchIDs::amount, juce::jlimit( -1.f, 1.f, Amount ), nullptr );
+        module( Target ).appendChild( c, um );
+        return c;
+    }
+
+    void PatchEditor::setCableAmount( juce::ValueTree Cable, float Amount )
+    {
+        if( !Cable.isValid() )
+            return;
+        markEdited();
+        Cable.setProperty( PatchIDs::amount, juce::jlimit( -1.f, 1.f, Amount ), um );
+    }
+
+    std::vector<std::pair<juce::String, juce::String>> PatchEditor::getCableSources( int Target ) const
+    {
+        std::vector<juce::ValueTree> audio;
+        for( const auto& m : patch )
+            if( const int id = m.getProperty( PatchIDs::id ); id != Target && isAudioModule( id ) )
+                audio.push_back( m );
+        std::sort( audio.begin(), audio.end(), gridBefore );
+
+        std::vector<std::pair<juce::String, juce::String>> sources;
+        for( const auto& m : audio )
+        {
+            const int id = m.getProperty( PatchIDs::id );
+            sources.push_back( { PatchBuilder::module( id ), moduleLabel( id ) } );
+        }
+        return sources;
+    }
+
+    juce::String PatchEditor::macroLabel( int Macro ) const
+    {
+        if( const auto stored = patch.getProperty( PatchIDs::macroName( Macro ) ).toString(); stored.isNotEmpty() )
+            return stored;
+
+        // What it modulates, in grid order, then the effects.
+        std::vector<juce::ValueTree> nodes;
+        for( const auto& m : patch )
+            if( m.hasType( PatchIDs::MODULE ) )
+                nodes.push_back( m );
+        std::sort( nodes.begin(), nodes.end(), gridBefore );
+        for( const auto& m : patch )
+            if( m.hasType( PatchIDs::FX ) )
+                nodes.push_back( m );
+
+        const auto        source = builtinSourceId( kMacro1 + Macro );
+        juce::StringArray targets;
+        for( const auto& m : nodes )
+            if( const auto* spec = specOf( m ) )
+                for( const auto& r : m )
+                    if( r.hasType( PatchIDs::MOD ) && r.getProperty( PatchIDs::source ).toString() == source )
+                        if( const auto pi = spec->findParam( r.getProperty( PatchIDs::param ).toString() ); pi >= 0 )
+                            targets.addIfNotAlreadyThere( spec->params[(size_t)pi].name );
+
+        if( targets.isEmpty() )
+            return "Macro " + juce::String( Macro + 1 );
+        return targets[0] + ( targets.size() > 1 ? " +" + juce::String( targets.size() - 1 ) : juce::String() );
+    }
+
+    void PatchEditor::setMacroName( int Macro, const juce::String& Name )
+    {
+        if( !patch.isValid() || !juce::isPositiveAndBelow( Macro, 8 ) )
+            return;
+        markEdited();
+        if( Name.trim().isEmpty() )
+            patch.removeProperty( PatchIDs::macroName( Macro ), um );
+        else
+            patch.setProperty( PatchIDs::macroName( Macro ), Name.trim(), um );
     }
 
     juce::ValueTree PatchEditor::moduleAt( int Col, int Row ) const
@@ -337,7 +519,7 @@ namespace mt::modular
         const auto source = PatchBuilder::module( Id );
         for( auto other : patch )
             for( int i = other.getNumChildren(); --i >= 0; )
-                if( auto r = other.getChild( i ); r.hasType( PatchIDs::MOD ) && r.getProperty( PatchIDs::source ).toString() == source )
+                if( auto r = other.getChild( i ); ( r.hasType( PatchIDs::MOD ) || r.hasType( PatchIDs::CABLE ) ) && r.getProperty( PatchIDs::source ).toString() == source )
                     other.removeChild( r, um );
         patch.removeChild( m, um );
     }
@@ -431,11 +613,21 @@ namespace mt::modular
         patch.setProperty( PatchIDs::voices, Voices, um );
     }
 
-    std::vector<std::pair<juce::String, juce::String>> PatchEditor::getSources() const
+    std::vector<std::pair<juce::String, juce::String>> PatchEditor::getSources( bool GlobalOnly ) const
     {
         std::vector<std::pair<juce::String, juce::String>> sources;
         for( int s = 0; s < kNumBuiltinSources; ++s )
-            sources.push_back( { builtinSourceId( s ), builtinSourceName( s ) } );
+            if( !GlobalOnly || isGlobalSource( s ) )
+            {
+                // A macro shows what it already does: "Macro 1 (Cutoff)".
+                auto name = builtinSourceName( s );
+                if( s >= kMacro1 )
+                    if( const auto label = macroLabel( s - kMacro1 ); label != name )
+                        name << " (" << label << ")";
+                sources.push_back( { builtinSourceId( s ), name } );
+            }
+        if( GlobalOnly )
+            return sources;
 
         std::vector<juce::ValueTree> modulators;
         for( const auto& m : patch )
@@ -472,5 +664,67 @@ namespace mt::modular
             if( const auto label = moduleLabel( Source.fromFirstOccurrenceOf( ":", false, false ).getIntValue() ); label.isNotEmpty() )
                 return label;
         return "?";
+    }
+
+    //==============================================================================
+    namespace
+    {
+        juce::File& presetDirOverride()
+        {
+            static juce::File dir;
+            return dir;
+        }
+    } // namespace
+
+    juce::File UserPresets::getDirectory()
+    {
+        const auto& over = presetDirOverride();
+        return over != juce::File() ? over : getAppDirs( MTPrefs ).getChildFile( "ModularPresets" );
+    }
+
+    void UserPresets::setDirectory( const juce::File& Dir ) { presetDirOverride() = Dir; }
+
+    juce::StringArray UserPresets::getNames()
+    {
+        juce::StringArray names;
+        for( const auto& f : getDirectory().findChildFiles( juce::File::findFiles, false, "*.xml" ) )
+            if( auto xml = juce::XmlDocument::parse( f ); xml && xml->hasTagName( PatchIDs::MODULAR_PATCH.toString() ) )
+                names.addIfNotAlreadyThere( xml->getStringAttribute( PatchIDs::name.toString() ) );
+        names.removeEmptyStrings();
+        names.sortNatural();
+        return names;
+    }
+
+    juce::ValueTree UserPresets::load( const juce::String& Name )
+    {
+        for( const auto& f : getDirectory().findChildFiles( juce::File::findFiles, false, "*.xml" ) )
+            if( auto xml = juce::XmlDocument::parse( f ); xml && xml->hasTagName( PatchIDs::MODULAR_PATCH.toString() ) )
+                if( xml->getStringAttribute( PatchIDs::name.toString() ) == Name )
+                    return juce::ValueTree::fromXml( *xml );
+        return {};
+    }
+
+    bool UserPresets::save( const juce::ValueTree& Patch, const juce::String& Name )
+    {
+        const auto name = Name.trim();
+        if( name.isEmpty() || !Patch.hasType( PatchIDs::MODULAR_PATCH ) || getPresetNames().contains( name ) )
+            return false;
+
+        remove( name ); // a file with another spelling of the same name
+        auto copy = Patch.createCopy();
+        copy.setProperty( PatchIDs::name, name, nullptr );
+        const auto dir = getDirectory();
+        dir.createDirectory();
+        auto xml = copy.createXml();
+        return xml && xml->writeTo( dir.getChildFile( juce::File::createLegalFileName( name ) + ".xml" ) );
+    }
+
+    bool UserPresets::remove( const juce::String& Name )
+    {
+        bool removed = false;
+        for( const auto& f : getDirectory().findChildFiles( juce::File::findFiles, false, "*.xml" ) )
+            if( auto xml = juce::XmlDocument::parse( f ); xml && xml->getStringAttribute( PatchIDs::name.toString() ) == Name )
+                removed = f.deleteFile() || removed;
+        return removed;
     }
 } // namespace mt::modular

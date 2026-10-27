@@ -4,12 +4,16 @@
  * A patch is a ValueTree, so the program can keep it in the project (saved with
  * it, undoable):
  *
- *   <MODULAR_PATCH name="Init" voices="8">
+ *   <MODULAR_PATCH name="Init" voices="8" macroName1="Brightness">
  *     <MODULE id="1" type="osc" col="0" row="0" wave="2" level="0.5"/>
  *     <MODULE id="3" type="vca" col="0" row="1" gain="0">
  *       <MOD param="gain" source="module:2" depth="1"/>
  *     </MODULE>
- *     <MODULE id="2" type="adsr" col="1" row="0" attack="0.005"/>
+ *     <MODULE id="4" type="osc" col="1" row="0" input="1">
+ *       <CABLE source="module:1" amount="0.5"/>
+ *     </MODULE>
+ *     <MODULE id="2" type="adsr" col="1" row="1" attack="0.005"/>
+ *     <FX id="5" type="reverb" slot="0" mix="0.3"/>
  *   </MODULAR_PATCH>
  *
  * Module properties named after a parameter hold its value in that parameter's
@@ -17,6 +21,15 @@
  * and the columns are summed. A MOD adds `depth` (in normalised knob travel,
  * -1..1) times a source to one of the module's parameters; the source is a
  * built-in ("velocity", "macro1"...) or a modulator module ("module:<id>").
+ *
+ * A CABLE adds `amount` (-1..1) times another audio module's output to a
+ * module's input. A source to the left of (or above) its target arrives in the
+ * same sub-block; one to the right arrives one sub-block (16 samples) later,
+ * which is what makes feedback possible.
+ *
+ * FX nodes are the stereo effects after the voices, in slot order; their MODs
+ * may only use voice-independent sources (macros, mod wheel, bend). Macros take
+ * their name from macroName<n>, else from what they modulate ("Cutoff").
  *
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
@@ -38,12 +51,19 @@ namespace mt::modular
         inline const juce::Identifier param{ "param" };
         inline const juce::Identifier source{ "source" };
         inline const juce::Identifier depth{ "depth" };
+        inline const juce::Identifier FX{ "FX" };
+        inline const juce::Identifier CABLE{ "CABLE" };
+        inline const juce::Identifier slot{ "slot" };
+        inline const juce::Identifier amount{ "amount" };
+        /// Macro is 0-based: macroName1..macroName8.
+        inline juce::Identifier macroName( int Macro ) { return juce::Identifier( "macroName" + juce::String( Macro + 1 ) ); }
     } // namespace PatchIDs
 
     constexpr int maxVoices     = 16;
     constexpr int defaultVoices = 8;
     constexpr int gridColumns   = 8; // what the editor shows; the engine does not care
     constexpr int gridRows      = 6;
+    constexpr int effectSlots   = 4;
 
     /// A patch read out of its tree: plain data the engine can build from.
     struct PatchDesc
@@ -54,6 +74,12 @@ namespace mt::modular
             float        depth{ 0 };
         };
 
+        struct Cable
+        {
+            juce::String source;
+            float        amount{ 1 };
+        };
+
         struct Module
         {
             int                id{ 0 };
@@ -61,11 +87,13 @@ namespace mt::modular
             int                col{ 0 }, row{ 0 };
             std::vector<float> values; // one per spec parameter, in its units
             std::vector<Mod>   mods;
+            std::vector<Cable> cables;
         };
 
         juce::String        name;
         int                 voices{ defaultVoices };
         std::vector<Module> modules; // column, then row order; unknown types are skipped
+        std::vector<Module> effects; // slot order (in `col`)
 
         static PatchDesc fromTree( const juce::ValueTree& Patch );
 
@@ -85,7 +113,11 @@ namespace mt::modular
 
         /// Adds a module and returns its id. Values not given take their defaults.
         int add( const juce::String& Type, int Col, int Row, std::initializer_list<std::pair<const char*, float>> Values = {} );
+        /// An effect in the chain after the voices; returns its id.
+        int           addEffect( const juce::String& Type, int Slot, std::initializer_list<std::pair<const char*, float>> Values = {} );
         PatchBuilder& mod( int Target, const juce::String& Param, const juce::String& Source, float Depth );
+        PatchBuilder& cable( int Target, int Source, float Amount = 1.f );
+        PatchBuilder& macroName( int Macro, const juce::String& Name ); // 0-based
 
         static juce::String module( int Id ) { return "module:" + juce::String( Id ); }
 
@@ -123,16 +155,33 @@ namespace mt::modular
         float getValue( int Id, const juce::String& Param ) const;
         void  setValue( int Id, const juce::String& Param, float Value );
 
+        juce::ValueTree effectAt( int Slot ) const;
+        /// Returns the new effect's id, or 0 if the slot is taken or the type unknown.
+        int addEffect( const juce::String& Type, int Slot );
+
         juce::ValueTree addMod( int Target, const juce::String& Param, const juce::String& Source, float Depth );
         void            setModDepth( juce::ValueTree Mod, float Depth );
+        /// Removes a MOD or a CABLE.
         void            removeMod( juce::ValueTree Mod );
+
+        /// Audio from Source (an audio module, not Target) into Target's input.
+        juce::ValueTree addCable( int Target, const juce::String& Source, float Amount );
+        void            setCableAmount( juce::ValueTree Cable, float Amount );
+        /// Audio modules that can feed Target, as { stored id, display name }.
+        std::vector<std::pair<juce::String, juce::String>> getCableSources( int Target ) const;
+
+        /// 0-based. The stored name, else what the macro modulates ("Cutoff",
+        /// "Cutoff +2"), else "Macro 3".
+        juce::String macroLabel( int Macro ) const;
+        void         setMacroName( int Macro, const juce::String& Name ); // empty = derive it
 
         int  getVoices() const;
         void setVoices( int Voices );
 
         /// Modulation sources this patch offers: the built-ins, then its modulator
         /// modules, as { stored id, display name }.
-        std::vector<std::pair<juce::String, juce::String>> getSources() const;
+        /// GlobalOnly: just the sources effects may use.
+        std::vector<std::pair<juce::String, juce::String>> getSources( bool GlobalOnly = false ) const;
         /// "LFO 2": type name, numbered in grid order among modules of that type.
         juce::String moduleLabel( int Id ) const;
         juce::String sourceLabel( const juce::String& Source ) const;
@@ -140,8 +189,22 @@ namespace mt::modular
     private:
         void markEdited();
         int  nextId() const;
+        bool isAudioModule( int Id ) const;
 
         juce::ValueTree    patch;
         juce::UndoManager* um;
+    };
+
+    /// Patches saved by the user: one XML file each, in <prefs>/ModularPresets.
+    struct UserPresets
+    {
+        static juce::File        getDirectory();
+        static void              setDirectory( const juce::File& Dir ); // tests; a default File = back to prefs
+        static juce::StringArray getNames();                             // sorted
+        static juce::ValueTree   load( const juce::String& Name );     // invalid if missing
+        /// Saves a copy called Name, replacing a user preset of that name. Refuses an
+        /// empty name or a factory preset's.
+        static bool save( const juce::ValueTree& Patch, const juce::String& Name );
+        static bool remove( const juce::String& Name );
     };
 } // namespace mt::modular
