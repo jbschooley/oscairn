@@ -6,6 +6,7 @@ target_include_directories(oscairn_clap_headers INTERFACE clap-host/third_party/
 
 add_library(oscairn_engine STATIC
     engine/src/chain.cpp
+    engine/src/graph.cpp
     engine/src/transport.cpp
     engine/src/wav_file.cpp)
 target_include_directories(oscairn_engine PUBLIC engine/include)
@@ -27,3 +28,8 @@ add_test(NAME chain-mono COMMAND oscairn-chain-mono-test $<TARGET_FILE:kick-clap
 add_executable(oscairn-midi-clock-test engine/tests/midi_clock.cpp)
 target_link_libraries(oscairn-midi-clock-test PRIVATE oscairn_engine)
 add_test(NAME midi-clock COMMAND oscairn-midi-clock-test $<TARGET_FILE:oscairn_step_sequencer>)
+
+add_executable(oscairn-graph-test engine/tests/graph_test.cpp)
+target_link_libraries(oscairn-graph-test PRIVATE oscairn_engine)
+add_test(NAME graph COMMAND oscairn-graph-test $<TARGET_FILE:oscairn_step_sequencer> $<TARGET_FILE:oscairn_basic_synth>
+    $<TARGET_FILE:oscairn_delay> $<TARGET_FILE:kick-clap-fixture-normal>)

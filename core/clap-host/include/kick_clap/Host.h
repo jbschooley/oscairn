@@ -89,6 +89,7 @@ public:
     uint64_t metadataRevision() const noexcept;
     const std::vector<Port>& inputPorts() const noexcept;
     const std::vector<Port>& outputPorts() const noexcept;
+    uint32_t noteInputPorts() const noexcept;
     uint32_t noteOutputPorts() const noexcept;
     double parameterValue(clap_id) const noexcept;
     std::string parameterText(clap_id, double value) const;

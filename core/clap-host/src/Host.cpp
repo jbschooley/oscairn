@@ -683,6 +683,7 @@ const std::vector<Parameter>& Host::parameters() const noexcept { return impl->p
 uint64_t Host::metadataRevision() const noexcept { return impl->metadataVersion; }
 const std::vector<Port>& Host::inputPorts() const noexcept { return impl->inputs; }
 const std::vector<Port>& Host::outputPorts() const noexcept { return impl->outputs; }
+uint32_t Host::noteInputPorts() const noexcept { return static_cast<uint32_t>(impl->noteInputs.size()); }
 uint32_t Host::noteOutputPorts() const noexcept { return static_cast<uint32_t>(impl->noteOutputs.size()); }
 double Host::parameterValue(clap_id id) const noexcept {
     auto& s = *impl; const auto i = s.paramIndex(id);

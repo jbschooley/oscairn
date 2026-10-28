@@ -1,0 +1,326 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+#include "oscairn/graph.h"
+
+#include <kick_clap/Discovery.h>
+
+#include <algorithm>
+#include <stdexcept>
+
+namespace oscairn
+{
+    /// A compiled graph: nodes in dependency order with everything the audio thread needs
+    /// preallocated, so processing never allocates or locks.
+    struct Graph::Plan
+    {
+        struct Step
+        {
+            std::shared_ptr<kick::clap::Host> host; // keeps the plugin alive while any plan uses it
+            uint32_t                          audioInputs = 0, audioOutputs = 0;
+            std::vector<int>                  audioSources; // step indices, summed
+            std::vector<int>                  noteSources;  // step indices; -1 is graphInput
+            bool                              toOutput = false;
+            float*                            out[channels]{};
+        };
+
+        struct Key // orders merged notes: by time, then by source and position
+        {
+            uint32_t                 time;
+            uint32_t                 order;
+            const kick::clap::Event* event;
+        };
+
+        std::vector<Step>              steps;
+        std::vector<float>             buffers; // channels * maxFrames per audio-producing step
+        std::vector<float>             mix;     // the summed audio input of one step
+        std::vector<Key>               keys;
+        std::vector<kick::clap::Event> merged;
+    };
+
+    //==============================================================================
+    void Graph::Retired::push( Plan* p ) noexcept
+    {
+        const auto head = head_.load( std::memory_order_relaxed );
+        slots_[head % slots_.size()] = p;
+        head_.store( head + 1, std::memory_order_release );
+    }
+
+    Graph::Plan* Graph::Retired::pop() noexcept
+    {
+        const auto tail = tail_.load( std::memory_order_relaxed );
+        if( tail == head_.load( std::memory_order_acquire ) )
+            return nullptr;
+        Plan* p = slots_[tail % slots_.size()];
+        tail_.store( tail + 1, std::memory_order_release );
+        return p;
+    }
+
+    //==============================================================================
+    Graph::Graph( double sampleRate, uint32_t maxFrames )
+        : sampleRate_( sampleRate )
+        , maxFrames_( maxFrames )
+    {
+    }
+
+    Graph::~Graph()
+    {
+        // The audio thread must have stopped calling process().
+        delete pending_.exchange( nullptr );
+        delete current_;
+        collect();
+    }
+
+    NodeId Graph::add( const std::string& path, const std::string& pluginId )
+    {
+        // Reading the descriptors loads the module in this process; fine for a trusted
+        // path. Untrusted folders go through the out-of-process scanner.
+        const auto scan  = kick::clap::inspect( path );
+        const auto found = std::find_if( scan.plugins.begin(), scan.plugins.end(), [&]( const kick::clap::Descriptor& d ) {
+            return pluginId.empty() || d.id == pluginId;
+        } );
+        if( found == scan.plugins.end() )
+        {
+            if( !scan.failures.empty() )
+                throw std::runtime_error( scan.failures.front().message );
+            throw std::runtime_error( pluginId.empty() ? "no plugins in " + path : "plugin " + pluginId + " not found in " + path );
+        }
+
+        Node node;
+        node.host = std::make_shared<kick::clap::Host>();
+        if( !node.host->load( *found, sampleRate_, maxFrames_ ) )
+            throw std::runtime_error( "cannot load " + found->id + ": " + node.host->error() );
+        for( const auto& port : node.host->inputPorts() )
+            node.audioInputs += port.channels;
+        for( const auto& port : node.host->outputPorts() )
+            node.audioOutputs += port.channels;
+
+        const NodeId id = nextId_++;
+        nodes_.emplace( id, std::move( node ) );
+        return id;
+    }
+
+    void Graph::remove( NodeId node )
+    {
+        nodes_.erase( node );
+        auto touches = [&]( const std::pair<NodeId, NodeId>& e ) { return e.first == node || e.second == node; };
+        audioEdges_.erase( std::remove_if( audioEdges_.begin(), audioEdges_.end(), touches ), audioEdges_.end() );
+        noteEdges_.erase( std::remove_if( noteEdges_.begin(), noteEdges_.end(), touches ), noteEdges_.end() );
+    }
+
+    void Graph::checkSource( NodeId from, bool audio ) const
+    {
+        if( from == graphInput && !audio )
+            return;
+        const auto it = nodes_.find( from );
+        if( it == nodes_.end() )
+            throw std::invalid_argument( "no such source node" );
+        if( audio ? it->second.audioOutputs == 0 : it->second.host->noteOutputPorts() == 0 )
+            throw std::invalid_argument( audio ? "the source has no audio outputs" : "the source has no note outputs" );
+    }
+
+    void Graph::checkDestination( NodeId to, bool audio ) const
+    {
+        if( to == graphOutput && audio )
+            return;
+        const auto it = nodes_.find( to );
+        if( it == nodes_.end() )
+            throw std::invalid_argument( "no such destination node" );
+        if( audio ? it->second.audioInputs == 0 : it->second.host->noteInputPorts() == 0 )
+            throw std::invalid_argument( audio ? "the destination has no audio inputs" : "the destination has no note inputs" );
+    }
+
+    void Graph::connectAudio( NodeId from, NodeId to )
+    {
+        checkSource( from, true );
+        checkDestination( to, true );
+        if( std::find( audioEdges_.begin(), audioEdges_.end(), std::make_pair( from, to ) ) == audioEdges_.end() )
+            audioEdges_.emplace_back( from, to );
+    }
+
+    void Graph::connectNotes( NodeId from, NodeId to )
+    {
+        checkSource( from, false );
+        checkDestination( to, false );
+        if( std::find( noteEdges_.begin(), noteEdges_.end(), std::make_pair( from, to ) ) == noteEdges_.end() )
+            noteEdges_.emplace_back( from, to );
+    }
+
+    void Graph::disconnectAudio( NodeId from, NodeId to )
+    {
+        audioEdges_.erase( std::remove( audioEdges_.begin(), audioEdges_.end(), std::make_pair( from, to ) ), audioEdges_.end() );
+    }
+
+    void Graph::disconnectNotes( NodeId from, NodeId to )
+    {
+        noteEdges_.erase( std::remove( noteEdges_.begin(), noteEdges_.end(), std::make_pair( from, to ) ), noteEdges_.end() );
+    }
+
+    const kick::clap::Host& Graph::host( NodeId node ) const
+    {
+        return *nodes_.at( node ).host;
+    }
+
+    Graph::Plan* Graph::compile() const
+    {
+        // Dependency order (Kahn's algorithm), lowest node ID first among ready nodes so
+        // the order is stable.
+        std::map<NodeId, int> indegree;
+        for( const auto& [id, node] : nodes_ )
+            indegree[id] = 0;
+        auto internal = [&]( const std::pair<NodeId, NodeId>& e ) { return nodes_.count( e.first ) && nodes_.count( e.second ); };
+        for( const auto* edges : { &audioEdges_, &noteEdges_ } )
+            for( const auto& e : *edges )
+                if( internal( e ) )
+                    ++indegree[e.second];
+
+        std::vector<NodeId> order;
+        while( order.size() < nodes_.size() )
+        {
+            auto ready = std::find_if( indegree.begin(), indegree.end(), []( const auto& d ) { return d.second == 0; } );
+            if( ready == indegree.end() )
+                throw std::runtime_error( "the graph's connections form a cycle" );
+            const NodeId id = ready->first;
+            ready->second   = -1; // done
+            order.push_back( id );
+            for( const auto* edges : { &audioEdges_, &noteEdges_ } )
+                for( const auto& e : *edges )
+                    if( e.first == id && internal( e ) )
+                        --indegree[e.second];
+        }
+
+        auto plan = std::make_unique<Plan>();
+        std::map<NodeId, int> stepOf;
+        for( const NodeId id : order )
+        {
+            const auto& node = nodes_.at( id );
+            Plan::Step  step;
+            step.host         = node.host;
+            step.audioInputs  = node.audioInputs;
+            step.audioOutputs = node.audioOutputs;
+            stepOf[id]        = (int)plan->steps.size();
+            plan->steps.push_back( std::move( step ) );
+        }
+        for( const auto& [from, to] : audioEdges_ )
+        {
+            if( !nodes_.count( from ) )
+                continue;
+            if( to == graphOutput )
+                plan->steps[(size_t)stepOf[from]].toOutput = true;
+            else if( nodes_.count( to ) )
+                plan->steps[(size_t)stepOf[to]].audioSources.push_back( stepOf[from] );
+        }
+        for( const auto& [from, to] : noteEdges_ )
+        {
+            if( !nodes_.count( to ) || ( from != graphInput && !nodes_.count( from ) ) )
+                continue;
+            plan->steps[(size_t)stepOf[to]].noteSources.push_back( from == graphInput ? -1 : stepOf[from] );
+        }
+
+        size_t producing = 0;
+        for( const auto& step : plan->steps )
+            producing += step.audioOutputs > 0;
+        plan->buffers.assign( producing * channels * maxFrames_, 0.0f );
+        size_t next = 0;
+        for( auto& step : plan->steps )
+            if( step.audioOutputs > 0 )
+            {
+                for( uint32_t c = 0; c < channels; ++c )
+                    step.out[c] = plan->buffers.data() + ( next * channels + c ) * maxFrames_;
+                ++next;
+            }
+        plan->mix.assign( channels * maxFrames_, 0.0f );
+        plan->keys.reserve( kick::clap::Host::maxBlockEvents );
+        plan->merged.resize( kick::clap::Host::maxBlockEvents );
+        return plan.release();
+    }
+
+    void Graph::commit()
+    {
+        Plan* plan = compile(); // throws on a cycle, before anything changes
+        collect();
+        delete pending_.exchange( plan, std::memory_order_acq_rel ); // a plan the audio thread never took
+    }
+
+    void Graph::collect()
+    {
+        while( Plan* p = retired_.pop() )
+            delete p;
+    }
+
+    bool Graph::process( float* const* outputs, uint32_t frames, const clap_event_transport_t* transport,
+                         const kick::clap::Event* events, uint32_t eventCount ) noexcept
+    {
+        // Adopt the newest plan, retiring the current one, if there is room to retire it.
+        if( !current_ || !retired_.full() )
+            if( Plan* plan = pending_.exchange( nullptr, std::memory_order_acq_rel ) )
+            {
+                if( current_ )
+                    retired_.push( current_ );
+                current_ = plan;
+            }
+
+        for( uint32_t c = 0; c < channels; ++c )
+            std::fill_n( outputs[c], frames, 0.0f );
+        Plan* plan = current_;
+        if( !plan )
+            return true;
+        if( frames > maxFrames_ )
+            return false;
+
+        bool ok = true;
+        for( auto& step : plan->steps )
+        {
+            // Audio in: the sum of the sources.
+            float*        mix[channels] = { plan->mix.data(), plan->mix.data() + maxFrames_ };
+            const float* const* inputs  = nullptr;
+            if( !step.audioSources.empty() && step.audioInputs > 0 )
+            {
+                for( uint32_t c = 0; c < channels; ++c )
+                {
+                    std::fill_n( mix[c], frames, 0.0f );
+                    for( int source : step.audioSources )
+                    {
+                        const float* from = plan->steps[(size_t)source].out[c];
+                        for( uint32_t i = 0; i < frames; ++i )
+                            mix[c][i] += from[i];
+                    }
+                }
+                inputs = mix;
+            }
+
+            // Notes in: every source's events this block, merged in time order.
+            plan->keys.clear();
+            uint32_t order = 0;
+            for( int source : step.noteSources )
+            {
+                const kick::clap::Event* list  = events;
+                uint32_t                 count = eventCount;
+                if( source >= 0 )
+                    list = plan->steps[(size_t)source].host->outputEvents( count );
+                for( uint32_t i = 0; i < count && plan->keys.size() < kick::clap::Host::maxBlockEvents; ++i )
+                    plan->keys.push_back( { list[i].header()->time, order++, &list[i] } );
+            }
+            std::sort( plan->keys.begin(), plan->keys.end(), []( const Plan::Key& a, const Plan::Key& b ) {
+                return a.time != b.time ? a.time < b.time : a.order < b.order;
+            } );
+            for( size_t i = 0; i < plan->keys.size(); ++i )
+                plan->merged[i] = *plan->keys[i].event;
+            const auto merged = (uint32_t)plan->keys.size();
+
+            if( step.audioOutputs > 0 )
+            {
+                ok &= step.host->process( inputs, inputs ? channels : 0, step.out, channels, frames, plan->merged.data(), merged, transport );
+                if( step.audioOutputs == 1 ) // a mono plugin plays in the centre
+                    std::copy_n( step.out[0], frames, step.out[1] );
+            }
+            else
+                ok &= step.host->process( inputs, inputs ? channels : 0, nullptr, 0, frames, plan->merged.data(), merged, transport );
+        }
+
+        for( const auto& step : plan->steps )
+            if( step.toOutput )
+                for( uint32_t c = 0; c < channels; ++c )
+                    for( uint32_t i = 0; i < frames; ++i )
+                        outputs[c][i] += step.out[c][i];
+        return ok;
+    }
+}
