@@ -4,6 +4,10 @@
 // The delay time is a dotted eighth note at the transport tempo (375 ms when the host
 // gives no tempo). Each repeat crosses to the other side. The output does not depend
 // on the host's block size.
+//
+// When the tempo changes, the delay time glides to the new value (a 50 ms time constant,
+// at most half a sample per sample), like a tape delay, rather than jumping, which would
+// click.
 
 #include <clap/clap.h>
 
@@ -18,6 +22,7 @@ namespace
     constexpr double feedback = 0.45;
     constexpr double wet      = 0.3;
     constexpr double maxDelaySeconds = 2.0;
+    constexpr double glideSeconds    = 0.05; // time constant of the delay time's glide
 
     const char* const features[] = { CLAP_PLUGIN_FEATURE_AUDIO_EFFECT, CLAP_PLUGIN_FEATURE_DELAY, CLAP_PLUGIN_FEATURE_STEREO, nullptr };
 
@@ -40,6 +45,8 @@ namespace
         double             sampleRate = 48000.0;
         std::vector<float> left, right; // circular buffers
         size_t             write = 0;
+        double             delay = -1.0; // current delay in samples, gliding; -1 until the first block
+        double             glide = 0.0;  // per-sample glide coefficient
     };
 
     Delay& self( const clap_plugin_t* p )
@@ -61,16 +68,31 @@ namespace
 
         const auto* t        = process->transport;
         const double seconds = ( t && ( t->flags & CLAP_TRANSPORT_HAS_TEMPO ) && t->tempo > 0.0 ) ? 0.75 * 60.0 / t->tempo : 0.375;
-        const auto   delay   = (size_t)std::clamp<long long>( std::llround( seconds * s.sampleRate ), 1, (long long)s.left.size() - 1 );
         const size_t size    = s.left.size();
+        const double target  = (double)std::clamp<long long>( std::llround( seconds * s.sampleRate ), 1, (long long)size - 2 );
+        if( s.delay < 0.0 )
+            s.delay = target;
 
         for( uint32_t i = 0; i < process->frames_count; ++i )
         {
-            const float  dryL = inL ? inL[i] : 0.0f;
-            const float  dryR = inR ? inR[i] : 0.0f;
-            const size_t read = ( s.write + size - delay ) % size;
-            const float  echoL = s.left[read];
-            const float  echoR = s.right[read];
+            if( s.delay != target )
+            {
+                // At most half a sample per sample: the echoes bend in pitch by up to
+                // half (an octave down to a fifth up) while gliding, never backwards.
+                s.delay += std::clamp( ( target - s.delay ) * s.glide, -0.5, 0.5 );
+                if( std::abs( target - s.delay ) < 1e-3 )
+                    s.delay = target;
+            }
+            // Read between samples while gliding; at a whole number of samples this is
+            // exactly the stored sample.
+            const double whole = std::floor( s.delay );
+            const auto   frac  = (float)( s.delay - whole );
+            const size_t read  = ( s.write + size - (size_t)whole ) % size; // `whole` samples ago
+            const size_t older = ( read + size - 1 ) % size;
+            const float  dryL  = inL ? inL[i] : 0.0f;
+            const float  dryR  = inR ? inR[i] : 0.0f;
+            const float  echoL = frac == 0.0f ? s.left[read] : s.left[read] + frac * ( s.left[older] - s.left[read] );
+            const float  echoR = frac == 0.0f ? s.right[read] : s.right[read] + frac * ( s.right[older] - s.right[read] );
 
             // Ping-pong: the left line is fed from the input and the right echoes,
             // and the other way round, so each repeat crosses sides.
@@ -109,6 +131,7 @@ namespace
         std::fill( s.left.begin(), s.left.end(), 0.0f );
         std::fill( s.right.begin(), s.right.end(), 0.0f );
         s.write = 0;
+        s.delay = -1.0;
     }
 
     const clap_plugin_t* create()
@@ -124,6 +147,8 @@ namespace
             s.left.assign( (size_t)( maxDelaySeconds * rate ) + 1, 0.0f ); // allocate here, not on the audio thread
             s.right.assign( s.left.size(), 0.0f );
             s.write = 0;
+            s.delay = -1.0;
+            s.glide = 1.0 - std::exp( -1.0 / ( glideSeconds * rate ) );
             return true;
         };
         s->plugin.deactivate       = []( const clap_plugin_t* ) {};
