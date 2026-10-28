@@ -60,6 +60,10 @@ To do:
 - the control API, with the UI moving to its own process (RFC 0003, proposed);
 - LV2 hosting, right after the control API: a large catalog of open plugins already
   built for ARM Linux;
+- define hardware capabilities, timestamped input, scheduled output and engine backend
+  selection before hardware MIDI/CV implementation
+  ([RFC 0004](rfcs/0004-hardware-services.md), proposed); the control API remains outside
+  this performance-event path;
 - the KICK's real panel as a control surface.
 
 Done when: pressing pads and transport buttons programs and plays a pattern through the
@@ -69,6 +73,16 @@ new core, from a UI that talks to it only through the control API.
 
 - Done: an Oscairn OS image built with current Buildroot, booting into Oscairn in QEMU's
   generic ARM64 machine (no emulator models the target chips).
+- Hardware services ([RFC 0004](rfcs/0004-hardware-services.md)): first a CPU backend and
+  simulated clocks/queues, then a board adapter. Inventory actual peripheral ownership,
+  firmware availability and clock domains before assigning work to a real-time core or
+  panel MCU. Validate input timestamps, scheduled MIDI/CV/clock output, cancellation,
+  overflow handling and alignment with audio under load.
+- Optional engine backends: capability discovery and resource reservations, then one
+  reference engine on one available DSP, FPGA or real-time core. Compare sound, complete
+  processing latency and sustained capacity with its CPU backend. Only use acceleration
+  when a compatible implementation and measured benefit exist; keep CPU-only devices
+  and offline rendering supported.
 - The KICK (i.MX8M Mini), once beta units exist: an image for its board, and a
   hardware-services adapter for its panel, screen and audio.
 - The Ignite (BE 0716-AAF), which uses the same board family and panel protocol: a 64-track

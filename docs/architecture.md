@@ -363,17 +363,50 @@ scanning, scheduling, synthesis, buffering and converter delay. Development star
 load is chosen from measurements. Parallel paths are latency-compensated, and paths over
 the live-playing budget are reported.
 
-## CPU and FPGA
+## CPU, real-time cores, DSPs and FPGAs
 
-Every product runs the platform on its main CPU. Larger hardware may add an FPGA for
-workloads where it measurably helps (analog modelling with heavy oversampling, large
-polyphony, tonewheel generation).
+Devices expose capabilities through hardware services: some have only an application CPU;
+others also have a real-time core, a panel MCU, dedicated DSPs or an FPGA. Engines adapt by
+selecting an explicitly supported implementation, while Sounds keep their musical state.
+The design is specified in [RFC 0004](rfcs/0004-hardware-services.md); it is not implemented yet.
 
-- Every official portable engine has a CPU implementation.
-- An accelerated engine is still a plugin, with a CPU backend and an FPGA backend reached
-  through the platform's hardware services. The FPGA is a DSP backend, not a plugin format.
-- Backends share a reference sound, with cross-backend tests and defined tolerances.
-  Quality modes are explicit and saved with the patch; nothing changes the sound silently.
+- **The application CPU runs the host.** Every official portable engine has a CPU
+  implementation, usable on a CPU-only device, on the desktop and in a DAW. The device
+  must still have enough resources for the requested sound and quality.
+- **Timing services and audio acceleration are separate capabilities.** A real-time core
+  or panel MCU can timestamp inputs and deliver scheduled MIDI, clock and CV/Gate outputs
+  when its firmware and peripheral connections support them. A DSP, FPGA or real-time
+  core can also execute specific audio algorithms, but only with a compatible engine
+  backend. A chip name alone establishes neither capability.
+- **Plugins own algorithms; the host owns shared hardware.** A plugin declares its CPU
+  and optional hardware backends, their requirements and compatible state/quality modes.
+  The resource manager selects and reserves a backend before activation; hardware services
+  mediate device access. Ordinary plugins continue to run on the CPU. Oscairn does not
+  automatically translate arbitrary plugin code to a DSP or FPGA.
+- **Selection preserves the sound.** Compatible backends share engine and parameter IDs,
+  portable state and a tested reference sound, with defined numerical tolerances. Quality
+  modes are explicit and saved with the patch. Resource limits, added latency and any
+  required reduction in polyphony or quality are reported before activation.
+- **Execution is prepared and bounded.** Firmware loading, memory allocation and backend
+  changes happen outside the audio callback. Hardware processing includes transfer and
+  buffering latency in its deadline budget and latency report. Live backend switching or
+  recovery needs prepared resources and an explicit transition policy; seamless fallback
+  is not assumed.
+
+### Hardware event timing
+
+Sequencers remain plugins that decide what plays. Hardware services determine when events
+reach physical outputs. Inputs retain capture timestamps; outputs carry deadlines mapped
+between the audio sample timeline and device clocks. A capable real-time core executes
+queued events at those deadlines, reducing dependence on Linux wake-up timing.
+
+This requires clock synchronisation, bounded queues, an explicit scheduling lead time,
+and cancellation on stop, seek or edits. Events emitted by a plugin for the current audio
+block are not automatically available in advance: the host must budget output lead time
+and align internal audio with external outputs. Live input latency is measured separately.
+Missed deadlines and queue overflows are reported, with defined note-off/gate-reset and
+disconnect behaviour. CPU-only backends implement the same event contract and report their
+measured timing limits. Played events never pass through the UI control API.
 
 ## Portable sounds
 
@@ -588,24 +621,27 @@ Engine resource manager
 Realtime graph
 ├── format adapters: CLAP / LV2 / VST3
 └── engine, effect and event plugin nodes
-    ├── CPU backend  → CPU DSP
-    └── FPGA backend → hardware services → FPGA DSP
+    ├── CPU backend      → CPU DSP
+    └── hardware backend → hardware services → DSP / FPGA / real-time core
           │
           ▼
 Routing, buses, latency compensation
           │
           ▼
-Audio I/O (hardware services)
+Audio I/O and scheduled MIDI / CV / clock I/O (hardware services)
 ```
 
-Resource preparation and recovery run outside the realtime path; the graph processes
-ready contexts and applies prepared changes at block boundaries.
+Resource preparation, capability discovery, hardware reservations and recovery run outside
+the realtime path; the graph processes ready contexts and applies prepared changes at block
+boundaries. Timestamped hardware input feeds the graph directly. Devices without auxiliary
+processors use CPU implementations of the same interfaces.
 
 ## Engines
 
 Oscairn should come with a few strong engines and leave room for many more:
 
-- an analog-modelling engine that scales from CPU-only devices to FPGA-assisted ones;
+- an analog-modelling engine that scales from CPU-only devices to supported DSP- or
+  FPGA-assisted ones;
 - an FM engine, starting from an existing open engine where licences allow (such as
   Dexed / MSFA);
 - a tonewheel organ with drawbars, percussion, vibrato and chorus, and a rotary speaker;

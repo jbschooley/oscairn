@@ -139,6 +139,10 @@ The design the code is built towards; most of it is not built yet. In full:
   never runs on the audio thread.
 - **The core is a library.** It does not assume it owns the audio device or the process, so the
   same core runs as device firmware, a desktop app, a headless test host and a DAW plugin.
+- **Hardware capabilities.** CPU implementations provide the portable baseline. Engines
+  can offer compatible DSP, FPGA or real-time-core backends; hardware services also provide
+  timestamped input and scheduled output where supported
+  ([RFC 0004](docs/rfcs/0004-hardware-services.md), proposed).
 - **Hierarchy.** Patch → Sound (note effects + engine + inserts) → Performance (Sounds,
   zones, routing, scenes) → Setlist; and Project → tracks, patterns, song for sequencing.
 - **Files first.** Everything a user owns is a plain file in a documented format. A library
