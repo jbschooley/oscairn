@@ -90,7 +90,8 @@ a DAW plugin; and:
   one package format, stored once by content hash and loaded once in memory, with no copy
   protection and no need for a network
   (see [architecture](architecture.md#packages-sound-packs-libraries-and-plugins)); the
-  platform profile of built-in plugins; then online catalogs, and sync with a paired
+  platform profile of built-in plugins; engines with factory sample libraries, user
+  samples and the host's asset extension; then online catalogs, and sync with a paired
   computer.
 - **Keeping plugins loaded:** a memory budget, unloading the least recently used, setlist
   preparation options and a setlist check; CPU, memory and storage meters.

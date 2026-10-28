@@ -340,9 +340,11 @@ sequencers), layouts and themes install the same way.
   version it was made with until moved on deliberately.
 - **No copy protection.** The platform has no licence keys, no activation, no activation
   servers and no licensing API, and the default catalog does not accept packages that need
-  them: a plugin must work with nothing but its files. Oscairn cannot stop a vendor
-  shipping a plugin with its own licensing, but it does not support it, and such a plugin
-  is confined to its sandbox like any other, so it cannot affect anything else. Packages
+  them: a plugin must work with nothing but its files. Copy protection and licensing are
+  strongly discouraged, and the library and catalogs point users to open alternatives.
+  Oscairn cannot stop a vendor shipping a plugin with its own licensing, but it does not
+  support it, and such a plugin is confined to its sandbox like any other, so it cannot
+  affect anything else. Packages
   can be signed, which shows who published a package and that it has not been altered:
   authenticity, not copy protection. Licence terms ("do not redistribute") are stated in
   the manifest, not enforced. Paid packs are just files.
@@ -359,6 +361,36 @@ sequencers), layouts and themes install the same way.
 - **Where packages come from:** files from USB, SD or a computer, sync with a paired
   computer, and online catalogs: indexes of packages that anyone can host, with a default
   community catalog.
+
+### Engines with sample libraries
+
+A sample-playback engine (a multisample and PCM engine, like AWM2 on a MODX) comes with a
+large factory library, and users add their own samples. These are separate packages, so
+neither has to move with the other:
+
+- **The engine is one package, its factory samples another.** The engine package depends on
+  its factory library. Updating the engine does not download gigabytes of samples again,
+  and a library can serve several versions of the engine.
+- **Sample packs are more packages:** third-party libraries made for the engine depend on it
+  and install alongside the factory one.
+- **User samples are the user's own files:** WAVs in the Samples folder, imported from USB,
+  SD or a computer, or recorded on the device. Multisamples a user builds (zones across
+  keys and velocities) are user content too, and can use the user's samples, factory
+  samples or both.
+- **An open format for multisamples.** Sample maps are stored as SFZ, an open format other
+  sample players read, with the engine's own settings saved beside them; sample packs are
+  then useful beyond Oscairn.
+- **Samples are referenced, not copied.** A Sound records the samples it uses by content
+  hash. Exporting it includes the user samples it uses and refers to factory and pack
+  samples by package, so the export is small and complete.
+- **The host gives plugins their samples.** Plugins run sandboxed, so a sampler does not read
+  arbitrary files: it asks the host for an asset by ID and gets it read-only, memory-mapped
+  from the store. The host shares one copy between every instance and engine that uses
+  it, can stream large samples from storage, and knows exactly which samples each Sound
+  needs (for export, sync, and the memory budget). This is an Oscairn extension, with the
+  SDK.
+- **Old versions stay while used.** A library update that changes a sample keeps the old one
+  in the store while any saved Sound still refers to it; unused files are removed later.
 
 ### Built-in plugins and other manufacturers' defaults
 
