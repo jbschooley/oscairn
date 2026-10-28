@@ -10,7 +10,7 @@ set(KICK_CLAP_JUCE_PATH "" CACHE PATH "Local JUCE source for standalone adapter 
 add_library(kick_clap_host STATIC src/Host.cpp src/Discovery.cpp)
 target_compile_features(kick_clap_host PUBLIC cxx_std_17)
 set_target_properties(kick_clap_host PROPERTIES POSITION_INDEPENDENT_CODE ON)
-target_include_directories(kick_clap_host PUBLIC include third_party/clap/include)
+target_include_directories(kick_clap_host PUBLIC include third_party/clap/include ../clap-ext/include)
 target_link_libraries(kick_clap_host PUBLIC ${CMAKE_DL_LIBS})
 find_package(Threads REQUIRED)
 target_link_libraries(kick_clap_host PUBLIC Threads::Threads)

@@ -2,7 +2,7 @@ add_subdirectory(clap-host)
 
 # CLAP API headers for first-party plugins (vendored in clap-host).
 add_library(oscairn_clap_headers INTERFACE)
-target_include_directories(oscairn_clap_headers INTERFACE clap-host/third_party/clap/include)
+target_include_directories(oscairn_clap_headers INTERFACE clap-host/third_party/clap/include clap-ext/include)
 
 add_library(oscairn_engine STATIC
     engine/src/chain.cpp
@@ -33,3 +33,7 @@ add_executable(oscairn-graph-test engine/tests/graph_test.cpp)
 target_link_libraries(oscairn-graph-test PRIVATE oscairn_engine)
 add_test(NAME graph COMMAND oscairn-graph-test $<TARGET_FILE:oscairn_step_sequencer> $<TARGET_FILE:oscairn_basic_synth>
     $<TARGET_FILE:oscairn_delay> $<TARGET_FILE:kick-clap-fixture-normal>)
+
+add_executable(oscairn-param-target-test engine/tests/param_target.cpp)
+target_link_libraries(oscairn-param-target-test PRIVATE oscairn_engine)
+add_test(NAME param-target COMMAND oscairn-param-target-test $<TARGET_FILE:oscairn_step_sequencer> $<TARGET_FILE:kick-clap-fixture-normal>)

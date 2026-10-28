@@ -71,7 +71,7 @@ int main( int argc, char** argv )
         uint32_t    count  = 0;
         const auto* events = host.outputEvents( count );
         for( uint32_t i = 0; i < count; ++i )
-            if( events[i].header()->type == CLAP_EVENT_NOTE_ON )
+            if( events[i].header()->space_id == CLAP_CORE_EVENT_SPACE_ID && events[i].header()->type == CLAP_EVENT_NOTE_ON )
                 noteOns.push_back( now + events[i].header()->time );
 
         // The clock messages that fell in this block, in order.

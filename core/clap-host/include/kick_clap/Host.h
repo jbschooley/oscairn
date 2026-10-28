@@ -67,6 +67,10 @@ class Host {
 public:
     static constexpr uint32_t maxEvents = 2048;     // capacity of the control-thread queues
     static constexpr uint32_t maxBlockEvents = 512; // events delivered to the plugin per process() call
+    // The event space this host assigns to oscairn.param-target (oscairn-clap/param-target.h)
+    // through CLAP's event-registry. Plugins may send these events; the host passes them
+    // to the caller in outputEvents() and never delivers them to a plugin.
+    static constexpr uint16_t paramTargetSpace = 1000;
     static constexpr uint32_t maxStateBytes = 64 * 1024 * 1024;
     Host();
     ~Host();

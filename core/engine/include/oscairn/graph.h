@@ -58,6 +58,15 @@ namespace oscairn
         void disconnectAudio( NodeId from, NodeId to );
         void disconnectNotes( NodeId from, NodeId to );
 
+        /// Routes a plugin's oscairn.param-target lane (oscairn-clap/param-target.h) to a
+        /// parameter of another node, replacing any earlier mapping of that lane. The target
+        /// is processed after the source, and the lane's events reach it in the same block
+        /// as standard CLAP parameter events, before notes at the same sample. Takes effect
+        /// at the next commit(). Throws std::invalid_argument for unknown nodes, a parameter
+        /// the target does not have or cannot change, or source == target.
+        void mapParamTarget( NodeId source, uint32_t lane, NodeId target, clap_id param );
+        void unmapParamTarget( NodeId source, uint32_t lane );
+
         const kick::clap::Host& host( NodeId node ) const;
         bool                    contains( NodeId node ) const { return nodes_.count( node ) != 0; }
 
@@ -107,6 +116,7 @@ namespace oscairn
 
         std::map<NodeId, Node>                nodes_;
         std::vector<std::pair<NodeId, NodeId>> audioEdges_, noteEdges_;
+        std::map<std::pair<NodeId, uint32_t>, std::pair<NodeId, clap_id>> paramTargets_; // (source, lane) -> (target, param)
 
         std::atomic<Plan*> pending_{ nullptr };
         Plan*              current_ = nullptr; // audio thread only

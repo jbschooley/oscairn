@@ -2,9 +2,12 @@
 #include "oscairn/graph.h"
 
 #include <kick_clap/Discovery.h>
+#include <oscairn-clap/param-target.h>
 
 #include <algorithm>
+#include <cmath>
 #include <stdexcept>
+#include <utility>
 
 namespace oscairn
 {
@@ -20,6 +23,18 @@ namespace oscairn
             std::vector<int>                  noteSources;  // step indices; -1 is graphInput
             bool                              toOutput = false;
             float*                            out[channels]{};
+
+            struct Route // where one of this step's param-target lanes goes
+            {
+                uint32_t lane;
+                int      target;
+                clap_id  param;
+                double   minimum, maximum;
+                bool     stepped;
+            };
+            std::vector<Route>             routes;
+            std::vector<kick::clap::Event> paramIn; // converted events waiting for this step this block
+            uint32_t                       paramCount = 0;
         };
 
         struct Key // orders merged notes: by time, then by source and position
@@ -101,6 +116,8 @@ namespace oscairn
     void Graph::remove( NodeId node )
     {
         nodes_.erase( node );
+        for( auto it = paramTargets_.begin(); it != paramTargets_.end(); )
+            it = ( it->first.first == node || it->second.first == node ) ? paramTargets_.erase( it ) : std::next( it );
         auto touches = [&]( const std::pair<NodeId, NodeId>& e ) { return e.first == node || e.second == node; };
         audioEdges_.erase( std::remove_if( audioEdges_.begin(), audioEdges_.end(), touches ), audioEdges_.end() );
         noteEdges_.erase( std::remove_if( noteEdges_.begin(), noteEdges_.end(), touches ), noteEdges_.end() );
@@ -154,6 +171,22 @@ namespace oscairn
         noteEdges_.erase( std::remove( noteEdges_.begin(), noteEdges_.end(), std::make_pair( from, to ) ), noteEdges_.end() );
     }
 
+    void Graph::mapParamTarget( NodeId source, uint32_t lane, NodeId target, clap_id param )
+    {
+        if( !nodes_.count( source ) || !nodes_.count( target ) || source == target )
+            throw std::invalid_argument( "a parameter mapping needs two different nodes" );
+        const auto& params = nodes_.at( target ).host->parameters();
+        const auto  found  = std::find_if( params.begin(), params.end(), [&]( const kick::clap::Parameter& p ) { return p.id == param; } );
+        if( found == params.end() || ( found->flags & CLAP_PARAM_IS_READONLY ) )
+            throw std::invalid_argument( "the target has no such parameter, or it is read-only" );
+        paramTargets_[{ source, lane }] = { target, param };
+    }
+
+    void Graph::unmapParamTarget( NodeId source, uint32_t lane )
+    {
+        paramTargets_.erase( { source, lane } );
+    }
+
     const kick::clap::Host& Graph::host( NodeId node ) const
     {
         return *nodes_.at( node ).host;
@@ -167,7 +200,10 @@ namespace oscairn
         for( const auto& [id, node] : nodes_ )
             indegree[id] = 0;
         auto internal = [&]( const std::pair<NodeId, NodeId>& e ) { return nodes_.count( e.first ) && nodes_.count( e.second ); };
-        for( const auto* edges : { &audioEdges_, &noteEdges_ } )
+        std::vector<std::pair<NodeId, NodeId>> mappingEdges;
+        for( const auto& [from, to] : paramTargets_ )
+            mappingEdges.emplace_back( from.first, to.first );
+        for( const auto* edges : { &audioEdges_, &noteEdges_, &std::as_const( mappingEdges ) } )
             for( const auto& e : *edges )
                 if( internal( e ) )
                     ++indegree[e.second];
@@ -181,7 +217,7 @@ namespace oscairn
             const NodeId id = ready->first;
             ready->second   = -1; // done
             order.push_back( id );
-            for( const auto* edges : { &audioEdges_, &noteEdges_ } )
+            for( const auto* edges : { &audioEdges_, &noteEdges_, &std::as_const( mappingEdges ) } )
                 for( const auto& e : *edges )
                     if( e.first == id && internal( e ) )
                         --indegree[e.second];
@@ -213,6 +249,18 @@ namespace oscairn
             if( !nodes_.count( to ) || ( from != graphInput && !nodes_.count( from ) ) )
                 continue;
             plan->steps[(size_t)stepOf[to]].noteSources.push_back( from == graphInput ? -1 : stepOf[from] );
+        }
+
+        for( const auto& [from, to] : paramTargets_ )
+        {
+            const auto& params = nodes_.at( to.first ).host->parameters();
+            const auto  p      = std::find_if( params.begin(), params.end(), [&]( const kick::clap::Parameter& q ) { return q.id == to.second; } );
+            if( p == params.end() )
+                continue; // the plugin no longer has it
+            auto& source = plan->steps[(size_t)stepOf[from.first]];
+            auto& target = plan->steps[(size_t)stepOf[to.first]];
+            source.routes.push_back( { from.second, stepOf[to.first], to.second, p->minimum, p->maximum, ( p->flags & CLAP_PARAM_IS_STEPPED ) != 0 } );
+            target.paramIn.resize( kick::clap::Host::maxBlockEvents );
         }
 
         size_t producing = 0;
@@ -290,6 +338,8 @@ namespace oscairn
             // Notes in: every source's events this block, merged in time order.
             plan->keys.clear();
             uint32_t order = 0;
+            for( uint32_t i = 0; i < step.paramCount; ++i ) // before notes at the same sample
+                plan->keys.push_back( { step.paramIn[i].header()->time, order++, &step.paramIn[i] } );
             for( int source : step.noteSources )
             {
                 const kick::clap::Event* list  = events;
@@ -297,7 +347,8 @@ namespace oscairn
                 if( source >= 0 )
                     list = plan->steps[(size_t)source].host->outputEvents( count );
                 for( uint32_t i = 0; i < count && plan->keys.size() < kick::clap::Host::maxBlockEvents; ++i )
-                    plan->keys.push_back( { list[i].header()->time, order++, &list[i] } );
+                    if( list[i].header()->space_id == CLAP_CORE_EVENT_SPACE_ID ) // lane events are routed, not passed on
+                        plan->keys.push_back( { list[i].header()->time, order++, &list[i] } );
             }
             std::sort( plan->keys.begin(), plan->keys.end(), []( const Plan::Key& a, const Plan::Key& b ) {
                 return a.time != b.time ? a.time < b.time : a.order < b.order;
@@ -314,6 +365,55 @@ namespace oscairn
             }
             else
                 ok &= step.host->process( inputs, inputs ? channels : 0, nullptr, 0, frames, plan->merged.data(), merged, transport );
+            step.paramCount = 0;
+
+            // This step's param-target lane events become parameter events for their
+            // targets, which come later in this block.
+            if( !step.routes.empty() )
+            {
+                uint32_t    count  = 0;
+                const auto* output = step.host->outputEvents( count );
+                for( uint32_t i = 0; i < count; ++i )
+                {
+                    const auto* h = output[i].header();
+                    if( h->space_id != kick::clap::Host::paramTargetSpace || h->type != OSCAIRN_EVENT_PARAM_TARGET )
+                        continue;
+                    const auto& e     = *reinterpret_cast<const oscairn_event_param_target_t*>( h );
+                    const auto  route = std::find_if( step.routes.begin(), step.routes.end(), [&]( const Plan::Step::Route& r ) { return r.lane == e.lane; } );
+                    if( route == step.routes.end() )
+                        continue; // lane not mapped
+                    auto& target = plan->steps[(size_t)route->target];
+                    if( target.paramCount == target.paramIn.size() )
+                        continue; // full for this block
+                    const double range = route->maximum - route->minimum;
+                    if( e.mode == OSCAIRN_PARAM_TARGET_SET )
+                    {
+                        clap_event_param_value_t v{};
+                        v.header     = { sizeof( v ), h->time, CLAP_CORE_EVENT_SPACE_ID, CLAP_EVENT_PARAM_VALUE, 0 };
+                        v.param_id   = route->param;
+                        v.note_id    = e.note_id;
+                        v.port_index = e.port_index;
+                        v.channel    = e.channel;
+                        v.key        = e.key;
+                        v.value      = route->minimum + std::clamp( e.value, 0.0, 1.0 ) * range;
+                        if( route->stepped )
+                            v.value = std::round( v.value );
+                        target.paramIn[target.paramCount++] = kick::clap::Event::from( v );
+                    }
+                    else
+                    {
+                        clap_event_param_mod_t m{};
+                        m.header     = { sizeof( m ), h->time, CLAP_CORE_EVENT_SPACE_ID, CLAP_EVENT_PARAM_MOD, 0 };
+                        m.param_id   = route->param;
+                        m.note_id    = e.note_id;
+                        m.port_index = e.port_index;
+                        m.channel    = e.channel;
+                        m.key        = e.key;
+                        m.amount     = std::clamp( e.value, -1.0, 1.0 ) * range;
+                        target.paramIn[target.paramCount++] = kick::clap::Event::from( m );
+                    }
+                }
+            }
         }
 
         for( const auto& step : plan->steps )

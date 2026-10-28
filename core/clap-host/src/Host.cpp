@@ -11,6 +11,8 @@
 #include <clap/ext/timer-support.h>
 #include <clap/ext/posix-fd-support.h>
 #include <clap/ext/log.h>
+#include <clap/ext/event-registry.h>
+#include <oscairn-clap/param-target.h>
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -73,6 +75,11 @@ struct Stream {
     }
 };
 bool validEvent(const clap_event_header_t* h) noexcept {
+    if (h && h->space_id == Host::paramTargetSpace) {
+        const auto* t = reinterpret_cast<const oscairn_event_param_target_t*>(h);
+        return h->type == OSCAIRN_EVENT_PARAM_TARGET && h->size == sizeof(oscairn_event_param_target_t) &&
+               (t->mode == OSCAIRN_PARAM_TARGET_SET || t->mode == OSCAIRN_PARAM_TARGET_MODULATE) && std::isfinite(t->value);
+    }
     if (!h || h->space_id != CLAP_CORE_EVENT_SPACE_ID || h->size > Event::capacity) return false;
     uint32_t size = 0;
     switch (h->type) {
@@ -234,6 +241,7 @@ struct Host::Impl {
         static const clap_host_audio_ports_t audio{supportedAudioRescan, audioRescan};
         static const clap_host_note_ports_t notes{dialects, noteRescan};
         static const clap_host_log_t logging{log};
+        static const clap_host_event_registry_t registry{queryEventSpace};
         static const clap_host_timer_support_t timer{registerTimer, unregisterTimer};
         static const clap_host_posix_fd_support_t descriptors{registerFd, modifyFd, unregisterFd};
         if (!id) return nullptr;
@@ -245,6 +253,7 @@ struct Host::Impl {
         if (!std::strcmp(id, CLAP_EXT_AUDIO_PORTS)) return &audio;
         if (!std::strcmp(id, CLAP_EXT_NOTE_PORTS)) return &notes;
         if (!std::strcmp(id, CLAP_EXT_LOG)) return &logging;
+        if (!std::strcmp(id, CLAP_EXT_EVENT_REGISTRY)) return &registry;
         if (!std::strcmp(id, CLAP_EXT_TIMER_SUPPORT)) return &timer;
 #ifndef _WIN32
         if (!std::strcmp(id, CLAP_EXT_POSIX_FD_SUPPORT)) return &descriptors;
@@ -389,10 +398,16 @@ struct Host::Impl {
         auto& s = *static_cast<Impl*>(list->ctx);
         return i < s.chunkCount ? s.chunkEvents[i].header() : nullptr;
     }
+    static bool CLAP_ABI queryEventSpace(const clap_host_t*, const char* name, uint16_t* space) {
+        if (!name || !space || std::strcmp(name, OSCAIRN_EVENT_SPACE_PARAM_TARGET) != 0) return false;
+        *space = Host::paramTargetSpace;
+        return true;
+    }
     static bool CLAP_ABI outputPush(const clap_output_events_t* list, const clap_event_header_t* event) {
         auto& s = *static_cast<Impl*>(list->ctx);
         if (!validEvent(event) || event->time >= s.currentProcessFrames) return false;
-        if (event->type == CLAP_EVENT_PARAM_VALUE) {
+        const bool core = event->space_id == CLAP_CORE_EVENT_SPACE_ID;
+        if (core && event->type == CLAP_EVENT_PARAM_VALUE) {
             const auto* p = reinterpret_cast<const clap_event_param_value_t*>(event);
             auto i = s.paramIndex(p->param_id);
             if (i < s.paramInfo.size() && std::isfinite(p->value)) {
@@ -404,8 +419,8 @@ struct Host::Impl {
         // Parameter and gesture events go to the control thread. Everything else
         // (notes, MIDI, expressions) is kept for the caller of process(), which
         // routes it to the next plugin in the same block.
-        const bool control = event->type == CLAP_EVENT_PARAM_VALUE || event->type == CLAP_EVENT_PARAM_MOD ||
-                             event->type == CLAP_EVENT_PARAM_GESTURE_BEGIN || event->type == CLAP_EVENT_PARAM_GESTURE_END;
+        const bool control = core && (event->type == CLAP_EVENT_PARAM_VALUE || event->type == CLAP_EVENT_PARAM_MOD ||
+                             event->type == CLAP_EVENT_PARAM_GESTURE_BEGIN || event->type == CLAP_EVENT_PARAM_GESTURE_END);
         if (!control) {
             if (s.inProcess && s.blockOutputCount < maxBlockEvents) { s.blockOutput[s.blockOutputCount++] = copy; return true; }
             s.dropped.fetch_add(1); return false;
@@ -717,7 +732,7 @@ uint32_t Host::latency() const noexcept { return impl->latencyFrames.load(); }
 Statistics Host::statistics() const noexcept { auto& s = *impl; return {s.blocks.load(), s.dropped.load(), s.errors.load(), s.lastUs.load(), s.maxUs.load(), s.deadlineMisses.load(), s.controlSilences.load(), s.idleBlocks.load()}; }
 bool Host::enqueue(const Event& e) noexcept {
     auto& s = *impl;
-    if (!validEvent(e.header())) return false;
+    if (!validEvent(e.header()) || e.header()->space_id != CLAP_CORE_EVENT_SPACE_ID) return false;
     // Count before publishing, so process() never takes an event it has not counted.
     s.pendingCommands.fetch_add(1);
     if (s.commands.push(e)) { s.wake.store(true); return true; }
@@ -754,7 +769,8 @@ bool Host::process(const float* const* input, uint32_t ni, float* const* output,
         auto append = [&](Event e) {
             // A malformed or late event is dropped on its own; resetting the plugin
             // for it would cut every sounding note on stage.
-            if (!validEvent(e.header()) || e.header()->time >= frames) { s.dropped.fetch_add(1); return; }
+            // Events in other spaces (param-target) are for the caller, never for a plugin.
+            if (!validEvent(e.header()) || e.header()->space_id != CLAP_CORE_EVENT_SPACE_ID || e.header()->time >= frames) { s.dropped.fetch_add(1); return; }
             // Overflow can drop note-offs, so it still resets the plugin rather than
             // risk stuck notes.
             if (total == maxBlockEvents) { s.dropped.fetch_add(1); s.panic.store(true); return; }
