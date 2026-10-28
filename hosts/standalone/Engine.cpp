@@ -173,7 +173,11 @@ namespace oscairn::standalone
         // Messages that arrived while the last block played: clock messages are placed at
         // their time within it, notes play at the start of this one.
         const bool follow = followClock_;
-        transport.setClockSource( follow ? Transport::ClockSource::MidiClock : Transport::ClockSource::Internal );
+        if( follow != following_ ) // switching resets the clock state, so only on a change
+        {
+            transport.setClockSource( follow ? Transport::ClockSource::MidiClock : Transport::ClockSource::Internal );
+            following_ = follow;
+        }
         std::array<kick::clap::Event, 128> notes;
         uint32_t                           noteCount = 0;
         {

@@ -111,6 +111,8 @@ namespace oscairn::standalone
         std::array<Incoming, 1024>    incoming_{};
         std::atomic<uint64_t>         droppedMidi_{ 0 };
 
+        bool following_ = false; // audio thread: the transport is following MIDI clock
+
         // Audio thread: when the last block started (seconds and sample), and where the
         // next one starts, on the transport's timeline. Places MIDI clock in time.
         double  blockSeconds_   = 0.0;
