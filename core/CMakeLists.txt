@@ -1,5 +1,17 @@
 add_subdirectory(clap-host)
 
+add_library(oscairn_plugin_host STATIC plugin-host/src/plugin_host.cpp)
+target_include_directories(oscairn_plugin_host PUBLIC plugin-host/include)
+target_link_libraries(oscairn_plugin_host PUBLIC kick_clap_host)
+target_compile_options(oscairn_plugin_host PRIVATE -Wall -Wextra)
+if(OSCAIRN_LV2)
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(LILV REQUIRED IMPORTED_TARGET lilv-0>=0.24)
+    target_sources(oscairn_plugin_host PRIVATE lv2-host/Host.cpp)
+    target_link_libraries(oscairn_plugin_host PRIVATE PkgConfig::LILV)
+    target_compile_definitions(oscairn_plugin_host PRIVATE OSCAIRN_LV2=1)
+endif()
+
 # CLAP API headers for first-party plugins (vendored in clap-host).
 add_library(oscairn_clap_headers INTERFACE)
 target_include_directories(oscairn_clap_headers INTERFACE clap-host/third_party/clap/include clap-ext/include)
@@ -11,7 +23,7 @@ add_library(oscairn_engine STATIC
     engine/src/transport.cpp
     engine/src/wav_file.cpp)
 target_include_directories(oscairn_engine PUBLIC engine/include)
-target_link_libraries(oscairn_engine PUBLIC kick_clap_host)
+target_link_libraries(oscairn_engine PUBLIC oscairn_plugin_host)
 target_compile_options(oscairn_engine PRIVATE -Wall -Wextra)
 
 add_subdirectory(control)
@@ -60,3 +72,7 @@ add_test(NAME midi-input COMMAND oscairn-midi-input-test)
 add_executable(oscairn-pressure-test engine/tests/pressure.cpp)
 target_link_libraries(oscairn-pressure-test PRIVATE oscairn_engine)
 add_test(NAME pressure COMMAND oscairn-pressure-test $<TARGET_FILE:oscairn_basic_synth>)
+
+if(OSCAIRN_LV2)
+    add_subdirectory(lv2-host/tests)
+endif()

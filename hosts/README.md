@@ -158,3 +158,13 @@ and stop only the processes they started. Automatic startup, reattachment and th
 recovery button were verified on macOS with the Multi-Output Device at 48 kHz/512 samples.
 Separately, Jacob verified SMK37 notes, pressure response and sequencer PLAY/STOP in the
 default managed desktop's KICK layout on October 28, 2026.
+
+## LV2-enabled hosts
+
+Add `-DOSCAIRN_LV2=ON` when configuring either the renderer or the desktop/helper. They
+use the same graph adapter. `oscairn-render` accepts `bundle.lv2#plugin-uri` alongside
+CLAP paths; `graph.add` accepts a bundle path plus the URI in `pluginId`. See
+[LV2 hosting](../core/lv2-host/README.md). The desktop layout and default CLAP demo are
+unchanged; plugin browsing and selection UI remain pending. LV2-enabled macOS builds
+currently link to the installed Lilv libraries; packaging those dependencies for another
+Mac is separate from the existing helper/plugin copying step.

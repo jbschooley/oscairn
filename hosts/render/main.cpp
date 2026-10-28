@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
-// oscairn-render: plays a chain of CLAP plugins against the Oscairn transport
+// oscairn-render: plays a chain of CLAP and LV2 plugins against the Oscairn transport
 // faster than real time and writes the result to a WAV file.
 //
 //   oscairn-render out.wav [--seconds 8] [--tempo 120] [--block 512] [--rate 48000]
-//                  [--midi-clock BPM] [--map SRC.LANE=DST.PARAM ...] plugin.clap[#plugin-id] ...
+//                  [--midi-clock BPM] [--map SRC.LANE=DST.PARAM ...] plugin.clap[#plugin-id] | bundle.lv2[#URI] ...
 //
 // Plugins are chained in order: each one plays the notes of the one before it,
 // so "sequencer.clap synth.clap" has the sequencer playing the synth.
@@ -34,7 +34,7 @@ namespace
     int usage()
     {
         std::fprintf( stderr,
-                      "usage: oscairn-render out.wav [--seconds S] [--tempo BPM] [--block N] [--rate HZ] [--midi-clock BPM] [--map SRC.LANE=DST.PARAM] plugin.clap[#id] ...\n" );
+                      "usage: oscairn-render out.wav [--seconds S] [--tempo BPM] [--block N] [--rate HZ] [--midi-clock BPM] [--map SRC.LANE=DST.PARAM] plugin.clap[#id] or bundle.lv2[#URI] ...\n" );
         return 2;
     }
 }

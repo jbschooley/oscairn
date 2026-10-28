@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #pragma once
 
-#include <kick_clap/Host.h>
+#include "oscairn/plugin_host.h"
 
 #include <array>
 #include <atomic>
@@ -21,7 +21,7 @@ namespace oscairn
     constexpr NodeId graphInput  = 0xFFFFFFFEu;
     constexpr NodeId graphOutput = 0xFFFFFFFFu;
 
-    /// A graph of CLAP plugin nodes with audio and note connections, processed in
+    /// A graph of plugin nodes with audio and note connections, processed in
     /// dependency order within each block, so a sequencer's notes reach the instruments
     /// it plays in the same block. Audio connected into a node is summed; notes from
     /// several sources are merged in time order. Renders stereo; a mono plugin output
@@ -46,7 +46,8 @@ namespace oscairn
 
         // Main thread -------------------------------------------------------------
 
-        /// Loads a plugin as a new node. `pluginId` empty means the module's first plugin.
+        /// Loads a CLAP module or LV2 bundle as a new node. Multiple-plugin LV2 bundles
+        /// require pluginId (the URI); CLAP defaults to the module's first plugin.
         /// Throws std::runtime_error on failure.
         NodeId add( const std::string& path, const std::string& pluginId = {} );
         void   remove( NodeId node );
@@ -69,8 +70,8 @@ namespace oscairn
 
         /// The node's plugin host. Its control API (parameters, service()) belongs to the
         /// main thread; setParameter is safe while the graph is processing.
-        const kick::clap::Host& host( NodeId node ) const;
-        kick::clap::Host&       host( NodeId node );
+        const PluginHost& host( NodeId node ) const;
+        PluginHost&       host( NodeId node );
         bool                    contains( NodeId node ) const { return nodes_.count( node ) != 0; }
 
         struct NodeInfo
@@ -107,7 +108,7 @@ namespace oscairn
     private:
         struct Node
         {
-            std::shared_ptr<kick::clap::Host> host;
+            std::shared_ptr<PluginHost> host;
             uint32_t                          audioInputs = 0, audioOutputs = 0; // channels
         };
         struct Plan;

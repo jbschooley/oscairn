@@ -33,6 +33,39 @@ add_test(NAME render-midi-clock-is-repeatable
     COMMAND ${CMAKE_COMMAND} -E compare_files ${CMAKE_CURRENT_BINARY_DIR}/demo-clock-a.wav ${CMAKE_CURRENT_BINARY_DIR}/demo-clock-b.wav)
 set_tests_properties(render-midi-clock-is-repeatable PROPERTIES FIXTURES_REQUIRED "render-clock-a;render-clock-b")
 
+# Independently packaged upstream examples, when explicitly supplied by CI/developers.
+if(OSCAIRN_LV2 AND OSCAIRN_LV2_EXAMPLE_DIR)
+    foreach(example eg-amp eg-fifths)
+        if(NOT EXISTS "${OSCAIRN_LV2_EXAMPLE_DIR}/${example}.lv2/manifest.ttl")
+            message(FATAL_ERROR "Missing LV2 example ${example} in OSCAIRN_LV2_EXAMPLE_DIR")
+        endif()
+    endforeach()
+endif()
+if(OSCAIRN_LV2 AND EXISTS "${OSCAIRN_LV2_EXAMPLE_DIR}/eg-amp.lv2/manifest.ttl")
+    # eg-amp is mono. Compare against a mono synth chain, before stereo delay.
+    set(amp_chain $<TARGET_FILE:oscairn_step_sequencer> $<TARGET_FILE:oscairn_basic_synth>)
+    add_test(NAME lv2-example-reference COMMAND oscairn-render ${CMAKE_CURRENT_BINARY_DIR}/lv2-reference.wav
+        --seconds 4 --block 512 ${amp_chain})
+    set_tests_properties(lv2-example-reference PROPERTIES FIXTURES_SETUP lv2-reference)
+    add_test(NAME lv2-example-amp COMMAND oscairn-render ${CMAKE_CURRENT_BINARY_DIR}/lv2-amp.wav
+        --seconds 4 --block 512 ${amp_chain} "${OSCAIRN_LV2_EXAMPLE_DIR}/eg-amp.lv2")
+    set_tests_properties(lv2-example-amp PROPERTIES FIXTURES_SETUP lv2-amp)
+    add_test(NAME lv2-example-amp-unity COMMAND ${CMAKE_COMMAND} -E compare_files
+        ${CMAKE_CURRENT_BINARY_DIR}/lv2-reference.wav ${CMAKE_CURRENT_BINARY_DIR}/lv2-amp.wav)
+    set_tests_properties(lv2-example-amp-unity PROPERTIES FIXTURES_REQUIRED "lv2-reference;lv2-amp")
+endif()
+if(OSCAIRN_LV2 AND EXISTS "${OSCAIRN_LV2_EXAMPLE_DIR}/eg-fifths.lv2/manifest.ttl")
+    foreach(block 512 37)
+        add_test(NAME lv2-example-fifths-${block} COMMAND oscairn-render
+            ${CMAKE_CURRENT_BINARY_DIR}/lv2-fifths-${block}.wav --seconds 4 --block ${block}
+            $<TARGET_FILE:oscairn_step_sequencer> "${OSCAIRN_LV2_EXAMPLE_DIR}/eg-fifths.lv2" $<TARGET_FILE:oscairn_basic_synth>)
+        set_tests_properties(lv2-example-fifths-${block} PROPERTIES FIXTURES_SETUP lv2-fifths-${block})
+    endforeach()
+    add_test(NAME lv2-example-fifths-timing COMMAND ${CMAKE_COMMAND} -E compare_files
+        ${CMAKE_CURRENT_BINARY_DIR}/lv2-fifths-512.wav ${CMAKE_CURRENT_BINARY_DIR}/lv2-fifths-37.wav)
+    set_tests_properties(lv2-example-fifths-timing PROPERTIES FIXTURES_REQUIRED "lv2-fifths-512;lv2-fifths-37")
+endif()
+
 if(UNIX)
     add_subdirectory(process)
 endif()

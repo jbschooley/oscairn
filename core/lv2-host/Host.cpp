@@ -1,0 +1,469 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+#include "oscairn/plugin_host.h"
+#include <lilv/lilv.h>
+#include <lv2/atom/atom.h>
+#include <lv2/atom/forge.h>
+#include <lv2/buf-size/buf-size.h>
+#include <lv2/midi/midi.h>
+#include <lv2/options/options.h>
+#include <lv2/parameters/parameters.h>
+#include <lv2/port-props/port-props.h>
+#include <lv2/resize-port/resize-port.h>
+#include <lv2/time/time.h>
+#include <lv2/urid/urid.h>
+#include <clap/ext/params.h>
+#include <algorithm>
+#include <atomic>
+#include <chrono>
+#include <cmath>
+#include <filesystem>
+#include <limits>
+#include <stdexcept>
+
+namespace oscairn
+{
+namespace
+{
+using Event = kick::clap::Event;
+using Parameter = kick::clap::Parameter;
+using PortInfo = kick::clap::Port;
+constexpr uint32_t maxEvents = kick::clap::Host::maxBlockEvents;
+constexpr uint32_t atomBytes = 16384;
+using Node = std::unique_ptr<LilvNode, decltype(&lilv_node_free)>;
+Node own(LilvNode* n) { return Node(n, lilv_node_free); }
+std::string text(const LilvNode* n) { return n ? lilv_node_as_string(n) : ""; }
+
+// Fixed storage keeps URI pointers stable and supports lookup without allocation.
+// No worker/UI extension is advertised. Concurrent new mappings fail rather than
+// blocking the render thread; existing mappings remain readable by every thread.
+struct Urids
+{
+    std::array<std::array<char, 512>, 512> names{};
+    std::atomic<uint32_t> count{0};
+    std::atomic_flag writing = ATOMIC_FLAG_INIT;
+    static LV2_URID map(void* handle, const char* uri)
+    {
+        auto& s = *static_cast<Urids*>(handle);
+        if(!uri) return 0;
+        auto find = [&]() -> LV2_URID {
+            const auto n = s.count.load(std::memory_order_acquire);
+            for(uint32_t i=0; i<n; ++i) if(!std::strcmp(uri,s.names[i].data())) return i+1;
+            return 0;
+        };
+        if(const auto id=find()) return id;
+        if(s.writing.test_and_set(std::memory_order_acquire)) return 0;
+        struct Unlock { std::atomic_flag& flag; ~Unlock(){flag.clear(std::memory_order_release);} } unlock{s.writing};
+        if(const auto id=find()) return id;
+        const auto n=s.count.load(std::memory_order_relaxed);
+        const auto length=strnlen(uri,s.names[0].size());
+        if(n==s.names.size() || length==s.names[0].size()) return 0;
+        std::memcpy(s.names[n].data(),uri,length+1);
+        s.count.store(n+1,std::memory_order_release);
+        return n+1;
+    }
+    static const char* unmap(void* handle, LV2_URID id)
+    {
+        auto& s=*static_cast<Urids*>(handle);
+        return id && id<=s.count.load(std::memory_order_acquire) ? s.names[id-1].data() : nullptr;
+    }
+    LV2_URID operator()(const char* uri) { return map(this,uri); }
+};
+
+class Lv2Host final : public PluginHost
+{
+    enum class Kind { Ignored, Audio, Control, Atom };
+    struct Port
+    {
+        Kind kind=Kind::Ignored;
+        bool input=false, midi=false, time=false;
+        uint32_t channel=0, midiIndex=0;
+        float control=0;
+        std::vector<float> audio;
+        std::vector<uint64_t> atom; // 8-byte alignment
+        LV2_Atom_Sequence* sequence(){return reinterpret_cast<LV2_Atom_Sequence*>(atom.data());}
+    };
+    struct Timed { Event event; uint32_t order; };
+    std::unique_ptr<LilvWorld,decltype(&lilv_world_free)> world_{lilv_world_new(),lilv_world_free};
+    std::unique_ptr<LilvInstance,decltype(&lilv_instance_free)> instance_{nullptr,lilv_instance_free};
+    bool active_=false;
+    kick::clap::Descriptor descriptor_;
+    std::vector<Parameter> parameters_;
+    std::vector<PortInfo> inputs_,outputs_;
+    std::vector<Port> ports_;
+    std::unique_ptr<std::atomic<double>[]> values_;
+    uint32_t noteInputs_=0,noteOutputs_=0;
+    double rate_;
+    uint32_t maxFrames_;
+    Urids urids_;
+    LV2_URID_Map map_{&urids_,Urids::map};
+    LV2_URID_Unmap unmap_{&urids_,Urids::unmap};
+    LV2_Atom_Forge forge_{};
+    LV2_URID sequence_,chunk_,frameTime_,midi_,position_,frame_,speed_,bpm_,beat_,bar_,barBeat_,beatUnit_,beatsPerBar_;
+    int32_t minimum_=1, maximum_, sequenceSize_=atomBytes;
+    float sampleRate_;
+    std::array<LV2_Options_Option,5> options_{};
+    std::array<LV2_Feature,5> features_{};
+    std::array<const LV2_Feature*,6> featurePointers_{};
+    // One control producer, one audio consumer; graph callers share this contract.
+    std::array<Event,kick::clap::Host::maxEvents> commands_{};
+    std::atomic<size_t> head_{0},tail_{0};
+    std::array<Timed,maxEvents> ordered_{};
+    std::array<Event,maxEvents> emitted_{};
+    uint32_t emittedCount_=0;
+    bool inputPanic_=false,outputPanic_=false;
+    std::atomic<uint64_t> blocks_{0},drops_{0},errors_{0},deadlines_{0};
+    std::atomic<double> lastUs_{0},maxUs_{0};
+
+    Node uri(const char* value) const { return own(lilv_new_uri(world_.get(),value)); }
+    bool is(const LilvPlugin* plugin,const LilvPort* port,const char* klass) const
+    {auto n=uri(klass);return lilv_port_is_a(plugin,port,n.get());}
+    bool property(const LilvPlugin* plugin,const LilvPort* port,const char* name) const
+    {auto n=uri(name);return lilv_port_has_property(plugin,port,n.get());}
+    bool supports(const LilvPlugin* plugin,const LilvPort* port,const char* type) const
+    {auto n=uri(type);return lilv_port_supports_event(plugin,port,n.get());}
+    const Parameter* parameter(clap_id id) const noexcept
+    {
+        const auto it=std::lower_bound(parameters_.begin(),parameters_.end(),id,[](const auto& p,clap_id key){return p.id<key;});
+        return it!=parameters_.end() && it->id==id ? &*it : nullptr;
+    }
+    bool writable(clap_id id) const noexcept
+    {const auto* p=parameter(id);return p && !(p->flags&CLAP_PARAM_IS_READONLY);}
+    bool queue(const Event& e) noexcept
+    {
+        const auto head=head_.load(std::memory_order_relaxed);
+        if(head-tail_.load(std::memory_order_acquire)==commands_.size())return false;
+        commands_[head%commands_.size()]=e;
+        head_.store(head+1,std::memory_order_release);
+        return true;
+    }
+    void apply(const Event& event) noexcept
+    {
+        const auto& e=*reinterpret_cast<const clap_event_param_value_t*>(event.bytes.data());
+        const auto* p=parameter(e.param_id);
+        if(!p || (p->flags&CLAP_PARAM_IS_READONLY) || !std::isfinite(e.value) || e.note_id!=-1 ||
+           e.port_index!=-1 || e.channel!=-1 || e.key!=-1){++drops_;return;}
+        auto value=std::clamp(e.value,p->minimum,p->maximum);
+        if(p->flags&CLAP_PARAM_IS_STEPPED)value=std::trunc(value);
+        ports_[e.param_id].control=static_cast<float>(value);
+        values_[e.param_id].store(value,std::memory_order_relaxed);
+    }
+    static uint32_t midiSize(uint8_t status) noexcept
+    {
+        if(status<0x80)return 0;
+        if(status<0xf0)return (status&0xe0)==0xc0?2:3;
+        switch(status){case 0xf1:case 0xf3:return 2;case 0xf2:return 3;case 0xf6:case 0xf8:case 0xfa:case 0xfb:case 0xfc:case 0xfe:case 0xff:return 1;default:return 0;}
+    }
+    void append(Port& port,uint32_t time,LV2_URID type,const void* data,uint32_t size) noexcept
+    {
+        auto* sequence=port.sequence();
+        const auto padded=(sizeof(LV2_Atom_Event)+size+7u)&~size_t(7);
+        if(size>atomBytes || sizeof(LV2_Atom)+sequence->atom.size+padded>atomBytes)
+        {++drops_;if(type==midi_)inputPanic_=true;return;}
+        auto* event=reinterpret_cast<LV2_Atom_Event*>(reinterpret_cast<uint8_t*>(sequence)+sizeof(LV2_Atom)+sequence->atom.size);
+        event->time.frames=time;event->body={size,type};
+        std::memcpy(event+1,data,size);
+        std::memset(reinterpret_cast<uint8_t*>(event+1)+size,0,padded-size-sizeof(LV2_Atom_Event));
+        sequence->atom.size+=static_cast<uint32_t>(padded);
+    }
+    void sendMidi(int portIndex,uint32_t time,uint8_t status,uint8_t a,uint8_t b) noexcept
+    {
+        const uint8_t bytes[]{status,a,b};
+        for(auto& port:ports_)if(port.kind==Kind::Atom && port.input && port.midi &&
+            (portIndex==-1 || static_cast<uint32_t>(portIndex)==port.midiIndex))append(port,time,midi_,bytes,midiSize(status));
+    }
+    void musical(const Event& event,uint32_t start) noexcept
+    {
+        const auto* h=event.header();const auto time=h->time-start;
+        if(h->type==CLAP_EVENT_MIDI)
+        {
+            const auto& e=*reinterpret_cast<const clap_event_midi_t*>(h);
+            const auto length=midiSize(e.data[0]);
+            if(!length || (length>1 && e.data[1]>127) || (length>2 && e.data[2]>127) || e.port_index>=noteInputs_){++drops_;return;}
+            sendMidi(e.port_index,time,e.data[0],e.data[1],e.data[2]);return;
+        }
+        int port=-1,channel=-1,key=-1;double value=0;bool pressure=false,on=false;
+        if(h->type==CLAP_EVENT_NOTE_EXPRESSION)
+        {
+            const auto& e=*reinterpret_cast<const clap_event_note_expression_t*>(h);
+            if(e.expression_id!=CLAP_NOTE_EXPRESSION_PRESSURE || e.note_id!=-1){++drops_;return;}
+            port=e.port_index;channel=e.channel;key=e.key;value=e.value;pressure=true;
+        }
+        else
+        {
+            const auto& e=*reinterpret_cast<const clap_event_note_t*>(h);
+            if(e.note_id!=-1){++drops_;return;}
+            port=e.port_index;channel=e.channel;key=e.key;value=e.velocity;on=h->type==CLAP_EVENT_NOTE_ON;
+        }
+        if(port < -1 || (port>=0 && static_cast<uint32_t>(port)>=noteInputs_) || channel < -1 || channel>15 || key < -1 || key>127 ||
+           !std::isfinite(value) || value<0 || value>1 || (on && (key<0 || channel<0 || port<0))){++drops_;return;}
+        const auto v=static_cast<uint8_t>(std::lround(value*127));
+        for(int c=channel<0?0:channel;c<=(channel<0?15:channel);++c)
+        {
+            if(pressure)sendMidi(port,time,static_cast<uint8_t>((key<0?0xd0:0xa0)|c),key<0?v:static_cast<uint8_t>(key),key<0?0:v);
+            else if(key<0)sendMidi(port,time,static_cast<uint8_t>(0xb0|c),123,0);
+            else sendMidi(port,time,static_cast<uint8_t>((on?0x90:0x80)|c),static_cast<uint8_t>(key),v);
+        }
+    }
+    bool valid(const Event& event,uint32_t frames) noexcept
+    {
+        const auto* h=event.header();if(h->space_id!=CLAP_CORE_EVENT_SPACE_ID || h->time>=frames)return false;
+        uint32_t expected=0;
+        switch(h->type)
+        {
+        case CLAP_EVENT_NOTE_ON:case CLAP_EVENT_NOTE_OFF:case CLAP_EVENT_NOTE_CHOKE:expected=sizeof(clap_event_note_t);break;
+        case CLAP_EVENT_NOTE_EXPRESSION:expected=sizeof(clap_event_note_expression_t);break;
+        case CLAP_EVENT_MIDI:expected=sizeof(clap_event_midi_t);break;
+        case CLAP_EVENT_PARAM_VALUE:expected=sizeof(clap_event_param_value_t);break;
+        case CLAP_EVENT_PARAM_GESTURE_BEGIN:case CLAP_EVENT_PARAM_GESTURE_END:expected=sizeof(clap_event_param_gesture_t);break;
+        default:return false;
+        }
+        return h->size==expected;
+    }
+    void transport(Port& port,const clap_event_transport_t* t,uint32_t start) noexcept
+    {
+        if(!t)return;
+        alignas(8) uint8_t buffer[512]{};
+        auto forge=forge_;lv2_atom_forge_set_buffer(&forge,buffer,sizeof(buffer));
+        LV2_Atom_Forge_Frame object;lv2_atom_forge_object(&forge,&object,0,position_);
+        const bool playing=t->flags&CLAP_TRANSPORT_IS_PLAYING;
+        auto key=[&](LV2_URID id){lv2_atom_forge_key(&forge,id);};
+        key(speed_);lv2_atom_forge_float(&forge,playing?1.f:0.f);
+        if(t->flags&CLAP_TRANSPORT_HAS_TEMPO){key(bpm_);lv2_atom_forge_float(&forge,static_cast<float>(t->tempo));}
+        if(t->flags&CLAP_TRANSPORT_HAS_SECONDS_TIMELINE)
+        {
+            key(frame_);lv2_atom_forge_long(&forge,static_cast<int64_t>(std::llround(static_cast<double>(t->song_pos_seconds)/CLAP_SECTIME_FACTOR*rate_))+(playing?start:0));
+        }
+        if(t->flags&CLAP_TRANSPORT_HAS_BEATS_TIMELINE)
+        {
+            const double beat=static_cast<double>(t->song_pos_beats)/CLAP_BEATTIME_FACTOR+(playing?start/rate_*t->tempo/60:0);
+            key(beat_);lv2_atom_forge_double(&forge,beat);
+            if((t->flags&CLAP_TRANSPORT_HAS_TIME_SIGNATURE) && t->tsig_num && t->tsig_denom)
+            {
+                const auto beatsPerBar=static_cast<float>(t->tsig_num);const double meterBeat=beat*t->tsig_denom/4.0;
+                key(bar_);lv2_atom_forge_long(&forge,static_cast<int64_t>(std::floor(meterBeat/beatsPerBar)));
+                key(barBeat_);lv2_atom_forge_float(&forge,static_cast<float>(meterBeat-std::floor(meterBeat/beatsPerBar)*beatsPerBar));
+                key(beatUnit_);lv2_atom_forge_int(&forge,t->tsig_denom);
+                key(beatsPerBar_);lv2_atom_forge_float(&forge,beatsPerBar);
+            }
+        }
+        lv2_atom_forge_pop(&forge,&object);
+        const auto* atom=reinterpret_cast<const LV2_Atom*>(buffer);
+        append(port,0,atom->type,atom+1,atom->size);
+    }
+    void collect(Port& port,uint32_t start,uint32_t frames) noexcept
+    {
+        const auto* seq=port.sequence();
+        if(seq->atom.type==chunk_)return; // plugin wrote nothing
+        if(seq->atom.type!=sequence_ || seq->atom.size<sizeof(seq->body) || seq->atom.size>atomBytes-sizeof(LV2_Atom) ||
+           (seq->body.unit!=0 && seq->body.unit!=frameTime_)){++errors_;return;}
+        size_t offset=sizeof(LV2_Atom_Sequence),end=sizeof(LV2_Atom)+seq->atom.size;
+        while(offset<end)
+        {
+            if(end-offset<sizeof(LV2_Atom_Event)){++errors_;break;}
+            const auto* e=reinterpret_cast<const LV2_Atom_Event*>(reinterpret_cast<const uint8_t*>(seq)+offset);
+            const uint64_t size=(uint64_t(sizeof(*e))+e->body.size+7)&~uint64_t(7);
+            if(size>end-offset){++errors_;break;}
+            if(port.midi && e->body.type==midi_)
+            {
+                const auto* bytes=reinterpret_cast<const uint8_t*>(e+1);
+                if(e->time.frames<0 || e->time.frames>=frames || e->body.size<1 || e->body.size>3 ||
+                   midiSize(bytes[0])!=e->body.size || (e->body.size>1 && bytes[1]>127) || (e->body.size>2 && bytes[2]>127)){++drops_;}
+                else if(emittedCount_==emitted_.size()){++drops_;outputPanic_=true;}
+                else
+                {
+                    const auto time=start+static_cast<uint32_t>(e->time.frames);
+                    const auto kind=bytes[0]&0xf0;
+                    if(kind==0x80 || kind==0x90)emitted_[emittedCount_++]=Event::note(kind==0x90 && bytes[2],bytes[1],bytes[2]/127.0,time,bytes[0]&15,port.midiIndex);
+                    else if(kind==0xa0 || kind==0xd0)
+                    {
+                        clap_event_note_expression_t pressure{};
+                        pressure.header={sizeof(pressure),time,CLAP_CORE_EVENT_SPACE_ID,CLAP_EVENT_NOTE_EXPRESSION,0};
+                        pressure.expression_id=CLAP_NOTE_EXPRESSION_PRESSURE;pressure.note_id=-1;pressure.port_index=static_cast<int16_t>(port.midiIndex);
+                        pressure.channel=bytes[0]&15;pressure.key=kind==0xa0?bytes[1]:-1;pressure.value=(kind==0xa0?bytes[2]:bytes[1])/127.0;
+                        emitted_[emittedCount_++]=Event::from(pressure);
+                    }
+                    else emitted_[emittedCount_++]=Event::midi(bytes[0],e->body.size>1?bytes[1]:0,e->body.size>2?bytes[2]:0,time,static_cast<uint16_t>(port.midiIndex));
+                }
+            }
+            offset+=static_cast<size_t>(size);
+        }
+    }
+public:
+    Lv2Host(const std::string& bundle,const std::string& id,double rate,uint32_t frames):rate_(rate),maxFrames_(frames),maximum_(static_cast<int32_t>(frames)),sampleRate_(static_cast<float>(rate))
+    {
+        if(!world_ || !std::isfinite(rate) || rate<=0 || !frames || frames>1048576)throw std::invalid_argument("Invalid LV2 host configuration");
+        const auto path=std::filesystem::canonical(bundle).string()+"/";
+        auto bundleUri=own(lilv_new_file_uri(world_.get(),nullptr,path.c_str()));
+        lilv_world_load_bundle(world_.get(),bundleUri.get());
+        const auto* plugins=lilv_world_get_all_plugins(world_.get());const LilvPlugin* plugin=nullptr;
+        if(id.empty())
+        {
+            if(lilv_plugins_size(plugins)!=1)throw std::runtime_error("LV2 bundle must contain one plugin, or supply pluginId as its URI: "+bundle);
+            plugin=lilv_plugins_get(plugins,lilv_plugins_begin(plugins));
+        }
+        else {auto key=uri(id.c_str());plugin=lilv_plugins_get_by_uri(plugins,key.get());}
+        if(!plugin || !lilv_plugin_verify(plugin))throw std::runtime_error("No valid matching LV2 plugin in "+bundle);
+        descriptor_.path=std::filesystem::canonical(bundle).string();descriptor_.id=text(lilv_plugin_get_uri(plugin));
+        auto name=own(lilv_plugin_get_name(plugin));descriptor_.name=text(name.get());
+        auto author=own(lilv_plugin_get_author_name(plugin));descriptor_.vendor=text(author.get());descriptor_.features={"lv2"};
+        sequence_=urids_(LV2_ATOM__Sequence);chunk_=urids_(LV2_ATOM__Chunk);frameTime_=urids_(LV2_ATOM__frameTime);midi_=urids_(LV2_MIDI__MidiEvent);
+        position_=urids_(LV2_TIME__Position);frame_=urids_(LV2_TIME__frame);speed_=urids_(LV2_TIME__speed);bpm_=urids_(LV2_TIME__beatsPerMinute);
+        beat_=urids_(LV2_TIME__beat);bar_=urids_(LV2_TIME__bar);barBeat_=urids_(LV2_TIME__barBeat);beatUnit_=urids_(LV2_TIME__beatUnit);beatsPerBar_=urids_(LV2_TIME__beatsPerBar);
+        lv2_atom_forge_init(&forge_,&map_);
+        options_[0]={LV2_OPTIONS_INSTANCE,0,urids_(LV2_BUF_SIZE__minBlockLength),sizeof(minimum_),urids_(LV2_ATOM__Int),&minimum_};
+        options_[1]={LV2_OPTIONS_INSTANCE,0,urids_(LV2_BUF_SIZE__maxBlockLength),sizeof(maximum_),urids_(LV2_ATOM__Int),&maximum_};
+        options_[2]={LV2_OPTIONS_INSTANCE,0,urids_(LV2_BUF_SIZE__sequenceSize),sizeof(sequenceSize_),urids_(LV2_ATOM__Int),&sequenceSize_};
+        options_[3]={LV2_OPTIONS_INSTANCE,0,urids_(LV2_PARAMETERS__sampleRate),sizeof(sampleRate_),urids_(LV2_ATOM__Float),&sampleRate_};
+        features_={LV2_Feature{LV2_URID__map,&map_},{LV2_URID__unmap,&unmap_},{LV2_OPTIONS__options,options_.data()},
+                   {LV2_BUF_SIZE__boundedBlockLength,nullptr},{LV2_CORE__inPlaceBroken,nullptr}};
+        for(size_t i=0;i<features_.size();++i)featurePointers_[i]=&features_[i];
+        std::unique_ptr<LilvNodes,decltype(&lilv_nodes_free)> required(lilv_plugin_get_required_features(plugin),lilv_nodes_free);
+        LILV_FOREACH(nodes,i,required.get())
+        {
+            const auto feature=text(lilv_nodes_get(required.get(),i));
+            if(std::none_of(features_.begin(),features_.end(),[&](const auto& f){return feature==f.URI;}))
+                throw std::runtime_error("Unsupported required LV2 feature: "+feature);
+        }
+        const auto count=lilv_plugin_get_num_ports(plugin);
+        if(count>256)throw std::runtime_error("LV2 port limit exceeded (256)");
+        ports_.resize(count);values_=std::make_unique<std::atomic<double>[]>(count);
+        for(uint32_t i=0;i<count;++i)
+        {
+            const auto* source=lilv_plugin_get_port_by_index(plugin,i);auto& port=ports_[i];values_[i].store(0);
+            port.input=is(plugin,source,LV2_CORE__InputPort);
+            if(port.input==is(plugin,source,LV2_CORE__OutputPort))throw std::runtime_error("LV2 port has ambiguous direction");
+            auto label=own(lilv_port_get_name(plugin,source));
+            if(is(plugin,source,LV2_CORE__AudioPort))
+            {
+                port.kind=Kind::Audio;auto& list=port.input?inputs_:outputs_;port.channel=static_cast<uint32_t>(list.size());
+                list.push_back({i,text(label.get()),1,0});port.audio.resize(frames);
+            }
+            else if(is(plugin,source,LV2_CORE__ControlPort))
+            {
+                port.kind=Kind::Control;LilvNode *d=nullptr,*lo=nullptr,*hi=nullptr;lilv_port_get_range(plugin,source,&d,&lo,&hi);
+                auto defaultNode=own(d),minNode=own(lo),maxNode=own(hi);
+                auto number=[](LilvNode* n,double fallback){return n && (lilv_node_is_float(n)||lilv_node_is_int(n))?static_cast<double>(lilv_node_as_float(n)):fallback;};
+                const auto scale=property(plugin,source,LV2_CORE__sampleRate)?rate:1.0;
+                double minimum=number(lo,0)*scale,maximum=number(hi,1)*scale,initial=number(d,0)*scale;
+                if(!std::isfinite(minimum)||!std::isfinite(maximum)||!std::isfinite(initial)||minimum>maximum ||
+                   std::abs(minimum)>std::numeric_limits<float>::max()||std::abs(maximum)>std::numeric_limits<float>::max())throw std::runtime_error("Invalid LV2 control range");
+                uint32_t flags=port.input?CLAP_PARAM_IS_AUTOMATABLE:CLAP_PARAM_IS_READONLY;
+                if(property(plugin,source,LV2_CORE__integer)||property(plugin,source,LV2_CORE__toggled))flags|=CLAP_PARAM_IS_STEPPED;
+                initial=std::clamp(initial,minimum,maximum);port.control=static_cast<float>(initial);values_[i].store(initial);
+                parameters_.push_back({i,text(label.get()),"",minimum,maximum,initial,flags});
+            }
+            else if(is(plugin,source,LV2_ATOM__AtomPort))
+            {
+                auto type=uri(LV2_ATOM__bufferType);auto bufferType=own(lilv_port_get(plugin,source,type.get()));
+                if(text(bufferType.get())!=LV2_ATOM__Sequence)throw std::runtime_error("Unsupported LV2 atom buffer type (requires Sequence)");
+                auto minimumKey=uri(LV2_RESIZE_PORT__minimumSize);auto minimum=own(lilv_port_get(plugin,source,minimumKey.get()));
+                if(minimum && (!lilv_node_is_int(minimum.get()) || lilv_node_as_int(minimum.get())<0 || lilv_node_as_int(minimum.get())>static_cast<int>(atomBytes)))throw std::runtime_error("LV2 atom buffer minimum exceeds 16384 bytes");
+                port.kind=Kind::Atom;port.atom.resize(atomBytes/sizeof(uint64_t));
+                port.midi=supports(plugin,source,LV2_MIDI__MidiEvent);port.time=supports(plugin,source,LV2_TIME__Position);
+                if(port.midi)port.midiIndex=port.input?noteInputs_++:noteOutputs_++;
+            }
+            else if(!property(plugin,source,LV2_CORE__connectionOptional))throw std::runtime_error("Unsupported required LV2 port: "+text(label.get()));
+        }
+        instance_.reset(lilv_plugin_instantiate(plugin,rate,featurePointers_.data()));
+        if(!instance_)throw std::runtime_error("LV2 instantiation failed: "+descriptor_.id);
+        for(uint32_t i=0;i<ports_.size();++i)
+        {
+            auto& p=ports_[i];void* data=nullptr;
+            if(p.kind==Kind::Audio)data=p.audio.data();else if(p.kind==Kind::Control)data=&p.control;else if(p.kind==Kind::Atom)data=p.atom.data();
+            lilv_instance_connect_port(instance_.get(),i,data);
+        }
+        lilv_instance_activate(instance_.get());active_=true;
+    }
+    ~Lv2Host() override
+    {
+        if(active_)lilv_instance_deactivate(instance_.get());
+        instance_.reset(); // cleanup may still use connected buffers and host features
+    }
+    void service() override {}
+    const kick::clap::Descriptor& descriptor() const noexcept override{return descriptor_;}
+    const std::vector<Parameter>& parameters() const noexcept override{return parameters_;}
+    const std::vector<PortInfo>& inputPorts() const noexcept override{return inputs_;}
+    const std::vector<PortInfo>& outputPorts() const noexcept override{return outputs_;}
+    uint32_t noteInputPorts() const noexcept override{return noteInputs_;}
+    uint32_t noteOutputPorts() const noexcept override{return noteOutputs_;}
+    double parameterValue(clap_id id) const noexcept override{return parameter(id)?values_[id].load():0;}
+    std::string parameterText(clap_id,double value) const override{return std::to_string(value);}
+    bool setParameter(clap_id id,double value) noexcept override
+    {
+        if(!writable(id)||!std::isfinite(value))return false;
+        const auto* p=parameter(id);value=std::clamp(value,p->minimum,p->maximum);if(p->flags&CLAP_PARAM_IS_STEPPED)value=std::trunc(value);
+        clap_event_param_value_t e{};e.header={sizeof(e),0,CLAP_CORE_EVENT_SPACE_ID,CLAP_EVENT_PARAM_VALUE,0};
+        e.param_id=id;e.note_id=-1;e.port_index=e.channel=e.key=-1;e.value=value;
+        return queue(Event::from(e));
+    }
+    bool parameterGesture(clap_id id,bool) noexcept override{return writable(id);} // LV2 control ports have no gesture message
+    bool popOutput(Event&) noexcept override{return false;} // output control values use atomic telemetry
+    uint64_t outputEventDrops() const noexcept override{return 0;}
+    const Event* outputEvents(uint32_t& count) const noexcept override{count=emittedCount_;return emitted_.data();}
+    kick::clap::Statistics statistics() const noexcept override{return {blocks_.load(),drops_.load(),errors_.load(),lastUs_.load(),maxUs_.load(),deadlines_.load(),0,0};}
+    bool process(const float* const* inputs,uint32_t ni,float* const* outputs,uint32_t no,uint32_t frames,const Event* events,uint32_t count,const clap_event_transport_t* t) noexcept override
+    {
+        emittedCount_=0;outputPanic_=false;
+        auto silence=[&]{if(outputs)for(uint32_t c=0;c<no;++c)if(outputs[c])std::fill_n(outputs[c],frames,0.f);};
+        if(!frames)return true;
+        if(frames>maxFrames_ || (no && !outputs) || (count && !events) || count>maxEvents){silence();++errors_;return false;}
+        const auto began=std::chrono::steady_clock::now();
+        uint32_t total=0;auto tail=tail_.load(std::memory_order_relaxed);const auto head=head_.load(std::memory_order_acquire);
+        while(tail!=head && total+count<maxEvents){ordered_[total]={commands_[tail%commands_.size()],total};++total;++tail;}
+        tail_.store(tail,std::memory_order_release);
+        for(uint32_t i=0;i<count;++i)if(valid(events[i],frames)){ordered_[total]={events[i],total};++total;}else ++drops_;
+        std::sort(ordered_.begin(),ordered_.begin()+total,[](const auto& a,const auto& b){return a.event.header()->time!=b.event.header()->time?a.event.header()->time<b.event.header()->time:a.order<b.order;});
+        for(auto& p:ports_)if(p.kind==Kind::Audio)
+        {
+            if(p.input && inputs && p.channel<ni && inputs[p.channel])std::copy_n(inputs[p.channel],frames,p.audio.data());
+            else std::fill_n(p.audio.data(),frames,0.f);
+        }
+        const bool releaseInputs=inputPanic_;inputPanic_=false;
+        uint32_t next=0,start=0;
+        while(start<frames)
+        {
+            // Control-port edits split runs at their exact sample; MIDI stays in the
+            // atom sequence, with timestamps relative to this run's audio pointers.
+            for(uint32_t i=next;i<total && ordered_[i].event.header()->time==start;++i)
+                if(ordered_[i].event.header()->type==CLAP_EVENT_PARAM_VALUE)apply(ordered_[i].event);
+            uint32_t end=frames;
+            for(uint32_t i=next;i<total;++i)if(ordered_[i].event.header()->type==CLAP_EVENT_PARAM_VALUE && ordered_[i].event.header()->time>start){end=ordered_[i].event.header()->time;break;}
+            for(uint32_t i=0;i<ports_.size();++i)
+            {
+                auto& p=ports_[i];
+                if(p.kind==Kind::Audio)lilv_instance_connect_port(instance_.get(),i,p.audio.data()+start);
+                if(p.kind==Kind::Atom)
+                {
+                    auto* seq=p.sequence();
+                    seq->atom={p.input?static_cast<uint32_t>(sizeof(seq->body)):atomBytes-static_cast<uint32_t>(sizeof(LV2_Atom)),p.input?sequence_:chunk_};
+                    seq->body={0,0};if(p.input && p.time)transport(p,t,start);
+                }
+            }
+            if(start==0 && releaseInputs)
+                for(int c=0;c<16;++c)
+                {sendMidi(-1,0,static_cast<uint8_t>(0xb0|c),120,0);sendMidi(-1,0,static_cast<uint8_t>(0xb0|c),123,0);}
+            while(next<total && ordered_[next].event.header()->time<end)
+            {
+                const auto& event=ordered_[next++].event;const auto type=event.header()->type;
+                if(type!=CLAP_EVENT_PARAM_VALUE && type!=CLAP_EVENT_PARAM_GESTURE_BEGIN && type!=CLAP_EVENT_PARAM_GESTURE_END)musical(event,start);
+            }
+            lilv_instance_run(instance_.get(),end-start);
+            for(auto& p:ports_)if(p.kind==Kind::Atom && !p.input)collect(p,start,end-start);
+            start=end;
+        }
+        silence();
+        for(const auto& p:ports_)if(p.kind==Kind::Audio && !p.input && p.channel<no && outputs[p.channel])std::copy_n(p.audio.data(),frames,outputs[p.channel]);
+        for(const auto& p:parameters_)if(p.flags&CLAP_PARAM_IS_READONLY)
+        {const auto value=ports_[p.id].control;if(std::isfinite(value))values_[p.id].store(value);else ++errors_;}
+        if(outputPanic_)emitted_[emittedCount_-1]=Event::note(false,-1,0,frames-1,-1,-1);
+        // Stable, bounded merge across multiple MIDI output ports.
+        for(uint32_t i=1;i<emittedCount_;++i){auto e=emitted_[i];auto j=i;while(j && emitted_[j-1].header()->time>e.header()->time){emitted_[j]=emitted_[j-1];--j;}emitted_[j]=e;}
+        const auto us=std::chrono::duration<double,std::micro>(std::chrono::steady_clock::now()-began).count();
+        lastUs_.store(us);if(us>maxUs_.load())maxUs_.store(us);if(us>frames/rate_*1e6)++deadlines_;++blocks_;
+        return true;
+    }
+};
+}
+std::shared_ptr<PluginHost> loadLv2Plugin(const std::string& path,const std::string& id,double rate,uint32_t frames)
+{return std::make_shared<Lv2Host>(path,id,rate,frames);}
+}

@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #include "oscairn/graph.h"
 
-#include <kick_clap/Discovery.h>
 #include <oscairn-clap/param-target.h>
 
 #include <algorithm>
@@ -17,7 +16,7 @@ namespace oscairn
     {
         struct Step
         {
-            std::shared_ptr<kick::clap::Host> host; // keeps the plugin alive while any plan uses it
+            std::shared_ptr<PluginHost> host; // keeps the plugin alive while any plan uses it
             uint32_t                          audioInputs = 0, audioOutputs = 0;
             std::vector<int>                  audioSources; // step indices, summed
             std::vector<int>                  noteSources;  // step indices; -1 is graphInput
@@ -86,23 +85,8 @@ namespace oscairn
 
     NodeId Graph::add( const std::string& path, const std::string& pluginId )
     {
-        // Reading the descriptors loads the module in this process; fine for a trusted
-        // path. Untrusted folders go through the out-of-process scanner.
-        const auto scan  = kick::clap::inspect( path );
-        const auto found = std::find_if( scan.plugins.begin(), scan.plugins.end(), [&]( const kick::clap::Descriptor& d ) {
-            return pluginId.empty() || d.id == pluginId;
-        } );
-        if( found == scan.plugins.end() )
-        {
-            if( !scan.failures.empty() )
-                throw std::runtime_error( scan.failures.front().message );
-            throw std::runtime_error( pluginId.empty() ? "no plugins in " + path : "plugin " + pluginId + " not found in " + path );
-        }
-
         Node node;
-        node.host = std::make_shared<kick::clap::Host>();
-        if( !node.host->load( *found, sampleRate_, maxFrames_ ) )
-            throw std::runtime_error( "cannot load " + found->id + ": " + node.host->error() );
+        node.host = loadPlugin( path, pluginId, sampleRate_, maxFrames_ );
         for( const auto& port : node.host->inputPorts() )
             node.audioInputs += port.channels;
         for( const auto& port : node.host->outputPorts() )
@@ -187,12 +171,12 @@ namespace oscairn
         paramTargets_.erase( { source, lane } );
     }
 
-    const kick::clap::Host& Graph::host( NodeId node ) const
+    const PluginHost& Graph::host( NodeId node ) const
     {
         return *nodes_.at( node ).host;
     }
 
-    kick::clap::Host& Graph::host( NodeId node )
+    PluginHost& Graph::host( NodeId node )
     {
         return *nodes_.at( node ).host;
     }

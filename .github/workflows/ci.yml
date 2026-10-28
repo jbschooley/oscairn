@@ -19,14 +19,16 @@ jobs:
 
       - name: Install Ninja (Linux)
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y ninja-build
+        run: sudo apt-get update && sudo apt-get install -y ninja-build liblilv-dev lv2-dev lv2-examples
 
       - name: Install Ninja (macOS)
         if: runner.os == 'macOS'
-        run: brew install ninja
+        run: brew install ninja lilv lv2
 
       - name: Configure
-        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+        run: >
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DOSCAIRN_LV2=ON
+          -DOSCAIRN_LV2_EXAMPLE_DIR="${{ runner.os == 'Linux' && '/usr/lib/lv2' || '' }}"
 
       - name: Build
         run: cmake --build build
@@ -39,10 +41,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install Ninja
-        run: sudo apt-get update && sudo apt-get install -y ninja-build
+        run: sudo apt-get update && sudo apt-get install -y ninja-build liblilv-dev lv2-dev
       - name: Configure
         run: >
           cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug
+          -DOSCAIRN_LV2=ON
           -DCMAKE_CXX_FLAGS="-fsanitize=thread -g"
           -DCMAKE_EXE_LINKER_FLAGS=-fsanitize=thread
           -DCMAKE_SHARED_LINKER_FLAGS=-fsanitize=thread

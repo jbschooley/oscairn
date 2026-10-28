@@ -14,7 +14,8 @@ here only to describe compatibility.
 > playing a synth through a delay, with per-step parameter locks), sample-accurately,
 > following its own tempo or an external MIDI clock, rendered offline to a WAV file, and a
 > desktop demo app with live audio, MIDI input and switchable panel layouts, and a Linux
-> image that boots into Oscairn (tested in QEMU, [`os/`](os/README.md)). No LV2/VST3, patch
+> image that boots into Oscairn (tested in QEMU, [`os/`](os/README.md)). Optional LV2 hosting
+> supports mixed CLAP/LV2 graphs with audio, controls and MIDI/time atoms. No VST3, patch
 > library or real-hardware image yet.
 
 ## Try it
@@ -43,6 +44,15 @@ open build-app/hosts/standalone/oscairn_standalone_artefacts/RelWithDebInfo/Osca
 Options: `--layout desktop|kick|keys49|file.json`, and `--snapshot out.png [--size WxH]
 [--play SECONDS]` to render the panel to a PNG and quit. Layouts are described in
 [hosts/standalone/layouts](hosts/standalone/layouts/README.md).
+
+### LV2 plugins
+
+Enable the initial LV2 host with `-DOSCAIRN_LV2=ON` for the core, renderer or desktop.
+Install `lilv` and `lv2` with Homebrew, or `liblilv-dev` and `lv2-dev` on Debian/Ubuntu.
+It defaults to OFF so CLAP-only builds keep their existing dependency set.
+See [LV2 hosting](core/lv2-host/README.md) for loading bundles, supported extensions,
+limits and examples. The desktop's default demo and layouts still use the three CLAP
+plugins; there is no graphical plugin browser yet.
 
 ### Panel layouts
 

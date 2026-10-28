@@ -87,3 +87,11 @@ Other Buildroot targets go after the defconfig, for example
   interface and a real-time kernel, and latency measurements.
 - The KICK, once units exist: its kernel, display, audio codec, and a driver for the panel.
 - Signed updates with A/B system images.
+
+## Optional LV2 hosting
+
+`BR2_PACKAGE_OSCAIRN_LV2` selects Lilv and enables the core's LV2 adapter. It requires a
+dynamic-library toolchain. It is off in the existing QEMU defconfig; this change does not
+add LV2 bundles to the image. Install native target builds of bundles separately. The
+initial [host subset](../core/lv2-host/README.md) applies on devices too. The LV2-enabled
+Buildroot image has not yet been rebuilt or boot-tested.

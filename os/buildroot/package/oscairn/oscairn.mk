@@ -13,6 +13,13 @@ OSCAIRN_LICENSE = AGPL-3.0-or-later
 OSCAIRN_LICENSE_FILES = LICENSE
 OSCAIRN_DEPENDENCIES = host-pkgconf
 
+ifeq ($(BR2_PACKAGE_OSCAIRN_LV2),y)
+OSCAIRN_DEPENDENCIES += lilv
+OSCAIRN_CONF_OPTS += -DOSCAIRN_LV2=ON
+else
+OSCAIRN_CONF_OPTS += -DOSCAIRN_LV2=OFF
+endif
+
 ifeq ($(BR2_PACKAGE_OSCAIRN_STANDALONE),y)
 OSCAIRN_DEPENDENCIES += oscairn-juce alsa-lib freetype fontconfig \
 	xlib_libX11 xlib_libXext xlib_libXinerama xlib_libXrandr \

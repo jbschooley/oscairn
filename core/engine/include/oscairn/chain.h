@@ -9,7 +9,7 @@
 
 namespace oscairn
 {
-    /// A straight line of CLAP plugins, built on Graph: each plugin plays the note output
+    /// A straight line of plugins, built on Graph: each plugin plays the note output
     /// of the plugin before it (the first plays the events passed to process()) and
     /// processes the audio of the last plugin that produced audio, which goes to the
     /// output.
@@ -25,7 +25,8 @@ namespace oscairn
         {
         }
 
-        /// Loads a plugin and appends it. `pluginId` empty means the module's first plugin.
+        /// Loads a plugin and appends it. An LV2 bundle with multiple plugins requires
+        /// its URI in pluginId; a CLAP module defaults to its first plugin.
         /// Throws std::runtime_error on failure.
         void add( const std::string& path, const std::string& pluginId = {} );
 

@@ -8,7 +8,7 @@ design decisions are recorded as [RFCs](rfcs/README.md).
 
 | Built | Not built yet |
 | --- | --- |
-| Graph of CLAP plugins: audio and note connections, dependency order, lock-free live editing | LV2 and VST3 hosting |
+| Graph of CLAP and optional LV2 plugins: audio/note connections, dependency order, lock-free live editing | Remaining LV2 extensions (worker, state, UI), VST3 hosting |
 | Sample-accurate event routing; renders identical at different block sizes (tested in CI) | Persistent session recovery |
 | JUCE-free session and typed local/remote Control interface, including host/device status | Gesture ownership/undo |
 | JSON-RPC graph editing, parameter coalescing/gestures, notifications and bounded Unix sockets; default engine/UI separation with startup, reattachment and explicit recovery | UI engine shutdown and session persistence |
@@ -159,7 +159,9 @@ voices. The host reports when a transition cannot be seamless.
 
 - **CLAP** is the preferred format for new engines, effects and sequencers: a clean C ABI,
   a good realtime and threading model, per-note expression, MPE, and extensibility.
-- **LV2** is first-class, for the large existing Linux ecosystem.
+- **LV2** is first-class, for the large existing Linux ecosystem. The initial optional
+  host supports audio/control ports and MIDI/time atom sequences;
+  [implementation scope](../core/lv2-host/README.md) lists the remaining extensions.
 - **VST3** is hosted for compatibility with existing plugins (the SDK is MIT-licensed
   since 3.8).
 

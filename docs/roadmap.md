@@ -67,12 +67,15 @@ Done:
   background engine lifetime, UI reattachment and explicit recovery after engine failure.
 - audible verification of the default separate-process desktop in the KICK layout:
   Jacob confirmed SMK37 notes, pressure response and PLAY/STOP on October 28, 2026.
+- optional LV2 hosting through Lilv: mixed CLAP/LV2 graphs, sample-timed control ports,
+  MIDI/pressure translation and time atoms, with fixture and upstream-example tests.
 
 To do:
 
 - tracks, patterns, swing and more lanes in the sequencer;
-- LV2 hosting, right after the control API: a large catalog of open plugins already
-  built for ARM Linux;
+- extend LV2 coverage with worker scheduling and state/preset handling, then plugin
+  discovery and selection in the desktop; custom UIs and other extensions follow
+  ([current scope](../core/lv2-host/README.md));
 - define hardware capabilities, timestamped input, scheduled output and engine backend
   selection before hardware MIDI/CV implementation
   ([RFC 0004](rfcs/0004-hardware-services.md), proposed); the control API remains outside

@@ -12,6 +12,15 @@ config BR2_PACKAGE_OSCAIRN
 
 if BR2_PACKAGE_OSCAIRN
 
+config BR2_PACKAGE_OSCAIRN_LV2
+	bool "LV2 plugin hosting"
+	depends on !BR2_STATIC_LIBS
+	select BR2_PACKAGE_LILV
+	help
+	  Load LV2 bundles alongside CLAP plugins, using Lilv. Supports
+	  audio/control ports and MIDI/time atom sequences. Plugins must
+	  be built for the target architecture and supported extensions.
+
 config BR2_PACKAGE_OSCAIRN_STANDALONE
 	bool "desktop app (JUCE, X11)"
 	depends on BR2_PACKAGE_XORG7

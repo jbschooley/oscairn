@@ -54,6 +54,12 @@ request members.
 | `graph.commit` | omitted or `{}` | new `revision` |
 | `notes.send` | `on` (boolean), `key` (0..127), optional `velocity` (0..1), optional `channel` (0..15) | `{"accepted":true}` |
 
+`graph.add` accepts a CLAP module or, in an LV2-enabled engine, a `.lv2` bundle directory.
+For LV2, `pluginId` is the plugin URI and is required when the bundle has multiple plugins.
+Numeric LV2 parameter IDs are control-port indices.
+Unsupported required features/ports fail loading with a descriptive error. See
+[LV2 hosting](../core/lv2-host/README.md) for limits.
+
 Node addresses accept a name or an unsigned 32-bit numeric ID. Parameter IDs are unsigned
 32-bit numbers. All controls use finite double values. Note channel defaults to 0;
 velocity defaults to 1 for note-on and 0 for note-off. A note-on with zero velocity becomes
