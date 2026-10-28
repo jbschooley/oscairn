@@ -13,3 +13,4 @@ endfunction()
 
 oscairn_add_plugin(oscairn_step_sequencer oscairn-step-sequencer step-sequencer/step_sequencer.cpp)
 oscairn_add_plugin(oscairn_basic_synth oscairn-basic-synth basic-synth/basic_synth.cpp)
+oscairn_add_plugin(oscairn_delay oscairn-delay delay/delay.cpp)

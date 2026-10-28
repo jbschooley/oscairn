@@ -2,9 +2,9 @@ add_executable(oscairn-render render/main.cpp)
 target_link_libraries(oscairn-render PRIVATE oscairn_engine)
 target_compile_options(oscairn-render PRIVATE -Wall -Wextra)
 
-# Sequencer playing the synth. Rendering with very different block sizes must give
+# Sequencer playing the synth, through the delay. Rendering with very different block sizes must give
 # byte-identical files: events land on their exact sample, not on block boundaries.
-set(demo_chain $<TARGET_FILE:oscairn_step_sequencer> $<TARGET_FILE:oscairn_basic_synth>)
+set(demo_chain $<TARGET_FILE:oscairn_step_sequencer> $<TARGET_FILE:oscairn_basic_synth> $<TARGET_FILE:oscairn_delay>)
 foreach(block 512 37)
     add_test(NAME render-block-${block}
         COMMAND oscairn-render ${CMAKE_CURRENT_BINARY_DIR}/demo-${block}.wav --seconds 4 --block ${block} ${demo_chain})
