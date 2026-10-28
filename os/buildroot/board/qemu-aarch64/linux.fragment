@@ -1,0 +1,11 @@
+# Added to Buildroot's QEMU arm64 kernel config: sound (a dummy card for testing, and
+# virtio sound), the ALSA sequencer for MIDI, a console on the virtio display, and a
+# low-latency kernel.
+CONFIG_SOUND=y
+CONFIG_SND=y
+CONFIG_SND_SEQUENCER=y
+CONFIG_SND_DRIVERS=y
+CONFIG_SND_DUMMY=y
+CONFIG_SND_VIRTIO=y
+CONFIG_DRM_FBDEV_EMULATION=y
+CONFIG_PREEMPT=y

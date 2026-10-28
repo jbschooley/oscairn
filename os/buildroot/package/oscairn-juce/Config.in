@@ -1,0 +1,5 @@
+config BR2_PACKAGE_OSCAIRN_JUCE
+	bool
+	help
+	  The JUCE source, for building the Oscairn app. Nothing is
+	  installed on the target.

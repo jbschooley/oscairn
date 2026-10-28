@@ -1,0 +1,41 @@
+config BR2_PACKAGE_OSCAIRN
+	bool "oscairn"
+	depends on BR2_INSTALL_LIBSTDCPP
+	depends on BR2_TOOLCHAIN_HAS_THREADS
+	depends on BR2_TOOLCHAIN_GCC_AT_LEAST_12 # C++20
+	help
+	  Oscairn, an open instrument platform: the plugin host core,
+	  the first-party CLAP plugins (installed to /usr/lib/clap) and
+	  oscairn-render.
+
+	  https://github.com/jbschooley/oscairn
+
+if BR2_PACKAGE_OSCAIRN
+
+config BR2_PACKAGE_OSCAIRN_STANDALONE
+	bool "desktop app (JUCE, X11)"
+	depends on BR2_PACKAGE_XORG7
+	depends on BR2_TOOLCHAIN_USES_GLIBC
+	select BR2_PACKAGE_OSCAIRN_JUCE
+	select BR2_PACKAGE_ALSA_LIB
+	select BR2_PACKAGE_FREETYPE
+	select BR2_PACKAGE_FONTCONFIG
+	select BR2_PACKAGE_XLIB_LIBX11
+	select BR2_PACKAGE_XLIB_LIBXEXT
+	select BR2_PACKAGE_XLIB_LIBXINERAMA
+	select BR2_PACKAGE_XLIB_LIBXRANDR
+	select BR2_PACKAGE_XLIB_LIBXCURSOR
+	select BR2_PACKAGE_XLIB_LIBXRENDER
+	help
+	  The Oscairn app with its screen and panel layouts, built
+	  with JUCE. Needs an X11 display. It is the only part of the
+	  image that uses JUCE or X11.
+
+comment "the desktop app needs X.org and a glibc toolchain"
+	depends on !BR2_PACKAGE_XORG7 || !BR2_TOOLCHAIN_USES_GLIBC
+
+endif
+
+comment "oscairn needs a toolchain w/ C++, threads, gcc >= 12"
+	depends on !BR2_INSTALL_LIBSTDCPP || !BR2_TOOLCHAIN_HAS_THREADS || \
+		!BR2_TOOLCHAIN_GCC_AT_LEAST_12

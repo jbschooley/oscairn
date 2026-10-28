@@ -1,0 +1,28 @@
+#!/bin/sh
+# The Oscairn session: an X server for the JUCE app, then the app itself, restarted if it
+# exits. Progress goes to the console; the app's output to /var/log/oscairn.log.
+#
+# This is the only place the image depends on X11. A device UI built another way replaces
+# this script and the BR2_PACKAGE_OSCAIRN_STANDALONE option.
+
+[ -f /etc/default/oscairn ] && . /etc/default/oscairn
+export DISPLAY=:0 HOME=/root
+say() { echo "oscairn-session: $*" > /dev/console; }
+
+Xorg :0 -nolisten tcp -nocursor > /var/log/oscairn-xorg.log 2>&1 &
+for i in $(seq 100); do
+	[ -S /tmp/.X11-unix/X0 ] && break
+	sleep 0.1
+done
+[ -S /tmp/.X11-unix/X0 ] && say "X server up" || say "X server did not start (see /var/log/oscairn-xorg.log)"
+
+while true; do
+	/usr/bin/Oscairn --plugins /usr/lib/clap $OSCAIRN_ARGS >> /var/log/oscairn.log 2>&1 &
+	pid=$!
+	sleep 5
+	kill -0 "$pid" 2>/dev/null && say "Oscairn running (pid $pid)"
+	wait "$pid"
+	say "Oscairn exited ($?), restarting"
+	tail -n 5 /var/log/oscairn.log > /dev/console
+	sleep 2
+done

@@ -1,0 +1,2 @@
+# Arguments for the Oscairn app, started at boot by /etc/init.d/S95oscairn.
+OSCAIRN_ARGS="--layout kick-screen --fullscreen --play"
