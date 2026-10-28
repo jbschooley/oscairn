@@ -23,8 +23,8 @@ covers the core, so Oscairn has its own:
 - AGPL-3.0-or-later, with plugin loading as the licence boundary
   ([RFC 0001](rfcs/0001-licence.md)).
 
-Still to decide: the control API's transport (local socket with OSC or JSON, or similar),
-and the UI toolkit on devices.
+The control API proposes JSON-RPC over a local socket ([RFC 0003](rfcs/0003-control-api.md)).
+The UI toolkit on devices is still to decide.
 
 ## Phase 2: headless core on the desktop (milestone met)
 
@@ -40,7 +40,8 @@ Done:
 - offline renderer, and CI on Linux and macOS with a ThreadSanitizer run.
 
 Not done: the hardware-services interface, file formats and the library index, the
-control API, CPU and deadline measurements.
+complete control API, CPU and deadline measurements. Its in-process foundation is in
+place (Phase 3 below).
 
 ## Phase 3: first sequencer and first workflow (in progress)
 
@@ -53,11 +54,15 @@ Done:
 - a desktop app (JUCE) with live audio, MIDI input, a Groovebox screen for editing the
   pattern, and panel layouts described in data: a desktop window, the KICK's panel, and a
   concept keyboard.
+- `core/control`: a JUCE-free graph/transport session and initial in-process control
+  interface for parameters, transport and UI notes, used by the desktop adapter; headless
+  audio-equivalence, clock, queue-overflow and concurrent-control tests.
 
 To do:
 
 - tracks, patterns, swing and more lanes in the sequencer;
-- the control API, with the UI moving to its own process (RFC 0003, proposed);
+- complete the control API: JSON-RPC, graph editing, coalescing/notifications, sockets,
+  and the UI moving to its own process ([RFC 0003](rfcs/0003-control-api.md));
 - LV2 hosting, right after the control API: a large catalog of open plugins already
   built for ARM Linux;
 - define hardware capabilities, timestamped input, scheduled output and engine backend

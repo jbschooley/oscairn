@@ -26,21 +26,18 @@ namespace oscairn::standalone
         sampleRate_ = device->getCurrentSampleRate();
         std::fprintf( stderr, "oscairn: audio output \"%s\", %.0f Hz, %d-sample buffer\n", device->getName().toRawUTF8(), sampleRate_,
                       device->getCurrentBufferSizeSamples() );
-        transport_.emplace( sampleRate_, tempo_ );
-        transport_->setPlaying( false );
         scratch_.resize( maxFrames );
 
-        graph_          = std::make_unique<Graph>( sampleRate_, maxFrames );
-        const auto seq   = graph_->add( pluginDir + "/oscairn-step-sequencer.clap" );
-        const auto synth = graph_->add( pluginDir + "/oscairn-basic-synth.clap" );
-        const auto delay = graph_->add( pluginDir + "/oscairn-delay.clap" );
-        nodes_           = { { "sequencer", seq }, { "synth", synth }, { "delay", delay } };
-        graph_->connectNotes( seq, synth );
-        graph_->connectNotes( graphInput, synth );
-        graph_->connectAudio( synth, delay );
-        graph_->connectAudio( delay, graphOutput );
-        graph_->mapParamTarget( seq, 0, synth, brightnessParam ); // Lock A opens the filter
-        graph_->commit();
+        session_        = std::make_unique<Session>( sampleRate_, maxFrames );
+        const auto seq   = session_->add( "sequencer", pluginDir + "/oscairn-step-sequencer.clap" );
+        const auto synth = session_->add( "synth", pluginDir + "/oscairn-basic-synth.clap" );
+        const auto delay = session_->add( "delay", pluginDir + "/oscairn-delay.clap" );
+        session_->connectNotes( seq, synth );
+        session_->connectNotes( graphInput, synth );
+        session_->connectAudio( synth, delay );
+        session_->connectAudio( delay, graphOutput );
+        session_->mapParameter( seq, 0, synth, brightnessParam ); // Lock A opens the filter
+        session_->commit();
 
         openMidiInputs();
         midiDevicesChanged_ = juce::MidiDeviceListConnection::make( [this] { midiDevicesDirty_ = true; } );
@@ -55,57 +52,57 @@ namespace oscairn::standalone
         midiInputs_.clear();
     }
 
-    NodeId Engine::nodeOf( const std::string& name ) const
-    {
-        const auto it = nodes_.find( name );
-        if( it == nodes_.end() )
-            throw std::invalid_argument( "no node " + name );
-        return it->second;
-    }
-
     bool Engine::hasParam( const std::string& node, uint32_t param ) const
     {
-        const auto it = nodes_.find( node );
-        if( it == nodes_.end() )
+        const auto& control = session_->control();
+        try
+        {
+            return control.hasParameter( control.nodeId( node ), param );
+        }
+        catch( const std::invalid_argument& )
+        {
             return false;
-        const auto& params = graph_->host( it->second ).parameters();
-        return std::any_of( params.begin(), params.end(), [&]( const kick::clap::Parameter& p ) { return p.id == param; } );
+        }
     }
 
     Engine::ParamInfo Engine::paramInfo( const std::string& node, uint32_t param ) const
     {
-        for( const auto& p : graph_->host( nodeOf( node ) ).parameters() )
-            if( p.id == param )
-                return { p.name, p.minimum, p.maximum, p.defaultValue, ( p.flags & CLAP_PARAM_IS_STEPPED ) != 0 };
-        throw std::invalid_argument( node + " has no parameter " + std::to_string( param ) );
+        const auto& control = session_->control();
+        return control.parameterInfo( control.nodeId( node ), param );
     }
 
     double Engine::param( const std::string& node, uint32_t param ) const
     {
-        return graph_->host( nodeOf( node ) ).parameterValue( param );
+        const auto& control = session_->control();
+        return control.parameter( control.nodeId( node ), param );
     }
 
     std::string Engine::paramText( const std::string& node, uint32_t param, double value ) const
     {
-        return graph_->host( nodeOf( node ) ).parameterText( param, value );
+        const auto& control = session_->control();
+        return control.parameterText( control.nodeId( node ), param, value );
     }
 
     void Engine::setParam( const std::string& node, uint32_t param, double value )
     {
-        graph_->host( nodeOf( node ) ).setParameter( param, value );
+        auto& control = session_->control();
+        if( !control.setParameter( control.nodeId( node ), param, value ) )
+            std::fprintf( stderr, "oscairn: parameter queue full for %s.%u\n", node.c_str(), param );
     }
 
     void Engine::note( bool on, int key, float velocity )
     {
-        push( on ? juce::MidiMessage::noteOn( 1, key, velocity ) : juce::MidiMessage::noteOff( 1, key ) );
+        if( !session_->control().note( on, key, velocity ) )
+            std::fprintf( stderr, "oscairn: UI note queue overflow; releasing notes\n" );
     }
 
     Engine::Status Engine::status() const
     {
         Status s;
-        s.playing = statusPlaying_;
-        s.tempo   = statusTempo_;
-        s.step    = statusStep_;
+        const auto transport = session_->control().transportState();
+        s.playing = transport.playing;
+        s.tempo   = transport.tempo;
+        s.step    = transport.playing ? (int)( (int64_t)std::floor( transport.beat / stepBeats + 1e-9 ) % steps ) : -1;
         if( auto* device = devices_.getCurrentAudioDevice() )
             s.audioDevice = device->getName().toStdString();
         for( const auto& input : midiInputs_ )
@@ -115,9 +112,7 @@ namespace oscairn::standalone
 
     void Engine::service()
     {
-        for( const auto& [name, node] : nodes_ )
-            graph_->host( node ).service();
-        graph_->collect();
+        session_->service();
         if( midiDevicesDirty_.exchange( false ) )
             openMidiInputs();
     }
@@ -174,18 +169,11 @@ namespace oscairn::standalone
         const double now = juce::Time::getMillisecondCounterHiRes() * 0.001;
         if( !started_ || numOutputs < 1 || !outputs[0] )
             return;
-        auto& transport = *transport_;
-
-        // Messages that arrived while the last block played: clock messages are placed at
-        // their time within it, notes play at the start of this one.
-        const bool follow = followClock_;
-        if( follow != following_ ) // switching resets the clock state, so only on a change
-        {
-            transport.setClockSource( follow ? Transport::ClockSource::MidiClock : Transport::ClockSource::Internal );
-            following_ = follow;
-        }
+        // Device timestamps belong to this adapter. The core receives sample times,
+        // with the existing policy: notes now, clock timestamps in the preceding block.
         std::array<kick::clap::Event, 128> notes;
-        uint32_t                           noteCount = 0;
+        std::array<Session::MidiClockEvent, 1024> clocks;
+        uint32_t noteCount = 0, clockCount = 0;
         {
             const auto scope = fifo_.read( fifo_.getNumReady() );
             auto       take  = [&]( int index ) {
@@ -193,11 +181,11 @@ namespace oscairn::standalone
                 const uint8_t status = in.bytes[0];
                 if( status >= 0xF0 )
                 {
-                    if( !follow || blockSample_ == lastBlockStart_ )
+                    if( blockSample_ == lastBlockStart_ )
                         return;
                     const auto offset = (int64_t)std::llround( ( in.seconds - blockSeconds_ ) * sampleRate_ );
                     const auto time   = std::clamp<int64_t>( lastBlockStart_ + offset, lastBlockStart_, blockSample_ - 1 );
-                    transport.midiClock( status, time, (uint16_t)( in.bytes[1] | ( in.bytes[2] << 7 ) ) );
+                    clocks[clockCount++] = { status, time, (uint16_t)( in.bytes[1] | ( in.bytes[2] << 7 ) ) };
                     return;
                 }
                 // Notes and aftertouch (as CLAP pressure).
@@ -209,27 +197,14 @@ namespace oscairn::standalone
             for( int i = 0; i < scope.blockSize2; ++i )
                 take( scope.startIndex2 + i );
         }
-        if( !follow )
-        {
-            transport.setTempo( tempo_ );
-            transport.setPlaying( playing_ );
-        }
-
         float* right = numOutputs >= 2 && outputs[1] ? outputs[1] : scratch_.data();
         for( int done = 0; done < numSamples; )
         {
             const auto frames = (uint32_t)std::min<int>( (int)maxFrames, numSamples - done );
-            const auto t      = transport.current();
-            if( done == 0 )
-            {
-                statusPlaying_ = ( t.flags & CLAP_TRANSPORT_IS_PLAYING ) != 0;
-                statusTempo_   = t.tempo;
-                const auto beat = (double)t.song_pos_beats / (double)CLAP_BEATTIME_FACTOR;
-                statusStep_     = statusPlaying_ ? (int)( (int64_t)std::floor( beat / stepBeats + 1e-9 ) % steps ) : -1;
-            }
             float* out[] = { outputs[0] + done, right == scratch_.data() ? scratch_.data() : right + done };
-            graph_->process( out, frames, &t, done == 0 ? notes.data() : nullptr, done == 0 ? noteCount : 0 );
-            transport.advance( frames );
+            session_->process( out, frames,
+                               { notes.data(), done == 0 ? noteCount : 0 },
+                               { clocks.data(), done == 0 ? clockCount : 0 } );
             done += (int)frames;
         }
         blockSeconds_   = now;

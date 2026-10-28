@@ -108,6 +108,11 @@ What is in place:
   connections merged; processed in dependency order each block; edited while audio runs,
   without locks) and the transport (tempo, time signature, position; its own tempo or an
   external MIDI clock). `oscairn-render` builds a straight chain on the graph.
+- **Control foundation** (`core/control`): a JUCE-free session owns the graph, transport
+  and UI note queue. The desktop adapter uses its in-process `Control` interface for
+  parameter metadata/values, transport and UI notes; physical MIDI enters the audio path
+  directly. JSON-RPC, sockets and the separate engine process are still to come
+  ([RFC 0003](docs/rfcs/0003-control-api.md)).
 - **oscairn.param-target** ([RFC 0002](docs/rfcs/0002-param-target.md)): a CLAP
   extension for parameter changes between plugins, such as a sequencer's per-step locks,
   routed by the graph to the target's parameter in the same block.
@@ -124,6 +129,9 @@ What is in place:
   and the delay glides without clicking; MIDI notes and polyphonic and channel aftertouch
   converted, and aftertouch reaching the synth through the graph; host behaviour for live
   use (bad events, queued-event overflow, mono output).
+  The control/session test compares its rendered audio with the existing graph path,
+  including tempo and pressure changes, and checks MIDI clock, input validation, UI-note
+  overflow recovery and concurrent control/rendering with an allocation guard.
 
 ## Design in brief
 

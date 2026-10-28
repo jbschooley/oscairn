@@ -9,7 +9,8 @@ design decisions are recorded as [RFCs](rfcs/README.md).
 | Built | Not built yet |
 | --- | --- |
 | Graph of CLAP plugins: audio and note connections, dependency order, lock-free live editing | LV2 and VST3 hosting |
-| Sample-accurate event routing; renders identical at different block sizes (tested in CI) | Control API; the UI as its own process |
+| Sample-accurate event routing; renders identical at different block sizes (tested in CI) | JSON-RPC/socket control API; the UI as its own process |
+| JUCE-free session and initial in-process Control interface, used by the desktop adapter | Control notifications, coalescing and complete graph-edit API |
 | Transport: internal tempo or external MIDI clock | Ableton Link, DAW and CV clock sync |
 | Parameter events between plugins (`oscairn.param-target`, [RFC 0002](rfcs/0002-param-target.md)) | Sounds, Performances, Setlists, Projects; file formats and library |
 | Step sequencer, basic synth and delay plugins | Scenes, persistent engines, crash recovery |

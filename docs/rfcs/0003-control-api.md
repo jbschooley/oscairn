@@ -1,6 +1,24 @@
 # RFC 0003: Control API
 
-**Status:** proposed
+**Status:** proposed; in-process session/control foundation implemented
+
+## Current implementation
+
+`core/control` provides `Session` and the initial C++ `Control` interface. The desktop
+adapter delegates parameter metadata/values, transport commands/status and UI notes to it.
+The core owns the graph and transport; JUCE device access and wall-clock-to-sample
+conversion remain in the host. Tests compare audio with the existing graph path, including
+pressure and tempo changes, and exercise clock following, validation, overflow recovery
+and concurrent control/rendering.
+
+This is the first part of plan item 1. JSON encoding/schema, RPC error mapping, gestures,
+parameter coalescing, subscriptions, complete graph editing, sockets and process separation
+are not implemented. Graph construction is currently a `Session` setup API. Parameter
+updates go directly to the plugin queue and report refusal; transport values are atomic
+telemetry. Tests currently drive the typed interface, not JSON. The desktop retains its
+existing next-block timing policy for physical notes and pressure.
+
+The remainder of this RFC specifies the intended complete API, not existing behaviour.
 
 ## Problem
 
@@ -185,7 +203,8 @@ load (-32004). Messages say what was wrong in words.
   DAW gives the plugin a window to draw into, and the audio callback must not cross
   processes every block, so both stay inside the plugin.
 
-The engine's audio and MIDI I/O goes through the hardware-services interface (its own RFC).
+The engine's audio and MIDI I/O goes through the hardware-services interface
+([RFC 0004](0004-hardware-services.md)).
 The first version of `oscairn-engine` uses JUCE's audio and MIDI device classes without
 its GUI modules, as the app does today; a direct ALSA backend can replace them on devices.
 JUCE stays out of `core/`.
