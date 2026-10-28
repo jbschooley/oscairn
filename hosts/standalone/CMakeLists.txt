@@ -12,7 +12,6 @@ juce_add_gui_app(oscairn_standalone
     COMPANY_NAME "Oscairn"
     BUNDLE_ID org.oscairn.standalone
     MICROPHONE_PERMISSION_ENABLED FALSE)
-set_target_properties(oscairn_standalone PROPERTIES OUTPUT_NAME oscairn-standalone)
 
 juce_add_binary_data(oscairn_standalone_layouts SOURCES
     layouts/desktop.json

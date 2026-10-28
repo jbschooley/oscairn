@@ -40,7 +40,7 @@ The desktop app (downloads JUCE 9.0.4 the first time):
 ```bash
 cmake -S . -B build-app -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DOSCAIRN_STANDALONE=ON
 ninja -C build-app oscairn_standalone
-# macOS: build-app/hosts/standalone/oscairn_standalone_artefacts/RelWithDebInfo/oscairn-standalone.app
+# macOS: build-app/hosts/standalone/oscairn_standalone_artefacts/RelWithDebInfo/Oscairn.app
 #   --layout desktop|kick|keys49|file.json   (or the View menu)
 #   --snapshot out.png [--play SECONDS]      render the panel to a PNG and quit
 ```
