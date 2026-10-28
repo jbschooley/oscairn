@@ -42,10 +42,12 @@ namespace oscairn::standalone
         openMidiInputs();
         midiDevicesChanged_ = juce::MidiDeviceListConnection::make( [this] { midiDevicesDirty_ = true; } );
         devices_.addAudioCallback( this );
+        startTimer( 5 ); // control ticks are independent of the panel's repaint rate
     }
 
     Engine::~Engine()
     {
+        stopTimer();
         devices_.removeAudioCallback( this ); // waits for the callback to finish
         for( auto& input : midiInputs_ )
             input->stop();
@@ -94,6 +96,13 @@ namespace oscairn::standalone
     {
         if( !session_->control().note( on, key, velocity ) )
             std::fprintf( stderr, "oscairn: UI note queue overflow; releasing notes\n" );
+    }
+
+    void Engine::paramGesture( const std::string& node, uint32_t param, bool begin )
+    {
+        auto& control = session_->control();
+        if( !control.parameterGesture(control.nodeId(node),param,begin) )
+            std::fprintf(stderr,"oscairn: gesture queue full for %s.%u\n",node.c_str(),param);
     }
 
     Engine::Status Engine::status() const

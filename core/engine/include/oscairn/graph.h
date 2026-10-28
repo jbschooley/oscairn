@@ -73,6 +73,23 @@ namespace oscairn
         kick::clap::Host&       host( NodeId node );
         bool                    contains( NodeId node ) const { return nodes_.count( node ) != 0; }
 
+        struct NodeInfo
+        {
+            NodeId id;
+            kick::clap::Descriptor plugin;
+            std::vector<kick::clap::Port> inputs, outputs;
+            uint32_t noteInputs, noteOutputs;
+        };
+        struct Mapping { NodeId source; uint32_t lane; NodeId target; uint32_t param; };
+        struct Description
+        {
+            std::vector<NodeInfo> nodes;
+            std::vector<std::pair<NodeId,NodeId>> audio, notes;
+            std::vector<Mapping> mappings;
+        };
+        /// Control-thread copy of staged topology; audio changes only at commit().
+        Description describe() const;
+
         /// Compiles the current nodes and connections and hands them to the audio thread.
         /// Throws std::runtime_error if the connections form a cycle (nothing changes then).
         void commit();

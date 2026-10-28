@@ -1,6 +1,6 @@
 # RFC 0003: Control API
 
-**Status:** proposed; in-process session/control and initial JSON-RPC adapter implemented
+**Status:** proposed; session/control, JSON-RPC graph/parameter methods and subscriptions implemented
 
 ## Current implementation
 
@@ -12,14 +12,15 @@ pressure and tempo changes, and exercise clock following, validation, overflow r
 and concurrent control/rendering.
 
 `JsonRpc` now exposes parameter metadata/values/text, transport and UI notes through JSON,
-with batches, notifications, validation and error mapping. The implemented subset has a
-[wire contract and JSON Schema](../control-protocol.md). Tests drive JSON and typed controls
+with graph edits, coalescing, ordered gestures, subscriptions, batches, validation and errors.
+The implemented subset has a [wire contract and JSON Schema](../control-protocol.md). Tests drive JSON and typed controls
 and compare rendered samples; separate protocol tests use an independent JSON decoder.
 
-This is part of plan item 1. Gestures, parameter coalescing, subscriptions, complete graph
-editing, sockets and process separation are not implemented. Graph construction is currently
-a `Session` setup API. Parameter updates go directly to the plugin queue and report refusal;
-transport values are atomic telemetry. The desktop still uses typed `Control` and retains its
+Plan item 1 now includes staged graph operations and per-client notification cursors.
+Parameter values coalesce per service tick and retry under plugin-queue pressure. Gesture
+boundaries remain ordered. Sockets, host/device status and process separation are not yet
+implemented; graph edits share a staging area and gestures have no per-client ownership.
+Transport values remain atomic telemetry. The desktop still uses typed `Control` and retains its
 existing next-block timing policy for physical notes and pressure.
 
 The remainder of this RFC specifies the intended complete API, not existing behaviour.

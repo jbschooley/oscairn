@@ -9,17 +9,17 @@ The caller supplies buffers, block-relative CLAP events and, when following MIDI
 absolute sample timestamps for clock messages from the preceding interval. It owns the
 device, timestamp conversion, block splitting and mono-output adaptation.
 
-`Control` exposes node-name lookup, parameter metadata/values/text, transport commands and
-status, and UI notes. The desktop `Engine` delegates these operations to `Session::control()`.
+`Control` exposes node-name lookup, parameter metadata/values/text, graph editing, gestures,
+change history, transport commands/status, and UI notes. The desktop `Engine` delegates to
+`Session::control()`.
 Physical MIDI bypasses the control interface. Node IDs and parameter IDs are numeric;
-`nodeId(name)` resolves the optional UI-facing name (names are required by this initial
-graph-construction API).
+`nodeId(name)` resolves an optional unique UI-facing name. Unnamed nodes use numeric IDs.
 
 ## Threads and failures
 
 - Construct, configure, control, service and destroy on one main/control thread. Stop audio
-  processing before destroying the session. Graph setup currently has add/connect/map/commit;
-  the full transactional edit API is pending.
+  processing before destroying the session. Graph operations stage
+  add/remove/connect/disconnect/map/unmap edits; commit publishes the plan. Failed commits leave audio unchanged and retain staging for correction.
 - One audio thread calls `process`. It does not read the control thread's node map or call
   a wall clock. Scratch and event storage are allocated before rendering.
 - UI notes use a single-producer/single-consumer queue. Each block drains a bounded
@@ -28,8 +28,9 @@ graph-construction API).
   without an intermediate MIDI 7-bit conversion.
 - Invalid control addresses/values throw `std::invalid_argument`. Tempo accepts 1..1000 BPM.
   Parameter values follow the plugin host's range clamping and stepped-value conversion.
-  A false `setParameter` result means the plugin queue refused the command. Coalescing and
-  guaranteed final-value retry are not implemented yet.
+  A false `setParameter` result means the bounded pending store refused the command.
+  Accepted consecutive values coalesce until `service()`; refused plugin enqueues are
+  retained and retried. Gesture boundaries preserve ordering and their final values.
 - UI note overflow returns false and increments `droppedNotes()`. On the next block the
   queued burst is discarded and a wildcard note-off is sent to graph-input destinations.
   This emergency release can affect other sources sharing those destinations. Full note
@@ -51,11 +52,16 @@ control/rendering. Session render calls use the host tests' C++ allocation guard
 ThreadSanitizer job includes this test.
 
 `oscairn_control_json` adds `JsonRpc`, a transport-independent JSON-RPC adapter for the
-existing controls, with batch/notification handling and queue-refusal errors. Its
+controls and graph edits, with batches, subscriptions and explicit backpressure errors. Its
 [wire contract and schema](../../docs/control-protocol.md) describe the implemented subset.
 Two more tests check JSON-driven audio against typed controls and validate protocol behaviour
 with Python's independent decoder. JSON is never parsed on the audio thread.
 
-Next: complete graph operations, coalescing/notifications and gesture semantics, then
-sockets and the engine helper process.
+`control-flow` checks coalescing under plugin-queue pressure, final-value/gesture ordering,
+held-note continuity, independent subscribers, history-gap reporting and staged graph edits.
+The desktop services the session on its own 5 ms timer and sends slider gesture boundaries.
+
+Next: sockets and the engine helper process, with host/device status, followed by desktop
+process separation. Graph staging is shared across clients, and gestures have no per-client
+ownership/undo implementation yet.
 No network listener or separate engine process exists in this slice.

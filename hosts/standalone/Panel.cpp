@@ -110,6 +110,8 @@ namespace oscairn::standalone
                 slider_.setDoubleClickReturnValue( true, info.defaultValue );
                 slider_.textFromValueFunction = [this]( double v ) { return juce::String( engine_.paramText( node_, param_, v ) ); };
                 slider_.onValueChange         = [this] { engine_.setParam( node_, param_, slider_.getValue() ); };
+                slider_.onDragStart           = [this] { engine_.paramGesture( node_, param_, true ); };
+                slider_.onDragEnd             = [this] { engine_.paramGesture( node_, param_, false ); };
                 if( label_.empty() )
                     label_ = info.name;
                 refresh();
@@ -396,7 +398,7 @@ namespace oscairn::standalone
         std::vector<std::pair<juce::TextButton*, std::string>> toggles_;
     };
 
-    Panel::Panel( Engine& engine, const Layout& layout ) : engine_( engine ), layout_( layout )
+    Panel::Panel( Engine& engine, const Layout& layout ) : layout_( layout )
     {
         board_ = std::make_unique<Board>( engine, layout_ );
         addAndMakeVisible( *board_ );
@@ -430,7 +432,6 @@ namespace oscairn::standalone
 
     void Panel::timerCallback()
     {
-        engine_.service();
         board_->refresh();
     }
 }

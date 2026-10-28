@@ -5,6 +5,7 @@
 #include "oscairn/transport.h"
 
 #include <string>
+#include <map>
 #include <vector>
 
 namespace oscairn
@@ -31,6 +32,38 @@ namespace oscairn
             double tempo = 120.0;
             double beat = 0.0;
         };
+        struct GraphState
+        {
+            Graph::Description topology;
+            std::map<NodeId,std::string> names;
+            uint64_t revision = 0;
+            bool staged = false;
+        };
+        enum class ChangeKind { Value, GestureBegin, GestureEnd, Graph, Resync };
+        struct Change
+        {
+            uint64_t sequence = 0;
+            ChangeKind kind = ChangeKind::Value;
+            NodeId node = 0;
+            uint32_t param = 0;
+            double value = 0;
+            bool plugin = false;
+        };
+        struct Changes { uint64_t latest = 0; bool lost = false; std::vector<Change> events; };
+
+        virtual GraphState graphState() const = 0;
+        virtual NodeId add( const std::string& name, const std::string& path, const std::string& pluginId = {} ) = 0;
+        virtual void remove( NodeId node ) = 0;
+        virtual void connectAudio( NodeId from, NodeId to ) = 0;
+        virtual void connectNotes( NodeId from, NodeId to ) = 0;
+        virtual void disconnectAudio( NodeId from, NodeId to ) = 0;
+        virtual void disconnectNotes( NodeId from, NodeId to ) = 0;
+        virtual void mapParameter( NodeId from, uint32_t lane, NodeId to, uint32_t param ) = 0;
+        virtual void unmapParameter( NodeId from, uint32_t lane ) = 0;
+        virtual void commit() = 0;
+        /// Bounded history, independent cursor for every consumer. lost requires resync.
+        virtual uint64_t changeSequence() const = 0;
+        virtual Changes changesAfter( uint64_t sequence ) const = 0;
 
         virtual NodeId nodeId( const std::string& name ) const = 0;
         virtual bool hasNode( NodeId node ) const = 0;
@@ -39,9 +72,10 @@ namespace oscairn
         virtual ParamInfo parameterInfo( NodeId node, uint32_t param ) const = 0;
         virtual double parameter( NodeId node, uint32_t param ) const = 0;
         virtual std::string parameterText( NodeId node, uint32_t param, double value ) const = 0;
-        /// Invalid addresses/values throw std::invalid_argument. False means the bounded
-        /// plugin queue refused the command; callers must not report that it was applied.
+        /// Accepted values coalesce until service(), then retry if the plugin is busy.
+        /// False means the bounded pending-command store refused this new command.
         virtual bool setParameter( NodeId node, uint32_t param, double value ) = 0;
+        virtual bool parameterGesture( NodeId node, uint32_t param, bool begin ) = 0;
 
         virtual void setPlaying( bool playing ) = 0;
         virtual void setTempo( double bpm ) = 0;

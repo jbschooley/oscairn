@@ -197,6 +197,19 @@ namespace oscairn
         return *nodes_.at( node ).host;
     }
 
+    Graph::Description Graph::describe() const
+    {
+        Description result;
+        for( const auto& [id,node] : nodes_ )
+            result.nodes.push_back({id,node.host->descriptor(),node.host->inputPorts(),node.host->outputPorts(),
+                                    node.host->noteInputPorts(),node.host->noteOutputPorts()});
+        result.audio = audioEdges_;
+        result.notes = noteEdges_;
+        for( const auto& [from,to] : paramTargets_ )
+            result.mappings.push_back({from.first,from.second,to.first,to.second});
+        return result;
+    }
+
     Graph::Plan* Graph::compile() const
     {
         // Dependency order (Kahn's algorithm), lowest node ID first among ready nodes so

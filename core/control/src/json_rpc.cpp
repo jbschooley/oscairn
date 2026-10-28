@@ -120,7 +120,7 @@ namespace oscairn
             return "{\"jsonrpc\":\"2.0\",\"id\":" + std::string(id) + ",\"error\":{\"code\":" +
                 std::to_string(f.code) + ",\"message\":" + quote(f.message) + ",\"data\":" + f.data + "}}";
         }
-        NodeId node( Control& c, Value v )
+        NodeId node( Control& c, Value v, bool endpoint = false )
         {
             NodeId id;
             if( v && v->type == json_type_string )
@@ -129,6 +129,7 @@ namespace oscairn
                 catch( const std::invalid_argument& ) { throw Failure{ -32001, "Unknown node" }; }
             }
             else id = integer(v);
+            if( endpoint && (id == graphInput || id == graphOutput) ) return id;
             if( !c.hasNode(id) ) throw Failure{ -32001, "Unknown node" };
             return id;
         }
@@ -145,12 +146,111 @@ namespace oscairn
                 ",\"beat\":" + encode(s.beat) + ",\"clockSource\":" +
                 quote(c.clockSource() == Transport::ClockSource::Internal ? "internal" : "midi") + '}';
         }
-        std::string invoke( Control& c, std::string_view method, Value p )
+        std::string invoke( Control& c, JsonRpc& client, std::string_view method, Value p )
         {
             if( method == "session.hello" )
             {
                 fields(p, {});
-                return R"({"protocolVersion":1,"server":"oscairn","capabilities":["params.list","params.get","params.set","params.text","transport.get","transport.set","notes.send"],"limits":{"messageBytes":65536,"depth":32,"batch":64,"parameterChanges":128}})";
+                return R"({"protocolVersion":1,"server":"oscairn","capabilities":["params.list","params.get","params.set","params.text","params.gesture","graph.get","graph.add","graph.remove","graph.connect","graph.disconnect","graph.map","graph.unmap","graph.commit","subscribe","unsubscribe","transport.get","transport.set","notes.send"],"limits":{"messageBytes":65536,"depth":32,"batch":64,"parameterChanges":128}})";
+            }
+            if( method == "subscribe" || method == "unsubscribe" )
+            {
+                fields(p,{"topics","allChanges"});
+                const auto topics = array(member(p,"topics"),3);
+                const bool all = member(p,"allChanges") ? boolean(member(p,"allChanges")) : false;
+                for( auto topic : topics )
+                    if( string(topic) != "params.changed" && string(topic) != "transport" && string(topic) != "graph.changed" )
+                        invalid("Unknown subscription topic");
+                for( auto topic : topics ) client.subscription(string(topic),method == "subscribe",all);
+                return R"({"accepted":true})";
+            }
+            if( method == "graph.get" )
+            {
+                fields(p,{});
+                const auto graph = c.graphState();
+                std::vector<std::string> nodes,connections,mappings;
+                auto ports = [](const auto& source) {
+                    std::vector<std::string> result;
+                    for( const auto& port : source )
+                        result.push_back("{\"id\":" + std::to_string(port.id) + ",\"name\":" + quote(port.name) +
+                            ",\"channels\":" + std::to_string(port.channels) + ",\"flags\":" + std::to_string(port.flags) + '}');
+                    return join(result);
+                };
+                for( const auto& n : graph.topology.nodes )
+                    nodes.push_back("{\"id\":" + std::to_string(n.id) + ",\"name\":" + quote(graph.names.at(n.id)) +
+                        ",\"plugin\":{\"id\":" + quote(n.plugin.id) + ",\"path\":" + quote(n.plugin.path) + ",\"name\":" + quote(n.plugin.name) +
+                        "},\"audioInputs\":" + ports(n.inputs) + ",\"audioOutputs\":" + ports(n.outputs) +
+                        ",\"noteInputs\":" + std::to_string(n.noteInputs) + ",\"noteOutputs\":" + std::to_string(n.noteOutputs) + '}');
+                auto edges = [&](const auto& list, const char* kind) {
+                    for( const auto& [from,to] : list ) connections.push_back("{\"kind\":" + quote(kind) +
+                        ",\"from\":" + std::to_string(from) + ",\"to\":" + std::to_string(to) + '}');
+                };
+                edges(graph.topology.audio,"audio"); edges(graph.topology.notes,"notes");
+                for( const auto& m : graph.topology.mappings )
+                    mappings.push_back("{\"from\":" + std::to_string(m.source) + ",\"lane\":" + std::to_string(m.lane) +
+                        ",\"to\":" + std::to_string(m.target) + ",\"param\":" + std::to_string(m.param) + '}');
+                return "{\"revision\":" + std::to_string(graph.revision) + ",\"staged\":" + (graph.staged ? "true" : "false") +
+                    ",\"input\":" + std::to_string(graphInput) + ",\"output\":" + std::to_string(graphOutput) +
+                    ",\"nodes\":" + join(nodes) + ",\"connections\":" + join(connections) + ",\"mappings\":" + join(mappings) + '}';
+            }
+            if( method == "graph.add" )
+            {
+                fields(p,{"name","path","pluginId"});
+                const auto name = member(p,"name") ? std::string(string(member(p,"name"))) : "";
+                const auto path = std::string(string(member(p,"path")));
+                const auto plugin = member(p,"pluginId") ? std::string(string(member(p,"pluginId"))) : "";
+                if( path.empty() || path.find('\0') != std::string::npos ) invalid("Invalid plugin path");
+                try { return "{\"node\":" + std::to_string(c.add(name,path,plugin)) + '}'; }
+                catch( const std::runtime_error& e ) { throw Failure{-32004,e.what()}; }
+            }
+            if( method == "graph.remove" )
+            {
+                fields(p,{"node"}); c.remove(node(c,member(p,"node")));
+                return R"({"accepted":true})";
+            }
+            if( method == "graph.connect" || method == "graph.disconnect" )
+            {
+                fields(p,{"kind","from","to"});
+                const auto kind = string(member(p,"kind"));
+                if( kind != "audio" && kind != "notes" ) invalid("Unknown connection kind");
+                const auto from = node(c,member(p,"from"),true), to = node(c,member(p,"to"),true);
+                try
+                {
+                    if( method == "graph.connect" )
+                    {
+                        if( kind == "audio" ) c.connectAudio(from,to); else c.connectNotes(from,to);
+                    }
+                    else { if( kind == "audio" ) c.disconnectAudio(from,to); else c.disconnectNotes(from,to); }
+                }
+                catch( const std::invalid_argument& e ) { throw Failure{-32003,e.what()}; }
+                return R"({"accepted":true})";
+            }
+            if( method == "graph.map" || method == "graph.unmap" )
+            {
+                const bool map = method == "graph.map";
+                if( map ) fields(p,{"from","lane","to","param"}); else fields(p,{"from","lane"});
+                const auto from = node(c,member(p,"from")), lane = integer(member(p,"lane"));
+                const auto to = map ? node(c,member(p,"to")) : 0;
+                const auto param = map ? parameter(c,to,member(p,"param")) : 0;
+                try { if( map ) c.mapParameter(from,lane,to,param); else c.unmapParameter(from,lane); }
+                catch( const std::invalid_argument& e ) { throw Failure{-32003,e.what()}; }
+                return R"({"accepted":true})";
+            }
+            if( method == "graph.commit" )
+            {
+                fields(p,{});
+                try { c.commit(); }
+                catch( const std::runtime_error& e ) { throw Failure{-32003,e.what()}; }
+                return "{\"revision\":" + std::to_string(c.graphState().revision) + '}';
+            }
+            if( method == "params.gesture" )
+            {
+                fields(p,{"node","param","begin"});
+                const auto n = node(c,member(p,"node"));
+                const auto id = parameter(c,n,member(p,"param"));
+                if( !c.parameterGesture(n,id,boolean(member(p,"begin"))) )
+                    throw Failure{-32005,"Pending parameter command store full"};
+                return R"({"accepted":true})";
             }
             if( method == "params.list" )
             {
@@ -187,7 +287,7 @@ namespace oscairn
                 for( const auto& change : changes )
                 {
                     if( set && !c.setParameter(change.node, change.param, change.value) )
-                        throw Failure{ -32005, "Parameter queue full", "{\"accepted\":" + std::to_string(values.size()) +
+                        throw Failure{ -32005, "Pending parameter command store full", "{\"accepted\":" + std::to_string(values.size()) +
                             ",\"index\":" + std::to_string(values.size()) + '}' };
                     values.push_back("{\"node\":" + std::to_string(change.node) + ",\"param\":" + std::to_string(change.param) +
                         ",\"value\":" + encode(c.parameter(change.node,change.param)) + '}');
@@ -232,7 +332,7 @@ namespace oscairn
             throw Failure{ -32601, "Method not found" };
         }
 
-        std::optional<std::string> request( Control& c, Value v )
+        std::optional<std::string> request( Control& c, JsonRpc& client, Value v )
         {
             if( v->type != json_type_object ) return error("null", {-32600,"Invalid Request"});
             std::set<std::string_view> seen;
@@ -250,7 +350,7 @@ namespace oscairn
             json_value_s emptyParams{&emptyObject,json_type_object};
             try
             {
-                const auto result = invoke(c,string(method),params ? params : &emptyParams);
+                const auto result = invoke(c,client,string(method),params ? params : &emptyParams);
                 if( id ) return "{\"jsonrpc\":\"2.0\",\"id\":" + token + ",\"result\":" + result + '}';
             }
             catch( const Failure& f ) { if( id ) return error(token,f); }
@@ -303,6 +403,83 @@ namespace oscairn
         }
     }
 
+    void JsonRpc::subscription( std::string_view topic, bool enabled, bool allChanges )
+    {
+        if( topic == "params.changed" )
+        {
+            if( enabled && !params_ ) { paramsCursor_ = control_.changeSequence(); lastParams_.reset(); }
+            params_ = enabled; allChanges_ = allChanges;
+        }
+        else if( topic == "transport" )
+        {
+            if( enabled && !transport_ ) { lastTransport_.reset(); lastTransportValue_.clear(); }
+            transport_ = enabled;
+        }
+        else if( topic == "graph.changed" )
+        {
+            if( enabled && !graph_ ) graphCursor_ = control_.changeSequence();
+            graph_ = enabled;
+        }
+        else throw std::invalid_argument("Unknown subscription topic");
+    }
+
+    std::vector<std::string> JsonRpc::notifications( uint64_t now )
+    {
+        std::vector<std::string> result;
+        auto send = [&](std::string_view method, const std::string& params) {
+            result.push_back("{\"jsonrpc\":\"2.0\",\"method\":" + quote(method) + ",\"params\":" + params + '}');
+        };
+        auto due = [&](const auto& last) { return !last || now < *last || now - *last >= 16666667; };
+        if( params_ && (allChanges_ || due(lastParams_)) )
+        {
+            const auto changes = control_.changesAfter(paramsCursor_);
+            std::vector<std::string> values;
+            std::map<std::pair<NodeId,uint32_t>,Control::Change> latest;
+            auto append = [&](const Control::Change& change) {
+                const auto kind = change.kind == Control::ChangeKind::Value ? "value" :
+                    change.kind == Control::ChangeKind::GestureBegin ? "begin" : "end";
+                values.push_back("{\"sequence\":" + std::to_string(change.sequence) + ",\"node\":" + std::to_string(change.node) +
+                    ",\"param\":" + std::to_string(change.param) + ",\"kind\":" + quote(kind) +
+                    ",\"source\":" + quote(change.plugin ? "plugin" : "control") +
+                    (change.kind == Control::ChangeKind::Value ? ",\"value\":" + encode(change.value) : "") + '}');
+            };
+            auto flush = [&] {
+                std::vector<Control::Change> ordered;
+                for( const auto& [address,change] : latest ) ordered.push_back(change);
+                std::sort(ordered.begin(),ordered.end(),[](const auto& a,const auto& b){return a.sequence < b.sequence;});
+                for( const auto& change : ordered ) append(change);
+                latest.clear();
+            };
+            bool lost = changes.lost;
+            for( const auto& change : changes.events )
+            {
+                if( change.kind == Control::ChangeKind::Resync ) { lost = true; continue; }
+                if( change.kind == Control::ChangeKind::Graph ) continue;
+                if( !allChanges_ && change.kind == Control::ChangeKind::Value ) latest[{change.node,change.param}] = change;
+                else { flush(); append(change); }
+            }
+            flush();
+            if( lost ) send("session.resync",R"({"topic":"params.changed"})");
+            if( !values.empty() ) send("params.changed","{\"changes\":" + join(values) + '}');
+            paramsCursor_ = changes.latest;
+            lastParams_ = now;
+        }
+        if( transport_ && due(lastTransport_) )
+        {
+            auto state = transport(control_);
+            if( state != lastTransportValue_ ) { send("transport",state); lastTransportValue_ = std::move(state); }
+            lastTransport_ = now;
+        }
+        if( graph_ )
+        {
+            const auto changes = control_.changesAfter(graphCursor_);
+            if( changes.lost || std::any_of(changes.events.begin(),changes.events.end(),[](const auto& c){return c.kind == Control::ChangeKind::Graph;}) )
+                send("graph.changed","{\"revision\":" + std::to_string(control_.graphState().revision) + '}');
+            graphCursor_ = changes.latest;
+        }
+        return result;
+    }
+
     std::optional<std::string> JsonRpc::dispatch( std::string_view message )
     {
         try
@@ -311,13 +488,13 @@ namespace oscairn
             preflight(message);
             std::unique_ptr<json_value_s, decltype(&std::free)> root(json_parse(message.data(),message.size()), &std::free);
             if( !root ) throw Failure{-32700,"Parse error"};
-            if( root->type != json_type_array ) return request(control_,root.get());
+            if( root->type != json_type_array ) return request(control_,*this,root.get());
             const auto* batch = static_cast<const json_array_s*>(root->payload);
             if( batch->length == 0 ) throw Failure{-32600,"Empty batch"};
             if( batch->length > maxBatch ) throw Failure{-32006,"Batch limit exceeded"};
             std::vector<std::string> responses;
             for( auto* e = batch->start; e; e = e->next )
-                if( auto result = request(control_,e->value) ) responses.push_back(std::move(*result));
+                if( auto result = request(control_,*this,e->value) ) responses.push_back(std::move(*result));
             if( responses.empty() ) return std::nullopt;
             return join(responses);
         }

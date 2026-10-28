@@ -160,6 +160,7 @@ namespace
             if( n == 400 ) { control.setPlaying( false ); transport.setPlaying( false ); }
             referenceEvents.insert( referenceEvents.end(), events.begin(), events.end() );
             const auto t = transport.current();
+            session.service();
             check( render( session, actual, frames, events ), "session renders demo graph" );
             check( reference.process( expected.out, frames, &t, referenceEvents.data(), (uint32_t)referenceEvents.size() ), "reference renders" );
             identical &= std::equal( actual.left.begin(), actual.left.begin() + frames, expected.left.begin() )

@@ -20,7 +20,7 @@ namespace oscairn::standalone
     /// The UI talks to the engine only through the public methods below: nodes by name,
     /// parameters by id, plain values. Nothing here hands out the graph or a plugin. When
     /// the UI moves to its own process, this adapter will connect to the remote Control.
-    class Engine : private juce::AudioIODeviceCallback, private juce::MidiInputCallback
+    class Engine : private juce::AudioIODeviceCallback, private juce::MidiInputCallback, private juce::Timer
     {
     public:
         /// Loads the plugins from `pluginDir` and opens the default audio output.
@@ -37,6 +37,7 @@ namespace oscairn::standalone
         double      param( const std::string& node, uint32_t param ) const;
         std::string paramText( const std::string& node, uint32_t param, double value ) const;
         void        setParam( const std::string& node, uint32_t param, double value );
+        void        paramGesture( const std::string& node, uint32_t param, bool begin );
 
         void setPlaying( bool playing ) { session_->control().setPlaying( playing ); }
         void setTempo( double bpm ) { session_->control().setTempo( bpm ); }
@@ -74,6 +75,7 @@ namespace oscairn::standalone
 
         void push( const juce::MidiMessage& message );
         void openMidiInputs();
+        void timerCallback() override { service(); }
 
         juce::AudioDeviceManager devices_;
         double                   sampleRate_ = 48000.0;

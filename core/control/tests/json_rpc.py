@@ -35,7 +35,7 @@ def value(param):
 try:
     hello = rpc('session.hello')['result']
     assert hello['protocolVersion'] == 1 and 'notes.send' in hello['capabilities']
-    assert 'graph.add' not in hello['capabilities'] and 'subscribe' not in hello['capabilities']
+    assert 'graph.add' in hello['capabilities'] and 'subscribe' in hello['capabilities']
     for ident in [None, 0, -1, 2**63 + 7, 'hello\x00\n"\\', 'é🎹', 1.5]:
         assert rpc('transport.get', ident=ident)['id'] == ident
     # The numeric ID token is echoed without rounding, even beyond machine integers.
@@ -52,7 +52,7 @@ try:
                 '{"jsonrpc":"2.0","method":"session.hello","params":null}',
                 '{"jsonrpc":"2.0","jsonrpc":"2.0","method":"session.hello"}']:
         error(raw(bad), -32600, None)
-    error(rpc('graph.add'), -32601)
+    error(rpc('graph.unknown'), -32601)
     error(rpc('params.list', []), -32602)
     error(rpc('params.list', {'node': 100}), -32001)
     error(rpc('params.list', {'node': 'missing'}), -32001)
@@ -104,25 +104,50 @@ try:
     error(rpc('notes.send', {'on': False, 'key': 60}), -32005)
     raw('!render')
     assert rpc('notes.send', {'on': False, 'key': 60})['result']['accepted']
-    # Discover queue capacity, then leave one slot to exercise partial multi-set acceptance.
-    accepted = 0
-    while accepted < 10000:
-        response = rpc('params.set', {'values': [{'node': 1, 'param': 1, 'value': 0.5}]})
-        if 'error' in response:
-            error(response, -32005)
-            assert response['error']['data'] == {'accepted': 0, 'index': 0}
-            break
-        accepted += 1
-    assert 0 < accepted < 10000
+    # Repeated values coalesce instead of filling the plugin queue.
+    for i in range(5000):
+        assert 'result' in rpc('params.set', {'values': [{'node': 1, 'param': 1, 'value': (i % 100) / 100}]})
+    assert value(1) == 0.99
     raw('!drain')
-    for _ in range(accepted - 1):
-        assert 'result' in rpc('params.set', {'values': [{'node': 1, 'param': 1, 'value': 0.5}]})
+    # Ordered gesture commands cannot coalesce. Leave one pending slot for a value.
+    for _ in range(4095):
+        assert 'result' in rpc('params.gesture', {'node': 1, 'param': 1, 'begin': True})
+    assert 'result' in rpc('params.set', {'values': [{'node': 1, 'param': 1, 'value': 0.5}]})
     response = rpc('params.set', {'values': [{'node': 1, 'param': 1, 'value': 0.6}, {'node': 1, 'param': 2, 'value': 0.7}]})
     error(response, -32005)
     assert response['error']['data'] == {'accepted': 1, 'index': 1}, response
     assert value(1) == 0.6
-    raw('!render')
+    raw('!drain')
     assert 'result' in rpc('params.set', {'values': [{'node': 1, 'param': 2, 'value': 0.7}]})
+    assert 'result' in rpc('subscribe', {'topics': ['params.changed', 'transport', 'graph.changed']})
+    rpc('params.set', {'values': [{'node': 1, 'param': 3, 'value': 0.4}]})
+    notifications = raw('!poll 0')
+    assert any(n['method'] == 'params.changed' for n in notifications), notifications
+    assert any(n['method'] == 'transport' for n in notifications), notifications
+    assert raw('!poll 1') == []
+    assert 'result' in rpc('unsubscribe', {'topics': ['params.changed', 'transport']})
+    error(rpc('subscribe', {'topics': ['bad']}), -32602)
+    graph = rpc('graph.get')['result']
+    assert graph['revision'] == 1 and not graph['staged'] and len(graph['nodes']) == 1
+    error(rpc('graph.add', {'path': '/missing/no-plugin.clap'}), -32004)
+    error(rpc('graph.add', {'path': sys.argv[2], 'name': 'synth'}), -32602)
+    delay = rpc('graph.add', {'path': sys.argv[3], 'name': 'delay'})['result']['node']
+    assert rpc('graph.get')['result']['staged']
+    assert 'result' in rpc('graph.connect', {'kind': 'audio', 'from': 1, 'to': delay})
+    assert 'result' in rpc('graph.connect', {'kind': 'audio', 'from': delay, 'to': delay})
+    error(rpc('graph.commit'), -32003)
+    assert rpc('graph.get')['result']['revision'] == 1
+    assert raw('!poll 2') == []
+    rpc('graph.disconnect', {'kind': 'audio', 'from': delay, 'to': delay})
+    assert rpc('graph.commit')['result']['revision'] == 2
+    assert raw('!poll 3')[0]['method'] == 'graph.changed'
+    assert 'result' in rpc('graph.map', {'from': delay, 'lane': 0, 'to': 1, 'param': 3})
+    assert len(rpc('graph.get')['result']['mappings']) == 1
+    assert 'result' in rpc('graph.unmap', {'from': delay, 'lane': 0})
+    assert 'result' in rpc('graph.remove', {'node': delay})
+    assert len(rpc('graph.get')['result']['nodes']) == 1
+    error(rpc('params.list', {'node': 'delay'}), -32001)
+    rpc('graph.commit')
     print('ok: JSON-RPC envelopes, IDs, batches, notifications, validation, limits and queue errors')
 finally:
     proc.stdin.close()

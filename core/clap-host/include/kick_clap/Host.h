@@ -105,6 +105,7 @@ public:
 
     bool enqueue(const Event&) noexcept; // bounded multi-producer queue
     bool popOutput(Event&) noexcept; // main/control-thread consumer of parameter output
+    uint64_t outputEventDrops() const noexcept; // detects gaps in plugin control output
     // Note, MIDI and expression events the plugin emitted during the last
     // process() call, sorted as emitted, with times relative to the start of that
     // call. Audio thread only; valid until the next process() on this host.

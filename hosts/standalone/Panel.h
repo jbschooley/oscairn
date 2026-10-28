@@ -35,7 +35,6 @@ namespace oscairn::standalone
 
         void timerCallback() override;
 
-        Engine&                engine_;
         Layout                 layout_;
         std::unique_ptr<Board> board_;
     };

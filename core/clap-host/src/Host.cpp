@@ -150,6 +150,7 @@ struct Host::Impl {
     std::atomic<double> lastUs{0}, maxUs{0};
     std::atomic<uint64_t> deadlineMisses{0}, controlSilences{0}, idleBlocks{0};
     detail::Queue<Event, maxEvents> commands, emitted;
+    std::atomic<uint64_t> outputDrops{0};
     struct TimedEvent { Event event; uint32_t order = 0; };
     std::array<TimedEvent, maxBlockEvents> ordered;
     std::array<Event, maxBlockEvents> chunkEvents;
@@ -426,6 +427,7 @@ struct Host::Impl {
             s.dropped.fetch_add(1); return false;
         }
         if (s.emitted.push(copy)) return true;
+        s.outputDrops.fetch_add(1);
         s.dropped.fetch_add(1); return false;
     }
     void flushParameters() {
@@ -737,9 +739,17 @@ bool Host::enqueue(const Event& e) noexcept {
     s.pendingCommands.fetch_add(1);
     if (s.commands.push(e)) { s.wake.store(true); return true; }
     s.pendingCommands.fetch_sub(1);
-    s.dropped.fetch_add(1); s.panic.store(true); return false;
+    s.dropped.fetch_add(1);
+    // Control callers can retain and retry refused parameter/gesture commands.
+    // Resetting here would discard already accepted commands and cut held notes.
+    const auto type = e.header()->type;
+    if (type != CLAP_EVENT_PARAM_VALUE && type != CLAP_EVENT_PARAM_MOD &&
+        type != CLAP_EVENT_PARAM_GESTURE_BEGIN && type != CLAP_EVENT_PARAM_GESTURE_END)
+        s.panic.store(true);
+    return false;
 }
 bool Host::popOutput(Event& e) noexcept { return impl->emitted.pop(e); }
+uint64_t Host::outputEventDrops() const noexcept { return impl->outputDrops.load(); }
 const Event* Host::outputEvents(uint32_t& count) const noexcept { count = impl->publishedOutputCount; return impl->blockOutput.data(); }
 void Host::panic() noexcept { impl->panic.store(true); impl->wake.store(true); }
 void Host::reset() { auto& s = *impl; if (!s.main() || !s.plugin) return; Gate guard(s.gate); AudioScope scope(&s); s.plugin->reset(s.plugin); s.sleeping = false; }

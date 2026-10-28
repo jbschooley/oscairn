@@ -26,6 +26,7 @@ namespace
         }
         void render( uint32_t frames = 512 )
         {
+            session.service();
             float* out[]{left.data(),right.data()};
             forbidAllocation = true;
             const bool ok = session.process(out,frames);
@@ -89,9 +90,16 @@ int main( int argc, char** argv )
         {
             if( line == "!render" || line == "!drain" )
             {
-                const auto blocks = line == "!drain" ? kick::clap::Host::maxEvents / kick::clap::Host::maxBlockEvents + 2 : 1;
+                const auto blocks = line == "!drain" ? (oscairn::Session::commandCapacity + kick::clap::Host::maxEvents) / kick::clap::Host::maxBlockEvents + 2 : 1;
                 for( uint32_t i = 0; i < blocks; ++i ) { f.render(); f.session.service(); }
                 std::cout << "{}\n";
+            }
+            else if( line.starts_with("!poll ") )
+            {
+                const auto events = f.rpc.notifications(std::stoull(line.substr(6)));
+                std::cout << '[';
+                for(size_t i=0;i<events.size();++i) { if(i)std::cout<<','; std::cout<<events[i]; }
+                std::cout << "]\n";
             }
             else std::cout << f.rpc.dispatch(line).value_or("") << '\n';
             std::cout.flush();

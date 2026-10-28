@@ -22,8 +22,16 @@ namespace oscairn
 
         explicit JsonRpc( Control& control ) : control_( control ) {}
         std::optional<std::string> dispatch( std::string_view message );
+        /// One adapter per client. Host supplies monotonic time; no clock reads in core.
+        /// Default notifications are throttled to 60 Hz; allChanges bypasses coalescing.
+        std::vector<std::string> notifications( uint64_t nowNanoseconds );
+        void subscription( std::string_view topic, bool enabled, bool allChanges = false );
 
     private:
         Control& control_;
+        bool params_ = false, transport_ = false, graph_ = false, allChanges_ = false;
+        uint64_t paramsCursor_ = 0, graphCursor_ = 0;
+        std::optional<uint64_t> lastParams_, lastTransport_;
+        std::string lastTransportValue_;
     };
 }

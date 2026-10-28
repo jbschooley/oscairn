@@ -10,13 +10,13 @@ The desktop still uses typed `Control`; sockets and the engine helper are pendin
 The [JSON Schema](control-protocol.schema.json) describes the implemented request and
 response shapes. [RFC 0003](rfcs/0003-control-api.md) describes the larger planned API.
 This subset is protocol version 1. Clients must check `session.hello` capabilities before
-using optional methods. Graph editing, subscriptions, gestures and parameter coalescing
-are not advertised or implemented yet.
+using optional methods. Graph editing, parameter coalescing, gestures and subscriptions are
+implemented. Host/device status, sockets and the engine helper remain pending.
 
 ## Requests and responses
 
 Requests use named `params` objects. Unknown or duplicate method-parameter fields are
-rejected. `params` can be omitted for `session.hello` and `transport.get`; `{}` also works.
+rejected. `params` can be omitted for `session.hello`, `transport.get`, `graph.get` and `graph.commit`; `{}` also works.
 Positional arrays receive invalid-params errors. Extra envelope fields are ignored, but
 duplicate envelope fields make the request invalid.
 
@@ -40,6 +40,15 @@ request members.
 | `params.text` | `{"node":"synth","param":3,"value":0.5}` | `{"text":"50%"}` |
 | `transport.get` | omitted or `{}` | `playing`, `tempo`, `beat`, `clockSource` |
 | `transport.set` | one or more of `playing` (boolean), `tempo` (1..1000), `clockSource` (`"internal"` or `"midi"`) | `{"accepted":true}` |
+| `params.gesture` | `node`, `param`, `begin` (boolean) | `{"accepted":true}` |
+| `subscribe`, `unsubscribe` | `topics` (1..3 of `params.changed`, `transport`, `graph.changed`), optional `allChanges` boolean | `{"accepted":true}` |
+| `graph.get` | omitted or `{}` | staged topology, names/plugin metadata/ports, connections, mappings, `revision`, `staged`, numeric `input`/`output` endpoints |
+| `graph.add` | `path`, optional `name` and `pluginId` | numeric `node` |
+| `graph.remove` | `node` | `{"accepted":true}` |
+| `graph.connect`, `graph.disconnect` | `kind` (`audio` or `notes`), `from`, `to` | `{"accepted":true}` |
+| `graph.map` | `from`, `lane`, `to`, `param` | `{"accepted":true}` |
+| `graph.unmap` | `from`, `lane` | `{"accepted":true}` |
+| `graph.commit` | omitted or `{}` | new `revision` |
 | `notes.send` | `on` (boolean), `key` (0..127), optional `velocity` (0..1), optional `channel` (0..15) | `{"accepted":true}` |
 
 Node addresses accept a name or an unsigned 32-bit numeric ID. Parameter IDs are unsigned
@@ -50,16 +59,83 @@ MIDI, including pressure, keeps its separate sample-timed route.
 
 Parameter lists contain 1..128 distinct addresses. All addresses, writable flags and values
 are validated before any change is submitted. Plugin ranges clamp values and stepped
-parameters use the host's existing rounding. Acceptance means queued, not yet rendered.
-There is no coalescing or guaranteed final-value retry in this slice.
+parameters truncate fractional values, matching the host. Acceptance means retained by the
+session, not yet rendered. `params.get` reports the latest retained value when one is
+pending, otherwise the host's cached value.
 
-When a plugin queue fills partway through `params.set`, error `-32005` includes
+The session coalesces consecutive values for each parameter until `Session::service()`.
+The host calls this on the control thread, about every 5 ms in the desktop app, independently
+of UI repainting. Each tick submits at most one value per parameter. Accepted values and
+gesture boundaries that a plugin queue refuses remain pending for later ticks. A failed
+parameter enqueue does not trigger the host's emergency note reset.
+
+`params.gesture` appends begin/end commands. Values never coalesce across a gesture boundary;
+the final value precedes its end. Clients are responsible for pairing gestures; they are
+not yet associated with per-client ownership or undo transactions. The desktop's parameter
+sliders send these boundaries. Screen edits and single parameter writes do not require a
+gesture. Delivery assumes the host keeps servicing/rendering a functioning plugin. Removing
+a node cancels its pending commands; a parameter removed or made read-only by a plugin
+rescan cancels its pending commands and requests client resynchronization.
+
+The session retains at most 4,096 commands (values and gesture boundaries), shared across
+parameters. Replacing an already pending tail value consumes no additional slot. If the
+store fills partway through `params.set`, error `-32005` includes
 `data: {"accepted":N,"index":N}`. The first N entries were accepted; the entry at zero-based
 index N and all subsequent entries were not submitted. Accepted entries are not rolled
-back. The client can retry the remaining entries after audio drains the queues. Separate
-nodes have separate queues. `notes.send` queue overflow also returns `-32005`; the session
-schedules its existing emergency release, which can affect other sources on shared
-instrument destinations.
+back. Retry unaccepted entries after control ticks drain the store. `params.gesture` also
+returns `-32005` if its boundary cannot be retained. Use requests to detect refusal.
+`notes.send` retains its separate bounded queue and emergency release policy.
+
+## Graph edits
+
+Graph operations stage changes on the single control thread; they share one staging area
+across clients. `graph.get` describes that staging area, not the currently rendered plan.
+`revision` counts successful commits, and `staged` indicates edits since the last commit.
+Even an unchanged commit produces a new revision. A successful commit publishes a complete
+plan for the audio thread to adopt at a block boundary; it does not wait for adoption.
+
+`graph.add` loads a native CLAP plugin in the engine process. Its optional name must be unique
+when nonempty; unnamed nodes use their numeric IDs. IDs are not reused. Audio ports include
+IDs, names, channel counts and flags; note ports are currently represented by counts, matching
+the graph's whole-node routing. The `input` endpoint accepts external notes and `output`
+collects audio. Connections use node names or numeric IDs; the endpoints use the numeric
+IDs returned by `graph.get`.
+
+A cycle fails with `-32003`, leaves the live plan/revision unchanged and retains the staged
+edits for correction. Disconnect the offending edge and commit again. There is no rollback
+method or per-client edit isolation yet. Removing a node prunes its connections and mappings,
+forgets its name and cancels pending controls. The active plan keeps its plugin alive until
+a later successful commit takes effect. Parameter changes are independent of graph staging.
+
+## Notifications
+
+Create one `JsonRpc` adapter per client, sharing the same `Control`. The host polls each
+adapter's `notifications(nowNanoseconds)` on the control thread with a monotonic timestamp;
+the returned strings are complete JSON-RPC notifications. No subscription means no messages.
+Subscriptions begin at the current change sequence, without replaying earlier history;
+request initial parameter/graph snapshots explicitly. Transport sends its current state on
+the first poll. Re-subscribing does not discard already unread changes.
+
+- `params.changed`: `params.changes` contains `sequence`, `node`, `param`, `kind` (`value`,
+  `begin`, `end`), `source` (`control` or `plugin`), and `value` for value changes. Every
+  accepted control value is recorded, including a client's own writes. Plugin-emitted
+  parameter/gesture events and cached values changed by rescans are also recorded.
+- Default parameter notifications are sent at most 60 times per second per client. Within
+  each interval the latest value per parameter is retained, preserving gesture boundaries.
+  Several gestures in one interval can therefore include several final values. `allChanges:
+  true` on a parameter subscription returns every retained change without throttling or
+  coalescing. This is a control observation stream, not a sample-timestamped automation file.
+- `transport` carries the `transport.get` shape when it changes, at most 60 times per second.
+- `graph.changed` carries the latest committed `revision`. Several unseen commits can be
+  represented by one notification; fetch `graph.get` to inspect the staging area.
+- `session.resync` with `topic: "params.changed"` signals a gap: the bounded 4,096-entry
+  history wrapped, plugin control output overflowed, or pending commands were invalidated
+  by a rescan. Refresh graph/parameter snapshots. `allChanges` cannot promise lossless
+  recording if the client falls behind; gaps are explicit.
+
+Each client's cursor is independent; reading one client's notifications never consumes
+another's. A stopped/slow client cannot grow the history indefinitely. Subscriptions may
+be changed or removed at any time. Status notifications await host/device integration.
 
 `transport.set` validates all fields before storing them. They are independent atomic
 controls, not an atomic transaction with the audio thread. `transport.get` returns the
@@ -89,7 +165,9 @@ Example:
 | -32603 | Unexpected control/encoding failure |
 | -32001 | Unknown node |
 | -32002 | Unknown parameter |
-| -32005 | Queue refused a command; see partial acceptance above |
+| -32003 | Invalid graph change, including a cycle |
+| -32004 | Plugin failed to load |
+| -32005 | Pending command store or UI note queue refused a command |
 | -32006 | Message, nesting or batch limit exceeded |
 
 Input is limited to 65,536 bytes, 32 nested arrays/objects and 64 requests per batch.
@@ -112,5 +190,6 @@ package or network download, and JSON types do not appear in the public `Control
 uneven block sizes, parameter changes and note releases, with a render allocation guard.
 `control-json-protocol` uses Python's independent JSON decoder to check requests, replies,
 IDs, errors, notifications, batches, limits and queue refusal/recovery. Python is optional
-for the build; CI environments include it. Both tests are included in the existing
-ThreadSanitizer job.
+for the build; CI environments include it. `control-flow` additionally checks retained final
+values, ordered gestures, independent subscribers, explicit history gaps and staged graph edits without interrupting held notes.
+These tests are included in the existing ThreadSanitizer job.

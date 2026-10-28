@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Oscairn control protocol 1: implemented subset",
+  "title": "Oscairn control protocol 1: graph, parameters, transport and notifications",
   "description": "Complete JSON document. Byte/depth limits, duplicate-member rejection, finite double range, unique parameter addresses and queue semantics are specified in control-protocol.md.",
   "oneOf": [
     {
@@ -24,6 +24,9 @@
       },
       "minItems": 1,
       "maxItems": 64
+    },
+    {
+      "$ref": "#/$defs/Notification"
     }
   ],
   "$defs": {
@@ -576,6 +579,429 @@
             "params"
           ],
           "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
+              "const": "params.gesture"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "node": {
+                  "$ref": "#/$defs/Node"
+                },
+                "param": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 4294967295
+                },
+                "begin": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "node",
+                "param",
+                "begin"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "params"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
+              "const": "graph.get"
+            },
+            "params": {
+              "type": "object",
+              "properties": {},
+              "required": [],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
+              "const": "graph.add"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "name": {
+                  "type": "string"
+                },
+                "pluginId": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "path"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "params"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
+              "const": "graph.remove"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "node": {
+                  "$ref": "#/$defs/Node"
+                }
+              },
+              "required": [
+                "node"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "params"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
+              "const": "graph.connect"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "enum": [
+                    "audio",
+                    "notes"
+                  ]
+                },
+                "from": {
+                  "$ref": "#/$defs/Node"
+                },
+                "to": {
+                  "$ref": "#/$defs/Node"
+                }
+              },
+              "required": [
+                "kind",
+                "from",
+                "to"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "params"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
+              "const": "graph.disconnect"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "enum": [
+                    "audio",
+                    "notes"
+                  ]
+                },
+                "from": {
+                  "$ref": "#/$defs/Node"
+                },
+                "to": {
+                  "$ref": "#/$defs/Node"
+                }
+              },
+              "required": [
+                "kind",
+                "from",
+                "to"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "params"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
+              "const": "graph.map"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "from": {
+                  "$ref": "#/$defs/Node"
+                },
+                "lane": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 4294967295
+                },
+                "to": {
+                  "$ref": "#/$defs/Node"
+                },
+                "param": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 4294967295
+                }
+              },
+              "required": [
+                "from",
+                "lane",
+                "to",
+                "param"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "params"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
+              "const": "graph.unmap"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "from": {
+                  "$ref": "#/$defs/Node"
+                },
+                "lane": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 4294967295
+                }
+              },
+              "required": [
+                "from",
+                "lane"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "params"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
+              "const": "graph.commit"
+            },
+            "params": {
+              "type": "object",
+              "properties": {},
+              "required": [],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
+              "const": "subscribe"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "topics": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 3,
+                  "items": {
+                    "enum": [
+                      "params.changed",
+                      "transport",
+                      "graph.changed"
+                    ]
+                  }
+                },
+                "allChanges": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "topics"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "params"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
+              "const": "unsubscribe"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "topics": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 3,
+                  "items": {
+                    "enum": [
+                      "params.changed",
+                      "transport",
+                      "graph.changed"
+                    ]
+                  }
+                },
+                "allChanges": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "topics"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "params"
+          ],
+          "additionalProperties": true
         }
       ]
     },
@@ -609,6 +1035,15 @@
                 },
                 {
                   "$ref": "#/$defs/Accepted"
+                },
+                {
+                  "$ref": "#/$defs/GraphResult"
+                },
+                {
+                  "$ref": "#/$defs/NodeResult"
+                },
+                {
+                  "$ref": "#/$defs/Revision"
                 }
               ]
             }
@@ -651,6 +1086,420 @@
             "jsonrpc",
             "id",
             "error"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "AudioPort": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "name": {
+          "type": "string"
+        },
+        "channels": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "flags": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "channels",
+        "flags"
+      ],
+      "additionalProperties": false
+    },
+    "GraphNode": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "name": {
+          "type": "string"
+        },
+        "plugin": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "path": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "path",
+            "name"
+          ],
+          "additionalProperties": false
+        },
+        "audioInputs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AudioPort"
+          }
+        },
+        "audioOutputs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AudioPort"
+          }
+        },
+        "noteInputs": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "noteOutputs": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "plugin",
+        "audioInputs",
+        "audioOutputs",
+        "noteInputs",
+        "noteOutputs"
+      ],
+      "additionalProperties": false
+    },
+    "GraphResult": {
+      "type": "object",
+      "properties": {
+        "revision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "staged": {
+          "type": "boolean"
+        },
+        "input": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "output": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "nodes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/GraphNode"
+          }
+        },
+        "connections": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "enum": [
+                  "audio",
+                  "notes"
+                ]
+              },
+              "from": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 4294967295
+              },
+              "to": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 4294967295
+              }
+            },
+            "required": [
+              "kind",
+              "from",
+              "to"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "mappings": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "from": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 4294967295
+              },
+              "lane": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 4294967295
+              },
+              "to": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 4294967295
+              },
+              "param": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 4294967295
+              }
+            },
+            "required": [
+              "from",
+              "lane",
+              "to",
+              "param"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "revision",
+        "staged",
+        "input",
+        "output",
+        "nodes",
+        "connections",
+        "mappings"
+      ],
+      "additionalProperties": false
+    },
+    "NodeResult": {
+      "type": "object",
+      "properties": {
+        "node": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        }
+      },
+      "required": [
+        "node"
+      ],
+      "additionalProperties": false
+    },
+    "Revision": {
+      "type": "object",
+      "properties": {
+        "revision": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "revision"
+      ],
+      "additionalProperties": false
+    },
+    "Change": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "sequence": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "node": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 4294967295
+            },
+            "param": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 4294967295
+            },
+            "source": {
+              "enum": [
+                "control",
+                "plugin"
+              ]
+            },
+            "kind": {
+              "const": "value"
+            },
+            "value": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "sequence",
+            "node",
+            "param",
+            "source",
+            "kind",
+            "value"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "sequence": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "node": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 4294967295
+            },
+            "param": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 4294967295
+            },
+            "source": {
+              "enum": [
+                "control",
+                "plugin"
+              ]
+            },
+            "kind": {
+              "enum": [
+                "begin",
+                "end"
+              ]
+            }
+          },
+          "required": [
+            "sequence",
+            "node",
+            "param",
+            "source",
+            "kind"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "Notification": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "method": {
+              "const": "params.changed"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "changes": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/Change"
+                  },
+                  "maxItems": 4096
+                }
+              },
+              "required": [
+                "changes"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "params"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "method": {
+              "const": "transport"
+            },
+            "params": {
+              "$ref": "#/$defs/Transport"
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "params"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "method": {
+              "const": "graph.changed"
+            },
+            "params": {
+              "$ref": "#/$defs/Revision"
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "params"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "method": {
+              "const": "session.resync"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "topic": {
+                  "const": "params.changed"
+                }
+              },
+              "required": [
+                "topic"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "params"
           ],
           "additionalProperties": false
         }
