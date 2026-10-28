@@ -8,6 +8,5 @@ Number them in order (`0002-...md`) and keep the status line up to date
 | --- | --- | --- |
 | [0001](0001-licence.md) | Licence | accepted |
 | [0002](0002-param-target.md) | Parameter changes between plugins (oscairn.param-target) | draft, implemented |
+| [0003](0003-control-api.md) | Control API | proposed |
 | [0004](0004-hardware-services.md) | Hardware services, event timing and engine backends | proposed |
-
-RFC 0003 (Control API) is proposed on the `control-api` branch; its number is reserved.
