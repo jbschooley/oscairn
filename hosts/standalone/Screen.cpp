@@ -113,43 +113,50 @@ namespace oscairn::standalone
 
     void Screen::mouseDown( const juce::MouseEvent& e )
     {
-        dragStep_  = stepAt( e.position );
-        dragMoved_ = false;
-        if( dragStep_ < 0 )
-            drag_ = Drag::None;
-        else if( lockBar( dragStep_ ).expanded( 0.0f, 6.0f ).contains( e.position ) )
+        Touch t;
+        t.step = stepAt( e.position );
+        if( t.step >= 0 && lockBar( t.step ).expanded( 0.0f, 6.0f ).contains( e.position ) )
         {
-            drag_ = Drag::Lock;
-            setLock( dragStep_, e.position.x );
+            t.drag = Drag::Lock;
+            setLock( t.step, e.position.x );
         }
-        else
+        else if( t.step >= 0 )
         {
-            drag_     = Drag::Toggle; // becomes a note change if it moves
-            dragNote_ = note_[(size_t)dragStep_];
+            t.drag = Drag::Toggle; // becomes a note change if it moves
+            t.note = note_[(size_t)t.step];
         }
+        touches_[e.source.getIndex()] = t;
     }
 
     void Screen::mouseDrag( const juce::MouseEvent& e )
     {
-        if( drag_ == Drag::Lock )
-            setLock( dragStep_, e.position.x );
-        else if( drag_ != Drag::None && std::abs( e.getDistanceFromDragStartY() ) > 4 )
+        const auto it = touches_.find( e.source.getIndex() );
+        if( it == touches_.end() )
+            return;
+        auto& t = it->second;
+        if( t.drag == Drag::Lock )
+            setLock( t.step, e.position.x );
+        else if( t.drag != Drag::None && std::abs( e.getDistanceFromDragStartY() ) > 4 )
         {
-            drag_            = Drag::Note;
-            const auto pitch = juce::jlimit( 0, 127, dragNote_ - (int)std::lround( e.getDistanceFromDragStartY() / ( 8.0f * getHeight() / 600.0f ) ) );
-            engine_.setParam( "sequencer", noteParam + (uint32_t)dragStep_, pitch );
+            t.drag           = Drag::Note;
+            const auto pitch = juce::jlimit( 0, 127, t.note - (int)std::lround( e.getDistanceFromDragStartY() / ( 8.0f * getHeight() / 600.0f ) ) );
+            engine_.setParam( "sequencer", noteParam + (uint32_t)t.step, pitch );
             refresh();
         }
     }
 
-    void Screen::mouseUp( const juce::MouseEvent& )
+    void Screen::mouseUp( const juce::MouseEvent& e )
     {
-        if( drag_ == Drag::Toggle )
+        const auto it = touches_.find( e.source.getIndex() );
+        if( it == touches_.end() )
+            return;
+        if( it->second.drag == Drag::Toggle )
         {
-            engine_.setParam( "sequencer", onParam + (uint32_t)dragStep_, on_[(size_t)dragStep_] ? 0.0 : 1.0 );
+            const auto step = it->second.step;
+            engine_.setParam( "sequencer", onParam + (uint32_t)step, on_[(size_t)step] ? 0.0 : 1.0 );
             refresh();
         }
-        drag_ = Drag::None;
+        touches_.erase( it );
     }
 
     void Screen::mouseWheelMove( const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel )

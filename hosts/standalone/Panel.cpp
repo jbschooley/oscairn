@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #include "Panel.h"
+#include "Presses.h"
 
 #include <stdexcept>
 
@@ -174,7 +175,7 @@ namespace oscairn::standalone
             {
                 const auto r = pad( i );
                 juce::Colour colour = face;
-                if( i == held_ )
+                if( held_.held( i ) )
                     colour = accent;
                 else if( control_.steps && i == step_ )
                     colour = lit.withAlpha( 0.8f );
@@ -188,24 +189,26 @@ namespace oscairn::standalone
             }
         }
 
+        // Each finger presses its own pad, so several pads can play at once.
         void mouseDown( const juce::MouseEvent& e ) override
         {
-            held_ = padAt( e.position );
-            if( held_ >= 0 )
+            const int i = padAt( e.position );
+            if( i < 0 )
+                return;
+            if( held_.press( e.source.getIndex(), i ) )
             {
                 // Harder towards the top of the pad, like pressure on a velocity pad.
-                const auto r        = pad( held_ );
+                const auto r        = pad( i );
                 const auto velocity = juce::jlimit( 0.2f, 1.0f, 1.0f - ( e.position.y - r.getY() ) / r.getHeight() * 0.8f );
-                engine_.note( true, control_.note + held_, velocity );
+                engine_.note( true, control_.note + i, velocity );
             }
             repaint();
         }
 
-        void mouseUp( const juce::MouseEvent& ) override
+        void mouseUp( const juce::MouseEvent& e ) override
         {
-            if( held_ >= 0 )
-                engine_.note( false, control_.note + held_, 0.0f );
-            held_ = -1;
+            if( const auto i = held_.release( e.source.getIndex() ) )
+                engine_.note( false, control_.note + *i, 0.0f );
             repaint();
         }
 
@@ -226,7 +229,8 @@ namespace oscairn::standalone
 
         Engine&         engine_;
         Layout::Control control_;
-        int             step_ = -1, held_ = -1;
+        int             step_ = -1;
+        Presses<int>    held_; // pads held, by finger
     };
 
     /// A piano keyboard that plays notes.

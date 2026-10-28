@@ -5,6 +5,8 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <map>
+
 namespace oscairn::standalone
 {
     /// The instrument's display: the step sequencer's 16 steps with the playhead, and
@@ -49,9 +51,12 @@ namespace oscairn::standalone
             Note,
             Lock
         };
-        Drag drag_      = Drag::None;
-        int  dragStep_  = -1;
-        int  dragNote_  = 0; // the note when the drag began
-        bool dragMoved_ = false;
+        struct Touch
+        {
+            Drag drag = Drag::None;
+            int  step = -1;
+            int  note = 0; // the step's note when the touch began
+        };
+        std::map<int, Touch> touches_; // by finger, so several steps can be edited at once
     };
 }

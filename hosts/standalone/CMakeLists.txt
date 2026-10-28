@@ -38,3 +38,7 @@ target_link_libraries(oscairn_standalone PRIVATE
 add_dependencies(oscairn_standalone oscairn_step_sequencer oscairn_basic_synth oscairn_delay)
 
 install(TARGETS oscairn_standalone RUNTIME DESTINATION bin BUNDLE DESTINATION Applications)
+
+# The per-finger press tracking behind the pads (no JUCE needed).
+add_executable(oscairn-standalone-presses-test tests/presses.cpp)
+add_test(NAME standalone-presses COMMAND oscairn-standalone-presses-test)
