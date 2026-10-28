@@ -6,6 +6,10 @@ Oscairn is an open instrument platform: one realtime host for synthesis engines,
 effects and sequencers that runs on hardware instruments, on the desktop and inside a DAW.
 A sound or performance is not tied to one device.
 
+Oscairn is an independent, unofficial project. It is not affiliated with or endorsed by
+Behringer, Klark Teknik or Music Tribe. KICK is a product of Klark Teknik; the name is used
+here only to describe compatibility.
+
 > **Status:** early. What runs today: a graph of CLAP plugins (for example a sequencer
 > playing a synth through a delay, with per-step parameter locks), sample-accurately,
 > following its own tempo or an external MIDI clock, rendered offline to a WAV file, and a
@@ -14,8 +18,35 @@ A sound or performance is not tied to one device.
 
 ## Try it
 
-Needs CMake 3.21+, Ninja and a C++20 compiler. CI builds and tests on Ubuntu 24.04 (GCC)
-and macOS 15 (Apple clang), plus a ThreadSanitizer run.
+Needs CMake 3.21+, Ninja and a C++20 compiler (on macOS: Xcode command line tools, and
+`brew install cmake ninja`).
+
+### The desktop app
+
+Builds the demo groovebox and starts it. The first build downloads JUCE 9.0.4 and takes a
+few minutes. Tested on macOS; the Linux build is untested so far.
+
+```bash
+cmake -S . -B build-app -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DOSCAIRN_STANDALONE=ON
+ninja -C build-app oscairn_standalone
+open build-app/hosts/standalone/oscairn_standalone_artefacts/RelWithDebInfo/Oscairn.app
+```
+
+It plays through the default audio output, and any connected MIDI device plays it. Switch
+panel layouts in the View menu, or start with one:
+
+```bash
+open build-app/hosts/standalone/oscairn_standalone_artefacts/RelWithDebInfo/Oscairn.app --args --layout kick
+```
+
+Options: `--layout desktop|kick|keys49|file.json`, and `--snapshot out.png [--size WxH]
+[--play SECONDS]` to render the panel to a PNG and quit. Layouts are described in
+[hosts/standalone/layouts](hosts/standalone/layouts/README.md).
+
+### The core, tests and offline renderer
+
+CI builds and tests on Ubuntu 24.04 (GCC) and macOS 15 (Apple clang), plus a
+ThreadSanitizer run.
 
 ```bash
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
@@ -33,16 +64,6 @@ build/hosts/oscairn-render demo-locks.wav --seconds 16 --map 0.0=1.Brightness \
 # The same chain following a (simulated) external MIDI clock at 140 BPM:
 build/hosts/oscairn-render demo-140.wav --seconds 16 --midi-clock 140 \
     $P/oscairn-step-sequencer.clap $P/oscairn-basic-synth.clap $P/oscairn-delay.clap
-```
-
-The desktop app (downloads JUCE 9.0.4 the first time):
-
-```bash
-cmake -S . -B build-app -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DOSCAIRN_STANDALONE=ON
-ninja -C build-app oscairn_standalone
-# macOS: build-app/hosts/standalone/oscairn_standalone_artefacts/RelWithDebInfo/Oscairn.app
-#   --layout desktop|kick|keys49|file.json   (or the View menu)
-#   --snapshot out.png [--size WxH] [--play SECONDS]   render the panel to a PNG and quit
 ```
 
 `oscairn-render` chains the plugins in the order given: each one plays the notes of the
