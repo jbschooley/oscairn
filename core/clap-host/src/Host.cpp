@@ -146,6 +146,11 @@ struct Host::Impl {
     std::array<Event, maxEvents> chunkEvents;
     std::array<Event, maxEvents> carryEvents;
     uint32_t carryCount = 0;
+    // Non-parameter output of the current process() call, collected only while
+    // inProcess is set and published to the caller when the call returns.
+    std::array<Event, maxEvents> blockOutput;
+    uint32_t blockOutputCount = 0, publishedOutputCount = 0;
+    bool inProcess = false;
     uint32_t chunkCount = 0;
     uint32_t outputFrameOffset = 0, currentProcessFrames = 1;
     struct Timer { clap_id id; uint32_t period; std::chrono::steady_clock::time_point next; };
@@ -394,6 +399,15 @@ struct Host::Impl {
         }
         Event copy; std::memcpy(copy.bytes.data(), event, event->size);
         reinterpret_cast<clap_event_header_t*>(copy.bytes.data())->time += s.outputFrameOffset;
+        // Parameter and gesture events go to the control thread. Everything else
+        // (notes, MIDI, expressions) is kept for the caller of process(), which
+        // routes it to the next plugin in the same block.
+        const bool control = event->type == CLAP_EVENT_PARAM_VALUE || event->type == CLAP_EVENT_PARAM_MOD ||
+                             event->type == CLAP_EVENT_PARAM_GESTURE_BEGIN || event->type == CLAP_EVENT_PARAM_GESTURE_END;
+        if (!control) {
+            if (s.inProcess && s.blockOutputCount < maxEvents) { s.blockOutput[s.blockOutputCount++] = copy; return true; }
+            s.dropped.fetch_add(1); return false;
+        }
         if (s.emitted.push(copy)) return true;
         s.dropped.fetch_add(1); return false;
     }
@@ -670,6 +684,7 @@ bool Host::enqueue(const Event& e) noexcept {
     s.dropped.fetch_add(1); s.panic.store(true); return false;
 }
 bool Host::popOutput(Event& e) noexcept { return impl->emitted.pop(e); }
+const Event* Host::outputEvents(uint32_t& count) const noexcept { count = impl->publishedOutputCount; return impl->blockOutput.data(); }
 void Host::panic() noexcept { impl->panic.store(true); impl->wake.store(true); }
 void Host::reset() { auto& s = *impl; if (!s.main() || !s.plugin) return; Gate guard(s.gate); AudioScope scope(&s); s.plugin->reset(s.plugin); s.sleeping = false; }
 
@@ -677,6 +692,7 @@ bool Host::process(const float* const* input, uint32_t ni, float* const* output,
                    const Event* incoming, uint32_t count, const clap_event_transport_t* transport) noexcept {
     auto& s = *impl;
     auto silence = [&] { if (output) for (uint32_t c = 0; c < no; ++c) if (output[c]) std::fill_n(output[c], frames, 0.f); };
+    s.publishedOutputCount = 0;
     if (!frames) return true;
     // A note-only plugin (no audio outputs) may be processed with no output buffers.
     if ((no && !output) || (count && !incoming)) { silence(); return false; }
@@ -684,6 +700,11 @@ bool Host::process(const float* const* input, uint32_t ni, float* const* output,
         s.controlSilences.fetch_add(1); silence(); return false;
     }
     struct Release { std::atomic_flag& flag; ~Release() { flag.clear(std::memory_order_release); } } release{s.gate};
+    s.blockOutputCount = 0; s.inProcess = true;
+    struct Publish {
+        Impl& s;
+        ~Publish() { s.inProcess = false; s.publishedOutputCount = s.blockOutputCount; }
+    } publish{s}; // declared after release, so it runs while the gate is still held
     AudioScope scope(&s);
     if (!s.plugin || !s.active || s.failed.load()) { silence(); return false; }
     const auto start = std::chrono::steady_clock::now();
