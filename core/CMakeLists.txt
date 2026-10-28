@@ -37,3 +37,7 @@ add_test(NAME graph COMMAND oscairn-graph-test $<TARGET_FILE:oscairn_step_sequen
 add_executable(oscairn-param-target-test engine/tests/param_target.cpp)
 target_link_libraries(oscairn-param-target-test PRIVATE oscairn_engine)
 add_test(NAME param-target COMMAND oscairn-param-target-test $<TARGET_FILE:oscairn_step_sequencer> $<TARGET_FILE:kick-clap-fixture-normal>)
+
+add_executable(oscairn-sequencer-params-test engine/tests/sequencer_params.cpp)
+target_link_libraries(oscairn-sequencer-params-test PRIVATE oscairn_engine)
+add_test(NAME sequencer-params COMMAND oscairn-sequencer-params-test $<TARGET_FILE:oscairn_step_sequencer>)
