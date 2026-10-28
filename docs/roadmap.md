@@ -57,8 +57,7 @@ Done:
 To do:
 
 - tracks, patterns, swing and more lanes in the sequencer;
-- the control API, with the UI moving to its own process
-  ([RFC 0003](rfcs/0003-control-api.md));
+- the control API, with the UI moving to its own process (RFC 0003, proposed);
 - LV2 hosting, right after the control API: a large catalog of open plugins already
   built for ARM Linux;
 - the KICK's real panel as a control surface.
