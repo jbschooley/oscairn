@@ -13,8 +13,9 @@ The Oscairn core, hosts, first-party plugins and tools are licensed under the
   two in either direction.
 - Anyone who ships a modified Oscairn, on hardware or as a network service, must publish their
   changes.
-- JUCE 8 is available under AGPLv3, so it can be used without a commercial licence where it is
-  useful (for example in UI code).
+- JUCE (version 8 and later, including the 9.0.4 the desktop app uses) is available under
+  AGPLv3, so it can be used without a commercial licence where it is useful, such as UI code.
+  The core does not depend on it.
 
 ## The plugin boundary
 
