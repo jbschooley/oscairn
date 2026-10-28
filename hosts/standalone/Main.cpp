@@ -4,10 +4,10 @@
 // layouts (View menu, or --layout NAME|FILE.json). Every MIDI input plays it.
 //
 //   oscairn-standalone [--layout desktop|kick|keys49|path.json] [--plugins DIR]
-//                      [--snapshot out.png [--play SECONDS]]
+//                      [--snapshot out.png [--size WxH] [--play SECONDS]]
 //
-// --snapshot renders the panel at its design size to a PNG and quits; with --play, the
-// sequencer plays for that long first.
+// --snapshot renders the panel to a PNG and quits: at its design size, or as in a window
+// of --size. With --play, the sequencer plays for that long first.
 
 #include "Engine.h"
 #include "Layout.h"
@@ -86,12 +86,12 @@ namespace oscairn::standalone
             setName( "Oscairn - " + juce::String( layout.name ) );
 
             // Start at the layout's design size (one design unit per pixel) if it fits,
-            // otherwise as large as fits; keep its proportions when resizing.
+            // otherwise as large as fits.
             const auto area  = juce::Desktop::getInstance().getDisplays().getPrimaryDisplay()->userBounds.reduced( 40 );
             const auto scale = juce::jmin( 1.0f, area.getWidth() / (float)layout.width, area.getHeight() / (float)layout.height );
-            setResizable( layout.resizable, false );
+            setResizable( layout.resize != Layout::Resize::Fixed, false );
             if( auto* c = getConstrainer() )
-                c->setFixedAspectRatio( layout.width / (double)layout.height );
+                c->setFixedAspectRatio( layout.resize == Layout::Resize::Scale ? layout.width / (double)layout.height : 0.0 );
             setResizeLimits( layout.width / 4, layout.height / 4, layout.width * 3, layout.height * 3 );
             centreWithSize( juce::roundToInt( layout.width * scale ), juce::roundToInt( layout.height * scale ) );
         }
@@ -199,8 +199,10 @@ namespace oscairn::standalone
                     const auto seconds = argument( args, "--play" ).getDoubleValue();
                     if( seconds > 0.0 )
                         engine_->setPlaying( true );
-                    juce::Timer::callAfterDelay( juce::roundToInt( juce::jmax( 0.5, seconds ) * 1000.0 ), [this, snapshot] {
-                        writeSnapshot( juce::File::getCurrentWorkingDirectory().getChildFile( snapshot ) );
+                    const auto size = juce::StringArray::fromTokens( argument( args, "--size" ), "x", "" );
+                    const auto w = size.size() == 2 ? size[0].getIntValue() : 0, h = size.size() == 2 ? size[1].getIntValue() : 0;
+                    juce::Timer::callAfterDelay( juce::roundToInt( juce::jmax( 0.5, seconds ) * 1000.0 ), [this, snapshot, w, h] {
+                        writeSnapshot( juce::File::getCurrentWorkingDirectory().getChildFile( snapshot ), w, h );
                         quit();
                     } );
                 }
@@ -220,11 +222,14 @@ namespace oscairn::standalone
         }
 
     private:
-        void writeSnapshot( const juce::File& file )
+        void writeSnapshot( const juce::File& file, int width, int height )
         {
             auto* panel = dynamic_cast<Panel*>( window_->getContentComponent() );
             const auto& l = panel->layout();
-            panel->setSize( l.width, l.height ); // one design unit per pixel
+            if( width > 0 && height > 0 )
+                panel->setSize( width, height );
+            else
+                panel->setSize( l.width, l.height ); // one design unit per pixel
             const auto image = panel->createComponentSnapshot( panel->getLocalBounds(), true, 1.0f );
             file.deleteFile();
             juce::FileOutputStream out( file );

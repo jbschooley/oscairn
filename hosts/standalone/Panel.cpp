@@ -246,11 +246,24 @@ namespace oscairn::standalone
                 }
                 if( component )
                 {
-                    component->setBounds( c.rect );
                     addAndMakeVisible( *component );
+                    placed_.emplace_back( component.get(), &c );
                     owned_.push_back( std::move( component ) );
                 }
             }
+            layOut( 0, 0 );
+        }
+
+        /// Sizes the board to the design plus `dx`, `dy` extra units, moving and sizing
+        /// every element by its anchor.
+        void layOut( int dx, int dy )
+        {
+            dx_ = dx;
+            dy_ = dy;
+            setSize( layout_.width + dx, layout_.height + dy );
+            for( auto& [component, control] : placed_ )
+                component->setBounds( control->anchor.place( control->rect, dx, dy ) );
+            repaint();
         }
 
         void refresh()
@@ -274,18 +287,19 @@ namespace oscairn::standalone
             g.fillAll( layout_.background );
             for( const auto& p : layout_.panels )
             {
+                const auto r = p.anchor.place( p.rect, dx_, dy_ );
                 g.setColour( face.darker( 0.3f ) );
-                g.fillRoundedRectangle( p.rect.toFloat(), 8.0f );
+                g.fillRoundedRectangle( r.toFloat(), 8.0f );
                 g.setColour( dim );
                 g.setFont( juce::FontOptions( 13.0f, juce::Font::bold ) );
-                g.drawText( p.label, p.rect.withHeight( 20 ), juce::Justification::centred );
+                g.drawText( p.label, r.withHeight( 20 ), juce::Justification::centred );
             }
             g.setColour( text );
             for( const auto& c : layout_.controls )
                 if( c.type == Layout::Control::Type::Label )
                 {
                     g.setFont( juce::FontOptions( (float)c.rect.getHeight() * 0.7f, juce::Font::bold ) );
-                    g.drawText( c.label, c.rect, juce::Justification::centredLeft );
+                    g.drawText( c.label, c.anchor.place( c.rect, dx_, dy_ ), juce::Justification::centredLeft );
                 }
         }
 
@@ -314,6 +328,8 @@ namespace oscairn::standalone
         Engine&                                       engine_;
         const Layout&                                 layout_;
         std::vector<std::unique_ptr<juce::Component>> owned_;
+        std::vector<std::pair<juce::Component*, const Layout::Control*>> placed_;
+        int                                           dx_ = 0, dy_ = 0;
         Screen*                                       screen_ = nullptr;
         std::vector<Knob*>                            knobs_;
         std::vector<Pads*>                            pads_;
@@ -337,8 +353,17 @@ namespace oscairn::standalone
 
     void Panel::resized()
     {
-        // Fit the board, keeping its proportions, centred.
+        // Scale the board to fit the tighter dimension. A stretching layout takes the
+        // space left in the other; otherwise the board is centred in it.
         const auto scale = juce::jmin( getWidth() / (float)layout_.width, getHeight() / (float)layout_.height );
+        if( scale <= 0.0f )
+            return;
+        if( layout_.resize == Layout::Resize::Stretch )
+        {
+            board_->layOut( juce::jmax( 0, (int)( getWidth() / scale ) - layout_.width ), juce::jmax( 0, (int)( getHeight() / scale ) - layout_.height ) );
+            board_->setTransform( juce::AffineTransform::scale( scale ) );
+            return;
+        }
         const auto x = ( getWidth() - layout_.width * scale ) / 2.0f, y = ( getHeight() - layout_.height * scale ) / 2.0f;
         board_->setTransform( juce::AffineTransform::scale( scale ).translated( x, y ) );
     }

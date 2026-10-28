@@ -1,23 +1,24 @@
 {
   "name": "Desktop",
   "size": [1280, 800],
+  "resize": "stretch",
   "panels": [
-    {"rect": [870, 80, 370, 470], "label": "SOUND"},
-    {"rect": [870, 580, 370, 190], "label": "TRANSPORT"}
+    {"rect": [870, 80, 370, 470], "label": "SOUND", "anchor": "right top"},
+    {"rect": [870, 580, 370, 190], "label": "TRANSPORT", "anchor": "right bottom"}
   ],
   "controls": [
     {"type": "label", "rect": [40, 24, 400, 40], "label": "OSCAIRN"},
-    {"type": "screen", "rect": [40, 80, 800, 469]},
-    {"type": "knob", "rect": [890, 110, 105, 140], "label": "Brightness", "bind": "synth:1"},
-    {"type": "knob", "rect": [1003, 110, 105, 140], "label": "Level", "bind": "synth:2"},
-    {"type": "knob", "rect": [1116, 110, 105, 140], "label": "Tempo", "bind": "tempo"},
-    {"type": "knob", "rect": [890, 280, 105, 140], "label": "Lock 1", "bind": "sequencer:300"},
-    {"type": "knob", "rect": [1003, 280, 105, 140], "label": "Lock 2", "bind": "sequencer:301"},
-    {"type": "knob", "rect": [1116, 280, 105, 140], "label": "Note 1", "bind": "sequencer:200"},
-    {"type": "pads", "rect": [40, 580, 800, 190], "rows": 2, "cols": 8, "note": 36, "steps": true},
-    {"type": "button", "rect": [890, 620, 105, 60], "label": "PLAY", "bind": "play"},
-    {"type": "button", "rect": [1003, 620, 105, 60], "label": "STOP", "bind": "stop"},
-    {"type": "button", "rect": [1116, 620, 105, 60], "label": "MIDI SYNC", "bind": "sync"},
-    {"type": "button", "rect": [890, 695, 331, 50], "label": "PLAY / STOP", "bind": "play-stop"}
+    {"type": "screen", "rect": [40, 80, 800, 469], "anchor": "stretch stretch"},
+    {"type": "knob", "rect": [890, 110, 105, 140], "label": "Brightness", "bind": "synth:1", "anchor": "right top"},
+    {"type": "knob", "rect": [1003, 110, 105, 140], "label": "Level", "bind": "synth:2", "anchor": "right top"},
+    {"type": "knob", "rect": [1116, 110, 105, 140], "label": "Tempo", "bind": "tempo", "anchor": "right top"},
+    {"type": "knob", "rect": [890, 280, 105, 140], "label": "Lock 1", "bind": "sequencer:300", "anchor": "right top"},
+    {"type": "knob", "rect": [1003, 280, 105, 140], "label": "Lock 2", "bind": "sequencer:301", "anchor": "right top"},
+    {"type": "knob", "rect": [1116, 280, 105, 140], "label": "Note 1", "bind": "sequencer:200", "anchor": "right top"},
+    {"type": "pads", "rect": [40, 580, 800, 190], "rows": 2, "cols": 8, "note": 36, "steps": true, "anchor": "stretch bottom"},
+    {"type": "button", "rect": [890, 620, 105, 60], "label": "PLAY", "bind": "play", "anchor": "right bottom"},
+    {"type": "button", "rect": [1003, 620, 105, 60], "label": "STOP", "bind": "stop", "anchor": "right bottom"},
+    {"type": "button", "rect": [1116, 620, 105, 60], "label": "MIDI SYNC", "bind": "sync", "anchor": "right bottom"},
+    {"type": "button", "rect": [890, 695, 331, 50], "label": "PLAY / STOP", "bind": "play-stop", "anchor": "right bottom"}
   ]
 }

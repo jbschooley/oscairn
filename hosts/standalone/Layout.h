@@ -14,10 +14,29 @@ namespace oscairn::standalone
     /// See layouts/README.md for the format.
     struct Layout
     {
+        /// Where an element goes when a stretching layout gets extra space: along each
+        /// axis it keeps its distance from the start (left, top) or the end (right,
+        /// bottom), stays centred, or stretches with the space.
+        struct Anchor
+        {
+            enum Edge
+            {
+                Start,
+                End,
+                Centre,
+                Stretch
+            };
+            Edge x = Start, y = Start;
+
+            /// `rect` from the design, moved or sized for `dx`, `dy` extra design units.
+            juce::Rectangle<int> place( juce::Rectangle<int> rect, int dx, int dy ) const;
+        };
+
         struct Panel
         {
             juce::Rectangle<int> rect;
             std::string          label;
+            Anchor               anchor;
         };
 
         struct Control
@@ -41,11 +60,21 @@ namespace oscairn::standalone
             int         note  = 36;         // pads: the first pad's note; keys: the lowest key
             int         count = 25;         // keys
             bool        steps = false;      // pads light with the sequencer's playhead
+            Anchor      anchor;
         };
 
         std::string          name;
         int                  width = 0, height = 0;
-        bool                 resizable = true; // scaled to the window, keeping its proportions
+        /// How the panel fits a resized window. Scale: the whole panel scales, keeping its
+        /// proportions. Stretch: it scales to fit the tighter dimension and the space left
+        /// over in the other goes to elements by their anchors, so any window shape works.
+        enum class Resize
+        {
+            Fixed,
+            Scale,
+            Stretch
+        };
+        Resize               resize = Resize::Scale;
         juce::Colour         background{ 0xff1b1d21 };
         std::vector<Panel>   panels;
         std::vector<Control> controls;

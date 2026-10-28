@@ -60,7 +60,7 @@ namespace oscairn::standalone
     void Screen::paint( juce::Graphics& g )
     {
         g.fillAll( background );
-        const float unit = getHeight() / 600.0f; // the KICK's screen is 1024 x 600
+        const float unit = juce::jmin( getHeight() / 600.0f, getWidth() / 1024.0f ); // drawn for the KICK's 1024 x 600
 
         auto top = header().reduced( 14.0f * unit, 0.0f );
         g.setColour( text );

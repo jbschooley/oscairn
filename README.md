@@ -42,7 +42,7 @@ cmake -S . -B build-app -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DOSCAIRN_STA
 ninja -C build-app oscairn_standalone
 # macOS: build-app/hosts/standalone/oscairn_standalone_artefacts/RelWithDebInfo/Oscairn.app
 #   --layout desktop|kick|keys49|file.json   (or the View menu)
-#   --snapshot out.png [--play SECONDS]      render the panel to a PNG and quit
+#   --snapshot out.png [--size WxH] [--play SECONDS]   render the panel to a PNG and quit
 ```
 
 `oscairn-render` chains the plugins in the order given: each one plays the notes of the
