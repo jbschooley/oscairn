@@ -7,6 +7,7 @@
 #include <kick_clap/Discovery.h>
 #include <kick_clap/Host.h>
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstdio>
