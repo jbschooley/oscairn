@@ -4,10 +4,13 @@
 // faster than real time and writes the result to a WAV file.
 //
 //   oscairn-render out.wav [--seconds 8] [--tempo 120] [--block 512] [--rate 48000]
-//                  plugin.clap[#plugin-id] ...
+//                  [--midi-clock BPM] plugin.clap[#plugin-id] ...
 //
 // Plugins are chained in order: each one plays the notes of the one before it,
 // so "sequencer.clap synth.clap" has the sequencer playing the synth.
+//
+// --midi-clock BPM simulates an external MIDI clock source at that tempo (start, then
+// 24 pulses per beat) and makes the transport follow it instead of --tempo.
 
 #include "oscairn/chain.h"
 #include "oscairn/transport.h"
@@ -26,7 +29,7 @@ namespace
     int usage()
     {
         std::fprintf( stderr,
-                      "usage: oscairn-render out.wav [--seconds S] [--tempo BPM] [--block N] [--rate HZ] plugin.clap[#id] ...\n" );
+                      "usage: oscairn-render out.wav [--seconds S] [--tempo BPM] [--block N] [--rate HZ] [--midi-clock BPM] plugin.clap[#id] ...\n" );
         return 2;
     }
 }
@@ -37,7 +40,7 @@ int main( int argc, char** argv )
         return usage();
 
     std::string              output = argv[1];
-    double                   seconds = 8.0, tempo = 120.0, rate = 48000.0;
+    double                   seconds = 8.0, tempo = 120.0, rate = 48000.0, clockBpm = 0.0;
     uint32_t                 block   = 512;
     std::vector<std::string> plugins;
     for( int i = 2; i < argc; ++i )
@@ -53,12 +56,14 @@ int main( int argc, char** argv )
             block = (uint32_t)std::atoi( v );
         else if( arg == "--rate" && ( v = value() ) )
             rate = std::atof( v );
+        else if( arg == "--midi-clock" && ( v = value() ) )
+            clockBpm = std::atof( v );
         else if( arg.rfind( "--", 0 ) == 0 )
             return usage();
         else
             plugins.push_back( arg );
     }
-    if( plugins.empty() || seconds <= 0 || tempo <= 0 || rate <= 0 || block == 0 )
+    if( plugins.empty() || seconds <= 0 || tempo <= 0 || rate <= 0 || block == 0 || clockBpm < 0 )
         return usage();
 
     try
@@ -72,6 +77,11 @@ int main( int argc, char** argv )
         }
 
         oscairn::Transport transport( rate, tempo );
+        if( clockBpm > 0 )
+            transport.setClockSource( oscairn::Transport::ClockSource::MidiClock );
+        const double clockInterval = clockBpm > 0 ? rate * 60.0 / ( clockBpm * 24.0 ) : 0.0;
+        bool         clockStarted  = false;
+        int64_t      nextPulse     = 0;
         const auto         total = (int64_t)std::llround( seconds * rate );
         std::vector<float> interleaved( (size_t)total * oscairn::Chain::channels );
         std::vector<float> left( block ), right( block );
@@ -88,6 +98,17 @@ int main( int argc, char** argv )
                 interleaved[(size_t)( position + i ) * 2]     = left[i];
                 interleaved[(size_t)( position + i ) * 2 + 1] = right[i];
             }
+            if( clockBpm > 0 )
+            {
+                // The simulated clock's messages in this block: start at sample 0, then pulses.
+                if( !clockStarted )
+                {
+                    transport.midiClock( 0xFA, 0 );
+                    clockStarted = true;
+                }
+                for( int64_t at; ( at = (int64_t)std::llround( nextPulse * clockInterval ) ) < position + frames; ++nextPulse )
+                    transport.midiClock( 0xF8, at );
+            }
             transport.advance( frames );
             position += frames;
         }
@@ -96,7 +117,8 @@ int main( int argc, char** argv )
         for( float s : interleaved )
             peak = std::max( peak, std::abs( s ) );
         oscairn::writeWavFile( output, interleaved, oscairn::Chain::channels, (int)rate );
-        std::printf( "wrote %s: %.2f s at %.0f Hz, %.0f BPM, block %u, peak %.3f\n", output.c_str(), seconds, rate, tempo, block, peak );
+        std::printf( "wrote %s: %.2f s at %.0f Hz, %.0f BPM%s, block %u, peak %.3f\n", output.c_str(), seconds, rate,
+                     clockBpm > 0 ? clockBpm : tempo, clockBpm > 0 ? " (MIDI clock)" : "", block, peak );
         return peak > 0.0f ? 0 : 1; // silence means something went wrong
     }
     catch( const std::exception& e )

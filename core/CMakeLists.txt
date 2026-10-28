@@ -23,3 +23,7 @@ add_test(NAME host-policy COMMAND oscairn-host-policy-test $<TARGET_FILE:oscairn
 add_executable(oscairn-chain-mono-test engine/tests/chain_mono.cpp)
 target_link_libraries(oscairn-chain-mono-test PRIVATE oscairn_engine)
 add_test(NAME chain-mono COMMAND oscairn-chain-mono-test $<TARGET_FILE:kick-clap-fixture-normal>)
+
+add_executable(oscairn-midi-clock-test engine/tests/midi_clock.cpp)
+target_link_libraries(oscairn-midi-clock-test PRIVATE oscairn_engine)
+add_test(NAME midi-clock COMMAND oscairn-midi-clock-test $<TARGET_FILE:oscairn_step_sequencer>)

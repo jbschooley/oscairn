@@ -4,10 +4,11 @@
 // sixteenth notes in time with the host transport and sends the notes on to the
 // next plugin. It has no audio ports.
 //
-// Step times are worked out in whole samples from the transport position, so the
-// output does not depend on the host's block size. A tempo change takes effect from
-// the position where it happens, measured from the start of the timeline (good
-// enough for a fixed-tempo demo; a tempo map comes later).
+// Steps are placed by the transport's beat position, so the sequencer follows
+// whatever drives the transport (its own tempo, MIDI clock, a DAW). Each step plays
+// once even if the position jitters, and a jump in position (song position, loop)
+// restarts from the new place. With a steady tempo the output does not depend on the
+// host's block size.
 
 #include <clap/clap.h>
 
@@ -21,7 +22,8 @@ namespace
 {
     // A minor arpeggio bassline, alternating octaves.
     constexpr std::array<int16_t, 16> pattern{ 45, 57, 52, 57, 48, 60, 55, 60, 43, 55, 50, 55, 47, 59, 52, 59 };
-    constexpr double                  gateLength = 0.5; // fraction of a step
+    constexpr double                  stepBeats  = 0.25; // sixteenth notes
+    constexpr double                  gateLength = 0.5;  // fraction of a step
 
     const char* const features[] = { CLAP_PLUGIN_FEATURE_NOTE_EFFECT, nullptr };
 
@@ -41,9 +43,10 @@ namespace
     struct Sequencer
     {
         clap_plugin_t      plugin{};
-        const clap_host_t* host       = nullptr;
         double             sampleRate = 48000.0;
-        int16_t            heldKey    = -1; // the note currently sounding, if any
+        int64_t            lastStep   = -1; // the last step played; -1 when stopped
+        int64_t            heldStep   = -1; // the step whose note is sounding
+        int16_t            heldKey    = -1;
     };
 
     Sequencer& self( const clap_plugin_t* p )
@@ -78,50 +81,74 @@ namespace
     {
         auto&          s      = self( p );
         const auto*    t      = process->transport;
-        const uint32_t frames = process->frames_count;
+        const auto     frames = (int64_t)process->frames_count;
 
         const bool playing = t && ( t->flags & CLAP_TRANSPORT_IS_PLAYING ) && ( t->flags & CLAP_TRANSPORT_HAS_TEMPO )
-                          && ( t->flags & CLAP_TRANSPORT_HAS_SECONDS_TIMELINE ) && t->tempo > 0.0;
+                          && ( t->flags & CLAP_TRANSPORT_HAS_BEATS_TIMELINE ) && t->tempo > 0.0;
         if( !playing )
         {
             if( s.heldKey >= 0 )
                 pushNote( process->out_events, 0, false, s.heldKey, 0.0 );
             s.heldKey = -1;
+            s.heldStep = s.lastStep = -1;
             return CLAP_PROCESS_CONTINUE;
         }
 
-        const auto   start       = (int64_t)std::llround( (double)t->song_pos_seconds / (double)CLAP_SECTIME_FACTOR * s.sampleRate );
-        const auto   end         = start + frames;
-        const double stepSamples = s.sampleRate * 60.0 / t->tempo / 4.0;
-        const auto   gateSamples = (int64_t)std::llround( gateLength * stepSamples );
+        const double beatStart      = (double)t->song_pos_beats / (double)CLAP_BEATTIME_FACTOR;
+        const double samplesPerBeat = s.sampleRate * 60.0 / t->tempo;
+        auto offsetOf = [&]( double beat ) { return (int64_t)std::llround( ( beat - beatStart ) * samplesPerBeat ); };
 
-        // Every note-on and note-off that falls in this block, including the off of
-        // a step that started in an earlier block.
-        std::array<Pending, 64> pending{}; // hosts split blocks to maxFrames, so this is ample
-        size_t                 count = 0;
-        for( auto k = std::max<int64_t>( 0, (int64_t)std::floor( (double)start / stepSamples ) - 1 ); count + 2 <= pending.size(); ++k )
+        // Where to continue: after the last step played, unless the position jumped
+        // (backwards, or forwards by more than a step), or we are just starting. On a
+        // start or jump, a step that began within its gate time still plays, late,
+        // rather than being skipped (a clocked start always arrives slightly after
+        // the beat).
+        int64_t next = s.lastStep + 1;
+        if( s.lastStep < 0 || next * stepBeats < beatStart - stepBeats || s.lastStep * stepBeats > beatStart + 1e-9 )
         {
-            const auto on = (int64_t)std::llround( (double)k * stepSamples );
-            if( on >= end )
-                break;
-            const int16_t key      = pattern[(size_t)( k % (int64_t)pattern.size() )];
-            const double  velocity = ( k % 4 == 0 ) ? 1.0 : 0.7;
-            if( on >= start )
-                pending[count++] = { on, true, key, velocity };
-            const auto off = on + gateSamples;
-            if( off >= start && off < end )
-                pending[count++] = { off, false, key, 0.0 };
+            const auto current = (int64_t)std::floor( beatStart / stepBeats + 1e-9 );
+            const bool inGate  = beatStart - current * stepBeats < gateLength * stepBeats;
+            next               = std::max<int64_t>( inGate ? current : current + 1, 0 );
         }
+
+        std::array<Pending, 64> pending{}; // hosts split blocks to maxFrames, so this is ample
+        size_t                  count = 0;
+        auto endHeldNoteBefore = [&]( int64_t limit ) {
+            if( s.heldStep < 0 )
+                return;
+            const auto off = std::max<int64_t>( 0, offsetOf( ( s.heldStep + gateLength ) * stepBeats ) );
+            if( off < limit )
+            {
+                pending[count++] = { off, false, s.heldKey, 0.0 };
+                s.heldStep = -1;
+                s.heldKey  = -1;
+            }
+        };
+
+        for( int64_t k = next; count + 2 <= pending.size(); ++k )
+        {
+            const auto on = std::max<int64_t>( 0, offsetOf( k * stepBeats ) );
+            if( on >= frames )
+                break;
+            endHeldNoteBefore( on + 1 );
+            if( s.heldStep >= 0 ) // still sounding at the next step: end it there
+            {
+                pending[count++] = { on, false, s.heldKey, 0.0 };
+                s.heldStep = -1;
+            }
+            const int16_t key = pattern[(size_t)( k % (int64_t)pattern.size() )];
+            pending[count++]  = { on, true, key, ( k % 4 == 0 ) ? 1.0 : 0.7 };
+            s.heldStep        = k;
+            s.heldKey         = key;
+            s.lastStep        = k;
+        }
+        endHeldNoteBefore( frames );
+
         std::stable_sort( pending.begin(), pending.begin() + count, []( const Pending& a, const Pending& b ) {
             return a.time != b.time ? a.time < b.time : ( !a.on && b.on ); // offs first
         } );
-
         for( size_t i = 0; i < count; ++i )
-        {
-            const auto& e = pending[i];
-            pushNote( process->out_events, (uint32_t)( e.time - start ), e.on, e.key, e.velocity );
-            s.heldKey = e.on ? e.key : int16_t( -1 );
-        }
+            pushNote( process->out_events, (uint32_t)pending[i].time, pending[i].on, pending[i].key, pending[i].velocity );
         return CLAP_PROCESS_CONTINUE;
     }
 
@@ -143,35 +170,41 @@ namespace
 
     const clap_plugin_note_ports_t notePorts = { notePortsCount, notePortsGet };
 
-    const clap_plugin_t* create( const clap_host_t* host )
+    void stop( Sequencer& s )
     {
-        auto* s                         = new Sequencer;
-        s->host                         = host;
-        s->plugin.desc                  = &descriptor;
-        s->plugin.plugin_data           = s;
-        s->plugin.init                  = []( const clap_plugin_t* ) { return true; };
-        s->plugin.destroy               = []( const clap_plugin_t* p ) { delete &self( p ); };
-        s->plugin.activate              = []( const clap_plugin_t* p, double rate, uint32_t, uint32_t ) {
+        s.lastStep = s.heldStep = -1;
+        s.heldKey               = -1;
+    }
+
+    const clap_plugin_t* create()
+    {
+        auto* s                    = new Sequencer;
+        s->plugin.desc             = &descriptor;
+        s->plugin.plugin_data      = s;
+        s->plugin.init             = []( const clap_plugin_t* ) { return true; };
+        s->plugin.destroy          = []( const clap_plugin_t* p ) { delete &self( p ); };
+        s->plugin.activate         = []( const clap_plugin_t* p, double rate, uint32_t, uint32_t ) {
             self( p ).sampleRate = rate;
+            stop( self( p ) );
             return true;
         };
-        s->plugin.deactivate            = []( const clap_plugin_t* ) {};
-        s->plugin.start_processing      = []( const clap_plugin_t* ) { return true; };
-        s->plugin.stop_processing       = []( const clap_plugin_t* ) {};
-        s->plugin.reset                 = []( const clap_plugin_t* p ) { self( p ).heldKey = -1; };
-        s->plugin.process               = process;
-        s->plugin.get_extension         = []( const clap_plugin_t*, const char* id ) -> const void* {
+        s->plugin.deactivate       = []( const clap_plugin_t* ) {};
+        s->plugin.start_processing = []( const clap_plugin_t* ) { return true; };
+        s->plugin.stop_processing  = []( const clap_plugin_t* ) {};
+        s->plugin.reset            = []( const clap_plugin_t* p ) { stop( self( p ) ); };
+        s->plugin.process          = process;
+        s->plugin.get_extension    = []( const clap_plugin_t*, const char* id ) -> const void* {
             return std::strcmp( id, CLAP_EXT_NOTE_PORTS ) == 0 ? &notePorts : nullptr;
         };
-        s->plugin.on_main_thread        = []( const clap_plugin_t* ) {};
+        s->plugin.on_main_thread   = []( const clap_plugin_t* ) {};
         return &s->plugin;
     }
 
     const clap_plugin_factory_t factory = {
         []( const clap_plugin_factory_t* ) -> uint32_t { return 1; },
         []( const clap_plugin_factory_t*, uint32_t index ) -> const clap_plugin_descriptor_t* { return index == 0 ? &descriptor : nullptr; },
-        []( const clap_plugin_factory_t*, const clap_host_t* host, const char* id ) -> const clap_plugin_t* {
-            return std::strcmp( id, descriptor.id ) == 0 ? create( host ) : nullptr;
+        []( const clap_plugin_factory_t*, const clap_host_t*, const char* id ) -> const clap_plugin_t* {
+            return std::strcmp( id, descriptor.id ) == 0 ? create() : nullptr;
         },
     };
 }
