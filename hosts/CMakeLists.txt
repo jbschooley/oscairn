@@ -1,6 +1,7 @@
 add_executable(oscairn-render render/main.cpp)
 target_link_libraries(oscairn-render PRIVATE oscairn_engine)
 target_compile_options(oscairn-render PRIVATE -Wall -Wextra)
+install(TARGETS oscairn-render RUNTIME DESTINATION bin)
 
 # Sequencer playing the synth, through the delay. Rendering with very different block sizes must give
 # byte-identical files: events land on their exact sample, not on block boundaries.

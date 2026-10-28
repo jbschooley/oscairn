@@ -9,6 +9,8 @@ function(oscairn_add_plugin target output source)
         OUTPUT_NAME ${output}
         CXX_VISIBILITY_PRESET hidden
         VISIBILITY_INLINES_HIDDEN ON)
+    # lib/clap is where CLAP hosts look on Linux (/usr/lib/clap).
+    install(TARGETS ${target} LIBRARY DESTINATION lib/clap)
 endfunction()
 
 oscairn_add_plugin(oscairn_step_sequencer oscairn-step-sequencer step-sequencer/step_sequencer.cpp)
