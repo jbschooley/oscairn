@@ -3,11 +3,12 @@
 // Oscairn standalone: the demo instrument in a desktop window, with a choice of panel
 // layouts (View menu, or --layout NAME|FILE.json). Every MIDI input plays it.
 //
-//   oscairn-standalone [--layout desktop|kick|keys49|path.json] [--plugins DIR]
-//                      [--snapshot out.png [--size WxH] [--play SECONDS]]
+//   oscairn-standalone [--layout desktop|kick|kick-screen|keys49|path.json] [--plugins DIR]
+//                      [--fullscreen] [--play] [--snapshot out.png [--size WxH] [--play SECONDS]]
 //
-// --snapshot renders the panel to a PNG and quits: at its design size, or as in a window
-// of --size. With --play, the sequencer plays for that long first.
+// --fullscreen fills the display with no title bar (for a device). --play starts the
+// sequencer at launch. --snapshot renders the panel to a PNG and quits: at its design size,
+// or as in a window of --size; with --play SECONDS, the sequencer plays for that long first.
 
 #include "Engine.h"
 #include "Layout.h"
@@ -41,7 +42,7 @@ namespace oscairn::standalone
                     layouts.push_back( { file.upToLastOccurrenceOf( ".json", false, false ), juce::String::fromUTF8( data, size ) } );
             }
             // A fixed order for the menu.
-            const juce::StringArray order{ "desktop", "kick", "keys49" };
+            const juce::StringArray order{ "desktop", "kick", "kick-screen", "keys49" };
             std::sort( layouts.begin(), layouts.end(), [&]( const NamedLayout& a, const NamedLayout& b ) {
                 return order.indexOf( a.name ) < order.indexOf( b.name );
             } );
@@ -58,14 +59,20 @@ namespace oscairn::standalone
     class Window : public juce::DocumentWindow, public juce::MenuBarModel
     {
     public:
-        Window( Engine& engine, std::vector<NamedLayout> layouts, const Layout& first )
-            : DocumentWindow( "Oscairn", juce::Colours::black, DocumentWindow::allButtons ), engine_( engine ), layouts_( std::move( layouts ) )
+        Window( Engine& engine, std::vector<NamedLayout> layouts, const Layout& first, bool fullScreen )
+            : DocumentWindow( "Oscairn", juce::Colours::black, DocumentWindow::allButtons )
+            , engine_( engine )
+            , layouts_( std::move( layouts ) )
+            , fullScreen_( fullScreen )
         {
-            setUsingNativeTitleBar( true );
+            setUsingNativeTitleBar( !fullScreen );
+            if( fullScreen )
+                setTitleBarHeight( 0 );
 #if JUCE_MAC
             juce::MenuBarModel::setMacMainMenu( this );
 #else
-            setMenuBar( this );
+            if( !fullScreen ) // a device's screen has no menu bar
+                setMenuBar( this );
 #endif
             show( first );
             setVisible( true );
@@ -93,6 +100,15 @@ namespace oscairn::standalone
             if( auto* c = getConstrainer() )
                 c->setFixedAspectRatio( layout.resize == Layout::Resize::Scale ? layout.width / (double)layout.height : 0.0 );
             setResizeLimits( layout.width / 4, layout.height / 4, layout.width * 3, layout.height * 3 );
+            if( fullScreen_ )
+            {
+                // The whole display, whatever its shape: the panel scales or stretches to fit.
+                setResizeLimits( 1, 1, 1 << 15, 1 << 15 );
+                if( auto* c = getConstrainer() )
+                    c->setFixedAspectRatio( 0.0 );
+                setBounds( juce::Desktop::getInstance().getDisplays().getPrimaryDisplay()->logicalBounds.toNearestInt() );
+                return;
+            }
             centreWithSize( juce::roundToInt( layout.width * scale ), juce::roundToInt( layout.height * scale ) );
         }
 
@@ -158,6 +174,7 @@ namespace oscairn::standalone
         Engine&                            engine_;
         std::vector<NamedLayout>           layouts_;
         std::unique_ptr<juce::FileChooser> chooser_;
+        bool                               fullScreen_;
     };
 
     class Application : public juce::JUCEApplication
@@ -192,13 +209,13 @@ namespace oscairn::standalone
                         throw std::runtime_error( "no layout named " + wanted.toStdString() + " and no such file" );
                     json = file.loadFileAsString();
                 }
-                window_ = std::make_unique<Window>( *engine_, std::move( layouts ), Layout::parse( json ) );
+                window_ = std::make_unique<Window>( *engine_, std::move( layouts ), Layout::parse( json ), args.contains( "--fullscreen" ) );
+                if( args.contains( "--play" ) )
+                    engine_->setPlaying( true );
 
                 if( const auto snapshot = argument( args, "--snapshot" ); snapshot.isNotEmpty() )
                 {
                     const auto seconds = argument( args, "--play" ).getDoubleValue();
-                    if( seconds > 0.0 )
-                        engine_->setPlaying( true );
                     const auto size = juce::StringArray::fromTokens( argument( args, "--size" ), "x", "" );
                     const auto w = size.size() == 2 ? size[0].getIntValue() : 0, h = size.size() == 2 ? size[1].getIntValue() : 0;
                     juce::Timer::callAfterDelay( juce::roundToInt( juce::jmax( 0.5, seconds ) * 1000.0 ), [this, snapshot, w, h] {

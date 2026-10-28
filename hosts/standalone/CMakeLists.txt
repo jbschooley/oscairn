@@ -16,6 +16,7 @@ juce_add_gui_app(oscairn_standalone
 juce_add_binary_data(oscairn_standalone_layouts SOURCES
     layouts/desktop.json
     layouts/kick.json
+    layouts/kick-screen.json
     layouts/keys49.json)
 
 target_sources(oscairn_standalone PRIVATE Main.cpp Engine.cpp Layout.cpp Panel.cpp Screen.cpp)
@@ -34,3 +35,5 @@ target_link_libraries(oscairn_standalone PRIVATE
     juce::juce_recommended_config_flags
     juce::juce_recommended_warning_flags)
 add_dependencies(oscairn_standalone oscairn_step_sequencer oscairn_basic_synth oscairn_delay)
+
+install(TARGETS oscairn_standalone RUNTIME DESTINATION bin BUNDLE DESTINATION Applications)

@@ -8,6 +8,7 @@ a device that does not exist yet and be tried with the same engine behind it. Bu
 | --- | --- |
 | `desktop.json` | Desktop window that stretches to any shape: large screen, sound knobs, 16 pads, transport |
 | `kick.json` | The KICK's panel, with the geometry of chillbeast's KickEM simulator board (1024 x 600 screen); most buttons do nothing yet |
+| `kick-screen.json` | The KICK's screen alone, 1024 x 600: on the device, the hardware panel supplies the controls |
 | `keys49.json` | A concept 49-key keyboard: screen, knobs, pads and keys |
 
 Others can be opened with View > Open Layout File... or `--layout path.json`.
