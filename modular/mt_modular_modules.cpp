@@ -92,6 +92,7 @@ namespace mt::modular
             enum Input { Add, PhaseMod, Replace };
             static constexpr int maxUnison = 7;
 
+            void prepare( double ) override { incrementsValid = false; }
             void reset() override { phases.fill( 0.0 ); }
             void noteOn( const VoiceContext&, bool Steal ) override
             {
@@ -112,14 +113,18 @@ namespace mt::modular
                 const auto note  = C.note + P[kTune] + P[kFine] * 0.01;
                 const auto pw    = (double)P[kPw];
                 const auto pm    = P[kPm];
-                const auto norm  = 1.f / std::sqrt( (float)copies ); // unison keeps about the same loudness
-
-                // Unison copies spread evenly across +-Spread cents.
-                std::array<double, maxUnison> dt{};
-                for( int u = 0; u < copies; ++u )
+                if( !incrementsValid || cachedNote != note || cachedRate != C.sampleRate
+                    || cachedCopies != copies || cachedSpread != P[kSpread] )
                 {
-                    const auto cents = copies == 1 ? 0.0 : P[kSpread] * ( 2.0 * u / ( copies - 1 ) - 1.0 );
-                    dt[(size_t)u]    = juce::jlimit( 0.0, 0.45, noteToHz( note + cents * 0.01 ) / C.sampleRate );
+                    // Reuse exact increments until pitch, spread, unison or rate changes.
+                    for( int u = 0; u < copies; ++u )
+                    {
+                        const auto cents = copies == 1 ? 0.0 : P[kSpread] * ( 2.0 * u / ( copies - 1 ) - 1.0 );
+                        dt[(size_t)u] = juce::jlimit( 0.0, 0.45, noteToHz( note + cents * 0.01 ) / C.sampleRate );
+                    }
+                    norm = 1.f / std::sqrt( (float)copies );
+                    cachedNote = note; cachedRate = C.sampleRate; cachedCopies = copies; cachedSpread = P[kSpread];
+                    incrementsValid = true;
                 }
 
                 Ramp level( P0[kLevel], P[kLevel], N );
@@ -164,6 +169,11 @@ namespace mt::modular
             }
 
             std::array<double, maxUnison> phases{};
+            std::array<double, maxUnison> dt{};
+            double cachedNote{ 0 }, cachedRate{ 0 };
+            int cachedCopies{ 0 };
+            float cachedSpread{ 0 }, norm{ 1.f };
+            bool incrementsValid{ false };
             Rng                           rng;
         };
 
@@ -198,6 +208,7 @@ namespace mt::modular
             enum { kMode, kCutoff, kReso, kTrack };
             enum Mode { LowPass, BandPass, HighPass, Notch, Ladder };
 
+            void prepare( double ) override { coefficientsValid = false; }
             void reset() override
             {
                 ic1 = ic2 = 0;
@@ -206,19 +217,24 @@ namespace mt::modular
             }
             void process( const VoiceContext& C, const float*, const float* P, float* Buf, int N ) override
             {
-                // Topology-preserving SVF (Zavalishin / Cytomic), coefficients per sub-block.
-                const auto sr   = (float)C.sampleRate;
-                const auto fc   = juce::jlimit( 10.f, 0.45f * sr, P[kCutoff] * std::exp2( P[kTrack] * ( C.note - 60.f ) / 12.f ) );
-                const auto g    = std::tan( juce::MathConstants<float>::pi * fc / sr );
+                // Recompute exact SVF coefficients only when their inputs change.
+                const std::array<float, 4> controls{ C.note, P[kCutoff], P[kReso], P[kTrack] };
+                if( !coefficientsValid || cachedRate != C.sampleRate || controls != cachedControls )
+                {
+                    const auto sr = (float)C.sampleRate;
+                    const auto fc = juce::jlimit( 10.f, 0.45f * sr, P[kCutoff] * std::exp2( P[kTrack] * ( C.note - 60.f ) / 12.f ) );
+                    g = std::tan( juce::MathConstants<float>::pi * fc / sr );
+                    k = 2.f - 1.96f * P[kReso];
+                    a1 = 1.f / ( 1.f + g * ( g + k ) );
+                    a2 = g * a1;
+                    a3 = g * a2;
+                    cachedRate = C.sampleRate; cachedControls = controls; coefficientsValid = true;
+                }
                 if( (int)P[kMode] == Ladder )
                 {
                     processLadder( g, P[kReso], Buf, N );
                     return;
                 }
-                const auto k    = 2.f - 1.96f * P[kReso];
-                const auto a1   = 1.f / ( 1.f + g * ( g + k ) );
-                const auto a2   = g * a1;
-                const auto a3   = g * a2;
                 const auto mode = (int)P[kMode];
 
                 for( int i = 0; i < N; ++i )
@@ -266,6 +282,10 @@ namespace mt::modular
             float                ic1{ 0 }, ic2{ 0 };
             std::array<float, 4> ladder{};
             float                ladderOut{ 0 };
+            std::array<float, 4> cachedControls{};
+            double cachedRate{ 0 };
+            float g{ 0 }, k{ 0 }, a1{ 0 }, a2{ 0 }, a3{ 0 };
+            bool coefficientsValid{ false };
         };
 
         //==========================================================================

@@ -201,8 +201,12 @@ namespace mt
         {
             for( int p = 0; p < numParams(); ++p )
             {
-                baseNorm[(size_t)p] = base[(size_t)p].load( std::memory_order_relaxed );
-                baseReal[(size_t)p] = paramSpecs[(size_t)p]->fromNormal( baseNorm[(size_t)p] );
+                const auto value = base[(size_t)p].load( std::memory_order_relaxed );
+                if( value != baseNorm[(size_t)p] )
+                {
+                    baseNorm[(size_t)p] = value;
+                    baseReal[(size_t)p] = paramSpecs[(size_t)p]->fromNormal( value );
+                }
             }
             for( size_t r = 0; r < depthNow.size(); ++r )
                 depthNow[r] = depth[r].load( std::memory_order_relaxed );
@@ -668,6 +672,18 @@ namespace mt
 
         void render( float* L, float* R, int N, const Globals& G )
         {
+            if( !R && !effects.empty() )
+            {
+                // Keep stereo effect state and tails when the host requests mono.
+                std::array<float, 128> right{};
+                for( int offset = 0; offset < N; offset += (int)right.size() )
+                {
+                    const int n = juce::jmin( (int)right.size(), N - offset );
+                    render( L + offset, right.data(), n, G );
+                    juce::FloatVectorOperations::add( L + offset, right.data(), n );
+                }
+                return;
+            }
             refreshValues();
             std::fill( L, L + N, 0.f );
             if( R )
@@ -845,7 +861,7 @@ namespace mt
             g->amount = std::make_unique<std::atomic<float>[]>( (size_t)numCables );
             g->amountNow.assign( (size_t)numCables, 0.f );
             g->effectValues.assign( (size_t)g->numParams(), 0.f );
-            g->baseNorm.assign( (size_t)g->numParams(), 0.f );
+            g->baseNorm.assign( (size_t)g->numParams(), -1.f ); // Force first conversion, including minimum-valued knobs.
             g->baseReal.assign( (size_t)g->numParams(), 0.f );
             g->depthNow.assign( pending.size(), 0.f );
             writeValues( *g, D );
