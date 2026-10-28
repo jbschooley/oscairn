@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <stdexcept>
 
 namespace oscairn::standalone
@@ -21,6 +22,8 @@ namespace oscairn::standalone
         if( error.isNotEmpty() || !device )
             throw std::runtime_error( "no audio output: " + ( error.isNotEmpty() ? error.toStdString() : std::string( "no device" ) ) );
         sampleRate_ = device->getCurrentSampleRate();
+        std::fprintf( stderr, "oscairn: audio output \"%s\", %.0f Hz, %d-sample buffer\n", device->getName().toRawUTF8(), sampleRate_,
+                      device->getCurrentBufferSizeSamples() );
         transport_.emplace( sampleRate_, tempo_ );
         transport_->setPlaying( false );
         scratch_.resize( maxFrames );

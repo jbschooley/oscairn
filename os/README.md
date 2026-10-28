@@ -62,6 +62,22 @@ the session reports Oscairn running and two screenshots 3 seconds apart both sho
 picture and differ, which means the screen is drawn and the sequencer is playing.
 Results: `build-os/test` (console log and screenshots).
 
+To hear what the image plays, `os/build.sh record [SECONDS]` boots it with a virtio sound
+card and QEMU writes everything Oscairn plays to `build-os/record/oscairn.wav` (44.1 kHz,
+the rate the app opens the card at). `os/scripts/compare-audio.py` checks the recording
+against an offline render of the same pattern:
+
+```sh
+os/build.sh record 20
+build/hosts/oscairn-render build-os/record/reference.wav --seconds 40 --rate 44100 \
+    --map 0.0=1.Brightness build/plugins/oscairn-step-sequencer.clap \
+    build/plugins/oscairn-basic-synth.clap build/plugins/oscairn-delay.clap
+python3 os/scripts/compare-audio.py build-os/record/oscairn.wav build-os/record/reference.wav
+```
+
+QEMU records the stream the VM sends, so this checks the audio itself (every note in place,
+nothing dropped or repeated), not whether the VM kept up in real time.
+
 Other Buildroot targets go after the defconfig, for example
 `os/build.sh oscairn_qemu_aarch64_defconfig oscairn-rebuild all`.
 

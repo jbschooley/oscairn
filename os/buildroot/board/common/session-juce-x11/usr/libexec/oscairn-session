@@ -20,7 +20,7 @@ while true; do
 	/usr/bin/Oscairn --plugins /usr/lib/clap $OSCAIRN_ARGS >> /var/log/oscairn.log 2>&1 &
 	pid=$!
 	sleep 5
-	kill -0 "$pid" 2>/dev/null && say "Oscairn running (pid $pid)"
+	kill -0 "$pid" 2>/dev/null && say "Oscairn running (pid $pid)" && grep "^oscairn:" /var/log/oscairn.log | tail -n 1 > /dev/console
 	wait "$pid"
 	say "Oscairn exited ($?), restarting"
 	tail -n 5 /var/log/oscairn.log > /dev/console

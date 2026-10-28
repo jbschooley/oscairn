@@ -5,6 +5,8 @@
 #   os/build.sh [defconfig] [make targets...]     default: oscairn_qemu_aarch64_defconfig
 #   os/build.sh test                              boot the QEMU image and check Oscairn starts;
 #                                                 results in build-os/test
+#   os/build.sh record [SECONDS]                  as test, with a virtio sound card, recording
+#                                                 what Oscairn plays to build-os/record/oscairn.wav
 #   os/build.sh run                               boot the QEMU image to look at and use, on
 #                                                 VNC at localhost:5900 (password oscairn)
 #   os/build.sh stop                              stop it
@@ -35,6 +37,10 @@ if [ "${1:-}" = run ]; then
 fi
 if [ "${1:-}" = stop ]; then
 	docker stop oscairn-qemu > /dev/null && echo stopped
+	exit
+fi
+if [ "${1:-}" = record ]; then
+	run python3 /src/os/scripts/boot-test.py /work/output/oscairn_qemu_aarch64_defconfig/images /out/record --record "${2:-20}"
 	exit
 fi
 if [ "${1:-}" = test ]; then

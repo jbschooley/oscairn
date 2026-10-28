@@ -9,7 +9,11 @@ kernel's dummy sound card. Passes when, within the time limit:
   so the audio callback is running).
 Writes the console log and the screenshots to the output folder.
 
-    boot-test.py IMAGES_DIR OUTPUT_DIR [--timeout SECONDS]
+With --record SECONDS, the image gets a virtio sound card instead of the dummy one, and
+QEMU writes everything it plays for that long to OUTPUT_DIR/oscairn.wav (44.1 kHz, 16-bit
+stereo).
+
+    boot-test.py IMAGES_DIR OUTPUT_DIR [--timeout SECONDS] [--record SECONDS]
 """
 import argparse
 import os
@@ -54,6 +58,7 @@ def main():
     parser.add_argument("images")
     parser.add_argument("out")
     parser.add_argument("--timeout", type=float, default=600)
+    parser.add_argument("--record", type=float, default=0)
     args = parser.parse_args()
     os.makedirs(args.out, exist_ok=True)
     console = os.path.join(args.out, "console.log")
@@ -62,17 +67,27 @@ def main():
         if os.path.exists(path):
             os.remove(path)
 
+    cmdline = "rootwait root=/dev/vda console=ttyAMA0"
+    audio = []
+    if args.record > 0:
+        wav = os.path.join(args.out, "oscairn.wav")
+        if os.path.exists(wav):
+            os.remove(wav)
+        cmdline += " snd_dummy.enable=0"
+        audio = ["-audiodev", f"wav,id=snd0,path={wav},out.frequency=44100,out.channels=2,out.format=s16",
+                 "-device", "virtio-sound-pci,audiodev=snd0,romfile="]
+
     qemu = subprocess.Popen([
         "qemu-system-aarch64", "-M", "virt", "-cpu", "cortex-a76", "-smp", "4", "-m", "2048",
         "-kernel", os.path.join(args.images, "Image"),
-        "-append", "rootwait root=/dev/vda console=ttyAMA0",
+        "-append", cmdline,
         "-drive", f"file={os.path.join(args.images, 'rootfs.ext4')},if=none,format=raw,id=hd0,snapshot=on",
         "-device", "virtio-blk-device,drive=hd0",
         "-device", "virtio-gpu-pci,xres=1024,yres=600,romfile=",
         "-device", "virtio-keyboard-pci", "-device", "virtio-tablet-pci",
         "-nic", "none", "-display", "none", "-serial", f"file:{console}",
         "-monitor", f"unix:{sock},server,nowait",
-    ])
+    ] + audio)
     start = time.time()
     result = 1
     try:
@@ -102,8 +117,14 @@ def main():
             print(f"screen {a.size[0]}x{a.size[1]}, has content: {lit}, changes over 3 s: {moved}, Oscairn exited: {exited}")
             result = 0 if lit and moved and not exited else 1
             print("PASS" if result == 0 else "FAIL")
+            if args.record > 0:
+                time.sleep(args.record)
+                monitor(sock, "quit")  # a clean exit, so the WAV header is complete
+                qemu.wait(timeout=30)
+                print("recorded", os.path.join(args.out, "oscairn.wav"))
     finally:
-        qemu.kill()
+        if qemu.poll() is None:
+            qemu.kill()
         qemu.wait()
         print("console log:", console)
         lines = open(console, errors="replace").read().splitlines() if os.path.exists(console) else []
