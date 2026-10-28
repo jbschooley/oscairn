@@ -303,10 +303,17 @@ sequencers), layouts and themes install the same way.
   own work. Sounds refer to its items by ID and version, so editing never changes the pack;
   saving makes the user's own copy. Updates install side by side, and saved work keeps the
   version it was made with until moved on deliberately.
-- **No DRM.** Packages are documented files. They can be signed, which shows who
-  published a package and that it has not been altered: authenticity, not copy protection.
-  Licence terms ("do not redistribute") are stated in the manifest, not enforced. Paid
-  packs work the same way; they are just files.
+- **No copy protection anywhere.** No licence keys, no activation, no activation servers,
+  and no licensing API in the platform; a plugin must work with nothing but its files. The
+  default catalog does not accept packages with copy protection, and plugins have no
+  network access in their sandbox, so online activation cannot work. Packages can be
+  signed, which shows who published a package and that it has not been altered:
+  authenticity, not copy protection. Licence terms ("do not redistribute") are stated in
+  the manifest, not enforced. Paid packs are just files.
+- **Works offline.** Many devices will have no internet, or no network at all, so
+  everything works without one: installing from USB, SD or a computer, signature checks
+  (against keys on the device), the library, and sync over USB. Online catalogs are
+  optional.
 - **Where packages come from:** files from USB, SD or a computer, sync with a paired
   computer, and online catalogs: indexes of packages that anyone can host, with a default
   community catalog.
@@ -314,6 +321,31 @@ sequencers), layouts and themes install the same way.
   show who signed the package and what it contains and ask before installing code; plugins
   will run in separate worker processes without network access by default (see engine
   recovery).
+
+## Building and sharing plugins
+
+Developers should be able to build their own engines, effects and sequencers, install them,
+share them, and not be able to break each other or the host.
+
+- **SDK (MIT):** Oscairn's CLAP extension headers (such as `oscairn.param-target`), templates
+  for an instrument, an effect and a sequencer, and documentation. MIT so that plugins
+  under any licence can use them.
+- **Builder:** a container image with the same cross-compilers as the OS images, and a CI
+  template, so anyone can build for every device from any computer. Builds made with it are
+  reproducible: anyone can rebuild a package from its source and check it matches.
+- **The `oscairn` tool:** create a plugin from a template, build, validate, package, sign
+  (offline), and install to the desktop or to a device over USB or a paired connection. A
+  development mode loads a plugin straight from its build folder.
+- **Validation:** conformance and realtime-safety tests (no allocation or locking on the
+  audio thread, meeting deadlines, state that saves and loads) before a plugin is installed
+  or published.
+- **Isolation:** each plugin has its own data folder; versions install side by side; plugins
+  run in sandboxed worker processes with no network, memory and CPU limits, and a deadline
+  watchdog, so a plugin that crashes or hangs is recovered on its own and cannot take down
+  the host or other plugins (see engine recovery).
+- **Distribution:** a package carries its builds for each platform, its licence, and where
+  its exact source is (an archive in the package, or a repository and commit). Catalogs
+  list packages from anyone; the source travels with the binaries.
 
 ## The platform as a DAW plugin
 

@@ -84,3 +84,5 @@ a DAW plugin; and:
   (see [architecture](architecture.md#packages-sound-packs-libraries-and-plugins)). Then
   online catalogs, and sync with a paired computer.
 - **Plugin looks:** pages and themes described in data, then sandboxed custom views.
+- **Developer kit:** the MIT SDK and templates, the builder image, the `oscairn` tool,
+  the validator, and plugin isolation in sandboxed workers.
