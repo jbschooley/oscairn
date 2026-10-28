@@ -70,6 +70,6 @@ audio continues. Pathname-listener tests require socket-binding permission; CI r
 them. `oscairn-engine` owns device I/O and serves the socket; the desktop accepts
 `--connect SOCKET`. See [host instructions](../../hosts/README.md).
 
-Next: automatic helper launch/supervision and live GUI crash/reopen verification before
-switching the desktop default. Graph staging remains shared across clients, and gestures
+Next: automatic helper launch/supervision before switching the desktop default.
+Named-socket tests and a silent live-device KICK GUI crash/reopen test now pass on macOS. Graph staging remains shared across clients, and gestures
 have no per-client ownership/undo implementation yet.

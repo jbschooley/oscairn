@@ -26,9 +26,10 @@ reconnection without command replay. `hosts/audio` owns JUCE device I/O; the con
 being killed while rendering continues, followed by a new controller connecting.
 
 Plan items 2 and 3 are implemented; item 4 has explicit connection/reconnection but not
-automatic helper launch or supervision. In-process mode remains the default until the
-actual GUI/helper lifecycle is tested with live devices. Named-socket tests cannot bind
-inside the current development sandbox; CI requires them. Graph edits still share a
+automatic helper launch or supervision. In-process mode remains the default while helper launch/supervision is pending. The
+actual GUI/helper lifecycle now passes a silent macOS live-device crash/reopen test.
+Named-socket tests pass when run with approved permission outside the development
+sandbox; CI requires them. Graph edits still share a
 staging area, gestures have no per-client ownership, and transport remains atomic
 telemetry. Physical notes and pressure retain their existing next-block timing policy.
 

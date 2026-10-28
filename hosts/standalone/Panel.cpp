@@ -99,7 +99,8 @@ namespace oscairn::standalone
                 slider_.setDoubleClickReturnValue( true, 120.0 );
                 slider_.textFromValueFunction = []( double v ) { return juce::String( v, 1 ) + " BPM"; };
                 slider_.onValueChange         = [this] { engine_.setTempo( slider_.getValue() ); };
-                slider_.setValue( 120.0, juce::dontSendNotification );
+                refresh();
+                slider_.updateText();
             }
             else if( splitParam( c.bind, node_, param_ ) )
             {
@@ -115,6 +116,7 @@ namespace oscairn::standalone
                 if( label_.empty() )
                     label_ = info.name;
                 refresh();
+                slider_.updateText(); // zero may already be the slider's value before its formatter was installed
             }
             else if( !c.bind.empty() )
                 throw std::runtime_error( "layout: knob \"" + c.label + "\" has an unknown binding \"" + c.bind + "\"" );
@@ -127,7 +129,11 @@ namespace oscairn::standalone
 
         void refresh()
         {
-            if( !node_.empty() && !slider_.isMouseButtonDown() )
+            if( slider_.isMouseButtonDown() )
+                return;
+            if( tempo_ )
+                slider_.setValue( engine_.status().tempo, juce::dontSendNotification );
+            else if( !node_.empty() )
                 slider_.setValue( engine_.param( node_, param_ ), juce::dontSendNotification );
         }
 

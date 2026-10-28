@@ -46,7 +46,10 @@ int main(int argc,char** argv)
         oscairn::LocalServer server(audio.control());server.listen(socket);
         Pump pump(server);
         std::cout<<"oscairn-engine: listening on "<<socket<<std::endl;
-        juce::MessageManager::getInstance()->runDispatchLoop();
+        // On macOS runDispatchLoop() calls [NSApp run], but this console host
+        // has no NSApplication. The bounded loop pumps the native run loop too,
+        // so JUCE timers and device callbacks stay serviced without a GUI app.
+        while(!stopping && juce::MessageManager::getInstance()->runDispatchLoopUntil(50)) {}
         return pump.result;
     }
     catch(const std::exception& e){std::cerr<<"oscairn-engine: "<<e.what()<<'\n';return 1;}

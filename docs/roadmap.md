@@ -67,8 +67,8 @@ Done:
 To do:
 
 - tracks, patterns, swing and more lanes in the sequencer;
-- complete the control API: automatic helper launch/supervision and live GUI crash/reopen
-  testing before making separate-process mode the desktop default ([RFC 0003](rfcs/0003-control-api.md));
+- complete the control API: automatic helper launch/supervision before making
+  separate-process mode the desktop default ([RFC 0003](rfcs/0003-control-api.md));
 - LV2 hosting, right after the control API: a large catalog of open plugins already
   built for ARM Linux;
 - define hardware capabilities, timestamped input, scheduled output and engine backend

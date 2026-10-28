@@ -48,8 +48,9 @@ The socket parent must be private and owned by the user; existing endpoints are 
 replaced automatically. SIGINT/SIGTERM stops the helper and removes its own socket.
 After an engine crash, verify it has stopped before removing its stale endpoint and
 starting a new helper. Reconnecting a UI preserves a running engine's state; restarting
-an engine starts the demo graph afresh. Session persistence, helper auto-launch/restart,
-and the live GUI crash/reopen listening test remain pending.
+an engine starts the demo graph afresh. Session persistence and helper auto-launch/restart remain pending. A silent live-device
+smoke test on macOS now verifies the actual KICK UI can be killed and reopened while
+the same engine keeps processing; an audible listening check remains separate.
 
 See the [wire contract](../docs/control-protocol.md) for framing, bounds, status fields
 and timeout semantics. The socket carries JSON-RPC; no WebSocket or gRPC is involved.
@@ -75,3 +76,25 @@ named-socket test. Path validation and file preservation run in a separate test 
 when listener creation is unavailable. The named-socket test includes a controller
 process crash and reconnect, without using an audio device; the live GUI/listening test
 is still separate.
+
+
+## Live desktop regression test (opt-in)
+
+With a desktop session and audio output available, this test starts its own helper and
+KICK UI, mutes the synth, kills its UI process, and verifies that the same helper keeps
+advancing before reopening the UI at 143 BPM. It saves before/after PNGs and logs, then
+stops only the processes it started and checks orderly socket cleanup. It is not part
+of default CTest because it needs live devices and a desktop.
+
+```sh
+python3 hosts/engine/tests/desktop_lifecycle.py \
+  build-app/hosts/engine/oscairn_engine_host_artefacts/RelWithDebInfo/oscairn-engine \
+  build-app/hosts/standalone/oscairn_standalone_artefacts/RelWithDebInfo/Oscairn.app/Contents/MacOS/Oscairn
+```
+
+The first live run exposed a macOS console-loop issue: `runDispatchLoop()` returned
+immediately without an `NSApplication`. The helper now pumps `runDispatchLoopUntil()`
+in bounded intervals, keeping JUCE timers and native device events active without a
+GUI application. Screenshots also check that reopened tempo controls display the engine's
+current tempo. The smoke test is silent; it does not establish perceptual audio quality
+or test physical MIDI inputs.
