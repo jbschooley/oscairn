@@ -77,4 +77,10 @@ new core, from a UI that talks to it only through the control API.
 Each starts as an RFC: LV2 and VST3 hosting; the sampler workflow (slicing, resampling,
 looper); the Live workflow (splits, layers, scenes); file formats and the library;
 persistent engines; engine recovery; signed updates with A/B system images; the platform as
-a DAW plugin.
+a DAW plugin; and:
+
+- **Packages:** sound packs, libraries and installable plugins, engines and sequencers in
+  one package format, stored once by content hash and loaded once in memory, with no DRM
+  (see [architecture](architecture.md#packages-sound-packs-libraries-and-plugins)). Then
+  online catalogs, and sync with a paired computer.
+- **Plugin looks:** pages and themes described in data, then sandboxed custom views.

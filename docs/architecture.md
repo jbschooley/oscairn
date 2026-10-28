@@ -15,6 +15,7 @@ design decisions are recorded as [RFCs](rfcs/README.md).
 | Step sequencer, basic synth and delay plugins | Scenes, persistent engines, crash recovery |
 | Offline renderer; desktop app with live audio, MIDI input and panel layouts | Hardware-services interface; the platform as a DAW plugin |
 | A Linux image (Buildroot) that boots into Oscairn, tested in QEMU | Images for real hardware |
+| | Packages: sound packs, libraries, installable plugins |
 
 ## Core idea
 
@@ -247,6 +248,15 @@ cutoff"), and each device maps them to what it has: a dedicated knob, a touchscr
 an encoder, or a DAW automation parameter. Plugins without macros get a host-generated
 parameter editor with search, groups and saved assignments.
 
+Plugins can look like themselves without bringing GUI code to a device, in levels:
+generated pages from the parameter list, styled like the rest of the UI; pages and a theme
+described in data (layout, colours, fonts, images, custom knob graphics), drawn natively by
+the UI on any device and mapped to hardware controls; later, custom views (an envelope
+editor, a waveform) as sandboxed code running in the UI process, not the engine; and a
+plugin's own native GUI on the desktop and in a DAW. First-party plugins use the same
+system as third parties. The UI keeps its system areas (header, navigation, transport)
+consistent; a plugin owns its page.
+
 The desktop app's panel layouts already work this way for the screen and controls: one
 engine behind any layout ([layouts](../hosts/standalone/layouts/README.md)).
 
@@ -265,8 +275,45 @@ system.
 - **One bundle format, three scopes:** a selection (one item and its dependencies), a user
   export, and a full backup. Import merges by ID and reports missing dependencies.
 - **Sync** between devices, the desktop app and the DAW plugin uses the same mechanism,
-  moving only changed files. Plugins are per-platform binaries, so sync reports what is
-  missing rather than copying executables.
+  moving only changed files. Plugins are per-platform binaries: sync copies a plugin only
+  if its package has a build for the other side, and otherwise reports it missing. A
+  computer syncs with a device only once paired with it, for example by confirming a code
+  shown on the device's screen.
+
+## Packages: sound packs, libraries and plugins
+
+Like the libraries on a MODX or Montage, people can share and reuse sound packs; unlike
+them, without fixed slots, and without DRM. Third-party plugins (engines, effects,
+sequencers), layouts and themes install the same way.
+
+- **Everything installable is a package:** a manifest (ID, version, author, licence,
+  dependencies, the platforms its plugins are built for) and its files. Kinds: content
+  (Sounds, Performances, Projects, samples, presets), code (CLAP, LV2 or VST3 plugins, with
+  builds for ARM64 Linux, x86_64 Linux, macOS and Windows as available), and looks (panel
+  layouts, themes, plugin pages).
+- **Stored once.** Installed package files live in a content-addressed store, by hash, the
+  way git stores objects. A pack that bundles a plugin or samples already installed costs
+  no extra storage: its manifest points at files already in the store. A user's own work
+  stays plain files in readable folders; installed packages appear in the library, and as
+  read-only folders in the Files view.
+- **Loaded once.** The engine loads assets by content hash and plugins by ID and version,
+  so two libraries using the same sample or engine share it in memory (see persistent
+  engines).
+- **Libraries are read-only.** An installed pack appears in the library next to the user's
+  own work. Sounds refer to its items by ID and version, so editing never changes the pack;
+  saving makes the user's own copy. Updates install side by side, and saved work keeps the
+  version it was made with until moved on deliberately.
+- **No DRM.** Packages are documented files. They can be signed, which shows who
+  published a package and that it has not been altered: authenticity, not copy protection.
+  Licence terms ("do not redistribute") are stated in the manifest, not enforced. Paid
+  packs work the same way; they are just files.
+- **Where packages come from:** files from USB, SD or a computer, sync with a paired
+  computer, and online catalogs: indexes of packages that anyone can host, with a default
+  community catalog.
+- **Installing code needs care.** A plugin is native code running in the engine. Installs
+  show who signed the package and what it contains and ask before installing code; plugins
+  will run in separate worker processes without network access by default (see engine
+  recovery).
 
 ## The platform as a DAW plugin
 
