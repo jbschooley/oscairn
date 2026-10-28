@@ -299,9 +299,10 @@ all of them:
   files, shipped as packages.
 - **No certification programmes.** Oscairn devices are open: they do not join vendor
   certification or hardware-unlock schemes, and carry no authentication for them. Serato
-  and rekordbox unlock features for hardware their vendors certify; with a paid licence
-  they map other controllers' buttons, faders and pads, but not their jog wheels or
-  platters, so on an Oscairn deck they work only partly. That is their choice.
+  and rekordbox unlock features for hardware their vendors certify. With a paid licence
+  both map other controllers' buttons, faders and pads, but Serato does not map other
+  controllers' platters, and rekordbox's mapping did not cover jog wheels when last
+  documented, so on an Oscairn deck they work only partly. That is their choice.
 - **USB sticks DJs already carry:** reading the libraries exported by rekordbox, Serato and
   Engine DJ (cue points, beat grids, playlists) would make a deck useful at once. These
   formats are not officially documented; rekordbox's has been worked out publicly.
