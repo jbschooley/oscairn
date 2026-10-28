@@ -8,8 +8,9 @@ A sound or performance is not tied to one device.
 
 > **Status:** early. What runs today: a graph of CLAP plugins (for example a sequencer
 > playing a synth through a delay, with per-step parameter locks), sample-accurately,
-> following its own tempo or an external MIDI clock, rendered offline to a WAV file. No live
-> audio, MIDI input, UI or LV2/VST3 yet.
+> following its own tempo or an external MIDI clock, rendered offline to a WAV file, and a
+> desktop demo app with live audio, MIDI input and switchable panel layouts. No LV2/VST3,
+> patch library or device build yet.
 
 ## Try it
 
@@ -32,6 +33,16 @@ build/hosts/oscairn-render demo-locks.wav --seconds 16 --map 0.0=1.Brightness \
 # The same chain following a (simulated) external MIDI clock at 140 BPM:
 build/hosts/oscairn-render demo-140.wav --seconds 16 --midi-clock 140 \
     $P/oscairn-step-sequencer.clap $P/oscairn-basic-synth.clap $P/oscairn-delay.clap
+```
+
+The desktop app (downloads JUCE 9.0.4 the first time):
+
+```bash
+cmake -S . -B build-app -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DOSCAIRN_STANDALONE=ON
+ninja -C build-app oscairn_standalone
+# macOS: build-app/hosts/standalone/oscairn_standalone_artefacts/RelWithDebInfo/oscairn-standalone.app
+#   --layout desktop|kick|keys49|file.json   (or the View menu)
+#   --snapshot out.png [--play SECONDS]      render the panel to a PNG and quit
 ```
 
 `oscairn-render` chains the plugins in the order given: each one plays the notes of the

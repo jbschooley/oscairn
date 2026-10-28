@@ -6,6 +6,10 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+# The JUCE desktop app (hosts/standalone). Off by default: it downloads JUCE and needs
+# desktop libraries. The core never depends on JUCE.
+option(OSCAIRN_STANDALONE "Build the desktop app (downloads JUCE)" OFF)
+
 enable_testing()
 
 add_subdirectory(core)
