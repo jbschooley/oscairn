@@ -53,3 +53,25 @@ and the live GUI crash/reopen listening test remain pending.
 
 See the [wire contract](../docs/control-protocol.md) for framing, bounds, status fields
 and timeout semantics. The socket carries JSON-RPC; no WebSocket or gRPC is involved.
+
+## Diagnosing a listener failure
+
+`bind Unix socket PATH: Operation not permitted` means the OS refused the bind syscall.
+Sandbox policies can deny local Unix sockets even in a writable, user-owned 0700
+directory; a Unix socket needs no internet connection. Changing directory permissions
+does not grant a process permission to bind. The current development execution sandbox
+exhibits this restriction. This requires a permitted runtime or a runtime policy change,
+not a different RPC protocol or weaker endpoint permissions.
+
+Run the automated checks in a runtime that permits local socket listeners:
+
+```sh
+OSCAIRN_REQUIRE_SOCKET_BIND=1 ctest --test-dir build -R '^control-local' --output-on-failure
+```
+
+This mode fails if binding is denied; it cannot report a skipped listener test as a pass.
+Without that variable, only a permission denial from the bind syscall can skip the
+named-socket test. Path validation and file preservation run in a separate test even
+when listener creation is unavailable. The named-socket test includes a controller
+process crash and reconnect, without using an audio device; the live GUI/listening test
+is still separate.

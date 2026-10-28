@@ -202,15 +202,15 @@ namespace oscairn
         const auto directory=std::filesystem::path(path).parent_path().string();
         if(lstat(directory.c_str(),&parent)<0)systemError("socket parent directory");
         if(!S_ISDIR(parent.st_mode) || parent.st_uid!=geteuid() || (parent.st_mode&077)!=0)
-            throw std::runtime_error("Socket parent must be a private directory owned by this user");
-        if(lstat(path.c_str(),&existing)==0)throw std::runtime_error("Socket path already exists; refusing to replace it");
+            throw std::runtime_error("Socket parent must be a private directory owned by this user: " + directory);
+        if(lstat(path.c_str(),&existing)==0)throw std::runtime_error("Socket path already exists; refusing to replace it: " + path);
         if(errno!=ENOENT)systemError("socket path");
         const int fd=::socket(AF_UNIX,SOCK_STREAM,0);
         if(fd<0)systemError("socket");
         try
         {
             configure(fd);
-            if(::bind(fd,reinterpret_cast<const sockaddr*>(&addr),sizeof(addr))<0)systemError("bind Unix socket");
+            if(::bind(fd,reinterpret_cast<const sockaddr*>(&addr),sizeof(addr))<0)throw BindError(errno,path);
             s.path=path;
             if(lstat(path.c_str(),&existing)<0)systemError("stat bound socket");
             s.device=existing.st_dev;s.inode=existing.st_ino;

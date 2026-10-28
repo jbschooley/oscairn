@@ -71,6 +71,17 @@ namespace
             forbidAllocation=true;const bool ok=session.process(out,64);forbidAllocation=false;check(ok,"render");
         }
     };
+    struct TemporaryDirectory
+    {
+#ifdef __APPLE__
+        char path[64]="/private/tmp/oscairn-socket-XXXXXX";
+#else
+        char path[64]="/tmp/oscairn-socket-XXXXXX";
+#endif
+        TemporaryDirectory(){check(mkdtemp(path)!=nullptr,"temporary directory");}
+        ~TemporaryDirectory(){std::error_code ignored;std::filesystem::remove_all(path,ignored);}
+        std::string child(const std::string& name)const{return std::string(path)+'/'+name;}
+    };
     template<class F> void clientWhileRendering(Fixture& fixture,F&& action)
     {
         std::atomic<bool> done=false;std::exception_ptr failure;
@@ -142,18 +153,24 @@ namespace
         for(auto fd:clients)::close(fd);
         f.tick();check(f.server.clients()==0,"all connections cleaned");
     }
-    void controllerCrash(const char* plugin,const char* executable)
+    void controllerCrash(const char* plugin,const char* executable,const std::string& socketPath={})
     {
-        Fixture f(plugin);auto fd=pair();f.server.adopt(fd[0]);
+        Fixture f(plugin);std::array<int,2> fd{-1,-1};
+        if(socketPath.empty()){fd=pair();f.server.adopt(fd[0]);}
+        else f.server.listen(socketPath);
         posix_spawn_file_actions_t actions;
         check(posix_spawn_file_actions_init(&actions)==0,"spawn actions");
         // Reserve an inherited descriptor explicitly; the engine endpoint is CLOEXEC.
-        check(posix_spawn_file_actions_adddup2(&actions,fd[1],64)==0,"spawn socket descriptor");
-        if(fd[1]!=64)check(posix_spawn_file_actions_addclose(&actions,fd[1])==0,"spawn close original");
-        char mode[]="--crash-client",descriptor[]="64";
-        char* args[]{const_cast<char*>(executable),mode,descriptor,nullptr};pid_t pid=-1;
+        if(socketPath.empty())
+        {
+            check(posix_spawn_file_actions_adddup2(&actions,fd[1],64)==0,"spawn socket descriptor");
+            if(fd[1]!=64)check(posix_spawn_file_actions_addclose(&actions,fd[1])==0,"spawn close original");
+        }
+        std::string mode=socketPath.empty()?"--crash-client":"--crash-client-socket";
+        std::string endpoint=socketPath.empty()?"64":socketPath;
+        char* args[]{const_cast<char*>(executable),mode.data(),endpoint.data(),nullptr};pid_t pid=-1;
         const int result=posix_spawn(&pid,executable,&actions,nullptr,args,environ);
-        posix_spawn_file_actions_destroy(&actions);::close(fd[1]);
+        posix_spawn_file_actions_destroy(&actions);if(fd[1]>=0)::close(fd[1]);
         check(result==0,"spawn separate controller process");
         struct Reap
         {
@@ -168,9 +185,11 @@ namespace
         check(::waitpid(pid,&status,0)==pid && WIFSIGNALED(status) && WTERMSIG(status)==SIGKILL,"controller died abruptly");child.pid=-1;
         for(int i=0;i<100;++i){f.tick();check(f.left[0]>.82f,"audio survives controller process crash");}
         check(f.server.clients()==0,"crashed connection collected");
-        fd=pair();f.server.adopt(fd[0]);
+        if(socketPath.empty()){fd=pair();f.server.adopt(fd[0]);}
         clientWhileRendering(f,[&]{
-            LocalClient client;client.adopt(fd[1]);RemoteControl remote(client);
+            LocalClient client;
+            if(socketPath.empty())client.adopt(fd[1]);else client.connect(socketPath);
+            RemoteControl remote(client);
             check(remote.parameter(remote.nodeId("synth"),1)==.83,"new controller recovers existing parameter state");
             check(remote.transportState().playing,"new controller recovers transport state");
             remote.note(false,60,0);
@@ -238,33 +257,60 @@ namespace
         for(int i=0;i<10;++i)f.tick();
         check(f.left[0]>.62f,"typed remote client exit leaves audio running");
     }
-    int named(const char* plugin)
+    void pathPolicy(const char* plugin)
     {
-        char directory[]="/private/tmp/oscairn-socket-XXXXXX";
-#ifdef __linux__
-        std::strcpy(directory,"/tmp/oscairn-socket-XXXXXX");
-#endif
-        check(mkdtemp(directory)!=nullptr,"temporary directory");
-        const std::string path=std::string(directory)+"/control.sock";
-        struct Cleanup{const char* path;~Cleanup(){std::filesystem::remove_all(path);}}cleanup{directory};
+        TemporaryDirectory directory;Fixture f(plugin);
+        auto rejected=[&](const std::string& path)
+        {
+            bool refused=false;
+            try{LocalServer server(f.session);server.listen(path);}
+            catch(const LocalServer::BindError&){throw std::runtime_error("Invalid endpoint reached bind instead of failing validation");}
+            catch(const std::exception&){refused=true;}
+            check(refused,"invalid endpoint must be refused");
+        };
+        rejected("relative.sock");rejected("/"+std::string(200,'a'));
+        rejected(directory.child(std::string("bad\0name",8)));
+        rejected(directory.child("missing/control.sock"));
+        const auto occupied=directory.child("existing");
+        {std::ofstream file(occupied);file<<"preserve me";check(file.good(),"can create ordinary file in private directory");}
+        rejected(occupied);
+        std::ifstream file(occupied);std::string contents;std::getline(file,contents);check(contents=="preserve me","existing file preserved");
+        const auto link=directory.child("link");
+        std::filesystem::create_symlink(occupied,link);rejected(link);
+        check(std::filesystem::is_symlink(link),"existing symlink preserved");
+        const auto alias=directory.child("alias");std::filesystem::create_directory_symlink(directory.path,alias);
+        rejected(alias+"/control.sock");
+        check(chmod(directory.path,0755)==0,"make test directory nonprivate");
+        rejected(directory.child("control.sock"));
+        check(chmod(directory.path,0700)==0,"restore private directory");
+        std::cout<<"ok: invalid socket paths, private-directory policy, existing-file preservation and filesystem writes\n";
+    }
+    int named(const char* plugin,const char* executable)
+    {
+        TemporaryDirectory directory;
+        const std::string path=directory.child("control.sock");
+        // Establish ordinary filesystem access before diagnosing a bind denial.
+        {std::ofstream probe(directory.child("write-check"));probe<<"writable";check(probe.good(),"socket directory must be writable");}
         Fixture f(plugin);
         try{f.server.listen(path);}
-        catch(const std::system_error& e)
+        catch(const LocalServer::BindError& e)
         {
             if((e.code().value()==EPERM || e.code().value()==EACCES) && !std::getenv("OSCAIRN_REQUIRE_SOCKET_BIND"))
-            {std::cout<<"SKIP: environment denies Unix socket bind: "<<e.what()<<'\n';return 77;}
+            {std::cout<<"SKIP: bind denied after path ownership/privacy checks and a successful file write: "<<e.what()
+                      <<". Check sandbox/socket permissions. OSCAIRN_REQUIRE_SOCKET_BIND=1 makes this a failure.\n";return 77;}
             throw;
         }
         struct stat info{};check(lstat(path.c_str(),&info)==0 && (info.st_mode&0777)==0600,"socket user-only permissions");
         bool refused=false;try{LocalServer other(f.session);other.listen(path);}catch(const std::runtime_error&){refused=true;}
         check(refused && std::filesystem::exists(path),"live endpoint never replaced");
         clientWhileRendering(f,[&]{LocalClient client;client.connect(path);check(client.call("session.hello").find("protocolVersion")!=std::string::npos,"pathname connect and accept");});
-        const std::string temporary=std::string(directory)+"/temporary.sock";
+        const std::string temporary=directory.child("temporary.sock");
         {LocalServer other(f.session);other.listen(temporary);}
         check(!std::filesystem::exists(temporary),"server removes its own endpoint");
         {LocalServer other(f.session);other.listen(temporary);::unlink(temporary.c_str());std::ofstream file(temporary);file<<"replacement";}
         check(std::filesystem::is_regular_file(temporary),"cleanup preserves replacement file");
-        std::cout<<"ok: pathname listener, permissions, connect and cleanup\n";return 0;
+        controllerCrash(plugin,executable,directory.child("crash.sock"));
+        std::cout<<"ok: pathname listener, permissions, connect, cleanup and process crash/reconnect\n";return 0;
     }
 }
 int main(int argc,char** argv)
@@ -272,14 +318,18 @@ int main(int argc,char** argv)
     if(argc<2)return 2;
     try
     {
-        if(std::string_view(argv[1])=="--crash-client")
+        if(std::string_view(argv[1])=="--crash-client" || std::string_view(argv[1])=="--crash-client-socket")
         {
             if(argc!=3)return 2;
-            LocalClient client;client.adopt(std::stoi(argv[2]));RemoteControl remote(client);
+            LocalClient client;
+            if(std::string_view(argv[1])=="--crash-client")client.adopt(std::stoi(argv[2]));else client.connect(argv[2]);
+            RemoteControl remote(client);
             remote.setParameter(remote.nodeId("synth"),1,.83);remote.note(true,60,1);remote.setPlaying(true);
             for(;;)::pause(); // parent deliberately kills this process
         }
-        if(argc>2)return named(argv[1]);
+        if(argc==3 && std::string_view(argv[2])=="--path-policy"){pathPolicy(argv[1]);return 0;}
+        if(argc==3 && std::string_view(argv[2])=="--named")return named(argv[1],argv[0]);
+        if(argc!=2)return 2;
         framing(argv[1]);clientAndReconnect(argv[1]);pressure(argv[1]);clientFailures();typedClient(argv[1]);controllerCrash(argv[1],argv[0]);
         std::cout<<"ok: real Unix streams, framing, backpressure, notifications, reconnect, continuing audio and client failures\n";
     }

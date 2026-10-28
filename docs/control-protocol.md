@@ -260,7 +260,11 @@ future work; in-process mode is still the default.
 messages, backpressure, multiple clients, subscriptions, typed remote controls, uncertain
 outcomes and reconnects. It also kills a separate controller process with SIGKILL, verifies
 rendering continues without allocations, then reconnects and controls the existing state.
-`control-local-path` covers bind/connect, permissions and safe endpoint cleanup. It skips
-with code 77 only when local sandbox permissions deny binding; CI sets
+`control-local-path-policy` checks path validation, private-directory enforcement and
+existing-file/symlink preservation without creating a listener. `control-local-path`
+covers bind/connect, permissions, safe endpoint cleanup and a controller process
+crashing/reconnecting through a named socket. It verifies ordinary file writes before
+binding and skips with code 77 only for `LocalServer::BindError` with EPERM/EACCES; errors
+in directory access, chmod, listen or later operations fail normally. CI sets
 `OSCAIRN_REQUIRE_SOCKET_BIND=1` so that denial fails the test. These tests do not replace
 a live-device listening test or a crash/reopen test of the actual desktop GUI.

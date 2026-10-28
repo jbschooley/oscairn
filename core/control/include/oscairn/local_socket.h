@@ -3,6 +3,7 @@
 #include "oscairn/control.h"
 #include <memory>
 #include <string_view>
+#include <system_error>
 
 namespace oscairn
 {
@@ -11,6 +12,14 @@ namespace oscairn
     class LocalServer
     {
     public:
+        /// Identifies the bind syscall failure, separately from path validation or
+        /// subsequent permission/listen failures. Preserves the original errno.
+        class BindError : public std::system_error
+        {
+        public:
+            BindError(int error, const std::string& path)
+                : std::system_error(error, std::generic_category(), "bind Unix socket " + path) {}
+        };
         static constexpr size_t maxClients = 8;
         static constexpr size_t maxQueuedBytes = 1024 * 1024;
         static constexpr size_t maxRequestsPerTick = 16; // per client
