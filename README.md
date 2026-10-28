@@ -6,26 +6,32 @@ Oscairn is an open instrument platform: one realtime host for synthesis engines,
 effects and sequencers that runs on hardware instruments, on the desktop and inside a DAW.
 A sound or performance is not tied to one device.
 
-> **Status:** early. What runs today: a CLAP sequencer plugin playing a CLAP synth plugin,
-> sample-accurately, rendered offline to a WAV file. No live audio, MIDI input, UI or
-> LV2/VST3 yet.
+> **Status:** early. What runs today: a chain of CLAP plugins (a sequencer playing a synth
+> through a delay), sample-accurately, following its own tempo or an external MIDI clock,
+> rendered offline to a WAV file. No live audio, MIDI input, UI or LV2/VST3 yet.
 
 ## Try it
 
-Needs CMake 3.21+, Ninja and a C++20 compiler (tested on macOS with Apple clang).
+Needs CMake 3.21+, Ninja and a C++20 compiler. CI builds and tests on Ubuntu 24.04 (GCC)
+and macOS 15 (Apple clang), plus a ThreadSanitizer run.
 
 ```bash
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 ninja -C build
-ctest --test-dir build                     # host, scanner, timing and render tests
+ctest --test-dir build
 
+P=build/plugins
 build/hosts/oscairn-render demo.wav --seconds 16 --tempo 120 \
-    build/plugins/oscairn-step-sequencer.clap build/plugins/oscairn-basic-synth.clap
+    $P/oscairn-step-sequencer.clap $P/oscairn-basic-synth.clap $P/oscairn-delay.clap
+
+# The same chain following a (simulated) external MIDI clock at 140 BPM:
+build/hosts/oscairn-render demo-140.wav --seconds 16 --midi-clock 140 \
+    $P/oscairn-step-sequencer.clap $P/oscairn-basic-synth.clap $P/oscairn-delay.clap
 ```
 
 `oscairn-render` chains the plugins in the order given: each one plays the notes of the
-one before it. Any CLAP plugin can go in the chain (`path.clap#plugin-id` picks one plugin
-from a module).
+one before it and processes the audio of the last one that produced audio. Any CLAP plugin
+can go in the chain (`path.clap#plugin-id` picks one plugin from a module).
 
 What is in place:
 
@@ -33,14 +39,17 @@ What is in place:
   [KICK PR #13](https://github.com/MusicTribeOpenSource/0700-AAM/pull/13), imported with its
   history. Parameters, state, latency, tail, note and audio ports, timers, thread checks,
   sample-accurate events, out-of-process plugin scanning with crash and timeout isolation.
-  Changed here so note-only plugins (sequencers) load and their note output reaches the next
-  plugin in the same block.
-- **Engine** (`core/engine`): the transport (tempo, time signature, position) and a plugin
-  chain, the first step towards the graph.
+  Changed here so that note-only plugins (sequencers) load and their notes reach the next
+  plugin in the same block, main-thread work and state saves no longer silence audio, a bad
+  event no longer resets the plugin, and an instance uses 0.41 MB instead of 1.55 MB.
+- **Engine** (`core/engine`): the transport (tempo, time signature, position; its own
+  tempo or an external MIDI clock) and a plugin chain, the first step towards the graph.
 - **Plugins** (`plugins/`): Oscairn Step Sequencer (a 16-step pattern following the
-  transport) and Oscairn Basic Synth.
-- **Tests:** every sequencer note lands on its exact sample when processed in uneven blocks,
-  and rendering with 512- and 37-sample blocks gives byte-identical files.
+  transport's beat position), Oscairn Basic Synth and Oscairn Delay (tempo-synced ping-pong).
+- **Tests:** every sequencer note lands on its exact sample when processed in uneven blocks;
+  rendering with 512- and 37-sample blocks gives byte-identical files; following a 140 BPM
+  MIDI clock, steps land within 2 samples of their pulses; host behaviour for live use
+  (bad events, queued-event overflow, mono output).
 
 ## Design in brief
 
