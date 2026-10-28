@@ -120,6 +120,21 @@ namespace oscairn::standalone
             if( c.hasProperty( "note" ) ) control.note = c["note"];
             if( c.hasProperty( "count" ) ) control.count = c["count"];
             if( c.hasProperty( "steps" ) ) control.steps = c["steps"];
+            if( c.hasProperty( "mode" ) )
+            {
+                const auto mode = c["mode"].toString();
+                if( mode != "endless" && mode != "absolute" )
+                    invalid( where + ": \"mode\" must be endless or absolute" );
+                control.endless = mode == "endless";
+            }
+            if( c.hasProperty( "align" ) )
+            {
+                const auto align = c["align"].toString();
+                if( align == "left" ) control.align = juce::Justification::centredLeft;
+                else if( align == "centre" || align == "center" ) control.align = juce::Justification::centred;
+                else if( align == "right" ) control.align = juce::Justification::centredRight;
+                else invalid( where + ": \"align\" must be left, centre or right" );
+            }
             if( control.rows < 1 || control.cols < 1 || control.count < 1 || control.note < 0 || control.note > 127 )
                 invalid( where + ": rows, cols and count must be positive, note 0-127" );
             if( control.type == Control::Type::Screen )

@@ -45,11 +45,13 @@ Others can be opened with View > Open Layout File... or `--layout path.json`.
   - `screen`: the display (at most one). It is drawn for a 1024 x 600 screen and scales.
   - `knob`: `bind` is `node:param` (nodes `sequencer`, `synth`, `delay`; a CLAP parameter
     id) or `tempo`.
+    `"mode": "endless"` draws an endless encoder (a ring of LEDs showing the value) instead of a
+    pot with end stops (`absolute`, the default).
   - `button`: `bind` is `play`, `stop`, `play-stop` or `sync` (follow MIDI clock).
   - `pads`: `rows` x `cols` pads playing notes from `note` upwards, left to right from the
     top; with `"steps": true` they light with the sequencer's playhead.
   - `keys`: a piano keyboard of `count` keys from `note`.
-  - `label`: text.
+  - `label`: text; `"align"` is `left` (the default), `centre` or `right`.
 
   A control without `bind` is drawn but does nothing yet. An unknown type or binding stops
   the layout loading, with the reason.

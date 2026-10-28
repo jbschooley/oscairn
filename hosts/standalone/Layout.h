@@ -60,6 +60,8 @@ namespace oscairn::standalone
             int         note  = 36;         // pads: the first pad's note; keys: the lowest key
             int         count = 25;         // keys
             bool        steps = false;      // pads light with the sequencer's playhead
+            bool        endless = false;    // knobs: an endless encoder rather than a pot with end stops
+            juce::Justification align = juce::Justification::centredLeft; // labels
             Anchor      anchor;
         };
 

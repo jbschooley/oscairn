@@ -30,6 +30,49 @@ namespace oscairn::standalone
         }
     }
 
+    /// Text that scales with the control it is in, so a large panel scaled down stays
+    /// readable, and endless encoders drawn as a ring of LEDs rather than an arc with ends.
+    class PanelLook : public juce::LookAndFeel_V4
+    {
+    public:
+        juce::Font getLabelFont( juce::Label& label ) override
+        {
+            return juce::FontOptions( juce::jmax( 10.0f, label.getHeight() * 0.75f ) );
+        }
+
+        juce::Font getTextButtonFont( juce::TextButton&, int height ) override
+        {
+            return juce::FontOptions( juce::jmax( 10.0f, height * 0.36f ) );
+        }
+
+        void drawRotarySlider( juce::Graphics& g, int x, int y, int width, int height, float position, float start, float end,
+                               juce::Slider& slider ) override
+        {
+            if( !slider.getProperties()["endless"] )
+                return LookAndFeel_V4::drawRotarySlider( g, x, y, width, height, position, start, end, slider );
+
+            // An encoder: a knob that turns forever, with the value shown on its LED ring.
+            const auto bounds = juce::Rectangle<int>( x, y, width, height ).toFloat().reduced( 4.0f );
+            const auto radius = juce::jmin( bounds.getWidth(), bounds.getHeight() ) / 2.0f;
+            const auto centre = bounds.getCentre();
+            constexpr int leds = 16;
+            const int     on   = slider.isEnabled() ? juce::roundToInt( position * leds ) : 0;
+            for( int i = 0; i < leds; ++i )
+            {
+                const auto angle = start + ( end - start ) * ( i + 0.5f ) / leds;
+                const auto at    = centre.getPointOnCircumference( radius * 0.9f, angle );
+                const auto size  = radius * 0.14f;
+                g.setColour( i < on ? slider.findColour( juce::Slider::rotarySliderFillColourId )
+                                     : slider.findColour( juce::Slider::rotarySliderOutlineColourId ) );
+                g.fillEllipse( juce::Rectangle<float>( size, size ).withCentre( at ) );
+            }
+            g.setColour( juce::Colour( 0xff1e2126 ) );
+            g.fillEllipse( juce::Rectangle<float>( radius * 1.4f, radius * 1.4f ).withCentre( centre ) );
+            g.setColour( juce::Colour( 0xff3a404a ) );
+            g.drawEllipse( juce::Rectangle<float>( radius * 1.4f, radius * 1.4f ).withCentre( centre ), radius * 0.05f );
+        }
+    };
+
     /// A rotary knob bound to a parameter or the tempo.
     class Panel::Knob : public juce::Component
     {
@@ -41,6 +84,12 @@ namespace oscairn::standalone
             slider_.setColour( juce::Slider::rotarySliderFillColourId, accent );
             slider_.setColour( juce::Slider::rotarySliderOutlineColourId, edge );
             slider_.setColour( juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack );
+            if( c.endless )
+            {
+                // Its LEDs go most of the way round, as on hardware encoder rings.
+                slider_.getProperties().set( "endless", true );
+                slider_.setRotaryParameters( juce::MathConstants<float>::pi * 1.1f, juce::MathConstants<float>::pi * 2.9f, true );
+            }
             addAndMakeVisible( slider_ );
 
             if( c.bind == "tempo" )
@@ -83,13 +132,20 @@ namespace oscairn::standalone
         void paint( juce::Graphics& g ) override
         {
             g.setColour( slider_.isEnabled() ? text : dim );
-            g.setFont( juce::FontOptions( 15.0f, juce::Font::bold ) );
-            g.drawText( label_, getLocalBounds().removeFromTop( 20 ), juce::Justification::centred );
+            g.setFont( juce::FontOptions( textHeight() * 0.8f, juce::Font::bold ) );
+            g.drawText( label_, getLocalBounds().removeFromTop( textHeight() ), juce::Justification::centred );
         }
 
-        void resized() override { slider_.setBounds( getLocalBounds().withTrimmedTop( 20 ) ); }
+        void resized() override
+        {
+            if( slider_.getTextBoxPosition() != juce::Slider::NoTextBox )
+                slider_.setTextBoxStyle( juce::Slider::TextBoxBelow, true, getWidth(), textHeight() );
+            slider_.setBounds( getLocalBounds().withTrimmedTop( textHeight() ) );
+        }
 
     private:
+        int textHeight() const { return juce::jlimit( 18, 48, getHeight() / 7 ); }
+
         Engine&       engine_;
         std::string   label_, node_;
         uint32_t      param_ = 0;
@@ -212,6 +268,7 @@ namespace oscairn::standalone
     public:
         Board( Engine& engine, const Layout& layout ) : engine_( engine ), layout_( layout )
         {
+            setLookAndFeel( &look_ );
             setSize( layout.width, layout.height );
             for( const auto& c : layout.controls )
             {
@@ -299,9 +356,11 @@ namespace oscairn::standalone
                 if( c.type == Layout::Control::Type::Label )
                 {
                     g.setFont( juce::FontOptions( (float)c.rect.getHeight() * 0.7f, juce::Font::bold ) );
-                    g.drawText( c.label, c.anchor.place( c.rect, dx_, dy_ ), juce::Justification::centredLeft );
+                    g.drawText( c.label, c.anchor.place( c.rect, dx_, dy_ ), c.align );
                 }
         }
+
+        ~Board() override { setLookAndFeel( nullptr ); }
 
     private:
         std::unique_ptr<juce::Component> button( const Layout::Control& c )
@@ -327,6 +386,7 @@ namespace oscairn::standalone
 
         Engine&                                       engine_;
         const Layout&                                 layout_;
+        PanelLook                                     look_; // before the controls, so it outlives them
         std::vector<std::unique_ptr<juce::Component>> owned_;
         std::vector<std::pair<juce::Component*, const Layout::Control*>> placed_;
         int                                           dx_ = 0, dy_ = 0;
