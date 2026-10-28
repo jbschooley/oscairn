@@ -54,7 +54,7 @@ users can add their own or port a DAW.
 
 | Layer | What it is | Owns |
 | --- | --- | --- |
-| 1. Hardware services | Platform | Audio I/O, panel, pads and LEDs, display, MIDI ports, CV/Gate, clock I/O, storage |
+| 1. Hardware services | Platform | Audio I/O, panel, pads and LEDs, display, MIDI ports (several DIN ports, USB device and host), CV/Gate with calibration, clock and sync I/O, storage, network |
 | 2. Host core | Platform | Graph, plugin hosting, transport and clock sync, sample-accurate event routing, stable addressing of every node parameter, bus recording, scene and mute snapshots, the project container |
 | 3. Event sources and processors | Plugins, official and community | Sequencers, arpeggiators, loopers, splits and zones, chord and generative tools |
 | 4. Engines and effects | Plugins, official and community | Synths, samplers (including slicing and pad banks), drum engines, effects |
@@ -196,6 +196,41 @@ layers and transitions, not six independently initialised organs.
 - Changing setlists keeps resources common to both, prepares missing ones in the
   background and releases the rest when safe.
 
+### Keeping plugins loaded
+
+Plugins stay loaded once used, so going back to a sound is instant. When loading a sound
+would go over the memory budget, the plugins used longest ago are unloaded first.
+
+- **A budget, not swap.** The budget is the device's RAM minus a reserve for the system and
+  the UI. Audio never depends on swap.
+- **Idle plugins cost no CPU.** A loaded plugin that is not in the playing graph is not
+  processed; it only holds memory.
+- **Never unload what is in use:** anything in the playing Performance, still sounding (held
+  notes, tails), pinned, or prepared for the current setlist. Setlist items far from the
+  current position go before nearby ones.
+- **Know the cost before loading.** Each plugin's memory is measured once it is loaded
+  (exactly, when plugins run in their own worker processes, which also makes unloading
+  return all of it) and remembered per plugin and Sound, so later loads are predicted.
+  Samples' sizes are known from their files, and streaming samplers can keep only the
+  starts of samples in memory. A sound whose plugin has never been loaded is estimated
+  with headroom.
+- **Say so instead of failing.** A Sound or Performance that cannot fit even after
+  unloading everything else is refused with the reason, rather than starting and running
+  out of memory.
+- **Setlists choose how much to prepare:** everything (when it fits), the next few songs,
+  or pinned items only. A setlist check before a performance reports what fits, what will
+  load on the way, and how long each change will take.
+
+### Meters
+
+CPU, memory and storage are visible on the device and through the control API:
+
+- **CPU:** time each plugin and the whole graph take per audio block, against the block's
+  deadline; deadline misses (dropouts), per plugin and in total.
+- **Memory:** per plugin, Sound, Performance and pack; total against the budget; what is
+  loaded but idle and could be unloaded.
+- **Storage:** used and free on internal storage, SD and USB, per pack.
+
 ### Engine recovery
 
 A recovery record kept outside each engine worker (engine identity and version, last
@@ -303,13 +338,20 @@ sequencers), layouts and themes install the same way.
   own work. Sounds refer to its items by ID and version, so editing never changes the pack;
   saving makes the user's own copy. Updates install side by side, and saved work keeps the
   version it was made with until moved on deliberately.
-- **No copy protection anywhere.** No licence keys, no activation, no activation servers,
-  and no licensing API in the platform; a plugin must work with nothing but its files. The
-  default catalog does not accept packages with copy protection, and plugins have no
-  network access in their sandbox, so online activation cannot work. Packages can be
-  signed, which shows who published a package and that it has not been altered:
+- **No copy protection.** The platform has no licence keys, no activation, no activation
+  servers and no licensing API, and the default catalog does not accept packages that need
+  them: a plugin must work with nothing but its files. Oscairn cannot stop a vendor
+  shipping a plugin with its own licensing, but it does not support it, and such a plugin
+  is confined to its sandbox like any other, so it cannot affect anything else. Packages
+  can be signed, which shows who published a package and that it has not been altered:
   authenticity, not copy protection. Licence terms ("do not redistribute") are stated in
   the manifest, not enforced. Paid packs are just files.
+- **Network is a permission.** Plugins have no network access unless granted. A package
+  that needs it (a plugin that streams audio, talks to other software or hardware over the
+  network, or browses an online sample library) declares it and why, and the user grants it
+  for that plugin, as phone apps ask for permissions. Services that many plugins would want
+  are provided by the host instead, so most plugins never need the network themselves:
+  tempo sync (Ableton Link), network MIDI, OSC.
 - **Works offline.** Many devices will have no internet, or no network at all, so
   everything works without one: installing from USB, SD or a computer, signature checks
   (against keys on the device), the library, and sync over USB. Online catalogs are
@@ -317,6 +359,27 @@ sequencers), layouts and themes install the same way.
 - **Where packages come from:** files from USB, SD or a computer, sync with a paired
   computer, and online catalogs: indexes of packages that anyone can host, with a default
   community catalog.
+
+### Built-in plugins and other manufacturers' defaults
+
+Different devices will ship different built-in plugins: Oscairn's own, and engines a
+manufacturer adds. Packs should work across them without carrying copies of everyone's
+defaults.
+
+- **A baseline every device has.** A versioned platform profile ("Oscairn Core 1") lists
+  plugins every Oscairn device includes. A pack that uses only those works everywhere.
+- **Manufacturers' built-ins are ordinary packages**, pre-installed in the read-only system
+  area of their devices. Installed on another device, where a build for it exists and its
+  licence allows, they work the same way.
+- **Packs refer to plugins; they do not embed built-ins.** A pack's manifest lists the
+  plugins it needs by ID and version range, and the profile it expects. It may include
+  whole packages of third-party plugins it needs, which the store deduplicates; it never
+  includes a device's built-in plugins.
+- **Missing plugins are reported, not guessed.** Opening a Sound whose plugin is missing
+  says which package provides it and where it might come from, and keeps the Sound's saved
+  state so it plays once the plugin is installed (see portable sounds). A manufacturer can
+  declare one of its plugins a compatible replacement for another, with a tested mapping of
+  parameters and state; nothing is substituted silently.
 - **Installing code needs care.** A plugin is native code running in the engine. Installs
   show who signed the package and what it contains and ask before installing code; plugins
   will run in separate worker processes without network access by default (see engine
@@ -340,8 +403,8 @@ share them, and not be able to break each other or the host.
   audio thread, meeting deadlines, state that saves and loads) before a plugin is installed
   or published.
 - **Isolation:** each plugin has its own data folder; versions install side by side; plugins
-  run in sandboxed worker processes with no network, memory and CPU limits, and a deadline
-  watchdog, so a plugin that crashes or hangs is recovered on its own and cannot take down
+  run in sandboxed worker processes with no network unless granted, memory and CPU limits,
+  and a deadline watchdog, so a plugin that crashes or hangs is recovered on its own and cannot take down
   the host or other plugins (see engine recovery).
 - **Distribution:** a package carries its builds for each platform, its licence, and where
   its exact source is (an archive in the package, or a repository and commit). Catalogs

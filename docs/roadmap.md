@@ -57,7 +57,10 @@ Done:
 To do:
 
 - tracks, patterns, swing and more lanes in the sequencer;
-- the control API, with the UI moving to its own process;
+- the control API, with the UI moving to its own process
+  ([RFC 0003](rfcs/0003-control-api.md));
+- LV2 hosting, right after the control API: a large catalog of open plugins already
+  built for ARM Linux;
 - the KICK's real panel as a control surface.
 
 Done when: pressing pads and transport buttons programs and plays a pattern through the
@@ -65,24 +68,33 @@ new core, from a UI that talks to it only through the control API.
 
 ## Phase 4: hardware (started)
 
-- An Oscairn OS image built with current Buildroot, booted first in QEMU's generic ARM64
-  machine (no emulator models the target chips).
-- An RK3588 development board with an I2S codec or a class-compliant USB interface:
-  real-time kernel, audio on isolated cores, measured latency.
-- The KICK (i.MX8M Mini) as a second target once units exist: a hardware-services adapter
-  for its panel, screen and audio.
+- Done: an Oscairn OS image built with current Buildroot, booting into Oscairn in QEMU's
+  generic ARM64 machine (no emulator models the target chips).
+- The KICK (i.MX8M Mini), once beta units exist: an image for its board, and a
+  hardware-services adapter for its panel, screen and audio.
+- The Ignite (BE 0716-AAF), which uses the same board family and panel protocol: a 64-track
+  MIDI and CV sequencer with a General MIDI sound engine. Its features need several MIDI
+  ports (5 DIN pairs, USB device and USB host), CV/Gate with calibration, sync in and out,
+  MIDI Machine Control, and sequencers that drive external instruments as well as internal
+  engines.
+- An RK3588 board, once the target hardware is known: real-time kernel, audio on isolated
+  cores, measured latency.
 
 ## Phase 5: the rest of the architecture
 
-Each starts as an RFC: LV2 and VST3 hosting; the sampler workflow (slicing, resampling,
+Each starts as an RFC: VST3 hosting; the sampler workflow (slicing, resampling,
 looper); the Live workflow (splits, layers, scenes); file formats and the library;
 persistent engines; engine recovery; signed updates with A/B system images; the platform as
 a DAW plugin; and:
 
 - **Packages:** sound packs, libraries and installable plugins, engines and sequencers in
-  one package format, stored once by content hash and loaded once in memory, with no DRM
-  (see [architecture](architecture.md#packages-sound-packs-libraries-and-plugins)). Then
-  online catalogs, and sync with a paired computer.
+  one package format, stored once by content hash and loaded once in memory, with no copy
+  protection and no need for a network
+  (see [architecture](architecture.md#packages-sound-packs-libraries-and-plugins)); the
+  platform profile of built-in plugins; then online catalogs, and sync with a paired
+  computer.
+- **Keeping plugins loaded:** a memory budget, unloading the least recently used, setlist
+  preparation options and a setlist check; CPU, memory and storage meters.
 - **Plugin looks:** pages and themes described in data, then sandboxed custom views.
 - **Developer kit:** the MIT SDK and templates, the builder image, the `oscairn` tool,
   the validator, and plugin isolation in sandboxed workers.
