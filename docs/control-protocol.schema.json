@@ -1,0 +1,660 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Oscairn control protocol 1: implemented subset",
+  "description": "Complete JSON document. Byte/depth limits, duplicate-member rejection, finite double range, unique parameter addresses and queue semantics are specified in control-protocol.md.",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/Request"
+    },
+    {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Request"
+      },
+      "minItems": 1,
+      "maxItems": 64
+    },
+    {
+      "$ref": "#/$defs/Response"
+    },
+    {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Response"
+      },
+      "minItems": 1,
+      "maxItems": 64
+    }
+  ],
+  "$defs": {
+    "Id": {
+      "type": [
+        "string",
+        "number",
+        "null"
+      ]
+    },
+    "Node": {
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        }
+      ]
+    },
+    "ParameterAddress": {
+      "type": "object",
+      "properties": {
+        "node": {
+          "$ref": "#/$defs/Node"
+        },
+        "param": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        }
+      },
+      "required": [
+        "node",
+        "param"
+      ],
+      "additionalProperties": false
+    },
+    "ParameterValue": {
+      "type": "object",
+      "properties": {
+        "node": {
+          "$ref": "#/$defs/Node"
+        },
+        "param": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "value": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "node",
+        "param",
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "ParameterResult": {
+      "type": "object",
+      "properties": {
+        "node": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "param": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "value": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "node",
+        "param",
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "ParameterInfo": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "name": {
+          "type": "string"
+        },
+        "minimum": {
+          "type": "number"
+        },
+        "maximum": {
+          "type": "number"
+        },
+        "defaultValue": {
+          "type": "number"
+        },
+        "stepped": {
+          "type": "boolean"
+        },
+        "flags": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "minimum",
+        "maximum",
+        "defaultValue",
+        "stepped",
+        "flags"
+      ],
+      "additionalProperties": false
+    },
+    "Transport": {
+      "type": "object",
+      "properties": {
+        "playing": {
+          "type": "boolean"
+        },
+        "tempo": {
+          "type": "number"
+        },
+        "beat": {
+          "type": "number"
+        },
+        "clockSource": {
+          "enum": [
+            "internal",
+            "midi"
+          ]
+        }
+      },
+      "required": [
+        "playing",
+        "tempo",
+        "beat",
+        "clockSource"
+      ],
+      "additionalProperties": false
+    },
+    "Accepted": {
+      "type": "object",
+      "properties": {
+        "accepted": {
+          "const": true
+        }
+      },
+      "required": [
+        "accepted"
+      ],
+      "additionalProperties": false
+    },
+    "ValuesResult": {
+      "type": "object",
+      "properties": {
+        "values": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ParameterResult"
+          },
+          "minItems": 1,
+          "maxItems": 128
+        }
+      },
+      "required": [
+        "values"
+      ],
+      "additionalProperties": false
+    },
+    "ListResult": {
+      "type": "object",
+      "properties": {
+        "node": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "parameters": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ParameterInfo"
+          }
+        }
+      },
+      "required": [
+        "node",
+        "parameters"
+      ],
+      "additionalProperties": false
+    },
+    "TextResult": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "additionalProperties": false
+    },
+    "HelloResult": {
+      "type": "object",
+      "properties": {
+        "protocolVersion": {
+          "const": 1
+        },
+        "server": {
+          "type": "string"
+        },
+        "capabilities": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "limits": {
+          "type": "object",
+          "properties": {
+            "messageBytes": {
+              "const": 65536
+            },
+            "depth": {
+              "const": 32
+            },
+            "batch": {
+              "const": 64
+            },
+            "parameterChanges": {
+              "const": 128
+            }
+          },
+          "required": [
+            "messageBytes",
+            "depth",
+            "batch",
+            "parameterChanges"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "protocolVersion",
+        "server",
+        "capabilities",
+        "limits"
+      ],
+      "additionalProperties": false
+    },
+    "Request": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
+              "const": "session.hello"
+            },
+            "params": {
+              "type": "object",
+              "properties": {},
+              "required": [],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
+              "const": "params.list"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "node": {
+                  "$ref": "#/$defs/Node"
+                }
+              },
+              "required": [
+                "node"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "params"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
+              "const": "params.get"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "values": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/ParameterAddress"
+                  },
+                  "minItems": 1,
+                  "maxItems": 128
+                }
+              },
+              "required": [
+                "values"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "params"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
+              "const": "params.set"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "values": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/ParameterValue"
+                  },
+                  "minItems": 1,
+                  "maxItems": 128
+                }
+              },
+              "required": [
+                "values"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "params"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
+              "const": "params.text"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "node": {
+                  "$ref": "#/$defs/Node"
+                },
+                "param": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 4294967295
+                },
+                "value": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "node",
+                "param",
+                "value"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "params"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
+              "const": "transport.get"
+            },
+            "params": {
+              "type": "object",
+              "properties": {},
+              "required": [],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
+              "const": "transport.set"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "playing": {
+                  "type": "boolean"
+                },
+                "tempo": {
+                  "type": "number",
+                  "minimum": 1,
+                  "maximum": 1000
+                },
+                "clockSource": {
+                  "enum": [
+                    "internal",
+                    "midi"
+                  ]
+                }
+              },
+              "required": [],
+              "additionalProperties": false,
+              "minProperties": 1
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "params"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
+              "const": "notes.send"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "on": {
+                  "type": "boolean"
+                },
+                "key": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 127
+                },
+                "velocity": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                },
+                "channel": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 15
+                }
+              },
+              "required": [
+                "on",
+                "key"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "params"
+          ],
+          "additionalProperties": true
+        }
+      ]
+    },
+    "Response": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "result": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/HelloResult"
+                },
+                {
+                  "$ref": "#/$defs/ListResult"
+                },
+                {
+                  "$ref": "#/$defs/ValuesResult"
+                },
+                {
+                  "$ref": "#/$defs/TextResult"
+                },
+                {
+                  "$ref": "#/$defs/Transport"
+                },
+                {
+                  "$ref": "#/$defs/Accepted"
+                }
+              ]
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "id",
+            "result"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "error": {
+              "type": "object",
+              "properties": {
+                "code": {
+                  "type": "integer"
+                },
+                "message": {
+                  "type": "string"
+                },
+                "data": {}
+              },
+              "required": [
+                "code",
+                "message"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "id",
+            "error"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    }
+  }
+}

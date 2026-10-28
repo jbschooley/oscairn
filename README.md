@@ -111,8 +111,9 @@ What is in place:
 - **Control foundation** (`core/control`): a JUCE-free session owns the graph, transport
   and UI note queue. The desktop adapter uses its in-process `Control` interface for
   parameter metadata/values, transport and UI notes; physical MIDI enters the audio path
-  directly. JSON-RPC, sockets and the separate engine process are still to come
-  ([RFC 0003](docs/rfcs/0003-control-api.md)).
+  directly. A JSON-RPC adapter exposes the initial controls with a
+  [wire contract and schema](docs/control-protocol.md); sockets and the separate engine
+  process are still to come ([RFC 0003](docs/rfcs/0003-control-api.md)).
 - **oscairn.param-target** ([RFC 0002](docs/rfcs/0002-param-target.md)): a CLAP
   extension for parameter changes between plugins, such as a sequencer's per-step locks,
   routed by the graph to the target's parameter in the same block.

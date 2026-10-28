@@ -34,6 +34,7 @@ namespace oscairn
         void service();
 
         NodeId nodeId( const std::string& name ) const override;
+        bool hasNode( NodeId node ) const override { return graph_.contains( node ); }
         bool hasParameter( NodeId node, uint32_t param ) const override;
         std::vector<ParamInfo> parameters( NodeId node ) const override;
         ParamInfo parameterInfo( NodeId node, uint32_t param ) const override;

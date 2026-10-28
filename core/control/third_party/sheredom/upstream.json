@@ -1,0 +1,7 @@
+{
+  "repository": "https://github.com/sheredom/json.h",
+  "snapshot_source": "https://github.com/juce-framework/JUCE/blob/be29c81492b6151c8ea8d14c840e1311963b3a83/modules/juce_audio_processors_headless/format_types/VST3_SDK/public.sdk/source/vst/moduleinfo/json.h",
+  "sha256": "098ca68126cb34f7369388d49890d0a5d5ba731b76fbae0c2790377a663e9d41",
+  "license": "Unlicense (included in json.h)",
+  "note": "Unmodified header from the JUCE 9.0.3 snapshot. No JUCE dependency."
+}

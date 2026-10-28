@@ -1,7 +1,7 @@
 # Control and session
 
-The first implementation slice of [RFC 0003](../../docs/rfcs/0003-control-api.md), without
-JUCE, device ownership, threads created by the library, sockets or JSON.
+The first implementation slices of [RFC 0003](../../docs/rfcs/0003-control-api.md), without
+JUCE, device ownership, threads created by the library or sockets.
 
 `Session` owns a graph, transport, bounded UI note queue and transport telemetry. A host
 constructs and connects its graph, then renders stereo blocks with `Session::process`.
@@ -50,6 +50,12 @@ clock start/stop/source switching, validation, note-queue overflow/recovery and 
 control/rendering. Session render calls use the host tests' C++ allocation guard. CI's
 ThreadSanitizer job includes this test.
 
-Next: the JSON-RPC adapter and schema/error contract, complete graph operations,
-coalescing/notifications and gesture semantics, then sockets and the engine helper process.
+`oscairn_control_json` adds `JsonRpc`, a transport-independent JSON-RPC adapter for the
+existing controls, with batch/notification handling and queue-refusal errors. Its
+[wire contract and schema](../../docs/control-protocol.md) describe the implemented subset.
+Two more tests check JSON-driven audio against typed controls and validate protocol behaviour
+with Python's independent decoder. JSON is never parsed on the audio thread.
+
+Next: complete graph operations, coalescing/notifications and gesture semantics, then
+sockets and the engine helper process.
 No network listener or separate engine process exists in this slice.

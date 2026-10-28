@@ -57,11 +57,13 @@ Done:
 - `core/control`: a JUCE-free graph/transport session and initial in-process control
   interface for parameters, transport and UI notes, used by the desktop adapter; headless
   audio-equivalence, clock, queue-overflow and concurrent-control tests.
+- initial JSON-RPC adapter for those controls, with a published wire contract/schema,
+  protocol tests and JSON-driven audio equivalence tests.
 
 To do:
 
 - tracks, patterns, swing and more lanes in the sequencer;
-- complete the control API: JSON-RPC, graph editing, coalescing/notifications, sockets,
+- complete the control API: graph editing, coalescing/notifications, sockets,
   and the UI moving to its own process ([RFC 0003](rfcs/0003-control-api.md));
 - LV2 hosting, right after the control API: a large catalog of open plugins already
   built for ARM Linux;

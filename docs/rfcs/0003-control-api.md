@@ -1,6 +1,6 @@
 # RFC 0003: Control API
 
-**Status:** proposed; in-process session/control foundation implemented
+**Status:** proposed; in-process session/control and initial JSON-RPC adapter implemented
 
 ## Current implementation
 
@@ -11,11 +11,15 @@ conversion remain in the host. Tests compare audio with the existing graph path,
 pressure and tempo changes, and exercise clock following, validation, overflow recovery
 and concurrent control/rendering.
 
-This is the first part of plan item 1. JSON encoding/schema, RPC error mapping, gestures,
-parameter coalescing, subscriptions, complete graph editing, sockets and process separation
-are not implemented. Graph construction is currently a `Session` setup API. Parameter
-updates go directly to the plugin queue and report refusal; transport values are atomic
-telemetry. Tests currently drive the typed interface, not JSON. The desktop retains its
+`JsonRpc` now exposes parameter metadata/values/text, transport and UI notes through JSON,
+with batches, notifications, validation and error mapping. The implemented subset has a
+[wire contract and JSON Schema](../control-protocol.md). Tests drive JSON and typed controls
+and compare rendered samples; separate protocol tests use an independent JSON decoder.
+
+This is part of plan item 1. Gestures, parameter coalescing, subscriptions, complete graph
+editing, sockets and process separation are not implemented. Graph construction is currently
+a `Session` setup API. Parameter updates go directly to the plugin queue and report refusal;
+transport values are atomic telemetry. The desktop still uses typed `Control` and retains its
 existing next-block timing policy for physical notes and pressure.
 
 The remainder of this RFC specifies the intended complete API, not existing behaviour.
@@ -53,7 +57,7 @@ using, and moving it to its own process changes only how it connects.
 Why JSON-RPC over a Unix socket:
 
 - **Small and dependency-light**, which matters on a device: a JSON parser (vendored,
-  header-only, MIT) and POSIX sockets. gRPC, as Sushi uses, brings protobuf, its own
+  header-only, Unlicense) and POSIX sockets. gRPC, as Sushi uses, brings protobuf, its own
   runtime and code generation.
 - **Request and response with errors**, plus notifications, which a UI needs. OSC has no
   replies or errors and usually runs over UDP (see below for OSC as a second way in).

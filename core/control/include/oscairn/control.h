@@ -33,6 +33,7 @@ namespace oscairn
         };
 
         virtual NodeId nodeId( const std::string& name ) const = 0;
+        virtual bool hasNode( NodeId node ) const = 0;
         virtual bool hasParameter( NodeId node, uint32_t param ) const = 0;
         virtual std::vector<ParamInfo> parameters( NodeId node ) const = 0;
         virtual ParamInfo parameterInfo( NodeId node, uint32_t param ) const = 0;
