@@ -122,7 +122,7 @@ struct Host::Impl {
     std::vector<void*> cookies;
     std::unique_ptr<std::atomic<double>[]> paramValues;
     std::vector<Port> inputs, outputs;
-    std::vector<clap_note_port_info_t> noteInputs;
+    std::vector<clap_note_port_info_t> noteInputs, noteOutputs;
     std::vector<clap_audio_buffer_t> inputBuffers, outputBuffers;
     std::vector<float*> inputPointers, outputPointers;
     std::vector<float> scratch;
@@ -273,7 +273,7 @@ struct Host::Impl {
         plugin = nullptr; params = nullptr; state = nullptr; pluginLatency = nullptr;
         timerSupport = nullptr; fdSupport = nullptr;
         timers.clear(); fds.clear();
-        paramInfo.clear(); paramValues.reset(); cookies.clear(); inputs.clear(); outputs.clear(); noteInputs.clear();
+        paramInfo.clear(); paramValues.reset(); cookies.clear(); inputs.clear(); outputs.clear(); noteInputs.clear(); noteOutputs.clear();
         inputBuffers.clear(); outputBuffers.clear(); inputPointers.clear(); outputPointers.clear(); scratch.clear();
         library.reset();
         Event event; while (commands.pop(event)) {} while (emitted.pop(event)) {}
@@ -316,12 +316,14 @@ struct Host::Impl {
         ++metadataVersion;
     }
     void readPorts() {
-        inputs.clear(); outputs.clear(); noteInputs.clear();
+        inputs.clear(); outputs.clear(); noteInputs.clear(); noteOutputs.clear();
+        // A plugin without the audio-ports extension has no audio ports. That is
+        // normal for note effects such as sequencers and arpeggiators.
         const auto* audio = static_cast<const clap_plugin_audio_ports_t*>(plugin->get_extension(plugin, CLAP_EXT_AUDIO_PORTS));
-        if (!audio || !audio->count || !audio->get) throw std::runtime_error("Plugin has no audio-ports extension");
+        if (audio && (!audio->count || !audio->get)) throw std::runtime_error("Incomplete CLAP audio-ports interface");
         for (bool input : {true, false}) {
             auto& ports = input ? inputs : outputs;
-            const auto count = audio->count(plugin, input);
+            const auto count = audio ? audio->count(plugin, input) : 0;
             if (count > 16) throw std::runtime_error("More than 16 audio ports are unsupported");
             uint32_t channels = 0;
             for (uint32_t i = 0; i < count; ++i) {
@@ -333,17 +335,20 @@ struct Host::Impl {
                 channels += p.channel_count;
             }
         }
-        if (outputs.empty()) throw std::runtime_error("Plugin has no audio outputs");
         const auto* notes = static_cast<const clap_plugin_note_ports_t*>(plugin->get_extension(plugin, CLAP_EXT_NOTE_PORTS));
         if (notes && notes->count && notes->get) {
-            const auto count = notes->count(plugin, true);
-            if (count > 16) throw std::runtime_error("More than 16 note ports are unsupported");
-            for (uint32_t i = 0; i < count; ++i) {
-                clap_note_port_info_t p{};
-                if (!notes->get(plugin, i, true, &p)) throw std::runtime_error("Invalid CLAP note port");
-                noteInputs.push_back(p);
+            for (bool input : {true, false}) {
+                auto& ports = input ? noteInputs : noteOutputs;
+                const auto count = notes->count(plugin, input);
+                if (count > 16) throw std::runtime_error("More than 16 note ports are unsupported");
+                for (uint32_t i = 0; i < count; ++i) {
+                    clap_note_port_info_t p{};
+                    if (!notes->get(plugin, i, input, &p)) throw std::runtime_error("Invalid CLAP note port");
+                    ports.push_back(p);
+                }
             }
         }
+        if (outputs.empty() && noteOutputs.empty()) throw std::runtime_error("Plugin has neither audio nor note outputs");
         size_t ni = 0, no = 0;
         for (const auto& p : inputs) ni += p.channels;
         for (const auto& p : outputs) no += p.channels;
@@ -627,6 +632,7 @@ const std::vector<Parameter>& Host::parameters() const noexcept { return impl->p
 uint64_t Host::metadataRevision() const noexcept { return impl->metadataVersion; }
 const std::vector<Port>& Host::inputPorts() const noexcept { return impl->inputs; }
 const std::vector<Port>& Host::outputPorts() const noexcept { return impl->outputs; }
+uint32_t Host::noteOutputPorts() const noexcept { return static_cast<uint32_t>(impl->noteOutputs.size()); }
 double Host::parameterValue(clap_id id) const noexcept {
     auto& s = *impl; const auto i = s.paramIndex(id);
     return i < s.paramInfo.size() ? s.paramValues[i].load() : 0;
@@ -672,7 +678,8 @@ bool Host::process(const float* const* input, uint32_t ni, float* const* output,
     auto& s = *impl;
     auto silence = [&] { if (output) for (uint32_t c = 0; c < no; ++c) if (output[c]) std::fill_n(output[c], frames, 0.f); };
     if (!frames) return true;
-    if (!output || (count && !incoming)) { silence(); return false; }
+    // A note-only plugin (no audio outputs) may be processed with no output buffers.
+    if ((no && !output) || (count && !incoming)) { silence(); return false; }
     if (s.gate.test_and_set(std::memory_order_acquire)) {
         s.controlSilences.fetch_add(1); silence(); return false;
     }
