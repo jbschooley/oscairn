@@ -156,4 +156,5 @@ reopening another UI. This mode waits up to 60 seconds for the button click. Bot
 use a private test runtime directory, mute the synth before playback, save screenshots,
 and stop only the processes they started. Automatic startup, reattachment and the actual
 recovery button were verified on macOS with the Multi-Output Device at 48 kHz/512 samples.
-An audible SMK37 test remains separate.
+Separately, Jacob verified SMK37 notes, pressure response and sequencer PLAY/STOP in the
+default managed desktop's KICK layout on October 28, 2026.

@@ -65,12 +65,12 @@ Done:
   a controller process, verify audio continues, and reconnect to the existing state.
 - default managed desktop helper: bundled executable/plugins, concurrent launch protection,
   background engine lifetime, UI reattachment and explicit recovery after engine failure.
+- audible verification of the default separate-process desktop in the KICK layout:
+  Jacob confirmed SMK37 notes, pressure response and PLAY/STOP on October 28, 2026.
 
 To do:
 
 - tracks, patterns, swing and more lanes in the sequencer;
-- audible SMK37 verification of the default separate-process desktop, then merge the
-  control API work ([RFC 0003](rfcs/0003-control-api.md));
 - LV2 hosting, right after the control API: a large catalog of open plugins already
   built for ARM Linux;
 - define hardware capabilities, timestamped input, scheduled output and engine backend
