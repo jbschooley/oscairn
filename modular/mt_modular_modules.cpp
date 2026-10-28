@@ -87,62 +87,84 @@ namespace mt::modular
         class Oscillator : public Module
         {
         public:
-            enum { kWave, kTune, kFine, kPw, kLevel, kInput, kPm };
+            enum { kWave, kTune, kFine, kPw, kLevel, kInput, kPm, kUnison, kSpread };
             enum Wave { Sine, Triangle, Saw, Square };
             enum Input { Add, PhaseMod, Replace };
+            static constexpr int maxUnison = 7;
 
-            void reset() override { phase = 0; }
+            void reset() override { phases.fill( 0.0 ); }
             void noteOn( const VoiceContext&, bool Steal ) override
             {
-                if( !Steal )
-                    phase = 0;
+                if( Steal )
+                    return;
+                // The first copy starts at 0 for a consistent attack; unison copies start at
+                // random phases so they do not begin as one loud, phasing wave.
+                phases[0] = 0.0;
+                for( size_t u = 1; u < phases.size(); ++u )
+                    phases[u] = 0.5 * ( rng.bipolar() + 1.f );
             }
 
             void process( const VoiceContext& C, const float* P0, const float* P, float* Buf, int N ) override
             {
-                const auto wave = (int)P[kWave];
-                const auto mode = (int)P[kInput];
-                const auto hz   = noteToHz( C.note + P[kTune] + P[kFine] * 0.01 );
-                const auto dt   = juce::jlimit( 0.0, 0.45, hz / C.sampleRate );
-                const auto pw   = (double)P[kPw];
-                const auto pm   = P[kPm];
-                Ramp       level( P0[kLevel], P[kLevel], N );
+                const auto wave  = (int)P[kWave];
+                const auto mode  = (int)P[kInput];
+                const auto copies = juce::jlimit( 1, maxUnison, (int)P[kUnison] );
+                const auto note  = C.note + P[kTune] + P[kFine] * 0.01;
+                const auto pw    = (double)P[kPw];
+                const auto pm    = P[kPm];
+                const auto norm  = 1.f / std::sqrt( (float)copies ); // unison keeps about the same loudness
 
+                // Unison copies spread evenly across +-Spread cents.
+                std::array<double, maxUnison> dt{};
+                for( int u = 0; u < copies; ++u )
+                {
+                    const auto cents = copies == 1 ? 0.0 : P[kSpread] * ( 2.0 * u / ( copies - 1 ) - 1.0 );
+                    dt[(size_t)u]    = juce::jlimit( 0.0, 0.45, noteToHz( note + cents * 0.01 ) / C.sampleRate );
+                }
+
+                Ramp level( P0[kLevel], P[kLevel], N );
                 for( int i = 0; i < N; ++i )
                 {
-                    double x = phase;
-                    if( mode == PhaseMod )
+                    const double offset = mode == PhaseMod ? pm * Buf[i] : 0.0;
+                    float        s      = 0.f;
+                    for( int u = 0; u < copies; ++u )
                     {
-                        x += pm * Buf[i];
-                        x -= std::floor( x );
-                    }
-
-                    float s = 0.f;
-                    switch( wave )
-                    {
-                        case Sine: s = std::sin( twoPi * (float)x ); break;
-                        case Triangle: s = 4.f * std::abs( (float)x - 0.5f ) - 1.f; break;
-                        case Saw: s = (float)( 2.0 * x - 1.0 ) - polyBlep( x, dt ); break;
-                        default:
+                        auto& phase = phases[(size_t)u];
+                        double x    = phase;
+                        if( mode == PhaseMod )
                         {
-                            s = x < pw ? 1.f : -1.f;
-                            s += polyBlep( x, dt );
-                            s -= polyBlep( std::fmod( x + 1.0 - pw, 1.0 ), dt );
-                            break;
+                            x += offset;
+                            x -= std::floor( x );
                         }
+                        s += shape( wave, x, dt[(size_t)u], pw );
+                        phase += dt[(size_t)u];
+                        if( phase >= 1.0 )
+                            phase -= 1.0;
                     }
 
-                    const auto out = level.next() * s;
+                    const auto out = level.next() * s * norm;
                     Buf[i]         = mode == Add ? Buf[i] + out : out;
-
-                    phase += dt;
-                    if( phase >= 1.0 )
-                        phase -= 1.0;
                 }
             }
 
         private:
-            double phase{ 0 };
+            static float shape( int Wave, double X, double Dt, double Pw )
+            {
+                switch( Wave )
+                {
+                    case Sine: return std::sin( twoPi * (float)X );
+                    case Triangle: return 4.f * std::abs( (float)X - 0.5f ) - 1.f;
+                    case Saw: return (float)( 2.0 * X - 1.0 ) - polyBlep( X, Dt );
+                    default: break;
+                }
+                auto s = X < Pw ? 1.f : -1.f;
+                s += polyBlep( X, Dt );
+                s -= polyBlep( std::fmod( X + 1.0 - Pw, 1.0 ), Dt );
+                return s;
+            }
+
+            std::array<double, maxUnison> phases{};
+            Rng                           rng;
         };
 
         //==========================================================================
@@ -174,15 +196,25 @@ namespace mt::modular
         {
         public:
             enum { kMode, kCutoff, kReso, kTrack };
-            enum Mode { LowPass, BandPass, HighPass, Notch };
+            enum Mode { LowPass, BandPass, HighPass, Notch, Ladder };
 
-            void reset() override { ic1 = ic2 = 0; }
+            void reset() override
+            {
+                ic1 = ic2 = 0;
+                ladder.fill( 0.f );
+                ladderOut = 0;
+            }
             void process( const VoiceContext& C, const float*, const float* P, float* Buf, int N ) override
             {
                 // Topology-preserving SVF (Zavalishin / Cytomic), coefficients per sub-block.
                 const auto sr   = (float)C.sampleRate;
                 const auto fc   = juce::jlimit( 10.f, 0.45f * sr, P[kCutoff] * std::exp2( P[kTrack] * ( C.note - 60.f ) / 12.f ) );
                 const auto g    = std::tan( juce::MathConstants<float>::pi * fc / sr );
+                if( (int)P[kMode] == Ladder )
+                {
+                    processLadder( g, P[kReso], Buf, N );
+                    return;
+                }
                 const auto k    = 2.f - 1.96f * P[kReso];
                 const auto a1   = 1.f / ( 1.f + g * ( g + k ) );
                 const auto a2   = g * a1;
@@ -209,7 +241,116 @@ namespace mt::modular
             }
 
         private:
-            float ic1{ 0 }, ic2{ 0 };
+            // Four one-pole stages with saturated, one-sample-delayed feedback: a 24 dB/oct
+            // low-pass in the style of the Moog ladder. It self-oscillates near full resonance.
+            void processLadder( float G, float Reso, float* Buf, int N )
+            {
+                const auto a    = G / ( 1.f + G );
+                const auto k    = 3.9f * Reso;
+                const auto gain = 1.f + 0.5f * k; // resonance thins the low end; give some back
+                for( int i = 0; i < N; ++i )
+                {
+                    auto u = std::tanh( Buf[i] * gain - k * ladderOut );
+                    for( auto& z : ladder )
+                    {
+                        const auto v = ( u - z ) * a;
+                        const auto y = v + z;
+                        z            = y + v;
+                        u            = y;
+                    }
+                    ladderOut = u;
+                    Buf[i]    = u;
+                }
+            }
+
+            float                ic1{ 0 }, ic2{ 0 };
+            std::array<float, 4> ladder{};
+            float                ladderOut{ 0 };
+        };
+
+        //==========================================================================
+        // Three band-passes at the formants of a sung vowel, morphing A-E-I-O-U.
+        class Formant : public Module
+        {
+        public:
+            enum { kVowel, kShift, kReso, kMix };
+
+            void reset() override { bands = {}; }
+
+            void process( const VoiceContext& C, const float* P0, const float* P, float* Buf, int N ) override
+            {
+                // Formant frequencies (Hz) and levels of A, E, I, O, U (an adult male voice).
+                static constexpr float freq[5][3]  = { { 800, 1150, 2900 }, { 400, 1600, 2700 }, { 270, 2140, 2950 }, { 450, 800, 2830 }, { 325, 700, 2530 } };
+                static constexpr float level[5][3] = { { 1, 0.5f, 0.25f }, { 1, 0.35f, 0.3f }, { 1, 0.25f, 0.3f }, { 1, 0.55f, 0.15f }, { 1, 0.4f, 0.1f } };
+
+                const auto v     = juce::jlimit( 0.f, 4.f, P[kVowel] );
+                const auto i0    = juce::jmin( 3, (int)v );
+                const auto t     = v - (float)i0;
+                const auto shift = std::exp2( P[kShift] / 12.f );
+                const auto sr    = (float)C.sampleRate;
+                const auto k     = 1.f / ( 3.f + 17.f * P[kReso] ); // narrower bands as Resonance rises
+
+                std::array<float, 3> a1{}, a2{}, a3{}, amp{};
+                for( size_t b = 0; b < 3; ++b )
+                {
+                    const auto f  = juce::jlimit( 50.f, 0.45f * sr, std::exp( std::log( freq[i0][b] ) * ( 1.f - t ) + std::log( freq[i0 + 1][b] ) * t ) * shift );
+                    const auto g  = std::tan( juce::MathConstants<float>::pi * f / sr );
+                    a1[b]         = 1.f / ( 1.f + g * ( g + k ) );
+                    a2[b]         = g * a1[b];
+                    a3[b]         = g * a2[b];
+                    amp[b]        = level[i0][b] * ( 1.f - t ) + level[i0 + 1][b] * t;
+                }
+
+                Ramp mix( P0[kMix], P[kMix], N );
+                for( int i = 0; i < N; ++i )
+                {
+                    const auto x   = Buf[i];
+                    float      sum = 0.f;
+                    for( size_t b = 0; b < 3; ++b )
+                    {
+                        auto&      st = bands[b];
+                        const auto v3 = x - st[1];
+                        const auto v1 = a1[b] * st[0] + a2[b] * v3;
+                        const auto v2 = st[1] + a2[b] * st[0] + a3[b] * v3;
+                        st[0]         = 2.f * v1 - st[0];
+                        st[1]         = 2.f * v2 - st[1];
+                        sum += amp[b] * k * v1 * 2.f; // k * band-pass = unity at the centre
+                    }
+                    const auto m = mix.next();
+                    Buf[i]       = x * ( 1.f - m ) + sum * m * 1.5f; // the bands keep only part of the energy
+                }
+            }
+
+        private:
+            std::array<std::array<float, 2>, 3> bands{};
+        };
+
+        //==========================================================================
+        // Multiplies the signal by a sine: by default a fifth above the note.
+        class RingMod : public Module
+        {
+        public:
+            enum { kTrack, kTune, kFreq, kMix };
+
+            void reset() override { phase = 0; }
+            void process( const VoiceContext& C, const float* P0, const float* P, float* Buf, int N ) override
+            {
+                const auto hz = P[kTrack] > 0.5f ? noteToHz( C.note + P[kTune] ) : (double)P[kFreq];
+                const auto dt = juce::jlimit( 0.0, 0.45, hz / C.sampleRate );
+                Ramp       mix( P0[kMix], P[kMix], N );
+                for( int i = 0; i < N; ++i )
+                {
+                    const auto m       = mix.next();
+                    const auto carrier = std::sin( twoPi * (float)phase );
+                    Buf[i]             = Buf[i] * ( 1.f - m + m * carrier );
+                    phase += dt;
+                    if( phase >= 1.0 )
+                        phase -= 1.0;
+                }
+            }
+
+        private:
+            double phase{ 0 };
         };
 
         //==========================================================================
@@ -296,7 +437,7 @@ namespace mt::modular
         class Lfo : public Module
         {
         public:
-            enum { kShape, kRate, kRetrigger, kPolarity };
+            enum { kShape, kRate, kRetrigger, kPolarity, kAmount, kSync };
             enum Shape { Sine, Triangle, SawUp, Square, Random };
 
             void reset() override
@@ -318,7 +459,9 @@ namespace mt::modular
                     }
                 }
 
-                phase += P[kRate] * (float)N / (float)C.sampleRate;
+                const auto beats = syncBeats( (int)P[kSync] );
+                const auto rate  = beats > 0.0 ? (float)( C.bpm / 60.0 / beats ) : P[kRate];
+                phase += rate * (float)N / (float)C.sampleRate;
                 if( phase >= 1.f )
                 {
                     phase -= std::floor( phase );
@@ -334,7 +477,7 @@ namespace mt::modular
                     case Square: v = phase < 0.5f ? 1.f : -1.f; break;
                     default: v = held; break;
                 }
-                return P[kPolarity] > 0.5f ? 0.5f * ( v + 1.f ) : v;
+                return P[kAmount] * ( P[kPolarity] > 0.5f ? 0.5f * ( v + 1.f ) : v );
             }
 
         private:
@@ -523,7 +666,7 @@ namespace mt::modular
         class StereoDelay : public Module
         {
         public:
-            enum { kTime, kFeedback, kPingPong, kDamp, kMix };
+            enum { kTime, kFeedback, kPingPong, kDamp, kMix, kSync };
 
             void prepare( double SampleRate ) override
             {
@@ -540,12 +683,14 @@ namespace mt::modular
                 lpL = lpR = 0;
             }
 
-            void processStereo( const float* P, float* L, float* R, int N ) override
+            void processStereo( const VoiceContext& C, const float* P, float* L, float* R, int N ) override
             {
                 const auto size = (int)left.size();
                 if( size < 4 )
                     return;
-                const auto d    = juce::jlimit( 1.f, (float)size - 2.f, P[kTime] * 0.001f * (float)sampleRate );
+                const auto beats   = syncBeats( (int)P[kSync] );
+                const auto seconds = beats > 0.0 ? (float)( 60.0 / C.bpm * beats ) : P[kTime] * 0.001f;
+                const auto d       = juce::jlimit( 1.f, (float)size - 2.f, seconds * (float)sampleRate );
                 const auto fb   = P[kFeedback];
                 const auto damp = 1.f - 0.9f * P[kDamp];
                 const auto mix  = P[kMix];
@@ -600,7 +745,7 @@ namespace mt::modular
                 phase = 0;
             }
 
-            void processStereo( const float* P, float* L, float* R, int N ) override
+            void processStereo( const VoiceContext&, const float* P, float* L, float* R, int N ) override
             {
                 const auto size = (int)left.size();
                 if( size < 4 )
@@ -647,7 +792,7 @@ namespace mt::modular
             }
             void reset() override { reverb.reset(); }
 
-            void processStereo( const float* P, float* L, float* R, int N ) override
+            void processStereo( const VoiceContext&, const float* P, float* L, float* R, int N ) override
             {
                 juce::Reverb::Parameters p;
                 p.roomSize = P[kSize];
@@ -671,7 +816,7 @@ namespace mt::modular
             void prepare( double SampleRate ) override { sampleRate = SampleRate; }
             void reset() override { lpL = lpR = 0; }
 
-            void processStereo( const float* P, float* L, float* R, int N ) override
+            void processStereo( const VoiceContext&, const float* P, float* L, float* R, int N ) override
             {
                 const auto gain  = juce::Decibels::decibelsToGain( 30.f * P[kDrive] );
                 const auto norm  = 1.f / std::tanh( gain ); // a full-scale input stays full scale
@@ -710,6 +855,8 @@ namespace mt::modular
                   { "level", "Level", "", 0, 1, 0.5f },
                   { "input", "Input", "", 0, 2, 0, Curve::Steps, { "Add", "Phase Mod", "Replace" } },
                   { "pm", "PM Depth", "", 0, 4, 1 },
+                  { "unison", "Unison", "", 1, 7, 1, Curve::Steps },
+                  { "spread", "Spread", "ct", 0, 100, 20 },
               },
               maker<Oscillator>() },
             { "noise", "Noise", Role::Source,
@@ -720,12 +867,28 @@ namespace mt::modular
               maker<Noise>() },
             { "filter", "Filter", Role::Processor,
               {
-                  { "mode", "Mode", "", 0, 3, 0, Curve::Steps, { "Low Pass", "Band Pass", "High Pass", "Notch" } },
+                  { "mode", "Mode", "", 0, 4, 0, Curve::Steps, { "Low Pass", "Band Pass", "High Pass", "Notch", "Ladder LP" } },
                   { "cutoff", "Cutoff", "Hz", 20, 20000, 2000, Curve::Log },
                   { "reso", "Resonance", "", 0, 1, 0.2f },
                   { "track", "Key Track", "", 0, 1, 0 },
               },
               maker<Filter>() },
+            { "formant", "Formant", Role::Processor,
+              {
+                  { "vowel", "Vowel", "", 0, 4, 0 }, // 0 A, 1 E, 2 I, 3 O, 4 U; in between morphs
+                  { "shift", "Shift", "st", -12, 12, 0 },
+                  { "reso", "Resonance", "", 0, 1, 0.5f },
+                  { "mix", "Mix", "", 0, 1, 1 },
+              },
+              maker<Formant>() },
+            { "ring", "Ring Mod", Role::Processor,
+              {
+                  { "track", "Key Track", "", 0, 1, 1, Curve::Steps, { "Off", "On" } },
+                  { "tune", "Tune", "st", -24, 48, 7 },
+                  { "freq", "Freq", "Hz", 20, 5000, 440, Curve::Log }, // when Key Track is off
+                  { "mix", "Mix", "", 0, 1, 1 },
+              },
+              maker<RingMod>() },
             { "vca", "VCA", Role::Processor,
               {
                   { "gain", "Gain", "", 0, 1, 1 },
@@ -746,6 +909,8 @@ namespace mt::modular
                   { "rate", "Rate", "Hz", 0.02f, 40, 2, Curve::Log },
                   { "retrig", "Retrigger", "", 0, 1, 1, Curve::Steps, { "Off", "On" } },
                   { "polarity", "Polarity", "", 0, 1, 0, Curve::Steps, { "Bipolar", "Unipolar" } },
+                  { "amount", "Amount", "", 0, 1, 1 }, // modulate it to fade the LFO in (pressure, envelope)
+                  { "sync", "Sync", "", 0, 13, 0, Curve::Steps, syncChoices() },
               },
               maker<Lfo>() },
             { "random", "Random", Role::Modulator,
@@ -804,6 +969,7 @@ namespace mt::modular
                   { "pingpong", "Ping-Pong", "", 0, 1, 1, Curve::Steps, { "Off", "On" } },
                   { "damp", "Damping", "", 0, 1, 0.3f },
                   { "mix", "Mix", "", 0, 1, 0.3f },
+                  { "sync", "Sync", "", 0, 13, 0, Curve::Steps, syncChoices() }, // the longest echo is 2 s
               },
               maker<StereoDelay>() },
             { "chorus", "Chorus", Role::Effect,
@@ -832,6 +998,18 @@ namespace mt::modular
         return specs;
     }
 
+    const std::vector<juce::String>& syncChoices()
+    {
+        static const std::vector<juce::String> choices{ "Free", "4 Bars", "2 Bars", "1 Bar", "1/2", "1/4", "1/8", "1/16", "1/32", "1/4 T", "1/8 T", "1/16 T", "1/4 D", "1/8 D" };
+        return choices;
+    }
+
+    double syncBeats( int Choice )
+    {
+        static constexpr std::array<double, 14> beats{ 0, 16, 8, 4, 2, 1, 0.5, 0.25, 0.125, 2.0 / 3.0, 1.0 / 3.0, 1.0 / 6.0, 1.5, 0.75 };
+        return juce::isPositiveAndBelow( Choice, (int)beats.size() ) ? beats[(size_t)Choice] : 0.0;
+    }
+
     const ModuleSpec* findModuleSpec( const juce::String& Type )
     {
         for( auto* list : { &getModuleSpecs(), &getEffectSpecs() } )
@@ -850,6 +1028,7 @@ namespace mt::modular
             case kGate: return "gate";
             case kModWheel: return "modwheel";
             case kBend: return "bend";
+            case kPressure: return "pressure";
             default: break;
         }
         if( Source >= kMacro1 && Source < kNumBuiltinSources )

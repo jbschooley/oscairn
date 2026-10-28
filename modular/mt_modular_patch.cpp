@@ -8,7 +8,13 @@ namespace mt::modular
     {
         PatchDesc d;
         d.name   = Patch.getProperty( PatchIDs::name ).toString();
-        d.voices = juce::jlimit( 1, maxVoices, (int)Patch.getProperty( PatchIDs::voices, defaultVoices ) );
+        d.voices   = juce::jlimit( 1, maxVoices, (int)Patch.getProperty( PatchIDs::voices, defaultVoices ) );
+        d.playMode = juce::jlimit( (int)Poly, (int)Legato, (int)Patch.getProperty( PatchIDs::playMode, (int)Poly ) );
+        d.glide    = juce::jlimit( 0.f, maxGlide, (float)Patch.getProperty( PatchIDs::glide, 0.f ) );
+        d.arp        = juce::jlimit( (int)ArpOff, (int)ArpAsPlayed, (int)Patch.getProperty( PatchIDs::arp, (int)ArpOff ) );
+        d.arpRate    = juce::jlimit( 0, arpRateNames().size() - 1, (int)Patch.getProperty( PatchIDs::arpRate, 2 ) );
+        d.arpOctaves = juce::jlimit( 1, 4, (int)Patch.getProperty( PatchIDs::arpOctaves, 1 ) );
+        d.arpGate    = juce::jlimit( 0.05f, 1.f, (float)Patch.getProperty( PatchIDs::arpGate, 0.5f ) );
 
         for( const auto& m : Patch )
         {
@@ -294,13 +300,226 @@ namespace mt::modular
             return b.tree;
         }
 
+        // Seven detuned saws through a ladder filter, played legato with glide.
+        juce::ValueTree supersawLead()
+        {
+            B b( "Supersaw Lead", 1 );
+            b.tree.setProperty( PatchIDs::playMode, (int)Legato, nullptr ).setProperty( PatchIDs::glide, 0.08f, nullptr );
+            auto osc = b.add( "osc", 0, 0, { { "wave", 2 }, { "unison", 7 }, { "spread", 22 }, { "level", 0.6f } } );
+            auto flt = b.add( "filter", 0, 1, { { "mode", 4 }, { "cutoff", 2500 }, { "reso", 0.35f }, { "track", 0.5f } } );
+            auto vca = b.add( "vca", 0, 2, { { "gain", 0 } } );
+            auto amp = b.add( "adsr", 1, 0, { { "attack", 0.004f }, { "decay", 0.6f }, { "sustain", 0.8f }, { "release", 0.25f }, { "velocity", 0.3f } } );
+            auto fenv = b.add( "adsr", 1, 1, { { "attack", 0.002f }, { "decay", 0.5f }, { "sustain", 0.3f }, { "release", 0.3f }, { "velocity", 0.5f } } );
+            b.mod( vca, "gain", B::module( amp ), 1 ).mod( flt, "cutoff", B::module( fenv ), 0.2f );
+            b.mod( flt, "cutoff", "macro1", 0.4f ).mod( osc, "spread", "macro2", 0.6f ).mod( flt, "cutoff", "pressure", 0.25f );
+            b.macroName( 1, "Spread" );
+            b.addEffect( "chorus", 0, { { "rate", 0.25f }, { "depth", 0.4f }, { "mix", 0.3f } } );
+            auto echo = b.addEffect( "fxdelay", 1, { { "time", 330 }, { "feedback", 0.3f }, { "mix", 0.2f } } );
+            b.mod( echo, "mix", "macro3", 0.5f );
+            return b.tree;
+        }
+
+        // Pressing harder opens the filter and adds vibrato.
+        juce::ValueTree pressurePad()
+        {
+            B    b( "Pressure Pad" );
+            auto o1  = b.add( "osc", 0, 0, { { "wave", 2 }, { "unison", 3 }, { "spread", 12 }, { "level", 0.4f } } );
+            auto flt = b.add( "filter", 0, 1, { { "cutoff", 500 }, { "reso", 0.3f } } );
+            auto vca = b.add( "vca", 0, 2, { { "gain", 0 } } );
+            auto amp = b.add( "adsr", 1, 0, { { "attack", 0.3f }, { "decay", 1 }, { "sustain", 0.9f }, { "release", 1.2f }, { "velocity", 0.2f } } );
+            auto vib = b.add( "lfo", 1, 1, { { "rate", 5.5f }, { "retrig", 0 }, { "amount", 0 } } );
+            b.mod( vca, "gain", B::module( amp ), 1 ).mod( flt, "cutoff", "pressure", 0.45f ).mod( vca, "gain", "pressure", 0.2f );
+            b.mod( o1, "fine", B::module( vib ), 0.1f ).mod( vib, "amount", "pressure", 1.f );
+            b.mod( flt, "cutoff", "macro1", 0.4f );
+            b.addEffect( "reverb", 0, { { "size", 0.8f }, { "mix", 0.3f } } );
+            return b.tree;
+        }
+
+        // Sync choice indices (see syncChoices()).
+        constexpr float sync1Bar = 3, sync2Bars = 2, sync8thDotted = 13;
+
+        // A 303-style line: one voice, ladder filter with a snappy envelope, slides on overlap.
+        juce::ValueTree acidBass()
+        {
+            B b( "Acid Bass", 1 );
+            b.tree.setProperty( PatchIDs::playMode, (int)Legato, nullptr ).setProperty( PatchIDs::glide, 0.06f, nullptr );
+            b.add( "osc", 0, 0, { { "wave", 2 }, { "level", 0.6f } } );
+            auto flt  = b.add( "filter", 0, 1, { { "mode", 4 }, { "cutoff", 280 }, { "reso", 0.75f }, { "track", 0.3f } } );
+            auto drv  = b.add( "drive", 0, 2, { { "drive", 0.3f }, { "level", 0.6f } } );
+            auto vca  = b.add( "vca", 0, 3, { { "gain", 0 } } );
+            auto amp  = b.add( "adsr", 1, 0, { { "attack", 0.002f }, { "decay", 0.3f }, { "sustain", 0.6f }, { "release", 0.05f }, { "velocity", 0.4f } } );
+            auto fenv = b.add( "adsr", 1, 1, { { "attack", 0.001f }, { "decay", 0.18f }, { "sustain", 0 }, { "release", 0.1f }, { "velocity", 0.7f } } );
+            b.mod( vca, "gain", B::module( amp ), 1 ).mod( flt, "cutoff", B::module( fenv ), 0.45f );
+            b.mod( flt, "cutoff", "macro1", 0.4f ).mod( flt, "reso", "macro2", 0.25f ).mod( drv, "drive", "macro4", 0.6f );
+            auto echo = b.addEffect( "fxdelay", 0, { { "sync", sync8thDotted }, { "feedback", 0.35f }, { "mix", 0.15f } } );
+            b.mod( echo, "mix", "macro3", 0.4f );
+            return b.tree;
+        }
+
+        // Hold a chord: it plays as 1/16 notes up two octaves, with a dotted-eighth echo.
+        juce::ValueTree arpSparkle()
+        {
+            B b( "Arp Sparkle", 6 );
+            b.tree.setProperty( PatchIDs::arp, (int)ArpUp, nullptr ).setProperty( PatchIDs::arpRate, 2, nullptr ).setProperty( PatchIDs::arpOctaves, 2, nullptr ).setProperty( PatchIDs::arpGate, 0.5f, nullptr );
+            b.add( "osc", 0, 0, { { "wave", 3 }, { "pw", 0.3f }, { "level", 0.4f } } );
+            b.add( "osc", 0, 1, { { "wave", 2 }, { "tune", 12 }, { "level", 0.2f } } );
+            auto flt = b.add( "filter", 0, 2, { { "cutoff", 3000 }, { "reso", 0.3f } } );
+            auto vca = b.add( "vca", 0, 3, { { "gain", 0 } } );
+            auto amp = b.add( "adsr", 1, 0, { { "attack", 0.001f }, { "decay", 0.15f }, { "sustain", 0.2f }, { "release", 0.2f }, { "velocity", 0.5f } } );
+            b.mod( vca, "gain", B::module( amp ), 1 ).mod( flt, "cutoff", "macro1", 0.4f );
+            b.addEffect( "fxdelay", 0, { { "sync", sync8thDotted }, { "feedback", 0.4f }, { "pingpong", 1 }, { "mix", 0.3f } } );
+            auto verb = b.addEffect( "reverb", 1, { { "size", 0.7f }, { "mix", 0.25f } } );
+            b.mod( verb, "mix", "macro3", 0.4f );
+            return b.tree;
+        }
+
+        // A synced LFO walks the formant filter through A-E-I-O-U.
+        juce::ValueTree vowelLead()
+        {
+            B b( "Vowel Lead", 1 );
+            b.tree.setProperty( PatchIDs::playMode, (int)Legato, nullptr ).setProperty( PatchIDs::glide, 0.12f, nullptr );
+            b.add( "osc", 0, 0, { { "wave", 2 }, { "unison", 3 }, { "spread", 10 }, { "level", 0.6f } } );
+            auto vow = b.add( "formant", 0, 1, { { "vowel", 0 }, { "reso", 0.6f } } );
+            auto vca = b.add( "vca", 0, 2, { { "gain", 0 } } );
+            auto amp = b.add( "adsr", 1, 0, { { "attack", 0.02f }, { "decay", 0.5f }, { "sustain", 0.9f }, { "release", 0.3f } } );
+            auto lfo = b.add( "lfo", 1, 1, { { "shape", 1 }, { "sync", sync1Bar }, { "polarity", 1 }, { "retrig", 1 } } );
+            b.mod( vca, "gain", B::module( amp ), 1 ).mod( vow, "vowel", B::module( lfo ), 0.9f ).mod( vow, "vowel", "macro1", 0.8f );
+            b.mod( vow, "shift", "macro2", 0.3f );
+            b.macroName( 0, "Vowel" ).macroName( 1, "Formant Shift" );
+            b.addEffect( "chorus", 0, { { "mix", 0.3f } } );
+            return b.tree;
+        }
+
+        // A sine ring-modulated a fifth up: inharmonic and metallic.
+        juce::ValueTree metalBell()
+        {
+            B    b( "Metal Bell" );
+            b.add( "osc", 0, 0, { { "wave", 0 }, { "level", 0.7f } } );
+            auto ring = b.add( "ring", 0, 1, { { "tune", 7.4f }, { "mix", 0.8f } } );
+            b.add( "filter", 0, 2, { { "mode", 2 }, { "cutoff", 180 } } );
+            auto vca = b.add( "vca", 0, 3, { { "gain", 0 } } );
+            auto amp = b.add( "adsr", 1, 0, { { "attack", 0.001f }, { "decay", 2.5f }, { "sustain", 0 }, { "release", 1.5f }, { "velocity", 0.6f } } );
+            b.mod( vca, "gain", B::module( amp ), 1 ).mod( ring, "tune", "macro1", 0.1f ).mod( ring, "mix", "macro2", -0.6f );
+            b.macroName( 0, "Ring Tune" ).macroName( 1, "Purity" );
+            b.addEffect( "reverb", 0, { { "size", 0.8f }, { "mix", 0.3f } } );
+            return b.tree;
+        }
+
+        juce::ValueTree subBass()
+        {
+            B b( "Sub Bass", 1 );
+            b.tree.setProperty( PatchIDs::playMode, (int)Mono, nullptr );
+            b.add( "osc", 0, 0, { { "wave", 0 }, { "level", 0.9f } } );
+            b.add( "osc", 0, 1, { { "wave", 1 }, { "tune", 12 }, { "level", 0.15f } } );
+            auto drv = b.add( "drive", 0, 2, { { "drive", 0.2f }, { "level", 0.8f } } );
+            auto vca = b.add( "vca", 0, 3, { { "gain", 0 } } );
+            auto amp = b.add( "adsr", 1, 0, { { "attack", 0.003f }, { "decay", 0.5f }, { "sustain", 0.9f }, { "release", 0.1f }, { "velocity", 0.2f } } );
+            b.mod( vca, "gain", B::module( amp ), 1 ).mod( drv, "drive", "macro1", 0.6f );
+            return b.tree;
+        }
+
+        juce::ValueTree strings()
+        {
+            B    b( "Strings" );
+            b.add( "osc", 0, 0, { { "wave", 2 }, { "unison", 5 }, { "spread", 18 }, { "level", 0.5f } } );
+            auto flt  = b.add( "filter", 0, 1, { { "cutoff", 2500 }, { "reso", 0.1f } } );
+            auto vca  = b.add( "vca", 0, 2, { { "gain", 0 } } );
+            auto amp  = b.add( "adsr", 1, 0, { { "attack", 0.6f }, { "decay", 1 }, { "sustain", 0.9f }, { "release", 1.2f }, { "velocity", 0.3f } } );
+            auto fenv = b.add( "adsr", 1, 1, { { "attack", 0.5f }, { "decay", 1 }, { "sustain", 0.8f }, { "release", 1.2f }, { "velocity", 0 } } );
+            b.mod( vca, "gain", B::module( amp ), 1 ).mod( flt, "cutoff", B::module( fenv ), 0.15f );
+            b.mod( flt, "cutoff", "macro1", 0.3f ).mod( amp, "attack", "macro2", -0.4f );
+            b.addEffect( "chorus", 0, { { "rate", 0.3f }, { "depth", 0.5f }, { "mix", 0.4f } } );
+            b.addEffect( "reverb", 1, { { "size", 0.8f }, { "mix", 0.3f } } );
+            return b.tree;
+        }
+
+        // An 808-style kick: a sine whose pitch drops fast. Plays two octaves below the pad's note.
+        juce::ValueTree kickDrum()
+        {
+            B    b( "Kick Drum", 4 );
+            auto osc  = b.add( "osc", 0, 0, { { "wave", 0 }, { "tune", -24 }, { "level", 1 } } );
+            auto drv  = b.add( "drive", 0, 1, { { "drive", 0.2f }, { "level", 0.8f } } );
+            auto vca  = b.add( "vca", 0, 2, { { "gain", 0 } } );
+            auto amp  = b.add( "adsr", 1, 0, { { "attack", 0.001f }, { "decay", 0.35f }, { "sustain", 0 }, { "release", 0.1f }, { "velocity", 0.5f } } );
+            auto pitch = b.add( "adsr", 1, 1, { { "attack", 0.001f }, { "decay", 0.06f }, { "sustain", 0 }, { "release", 0.06f }, { "velocity", 0 } } );
+            b.mod( vca, "gain", B::module( amp ), 1 ).mod( osc, "tune", B::module( pitch ), 0.45f );
+            b.mod( pitch, "decay", "macro1", 0.3f ).mod( drv, "drive", "macro2", 0.4f ).mod( amp, "decay", "macro3", 0.3f );
+            b.macroName( 0, "Punch" ).macroName( 2, "Length" );
+            return b.tree;
+        }
+
+        juce::ValueTree snare()
+        {
+            B    b( "Snare", 4 );
+            b.add( "noise", 0, 0, { { "level", 0.8f } } );
+            b.add( "filter", 0, 1, { { "mode", 1 }, { "cutoff", 1800 }, { "reso", 0.3f } } );
+            auto nvca = b.add( "vca", 0, 2, { { "gain", 0 } } );
+            auto tone = b.add( "osc", 1, 0, { { "wave", 1 }, { "tune", -12 }, { "level", 0.5f } } );
+            auto tvca = b.add( "vca", 1, 1, { { "gain", 0 } } );
+            auto nenv = b.add( "adsr", 2, 0, { { "attack", 0.001f }, { "decay", 0.15f }, { "sustain", 0 }, { "release", 0.12f }, { "velocity", 0.6f } } );
+            auto tenv = b.add( "adsr", 2, 1, { { "attack", 0.001f }, { "decay", 0.08f }, { "sustain", 0 }, { "release", 0.06f }, { "velocity", 0.6f } } );
+            b.mod( nvca, "gain", B::module( nenv ), 1 ).mod( tvca, "gain", B::module( tenv ), 1 ).mod( tone, "tune", B::module( tenv ), 0.12f );
+            b.mod( nenv, "decay", "macro1", 0.4f ).mod( tone, "level", "macro2", 0.5f );
+            b.macroName( 0, "Snappy" ).macroName( 1, "Body" );
+            return b.tree;
+        }
+
+        // Drawbars: sines at the fundamental, octave, twelfth and two octaves, with a chorus.
+        juce::ValueTree organ()
+        {
+            B b( "Organ" );
+            b.add( "osc", 0, 0, { { "wave", 0 }, { "level", 0.4f } } );
+            b.add( "osc", 0, 1, { { "wave", 0 }, { "tune", 12 }, { "level", 0.3f } } );
+            auto twelfth = b.add( "osc", 0, 2, { { "wave", 0 }, { "tune", 19 }, { "level", 0.2f } } );
+            b.add( "osc", 0, 3, { { "wave", 0 }, { "tune", 24 }, { "level", 0.15f } } );
+            auto vca = b.add( "vca", 0, 4, { { "gain", 0 } } );
+            auto amp = b.add( "adsr", 1, 0, { { "attack", 0.005f }, { "decay", 0.1f }, { "sustain", 1 }, { "release", 0.05f }, { "velocity", 0 } } );
+            b.mod( vca, "gain", B::module( amp ), 1 ).mod( twelfth, "level", "macro1", 0.5f );
+            b.macroName( 0, "Drawbar" );
+            b.addEffect( "chorus", 0, { { "rate", 5 }, { "depth", 0.3f }, { "mix", 0.4f } } );
+            return b.tree;
+        }
+
+        // An FM electric piano through a bit crusher.
+        juce::ValueTree lofiKeys()
+        {
+            B    b( "Lo-Fi Keys" );
+            auto modOsc = b.add( "osc", 0, 0, { { "wave", 0 }, { "tune", 12 }, { "level", 0 } } );
+            b.add( "osc", 0, 1, { { "wave", 0 }, { "input", 1 }, { "pm", 1 }, { "level", 0.6f } } );
+            auto crush = b.add( "crush", 0, 2, { { "bits", 10 }, { "rate", 3 }, { "mix", 0.5f } } );
+            auto vca   = b.add( "vca", 0, 3, { { "gain", 0 } } );
+            auto amp   = b.add( "adsr", 1, 0, { { "attack", 0.001f }, { "decay", 1.5f }, { "sustain", 0.3f }, { "release", 0.4f }, { "velocity", 0.6f } } );
+            auto index = b.add( "adsr", 1, 1, { { "attack", 0.001f }, { "decay", 0.5f }, { "sustain", 0.1f }, { "release", 0.4f }, { "velocity", 0.8f } } );
+            b.mod( vca, "gain", B::module( amp ), 1 ).mod( modOsc, "level", B::module( index ), 0.4f );
+            b.mod( crush, "mix", "macro1", 0.5f ).mod( modOsc, "level", "macro2", 0.4f );
+            b.macroName( 0, "Lo-Fi" ).macroName( 1, "Bark" );
+            b.addEffect( "chorus", 0, { { "rate", 0.8f }, { "depth", 0.4f }, { "mix", 0.35f } } );
+            return b.tree;
+        }
+
+        // Slow, wide and evolving: a two-bar LFO on the filter into a big reverb.
+        juce::ValueTree drone()
+        {
+            B b( "Drone" );
+            b.add( "osc", 0, 0, { { "wave", 2 }, { "level", 0.35f } } );
+            b.add( "osc", 0, 1, { { "wave", 2 }, { "fine", 7 }, { "tune", -12 }, { "level", 0.35f } } );
+            auto flt = b.add( "filter", 0, 2, { { "cutoff", 700 }, { "reso", 0.5f } } );
+            auto vca = b.add( "vca", 0, 3, { { "gain", 0 } } );
+            auto amp = b.add( "adsr", 1, 0, { { "attack", 2 }, { "decay", 1 }, { "sustain", 1 }, { "release", 3 }, { "velocity", 0.2f } } );
+            auto lfo = b.add( "lfo", 1, 1, { { "sync", sync2Bars }, { "retrig", 0 } } );
+            b.mod( vca, "gain", B::module( amp ), 1 ).mod( flt, "cutoff", B::module( lfo ), 0.25f ).mod( flt, "cutoff", "macro1", 0.4f );
+            b.addEffect( "fxdelay", 0, { { "sync", 5 }, { "feedback", 0.5f }, { "mix", 0.25f } } );
+            b.addEffect( "reverb", 1, { { "size", 0.95f }, { "mix", 0.45f } } );
+            return b.tree;
+        }
+
         struct Preset
         {
             const char* name;
             juce::ValueTree ( *make )();
         };
 
-        const std::array<Preset, 9> presets{ {
+        const std::array<Preset, 22> presets{ {
             { "Init", init },
             { "Basic Poly", basicPoly },
             { "Pluck String", pluckString },
@@ -310,6 +529,19 @@ namespace mt::modular
             { "Noise Hat", noiseHat },
             { "Random Pad", randomPad },
             { "Cross FM", crossFm },
+            { "Supersaw Lead", supersawLead },
+            { "Pressure Pad", pressurePad },
+            { "Acid Bass", acidBass },
+            { "Arp Sparkle", arpSparkle },
+            { "Vowel Lead", vowelLead },
+            { "Metal Bell", metalBell },
+            { "Sub Bass", subBass },
+            { "Strings", strings },
+            { "Kick Drum", kickDrum },
+            { "Snare", snare },
+            { "Organ", organ },
+            { "Lo-Fi Keys", lofiKeys },
+            { "Drone", drone },
         } };
     } // namespace
 
@@ -344,6 +576,7 @@ namespace mt::modular
                 case kGate: return "Gate";
                 case kModWheel: return "Mod Wheel";
                 case kBend: return "Pitch Bend";
+                case kPressure: return "Pressure";
                 default: break;
             }
             return "Macro " + juce::String( Source - kMacro1 + 1 );
@@ -488,8 +721,9 @@ namespace mt::modular
 
     void PatchEditor::markEdited()
     {
+        // Once: a preset (factory or the user's) no longer reads as the untouched one.
         const auto name = patch.getProperty( PatchIDs::name ).toString();
-        if( getPresetNames().contains( name ) )
+        if( name.isNotEmpty() && !name.endsWith( " *" ) )
             patch.setProperty( PatchIDs::name, name + " *", um );
     }
 
@@ -600,6 +834,80 @@ namespace mt::modular
             markEdited();
             parent.removeChild( Mod, um );
         }
+    }
+
+    int PatchEditor::getPlayMode() const { return juce::jlimit( (int)Poly, (int)Legato, (int)patch.getProperty( PatchIDs::playMode, (int)Poly ) ); }
+
+    void PatchEditor::setPlayMode( int Mode )
+    {
+        Mode = juce::jlimit( (int)Poly, (int)Legato, Mode );
+        if( Mode == getPlayMode() )
+            return;
+        markEdited();
+        patch.setProperty( PatchIDs::playMode, Mode, um );
+    }
+
+    float PatchEditor::getGlide() const { return juce::jlimit( 0.f, maxGlide, (float)patch.getProperty( PatchIDs::glide, 0.f ) ); }
+
+    void PatchEditor::setGlide( float Seconds )
+    {
+        Seconds = juce::jlimit( 0.f, maxGlide, Seconds );
+        if( Seconds == getGlide() )
+            return;
+        markEdited();
+        patch.setProperty( PatchIDs::glide, Seconds, um );
+    }
+
+    const juce::StringArray& arpModeNames()
+    {
+        static const juce::StringArray names{ "Off", "Up", "Down", "Up-Down", "Random", "As Played" };
+        return names;
+    }
+
+    const juce::StringArray& arpRateNames()
+    {
+        static const juce::StringArray names{ "1/4", "1/8", "1/16", "1/32", "1/8 T", "1/16 T" };
+        return names;
+    }
+
+    double arpRateBeats( int Rate )
+    {
+        static constexpr std::array<double, 6> beats{ 1, 0.5, 0.25, 0.125, 1.0 / 3.0, 1.0 / 6.0 };
+        return beats[(size_t)juce::jlimit( 0, (int)beats.size() - 1, Rate )];
+    }
+
+    int   PatchEditor::getArp() const { return juce::jlimit( (int)ArpOff, (int)ArpAsPlayed, (int)patch.getProperty( PatchIDs::arp, (int)ArpOff ) ); }
+    int   PatchEditor::getArpRate() const { return juce::jlimit( 0, arpRateNames().size() - 1, (int)patch.getProperty( PatchIDs::arpRate, 2 ) ); }
+    int   PatchEditor::getArpOctaves() const { return juce::jlimit( 1, 4, (int)patch.getProperty( PatchIDs::arpOctaves, 1 ) ); }
+    float PatchEditor::getArpGate() const { return juce::jlimit( 0.05f, 1.f, (float)patch.getProperty( PatchIDs::arpGate, 0.5f ) ); }
+
+    void PatchEditor::setArp( int Mode, int Rate, int Octaves, float Gate )
+    {
+        if( !patch.isValid() )
+            return;
+        markEdited();
+        if( Mode >= 0 )
+            patch.setProperty( PatchIDs::arp, juce::jlimit( (int)ArpOff, (int)ArpAsPlayed, Mode ), um );
+        if( Rate >= 0 )
+            patch.setProperty( PatchIDs::arpRate, juce::jlimit( 0, arpRateNames().size() - 1, Rate ), um );
+        if( Octaves >= 0 )
+            patch.setProperty( PatchIDs::arpOctaves, juce::jlimit( 1, 4, Octaves ), um );
+        if( Gate >= 0.f )
+            patch.setProperty( PatchIDs::arpGate, juce::jlimit( 0.05f, 1.f, Gate ), um );
+    }
+
+    void PatchEditor::moveEffect( int Id, int Slot )
+    {
+        auto e = module( Id );
+        if( !e.hasType( PatchIDs::FX ) || !juce::isPositiveAndBelow( Slot, effectSlots ) )
+            return;
+        const int from = e.getProperty( PatchIDs::slot );
+        if( from == Slot )
+            return;
+        markEdited();
+        if( auto other = effectAt( Slot ); other.isValid() )
+            other.setProperty( PatchIDs::slot, from, um );
+        e.setProperty( PatchIDs::slot, Slot, um );
     }
 
     int PatchEditor::getVoices() const { return juce::jlimit( 1, maxVoices, (int)patch.getProperty( PatchIDs::voices, defaultVoices ) ); }

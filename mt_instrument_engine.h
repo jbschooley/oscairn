@@ -43,6 +43,11 @@ namespace mt
         /// Optional performance controls. Pitch bend in semitones (signed), mod wheel 0..1.
         virtual void pitchBend( float /*Semitones*/ ) {}
         virtual void modWheel( float /*Amount*/ ) {}
+        /// Optional pressure, 0..1: one held note (poly aftertouch) or all of them.
+        virtual void aftertouch( int /*Note*/, float /*Amount*/ ) {}
+        virtual void channelPressure( float /*Amount*/ ) {}
+        /// The project tempo, for tempo-synced LFOs, delays and arpeggios.
+        virtual void setTempo( double /*Bpm*/ ) {}
 
         /// Writes (does not add) NumSamples into each of the NumChannels outputs.
         virtual void process( float* const* Out, int NumChannels, int NumSamples ) = 0;
@@ -64,6 +69,8 @@ namespace mt
         virtual juce::ValueTree createPreset( int /*Index*/ ) const { return {}; }
         /// An invalid tree means "no stored patch".
         virtual void setPatch( const juce::ValueTree& /*Patch*/ ) {}
+        /// For an editor's meters: a recent output of one part of the patch (by its id).
+        virtual float getActivity( int /*PartId*/ ) const { return 0.f; }
     };
 
     /// Engines available in this build, by name.

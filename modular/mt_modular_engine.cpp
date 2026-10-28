@@ -18,6 +18,7 @@ namespace mt
             float                bendSemitones{ 0 };
             float                modWheel{ 0 };
             std::array<float, 8> macros{};
+            double               bpm{ 120 };
         };
 
         /// Calls F( index, parameter index, source index, depth ) for every usable
@@ -111,6 +112,7 @@ namespace mt
             std::vector<float>                   src;       // built-in sources, then one per node
             std::vector<std::array<float, subBlock>> outputs; // each node's last sub-block, for cables
             int                                  note{ 60 };
+            float                                pitch{ 60 }, target{ 60 }; // pitch glides to target
             float                                velocity{ 0 };
             bool                                 gate{ false }, active{ false }, fading{ false };
             float                                fade{ 1 };
@@ -128,6 +130,7 @@ namespace mt
         std::vector<Route>            routes;
         std::vector<int>              modulated; // module parameters with at least one route
         std::vector<std::vector<Cable>> cables;  // per node: the cables into it
+        std::vector<char>             feedsCable; // per node: its output is a cable's source
         std::vector<Effect>           effects;   // slot order; their parameters follow the modules'
         int                           numModuleParams{ 0 };
 
@@ -136,7 +139,34 @@ namespace mt
         std::unique_ptr<std::atomic<float>[]> depth;  // per route, in patch order
         std::unique_ptr<std::atomic<float>[]> amount; // per cable, in patch order
 
+        std::atomic<int>   playMode{ Poly };
+        std::atomic<float> glide{ 0 };
+        std::atomic<int>   arpMode{ ArpOff }, arpRate{ 2 }, arpOctaves{ 1 };
+        std::atomic<float> arpGate{ 0.5f };
+
+        // Ids of the nodes, then the effects, for the editor's activity meters.
+        std::vector<int>                      partIds;
+        std::unique_ptr<std::atomic<float>[]> activity;
+
         // Audio thread.
+        struct Held
+        {
+            int   note;
+            float velocity;
+        };
+        std::array<Held, 32> held{}; // mono modes: notes held down, oldest first
+        int                  numHeld{ 0 };
+
+        // Arpeggiator: the notes held down (in the order played), and its clock.
+        std::array<Held, 32> arpHeld{};
+        int                  numArpHeld{ 0 };
+        int                  arpStep{ 0 };
+        double               arpCountdown{ 0 }; // samples to the next step
+        double               arpGateLeft{ 0 };  // samples until the sounding note is released
+        int                  arpSounding{ -1 };
+        bool                 arpStarting{ false }; // first step due at the start of the next block
+        uint32_t             arpRandom{ 0x2545F491u };
+        std::vector<float>   peaks;  // per part, this block
         std::vector<float> baseNorm, baseReal, depthNow, amountNow;
         std::vector<float> effectValues; // indexed like the flat parameter list
         std::vector<Voice> voices;
@@ -178,7 +208,7 @@ namespace mt
 
         VoiceContext context( const Voice& V, const Globals& G ) const
         {
-            return { sampleRate, (float)V.note + G.bendSemitones, V.velocity, V.gate };
+            return { sampleRate, V.pitch + G.bendSemitones, V.velocity, V.gate, G.bpm };
         }
 
         void setGlobalSources( Voice& V, const Globals& G ) const
@@ -209,8 +239,30 @@ namespace mt
 
         void startNote( int Note, float Velocity, const Globals& G )
         {
+            if( arpMode.load( std::memory_order_relaxed ) != ArpOff )
+                arpNoteOn( Note, Velocity, G );
+            else
+                playNote( Note, Velocity, G );
+        }
+
+        void releaseNote( int Note, const Globals& G )
+        {
+            if( arpMode.load( std::memory_order_relaxed ) != ArpOff || numArpHeld > 0 )
+                arpNoteOff( Note, G );
+            else
+                stopNote( Note, G );
+        }
+
+        /// A note into the voices (from a key, or from the arpeggiator).
+        void playNote( int Note, float Velocity, const Globals& G )
+        {
             if( voices.empty() )
                 return;
+            if( const auto mode = playMode.load( std::memory_order_relaxed ); mode != Poly )
+            {
+                monoNoteOn( Note, Velocity, G, mode == Legato );
+                return;
+            }
 
             // A free voice, else the oldest released one, else the oldest.
             Voice* pick = nullptr;
@@ -229,8 +281,16 @@ namespace mt
                     if( !pick || v.age < pick->age )
                         pick = &v;
 
-            auto&      v     = *pick;
-            const bool steal = v.active;
+            startVoice( *pick, Note, Velocity, pick->active, G );
+        }
+
+        void startVoice( Voice& v, int Note, float Velocity, bool Steal, const Globals& G )
+        {
+            const bool steal = Steal;
+            // Glide only between notes of one mono voice; a fresh note starts on pitch.
+            if( !steal || playMode.load( std::memory_order_relaxed ) == Poly || glide.load( std::memory_order_relaxed ) <= 0.f )
+                v.pitch = (float)Note;
+            v.target         = (float)Note;
             v.note           = Note;
             v.velocity       = Velocity;
             v.gate           = true;
@@ -241,6 +301,7 @@ namespace mt
             v.src[kVelocity] = Velocity;
             v.src[kNote]     = juce::jlimit( -1.f, 1.f, ( (float)Note - 60.f ) / 60.f );
             v.src[kGate]     = 1.f;
+            v.src[kPressure] = 0.f;
             setGlobalSources( v, G );
             if( !steal )
                 std::copy( baseReal.begin(), baseReal.end(), v.cur.begin() );
@@ -253,15 +314,235 @@ namespace mt
             v.prev = v.cur;
         }
 
-        void releaseNote( int Note )
+        void stopNote( int Note, const Globals& G )
         {
+            if( playMode.load( std::memory_order_relaxed ) != Poly && !voices.empty() )
+            {
+                monoNoteOff( Note, G, playMode.load( std::memory_order_relaxed ) == Legato );
+                return;
+            }
             for( auto& v : voices )
                 if( v.active && v.gate && v.note == Note )
                     releaseVoice( v );
         }
 
+        //------------------------------------------------------------------------------
+        // Mono and legato: one voice, the last note held wins; letting it go returns to
+        // the one held before. Mono retriggers the envelopes on every change, legato
+        // only when no other note was held.
+        void monoNoteOn( int Note, float Velocity, const Globals& G, bool IsLegato )
+        {
+            removeHeld( Note );
+            if( numHeld == (int)held.size() ) // drop the oldest
+                std::move( held.begin() + 1, held.end(), held.begin() ), --numHeld;
+            held[(size_t)numHeld++] = { Note, Velocity };
+
+            auto& v = voices[0];
+            if( IsLegato && v.active && v.gate )
+                retarget( v, Note );
+            else
+                startVoice( v, Note, Velocity, v.active, G );
+        }
+
+        void monoNoteOff( int Note, const Globals& G, bool IsLegato )
+        {
+            removeHeld( Note );
+            auto& v = voices[0];
+            if( !v.active || !v.gate || v.note != Note )
+                return; // a note underneath was let go
+            if( numHeld == 0 )
+            {
+                releaseVoice( v );
+                return;
+            }
+            const auto back = held[(size_t)numHeld - 1];
+            if( IsLegato )
+                retarget( v, back.note );
+            else
+                startVoice( v, back.note, back.velocity, true, G );
+        }
+
+        void retarget( Voice& V, int Note )
+        {
+            V.note       = Note;
+            V.target     = (float)Note;
+            V.src[kNote] = juce::jlimit( -1.f, 1.f, ( (float)Note - 60.f ) / 60.f );
+            if( glide.load( std::memory_order_relaxed ) <= 0.f )
+                V.pitch = (float)Note;
+        }
+
+        void removeHeld( int Note )
+        {
+            const auto end = std::remove_if( held.begin(), held.begin() + numHeld, [Note]( const Held& H ) { return H.note == Note; } );
+            numHeld        = (int)( end - held.begin() );
+        }
+
+        void aftertouch( int Note, float Amount )
+        {
+            for( auto& v : voices )
+                if( v.active && v.note == Note )
+                    v.src[kPressure] = Amount;
+        }
+
+        void channelPressure( float Amount )
+        {
+            for( auto& v : voices )
+                if( v.active )
+                    v.src[kPressure] = Amount;
+        }
+
+        //------------------------------------------------------------------------------
+        // Arpeggiator.
+        void arpNoteOn( int Note, float Velocity, const Globals& G )
+        {
+            const bool starting = numArpHeld == 0;
+            arpRemove( Note );
+            if( numArpHeld == (int)arpHeld.size() )
+                std::move( arpHeld.begin() + 1, arpHeld.end(), arpHeld.begin() ), --numArpHeld;
+            arpHeld[(size_t)numArpHeld++] = { Note, Velocity };
+            // The first step waits for the next block to start, so a chord's notes (which
+            // arrive together, before that block) are all in it; the clock starts from it.
+            if( starting )
+            {
+                arpStep     = 0;
+                arpStarting = true;
+            }
+            juce::ignoreUnused( G );
+        }
+
+        void arpNoteOff( int Note, const Globals& G )
+        {
+            arpRemove( Note );
+            if( numArpHeld == 0 )
+                arpStop( G );
+        }
+
+        void arpRemove( int Note )
+        {
+            const auto end = std::remove_if( arpHeld.begin(), arpHeld.begin() + numArpHeld, [Note]( const Held& H ) { return H.note == Note; } );
+            numArpHeld     = (int)( end - arpHeld.begin() );
+        }
+
+        void arpStop( const Globals& G )
+        {
+            if( arpSounding >= 0 )
+                stopNote( arpSounding, G );
+            arpSounding = -1;
+            numArpHeld  = 0;
+        }
+
+        double arpStepSamples( const Globals& G ) const
+        {
+            return juce::jmax( 1.0, 60.0 / juce::jmax( 1.0, G.bpm ) * arpRateBeats( arpRate.load( std::memory_order_relaxed ) ) * sampleRate );
+        }
+
+        Held arpNext()
+        {
+            // The pattern: held notes (sorted, unless "As Played") repeated per octave.
+            std::array<Held, 32> notes{};
+            std::copy( arpHeld.begin(), arpHeld.begin() + numArpHeld, notes.begin() );
+            const auto mode = arpMode.load( std::memory_order_relaxed );
+            if( mode != ArpAsPlayed )
+                std::sort( notes.begin(), notes.begin() + numArpHeld, []( const Held& A, const Held& B ) { return A.note < B.note; } );
+
+            std::array<Held, 128> pattern{};
+            int                   n = 0;
+            for( int o = 0; o < arpOctaves.load( std::memory_order_relaxed ); ++o )
+                for( int i = 0; i < numArpHeld && n < (int)pattern.size(); ++i )
+                    if( notes[(size_t)i].note + 12 * o < 128 )
+                        pattern[(size_t)n++] = { notes[(size_t)i].note + 12 * o, notes[(size_t)i].velocity };
+            if( n == 0 )
+                return { -1, 0.f };
+
+            int index = 0;
+            switch( mode )
+            {
+                case ArpDown: index = n - 1 - arpStep % n; break;
+                case ArpUpDown:
+                {
+                    const auto cycle = juce::jmax( 1, 2 * n - 2 ); // no repeated top or bottom note
+                    const auto p     = arpStep % cycle;
+                    index            = p < n ? p : cycle - p;
+                    break;
+                }
+                case ArpRandom:
+                    arpRandom ^= arpRandom << 13;
+                    arpRandom ^= arpRandom >> 17;
+                    arpRandom ^= arpRandom << 5;
+                    index = (int)( arpRandom % (uint32_t)n );
+                    break;
+                default: index = arpStep % n; break; // Up, As Played
+            }
+            ++arpStep;
+            return pattern[(size_t)juce::jlimit( 0, n - 1, index )];
+        }
+
+        void arpStepNow( const Globals& G )
+        {
+            const auto next = arpNext();
+            if( next.note < 0 )
+                return;
+            const auto previous = arpSounding;
+            if( previous == next.note )
+                stopNote( previous, G ); // the same note again: a new attack
+            // The new note starts before the old one stops, so legato and glide join them.
+            playNote( next.note, next.velocity, G );
+            if( previous >= 0 && previous != next.note )
+                stopNote( previous, G );
+
+            const auto step = arpStepSamples( G );
+            arpSounding     = next.note;
+            arpGateLeft     = step * arpGate.load( std::memory_order_relaxed );
+            arpCountdown    = step;
+        }
+
+        /// Samples until the arpeggiator's next event, or N if none comes sooner.
+        int arpSamplesToEvent( int N ) const
+        {
+            double next = N;
+            if( numArpHeld > 0 )
+                next = juce::jmin( next, arpCountdown );
+            if( arpSounding >= 0 && arpGateLeft > 0.0 )
+                next = juce::jmin( next, arpGateLeft );
+            return juce::jlimit( 1, N, (int)std::ceil( next ) );
+        }
+
+        void arpAdvance( int Samples, const Globals& G )
+        {
+            if( arpMode.load( std::memory_order_relaxed ) == ArpOff )
+            {
+                if( arpSounding >= 0 || numArpHeld > 0 )
+                    arpStop( G ); // switched off while playing
+                return;
+            }
+            if( arpSounding >= 0 && arpGateLeft > 0.0 )
+            {
+                arpGateLeft -= Samples;
+                if( arpGateLeft <= 0.0 && arpGate.load( std::memory_order_relaxed ) < 1.f )
+                {
+                    stopNote( arpSounding, G );
+                    arpSounding = -1;
+                }
+            }
+            if( numArpHeld == 0 )
+                return;
+            arpCountdown -= Samples;
+            if( arpCountdown <= 0.0 )
+                arpStepNow( G );
+        }
+
+        void resetArp()
+        {
+            numArpHeld  = 0;
+            arpSounding = -1;
+            arpStep     = 0;
+            arpStarting = false;
+        }
+
         void releaseAll()
         {
+            numHeld = 0;
+            resetArp();
             for( auto& v : voices )
                 if( v.active && v.gate )
                     releaseVoice( v );
@@ -287,6 +568,14 @@ namespace mt
 
         void renderVoice( Voice& V, const Globals& G, float* L, float* R, int N )
         {
+            if( V.pitch != V.target )
+            {
+                // About 99% of the way in the glide time.
+                const auto seconds = glide.load( std::memory_order_relaxed );
+                V.pitch            = seconds <= 0.f ? V.target : V.target + ( V.pitch - V.target ) * std::exp( -4.6f * (float)N / ( seconds * (float)sampleRate ) );
+                if( std::abs( V.pitch - V.target ) < 1.0e-3f )
+                    V.pitch = V.target;
+            }
             setGlobalSources( V, G );
             const auto ctx = context( V, G );
             runModulators( V, ctx, N );
@@ -311,7 +600,10 @@ namespace mt
 
                     const auto first = (size_t)nodes[(size_t)n].firstParam;
                     V.modules[(size_t)n]->process( ctx, &V.prev[first], &V.cur[first], buf.data(), N );
-                    std::copy( buf.begin(), buf.begin() + N, V.outputs[(size_t)n].begin() );
+                    if( feedsCable[(size_t)n] )
+                        std::copy( buf.begin(), buf.begin() + N, V.outputs[(size_t)n].begin() );
+                    const auto range = juce::FloatVectorOperations::findMinAndMax( buf.data(), N );
+                    peaks[(size_t)n] = juce::jmax( peaks[(size_t)n], -range.getStart(), range.getEnd() );
                 }
 
                 // Equal-power pan.
@@ -365,14 +657,49 @@ namespace mt
             std::fill( L, L + N, 0.f );
             if( R )
                 std::fill( R, R + N, 0.f );
+            std::fill( peaks.begin(), peaks.end(), 0.f );
 
-            for( auto& v : voices )
-                for( int start = 0; start < N && v.active; start += subBlock )
-                    renderVoice( v, G, L + start, R ? R + start : nullptr, juce::jmin( subBlock, N - start ) );
+            if( arpStarting )
+            {
+                arpStarting = false;
+                if( numArpHeld > 0 && arpMode.load( std::memory_order_relaxed ) != ArpOff )
+                    arpStepNow( G );
+            }
 
+            // Split the block where the arpeggiator steps, so its notes land on time.
+            for( int done = 0; done < N; )
+            {
+                const auto len = arpMode.load( std::memory_order_relaxed ) != ArpOff || arpSounding >= 0 ? arpSamplesToEvent( N - done ) : N - done;
+                for( auto& v : voices )
+                    for( int start = done; start < done + len && v.active; start += subBlock )
+                        renderVoice( v, G, L + start, R ? R + start : nullptr, juce::jmin( subBlock, done + len - start ) );
+                done += len;
+                arpAdvance( len, G );
+            }
+
+            renderEffects( L, R, N, G );
+            publishActivity();
+        }
+
+        void publishActivity()
+        {
+            // Modulators show their value in the newest sounding voice (0 when none).
+            const Voice* newest = nullptr;
+            for( const auto& v : voices )
+                if( v.active && ( !newest || v.age > newest->age ) )
+                    newest = &v;
+            for( auto n : modulators )
+                peaks[(size_t)n] = newest ? newest->src[(size_t)( kNumBuiltinSources + n )] : 0.f;
+            for( size_t i = 0; i < peaks.size(); ++i )
+                activity[i].store( peaks[i], std::memory_order_relaxed );
+        }
+
+        void renderEffects( float* L, float* R, int N, const Globals& G )
+        {
             // Effects run every block, voices or not, so their tails ring out.
             if( effects.empty() || !R )
                 return; // effects are stereo; a mono render skips them
+            const VoiceContext                    ctx{ sampleRate, 60.f, 1.f, false, G.bpm };
             std::array<float, kNumBuiltinSources> global{};
             global[kModWheel] = G.modWheel;
             global[kBend]     = juce::jlimit( -1.f, 1.f, G.bendSemitones / bendRange );
@@ -388,7 +715,11 @@ namespace mt
                         n += depthNow[(size_t)routes[(size_t)r].depthIndex] * global[(size_t)routes[(size_t)r].source];
                     effectValues[(size_t)p] = paramSpecs[(size_t)p]->fromNormal( n );
                 }
-                e.processor->processStereo( &effectValues[(size_t)e.firstParam], L, R, N );
+                e.processor->processStereo( ctx, &effectValues[(size_t)e.firstParam], L, R, N );
+
+                auto& peak = peaks[nodes.size() + (size_t)( &e - effects.data() )];
+                for( int i = 0; i < N; ++i )
+                    peak = juce::jmax( peak, std::abs( L[i] ), std::abs( R[i] ) );
             }
         }
     };
@@ -411,6 +742,12 @@ namespace mt
                 for( size_t p = 0; p < fx.values.size(); ++p )
                     G.base[first + p].store( fx.spec->params[p].toNormal( fx.values[p] ), std::memory_order_relaxed );
             }
+            G.playMode.store( D.playMode, std::memory_order_relaxed );
+            G.glide.store( D.glide, std::memory_order_relaxed );
+            G.arpMode.store( D.arp, std::memory_order_relaxed );
+            G.arpRate.store( D.arpRate, std::memory_order_relaxed );
+            G.arpOctaves.store( D.arpOctaves, std::memory_order_relaxed );
+            G.arpGate.store( D.arpGate, std::memory_order_relaxed );
             size_t k = 0;
             forEachRoute( D, [&]( int, int, int, float Depth ) { G.depth[k++].store( Depth, std::memory_order_relaxed ); } );
             size_t c = 0;
@@ -468,7 +805,11 @@ namespace mt
 
             g->cables.resize( g->nodes.size() );
             int numCables = 0;
-            forEachCable( D, [&]( int Target, int Source, float ) { g->cables[(size_t)Target].push_back( { Source, numCables++ } ); } );
+            g->feedsCable.assign( g->nodes.size(), 0 );
+            forEachCable( D, [&]( int Target, int Source, float ) {
+                g->cables[(size_t)Target].push_back( { Source, numCables++ } );
+                g->feedsCable[(size_t)Source] = 1;
+            } );
             std::stable_sort( pending.begin(), pending.end(), []( const Pending& A, const Pending& B ) { return A.param < B.param; } );
 
             g->routeBegin.assign( (size_t)g->numParams() + 1, 0 );
@@ -494,6 +835,13 @@ namespace mt
             g->depthNow.assign( pending.size(), 0.f );
             writeValues( *g, D );
             g->refreshValues();
+
+            for( const auto& m : D.modules )
+                g->partIds.push_back( m.id );
+            for( const auto& e : D.effects )
+                g->partIds.push_back( e.id );
+            g->activity = std::make_unique<std::atomic<float>[]>( g->partIds.size() );
+            g->peaks.assign( g->partIds.size(), 0.f );
 
             g->voices.resize( (size_t)D.voices );
             for( auto& v : g->voices )
@@ -546,14 +894,18 @@ namespace mt
             for( auto& v : graph->voices )
                 graph->freeVoice( v );
             graph->resetEffects();
+            graph->resetArp();
+            graph->numHeld = 0;
         }
     }
 
     namespace
     {
-        Globals snapshot( const std::atomic<float>& Bend, const std::atomic<float>& Wheel, const std::array<std::atomic<float>, 8>& Macros )
+        Globals snapshot( const std::atomic<float>& Bend, const std::atomic<float>& Wheel, const std::array<std::atomic<float>, 8>& Macros,
+                          const std::atomic<double>& Tempo )
         {
             Globals g;
+            g.bpm           = Tempo.load( std::memory_order_relaxed );
             g.bendSemitones = Bend.load( std::memory_order_relaxed );
             g.modWheel      = Wheel.load( std::memory_order_relaxed );
             for( size_t m = 0; m < g.macros.size(); ++m )
@@ -566,14 +918,44 @@ namespace mt
     {
         const juce::SpinLock::ScopedLockType lock( graphLock );
         if( graph )
-            graph->startNote( Note, juce::jlimit( 0.f, 1.f, Velocity ), snapshot( bendSemitones, modWheelAmount, macros ) );
+            graph->startNote( Note, juce::jlimit( 0.f, 1.f, Velocity ), snapshot( bendSemitones, modWheelAmount, macros, tempo ) );
     }
 
     void ModularEngine::noteOff( int Note )
     {
         const juce::SpinLock::ScopedLockType lock( graphLock );
         if( graph )
-            graph->releaseNote( Note );
+            graph->releaseNote( Note, snapshot( bendSemitones, modWheelAmount, macros, tempo ) );
+    }
+
+    void ModularEngine::aftertouch( int Note, float Amount )
+    {
+        const juce::SpinLock::ScopedLockType lock( graphLock );
+        if( graph )
+            graph->aftertouch( Note, juce::jlimit( 0.f, 1.f, Amount ) );
+    }
+
+    void ModularEngine::setTempo( double Bpm )
+    {
+        if( Bpm > 0.0 )
+            tempo = Bpm;
+    }
+
+    void ModularEngine::channelPressure( float Amount )
+    {
+        const juce::SpinLock::ScopedLockType lock( graphLock );
+        if( graph )
+            graph->channelPressure( juce::jlimit( 0.f, 1.f, Amount ) );
+    }
+
+    float ModularEngine::getActivity( int PartId ) const
+    {
+        // The graph only changes on this thread; the values are atomics.
+        if( graph )
+            for( size_t i = 0; i < graph->partIds.size(); ++i )
+                if( graph->partIds[i] == PartId )
+                    return graph->activity[i].load( std::memory_order_relaxed );
+        return 0.f;
     }
 
     void ModularEngine::allNotesOff()
@@ -602,7 +984,7 @@ namespace mt
         {
             const juce::SpinLock::ScopedLockType lock( graphLock );
             if( graph )
-                graph->render( Out[0], NumChannels > 1 ? Out[1] : nullptr, NumSamples, snapshot( bendSemitones, modWheelAmount, macros ) );
+                graph->render( Out[0], NumChannels > 1 ? Out[1] : nullptr, NumSamples, snapshot( bendSemitones, modWheelAmount, macros, tempo ) );
             else
                 for( int ch = 0; ch < juce::jmin( 2, NumChannels ); ++ch )
                     juce::FloatVectorOperations::clear( Out[ch], NumSamples );
@@ -641,10 +1023,19 @@ namespace mt
                 fresh->prepare( sampleRate.load() );
             if( graph ) // held notes keep playing through the new patch
             {
-                const auto g = snapshot( bendSemitones, modWheelAmount, macros );
+                const auto g = snapshot( bendSemitones, modWheelAmount, macros, tempo );
                 for( const auto& v : graph->voices )
                     if( v.active && v.gate )
-                        fresh->startNote( v.note, v.velocity, g );
+                        fresh->playNote( v.note, v.velocity, g );
+                fresh->held    = graph->held; // the mono note stack too
+                fresh->numHeld = graph->numHeld;
+                fresh->arpHeld      = graph->arpHeld; // and the arpeggio, mid-step
+                fresh->numArpHeld   = graph->numArpHeld;
+                fresh->arpStep      = graph->arpStep;
+                fresh->arpCountdown = graph->arpCountdown;
+                fresh->arpGateLeft  = graph->arpGateLeft;
+                fresh->arpSounding  = graph->arpSounding;
+                fresh->arpStarting  = graph->arpStarting;
             }
             std::swap( graph, fresh );
         }

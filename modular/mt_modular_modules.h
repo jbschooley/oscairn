@@ -63,6 +63,7 @@ namespace mt::modular
         float  note{ 60 };     // MIDI note including pitch bend, fractional
         float  velocity{ 1 };  // 0..1
         bool   gate{ false };
+        double bpm{ 120 };     // project tempo, for synced rates
     };
 
     class Module
@@ -89,7 +90,7 @@ namespace mt::modular
         virtual float modulate( const VoiceContext&, const float* /*P*/, int /*N*/ ) { return 0.f; }
 
         /// Effects: process the mixed voices in place, once per block.
-        virtual void processStereo( const float* /*P*/, float* /*L*/, float* /*R*/, int /*N*/ ) {}
+        virtual void processStereo( const VoiceContext&, const float* /*P*/, float* /*L*/, float* /*R*/, int /*N*/ ) {}
 
         /// Envelopes: still running. A voice ends once its gate is off and none is.
         virtual bool isEnvelope() const { return false; }
@@ -115,6 +116,11 @@ namespace mt::modular
     const ModuleSpec* findModuleSpec( const juce::String& Type );
 
     //==============================================================================
+    /// Tempo-sync choices shared by synced knobs ("Free", "1 Bar", "1/8 T"...), and their
+    /// length in beats (0 = free, use the knob's own rate or time).
+    const std::vector<juce::String>& syncChoices();
+    double                           syncBeats( int Choice );
+
     /// Modulation sources other than modulator modules, in source-index order.
     enum BuiltinSource
     {
@@ -123,6 +129,7 @@ namespace mt::modular
         kGate,     // 0 or 1
         kModWheel, // 0..1
         kBend,     // -1..1 over the bend range
+        kPressure, // 0..1, the voice's aftertouch (or channel pressure)
         kMacro1,   // 0..1, eight of them
         kNumBuiltinSources = kMacro1 + 8
     };

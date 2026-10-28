@@ -37,6 +37,9 @@ namespace mt
         void allNotesOff() override;
         void pitchBend( float Semitones ) override;
         void modWheel( float Amount ) override;
+        void aftertouch( int Note, float Amount ) override;
+        void channelPressure( float Amount ) override;
+        void setTempo( double Bpm ) override;
         void process( float* const* Out, int NumChannels, int NumSamples ) override;
 
         const std::vector<InstrumentParam>& getParams() const override { return params; }
@@ -46,10 +49,14 @@ namespace mt
         juce::StringArray getPresetNames() const override { return modular::getPresetNames(); }
         juce::ValueTree   createPreset( int Index ) const override { return modular::createPreset( Index ); }
         void              setPatch( const juce::ValueTree& Patch ) override;
+        /// Message thread: a module's or effect's latest output (modulators: their value
+        /// in the newest voice; audio: the block's peak). 0 for an unknown id.
+        float getActivity( int PartId ) const override;
 
         // Diagnostics (tests, meters).
         int getBuildCount() const { return buildCount; } // message thread
         int getNumActiveVoices();
+        double getTempo() const { return tempo.load(); }
 
         struct Graph; // mt_modular_engine.cpp
 
@@ -66,6 +73,7 @@ namespace mt
         std::atomic<float>                level{ 0.7f };
         std::atomic<float>                bendSemitones{ 0.f };
         std::atomic<float>                modWheelAmount{ 0.f };
+        std::atomic<double>               tempo{ 120.0 };
         float                             lastGain{ 0.f }; // audio thread
     };
 } // namespace mt

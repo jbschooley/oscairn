@@ -4,7 +4,7 @@
  * A patch is a ValueTree, so the program can keep it in the project (saved with
  * it, undoable):
  *
- *   <MODULAR_PATCH name="Init" voices="8" macroName1="Brightness">
+ *   <MODULAR_PATCH name="Init" voices="8" playMode="0" glide="0" macroName1="Brightness">
  *     <MODULE id="1" type="osc" col="0" row="0" wave="2" level="0.5"/>
  *     <MODULE id="3" type="vca" col="0" row="1" gain="0">
  *       <MOD param="gain" source="module:2" depth="1"/>
@@ -26,6 +26,14 @@
  * module's input. A source to the left of (or above) its target arrives in the
  * same sub-block; one to the right arrives one sub-block (16 samples) later,
  * which is what makes feedback possible.
+ *
+ * arp (0 off, else a pattern) plays the held notes one at a time at arpRate (a
+ * note length, synced to the project tempo) over arpOctaves octaves, each held
+ * for arpGate of a step. Its notes go through the play mode like played ones.
+ *
+ * playMode: 0 = poly, 1 = mono (last note wins, retriggers), 2 = legato (mono,
+ * envelopes keep running between overlapping notes). glide (seconds) slides the
+ * pitch between notes in the mono modes.
  *
  * FX nodes are the stereo effects after the voices, in slot order; their MODs
  * may only use voice-independent sources (macros, mod wheel, bend). Macros take
@@ -55,6 +63,12 @@ namespace mt::modular
         inline const juce::Identifier CABLE{ "CABLE" };
         inline const juce::Identifier slot{ "slot" };
         inline const juce::Identifier amount{ "amount" };
+        inline const juce::Identifier playMode{ "playMode" };
+        inline const juce::Identifier glide{ "glide" };
+        inline const juce::Identifier arp{ "arp" };
+        inline const juce::Identifier arpRate{ "arpRate" };
+        inline const juce::Identifier arpOctaves{ "arpOctaves" };
+        inline const juce::Identifier arpGate{ "arpGate" };
         /// Macro is 0-based: macroName1..macroName8.
         inline juce::Identifier macroName( int Macro ) { return juce::Identifier( "macroName" + juce::String( Macro + 1 ) ); }
     } // namespace PatchIDs
@@ -64,6 +78,27 @@ namespace mt::modular
     constexpr int gridColumns   = 8; // what the editor shows; the engine does not care
     constexpr int gridRows      = 6;
     constexpr int effectSlots   = 4;
+    constexpr float maxGlide    = 2.f; // seconds
+
+    enum PlayMode
+    {
+        Poly,
+        Mono,
+        Legato
+    };
+
+    enum ArpMode
+    {
+        ArpOff,
+        ArpUp,
+        ArpDown,
+        ArpUpDown,
+        ArpRandom,
+        ArpAsPlayed
+    };
+    const juce::StringArray& arpModeNames(); // "Off", "Up"...
+    const juce::StringArray& arpRateNames(); // "1/4", "1/8"...
+    double                   arpRateBeats( int Rate );
 
     /// A patch read out of its tree: plain data the engine can build from.
     struct PatchDesc
@@ -92,6 +127,10 @@ namespace mt::modular
 
         juce::String        name;
         int                 voices{ defaultVoices };
+        int                 playMode{ Poly }; // values, not structure: no rebuild
+        float               glide{ 0 };
+        int                 arp{ ArpOff }, arpRate{ 2 }, arpOctaves{ 1 };
+        float               arpGate{ 0.5f };
         std::vector<Module> modules; // column, then row order; unknown types are skipped
         std::vector<Module> effects; // slot order (in `col`)
 
@@ -177,6 +216,20 @@ namespace mt::modular
 
         int  getVoices() const;
         void setVoices( int Voices );
+        int   getPlayMode() const;
+        void  setPlayMode( int Mode );
+        float getGlide() const;
+        void  setGlide( float Seconds );
+
+        int   getArp() const;
+        int   getArpRate() const;
+        int   getArpOctaves() const;
+        float getArpGate() const;
+        /// Any argument < 0 leaves that setting as it is.
+        void setArp( int Mode, int Rate = -1, int Octaves = -1, float Gate = -1.f );
+
+        /// Moves an effect to another slot; one already there takes its old slot.
+        void moveEffect( int Id, int Slot );
 
         /// Modulation sources this patch offers: the built-ins, then its modulator
         /// modules, as { stored id, display name }.
