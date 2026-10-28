@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #include "Screen.h"
+#include <juce_audio_basics/juce_audio_basics.h>
 
 #include <cmath>
 

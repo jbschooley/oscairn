@@ -1,5 +1,8 @@
 name: CI
 
+env:
+  OSCAIRN_REQUIRE_SOCKET_BIND: "1"
+
 on:
   push:
   pull_request:

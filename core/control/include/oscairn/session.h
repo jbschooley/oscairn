@@ -41,6 +41,8 @@ namespace oscairn
         void commit() override;
         /// Call at each control tick (desktop: 5 ms), never on the audio thread.
         void service();
+        SessionStatus sessionStatus() const override;
+        void setHostStatus(SessionStatus status) { hostStatus_ = std::move(status); }
         uint64_t changeSequence() const override { return sequence_; }
         Changes changesAfter( uint64_t sequence ) const override;
 
@@ -89,6 +91,7 @@ namespace oscairn
         double sampleRate_;
         uint32_t maxFrames_;
         Graph graph_;
+        SessionStatus hostStatus_;
         std::map<NodeId,std::string> nodes_;
         bool staged_ = false;
         uint64_t revision_ = 0, sequence_ = 0;

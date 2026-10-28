@@ -132,6 +132,15 @@ namespace oscairn
         return {graph_.describe(),nodes_,revision_,staged_};
     }
 
+    Control::SessionStatus Session::sessionStatus() const
+    {
+        auto result = hostStatus_;
+        if(result.sampleRate == 0) result.sampleRate = sampleRate_;
+        if(result.bufferSize == 0) result.bufferSize = maxFrames_;
+        for(const auto& [node,name] : nodes_) result.deadlineMisses += graph_.host(node).statistics().deadlineMisses;
+        return result;
+    }
+
     void Session::remove( NodeId node )
     {
         if( !graph_.contains(node) ) throw std::invalid_argument("unknown node");

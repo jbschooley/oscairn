@@ -1,0 +1,287 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+#include "oscairn/local_socket.h"
+#include "oscairn/session.h"
+#include "oscairn/remote_control.h"
+#include "AllocationGuard.h"
+#include <array>
+#include <atomic>
+#include <chrono>
+#include <csignal>
+#include <cstdlib>
+#include <cstring>
+#include <filesystem>
+#include <fstream>
+#include <iostream>
+#include <stdexcept>
+#include <thread>
+#include <system_error>
+#include <fcntl.h>
+#include <spawn.h>
+#include <sys/socket.h>
+#include <sys/stat.h>
+#include <sys/wait.h>
+#include <unistd.h>
+
+extern char** environ;
+
+namespace
+{
+    using namespace oscairn;
+    void check(bool value,const char* message){if(!value)throw std::runtime_error(message);}
+    std::array<int,2> pair()
+    {
+        std::array<int,2> fds;check(socketpair(AF_UNIX,SOCK_STREAM,0,fds.data())==0,"socketpair");
+        for(auto fd:fds)
+        {
+            fcntl(fd,F_SETFL,fcntl(fd,F_GETFL)|O_NONBLOCK);
+#ifdef SO_NOSIGPIPE
+            int yes=1;setsockopt(fd,SOL_SOCKET,SO_NOSIGPIPE,&yes,sizeof(yes));
+#endif
+        }
+        return fds;
+    }
+    ssize_t send(int fd,std::string_view data)
+    {
+#ifdef MSG_NOSIGNAL
+        return ::send(fd,data.data(),data.size(),MSG_NOSIGNAL);
+#else
+        return ::send(fd,data.data(),data.size(),0);
+#endif
+    }
+    std::string read(int fd)
+    {
+        std::string result;std::array<char,8192> buffer;
+        for(;;){const auto n=recv(fd,buffer.data(),buffer.size(),0);if(n<=0)break;result.append(buffer.data(),n);}
+        return result;
+    }
+    struct Fixture
+    {
+        Session session{48000,64};LocalServer server{session};
+        std::array<float,64> left{},right{};
+        explicit Fixture(const char* plugin)
+        {
+            const auto node=session.add("synth",plugin);
+            session.connectNotes(graphInput,node);session.connectAudio(node,graphOutput);session.commit();
+        }
+        void tick()
+        {
+            const auto time=std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+            server.poll(static_cast<uint64_t>(time));session.service();
+            float* out[]{left.data(),right.data()};
+            forbidAllocation=true;const bool ok=session.process(out,64);forbidAllocation=false;check(ok,"render");
+        }
+    };
+    template<class F> void clientWhileRendering(Fixture& fixture,F&& action)
+    {
+        std::atomic<bool> done=false;std::exception_ptr failure;
+        std::thread client([&]{try{action();}catch(...){failure=std::current_exception();}done=true;});
+        while(!done){fixture.tick();std::this_thread::yield();}
+        client.join();if(failure)std::rethrow_exception(failure);
+    }
+    void framing(const char* plugin)
+    {
+        Fixture f(plugin);auto fd=pair();f.server.adopt(fd[0]);
+        const std::string request=R"({"jsonrpc":"2.0","id":"🎹","method":"transport.set","params":{"tempo":139}})";
+        check(send(fd[1],request.substr(0,32))==32,"send fragment");f.tick();
+        check(f.session.transportState().tempo==120 && read(fd[1]).empty(),"partial request not executed");
+        auto tail=request.substr(32)+"\r\n{broken\n{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"transport.get\"}\n";
+        check(send(fd[1],tail)==static_cast<ssize_t>(tail.size()),"send coalesced lines");f.tick();
+        const auto replies=read(fd[1]);
+        check(replies.find("🎹")!=std::string::npos && replies.find("-32700")!=std::string::npos && replies.find("\"id\":2")!=std::string::npos,"framing preserves IDs and parse errors isolate a line");
+        check(f.session.transportState().tempo==139,"complete request applied");
+        ::close(fd[1]);f.tick();check(f.server.clients()==0,"disconnect collected");
+
+        fd=pair();f.server.adopt(fd[0]);
+        std::string oversized(65538,' ');size_t written=0;
+        for(int i=0;i<100 && f.server.clients();++i)
+        {
+            const auto n=send(fd[1],std::string_view(oversized).substr(written));if(n>0)written+=n;f.tick();
+        }
+        check(f.server.clients()==0,"oversized unterminated line disconnects");::close(fd[1]);
+        fd=pair();f.server.adopt(fd[0]);
+        const std::string half=R"({"jsonrpc":"2.0","id":3,"method":"transport.get"})" "\n";
+        send(fd[1],half);shutdown(fd[1],SHUT_WR);f.tick();
+        check(read(fd[1]).find("\"id\":3")!=std::string::npos,"write half-close drains the response");::close(fd[1]);
+    }
+    void clientAndReconnect(const char* plugin)
+    {
+        Fixture f(plugin);auto fd=pair();f.server.adopt(fd[0]);
+        clientWhileRendering(f,[&]{
+            LocalClient client;client.adopt(fd[1]);
+            check(client.call("session.hello").find("\"protocolVersion\":1")!=std::string::npos,"hello over socket");
+            client.call("subscribe",R"({"topics":["transport","params.changed"]})");
+            client.call("params.set",R"({"values":[{"node":"synth","param":1,"value":0.7}]})");
+            client.call("notes.send",R"({"on":true,"key":60})");
+            client.call("transport.get");
+            check(!client.takeNotifications().empty(),"notifications interleaved with replies");
+        });
+        for(int i=0;i<100;++i){f.tick();check(f.left[0]>.69f,"audio continues when controller disconnects");}
+        fd=pair();f.server.adopt(fd[0]);
+        clientWhileRendering(f,[&]{
+            LocalClient client;client.adopt(fd[1]);
+            check(client.call("params.get",R"({"values":[{"node":"synth","param":1}]})").find("0.7")!=std::string::npos,"reconnected client sees existing state");
+            client.call("notes.send",R"({"on":false,"key":60})");
+        });
+        f.tick();check(f.left[0]==0,"reconnected controller releases held note");
+    }
+    void pressure(const char* plugin)
+    {
+        Fixture f(plugin);auto slow=pair(),good=pair();
+        int small=1024;setsockopt(slow[0],SOL_SOCKET,SO_SNDBUF,&small,sizeof(small));
+        f.server.adopt(slow[0]);f.server.adopt(good[0]);
+        std::string burst;
+        for(int i=0;i<16;++i)burst+=R"({"jsonrpc":"2.0","id":1,"method":"session.hello"})" "\n";
+        for(int i=0;i<1000 && f.server.clients()==2;++i){send(slow[1],burst);f.tick();}
+        check(f.server.clients()==1,"slow reader disconnected at bounded output limit");
+        send(good[1],R"({"jsonrpc":"2.0","id":2,"method":"transport.get"})" "\n");f.tick();
+        check(read(good[1]).find("\"id\":2")!=std::string::npos,"slow reader does not block another client");
+        ::close(slow[1]);::close(good[1]);f.tick();
+        std::vector<int> clients;
+        for(size_t i=0;i<LocalServer::maxClients;++i){auto fd=pair();check(f.server.adopt(fd[0]),"accept within limit");clients.push_back(fd[1]);}
+        auto excess=pair();check(!f.server.adopt(excess[0]),"client count bounded");::close(excess[1]);
+        for(auto fd:clients)::close(fd);
+        f.tick();check(f.server.clients()==0,"all connections cleaned");
+    }
+    void controllerCrash(const char* plugin,const char* executable)
+    {
+        Fixture f(plugin);auto fd=pair();f.server.adopt(fd[0]);
+        posix_spawn_file_actions_t actions;
+        check(posix_spawn_file_actions_init(&actions)==0,"spawn actions");
+        // Reserve an inherited descriptor explicitly; the engine endpoint is CLOEXEC.
+        check(posix_spawn_file_actions_adddup2(&actions,fd[1],64)==0,"spawn socket descriptor");
+        if(fd[1]!=64)check(posix_spawn_file_actions_addclose(&actions,fd[1])==0,"spawn close original");
+        char mode[]="--crash-client",descriptor[]="64";
+        char* args[]{const_cast<char*>(executable),mode,descriptor,nullptr};pid_t pid=-1;
+        const int result=posix_spawn(&pid,executable,&actions,nullptr,args,environ);
+        posix_spawn_file_actions_destroy(&actions);::close(fd[1]);
+        check(result==0,"spawn separate controller process");
+        struct Reap
+        {
+            pid_t pid;
+            ~Reap(){if(pid>0){::kill(pid,SIGKILL);while(::waitpid(pid,nullptr,0)<0 && errno==EINTR){}}}
+        } child{pid};
+        const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(15);
+        while(!f.session.transportState().playing && std::chrono::steady_clock::now()<deadline)
+        {f.tick();std::this_thread::yield();}
+        check(f.session.transportState().playing,"child controller completed edits");
+        check(::kill(pid,SIGKILL)==0,"kill controller process");int status=0;
+        check(::waitpid(pid,&status,0)==pid && WIFSIGNALED(status) && WTERMSIG(status)==SIGKILL,"controller died abruptly");child.pid=-1;
+        for(int i=0;i<100;++i){f.tick();check(f.left[0]>.82f,"audio survives controller process crash");}
+        check(f.server.clients()==0,"crashed connection collected");
+        fd=pair();f.server.adopt(fd[0]);
+        clientWhileRendering(f,[&]{
+            LocalClient client;client.adopt(fd[1]);RemoteControl remote(client);
+            check(remote.parameter(remote.nodeId("synth"),1)==.83,"new controller recovers existing parameter state");
+            check(remote.transportState().playing,"new controller recovers transport state");
+            remote.note(false,60,0);
+        });
+        f.tick();check(f.left[0]==0,"new controller can release note after crash");
+    }
+    void clientFailures()
+    {
+        auto fd=pair();LocalClient client;client.adopt(fd[0]);
+        bool timeout=false;try{client.call("session.hello","{}",10);}catch(const std::runtime_error&){timeout=true;}
+        check(timeout && !client.connected(),"timeout closes uncertain connection without replay");::close(fd[1]);
+        fd=pair();client.adopt(fd[0]);
+        std::thread peer([&]{
+            while(read(fd[1]).empty())std::this_thread::yield();
+            send(fd[1],R"({"jsonrpc":"2.0","id":999,"result":{}})" "\n");::close(fd[1]);
+        });
+        bool mismatch=false;try{client.call("session.hello");}catch(const std::runtime_error&){mismatch=true;}
+        peer.join();check(mismatch && !client.connected(),"mismatched response closes connection");
+        fd=pair();client.adopt(fd[0]);
+        std::thread finalReply([&]{
+            while(read(fd[1]).empty())std::this_thread::yield();
+            // IDs are monotonic across reconnects; failed calls are never reused.
+            send(fd[1],R"({"jsonrpc":"2.0","id":3,"result":{"ok":true}})" "\n");::close(fd[1]);
+        });
+        std::string reply;std::exception_ptr failure;
+        try{reply=client.call("session.hello");}catch(...){failure=std::current_exception();}
+        finalReply.join();if(failure)std::rethrow_exception(failure);
+        check(reply.find("\"ok\":true")!=std::string::npos,"final response survives simultaneous EOF");
+        for(const auto* invalid : {
+            R"({"jsonrpc":"1.0","id":1,"result":{}})",
+            R"({"jsonrpc":"2.0","id":1,"result":{},"error":{}})",
+            R"({"jsonrpc":"2.0","id":1,"id":1,"result":{}})",
+            R"({"jsonrpc":"2.0","method":17})"})
+        {
+            auto sockets=pair();LocalClient fresh;fresh.adopt(sockets[0]);
+            send(sockets[1],std::string(invalid)+'\n');
+            bool rejected=false;try{fresh.poll();}catch(const std::runtime_error&){rejected=true;}
+            ::close(sockets[1]);check(rejected && !fresh.connected(),"invalid server envelope closes connection");
+        }
+    }
+    void typedClient(const char* plugin)
+    {
+        Fixture f(plugin);auto fd=pair();f.server.adopt(fd[0]);
+        f.session.setHostStatus({"Test device",{"Test MIDI"},48000,.25,64,7});
+        clientWhileRendering(f,[&]{
+            LocalClient client;client.adopt(fd[1]);RemoteControl remote(client);
+            const auto synth=remote.nodeId("synth");
+            check(remote.hasParameter(synth,1) && remote.parameters(synth).size()==1,"remote metadata snapshot");
+            check(remote.sessionStatus().audioDevice=="Test device" && remote.sessionStatus().midiInputs.size()==1,"host status crosses socket");
+            check(remote.parameterText(synth,1,.5)=="0.500","remote plugin formatting");
+            remote.parameterGesture(synth,1,true);remote.setParameter(synth,1,.63);remote.parameterGesture(synth,1,false);
+            check(remote.parameter(synth,1)==.63,"accepted value updates local cache");
+            remote.setPlaying(true);remote.setTempo(131);remote.note(true,60,1);
+            for(int i=0;i<10;++i){client.call("transport.get");remote.service();}
+            check(remote.parameter(synth,1)==.63,"notification cache matches accepted value");
+            // Graph edits use the same interface and refresh names/metadata.
+            const auto effect=remote.add("effect",plugin);
+            remote.disconnectAudio(synth,graphOutput);remote.connectAudio(synth,effect);remote.connectAudio(effect,graphOutput);remote.commit();
+            check(remote.hasNode(effect) && !remote.graphState().staged,"remote graph snapshot after commit");
+            remote.remove(effect);remote.connectAudio(synth,graphOutput);remote.commit();
+            check(!remote.hasNode(effect),"remote removal refreshes cache");
+            bool bad=false;try{remote.setParameter(synth,999,1);}catch(const std::invalid_argument&){bad=true;}
+            check(bad,"remote invalid parameter follows typed error contract");
+        });
+        for(int i=0;i<10;++i)f.tick();
+        check(f.left[0]>.62f,"typed remote client exit leaves audio running");
+    }
+    int named(const char* plugin)
+    {
+        char directory[]="/private/tmp/oscairn-socket-XXXXXX";
+#ifdef __linux__
+        std::strcpy(directory,"/tmp/oscairn-socket-XXXXXX");
+#endif
+        check(mkdtemp(directory)!=nullptr,"temporary directory");
+        const std::string path=std::string(directory)+"/control.sock";
+        struct Cleanup{const char* path;~Cleanup(){std::filesystem::remove_all(path);}}cleanup{directory};
+        Fixture f(plugin);
+        try{f.server.listen(path);}
+        catch(const std::system_error& e)
+        {
+            if((e.code().value()==EPERM || e.code().value()==EACCES) && !std::getenv("OSCAIRN_REQUIRE_SOCKET_BIND"))
+            {std::cout<<"SKIP: environment denies Unix socket bind: "<<e.what()<<'\n';return 77;}
+            throw;
+        }
+        struct stat info{};check(lstat(path.c_str(),&info)==0 && (info.st_mode&0777)==0600,"socket user-only permissions");
+        bool refused=false;try{LocalServer other(f.session);other.listen(path);}catch(const std::runtime_error&){refused=true;}
+        check(refused && std::filesystem::exists(path),"live endpoint never replaced");
+        clientWhileRendering(f,[&]{LocalClient client;client.connect(path);check(client.call("session.hello").find("protocolVersion")!=std::string::npos,"pathname connect and accept");});
+        const std::string temporary=std::string(directory)+"/temporary.sock";
+        {LocalServer other(f.session);other.listen(temporary);}
+        check(!std::filesystem::exists(temporary),"server removes its own endpoint");
+        {LocalServer other(f.session);other.listen(temporary);::unlink(temporary.c_str());std::ofstream file(temporary);file<<"replacement";}
+        check(std::filesystem::is_regular_file(temporary),"cleanup preserves replacement file");
+        std::cout<<"ok: pathname listener, permissions, connect and cleanup\n";return 0;
+    }
+}
+int main(int argc,char** argv)
+{
+    if(argc<2)return 2;
+    try
+    {
+        if(std::string_view(argv[1])=="--crash-client")
+        {
+            if(argc!=3)return 2;
+            LocalClient client;client.adopt(std::stoi(argv[2]));RemoteControl remote(client);
+            remote.setParameter(remote.nodeId("synth"),1,.83);remote.note(true,60,1);remote.setPlaying(true);
+            for(;;)::pause(); // parent deliberately kills this process
+        }
+        if(argc>2)return named(argv[1]);
+        framing(argv[1]);clientAndReconnect(argv[1]);pressure(argv[1]);clientFailures();typedClient(argv[1]);controllerCrash(argv[1],argv[0]);
+        std::cout<<"ok: real Unix streams, framing, backpressure, notifications, reconnect, continuing audio and client failures\n";
+    }
+    catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}
+}

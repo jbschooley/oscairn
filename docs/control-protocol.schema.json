@@ -327,6 +327,31 @@
               "$ref": "#/$defs/Id"
             },
             "method": {
+              "const": "session.status"
+            },
+            "params": {
+              "type": "object",
+              "properties": {},
+              "required": [],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
               "const": "params.list"
             },
             "params": {
@@ -933,12 +958,13 @@
                 "topics": {
                   "type": "array",
                   "minItems": 1,
-                  "maxItems": 3,
+                  "maxItems": 4,
                   "items": {
                     "enum": [
                       "params.changed",
                       "transport",
-                      "graph.changed"
+                      "graph.changed",
+                      "status"
                     ]
                   }
                 },
@@ -977,12 +1003,13 @@
                 "topics": {
                   "type": "array",
                   "minItems": 1,
-                  "maxItems": 3,
+                  "maxItems": 4,
                   "items": {
                     "enum": [
                       "params.changed",
                       "transport",
-                      "graph.changed"
+                      "graph.changed",
+                      "status"
                     ]
                   }
                 },
@@ -1044,6 +1071,9 @@
                 },
                 {
                   "$ref": "#/$defs/Revision"
+                },
+                {
+                  "$ref": "#/$defs/SessionStatus"
                 }
               ]
             }
@@ -1502,8 +1532,68 @@
             "params"
           ],
           "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "method": {
+              "const": "status"
+            },
+            "params": {
+              "$ref": "#/$defs/SessionStatus"
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "params"
+          ],
+          "additionalProperties": false
         }
       ]
+    },
+    "SessionStatus": {
+      "type": "object",
+      "properties": {
+        "audioDevice": {
+          "type": "string"
+        },
+        "midiInputs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "sampleRate": {
+          "type": "number",
+          "minimum": 0
+        },
+        "bufferSize": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "cpuLoad": {
+          "type": "number",
+          "minimum": 0
+        },
+        "deadlineMisses": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "audioDevice",
+        "midiInputs",
+        "sampleRate",
+        "bufferSize",
+        "cpuLoad",
+        "deadlineMisses"
+      ],
+      "additionalProperties": false
     }
   }
 }

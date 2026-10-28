@@ -1,7 +1,8 @@
 # Control and session
 
 The first implementation slices of [RFC 0003](../../docs/rfcs/0003-control-api.md), without
-JUCE, device ownership, threads created by the library or sockets.
+JUCE, device ownership or threads created by the library. Optional JSON-RPC and Unix
+socket libraries provide the local control transport.
 
 `Session` owns a graph, transport, bounded UI note queue and transport telemetry. A host
 constructs and connects its graph, then renders stereo blocks with `Session::process`.
@@ -10,8 +11,8 @@ absolute sample timestamps for clock messages from the preceding interval. It ow
 device, timestamp conversion, block splitting and mono-output adaptation.
 
 `Control` exposes node-name lookup, parameter metadata/values/text, graph editing, gestures,
-change history, transport commands/status, and UI notes. The desktop `Engine` delegates to
-`Session::control()`.
+change history, transport commands/status, host status and UI notes. The desktop `Engine`
+delegates to `Session::control()` or cached `RemoteControl` when connected to a helper.
 Physical MIDI bypasses the control interface. Node IDs and parameter IDs are numeric;
 `nodeId(name)` resolves an optional unique UI-facing name. Unnamed nodes use numeric IDs.
 
@@ -36,9 +37,10 @@ Physical MIDI bypasses the control interface. Node IDs and parameter IDs are num
   This emergency release can affect other sources sharing those destinations. Full note
   ownership and device-output fail-safe policies belong to the later routing work.
 - `transportState()` is last-rendered-block telemetry; its fields are individually atomic,
-  not a coherent transaction. Hardware status and device lists remain in the host.
+  not a coherent transaction. The host publishes device names, rate, buffer size and
+  callback load through `setHostStatus`; `sessionStatus()` also sums plugin deadline misses.
 
-The existing physical-MIDI queue and its capacity limits remain in the desktop adapter;
+The existing physical-MIDI queue and its capacity limits remain in the shared `hosts/audio` adapter;
 this extraction does not implement RFC 0004's hardware scheduling or change the app's
 next-block policy for incoming notes and pressure.
 
@@ -61,7 +63,13 @@ with Python's independent decoder. JSON is never parsed on the audio thread.
 held-note continuity, independent subscribers, history-gap reporting and staged graph edits.
 The desktop services the session on its own 5 ms timer and sends slider gesture boundaries.
 
-Next: sockets and the engine helper process, with host/device status, followed by desktop
-process separation. Graph staging is shared across clients, and gestures have no per-client
-ownership/undo implementation yet.
-No network listener or separate engine process exists in this slice.
+`oscairn_control_socket` adds a bounded `LocalServer`, `LocalClient` and cached
+`RemoteControl`, all single-threaded and separate from rendering. Socket tests cover
+framing, slow peers, notifications, reconnects and killing a controller process while
+audio continues. Pathname-listener tests require socket-binding permission; CI requires
+them. `oscairn-engine` owns device I/O and serves the socket; the desktop accepts
+`--connect SOCKET`. See [host instructions](../../hosts/README.md).
+
+Next: automatic helper launch/supervision and live GUI crash/reopen verification before
+switching the desktop default. Graph staging remains shared across clients, and gestures
+have no per-client ownership/undo implementation yet.

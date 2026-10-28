@@ -32,6 +32,15 @@ namespace oscairn
             double tempo = 120.0;
             double beat = 0.0;
         };
+        struct SessionStatus
+        {
+            std::string audioDevice;
+            std::vector<std::string> midiInputs;
+            double sampleRate = 0, cpuLoad = 0;
+            uint32_t bufferSize = 0;
+            uint64_t deadlineMisses = 0;
+        };
+        virtual SessionStatus sessionStatus() const = 0;
         struct GraphState
         {
             Graph::Description topology;

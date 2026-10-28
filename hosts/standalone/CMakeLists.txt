@@ -1,12 +1,4 @@
-# oscairn-standalone: the demo instrument as a desktop app, built with JUCE (AGPLv3 or
-# commercial; Oscairn uses it under the AGPLv3). Only this app uses JUCE.
-include(FetchContent)
-FetchContent_Declare(JUCE
-    GIT_REPOSITORY https://github.com/juce-framework/JUCE.git
-    GIT_TAG 9.0.4
-    GIT_SHALLOW ON)
-FetchContent_MakeAvailable(JUCE)
-
+# Desktop UI: in-process by default, or --connect to a separate engine.
 juce_add_gui_app(oscairn_standalone
     PRODUCT_NAME "Oscairn"
     COMPANY_NAME "Oscairn"
@@ -29,7 +21,8 @@ target_compile_definitions(oscairn_standalone PRIVATE
     # The demo loads the plugins from the build tree unless --plugins says otherwise.
     OSCAIRN_PLUGIN_DIR="$<TARGET_FILE_DIR:oscairn_step_sequencer>")
 target_link_libraries(oscairn_standalone PRIVATE
-    oscairn_control
+    oscairn_audio_host
+    oscairn_control_socket
     oscairn_standalone_layouts
     juce::juce_audio_utils
     juce::juce_gui_extra

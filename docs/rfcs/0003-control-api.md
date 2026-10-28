@@ -1,6 +1,6 @@
 # RFC 0003: Control API
 
-**Status:** proposed; session/control, JSON-RPC graph/parameter methods and subscriptions implemented
+**Status:** partially implemented; local JSON-RPC transport, remote control and explicit engine/UI separation available
 
 ## Current implementation
 
@@ -18,10 +18,19 @@ and compare rendered samples; separate protocol tests use an independent JSON de
 
 Plan item 1 now includes staged graph operations and per-client notification cursors.
 Parameter values coalesce per service tick and retry under plugin-queue pressure. Gesture
-boundaries remain ordered. Sockets, host/device status and process separation are not yet
-implemented; graph edits share a staging area and gestures have no per-client ownership.
-Transport values remain atomic telemetry. The desktop still uses typed `Control` and retains its
-existing next-block timing policy for physical notes and pressure.
+boundaries remain ordered. `LocalServer`, `LocalClient` and cached `RemoteControl` now
+provide bounded Unix-stream I/O, host/device status, independent subscriptions and
+reconnection without command replay. `hosts/audio` owns JUCE device I/O; the console
+`oscairn-engine` and in-process desktop share that adapter. The desktop can connect with
+`--connect SOCKET` and refresh state after disconnection. Tests cover a controller process
+being killed while rendering continues, followed by a new controller connecting.
+
+Plan items 2 and 3 are implemented; item 4 has explicit connection/reconnection but not
+automatic helper launch or supervision. In-process mode remains the default until the
+actual GUI/helper lifecycle is tested with live devices. Named-socket tests cannot bind
+inside the current development sandbox; CI requires them. Graph edits still share a
+staging area, gestures have no per-client ownership, and transport remains atomic
+telemetry. Physical notes and pressure retain their existing next-block timing policy.
 
 The remainder of this RFC specifies the intended complete API, not existing behaviour.
 

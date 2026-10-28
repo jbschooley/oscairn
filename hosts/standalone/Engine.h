@@ -1,111 +1,58 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #pragma once
-
-#include "oscairn/session.h"
-
-#include <juce_audio_devices/juce_audio_devices.h>
-
-#include <atomic>
+#include "oscairn/remote_control.h"
+#include <juce_events/juce_events.h>
 #include <memory>
-#include <mutex>
-#include <string>
-#include <vector>
+#include <cstdio>
 
+namespace oscairn::host { class AudioEngine; }
 namespace oscairn::standalone
 {
-    /// The demo instrument: the step sequencer and pads playing the basic synth, through
-    /// the delay, on the default audio device, with every MIDI input as a source of notes,
-    /// aftertouch and clock.
-    ///
-    /// The UI talks to the engine only through the public methods below: nodes by name,
-    /// parameters by id, plain values. Nothing here hands out the graph or a plugin. When
-    /// the UI moves to its own process, this adapter will connect to the remote Control.
-    class Engine : private juce::AudioIODeviceCallback, private juce::MidiInputCallback, private juce::Timer
+    /// UI facade over either an in-process Control or a remote engine's cached Control.
+    class Engine : private juce::Timer
     {
     public:
-        /// Loads the plugins from `pluginDir` and opens the default audio output.
-        /// Throws std::runtime_error if a plugin does not load or no audio output opens.
-        explicit Engine( const std::string& pluginDir );
+        explicit Engine(const std::string& pluginDir, const std::string& socketPath = {});
         ~Engine() override;
-
-        // Main thread --------------------------------------------------------------
-
         using ParamInfo = Control::ParamInfo;
-        /// Nodes: "sequencer", "synth", "delay".
-        bool        hasParam( const std::string& node, uint32_t param ) const;
-        ParamInfo   paramInfo( const std::string& node, uint32_t param ) const;
-        double      param( const std::string& node, uint32_t param ) const;
-        std::string paramText( const std::string& node, uint32_t param, double value ) const;
-        void        setParam( const std::string& node, uint32_t param, double value );
-        void        paramGesture( const std::string& node, uint32_t param, bool begin );
-
-        void setPlaying( bool playing ) { session_->control().setPlaying( playing ); }
-        void setTempo( double bpm ) { session_->control().setTempo( bpm ); }
-        void setFollowMidiClock( bool follow )
-        {
-            session_->control().setClockSource( follow ? Transport::ClockSource::MidiClock : Transport::ClockSource::Internal );
-        }
-        bool followsMidiClock() const { return session_->control().clockSource() == Transport::ClockSource::MidiClock; }
-
-        /// Notes from the UI (pads, on-screen keys), as if from a MIDI input.
-        void note( bool on, int key, float velocity );
-
+        bool hasParam(const std::string& node,uint32_t param)const;
+        ParamInfo paramInfo(const std::string& node,uint32_t param)const;
+        double param(const std::string& node,uint32_t param)const;
+        std::string paramText(const std::string& node,uint32_t param,double value)const;
+        void setParam(const std::string& node,uint32_t param,double value);
+        void paramGesture(const std::string& node,uint32_t param,bool begin);
+        void setPlaying(bool playing);
+        void setTempo(double bpm);
+        void setFollowMidiClock(bool follow);
+        bool followsMidiClock()const;
+        void note(bool on,int key,float velocity);
         struct Status
         {
-            bool        playing = false;
-            double      tempo   = 120.0; // the estimate while following MIDI clock
-            int         step    = -1;    // the sequencer step under the playhead; -1 when stopped
+            bool playing=false;
+            double tempo=120;
+            int step=-1;
             std::string audioDevice;
             std::vector<std::string> midiInputs;
         };
-        Status status() const;
-
-        /// Main-loop work: plugin callbacks, freeing retired graph plans, reopening MIDI
-        /// inputs after devices change. Call regularly (the UI does, from a timer).
-        void service();
-
+        Status status()const;
     private:
-        // Audio thread
-        void audioDeviceIOCallbackWithContext( const float* const* inputs, int numInputs, float* const* outputs, int numOutputs,
-                                               int numSamples, const juce::AudioIODeviceCallbackContext& ) override;
-        void audioDeviceAboutToStart( juce::AudioIODevice* ) override;
-        void audioDeviceStopped() override {}
-        // MIDI input threads
-        void handleIncomingMidiMessage( juce::MidiInput*, const juce::MidiMessage& ) override;
-
-        void push( const juce::MidiMessage& message );
-        void openMidiInputs();
-        void timerCallback() override { service(); }
-
-        juce::AudioDeviceManager devices_;
-        double                   sampleRate_ = 48000.0;
-        static constexpr uint32_t maxFrames  = 512;
-
-        std::unique_ptr<Session> session_;
-        std::vector<float>       scratch_; // a second channel for mono devices
-        std::atomic<bool>        started_{ false }; // the device's rate matched the graph's
-
-        // Physical MIDI to the audio thread: many producers, serialised by the mutex
-        // (never taken on the audio thread), one consumer.
-        struct Incoming
+        void timerCallback()override;
+        template<class F> void command(F&& f)
         {
-            uint8_t bytes[3];
-            uint8_t size; // bytes used
-            double  seconds; // Time::getMillisecondCounterHiRes() / 1000 at arrival
-        };
-        std::mutex                    pushLock_;
-        juce::AbstractFifo            fifo_{ 1024 };
-        std::array<Incoming, 1024>    incoming_{};
-        std::atomic<uint64_t>         droppedMidi_{ 0 };
-
-        // Audio thread: when the last block started (seconds and sample), and where the
-        // next one starts, on the transport's timeline. Places MIDI clock in time.
-        double  blockSeconds_   = 0.0;
-        int64_t lastBlockStart_ = 0, blockSample_ = 0;
-
-        // MIDI inputs, main thread.
-        std::vector<std::unique_ptr<juce::MidiInput>> midiInputs_;
-        juce::MidiDeviceListConnection                midiDevicesChanged_;
-        std::atomic<bool>                             midiDevicesDirty_{ false };
+            if(!failure_.empty())return;
+            try{f();}catch(const std::exception& e)
+            {
+                if(client_ && !client_->connected())failed(e.what());
+                else std::fprintf(stderr,"oscairn: control command: %s\n",e.what());
+            }
+        }
+        void failed(const std::string& message);
+        std::unique_ptr<host::AudioEngine> audio_;
+        std::unique_ptr<LocalClient> client_;
+        std::unique_ptr<RemoteControl> remote_;
+        Control* control_=nullptr;
+        std::string socketPath_,failure_;
+        uint32_t reconnectTicks_=0;
+        mutable std::map<std::pair<std::string,uint32_t>,std::pair<uint64_t,std::string>> textCache_;
     };
 }

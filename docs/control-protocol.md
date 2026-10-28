@@ -5,18 +5,20 @@
 `dispatch(string_view)` on the control thread with a complete UTF-8 JSON document.
 The return value is one compact JSON document, or `nullopt` when no response is due.
 The adapter performs no I/O, creates no threads and never runs on the audio thread.
-The desktop still uses typed `Control`; sockets and the engine helper are pending.
+`LocalServer` serves this adapter over a Unix-domain socket. `RemoteControl` implements
+the same typed `Control` interface for a desktop connected to `oscairn-engine`.
 
 The [JSON Schema](control-protocol.schema.json) describes the implemented request and
 response shapes. [RFC 0003](rfcs/0003-control-api.md) describes the larger planned API.
 This subset is protocol version 1. Clients must check `session.hello` capabilities before
 using optional methods. Graph editing, parameter coalescing, gestures and subscriptions are
-implemented. Host/device status, sockets and the engine helper remain pending.
+implemented, as are host/device status and the explicit helper connection. Automatic
+helper launch/supervision is still pending.
 
 ## Requests and responses
 
 Requests use named `params` objects. Unknown or duplicate method-parameter fields are
-rejected. `params` can be omitted for `session.hello`, `transport.get`, `graph.get` and `graph.commit`; `{}` also works.
+rejected. `params` can be omitted for `session.hello`, `session.status`, `transport.get`, `graph.get` and `graph.commit`; `{}` also works.
 Positional arrays receive invalid-params errors. Extra envelope fields are ignored, but
 duplicate envelope fields make the request invalid.
 
@@ -34,6 +36,7 @@ request members.
 | Method | `params` | `result` |
 | --- | --- | --- |
 | `session.hello` | omitted or `{}` | `protocolVersion`, `server`, supported method names in `capabilities`, `limits` |
+| `session.status` | omitted or `{}` | `audioDevice`, `midiInputs`, `sampleRate`, `bufferSize`, `cpuLoad`, `deadlineMisses` |
 | `params.list` | `{"node":"synth"}` | numeric `node`, array `parameters` of `id`, `name`, `minimum`, `maximum`, `defaultValue`, `stepped`, CLAP `flags` |
 | `params.get` | `{"values":[{"node":"synth","param":3}]}` | `{"values":[{"node":1,"param":3,"value":0.5}]}` |
 | `params.set` | `{"values":[{"node":"synth","param":3,"value":0.7}]}` | same shape as `params.get`, with accepted plain values |
@@ -41,7 +44,7 @@ request members.
 | `transport.get` | omitted or `{}` | `playing`, `tempo`, `beat`, `clockSource` |
 | `transport.set` | one or more of `playing` (boolean), `tempo` (1..1000), `clockSource` (`"internal"` or `"midi"`) | `{"accepted":true}` |
 | `params.gesture` | `node`, `param`, `begin` (boolean) | `{"accepted":true}` |
-| `subscribe`, `unsubscribe` | `topics` (1..3 of `params.changed`, `transport`, `graph.changed`), optional `allChanges` boolean | `{"accepted":true}` |
+| `subscribe`, `unsubscribe` | `topics` (1..4 of `params.changed`, `transport`, `graph.changed`, `status`), optional `allChanges` boolean | `{"accepted":true}` |
 | `graph.get` | omitted or `{}` | staged topology, names/plugin metadata/ports, connections, mappings, `revision`, `staged`, numeric `input`/`output` endpoints |
 | `graph.add` | `path`, optional `name` and `pluginId` | numeric `node` |
 | `graph.remove` | `node` | `{"accepted":true}` |
@@ -113,7 +116,7 @@ Create one `JsonRpc` adapter per client, sharing the same `Control`. The host po
 adapter's `notifications(nowNanoseconds)` on the control thread with a monotonic timestamp;
 the returned strings are complete JSON-RPC notifications. No subscription means no messages.
 Subscriptions begin at the current change sequence, without replaying earlier history;
-request initial parameter/graph snapshots explicitly. Transport sends its current state on
+request initial parameter/graph snapshots explicitly. Transport and status send their current state on
 the first poll. Re-subscribing does not discard already unread changes.
 
 - `params.changed`: `params.changes` contains `sequence`, `node`, `param`, `kind` (`value`,
@@ -126,6 +129,12 @@ the first poll. Re-subscribing does not discard already unread changes.
   true` on a parameter subscription returns every retained change without throttling or
   coalescing. This is a control observation stream, not a sample-timestamped automation file.
 - `transport` carries the `transport.get` shape when it changes, at most 60 times per second.
+- `status` carries the `session.status` shape when it changes, at most 60 times per second.
+  `cpuLoad` is the device callback load as a fraction (1 means the entire block budget),
+  not whole-machine CPU usage. `deadlineMisses` sums plugin deadline misses for nodes
+  currently in the staging graph; it is not an audio-device underrun counter and may
+  decrease when nodes are removed. Without device I/O, names are empty and the session
+  reports its configured sample rate and maximum block size.
 - `graph.changed` carries the latest committed `revision`. Several unseen commits can be
   represented by one notification; fetch `graph.get` to inspect the staging area.
 - `session.resync` with `topic: "params.changed"` signals a gap: the bounded 4,096-entry
@@ -135,7 +144,7 @@ the first poll. Re-subscribing does not discard already unread changes.
 
 Each client's cursor is independent; reading one client's notifications never consumes
 another's. A stopped/slow client cannot grow the history indefinitely. Subscriptions may
-be changed or removed at any time. Status notifications await host/device integration.
+be changed or removed at any time.
 
 `transport.set` validates all fields before storing them. They are independent atomic
 controls, not an atomic transaction with the audio thread. `transport.get` returns the
@@ -175,7 +184,7 @@ The adapter checks byte/depth limits before parsing and batch size before dispat
 member. These limit errors have a null ID and no requests are executed. Duplicate JSON
 members are rejected at the envelope or method-parameter level. Numeric range, unique
 addresses, duplicate members, byte limits and nesting limits require checks beyond JSON
-Schema validation. Future socket code must enforce the byte limit while receiving, before
+Schema validation. The socket transport enforces the byte limit while receiving, before
 accumulating a whole line.
 
 Parsing uses a vendored, unmodified [sheredom/json.h](https://github.com/sheredom/json.h)
@@ -193,3 +202,65 @@ IDs, errors, notifications, batches, limits and queue refusal/recovery. Python i
 for the build; CI environments include it. `control-flow` additionally checks retained final
 values, ordered gestures, independent subscribers, explicit history gaps and staged graph edits without interrupting held notes.
 These tests are included in the existing ThreadSanitizer job.
+
+## Local transport and client
+
+Link `oscairn_control_socket` on Linux or macOS. `LocalServer` and `LocalClient` use
+Unix-domain `SOCK_STREAM`, with one compact JSON document followed by LF. Escaped newlines
+inside strings are fine; pretty-printed documents containing literal LF are not frames.
+CR before LF is accepted as JSON whitespace. Partial reads/writes and several documents
+per read are supported. Each server connection has its own `JsonRpc` subscriptions.
+There is no WebSocket, gRPC or TCP listener.
+
+The socket path must be absolute and fit the platform's `sockaddr_un`. Its parent must
+be a real directory owned by the current user with no group/other permissions (0700 is
+recommended). The endpoint is 0600. The server refuses any existing path, including a
+stale socket. Stop the owning process and remove a stale endpoint explicitly before
+restarting. Orderly exit unlinks only the socket inode created by this server. This is
+a same-user control interface, including native plugin loading; it is not a sandbox for
+untrusted clients. `adopt(fd)` takes ownership of an already connected stream, allowing
+socket activation and anonymous-stream tests without a pathname listener.
+
+The control thread calls `LocalServer::poll(monotonicNanoseconds)` regularly; the method
+never waits for socket readiness. There are at most 8 clients, 16 documents dispatched
+per client per tick, roughly 64 KiB read/written per client per tick, and 1 MiB queued
+output per client. A document may contain up to 64 batch members. Method execution
+(including plugin loading and graph commits) remains synchronous on the control thread.
+Oversized frames, I/O failures and full output queues disconnect that client. Malformed
+JSON within a bounded frame receives an RPC error and does not discard later frames.
+A write-half-close drains complete requests and responses before closing.
+
+`LocalClient::call` waits for its matching response while retaining interleaved
+notifications. The default deadline is 1 second. Timeout, malformed response, mismatched
+ID or disconnection closes the connection. A mutation may already have applied when
+its response is lost: refresh state after reconnecting, never replay it automatically.
+IDs continue increasing across reconnects. The client bounds received messages to 128
+queued documents and 1 MiB; overflow disconnects rather than silently losing updates.
+`poll()` receives without waiting; `takeNotifications()` drains retained notifications.
+Call these APIs from one UI/control thread, never from audio or MIDI callbacks.
+
+`RemoteControl` checks protocol version 1, subscribes, and reads graph, parameter,
+transport and host-status snapshots. Most getters use that cache; plugin text formatting
+and mutations use bounded synchronous RPC calls. Call `service()` regularly to update
+snapshots and deliver changes. Its change sequence is local to that adapter's lifetime,
+not the server's sequence. Graph commits and explicit history gaps trigger a snapshot
+refresh. Snapshots span several requests and are not atomic across concurrent clients;
+interleaved notifications are retained to bring the cache up to date. Recreate the
+adapter on reconnect. No commands are implicitly retried.
+
+The desktop's `--connect SOCKET` mode uses this adapter, polls every 16 ms, and retries
+failed connections about once a second. It displays disconnection status and refreshes
+snapshots when reconnected. Calls currently run on the UI thread and may pause the UI
+until their deadline if the engine is unresponsive. Audio and physical MIDI remain in
+the helper. See [host instructions](../hosts/README.md) for launching the two processes.
+Automatic helper launch, restart supervision and making this the desktop default remain
+future work; in-process mode is still the default.
+
+`control-local-stream` uses real anonymous Unix streams to exercise framing, partial
+messages, backpressure, multiple clients, subscriptions, typed remote controls, uncertain
+outcomes and reconnects. It also kills a separate controller process with SIGKILL, verifies
+rendering continues without allocations, then reconnects and controls the existing state.
+`control-local-path` covers bind/connect, permissions and safe endpoint cleanup. It skips
+with code 77 only when local sandbox permissions deny binding; CI sets
+`OSCAIRN_REQUIRE_SOCKET_BIND=1` so that denial fails the test. These tests do not replace
+a live-device listening test or a crash/reopen test of the actual desktop GUI.

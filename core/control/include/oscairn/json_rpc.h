@@ -30,8 +30,11 @@ namespace oscairn
     private:
         Control& control_;
         bool params_ = false, transport_ = false, graph_ = false, allChanges_ = false;
+        bool status_ = false;
         uint64_t paramsCursor_ = 0, graphCursor_ = 0;
         std::optional<uint64_t> lastParams_, lastTransport_;
         std::string lastTransportValue_;
+        std::optional<uint64_t> lastStatus_;
+        std::string lastStatusValue_;
     };
 }

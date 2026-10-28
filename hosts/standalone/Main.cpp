@@ -3,7 +3,7 @@
 // Oscairn standalone: the demo instrument in a desktop window, with a choice of panel
 // layouts (View menu, or --layout NAME|FILE.json). Every MIDI input plays it.
 //
-//   oscairn-standalone [--layout desktop|kick|kick-screen|ignite|keys49|path.json] [--plugins DIR]
+//   oscairn-standalone [--layout NAME|path.json] [--plugins DIR] [--in-process | --connect SOCKET]
 //                      [--fullscreen] [--play] [--snapshot out.png [--size WxH] [--play SECONDS]]
 //
 // --fullscreen fills the display with no title bar (for a device). --play starts the
@@ -192,7 +192,12 @@ namespace oscairn::standalone
                 dir = OSCAIRN_PLUGIN_DIR;
             try
             {
-                engine_ = std::make_unique<Engine>( dir.toStdString() );
+                const auto socket = argument(args, "--connect");
+                if(args.contains("--connect") && socket.isEmpty())
+                    throw std::invalid_argument("--connect requires a socket path");
+                if(args.contains("--in-process") && !socket.isEmpty())
+                    throw std::invalid_argument("choose --in-process or --connect");
+                engine_ = std::make_unique<Engine>( dir.toStdString(), socket.toStdString() );
 
                 auto layouts = builtInLayouts();
                 auto wanted  = argument( args, "--layout" );

@@ -1,0 +1,4 @@
+add_library(oscairn_audio_host STATIC AudioEngine.cpp)
+target_compile_definitions(oscairn_audio_host PUBLIC JUCE_USE_CURL=0 JUCE_WEB_BROWSER=0)
+target_link_libraries(oscairn_audio_host PUBLIC oscairn_control juce::juce_audio_devices)
+target_compile_options(oscairn_audio_host PRIVATE -Wall -Wextra)

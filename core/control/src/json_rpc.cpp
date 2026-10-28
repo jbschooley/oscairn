@@ -146,24 +146,34 @@ namespace oscairn
                 ",\"beat\":" + encode(s.beat) + ",\"clockSource\":" +
                 quote(c.clockSource() == Transport::ClockSource::Internal ? "internal" : "midi") + '}';
         }
+        std::string status(Control& c)
+        {
+            const auto s = c.sessionStatus();
+            std::vector<std::string> midi;
+            for(const auto& name : s.midiInputs) midi.push_back(quote(name));
+            return "{\"audioDevice\":" + quote(s.audioDevice) + ",\"midiInputs\":" + join(midi) +
+                ",\"sampleRate\":" + encode(s.sampleRate) + ",\"bufferSize\":" + std::to_string(s.bufferSize) +
+                ",\"cpuLoad\":" + encode(s.cpuLoad) + ",\"deadlineMisses\":" + std::to_string(s.deadlineMisses) + '}';
+        }
         std::string invoke( Control& c, JsonRpc& client, std::string_view method, Value p )
         {
             if( method == "session.hello" )
             {
                 fields(p, {});
-                return R"({"protocolVersion":1,"server":"oscairn","capabilities":["params.list","params.get","params.set","params.text","params.gesture","graph.get","graph.add","graph.remove","graph.connect","graph.disconnect","graph.map","graph.unmap","graph.commit","subscribe","unsubscribe","transport.get","transport.set","notes.send"],"limits":{"messageBytes":65536,"depth":32,"batch":64,"parameterChanges":128}})";
+                return R"({"protocolVersion":1,"server":"oscairn","capabilities":["session.status","params.list","params.get","params.set","params.text","params.gesture","graph.get","graph.add","graph.remove","graph.connect","graph.disconnect","graph.map","graph.unmap","graph.commit","subscribe","unsubscribe","transport.get","transport.set","notes.send"],"limits":{"messageBytes":65536,"depth":32,"batch":64,"parameterChanges":128}})";
             }
             if( method == "subscribe" || method == "unsubscribe" )
             {
                 fields(p,{"topics","allChanges"});
-                const auto topics = array(member(p,"topics"),3);
+                const auto topics = array(member(p,"topics"),4);
                 const bool all = member(p,"allChanges") ? boolean(member(p,"allChanges")) : false;
                 for( auto topic : topics )
-                    if( string(topic) != "params.changed" && string(topic) != "transport" && string(topic) != "graph.changed" )
+                    if( string(topic) != "params.changed" && string(topic) != "transport" && string(topic) != "graph.changed" && string(topic) != "status" )
                         invalid("Unknown subscription topic");
                 for( auto topic : topics ) client.subscription(string(topic),method == "subscribe",all);
                 return R"({"accepted":true})";
             }
+            if( method == "session.status" ) { fields(p,{}); return status(c); }
             if( method == "graph.get" )
             {
                 fields(p,{});
@@ -420,6 +430,11 @@ namespace oscairn
             if( enabled && !graph_ ) graphCursor_ = control_.changeSequence();
             graph_ = enabled;
         }
+        else if(topic == "status")
+        {
+            if(enabled && !status_) { lastStatus_.reset(); lastStatusValue_.clear(); }
+            status_ = enabled;
+        }
         else throw std::invalid_argument("Unknown subscription topic");
     }
 
@@ -469,6 +484,12 @@ namespace oscairn
             auto state = transport(control_);
             if( state != lastTransportValue_ ) { send("transport",state); lastTransportValue_ = std::move(state); }
             lastTransport_ = now;
+        }
+        if(status_ && due(lastStatus_))
+        {
+            auto value = status(control_);
+            if(value != lastStatusValue_) { send("status",value); lastStatusValue_ = std::move(value); }
+            lastStatus_ = now;
         }
         if( graph_ )
         {

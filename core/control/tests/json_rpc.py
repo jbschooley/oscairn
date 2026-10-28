@@ -36,6 +36,11 @@ try:
     hello = rpc('session.hello')['result']
     assert hello['protocolVersion'] == 1 and 'notes.send' in hello['capabilities']
     assert 'graph.add' in hello['capabilities'] and 'subscribe' in hello['capabilities']
+    assert 'session.status' in hello['capabilities']
+    status = rpc('session.status')['result']
+    assert status == {'audioDevice': '', 'midiInputs': [], 'sampleRate': 48000,
+                      'bufferSize': 512, 'cpuLoad': 0, 'deadlineMisses': 0}, status
+    error(rpc('session.status', {'unknown': True}), -32602)
     for ident in [None, 0, -1, 2**63 + 7, 'hello\x00\n"\\', 'é🎹', 1.5]:
         assert rpc('transport.get', ident=ident)['id'] == ident
     # The numeric ID token is echoed without rounding, even beyond machine integers.
@@ -119,13 +124,14 @@ try:
     assert value(1) == 0.6
     raw('!drain')
     assert 'result' in rpc('params.set', {'values': [{'node': 1, 'param': 2, 'value': 0.7}]})
-    assert 'result' in rpc('subscribe', {'topics': ['params.changed', 'transport', 'graph.changed']})
+    assert 'result' in rpc('subscribe', {'topics': ['params.changed', 'transport', 'graph.changed', 'status']})
     rpc('params.set', {'values': [{'node': 1, 'param': 3, 'value': 0.4}]})
     notifications = raw('!poll 0')
     assert any(n['method'] == 'params.changed' for n in notifications), notifications
     assert any(n['method'] == 'transport' for n in notifications), notifications
+    assert any(n['method'] == 'status' and n['params']['sampleRate'] == 48000 for n in notifications), notifications
     assert raw('!poll 1') == []
-    assert 'result' in rpc('unsubscribe', {'topics': ['params.changed', 'transport']})
+    assert 'result' in rpc('unsubscribe', {'topics': ['params.changed', 'transport', 'status']})
     error(rpc('subscribe', {'topics': ['bad']}), -32602)
     graph = rpc('graph.get')['result']
     assert graph['revision'] == 1 and not graph['staged'] and len(graph['nodes']) == 1

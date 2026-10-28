@@ -23,7 +23,7 @@ covers the core, so Oscairn has its own:
 - AGPL-3.0-or-later, with plugin loading as the licence boundary
   ([RFC 0001](rfcs/0001-licence.md)).
 
-The control API proposes JSON-RPC over a local socket ([RFC 0003](rfcs/0003-control-api.md)).
+The control API uses JSON-RPC over a local socket ([RFC 0003](rfcs/0003-control-api.md)).
 The UI toolkit on devices is still to decide.
 
 ## Phase 2: headless core on the desktop (milestone met)
@@ -60,12 +60,15 @@ Done:
 - initial JSON-RPC adapter for those controls, with a published wire contract/schema,
   protocol tests and JSON-driven audio equivalence tests; staged graph edits, coalescing,
   ordered gestures and independent client subscriptions.
+- bounded Unix socket server/client, cached remote controls and host/device status;
+  `oscairn-engine` owns live I/O and the desktop can use `--connect SOCKET`. Tests kill
+  a controller process, verify audio continues, and reconnect to the existing state.
 
 To do:
 
 - tracks, patterns, swing and more lanes in the sequencer;
-- complete the control API: host/device status, sockets,
-  and the UI moving to its own process ([RFC 0003](rfcs/0003-control-api.md));
+- complete the control API: automatic helper launch/supervision and live GUI crash/reopen
+  testing before making separate-process mode the desktop default ([RFC 0003](rfcs/0003-control-api.md));
 - LV2 hosting, right after the control API: a large catalog of open plugins already
   built for ARM Linux;
 - define hardware capabilities, timestamped input, scheduled output and engine backend
