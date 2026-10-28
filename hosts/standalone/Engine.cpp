@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #include "Engine.h"
 #include "../audio/AudioEngine.h"
+#include "EngineProcess.h"
 #include <bit>
 #include <cmath>
 #include <cstdio>
@@ -8,15 +9,21 @@
 
 namespace oscairn::standalone
 {
-    Engine::Engine(const std::string& pluginDir,const std::string& socketPath):socketPath_(socketPath)
+    Engine::Engine(const std::string& pluginDir,const std::string& socketPath,const std::string& helperExecutable):socketPath_(socketPath)
     {
-        if(socketPath.empty())
+        if(socketPath.empty() && helperExecutable.empty())
         {
             audio_=std::make_unique<host::AudioEngine>(pluginDir);control_=&audio_->control();
         }
         else
         {
-            client_=std::make_unique<LocalClient>();client_->connect(socketPath);
+            client_=std::make_unique<LocalClient>();
+            if(!helperExecutable.empty())
+            {
+                process_=std::make_unique<host::EngineProcess>(helperExecutable,pluginDir);
+                process_->connectOrStart(*client_);socketPath_=process_->socketPath();
+            }
+            else client_->connect(socketPath);
             remote_=std::make_unique<RemoteControl>(*client_);control_=remote_.get();
             startTimer(16);
         }
@@ -50,13 +57,24 @@ namespace oscairn::standalone
     Engine::Status Engine::status()const
     {
         const auto transport=control_->transportState();const auto host=control_->sessionStatus();
-        return {transport.playing,transport.tempo,transport.playing?static_cast<int>(static_cast<int64_t>(std::floor(transport.beat/.25+1e-9))%16):-1,
+        return {connected() && transport.playing,transport.tempo,connected() && transport.playing?static_cast<int>(static_cast<int64_t>(std::floor(transport.beat/.25+1e-9))%16):-1,
                 failure_.empty()?host.audioDevice:"Disconnected: "+failure_,host.midiInputs};
     }
     void Engine::failed(const std::string& message)
     {
         failure_=message;std::fprintf(stderr,"oscairn: control connection: %s\n",message.c_str());
         if(client_)client_->disconnect();
+    }
+    void Engine::restart()
+    {
+        if(!process_ || !recoveryAvailable_)return;
+        try
+        {
+            process_->connectOrStart(*client_);
+            auto fresh=std::make_unique<RemoteControl>(*client_);
+            remote_=std::move(fresh);control_=remote_.get();failure_.clear();textCache_.clear();recoveryAvailable_=false;
+        }
+        catch(const std::exception& e){failed(e.what());}
     }
     void Engine::timerCallback()
     {
@@ -71,9 +89,14 @@ namespace oscairn::standalone
             {
                 client_->connect(socketPath_,100);
                 auto fresh=std::make_unique<RemoteControl>(*client_);
-                remote_=std::move(fresh);control_=remote_.get();failure_.clear();textCache_.clear();
+                remote_=std::move(fresh);control_=remote_.get();failure_.clear();textCache_.clear();recoveryAvailable_=false;
             }
-            catch(const std::exception&){client_->disconnect();}
+            catch(const std::exception&)
+            {
+                client_->disconnect();
+                try{recoveryAvailable_=process_ && !process_->running();}
+                catch(const std::exception&){recoveryAvailable_=false;}
+            }
         }
     }
 }

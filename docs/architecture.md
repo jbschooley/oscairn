@@ -9,9 +9,9 @@ design decisions are recorded as [RFCs](rfcs/README.md).
 | Built | Not built yet |
 | --- | --- |
 | Graph of CLAP plugins: audio and note connections, dependency order, lock-free live editing | LV2 and VST3 hosting |
-| Sample-accurate event routing; renders identical at different block sizes (tested in CI) | Automatic helper launch/supervision |
+| Sample-accurate event routing; renders identical at different block sizes (tested in CI) | Persistent session recovery |
 | JUCE-free session and typed local/remote Control interface, including host/device status | Gesture ownership/undo |
-| JSON-RPC graph editing, parameter coalescing/gestures, notifications and bounded Unix sockets; explicit engine/UI separation | Automatic helper lifecycle and helper mode as desktop default |
+| JSON-RPC graph editing, parameter coalescing/gestures, notifications and bounded Unix sockets; default engine/UI separation with startup, reattachment and explicit recovery | UI engine shutdown and session persistence |
 | Transport: internal tempo or external MIDI clock | Ableton Link, DAW and CV clock sync |
 | Parameter events between plugins (`oscairn.param-target`, [RFC 0002](rfcs/0002-param-target.md)) | Sounds, Performances, Setlists, Projects; file formats and library |
 | Step sequencer, basic synth and delay plugins | Scenes, persistent engines, crash recovery |

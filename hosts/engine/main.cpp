@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #include "../audio/AudioEngine.h"
 #include "oscairn/local_socket.h"
+#include "EngineProcess.h"
 #include <juce_events/juce_events.h>
 #include <chrono>
 #include <csignal>
@@ -30,9 +31,11 @@ namespace
 int main(int argc,char** argv)
 {
     std::string plugins=OSCAIRN_PLUGIN_DIR,socket;
+    bool managed=false;
     for(int i=1;i<argc;++i)
     {
         const std::string arg=argv[i];
+        if(arg=="--managed"){managed=true;continue;}
         if(arg=="--help"){std::cout<<"oscairn-engine --socket /private/directory/control.sock [--plugins DIR]\n";return 0;}
         if((arg=="--socket" || arg=="--plugins") && i+1<argc){(arg=="--socket"?socket:plugins)=argv[++i];continue;}
         std::cerr<<"Unknown or incomplete argument: "<<arg<<'\n';return 2;
@@ -42,6 +45,8 @@ int main(int argc,char** argv)
     juce::ScopedJuceInitialiser_GUI initialise; // JUCE event loop initialization; no GUI modules linked
     try
     {
+        std::unique_ptr<oscairn::host::EngineLease> lease;
+        if(managed)lease=std::make_unique<oscairn::host::EngineLease>(socket);
         oscairn::host::AudioEngine audio(plugins);
         oscairn::LocalServer server(audio.control());server.listen(socket);
         Pump pump(server);

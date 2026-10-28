@@ -1,4 +1,4 @@
-# Desktop UI: in-process by default, or --connect to a separate engine.
+# Desktop UI: managed helper by default; --in-process and --connect remain available.
 juce_add_gui_app(oscairn_standalone
     PRODUCT_NAME "Oscairn"
     COMPANY_NAME "Oscairn"
@@ -22,12 +22,22 @@ target_compile_definitions(oscairn_standalone PRIVATE
     OSCAIRN_PLUGIN_DIR="$<TARGET_FILE_DIR:oscairn_step_sequencer>")
 target_link_libraries(oscairn_standalone PRIVATE
     oscairn_audio_host
+    oscairn_host_process
     oscairn_control_socket
     oscairn_standalone_layouts
     juce::juce_audio_utils
     juce::juce_gui_extra
     juce::juce_recommended_config_flags
     juce::juce_recommended_warning_flags)
-add_dependencies(oscairn_standalone oscairn_step_sequencer oscairn_basic_synth oscairn_delay)
+add_dependencies(oscairn_standalone oscairn_engine_host oscairn_step_sequencer oscairn_basic_synth oscairn_delay)
+set_property(TARGET oscairn_standalone APPEND PROPERTY LINK_DEPENDS
+    "$<TARGET_FILE:oscairn_engine_host>;$<TARGET_FILE:oscairn_step_sequencer>;$<TARGET_FILE:oscairn_basic_synth>;$<TARGET_FILE:oscairn_delay>")
+add_custom_command(TARGET oscairn_standalone POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:oscairn_engine_host> $<TARGET_FILE_DIR:oscairn_standalone>/oscairn-engine
+    COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:oscairn_standalone>/plugins
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        $<TARGET_FILE:oscairn_step_sequencer> $<TARGET_FILE:oscairn_basic_synth> $<TARGET_FILE:oscairn_delay>
+        $<TARGET_FILE_DIR:oscairn_standalone>/plugins
+    VERBATIM)
 
 install(TARGETS oscairn_standalone RUNTIME DESTINATION bin BUNDLE DESTINATION Applications)

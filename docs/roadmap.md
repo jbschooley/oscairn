@@ -63,12 +63,14 @@ Done:
 - bounded Unix socket server/client, cached remote controls and host/device status;
   `oscairn-engine` owns live I/O and the desktop can use `--connect SOCKET`. Tests kill
   a controller process, verify audio continues, and reconnect to the existing state.
+- default managed desktop helper: bundled executable/plugins, concurrent launch protection,
+  background engine lifetime, UI reattachment and explicit recovery after engine failure.
 
 To do:
 
 - tracks, patterns, swing and more lanes in the sequencer;
-- complete the control API: automatic helper launch/supervision before making
-  separate-process mode the desktop default ([RFC 0003](rfcs/0003-control-api.md));
+- audible SMK37 verification of the default separate-process desktop, then merge the
+  control API work ([RFC 0003](rfcs/0003-control-api.md));
 - LV2 hosting, right after the control API: a large catalog of open plugins already
   built for ARM Linux;
 - define hardware capabilities, timestamped input, scheduled output and engine backend

@@ -115,8 +115,10 @@ What is in place:
   ordered gestures, per-client notifications and a
   [wire contract and schema](docs/control-protocol.md). A bounded Unix socket server,
   cached remote client and separate `oscairn-engine` helper support explicit desktop
-  connections via `--connect SOCKET` ([instructions](hosts/README.md)). In-process mode
-  remains the default; helper launch/supervision is pending ([RFC 0003](docs/rfcs/0003-control-api.md)).
+  connections via `--connect SOCKET` ([instructions](hosts/README.md)). The desktop now
+  starts or reconnects to its bundled helper by default, retains audio when the UI exits,
+  and offers fresh-session recovery after helper failure. `--in-process` remains available
+  for debugging ([RFC 0003](docs/rfcs/0003-control-api.md)).
 - **oscairn.param-target** ([RFC 0002](docs/rfcs/0002-param-target.md)): a CLAP
   extension for parameter changes between plugins, such as a sequencer's per-step locks,
   routed by the graph to the target's parameter in the same block.

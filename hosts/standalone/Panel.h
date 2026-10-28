@@ -36,6 +36,9 @@ namespace oscairn::standalone
         void timerCallback() override;
 
         Layout                 layout_;
+        Engine&                engine_;
         std::unique_ptr<Board> board_;
+        juce::Label connectionNotice_;
+        juce::TextButton restartButton_{"Restart engine"};
     };
 }

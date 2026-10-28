@@ -10,11 +10,15 @@ Programs built on the core: a file renderer, a live audio/MIDI engine and a desk
 - `engine/`: `oscairn-engine`, a console process that owns that audio/MIDI adapter and a
   local JSON-RPC server. No JUCE GUI modules are linked. Closing a connected controller
   does not close the audio engine or reset its transport/held notes.
-- `standalone/`: `Oscairn`, the desktop UI and panel layouts. Its `Engine` facade uses
-  typed `Control`, either in process (the default) or through cached `RemoteControl`
-  with `--connect SOCKET`. The separate helper must already be running for initial
-  connection. After a connection fails, the UI retries and refreshes snapshots; it
-  never replays commands with uncertain outcomes.
+- `process/`: desktop helper startup and lifetime locks, independent of JUCE. A
+  launcher attaches to a running engine or starts the bundled helper. Its destruction
+  leaves that helper alive. Concurrent launches share one engine per plugin directory.
+- `standalone/`: `Oscairn`, the desktop UI and panel layouts. It starts or reconnects
+  to a helper by default through cached `RemoteControl`. `--in-process` runs audio in
+  the UI process; `--connect SOCKET` attaches to an externally managed engine. After
+  disconnection the UI retries and refreshes snapshots, without replaying commands.
+  If its managed engine stops, a banner offers **Restart engine**, which opens a fresh
+  demo session. Startup failures offer Retry/Quit; snapshot commands fail immediately.
 
 ## Build and connect
 
@@ -22,7 +26,12 @@ Programs built on the core: a file renderer, a live audio/MIDI engine and a desk
 engine, use `-DOSCAIRN_ENGINE=ON`. Both options default to OFF. JUCE is downloaded for
 these hosts, while core and renderer builds need no JUCE. Linux and macOS are supported.
 
-For example, from the repository root on macOS:
+Opening the built app normally starts the helper automatically. The macOS bundle
+contains the helper beside the UI executable and the demo plugins in `plugins/`.
+On Linux, installed hosts use the sibling `oscairn-engine` and `../lib/clap` plugins.
+`--plugins DIR` selects a separate managed session for that canonical plugin directory.
+
+For explicit, externally managed operation, from the repository root on macOS:
 
 ```sh
 cmake -S . -B build-app -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DOSCAIRN_STANDALONE=ON
@@ -41,14 +50,14 @@ open build-app/hosts/standalone/oscairn_standalone_artefacts/RelWithDebInfo/Osca
 Quit any existing Oscairn UI first so `open` starts it with the new arguments. On Linux,
 run the corresponding executable in `oscairn_standalone_artefacts/RelWithDebInfo/` directly.
 Both hosts accept `--plugins DIR`; connected UI mode uses the helper's plugins.
-The normal demo launcher still runs in-process mode; `--in-process` also selects it
-explicitly and cannot be combined with `--connect`.
+The normal demo launcher now uses managed-helper mode. `--in-process` selects single-process
+operation explicitly and cannot be combined with `--connect`.
 
-The socket parent must be private and owned by the user; existing endpoints are never
-replaced automatically. SIGINT/SIGTERM stops the helper and removes its own socket.
+The socket parent must be private and owned by the user. Explicit `--socket` servers
+never replace existing endpoints. SIGINT/SIGTERM stops the helper and removes its own socket.
 After an engine crash, verify it has stopped before removing its stale endpoint and
 starting a new helper. Reconnecting a UI preserves a running engine's state; restarting
-an engine starts the demo graph afresh. Session persistence and helper auto-launch/restart remain pending. A silent live-device
+an engine starts the demo graph afresh. Session persistence remains pending. A silent live-device
 smoke test on macOS now verifies the actual KICK UI can be killed and reopened while
 the same engine keeps processing; an audible listening check remains separate.
 
@@ -98,3 +107,53 @@ in bounded intervals, keeping JUCE timers and native device events active withou
 GUI application. Screenshots also check that reopened tempo controls display the engine's
 current tempo. The smoke test is silent; it does not establish perceptual audio quality
 or test physical MIDI inputs.
+
+
+## Managed desktop lifecycle
+
+Managed sessions use `engine-<hash>.sock` in a private per-user runtime directory:
+`$XDG_RUNTIME_DIR/oscairn` on Linux when available, otherwise `/tmp/oscairn-<uid>`.
+`OSCAIRN_RUNTIME_DIR` overrides the directory for isolated sessions/tests. Existing
+runtime directories must already be private and user-owned; symlinks are refused.
+The hash identifies the canonical plugin directory, not an audio engine backend.
+
+The `.launch` file serializes launchers; the `.lock` file is held by the helper for its
+whole lifetime. Under that lock, `--managed` removes an abandoned socket only after
+connection refusal and an inode recheck. Regular files, symlinks and reachable servers
+are preserved. Lock/log files must be private regular files and are not unlinked while
+in use. The PID written to `.lock` is diagnostic; locking, not a stored PID, establishes
+liveness. Output goes to `.sock.log`. The helper has its own process group and redirected
+standard streams, so the UI's exit does not own its lifetime.
+
+Startup waits up to five seconds for a listener. If a helper launched by this UI never
+becomes ready, the launcher terminates and reaps that specific child (force-stopping it
+if it does not respond). It never stops an existing helper it merely tried to attach to.
+A macOS permission prompt may delay first startup; accept the system prompt and use
+Retry if startup timed out. There is no background crash/relaunch loop. Disconnected
+controls are disabled. A managed helper's death enables Restart engine; it loads the
+fresh demo with transport stopped. Unsaved engine state is not restored. External
+`--connect` sessions reconnect but leave lifecycle management to their owner.
+
+Closing a managed UI leaves its engine and audio device open. Reopening attaches to
+that session, including its existing transport and parameter state. Stop playback before
+closing if you want silence. Engine shutdown is currently external (SIGTERM); a UI
+shutdown command and session save/restore remain separate work.
+
+`engine-process-policy` checks ownership locks, refusal to replace unrelated files and
+bounded cleanup of an unresponsive child. `engine-process-lifecycle` checks concurrent
+launch, UI detachment, reuse, stale-socket recovery and fresh state after an engine crash
+using a device-free helper. CI requires socket permission for this test.
+
+The live managed test exercises the bundled desktop without `--connect`:
+
+```sh
+python3 hosts/engine/tests/managed_lifecycle.py \
+  build-app/hosts/standalone/oscairn_standalone_artefacts/RelWithDebInfo/Oscairn.app/Contents/MacOS/Oscairn
+```
+
+Add `--interactive-recovery` to exercise the on-screen Restart engine button instead of
+reopening another UI. This mode waits up to 60 seconds for the button click. Both modes
+use a private test runtime directory, mute the synth before playback, save screenshots,
+and stop only the processes they started. Automatic startup, reattachment and the actual
+recovery button were verified on macOS with the Multi-Output Device at 48 kHz/512 samples.
+An audible SMK37 test remains separate.

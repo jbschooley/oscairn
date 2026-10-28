@@ -1,0 +1,12 @@
+add_library(oscairn_host_process STATIC EngineProcess.cpp)
+target_link_libraries(oscairn_host_process PUBLIC oscairn_control_socket)
+target_include_directories(oscairn_host_process PUBLIC .)
+target_compile_options(oscairn_host_process PRIVATE -Wall -Wextra)
+
+add_executable(oscairn-engine-process-test tests/engine_process.cpp)
+target_link_libraries(oscairn-engine-process-test PRIVATE oscairn_host_process)
+target_compile_options(oscairn-engine-process-test PRIVATE -Wall -Wextra)
+add_test(NAME engine-process-policy COMMAND oscairn-engine-process-test $<TARGET_FILE_DIR:oscairn-control-fixture> --policy)
+add_test(NAME engine-process-lifecycle COMMAND oscairn-engine-process-test $<TARGET_FILE_DIR:oscairn-control-fixture> --lifecycle)
+set_tests_properties(engine-process-policy engine-process-lifecycle PROPERTIES TIMEOUT 30)
+set_tests_properties(engine-process-lifecycle PROPERTIES SKIP_RETURN_CODE 77)

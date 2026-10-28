@@ -5,14 +5,15 @@
 #include <memory>
 #include <cstdio>
 
-namespace oscairn::host { class AudioEngine; }
+namespace oscairn::host { class AudioEngine; class EngineProcess; }
 namespace oscairn::standalone
 {
     /// UI facade over either an in-process Control or a remote engine's cached Control.
     class Engine : private juce::Timer
     {
     public:
-        explicit Engine(const std::string& pluginDir, const std::string& socketPath = {});
+        /// helperExecutable selects managed mode; empty helper + empty socket is in-process.
+        explicit Engine(const std::string& pluginDir, const std::string& socketPath = {}, const std::string& helperExecutable = {});
         ~Engine() override;
         using ParamInfo = Control::ParamInfo;
         bool hasParam(const std::string& node,uint32_t param)const;
@@ -26,6 +27,9 @@ namespace oscairn::standalone
         void setFollowMidiClock(bool follow);
         bool followsMidiClock()const;
         void note(bool on,int key,float velocity);
+        bool connected()const{return failure_.empty();}
+        bool canRestart()const{return recoveryAvailable_;}
+        void restart();
         struct Status
         {
             bool playing=false;
@@ -48,11 +52,13 @@ namespace oscairn::standalone
         }
         void failed(const std::string& message);
         std::unique_ptr<host::AudioEngine> audio_;
+        std::unique_ptr<host::EngineProcess> process_;
         std::unique_ptr<LocalClient> client_;
         std::unique_ptr<RemoteControl> remote_;
         Control* control_=nullptr;
         std::string socketPath_,failure_;
         uint32_t reconnectTicks_=0;
+        bool recoveryAvailable_=false;
         mutable std::map<std::pair<std::string,uint32_t>,std::pair<uint64_t,std::string>> textCache_;
     };
 }

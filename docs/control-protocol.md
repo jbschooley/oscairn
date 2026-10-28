@@ -12,8 +12,8 @@ The [JSON Schema](control-protocol.schema.json) describes the implemented reques
 response shapes. [RFC 0003](rfcs/0003-control-api.md) describes the larger planned API.
 This subset is protocol version 1. Clients must check `session.hello` capabilities before
 using optional methods. Graph editing, parameter coalescing, gestures and subscriptions are
-implemented, as are host/device status and the explicit helper connection. Automatic
-helper launch/supervision is still pending.
+implemented, as are host/device status and helper connections. The desktop now manages
+helper startup, reattachment and explicit crash recovery by default.
 
 ## Requests and responses
 
@@ -253,8 +253,11 @@ failed connections about once a second. It displays disconnection status and ref
 snapshots when reconnected. Calls currently run on the UI thread and may pause the UI
 until their deadline if the engine is unresponsive. Audio and physical MIDI remain in
 the helper. See [host instructions](../hosts/README.md) for launching the two processes.
-Automatic helper launch, restart supervision and making this the desktop default remain
-future work; in-process mode is still the default.
+The normal desktop launch now starts or reconnects to a managed helper. Closing the UI
+leaves the helper alive. A stopped managed helper enables a Restart engine button; this
+starts a fresh demo session, without restoring or replaying the old session. Process
+locks serialize startup and guard stale-socket cleanup. See the host instructions for
+paths, timeouts and failure handling. `--in-process` remains an explicit alternative.
 
 `control-local-stream` uses real anonymous Unix streams to exercise framing, partial
 messages, backpressure, multiple clients, subscriptions, typed remote controls, uncertain

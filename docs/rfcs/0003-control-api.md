@@ -25,13 +25,15 @@ reconnection without command replay. `hosts/audio` owns JUCE device I/O; the con
 `--connect SOCKET` and refresh state after disconnection. Tests cover a controller process
 being killed while rendering continues, followed by a new controller connecting.
 
-Plan items 2 and 3 are implemented; item 4 has explicit connection/reconnection but not
-automatic helper launch or supervision. In-process mode remains the default while helper launch/supervision is pending. The
-actual GUI/helper lifecycle now passes a silent macOS live-device crash/reopen test.
-Named-socket tests pass when run with approved permission outside the development
-sandbox; CI requires them. Graph edits still share a
-staging area, gestures have no per-client ownership, and transport remains atomic
-telemetry. Physical notes and pressure retain their existing next-block timing policy.
+Plan items 2 through 4 are implemented for the desktop: bundled helper startup is the
+default; simultaneous UI launches share a session; reopening attaches to the existing
+engine; a stopped helper offers explicit fresh-session recovery. An unresponsive startup
+is bounded and its own child is cleaned up. `--in-process` and external `--connect` remain
+available. Named-socket and lifecycle tests pass with approved socket access. The silent
+macOS live test verifies UI crashes, reopening and the actual Restart engine button.
+Session persistence, per-client gesture ownership, and independent graph transactions
+remain unimplemented. Transport is atomic telemetry, and physical notes and pressure
+retain their existing next-block timing policy.
 
 The remainder of this RFC specifies the intended complete API, not existing behaviour.
 
@@ -211,7 +213,8 @@ load (-32004). Messages say what was wrong in words.
 - **On the desktop**, the app starts its own engine as a helper process by default and
   connects to it over the socket, so a UI crash does not stop the audio, the UI can be
   restarted while it plays, and the desktop runs the same split as a device. The app
-  restarts the helper if it exits, and checks that the versions match. `--in-process` runs
+  offers Restart engine if the helper exits, and checks protocol compatibility. Restart
+  currently opens a fresh demo session; persistent state recovery comes later. `--in-process` runs
   the engine inside the app (debugging, tests); `--connect` attaches to an engine that is
   already running.
 - **In a DAW**, the plugin is the engine, and its editor uses `Control` in process. The

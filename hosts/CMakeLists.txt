@@ -33,6 +33,10 @@ add_test(NAME render-midi-clock-is-repeatable
     COMMAND ${CMAKE_COMMAND} -E compare_files ${CMAKE_CURRENT_BINARY_DIR}/demo-clock-a.wav ${CMAKE_CURRENT_BINARY_DIR}/demo-clock-b.wav)
 set_tests_properties(render-midi-clock-is-repeatable PROPERTIES FIXTURES_REQUIRED "render-clock-a;render-clock-b")
 
+if(UNIX)
+    add_subdirectory(process)
+endif()
+
 if(OSCAIRN_STANDALONE OR OSCAIRN_ENGINE)
     include(FetchContent)
     FetchContent_Declare(JUCE

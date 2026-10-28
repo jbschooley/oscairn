@@ -189,7 +189,12 @@ namespace oscairn::standalone
             const auto args = juce::StringArray::fromTokens( commandLine, true );
             auto       dir  = argument( args, "--plugins" );
             if( dir.isEmpty() )
-                dir = OSCAIRN_PLUGIN_DIR;
+            {
+                const auto binaryDir=juce::File::getSpecialLocation(juce::File::currentExecutableFile).getParentDirectory();
+                const auto bundled=binaryDir.getChildFile("plugins");
+                const auto installed=binaryDir.getSiblingFile("lib").getChildFile("clap");
+                dir=bundled.isDirectory()?bundled.getFullPathName():installed.isDirectory()?installed.getFullPathName():juce::String(OSCAIRN_PLUGIN_DIR);
+            }
             try
             {
                 const auto socket = argument(args, "--connect");
@@ -197,7 +202,10 @@ namespace oscairn::standalone
                     throw std::invalid_argument("--connect requires a socket path");
                 if(args.contains("--in-process") && !socket.isEmpty())
                     throw std::invalid_argument("choose --in-process or --connect");
-                engine_ = std::make_unique<Engine>( dir.toStdString(), socket.toStdString() );
+                std::string helper;
+                if(socket.isEmpty() && !args.contains("--in-process"))
+                    helper=juce::File::getSpecialLocation(juce::File::currentExecutableFile).getSiblingFile("oscairn-engine").getFullPathName().toStdString();
+                engine_ = std::make_unique<Engine>( dir.unquoted().toStdString(), socket.unquoted().toStdString(), helper );
 
                 auto layouts = builtInLayouts();
                 auto wanted  = argument( args, "--layout" );
@@ -233,7 +241,20 @@ namespace oscairn::standalone
             {
                 std::fprintf( stderr, "oscairn-standalone: %s\n", e.what() );
                 setApplicationReturnValue( 1 );
-                quit();
+                if(args.contains("--snapshot"))quit();
+                else juce::AlertWindow::showAsync(
+                    juce::MessageBoxOptions().withIconType(juce::MessageBoxIconType::WarningIcon)
+                        .withTitle("Oscairn could not start").withMessage(e.what()).withButton("Retry").withButton("Quit"),
+                    [this,commandLine](int choice) {
+                        if(choice==1)
+                        {
+                            window_.reset(); // the panel uses the engine
+                            engine_.reset();
+                            setApplicationReturnValue(0);
+                            initialise(commandLine);
+                        }
+                        else quit();
+                    });
             }
         }
 
