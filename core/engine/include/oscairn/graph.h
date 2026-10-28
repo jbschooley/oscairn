@@ -67,7 +67,10 @@ namespace oscairn
         void mapParamTarget( NodeId source, uint32_t lane, NodeId target, clap_id param );
         void unmapParamTarget( NodeId source, uint32_t lane );
 
+        /// The node's plugin host. Its control API (parameters, service()) belongs to the
+        /// main thread; setParameter is safe while the graph is processing.
         const kick::clap::Host& host( NodeId node ) const;
+        kick::clap::Host&       host( NodeId node );
         bool                    contains( NodeId node ) const { return nodes_.count( node ) != 0; }
 
         /// Compiles the current nodes and connections and hands them to the audio thread.

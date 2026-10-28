@@ -192,6 +192,11 @@ namespace oscairn
         return *nodes_.at( node ).host;
     }
 
+    kick::clap::Host& Graph::host( NodeId node )
+    {
+        return *nodes_.at( node ).host;
+    }
+
     Graph::Plan* Graph::compile() const
     {
         // Dependency order (Kahn's algorithm), lowest node ID first among ready nodes so
