@@ -751,7 +751,11 @@ bool Host::process(const float* const* input, uint32_t ni, float* const* output,
     try {
         uint32_t total = 0;
         auto append = [&](Event e) {
-            if (!validEvent(e.header()) || e.header()->time >= frames) { s.dropped.fetch_add(1); s.panic.store(true); return; }
+            // A malformed or late event is dropped on its own; resetting the plugin
+            // for it would cut every sounding note on stage.
+            if (!validEvent(e.header()) || e.header()->time >= frames) { s.dropped.fetch_add(1); return; }
+            // Overflow can drop note-offs, so it still resets the plugin rather than
+            // risk stuck notes.
             if (total == maxEvents) { s.dropped.fetch_add(1); s.panic.store(true); return; }
             auto translated = s.translate(e);
             if (!s.accepts(translated)) { s.dropped.fetch_add(1); return; }

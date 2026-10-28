@@ -15,3 +15,7 @@ target_compile_options(oscairn_engine PRIVATE -Wall -Wextra)
 add_executable(oscairn-sequencer-timing-test engine/tests/sequencer_timing.cpp)
 target_link_libraries(oscairn-sequencer-timing-test PRIVATE oscairn_engine)
 add_test(NAME sequencer-timing COMMAND oscairn-sequencer-timing-test $<TARGET_FILE:oscairn_step_sequencer>)
+
+add_executable(oscairn-host-policy-test engine/tests/host_policy.cpp)
+target_link_libraries(oscairn-host-policy-test PRIVATE kick_clap_host)
+add_test(NAME host-policy COMMAND oscairn-host-policy-test $<TARGET_FILE:oscairn_basic_synth>)
