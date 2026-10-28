@@ -5,3 +5,5 @@ build-*/
 .idea/
 compile_commands.json
 demo/
+build-tsan/
+build-asan/

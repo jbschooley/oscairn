@@ -44,7 +44,9 @@ struct Plugin {
     const clap_host_thread_check_t* check;
     int kind;
     bool active = false, processing = false, gate = false;
-    double gain = .5, toggle = 0, mode = 0;
+    // Atomic: CLAP lets the main thread (state save, get_value) read these while
+    // the audio thread writes them in process().
+    std::atomic<double> gain{.5}, toggle{0}, mode{0};
     clap_id timerId = CLAP_INVALID_ID;
     uint32_t maxFrames = 0;
     static Plugin& get(const clap_plugin_t* p) { return *static_cast<Plugin*>(p->plugin_data); }

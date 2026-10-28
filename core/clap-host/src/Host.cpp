@@ -129,7 +129,9 @@ struct Host::Impl {
     double sampleRate = 48000;
     uint32_t maxFrames = 512;
     int64_t steadyTime = 0;
-    bool active = false, processing = false, sleeping = false;
+    bool active = false, sleeping = false;
+    std::atomic<bool> processing{false}; // read by service() without the gate
+    std::atomic<uint32_t> pendingCommands{0}; // enqueued but not yet taken by process()
     bool transportObserved = false, hadTransport = false;
     clap_event_transport_t previousTransport{};
     uint32_t previousTransportFrames = 0;
@@ -281,7 +283,7 @@ struct Host::Impl {
         paramInfo.clear(); paramValues.reset(); cookies.clear(); inputs.clear(); outputs.clear(); noteInputs.clear(); noteOutputs.clear();
         inputBuffers.clear(); outputBuffers.clear(); inputPointers.clear(); outputPointers.clear(); scratch.clear();
         library.reset();
-        Event event; while (commands.pop(event)) {} while (emitted.pop(event)) {}
+        Event event; while (commands.pop(event)) pendingCommands.fetch_sub(1); while (emitted.pop(event)) {}
         failed.store(false); dirty.store(false); restart.store(false); callback.store(false);
         wake.store(false); flush.store(false); panic.store(false); rescan.store(0); latencyFrames.store(0);
         steadyTime = 0;
@@ -558,7 +560,10 @@ bool Host::reconfigure(double rate, uint32_t frames) {
 void Host::service() {
     auto& s = *impl;
     if (!s.main() || !s.plugin) return;
-    Gate guard(s.gate);
+    // Main-thread callbacks, timers, fd callbacks and parameter value reads may run
+    // while the plugin processes audio (CLAP's threading model allows it), so they
+    // do not take the gate: taking it here silenced audio whenever they ran long.
+    // Only the operations that change what the audio thread uses take the gate.
     try {
         if (s.callback.exchange(false)) s.plugin->on_main_thread(s.plugin);
         const auto now = std::chrono::steady_clock::now();
@@ -584,27 +589,59 @@ void Host::service() {
 #endif
         const auto flags = s.rescan.exchange(0);
         if (s.restart.exchange(false) || (flags & (CLAP_PARAM_RESCAN_ALL | CLAP_PARAM_RESCAN_INFO))) {
+            Gate guard(s.gate);
             s.deactivate(); s.activate();
         } else if (flags & CLAP_PARAM_RESCAN_VALUES) {
             for (size_t i = 0; i < s.paramInfo.size(); ++i) { double value; if (s.params->get_value(s.plugin, s.paramInfo[i].id, &value) && std::isfinite(value)) s.paramValues[i].store(value); }
         }
-        if (s.flush.exchange(false)) s.flushParameters();
-        if (s.failed.load()) s.stop();
+        // While the plugin is processing, process() performs requested flushes on
+        // the audio thread. Otherwise flush here, excluding a process() that starts.
+        if (!s.processing.load() && s.flush.load()) {
+            Gate guard(s.gate);
+            if (!s.processing.load() && s.flush.exchange(false)) s.flushParameters();
+        }
+        if (s.failed.load()) { Gate guard(s.gate); s.stop(); }
     } catch (const std::exception& e) { s.fail(e.what()); }
       catch (...) { s.fail("Plugin threw during main-thread service"); }
 }
 bool Host::saveState(std::vector<uint8_t>& destination) {
     auto& s = *impl;
     if (!s.main() || !s.plugin || !s.state || !s.state->save) { s.message = "Plugin does not support state saving"; return false; }
+    try {
+        // Parameter changes still queued for the audio thread must reach the plugin
+        // before it saves, so a save right after moving a slider includes the move.
+        // While audio is running, wait briefly for process() to deliver them, then
+        // save without the gate so audio keeps playing: CLAP allows state saving on
+        // the main thread while the plugin processes.
+        if (s.pendingCommands.load() > 0) {
+            using clock = std::chrono::steady_clock;
+            auto audioBlocks = [&] { return s.blocks.load() + s.idleBlocks.load() + s.controlSilences.load(); };
+            auto seen = audioBlocks();
+            auto lastProgress = clock::now();
+            const auto deadline = lastProgress + std::chrono::milliseconds(100);
+            while (s.pendingCommands.load() > 0 && clock::now() < deadline) {
+                std::this_thread::sleep_for(std::chrono::microseconds(500));
+                if (audioBlocks() != seen) { seen = audioBlocks(); lastProgress = clock::now(); }
+                else if (clock::now() - lastProgress > std::chrono::milliseconds(10)) break; // audio is not running
+            }
+        }
+        if (s.pendingCommands.load() == 0) {
+            Stream stream; clap_ostream_t output{&stream, Stream::write};
+            if (!s.state->save(s.plugin, &output) || stream.failed) { s.message = "Plugin state saving failed"; return false; }
+            destination = std::move(stream.bytes); s.dirty.store(false); return true;
+        }
+    } catch (...) { s.message = "Plugin threw during state saving"; return false; }
+
+    // Audio is not running: deliver the queued changes through a parameter flush
+    // under the gate, then save.
     Gate guard(s.gate);
     try {
-        // Keep audio-thread parameter changes in the plugin's saved state even
-        // when the user saves immediately after moving a slider.
         s.stop();
         s.chunkCount = 0;
         s.outputFrameOffset = 0; s.currentProcessFrames = 1;
         Event e;
         while (s.commands.pop(e)) {
+            s.pendingCommands.fetch_sub(1);
             const auto type = e.header()->type;
             if (type == CLAP_EVENT_PARAM_VALUE || type == CLAP_EVENT_PARAM_GESTURE_BEGIN || type == CLAP_EVENT_PARAM_GESTURE_END)
                 if (s.chunkCount < maxEvents) s.chunkEvents[s.chunkCount++] = s.translate(e);
@@ -632,7 +669,7 @@ bool Host::loadState(const std::vector<uint8_t>& bytes) {
         s.deactivate();
         Stream stream; stream.bytes = bytes; clap_istream_t input{&stream, Stream::read};
         if (!s.state->load(s.plugin, &input)) { s.activate(); s.message = "Plugin rejected state"; return false; }
-        Event e; while (s.commands.pop(e)) {}
+        Event e; while (s.commands.pop(e)) s.pendingCommands.fetch_sub(1);
         s.carryCount = 0;
         s.activate(); s.dirty.store(false); s.failed.store(false); return true;
     } catch (...) { s.fail("Plugin state restoration failed"); return false; }
@@ -680,7 +717,10 @@ Statistics Host::statistics() const noexcept { auto& s = *impl; return {s.blocks
 bool Host::enqueue(const Event& e) noexcept {
     auto& s = *impl;
     if (!validEvent(e.header())) return false;
+    // Count before publishing, so process() never takes an event it has not counted.
+    s.pendingCommands.fetch_add(1);
     if (s.commands.push(e)) { s.wake.store(true); return true; }
+    s.pendingCommands.fetch_sub(1);
     s.dropped.fetch_add(1); s.panic.store(true); return false;
 }
 bool Host::popOutput(Event& e) noexcept { return impl->emitted.pop(e); }
@@ -720,7 +760,7 @@ bool Host::process(const float* const* input, uint32_t ni, float* const* output,
         Event event;
         for (uint32_t i = 0; i < s.carryCount; ++i) append(s.carryEvents[i]);
         s.carryCount = 0;
-        for (uint32_t i = 0; i < maxEvents && s.commands.pop(event); ++i) append(event);
+        for (uint32_t i = 0; i < maxEvents && s.commands.pop(event); ++i) { s.pendingCommands.fetch_sub(1); append(event); }
         for (uint32_t i = 0; i < std::min(count, maxEvents); ++i) append(incoming[i]);
         if (count > maxEvents) { s.dropped.fetch_add(count - maxEvents); s.panic.store(true); }
         if (s.panic.exchange(false)) {

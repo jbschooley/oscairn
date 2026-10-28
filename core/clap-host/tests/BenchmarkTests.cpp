@@ -50,14 +50,15 @@ int main(int argc, char** argv) {
         while (!saving() && std::chrono::steady_clock::now() < deadline) std::this_thread::yield();
         check(saving(), "state save reaches barrier");
         forbidAllocation = true;
+        // A state save runs on the main thread while audio keeps processing.
         for (int i = 0; i < 10; ++i) {
             left.fill(1); right.fill(1);
-            check(!held.process(nullptr, 0, output, 2, 16) && left[0] == 0 && right[0] == 0, "control gate returns silent buffers immediately");
+            check(held.process(nullptr, 0, output, 2, 16), "audio keeps processing during a state save");
         }
         forbidAllocation = false; release();
     });
     std::vector<uint8_t> state; check(held.saveState(state), "release snapshot barrier"); audio.join();
-    check(held.statistics().controlSilences == 10 && held.statistics().processErrors == 0 && held.statistics().deadlineMisses == 0, "control silences are distinct from DSP faults and deadline misses");
+    check(held.statistics().controlSilences == 0 && held.statistics().processErrors == 0 && held.statistics().deadlineMisses == 0, "a state save causes no control silences, DSP faults or deadline misses");
     held.unload(); dlclose(library);
 #endif
     Host asleep; descriptor.path = argv[1]; descriptor.id = "org.kick.test.sleep";
