@@ -41,3 +41,7 @@ add_test(NAME param-target COMMAND oscairn-param-target-test $<TARGET_FILE:oscai
 add_executable(oscairn-sequencer-params-test engine/tests/sequencer_params.cpp)
 target_link_libraries(oscairn-sequencer-params-test PRIVATE oscairn_engine)
 add_test(NAME sequencer-params COMMAND oscairn-sequencer-params-test $<TARGET_FILE:oscairn_step_sequencer>)
+
+add_executable(oscairn-transport-tempo-test engine/tests/transport_tempo.cpp)
+target_link_libraries(oscairn-transport-tempo-test PRIVATE oscairn_engine)
+add_test(NAME transport-tempo COMMAND oscairn-transport-tempo-test)

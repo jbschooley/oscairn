@@ -19,6 +19,15 @@ namespace oscairn
     {
     }
 
+    void Transport::setTempo( double bpm ) noexcept
+    {
+        if( bpm == tempo_ )
+            return;
+        anchorBeats_  = anchorBeats_ + (double)( position_ - anchorSample_ ) / sampleRate_ * tempo_ / 60.0;
+        anchorSample_ = position_;
+        tempo_        = bpm;
+    }
+
     void Transport::setClockSource( ClockSource source ) noexcept
     {
         source_       = source;
@@ -93,9 +102,9 @@ namespace oscairn
             beats                      = lastPulseBeat + std::clamp( elapsed, 0.0, 1.0 / pulsesPerBeat );
         }
         else
-            beats = (double)position_ / sampleRate_ * bpm / 60.0;
+            beats = anchorBeats_ + (double)( position_ - anchorSample_ ) / sampleRate_ * bpm / 60.0;
 
-        const double seconds = beats * 60.0 / bpm;
+        const double seconds = source_ == ClockSource::Internal ? (double)position_ / sampleRate_ : beats * 60.0 / bpm;
         const auto   bar     = (int32_t)std::floor( beats / tsigNum_ );
 
         clap_event_transport_t t{};

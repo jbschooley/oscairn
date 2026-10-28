@@ -26,7 +26,8 @@ namespace oscairn
         explicit Transport( double sampleRate, double tempo = 120.0 );
 
         /// Internal tempo; also used while following MIDI clock until two pulses have arrived.
-        void setTempo( double bpm ) noexcept { tempo_ = bpm; }
+        /// A change keeps the current beat position and applies from there.
+        void setTempo( double bpm ) noexcept;
         void setPlaying( bool playing ) noexcept { playing_ = playing; }
         void setClockSource( ClockSource source ) noexcept;
 
@@ -53,6 +54,10 @@ namespace oscairn
         bool     playing_  = true;
         int64_t  now_      = 0; // samples since the transport was created
         int64_t  position_ = 0; // internal play position in samples
+        // The internal beat position is anchorBeats_ at anchorSample_ (the last tempo
+        // change), moving on at tempo_ from there.
+        int64_t  anchorSample_ = 0;
+        double   anchorBeats_  = 0.0;
         uint16_t tsigNum_  = 4;
         uint16_t tsigDen_  = 4;
 
