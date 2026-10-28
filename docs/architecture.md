@@ -295,19 +295,39 @@ all of them:
 | Standalone | Nothing (it may prepare the library) | Everything |
 
 - **Mappings for DJ software that accepts them:** Mixxx (open source) first, then Traktor and
-  VirtualDJ, which accept mappings for any controller. Mappings are files, shipped as
-  packages.
-- **Serato and rekordbox** work only with hardware the software's vendor has certified; that
-  is an arrangement between the vendor and the manufacturer.
+  VirtualDJ, which accept mappings for any controller, jog wheels included. Mappings are
+  files, shipped as packages.
+- **No certification programmes.** Oscairn devices are open: they do not join vendor
+  certification or hardware-unlock schemes, and carry no authentication for them. Serato
+  and rekordbox unlock features for hardware their vendors certify; with a paid licence
+  they map other controllers' buttons, faders and pads, but not their jog wheels or
+  platters, so on an Oscairn deck they work only partly. That is their choice.
 - **USB sticks DJs already carry:** reading the libraries exported by rekordbox, Serato and
   Engine DJ (cue points, beat grids, playlists) would make a deck useful at once. These
   formats are not officially documented; rekordbox's has been worked out publicly.
 - **Sync with other players** on a network (Pro DJ Link, also worked out publicly) needs the
   network permission.
 
-Open question: if a DJ software vendor's certification requires the device to prove its
-identity with a secret, that conflicts with the platform's no-copy-protection rule and
-needs a decision when it comes up.
+### Mixxx
+
+[Mixxx](https://mixxx.org) is the open DJ software (GPL-2.0-or-later, so its code can be used
+in Oscairn with its notices kept). It is a whole application, not a plugin: its own audio
+engine, mixer, device handling, Qt interface, library and controller scripting. Two routes,
+in this order:
+
+1. **Mixxx as the deck's application**, for a working deck early: the Oscairn image runs
+   Mixxx as a standalone application that owns the audio device (the "ported DAW" case),
+   and Oscairn provides the system, updates, USB audio both ways, and a panel driver that
+   presents the deck's jog wheels, faders, buttons and LEDs to Mixxx as a controller, with a
+   Mixxx mapping. Needs a touchscreen interface for Mixxx, and its performance on the
+   device's chip measured.
+2. **A native Oscairn deck:** the player, mixer and DJ effects as plugins in Oscairn's graph,
+   borrowing from Mixxx where it helps (beat and key analysis, effects, importing Mixxx
+   libraries, cues and crates, its controller-mapping format), so DJ effects are shared with
+   instruments and the DAW plugin, and plugins are isolated and packaged like any other.
+
+Improvements made for the first route (a touchscreen interface, ARM performance, the deck's
+mapping) go back to the Mixxx project.
 
 ## Latency
 

@@ -80,7 +80,8 @@ new core, from a UI that talks to it only through the control API.
   yet): several clocks with decks as the master, high-resolution jog input, a track player
   with key lock, track analysis, DJ mixer outputs and cue, waveform streams, and the three
   ways of working with DJ software on a computer (see
-  [architecture](architecture.md#dj-devices)).
+  [architecture](architecture.md#dj-devices)). First Mixxx running on the device as its
+  application, then a native Oscairn deck; no certification programmes.
 - USB audio and MIDI in both directions, as a USB device to a computer and as a host for
   interfaces and controllers, on every device whose hardware allows it.
 - An RK3588 board, once the target hardware is known: real-time kernel, audio on isolated
