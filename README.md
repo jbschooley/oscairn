@@ -114,14 +114,16 @@ What is in place:
 - **Plugins** (`plugins/`): Oscairn Step Sequencer (a 16-step pattern following the
   transport's beat position, with a lock lane; each step's on/off, note and lock are
   parameters), Oscairn Basic Synth (Brightness, Level and Pressure parameters; aftertouch
-  opens each voice's filter) and Oscairn Delay (tempo-synced ping-pong).
+  opens each voice's filter) and Oscairn Delay (tempo-synced ping-pong, gliding when the
+  tempo changes).
 - **Tests:** every sequencer note lands on its exact sample when processed in uneven blocks;
   rendering with 512- and 37-sample blocks gives byte-identical files; following a 140 BPM
   MIDI clock, steps land within 2 samples of their pulses; graph fan-out, summing, note
   merging, cycle rejection and live editing; parameter locks applied from each step's first
-  sample; step edits applied from their exact sample; MIDI notes and polyphonic and channel
-  aftertouch converted, and aftertouch reaching the synth through the graph; host behaviour
-  for live use (bad events, queued-event overflow, mono output).
+  sample; step edits applied from their exact sample; tempo changes keep the beat position,
+  and the delay glides without clicking; MIDI notes and polyphonic and channel aftertouch
+  converted, and aftertouch reaching the synth through the graph; host behaviour for live
+  use (bad events, queued-event overflow, mono output).
 
 ## Design in brief
 
