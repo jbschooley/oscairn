@@ -21,3 +21,13 @@ set_tests_properties(render-repeat PROPERTIES FIXTURES_SETUP render-again)
 add_test(NAME render-is-repeatable
     COMMAND ${CMAKE_COMMAND} -E compare_files ${CMAKE_CURRENT_BINARY_DIR}/demo-512.wav ${CMAKE_CURRENT_BINARY_DIR}/demo-512-again.wav)
 set_tests_properties(render-is-repeatable PROPERTIES FIXTURES_REQUIRED "render-512;render-again")
+
+# Following a (simulated) 140 BPM MIDI clock, rendering twice gives the same file.
+foreach(run a b)
+    add_test(NAME render-midi-clock-${run}
+        COMMAND oscairn-render ${CMAKE_CURRENT_BINARY_DIR}/demo-clock-${run}.wav --seconds 4 --midi-clock 140 ${demo_chain})
+    set_tests_properties(render-midi-clock-${run} PROPERTIES FIXTURES_SETUP render-clock-${run})
+endforeach()
+add_test(NAME render-midi-clock-is-repeatable
+    COMMAND ${CMAKE_COMMAND} -E compare_files ${CMAKE_CURRENT_BINARY_DIR}/demo-clock-a.wav ${CMAKE_CURRENT_BINARY_DIR}/demo-clock-b.wav)
+set_tests_properties(render-midi-clock-is-repeatable PROPERTIES FIXTURES_REQUIRED "render-clock-a;render-clock-b")
