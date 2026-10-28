@@ -73,7 +73,7 @@ struct Stream {
     }
 };
 bool validEvent(const clap_event_header_t* h) noexcept {
-    if (!h || h->space_id != CLAP_CORE_EVENT_SPACE_ID || h->size > 128) return false;
+    if (!h || h->space_id != CLAP_CORE_EVENT_SPACE_ID || h->size > Event::capacity) return false;
     uint32_t size = 0;
     switch (h->type) {
         case CLAP_EVENT_NOTE_ON: case CLAP_EVENT_NOTE_OFF: case CLAP_EVENT_NOTE_CHOKE:
@@ -144,13 +144,13 @@ struct Host::Impl {
     std::atomic<uint64_t> deadlineMisses{0}, controlSilences{0}, idleBlocks{0};
     detail::Queue<Event, maxEvents> commands, emitted;
     struct TimedEvent { Event event; uint32_t order = 0; };
-    std::array<TimedEvent, maxEvents> ordered;
-    std::array<Event, maxEvents> chunkEvents;
-    std::array<Event, maxEvents> carryEvents;
+    std::array<TimedEvent, maxBlockEvents> ordered;
+    std::array<Event, maxBlockEvents> chunkEvents;
+    std::array<Event, maxBlockEvents> carryEvents;
     uint32_t carryCount = 0;
     // Non-parameter output of the current process() call, collected only while
     // inProcess is set and published to the caller when the call returns.
-    std::array<Event, maxEvents> blockOutput;
+    std::array<Event, maxBlockEvents> blockOutput;
     uint32_t blockOutputCount = 0, publishedOutputCount = 0;
     bool inProcess = false;
     uint32_t chunkCount = 0;
@@ -407,7 +407,7 @@ struct Host::Impl {
         const bool control = event->type == CLAP_EVENT_PARAM_VALUE || event->type == CLAP_EVENT_PARAM_MOD ||
                              event->type == CLAP_EVENT_PARAM_GESTURE_BEGIN || event->type == CLAP_EVENT_PARAM_GESTURE_END;
         if (!control) {
-            if (s.inProcess && s.blockOutputCount < maxEvents) { s.blockOutput[s.blockOutputCount++] = copy; return true; }
+            if (s.inProcess && s.blockOutputCount < maxBlockEvents) { s.blockOutput[s.blockOutputCount++] = copy; return true; }
             s.dropped.fetch_add(1); return false;
         }
         if (s.emitted.push(copy)) return true;
@@ -644,9 +644,9 @@ bool Host::saveState(std::vector<uint8_t>& destination) {
             s.pendingCommands.fetch_sub(1);
             const auto type = e.header()->type;
             if (type == CLAP_EVENT_PARAM_VALUE || type == CLAP_EVENT_PARAM_GESTURE_BEGIN || type == CLAP_EVENT_PARAM_GESTURE_END)
-                if (s.chunkCount < maxEvents) s.chunkEvents[s.chunkCount++] = s.translate(e);
+                if (s.chunkCount < maxBlockEvents) s.chunkEvents[s.chunkCount++] = s.translate(e);
             if (type != CLAP_EVENT_PARAM_VALUE && type != CLAP_EVENT_PARAM_GESTURE_BEGIN && type != CLAP_EVENT_PARAM_GESTURE_END) {
-                if (s.carryCount < maxEvents) s.carryEvents[s.carryCount++] = e;
+                if (s.carryCount < maxBlockEvents) s.carryEvents[s.carryCount++] = e;
                 else { s.panic.store(true); s.dropped.fetch_add(1); }
             }
         }
@@ -756,7 +756,7 @@ bool Host::process(const float* const* input, uint32_t ni, float* const* output,
             if (!validEvent(e.header()) || e.header()->time >= frames) { s.dropped.fetch_add(1); return; }
             // Overflow can drop note-offs, so it still resets the plugin rather than
             // risk stuck notes.
-            if (total == maxEvents) { s.dropped.fetch_add(1); s.panic.store(true); return; }
+            if (total == maxBlockEvents) { s.dropped.fetch_add(1); s.panic.store(true); return; }
             auto translated = s.translate(e);
             if (!s.accepts(translated)) { s.dropped.fetch_add(1); return; }
             s.ordered[total] = {translated, total}; ++total;
@@ -764,9 +764,13 @@ bool Host::process(const float* const* input, uint32_t ni, float* const* output,
         Event event;
         for (uint32_t i = 0; i < s.carryCount; ++i) append(s.carryEvents[i]);
         s.carryCount = 0;
-        for (uint32_t i = 0; i < maxEvents && s.commands.pop(event); ++i) { s.pendingCommands.fetch_sub(1); append(event); }
-        for (uint32_t i = 0; i < std::min(count, maxEvents); ++i) append(incoming[i]);
-        if (count > maxEvents) { s.dropped.fetch_add(count - maxEvents); s.panic.store(true); }
+        // Events passed in directly (from the graph) are time-critical, so room is
+        // kept for them. Queued control commands beyond the remaining room stay
+        // queued for the next block instead of being dropped.
+        const uint32_t direct = std::min(count, maxBlockEvents);
+        while (total + direct < maxBlockEvents && s.commands.pop(event)) { s.pendingCommands.fetch_sub(1); append(event); }
+        for (uint32_t i = 0; i < direct; ++i) append(incoming[i]);
+        if (count > maxBlockEvents) { s.dropped.fetch_add(count - maxBlockEvents); s.panic.store(true); }
         if (s.panic.exchange(false)) {
             // Never leave a stuck gate after an event overflow. Reset is an
             // audio-thread operation and covers every note channel and port.

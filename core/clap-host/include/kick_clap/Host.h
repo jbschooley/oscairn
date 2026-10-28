@@ -32,12 +32,15 @@ struct Port {
 // Owning, fixed-capacity event. Pointer-bearing events (SysEx) are deliberately
 // rejected: their data cannot safely outlive the caller in the command queue.
 struct Event {
-    alignas(8) std::array<uint8_t, 128> bytes{};
+    // 64 bytes holds every event type the host accepts (the largest, parameter
+    // value and modulation events, are 56 bytes).
+    static constexpr size_t capacity = 64;
+    alignas(8) std::array<uint8_t, capacity> bytes{};
     const clap_event_header_t* header() const noexcept {
         return reinterpret_cast<const clap_event_header_t*>(bytes.data());
     }
     template<class T> static Event from(const T& source) noexcept {
-        static_assert(sizeof(T) <= 128, "event too large");
+        static_assert(sizeof(T) <= capacity, "event too large");
         Event result;
         std::memcpy(result.bytes.data(), &source, sizeof(T));
         return result;
@@ -62,7 +65,8 @@ struct Statistics {
 // thread for stop/reset/flush; thread-check reports this scope accurately.
 class Host {
 public:
-    static constexpr uint32_t maxEvents = 2048;
+    static constexpr uint32_t maxEvents = 2048;     // capacity of the control-thread queues
+    static constexpr uint32_t maxBlockEvents = 512; // events delivered to the plugin per process() call
     static constexpr uint32_t maxStateBytes = 64 * 1024 * 1024;
     Host();
     ~Host();

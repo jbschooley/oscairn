@@ -92,7 +92,10 @@ int main(int argc, char** argv) {
         }
     });
     for (auto& producer : producers) producer.join();
-    check(rejected.load() == 0 && render(h, out, 128) && left[0] == 0.f, "bounded multi-producer event publication");
+    // Each process() takes at most maxBlockEvents queued events; render until all
+    // 1600 have been delivered.
+    for (uint32_t b = 0; b * Host::maxBlockEvents < 1600; ++b) check(render(h, out, 128), "render queued events");
+    check(rejected.load() == 0 && left[0] == 0.f, "bounded multi-producer event publication");
     check(!h.enqueue(Event::note(true, 200, .8)), "reject invalid note key");
     // Overflow is bounded and forces a reset rather than losing note-off forever.
     for (uint32_t i = 0; i < Host::maxEvents + 10; ++i) h.enqueue(note);
