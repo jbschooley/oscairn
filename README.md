@@ -116,9 +116,9 @@ What is in place:
 
 | Folder | Contents |
 | --- | --- |
-| `core/` | Graph, transport and clock, event routing, plugin hosting, library index. A library. |
+| `core/` | Graph, transport and clock, event routing, plugin hosting; library index (not built yet). A library. |
 | `hosts/` | Programs built on the core: headless (render to file, for CI), desktop, later device and plugin builds. |
-| `plugins/` | First-party plugins: step sequencer, arpeggiator, test synth. |
+| `plugins/` | First-party plugins: step sequencer, basic synth, delay; arpeggiator (not built yet). |
 | `docs/rfcs/` | Design decisions, one short document each. |
 
 ## Licence
