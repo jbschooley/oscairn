@@ -38,14 +38,46 @@ Why JSON-RPC over a Unix socket:
   header-only, MIT) and POSIX sockets. gRPC, as Sushi uses, brings protobuf, its own
   runtime and code generation.
 - **Request and response with errors**, plus notifications, which a UI needs. OSC has no
-  replies or errors and usually runs over UDP; it can be added later as a bridge for
-  hardware controllers and other software that speak it.
-- **Any language**, readable on the wire, and testable with `socat`. The bandwidth (knob
-  moves, a playhead at up to 60 updates a second) is far below what JSON handles.
+  replies or errors and usually runs over UDP (see below for OSC as a second way in).
+- **Any language**, readable on the wire, and testable with `socat`. A small message costs
+  tens of microseconds to send, encode and decode; a UI frame is 16 ms, and the API never
+  touches the audio thread, so a parameter change waits for the next audio block (1 to
+  12 ms) however it arrived.
+- **Protobuf was considered.** Its binary encoding is smaller and faster to decode, but
+  the gain is microseconds on messages a UI sends a few hundred times a second, at the
+  cost of a library, generated code and unreadable messages. Its real benefit, a typed
+  schema that generates clients, comes instead from publishing the message types as a JSON
+  Schema. If measurements ever call for it, a binary encoding of the same messages (CBOR
+  or MessagePack) can be negotiated in `session.hello`.
 - **Local only.** The socket is created with user-only permissions
   (`$XDG_RUNTIME_DIR/oscairn/control.sock`; `/run/oscairn/control.sock` on a device). There
-  is no network listener. Remote access (a browser UI, a phone) is a later RFC, with
-  authentication, probably as WebSocket carrying the same messages.
+  is no network listener; see Remote access below.
+
+### Streams
+
+Large continuous data (level meters, oscilloscopes, waveform overviews, spectrum) does not
+go through request and notification messages. A client asks for a stream over the API and
+gets a handle to a shared-memory ring buffer the engine writes and the UI reads, with no
+encoding at all. This is a later addition; version 1 has none.
+
+### OSC, a second way in
+
+An OSC bridge, off until enabled, translates OSC messages into `Control` calls, for
+controllers and software that speak OSC (TouchOSC, Open Stage Control, Max, Pure Data,
+SuperCollider): parameters (`/node/synth/param/1 0.62`), transport (`/transport/play`)
+and notes. It listens on UDP on the network, so it is opt-in, and it offers only those
+methods, not graph edits.
+
+### Remote access
+
+Off by default, and not part of version 1. Syncing libraries between a device and the
+desktop app or DAW plugin needs a network or USB-network connection, but not the whole
+control API: a narrow sync service (exchange library indexes, transfer missing files by
+hash), available only to a computer paired with the device, for example by confirming a
+code shown on its screen. Remote editing from a computer would use that paired
+connection. Both are decided in the library and sync RFC; the message layer here does not
+depend on how messages are carried, and methods are grouped by namespace so permissions
+can be granted per group.
 
 ### Threads
 
@@ -92,6 +124,24 @@ Graph edits are applied together: `graph.add`, `connect` and `map` collect chang
 take effect at the next `graph.commit`, so a UI can build or change a graph without the
 audio hearing it half-made. A commit that would make a cycle fails and changes nothing.
 
+### Parameter update rate
+
+A fast knob drag, an OSC fader or a script can send hundreds of changes a second. Each
+would go into the plugin's event queue and be echoed to every client; a full queue drops
+events, and a dropped final value leaves the parameter where the control is not. So the
+server coalesces in both directions:
+
+- **Incoming:** the latest value per parameter is passed to the plugin once per control
+  tick (about every 5 ms); intermediate values are dropped. Gesture begin and end are always
+  delivered, and the final value of a gesture always arrives. `params.set` takes many
+  values in one message.
+- **Outgoing:** `params.changed` reaches each client at most 60 times a second per
+  parameter. A client that records every change (automation, motion recording) subscribes
+  to all changes instead.
+
+MIDI controllers do not go through the control API: their events enter the graph at their
+exact sample, so played performance is never coalesced.
+
 ### Notifications
 
 The server sends notifications only for what a client subscribed to:
@@ -125,9 +175,15 @@ load (-32004). Messages say what was wrong in words.
 - **On a device**, the engine runs as a service (`oscairn-engine`) that owns the audio and
   MIDI devices, the graph and the plugins, and serves the socket. The UI is another
   service and a client; if it crashes or is restarted, the audio carries on.
-- **On the desktop**, the app runs the engine in its own process by default (one process,
-  in-process `Control`), or connects to a running engine (`--connect`).
-- **In a DAW**, the plugin is the engine, and its editor uses `Control` in process.
+- **On the desktop**, the app starts its own engine as a helper process by default and
+  connects to it over the socket, so a UI crash does not stop the audio, the UI can be
+  restarted while it plays, and the desktop runs the same split as a device. The app
+  restarts the helper if it exits, and checks that the versions match. `--in-process` runs
+  the engine inside the app (debugging, tests); `--connect` attaches to an engine that is
+  already running.
+- **In a DAW**, the plugin is the engine, and its editor uses `Control` in process. The
+  DAW gives the plugin a window to draw into, and the audio callback must not cross
+  processes every block, so both stay inside the plugin.
 
 The engine's audio and MIDI I/O goes through the hardware-services interface (its own RFC).
 The first version of `oscairn-engine` uses JUCE's audio and MIDI device classes without
@@ -147,15 +203,28 @@ JUCE stays out of `core/`.
    through JSON and render audio, so they are deterministic.
 2. The socket server and a small client library, with tests over a real socket.
 3. `hosts/engine`: `oscairn-engine`.
-4. The desktop app uses only `Control`: in process by default, `--connect` for a socket.
+4. The desktop app uses only `Control`, starting `oscairn-engine` as its helper by default,
+   with `--in-process` and `--connect`.
 5. The OS image runs the engine and the UI as separate services, with a test that kills
    the UI and checks the audio carries on.
+6. The OSC bridge.
+
+## Plugin GUIs
+
+A plugin's own GUI (the CLAP GUI extension) is created by the plugin, inside the process
+that loaded it: the engine. On a device the engine has no window system and must not carry
+GUI code, and most plugin GUIs are built for a mouse and a large screen. So:
+
+- **Devices:** no native plugin GUIs. Every plugin gets generated pages from `params.list`,
+  and pages of controls from CLAP's remote-controls extension where the plugin offers them
+  (eight controls a page, which suit hardware knobs).
+- **Desktop:** native plugin GUIs open as separate windows from the engine helper.
+- **DAW:** embedded in the plugin's editor as usual.
+
+How third-party plugins get their own look on devices (layouts and themes described in
+data, custom views in a sandbox) is its own RFC.
 
 ## Open questions
 
-- Batching and coalescing parameter updates when a client sends faster than it needs to
-  (a knob dragged quickly): coalesce per parameter on the server, or leave it to clients.
-- Whether plugin GUIs (CLAP GUI extension) are shown by the UI process (embedding a window
-  from another process) or by the engine; on devices, probably neither at first, with the
-  host's generated parameter pages instead.
-- Remote access: WebSocket, authentication, and which methods a remote client may call.
+- The shared-memory stream format, and how a client finds and maps a stream.
+- The OSC address scheme in full.
