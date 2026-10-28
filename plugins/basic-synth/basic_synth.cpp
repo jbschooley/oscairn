@@ -3,14 +3,19 @@
 // Oscairn Basic Synth: a small polyphonic CLAP instrument for tests and demos.
 // Each voice is a band-limited sawtooth through a two-pole low-pass filter whose
 // cutoff follows the amplitude envelope, which gives a plucked bass sound.
+// Parameters: Brightness (how far the filter opens) and Level. Both take values and
+// modulation, applied on their exact sample.
 // Events are applied on their exact sample, and the output does not depend on the
 // host's block size.
 
 #include <clap/clap.h>
 
+#include <algorithm>
 #include <array>
+#include <atomic>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 
 namespace
@@ -30,6 +35,12 @@ namespace
         "0.1.0",
         "A small polyphonic subtractive synth for tests and demos",
         features,
+    };
+
+    enum ParamId : clap_id
+    {
+        brightnessId = 1,
+        levelId      = 2,
     };
 
     enum class Stage
@@ -61,6 +72,10 @@ namespace
         uint64_t               notesStarted = 0;
         double                 attackStep = 0.0, decayCoefficient = 0.0, releaseCoefficient = 0.0;
         static constexpr double sustain = 0.35;
+
+        // Values are atomic: the main thread reads them (get_value) while audio runs.
+        std::atomic<double> brightness{ 1.0 }, level{ 1.0 };
+        double              brightnessMod = 0.0, levelMod = 0.0; // audio thread only
     };
 
     Synth& self( const clap_plugin_t* p )
@@ -115,8 +130,33 @@ namespace
                 v.stage = Stage::Release;
     }
 
+    void applyParam( Synth& s, const clap_event_header_t* header )
+    {
+        if( header->space_id != CLAP_CORE_EVENT_SPACE_ID )
+            return;
+        if( header->type == CLAP_EVENT_PARAM_VALUE )
+        {
+            const auto* e = reinterpret_cast<const clap_event_param_value_t*>( header );
+            const double v = std::clamp( e->value, 0.0, 1.0 );
+            if( e->param_id == brightnessId )
+                s.brightness = v;
+            else if( e->param_id == levelId )
+                s.level = v;
+        }
+        else if( header->type == CLAP_EVENT_PARAM_MOD )
+        {
+            const auto* e = reinterpret_cast<const clap_event_param_mod_t*>( header );
+            if( e->param_id == brightnessId )
+                s.brightnessMod = e->amount;
+            else if( e->param_id == levelId )
+                s.levelMod = e->amount;
+        }
+    }
+
     void render( Synth& s, float* left, float* right, uint32_t from, uint32_t to )
     {
+        const double brightness = std::clamp( s.brightness.load() + s.brightnessMod, 0.0, 1.0 );
+        const double level      = std::clamp( s.level.load() + s.levelMod, 0.0, 1.0 );
         for( uint32_t i = from; i < to; ++i )
         {
             double mix = 0.0;
@@ -153,14 +193,14 @@ namespace
                 if( v.phase >= 1.0 )
                     v.phase -= 1.0;
 
-                const double cutoff = 120.0 + v.level * v.level * 5000.0 * v.velocity;
+                const double cutoff = 120.0 + v.level * v.level * 5000.0 * v.velocity * brightness;
                 const double g      = 1.0 - std::exp( -2.0 * pi * cutoff / s.sampleRate );
                 v.low1 += g * ( saw - v.low1 );
                 v.low2 += g * ( v.low1 - v.low2 );
 
                 mix += v.low2 * v.level * v.velocity * 0.35;
             }
-            const auto sample = (float)std::tanh( mix );
+            const auto sample = (float)std::tanh( mix * level );
             left[i]           = sample;
             right[i]          = sample;
         }
@@ -188,7 +228,9 @@ namespace
                 render( s, left, right, done, at );
                 done = at;
             }
-            if( header->type == CLAP_EVENT_NOTE_ON || header->type == CLAP_EVENT_NOTE_OFF || header->type == CLAP_EVENT_NOTE_CHOKE )
+            if( header->type == CLAP_EVENT_PARAM_VALUE || header->type == CLAP_EVENT_PARAM_MOD )
+                applyParam( s, header );
+            else if( header->type == CLAP_EVENT_NOTE_ON || header->type == CLAP_EVENT_NOTE_OFF || header->type == CLAP_EVENT_NOTE_CHOKE )
             {
                 const auto* note = reinterpret_cast<const clap_event_note_t*>( header );
                 if( header->type == CLAP_EVENT_NOTE_ON && note->velocity > 0.0 )
@@ -235,6 +277,59 @@ namespace
         return true;
     }
 
+    uint32_t paramsCount( const clap_plugin_t* )
+    {
+        return 2;
+    }
+
+    bool paramsInfo( const clap_plugin_t*, uint32_t index, clap_param_info_t* info )
+    {
+        if( index > 1 )
+            return false;
+        *info               = {};
+        info->id            = index == 0 ? brightnessId : levelId;
+        info->flags         = CLAP_PARAM_IS_AUTOMATABLE | CLAP_PARAM_IS_MODULATABLE;
+        info->min_value     = 0.0;
+        info->max_value     = 1.0;
+        info->default_value = 1.0;
+        std::snprintf( info->name, sizeof( info->name ), "%s", index == 0 ? "Brightness" : "Level" );
+        return true;
+    }
+
+    bool paramsValue( const clap_plugin_t* p, clap_id id, double* value )
+    {
+        if( id == brightnessId )
+            *value = self( p ).brightness;
+        else if( id == levelId )
+            *value = self( p ).level;
+        else
+            return false;
+        return true;
+    }
+
+    bool paramsToText( const clap_plugin_t*, clap_id id, double value, char* text, uint32_t size )
+    {
+        if( id != brightnessId && id != levelId )
+            return false;
+        std::snprintf( text, size, "%.0f%%", value * 100.0 );
+        return true;
+    }
+
+    bool paramsFromText( const clap_plugin_t*, clap_id id, const char* text, double* value )
+    {
+        if( id != brightnessId && id != levelId )
+            return false;
+        *value = std::clamp( std::atof( text ) / 100.0, 0.0, 1.0 );
+        return true;
+    }
+
+    void paramsFlush( const clap_plugin_t* p, const clap_input_events_t* in, const clap_output_events_t* )
+    {
+        for( uint32_t i = 0, n = in->size( in ); i < n; ++i )
+            applyParam( self( p ), in->get( in, i ) );
+    }
+
+    const clap_plugin_params_t      params     = { paramsCount, paramsInfo, paramsValue, paramsToText, paramsFromText, paramsFlush };
     const clap_plugin_audio_ports_t audioPorts = { audioPortsCount, audioPortsGet };
     const clap_plugin_note_ports_t  notePorts  = { notePortsCount, notePortsGet };
 
@@ -264,6 +359,8 @@ namespace
                 return &audioPorts;
             if( std::strcmp( id, CLAP_EXT_NOTE_PORTS ) == 0 )
                 return &notePorts;
+            if( std::strcmp( id, CLAP_EXT_PARAMS ) == 0 )
+                return &params;
             return nullptr;
         };
         s->plugin.on_main_thread   = []( const clap_plugin_t* ) {};
