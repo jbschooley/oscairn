@@ -121,9 +121,6 @@ What is in place:
 | `plugins/` | First-party plugins: step sequencer, arpeggiator, test synth. |
 | `docs/rfcs/` | Design decisions, one short document each. |
 
-Related: [`oscairn-panel`](https://github.com/jbschooley/oscairn-panel), a virtual front panel
-for developing without hardware.
-
 ## Licence
 
 Oscairn is licensed under the GNU Affero General Public License v3.0 or later. See
