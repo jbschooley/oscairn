@@ -98,6 +98,10 @@ What is in place:
 
 ## Design in brief
 
+The design the code is built towards; most of it is not built yet. In full:
+[architecture](docs/architecture.md), and what exists and what comes next:
+[roadmap](docs/roadmap.md).
+
 - **Event sources.** Keyboards, pads, MIDI, sequencers and the DAW are all event sources that
   feed the same graph. Live playing, groovebox sequencing and DAW use are one model.
 - **Plugins do the timing-critical work.** Engines, effects, sequencers and arpeggiators are
@@ -119,7 +123,7 @@ What is in place:
 | `core/` | Graph, transport and clock, event routing, plugin hosting; library index (not built yet). A library. |
 | `hosts/` | Programs built on the core: headless (render to file, for CI), desktop, later device and plugin builds. |
 | `plugins/` | First-party plugins: step sequencer, basic synth, delay; arpeggiator (not built yet). |
-| `docs/rfcs/` | Design decisions, one short document each. |
+| `docs/` | [Architecture](docs/architecture.md), [roadmap](docs/roadmap.md), and design decisions in [`rfcs/`](docs/rfcs/README.md). |
 
 ## Licence
 
