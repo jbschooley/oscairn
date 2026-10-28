@@ -255,9 +255,22 @@ namespace
         endHeldNoteBefore( frames );
         applyParamsUntil( frames );
 
-        std::stable_sort( pending.begin(), pending.begin() + count, []( const Pending& a, const Pending& b ) {
+        const auto before = []( const Pending& a, const Pending& b ) {
             return a.time != b.time ? a.time < b.time : a.kind < b.kind; // offs, then locks, then ons
-        } );
+        };
+        // Stable insertion sort for at most 64 events. std::stable_sort may allocate
+        // a temporary buffer, which is not allowed in the audio callback.
+        for( size_t i = 1; i < count; ++i )
+        {
+            const auto event = pending[i];
+            auto j = i;
+            while( j > 0 && before( event, pending[j - 1] ) )
+            {
+                pending[j] = pending[j - 1];
+                --j;
+            }
+            pending[j] = event;
+        }
         for( size_t i = 0; i < count; ++i )
         {
             const auto& e = pending[i];
