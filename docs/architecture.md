@@ -13,7 +13,8 @@ design decisions are recorded as [RFCs](rfcs/README.md).
 | Transport: internal tempo or external MIDI clock | Ableton Link, DAW and CV clock sync |
 | Parameter events between plugins (`oscairn.param-target`, [RFC 0002](rfcs/0002-param-target.md)) | Sounds, Performances, Setlists, Projects; file formats and library |
 | Step sequencer, basic synth and delay plugins | Scenes, persistent engines, crash recovery |
-| Offline renderer; desktop app with live audio, MIDI input and panel layouts | Hardware-services interface; device images; the platform as a DAW plugin |
+| Offline renderer; desktop app with live audio, MIDI input and panel layouts | Hardware-services interface; the platform as a DAW plugin |
+| A Linux image (Buildroot) that boots into Oscairn, tested in QEMU | Images for real hardware |
 
 ## Core idea
 

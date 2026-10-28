@@ -13,8 +13,9 @@ here only to describe compatibility.
 > **Status:** early. What runs today: a graph of CLAP plugins (for example a sequencer
 > playing a synth through a delay, with per-step parameter locks), sample-accurately,
 > following its own tempo or an external MIDI clock, rendered offline to a WAV file, and a
-> desktop demo app with live audio, MIDI input and switchable panel layouts. No LV2/VST3,
-> patch library or device build yet.
+> desktop demo app with live audio, MIDI input and switchable panel layouts, and a Linux
+> image that boots into Oscairn (tested in QEMU, [`os/`](os/README.md)). No LV2/VST3, patch
+> library or real-hardware image yet.
 
 ## Try it
 
