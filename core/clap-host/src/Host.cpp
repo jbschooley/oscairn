@@ -255,7 +255,7 @@ struct Host::Impl {
     }
     Impl() {
         host.clap_version = CLAP_VERSION; host.host_data = this;
-        host.name = "KICK"; host.vendor = "KICK"; host.url = "https://github.com/MusicTribeOpenSource/0700-AAM"; host.version = "0.1.0";
+        host.name = "Oscairn"; host.vendor = "Oscairn"; host.url = "https://github.com/jbschooley/oscairn"; host.version = "0.1.0";
         host.get_extension = extension; host.request_restart = requestRestart;
         host.request_process = requestProcess; host.request_callback = requestCallback;
     }
@@ -839,8 +839,6 @@ bool Host::process(const float* const* input, uint32_t ni, float* const* output,
                     }
                 } else std::fill_n(destination, n, 0.f);
             }
-            // A mono instrument feeds both sides of KICK's stereo program bus.
-            if (s.outputPointers.size() == 1 && no == 2 && output[0] && output[1]) std::copy_n(output[0] + done, n, output[1] + done);
             s.sleeping = status == CLAP_PROCESS_SLEEP;
             s.steadyTime += n; done += n;
         }

@@ -19,3 +19,7 @@ add_test(NAME sequencer-timing COMMAND oscairn-sequencer-timing-test $<TARGET_FI
 add_executable(oscairn-host-policy-test engine/tests/host_policy.cpp)
 target_link_libraries(oscairn-host-policy-test PRIVATE kick_clap_host)
 add_test(NAME host-policy COMMAND oscairn-host-policy-test $<TARGET_FILE:oscairn_basic_synth>)
+
+add_executable(oscairn-chain-mono-test engine/tests/chain_mono.cpp)
+target_link_libraries(oscairn-chain-mono-test PRIVATE oscairn_engine)
+add_test(NAME chain-mono COMMAND oscairn-chain-mono-test $<TARGET_FILE:kick-clap-fixture-normal>)

@@ -57,6 +57,12 @@ namespace oscairn
             {
                 float* const* target = ( audio == a ) ? b : a;
                 ok &= node->process( audio, audio ? channels : 0, target, channels, frames, nodeEvents, nodeCount, transport );
+                // A mono plugin plays in the centre: copy its channel to the right.
+                uint32_t pluginChannels = 0;
+                for( const auto& port : node->outputPorts() )
+                    pluginChannels += port.channels;
+                if( pluginChannels == 1 )
+                    std::copy_n( target[0], frames, target[1] );
                 audio = target;
             }
             else

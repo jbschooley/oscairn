@@ -47,7 +47,9 @@ int main(int argc, char** argv) {
     float* out[]{left.data(), right.data()};
     Event events[]{Event::midi(0x90, 60, 100, 17), Event::midi(0x80, 60, 0, 700)};
     check(render(h, out, 1025, events, 2), "split oversized blocks and translate MIDI to native CLAP notes");
-    for (int i = 0; i < 1025; ++i) check(left[i] == ((i >= 17 && i < 700) ? .5f : 0.f) && left[i] == right[i], "sample offsets and mono-to-stereo routing");
+    // The fixture instrument is mono: the host leaves the surplus right channel silent
+    // (spreading mono to stereo is up to the caller, e.g. the Oscairn chain).
+    for (int i = 0; i < 1025; ++i) check(left[i] == ((i >= 17 && i < 700) ? .5f : 0.f) && right[i] == 0.f, "sample offsets; surplus output channels silent");
     check(!h.setParameter(99, .2) && !h.setParameter(7, std::numeric_limits<double>::quiet_NaN()), "reject read-only and nonfinite parameters");
     check(h.setParameter(7, .25), "queue parameter");
     std::vector<uint8_t> saved;
