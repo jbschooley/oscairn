@@ -6,9 +6,10 @@ Oscairn is an open instrument platform: one realtime host for synthesis engines,
 effects and sequencers that runs on hardware instruments, on the desktop and inside a DAW.
 A sound or performance is not tied to one device.
 
-> **Status:** early. What runs today: a chain of CLAP plugins (a sequencer playing a synth
-> through a delay), sample-accurately, following its own tempo or an external MIDI clock,
-> rendered offline to a WAV file. No live audio, MIDI input, UI or LV2/VST3 yet.
+> **Status:** early. What runs today: a graph of CLAP plugins (for example a sequencer
+> playing a synth through a delay, with per-step parameter locks), sample-accurately,
+> following its own tempo or an external MIDI clock, rendered offline to a WAV file. No live
+> audio, MIDI input, UI or LV2/VST3 yet.
 
 ## Try it
 
@@ -22,6 +23,10 @@ ctest --test-dir build
 
 P=build/plugins
 build/hosts/oscairn-render demo.wav --seconds 16 --tempo 120 \
+    $P/oscairn-step-sequencer.clap $P/oscairn-basic-synth.clap $P/oscairn-delay.clap
+
+# With per-step parameter locks: the sequencer's lane 0 controls the synth's Brightness:
+build/hosts/oscairn-render demo-locks.wav --seconds 16 --map 0.0=1.Brightness \
     $P/oscairn-step-sequencer.clap $P/oscairn-basic-synth.clap $P/oscairn-delay.clap
 
 # The same chain following a (simulated) external MIDI clock at 140 BPM:
@@ -42,14 +47,21 @@ What is in place:
   Changed here so that note-only plugins (sequencers) load and their notes reach the next
   plugin in the same block, main-thread work and state saves no longer silence audio, a bad
   event no longer resets the plugin, and an instance uses 0.41 MB instead of 1.55 MB.
-- **Engine** (`core/engine`): the transport (tempo, time signature, position; its own
-  tempo or an external MIDI clock) and a plugin chain, the first step towards the graph.
+- **Engine** (`core/engine`): the graph (plugin nodes; audio connections summed, note
+  connections merged; processed in dependency order each block; edited while audio runs,
+  without locks) and the transport (tempo, time signature, position; its own tempo or an
+  external MIDI clock). `oscairn-render` builds a straight chain on the graph.
+- **oscairn.param-target** ([RFC 0002](docs/rfcs/0002-param-target.md)): a CLAP
+  extension for parameter changes between plugins, such as a sequencer's per-step locks,
+  routed by the graph to the target's parameter in the same block.
 - **Plugins** (`plugins/`): Oscairn Step Sequencer (a 16-step pattern following the
-  transport's beat position), Oscairn Basic Synth and Oscairn Delay (tempo-synced ping-pong).
+  transport's beat position, with a lock lane), Oscairn Basic Synth (Brightness and Level
+  parameters) and Oscairn Delay (tempo-synced ping-pong).
 - **Tests:** every sequencer note lands on its exact sample when processed in uneven blocks;
   rendering with 512- and 37-sample blocks gives byte-identical files; following a 140 BPM
-  MIDI clock, steps land within 2 samples of their pulses; host behaviour for live use
-  (bad events, queued-event overflow, mono output).
+  MIDI clock, steps land within 2 samples of their pulses; graph fan-out, summing, note
+  merging, cycle rejection and live editing; parameter locks applied from each step's first
+  sample; host behaviour for live use (bad events, queued-event overflow, mono output).
 
 ## Design in brief
 
