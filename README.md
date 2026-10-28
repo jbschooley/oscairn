@@ -44,6 +44,30 @@ Options: `--layout desktop|kick|keys49|file.json`, and `--snapshot out.png [--si
 [--play SECONDS]` to render the panel to a PNG and quit. Layouts are described in
 [hosts/standalone/layouts](hosts/standalone/layouts/README.md).
 
+### Panel layouts
+
+The same engine runs behind every layout; the View menu or `--layout` switches between
+them. Captured with `--snapshot` while playing.
+
+**Desktop** (`desktop`): stretches to any window shape.
+
+![Desktop layout](docs/images/layouts/desktop.png)
+
+**KICK** (`kick`), with the geometry of chillbeast's KickEM simulator board, and the KICK's
+screen alone (`kick-screen`), as the device shows it:
+
+![KICK layout](docs/images/layouts/kick.png)
+
+![KICK screen layout](docs/images/layouts/kick-screen.png)
+
+**Ignite** (`ignite`), from its front-panel photo; every rotary is an endless encoder:
+
+![Ignite layout](docs/images/layouts/ignite.png)
+
+**49-key keyboard** (`keys49`), a concept for a future device:
+
+![49-key keyboard layout](docs/images/layouts/keys49.png)
+
 ### The core, tests and offline renderer
 
 CI builds and tests on Ubuntu 24.04 (GCC) and macOS 15 (Apple clang), plus a
