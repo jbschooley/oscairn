@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #include "Engine.h"
 
+#include "oscairn/midi_input.h"
+
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -135,7 +137,7 @@ namespace oscairn::standalone
 
     void Engine::handleIncomingMidiMessage( juce::MidiInput*, const juce::MidiMessage& message )
     {
-        if( message.isNoteOnOrOff() || message.isMidiClock() || message.isMidiStart() || message.isMidiContinue() || message.isMidiStop()
+        if( message.isNoteOnOrOff() || message.isAftertouch() || message.isChannelPressure() || message.isMidiClock() || message.isMidiStart() || message.isMidiContinue() || message.isMidiStop()
             || message.isSongPositionPointer() )
             push( message );
     }
@@ -145,6 +147,7 @@ namespace oscairn::standalone
         Incoming in{};
         const auto size = std::min( message.getRawDataSize(), 3 );
         std::copy_n( message.getRawData(), size, in.bytes );
+        in.size = (uint8_t)size;
         in.seconds = juce::Time::getMillisecondCounterHiRes() * 0.001;
 
         std::lock_guard lock( pushLock_ );
@@ -197,9 +200,9 @@ namespace oscairn::standalone
                     transport.midiClock( status, time, (uint16_t)( in.bytes[1] | ( in.bytes[2] << 7 ) ) );
                     return;
                 }
-                const bool on = ( status & 0xF0 ) == 0x90 && in.bytes[2] > 0;
-                if( ( ( status & 0xF0 ) == 0x90 || ( status & 0xF0 ) == 0x80 ) && noteCount < notes.size() )
-                    notes[noteCount++] = kick::clap::Event::note( on, in.bytes[1], in.bytes[2] / 127.0 );
+                // Notes and aftertouch (as CLAP pressure).
+                if( noteCount < notes.size() && oscairn::midiToClap( in.bytes, in.size, 0, notes[noteCount] ) )
+                    ++noteCount;
             };
             for( int i = 0; i < scope.blockSize1; ++i )
                 take( scope.startIndex1 + i );

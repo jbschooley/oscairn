@@ -17,8 +17,8 @@
 namespace oscairn::standalone
 {
     /// The demo instrument: the step sequencer and pads playing the basic synth, through
-    /// the delay, on the default audio device, with every MIDI input as a note and clock
-    /// source.
+    /// the delay, on the default audio device, with every MIDI input as a source of notes,
+    /// aftertouch and clock.
     ///
     /// The UI talks to the engine only through the public methods below: nodes by name,
     /// parameters by id, plain values. Nothing here hands out the graph or a plugin. When
@@ -104,6 +104,7 @@ namespace oscairn::standalone
         struct Incoming
         {
             uint8_t bytes[3];
+            uint8_t size; // bytes used
             double  seconds; // Time::getMillisecondCounterHiRes() / 1000 at arrival
         };
         std::mutex                    pushLock_;

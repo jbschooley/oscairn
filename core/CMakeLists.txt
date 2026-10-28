@@ -7,6 +7,7 @@ target_include_directories(oscairn_clap_headers INTERFACE clap-host/third_party/
 add_library(oscairn_engine STATIC
     engine/src/chain.cpp
     engine/src/graph.cpp
+    engine/src/midi_input.cpp
     engine/src/transport.cpp
     engine/src/wav_file.cpp)
 target_include_directories(oscairn_engine PUBLIC engine/include)
@@ -49,3 +50,11 @@ add_test(NAME transport-tempo COMMAND oscairn-transport-tempo-test)
 add_executable(oscairn-delay-glide-test engine/tests/delay_glide.cpp)
 target_link_libraries(oscairn-delay-glide-test PRIVATE oscairn_engine)
 add_test(NAME delay-glide COMMAND oscairn-delay-glide-test $<TARGET_FILE:oscairn_delay>)
+
+add_executable(oscairn-midi-input-test engine/tests/midi_input.cpp)
+target_link_libraries(oscairn-midi-input-test PRIVATE oscairn_engine)
+add_test(NAME midi-input COMMAND oscairn-midi-input-test)
+
+add_executable(oscairn-pressure-test engine/tests/pressure.cpp)
+target_link_libraries(oscairn-pressure-test PRIVATE oscairn_engine)
+add_test(NAME pressure COMMAND oscairn-pressure-test $<TARGET_FILE:oscairn_basic_synth>)

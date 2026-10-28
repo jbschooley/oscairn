@@ -3,8 +3,10 @@
 // Oscairn Basic Synth: a small polyphonic CLAP instrument for tests and demos.
 // Each voice is a band-limited sawtooth through a two-pole low-pass filter whose
 // cutoff follows the amplitude envelope, which gives a plucked bass sound.
-// Parameters: Brightness (how far the filter opens) and Level. Both take values and
-// modulation, applied on their exact sample.
+// Parameters: Brightness (how far the filter opens), Level, and Pressure (how far
+// pressure opens each voice's filter). All take values and modulation, applied on their
+// exact sample. Pressure (CLAP's pressure note expression: polyphonic or, with a wildcard
+// key, channel aftertouch) applies per voice.
 // Events are applied on their exact sample, and the output does not depend on the
 // host's block size.
 
@@ -41,7 +43,9 @@ namespace
     {
         brightnessId = 1,
         levelId      = 2,
+        pressureId   = 3,
     };
+    constexpr double pressureCutoff = 6000.0; // Hz the filter opens at full pressure and amount
 
     enum class Stage
     {
@@ -60,6 +64,7 @@ namespace
         double   increment = 0.0;
         double   level    = 0.0; // envelope
         double   velocity = 0.0;
+        double   pressure = 0.0; // 0..1, from note expressions
         double   low1 = 0.0, low2 = 0.0;
         uint64_t started = 0;
     };
@@ -74,8 +79,8 @@ namespace
         static constexpr double sustain = 0.35;
 
         // Values are atomic: the main thread reads them (get_value) while audio runs.
-        std::atomic<double> brightness{ 1.0 }, level{ 1.0 };
-        double              brightnessMod = 0.0, levelMod = 0.0; // audio thread only
+        std::atomic<double> brightness{ 1.0 }, level{ 1.0 }, pressure{ 0.5 };
+        double              brightnessMod = 0.0, levelMod = 0.0, pressureMod = 0.0; // audio thread only
     };
 
     Synth& self( const clap_plugin_t* p )
@@ -130,6 +135,17 @@ namespace
                 v.stage = Stage::Release;
     }
 
+    // Pressure for the voices an expression addresses: a key and channel, with -1 for any.
+    void applyExpression( Synth& s, const clap_event_note_expression_t& e )
+    {
+        if( e.expression_id != CLAP_NOTE_EXPRESSION_PRESSURE )
+            return;
+        const double value = std::clamp( e.value, 0.0, 1.0 );
+        for( auto& v : s.voices )
+            if( v.active && ( e.key < 0 || v.key == e.key ) && ( e.channel < 0 || v.channel == e.channel ) )
+                v.pressure = value;
+    }
+
     void applyParam( Synth& s, const clap_event_header_t* header )
     {
         if( header->space_id != CLAP_CORE_EVENT_SPACE_ID )
@@ -142,6 +158,8 @@ namespace
                 s.brightness = v;
             else if( e->param_id == levelId )
                 s.level = v;
+            else if( e->param_id == pressureId )
+                s.pressure = v;
         }
         else if( header->type == CLAP_EVENT_PARAM_MOD )
         {
@@ -150,6 +168,8 @@ namespace
                 s.brightnessMod = e->amount;
             else if( e->param_id == levelId )
                 s.levelMod = e->amount;
+            else if( e->param_id == pressureId )
+                s.pressureMod = e->amount;
         }
     }
 
@@ -157,6 +177,7 @@ namespace
     {
         const double brightness = std::clamp( s.brightness.load() + s.brightnessMod, 0.0, 1.0 );
         const double level      = std::clamp( s.level.load() + s.levelMod, 0.0, 1.0 );
+        const double pressure   = std::clamp( s.pressure.load() + s.pressureMod, 0.0, 1.0 );
         for( uint32_t i = from; i < to; ++i )
         {
             double mix = 0.0;
@@ -193,7 +214,7 @@ namespace
                 if( v.phase >= 1.0 )
                     v.phase -= 1.0;
 
-                const double cutoff = 120.0 + v.level * v.level * 5000.0 * v.velocity * brightness;
+                const double cutoff = 120.0 + v.level * v.level * 5000.0 * v.velocity * brightness + v.pressure * pressure * pressureCutoff;
                 const double g      = 1.0 - std::exp( -2.0 * pi * cutoff / s.sampleRate );
                 v.low1 += g * ( saw - v.low1 );
                 v.low2 += g * ( v.low1 - v.low2 );
@@ -238,6 +259,8 @@ namespace
                 else
                     noteOff( s, note->key, note->channel );
             }
+            else if( header->type == CLAP_EVENT_NOTE_EXPRESSION )
+                applyExpression( s, *reinterpret_cast<const clap_event_note_expression_t*>( header ) );
         }
         render( s, left, right, done, frames );
         return CLAP_PROCESS_CONTINUE;
@@ -279,20 +302,26 @@ namespace
 
     uint32_t paramsCount( const clap_plugin_t* )
     {
-        return 2;
+        return 3;
     }
 
     bool paramsInfo( const clap_plugin_t*, uint32_t index, clap_param_info_t* info )
     {
-        if( index > 1 )
+        constexpr struct
+        {
+            clap_id     id;
+            const char* name;
+            double      defaultValue;
+        } all[] = { { brightnessId, "Brightness", 1.0 }, { levelId, "Level", 1.0 }, { pressureId, "Pressure", 0.5 } };
+        if( index >= std::size( all ) )
             return false;
         *info               = {};
-        info->id            = index == 0 ? brightnessId : levelId;
+        info->id            = all[index].id;
         info->flags         = CLAP_PARAM_IS_AUTOMATABLE | CLAP_PARAM_IS_MODULATABLE;
         info->min_value     = 0.0;
         info->max_value     = 1.0;
-        info->default_value = 1.0;
-        std::snprintf( info->name, sizeof( info->name ), "%s", index == 0 ? "Brightness" : "Level" );
+        info->default_value = all[index].defaultValue;
+        std::snprintf( info->name, sizeof( info->name ), "%s", all[index].name );
         return true;
     }
 
@@ -302,6 +331,8 @@ namespace
             *value = self( p ).brightness;
         else if( id == levelId )
             *value = self( p ).level;
+        else if( id == pressureId )
+            *value = self( p ).pressure;
         else
             return false;
         return true;
@@ -309,7 +340,7 @@ namespace
 
     bool paramsToText( const clap_plugin_t*, clap_id id, double value, char* text, uint32_t size )
     {
-        if( id != brightnessId && id != levelId )
+        if( id != brightnessId && id != levelId && id != pressureId )
             return false;
         std::snprintf( text, size, "%.0f%%", value * 100.0 );
         return true;
@@ -317,7 +348,7 @@ namespace
 
     bool paramsFromText( const clap_plugin_t*, clap_id id, const char* text, double* value )
     {
-        if( id != brightnessId && id != levelId )
+        if( id != brightnessId && id != levelId && id != pressureId )
             return false;
         *value = std::clamp( std::atof( text ) / 100.0, 0.0, 1.0 );
         return true;
