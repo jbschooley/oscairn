@@ -254,6 +254,27 @@ i.MX8M Mini and the RK3588 both have the USB controllers for it):
   continuously and adaptively to stay in step with the device's audio clock, without drift
   or clicks; the device reports to a computer as the clock master where it can.
 
+### External controllers and hardware
+
+Other hardware plugged into an Oscairn device works with it, on any device:
+
+- **Controllers over USB:** MIDI and HID controllers (a keyboard, a Launchpad, a DJ
+  controller, a CDJ in its controller mode) control the device through **controller
+  mappings**, shipped as packages. Oscairn reads Mixxx's mapping format (XML with
+  JavaScript), so its library of community mappings works too; scripts run in a small
+  sandboxed JavaScript engine (for example QuickJS, MIT) in the controller service, outside
+  the audio thread. Mappings can light LEDs and drive controllers' displays. Jog wheels
+  and other continuous controls keep to the direct event path's latency (about a
+  millisecond added at most).
+- **Audio from other hardware** comes in as channels in the graph on devices with inputs.
+- **Sync:** MIDI clock, Ableton Link, and on DJ devices Pro DJ Link (below).
+
+### Touch
+
+The KICK and the Ignite have touchscreens, and most devices will. UIs handle several
+fingers at once (two pads, or a pad and a fader); JUCE 9 provides multi-touch on Linux
+through XInput2, and any later device UI toolkit must too.
+
 ## DJ devices
 
 A DJ deck or all-in-one DJ system needs no synth engines, but the same core runs it:
@@ -306,8 +327,12 @@ all of them:
 - **USB sticks DJs already carry:** reading the libraries exported by rekordbox, Serato and
   Engine DJ (cue points, beat grids, playlists) would make a deck useful at once. These
   formats are not officially documented; rekordbox's has been worked out publicly.
-- **Sync with other players** on a network (Pro DJ Link, also worked out publicly) needs the
-  network permission.
+- **Sync with other players** on a network (Pro DJ Link, also worked out publicly, for example
+  by Deep Symmetry's beat-link): following or leading CDJs and mixers' tempo and beat, and
+  their track information. Needs the network permission.
+- **Timecode control:** a CDJ or turntable plays a timecode track, and the deck follows its
+  platter by reading that audio from an input, as digital vinyl systems do (Mixxx does this
+  with the xwax library, GPL).
 
 ### Mixxx
 
