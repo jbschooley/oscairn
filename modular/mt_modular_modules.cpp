@@ -561,7 +561,7 @@ namespace mt::modular
             }
             void reset() override
             {
-                std::fill( buffer.begin(), buffer.end(), 0.f );
+                validSamples = 0; // unwritten ring positions read as zero after reset
                 write = 0;
                 lp    = 0;
             }
@@ -589,10 +589,13 @@ namespace mt::modular
                     const auto i0   = (int)read;
                     const auto frac = read - (float)i0;
                     const auto i1   = i0 + 1 < size ? i0 + 1 : 0;
-                    const auto y    = buffer[(size_t)i0] + frac * ( buffer[(size_t)i1] - buffer[(size_t)i0] );
+                    const auto a = i0 < validSamples ? buffer[(size_t)i0] : 0.f;
+                    const auto b = i1 < validSamples ? buffer[(size_t)i1] : 0.f;
+                    const auto y = a + frac * ( b - a );
 
                     lp += ( y - lp ) * damp;
                     buffer[(size_t)write] = Buf[i] + fb * lp;
+                    validSamples = juce::jmin( size, validSamples + 1 );
                     if( ++write >= size )
                         write = 0;
 
@@ -605,6 +608,7 @@ namespace mt::modular
             static constexpr double maxSeconds = 1.0;
             std::vector<float>      buffer;
             int                     write{ 0 };
+            int                     validSamples{ 0 };
             float                   lp{ 0 };
         };
 

@@ -1018,20 +1018,30 @@ namespace mt::modular
         if( name.isEmpty() || !Patch.hasType( PatchIDs::MODULAR_PATCH ) || getPresetNames().contains( name ) )
             return false;
 
-        remove( name ); // a file with another spelling of the same name
         auto copy = Patch.createCopy();
         copy.setProperty( PatchIDs::name, name, nullptr );
         const auto dir = getDirectory();
-        dir.createDirectory();
+        if(dir.createDirectory().failed()) return false;
+        auto legalName = juce::File::createLegalFileName(name).substring(0, 100);
+        if(legalName.isEmpty()) legalName = "Preset";
+        auto target = dir.getChildFile(legalName + ".xml").getNonexistentSibling();
+        juce::Array<juce::File> previous;
+        for(const auto& file : dir.findChildFiles(juce::File::findFiles, false, "*.xml"))
+            if(auto xml = juce::XmlDocument::parse(file); xml && xml->hasTagName(PatchIDs::MODULAR_PATCH.toString()) && xml->getStringAttribute(PatchIDs::name.toString()) == name)
+                previous.add(file);
+        if(!previous.isEmpty()) target = previous[0];
+        juce::TemporaryFile temporary(target);
         auto xml = copy.createXml();
-        return xml && xml->writeTo( dir.getChildFile( juce::File::createLegalFileName( name ) + ".xml" ) );
+        if(!xml || !xml->writeTo(temporary.getFile()) || !temporary.overwriteTargetFileWithTemporary()) return false;
+        for(const auto& file : previous) if(file != target) file.deleteFile();
+        return true;
     }
 
     bool UserPresets::remove( const juce::String& Name )
     {
         bool removed = false;
         for( const auto& f : getDirectory().findChildFiles( juce::File::findFiles, false, "*.xml" ) )
-            if( auto xml = juce::XmlDocument::parse( f ); xml && xml->getStringAttribute( PatchIDs::name.toString() ) == Name )
+            if( auto xml = juce::XmlDocument::parse( f ); xml && xml->hasTagName(PatchIDs::MODULAR_PATCH.toString()) && xml->getStringAttribute( PatchIDs::name.toString() ) == Name )
                 removed = f.deleteFile() || removed;
         return removed;
     }

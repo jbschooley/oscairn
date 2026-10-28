@@ -156,6 +156,7 @@ namespace mt
         };
         std::array<Held, 32> held{}; // mono modes: notes held down, oldest first
         int                  numHeld{ 0 };
+        std::array<float, 128> inputHeld{}; // physical keys, before arpeggiation
 
         // Arpeggiator: the notes held down (in the order played), and its clock.
         std::array<Held, 32> arpHeld{};
@@ -176,6 +177,9 @@ namespace mt
 
         void prepare( double SampleRate )
         {
+            numHeld = 0;
+            resetArp();
+            inputHeld.fill( 0.f );
             sampleRate = SampleRate;
             for( auto& v : voices )
             {
@@ -239,6 +243,8 @@ namespace mt
 
         void startNote( int Note, float Velocity, const Globals& G )
         {
+            if( !juce::isPositiveAndBelow( Note, 128 ) ) return;
+            inputHeld[(size_t)Note] = Velocity;
             if( arpMode.load( std::memory_order_relaxed ) != ArpOff )
                 arpNoteOn( Note, Velocity, G );
             else
@@ -247,6 +253,8 @@ namespace mt
 
         void releaseNote( int Note, const Globals& G )
         {
+            if( !juce::isPositiveAndBelow( Note, 128 ) ) return;
+            inputHeld[(size_t)Note] = 0.f;
             if( arpMode.load( std::memory_order_relaxed ) != ArpOff || numArpHeld > 0 )
                 arpNoteOff( Note, G );
             else
@@ -405,6 +413,7 @@ namespace mt
             if( starting )
             {
                 arpStep     = 0;
+                arpCountdown = 0.0;
                 arpStarting = true;
             }
             juce::ignoreUnused( G );
@@ -493,7 +502,7 @@ namespace mt
             const auto step = arpStepSamples( G );
             arpSounding     = next.note;
             arpGateLeft     = step * arpGate.load( std::memory_order_relaxed );
-            arpCountdown    = step;
+            arpCountdown    += step;
         }
 
         /// Samples until the arpeggiator's next event, or N if none comes sooner.
@@ -533,6 +542,7 @@ namespace mt
 
         void resetArp()
         {
+            arpCountdown = arpGateLeft = 0.0;
             numArpHeld  = 0;
             arpSounding = -1;
             arpStep     = 0;
@@ -541,6 +551,7 @@ namespace mt
 
         void releaseAll()
         {
+            inputHeld.fill( 0.f );
             numHeld = 0;
             resetArp();
             for( auto& v : voices )
@@ -601,7 +612,10 @@ namespace mt
                     const auto first = (size_t)nodes[(size_t)n].firstParam;
                     V.modules[(size_t)n]->process( ctx, &V.prev[first], &V.cur[first], buf.data(), N );
                     if( feedsCable[(size_t)n] )
+                    {
                         std::copy( buf.begin(), buf.begin() + N, V.outputs[(size_t)n].begin() );
+                        std::fill( V.outputs[(size_t)n].begin() + N, V.outputs[(size_t)n].end(), 0.f );
+                    }
                     const auto range = juce::FloatVectorOperations::findMinAndMax( buf.data(), N );
                     peaks[(size_t)n] = juce::jmax( peaks[(size_t)n], -range.getStart(), range.getEnd() );
                 }
@@ -618,7 +632,8 @@ namespace mt
             }
 
             // A runaway patch (NaN/inf) loses its voice rather than poisoning the mix.
-            if( !std::isfinite( mixL[(size_t)N - 1] + mixR[(size_t)N - 1] ) )
+            if( std::any_of( mixL.begin(), mixL.begin() + N, []( float x ) { return !std::isfinite( x ) || std::abs( x ) > 32.f; } )
+                || std::any_of( mixR.begin(), mixR.begin() + N, []( float x ) { return !std::isfinite( x ) || std::abs( x ) > 32.f; } ) )
             {
                 freeVoice( V );
                 return;
@@ -884,11 +899,19 @@ namespace mt
         const juce::SpinLock::ScopedLockType lock( graphLock );
         if( graph && graph->sampleRate != sampleRate.load() )
             graph->prepare( sampleRate.load() );
+        else if( graph )
+        {
+            graph->releaseAll();
+            for( auto& v : graph->voices ) graph->freeVoice( v );
+            graph->resetEffects();
+        }
+        crossfadeRemaining = 0;
     }
 
     void ModularEngine::reset()
     {
         const juce::SpinLock::ScopedLockType lock( graphLock );
+        crossfadeRemaining = 0;
         if( graph )
         {
             for( auto& v : graph->voices )
@@ -984,7 +1007,24 @@ namespace mt
         {
             const juce::SpinLock::ScopedLockType lock( graphLock );
             if( graph )
+            {
                 graph->render( Out[0], NumChannels > 1 ? Out[1] : nullptr, NumSamples, snapshot( bendSemitones, modWheelAmount, macros, tempo ) );
+                // Retain the old graph off the audio thread, but render its short
+                // release while the new graph fades in across structural edits.
+                std::array<float, 128> oldL{}, oldR{};
+                for( int offset = 0; previousGraph && crossfadeRemaining > 0 && offset < NumSamples; )
+                {
+                    const int n = juce::jmin( 128, NumSamples - offset, crossfadeRemaining );
+                    previousGraph->render( oldL.data(), NumChannels > 1 ? oldR.data() : nullptr, n, snapshot( bendSemitones, modWheelAmount, macros, tempo ) );
+                    for( int i = 0; i < n; ++i )
+                    {
+                        const float oldGain = (float)crossfadeRemaining-- / crossfadeLength;
+                        Out[0][offset + i] = oldGain * oldL[(size_t)i] + ( 1.f - oldGain ) * Out[0][offset + i];
+                        if( NumChannels > 1 ) Out[1][offset + i] = oldGain * oldR[(size_t)i] + ( 1.f - oldGain ) * Out[1][offset + i];
+                    }
+                    offset += n;
+                }
+            }
             else
                 for( int ch = 0; ch < juce::jmin( 2, NumChannels ); ++ch )
                     juce::FloatVectorOperations::clear( Out[ch], NumSamples );
@@ -1010,37 +1050,49 @@ namespace mt
         const auto desc = PatchDesc::fromTree( Patch.isValid() ? Patch : modular::createPreset( 0 ) );
 
         // Only knob values or depths changed: no rebuild, nothing interrupted.
-        if( graph && graph->key == desc.structureKey() )
-        {
-            writeValues( *graph, desc );
-            return;
-        }
-
-        auto fresh = buildGraph( desc, sampleRate.load() );
         {
             const juce::SpinLock::ScopedLockType lock( graphLock );
-            if( fresh->sampleRate != sampleRate.load() ) // prepare() ran while we were building
-                fresh->prepare( sampleRate.load() );
+            if( graph && graph->key == desc.structureKey() )
+            {
+                const bool modeChanged = graph->playMode.load() != desc.playMode;
+                const bool arpChanged = graph->arpMode.load() != desc.arp;
+                const auto held = graph->inputHeld;
+                if( modeChanged || arpChanged ) graph->releaseAll();
+                writeValues( *graph, desc );
+                if( arpChanged && !modeChanged )
+                {
+                    graph->refreshValues();
+                    const auto g = snapshot( bendSemitones, modWheelAmount, macros, tempo );
+                    for( int n = 0; n < 128; ++n )
+                        if( held[(size_t)n] > 0.f ) graph->startNote( n, held[(size_t)n], g );
+                }
+                return;
+            }
+        }
+
+        std::unique_ptr<Graph> oldPrevious;
+        for( ;; )
+        {
+            auto fresh = buildGraph( desc, sampleRate.load() );
+            const juce::SpinLock::ScopedLockType lock( graphLock );
+            if( fresh->sampleRate != sampleRate.load() ) continue; // retry preparation outside the audio lock
             if( graph ) // held notes keep playing through the new patch
             {
                 const auto g = snapshot( bendSemitones, modWheelAmount, macros, tempo );
-                for( const auto& v : graph->voices )
-                    if( v.active && v.gate )
-                        fresh->playNote( v.note, v.velocity, g );
-                fresh->held    = graph->held; // the mono note stack too
-                fresh->numHeld = graph->numHeld;
-                fresh->arpHeld      = graph->arpHeld; // and the arpeggio, mid-step
-                fresh->numArpHeld   = graph->numArpHeld;
-                fresh->arpStep      = graph->arpStep;
-                fresh->arpCountdown = graph->arpCountdown;
-                fresh->arpGateLeft  = graph->arpGateLeft;
-                fresh->arpSounding  = graph->arpSounding;
-                fresh->arpStarting  = graph->arpStarting;
+                fresh->refreshValues();
+                for( int n = 0; n < 128; ++n )
+                    if( graph->inputHeld[(size_t)n] > 0.f ) fresh->startNote( n, graph->inputHeld[(size_t)n], g );
+                graph->releaseAll();
             }
+            oldPrevious = std::move( previousGraph );
+            previousGraph = std::move( graph );
             std::swap( graph, fresh );
+            crossfadeLength = juce::jmax( 1, (int)( sampleRate.load() * 0.02 ) );
+            crossfadeRemaining = previousGraph ? crossfadeLength : 0;
+            break;
         }
         ++buildCount;
-        // `fresh` now holds the old graph and is freed here, off the audio thread.
+        // Any older crossfade graph is freed here, off the audio thread.
     }
 
     int ModularEngine::getNumActiveVoices()

@@ -65,6 +65,8 @@ namespace mt
 
         juce::SpinLock         graphLock; // audio thread vs. graph swaps and prepare()
         std::unique_ptr<Graph> graph;
+        std::unique_ptr<Graph> previousGraph; // destroyed only by the editing thread
+        int crossfadeRemaining{ 0 }, crossfadeLength{ 1 };
         std::atomic<double>    sampleRate{ 48000 };
         int                    buildCount{ 0 };
 
