@@ -54,7 +54,7 @@ users can add their own or port a DAW.
 
 | Layer | What it is | Owns |
 | --- | --- | --- |
-| 1. Hardware services | Platform | Audio I/O, panel, pads and LEDs, display, MIDI ports (several DIN ports, USB device and host), CV/Gate with calibration, clock and sync I/O, storage, network |
+| 1. Hardware services | Platform | Audio I/O (built-in, and USB audio in both directions), panel, pads, jog wheels and LEDs, display, MIDI ports (several DIN ports, USB device and host), CV/Gate with calibration, clock and sync I/O, storage, network |
 | 2. Host core | Platform | Graph, plugin hosting, transport and clock sync, sample-accurate event routing, stable addressing of every node parameter, bus recording, scene and mute snapshots, the project container |
 | 3. Event sources and processors | Plugins, official and community | Sequencers, arpeggiators, loopers, splits and zones, chord and generative tools |
 | 4. Engines and effects | Plugins, official and community | Synths, samplers (including slicing and pad banks), drum engines, effects |
@@ -239,6 +239,75 @@ worker outside the audio path, restore its state, reconnect it at an audio bound
 fade it in. The output core never waits for a failed worker; it mutes or bypasses the
 affected node. Retries are bounded. Restarting may lose held voices and tails: the promise
 is that the sound comes back automatically, not that recovery is inaudible.
+
+### USB audio and MIDI, both ways
+
+Every device can be both a USB device and a USB host, where its hardware allows (the
+i.MX8M Mini and the RK3588 both have the USB controllers for it):
+
+- **As a USB device**, plugged into a computer: a class-compliant audio interface (several
+  channels each way) and MIDI device, so a computer can play through it, record it, or
+  control it, with no driver needed. Linux provides this through USB gadget functions.
+- **As a USB host:** class-compliant audio interfaces, MIDI controllers and keyboards
+  plugged into it.
+- **Clocks:** a USB link runs on its own clock, so the audio crossing it is resampled
+  continuously and adaptively to stay in step with the device's audio clock, without drift
+  or clicks; the device reports to a computer as the clock master where it can.
+
+## DJ devices
+
+A DJ deck or all-in-one DJ system needs no synth engines, but the same core runs it:
+decks, the mixer and DJ effects are plugins in the graph; jog wheels, platters and the
+mixer section come through hardware services; the UI is a layout and a UI process like any
+other; music on USB sticks is another library source, with cue points and beat grids as
+metadata. A device profile without synth engines is just a smaller set of built-in
+plugins. What it needs beyond the rest of this document:
+
+- **Several clocks.** Each deck has its own tempo and beat position, and one deck (or the
+  master tempo) is the master the others sync to. The transport can follow a node, so the
+  master deck drives it the way an external MIDI clock does; tempo-synced effects, Ableton
+  Link and MIDI clock out then follow the master.
+- **Fast, fine-grained jog input.** Scratching needs platter movement and touch at the deck
+  plugin within a few milliseconds, placed at its sample, at higher rate and resolution
+  than MIDI. Jog events take the same direct path into the graph as played MIDI (never the
+  control API), as an Oscairn event type.
+- **Playing long audio files:** a player plugin that streams tracks from storage with
+  read-ahead and seeks instantly; decoders for WAV, AIFF, FLAC, MP3 and AAC;
+  time-stretching for key lock (for example Signalsmith Stretch, MIT, or Rubber Band,
+  GPL-2.0-or-later); file access through the host's asset extension, as for samplers.
+- **Track analysis:** BPM, beat grid, key and waveform overviews, worked out in the
+  background and kept in the library index.
+- **A DJ mixer's outputs:** main, booth and headphone cue (pre-fader listening, and split
+  cue), so the graph needs several outputs and cue buses.
+- **Waveforms on screen:** scrolling waveforms for several decks at 60 frames a second, which
+  need the control API's shared-memory streams.
+- **Mix recording**, through the core's bus recording.
+
+### Working with DJ software on a computer
+
+DJ software divides the work with hardware in one of three ways, and a deck should offer
+all of them:
+
+| Mode | The computer does | The deck does |
+| --- | --- | --- |
+| Controller with an audio interface | Playback, time-stretching, mixing, EQ, effects, waveforms | Sends jog wheels, faders and buttons (USB MIDI, or HID where high-resolution jog wheels need it); plays the computer's audio on its main and headphone outputs; records its own inputs to the computer |
+| External mixer | Playback and per-deck effects, each deck sent as its own stereo channel | Mixing, EQ, filters, master effects and cueing, in its own graph |
+| Standalone | Nothing (it may prepare the library) | Everything |
+
+- **Mappings for DJ software that accepts them:** Mixxx (open source) first, then Traktor and
+  VirtualDJ, which accept mappings for any controller. Mappings are files, shipped as
+  packages.
+- **Serato and rekordbox** work only with hardware the software's vendor has certified; that
+  is an arrangement between the vendor and the manufacturer.
+- **USB sticks DJs already carry:** reading the libraries exported by rekordbox, Serato and
+  Engine DJ (cue points, beat grids, playlists) would make a deck useful at once. These
+  formats are not officially documented; rekordbox's has been worked out publicly.
+- **Sync with other players** on a network (Pro DJ Link, also worked out publicly) needs the
+  network permission.
+
+Open question: if a DJ software vendor's certification requires the device to prove its
+identity with a secret, that conflicts with the platform's no-copy-protection rule and
+needs a decision when it comes up.
 
 ## Latency
 

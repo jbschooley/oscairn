@@ -76,6 +76,13 @@ new core, from a UI that talks to it only through the control API.
   ports (5 DIN pairs, USB device and USB host), CV/Gate with calibration, sync in and out,
   MIDI Machine Control, and sequencers that drive external instruments as well as internal
   engines.
+- A DJ deck, once Behringer publishes its details (it has been teased; nothing is public
+  yet): several clocks with decks as the master, high-resolution jog input, a track player
+  with key lock, track analysis, DJ mixer outputs and cue, waveform streams, and the three
+  ways of working with DJ software on a computer (see
+  [architecture](architecture.md#dj-devices)).
+- USB audio and MIDI in both directions, as a USB device to a computer and as a host for
+  interfaces and controllers, on every device whose hardware allows it.
 - An RK3588 board, once the target hardware is known: real-time kernel, audio on isolated
   cores, measured latency.
 
