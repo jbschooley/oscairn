@@ -3,7 +3,7 @@
 // Oscairn standalone: the demo instrument in a desktop window, with a choice of panel
 // layouts (View menu, or --layout NAME|FILE.json). Every MIDI input plays it.
 //
-//   oscairn-standalone [--layout desktop|kick|kick-screen|keys49|path.json] [--plugins DIR]
+//   oscairn-standalone [--layout desktop|kick|kick-screen|ignite|keys49|path.json] [--plugins DIR]
 //                      [--fullscreen] [--play] [--snapshot out.png [--size WxH] [--play SECONDS]]
 //
 // --fullscreen fills the display with no title bar (for a device). --play starts the
@@ -42,7 +42,7 @@ namespace oscairn::standalone
                     layouts.push_back( { file.upToLastOccurrenceOf( ".json", false, false ), juce::String::fromUTF8( data, size ) } );
             }
             // A fixed order for the menu.
-            const juce::StringArray order{ "desktop", "kick", "kick-screen", "keys49" };
+            const juce::StringArray order{ "desktop", "kick", "kick-screen", "ignite", "keys49" };
             std::sort( layouts.begin(), layouts.end(), [&]( const NamedLayout& a, const NamedLayout& b ) {
                 return order.indexOf( a.name ) < order.indexOf( b.name );
             } );

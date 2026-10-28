@@ -17,6 +17,7 @@ juce_add_binary_data(oscairn_standalone_layouts SOURCES
     layouts/desktop.json
     layouts/kick.json
     layouts/kick-screen.json
+    layouts/ignite.json
     layouts/keys49.json)
 
 target_sources(oscairn_standalone PRIVATE Main.cpp Engine.cpp Layout.cpp Panel.cpp Screen.cpp)
