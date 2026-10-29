@@ -165,6 +165,58 @@ or as a surprise when a performer starts playback. A Linux-default export may th
 complete offline for its advertised hardware profiles while requiring downloads on a Mac/PC;
 that distinction is part of the export/import status, not an error in the default policy.
 
+## Repairing missing dependencies on offline instruments
+
+Offline means the instrument cannot fetch files itself, not that removed packages are
+irrecoverable. Importing any trusted bundle containing the exact required target artifacts
+and dependencies can satisfy existing unavailable Sounds, Performances, Setlists and apps.
+Reuse the normal verified store/import transaction, then recheck affected dependents; do not
+require reimporting their documents or overwrite newer musical edits with an older bundle's
+state. A dependency-only repair is distinct from choosing to import/update musical documents.
+Successful repair restores eligibility after validation, not automatic live activation.
+
+Offer **Repair missing content** from unavailable items and Installed content. The musician
+can repair selected items or all known missing dependencies on that device through:
+
+1. **An existing package or backup:** inspect local/removable-media bundles and reuse exact
+   matching artifacts, including shared libraries/assets and selected hardware backends.
+2. **A request carried to a computer:** export a small **Missing content request** to USB.
+   It records schema/request identity, target profile revision and relevant device capabilities,
+   selected document/lock revisions, exact package/artifact/asset identities and hashes,
+   dependency metadata and configured source identities. It need not include recordings,
+   patch state or private song names. Include the locked dependency graph so the computer
+   can collect transitive requirements, not merely the named top-level plugins.
+3. **A USB-connected computer:** where a compatible data connection and companion transport
+   exist, let the desktop read the request/inventory, acquire missing content and send the
+   repair bundle back. An audio/MIDI-only USB connection does not imply file-transfer support.
+   Use the same request, resolution and import operations as the USB-drive workflow; the
+   computer is the downloader, so the instrument itself needs no Internet connection.
+
+The desktop opens the request and offers **Collect for instrument**. First reuse its own
+verified store/backups, then obtain exact artifacts from configured authenticated sources
+when enabled. Resolve for the instrument, not the computer's OS. Produce a normal portable
+repair bundle containing the missing dependency closure plus a fulfilled/unresolved report;
+no separate package format or installer is needed beyond the request/report metadata.
+Existing target content may be omitted using the request's inventory, but record that
+assumption. A complete offline backup can instead include the full selected closure.
+
+On return, the instrument verifies hashes, provenance, target compatibility and current
+dependencies before staging installation. Recompute remaining requirements because the
+library, firmware or installed content may have changed since the request was made. Show
+partial completion honestly and allow a refreshed request; never upgrade versions or fill
+gaps with different sounds. Interrupted transfers can be retried, and repeated imports are
+idempotent. Existing working performances remain intact throughout repair. Request files
+are data, not authority to execute commands, add arbitrary sources or run vendor installers;
+the normal import/trust and external-plugin rules still apply.
+
+Removal should explain these repair routes and offer export/backup before reclaiming files.
+A verified retained copy on a computer or removable media provides recovery even when a
+publisher later removes a download; deleting an instrument's copy does not delete that backup.
+Distinguish **available in a verified backup**, **currently downloadable** and **no known
+source**. Revalidate sources when repairing. No workflow can retrieve an exact artifact or
+user asset that no longer exists in any accessible source; report that specific gap rather
+than treating offline operation itself as the problem.
+
 ## Preparing for several performance devices
 
 The musician prepares a Sound, Performance or Setlist for named instruments, not backend
@@ -350,8 +402,8 @@ Provide **Settings > Installed content** per device for managed plugins, apps an
   and retained revisions; also allow inspection from a document to its dependencies.
 - Import/export selected packages with their required dependency closure and target options;
   export reports unavailable artifacts and external transfer restrictions as usual.
-- Offer **Keep installed**, reinstall, remove selected items and **Remove all unused**, with
-  a preview of the exact versions/content affected. Retention and version-update policy are
+- Offer **Keep installed**, reinstall/**Repair missing content**, remove selected items and
+  **Remove all unused**, with a preview of the exact versions/content affected. Retention and version-update policy are
   distinct: keeping an engine for future use does not request an upgrade.
 - Hide implementation libraries in the default list, with **Show shared dependencies** to
   reveal who installed/requires them. Manually installed apps/plugins default to retained;
@@ -393,7 +445,8 @@ mutable app data. Uninstalling an app/plugin does not delete user data. Shared d
 still referenced by other retained packages remain installed. Recompute reachability before
 committing a removal to handle concurrent saves/imports; journal/stage metadata changes for
 crash recovery. Cleanup is control/storage work, not audio-callback work. Missing packages
-retain reinstall identity, but future download availability is not guaranteed.
+retain reinstall identity and offer the [offline repair workflow](#repairing-missing-dependencies-on-offline-instruments);
+show known backup/download sources rather than assuming offline content cannot be restored.
 
 ### Package-manager prior art and reuse
 
@@ -665,7 +718,9 @@ those workers exist.
    online catalog required. Test cache removal without losing pinned offline installations
    and two projects sharing a release while another pins an older one. Include basic Used by,
    grouped cleanup prompts, per-device retention settings and safe removal/reinstall; deletion
-   safety is part of this slice, not later UI polish. Avoid inventing another plugin ABI.
+   safety is part of this slice, not later UI polish. Prove dependency-only repair from an
+   existing bundle and an exported missing-content request fulfilled from a computer's local
+   repository, preserving newer document edits. Avoid inventing another plugin ABI.
 3. **Cross-platform proof:** first-party engine/state tests on supported macOS, Windows and
    Buildroot Linux builds as those hosts exist. Test Linux ARM64 through available QEMU
    coverage initially and real hardware when available; test a clean runtime image without
@@ -681,8 +736,9 @@ those workers exist.
    store without assuming the DAW understands package locks.
 6. **Distribution/UI polish:** published profile/package catalogs, multi-device preparation
    matrix, paired-device deltas, advanced storage views, migration tools and optional rendered
-   alternatives use the same manifest and lock. Prove revision-aware round trips before
-   advertising automatic device synchronization.
+   alternatives use the same manifest and lock. Add online acquisition for offline requests
+   and USB companion repair using the same bundle/import path. Prove revision-aware round
+   trips before advertising automatic device synchronization.
 
 Also test multiple devices using shared and distinct revisions; offline/stale/modified device
 profiles; conflicting edits and repeated imports; hardware-only mode transfer and stale
@@ -690,7 +746,11 @@ converted state; removal of a setlist without deleting saved sounds; both cleanu
 manually retained and shared dependencies; retained history and offline-library pins; batch
 reclaimable sizes; deliberate used-package removal/reinstall with intact state; active-resource
 refusal; and interrupted/concurrent cleanup versus import/save. Unknown external usage must
-not be presented as proven unused.
+not be presented as proven unused. Repair tests cover transitive missing dependencies,
+instrument-target artifacts collected on another OS, shared-store reuse, newer document edits,
+stale device/inventory requests, partial/unavailable downloads, tampered bundles, interrupted
+USB transfers and repeated imports. Test backup recovery without a catalog and revalidation
+before readiness; neither repair completion nor reconnecting a computer activates a live change.
 
 Required tests include Linux-default export on a Mac/PC without desktop binaries; advanced
 multi-target export that installs only destination artifacts on hardware; exact-release

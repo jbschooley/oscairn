@@ -180,6 +180,9 @@ a DAW plugin; and:
   unused-content prompts, per-device Keep installed policy and safe removal/reinstall in
   the first package slice. Track retained history, shared dependencies and live resources;
   preserve user data and unavailable-node state when a used package is deliberately removed.
+  Prove dependency-only repair from existing bundles and offline missing-content requests
+  fulfilled by a computer, without reverting musical edits. Later add catalog acquisition
+  and USB companion transfer through the same repair/import path, with stale-request checks.
   Storage deduplication and RAM sharing have separate contracts. Prove state portability across supported CPU/OS/runtime profiles, then broaden
   to LV2, external installations and AU/VST3 alongside their adapters; cross-format state
   conversion requires tested mappings. Baseline profiles identify what may be omitted from

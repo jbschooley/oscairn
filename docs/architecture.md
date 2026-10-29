@@ -769,6 +769,14 @@ resources protect dependencies; intentional removal of a used package warns abou
 documents and preserves their state for reinstall. User recordings/presets survive uninstall.
 See [removal rules and package-manager prior art](rfcs/0006-packages-and-portability.md#installed-content-and-removal).
 
+Missing content can be restored from any compatible verified bundle without replacing saved
+musical edits. Offline instruments export a Missing content request; a computer collects the
+exact target packages/assets from its store or configured sources and returns a repair bundle.
+A supported USB companion connection automates the same exchange. Revalidate the current
+device and affected documents before marking them ready; never activate repairs mid-show.
+Offer backup before removal and distinguish backup availability from download availability.
+See [offline repair](rfcs/0006-packages-and-portability.md#repairing-missing-dependencies-on-offline-instruments).
+
 **Oscairn-native** identifies a tested portability contract: declared dependencies, stable
 engine/state/assets, builds for advertised profiles and normal operation in other hosts.
 It is open to third-party authors and is independent of file format. **External** plugins
