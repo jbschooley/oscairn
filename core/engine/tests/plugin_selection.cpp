@@ -3,6 +3,7 @@
 #include "oscairn/discovery.h"
 #include "AllocationGuard.h"
 #include <array>
+#include <algorithm>
 #include <iostream>
 #include <cmath>
 using namespace oscairn;

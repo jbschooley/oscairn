@@ -131,6 +131,7 @@ void Theme::drawRotarySlider(juce::Graphics& g,int x,int y,int width,int height,
     const auto bounds=juce::Rectangle<int>(x,y,width,height).toFloat().reduced(4);const auto radius=std::min(bounds.getWidth(),bounds.getHeight())/2,centreX=bounds.getCentreX(),centreY=bounds.getCentreY();
     const int on=slider.isEnabled()?juce::roundToInt(position*16):0;
     for(int i=0;i<16;++i){const auto at=juce::Point<float>(centreX,centreY).getPointOnCircumference(radius*.9f,start+(end-start)*(i+.5f)/16);g.setColour(ink(i<on?Ink::Accent:Ink::Border));g.fillEllipse(juce::Rectangle<float>(radius*.14f,radius*.14f).withCentre(at));}
-    g.setColour(ink(Ink::Surface));g.fillEllipse(bounds.reduced(radius*.3f));g.setColour(ink(Ink::Border));g.drawEllipse(bounds.reduced(radius*.3f),radius*.05f);
+    const auto knob=juce::Rectangle<float>(radius*1.4f,radius*1.4f).withCentre({centreX,centreY});
+    g.setColour(ink(Ink::Surface));g.fillEllipse(knob);g.setColour(ink(Ink::Border));g.drawEllipse(knob,radius*.05f);
 }
 }
