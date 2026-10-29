@@ -232,7 +232,9 @@ recovery. **In-place restore is not seamless sound switching.** Prepare state on
 instance while the old one renders; switching new-note routing, retaining note ownership,
 and retiring old voices/tails still require the planned context/instance-pool layer.
 Neither plugin format guarantees multitimbrality. Native Oscairn instruments are required
-to support concurrent sound contexts; the current basic synth does not yet do so.
+to support concurrent sound contexts; the Basic Synth now implements the native interface
+([RFC 0005](../../docs/rfcs/0005-sound-contexts.md)). Ordinary LV2 instances still require
+the planned prepared-instance pool and note-ownership router.
 See the [persistent-engine design](../../docs/architecture.md#persistent-engines-and-fast-sound-switching).
 
 ## Not implemented yet

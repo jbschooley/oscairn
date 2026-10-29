@@ -6,7 +6,8 @@ Programs built on the core: a file renderer, a live audio/MIDI engine and a desk
 - `audio/`: shared JUCE 9 audio/MIDI adapter. It opens the default audio output and all
   MIDI inputs, converts arrival timestamps, and services the JUCE-free core `Session`.
   The demo graph is the sequencer and pads playing the basic synth through the delay.
-  MIDI notes, polyphonic/channel pressure and optional MIDI clock enter here.
+  MIDI notes, polyphonic/channel pressure, sustain (CC64), emergency releases (CC120/123)
+  and optional MIDI clock enter here.
 - `engine/`: `oscairn-engine`, a console process that owns that audio/MIDI adapter and a
   local JSON-RPC server. No JUCE GUI modules are linked. Closing a connected controller
   does not close the audio engine or reset its transport/held notes.

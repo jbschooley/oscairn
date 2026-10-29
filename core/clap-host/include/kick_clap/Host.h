@@ -2,6 +2,7 @@
 #pragma once
 
 #include <clap/clap.h>
+#include <oscairn-clap/sound-contexts.h>
 #include <array>
 #include <cstdint>
 #include <cstring>
@@ -61,6 +62,8 @@ struct Statistics {
 // Control API belongs to ONE main/UI thread. process(), enqueue() and atomic
 // telemetry are the only cross-thread API. Control operations exclude rendering
 // with a gate: the callback NEVER waits and returns silence during a change.
+// Native sound-context operations instead use the extension's concurrent contract;
+// preparing/selecting an unused context does not gate the playing instance.
 // CLAP permits the exclusively held main thread to act as the symbolic audio
 // thread for stop/reset/flush; thread-check reports this scope accurately.
 class Host {
@@ -87,6 +90,11 @@ public:
     bool saveState(std::vector<uint8_t>& destination);
     bool loadState(const std::vector<uint8_t>& source);
     bool supportsState() const noexcept;
+    uint32_t soundContextCapacity() const noexcept;
+    std::vector<oscairn_sound_context_info_t> soundContexts() const;
+    uint32_t prepareSound(const std::string& name,const std::vector<oscairn_sound_parameter_t>& parameters);
+    bool selectSound(uint32_t id,int16_t channel=-1);
+    bool discardSound(uint32_t id);
     bool loaded() const noexcept;
     bool faulted() const noexcept;
     const std::string& error() const noexcept;

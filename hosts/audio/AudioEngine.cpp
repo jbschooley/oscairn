@@ -105,7 +105,7 @@ namespace oscairn::host
 
     void AudioEngine::handleIncomingMidiMessage( juce::MidiInput*, const juce::MidiMessage& message )
     {
-        if( message.isNoteOnOrOff() || message.isAftertouch() || message.isChannelPressure() || message.isMidiClock() || message.isMidiStart() || message.isMidiContinue() || message.isMidiStop()
+        if( message.isNoteOnOrOff() || (message.isController() && (message.getControllerNumber()==64 || message.getControllerNumber()==120 || message.getControllerNumber()==123)) || message.isAftertouch() || message.isChannelPressure() || message.isMidiClock() || message.isMidiStart() || message.isMidiContinue() || message.isMidiStop()
             || message.isSongPositionPointer() )
             push( message );
     }

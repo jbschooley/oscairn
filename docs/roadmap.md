@@ -80,12 +80,15 @@ Done:
   sidechains and gain-controlled sums; typed/JSON/remote routing, desktop device-channel
   mapping and availability reporting. Independent master/cue/record buses and mixed
   CLAP/LV2 routing are tested; the desktop's default stereo workflow is preserved.
+- initial native sound contexts in the Basic Synth: prepared patches, independent channel
+  selection, held-voice preservation, note-ID/FIFO ownership, sustain and safe retirement;
+  typed/JSON/remote controls and concurrent reference-audio tests ([RFC 0005](rfcs/0005-sound-contexts.md)).
 
 To do:
 
 - tracks, patterns, swing and more lanes in the sequencer;
-- native multitimbral sound contexts, prepared-instance switching for third-party plugins,
-  note ownership across transitions and preservation of held voices/effect tails;
+- prepared-instance switching and note ownership for third-party plugins; native effect
+  contexts/tails, asset-bearing patches, persistence and a desktop sound picker;
 - expose plugin state/presets and patch properties through the control API, then plugin
   discovery and selection in the desktop; custom UIs and other extensions follow
   ([current scope](../core/lv2-host/README.md));

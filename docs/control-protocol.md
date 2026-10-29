@@ -345,3 +345,42 @@ binding and skips with code 77 only for `LocalServer::BindError` with EPERM/EACC
 in directory access, chmod, listen or later operations fail normally. CI sets
 `OSCAIRN_REQUIRE_SOCKET_BIND=1` so that denial fails the test. These tests do not replace
 a live-device listening test or a crash/reopen test of the actual desktop GUI.
+
+## Prepared native sounds
+
+Capability methods `sounds.get`, `sounds.prepare`, `sounds.select`, and `sounds.discard`
+expose native concurrent sound contexts ([RFC 0005](rfcs/0005-sound-contexts.md)). They
+belong to the control thread, independently of staged graph edits. The current Basic
+Synth implements them; other plugins report capacity zero unless they implement the
+native extension. These operations do not restore state into a playing instance.
+
+| Method | Parameters | Result |
+| --- | --- | --- |
+| `sounds.get` | `node` | `capacity`, `contexts` |
+| `sounds.prepare` | `node`, `name`, `parameters: [{id, value}, ...]` | `context` ID |
+| `sounds.select` | `node`, `context`, optional `channel` (-1 for all, or 0..15) | `accepted: true` |
+| `sounds.discard` | `node`, `context` | `accepted: true` |
+
+Each context reports `id`, `name`, `selectedChannels` (16-bit mask), `activeVoices`, and
+`idle`. Fields are independent telemetry snapshots. A selection takes effect at the next
+plugin processing boundary, before notes and parameter edits in that call. Held notes
+retain their original context. `accepted` acknowledges enqueueing; poll `sounds.get` for
+the applied selection. There is no context notification topic yet.
+
+A patch starts from plugin defaults, with up to 128 supplied numeric parameters; an empty
+array selects defaults. Names are at most 63 UTF-8 bytes. Invalid or duplicate parameters
+reject the entire patch. Preparation returns `-32005` if capacity is exhausted; selection
+or discard returns `-32005` for an unknown/busy context or full selection queue. Invalid
+arguments and unsupported native contexts return `-32602`. Discard refuses selected,
+queued, sounding or tailing contexts. The Basic Synth's Default context (ID 0) is protected.
+
+For example, prepare a darker patch and select it for new notes while old notes continue:
+
+```json
+{"jsonrpc":"2.0","id":1,"method":"sounds.prepare","params":{"node":"synth","name":"Dark","parameters":[{"id":1,"value":0.1},{"id":2,"value":0.6}]}}
+```
+
+Use the returned `context` in `sounds.select`. This is a transient prepared patch, not a
+saved preset file. Context IDs are unique within that instance and become invalid after
+unload. Third-party prepared-instance switching, effect-context changes, persistent
+presets and the desktop sound picker are separate follow-up work.

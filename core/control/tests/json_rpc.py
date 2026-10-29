@@ -37,6 +37,22 @@ try:
     assert hello['protocolVersion'] == 1 and 'notes.send' in hello['capabilities']
     assert 'graph.add' in hello['capabilities'] and 'subscribe' in hello['capabilities']
     assert 'session.status' in hello['capabilities'] and 'graph.audio-routing' in hello['capabilities']
+    assert 'sounds.prepare' in hello['capabilities']
+    sounds = rpc('sounds.get', {'node':'synth'})['result']
+    assert sounds['capacity'] == 8 and sounds['contexts'][0]['id'] == 0
+    prepared = rpc('sounds.prepare', {'node':'synth','name':'Dark','parameters':[{'id':1,'value':.1}]})['result']['context']
+    error(rpc('sounds.prepare', {'node':'synth','name':'Bad','parameters':[{'id':999,'value':.1}]}), -32602)
+    error(rpc('sounds.prepare', {'node':'synth','name':'Bad','parameters':[{'id':1,'value':.1},{'id':1,'value':.2}]}), -32602)
+    error(rpc('sounds.select', {'node':'synth','context':prepared,'channel':16}), -32602)
+    assert rpc('sounds.select', {'node':'synth','context':prepared})['result']['accepted']
+    error(rpc('sounds.discard', {'node':'synth','context':prepared}), -32005)
+    raw('!render')
+    active = next(c for c in rpc('sounds.get', {'node':'synth'})['result']['contexts'] if c['id']==prepared)
+    assert active['selectedChannels']==65535 and not active['idle']
+    assert rpc('sounds.select', {'node':'synth','context':0})['result']['accepted']
+    raw('!render')
+    assert rpc('sounds.discard', {'node':'synth','context':prepared})['result']['accepted']
+    error(rpc('sounds.select', {'node':'synth','context':prepared}), -32005)
     status = rpc('session.status')['result']
     assert status == {'audioDevice': '', 'midiInputs': [], 'sampleRate': 48000,
                       'bufferSize': 512, 'cpuLoad': 0, 'deadlineMisses': 0, 'graphEventDrops': 0, 'audioReady': True, 'audioInputs': [], 'audioOutputs': []}, status

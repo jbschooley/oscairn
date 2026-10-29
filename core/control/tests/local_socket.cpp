@@ -267,6 +267,23 @@ namespace
         for(int i=0;i<10;++i)f.tick();
         check(f.left[0]>.62f,"typed remote client exit leaves audio running");
     }
+    void soundClient(const char* plugin)
+    {
+        Fixture f(plugin);auto fd=pair();f.server.adopt(fd[0]);
+        clientWhileRendering(f,[&]{
+            LocalClient client;client.adopt(fd[1]);RemoteControl remote(client);
+            const auto node=remote.nodeId("synth");check(remote.sounds(node).capacity==8,"native capacity crosses socket");
+            const auto id=remote.prepareSound(node,"Remote dark",{{1,.1},{2,.3}});
+            check(remote.selectSound(node,id,2),"remote channel selection accepted");
+            bool selected=false;
+            for(int i=0;i<20 && !selected;++i)for(const auto& c:remote.sounds(node).contexts)if(c.id==id)selected=c.selectedChannels==4 && c.name=="Remote dark";
+            check(selected && !remote.discardSound(node,id),"remote selection and busy retirement");
+            check(remote.selectSound(node,0,2),"remote switch back");bool retired=false;
+            for(int i=0;i<20 && !retired;++i)retired=remote.discardSound(node,id);
+            check(retired,"remote retires silent outgoing context");
+            const auto defaults=remote.prepareSound(node,"Defaults",{});check(remote.discardSound(node,defaults),"empty patch uses defaults");
+        });
+    }
     void pathPolicy(const char* plugin)
     {
         TemporaryDirectory directory;Fixture f(plugin);
@@ -337,6 +354,7 @@ int main(int argc,char** argv)
             remote.setParameter(remote.nodeId("synth"),1,.83);remote.note(true,60,1);remote.setPlaying(true);
             for(;;)::pause(); // parent deliberately kills this process
         }
+        if(argc==3 && std::string_view(argv[2])=="--sounds"){soundClient(argv[1]);return 0;}
         if(argc==3 && std::string_view(argv[2])=="--path-policy"){pathPolicy(argv[1]);return 0;}
         if(argc==3 && std::string_view(argv[2])=="--named")return named(argv[1],argv[0]);
         if(argc!=2)return 2;

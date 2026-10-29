@@ -119,6 +119,7 @@ struct Host::Impl {
     const clap_plugin_t* plugin = nullptr;
     const clap_plugin_params_t* params = nullptr;
     const clap_plugin_state_t* state = nullptr;
+    const oscairn_plugin_sound_contexts_t* sounds = nullptr;
     const clap_plugin_latency_t* pluginLatency = nullptr;
     const clap_plugin_timer_support_t* timerSupport = nullptr;
     const clap_plugin_posix_fd_support_t* fdSupport = nullptr;
@@ -289,7 +290,7 @@ struct Host::Impl {
         audioLayoutLocked=false;
         loaded.store(false);
         if (plugin) { deactivate(); if (plugin->destroy) plugin->destroy(plugin); }
-        plugin = nullptr; params = nullptr; state = nullptr; pluginLatency = nullptr;
+        plugin = nullptr; params = nullptr; state = nullptr; sounds = nullptr; pluginLatency = nullptr;
         timerSupport = nullptr; fdSupport = nullptr;
         timers.clear(); fds.clear();
         paramInfo.clear(); paramValues.reset(); cookies.clear(); inputs.clear(); outputs.clear(); noteInputs.clear(); noteOutputs.clear();
@@ -557,6 +558,9 @@ bool Host::load(const Descriptor& descriptor, double sampleRate, uint32_t frames
         s.params = static_cast<const clap_plugin_params_t*>(s.plugin->get_extension(s.plugin, CLAP_EXT_PARAMS));
         if (s.params && (!s.params->count || !s.params->get_info || !s.params->get_value || !s.params->flush))
             throw std::runtime_error("Incomplete CLAP parameter interface");
+        s.sounds = static_cast<const oscairn_plugin_sound_contexts_t*>(s.plugin->get_extension(s.plugin,OSCAIRN_EXT_SOUND_CONTEXTS));
+        if(s.sounds && (!s.sounds->capacity || !s.sounds->get || !s.sounds->prepare || !s.sounds->select || !s.sounds->discard || s.sounds->capacity(s.plugin)>256))
+            throw std::runtime_error("Invalid sound-context interface");
         s.state = static_cast<const clap_plugin_state_t*>(s.plugin->get_extension(s.plugin, CLAP_EXT_STATE));
         s.pluginLatency = static_cast<const clap_plugin_latency_t*>(s.plugin->get_extension(s.plugin, CLAP_EXT_LATENCY));
         s.timerSupport = static_cast<const clap_plugin_timer_support_t*>(s.plugin->get_extension(s.plugin, CLAP_EXT_TIMER_SUPPORT));
@@ -885,4 +889,35 @@ bool Host::process(const float* const* input, uint32_t ni, float* const* output,
         return true;
     } catch (...) { s.failed.store(true); s.errors.fetch_add(1); silence(); return false; }
 }
+uint32_t Host::soundContextCapacity() const noexcept {return impl->sounds?impl->sounds->capacity(impl->plugin):0;}
+std::vector<oscairn_sound_context_info_t> Host::soundContexts() const {
+    std::vector<oscairn_sound_context_info_t> result;
+    for(uint32_t i=0;i<soundContextCapacity();++i){oscairn_sound_context_info_t info{};if(impl->sounds->get(impl->plugin,i,&info)){info.name[63]=0;result.push_back(info);}}
+    return result;
+}
+uint32_t Host::prepareSound(const std::string& name,const std::vector<oscairn_sound_parameter_t>& parameters) {
+    if(!impl->sounds)throw std::invalid_argument("Plugin has no native sound contexts");
+    if(name.size()>63 || name.find('\0')!=std::string::npos || parameters.size()>128)throw std::invalid_argument("Invalid sound patch");
+    for(size_t i=0;i<parameters.size();++i){const auto& v=parameters[i];
+        const auto p=std::find_if(impl->paramInfo.begin(),impl->paramInfo.end(),[&](const auto& p){return p.id==v.id;});
+        if(p==impl->paramInfo.end() || (p->flags&CLAP_PARAM_IS_READONLY) || !std::isfinite(v.value) || v.value<p->minimum || v.value>p->maximum)
+            throw std::invalid_argument("Invalid sound parameter");
+        for(size_t j=0;j<i;++j)if(parameters[j].id==v.id)throw std::invalid_argument("Duplicate sound parameter");
+    }
+    const auto id=impl->sounds->prepare(impl->plugin,name.c_str(),parameters.data(),static_cast<uint32_t>(parameters.size()));
+    if(id==CLAP_INVALID_ID)throw std::runtime_error("Sound preparation rejected: invalid patch or context capacity exhausted");
+    return id;
+}
+bool Host::selectSound(uint32_t id,int16_t channel) {
+    if(channel < -1 || channel>15)throw std::invalid_argument("Invalid sound channel");
+    if(!impl->sounds)throw std::invalid_argument("Plugin has no native sound contexts");
+    const bool accepted=impl->sounds->select(impl->plugin,id,channel);
+    if(accepted)impl->wake.store(true);
+    return accepted;
+}
+bool Host::discardSound(uint32_t id) {
+    if(!impl->sounds)throw std::invalid_argument("Plugin has no native sound contexts");
+    return impl->sounds->discard(impl->plugin,id);
+}
+
 } // namespace kick::clap
