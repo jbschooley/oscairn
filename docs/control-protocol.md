@@ -513,3 +513,16 @@ stereo ports with matching IDs). Voices capture the bus at note-on through susta
 changing sounds or Output bus cannot move held notes. Routed voices are excluded from Main.
 Buses are permanent destinations, not sound-context IDs; assigning two sounds to one bus
 intentionally combines them before the effects. Allocate different buses for different chains.
+
+## Performance persistence
+
+`performance.save` and `performance.load` take `{"directory":"/path/to/performance"}`;
+returns are `{"saved":true}` and `{"loaded":true}`. Both are advertised by `session.hello`.
+Files use the [Performance version 1 format/schema](performance-format.md). Saving refuses
+existing directories and staged graph edits. Loading validates a complete replacement;
+a load failure leaves the playing graph intact. Successful publication emits a graph resync,
+invalidates old node/context references, and starts stopped at beat zero on adoption.
+The current note/tail audio is not saved. Resource/state/format failures use `-32005`;
+malformed RPC arguments use `-32602`. These control-thread calls can take time; remote
+wrappers allow 30 seconds, and callers must reread the graph after a timeout before retrying
+because a disconnected request is not cancellation. The app runs them on its control worker.

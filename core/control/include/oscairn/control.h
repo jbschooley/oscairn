@@ -64,8 +64,11 @@ namespace oscairn
         };
         struct Changes { uint64_t latest = 0; bool lost = false; std::vector<Change> events; };
 
-        // Control thread, engine-local paths. Export creates a NEW portable directory;
-        // pooled instruments export the selected channel-0 instance.
+        // Control thread, engine-local paths. Performance save includes all prepared sounds
+        // in a NEW folder; load validates before replacing the current graph.
+        virtual void savePerformance(const std::string& directory) = 0;
+        virtual void loadPerformance(const std::string& directory) = 0;
+        // Per-node export saves the selected channel-0 instance of a hosted pool.
         virtual bool supportsState(NodeId node) const = 0;
         virtual void saveState(NodeId node,const std::string& directory) = 0;
         virtual std::vector<PresetInfo> presets(NodeId node) = 0;

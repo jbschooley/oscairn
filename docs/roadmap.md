@@ -77,7 +77,7 @@ Done:
 - shared CLAP/LV2 plugin state API; LV2 default/bundle presets, portable mapped sample
   assets and bounded patch properties, with upstream sampler and production samplv1 tests.
   State export, preset enumeration and typed patch properties now also have typed/JSON/remote
-  controls; confirmed readback and state round trips are tested. Project persistence remains below.
+  controls; confirmed readback and state round trips are tested. Performance persistence is implemented below.
 - explicit graph audio ports/channel ranges, external inputs, independent outputs,
   sidechains and gain-controlled sums; typed/JSON/remote routing, desktop device-channel
   mapping and availability reporting. Independent master/cue/record buses and mixed
@@ -101,7 +101,7 @@ Done:
   render regression covers sequencer playback followed by pads.
   Basic Synth contexts also own oscillator mode, saw detune and pitch LFO settings;
   detuned-saw and square-vibrato sounds overlap and play as independent channel parts.
-  In-process diagnostics disable preparation; project persistence remains pending.
+  In-process diagnostics disable preparation; Performance persistence is implemented below.
 
 
 - desktop plugin browser: isolated CLAP/LV2 discovery, search and folder selection,
@@ -116,7 +116,7 @@ Done:
 To do:
 
 - tracks, patterns, swing and more lanes in the sequencer;
-- automatic Sound/effect-chain preparation and retirement, asset-bearing native patches and pool/project persistence;
+- automatic Sound/effect-chain preparation and retirement, asset-bearing native patches and Setlist/library persistence;
 - carry stable format/plugin identities and state provenance into persistent library data,
   following [RFC 0006](rfcs/0006-packages-and-portability.md). Installation paths locate
   binaries but must not become portable package identities. Custom plugin pages and
@@ -139,11 +139,13 @@ new core, from a UI that talks to it only through the control API.
 1. **Native effect contexts and per-sound audio — implemented foundation:** Delay contexts,
    Basic Synth output buses and typed/JSON/remote controls now pass independent-reference,
    lifetime, tail and resource tests ([RFC 0007](rfcs/0007-effect-contexts.md)). Explicit
-   routing preserves outgoing voices/chains; automatic chain management remains for save/reopen.
-2. **Minimal save/reopen:** persist one complete Performance with its graph, scenes/prepared
-   sounds, state, asset references and mappings. Preserve provenance and unresolved nodes;
-   do not require the future package manager. Test a process restart, missing plugin/assets,
-   interrupted save, and render/state comparisons.
+   routing preserves outgoing voices/chains; automatic chain management remains future work.
+2. **Minimal save/reopen — implemented:** [versioned JSON Performance folders](performance-format.md)
+   retain graph, all prepared sounds, shared effect state, assets and mappings. Restore
+   validates a replacement before publication. A missing dependency preserves the current
+   graph and original folder; opening unresolved nodes as disabled placeholders, archive
+   packaging and dependency resolution remain future work. Process restart, missing
+   plugin/assets, save failure and render/state comparisons are tested.
 3. Expand native asset-bearing patches and sequencer tracks/patterns
    against that usable workflow. Keep the shared theme and generated-editor contract current
    as new screens are added.

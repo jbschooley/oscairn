@@ -95,6 +95,7 @@ public:
     bool saveState(std::vector<uint8_t>& destination);
     bool loadState(const std::vector<uint8_t>& source);
     bool supportsState() const noexcept;
+    bool supportsSoundSnapshot() const noexcept;
     uint32_t soundContextCapacity() const noexcept;
     std::vector<oscairn_sound_context_info_t> soundContexts() const;
     uint32_t prepareSound(const std::string& name,const std::vector<oscairn_sound_parameter_t>& parameters);

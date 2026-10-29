@@ -125,6 +125,7 @@ struct Host::Impl {
     const clap_plugin_t* plugin = nullptr;
     const clap_plugin_params_t* params = nullptr;
     const clap_plugin_state_t* state = nullptr;
+    bool exclusiveState=false;
     const oscairn_plugin_sound_contexts_t* sounds = nullptr;
     const clap_plugin_latency_t* pluginLatency = nullptr;
     const clap_plugin_timer_support_t* timerSupport = nullptr;
@@ -326,6 +327,9 @@ struct Host::Impl {
         if(s.sounds && (!s.sounds->capacity || !s.sounds->get || !s.sounds->prepare || !s.sounds->select || !s.sounds->discard || s.sounds->capacity(s.plugin)>256))
             throw std::runtime_error("Invalid sound-context interface");
         s.state = static_cast<const clap_plugin_state_t*>(s.plugin->get_extension(s.plugin, CLAP_EXT_STATE));
+        s.exclusiveState=s.sounds && s.sounds->state;
+        if(s.exclusiveState)s.state=s.sounds->state;
+        if(s.state && (!s.state->save || !s.state->load))throw std::runtime_error("Incomplete plugin state interface");
         s.pluginLatency = static_cast<const clap_plugin_latency_t*>(s.plugin->get_extension(s.plugin, CLAP_EXT_LATENCY));
         s.timerSupport = static_cast<const clap_plugin_timer_support_t*>(s.plugin->get_extension(s.plugin, CLAP_EXT_TIMER_SUPPORT));
         s.fdSupport = static_cast<const clap_plugin_posix_fd_support_t*>(s.plugin->get_extension(s.plugin, CLAP_EXT_POSIX_FD_SUPPORT));
@@ -687,7 +691,7 @@ bool Host::saveState(std::vector<uint8_t>& destination) {
                 else if (clock::now() - lastProgress > std::chrono::milliseconds(10)) break; // audio is not running
             }
         }
-        if (s.pendingCommands.load() == 0) {
+        if (s.pendingCommands.load() == 0 && !s.exclusiveState) {
             Stream stream; clap_ostream_t output{&stream, Stream::write};
             if (!s.state->save(s.plugin, &output) || stream.failed) { s.message = "Plugin state saving failed"; return false; }
             destination = std::move(stream.bytes); s.dirty.store(false); return true;
@@ -737,6 +741,7 @@ bool Host::loadState(const std::vector<uint8_t>& bytes) {
     } catch (...) { s.fail("Plugin state restoration failed"); return false; }
 }
 bool Host::supportsState() const noexcept { return impl->state && impl->state->save && impl->state->load; }
+bool Host::supportsSoundSnapshot() const noexcept { return impl->exclusiveState && supportsState(); }
 bool Host::loaded() const noexcept { return impl->loaded.load(); }
 bool Host::faulted() const noexcept { return impl->failed.load(); }
 const std::string& Host::error() const noexcept { return impl->message; }

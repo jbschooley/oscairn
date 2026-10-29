@@ -134,7 +134,8 @@ The socket parent must be private and owned by the user. Explicit `--socket` ser
 never replace existing endpoints. SIGINT/SIGTERM stops the helper and removes its own socket.
 After an engine crash, verify it has stopped before removing its stale endpoint and
 starting a new helper. Reconnecting a UI preserves a running engine's state; restarting
-an engine starts the demo graph afresh. Session persistence remains pending. A silent live-device
+an engine starts the demo graph afresh; use Performance → Open Performance to restore a
+[saved folder](../docs/performance-format.md). Automatic startup restore remains future work. A silent live-device
 smoke test on macOS now verifies the actual KICK UI can be killed and reopened while
 the same engine keeps processing; an audible listening check remains separate.
 
@@ -367,3 +368,7 @@ use `--play-only` to replay a configured session. The script leaves the sounds/c
 available for pads or sequencer testing. It modifies the session, so use a fresh test
 engine rather than a working Performance. This is an explicit-routing example; automatic
 Sound/chain management and persistence remain planned.
+
+Performance save/reopen uses the [versioned JSON folder format](../docs/performance-format.md), including
+prepared sounds, shared effects, routing and plugin state. The desktop Performance menu
+exposes Save As and Open; validation precedes replacement of the playing graph.

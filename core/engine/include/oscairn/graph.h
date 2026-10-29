@@ -8,6 +8,8 @@
 #include <cstdint>
 #include <map>
 #include <memory>
+#include <optional>
+#include <functional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -75,6 +77,12 @@ namespace oscairn
         void replace(NodeId node,const std::string& path,const std::string& pluginId,const std::string& preset = {});
         void   remove( NodeId node );
         NodeId addEffectContext(NodeId source);
+        NodeId effectSource(NodeId node) const;
+        std::unique_ptr<Graph> prepareReplacement() const;
+        // onPublish must not throw; called after successful compilation/allocation, before publication.
+        void publishReplacement(Graph& prepared,size_t noteCutoff,const std::function<void()>& onPublish);
+        // Audio thread: adopt once before Session computes transport for this block.
+        std::optional<size_t> beginBlock() noexcept;
 
         /// Connections take effect at the next commit(). Throw std::invalid_argument if
         /// the source cannot send or the destination cannot receive that kind of signal.
@@ -146,7 +154,7 @@ namespace oscairn
         bool process( const float* const* inputs, uint32_t inputChannels,
                       float* const* outputs, uint32_t outputChannels, uint32_t frames,
                       const clap_event_transport_t* transport,
-                      const kick::clap::Event* events = nullptr, uint32_t eventCount = 0 ) noexcept;
+                      const kick::clap::Event* events = nullptr, uint32_t eventCount = 0, bool adopt = true ) noexcept;
         void panicInput() noexcept { panicInput_=true; } // audio thread only
         uint32_t inputChannels() const noexcept { return inputChannels_; }
         uint32_t outputChannels() const noexcept { return outputChannels_; }
@@ -157,6 +165,7 @@ namespace oscairn
         struct Node
         {
             std::shared_ptr<PluginHost> host;
+            std::shared_ptr<char> effectGroup=std::make_shared<char>();
             uint32_t                          audioInputs = 0, audioOutputs = 0; // channels
         };
         struct Plan;
@@ -189,6 +198,8 @@ namespace oscairn
         uint32_t inputChannels_=0, outputChannels_=0;
         std::vector<AudioConnection> audioRoutes_;
         NodeId   nextId_ = 1;
+        uint64_t replacementSerial_=0;
+        size_t replacementNoteCutoff_=0;
 
         std::map<NodeId, Node>                nodes_;
         std::map<std::pair<NodeId, NodeId>,std::shared_ptr<NoteRoute>> noteEdges_;

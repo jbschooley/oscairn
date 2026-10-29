@@ -1015,3 +1015,9 @@ sample libraries and presets: CLAP guidance, LV2 and VST3 compatibility notes, a
 test host, reference plugins, capability and realtime-safety tests, packaging, and CI
 templates. Platform-specific extensions only where the standards genuinely cannot express
 something.
+
+## Performance persistence (implemented)
+
+Performance save/reopen uses the [versioned JSON folder format](performance-format.md), including
+prepared sounds, shared effects, routing and plugin state. The desktop Performance menu
+exposes Save As and Open; validation precedes replacement of the playing graph.

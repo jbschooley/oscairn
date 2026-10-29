@@ -1743,6 +1743,72 @@
             "params"
           ],
           "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
+              "const": "performance.save"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "directory": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "directory"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "params"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
+              "const": "performance.load"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "directory": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "directory"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "params"
+          ],
+          "additionalProperties": true
         }
       ]
     },
@@ -1815,6 +1881,9 @@
                 },
                 {
                   "type": "null"
+                },
+                {
+                  "$ref": "#/$defs/PerformanceLoaded"
                 }
               ]
             }
@@ -2851,6 +2920,18 @@
         "capacity",
         "prepared",
         "tailActive"
+      ],
+      "additionalProperties": false
+    },
+    "PerformanceLoaded": {
+      "type": "object",
+      "properties": {
+        "loaded": {
+          "const": true
+        }
+      },
+      "required": [
+        "loaded"
       ],
       "additionalProperties": false
     }

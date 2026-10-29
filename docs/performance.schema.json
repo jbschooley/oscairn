@@ -1,0 +1,310 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Oscairn Performance version 1",
+  "description": "performance.json inside a Performance folder. See performance-format.md for binary state, asset limits, plugin validation and transactional loading. Runtime node/context IDs and live voices are not persisted.",
+  "type": "object",
+  "properties": {
+    "format": {
+      "const": "oscairn.performance"
+    },
+    "version": {
+      "const": 1
+    },
+    "transport": {
+      "type": "object",
+      "properties": {
+        "tempo": {
+          "type": "number",
+          "minimum": 1,
+          "maximum": 1000
+        },
+        "clockSource": {
+          "enum": [
+            "internal",
+            "midi"
+          ]
+        }
+      },
+      "required": [
+        "tempo",
+        "clockSource"
+      ],
+      "additionalProperties": false
+    },
+    "audioInputs": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Port"
+      },
+      "maxItems": 256
+    },
+    "audioOutputs": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Port"
+      },
+      "maxItems": 256
+    },
+    "nodes": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Node"
+      },
+      "maxItems": 256
+    },
+    "audio": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Audio"
+      },
+      "maxItems": 4096
+    },
+    "notes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "$ref": "#/$defs/EndpointKey"
+          },
+          "to": {
+            "$ref": "#/$defs/NodeKey"
+          }
+        },
+        "required": [
+          "from",
+          "to"
+        ],
+        "additionalProperties": false
+      },
+      "maxItems": 4096
+    },
+    "mappings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "$ref": "#/$defs/NodeKey"
+          },
+          "lane": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 4294967295
+          },
+          "to": {
+            "$ref": "#/$defs/NodeKey"
+          },
+          "param": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 4294967295
+          }
+        },
+        "required": [
+          "from",
+          "lane",
+          "to",
+          "param"
+        ],
+        "additionalProperties": false
+      },
+      "maxItems": 4096
+    }
+  },
+  "required": [
+    "format",
+    "version",
+    "transport",
+    "audioInputs",
+    "audioOutputs",
+    "nodes",
+    "audio",
+    "notes",
+    "mappings"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "NodeKey": {
+      "type": "string",
+      "pattern": "^node-[0-9]{1,7}$"
+    },
+    "EndpointKey": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/NodeKey"
+        },
+        {
+          "enum": [
+            "input",
+            "output"
+          ]
+        }
+      ]
+    },
+    "Port": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "channels": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 256
+        },
+        "flags": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        }
+      },
+      "required": [
+        "id",
+        "channels",
+        "flags"
+      ],
+      "additionalProperties": false
+    },
+    "Endpoint": {
+      "type": "object",
+      "properties": {
+        "node": {
+          "$ref": "#/$defs/EndpointKey"
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "channel": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 255
+        }
+      },
+      "required": [
+        "node",
+        "port",
+        "channel"
+      ],
+      "additionalProperties": false
+    },
+    "Node": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "$ref": "#/$defs/NodeKey"
+        },
+        "name": {
+          "type": "string",
+          "maxLength": 4096,
+          "pattern": "^[^\\u0000]*$"
+        },
+        "plugin": {
+          "type": "object",
+          "properties": {
+            "format": {
+              "enum": [
+                "clap",
+                "lv2"
+              ]
+            },
+            "id": {
+              "type": "string",
+              "maxLength": 4096,
+              "pattern": "^[^\\u0000]*$",
+              "minLength": 1
+            },
+            "version": {
+              "type": "string",
+              "maxLength": 4096,
+              "pattern": "^[^\\u0000]*$"
+            },
+            "pathHint": {
+              "type": "string",
+              "maxLength": 4096,
+              "pattern": "^[^\\u0000]*$",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "format",
+            "id",
+            "version",
+            "pathHint"
+          ],
+          "additionalProperties": false
+        },
+        "engine": {
+          "$ref": "#/$defs/NodeKey"
+        },
+        "inputs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Port"
+          },
+          "maxItems": 256
+        },
+        "outputs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Port"
+          },
+          "maxItems": 256
+        },
+        "noteInputs": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 16
+        },
+        "noteOutputs": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 16
+        }
+      },
+      "required": [
+        "key",
+        "name",
+        "plugin",
+        "engine",
+        "inputs",
+        "outputs",
+        "noteInputs",
+        "noteOutputs"
+      ],
+      "additionalProperties": false
+    },
+    "Audio": {
+      "type": "object",
+      "properties": {
+        "from": {
+          "$ref": "#/$defs/Endpoint"
+        },
+        "to": {
+          "$ref": "#/$defs/Endpoint"
+        },
+        "channels": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 256
+        },
+        "gain": {
+          "type": "number",
+          "minimum": -16,
+          "maximum": 16
+        }
+      },
+      "required": [
+        "from",
+        "to",
+        "channels",
+        "gain"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

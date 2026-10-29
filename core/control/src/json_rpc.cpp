@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #include "oscairn/json_rpc.h"
+#include "JsonInput.h"
 #include "PropertyWire.h"
 #include "sheredom/json.h"
 
@@ -162,7 +163,7 @@ namespace oscairn
             if( method == "session.hello" )
             {
                 fields(p, {});
-                return R"({"protocolVersion":1,"server":"oscairn","capabilities":["state.info","state.save","presets.list","properties.list","properties.get","properties.set","properties.request","sounds.get","sounds.prepare","sounds.select","sounds.discard","session.status","params.list","params.get","params.set","params.text","params.gesture","graph.audio-routing","graph.get","graph.add","effects.create","effects.resources","graph.remove","graph.replace","graph.connect","graph.disconnect","graph.map","graph.unmap","graph.commit","subscribe","unsubscribe","transport.get","transport.set","notes.send"],"limits":{"messageBytes":65536,"depth":32,"batch":64,"parameterChanges":128}})";
+                return R"({"protocolVersion":1,"server":"oscairn","capabilities":["performance.save","performance.load","state.info","state.save","presets.list","properties.list","properties.get","properties.set","properties.request","sounds.get","sounds.prepare","sounds.select","sounds.discard","session.status","params.list","params.get","params.set","params.text","params.gesture","graph.audio-routing","graph.get","graph.add","effects.create","effects.resources","graph.remove","graph.replace","graph.connect","graph.disconnect","graph.map","graph.unmap","graph.commit","subscribe","unsubscribe","transport.get","transport.set","notes.send"],"limits":{"messageBytes":65536,"depth":32,"batch":64,"parameterChanges":128}})";
             }
             if( method == "subscribe" || method == "unsubscribe" )
             {
@@ -174,6 +175,12 @@ namespace oscairn
                         invalid("Unknown subscription topic");
                 for( auto topic : topics ) client.subscription(string(topic),method == "subscribe",all);
                 return R"({"accepted":true})";
+            }
+            if(method=="performance.save" || method=="performance.load") {
+                fields(p,{"directory"});const auto directory=std::string(string(member(p,"directory")));
+                try{if(method=="performance.save")c.savePerformance(directory);else c.loadPerformance(directory);}
+                catch(const std::exception& e){throw Failure{-32005,e.what()};}
+                return method=="performance.save"?R"({"saved":true})":R"({"loaded":true})";
             }
             if(method=="state.info") {
                 fields(p,{"node"});return std::string("{\"supported\":")+(c.supportsState(node(c,member(p,"node")))?"true}":"false}");
@@ -463,48 +470,11 @@ namespace oscairn
             return std::nullopt;
         }
 
-        // Bound recursion before entering the vendored recursive parser. Also reject
-        // raw control characters and malformed UTF-8, which it does not fully validate.
-        void preflight( std::string_view s )
-        {
-            size_t depth = 0;
-            bool quoted = false, escaped = false;
-            for( size_t i = 0; i < s.size(); ++i )
-            {
-                const auto ch = static_cast<unsigned char>(s[i]);
-                if( ch >= 128 )
-                {
-                    unsigned n = 0, code = 0, minimum = 0;
-                    if( ch >= 0xC2 && ch <= 0xDF ) { n = 1; code = ch & 31; minimum = 0x80; }
-                    else if( ch >= 0xE0 && ch <= 0xEF ) { n = 2; code = ch & 15; minimum = 0x800; }
-                    else if( ch >= 0xF0 && ch <= 0xF4 ) { n = 3; code = ch & 7; minimum = 0x10000; }
-                    else throw Failure{-32700,"Invalid UTF-8"};
-                    while( n-- )
-                    {
-                        if( ++i >= s.size() || (static_cast<unsigned char>(s[i]) & 0xC0) != 0x80 )
-                            throw Failure{-32700,"Invalid UTF-8"};
-                        code = (code << 6) | (static_cast<unsigned char>(s[i]) & 63);
-                    }
-                    if( code < minimum || code > 0x10FFFF || (code >= 0xD800 && code <= 0xDFFF) )
-                        throw Failure{-32700,"Invalid UTF-8"};
-                    escaped = false;
-                    continue;
-                }
-                if( quoted )
-                {
-                    if( ch < 32 ) throw Failure{-32700,"Unescaped control character"};
-                    if( escaped ) escaped = false;
-                    else if( ch == '\\' ) escaped = true;
-                    else if( ch == '"' ) quoted = false;
-                }
-                else if( ch == '"' ) quoted = true;
-                else if( ch == '[' || ch == '{' )
-                {
-                    if( ++depth > JsonRpc::maxDepth ) throw Failure{-32006,"JSON nesting limit exceeded"};
-                }
-                else if( (ch == ']' || ch == '}') && depth ) --depth;
-            }
+        void preflight(std::string_view text) {
+            const auto error=detail::jsonPreflight(text,JsonRpc::maxDepth);
+            if(!error.empty())throw Failure{error=="JSON nesting limit exceeded"?-32006:-32700,std::string(error)};
         }
+
     }
 
     void JsonRpc::subscription( std::string_view topic, bool enabled, bool allChanges )

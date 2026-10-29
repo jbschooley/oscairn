@@ -19,14 +19,14 @@ namespace oscairn::standalone
     };
     struct SoundAction
     {
-        enum Kind { Refresh, Prepare, Select, Discard, BrightnessLocks, Replace } kind = Refresh;
+        enum Kind { Refresh, Prepare, Select, Discard, BrightnessLocks, Replace, SavePerformance, LoadPerformance } kind = Refresh;
         NodeId node = 0;
         std::string pluginId;
         uint32_t context = 0;
         bool cutTail = false;
         bool enableLocks = false;
         SoundChoice choice;
-        std::string replacementPath,replacementId;
+        std::string replacementPath,replacementId,directory;
     };
     SoundPickerState readSoundPicker(Control&);
     void applySoundAction(Control&, const SoundAction&);

@@ -16,6 +16,8 @@ namespace oscairn
     /// preallocated, so processing never allocates or locks.
     struct Graph::Plan
     {
+        uint64_t replacementSerial=0;
+        size_t noteCutoff=0;
         struct AudioRoute { int source; uint32_t from, to; float gain; bool first=false; }; // -1: external input
         std::vector<AudioRoute> outputRoutes;
         std::vector<float> externalInputs;
@@ -131,9 +133,31 @@ namespace oscairn
     NodeId Graph::addEffectContext(NodeId source)
     {
         if(nextId_>=graphInput)throw std::overflow_error("Graph node IDs exhausted");
-        Node node;node.host=host(source).createEffectContext();
+        Node node;node.host=host(source).createEffectContext();node.effectGroup=nodes_.at(source).effectGroup;
         node.audioInputs=countChannels(node.host->inputPorts());node.audioOutputs=countChannels(node.host->outputPorts());
         const NodeId id=nextId_++;nodes_.emplace(id,std::move(node));return id;
+    }
+
+    NodeId Graph::effectSource(NodeId id) const {
+        const auto& group=nodes_.at(id).effectGroup;
+        for(const auto& [other,node]:nodes_)if(node.effectGroup==group)return other;
+        return id;
+    }
+    std::unique_ptr<Graph> Graph::prepareReplacement() const {
+        auto next=std::make_unique<Graph>(sampleRate_,maxFrames_,mode_,lv2Buffers_,audioLayout_);
+        next->nextId_=nextId_;return next;
+    }
+    void Graph::publishReplacement(Graph& next,size_t cutoff,const std::function<void()>& onPublish) {
+        if(next.sampleRate_!=sampleRate_ || next.maxFrames_!=maxFrames_ || next.inputChannels_!=inputChannels_ || next.outputChannels_!=outputChannels_)
+            throw std::invalid_argument("Replacement device layout mismatch");
+        next.replacementSerial_=replacementSerial_+1;next.replacementNoteCutoff_=cutoff;
+        std::unique_ptr<Plan> plan(next.compile());
+        removedHosts_.reserve(removedHosts_.size()+nodes_.size());
+        onPublish(); // caller supplies a nonthrowing metadata/transport commit
+        for(const auto& [id,node]:nodes_)removedHosts_.push_back(node.host);
+        nodes_.swap(next.nodes_);audioRoutes_.swap(next.audioRoutes_);noteEdges_.swap(next.noteEdges_);paramTargets_.swap(next.paramTargets_);
+        nextId_=next.nextId_;replacementSerial_=next.replacementSerial_;replacementNoteCutoff_=cutoff;
+        delete pending_.exchange(plan.release(),std::memory_order_acq_rel);
     }
 
     void Graph::replace(NodeId id,const std::string& path,const std::string& pluginId,const std::string& preset)
@@ -394,6 +418,7 @@ namespace oscairn
         }
 
         auto plan = std::make_unique<Plan>();
+        plan->replacementSerial=replacementSerial_;plan->noteCutoff=replacementNoteCutoff_;
         std::map<NodeId, int> stepOf;
         for( const NodeId id : order )
         {
@@ -479,24 +504,12 @@ namespace oscairn
         for(const auto& host:removedHosts_)host->service();
     }
 
-    bool Graph::process( float* const* outputs, uint32_t frames, const clap_event_transport_t* transport,
-                         const kick::clap::Event* events, uint32_t eventCount ) noexcept
-    {
-        return process(nullptr,0,outputs,channels,frames,transport,events,eventCount);
-    }
-
-    bool Graph::process(const float* const* inputs,uint32_t ni,float* const* outputs,uint32_t no,uint32_t frames,
-                        const clap_event_transport_t* transport,const kick::clap::Event* events,uint32_t eventCount) noexcept
-    {
-        auto clear=[&]{if(outputs)for(uint32_t c=0;c<no;++c)if(outputs[c])std::fill_n(outputs[c],frames,0.f);};
-        if(!frames || frames>maxFrames_ || ni>maxAudioChannels || no>maxAudioChannels || (ni && !inputs) ||
-           (no && !outputs) || no<outputChannels_ || (eventCount && !events) || eventCount>kick::clap::Host::maxBlockEvents)
-        {clear();return false;}
-        for(uint32_t c=0;c<outputChannels_;++c)if(!outputs[c]){clear();return false;}
+    std::optional<size_t> Graph::beginBlock() noexcept {
         // Adopt the newest plan, retiring the current one, if there is room to retire it.
         if( !current_ || !retired_.full() )
             if( Plan* plan = pending_.exchange( nullptr, std::memory_order_acq_rel ) )
             {
+                const bool replacement=!current_?plan->replacementSerial!=0:current_->replacementSerial!=plan->replacementSerial;
                 if( current_ ) {
                     for(auto& old:current_->steps)for(auto& next:plan->steps)if(old.host==next.host)
                         for(auto& source:old.noteSources)
@@ -511,7 +524,26 @@ namespace oscairn
                     retired_.push( current_ );
                 }
                 current_ = plan;
+                if(replacement)return plan->noteCutoff;
             }
+        return {};
+    }
+
+    bool Graph::process( float* const* outputs, uint32_t frames, const clap_event_transport_t* transport,
+                         const kick::clap::Event* events, uint32_t eventCount ) noexcept
+    {
+        return process(nullptr,0,outputs,channels,frames,transport,events,eventCount);
+    }
+
+    bool Graph::process(const float* const* inputs,uint32_t ni,float* const* outputs,uint32_t no,uint32_t frames,
+                        const clap_event_transport_t* transport,const kick::clap::Event* events,uint32_t eventCount,bool adopt) noexcept
+    {
+        auto clear=[&]{if(outputs)for(uint32_t c=0;c<no;++c)if(outputs[c])std::fill_n(outputs[c],frames,0.f);};
+        if(!frames || frames>maxFrames_ || ni>maxAudioChannels || no>maxAudioChannels || (ni && !inputs) ||
+           (no && !outputs) || no<outputChannels_ || (eventCount && !events) || eventCount>kick::clap::Host::maxBlockEvents)
+        {clear();return false;}
+        for(uint32_t c=0;c<outputChannels_;++c)if(!outputs[c]){clear();return false;}
+        if(adopt)beginBlock();
 
         const bool panicInput=std::exchange(panicInput_,false);
         Plan* plan = current_;

@@ -183,6 +183,12 @@ namespace oscairn
     RemoteControl::~RemoteControl()=default;
     Control::GraphState RemoteControl::graphState()const{return impl_->graph;}
     Control::SessionStatus RemoteControl::sessionStatus()const{return impl_->status;}
+    void RemoteControl::savePerformance(const std::string& directory) {
+        impl_->call("performance.save","{\"directory\":"+quote(directory)+'}',30000);
+    }
+    void RemoteControl::loadPerformance(const std::string& directory) {
+        impl_->call("performance.load","{\"directory\":"+quote(directory)+'}',30000);impl_->refresh();
+    }
     bool RemoteControl::supportsState(NodeId node) const {
         auto d=impl_->call("state.info","{\"node\":"+std::to_string(node)+'}');return boolean(field(field(d.get(),"result"),"supported"));
     }

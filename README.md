@@ -17,7 +17,8 @@ here only to describe compatibility.
 > image that boots into Oscairn (tested in QEMU, [`os/`](os/README.md)). Optional LV2 hosting
 > supports mixed CLAP/LV2 graphs with audio, controls, MIDI/time atoms, Worker, plugin
 > state/presets and scalar patch properties. The control API supports prepared sounds,
-> state export, preset enumeration and typed property access. Transpose and MIDI delay
+> state export, preset enumeration and typed property access. Versioned JSON
+> [Performance folders](docs/performance-format.md) save/reopen graphs, prepared sounds and effects. Transpose and MIDI delay
 > are included as reference plugins. No AU/VST3, patch library or real-hardware image yet.
 
 See the [roadmap](docs/roadmap.md) for implementation status and planned work.
@@ -122,7 +123,8 @@ What is in place:
   history. Parameters, state, latency, tail, note and audio ports, timers, thread checks,
   sample-accurate events, out-of-process plugin scanning with crash and timeout isolation.
   Changed here so that note-only plugins (sequencers) load and their notes reach the next
-  plugin in the same block, main-thread work and state saves no longer silence audio, a bad
+  plugin in the same block, concurrent CLAP state saves avoid gating audio (exclusive native/LV2
+  snapshots may briefly silence a node), a bad
   event no longer resets the plugin, and an instance uses 0.41 MB instead of 1.55 MB.
 - **Engine** (`core/engine`): the graph (plugin nodes; audio connections summed, note
   connections merged; processed in dependency order each block; edited while audio runs,

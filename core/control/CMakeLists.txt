@@ -1,4 +1,5 @@
-add_library(oscairn_control STATIC src/session.cpp)
+add_library(oscairn_control STATIC src/session.cpp src/performance.cpp)
+target_include_directories(oscairn_control SYSTEM PRIVATE third_party)
 target_include_directories(oscairn_control PUBLIC include)
 target_link_libraries(oscairn_control PUBLIC oscairn_engine)
 target_compile_options(oscairn_control PRIVATE -Wall -Wextra)
@@ -85,4 +86,16 @@ endif()
 if(UNIX)
     add_test(NAME control-native-effects COMMAND oscairn-local-socket-test $<TARGET_FILE:oscairn_basic_synth> --effects $<TARGET_FILE:oscairn_delay>)
     set_tests_properties(control-native-effects PROPERTIES TIMEOUT 30)
+endif()
+
+add_executable(oscairn-performance-test tests/performance.cpp)
+target_include_directories(oscairn-performance-test PRIVATE ../clap-host/tests)
+target_link_libraries(oscairn-performance-test PRIVATE oscairn_control)
+add_test(NAME control-performance COMMAND oscairn-performance-test
+    $<TARGET_FILE:oscairn_basic_synth> $<TARGET_FILE:oscairn_delay> $<TARGET_FILE:oscairn_step_sequencer> $<TARGET_FILE:kick-clap-fixture-normal>)
+set_tests_properties(control-performance PROPERTIES TIMEOUT 60)
+if(Python3_Interpreter_FOUND)
+    add_test(NAME control-performance-format COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/performance.py"
+        $<TARGET_FILE:oscairn-json-rpc-test> $<TARGET_FILE:oscairn_basic_synth>)
+    set_tests_properties(control-performance-format PROPERTIES TIMEOUT 30)
 endif()

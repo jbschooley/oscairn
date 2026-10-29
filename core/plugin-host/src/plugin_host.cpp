@@ -4,6 +4,10 @@
 #include <kick_clap/Discovery.h>
 #include <algorithm>
 #include <filesystem>
+#include <sstream>
+#include <iomanip>
+#include <locale>
+#include <cmath>
 #include <stdexcept>
 namespace oscairn
 {
@@ -30,6 +34,10 @@ namespace oscairn
             bool selectSound(uint32_t id,int16_t channel) override {return host.selectSound(id,channel);}
             bool discardSound(uint32_t id,bool) override {return host.discardSound(id);}
             bool supportsState() const noexcept override {return host.supportsState();}
+            void saveSnapshot(const std::string& directory) override {
+                if(soundContextCapacity() && !host.supportsSoundSnapshot())throw std::runtime_error("Native engine has no complete sound-context snapshot interface");
+                PluginHost::saveSnapshot(directory);
+            }
             void saveState(const std::string& directory) override
             {
                 state_files::Bundle bundle(directory);std::vector<uint8_t> bytes;
@@ -67,6 +75,43 @@ namespace oscairn
             bool process(const float* const* inputs, uint32_t ni, float* const* outputs, uint32_t no, uint32_t frames, const kick::clap::Event* events, uint32_t count, const clap_event_transport_t* transport) noexcept override { return host.process(inputs,ni,outputs,no,frames,events,count,transport); }
         };
     }
+    void PluginHost::saveSnapshot(const std::string& directory)
+    {
+        if(soundContextCapacity() && !supportsState())throw std::runtime_error("Plugin cannot snapshot all native sounds");
+        state_files::Bundle bundle(directory);
+        std::ostringstream out;out.imbue(std::locale::classic());out<<std::setprecision(17);
+        if(supportsState()){saveState((bundle.temporary.path/"state").string());out<<"state 1\n";}
+        else {
+            // shortcut: parameter-only restore fits one queue; add offline flushing for larger plugins.
+            if(std::count_if(parameters().begin(),parameters().end(),[](const auto& p){return !(p.flags&CLAP_PARAM_IS_READONLY);})>kick::clap::Host::maxEvents)
+                throw std::runtime_error("Parameter-only snapshots support at most 2048 writable parameters");
+            out<<"parameters 1\n";
+            for(const auto& p:parameters())if(!(p.flags&CLAP_PARAM_IS_READONLY)) {
+                const double value=parameterValue(p.id);if(!std::isfinite(value))throw std::runtime_error("Nonfinite plugin parameter");
+                out<<p.id<<' '<<value<<'\n';
+            }
+        }
+        const auto text=out.str();state_files::write(bundle.temporary.path/"snapshot",text.data(),text.size());bundle.publish();
+    }
+    void PluginHost::loadSnapshot(const std::string& directory)
+    {
+        const auto data=state_files::read(std::filesystem::path(directory)/"snapshot",2*1024*1024);
+        std::istringstream input(std::string(data.begin(),data.end()));input.imbue(std::locale::classic());
+        std::string kind;unsigned version;if(!(input>>kind>>version) || version!=1)throw std::runtime_error("Invalid plugin snapshot version");
+        if(kind=="state") {input>>std::ws;if(!input.eof())throw std::runtime_error("Trailing snapshot data");loadState((std::filesystem::path(directory)/"state").string());return;}
+        if(kind!="parameters" || soundContextCapacity())throw std::runtime_error("Unsupported parameter-only snapshot");
+        std::vector<oscairn_sound_parameter_t> values;uint32_t id;double value;
+        while(input>>std::ws && !input.eof()) {
+            if(values.size()>=kick::clap::Host::maxEvents || !(input>>id>>value) || !std::isfinite(value))throw std::runtime_error("Invalid parameter snapshot");
+            const auto& all=parameters();const auto p=std::find_if(all.begin(),all.end(),[&](const auto& p){return p.id==id;});
+            if(p==all.end() || (p->flags&CLAP_PARAM_IS_READONLY) || value<p->minimum || value>p->maximum || ((p->flags&CLAP_PARAM_IS_STEPPED) && value!=std::trunc(value)) ||
+               std::any_of(values.begin(),values.end(),[&](const auto& v){return v.id==id;}))throw std::runtime_error("Snapshot parameter does not match plugin");
+            values.push_back({id,value});
+        }
+        if(values.size()!=static_cast<size_t>(std::count_if(parameters().begin(),parameters().end(),[](const auto& p){return !(p.flags&CLAP_PARAM_IS_READONLY);})))throw std::runtime_error("Incomplete parameter snapshot");
+        for(const auto& v:values)if(!setParameter(v.id,v.value))throw std::runtime_error("Snapshot parameter queue full");
+    }
+
     std::vector<uint32_t> PluginHost::mainAudioPorts(bool input) const
     {
         const auto& ports=input?inputPorts():outputPorts();

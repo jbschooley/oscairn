@@ -28,6 +28,7 @@ namespace oscairn
         /// Internal tempo; also used while following MIDI clock until two pulses have arrived.
         /// A change keeps the current beat position and applies from there.
         void setTempo( double bpm ) noexcept;
+        void rewind() noexcept {position_=0;anchorSample_=0;anchorBeats_=0;clockRunning_=false;pulses_=-1;lastPulseTime_=now_;intervalCount_=intervalNext_=0;}
         void setPlaying( bool playing ) noexcept { playing_ = playing; }
         void setClockSource( ClockSource source ) noexcept;
 

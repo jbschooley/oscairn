@@ -34,6 +34,10 @@ namespace oscairn
     public:
         virtual ~PluginHost() = default;
         virtual void service() = 0;
+        // Full Performance snapshot: native context state or all hosted pool instances.
+        // Creates a new directory. Restore is for an unpublished replacement host only.
+        virtual void saveSnapshot(const std::string& directory);
+        virtual void loadSnapshot(const std::string& directory);
         virtual std::shared_ptr<PluginHost> createEffectContext() { throw std::runtime_error("Plugin has no native effect contexts"); }
         virtual std::optional<oscairn_effect_resources_t> effectResources() const { return {}; }
         // Control thread. Save to a NEW directory; restore from a saved directory.

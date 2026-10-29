@@ -8,7 +8,7 @@ namespace oscairn::standalone
     SoundPickerState readSoundPicker(Control& control)
     {
         SoundPickerState result;
-        result.node = control.nodeId("synth");
+        try{result.node = control.nodeId("synth");}catch(const std::invalid_argument&){return result;}
         const auto graph = control.graphState();
         for(const auto& node : graph.topology.nodes)
             if(node.id == result.node)
@@ -50,6 +50,8 @@ namespace oscairn::standalone
     void applySoundAction(Control& control, const SoundAction& action)
     {
         if(action.kind == SoundAction::Refresh) return;
+        if(action.kind == SoundAction::SavePerformance){control.savePerformance(action.directory);return;}
+        if(action.kind == SoundAction::LoadPerformance){control.loadPerformance(action.directory);return;}
         if(action.kind==SoundAction::Replace) {
             const auto graph=control.graphState();
             const auto found=std::find_if(graph.topology.nodes.begin(),graph.topology.nodes.end(),[&](const auto& n){return n.id==action.node && n.plugin.id==action.pluginId;});

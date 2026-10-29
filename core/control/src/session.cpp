@@ -324,6 +324,12 @@ namespace oscairn
         {silence();return false;}
         for(uint32_t c=0;c<graph_.outputChannels();++c)if(!outputs[c]){silence();return false;}
 
+        if(const auto cutoff=graph_.beginBlock()) {
+            transport_.rewind();
+            clocks={}; // prior-block clock messages belong to the outgoing Performance
+            const auto tail=noteTail_.load(std::memory_order_relaxed);
+            if(tail<*cutoff)noteTail_.store(*cutoff,std::memory_order_release);
+        }
         const auto source = clockSource_.load();
         if( source != following_ )
         {
@@ -368,7 +374,7 @@ namespace oscairn
         statusPlaying_.store( ( t.flags & CLAP_TRANSPORT_IS_PLAYING ) != 0 );
         statusTempo_.store( t.tempo );
         statusBeat_.store( (double)t.song_pos_beats / (double)CLAP_BEATTIME_FACTOR );
-        const bool ok = graph_.process( inputs, ni, outputs, no, frames, &t, merged_.data(), (uint32_t)count );
+        const bool ok = graph_.process( inputs, ni, outputs, no, frames, &t, merged_.data(), (uint32_t)count, false );
         transport_.advance( frames );
         return ok;
     }

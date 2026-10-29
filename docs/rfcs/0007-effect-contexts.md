@@ -3,7 +3,8 @@
 Status: first implementation complete. Delay provides independently scheduled contexts
 sharing one native engine; Basic Synth provides eight sound buses in addition to Main.
 Typed/JSON/remote control, state, resource telemetry and reference-graph tests are implemented.
-Automatic Sound-to-chain management and complete Performance persistence remain planned.
+Performance persistence is implemented in the [versioned JSON format](../performance-format.md).
+Automatic Sound-to-chain management remains planned.
 
 ## Musician-facing behavior
 
@@ -139,6 +140,10 @@ is wall time, not a hardware-independent speedup claim. The test prints fresh me
 5. Persist the logical Sounds/chains and provenance in the Performance save/reopen milestone.
    Runtime IDs and physical DSP slots are reconstructed on preparation, not saved as identity.
 
-The first four checks above are implemented as the explicit-routing prototype; automatic
-Sound/chain setup and retirement belong with the next Performance save/reopen milestone.
+All five checks are implemented for explicit routes and prepared sounds; automatic
+Sound/chain setup and retirement remain future work.
 A package manager, general rack editor and hardware acceleration are not prerequisites.
+
+Performance persistence now records shared engine relationships and each context’s state
+separately; see [the Performance format](../performance-format.md). Histories/tails are
+excluded, and successful reopen starts a fresh stopped graph.

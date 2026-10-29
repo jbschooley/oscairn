@@ -126,13 +126,14 @@ namespace oscairn::standalone
 
         void closeButtonPressed() override { juce::JUCEApplication::getInstance()->systemRequestedQuit(); }
 
-        juce::StringArray getMenuBarNames() override { return { "View", "Plugins", "Appearance" }; }
+        juce::StringArray getMenuBarNames() override { return { "Performance", "View", "Plugins", "Appearance" }; }
 
         juce::PopupMenu getMenuForIndex( int index, const juce::String& ) override
         {
             juce::PopupMenu menu;
-            if(index==1){menu.addItem(2000,"Browse plugins and edit parameters...");return menu;}
-            if(index==2){themeItems_=theme_.installed();for(size_t i=0;i<themeItems_.size();++i)menu.addItem(3000+int(i),themeItems_[i].second,true,themeItems_[i].first==themeData().id);menu.addSeparator();menu.addItem(4000,"Manage themes...");return menu;}
+            if(index==0){menu.addItem(5000,"Save Performance As...",engine_.connected() && !engine_.soundBusy());menu.addItem(5001,"Open Performance...",engine_.connected() && !engine_.soundBusy());return menu;}
+            if(index==2){menu.addItem(2000,"Browse plugins and edit parameters...");return menu;}
+            if(index==3){themeItems_=theme_.installed();for(size_t i=0;i<themeItems_.size();++i)menu.addItem(3000+int(i),themeItems_[i].second,true,themeItems_[i].first==themeData().id);menu.addSeparator();menu.addItem(4000,"Manage themes...");return menu;}
             const auto*     current = dynamic_cast<Panel*>( getContentComponent() );
             for( size_t i = 0; i < layouts_.size(); ++i )
             {
@@ -147,6 +148,17 @@ namespace oscairn::standalone
 
         void menuItemSelected( int id, int ) override
         {
+            if(id==5000 || id==5001) {
+                const bool save=id==5000;
+                const auto initial=save?juce::File::getSpecialLocation(juce::File::userDocumentsDirectory).getChildFile("Untitled.oscairn"):juce::File();
+                chooser_=std::make_unique<juce::FileChooser>(save?"Save Performance to a new folder":"Open Performance folder",initial,save?"*.oscairn":"*");
+                chooser_->launchAsync((save?juce::FileBrowserComponent::saveMode:juce::FileBrowserComponent::openMode)|juce::FileBrowserComponent::canSelectDirectories,
+                    [safe=juce::Component::SafePointer<Window>(this),save](const juce::FileChooser& fc) {
+                        if(!safe || fc.getResult()==juce::File())return;
+                        SoundAction action;action.kind=save?SoundAction::SavePerformance:SoundAction::LoadPerformance;
+                        action.directory=fc.getResult().getFullPathName().toStdString();safe->engine_.soundAction(std::move(action));
+                    });return;
+            }
             if(id==2000 || id==4000){showLibrary();return;}
             if(id>=3000 && size_t(id-3000)<themeItems_.size()){try{theme_.apply(themeItems_[size_t(id-3000)].first);}catch(const std::exception& e){juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,"Theme not applied",e.what());}return;}
             if( id == 1000 )

@@ -11,13 +11,13 @@ that matches your component; the [documentation index](README.md) links the full
 | --- | --- | --- |
 | Instrument, sampler or effect | CLAP; optional LV2 hosting | [First-party plugins](../plugins/README.md), [LV2 subset](../core/lv2-host/README.md) |
 | Sequencer or note processor | CLAP note output ports and transport; optional parameter-target events | [Step Sequencer](../plugins/step-sequencer/step_sequencer.cpp), [MIDI effects](../plugins/midi-effects/README.md), [RFC 0002](rfcs/0002-param-target.md) |
-| Native multitimbral instrument | CLAP plus `oscairn.sound-contexts/draft` | [Basic Synth](../plugins/basic-synth/basic_synth.cpp), [RFC 0005](rfcs/0005-sound-contexts.md) |
+| Native multitimbral instrument | CLAP plus `oscairn.sound-contexts/draft-2` | [Basic Synth](../plugins/basic-synth/basic_synth.cpp), [RFC 0005](rfcs/0005-sound-contexts.md) |
 | UI, editor or automation script | Typed `Control` or JSON-RPC over the local Unix socket | [Protocol and schema](control-protocol.md) |
 | New host/application | C++20 `Session` or `Graph`, supplied audio buffers and events | [Core](../core/README.md), [hosts](../hosts/README.md) |
 | Hardware panel/layout | Desktop JSON layouts today; timestamped hardware services are proposed | [Layouts](../hosts/standalone/layouts/README.md), [RFC 0004](rfcs/0004-hardware-services.md) |
 
-VST3 hosting, plugin GUI embedding, a distributable Oscairn SDK/package registry, complete
-project persistence, automatic DSP/auxiliary-core offloading, and a native DJ deck engine
+VST3 hosting, plugin GUI embedding, a distributable Oscairn SDK/package registry, Setlist/library
+persistence, automatic DSP/auxiliary-core offloading, and a native DJ deck engine
 are not implemented. A plugin binary must match the host OS, CPU architecture and ABI.
 A macOS plugin cannot be copied unchanged onto an ARM Linux image.
 
@@ -307,5 +307,15 @@ that bus, and voices routed separately are absent from Main. Buses are persisten
 destinations; multiple sounds assigned the same bus intentionally share its chain.
 Keep old chains routed until their voices and effects finish. `effects.resources` reports
 Delay tail activity; removing a node deliberately cuts its tail. Automatic chain management
-and complete Performance persistence remain future work. [RFC 0007](rfcs/0007-effect-contexts.md)
+remains future work. Complete Performance persistence is described in the
+[versioned JSON format](performance-format.md). [RFC 0007](rfcs/0007-effect-contexts.md)
 records measured costs and validation; sharing Delay saves essentially no history RAM.
+
+## Saving a Performance
+
+Use the typed `savePerformance(directory)` / `loadPerformance(directory)` methods or
+`performance.save` / `performance.load` RPCs. The [Performance format and schema](performance-format.md)
+are the shared save/open/import/export contract. Native engines must snapshot all prepared
+contexts; ordinary hosted instruments are saved instance by instance. The app's Performance
+menu uses a control worker, so disk I/O and plugin preparation stay outside the UI/audio paths.
+Keep this format, the schema, protocol and round-trip tests in sync when adding persistent data.

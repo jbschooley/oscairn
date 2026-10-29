@@ -96,8 +96,9 @@ void concurrent(const char* path){
     std::thread audio([&]{forbidAllocation=true;const std::array events{Event::note(true,60,1,0,0,0,1),Event::note(false,60,0,100,0,0,1)};
         while(!done.load())if(!s.graph.process(s.out,512,nullptr,events.data(),events.size()))ok=false;forbidAllocation=false;});
     unsigned prepared=0;
-    for(int i=0;i<400;++i){s.host().service();s.host().selectSound(0);for(const auto& c:s.host().soundContexts())if(c.id)s.host().discardSound(c.id,true);
-        if(s.host().soundContexts().size()<8){auto id=s.prepare(i%2?.25:.75);s.host().selectSound(id);++prepared;}}
+    const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(5);
+    for(unsigned i=0;prepared<100 && std::chrono::steady_clock::now()<deadline;++i){s.host().service();s.host().selectSound(0);for(const auto& c:s.host().soundContexts())if(c.id)s.host().discardSound(c.id,true);
+        if(s.host().soundContexts().size()<8){auto id=s.prepare(i%2?.25:.75);s.host().selectSound(id);++prepared;}std::this_thread::yield();}
     done=true;audio.join();check(ok && prepared>20,"concurrent preparation, selection, retirement and rendering");
 }
 void protocol(const char* path){

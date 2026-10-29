@@ -37,6 +37,15 @@ void lv2(const char* sampler,const char* fixture){
     f.session.note(true,60,1);f.render();check(f.left[0]==.25f,"property change affects rendered sample");
     const auto state=(temp.path/"saved").string();check(f.call("state.save","{\"node\":\"sampler\",\"directory\":"+quote(state)+'}').find("\"saved\":true")!=std::string::npos,"wire portable state export");
     check(std::filesystem::exists(std::filesystem::path(state)/"state.ttl"),"state saved");
+    const auto performance=temp.path/"performance",moved=temp.path/"moved";
+    f.session.savePerformance(performance.string());std::filesystem::rename(performance,moved);std::filesystem::remove(sample);
+    Fixture imported;imported.session.loadPerformance(moved.string());imported.render();
+    imported.session.note(true,60,1);imported.render();check(imported.left[0]==.25f,"Performance carries sampler assets after move and original removal");
+    const auto revision=imported.session.graphState().revision;
+    for(const auto& entry:std::filesystem::recursive_directory_iterator(moved))if(entry.path().extension()==".wav")std::filesystem::remove(entry.path());
+    bool missing=false;try{imported.session.loadPerformance(moved.string());}catch(const std::exception&){missing=true;}
+    check(missing && imported.session.graphState().revision==revision,"missing Performance asset preserves live graph");
+    imported.render();check(imported.left[0]==.25f,"missing asset does not interrupt current sampler");
     f.session.add("presets",fixture,"urn:oscairn:test:state");check(f.call("presets.list",R"({"node":"presets"})").find("urn:oscairn:test:preset")!=std::string::npos,"LV2 preset enumeration");
     check(f.call("properties.get",R"({"node":"sampler","uri":"missing"})").find("-32602")!=std::string::npos,"unknown property rejected");
 }

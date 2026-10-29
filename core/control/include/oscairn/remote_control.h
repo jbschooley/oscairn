@@ -13,6 +13,8 @@ namespace oscairn
         explicit RemoteControl(LocalClient& client);
         ~RemoteControl() override;
         void service();
+        void savePerformance(const std::string& directory) override;
+        void loadPerformance(const std::string& directory) override;
         bool supportsState(NodeId node) const override;
         void saveState(NodeId node,const std::string& directory) override;
         std::vector<PresetInfo> presets(NodeId node) override;

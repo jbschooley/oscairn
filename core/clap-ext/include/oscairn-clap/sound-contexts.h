@@ -6,8 +6,8 @@
 extern "C" {
 #endif
 
-/* Native prepared sound contexts. All methods are called on the main thread and
- * MUST be safe concurrently with process(), without stopping existing voices.
+/* Native prepared sound contexts. Context-management methods run on the main thread
+ * concurrently with process(), without stopping voices; state callbacks are exclusive.
  * Capacity is constant for the instance lifetime. Telemetry may change while read.
  * prepare builds an independent patch from plugin defaults plus supplied values.
  * select queues a bounded operation for the next process boundary, before notes;
@@ -17,7 +17,7 @@ extern "C" {
  * never reused during an instance lifetime. Unload invalidates all IDs.
  * No format-level claim is made for plugins not implementing this extension.
  */
-static const char OSCAIRN_EXT_SOUND_CONTEXTS[] = "oscairn.sound-contexts/draft";
+static const char OSCAIRN_EXT_SOUND_CONTEXTS[] = "oscairn.sound-contexts/draft-2";
 typedef struct oscairn_sound_parameter { clap_id id; double value; } oscairn_sound_parameter_t;
 typedef struct oscairn_sound_context_info {
     uint32_t id;
@@ -33,6 +33,12 @@ typedef struct oscairn_plugin_sound_contexts {
     uint32_t (CLAP_ABI *prepare)(const clap_plugin_t*,const char* name,const oscairn_sound_parameter_t*,uint32_t count);
     bool (CLAP_ABI *select)(const clap_plugin_t*,uint32_t id,int16_t channel);
     bool (CLAP_ABI *discard)(const clap_plugin_t*,uint32_t id);
+    /* Optional full patch/context/channel snapshot. Unlike the concurrent methods
+     * above, the host must exclude process/flush and stop_processing before calling
+     * save/load. Includes accepted queued selections, excludes voices and histories.
+     * load validates completely before replacing patches and gives them fresh IDs.
+     * A host may expose this as its state facility; it is not CLAP_EXT_STATE. */
+    const clap_plugin_state_t* state;
 } oscairn_plugin_sound_contexts_t;
 #ifdef __cplusplus
 }

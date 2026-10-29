@@ -183,7 +183,8 @@ and `loadState(directory)` for CLAP and LV2. Access it directly or through `Grap
 State export, preset enumeration and typed patch properties are also exposed through
 [Control/JSON-RPC](../../docs/control-protocol.md#state-export-presets-and-patch-properties).
 Eligible instruments load state/presets through `sounds.prepare` followed by `sounds.select`.
-The desktop sound picker and whole-graph/project persistence remain future work.
+The desktop sound picker is implemented. [Performance save/reopen](../../docs/performance-format.md)
+preserves the graph and every prepared instance, including state-mapped assets.
 
 Saving requires a **new directory**. A private staging directory is published only after
 successful serialization; an existing destination is never deliberately overwritten.

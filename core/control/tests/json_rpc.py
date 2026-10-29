@@ -39,13 +39,13 @@ try:
     assert 'session.status' in hello['capabilities'] and 'graph.audio-routing' in hello['capabilities']
     assert 'sounds.prepare' in hello['capabilities']
     assert 'state.save' in hello['capabilities'] and 'properties.set' in hello['capabilities']
-    assert rpc('state.info', {'node':'synth'})['result'] == {'supported':False}
+    assert rpc('state.info', {'node':'synth'})['result'] == {'supported':True}
     assert rpc('presets.list', {'node':'synth'})['result'] == {'presets':[]}
     assert rpc('properties.list', {'node':'synth'})['result'] == {'properties':[]}
     error(rpc('properties.get', {'node':'synth','uri':'unknown'}), -32602)
     error(rpc('properties.request', {'node':'synth','uri':'unknown'}), -32602)
     error(rpc('state.info', {'node':'synth','extra':True}), -32602)
-    error(rpc('state.save', {'node':'synth','directory':'unused'}), -32005)
+    error(rpc('state.save', {'node':'synth','directory':''}), -32602)
     sounds = rpc('sounds.get' , {'node':'synth'})['result']
     assert sounds['mode'] == 'native'
     assert sounds['capacity'] == 8 and sounds['contexts'][0]['id'] == 0

@@ -4,6 +4,10 @@
 #include "../../clap-host/src/Internal.h"
 #include <algorithm>
 #include <cmath>
+#include "../../plugin-host/src/StateFiles.h"
+#include <sstream>
+#include <iomanip>
+#include <locale>
 
 namespace oscairn {
 namespace {
@@ -166,6 +170,29 @@ public:
         if(std::find(desired_.selected.begin(),desired_.selected.end(),i)!=desired_.selected.end() ||
            applied_.load()<s->lastSelection || s->selected.load() || s->owned.load() || (!cutTail && s->rendered.load()))return false;
         auto next=std::make_unique<Plan>(desired_);next->instances[i].reset();publish(std::move(next));return true;
+    }
+    void saveSnapshot(const std::string& directory) override {
+        state_files::Bundle bundle(directory);std::ostringstream out;out.imbue(std::locale::classic());out<<"pool 1\n";
+        for(size_t i=0;i<capacity;++i){const auto& instance=desired_.instances[i];out<<bool(instance);
+            if(instance){out<<' '<<std::quoted(instance->name);instance->host->saveSnapshot((bundle.temporary.path/std::to_string(i)).string());}out<<'\n';}
+        for(auto slot:desired_.selected)out<<unsigned(slot)<<' ';out<<'\n';
+        const auto text=out.str();state_files::write(bundle.temporary.path/"snapshot",text.data(),text.size());bundle.publish();
+    }
+    void loadSnapshot(const std::string& directory) override {
+        const auto data=state_files::read(std::filesystem::path(directory)/"snapshot",4096);
+        std::istringstream in(std::string(data.begin(),data.end()));in.imbue(std::locale::classic());std::string kind;unsigned version;
+        if(!(in>>kind>>version) || kind!="pool" || version!=1)throw std::runtime_error("Invalid instrument pool snapshot");
+        auto next=std::make_unique<Plan>();
+        for(size_t i=0;i<capacity;++i){unsigned used;std::string name;if(!(in>>used) || used>1)throw std::runtime_error("Invalid pool slot");if(!used)continue;
+            if(!(in>>std::quoted(name)) || name.size()>63 || name.find('\0')!=std::string::npos)throw std::runtime_error("Invalid pool sound name");
+            auto h=loadPlugin(base().descriptor().path,base().descriptor().id,rate_,frames_,mode_,limits_);
+            h->loadSnapshot((std::filesystem::path(directory)/std::to_string(i)).string());checkLayout(*h);
+            if(nextContext_==CLAP_INVALID_ID)throw std::runtime_error("Sound IDs exhausted");
+            next->instances[i]=std::make_shared<Instance>(std::move(h),i?nextContext_++:0,std::move(name),frames_);
+        }
+        if(!next->instances[0])throw std::runtime_error("Missing default pool sound");
+        for(auto& slot:next->selected){unsigned n;if(!(in>>n) || n>=capacity || !next->instances[n])throw std::runtime_error("Invalid pool selection");slot=uint8_t(n);}
+        in>>std::ws;if(!in.eof())throw std::runtime_error("Trailing pool data");publish(std::move(next));
     }
     void service() override {collect();for(const auto& s:desired_.instances)if(s)s->host->service();}
     const kick::clap::Descriptor& descriptor() const noexcept override {return base().descriptor();}

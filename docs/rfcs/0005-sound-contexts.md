@@ -3,13 +3,14 @@
 Status: first instrument implementation. The Basic Synth and its typed/JSON/remote
 controls implement this contract. Ordinary CLAP/LV2 instruments also have a host-owned instance pool, documented in the
 [control protocol](../control-protocol.md#prepared-sounds); it does not implement this
-plugin extension. Effect-context transitions, asset-bearing native patches, project
-persistence remain to do. The desktop sound picker is implemented; native effect contexts
+plugin extension. Automatic effect-chain transitions and asset-bearing native patches
+remain to do. Performance persistence is implemented in the
+[versioned folder format](../performance-format.md). The desktop sound picker is implemented; native effect contexts
 and per-sound audio are specified separately in [RFC 0007](0007-effect-contexts.md).
 
 ## Contract
 
-`oscairn.sound-contexts/draft` separates preparation from selecting the sound for new
+`oscairn.sound-contexts/draft-2` separates preparation from selecting the sound for new
 notes. Preparation belongs to the single control thread and must be safe concurrently
 with rendering. It does not reset, gate or reconfigure the playing plugin. Selection
 uses a bounded queue and takes effect at the next plugin processing boundary, before
@@ -85,3 +86,16 @@ sustain, independent channels, queue exhaustion, stale IDs and safe slot reuse. 
 transition timeline renders identical samples in 37- and 512-frame blocks. An allocation
 guard covers rendering; concurrent prepare/select/discard tests run under ThreadSanitizer.
 JSON and real socket tests cover the same public operations.
+
+## Exclusive snapshots
+
+Draft 2 adds an optional `state` interface for a full native context snapshot. Its save/load
+callbacks require rendering and parameter flush to be excluded and processing stopped;
+this is deliberately not advertised as concurrent `CLAP_EXT_STATE`. Save must include all
+accepted queued selections. Load validates before replacing patches, reconstructs IDs and
+excludes voices/tails. Oscairn uses it in preference to ordinary CLAP state, which may describe only one patch. A native engine
+without a complete snapshot interface cannot be saved as a complete Performance.
+
+Basic Synth's `oscairn-synth-1` state stores eight slots (occupancy, quoted name, eight
+parameter values) followed by 16 selected slot indices. Numbers use the classic locale
+and round-trip precision. Flush applies accepted selections before queued patch edits.

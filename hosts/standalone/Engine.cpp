@@ -77,7 +77,7 @@ namespace oscairn::standalone
     void Engine::soundAction(SoundAction action)
     {
         if(soundBusy() || !connected())return;
-        if((action.kind==SoundAction::Prepare || action.kind==SoundAction::Replace) && !canPrepareSounds())
+        if((action.kind==SoundAction::Prepare || action.kind==SoundAction::Replace || action.kind==SoundAction::SavePerformance || action.kind==SoundAction::LoadPerformance) && !canPrepareSounds())
         {
             soundMessage_="Preparation requires the separate engine. Relaunch without --in-process.";
             return;
@@ -121,13 +121,17 @@ namespace oscairn::standalone
             if(old==editors_.end() || old->second.id!=editor.id || old->second.path!=editor.path)textCache_.clear();
         }
         soundPicker_=std::move(result.state);editors_=std::move(result.editors);
-        if(soundJobKind_==SoundAction::Replace)textCache_.clear();
+        if(soundJobKind_==SoundAction::Replace || soundJobKind_==SoundAction::LoadPerformance)textCache_.clear();
+        if(result.error.empty() && soundJobKind_==SoundAction::SavePerformance)soundMessage_="Performance saved.";
+        if(result.error.empty() && soundJobKind_==SoundAction::LoadPerformance)soundMessage_="Performance opened. Press Play or play a note.";
         if(result.disconnected)
         {
             pendingControls_.clear();
             failed(result.error);
             return;
         }
+        // Replay deferred releases on failure; successful replacement discarded their voices.
+        if(soundJobKind_==SoundAction::LoadPerformance && result.error.empty())pendingControls_.clear();
         auto pending=std::move(pendingControls_);pendingControls_.clear();
         for(auto& action:pending)command(std::move(action));
         if(pendingSound_ && connected())

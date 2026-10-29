@@ -22,7 +22,9 @@ Today Oscairn loads CLAP and optional LV2 by path/format identity. It exports in
 plugin state; the LV2 adapter collects assets registered through state path mapping, while
 the CLAP adapter saves an opaque stream and plugin ID. Neither proves that all third-party
 assets have been found or that state works on another OS. There is no package resolver,
-complete Performance/Setlist persistence, AU/VST3 adapter or cross-format state converter.
+Setlist/library persistence, AU/VST3 adapter or cross-format state converter.
+[Performance version 1 folders](../performance-format.md) now persist the graph, prepared
+sounds and shared effect state using installed plugins; they are not managed packages.
 No changes to the audio graph are required for this proposal: package resolution and state
 preparation belong to library/control services, before a ready graph is published.
 

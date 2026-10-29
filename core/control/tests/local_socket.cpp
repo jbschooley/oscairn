@@ -296,6 +296,10 @@ namespace
             for(int i=0;i<20 && !retired;++i)retired=remote.discardSound(node,id);
             check(retired,"remote retires silent outgoing context");
             const auto defaults=remote.prepareSound(node,"Defaults",{});check(remote.discardSound(node,defaults),"empty patch uses defaults");
+            TemporaryDirectory saved;const auto file=(std::filesystem::path(saved.path)/"performance").string();
+            remote.savePerformance(file);remote.loadPerformance(file);
+            check(remote.nodeId("synth")!=node && !remote.hasNode(node),"remote Performance reload invalidates old node IDs");
+            check(remote.sounds(remote.nodeId("synth")).contexts.size()==1,"remote restored sound list");
         });
     }
     void instanceClient(const char* plugin)

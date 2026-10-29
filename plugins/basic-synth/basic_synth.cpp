@@ -21,6 +21,9 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <sstream>
+#include <iomanip>
+#include <locale>
 
 namespace
 {
@@ -248,7 +251,7 @@ namespace
             }
             if(selection.channel<0)
             {
-                for(uint32_t i=0;i<parameters.size();++i){s.values[i]=next.values[i];clap_event_param_value_t e{};e.header={sizeof(e),0,CLAP_CORE_EVENT_SPACE_ID,CLAP_EVENT_PARAM_VALUE,0};e.param_id=i+1;e.note_id=e.port_index=e.channel=e.key=-1;e.value=next.values[i];output->try_push(output,&e.header);}
+                for(uint32_t i=0;i<parameters.size();++i){s.values[i]=next.values[i];clap_event_param_value_t e{};e.header={sizeof(e),0,CLAP_CORE_EVENT_SPACE_ID,CLAP_EVENT_PARAM_VALUE,0};e.param_id=i+1;e.note_id=e.port_index=e.channel=e.key=-1;e.value=next.values[i];if(output)output->try_push(output,&e.header);}
             }
             next.users.fetch_sub(1,std::memory_order_release); // queued-selection pin
             ++tail;
@@ -463,8 +466,9 @@ namespace
         *value=parsed;return true;
     }
 
-    void paramsFlush( const clap_plugin_t* p, const clap_input_events_t* in, const clap_output_events_t* )
+    void paramsFlush( const clap_plugin_t* p, const clap_input_events_t* in, const clap_output_events_t* out )
     {
+        applySelections(self(p),out);
         for( uint32_t i = 0, n = in->size( in ); i < n; ++i )
             applyParam( self( p ), in->get( in, i ) );
     }
@@ -472,6 +476,41 @@ namespace
     const clap_plugin_params_t      params     = { paramsCount, paramsInfo, paramsValue, paramsToText, paramsFromText, paramsFlush };
     const clap_plugin_audio_ports_t audioPorts = { audioPortsCount, audioPortsGet };
     const clap_plugin_note_ports_t  notePorts  = { notePortsCount, notePortsGet };
+
+    // The native snapshot extension is called only with rendering excluded.
+    const clap_plugin_state_t contextState{
+        [](const clap_plugin_t* p,const clap_ostream_t* stream)->bool {
+            auto& s=self(p);applySelections(s,nullptr);
+            std::ostringstream out;out.imbue(std::locale::classic());out<<std::setprecision(17)<<"oscairn-synth-1\n";
+            for(uint32_t slot=0;slot<Synth::contextCapacity;++slot) {
+                const auto& c=s.contexts[slot];out<<c.prepared;
+                if(c.prepared){out<<' '<<std::quoted(c.name);for(double value:c.values)out<<' '<<value;}
+                out<<'\n';
+            }
+            for(auto slot:s.selected)out<<slot<<' ';out<<'\n';const auto data=out.str();
+            for(size_t at=0;at<data.size();){const auto n=stream->write(stream,data.data()+at,data.size()-at);if(n<=0 || size_t(n)>data.size()-at)return false;at+=size_t(n);}return true;
+        },
+        [](const clap_plugin_t* p,const clap_istream_t* stream)->bool {
+            std::string data;char buffer[1024];
+            for(;;){const auto n=stream->read(stream,buffer,sizeof(buffer));if(n<0 || n>1024 || data.size()+n>16384)return false;if(!n)break;data.append(buffer,size_t(n));}
+            std::istringstream in(data);in.imbue(std::locale::classic());std::string version;if(!(in>>version) || version!="oscairn-synth-1")return false;
+            struct Patch {bool used=false;std::string name;std::array<double,parameters.size()> values{};};
+            std::array<Patch,Synth::contextCapacity> patches{};std::array<uint32_t,16> selection{};uint32_t needed=0;
+            for(auto& patch:patches){unsigned used;if(!(in>>used) || used>1)return false;patch.used=used;
+                if(!used)continue;++needed;if(!(in>>std::quoted(patch.name)) || patch.name.size()>63 || patch.name.find('\0')!=std::string::npos)return false;
+                for(size_t i=0;i<parameters.size();++i){auto& v=patch.values[i];if(!(in>>v) || !std::isfinite(v) || v<0 || v>parameters[i].maximum || (parameters[i].stepped && v!=std::round(v)))return false;}}
+            if(!patches[0].used)return false;
+            for(auto& slot:selection)if(!(in>>slot) || slot>=patches.size() || !patches[slot].used)return false;
+            in>>std::ws;if(!in.eof())return false;
+            auto& s=self(p);if(needed-1>CLAP_INVALID_ID-s.nextContext)return false;
+            applySelections(s,nullptr);resetVoices(s);
+            for(size_t i=0;i<patches.size();++i){auto& c=s.contexts[i];const auto& patch=patches[i];c.prepared=patch.used;c.users=0;c.selected=0;c.voices=0;
+                if(!patch.used)continue;c.id=i?s.nextContext++:0;std::strcpy(c.name,patch.name.c_str());c.values=patch.values;c.modulation={};}
+            s.selected=selection;
+            for(size_t ch=0;ch<selection.size();++ch){auto& c=s.contexts[selection[ch]];c.users.fetch_add(1);c.selected.fetch_or(1u<<ch);}
+            for(size_t i=0;i<parameters.size();++i)s.values[i]=s.contexts[s.selected[0]].values[i];return true;
+        }
+    };
 
     const oscairn_plugin_sound_contexts_t soundContexts{
         [](const clap_plugin_t*)->uint32_t{return Synth::contextCapacity;},
@@ -506,7 +545,8 @@ namespace
         },
         [](const clap_plugin_t* p,uint32_t id)->bool {
             if(!id)return false;for(auto& c:self(p).contexts)if(c.prepared && c.id==id){if(c.users.load(std::memory_order_acquire))return false;c.prepared=false;return true;}return false;
-        }
+        },
+        &contextState
     };
 
     const clap_plugin_t* create()

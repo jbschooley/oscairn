@@ -16,6 +16,7 @@ an implemented capability.
 | Preserve held notes across sound changes | [Native context contract](rfcs/0005-sound-contexts.md), [prepared-sound control API](control-protocol.md#prepared-sounds) |
 | Write a MIDI effect or route audio-generated notes | [MIDI references](../plugins/midi-effects/README.md), [hybrid routing and feedback](architecture.md#midi-effects-hybrid-plugins-and-feedback) |
 | Export plugin state or edit sample properties | [Sound-management controls](control-protocol.md#state-export-presets-and-patch-properties) |
+| Save, reopen, import or export a Performance | [Format and behavior](performance-format.md), [JSON Schema](performance.schema.json) |
 | Emit parameter-lock lanes from a sequencer | [Parameter-target extension](rfcs/0002-param-target.md) |
 | Add a desktop panel layout | [Layout format](../hosts/standalone/layouts/README.md) |
 | Configure audio, MIDI and helper processes | [Hosts](../hosts/README.md) |

@@ -29,6 +29,8 @@ namespace oscairn
 
         // Edits are staged; a failed commit leaves the live plan unchanged and the
         // staging area available for correction. Empty names address nodes by ID only.
+        void savePerformance(const std::string& directory) override;
+        void loadPerformance(const std::string& directory) override;
         bool supportsState(NodeId node) const override {return graph_.host(node).supportsState();}
         void saveState(NodeId node,const std::string& directory) override;
         std::vector<PresetInfo> presets(NodeId node) override {return graph_.host(node).presets();}
