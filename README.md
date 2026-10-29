@@ -51,6 +51,10 @@ Options: `--layout desktop|kick|keys49|file.json`, and `--snapshot out.png [--si
 [--play SECONDS]` to render the panel to a PNG and quit. Layouts are described in
 [hosts/standalone/layouts](hosts/standalone/layouts/README.md).
 
+The display's sound picker prepares Basic Synth variations (or a loaded instrument's
+presets), switches new notes while preserving held notes, and retires unused sounds.
+See [the picker workflow and current limits](hosts/README.md#desktop-sound-picker).
+
 ### LV2 plugins
 
 Enable the initial LV2 host with `-DOSCAIRN_LV2=ON` for the core, renderer or desktop.

@@ -13,7 +13,7 @@ juce_add_binary_data(oscairn_standalone_layouts SOURCES
     layouts/ignite.json
     layouts/keys49.json)
 
-target_sources(oscairn_standalone PRIVATE Main.cpp Engine.cpp Layout.cpp Panel.cpp Screen.cpp)
+target_sources(oscairn_standalone PRIVATE Main.cpp Engine.cpp Layout.cpp Panel.cpp Screen.cpp SoundPickerModel.cpp)
 target_compile_definitions(oscairn_standalone PRIVATE
     JUCE_WEB_BROWSER=0
     JUCE_USE_CURL=0

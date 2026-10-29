@@ -16,12 +16,13 @@ namespace oscairn::standalone
     class Screen : public juce::Component
     {
     public:
-        explicit Screen( Engine& engine ) : engine_( engine ) {}
+        explicit Screen( Engine& engine );
 
         /// Redraws from the engine's current state; the panel calls it from its timer.
         void refresh();
 
         void paint( juce::Graphics& ) override;
+        void resized() override;
         void mouseDown( const juce::MouseEvent& ) override;
         void mouseDrag( const juce::MouseEvent& ) override;
         void mouseUp( const juce::MouseEvent& ) override;
@@ -35,6 +36,14 @@ namespace oscairn::standalone
         juce::Rectangle<float> lockBar( int step ) const;
         int                    stepAt( juce::Point<float> ) const;
         void                   setLock( int step, float y );
+        void refreshPicker();
+        SoundAction selectedAction(SoundAction::Kind) const;
+
+        juce::ComboBox sounds_;
+        juce::TextButton useSound_{"Use sound"}, prepareSound_{"Prepare..."}, removeSound_{"Remove"};
+        juce::Label playingSound_, soundNotice_;
+        std::vector<uint32_t> soundIds_;
+        juce::StringArray soundLabels_;
 
         Engine& engine_;
         Engine::Status status_;

@@ -2,9 +2,13 @@
 #pragma once
 #include "oscairn/remote_control.h"
 #include "../audio/AudioConfiguration.h"
+#include "SoundPickerModel.h"
 #include <juce_events/juce_events.h>
 #include <memory>
 #include <cstdio>
+#include <future>
+#include <deque>
+#include <functional>
 
 namespace oscairn::host { class AudioEngine; class EngineProcess; }
 namespace oscairn::standalone
@@ -40,11 +44,17 @@ namespace oscairn::standalone
             std::vector<std::string> midiInputs;
         };
         Status status()const;
+        const SoundPickerState& soundPicker() const { return soundPicker_; }
+        const std::string& soundMessage() const { return soundMessage_; }
+        bool soundBusy() const { return pendingSound_.has_value() || (soundJob_.valid() && soundJobKind_!=SoundAction::Refresh); }
+        bool canPrepareSounds() const { return !socketPath_.empty(); }
+        void soundAction(SoundAction action);
     private:
         void timerCallback()override;
         template<class F> void command(F&& f)
         {
             if(!failure_.empty())return;
+            if(soundJob_.valid()) { pendingControls_.emplace_back(std::forward<F>(f)); return; }
             try{f();}catch(const std::exception& e)
             {
                 if(client_ && !client_->connected())failed(e.what());
@@ -52,6 +62,16 @@ namespace oscairn::standalone
             }
         }
         void failed(const std::string& message);
+        void refreshSounds(SoundAction action = {});
+        void finishSounds();
+        struct SoundResult { SoundPickerState state; std::string error; bool disconnected = false; };
+        std::future<SoundResult> soundJob_;
+        SoundAction::Kind soundJobKind_=SoundAction::Refresh;
+        std::optional<SoundAction> pendingSound_;
+        SoundPickerState soundPicker_;
+        std::string soundMessage_;
+        uint32_t soundTicks_ = 0;
+        std::deque<std::function<void()>> pendingControls_;
         std::unique_ptr<host::AudioEngine> audio_;
         std::unique_ptr<host::EngineProcess> process_;
         std::unique_ptr<LocalClient> client_;

@@ -25,10 +25,11 @@ namespace oscairn::standalone
             }
             else client_->connect(socketPath);
             remote_=std::make_unique<RemoteControl>(*client_);control_=remote_.get();
-            startTimer(16);
         }
+        refreshSounds();
+        startTimer(16);
     }
-    Engine::~Engine(){stopTimer();}
+    Engine::~Engine(){stopTimer();pendingSound_.reset();if(soundJob_.valid()){soundJob_.wait();finishSounds();}}
     bool Engine::hasParam(const std::string& n,uint32_t p)const
     {try{return control_->hasParameter(control_->nodeId(n),p);}catch(const std::invalid_argument&){return false;}}
     Engine::ParamInfo Engine::paramInfo(const std::string& n,uint32_t p)const{return control_->parameterInfo(control_->nodeId(n),p);}
@@ -42,18 +43,75 @@ namespace oscairn::standalone
         const auto key=std::make_pair(n,p);const auto it=textCache_.find(key);
         const auto bits=std::bit_cast<uint64_t>(v); // reuse formatting only for the exact cached value
         if(it!=textCache_.end() && it->second.first==bits)return it->second.second;
+        if(soundJob_.valid())return std::to_string(v);
         try{auto text=control_->parameterText(control_->nodeId(n),p,v);textCache_[key]={bits,text};return text;}
         catch(const std::exception&){return std::to_string(v);}
     }
     void Engine::setParam(const std::string& n,uint32_t p,double v)
-    {command([&]{if(!control_->setParameter(control_->nodeId(n),p,v))std::fprintf(stderr,"oscairn: parameter command refused\n");});}
+    {command([this,n,p,v]{if(!control_->setParameter(control_->nodeId(n),p,v))std::fprintf(stderr,"oscairn: parameter command refused\n");});}
     void Engine::paramGesture(const std::string& n,uint32_t p,bool begin)
-    {command([&]{if(!control_->parameterGesture(control_->nodeId(n),p,begin))std::fprintf(stderr,"oscairn: gesture command refused\n");});}
-    void Engine::setPlaying(bool v){command([&]{control_->setPlaying(v);});}
-    void Engine::setTempo(double v){command([&]{control_->setTempo(v);});}
-    void Engine::setFollowMidiClock(bool v){command([&]{control_->setClockSource(v?Transport::ClockSource::MidiClock:Transport::ClockSource::Internal);});}
+    {command([this,n,p,begin]{if(!control_->parameterGesture(control_->nodeId(n),p,begin))std::fprintf(stderr,"oscairn: gesture command refused\n");});}
+    void Engine::setPlaying(bool v){command([this,v]{control_->setPlaying(v);});}
+    void Engine::setTempo(double v){command([this,v]{control_->setTempo(v);});}
+    void Engine::setFollowMidiClock(bool v){command([this,v]{control_->setClockSource(v?Transport::ClockSource::MidiClock:Transport::ClockSource::Internal);});}
     bool Engine::followsMidiClock()const{return control_->clockSource()==Transport::ClockSource::MidiClock;}
-    void Engine::note(bool on,int key,float velocity){command([&]{if(!control_->note(on,key,velocity))std::fprintf(stderr,"oscairn: note queue overflow\n");});}
+    void Engine::note(bool on,int key,float velocity){command([this,on,key,velocity]{if(!control_->note(on,key,velocity))std::fprintf(stderr,"oscairn: note queue overflow\n");});}
+
+    void Engine::soundAction(SoundAction action)
+    {
+        if(soundBusy() || !connected())return;
+        if(action.kind==SoundAction::Prepare && !canPrepareSounds())
+        {
+            soundMessage_="Preparation requires the separate engine. Relaunch without --in-process.";
+            return;
+        }
+        soundMessage_.clear();
+        if(soundJob_.valid()){pendingSound_=std::move(action);return;}
+        refreshSounds(std::move(action));
+    }
+
+    void Engine::refreshSounds(SoundAction action)
+    {
+        if(socketPath_.empty())
+        {
+            try{applySoundAction(*control_,action);soundPicker_=readSoundPicker(*control_);}
+            catch(const std::exception& e){soundMessage_=e.what();}
+            return;
+        }
+        // A separate client belongs entirely to this worker; the UI's cached client
+        // is not serviced until preparation finishes, keeping long RPC waits off the UI.
+        soundJobKind_=action.kind;
+        soundJob_=std::async(std::launch::async,[socket=socketPath_,request=std::move(action)] {
+            SoundResult result;LocalClient client;
+            try
+            {
+                client.connect(socket);RemoteControl control(client);
+                try{applySoundAction(control,request);}catch(const std::exception& e){result.error=e.what();}
+                result.state=readSoundPicker(control);
+            }
+            catch(const std::exception& e){result.error=e.what();result.disconnected=!client.connected();}
+            return result;
+        });
+    }
+
+    void Engine::finishSounds()
+    {
+        auto result=soundJob_.get();
+        if(!result.error.empty())soundMessage_=result.error;
+        soundPicker_=std::move(result.state);
+        if(result.disconnected)
+        {
+            pendingControls_.clear();
+            failed(result.error);
+            return;
+        }
+        auto pending=std::move(pendingControls_);pendingControls_.clear();
+        for(auto& action:pending)command(std::move(action));
+        if(pendingSound_ && connected())
+        {
+            auto action=std::move(*pendingSound_);pendingSound_.reset();refreshSounds(std::move(action));
+        }
+    }
     Engine::Status Engine::status()const
     {
         const auto transport=control_->transportState();const auto host=control_->sessionStatus();
@@ -62,6 +120,8 @@ namespace oscairn::standalone
     }
     void Engine::failed(const std::string& message)
     {
+        pendingControls_.clear();
+        pendingSound_.reset();
         failure_=message;std::fprintf(stderr,"oscairn: control connection: %s\n",message.c_str());
         if(client_)client_->disconnect();
     }
@@ -78,9 +138,21 @@ namespace oscairn::standalone
     }
     void Engine::timerCallback()
     {
+        if(soundJob_.valid())
+        {
+            if(soundJob_.wait_for(std::chrono::seconds(0))!=std::future_status::ready)return;
+            finishSounds();
+            if(soundJob_.valid())return;
+        }
+        if(!remote_)
+        {
+            if(++soundTicks_>=30){soundTicks_=0;refreshSounds();}
+            return;
+        }
         if(failure_.empty())
         {
             try{remote_->service();}catch(const std::exception& e){failed(e.what());}
+            if(failure_.empty() && ++soundTicks_>=30){soundTicks_=0;refreshSounds();}
         }
         else if(++reconnectTicks_>=60)
         {

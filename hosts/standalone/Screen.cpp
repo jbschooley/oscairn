@@ -20,6 +20,101 @@ namespace oscairn::standalone
         }
     }
 
+    Screen::Screen(Engine& engine) : engine_(engine)
+    {
+        for(auto* component : std::initializer_list<juce::Component*>{&sounds_, &useSound_, &prepareSound_, &removeSound_, &playingSound_, &soundNotice_})
+            addAndMakeVisible(component);
+        sounds_.setName("Prepared sounds");
+        sounds_.setTextWhenNothingSelected("Choose a prepared sound");
+        sounds_.onChange=[this]{refreshPicker();};
+        playingSound_.setColour(juce::Label::textColourId, active);
+        soundNotice_.setColour(juce::Label::textColourId, dim);
+        useSound_.setTooltip("Use this sound for new notes on all MIDI channels. Held notes keep their sound.");
+        useSound_.onClick=[this]{engine_.soundAction(selectedAction(SoundAction::Select));refreshPicker();};
+        prepareSound_.onClick=[this] {
+            const auto state=engine_.soundPicker();
+            juce::PopupMenu menu;
+            for(size_t i=0;i<state.choices.size();++i)menu.addItem(static_cast<int>(i)+1,state.choices[i].name);
+            menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&prepareSound_),
+                [safe=juce::Component::SafePointer<Screen>(this),state](int id) {
+                    if(!safe || id<=0 || static_cast<size_t>(id)>state.choices.size())return;
+                    SoundAction action;action.kind=SoundAction::Prepare;action.node=state.node;
+                    action.pluginId=state.pluginId;action.choice=state.choices[static_cast<size_t>(id)-1];
+                    safe->engine_.soundAction(std::move(action));
+                });
+        };
+        removeSound_.onClick=[this] {
+            auto action=selectedAction(SoundAction::Discard);
+            const auto& state=engine_.soundPicker();
+            const auto found=std::find_if(state.sounds.contexts.begin(),state.sounds.contexts.end(),[&](const auto& s){return s.id==action.context;});
+            if(found==state.sounds.contexts.end())return;
+            if(found->idle){engine_.soundAction(action);return;}
+            juce::AlertWindow::showAsync(juce::MessageBoxOptions().withTitle("Remove prepared sound")
+                .withMessage("This sound may still have an effect tail. Remove it and stop that tail?")
+                .withButton("Remove").withButton("Keep"),
+                [safe=juce::Component::SafePointer<Screen>(this),action](int choice) mutable {
+                    if(safe && choice==1){action.cutTail=true;safe->engine_.soundAction(action);}
+                });
+        };
+    }
+
+    SoundAction Screen::selectedAction(SoundAction::Kind kind) const
+    {
+        SoundAction action;action.kind=kind;action.node=engine_.soundPicker().node;
+        action.pluginId=engine_.soundPicker().pluginId;
+        const auto index=sounds_.getSelectedItemIndex();
+        if(index>=0 && static_cast<size_t>(index)<soundIds_.size())action.context=soundIds_[static_cast<size_t>(index)];
+        return action;
+    }
+
+    void Screen::refreshPicker()
+    {
+        const auto& state=engine_.soundPicker();
+        const auto oldIndex=sounds_.getSelectedItemIndex();
+        const auto oldId=oldIndex>=0 && static_cast<size_t>(oldIndex)<soundIds_.size()?soundIds_[static_cast<size_t>(oldIndex)]:UINT32_MAX;
+        std::vector<uint32_t> ids;juce::StringArray labels;juce::StringArray playing;
+        for(const auto& sound:state.sounds.contexts)
+        {
+            ids.push_back(sound.id);labels.add(sound.name);
+            if(sound.selectedChannels)playing.add(sound.name);
+        }
+        if(ids!=soundIds_ || labels!=soundLabels_)
+        {
+            soundIds_=std::move(ids);soundLabels_=labels;sounds_.clear(juce::dontSendNotification);
+            sounds_.addItemList(labels,1);
+            auto selected=std::find(soundIds_.begin(),soundIds_.end(),oldId);
+            if(selected!=soundIds_.end())sounds_.setSelectedItemIndex(static_cast<int>(selected-soundIds_.begin()),juce::dontSendNotification);
+            else if(!soundIds_.empty())sounds_.setSelectedItemIndex(static_cast<int>(soundIds_.size())-1,juce::dontSendNotification);
+        }
+        const auto id=selectedAction(SoundAction::Select).context;
+        const auto found=std::find_if(state.sounds.contexts.begin(),state.sounds.contexts.end(),[&](const auto& s){return s.id==id;});
+        const bool ready=engine_.connected() && !engine_.soundBusy() && found!=state.sounds.contexts.end();
+        sounds_.setEnabled(!engine_.soundBusy() && engine_.connected());
+        useSound_.setEnabled(ready && found->selectedChannels!=65535);
+        removeSound_.setEnabled(ready && id!=0 && !found->selectedChannels && !found->activeVoices && (found->idle || state.sounds.mode=="instances"));
+        prepareSound_.setEnabled(engine_.connected() && !engine_.soundBusy() && engine_.canPrepareSounds() &&
+            !state.choices.empty() && state.sounds.contexts.size()<state.sounds.capacity);
+        prepareSound_.setTooltip(engine_.canPrepareSounds()?"Prepare a sound without changing playback.":"Preparation needs the separate engine; relaunch without --in-process.");
+        playingSound_.setText("Playing: "+(playing.isEmpty()?juce::String("none"):playing.joinIntoString(" / ")),juce::dontSendNotification);
+        const auto notice=!engine_.soundMessage().empty()?juce::String(engine_.soundMessage()):
+            engine_.soundBusy()?juce::String("Updating sounds..."):
+            juce::String(state.sounds.contexts.size())+" / "+juce::String(state.sounds.capacity)+" prepared | Use sound changes all MIDI channels";
+        soundNotice_.setText(notice,juce::dontSendNotification);
+        soundNotice_.setTooltip(notice);
+    }
+
+    void Screen::resized()
+    {
+        auto area=getLocalBounds().withTrimmedTop(juce::roundToInt(header().getHeight())).withHeight(juce::roundToInt(getHeight()*.20f)).reduced(10,0);
+        playingSound_.setBounds(area.removeFromTop(area.getHeight()/3));
+        auto row=area.removeFromTop(area.getHeight()/2);
+        const int buttonWidth=row.getWidth()/6;
+        removeSound_.setBounds(row.removeFromRight(buttonWidth).reduced(2));
+        prepareSound_.setBounds(row.removeFromRight(buttonWidth).reduced(2));
+        useSound_.setBounds(row.removeFromRight(buttonWidth).reduced(2));
+        sounds_.setBounds(row.reduced(2));soundNotice_.setBounds(area);
+    }
+
     void Screen::refresh()
     {
         status_ = engine_.status();
@@ -29,6 +124,7 @@ namespace oscairn::standalone
             note_[(size_t)i] = (int)engine_.param( "sequencer", noteParam + (uint32_t)i );
             lock_[(size_t)i] = engine_.param( "sequencer", lockParam + (uint32_t)i );
         }
+        refreshPicker();
         repaint();
     }
 
@@ -39,7 +135,7 @@ namespace oscairn::standalone
 
     juce::Rectangle<float> Screen::cell( int step ) const
     {
-        auto       area = getLocalBounds().toFloat().withTrimmedTop( header().getHeight() ).reduced( getWidth() * 0.015f );
+        auto       area = getLocalBounds().toFloat().withTrimmedTop( getHeight()*.32f ).reduced( getWidth() * 0.015f );
         const auto w = area.getWidth() / 8.0f, h = area.getHeight() / 2.0f;
         return juce::Rectangle<float>( area.getX() + ( step % 8 ) * w, area.getY() + ( step / 8 ) * h, w, h ).reduced( w * 0.05f );
     }

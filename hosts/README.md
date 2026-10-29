@@ -21,6 +21,39 @@ Programs built on the core: a file renderer, a live audio/MIDI engine and a desk
   If its managed engine stops, a banner offers **Restart engine**, which opens a fresh
   demo session. Startup failures offer Retry/Quit; snapshot commands fail immediately.
 
+## Desktop sound picker
+
+Every panel display now has a picker for the loaded `synth` instrument. **Prepare...**
+adds a ready sound without changing playback. The Basic Synth offers Warm, Bright and
+Pressure swell variations; other prepared instruments expose their default and advertised
+presets (including LV2 presets). Choose a prepared sound, then **Use sound** to send new
+notes on all MIDI channels to it. The Playing label reflects engine readback; browsing alone
+does not switch sounds. Held notes, sustain and releases retain their existing ownership.
+
+**Remove** retires an unselected sound once no notes own it. Ordinary plugin instances
+may have unknown effect tails, so removal then asks before cutting that tail. The default
+context remains reserved. Capacity exhaustion, invalid presets and changed/removed contexts
+are reported without replacing the playing sound. Prepared sounds live in the engine and
+survive UI reconnection, but not an engine restart: persistent performances remain planned.
+The sequencer's existing brightness locks still affect the selected sound when PLAY runs.
+
+Managed mode and `--connect` perform picker requests through a separate worker-owned control
+connection. The UI remains responsive while the engine prepares a preset; existing UI
+commands wait in order until the request finishes. Physical MIDI and audio continue on their
+existing paths. Failed connections do not replay uncertain mutations. The diagnostic
+`--in-process` mode can inspect/select/retire existing contexts but disables preparation,
+because its plugin main thread is also the UI thread. Use the default separate engine for
+the full workflow. A pending preparation has the control API's 30-second timeout; closing
+the UI waits for its outstanding request before destroying the adapter.
+
+`desktop-sound-picker` checks real remote preparation/selection/retirement, held-note
+ownership, failure/capacity preservation and reconnect readback. `desktop-sound-picker-lv2`
+checks preset enumeration/restoration, failed preparation and explicit tail retirement.
+The KICK controls were exercised in the app; live reconnect and scripted Warm/Bright note
+overlap ran at 48 kHz/128 frames with zero reported deadline misses or event drops. Jacob
+confirmed that the switching/overlap playback sounded normal on October 29, 2026. Physical
+KICK hardware and MIDI-controller input were not exercised in this picker check.
+
 ## Build and connect
 
 ### Audio buffer size
@@ -260,6 +293,7 @@ Add `-DOSCAIRN_LV2=ON` when configuring either the renderer or the desktop/helpe
 use the same graph adapter. `oscairn-render` accepts `bundle.lv2#plugin-uri` alongside
 CLAP paths; `graph.add` accepts a bundle path plus the URI in `pluginId`. See
 [LV2 hosting](../core/lv2-host/README.md). The desktop layout and default CLAP demo are
-unchanged; plugin browsing and selection UI remain pending. LV2-enabled macOS builds
+unchanged; the sound picker works with a loaded instrument, while plugin discovery and
+selection UI remain pending. LV2-enabled macOS builds
 currently link to the installed Lilv libraries; packaging those dependencies for another
 Mac is separate from the existing helper/plugin copying step.

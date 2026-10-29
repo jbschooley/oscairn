@@ -1,0 +1,112 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+#include "../SoundPickerModel.h"
+#include "oscairn/session.h"
+#include "oscairn/remote_control.h"
+#include <array>
+#include <chrono>
+#include <future>
+#include <iostream>
+#include <sys/socket.h>
+
+using namespace oscairn;
+using namespace oscairn::standalone;
+void check(bool ok,const char* message){if(!ok)throw std::runtime_error(message);}
+
+struct Fixture
+{
+    Session session{48000,128};LocalServer server{session};
+    std::array<float,128> left{},right{};
+    explicit Fixture(const char* path,const std::string& pluginId={})
+    {
+        const auto node=session.add("synth",path,pluginId);
+        session.connectNotes(graphInput,node);session.connectAudio(node,graphOutput);session.commit();
+    }
+    void tick()
+    {
+        const auto now=std::chrono::steady_clock::now().time_since_epoch();
+        server.poll(static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(now).count()));
+        session.service();float* output[]{left.data(),right.data()};check(session.process(output,128),"render failed");
+    }
+    template<class F> auto remote(F action)
+    {
+        int sockets[2];check(socketpair(AF_UNIX,SOCK_STREAM,0,sockets)==0,"socketpair");
+        check(server.adopt(sockets[0]),"adopt server socket");
+        auto worker=std::async(std::launch::async,[fd=sockets[1],action] {
+            LocalClient client;client.adopt(fd);RemoteControl control(client);return action(control);
+        });
+        while(worker.wait_for(std::chrono::milliseconds(0))!=std::future_status::ready){tick();std::this_thread::yield();}
+        return worker.get();
+    }
+};
+
+void presets(const char* path)
+{
+    Fixture f(path,"urn:oscairn:test:instrument");
+    auto state=f.remote([](Control& c){return readSoundPicker(c);});
+    check(state.sounds.mode=="instances" && state.choices.size()==2,"loaded LV2 instrument presets exposed");
+    SoundAction prepare;prepare.kind=SoundAction::Prepare;prepare.node=state.node;
+    prepare.pluginId=state.pluginId;prepare.choice=state.choices[1];
+    check(prepare.choice.preset=="urn:oscairn:test:instrument-preset","preset URI preserved");
+    state=f.remote([&](Control& c){applySoundAction(c,prepare);return readSoundPicker(c);});
+    check(state.sounds.contexts[0].selectedChannels==65535,"preset preparation does not replace playing sound");
+    SoundAction select=prepare;select.kind=SoundAction::Select;select.context=state.sounds.contexts[1].id;
+    f.remote([&](Control& c){applySoundAction(c,select);});f.tick();
+    check(f.session.parameter(state.node,0)==.75,"selected preset restores actual parameter value");
+    const auto prepared=select.context;
+    prepare.choice.preset="urn:missing";
+    check(f.remote([&](Control& c){try{applySoundAction(c,prepare);return false;}catch(const std::exception&){return true;}}),"missing preset reported");
+    state=f.remote([](Control& c){return readSoundPicker(c);});
+    check(state.sounds.contexts.size()==2 && state.sounds.contexts[1].selectedChannels==65535,"bad preset preserves current instance");
+    select.context=0;f.remote([&](Control& c){applySoundAction(c,select);});f.tick();
+    SoundAction remove=select;remove.kind=SoundAction::Discard;remove.context=prepared;
+    check(f.remote([&](Control& c){try{applySoundAction(c,remove);return false;}catch(const std::exception&){return true;}}),"unknown effect tail requires explicit retirement");
+    remove.cutTail=true;f.remote([&](Control& c){applySoundAction(c,remove);});
+    state=f.remote([](Control& c){return readSoundPicker(c);});
+    check(state.sounds.contexts.size()==1,"confirmed tail retirement removes instance");
+}
+
+int main(int argc,char** argv)
+{
+    try
+    {
+        check(argc==2 || argc==3,"need Basic Synth path or LV2 bundle and --lv2");
+        if(argc==3){presets(argv[1]);std::cout<<"ok: picker LV2 presets, failed preparation and explicit tail retirement\n";return 0;}
+        Fixture f(argv[1]);
+        auto state=f.remote([](Control& c){return readSoundPicker(c);});
+        check(state.choices.size()==3 && state.sounds.contexts.size()==1,"initial choices/default");
+        const auto node=state.node;
+        f.session.note(true,60,.7);f.tick();
+        SoundAction prepare;prepare.kind=SoundAction::Prepare;prepare.node=node;
+        prepare.pluginId=state.pluginId;prepare.choice=state.choices[0];
+        state=f.remote([&](Control& c){applySoundAction(c,prepare);return readSoundPicker(c);});
+        check(state.sounds.contexts.size()==2 && state.sounds.contexts[0].selectedChannels==65535,"preparing must not select");
+        const auto warm=state.sounds.contexts[1].id;
+        SoundAction select;select.kind=SoundAction::Select;select.node=node;select.pluginId=state.pluginId;select.context=warm;
+        f.remote([&](Control& c){applySoundAction(c,select);});f.tick();
+        state=f.remote([](Control& c){return readSoundPicker(c);});
+        check(state.sounds.contexts[1].selectedChannels==65535,"selection confirmed after processing");
+        check(state.sounds.contexts[0].activeVoices==1,"held note retained its original context");
+        f.session.note(true,64,.7);f.tick();
+        select.context=0;f.remote([&](Control& c){applySoundAction(c,select);});f.tick();
+        SoundAction remove=select;remove.kind=SoundAction::Discard;remove.context=warm;
+        check(f.remote([&](Control& c){try{applySoundAction(c,remove);return false;}catch(const std::runtime_error&){return true;}}),"held sound cannot be removed");
+        f.session.note(false,60,0);f.session.note(false,64,0);
+        for(int i=0;i<2000;++i)f.tick();
+        f.remote([&](Control& c){applySoundAction(c,remove);});
+        state=f.remote([](Control& c){return readSoundPicker(c);});
+        check(state.sounds.contexts.size()==1,"unselected idle sound removed; reconnect reads engine state");
+        prepare.choice.parameters={{999,1}};
+        check(f.remote([&](Control& c){try{applySoundAction(c,prepare);return false;}catch(const std::exception&){return true;}}),"bad preparation refused");
+        state=f.remote([](Control& c){return readSoundPicker(c);});
+        check(state.sounds.contexts.size()==1 && state.sounds.contexts[0].selectedChannels==65535,"failed prepare preserves current sound");
+        prepare.choice=state.choices[1];
+        for(uint32_t i=1;i<state.sounds.capacity;++i)f.remote([&](Control& c){applySoundAction(c,prepare);});
+        check(f.remote([&](Control& c){try{applySoundAction(c,prepare);return false;}catch(const std::exception&){return true;}}),"capacity exhaustion reported");
+        state=f.remote([](Control& c){return readSoundPicker(c);});
+        check(state.sounds.contexts[0].selectedChannels==65535,"capacity failure preserves selected sound");
+        select.pluginId="different-engine";
+        check(f.remote([&](Control& c){try{applySoundAction(c,select);return false;}catch(const std::exception&){return true;}}),"stale engine choice refused");
+        std::cout<<"ok: picker prepare/select/retire, held voices, failure/capacity and reconnect\n";
+    }
+    catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}
+}

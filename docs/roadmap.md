@@ -93,12 +93,16 @@ Done:
 - transpose and MIDI delay CLAP reference plugins, including mapped releases/pressure,
   sustain, bounded queues, exact timing, stop/overflow recovery and portable state;
   mixed audio-to-MIDI graph regression and documented feedback/desktop-host boundaries.
+- desktop sound picker for the loaded instrument: Basic Synth variations, advertised
+  presets, explicit prepare/use/remove, playing readback and safe retirement. Separate-engine
+  requests run off the UI thread; prepared sounds survive UI reconnect. Native and LV2
+  remote tests, actual KICK UI controls and live 128-frame reconnect/playback checks passed.
+  In-process diagnostics disable preparation; project persistence remains pending.
 
 To do:
 
 - tracks, patterns, swing and more lanes in the sequencer;
-- native effect contexts/tails, asset-bearing native patches, pool/project persistence
-  and a desktop sound picker;
+- native effect contexts/tails, asset-bearing native patches and pool/project persistence;
 - plugin discovery and selection in the desktop, using the completed state/preset/property
   controls. Carry stable format identities and state provenance into the library design
   before persisting projects, following [RFC 0006](rfcs/0006-packages-and-portability.md);
@@ -121,18 +125,12 @@ new core, from a UI that talks to it only through the control API.
 
 ### Next build and test order
 
-1. **Desktop sound picker:** expose the existing prepare/select/discard controls for the
-   loaded instrument, starting with named Basic Synth variations and available presets.
-   Keep the UI on the control API and preparation off its event thread. Test switching while
-   holding notes/sustain, correct note releases, preparation failure leaving the current sound
-   intact, and reconnect/readback. Open the app in the KICK layout and verify audible switching
-   at the 128-frame default; automated reference-audio checks complement listening.
-2. **Plugin discovery and selection:** reuse the existing CLAP scanner process and add the
+1. **Plugin discovery and selection:** reuse the existing CLAP scanner process and add the
    corresponding LV2 discovery path, stable format IDs and generic parameter/preset controls.
    Keep scanning away from live rendering; report failed/crashed scans and incompatible ports
    without replacing a working graph. Test bundled plugins and production CLAP/LV2 instruments
    and effects, repeated selection, routing and engine/UI reconnection.
-3. **Minimal save/reopen:** persist one complete Performance with its graph, scenes/prepared
+2. **Minimal save/reopen:** persist one complete Performance with its graph, scenes/prepared
    sounds, state, asset references and mappings. Preserve provenance and unresolved nodes;
    do not require the future package manager. Test a process restart, missing plugin/assets,
    interrupted save, and render/state comparisons. Then expand native asset-bearing patches,
