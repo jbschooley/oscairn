@@ -1,0 +1,356 @@
+{
+  "date": "2026-10-28",
+  "host_base_commit": "659bcc27368dbed329f86d99a2a4a728fc82e357",
+  "mod_builder_commit": "9442804cf044ee41c19f9a62c0fd3b8915690161",
+  "mod_mda_commit": "b2df88cb28540856b7ec7d0210809efd7ca6bcd7",
+  "mod_metadata_commit": "4d4fb43010296d1e672cc0759a4d1afdb7f02fe0",
+  "debian_packages": {
+    "zam-plugins": "4.2+ds-1+b1",
+    "x42-plugins": "20240611+ds-1+b1",
+    "guitarix-lv2": "0.46.0+dfsg-1+b1"
+  },
+  "change": "Configurable static LV2 Atom buffers; 16 KiB default, 1 MiB per-port cap, 4 MiB per-instance cap",
+  "platforms": {
+    "mac": {
+      "platform": "macOS-15.6.1-arm64-arm-64bit-Mach-O",
+      "plugins": [
+        {
+          "name": "JX10",
+          "uri": "http://moddevices.com/plugins/mda/JX10",
+          "repeat_difference_rms": 0.0,
+          "edited_difference_rms": 0.11361349502618295,
+          "block_difference_rms": 0.036248552897090794,
+          "released_tail_rms": 0.04711242679346906,
+          "held_tail_rms": 0.230905923870928,
+          "status": "passed",
+          "render_count": 11,
+          "inspection": {
+            "exit": 0,
+            "stdout": "name=MDA JX10\nuri=http://moddevices.com/plugins/mda/JX10\ninputs=0\noutputs=2\nnotes=1\nparam=0\tOSC Mix\t0\t1\t1\t32\nparam=1\tOSC Tune\t0\t1\t0.37\t32\nparam=2\tOSC Fine\t0\t1\t0.25\t32\nparam=3\tGlide\t0\t1\t0.3\t32\nparam=4\tGld Rate\t0\t1\t0.32\t32\nparam=5\tGld Bend\t0\t1\t0.5\t32\nparam=6\tVCF Freq\t0\t1\t0.9\t32\nparam=7\tVCF Reso\t0\t1\t0.6\t32\nparam=8\tVCF Env\t0\t1\t0.12\t32\nparam=9\tVCF LFO\t0\t1\t0\t32\nparam=10\tVCF Vel\t0\t1\t0.5\t32\nparam=11\tVCF Att\t0\t1\t0.9\t32\nparam=12\tVCF Dec\t0\t1\t0.89\t32\nparam=13\tVCF Sus\t0\t1\t0.9\t32\nparam=14\tVCF Rel\t0\t1\t0.73\t32\nparam=15\tENV Att\t0\t1\t0\t32\nparam=16\tENV Dec\t0\t1\t0.5\t32\nparam=17\tENV Sus\t0\t1\t1\t32\nparam=18\tENV Rel\t0\t1\t0.71\t32\nparam=19\tLFO Rate\t0\t1\t0.81\t32\nparam=20\tVibrato\t0\t1\t0.65\t32\nparam=21\tNoise\t0\t1\t0\t32\nparam=22\tOctave\t0\t1\t0.5\t32\nparam=23\tTuning\t0\t1\t0.5\t32\n",
+            "stderr": ""
+          },
+          "baseline_metrics": "RESULT peak=0.6435052752 rms=0.1091085242 tail_rms=0.04710004477 dry_difference_rms=0 channels=2 blocks=188"
+        },
+        {
+          "name": "DX10",
+          "uri": "http://moddevices.com/plugins/mda/DX10",
+          "repeat_difference_rms": 0.0,
+          "edited_difference_rms": 0.10099514987833796,
+          "block_difference_rms": 0.0,
+          "released_tail_rms": 0.0,
+          "held_tail_rms": 0.05507861502534214,
+          "status": "passed",
+          "render_count": 11,
+          "inspection": {
+            "exit": 0,
+            "stdout": "name=MDA DX10\nuri=http://moddevices.com/plugins/mda/DX10\ninputs=0\noutputs=2\nnotes=1\nparam=0\tAttack\t2.5\t4000\t2.5\t32\nparam=1\tDecay\t46.5\t7000\t6124\t32\nparam=2\tRelease\t46.5\t7000\t424.42\t32\nparam=3\tCoarse\t0\t40\t28\t33\nparam=4\tFine\t0.001\t0.75\t0.24675\t32\nparam=5\tMod Init\t0\t100\t23\t32\nparam=6\tMod Dec\t17\t7000\t4600\t32\nparam=7\tMod Sus\t0\t100\t5\t32\nparam=8\tMod Rel\t46.5\t7000\t6485\t32\nparam=9\tMod Vel\t0\t100\t90\t32\nparam=10\tVibrato\t0\t100\t0\t32\nparam=11\tOctave\t-3\t3\t0\t33\nparam=12\tFineTune\t-100\t100\t0\t32\nparam=13\tWaveform\t0\t100\t44.7\t32\nparam=14\tMod Thru\t0\t100\t0\t32\nparam=15\tLFO Rate\t0\t25\t10.35\t32\n",
+            "stderr": ""
+          },
+          "baseline_metrics": "RESULT peak=0.166757971 rms=0.06504643576 tail_rms=0 dry_difference_rms=0 channels=2 blocks=188"
+        },
+        {
+          "name": "EPiano",
+          "uri": "http://moddevices.com/plugins/mda/EPiano",
+          "repeat_difference_rms": 0.0,
+          "edited_difference_rms": 0.025858171844076,
+          "block_difference_rms": 2.565925592652494e-07,
+          "released_tail_rms": 0.0,
+          "held_tail_rms": 0.052195320725651195,
+          "status": "passed",
+          "render_count": 11,
+          "inspection": {
+            "exit": 0,
+            "stdout": "name=MDA ePiano\nuri=http://moddevices.com/plugins/mda/EPiano\ninputs=0\noutputs=2\nnotes=1\nparam=0\tEnvelope Decay\t3\t23\t8.5\t32\nparam=1\tEnvelope Release\t0.01\t1.4\t0.12\t32\nparam=2\tHardness\t-50\t50\t0\t32\nparam=3\tTreble Boost\t-50\t50\t0\t32\nparam=4\tModulation\t-100\t100\t0\t32\nparam=5\tLFO Rate\t0.1\t37\t4\t32\nparam=6\tVelocity Sense\t0\t100\t0\t32\nparam=7\tStereo Width\t0\t200\t100\t32\nparam=8\tPolyphonic\t0\t1\t1\t33\nparam=9\tFine Tuning\t-50\t50\t0\t32\nparam=10\tRandom Tuning\t0\t50\t7.3\t32\nparam=11\tOverdrive\t0\t100\t0\t32\n",
+            "stderr": ""
+          },
+          "baseline_metrics": "RESULT peak=0.300709337 rms=0.06828502976 tail_rms=0 dry_difference_rms=0 channels=2 blocks=188"
+        },
+        {
+          "name": "Ambience",
+          "uri": "http://moddevices.com/plugins/mda/Ambience",
+          "repeat_difference_rms": 0.0,
+          "edited_difference_rms": 0.09032355150607325,
+          "block_difference_rms": 0.0013723889904675487,
+          "status": "passed",
+          "render_count": 10,
+          "inspection": {
+            "exit": 0,
+            "stdout": "name=MDA Ambience\nuri=http://moddevices.com/plugins/mda/Ambience\ninputs=2\noutputs=2\nnotes=0\nparam=0\tRoomsize\t0\t10\t7\t32\nparam=1\tDamping\t0\t100\t70\t32\nparam=2\tMix\t0\t100\t90\t32\nparam=3\tLevel\t-20\t20\t0\t32\n",
+            "stderr": ""
+          },
+          "baseline_metrics": "RESULT peak=0.3543151617 rms=0.06543673168 tail_rms=0 dry_difference_rms=0.1031883028 channels=2 blocks=188"
+        },
+        {
+          "name": "DubDelay",
+          "uri": "http://moddevices.com/plugins/mda/DubDelay",
+          "repeat_difference_rms": 0.0,
+          "edited_difference_rms": 0.07537874348482115,
+          "block_difference_rms": 0.13426995114281853,
+          "status": "passed",
+          "render_count": 10,
+          "inspection": {
+            "exit": 0,
+            "stdout": "name=MDA DubDelay\nuri=http://moddevices.com/plugins/mda/DubDelay\ninputs=2\noutputs=2\nnotes=0\nparam=0\tDelay\t1\t7500\t460\t32\nparam=1\tFeedback\t-110\t110\t55\t32\nparam=2\tFb Tone\t-100\t100\t0\t32\nparam=3\tLFO Depth\t0\t100\t30\t32\nparam=4\tLFO Rate\t0.01\t10\t0.05\t32\nparam=5\tFX Mix\t0\t100\t50\t32\nparam=6\tLevel\t-12\t6\t0\t32\n",
+            "stderr": ""
+          },
+          "baseline_metrics": "RESULT peak=0.6720371246 rms=0.1570020037 tail_rms=0.03634339443 dry_difference_rms=0.09378393833 channels=2 blocks=188"
+        },
+        {
+          "name": "Overdrive",
+          "uri": "http://moddevices.com/plugins/mda/Overdrive",
+          "repeat_difference_rms": 0.0,
+          "edited_difference_rms": 0.10189365632443091,
+          "block_difference_rms": 0.0,
+          "status": "passed",
+          "render_count": 10,
+          "inspection": {
+            "exit": 0,
+            "stdout": "name=MDA Overdrive\nuri=http://moddevices.com/plugins/mda/Overdrive\ninputs=2\noutputs=2\nnotes=0\nparam=0\tDrive\t0\t100\t50\t32\nparam=1\tMuffle\t0\t100\t0\t32\nparam=2\tLevel\t-20\t20\t4\t32\n",
+            "stderr": ""
+          },
+          "baseline_metrics": "RESULT peak=0.6717408895 rms=0.2469128004 tail_rms=0 dry_difference_rms=0.161014191 channels=2 blocks=188"
+        }
+      ],
+      "chains": [
+        {
+          "case": "JX10-Ambience",
+          "block": 37,
+          "status": "passed"
+        },
+        {
+          "case": "JX10-Ambience",
+          "block": 512,
+          "status": "passed"
+        },
+        {
+          "case": "DX10-DubDelay",
+          "block": 37,
+          "status": "passed"
+        },
+        {
+          "case": "DX10-DubDelay",
+          "block": 512,
+          "status": "passed"
+        },
+        {
+          "case": "EPiano-Overdrive",
+          "block": 37,
+          "status": "passed"
+        },
+        {
+          "case": "EPiano-Overdrive",
+          "block": 512,
+          "status": "passed"
+        }
+      ]
+    },
+    "linux": {
+      "platform": "Linux-6.10.14-linuxkit-aarch64-with-glibc2.41",
+      "plugins": [
+        {
+          "name": "JX10",
+          "uri": "http://moddevices.com/plugins/mda/JX10",
+          "repeat_difference_rms": 0.0,
+          "edited_difference_rms": 0.1136134950484984,
+          "block_difference_rms": 0.036248552850581435,
+          "released_tail_rms": 0.047112426788594855,
+          "held_tail_rms": 0.230905923870928,
+          "status": "passed",
+          "render_count": 11,
+          "inspection": {
+            "exit": 0,
+            "stdout": "name=MDA JX10\nuri=http://moddevices.com/plugins/mda/JX10\ninputs=0\noutputs=2\nnotes=1\nparam=0\tOSC Mix\t0\t1\t1\t32\nparam=1\tOSC Tune\t0\t1\t0.37\t32\nparam=2\tOSC Fine\t0\t1\t0.25\t32\nparam=3\tGlide\t0\t1\t0.3\t32\nparam=4\tGld Rate\t0\t1\t0.32\t32\nparam=5\tGld Bend\t0\t1\t0.5\t32\nparam=6\tVCF Freq\t0\t1\t0.9\t32\nparam=7\tVCF Reso\t0\t1\t0.6\t32\nparam=8\tVCF Env\t0\t1\t0.12\t32\nparam=9\tVCF LFO\t0\t1\t0\t32\nparam=10\tVCF Vel\t0\t1\t0.5\t32\nparam=11\tVCF Att\t0\t1\t0.9\t32\nparam=12\tVCF Dec\t0\t1\t0.89\t32\nparam=13\tVCF Sus\t0\t1\t0.9\t32\nparam=14\tVCF Rel\t0\t1\t0.73\t32\nparam=15\tENV Att\t0\t1\t0\t32\nparam=16\tENV Dec\t0\t1\t0.5\t32\nparam=17\tENV Sus\t0\t1\t1\t32\nparam=18\tENV Rel\t0\t1\t0.71\t32\nparam=19\tLFO Rate\t0\t1\t0.81\t32\nparam=20\tVibrato\t0\t1\t0.65\t32\nparam=21\tNoise\t0\t1\t0\t32\nparam=22\tOctave\t0\t1\t0.5\t32\nparam=23\tTuning\t0\t1\t0.5\t32\n",
+            "stderr": ""
+          },
+          "baseline_metrics": "RESULT peak=0.6435052752 rms=0.1091085242 tail_rms=0.04710004477 dry_difference_rms=0 channels=2 blocks=188"
+        },
+        {
+          "name": "DX10",
+          "uri": "http://moddevices.com/plugins/mda/DX10",
+          "repeat_difference_rms": 0.0,
+          "edited_difference_rms": 0.10099514987833796,
+          "block_difference_rms": 0.0,
+          "released_tail_rms": 0.0,
+          "held_tail_rms": 0.05507861502534214,
+          "status": "passed",
+          "render_count": 11,
+          "inspection": {
+            "exit": 0,
+            "stdout": "name=MDA DX10\nuri=http://moddevices.com/plugins/mda/DX10\ninputs=0\noutputs=2\nnotes=1\nparam=0\tAttack\t2.5\t4000\t2.5\t32\nparam=1\tDecay\t46.5\t7000\t6124\t32\nparam=2\tRelease\t46.5\t7000\t424.42\t32\nparam=3\tCoarse\t0\t40\t28\t33\nparam=4\tFine\t0.001\t0.75\t0.24675\t32\nparam=5\tMod Init\t0\t100\t23\t32\nparam=6\tMod Dec\t17\t7000\t4600\t32\nparam=7\tMod Sus\t0\t100\t5\t32\nparam=8\tMod Rel\t46.5\t7000\t6485\t32\nparam=9\tMod Vel\t0\t100\t90\t32\nparam=10\tVibrato\t0\t100\t0\t32\nparam=11\tOctave\t-3\t3\t0\t33\nparam=12\tFineTune\t-100\t100\t0\t32\nparam=13\tWaveform\t0\t100\t44.7\t32\nparam=14\tMod Thru\t0\t100\t0\t32\nparam=15\tLFO Rate\t0\t25\t10.35\t32\n",
+            "stderr": ""
+          },
+          "baseline_metrics": "RESULT peak=0.166757971 rms=0.06504643576 tail_rms=0 dry_difference_rms=0 channels=2 blocks=188"
+        },
+        {
+          "name": "EPiano",
+          "uri": "http://moddevices.com/plugins/mda/EPiano",
+          "repeat_difference_rms": 0.0,
+          "edited_difference_rms": 0.025858171844076,
+          "block_difference_rms": 2.565925592652494e-07,
+          "released_tail_rms": 0.0,
+          "held_tail_rms": 0.052195320725651195,
+          "status": "passed",
+          "render_count": 11,
+          "inspection": {
+            "exit": 0,
+            "stdout": "name=MDA ePiano\nuri=http://moddevices.com/plugins/mda/EPiano\ninputs=0\noutputs=2\nnotes=1\nparam=0\tEnvelope Decay\t3\t23\t8.5\t32\nparam=1\tEnvelope Release\t0.01\t1.4\t0.12\t32\nparam=2\tHardness\t-50\t50\t0\t32\nparam=3\tTreble Boost\t-50\t50\t0\t32\nparam=4\tModulation\t-100\t100\t0\t32\nparam=5\tLFO Rate\t0.1\t37\t4\t32\nparam=6\tVelocity Sense\t0\t100\t0\t32\nparam=7\tStereo Width\t0\t200\t100\t32\nparam=8\tPolyphonic\t0\t1\t1\t33\nparam=9\tFine Tuning\t-50\t50\t0\t32\nparam=10\tRandom Tuning\t0\t50\t7.3\t32\nparam=11\tOverdrive\t0\t100\t0\t32\n",
+            "stderr": ""
+          },
+          "baseline_metrics": "RESULT peak=0.300709337 rms=0.06828502976 tail_rms=0 dry_difference_rms=0 channels=2 blocks=188"
+        },
+        {
+          "name": "Ambience",
+          "uri": "http://moddevices.com/plugins/mda/Ambience",
+          "repeat_difference_rms": 0.0,
+          "edited_difference_rms": 0.09032355150607325,
+          "block_difference_rms": 0.0013723889904675487,
+          "status": "passed",
+          "render_count": 10,
+          "inspection": {
+            "exit": 0,
+            "stdout": "name=MDA Ambience\nuri=http://moddevices.com/plugins/mda/Ambience\ninputs=2\noutputs=2\nnotes=0\nparam=0\tRoomsize\t0\t10\t7\t32\nparam=1\tDamping\t0\t100\t70\t32\nparam=2\tMix\t0\t100\t90\t32\nparam=3\tLevel\t-20\t20\t0\t32\n",
+            "stderr": ""
+          },
+          "baseline_metrics": "RESULT peak=0.3543151617 rms=0.06543673168 tail_rms=0 dry_difference_rms=0.1031883028 channels=2 blocks=188"
+        },
+        {
+          "name": "DubDelay",
+          "uri": "http://moddevices.com/plugins/mda/DubDelay",
+          "repeat_difference_rms": 0.0,
+          "edited_difference_rms": 0.07537874352403945,
+          "block_difference_rms": 0.13426995109883294,
+          "status": "passed",
+          "render_count": 10,
+          "inspection": {
+            "exit": 0,
+            "stdout": "name=MDA DubDelay\nuri=http://moddevices.com/plugins/mda/DubDelay\ninputs=2\noutputs=2\nnotes=0\nparam=0\tDelay\t1\t7500\t460\t32\nparam=1\tFeedback\t-110\t110\t55\t32\nparam=2\tFb Tone\t-100\t100\t0\t32\nparam=3\tLFO Depth\t0\t100\t30\t32\nparam=4\tLFO Rate\t0.01\t10\t0.05\t32\nparam=5\tFX Mix\t0\t100\t50\t32\nparam=6\tLevel\t-12\t6\t0\t32\n",
+            "stderr": ""
+          },
+          "baseline_metrics": "RESULT peak=0.6720371246 rms=0.1570020036 tail_rms=0.03634339443 dry_difference_rms=0.09378393828 channels=2 blocks=188"
+        },
+        {
+          "name": "Overdrive",
+          "uri": "http://moddevices.com/plugins/mda/Overdrive",
+          "repeat_difference_rms": 0.0,
+          "edited_difference_rms": 0.10189365632443091,
+          "block_difference_rms": 0.0,
+          "status": "passed",
+          "render_count": 10,
+          "inspection": {
+            "exit": 0,
+            "stdout": "name=MDA Overdrive\nuri=http://moddevices.com/plugins/mda/Overdrive\ninputs=2\noutputs=2\nnotes=0\nparam=0\tDrive\t0\t100\t50\t32\nparam=1\tMuffle\t0\t100\t0\t32\nparam=2\tLevel\t-20\t20\t4\t32\n",
+            "stderr": ""
+          },
+          "baseline_metrics": "RESULT peak=0.6717408895 rms=0.2469128004 tail_rms=0 dry_difference_rms=0.161014191 channels=2 blocks=188"
+        },
+        {
+          "name": "ZamComp",
+          "uri": "urn:zamaudio:ZamComp",
+          "repeat_difference_rms": 0.0,
+          "edited_difference_rms": 0.06310688836321875,
+          "block_difference_rms": 0.0,
+          "status": "passed",
+          "render_count": 10,
+          "inspection": {
+            "exit": 0,
+            "stdout": "name=ZamComp\nuri=urn:zamaudio:ZamComp\ninputs=2\noutputs=1\nnotes=0\nparam=3\tAttack\t0.1\t100\t10\t32\nparam=4\tRelease\t1\t500\t80\t32\nparam=5\tKnee\t0\t8\t0\t32\nparam=6\tRatio\t1\t20\t4\t32\nparam=7\tThreshold\t-80\t0\t0\t32\nparam=8\tMakeup\t0\t30\t0\t32\nparam=9\tSlew\t1\t150\t1\t32\nparam=10\tSidechain\t0\t1\t0\t33\nparam=11\tGain Reduction\t0\t20\t0\t8\nparam=12\tOutput Level\t-45\t20\t0\t8\n",
+            "stderr": ""
+          },
+          "baseline_metrics": "RESULT peak=0.2994697094 rms=0.08926785545 tail_rms=0 dry_difference_rms=0 channels=1 blocks=188"
+        },
+        {
+          "name": "GxChorus",
+          "uri": "http://guitarix.sourceforge.net/plugins/gx_chorus_stereo#_chorus_stereo",
+          "repeat_difference_rms": 0.0,
+          "edited_difference_rms": 0.061140822146298644,
+          "block_difference_rms": 0.0,
+          "status": "passed",
+          "render_count": 10,
+          "inspection": {
+            "exit": 0,
+            "stdout": "name=GxChorus-Stereo\nuri=http://guitarix.sourceforge.net/plugins/gx_chorus_stereo#_chorus_stereo\ninputs=2\noutputs=2\nnotes=0\nparam=0\tLevel\t0\t1\t0.5\t32\nparam=1\tDelay\t0\t0.2\t0.02\t32\nparam=2\tDepth\t0\t1\t0.02\t32\nparam=3\tFreq\t0.1\t10\t3\t32\nparam=8\tBYPASS\t0\t1\t1\t33\n",
+            "stderr": ""
+          },
+          "baseline_metrics": "RESULT peak=0.4001275599 rms=0.1005573997 tail_rms=0 dry_difference_rms=0.04083233763 channels=2 blocks=188"
+        },
+        {
+          "name": "GxCompressor",
+          "uri": "http://guitarix.sourceforge.net/plugins/gx_compressor#_compressor",
+          "repeat_difference_rms": 0.0,
+          "edited_difference_rms": 0.04226614664950144,
+          "block_difference_rms": 0.0,
+          "status": "passed",
+          "render_count": 10,
+          "inspection": {
+            "exit": 0,
+            "stdout": "name=GxCompressor\nuri=http://guitarix.sourceforge.net/plugins/gx_compressor#_compressor\ninputs=1\noutputs=1\nnotes=0\nparam=0\tRATIO\t1\t20\t2\t32\nparam=1\tKNEE\t0\t20\t3\t32\nparam=2\tTHRESHOLD\t-96\t10\t-20\t32\nparam=3\tRELEASE\t0\t10\t0.5\t32\nparam=4\tATTACK\t0\t1\t0.002\t32\nparam=7\tBYPASS\t0\t1\t1\t33\n",
+            "stderr": ""
+          },
+          "baseline_metrics": "RESULT peak=0.2994697094 rms=0.07215242812 tail_rms=0 dry_difference_rms=0.0199020184 channels=1 blocks=188"
+        },
+        {
+          "name": "GxZita",
+          "uri": "http://guitarix.sourceforge.net/plugins/gx_zita_rev1_stereo#_zita_rev1_stereo",
+          "repeat_difference_rms": 0.0,
+          "edited_difference_rms": 0.04877203078115753,
+          "block_difference_rms": 0.0,
+          "status": "passed",
+          "render_count": 10,
+          "inspection": {
+            "exit": 0,
+            "stdout": "name=GxZita_rev1-Stereo\nuri=http://guitarix.sourceforge.net/plugins/gx_zita_rev1_stereo#_zita_rev1_stereo\ninputs=2\noutputs=2\nnotes=0\nparam=0\tLEVEL\t-60\t4\t0\t32\nparam=1\tEQ2_FREQ\t160\t10000\t1500\t32\nparam=2\tEQ1_LEVEL\t-15\t15\t0\t32\nparam=3\tEQ1_FREQ\t40\t2500\t315\t32\nparam=4\tIN_DELAY\t20\t100\t60\t32\nparam=5\tLOW_RT60\t1\t8\t3\t32\nparam=6\tLF_X\t50\t1000\t200\t32\nparam=7\tHF_DAMPING\t1500\t23520\t6000\t32\nparam=8\tMID_RT60\t1\t8\t2\t32\nparam=9\tDRY_WET_MIX\t-1\t1\t0\t32\nparam=10\tEQ2_LEVEL\t-15\t15\t0\t32\n",
+            "stderr": ""
+          },
+          "baseline_metrics": "RESULT peak=0.1900679618 rms=0.04580114738 tail_rms=0.001042147025 dry_difference_rms=0.04978610728 channels=2 blocks=188"
+        },
+        {
+          "name": "x42-fil4-stereo",
+          "uri": "http://gareus.org/oss/lv2/fil4#stereo",
+          "repeat_difference_rms": 0.0,
+          "edited_difference_rms": 0.06142609957375706,
+          "block_difference_rms": 0.002278733312940078,
+          "status": "passed",
+          "render_count": 10,
+          "inspection": {
+            "exit": 0,
+            "stdout": "name=x42-eq - Parametric Equalizer Stereo\nuri=http://gareus.org/oss/lv2/fil4#stereo\ninputs=2\noutputs=2\nnotes=0\nparam=2\tEnable\t0\t1\t1\t33\nparam=3\tGain\t-18\t18\t0\t32\nparam=4\tPeak\t-120\t0\t0\t8\nparam=5\tReset Peak Hold\t0\t1\t1\t33\nparam=6\tHighpass\t0\t1\t0\t33\nparam=7\tHighpass Frequency\t5\t1250\t20\t32\nparam=8\tHighPass Resonance\t0\t1.4\t0.7\t32\nparam=9\tLowpass\t0\t1\t0\t33\nparam=10\tLowpass Frequency\t500\t20000\t20000\t32\nparam=11\tLowPass Resonance\t0\t1.4\t1\t32\nparam=12\tLowshelf\t0\t1\t1\t33\nparam=13\tLowshelf Frequency\t25\t400\t80\t32\nparam=14\tLowshelf Bandwidth\t0.0625\t4\t1\t32\nparam=15\tLowshelf Gain\t-18\t18\t0\t32\nparam=16\tSection 1\t0\t1\t1\t33\nparam=17\tFrequency 1\t20\t2000\t160\t32\nparam=18\tBandwidth 1\t0.0625\t4\t0.5\t32\nparam=19\tGain 1\t-18\t18\t0\t32\nparam=20\tSection 2\t0\t1\t1\t33\nparam=21\tFrequency 2\t40\t4000\t397\t32\nparam=22\tBandwidth 2\t0.0625\t4\t0.5\t32\nparam=23\tGain 2\t-18\t18\t0\t32\nparam=24\tSection 3\t0\t1\t1\t33\nparam=25\tFrequency 3\t100\t10000\t1250\t32\nparam=26\tBandwidth 3\t0.0625\t4\t0.5\t32\nparam=27\tGain 3\t-18\t18\t0\t32\nparam=28\tSection 4\t0\t1\t1\t33\nparam=29\tFrequency 4\t200\t20000\t2500\t32\nparam=30\tBandwidth 4\t0.0625\t4\t0.5\t32\nparam=31\tGain 4\t-18\t18\t0\t32\nparam=32\tHighshelf\t0\t1\t1\t33\nparam=33\tHighshelf Frequency\t1000\t16000\t8000\t32\nparam=34\tHighshelf Bandwidth\t0.0625\t4\t1\t32\nparam=35\tHighshelf Gain\t-18\t18\t0\t32\n",
+            "stderr": ""
+          },
+          "baseline_metrics": "RESULT peak=0.2999120653 rms=0.08232050797 tail_rms=1.32439903e-43 dry_difference_rms=0.01822715281 channels=2 blocks=188"
+        }
+      ],
+      "chains": [
+        {
+          "case": "JX10-Ambience",
+          "block": 37,
+          "status": "passed"
+        },
+        {
+          "case": "JX10-Ambience",
+          "block": 512,
+          "status": "passed"
+        },
+        {
+          "case": "DX10-DubDelay",
+          "block": 37,
+          "status": "passed"
+        },
+        {
+          "case": "DX10-DubDelay",
+          "block": 512,
+          "status": "passed"
+        },
+        {
+          "case": "EPiano-Overdrive",
+          "block": 37,
+          "status": "passed"
+        },
+        {
+          "case": "EPiano-Overdrive",
+          "block": 512,
+          "status": "passed"
+        }
+      ]
+    }
+  }
+}

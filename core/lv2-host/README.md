@@ -85,7 +85,7 @@ are flattened in port-index order, as for CLAP; there is no surround/bus editor.
   as permitted by LV2: they serialize access and mapping may allocate. Plugins must
   cache their IDs before performance-critical processing.
 
-Limits: 256 ports, 16 KiB per atom buffer, 512 input/output graph events per block,
+Limits: 256 ports, 512 input/output graph events per block,
 2048 queued control events. Each block can drain 512 queued controls independently of
 the 512 graph-event budget, so busy MIDI cannot starve controls. The URID map grows
 dynamically and preserves IDs and returned string addresses across insertions. All atom
@@ -95,6 +95,39 @@ Input MIDI overflow schedules all-sound/all-notes-off for the next block. Output
 or malformed MIDI output emits a wildcard note-off to release downstream voices,
 replacing the final event when the output buffer is full.
 Native plugin code is not sandboxed and can still crash or violate its realtime contract.
+
+### Atom buffer memory policy
+
+Each connected Atom Sequence port gets at least 16 KiB by default, increased to its
+declared `resize-port:minimumSize` and rounded up to eight-byte alignment. Defaults
+cap each port at 1 MiB and the sum of Atom buffers at 4 MiB **per plugin instance**.
+These are memory capacities, not audio block lengths or extra audio latency.
+Required ports get the budget first; optional ports that exceed either limit remain
+disconnected. Required over-budget ports reject loading with a specific error.
+Invalid or overflowing size declarations never become small allocations by truncation.
+
+Hosts can choose another `Lv2BufferLimits` policy at construction through `loadPlugin`,
+`Graph`, `Chain`, or `Session`. For example, a constrained hardware host can use:
+
+```cpp
+oscairn::Lv2BufferLimits limits;
+limits.maxPortBytes = 256 * 1024;
+limits.maxTotalBytes = 1024 * 1024;
+oscairn::Session session(sampleRate, maxFrames, limits);
+```
+
+Limits count aligned allocations including Atom headers, across both input and output
+ports. They apply separately to every LV2 instance; this does not impose a whole-graph
+memory budget, and CLAP hosting is unchanged. There is no runtime control API setter.
+The default must fit a Sequence header and both caps; per-port capacities must fit the
+signed Atom Int used for `buf-size:sequenceSize`.
+
+All buffers are allocated before instantiation. `sequenceSize` reports the largest
+connected buffer (or the configured default when there are none). Each input packing,
+output-capacity announcement and output-validation check uses that port's own size.
+Processing neither allocates nor resizes buffers. This implements static `minimumSize`
+requests, not the dynamic `resize-port:resize` feature or `asLargeAs` relationships.
+Larger buffers do not enable custom UIs, patch messaging or larger graph event queues.
 
 ## Worker and offline rendering
 
@@ -155,8 +188,9 @@ These are explicit follow-up work, not broad LV2 compatibility claims.
 [Production-plugin tests](tests/production/README.md) cover three MOD MDA instruments,
 three MOD MDA effects, ZamComp and three Guitarix effects through the normal adapter,
 plus mixed CLAP/LV2 chains. The report records exact builds, measurements and the
-x42 stereo EQ's current Atom-buffer incompatibility. CI repeats the six pinned MOD
-plugins on Linux and macOS; packaged-plugin tests are opt-in.
+x42 stereo EQ's initial Atom-buffer incompatibility and successful retest after adding
+configurable sizing. CI repeats the six pinned MOD plugins on Linux and macOS and the
+packaged x42 stereo EQ on Linux; other packaged-plugin tests are opt-in.
 
 `lv2-host` uses a real native bundle with Turtle metadata, an instrument/effect, an atom
 MIDI echo, transport telemetry and intentionally malformed output. It checks exact-sample
@@ -171,6 +205,13 @@ thread identity and draining shutdown. The host fixture verifies feature negotia
 live response application, sample-exact offline work, end-run calls across split blocks
 and block-size-independent offline graphs. Worker queue operations and live response
 delivery run under the allocation guard.
+
+The host tests also exercise unequal large buffers, alignment, actual per-port output
+capacity, the instance `sequenceSize` option, required-before-optional budgeting,
+configurable defaults/caps, malformed/overflowing metadata, and input/output bounds.
+A large opaque notification followed by MIDI verifies parsing beyond the old 16 KiB
+limit; malformed large output triggers the existing release/error policy. Rendering
+these cases runs under the allocation guard and Linux ASan/UBSan.
 
 For independent upstream examples, install `lv2-examples` and configure with
 `-DOSCAIRN_LV2_EXAMPLE_DIR=/usr/lib/lv2`. Additional tests check eg-amp at unity and eg-fifths

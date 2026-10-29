@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #include "oscairn/graph.h"
+#include "oscairn/chain.h"
 #include "oscairn/session.h"
 #include "oscairn/json_rpc.h"
 #include "oscairn/transport.h"
@@ -83,7 +84,7 @@ void audit(const char* bundle)
 {
     auto host=loadPlugin(bundle,"urn:oscairn:test:audit",48000,512);Audio audio;
     check(render(*host,audio),"audit fixture renders with required options and optional ports");
-    check(audio.l[0]==440 && audio.l[1]==1 && audio.l[2]==-1 && audio.l[3]==0,"sample-rate default, toggle, integer and disconnected optional atom ports");
+    check(audio.l[0]==440 && audio.l[1]==1 && audio.l[2]==-1 && audio.l[3]==1,"sample-rate default, toggle, integer and supported optional atom ports");
     const auto& frequency=*std::find_if(host->parameters().begin(),host->parameters().end(),[](const auto& p){return p.id==9;});
     check(frequency.minimum==0 && frequency.maximum==24000 && frequency.defaultValue==440,"sample rate scales bounds only");
     const std::array edits{param(.25,0,10),param(-1.5,0,11),param(30000,0,9)};
@@ -105,6 +106,53 @@ void audit(const char* bundle)
     check(render(*host,audio,&split,1,&t) && host->parameterValue(6)==48000 && host->parameterValue(13)==42 && host->parameterValue(17)==0,"stopped transport does not advance at a split");
     t.tsig_num=3;t.tsig_denom=4;t.tempo_inc=0;t.song_pos_beats=-CLAP_BEATTIME_FACTOR;t.bar_start=-3*CLAP_BEATTIME_FACTOR;t.bar_number=-1;
     check(render(*host,audio,nullptr,0,&t) && host->parameterValue(7)==-1 && host->parameterValue(13)==-1 && host->parameterValue(14)==2,"negative preroll positions");
+}
+void atomBuffers(const char* bundle)
+{
+    Audio audio;
+    auto load=[&](Lv2BufferLimits limits){return loadPlugin(bundle,"urn:oscairn:test:large",48000,512,ProcessingMode::Realtime,limits);};
+    auto host=load({});
+    check(render(*host,audio),"large notification renders without allocation");
+    check(audio.l[0]==131432 && audio.l[1]==262144 && audio.l[2]==1,"aligned per-port capacity and largest sequenceSize option");
+    uint32_t count=0;auto* events=host->outputEvents(count);
+    check(count==1 && events[0].header()->type==CLAP_EVENT_NOTE_ON && host->statistics().processErrors==0,"MIDI following large opaque payload survives");
+    for(int bad:{1,2})
+    {
+        host=load({});check(host->setParameter(1,bad),"queue malformed large output");
+        check(render(*host,audio),"malformed large output handled");events=host->outputEvents(count);
+        check(host->statistics().processErrors==1 && count==1 && events[0].header()->type==CLAP_EVENT_NOTE_OFF,
+              "validate against actual port capacity and contain oversized payloads");
+    }
+    Lv2BufferLimits limits;limits.maxTotalBytes=196976; // Both aligned required ports, no optional port.
+    host=load(limits);check(render(*host,audio) && audio.l[0]==131432 && audio.l[1]==131432 && audio.l[2]==0,
+                           "required ports take priority over earlier optional port");
+    limits={};limits.maxPortBytes=131432;
+    host=load(limits);check(render(*host,audio) && audio.l[2]==0,"over-limit optional port disconnected");
+    limits={};limits.defaultBytes=131440;
+    host=load(limits);check(render(*host,audio) && audio.l[0]==131440,"configured default applied before metadata minimum");
+    auto rejects=[&](auto action,const char* reason)
+    {
+        bool rejected=false;try{action();}catch(const std::exception& e){rejected=std::string(e.what()).find(reason)!=std::string::npos;}
+        check(rejected,"buffer policy rejects with useful reason");
+    };
+    limits={};limits.maxPortBytes=131425;
+    rejects([&]{load(limits);},"per-port limit"); // Aligned size exceeds an unaligned limit.
+    limits={};limits.maxTotalBytes=196975;
+    rejects([&]{load(limits);},"total per-instance limit");
+    limits={};limits.defaultBytes=15;rejects([&]{load(limits);},"Invalid LV2 Atom buffer limits");
+    limits={};limits.maxPortBytes=UINT32_MAX;rejects([&]{load(limits);},"Invalid LV2 Atom buffer limits");
+    limits={};limits.maxTotalBytes=1;rejects([&]{load(limits);},"Invalid LV2 Atom buffer limits");
+    for(const auto* id:{"urn:oscairn:test:negative-size","urn:oscairn:test:fractional-size","urn:oscairn:test:huge-size","urn:oscairn:test:wrap-size"})
+        rejects([&]{loadPlugin(bundle,id,48000,512);},"LV2 Atom");
+    limits={};limits.maxPortBytes=65536;
+    rejects([&]{Graph graph(48000,512,ProcessingMode::Realtime,limits);graph.add(bundle,"urn:oscairn:test:large");},"per-port limit");
+    rejects([&]{Chain chain(48000,512,ProcessingMode::Offline,limits);chain.add(bundle,"urn:oscairn:test:large");},"per-port limit");
+    rejects([&]{Session session(48000,512,limits);session.add("large",bundle,"urn:oscairn:test:large");},"per-port limit");
+    // Small configured buffers also bound input construction, not just output parsing.
+    limits={};limits.defaultBytes=64;limits.maxPortBytes=64;
+    host=loadPlugin(bundle,"urn:oscairn:test:synth",48000,512,ProcessingMode::Realtime,limits);
+    const std::array notes{Event::note(true,60,.5),Event::note(true,61,.5),Event::note(true,62,.5)};
+    check(render(*host,audio,notes.data(),notes.size()) && host->statistics().droppedEvents==1,"input packing respects actual small capacity");
 }
 void events(const char* bundle)
 {
@@ -226,6 +274,6 @@ void control(const char* bundle)
 }
 int main(int argc,char** argv)
 {
-    try{if(argc!=4)return 2;uridMapping();policy(argv[1]);audit(argv[1]);events(argv[1]);worker(argv[1]);graph(argv[1],argv[2],argv[3]);control(argv[1]);std::cout<<"ok: LV2 audit regressions, policy, MIDI/pressure/time, sample-accurate mixed graphs, control API and concurrent rendering\n";return 0;}
+    try{if(argc!=4)return 2;uridMapping();policy(argv[1]);audit(argv[1]);atomBuffers(argv[1]);events(argv[1]);worker(argv[1]);graph(argv[1],argv[2],argv[3]);control(argv[1]);std::cout<<"ok: LV2 buffer limits, audit regressions, policy, MIDI/pressure/time, sample-accurate mixed graphs, control API and concurrent rendering\n";return 0;}
     catch(const std::exception& e){forbidAllocation=false;std::cerr<<e.what()<<'\n';return 1;}
 }

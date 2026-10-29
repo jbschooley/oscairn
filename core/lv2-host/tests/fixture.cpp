@@ -22,6 +22,7 @@ struct Fixture
     bool effect=false,audit=false,worker=false;
     LV2_Worker_Schedule* schedule=nullptr;
     float workValue=1,completed=0,endRuns=0;
+    int32_t sequenceSize=0;
     std::array<std::array<bool,128>,16> held{};
     std::array<std::array<float,128>,16> pressure{};
     LV2_URID midi,sequence,object,position,bpm,frame,beat,bar,barBeat,beatUnit,beatsPerBar,speed;
@@ -49,6 +50,10 @@ LV2_Handle instantiate(const LV2_Descriptor* descriptor,double rate,const char*,
     for(auto f=features;*f;++f)if(!std::strcmp((*f)->URI,LV2_WORKER__schedule))s->schedule=static_cast<LV2_Worker_Schedule*>((*f)->data);
     if(s->worker && !s->schedule){delete s;return nullptr;}
     auto id=[&](const char* uri){return map->map(map->handle,uri);};
+    for(auto f=features;*f;++f)if(!std::strcmp((*f)->URI,LV2_OPTIONS__options))
+        for(auto o=static_cast<const LV2_Options_Option*>((*f)->data);o->key;++o)
+            if(o->key==id(LV2_BUF_SIZE__sequenceSize) && o->type==id(LV2_ATOM__Int) && o->size==sizeof(int32_t))
+                s->sequenceSize=*static_cast<const int32_t*>(o->value);
     s->midi=id(LV2_MIDI__MidiEvent);s->sequence=id(LV2_ATOM__Sequence);s->object=id(LV2_ATOM__Object);s->position=id(LV2_TIME__Position);
     s->bpm=id(LV2_TIME__beatsPerMinute);s->frame=id(LV2_TIME__frame);s->beat=id(LV2_TIME__beat);
     s->bar=id(LV2_TIME__bar);s->barBeat=id(LV2_TIME__barBeat);s->beatUnit=id(LV2_TIME__beatUnit);
@@ -143,5 +148,30 @@ const LV2_Descriptor worker{"urn:oscairn:test:worker",instantiate,synth.connect_
     [](const char* uri)->const void*{return !std::strcmp(uri,LV2_WORKER__interface)?&workerInterface:nullptr;}};
 const LV2_Descriptor brokenWorker{"urn:oscairn:test:bad-worker",instantiate,synth.connect_port,nullptr,run,nullptr,synth.cleanup,nullptr};
 const LV2_Descriptor audit{"urn:oscairn:test:audit",instantiate,synth.connect_port,nullptr,run,nullptr,synth.cleanup,nullptr};
+void largeRun(LV2_Handle instance,uint32_t frames)
+{
+    auto& s=*static_cast<Fixture*>(instance);
+    auto* out=static_cast<float*>(s.ports[2]);
+    auto* echo=static_cast<LV2_Atom_Sequence*>(s.ports[4]);
+    const auto capacity=echo->atom.size;
+    std::fill_n(out,frames,0.f);
+    if(frames>=3){out[0]=capacity+sizeof(LV2_Atom);out[1]=s.sequenceSize;out[2]=s.ports[0]?1:0;}
+    echo->atom.type=s.sequence;echo->body={0,0};lv2_atom_sequence_clear(echo);
+    // An opaque notification fills all but one MIDI event's space. A host must
+    // validate/skip the large notification and still recover the trailing note.
+    constexpr uint32_t payload=131376;
+    if(capacity<sizeof(echo->body)+sizeof(LV2_Atom_Event)+payload+24)return;
+    auto* e=lv2_atom_sequence_begin(&echo->body);
+    e->time.frames=0;e->body={payload,s.object};std::memset(e+1,0,payload);
+    echo->atom.size=sizeof(echo->body)+sizeof(LV2_Atom_Event)+payload;
+    alignas(8) uint8_t bytes[24]{};
+    auto* note=reinterpret_cast<LV2_Atom_Event*>(bytes);note->time.frames=0;note->body={3,s.midi};
+    bytes[sizeof(LV2_Atom_Event)]=0x90;bytes[sizeof(LV2_Atom_Event)+1]=60;bytes[sizeof(LV2_Atom_Event)+2]=100;
+    lv2_atom_sequence_append_event(echo,capacity,note);
+    const auto bad=*static_cast<float*>(s.ports[1]);
+    if(bad==1)echo->atom.size=capacity+1; // Just beyond this port's actual allocation.
+    if(bad==2)e->body.size=0xffffffff; // Overflow-sized event within a valid outer size.
 }
-LV2_SYMBOL_EXPORT const LV2_Descriptor* lv2_descriptor(uint32_t index){return index==0?&synth:index==1?&effect:index==2?&audit:index==3?&worker:index==4?&brokenWorker:nullptr;}
+const LV2_Descriptor large{"urn:oscairn:test:large",instantiate,synth.connect_port,nullptr,largeRun,nullptr,synth.cleanup,nullptr};
+}
+LV2_SYMBOL_EXPORT const LV2_Descriptor* lv2_descriptor(uint32_t index){return index==0?&synth:index==1?&effect:index==2?&audit:index==3?&worker:index==4?&brokenWorker:index==5?&large:nullptr;}

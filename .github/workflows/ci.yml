@@ -19,7 +19,7 @@ jobs:
 
       - name: Install Ninja (Linux)
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y ninja-build liblilv-dev lv2-dev lv2-examples libsndfile1-dev libsamplerate0-dev
+        run: sudo apt-get update && sudo apt-get install -y ninja-build liblilv-dev lv2-dev lv2-examples libsndfile1-dev libsamplerate0-dev x42-plugins
 
       - name: Check out pinned upstream LV2 examples (Linux)
         if: runner.os == 'Linux'
@@ -71,12 +71,18 @@ jobs:
           python3 core/lv2-host/tests/production/build_mod_mda.py upstream-mod-mda build/production-lv2 --mod-data upstream-mod-data
           python3 core/lv2-host/tests/production/run.py build/core/lv2-host/tests/oscairn-lv2-production-probe build/production-results --mod-root build/production-lv2 --renderer build/hosts/oscairn-render --sequencer build/plugins/oscairn-step-sequencer.clap
 
+      - name: Test production x42 EQ with larger Atom buffers (Linux)
+        if: runner.os == 'Linux'
+        run: python3 core/lv2-host/tests/production/run.py build/core/lv2-host/tests/oscairn-lv2-production-probe build/x42-production-results --system-root /usr/lib/lv2 --only x42-fil4-stereo
+
       - name: Upload production test measurements
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: production-lv2-${{ matrix.os }}
-          path: build/production-results/results.json
+          path: |
+            build/production-results/results.json
+            build/x42-production-results/results.json
           if-no-files-found: ignore
 
   thread-sanitizer:

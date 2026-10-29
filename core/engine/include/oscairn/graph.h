@@ -38,7 +38,7 @@ namespace oscairn
     public:
         static constexpr uint32_t channels = 2;
 
-        Graph( double sampleRate, uint32_t maxFrames, ProcessingMode mode = ProcessingMode::Realtime );
+        Graph( double sampleRate, uint32_t maxFrames, ProcessingMode mode = ProcessingMode::Realtime, Lv2BufferLimits lv2Buffers = {} );
         ~Graph();
 
         Graph( const Graph& )            = delete;
@@ -134,6 +134,7 @@ namespace oscairn
         double   sampleRate_;
         uint32_t maxFrames_;
         ProcessingMode mode_;
+        Lv2BufferLimits lv2Buffers_;
         NodeId   nextId_ = 1;
 
         std::map<NodeId, Node>                nodes_;

@@ -24,7 +24,9 @@ Cortex-A76/A55). It tests the toolchain, packaging and startup, not board-specif
   (`--layout kick-screen --fullscreen --play`). Logs: `/var/log/oscairn.log` and
   `/var/log/oscairn-xorg.log`.
 - Sound through ALSA. The QEMU image uses the kernel's dummy sound card, which plays
-  silently.
+  silently. Audio currently uses the backend/device default buffer size, through the
+  same engine as the desktop app; see [audio buffer configuration](../hosts/README.md#audio-buffer-size).
+  No separate board-specific buffer policy is configured yet.
 
 ## Changing the UI later
 

@@ -23,7 +23,7 @@ namespace oscairn
         static constexpr size_t commandCapacity = 4096;
         static constexpr size_t historyCapacity = 4096;
 
-        Session( double sampleRate, uint32_t maxFrames );
+        Session( double sampleRate, uint32_t maxFrames, Lv2BufferLimits lv2Buffers = {} );
         Control& control() noexcept { return *this; }
         const Control& control() const noexcept { return *this; }
 

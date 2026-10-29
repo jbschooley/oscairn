@@ -112,3 +112,39 @@
  .
 
 <urn:oscairn:test:worker> lv2:extensionData <http://lv2plug.in/ns/ext/worker#interface> .
+
+# Optional port comes first: required ports must get the budget first.
+<urn:oscairn:test:large> a lv2:Plugin; doap:name "Large Atom fixture"; lv2:requiredFeature urid:map; lv2:port
+ [a lv2:InputPort, atom:AtomPort; lv2:index 0; lv2:symbol "optional"; lv2:name "Optional"; atom:bufferType atom:Sequence; <http://lv2plug.in/ns/ext/resize-port#minimumSize> 262144; lv2:portProperty lv2:connectionOptional],
+ [a lv2:InputPort, lv2:ControlPort; lv2:index 1; lv2:symbol "bad"; lv2:name "Bad"; lv2:minimum 0; lv2:maximum 2; lv2:default 0],
+ [a lv2:OutputPort, lv2:AudioPort; lv2:index 2; lv2:symbol "out"; lv2:name "Out"],
+ [a lv2:InputPort, atom:AtomPort; lv2:index 3; lv2:symbol "in"; lv2:name "In"; atom:bufferType atom:Sequence; atom:supports midi:MidiEvent; <http://lv2plug.in/ns/ext/resize-port#minimumSize> 65537],
+ [a lv2:OutputPort, atom:AtomPort; lv2:index 4; lv2:symbol "notify"; lv2:name "Notify"; atom:bufferType atom:Sequence; atom:supports midi:MidiEvent; <http://lv2plug.in/ns/ext/resize-port#minimumSize> 131425] .
+
+<urn:oscairn:test:negative-size> a lv2:Plugin; doap:name "Large Atom fixture"; lv2:requiredFeature urid:map; lv2:port
+ [a lv2:InputPort, atom:AtomPort; lv2:index 0; lv2:symbol "optional"; lv2:name "Optional"; atom:bufferType atom:Sequence; <http://lv2plug.in/ns/ext/resize-port#minimumSize> 262144; lv2:portProperty lv2:connectionOptional],
+ [a lv2:InputPort, lv2:ControlPort; lv2:index 1; lv2:symbol "bad"; lv2:name "Bad"; lv2:minimum 0; lv2:maximum 2; lv2:default 0],
+ [a lv2:OutputPort, lv2:AudioPort; lv2:index 2; lv2:symbol "out"; lv2:name "Out"],
+ [a lv2:InputPort, atom:AtomPort; lv2:index 3; lv2:symbol "in"; lv2:name "In"; atom:bufferType atom:Sequence; atom:supports midi:MidiEvent; <http://lv2plug.in/ns/ext/resize-port#minimumSize> 65537],
+ [a lv2:OutputPort, atom:AtomPort; lv2:index 4; lv2:symbol "notify"; lv2:name "Notify"; atom:bufferType atom:Sequence; atom:supports midi:MidiEvent; <http://lv2plug.in/ns/ext/resize-port#minimumSize> -1] .
+
+<urn:oscairn:test:fractional-size> a lv2:Plugin; doap:name "Large Atom fixture"; lv2:requiredFeature urid:map; lv2:port
+ [a lv2:InputPort, atom:AtomPort; lv2:index 0; lv2:symbol "optional"; lv2:name "Optional"; atom:bufferType atom:Sequence; <http://lv2plug.in/ns/ext/resize-port#minimumSize> 262144; lv2:portProperty lv2:connectionOptional],
+ [a lv2:InputPort, lv2:ControlPort; lv2:index 1; lv2:symbol "bad"; lv2:name "Bad"; lv2:minimum 0; lv2:maximum 2; lv2:default 0],
+ [a lv2:OutputPort, lv2:AudioPort; lv2:index 2; lv2:symbol "out"; lv2:name "Out"],
+ [a lv2:InputPort, atom:AtomPort; lv2:index 3; lv2:symbol "in"; lv2:name "In"; atom:bufferType atom:Sequence; atom:supports midi:MidiEvent; <http://lv2plug.in/ns/ext/resize-port#minimumSize> 65537],
+ [a lv2:OutputPort, atom:AtomPort; lv2:index 4; lv2:symbol "notify"; lv2:name "Notify"; atom:bufferType atom:Sequence; atom:supports midi:MidiEvent; <http://lv2plug.in/ns/ext/resize-port#minimumSize> 1.5] .
+
+<urn:oscairn:test:huge-size> a lv2:Plugin; doap:name "Large Atom fixture"; lv2:requiredFeature urid:map; lv2:port
+ [a lv2:InputPort, atom:AtomPort; lv2:index 0; lv2:symbol "optional"; lv2:name "Optional"; atom:bufferType atom:Sequence; <http://lv2plug.in/ns/ext/resize-port#minimumSize> 262144; lv2:portProperty lv2:connectionOptional],
+ [a lv2:InputPort, lv2:ControlPort; lv2:index 1; lv2:symbol "bad"; lv2:name "Bad"; lv2:minimum 0; lv2:maximum 2; lv2:default 0],
+ [a lv2:OutputPort, lv2:AudioPort; lv2:index 2; lv2:symbol "out"; lv2:name "Out"],
+ [a lv2:InputPort, atom:AtomPort; lv2:index 3; lv2:symbol "in"; lv2:name "In"; atom:bufferType atom:Sequence; atom:supports midi:MidiEvent; <http://lv2plug.in/ns/ext/resize-port#minimumSize> 65537],
+ [a lv2:OutputPort, atom:AtomPort; lv2:index 4; lv2:symbol "notify"; lv2:name "Notify"; atom:bufferType atom:Sequence; atom:supports midi:MidiEvent; <http://lv2plug.in/ns/ext/resize-port#minimumSize> 2147483647] .
+
+<urn:oscairn:test:wrap-size> a lv2:Plugin; doap:name "Large Atom fixture"; lv2:requiredFeature urid:map; lv2:port
+ [a lv2:InputPort, atom:AtomPort; lv2:index 0; lv2:symbol "optional"; lv2:name "Optional"; atom:bufferType atom:Sequence; <http://lv2plug.in/ns/ext/resize-port#minimumSize> 262144; lv2:portProperty lv2:connectionOptional],
+ [a lv2:InputPort, lv2:ControlPort; lv2:index 1; lv2:symbol "bad"; lv2:name "Bad"; lv2:minimum 0; lv2:maximum 2; lv2:default 0],
+ [a lv2:OutputPort, lv2:AudioPort; lv2:index 2; lv2:symbol "out"; lv2:name "Out"],
+ [a lv2:InputPort, atom:AtomPort; lv2:index 3; lv2:symbol "in"; lv2:name "In"; atom:bufferType atom:Sequence; atom:supports midi:MidiEvent; <http://lv2plug.in/ns/ext/resize-port#minimumSize> 65537],
+ [a lv2:OutputPort, atom:AtomPort; lv2:index 4; lv2:symbol "notify"; lv2:name "Notify"; atom:bufferType atom:Sequence; atom:supports midi:MidiEvent; <http://lv2plug.in/ns/ext/resize-port#minimumSize> 4294967297] .

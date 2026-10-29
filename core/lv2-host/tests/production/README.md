@@ -16,7 +16,7 @@ adapter and mixed CLAP/LV2 renderer, not the direct-ABI sampler harness.
 | Guitarix GxChorus-Stereo | Not tested | Pass | Depth |
 | Guitarix GxCompressor | Not tested | Pass | Threshold |
 | Guitarix GxZita_rev1-Stereo | Not tested | Pass | Dry/wet mix |
-| x42 fil4 stereo EQ | Not tested | Rejected | Requires larger Atom buffer |
+| x42 fil4 stereo EQ | Not tested | Pass after buffer-sizing update | Gain |
 
 ## What passed and what did not
 
@@ -46,12 +46,12 @@ ePiano differed by about 2.57e-7 RMS; JX10, Ambience and DubDelay differed by
 a concrete upstream source of block dependence. These results do not establish
 the cause of every plugin's difference, and no plugin DSP was modified.
 
-The packaged x42 stereo EQ requests a 131,424-byte Atom input buffer. Oscairn's
-current 16,384-byte limit rejects it before instantiation, with
+The packaged x42 stereo EQ requests a 131,424-byte Atom **output notification**
+buffer for plugin-to-GUI communication. The initial 16,384-byte limit rejected it before instantiation, with
 `LV2 atom buffer minimum exceeds 16384 bytes`. Its requirements were not stripped.
-Supporting it needs a separately tested change to buffer sizing/limits; it is not
-counted as a successful render. The runner records this known rejection as
-`unsupported`, distinguishes it from other failures, and still tests all other cases.
+It was not counted as a successful render in the initial measurements. The sizing
+update described below now loads it with its declared requirements intact; rejection
+of x42 is now a test failure.
 
 This is automated functional coverage, **not an audible listening test or a realtime
 CPU/deadline benchmark**. Realtime mode uses the normal live host path but runs as fast
@@ -102,8 +102,31 @@ and exits nonzero on unexpected load/render failures or ineffective parameter ed
 It needs only Python's standard library. Missing bundles are failures, not skips.
 
 CI builds and exercises the pinned six MOD plugins and mixed chains on Linux and
-macOS, uploading the JSON measurements. The packaged Linux tests remain opt-in.
+macOS, plus the packaged x42 stereo EQ on Linux, uploading JSON measurements.
+Other packaged Linux tests remain opt-in. `--only x42-fil4-stereo` selects just x42
+when combined with `--system-root /usr/lib/lv2`.
 [Recorded measurements](results-2026-10-28.json) preserve the local baseline,
 parameter IDs/ranges, repeat/block differences and note-release comparisons.
 The local full logs and WAVs are under `/private/tmp/oscairn-production-results/`;
 they are disposable test artifacts, not repository assets.
+
+## Buffer-sizing follow-up (2026-10-28)
+
+After replacing the fixed 16 KiB ceiling with bounded per-port allocations, **all 11
+production plugins pass** on their tested platforms. The complete rerun covers 176
+individual renders and 12 mixed-chain renders, with the same stimuli, rates, blocks,
+modes and parameter/release checks as above. A separate x42-only invocation also
+verifies the CI command. No audio device settings were changed.
+
+The x42 stereo EQ now passes ten renders: eight rate/block/mode combinations, a
+repeat and a -12 dB Gain edit. Its baseline 48 kHz/512-frame render has peak 0.299912,
+RMS 0.082321 and zero host errors/drops. Repeats are identical; changing Gain produces
+0.061426 RMS difference. Its 37/512-frame output differs by 0.002279 RMS, so the same
+block-independence caveat applies. Its custom UI and notifications are not displayed;
+this validates normal DSP loading and processing, not UI support.
+
+[Follow-up measurements](results-atom-buffers-2026-10-28.json) retain the new results;
+[initial measurements](results-2026-10-28.json) retain the original rejection.
+Full rerun WAVs/logs are in `/private/tmp/oscairn-atom-results/` locally.
+The updated fixture additionally exercises allocations and bounds above 16 KiB under
+an allocation guard and Linux AddressSanitizer/UndefinedBehaviorSanitizer.

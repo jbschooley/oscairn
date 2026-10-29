@@ -13,3 +13,13 @@
 <urn:oscairn:test:required-option> a lv2:Plugin; lv2:binary <fixture@CMAKE_SHARED_MODULE_SUFFIX@>; rdfs:seeAlso <fixture.ttl> .
 <urn:oscairn:test:required-atom> a lv2:Plugin; lv2:binary <fixture@CMAKE_SHARED_MODULE_SUFFIX@>; rdfs:seeAlso <fixture.ttl> .
 <urn:oscairn:test:bad-worker> a lv2:Plugin; lv2:binary <fixture@CMAKE_SHARED_MODULE_SUFFIX@>; rdfs:seeAlso <fixture.ttl> .
+
+<urn:oscairn:test:large> a lv2:Plugin; lv2:binary <fixture@CMAKE_SHARED_MODULE_SUFFIX@>; rdfs:seeAlso <fixture.ttl> .
+
+<urn:oscairn:test:negative-size> a lv2:Plugin; lv2:binary <fixture@CMAKE_SHARED_MODULE_SUFFIX@>; rdfs:seeAlso <fixture.ttl> .
+
+<urn:oscairn:test:fractional-size> a lv2:Plugin; lv2:binary <fixture@CMAKE_SHARED_MODULE_SUFFIX@>; rdfs:seeAlso <fixture.ttl> .
+
+<urn:oscairn:test:huge-size> a lv2:Plugin; lv2:binary <fixture@CMAKE_SHARED_MODULE_SUFFIX@>; rdfs:seeAlso <fixture.ttl> .
+
+<urn:oscairn:test:wrap-size> a lv2:Plugin; lv2:binary <fixture@CMAKE_SHARED_MODULE_SUFFIX@>; rdfs:seeAlso <fixture.ttl> .

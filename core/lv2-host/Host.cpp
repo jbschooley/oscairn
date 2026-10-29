@@ -17,6 +17,7 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <charconv>
 #include <cmath>
 #include <filesystem>
 #include <limits>
@@ -30,7 +31,6 @@ using Event = kick::clap::Event;
 using Parameter = kick::clap::Parameter;
 using PortInfo = kick::clap::Port;
 constexpr uint32_t maxEvents = kick::clap::Host::maxBlockEvents;
-constexpr uint32_t atomBytes = 16384;
 using Node = std::unique_ptr<LilvNode, decltype(&lilv_node_free)>;
 Node own(LilvNode* n) { return Node(n, lilv_node_free); }
 std::string text(const LilvNode* n) { return n ? lilv_node_as_string(n) : ""; }
@@ -43,11 +43,13 @@ class Lv2Host final : public PluginHost
     struct Port
     {
         Kind kind=Kind::Ignored;
-        bool input=false, midi=false, time=false, toggle=false;
+        bool input=false, midi=false, time=false, toggle=false, optional=false;
+        uint32_t requestedBytes=0;
         uint32_t channel=0, midiIndex=0;
         float control=0;
         std::vector<float> audio;
         std::vector<uint64_t> atom; // 8-byte alignment
+        uint32_t atomBytes() const {return static_cast<uint32_t>(atom.size()*sizeof(uint64_t));}
         LV2_Atom_Sequence* sequence(){return reinterpret_cast<LV2_Atom_Sequence*>(atom.data());}
     };
     struct Timed { Event event; uint32_t order; };
@@ -69,7 +71,7 @@ class Lv2Host final : public PluginHost
     LV2_URID_Unmap unmap_{&urids_,Urids::unmap};
     LV2_Atom_Forge forge_{};
     LV2_URID sequence_,chunk_,frameTime_,midi_,position_,frame_,speed_,bpm_,beat_,bar_,barBeat_,beatUnit_,beatsPerBar_;
-    int32_t minimum_=1, maximum_, sequenceSize_=atomBytes;
+    int32_t minimum_=1, maximum_, sequenceSize_=0;
     float sampleRate_;
     std::array<LV2_Options_Option,5> options_{};
     std::array<LV2_Feature,6> features_{};
@@ -128,7 +130,7 @@ class Lv2Host final : public PluginHost
     {
         auto* sequence=port.sequence();
         const auto padded=(sizeof(LV2_Atom_Event)+size+7u)&~size_t(7);
-        if(size>atomBytes || sizeof(LV2_Atom)+sequence->atom.size+padded>atomBytes)
+        if(size>port.atomBytes() || sizeof(LV2_Atom)+sequence->atom.size+padded>port.atomBytes())
         {++drops_;if(type==midi_)inputPanic_=true;return;}
         auto* event=reinterpret_cast<LV2_Atom_Event*>(reinterpret_cast<uint8_t*>(sequence)+sizeof(LV2_Atom)+sequence->atom.size);
         event->time.frames=time;event->body={size,type};
@@ -237,7 +239,7 @@ class Lv2Host final : public PluginHost
     {
         const auto* seq=port.sequence();
         if(seq->atom.type==chunk_)return; // plugin wrote nothing
-        if(seq->atom.type!=sequence_ || seq->atom.size<sizeof(seq->body) || seq->atom.size>atomBytes-sizeof(LV2_Atom) ||
+        if(seq->atom.type!=sequence_ || seq->atom.size<sizeof(seq->body) || seq->atom.size>port.atomBytes()-sizeof(LV2_Atom) ||
            (seq->body.unit!=0 && seq->body.unit!=frameTime_)){++errors_;outputPanic_|=port.midi;return;}
         size_t offset=sizeof(LV2_Atom_Sequence),end=sizeof(LV2_Atom)+seq->atom.size;
         while(offset<end)
@@ -272,9 +274,15 @@ class Lv2Host final : public PluginHost
         }
     }
 public:
-    Lv2Host(const std::string& bundle,const std::string& id,double rate,uint32_t frames,ProcessingMode mode):mode_(mode),rate_(rate),maxFrames_(frames),worker_(mode==ProcessingMode::Offline),maximum_(static_cast<int32_t>(frames)),sampleRate_(static_cast<float>(rate))
+    Lv2Host(const std::string& bundle,const std::string& id,double rate,uint32_t frames,ProcessingMode mode,Lv2BufferLimits limits):mode_(mode),rate_(rate),maxFrames_(frames),worker_(mode==ProcessingMode::Offline),maximum_(static_cast<int32_t>(frames)),sampleRate_(static_cast<float>(rate))
     {
         if(!world_ || !std::isfinite(rate) || rate<=0 || !frames || frames>1048576)throw std::invalid_argument("Invalid LV2 host configuration");
+        // sequenceSize is an Atom Int. Round in 64 bits before comparing limits.
+        const auto aligned=[](uint32_t n){return (uint64_t(n)+7u)&~uint64_t(7);};
+        if(limits.defaultBytes<sizeof(LV2_Atom_Sequence) || limits.maxPortBytes>INT32_MAX ||
+           aligned(limits.defaultBytes)>limits.maxPortBytes || aligned(limits.defaultBytes)>limits.maxTotalBytes)
+            throw std::invalid_argument("Invalid LV2 Atom buffer limits");
+        sequenceSize_=static_cast<int32_t>(aligned(limits.defaultBytes));
         const auto path=std::filesystem::canonical(bundle).string()+"/";
         auto bundleUri=own(lilv_new_file_uri(world_.get(),nullptr,path.c_str()));
         lilv_world_load_bundle(world_.get(),bundleUri.get());
@@ -362,17 +370,49 @@ public:
                     throw std::runtime_error("Unsupported LV2 atom buffer type (requires Sequence)");
                 }
                 auto minimumKey=uri(LV2_RESIZE_PORT__minimumSize);auto minimum=own(lilv_port_get(plugin,source,minimumKey.get()));
-                if(minimum && (!lilv_node_is_int(minimum.get()) || lilv_node_as_int(minimum.get())<0 || lilv_node_as_int(minimum.get())>static_cast<int>(atomBytes)))
+                port.optional=property(plugin,source,LV2_CORE__connectionOptional);
+                // Parse the full lexical integer: narrowing through Lilv's int32
+                // accessor can wrap a hostile or simply oversized requirement.
+                uint64_t requested=0;bool validMinimum=true;
+                if(minimum)
                 {
-                    if(property(plugin,source,LV2_CORE__connectionOptional))continue;
-                    throw std::runtime_error("LV2 atom buffer minimum exceeds 16384 bytes");
+                    auto lexical=text(minimum.get());if(!lexical.empty() && lexical[0]=='+')lexical.erase(0,1);
+                    const auto parsed=std::from_chars(lexical.data(),lexical.data()+lexical.size(),requested);
+                    validMinimum=lilv_node_is_int(minimum.get()) && parsed.ec==std::errc{} && parsed.ptr==lexical.data()+lexical.size();
                 }
-                port.kind=Kind::Atom;port.atom.resize(atomBytes/sizeof(uint64_t));
+                if(!validMinimum)
+                {
+                    if(port.optional)continue;
+                    throw std::runtime_error("Invalid LV2 Atom minimumSize on port "+std::to_string(i));
+                }
+                // Check before alignment, so even UINT64_MAX cannot wrap.
+                const auto bytes=requested>limits.maxPortBytes?requested:aligned(std::max(limits.defaultBytes,static_cast<uint32_t>(requested)));
+                if(bytes>limits.maxPortBytes)
+                {
+                    if(port.optional)continue;
+                    throw std::runtime_error("LV2 Atom port "+std::to_string(i)+" requires "+std::to_string(bytes)+
+                        " bytes; per-port limit is "+std::to_string(limits.maxPortBytes));
+                }
+                port.kind=Kind::Atom;port.requestedBytes=static_cast<uint32_t>(bytes);
                 port.midi=supports(plugin,source,LV2_MIDI__MidiEvent);port.time=supports(plugin,source,LV2_TIME__Position);
-                if(port.midi)port.midiIndex=port.input?noteInputs_++:noteOutputs_++;
             }
             else if(!property(plugin,source,LV2_CORE__connectionOptional))throw std::runtime_error("Unsupported required LV2 port: "+text(label.get()));
         }
+        // Required ports get the budget first regardless of port order. Optional
+        // ports that do not fit stay disconnected. All allocation precedes instantiate.
+        uint64_t totalBytes=0;
+        for(bool optional : {false,true})for(auto& port:ports_)if(port.kind==Kind::Atom && port.optional==optional)
+        {
+            if(totalBytes+port.requestedBytes>limits.maxTotalBytes)
+            {
+                if(optional){port.kind=Kind::Ignored;continue;}
+                throw std::runtime_error("LV2 Atom buffers require more than total per-instance limit of "+std::to_string(limits.maxTotalBytes)+" bytes");
+            }
+            totalBytes+=port.requestedBytes;
+            port.atom.resize(port.requestedBytes/sizeof(uint64_t));
+            sequenceSize_=std::max(sequenceSize_,static_cast<int32_t>(port.atomBytes()));
+        }
+        for(auto& port:ports_)if(port.kind==Kind::Atom && port.midi)port.midiIndex=port.input?noteInputs_++:noteOutputs_++;
         instance_.reset(lilv_plugin_instantiate(plugin,rate,featurePointers_.data()));
         if(!instance_)throw std::runtime_error("LV2 instantiation failed: "+descriptor_.id);
         try
@@ -454,7 +494,7 @@ public:
                 if(p.kind==Kind::Atom)
                 {
                     auto* seq=p.sequence();
-                    seq->atom={p.input?static_cast<uint32_t>(sizeof(seq->body)):atomBytes-static_cast<uint32_t>(sizeof(LV2_Atom)),p.input?sequence_:chunk_};
+                    seq->atom={p.input?static_cast<uint32_t>(sizeof(seq->body)):p.atomBytes()-static_cast<uint32_t>(sizeof(LV2_Atom)),p.input?sequence_:chunk_};
                     seq->body={0,0};if(p.input && p.time)transport(p,t,start);
                 }
             }
@@ -488,6 +528,6 @@ public:
     }
 };
 }
-std::shared_ptr<PluginHost> loadLv2Plugin(const std::string& path,const std::string& id,double rate,uint32_t frames,ProcessingMode mode)
-{return std::make_shared<Lv2Host>(path,id,rate,frames,mode);}
+std::shared_ptr<PluginHost> loadLv2Plugin(const std::string& path,const std::string& id,double rate,uint32_t frames,ProcessingMode mode,Lv2BufferLimits limits)
+{return std::make_shared<Lv2Host>(path,id,rate,frames,mode,limits);}
 }

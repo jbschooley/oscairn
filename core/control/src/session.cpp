@@ -7,8 +7,8 @@
 
 namespace oscairn
 {
-    Session::Session( double sampleRate, uint32_t maxFrames )
-        : sampleRate_( sampleRate ), maxFrames_( maxFrames ), graph_( sampleRate, maxFrames ), transport_( sampleRate )
+    Session::Session( double sampleRate, uint32_t maxFrames, Lv2BufferLimits lv2Buffers )
+        : sampleRate_( sampleRate ), maxFrames_( maxFrames ), graph_( sampleRate, maxFrames, ProcessingMode::Realtime, lv2Buffers ), transport_( sampleRate )
     {
         if( !std::isfinite( sampleRate ) || sampleRate <= 0 || maxFrames == 0 )
             throw std::invalid_argument( "session needs a positive sample rate and block size" );

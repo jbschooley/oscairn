@@ -7,6 +7,15 @@ namespace oscairn
     // Selected before instantiation; Offline permits synchronous non-RT work.
     enum class ProcessingMode { Realtime, Offline };
 
+    // Per LV2 instance, chosen before loading; no allocation/resizing in process().
+    // Limits count aligned bytes including Atom headers, across input/output ports.
+    struct Lv2BufferLimits
+    {
+        uint32_t defaultBytes = 16 * 1024;
+        uint32_t maxPortBytes = 1024 * 1024;
+        uint32_t maxTotalBytes = 4 * 1024 * 1024;
+    };
+
     // Shared graph host contract. Events and metadata retain the existing CLAP-shaped
     // representation; format adapters translate at their boundary. Control methods
     // belong to one main thread; process/outputEvents belong to one audio thread.
@@ -34,5 +43,5 @@ namespace oscairn
     };
     // CLAP module or LV2 bundle directory; pluginId is a CLAP ID or an LV2 URI.
     std::shared_ptr<PluginHost> loadPlugin(const std::string& path, const std::string& pluginId,
-                                           double sampleRate, uint32_t maxFrames, ProcessingMode mode = ProcessingMode::Realtime);
+                                           double sampleRate, uint32_t maxFrames, ProcessingMode mode = ProcessingMode::Realtime, Lv2BufferLimits lv2Buffers = {});
 }

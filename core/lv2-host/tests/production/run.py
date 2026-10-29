@@ -52,6 +52,7 @@ def main():
     parser.add_argument("--system-root", type=Path, help="Directory containing ZamComp, fil4 and Guitarix bundles")
     parser.add_argument("--renderer", type=Path, help="Also test complete mixed-format chains using oscairn-render")
     parser.add_argument("--sequencer", type=Path, help="Oscairn CLAP step sequencer for chain tests")
+    parser.add_argument("--only", nargs="+", help="Restrict individual-plugin tests to these case names")
     args = parser.parse_args()
     if not (args.mod_root or args.system_root):
         parser.error("Specify at least one bundle root")
@@ -72,10 +73,14 @@ def main():
             ("GxChorus", "gx_chorus", "http://guitarix.sourceforge.net/plugins/gx_chorus_stereo#_chorus_stereo", 2, .8, None),
             ("GxCompressor", "gx_compressor", "http://guitarix.sourceforge.net/plugins/gx_compressor#_compressor", 2, -40, None),
             ("GxZita", "gx_zita_rev1", "http://guitarix.sourceforge.net/plugins/gx_zita_rev1_stereo#_zita_rev1_stereo", 9, 1, None),
-            ("x42-fil4-stereo", "fil4", "http://gareus.org/oss/lv2/fil4#stereo", 0, 0,
-             "LV2 atom buffer minimum exceeds 16384 bytes"),
+            ("x42-fil4-stereo", "fil4", "http://gareus.org/oss/lv2/fil4#stereo", 3, -12, None),
         ]:
             cases.append((name, args.system_root / f"{bundle}.lv2", uri, "effect", param, value, rejection))
+    if args.only:
+        missing=set(args.only)-{case[0] for case in cases}
+        if missing:
+            parser.error("Unknown/unavailable cases: " + ", ".join(sorted(missing)))
+        cases=[case for case in cases if case[0] in args.only]
     args.output.mkdir(parents=True, exist_ok=True)
     report = {"platform": platform.platform(), "python": platform.python_version(), "plugins": []}
     failed = False

@@ -69,10 +69,11 @@ namespace oscairn
     }
 
     //==============================================================================
-    Graph::Graph( double sampleRate, uint32_t maxFrames, ProcessingMode mode )
+    Graph::Graph( double sampleRate, uint32_t maxFrames, ProcessingMode mode, Lv2BufferLimits lv2Buffers )
         : sampleRate_( sampleRate )
         , maxFrames_( maxFrames )
         , mode_( mode )
+        , lv2Buffers_( lv2Buffers )
     {
     }
 
@@ -87,7 +88,7 @@ namespace oscairn
     NodeId Graph::add( const std::string& path, const std::string& pluginId )
     {
         Node node;
-        node.host = loadPlugin( path, pluginId, sampleRate_, maxFrames_, mode_ );
+        node.host = loadPlugin( path, pluginId, sampleRate_, maxFrames_, mode_, lv2Buffers_ );
         for( const auto& port : node.host->inputPorts() )
             node.audioInputs += port.channels;
         for( const auto& port : node.host->outputPorts() )
