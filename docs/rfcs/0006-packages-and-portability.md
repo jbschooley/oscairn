@@ -26,6 +26,70 @@ complete Performance/Setlist persistence, AU/VST3 adapter or cross-format state 
 No changes to the audio graph are required for this proposal: package resolution and state
 preparation belong to library/control services, before a ready graph is published.
 
+## Oscairn-native and external plugins
+
+**Oscairn-native** is a portability/conformance contract, not a new binary format, a synonym
+for CLAP, or a restriction to first-party authors. A community or commercial developer can
+supply a native engine. Required capabilities are declared package dependencies, stable
+engine/control identities, a versioned portable state/asset contract, tested builds for each
+advertised destination profile, and ordinary plugin operation outside Oscairn. Native
+instruments also implement the prepared/multitimbral sound contract; format wrappers may
+expose only what their host supports. Native effects/event plugins have their own applicable
+contracts, not an instrument-only voice interface.
+
+The product UI distinguishes **Oscairn-native** from **External**, and separately reports
+readiness for a selected destination. Native is not a promise of a binary for every possible
+machine or unlimited resources. A native plugin with no suitable build/assets, an unsupported
+host capability or too little device capacity is unavailable there too. The current
+`sounds.get.mode: "native"` reports only the sound-context extension; it is not proof of
+package portability and must not be reused as that badge.
+
+External/non-native plugins have no default portability guarantee. They work on a destination
+only when a compatible same-format installation is present (or explicitly installed there)
+and can restore the saved state/assets, or when an approved tested conversion has a usable
+destination implementation. Packaging an external binary does not promote it to native.
+Otherwise disable the unavailable node, show the reason, preserve its state/routes, and mark
+the affected performance not ready. Do not silently bypass the node. Other complete songs
+remain usable; a user can deliberately save a reduced/substituted version of the affected one.
+
+## Project manifest, lockfile and shared store
+
+Adopt the developer experience of a package manifest plus lockfile: a project declares direct
+packages and version requirements, and Oscairn resolves their transitive dependencies. The
+user normally manages this through the UI, with readable files and equivalent tooling for
+advanced use. No JavaScript runtime, npm registry dependency or package install scripts are
+required. Exact filenames/CLI syntax belong to the schema/tooling milestone.
+
+- **Manifest:** requested packages/version constraints and external plugin requirements.
+  Native package dependencies and external plugin requirements are separate categories;
+  external requirements are not automatically treated as retrievable native packages.
+  The library derives this from the full saved graph, including inactive scenes and parts.
+- **Lockfile:** exact resolved dependency graph, immutable release/artifact hashes, target
+  variants, state contracts and validated conversion choices. Reopening/installing from a
+  lock never chooses a newer release. Manifest/lock mismatch requires an explicit resolve
+  or update operation; it does not silently rewrite a performance on open.
+- **Project-local dependency view:** each project resolves only its own locked dependencies
+  through a small index or materialized layout; audio loading never searches for an arbitrary
+  globally installed version. Distinct project versions can coexist.
+- **Shared durable store:** identical package files/versions across projects refer to stored
+  content, using links/clones where suitable. This is installed content pinned by references,
+  not a disposable download cache. Removing a download cache must not break an offline rig.
+  Optional fetched archives/cache entries are separate and can be discarded when their
+  verified installed contents remain available.
+- **Online install:** reuse verified local content, acquire only missing target artifacts
+  from configured sources, then stage and publish the locked dependency set. Record selected
+  package sources/publishers; do not search unrelated catalogs for a same-named replacement.
+- **Offline install:** resolve the same lock using the local store plus an imported complete
+  archive, removable-media package repository or paired computer's prepared transfer. Missing
+  content is reported precisely; no downgrade or best-effort newer-version substitution.
+
+This combines npm-style declared dependencies and locked installs with a shared installed-file
+store closer to [pnpm's layout](https://pnpm.io/faq). The
+[npm cache](https://docs.npmjs.com/cli/commands/npm-cache/) is documented as disposable, while
+[`npm ci`](https://docs.npmjs.com/cli/commands/npm-ci/) illustrates installing a frozen lock.
+Oscairn's store pins and offline-completeness checks are essential additions for live devices.
+The resolution process stays entirely off the real-time thread.
+
 ## Separate four identities
 
 | Identity | Purpose |
@@ -208,6 +272,72 @@ by a supported conversion or marked unavailable. Reusing an old AU snapshot afte
 its VST3 replacement would silently undo the musician's work. Round-trip conversion is a
 separate tested capability, not implied by one-way import support.
 
+## Native plugins in DAWs and standalone applications
+
+Native plugins must not require the Oscairn application or a running Oscairn background
+engine just to make sound in another host. There are three distinct delivery paths:
+
+| Use | Planned delivery |
+| --- | --- |
+| One native instrument/effect/event processor in another DAW | Ordinary CLAP and VST3 builds for supported Windows/macOS/Linux targets; AU builds for macOS hosts needing AU |
+| A complete Oscairn graph/Performance inside a DAW | Oscairn itself as a standard plugin, preserving routing, sound contexts and dependency lock within its saved state |
+| Use without a DAW | Oscairn standalone; optionally an individual plugin with a small standalone audio/MIDI shell |
+
+First-party distribution targets CLAP plus VST3 on supported desktop profiles and AU on
+macOS, with reusable SDK packaging for third-party native authors. Compatibility is per
+host/format/plugin category, not a promise that every DAW accepts every format or can route
+MIDI effects. Other formats, including AAX-only hosts, require separate work and are not
+implicitly covered. Hardware builds use the required engine/DSP artifact without bringing
+unneeded desktop-format wrappers or UI dependencies.
+
+Prefer a common engine/state implementation with thin format adapters. Evaluate existing
+[clap-wrapper](https://github.com/free-audio/clap-wrapper) before writing our own bridges;
+it provides CLAP-to-VST3/AU and standalone paths. Its existence is not proof that every
+Oscairn extension, UI, bus arrangement or note feature survives conversion. No wrapper is
+adopted or integrated by this proposal. Preserve upstream credits if used.
+
+Oscairn extensions are optional to the external host. Ordinary notes, audio, parameters,
+state and supported transport must work without those extensions. Host-specific features
+such as parameter-target routing, prepared sound selection and hardware services require
+explicit support or remain unavailable; a wrapper must not pretend to provide them. An
+engine must use its declared CPU backend outside specialized hardware. Asset access needs a
+read-only package-backed implementation supplied by the plugin/SDK when the DAW does not
+provide Oscairn's asset service. The generic/generated editor or packaged UI must function
+without assuming the Oscairn app's panel or its private control socket exists.
+
+One package-manager operation can also install/publish the requested DAW formats in their
+standard discovery locations, preserving signatures and OS registration requirements.
+Those exports reference or carry the same pinned engine/runtime/assets. Use immutable
+links/clones where supported, with valid copies where necessary; exact zero duplication is
+not promised for every signed bundle or filesystem. An external DAW cannot be expected to
+understand Oscairn's project-local package view or perform its dependency resolution.
+
+State saved by a native format adapter must retain canonical sound state, engine/state
+version and explicit asset requirements; preserve port/parameter identity across compatible
+updates. A compatible adapter may dispatch to a pinned engine version. If an adapter cannot
+load old state safely, retaining the old package in the store alone is insufficient: keep
+an actually loadable compatible adapter or report the conflict. Generic DAWs often identify
+plugins by format ID, not package hash, so installing several versions with the same format
+ID is not a solution by itself. Never silently use the newest engine for an old DAW session.
+Published DAW exports pin their runtime versions until explicitly retired; do not rely on
+finding every saved project owned by another DAW before garbage collection.
+
+The Oscairn container can embed its complete internal dependency lock and export its assets.
+A native plugin loaded directly into another DAW cannot automatically collect that DAW's
+whole session or unrelated third-party plugins. Supply native sound/package export for its
+own dependency set, with missing dependencies reported before it processes audio. A DAW's
+normal project file does not automatically become a complete Oscairn offline bundle.
+Installation/download/upgrade tasks happen outside the audio callback, never as a hidden
+consequence of pressing Play.
+
+Before claiming DAW support, test direct native plugins and the Oscairn container separately:
+scan/load, editor lifecycle, save/reopen on a clean destination, offline render, transport,
+automation, audio buses, note/expression and MIDI-output behavior where supported, samples,
+old-state/version restoration and missing-dependency failures. Include a host with no
+Oscairn extensions and platform-specific standard-format hosts. The current reference
+plugins are CLAP modules; VST3/AU exports, container and individual standalone packaging are
+not implemented or DAW-certified by this document.
+
 ## Missing plugins and playable alternatives
 
 The saved graph remains intact with unavailable-node placeholders preserving identity,
@@ -249,12 +379,15 @@ those workers exist.
 1. **Before discovery/project persistence becomes permanent:** carry format-qualified IDs,
    package/artifact references and state provenance through discovery/library design. Keep
    path-based development loading, without baking absolute paths into the saved document
-   identity. Define the first target runtime profiles and manifest/lock schema with fixtures.
+   identity. Define the first target runtime profiles, native/external capability labels,
+   project manifest/lock and shared-store resolution schema with fixtures.
 2. **First vertical slice:** managed CLAP packages, one explicit shared runtime and sample
    dependency, exact version locks, side-by-side immutable installation, offline export/import
    and unavailable-node preservation. Demonstrate a setlist on a clean second supported
    machine with no plugin-specific installers. A local package directory is enough; no
-   online catalog required. Avoid inventing another plugin ABI.
+   online catalog required. Test cache removal without losing pinned offline installations
+   and two projects sharing a release while another pins an older one. Avoid inventing
+   another plugin ABI.
 3. **Cross-platform proof:** first-party engine/state tests on supported macOS, Windows and
    Buildroot Linux builds as those hosts exist. Test Linux ARM64 through available QEMU
    coverage initially and real hardware when available; test a clean runtime image without
@@ -264,7 +397,11 @@ those workers exist.
 4. **Broaden integrations:** LV2 packaging/state assets, existing-install discovery and
    audited third-party manifests; VST3 and AU only alongside their host adapters. Add one
    verified cross-format migration and a negative AU-only case before advertising it.
-5. **Distribution/UI polish:** catalog downloads, paired-device deltas, storage cleanup,
+5. **DAW delivery proof:** one native engine as direct CLAP/VST3/AU where supported,
+   outside the Oscairn app, using the same state/assets; then the Oscairn graph container
+   and optional standalone shell. Validate old DAW-session restore against the shared
+   store without assuming the DAW understands package locks.
+6. **Distribution/UI polish:** catalog downloads, paired-device deltas, storage cleanup,
    migration tools and optional rendered alternatives use the same manifest and lock.
 
 Required tests include clean/offline import of an entire setlist; one-copy shared resources;

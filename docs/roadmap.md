@@ -103,7 +103,8 @@ To do:
   controls. Carry stable format identities and state provenance into the library design
   before persisting projects, following [RFC 0006](rfcs/0006-packages-and-portability.md);
   package/artifact identity and destination runtime profiles must not become absolute
-  install paths. Custom UIs and other extensions follow
+  install paths. Distinguish native portability from external-plugin availability and from
+  the implemented sound-context capability. Custom UIs and other extensions follow
   ([current scope](../core/lv2-host/README.md));
 - define hardware capabilities, timestamped input, scheduled output and engine backend
   selection before hardware MIDI/CV implementation
@@ -165,15 +166,22 @@ a DAW plugin; and:
 
 - **Packages and portability** ([RFC 0006](rfcs/0006-packages-and-portability.md), proposed):
   first a clean-machine, offline Performance/Setlist transfer with managed CLAP packages,
-  exact dependency locks, target builds, shared runtime/sample packages, immutable storage
-  and unavailable-node preservation. Storage deduplication and RAM sharing have separate
-  contracts. Prove state portability across supported CPU/OS/runtime profiles, then broaden
+  project manifests/exact dependency locks, target builds, project-local dependency views
+  backed by a shared installed store, shared runtime/sample packages and unavailable-node
+  preservation. Keep disposable download caches separate from pinned offline installations.
+  Storage deduplication and RAM sharing have separate contracts. Prove state portability across supported CPU/OS/runtime profiles, then broaden
   to LV2, external installations and AU/VST3 alongside their adapters; cross-format state
   conversion requires tested mappings. Baseline profiles identify what may be omitted from
   a complete export. Catalogs and paired-device delta sync follow the same package model;
   vendor-specific installers/activation remain explicit external dependencies.
 - **Keeping plugins loaded:** a memory budget, unloading the least recently used, setlist
   preparation options and a setlist check; CPU, memory and storage meters.
+- **Native plugins outside Oscairn:** first one engine as a direct CLAP/VST3 plugin on
+  supported Windows/macOS/Linux targets and AU on macOS, with shared canonical state/assets
+  and tested host/format behavior; evaluate existing wrappers. Then the whole Oscairn graph
+  as a DAW plugin and optional individual standalone shells. Neither path requires the
+  separate Oscairn app to be running. Test old DAW-session state, runtime versions and
+  missing assets; another DAW does not automatically understand our package lock.
 - **Plugin looks:** pages and themes described in data, then sandboxed custom views.
 - **Developer kit:** the MIT SDK and templates, the builder image, the `oscairn` tool,
   the validator, and plugin isolation in sandboxed workers.

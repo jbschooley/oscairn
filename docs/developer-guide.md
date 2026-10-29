@@ -150,7 +150,10 @@ Complete projects, context-pool persistence and a sound-library UI are still fut
 ## Packaging and portability (planned)
 
 [RFC 0006](rfcs/0006-packages-and-portability.md) is the proposed distribution contract;
-there is no managed package installer yet. Design new engines with stable logical/format
+there is no managed package installer yet. The plan uses a project manifest and exact
+lockfile with a project-local dependency view backed by a shared durable content store.
+A download cache is separate; clearing it must not remove installed offline dependencies.
+Design new engines with stable logical/format
 identities, versioned architecture-independent state and complete asset enumeration.
 Declare shared code/data as versioned dependencies rather than relying on a developer's
 installed system libraries. Build separately for each supported OS/CPU/runtime profile;
@@ -163,6 +166,29 @@ including control mappings, assets, behavior and edits after transfer. Native ma
 engines should share a canonical state representation across their supported builds.
 Current per-plugin state export is not proof of complete project or cross-platform
 portability; preserve opaque third-party state and mark unsupported transfers explicitly.
+
+## Native versus external; other DAWs (planned)
+
+"Oscairn-native" means meeting the package/state/asset portability contract for advertised
+targets, not being first-party or merely exporting CLAP. Third-party authors can implement
+it. External plugins require a compatible destination installation or tested conversion;
+unavailable nodes retain state/routes and are disabled with a visible reason. Sound-context
+`mode: "native"` is a narrower implemented capability, not the future portability badge.
+
+Native engines must also function outside the Oscairn app. The desktop delivery target is
+ordinary CLAP/VST3 for supported Windows/macOS/Linux profiles and AU for macOS, using the
+same engine and canonical state. Use standard notes/audio/parameters/state and explicit
+capability checks when Oscairn host extensions are absent. Provide package-backed assets
+and a usable editor without requiring Oscairn's control socket. A wrapper does not make
+unsupported MIDI routing or per-note features work in every host.
+
+Individual plugins, the whole Oscairn graph as a DAW plugin, and standalone use are separate
+delivery paths. Prefer evaluating existing format wrappers to duplicating DSP. Keep exact
+runtime/state compatibility for old DAW projects: a standard host's format ID does not
+identify an Oscairn package version. Publish native formats through the package manager,
+but do not claim that another DAW's entire project becomes a complete offline bundle.
+See [the delivery contract](rfcs/0006-packages-and-portability.md#native-plugins-in-daws-and-standalone-applications).
+The current references are CLAP-only; these additional delivery paths remain planned.
 
 ## Controllers, hosts and hardware
 

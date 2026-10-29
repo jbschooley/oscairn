@@ -14,3 +14,9 @@ for build commands and the contracts for a new plugin.
 There is no arpeggiator in the current tree. Native effect-context transitions are also
 not implemented. These small plugins are executable references, not a complete production
 synth/preset library. Keep stable IDs and license notices when adapting their source.
+
+The proposed [native portability and DAW delivery contract](../docs/rfcs/0006-packages-and-portability.md)
+adds manifest/lock-based installation, shared dependencies and standard-format desktop
+exports. "Native" does not require running the Oscairn app: direct plugins should work in
+compatible hosts using standard APIs. Current references build as CLAP only; VST3/AU and
+individual standalone exports, and the native portability qualification, remain planned.

@@ -695,6 +695,23 @@ dependency closure and platform baseline; it need not duplicate every shared lib
 Import prepares all managed dependencies in one operation. Conventional vendor installers
 and activation services remain external requirements, visibly outside that guarantee.
 
+Projects declare packages/version requirements in a readable manifest and lock the resolved
+transitive dependency graph. Each project gets its own dependency view backed by a shared,
+immutable store, so projects using the same release reuse stored files. This is the familiar
+manifest/lock/install workflow with pnpm-like storage sharing, not a dependency on Node/npm.
+A disposable download cache is separate from installed content pinned for offline use.
+Offline installs use the same lock and local/imported packages; missing files never trigger
+an unrequested version substitution.
+
+**Oscairn-native** identifies a tested portability contract: declared dependencies, stable
+engine/state/assets, builds for advertised profiles and normal operation in other hosts.
+It is open to third-party authors and is independent of file format. **External** plugins
+have no such guarantee: the destination needs a compatible installed implementation or an
+approved tested conversion. Otherwise the node is disabled with a visible reason while
+preserving state/routes, and the affected performance is not ready. Native plugins also
+report unsupported targets/resource limits. The existing sound-context `mode: native` alone
+does not establish package portability.
+
 - **Everything installable is a package:** a manifest (ID, version, author, licence,
   dependencies, the platforms its plugins are built for) and its files. Kinds: content
   (Sounds, Performances, Projects, samples, presets), code (plugins and shared runtimes,
@@ -828,12 +845,30 @@ share them, and not be able to break each other or the host.
   Catalogs list target availability explicitly; unavailable builds are not created by
   copying a binary from another OS. External vendor references remain distinct.
 
-## The platform as a DAW plugin
+## Native plugins and the platform in DAWs (planned)
 
-Oscairn itself ships as a CLAP, VST3 and AU instrument: the core, its hosted plugins, and
-the UI as the editor window. The DAW supplies audio, is the transport, and stores the
-platform's state in its project. The standalone build of that plugin is also the desktop
-simulator.
+Native plugins must work directly in compatible DAWs without running the Oscairn app or
+its background engine. Planned first-party desktop artifacts are CLAP/VST3 on supported
+Windows, macOS and Linux profiles, plus AU on macOS. They share engine/state/assets and
+work with ordinary host APIs when Oscairn extensions are absent. MIDI-effect routing and
+other advanced features depend on the host/format; this does not promise every DAW or AAX.
+Evaluate existing clap-wrapper support before writing new format bridges. An optional
+standalone shell can expose an individual plugin's audio/MIDI without a DAW.
+
+Separately, Oscairn itself will ship as a CLAP, VST3 and AU plugin: the core, its hosted
+plugins and the UI as editor, so a whole graph can be used inside a DAW. The DAW supplies
+audio/transport and stores the graph state plus dependency lock. Oscairn standalone is the
+same core with its own device adapter; it does not require a DAW. These are distinct uses,
+not a requirement to run the whole Oscairn graph just to load one native instrument.
+
+The package manager can publish DAW-facing bundles to standard discovery locations while
+reusing the shared store where signing/filesystems permit. Ordinary DAWs do not understand
+Oscairn package locks: wrappers must retain compatible state, version and asset resolution,
+and old sessions must not silently bind to the newest engine. The direct-plugin route does
+not make an entire third-party DAW project automatically portable. See
+[RFC 0006](rfcs/0006-packages-and-portability.md#native-plugins-in-daws-and-standalone-applications)
+for offline dependencies, version pins, missing-plugin behavior and validation requirements.
+No VST3/AU export or Oscairn DAW container is implemented yet.
 
 Constraints adopted now because they are hard to retrofit:
 
