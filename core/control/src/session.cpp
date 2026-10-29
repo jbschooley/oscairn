@@ -319,8 +319,7 @@ namespace oscairn
             // Fail safe after a lost UI event: discard the queued burst and broadcast
             // release to graph-input destinations. Voices from other sources on the
             // same destinations can also be released by this emergency operation.
-            auto release = kick::clap::Event::note( false, -1, 0.0, 0, -1 );
-            merged_[count++] = release;
+            graph_.panicInput();
             tail = head;
         }
         else

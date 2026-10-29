@@ -70,6 +70,26 @@ int main( int argc, char** argv )
     if( host.statistics().droppedEvents != droppedBefore )
         return fail( "queued events beyond one block were dropped" ), 1;
 
+    host.reset();
+    using kick::clap::Event;
+    const Event unisons[]{Event::note(true,60,1,0,0,0,101),Event::note(true,60,1,0,0,0,102)};
+    if(!host.process(nullptr,0,out,2,256,unisons,2) || host.soundContexts()[0].active_voices!=2)
+        return fail("two CLAP voices on the same key"),1;
+    const auto wildcard=Event::note(false,60,0);
+    if(!host.process(nullptr,0,out,2,256,&wildcard,1))return fail("CLAP wildcard release"),1;
+    for(int i=0;i<240;++i)if(!host.process(nullptr,0,out,2,256))return fail("release tail"),1;
+    if(host.soundContexts()[0].active_voices!=0)return fail("wildcard ID must release both CLAP voices"),1;
+    const auto silentOn=Event::note(true,60,0);
+    if(!host.process(nullptr,0,out,2,256,&silentOn,1) || host.soundContexts()[0].active_voices!=1)
+        return fail("zero velocity CLAP note-on remains a note-on"),1;
+    host.reset();
+    const Event midiPresses[]{Event::midi(0x90,60,127),Event::midi(0x90,60,127)};
+    host.process(nullptr,0,out,2,256,midiPresses,2);
+    const auto midiRelease=Event::midi(0x80,60,0);
+    host.process(nullptr,0,out,2,256,&midiRelease,1);
+    for(int i=0;i<240;++i)host.process(nullptr,0,out,2,256);
+    if(host.soundContexts()[0].active_voices!=1)return fail("raw MIDI releases just the oldest press"),1;
+
     std::printf( "ok: late event dropped (%llu), valid note still playing (peak %.3f), 600 queued events delivered\n",
                  (unsigned long long)droppedBefore, peak );
     return 0;

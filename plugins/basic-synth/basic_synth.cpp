@@ -86,6 +86,8 @@ namespace
     struct Synth
     {
         clap_plugin_t          plugin{};
+        const clap_output_events_t* output=nullptr;
+        uint32_t eventTime=0;
         double                 sampleRate = 48000.0;
         std::array<Voice, 16>  voices{};
         uint64_t               notesStarted = 0;
@@ -128,6 +130,11 @@ namespace
     void finishVoice(Synth& s,Voice& v)
     {
         if(!v.active)return;
+        if(s.output) {
+            clap_event_note_t end{};end.header={sizeof(end),s.eventTime,CLAP_CORE_EVENT_SPACE_ID,CLAP_EVENT_NOTE_END,0};
+            end.note_id=v.noteId;end.port_index=0;end.channel=v.channel;end.key=v.key;
+            s.output->try_push(s.output,&end.header);
+        }
         v.active=false;
         auto& c=s.contexts[v.context];
         c.voices.fetch_sub(1,std::memory_order_relaxed);
@@ -153,13 +160,12 @@ namespace
     }
     bool matches(const Voice& v,int32_t id,int16_t key,int16_t channel)
     {return v.active && (id<0 || v.noteId==id) && (key<0 || v.key==key) && (channel<0 || v.channel==channel);}
-    void noteOff(Synth& s,const clap_event_note_t& note,bool choke=false)
+    void noteOff(Synth& s,const clap_event_note_t& note,bool choke=false,bool midi=false)
     {
         if(note.port_index>0)return;
-        // For ID-less repeated key presses, release the oldest still-held press.
-        // Explicit IDs address exactly that note; wildcards release all matches.
+        // Raw MIDI has no note IDs; only that dialect uses oldest-held-first release.
         Voice* oldest=nullptr;
-        const bool fifo=!choke && note.note_id<0 && note.key>=0 && note.channel>=0;
+        const bool fifo=midi && !choke && note.note_id<0 && note.key>=0 && note.channel>=0;
         for(auto& v:s.voices)if(matches(v,note.note_id,note.key,note.channel) && (choke || v.held))
         {
             if(fifo){if(!oldest || v.started<oldest->started)oldest=&v;continue;}
@@ -183,7 +189,7 @@ namespace
         if(kind==0x90 || kind==0x80)
         {
             clap_event_note_t n{};n.note_id=-1;n.channel=channel;n.key=e.data[1];n.velocity=e.data[2]/127.0;
-            if(kind==0x90 && e.data[2])noteOn(s,n);else noteOff(s,n);
+            if(kind==0x90 && e.data[2])noteOn(s,n);else noteOff(s,n,false,true);
             return;
         }
         if(kind==0xa0 || kind==0xd0)
@@ -258,6 +264,7 @@ namespace
         }
         for( uint32_t i = from; i < to; ++i )
         {
+            s.eventTime=i;
             std::array<double,Synth::contextCapacity> mix{},levels{};
             for( auto& v : s.voices )
             {
@@ -316,6 +323,8 @@ namespace
         float* left  = process->audio_outputs[0].data32[0];
         float* right = process->audio_outputs[0].data32[1];
 
+        s.output=process->out_events;s.eventTime=0;
+        struct ClearOutput {Synth& s;~ClearOutput(){s.output=nullptr;}} clearOutput{s};
         applySelections(s,process->out_events);
         const uint32_t frames = process->frames_count;
         const uint32_t count  = process->in_events->size( process->in_events );
@@ -331,12 +340,13 @@ namespace
                 render( s, left, right, done, at );
                 done = at;
             }
+            s.eventTime=at;
             if( header->type == CLAP_EVENT_PARAM_VALUE || header->type == CLAP_EVENT_PARAM_MOD )
                 applyParam( s, header );
             else if( header->type == CLAP_EVENT_NOTE_ON || header->type == CLAP_EVENT_NOTE_OFF || header->type == CLAP_EVENT_NOTE_CHOKE )
             {
                 const auto* note = reinterpret_cast<const clap_event_note_t*>( header );
-                if( header->type == CLAP_EVENT_NOTE_ON && note->velocity > 0.0 )
+                if( header->type == CLAP_EVENT_NOTE_ON )
                     noteOn(s,*note);
                 else
                     noteOff(s,*note,header->type==CLAP_EVENT_NOTE_CHOKE);

@@ -3,6 +3,7 @@
 
 #include "oscairn/session.h"
 #include "ChannelMap.h"
+#include "MidiBlock.h"
 
 #include <juce_audio_devices/juce_audio_devices.h>
 
@@ -69,9 +70,10 @@ namespace oscairn::host
         juce::AbstractFifo            fifo_{ 1024 };
         std::array<Incoming, 1024>    incoming_{};
         std::atomic<uint64_t>         droppedMidi_{ 0 };
+        std::atomic<bool> midiOverflow_{false};
 
         // Audio thread preallocated event buffers:
-        std::array<kick::clap::Event, 128>        notes_{};
+        MidiBlock notes_;
         std::array<Session::MidiClockEvent, 1024> clocks_{};
 
         // Audio thread: when the last block started (seconds and sample), and where the

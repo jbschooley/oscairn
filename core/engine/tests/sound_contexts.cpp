@@ -52,10 +52,10 @@ int main(int argc,char** argv){try{
     check(!mixed.host().selectSound(x),"stale context ID rejected");
 
     Instrument fifo(argv[1]);auto fx=fifo.host().prepareSound("A",dark),fy=fifo.host().prepareSound("B",bright);
-    fifo.host().selectSound(fx);fifo.one(Event::note(true,60,1));fifo.host().selectSound(fy);fifo.one(Event::note(true,60,1));
-    fifo.one(Event::note(false,60,0));fifo.tail();
-    check(fifo.info(fx).active_voices==0 && fifo.info(fy).active_voices==1,"ID-less repeated key releases oldest owning context");
-    fifo.one(Event::midi(0xb0,64,127));fifo.one(Event::note(false,60,0));fifo.host().selectSound(fx);fifo.tail();
+    fifo.host().selectSound(fx);fifo.one(Event::midi(0x90,60,127));fifo.host().selectSound(fy);fifo.one(Event::midi(0x90,60,127));
+    fifo.one(Event::midi(0x80,60,0));fifo.tail();
+    check(fifo.info(fx).active_voices==0 && fifo.info(fy).active_voices==1,"Raw MIDI repeated key releases oldest owning context");
+    fifo.one(Event::midi(0xb0,64,127));fifo.one(Event::midi(0x80,60,0));fifo.host().selectSound(fx);fifo.tail();
     check(fifo.info(fy).active_voices==1 && !fifo.host().discardSound(fy),"sustain retains outgoing context");
     fifo.one(Event::midi(0xb0,64,0));fifo.tail();check(fifo.info(fy).active_voices==0,"pedal release reaches outgoing context");
     fifo.host().selectSound(fy,1);
@@ -66,6 +66,13 @@ int main(int argc,char** argv){try{
 
     fifo.one(Event::midi(0x91,67,127));check(fifo.info(fy).active_voices==1,"advertised MIDI dialect accepts note on");
     fifo.one(Event::midi(0x81,67,0));fifo.tail();check(fifo.info(fy).active_voices==0,"advertised MIDI dialect accepts note off");
+
+    Instrument wildcards(argv[1]);
+    const std::array unisons{Event::note(true,60,1,0,0,0,101), Event::note(true,60,1,0,0,0,102)};
+    wildcards.run(unisons);check(wildcards.info(0).active_voices==2,"distinct CLAP IDs share one key");
+    wildcards.one(Event::note(false,60,0));wildcards.tail();
+    check(wildcards.info(0).active_voices==0,"CLAP wildcard note ID releases every matching voice");
+    wildcards.one(Event::note(true,60,0));check(wildcards.info(0).active_voices==1,"CLAP zero velocity remains a note on");
 
     Instrument bounded(argv[1]);std::vector<uint32_t> ids;
     for(int i=0;i<7;++i)ids.push_back(bounded.host().prepareSound("Ready",{}));

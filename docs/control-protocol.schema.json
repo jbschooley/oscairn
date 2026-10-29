@@ -2077,6 +2077,7 @@
         "audioReady": {
           "type": "boolean"
         },
+        "midiEventDrops": {"type":"integer","minimum":0},
         "graphEventDrops": {
           "type": "integer",
           "minimum": 0
@@ -2090,6 +2091,7 @@
         "cpuLoad",
         "deadlineMisses",
         "graphEventDrops",
+        "midiEventDrops",
         "audioInputs",
         "audioOutputs",
         "audioReady"

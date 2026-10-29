@@ -61,6 +61,8 @@ namespace oscairn
         // Format adapters resolve their own bus metadata; ambiguous layouts require explicit routes.
         virtual std::vector<uint32_t> mainAudioPorts(bool input) const;
         virtual uint32_t noteInputPorts() const noexcept = 0;
+        virtual bool usesClapNotes(uint32_t) const noexcept { return false; }
+        virtual void panic() noexcept = 0;
         virtual uint32_t noteOutputPorts() const noexcept = 0;
         virtual double parameterValue(clap_id id) const noexcept = 0;
         virtual std::string parameterText(clap_id id, double value) const = 0;

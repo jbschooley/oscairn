@@ -40,6 +40,7 @@ struct Event {
     const clap_event_header_t* header() const noexcept {
         return reinterpret_cast<const clap_event_header_t*>(bytes.data());
     }
+    bool valid() const noexcept;
     template<class T> static Event from(const T& source) noexcept {
         static_assert(sizeof(T) <= capacity, "event too large");
         Event result;
@@ -69,7 +70,7 @@ struct Statistics {
 class Host {
 public:
     static constexpr uint32_t maxEvents = 2048;     // capacity of the control-thread queues
-    static constexpr uint32_t maxBlockEvents = 512; // events delivered to the plugin per process() call
+    static constexpr uint32_t maxBlockEvents = 512; // direct graph events per process() call; queued commands have a separate budget
     // The event space this host assigns to oscairn.param-target (oscairn-clap/param-target.h)
     // through CLAP's event-registry. Plugins may send these events; the host passes them
     // to the caller in outputEvents() and never delivers them to a plugin.
@@ -104,6 +105,7 @@ public:
     const std::vector<Port>& inputPorts() const noexcept;
     const std::vector<Port>& outputPorts() const noexcept;
     uint32_t noteInputPorts() const noexcept;
+    bool usesClapNotes(uint32_t port) const noexcept;
     uint32_t noteOutputPorts() const noexcept;
     double parameterValue(clap_id) const noexcept;
     std::string parameterText(clap_id, double value) const;

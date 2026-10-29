@@ -11,12 +11,19 @@ start)
 stop)
 	printf "Stopping Oscairn: "
 	start-stop-daemon -K -p "$PIDFILE" && rm -f "$PIDFILE"
-	killall Oscairn Xorg 2>/dev/null
+	# The managed engine detaches from the UI's process group.
+	killall Oscairn oscairn-engine 2>/dev/null
+	remaining=5
+	while pidof Oscairn oscairn-engine >/dev/null 2>&1; do
+		if [ "$remaining" -eq 0 ]; then echo "FAIL (audio engine or UI still running)"; exit 1; fi
+		sleep 1
+		remaining=$((remaining - 1))
+	done
+	killall Xorg 2>/dev/null
 	echo "OK"
 	;;
 restart)
-	"$0" stop
-	"$0" start
+	"$0" stop && "$0" start
 	;;
 *)
 	echo "Usage: $0 {start|stop|restart}"

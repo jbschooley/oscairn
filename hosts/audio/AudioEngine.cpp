@@ -86,6 +86,7 @@ namespace oscairn::host
         }
         status.audioReady=started_.load();
         status.cpuLoad = devices_.getCpuUsage();
+        status.midiEventDrops=droppedMidi_.load();
         for(const auto& input : midiInputs_) status.midiInputs.push_back(input->getName().toStdString());
         session_->setHostStatus(std::move(status));
     }
@@ -121,7 +122,7 @@ namespace oscairn::host
         std::lock_guard lock( pushLock_ );
         const auto      scope = fifo_.write( 1 );
         if( scope.blockSize1 + scope.blockSize2 == 0 )
-            ++droppedMidi_;
+            {++droppedMidi_;midiOverflow_.store(true,std::memory_order_release);}
         else
             incoming_[(size_t)( scope.blockSize1 > 0 ? scope.startIndex1 : scope.startIndex2 )] = in;
     }
@@ -147,7 +148,8 @@ namespace oscairn::host
         {for(int c=0;c<numOutputs;++c)if(outputs[c])std::fill_n(outputs[c],numSamples,0.f);return;}
         // Device timestamps belong to this adapter. The core receives sample times,
         // with the existing policy: notes now, clock timestamps in the preceding block.
-        uint32_t noteCount = 0, clockCount = 0;
+        uint32_t clockCount = 0;notes_.reset();
+        const bool inputOverflow=midiOverflow_.exchange(false,std::memory_order_acquire);
         {
             const auto scope = fifo_.read( fifo_.getNumReady() );
             auto       take  = [&]( int index ) {
@@ -164,17 +166,20 @@ namespace oscairn::host
                     return;
                 }
                 // Notes and aftertouch (as CLAP pressure).
-                if( noteCount < notes_.size() && oscairn::midiToClap( in.bytes, in.size, 0, notes_[noteCount] ) )
-                    ++noteCount;
+                notes_.append(in.bytes,in.size);
             };
             for( int i = 0; i < scope.blockSize1; ++i )
                 take( scope.startIndex1 + i );
             for( int i = 0; i < scope.blockSize2; ++i )
                 take( scope.startIndex2 + i );
         }
+        droppedMidi_+=notes_.dropped;
+        const bool panic=inputOverflow || notes_.dropped;
+        if(panic){droppedMidi_+=notes_.count;notes_.count=0;}
         channelMap_.process(inputs,static_cast<uint32_t>(numInputs),outputs,static_cast<uint32_t>(numOutputs),static_cast<uint32_t>(numSamples),
             [&](const float* const* in,uint32_t ni,float* const* out,uint32_t no,uint32_t frames,uint32_t offset){
-                return session_->process(in,ni,out,no,frames,{notes_.data(),offset==0?noteCount:0},{clocks_.data(),offset==0?clockCount:0});
+                if(offset==0 && panic)session_->panicInput();
+                return session_->process(in,ni,out,no,frames,{notes_.events.data(),offset==0?notes_.count:0},{clocks_.data(),offset==0?clockCount:0});
             });
         blockSeconds_   = now;
         lastBlockStart_ = blockSample_;

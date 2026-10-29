@@ -116,7 +116,7 @@ namespace oscairn
             auto channels=[](V v){std::vector<DeviceChannel> result;for(auto c:array(v))result.push_back({static_cast<uint32_t>(integer(field(c,"deviceChannel"))),string(field(c,"name")),boolean(field(c,"available"))});return result;};
             status.audioInputs=channels(field(v,"audioInputs"));status.audioOutputs=channels(field(v,"audioOutputs"));
             status.audioReady=boolean(field(v,"audioReady"));
-            status.graphEventDrops=integer(field(v,"graphEventDrops"));
+            status.graphEventDrops=integer(field(v,"graphEventDrops"));status.midiEventDrops=integer(field(v,"midiEventDrops"));
             status.deadlineMisses=integer(field(v,"deadlineMisses"));status.midiInputs.clear();
             for(auto name:array(field(v,"midiInputs")))status.midiInputs.push_back(string(name));
         }

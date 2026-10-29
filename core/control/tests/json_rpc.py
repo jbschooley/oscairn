@@ -55,7 +55,7 @@ try:
     error(rpc('sounds.select', {'node':'synth','context':prepared}), -32005)
     status = rpc('session.status')['result']
     assert status == {'audioDevice': '', 'midiInputs': [], 'sampleRate': 48000,
-                      'bufferSize': 512, 'cpuLoad': 0, 'deadlineMisses': 0, 'graphEventDrops': 0, 'audioReady': True, 'audioInputs': [], 'audioOutputs': []}, status
+                      'bufferSize': 512, 'cpuLoad': 0, 'deadlineMisses': 0, 'graphEventDrops': 0, 'midiEventDrops': 0, 'audioReady': True, 'audioInputs': [], 'audioOutputs': []}, status
     error(rpc('session.status', {'unknown': True}), -32602)
     for ident in [None, 0, -1, 2**63 + 7, 'hello\x00\n"\\', 'é🎹', 1.5]:
         assert rpc('transport.get', ident=ident)['id'] == ident

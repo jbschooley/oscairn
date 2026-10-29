@@ -17,6 +17,7 @@
 #include <thread>
 
 namespace {
+std::atomic<bool> blockProcess{false}, enteredProcess{false}, releaseProcess{false};
 std::atomic<bool> savingState{false}, releaseState{false};
 std::atomic<int> threadErrors{0}, entryUsers{0}, processCalls{0}, callbackCalls{0};
 constexpr const char* ids[]{"org.kick.test.synth", "org.kick.test.effect", "org.kick.test.midi",
@@ -43,7 +44,7 @@ struct Plugin {
     const clap_host_t* host;
     const clap_host_thread_check_t* check;
     int kind;
-    bool active = false, processing = false, gate = false;
+    bool active = false, processing = false, gate = false, held = false, sustain = false;
     // Atomic: CLAP lets the main thread (state save, get_value) read these while
     // the audio thread writes them in process().
     std::atomic<double> gain{.5}, toggle{0}, mode{0};
@@ -69,7 +70,7 @@ struct Plugin {
         api.deactivate = [](const clap_plugin_t* p) { auto& s = get(p); s.main(); if (s.processing) ++threadErrors; s.active = false; };
         api.start_processing = [](const clap_plugin_t* p) { auto& s = get(p); s.audio(); if (!s.active) ++threadErrors; if (s.kind == 7) return false; s.processing = true; return true; };
         api.stop_processing = [](const clap_plugin_t* p) { auto& s = get(p); s.audio(); if (!s.processing) ++threadErrors; s.processing = false; };
-        api.reset = [](const clap_plugin_t* p) { auto& s = get(p); s.audio(); s.gate = false; };
+        api.reset = [](const clap_plugin_t* p) { auto& s = get(p); s.audio(); s.gate = s.held = s.sustain = false; };
         api.process = process;
         api.get_extension = extension;
         api.on_main_thread = [](const clap_plugin_t* p) {
@@ -80,11 +81,16 @@ struct Plugin {
     void event(const clap_event_header_t* e) {
         if (!e) { ++threadErrors; return; }
         if (e->type == CLAP_EVENT_NOTE_ON) { if (kind == 2) ++threadErrors; gate = true; }
-        if (e->type == CLAP_EVENT_NOTE_OFF || e->type == CLAP_EVENT_NOTE_CHOKE) gate = false;
+        if (e->type == CLAP_EVENT_NOTE_OFF || e->type == CLAP_EVENT_NOTE_CHOKE) { if (kind == 2) ++threadErrors; else gate = false; }
         if (e->type == CLAP_EVENT_MIDI) {
             const auto* m = reinterpret_cast<const clap_event_midi_t*>(e);
-            if ((m->data[0] & 0xf0) == 0x90) gate = m->data[2] > 0;
-            if ((m->data[0] & 0xf0) == 0x80) gate = false;
+            const auto kind=m->data[0]&0xf0;
+            if (kind==0x90 && m->data[2]) held=gate=true;
+            if (m->data[1] > 127 || m->data[2] > 127) ++threadErrors;
+            if (kind==0x80 || (kind==0x90 && !m->data[2])) {held=false;if(!sustain)gate=false;}
+            if (kind==0xb0 && m->data[1]==64) {sustain=m->data[2]>=64;if(!sustain && !held)gate=false;}
+            if (kind==0xb0 && m->data[1]==120) gate=held=false;
+            if (kind==0xb0 && m->data[1]==123) {held=false;if(!sustain)gate=false;}
         }
         if (e->type == CLAP_EVENT_PARAM_VALUE) {
             const auto* value = reinterpret_cast<const clap_event_param_value_t*>(e);
@@ -107,6 +113,7 @@ struct Plugin {
         std::this_thread::sleep_for(std::chrono::seconds(20));
 #endif
         auto& s = get(p); s.audio(); ++processCalls;
+        if (blockProcess.exchange(false)) { enteredProcess=true; while (!releaseProcess.load()) std::this_thread::yield(); }
         if (!s.active || !s.processing || !b->frames_count || b->frames_count > s.maxFrames) ++threadErrors;
         if (s.kind == 4) return CLAP_PROCESS_ERROR;
         if (s.kind == 11) s.gate = b->transport && (b->transport->flags & CLAP_TRANSPORT_IS_PLAYING);
@@ -219,6 +226,9 @@ const clap_plugin_factory_t factory{
     }};
 }
 extern "C" {
+CLAP_EXPORT void fixture_block_process() { enteredProcess=false; releaseProcess=false; blockProcess=true; }
+CLAP_EXPORT bool fixture_entered_process() { return enteredProcess.load(); }
+CLAP_EXPORT void fixture_release_process() { releaseProcess=true; }
 CLAP_EXPORT bool fixture_saving_state() { return savingState.load(); }
 CLAP_EXPORT void fixture_release_state() { releaseState.store(true); }
 CLAP_EXPORT int fixture_thread_errors() { return threadErrors.load(); }

@@ -4,7 +4,8 @@ How Oscairn gets from nothing to the [architecture](architecture.md): the smalle
 that each produce something that runs. Nobody has the target hardware yet, so everything
 early runs on a desktop.
 
-Status as of October 2026.
+Status as of October 29, 2026. Implementation status below includes the current branch;
+it does not mean every completed item has merged to `main`.
 
 ## Phase 0: a device to develop against, without hardware (done)
 

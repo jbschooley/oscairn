@@ -101,6 +101,10 @@ bool validEvent(const clap_event_header_t* h) noexcept {
             n.channel < -1 || n.channel > 15 || n.key < -1 || n.key > 127 || n.port_index < -1) return false;
         if (h->type == CLAP_EVENT_NOTE_ON && (n.channel < 0 || n.key < 0 || n.port_index < 0)) return false;
     }
+    auto address=[](const auto& e){return e.note_id>=-1 && e.port_index>=-1 && e.channel>=-1 && e.channel<=15 && e.key>=-1 && e.key<=127;};
+    if(h->type==CLAP_EVENT_PARAM_VALUE && !address(*reinterpret_cast<const clap_event_param_value_t*>(h)))return false;
+    if(h->type==CLAP_EVENT_PARAM_MOD && !address(*reinterpret_cast<const clap_event_param_mod_t*>(h)))return false;
+    if(h->type==CLAP_EVENT_NOTE_EXPRESSION && !address(*reinterpret_cast<const clap_event_note_expression_t*>(h)))return false;
     if (h->type == CLAP_EVENT_PARAM_VALUE && !std::isfinite(reinterpret_cast<const clap_event_param_value_t*>(h)->value)) return false;
     if (h->type == CLAP_EVENT_PARAM_MOD && !std::isfinite(reinterpret_cast<const clap_event_param_mod_t*>(h)->amount)) return false;
     if (h->type == CLAP_EVENT_NOTE_EXPRESSION && !std::isfinite(reinterpret_cast<const clap_event_note_expression_t*>(h)->value)) return false;
@@ -111,6 +115,8 @@ bool validEvent(const clap_event_header_t* h) noexcept {
     return true;
 }
 }
+
+bool Event::valid() const noexcept { return validEvent(header()); }
 
 struct Host::Impl {
     std::thread::id mainThread{};
@@ -140,7 +146,7 @@ struct Host::Impl {
     int64_t steadyTime = 0;
     bool active = false, sleeping = false;
     std::atomic<bool> processing{false}; // read by service() without the gate
-    std::atomic<uint32_t> pendingCommands{0}; // enqueued but not yet taken by process()
+    std::atomic<uint32_t> pendingCommands{0}; // enqueued but not yet delivered to the plugin
     bool transportObserved = false, hadTransport = false;
     clap_event_transport_t previousTransport{};
     uint32_t previousTransportFrames = 0;
@@ -154,8 +160,10 @@ struct Host::Impl {
     detail::Queue<Event, maxEvents> commands, emitted;
     std::atomic<uint64_t> outputDrops{0};
     struct TimedEvent { Event event; uint32_t order = 0; };
-    std::array<TimedEvent, maxBlockEvents> ordered;
-    std::array<Event, maxBlockEvents> chunkEvents;
+    // Separate bounded budgets for carry, queued controls and graph events.
+    static constexpr uint32_t renderEvents = 3 * maxBlockEvents;
+    std::array<TimedEvent, renderEvents> ordered;
+    std::array<Event, renderEvents> chunkEvents;
     std::array<Event, maxBlockEvents> carryEvents;
     uint32_t carryCount = 0;
     // Non-parameter output of the current process() call, collected only while
@@ -460,9 +468,8 @@ struct Host::Impl {
             const auto& m = *reinterpret_cast<const clap_event_midi_t*>(event.bytes.data());
             if (m.port_index < noteInputs.size()) {
                 const auto dialect = noteInputs[m.port_index].supported_dialects;
-                const auto preferred = noteInputs[m.port_index].preferred_dialect;
                 if ((dialect & CLAP_NOTE_DIALECT_CLAP) &&
-                    (preferred == CLAP_NOTE_DIALECT_CLAP || !(dialect & CLAP_NOTE_DIALECT_MIDI))) {
+                    !(dialect & (CLAP_NOTE_DIALECT_MIDI | CLAP_NOTE_DIALECT_MIDI_MPE))) {
                     const auto status = m.data[0] & 0xf0;
                     if (status == 0x90 || status == 0x80)
                         return Event::note(status == 0x90 && m.data[2] != 0, m.data[1], m.data[2] / 127.0,
@@ -713,6 +720,7 @@ const std::vector<Parameter>& Host::parameters() const noexcept { return impl->p
 uint64_t Host::metadataRevision() const noexcept { return impl->metadataVersion; }
 const std::vector<Port>& Host::inputPorts() const noexcept { return impl->inputs; }
 const std::vector<Port>& Host::outputPorts() const noexcept { return impl->outputs; }
+bool Host::usesClapNotes(uint32_t port) const noexcept { return port < impl->noteInputs.size() && (impl->noteInputs[port].supported_dialects & CLAP_NOTE_DIALECT_CLAP); }
 uint32_t Host::noteInputPorts() const noexcept { return static_cast<uint32_t>(impl->noteInputs.size()); }
 uint32_t Host::noteOutputPorts() const noexcept { return static_cast<uint32_t>(impl->noteOutputs.size()); }
 double Host::parameterValue(clap_id id) const noexcept {
@@ -787,28 +795,44 @@ bool Host::process(const float* const* input, uint32_t ni, float* const* output,
     AudioScope scope(&s);
     if (!s.plugin || !s.active || s.failed.load()) { silence(); return false; }
     const auto start = std::chrono::steady_clock::now();
+    struct Acknowledge {
+        Impl& s; uint32_t count=0;
+        ~Acknowledge() { if(count) s.pendingCommands.fetch_sub(count, std::memory_order_release); }
+    } acknowledged{s}; // Saving must wait until plugin processing, not just queue removal.
     try {
         uint32_t total = 0;
-        auto append = [&](Event e) {
+        auto deliver = [&](Event e) {
             // A malformed or late event is dropped on its own; resetting the plugin
             // for it would cut every sounding note on stage.
             // Events in other spaces (param-target) are for the caller, never for a plugin.
             if (!validEvent(e.header()) || e.header()->space_id != CLAP_CORE_EVENT_SPACE_ID || e.header()->time >= frames) { s.dropped.fetch_add(1); return; }
             // Overflow can drop note-offs, so it still resets the plugin rather than
             // risk stuck notes.
-            if (total == maxBlockEvents) { s.dropped.fetch_add(1); s.panic.store(true); return; }
+            if (total == Impl::renderEvents) { s.dropped.fetch_add(1); s.panic.store(true); return; }
             auto translated = s.translate(e);
             if (!s.accepts(translated)) { s.dropped.fetch_add(1); return; }
             s.ordered[total] = {translated, total}; ++total;
         };
+        auto append = [&](Event e) {
+            const auto* h=e.header();
+            if(validEvent(h) && h->space_id==CLAP_CORE_EVENT_SPACE_ID &&
+               (h->type==CLAP_EVENT_NOTE_OFF || h->type==CLAP_EVENT_NOTE_CHOKE)) {
+                const auto n=*reinterpret_cast<const clap_event_note_t*>(h);
+                for(size_t port=0;port<s.noteInputs.size();++port)if(n.port_index<0 || n.port_index==static_cast<int>(port)) {
+                    if(usesClapNotes(static_cast<uint32_t>(port))) {
+                        auto copy=n;copy.port_index=static_cast<int16_t>(port);deliver(Event::from(copy));
+                    } else for(int channel=0;channel<16;++channel)if(n.channel<0 || n.channel==channel) {
+                        if(n.key<0) deliver(Event::midi(0xb0|channel,h->type==CLAP_EVENT_NOTE_CHOKE?120:123,0,h->time,port));
+                        else deliver(Event::midi(0x80|channel,n.key,static_cast<uint8_t>(n.velocity*127),h->time,port));
+                    }
+                }
+            } else deliver(e);
+        };
         Event event;
         for (uint32_t i = 0; i < s.carryCount; ++i) append(s.carryEvents[i]);
         s.carryCount = 0;
-        // Events passed in directly (from the graph) are time-critical, so room is
-        // kept for them. Queued control commands beyond the remaining room stay
-        // queued for the next block instead of being dropped.
         const uint32_t direct = std::min(count, maxBlockEvents);
-        while (total + direct < maxBlockEvents && s.commands.pop(event)) { s.pendingCommands.fetch_sub(1); append(event); }
+        while (acknowledged.count < maxBlockEvents && s.commands.pop(event)) { ++acknowledged.count; append(event); }
         for (uint32_t i = 0; i < direct; ++i) append(incoming[i]);
         if (count > maxBlockEvents) { s.dropped.fetch_add(count - maxBlockEvents); s.panic.store(true); }
         if (s.panic.exchange(false)) {

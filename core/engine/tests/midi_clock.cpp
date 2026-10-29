@@ -53,6 +53,19 @@ int main( int argc, char** argv )
     oscairn::Transport transport( rate, 120.0 );
     transport.setClockSource( oscairn::Transport::ClockSource::MidiClock );
 
+    oscairn::Transport duplicateClock(rate,120);
+    duplicateClock.setClockSource(oscairn::Transport::ClockSource::MidiClock);
+    duplicateClock.midiClock(0xfa,0);duplicateClock.midiClock(0xf8,1000);
+    for(int i=0;i<40;++i){duplicateClock.midiClock(0xf8,1000);duplicateClock.midiClock(0xf8,999);}
+    if(duplicateClock.tempo()!=120)return fail("duplicate initial clocks preserve finite fallback tempo");
+    duplicateClock.midiClock(0xf8,2000);
+    const auto before=duplicateClock.current();
+    duplicateClock.midiClock(0xf8,2000);duplicateClock.midiClock(0xf8,1500);
+    if(duplicateClock.tempo()!=120 || duplicateClock.current().song_pos_beats!=before.song_pos_beats)
+        return fail("duplicate and backwards clocks preserve tempo and position");
+    duplicateClock.midiClock(0xf8,3000);
+    if(duplicateClock.tempo()!=120)return fail("clock recovers after rejected timestamps");
+
     std::vector<int64_t> noteOns;
     double               settledTempo = 0;
     int64_t              nextPulse    = 0;

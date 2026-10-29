@@ -88,6 +88,7 @@ namespace oscairn
                      uint32_t frames, std::span<const kick::clap::Event> events = {},
                      std::span<const MidiClockEvent> clocks = {}) noexcept;
 
+        void panicInput() noexcept { graph_.panicInput(); } // audio thread only
         uint64_t droppedNotes() const noexcept { return droppedNotes_.load(); }
         double sampleRate() const noexcept { return sampleRate_; }
         uint32_t maxFrames() const noexcept { return maxFrames_; }

@@ -19,6 +19,8 @@ here only to describe compatibility.
 > state/presets and scalar patch properties. State/property access is currently C++ only.
 > No VST3, patch library or real-hardware image yet.
 
+See the [roadmap](docs/roadmap.md) for implementation status and planned work.
+
 ## Try it
 
 Needs CMake 3.21+, Ninja and a C++20 compiler (on macOS: Xcode command line tools, and
