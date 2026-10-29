@@ -47,7 +47,7 @@ follow-up work. The graph currently stays at its startup
 sample rate; a later device rate change deliberately silences playback until restart.
 
 Buildroot Linux on hardware uses this same engine through ALSA. Its package explicitly
-sets `OSCAIRN_AUDIO_BUFFER_FRAMES=0`, preserving the backend/device default. A board
+sets `OSCAIRN_AUDIO_BUFFER_FRAMES=128`, matching the desktop's request. A board
 profile can override this build option to request a different supported size at startup;
 it should be chosen using measurements on the actual codec/driver under load.
 The QEMU dummy sound card cannot establish real-hardware latency or reliable settings.
