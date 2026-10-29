@@ -181,6 +181,14 @@ mode or separate engine. See [backend packaging](rfcs/0006-packages-and-portabil
 and [hardware contracts](rfcs/0004-hardware-services.md#backend-packages-and-sound-modes).
 No automatic conversion of arbitrary CPU code to hardware is implied.
 
+Device edits must export complete current state and assets, retaining backend provenance;
+declare whether conversion is reversible and invalidate derived alternate states after edits.
+Separate immutable package payloads from user presets/recordings and mutable app data so
+uninstall preserves musical work. Declare every runtime/asset dependency so Installed content
+can explain usage and safely remove orphaned packages. See the planned
+[device round trip](rfcs/0006-packages-and-portability.md#editing-on-one-instrument-and-transferring-to-another)
+and [content management](rfcs/0006-packages-and-portability.md#installed-content-and-removal).
+
 ## Native versus external; other DAWs (planned)
 
 "Oscairn-native" means meeting the package/state/asset portability contract for advertised

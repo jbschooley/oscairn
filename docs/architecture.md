@@ -661,6 +661,27 @@ AU→VST3 or LV2→CLAP/VST3 changes require tested state, parameter and port ma
 retain an unavailable-node placeholder. Cross-platform state migration and resource admission
 are separate requirements from copying package files.
 
+### Preparing and editing across devices (planned)
+
+A library can remember several performance devices and assign the same or different Sounds,
+Performances and Setlists to each. Share musical revisions; keep target dependency locks,
+controller/output mappings and explicit device variations separate. Show readiness per item
+and device, with missing downloads, incompatible modes, capacity and transition/load limits.
+Local audition requires an equivalent implementation; connected hardware can produce the
+sound where supported. Hardware-only offline sounds must not masquerade as live previews.
+
+Save instrument edits as revisions with ancestry and full state/assets. Transfer can update
+a shared revision or an explicit variation; concurrent edits preserve both versions for
+resolution. Rehearsed setlists remain pinned until deliberately updated. Derived states and
+destination checks become stale after edits; preserve unavailable hardware-specific sounds
+instead of silently substituting or resurrecting old state on another device.
+
+Use a Git-maintained public catalog of declarative instrument capability profiles, published
+as versioned authenticated snapshots for offline clients. Separate model/firmware profiles
+from actual device inventory and private musician settings. Evidence and runtime checks,
+not the model name or catalog entry, establish support. See the complete
+[multi-device workflow](rfcs/0006-packages-and-portability.md#preparing-for-several-performance-devices).
+
 ### Controls
 
 Sounds store semantic controls ("Macro 1 = Brightness"), not physical ones ("Knob 4 =
@@ -738,6 +759,15 @@ enabled, or reports what must be installed. A Linux-default package imported on 
 therefore acquire desktop binaries without carrying them on every offline hardware device.
 The source archive is preserved; full-archive retention is an explicit backup choice. See
 [the target policy](rfcs/0006-packages-and-portability.md#default-export-targets-and-selective-installation).
+
+Planned **Settings > Installed content** manages plugins/apps/libraries per device, with
+versions, installation reasons, Used by paths, import/export, retention, reclaimable storage
+and batch removal of unused content. Shared dependencies are optionally visible. Deleting
+musical documents does not implicitly uninstall their engines: default to a grouped cleanup
+prompt, with a per-device Keep installed without asking option. Retained revisions and live
+resources protect dependencies; intentional removal of a used package warns about affected
+documents and preserves their state for reinstall. User recordings/presets survive uninstall.
+See [removal rules and package-manager prior art](rfcs/0006-packages-and-portability.md#installed-content-and-removal).
 
 **Oscairn-native** identifies a tested portability contract: declared dependencies, stable
 engine/state/assets, builds for advertised profiles and normal operation in other hosts.
@@ -825,7 +855,8 @@ neither has to move with the other:
   declarations let the host collect what a Sound needs for export/sync. This planned
   Oscairn SDK extension does not make arbitrary third-party file access enumerable.
 - **Old versions stay while used.** A library update that changes a sample keeps the old one
-  in the store while any saved Sound still refers to it; unused files are removed later.
+  in the store while any saved Sound still refers to it; unused files become candidates for
+  the device's explicit cleanup/retention workflow.
 
 ### Built-in plugins and other manufacturers' defaults
 

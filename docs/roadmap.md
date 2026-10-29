@@ -175,12 +175,19 @@ a DAW plugin; and:
   preservation. Default exports to supported Buildroot Linux profiles, with advanced target
   selection; import installs only relevant artifacts, fetches exact missing target builds
   when enabled, or reports required installations. Keep disposable download caches separate
-  from pinned offline installations.
+  from pinned offline installations. Define revision ancestry and per-device assignments,
+  variations and profile versions with the persistence schema. Include Used by, grouped
+  unused-content prompts, per-device Keep installed policy and safe removal/reinstall in
+  the first package slice. Track retained history, shared dependencies and live resources;
+  preserve user data and unavailable-node state when a used package is deliberately removed.
   Storage deduplication and RAM sharing have separate contracts. Prove state portability across supported CPU/OS/runtime profiles, then broaden
   to LV2, external installations and AU/VST3 alongside their adapters; cross-format state
   conversion requires tested mappings. Baseline profiles identify what may be omitted from
   a complete export. Catalogs and paired-device delta sync follow the same package model;
-  vendor-specific installers/activation remain explicit external dependencies.
+  vendor-specific installers/activation remain explicit external dependencies. Maintain a
+  reviewed Git capability-profile catalog with authenticated offline snapshots and explicit
+  verification status. Add multiple-device preparation/readiness and revision-aware editing
+  round trips without silently merging opaque states or overwriting rehearsed setlists.
 - **Keeping plugins loaded:** a memory budget, unloading the least recently used, setlist
   preparation options and a setlist check; CPU, memory and storage meters.
 - **Native plugins outside Oscairn:** first one engine as a direct CLAP/VST3 plugin on

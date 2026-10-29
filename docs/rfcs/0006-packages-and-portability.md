@@ -165,6 +165,85 @@ or as a surprise when a performer starts playback. A Linux-default export may th
 complete offline for its advertised hardware profiles while requiring downloads on a Mac/PC;
 that distinction is part of the export/import status, not an error in the default policy.
 
+## Preparing for several performance devices
+
+The musician prepares a Sound, Performance or Setlist for named instruments, not backend
+artifacts. A library can remember several devices and assign all or selected items to each.
+One shared musical revision can target several devices; explicit device variations can use
+different sounds, layers or quality settings without overwriting the shared original. Device
+assignments reference exact document/variation revisions and target locks. They do not copy
+and silently fork every sound. Shared Sound edits offer an impact preview and an explicit
+update of dependent Performances; rehearsed Setlists keep their pinned revisions until updated.
+
+Show a content-by-device readiness matrix, with actionable reasons: missing download,
+unsupported engine/mode, unresolved controls/outputs, insufficient capacity or stale checks.
+The browser can filter for the selected devices (all selected versus any selected), while
+keeping unavailable sounds discoverable. Collect only each destination's assigned items and
+resolved dependencies. A multi-device archive can share common assets; each import installs
+only its assigned target subset. Readiness is per device and revision, never one universal
+green checkmark.
+
+Audition locally only when a compatible software implementation can reproduce the saved mode.
+When the hardware is connected and its integration supports it, the computer can edit while
+the instrument produces the audio. Hardware-only sounds offline remain editable where
+supported, with audition unavailable. Label approximate previews and recordings explicitly;
+a recording cannot demonstrate parameter edits it has not rendered.
+
+Distinguish **ready to transfer** (complete files for a declared target), **validated on this
+device** (restoration, mappings and measured capacity checked) and the musician's rehearsal
+status. Preparation checks every scene and setlist transition, including held notes/tails,
+resource overlap and expected loading time. Checks become stale when relevant content,
+packages, device configuration or firmware changes. No resource estimate guarantees every
+possible live performance. Stage transfers, keep the previous working revision, and activate
+an update deliberately outside an ongoing performance. Offline USB transfer remains first-class.
+
+### Capability profile catalog
+
+Maintain a versioned, declarative instrument-profile catalog in Git, with reviewed changes,
+schema validation and test evidence. Publish authenticated immutable catalog snapshots for
+clients; devices need neither Git nor an account, and can import/cache snapshots offline.
+Git history provides review/provenance, not proof that a capability works. Profiles distinguish
+documented, measured/verified, experimental and unknown claims, including test configuration
+and evidence date. A named instrument is not declared supported merely by adding its profile.
+
+Separate three things: the catalog's model/board/firmware/runtime profile, the actual device's
+reported installed services/resources, and private user settings such as names, mappings,
+library inventory and measured performance. Do not publish private device inventories to the
+catalog. A profile includes audio/MIDI/control capabilities, backend requirements, runtime
+baseline and measured limits where known. An instance may differ through firmware, hardware
+revision or modifications; unresolved differences stay unverified rather than enabling
+hardware optimistically. Resource availability still needs runtime admission.
+
+Record profile ID/revision/digest with target plans and validation results. Catalog updates
+do not silently change locked sounds or activate new backends; relevant changes invalidate
+checks and offer revalidation. A connected device supplies its current inventory; an offline
+device can export it via USB. Cached inventory shows its age and cannot certify current free
+storage or resources. Local experimental profiles are allowed but retain that status.
+
+### Editing on one instrument and transferring to another
+
+For the hypothetical Montage-to-KICK workflow (neither Yamaha chip access nor that backend
+is established), save the edited Performance and Sounds as new revisions with stable IDs,
+parent revision IDs, complete current state, new assets and originating backend/state contract.
+An engine's common portable state remains authoritative only if the backend can faithfully
+export it; otherwise retain hardware-specific opaque state and declare its limited scope.
+Do not flatten private state into a guessed list of parameter values.
+
+Transfer directly or through the computer, preserving revision ancestry. Identical imports
+are idempotent; a descendant can be offered as an update. Concurrent computer/instrument
+edits keep both revisions and ask which to use or save as a variation. Do not use timestamps
+as last-writer-wins, automatically merge opaque plugin states, or silently propagate deletion
+to other devices. Git is for the public profile catalog, not a required musician-facing sync UI.
+
+Preparing the edited revision for KICK resolves its exact compatible backend, packages and
+assets, checks controller/output mappings and measures capacity. Equivalent CPU state can
+restore when it fits. A Montage-only mode stays unavailable unless a tested conversion or
+explicit user-selected KICK variation exists. Preserve the source revision and name any
+sound/feature loss. Derived alternate-backend states and prior device checks become stale
+after edits; regenerate from the edited state or report unavailable, never reuse an older
+snapshot that discards the edit. Editing a device-specific variation does not overwrite its
+parent or siblings. Approved updates advance the relevant assignments/setlists explicitly.
+
 ## One import, explicit completeness
 
 The normal library file is lightweight: graph/state/metadata plus asset and dependency
@@ -248,8 +327,10 @@ Factory sample libraries and user content follow the same model.
   plugins can share immutable samples through the planned host asset API. Independently
   allocated or decoded samples, voices, delay lines and other mutable DSP state are private.
   No blanket "loaded once" memory promise for arbitrary plugins or across worker processes.
-- Pins come from installed packages, saved documents, backups as configured, prepared
-  setlists and live instances. Garbage collection must not remove a referenced release.
+- Pins come from explicitly retained packages, saved documents/revisions, backups as
+  configured, prepared setlists and live instances. Dependency-only installs are reachable
+  through these roots, not permanent roots merely because they were once installed.
+  Garbage collection must not remove a referenced release.
   Updates install side by side; rollback selects the old lock. Garbage collection is an
   explicit storage operation, never work on the audio callback.
 
@@ -258,6 +339,82 @@ sampler, copying its preset blob does not discover every file it might open. Inc
 whole required library if its working subset cannot be established and inclusion is
 permitted, or mark the export unresolved. Do not label factory-library references "small
 and complete" unless those libraries are also included or confirmed at the destination.
+
+## Installed content and removal
+
+Provide **Settings > Installed content** per device for managed plugins, apps and libraries:
+
+- Show versions, publisher, installation reason, status, disk usage and actually reclaimable
+  space. Deduplicated/shared bytes must not be counted twice in a batch removal estimate.
+- Show **Used by** paths through Sounds, Performances, Setlists, Projects, app dependencies
+  and retained revisions; also allow inspection from a document to its dependencies.
+- Import/export selected packages with their required dependency closure and target options;
+  export reports unavailable artifacts and external transfer restrictions as usual.
+- Offer **Keep installed**, reinstall, remove selected items and **Remove all unused**, with
+  a preview of the exact versions/content affected. Retention and version-update policy are
+  distinct: keeping an engine for future use does not request an upgrade.
+- Hide implementation libraries in the default list, with **Show shared dependencies** to
+  reveal who installed/requires them. Manually installed apps/plugins default to retained;
+  dependency-only installs become cleanup candidates after their last root disappears.
+
+Deleting a Setlist removes that document's references, not independently saved Performances
+or Sounds. Removing a song from a Setlist is not deleting the song from the library. Deleting
+a Sound/Performance referenced elsewhere shows affected documents and requires an explicit
+choice; keep their captured state/revisions or unavailable references, never silently erase
+dependent musical work. The subsequent package-cleanup decision is a separate operation.
+
+After a deletion removes the final retention root, default to one grouped prompt offering
+**Keep installed** or **Remove unused content**, naming candidates, reclaimable space and
+offline reinstall implications. Cancelling keeps packages. Per-device policy offers **Ask
+before removing unused content** (default) or **Keep installed without asking**; either still
+allows deliberate cleanup in Settings. Keeping particular content pins its dependency closure
+until the user releases that retention. Avoid repeated prompts for already retained content.
+No automatic uninstall policy is needed for the first version.
+
+Compute unused content by reachability from the device's complete known reference graph:
+saved and retained revisions (including retained trash/undo), all scenes and variations,
+device preparations, manually retained apps/plugins, configured backups, published DAW
+exports, active instances and in-progress transactions. Explain which root prevents removal.
+Offline/unmounted registered libraries keep their last known pins until explicitly forgotten;
+do not infer disuse because a drive is missing. Arbitrary unregistered DAW projects/USB files
+cannot be enumerated: expose that scope and allow Keep installed or export before cleanup.
+
+Deliberately removing a used managed package is distinct from garbage collection. Preview
+every known affected document/app, warn that dependents become unavailable until the exact
+compatible version and dependencies are restored, and require confirmation. Preserve states,
+locks, assets owned by the user and revision metadata; invalidate readiness and disable the
+affected dependents without silent bypass. Permit removal only after active/prepared users
+and transactions have safely released it; never unlink live resources mid-performance.
+Protected platform components are managed by system updates, not this removal action.
+Unmanaged vendor installations can be inventoried but use their supported uninstall path.
+
+Separate package binaries/immutable distributed content from user recordings, presets and
+mutable app data. Uninstalling an app/plugin does not delete user data. Shared dependencies
+still referenced by other retained packages remain installed. Recompute reachability before
+committing a removal to handle concurrent saves/imports; journal/stage metadata changes for
+crash recovery. Cleanup is control/storage work, not audio-callback work. Missing packages
+retain reinstall identity, but future download availability is not guaranteed.
+
+### Package-manager prior art and reuse
+
+Borrow established behavior before designing new machinery:
+
+| Prior art | Useful Oscairn behavior | Boundary |
+| --- | --- | --- |
+| [npm explain](https://docs.npmjs.com/cli/v11/commands/npm-explain/) and [Yarn why](https://yarnpkg.com/cli/why) | Explain every dependency path in Used by | Roots are musical documents/apps/revisions, not only JS projects |
+| [pnpm store](https://pnpm.io/cli/store) | Shared immutable content and explicit unused-store cleanup | An offline instrument cannot assume pruned releases can be downloaded again |
+| [Homebrew autoremove](https://docs.brew.sh/Manpage#autoremove---dry-run) | Distinguish requested installations from orphaned dependencies; preview removals | Never remove versions still required by saved performances |
+| [Nix garbage collection](https://nix.dev/manual/nix/2.35/package-management/garbage-collection.html) | Reachability from retained roots/generations and rollback retention | Oscairn additionally tracks live instances and prepared musical revisions |
+
+These are researched patterns, not adopted implementations. At the resolver milestone,
+evaluate reusable version-resolution, content-store, archive and transaction components
+against our target/ABI/state contracts, offline behavior, footprint and supported platforms.
+Reuse a suitable maintained component if it is smaller than owning that machinery. Do not
+wrap an entire JS/system package manager merely to obtain dependency traversal; keep Node,
+Ruby, build recipes and arbitrary install scripts out of the device runtime unless separately
+justified. Credit upstream authors and preserve applicable notices for any borrowed code;
+review the exact component and its dependencies before adoption. No upstream code is copied
+by this RFC. Source documentation checked 2026-10-29.
 
 ## Platform builds and hardware
 
@@ -498,14 +655,17 @@ those workers exist.
    package/artifact references and state provenance through discovery/library design. Keep
    path-based development loading, without baking absolute paths into the saved document
    identity. Define the first target runtime profiles, native/external capability labels,
-   project manifest/lock and shared-store resolution schema with fixtures.
+   project manifest/lock and shared-store resolution schema with fixtures. Include document
+   revision ancestry, per-device assignments/variations, versioned capability profiles and
+   dependency/retention roots before those identities become persistent.
 2. **First vertical slice:** managed CLAP packages, one explicit shared runtime and sample
    dependency, exact version locks, side-by-side immutable installation, offline export/import
    and unavailable-node preservation. Demonstrate a setlist on a clean second supported
    machine with no plugin-specific installers. A local package directory is enough; no
    online catalog required. Test cache removal without losing pinned offline installations
-   and two projects sharing a release while another pins an older one. Avoid inventing
-   another plugin ABI.
+   and two projects sharing a release while another pins an older one. Include basic Used by,
+   grouped cleanup prompts, per-device retention settings and safe removal/reinstall; deletion
+   safety is part of this slice, not later UI polish. Avoid inventing another plugin ABI.
 3. **Cross-platform proof:** first-party engine/state tests on supported macOS, Windows and
    Buildroot Linux builds as those hosts exist. Test Linux ARM64 through available QEMU
    coverage initially and real hardware when available; test a clean runtime image without
@@ -519,8 +679,18 @@ those workers exist.
    outside the Oscairn app, using the same state/assets; then the Oscairn graph container
    and optional standalone shell. Validate old DAW-session restore against the shared
    store without assuming the DAW understands package locks.
-6. **Distribution/UI polish:** catalog downloads, paired-device deltas, storage cleanup,
-   migration tools and optional rendered alternatives use the same manifest and lock.
+6. **Distribution/UI polish:** published profile/package catalogs, multi-device preparation
+   matrix, paired-device deltas, advanced storage views, migration tools and optional rendered
+   alternatives use the same manifest and lock. Prove revision-aware round trips before
+   advertising automatic device synchronization.
+
+Also test multiple devices using shared and distinct revisions; offline/stale/modified device
+profiles; conflicting edits and repeated imports; hardware-only mode transfer and stale
+converted state; removal of a setlist without deleting saved sounds; both cleanup policies;
+manually retained and shared dependencies; retained history and offline-library pins; batch
+reclaimable sizes; deliberate used-package removal/reinstall with intact state; active-resource
+refusal; and interrupted/concurrent cleanup versus import/save. Unknown external usage must
+not be presented as proven unused.
 
 Required tests include Linux-default export on a Mac/PC without desktop binaries; advanced
 multi-target export that installs only destination artifacts on hardware; exact-release
