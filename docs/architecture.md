@@ -598,6 +598,28 @@ The design is specified in [RFC 0004](rfcs/0004-hardware-services.md); it is not
   recovery needs prepared resources and an explicit transition policy; seamless fallback
   is not assumed.
 
+### Backend-specific installation
+
+One engine release can publish alternative CPU, FPGA and dedicated-sound-chip backends.
+Common state/assets and the selected backend's dependencies are separate package components;
+install only the destination's resolved execution plan, retaining other variants as metadata.
+A hardware instrument still needs its small CPU control adapter, but need not store the full
+CPU DSP implementation or unrelated FPGA/chip payloads. CPU reference availability is a
+portability requirement, not a demand to install or run it on an underpowered device.
+
+Resolve by exact board/service/firmware capabilities and supported sound modes, not just
+Linux/ARM64 or a chip name. The package manager selects files; the resource manager separately
+admits the whole performance and reserves parts/voices, memory, accelerator regions and CPU
+control/transfer budget. Defaults and offline exports use these richer destination profiles.
+See [backend packaging](rfcs/0006-packages-and-portability.md#backend-variants-and-device-specific-dependencies)
+and [hardware/sound semantics](rfcs/0004-hardware-services.md#backend-packages-and-sound-modes).
+
+Equivalent backends can be selected automatically within a saved sound/quality contract.
+If hardware changes the tone or offers an unmatched quality mode, save that mode explicitly;
+unsupported devices must report it or use a user-chosen alternative. A dedicated chip may
+only expose fixed synthesis operations and resident assets, not accept uploaded DSP code.
+MODX/SWX100 access is an unverified research example, not implemented Oscairn support.
+
 ### Hardware event timing
 
 Sequencers remain plugins that decide what plays. Hardware services determine when events

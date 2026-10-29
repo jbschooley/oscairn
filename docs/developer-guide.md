@@ -172,6 +172,15 @@ engines should share a canonical state representation across their supported bui
 Current per-plugin state export is not proof of complete project or cross-platform
 portability; preserve opaque third-party state and mark unsupported transfers explicitly.
 
+For accelerated engines, declare CPU/FPGA/DSP/sound-chip implementations as alternative
+execution plans with shared state/assets and conditional dependencies. Install only the
+selected plan's artifacts, including its CPU control adapter where needed. Match actual
+board/service/firmware capabilities; CPU fallback is allowed only when its sound and resource
+requirements fit. A hardware implementation that changes the sound needs an explicit saved
+mode or separate engine. See [backend packaging](rfcs/0006-packages-and-portability.md#backend-variants-and-device-specific-dependencies)
+and [hardware contracts](rfcs/0004-hardware-services.md#backend-packages-and-sound-modes).
+No automatic conversion of arbitrary CPU code to hardware is implied.
+
 ## Native versus external; other DAWs (planned)
 
 "Oscairn-native" means meeting the package/state/asset portability contract for advertised

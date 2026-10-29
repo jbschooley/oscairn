@@ -82,12 +82,80 @@ An audibly different algorithm is a distinct saved mode or engine, not a transpa
 substitute. Hardware-specific third-party engines can declare mandatory hardware; the
 host preserves their state and reports missing requirements on incompatible devices.
 
+### Backend packages and sound modes
+
+Separate the logical engine from its executable implementations. A release describes common
+state/metadata/assets and alternative backend artifacts. The package resolver selects a
+supported execution plan and installs only that plan's transitive dependencies; alternative
+backends are not unconditional dependencies. The artifact graph and export/import rules live
+in [RFC 0006](0006-packages-and-portability.md#backend-variants-and-device-specific-dependencies).
+
+For example, one hypothetical engine release can supply:
+
+| Backend | Device must provide | Installed engine-specific payload |
+| --- | --- | --- |
+| CPU | Matching OS/CPU/runtime and sufficient measured capacity | CPU DSP build and required data |
+| FPGA | Compatible board, FPGA region/static shell, service ABI and capacity | CPU control adapter plus matching bitstream/kernel and required data |
+| Dedicated sound chip | Accessible service implementing the required synthesis operations, parts/voices and asset banks | CPU control adapter plus mappings/data and any required loadable firmware |
+
+A hardware backend often still needs CPU code for state translation, event submission,
+buffers and host interaction. That does not require installing the engine's full CPU DSP
+implementation. Official portable engines publish a CPU reference implementation, but a
+hardware device need not install it unless it is selected, needed for local offline render,
+or deliberately prepared as a fallback. Having a CPU fallback file installed is not proof
+that it can keep up with the requested performance.
+
+A dedicated synthesis chip is not necessarily a programmable DSP. Its backend may only send
+commands to existing fixed-function synthesis and resident firmware/ROM. Capability records
+must identify the actual operations, firmware and banks, not merely a chip label. Do not
+redistribute resident firmware/ROM as if it were an engine dependency; declare required
+installed identities and validate access. If audio output cannot be captured/routed through
+the host with known latency, it cannot masquerade as an ordinary in-graph audio backend.
+External MIDI control plus physical audio return is a different integration with explicit I/O.
+
+The MODX/SWX100-style example is illustrative, not an available Oscairn target. Yamaha's
+[MODX documentation](https://usa.yamaha.com/products/music_production/synthesizers/modx/features.html)
+describes AWM2/FM-X engines; this establishes neither a third-party kernel API nor access
+for Oscairn. Chip model/revision, control interface, firmware availability, audio path and
+state/voice mapping must be investigated on actual hardware before declaring a backend.
+
+FPGA artifacts likewise identify exact supported device/board, region, shell/interface and
+clock/memory constraints. A generic "has FPGA" flag is insufficient. Full-fabric images and
+partial-region images declare different exclusivity/reconfiguration rules. The Linux
+[FPGA framework](https://cdn.kernel.org/doc/html/latest/driver-api/fpga/intro.html) separates
+manager, bridge and region responsibilities; it does not make arbitrary bitstreams compatible
+or define Oscairn's synthesis/resource contract.
+
+Distinguish these cases when saving and selecting a sound:
+
+- **Equivalent implementation:** same musical behavior and saved quality, tested within
+  stated tolerances. Auto-select CPU or hardware according to measured resource/latency
+  policy without rewriting the patch's musical requirements.
+- **Different or enhanced sound:** higher-quality processing, a different filter/oscillator
+  model or chip-specific character is an explicit saved mode or separate engine. If the CPU
+  also implements that mode, it can restore it when resources permit, including offline.
+  Do not replace it with a cheaper mode merely because that is all the destination can run.
+- **Hardware-required mode:** no equivalent software implementation is available. Mark that
+  Sound as hardware-required, even if other modes of the same engine are portable. Preserve
+  it with an unavailable warning elsewhere; a user-approved alternate mode is a separate
+  saved choice. The native portability badge applies only to its validated portable scope.
+
+Hardware is not inherently better-sounding: the implemented algorithm and quality mode decide
+that. Resource profiles may allow the same mode to run on a powerful computer but require
+acceleration on a small instrument. If an engine offers mixed CPU/hardware execution, it
+must declare supported plans and own the split/state/event semantics. The host must not
+arbitrarily divide its voices or kernels between incompatible implementations.
+
 ### Select and reserve before activation
 
-1. Match the Sound's engine, quality, resource and latency requirements to supported
-   backends and available hardware.
-2. Estimate the complete cost, including preparation, transfers, buffering, other active
-   engines and transition overlap. Report uncertain estimates rather than promising fit.
+1. Match the Sound's engine/mode, quality, resource and latency requirements to backend
+   plans, exact device capabilities and usable installed services. Package availability
+   and live resource admission are separate: files can be complete while hardware is busy.
+2. Estimate the complete cost, including CPU control overhead, transfers, buffering,
+   accelerator regions/parts/voices, memory, other active engines and transition overlap.
+   Reserve across the whole performance: two individually compatible plugins can still
+   require the same exclusive FPGA region or sound-chip part. Report uncertain estimates
+   rather than promising fit.
 3. Apply device/session policy: automatic compatible selection, CPU preference, or a
    specific backend for diagnostics. Automatic selection uses measured profiles and
    preserves the requested sound and quality; the choice is visible to the user.
@@ -209,9 +277,11 @@ clock and callback constraints remain authoritative.
    firmware availability. Test MIDI/CV/audio alignment and worst-case jitter under CPU,
    storage, UI and bus load with physical loopback or measurement equipment. QEMU alone
    cannot verify this.
-4. Implement backend discovery, reservations and one reference engine with a CPU backend
-   and one available accelerator. Test state round trips, reference audio tolerances,
-   parameter timing, buffer sizes, resource contention and refusal when no backend fits.
+4. Implement backend discovery, conditional package resolution, reservations and one
+   reference engine with CPU and simulated hardware backends before targeting an available
+   real accelerator. Test selective installation, exact board/firmware matching, state round
+   trips, explicit sound modes, reference audio tolerances, parameter timing, buffer sizes,
+   resource contention and refusal when a CPU fallback or accelerator cannot meet the budget.
 5. Exercise accelerator timeout/disconnect, firmware restart and CPU recovery with and
    without prepared capacity; measure complete latency and sustained deadline margin.
    Expand only after a backend shows a useful measured benefit.
@@ -238,5 +308,6 @@ sequencer decisions into board firmware or making the UI responsible for timing.
   i.MX8MM board support and an MCU firmware image omitted from the release. Verify the
   actual I/O owner before assigning timing work to the on-chip M4.
 
-Sources checked 2026-10-28. This RFC defines the software design; it does not claim that
-any particular instrument has working Oscairn acceleration or scheduled hardware I/O.
+Sources initially checked 2026-10-28; FPGA/MODX references checked 2026-10-29. This RFC defines
+the software design; it does not claim that any particular instrument has working Oscairn
+acceleration or scheduled hardware I/O.

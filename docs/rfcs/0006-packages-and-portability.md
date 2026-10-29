@@ -123,8 +123,9 @@ Mac/PC. This policy applies to exported packages/libraries as well as Sounds, Pe
 and Setlists with collected dependencies; it does not restrict what a publisher offers in
 its full release or what a user deliberately includes in a full backup.
 
-The preset names its exact CPU/runtime profiles. "Linux" alone is not a target, and one
-ARM64 binary is not assumed compatible with every Buildroot release. The default profile
+The preset names its exact CPU/runtime and relevant hardware-service/backend profiles.
+"Linux" alone is not a target, and one ARM64 binary is not assumed compatible with every
+Buildroot release. The default profile
 set is versioned with the exporter/platform tooling; the export records the profiles it
 actually covers. No build is invented when a package lacks a default target: report that
 profile's unresolved dependency and do not mark it complete for offline use. An export
@@ -296,6 +297,69 @@ LV2 and VST3 can both be packaged as managed dependencies. Their bundle formats 
 not prove the binary's external library closure or state portability. A Windows/Mac VST3
 installation does not supply a Linux hardware binary, and an LV2 instance is not the same
 format identity as the vendor's VST3 instance.
+
+## Backend variants and device-specific dependencies
+
+OS/CPU builds are one selection dimension; synthesis backend capabilities are another.
+A plugin release must describe **alternative execution plans**, not make every CPU, FPGA
+and sound-chip implementation a mandatory dependency. Keep the common engine identity,
+state schema, control definitions and shared assets separate from backend-specific payloads.
+Use the same manifest/lock mechanism rather than introducing a second installer.
+
+A candidate plan records its backend identity/version, target runtime, required service ABI,
+board/chip/firmware/FPGA-region compatibility, implemented sound modes, state compatibility,
+resource and latency constraints, and the exact artifact/dependency hashes to install.
+It can name an engine-wide backend or an explicitly supported combination of kernels.
+Selecting one plan pulls its transitive dependencies; unselected alternatives remain
+metadata only. An install must fail honestly if a selected plan's artifacts/services are
+missing, rather than pulling an unrelated implementation that happens to be available.
+
+For a hypothetical `vendor.organ` release:
+
+- **CPU device:** common data plus the matching CPU DSP artifact.
+- **Supported FPGA instrument:** common data, its host control adapter and the exact board/
+  region-compatible FPGA artifact; no dedicated-sound-chip adapter or unrelated bitstreams.
+- **Supported sound-chip instrument:** common data and its host adapter/mappings, plus any
+  legitimately supplied required firmware; no FPGA payload. Existing ROM/firmware/banks
+  are validated device capabilities when supplied by the instrument, not duplicate downloads.
+
+Every selected plan still includes whatever CPU host/control code it needs. A portable
+engine's published CPU reference backend is not necessarily installed on every hardware
+instrument. Retain/install it only when selected or needed for declared offline rendering
+or a prepared fallback. CPU fallback also requires enough live capacity and valid sound/state
+compatibility; its availability in a catalog is not a recovery guarantee.
+
+The portable document records engine, musical mode/quality and any mandatory capabilities.
+Keep that separate from a **per-target resolved execution plan** in the dependency lock,
+which pins actual backend/artifact versions and records the capability profile used for
+selection. Device/session policy may prefer an equivalent implementation, but importing to
+another device creates/revalidates its target plan instead of rewriting the musical patch
+or reusing physical device handles. Hardware-enhanced modes with no equivalent CPU version
+remain explicitly hardware-required, as defined in
+[RFC 0004](0004-hardware-services.md#backend-packages-and-sound-modes).
+
+Export profiles therefore include relevant board/services/accelerator capabilities in
+addition to CPU and runtime. The default Buildroot export covers only its advertised
+profiles: include each selected profile's resolved backend dependency set, deduplicating
+common files. A named-device export includes its selected plan and any explicitly requested
+fallbacks. It does not include every FPGA/DSP image merely because the archive is for Linux.
+A generic CPU-only profile cannot be labelled ready for a hardware-required Sound or a
+configuration whose CPU budget is insufficient. Unknown hardware capacity remains unverified.
+
+Import uses actual device service inventory, supported modes and measured capacity to select
+or validate a compatible plan, installs only that plan's dependencies, and applies the usual
+exact-release download/offline-missing rules. A package manager may install several candidate
+plans when explicitly requested for offline use, but the resource manager still must reserve
+the chosen one before performance activation. Profile matches and successful file installation
+do not prove an accelerator is currently available. Firmware/bitstream loading belongs to
+hardware services, outside the audio callback, with ownership and recovery rules.
+
+Tests must prove that two devices with the same Linux/CPU ABI but different accelerators
+install different backend payloads, neither retains the other's code, and shared assets
+remain shared. Also test wrong board/shell/firmware rejection; opaque or inaccessible chip
+services; absent ROM banks; an insufficient CPU fallback; incompatible sound modes; and two
+plugins competing for one resource. First exercise these rules with simulated capabilities;
+real hardware and complete latency/state tests are required before claiming support.
 
 ## State portability and format migration
 

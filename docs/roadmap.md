@@ -133,9 +133,13 @@ new core, from a UI that talks to it only through the control API.
   firmware availability and clock domains before assigning work to a real-time core or
   panel MCU. Validate input timestamps, scheduled MIDI/CV/clock output, cancellation,
   overflow handling and alignment with audio under load.
-- Optional engine backends: capability discovery and resource reservations, then one
-  reference engine on one available DSP, FPGA or real-time core. Compare sound, complete
-  processing latency and sustained capacity with its CPU backend. Only use acceleration
+- Optional engine backends: capability discovery, conditional backend-package resolution
+  and whole-performance resource reservations, first with simulated devices and then one
+  reference engine on one available DSP, FPGA or real-time core. Separate equivalent
+  implementations from explicit hardware-specific sound/quality modes. Install only each
+  target's selected backend dependencies; reject unavailable chip services, incompatible
+  FPGA regions/firmware and CPU fallbacks that cannot sustain the sound. Compare sound,
+  complete processing latency and sustained capacity with its CPU backend. Only use acceleration
   when a compatible implementation and measured benefit exist; keep CPU-only devices
   and offline rendering supported.
 - The KICK (i.MX8M Mini), once beta units exist: an image for its board, and a
