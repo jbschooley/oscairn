@@ -119,6 +119,30 @@ To do:
 Done when: pressing pads and transport buttons programs and plays a pattern through the
 new core, from a UI that talks to it only through the control API.
 
+### Next build and test order
+
+1. **Desktop sound picker:** expose the existing prepare/select/discard controls for the
+   loaded instrument, starting with named Basic Synth variations and available presets.
+   Keep the UI on the control API and preparation off its event thread. Test switching while
+   holding notes/sustain, correct note releases, preparation failure leaving the current sound
+   intact, and reconnect/readback. Open the app in the KICK layout and verify audible switching
+   at the 128-frame default; automated reference-audio checks complement listening.
+2. **Plugin discovery and selection:** reuse the existing CLAP scanner process and add the
+   corresponding LV2 discovery path, stable format IDs and generic parameter/preset controls.
+   Keep scanning away from live rendering; report failed/crashed scans and incompatible ports
+   without replacing a working graph. Test bundled plugins and production CLAP/LV2 instruments
+   and effects, repeated selection, routing and engine/UI reconnection.
+3. **Minimal save/reopen:** persist one complete Performance with its graph, scenes/prepared
+   sounds, state, asset references and mappings. Preserve provenance and unresolved nodes;
+   do not require the future package manager. Test a process restart, missing plugin/assets,
+   interrupted save, and render/state comparisons. Then expand native asset-bearing patches,
+   effect-tail transitions and sequencer tracks/patterns against that usable workflow.
+
+Package-manager comparison comes at the package milestone, before permanent distribution
+format commitments: evaluate libmamba/Nix and libsolv as a narrower fallback using the
+[defined prototype](rfcs/0006-packages-and-portability.md#implementation-candidates-and-decision-timing).
+No package-manager dependency or prototype is required for the next desktop step.
+
 ## Phase 4: hardware (started)
 
 - Map the existing logical audio endpoints onto each board's real inputs/outputs and

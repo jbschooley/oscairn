@@ -469,6 +469,37 @@ justified. Credit upstream authors and preserve applicable notices for any borro
 review the exact component and its dependencies before adoption. No upstream code is copied
 by this RFC. Source documentation checked 2026-10-29.
 
+### Implementation candidates and decision timing
+
+Do not assume Oscairn needs a new package manager from scratch. Evaluate existing foundations
+before choosing a permanent package format or implementing a general dependency solver:
+
+| Candidate | Reusable machinery | Questions to prove |
+| --- | --- | --- |
+| [Mamba/libmamba](https://mamba.readthedocs.io/en/latest/user_guide/micromamba.html) | C++ package tooling without requiring Python; resolution, downloads, cache and environment installation | Fit with Buildroot, exact per-project versions, hardware variants, signed plugin bundles and script-free installation |
+| [Nix](https://nix.dev/manual/nix/stable/command-ref/nix-store/export.html) | Immutable store, retained versions/roots and offline dependency-closure transfer | Store integration, ordinary DAW discovery/signatures, embedded footprint and native Windows delivery; currently documented platforms are Linux/macOS |
+| [libsolv](https://github.com/openSUSE/libsolv) | Embeddable dependency solving used by Mamba and other package systems | Leaves downloading, verified installation, storage and recovery to other components; use directly if a fuller foundation costs more to adapt |
+
+Mamba is the first fuller candidate to evaluate, alongside Nix as a reference for durable
+retention. Its [installation behavior](https://mamba.readthedocs.io/en/latest/advanced_usage/detailed_operations.html)
+includes file sharing, possible prefix rewriting and package scripts; those last two must
+not violate Oscairn's signed-bundle and managed-install contracts. Nix's
+[supported-platform list](https://nix.dev/manual/nix/stable/installation/supported-platforms.html)
+does not establish native Windows support. None is adopted; general Linux support alone
+does not establish compatibility with our Buildroot runtime.
+
+At the package milestone, compare a small working scenario: two plugins sharing one
+dependency, two retained versions, an offline repair bundle, and removal that preserves
+another Performance's dependencies. Check signed macOS bundles, native Windows, the actual
+Buildroot runtime, interrupted installation and resource footprint. Musical revision roots,
+state/backend compatibility, live resource admission and the musician-facing UI remain
+Oscairn responsibilities whichever foundation wins. Prefer existing machinery where the
+complete integration is smaller and maintainable; do not select by feature lists alone.
+
+Defer this prototype until the basic sound selection, discovery and save/reopen workflow is
+usable. Carry stable identities/state provenance now, without making that workflow depend
+on a catalog, a full package resolver or all the future multi-device features.
+
 ## Platform builds and hardware
 
 A code artifact declares OS, CPU architecture and required instruction set, runtime/ABI
