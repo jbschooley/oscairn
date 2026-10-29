@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #include "oscairn/graph.h"
 #include "NoteRoute.h"
+#include "PreparedInstrument.h"
 
 #include <oscairn-clap/param-target.h>
 
@@ -117,7 +118,7 @@ namespace oscairn
     NodeId Graph::add( const std::string& path, const std::string& pluginId )
     {
         Node node;
-        node.host = loadPlugin( path, pluginId, sampleRate_, maxFrames_, mode_, lv2Buffers_ );
+        node.host = preparedInstrument(loadPlugin(path,pluginId,sampleRate_,maxFrames_,mode_,lv2Buffers_),sampleRate_,maxFrames_,mode_,lv2Buffers_);
         node.audioInputs=countChannels(node.host->inputPorts());
         node.audioOutputs=countChannels(node.host->outputPorts());
 

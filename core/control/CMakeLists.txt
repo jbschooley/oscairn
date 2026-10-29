@@ -60,6 +60,8 @@ if(UNIX)
 endif()
 
 if(UNIX)
+    add_test(NAME control-prepared-instances COMMAND oscairn-local-socket-test $<TARGET_FILE:kick-clap-fixture-normal> --instances)
+    set_tests_properties(control-prepared-instances PROPERTIES TIMEOUT 30)
     add_test(NAME control-native-sounds COMMAND oscairn-local-socket-test $<TARGET_FILE:oscairn_basic_synth> --sounds)
     set_tests_properties(control-native-sounds PROPERTIES TIMEOUT 30)
 endif()

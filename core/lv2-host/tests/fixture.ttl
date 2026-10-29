@@ -179,3 +179,17 @@
  [a lv2:InputPort, lv2:AudioPort; lv2:index 1; lv2:symbol "right_in"; lv2:name "Right In"],
  [a lv2:OutputPort, lv2:AudioPort; lv2:index 2; lv2:symbol "left_out"; lv2:name "Left Out"],
  [a lv2:OutputPort, lv2:AudioPort; lv2:index 3; lv2:symbol "right_out"; lv2:name "Right Out"] .
+
+<urn:oscairn:test:instrument> a lv2:Plugin, lv2:InstrumentPlugin; doap:name "Oscairn synth fixture"; lv2:requiredFeature urid:map; lv2:port
+ [a lv2:InputPort, lv2:ControlPort; lv2:index 0; lv2:symbol "gain"; lv2:name "Gain"; lv2:minimum 0; lv2:maximum 2; lv2:default 0.5],
+ [a lv2:InputPort, lv2:ControlPort; lv2:index 1; lv2:symbol "in"; lv2:name "Unused"; lv2:default 0; lv2:minimum 0; lv2:maximum 1],
+ [a lv2:OutputPort, lv2:AudioPort; lv2:index 2; lv2:symbol "out"; lv2:name "Out"],
+ [a lv2:InputPort, atom:AtomPort; lv2:index 3; lv2:symbol "events_in"; lv2:name "Events In"; atom:bufferType atom:Sequence; atom:supports midi:MidiEvent, time:Position],
+ [a lv2:OutputPort, atom:AtomPort; lv2:index 4; lv2:symbol "events_out"; lv2:name "Events Out"; atom:bufferType atom:Sequence],
+ [a lv2:OutputPort, lv2:ControlPort; lv2:index 5; lv2:symbol "tempo"; lv2:name "Tempo"; lv2:minimum 0; lv2:maximum 1000; lv2:default 0],
+ [a lv2:OutputPort, lv2:ControlPort; lv2:index 6; lv2:symbol "frame"; lv2:name "Frame"; lv2:minimum 0; lv2:maximum 1000000; lv2:default 0],
+ [a lv2:OutputPort, lv2:ControlPort; lv2:index 7; lv2:symbol "beat"; lv2:name "Beat"; lv2:minimum 0; lv2:maximum 1000000; lv2:default 0],
+ [a lv2:InputPort, lv2:ControlPort; lv2:index 8; lv2:symbol "bad_output"; lv2:name "Bad Output"; lv2:minimum 0; lv2:maximum 5; lv2:default 0; lv2:portProperty lv2:integer]
+ .
+
+<urn:oscairn:test:instrument-preset> a <http://lv2plug.in/ns/ext/presets#Preset>; lv2:appliesTo <urn:oscairn:test:instrument>; rdfs:label "Prepared gain"; lv2:port [lv2:symbol "gain"; <http://lv2plug.in/ns/ext/presets#value> 0.75] .

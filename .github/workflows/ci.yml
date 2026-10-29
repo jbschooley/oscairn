@@ -69,7 +69,7 @@ jobs:
       - name: Build and test production MOD instruments and effects
         run: |
           python3 core/lv2-host/tests/production/build_mod_mda.py upstream-mod-mda build/production-lv2 --mod-data upstream-mod-data
-          python3 core/lv2-host/tests/production/run.py build/core/lv2-host/tests/oscairn-lv2-production-probe build/production-results --mod-root build/production-lv2 --renderer build/hosts/oscairn-render --sequencer build/plugins/oscairn-step-sequencer.clap
+          python3 core/lv2-host/tests/production/run.py build/core/lv2-host/tests/oscairn-lv2-production-probe build/production-results --mod-root build/production-lv2 --prepared-probe build/core/oscairn-prepared-instances-test --renderer build/hosts/oscairn-render --sequencer build/plugins/oscairn-step-sequencer.clap
 
       - name: Test production x42 EQ with larger Atom buffers (Linux)
         if: runner.os == 'Linux'

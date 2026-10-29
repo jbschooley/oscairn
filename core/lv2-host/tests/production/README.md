@@ -152,3 +152,8 @@ held-sound overlap between instances, failure recovery and malformed property me
 samplv1 notifications include an additional zero terminator in Path atoms. The host
 accepts trailing zero padding while rejecting embedded trailing text and unterminated
 strings. That compatibility case has a bounded-parser regression test.
+
+The production runner also accepts `--prepared-probe build/core/oscairn-prepared-instances-test`.
+For JX10, DX10 and EPiano this compares a two-sound held-note switch against the summed
+output of independently rendered reference instances, through both releases. CI runs
+these transitions on Linux and macOS in addition to the existing raw-host/chain checks.

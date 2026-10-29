@@ -51,6 +51,8 @@ struct NoteRoute
         clear();return ok;
     }
     template<class Emit> bool route(Event e,uint32_t& nextId,Emit&& emit) noexcept
+    {return route(e,nextId,emit,[](const Note&,uint32_t){});}
+    template<class Emit,class End> bool route(Event e,uint32_t& nextId,Emit&& emit,End&& end) noexcept
     {
         if(!e.valid())return emit(e);
         const auto* h=e.header();
@@ -66,17 +68,17 @@ struct NoteRoute
             } else if(kind==0xb0 && m.data[1]==64) {
                 pedal[m.port_index][channel]=m.data[2];
                 if(!clap[m.port_index] && m.data[2]<64)for(auto& n:notes)
-                    if(n.used && !n.held && n.address.port_index==m.port_index && n.address.channel==channel)n.used=false;
+                    if(n.used && !n.held && n.address.port_index==m.port_index && n.address.channel==channel){end(n,h->time);n.used=false;}
                 return emit(e);
             } else if(kind==0xb0 && (m.data[1]==120 || m.data[1]==123)) {
                 auto n=Event::note(false,-1,0,h->time,channel,m.port_index);
                 if(m.data[1]==120)reinterpret_cast<clap_event_header_t*>(n.bytes.data())->type=CLAP_EVENT_NOTE_CHOKE;
-                return route(n,nextId,emit);
+                return route(n,nextId,emit,end);
             } else if(kind==0xa0 || kind==0xd0) {
                 Event pressure;
                 if(!midiToClap(m.data,kind==0xd0?2:3,h->time,pressure))return emit(e);
                 reinterpret_cast<clap_event_note_expression_t*>(pressure.bytes.data())->port_index=m.port_index;
-                return route(pressure,nextId,emit);
+                return route(pressure,nextId,emit,end);
             } else return emit(e);
         }
         if(h->type==CLAP_EVENT_NOTE_ON && h->size==sizeof(clap_event_note_t))
@@ -103,7 +105,7 @@ struct NoteRoute
                 auto output=release(slot,h->time,choke);
                 auto* off=reinterpret_cast<clap_event_note_t*>(output.bytes.data());off->velocity=n.velocity;off->header.flags=h->flags;
                 ok=emit(output) && ok;
-                if(choke || (!clap[slot.address.port_index] && !sustained))slot.used=false;
+                if(choke || (!clap[slot.address.port_index] && !sustained)){end(slot,h->time);slot.used=false;}
             }
             return ok;
         }
@@ -121,7 +123,7 @@ struct NoteRoute
            (h->type==CLAP_EVENT_PARAM_MOD && h->size==sizeof(clap_event_param_mod_t))) {
             // Both CLAP parameter event structs have the same note-address fields.
             auto remap=[&]<class T>(const T& parameter) {
-                if(parameter.note_id<0)return emit(e);
+                if(parameter.note_id<0 && parameter.key<0)return emit(e);
                 bool ok=true;
                 for(const auto& slot:notes)if(matches(slot,parameter.note_id,parameter.port_index,parameter.channel,parameter.key)) {
                     auto copy=parameter;copy.note_id=clap[slot.address.port_index]?slot.id:-1;

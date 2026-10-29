@@ -16,10 +16,13 @@ here only to describe compatibility.
 > desktop demo app with live audio, MIDI input and switchable panel layouts, and a Linux
 > image that boots into Oscairn (tested in QEMU, [`os/`](os/README.md)). Optional LV2 hosting
 > supports mixed CLAP/LV2 graphs with audio, controls, MIDI/time atoms, Worker, plugin
-> state/presets and scalar patch properties. State/property access is currently C++ only.
+> state/presets and scalar patch properties. Prepared instrument state/preset selection is available through the control API;
+> state export and patch-property access remain C++ only.
 > No VST3, patch library or real-hardware image yet.
 
 See the [roadmap](docs/roadmap.md) for implementation status and planned work.
+For plugins, controllers and integrations, start with the [developer guide](docs/developer-guide.md)
+and [documentation index](docs/README.md).
 
 ## Try it
 

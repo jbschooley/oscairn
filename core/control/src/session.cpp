@@ -134,7 +134,7 @@ namespace oscairn
 
     Control::Sounds Session::sounds(NodeId node) const
     {
-        const auto& host=graph_.host(node);Sounds result{host.soundContextCapacity(),{}};
+        const auto& host=graph_.host(node);Sounds result{host.soundContextCapacity(),{},host.soundContextMode()};
         for(const auto& c:host.soundContexts())result.contexts.push_back({c.id,c.name,c.selected_channels,c.active_voices,c.idle});
         return result;
     }

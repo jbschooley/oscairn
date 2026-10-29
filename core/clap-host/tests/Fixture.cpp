@@ -23,7 +23,7 @@ std::atomic<int> threadErrors{0}, entryUsers{0}, processCalls{0}, callbackCalls{
 constexpr const char* ids[]{"org.kick.test.synth", "org.kick.test.effect", "org.kick.test.midi",
                             "org.kick.test.nan", "org.kick.test.error", "org.kick.test.sleep",
                             "org.kick.test.activate-failure", "org.kick.test.start-failure", "org.kick.test.stepped", "org.kick.test.no-state",
-                            "org.kick.test.save-failure", "org.kick.test.transport"};
+                            "org.kick.test.save-failure", "org.kick.test.transport", "org.kick.test.tail"};
 const char* instrument[]{CLAP_PLUGIN_FEATURE_INSTRUMENT, CLAP_PLUGIN_FEATURE_SYNTHESIZER, nullptr};
 const char* effect[]{CLAP_PLUGIN_FEATURE_AUDIO_EFFECT, nullptr};
 const clap_plugin_descriptor_t descriptors[]{
@@ -38,7 +38,8 @@ const clap_plugin_descriptor_t descriptors[]{
     {CLAP_VERSION, ids[8], "KICK steps", "KICK", "", "", "", "1", "Stepped fixture", instrument},
     {CLAP_VERSION, ids[9], "KICK no state", "KICK", "", "", "", "1", "Unsupported state fixture", instrument},
     {CLAP_VERSION, ids[10], "KICK save failure", "KICK", "", "", "", "1", "Failed state fixture", instrument},
-    {CLAP_VERSION, ids[11], "KICK transport", "KICK", "", "", "", "1", "Transport fixture", instrument}};
+    {CLAP_VERSION, ids[11], "KICK transport", "KICK", "", "", "", "1", "Transport fixture", instrument},
+    {CLAP_VERSION, ids[12], "KICK tail", "KICK", "", "", "", "1", "Release-tail instrument", instrument}};
 struct Plugin {
     clap_plugin_t api{};
     const clap_host_t* host;
@@ -49,7 +50,8 @@ struct Plugin {
     // the audio thread writes them in process().
     std::atomic<double> gain{.5}, toggle{0}, mode{0};
     clap_id timerId = CLAP_INVALID_ID;
-    uint32_t maxFrames = 0;
+    uint32_t maxFrames = 0, tailFrames=0;
+    clap_event_note_t tailNote{};
     static Plugin& get(const clap_plugin_t* p) { return *static_cast<Plugin*>(p->plugin_data); }
     void main() const { if (!check || !check->is_main_thread(host)) ++threadErrors; }
     void audio() const { if (!check || !check->is_audio_thread(host)) ++threadErrors; }
@@ -70,7 +72,7 @@ struct Plugin {
         api.deactivate = [](const clap_plugin_t* p) { auto& s = get(p); s.main(); if (s.processing) ++threadErrors; s.active = false; };
         api.start_processing = [](const clap_plugin_t* p) { auto& s = get(p); s.audio(); if (!s.active) ++threadErrors; if (s.kind == 7) return false; s.processing = true; return true; };
         api.stop_processing = [](const clap_plugin_t* p) { auto& s = get(p); s.audio(); if (!s.processing) ++threadErrors; s.processing = false; };
-        api.reset = [](const clap_plugin_t* p) { auto& s = get(p); s.audio(); s.gate = s.held = s.sustain = false; };
+        api.reset = [](const clap_plugin_t* p) { auto& s = get(p); s.audio(); s.gate = s.held = s.sustain = false;s.tailFrames=0; };
         api.process = process;
         api.get_extension = extension;
         api.on_main_thread = [](const clap_plugin_t* p) {
@@ -124,14 +126,18 @@ struct Plugin {
                 const auto* e = b->in_events->get(b->in_events, event);
                 if (e->time < i || e->time >= b->frames_count) ++threadErrors;
                 if (e->time > i) break;
-                s.event(e); ++event;
+                s.event(e);
+                if(s.kind==12 && e->type==CLAP_EVENT_NOTE_ON){s.tailNote=*reinterpret_cast<const clap_event_note_t*>(e);s.tailFrames=0;}
+                if(s.kind==12 && (e->type==CLAP_EVENT_NOTE_OFF || e->type==CLAP_EVENT_NOTE_CHOKE))s.tailFrames=e->type==CLAP_EVENT_NOTE_OFF?1024:1;
+                ++event;
             }
             for (uint32_t c = 0; c < b->audio_outputs[0].channel_count; ++c) {
-                float value = s.gate ? static_cast<float>(s.gain) : 0.f;
+                float value = s.gate ? static_cast<float>(s.gain) : static_cast<float>(s.gain)*s.tailFrames/1024.f;
                 if (s.kind == 1) value = b->audio_inputs[0].data32[c][i] * static_cast<float>(s.gain);
                 if (s.kind == 3) value = std::numeric_limits<float>::quiet_NaN();
                 b->audio_outputs[0].data32[c][i] = value;
             }
+            if(s.tailFrames && !--s.tailFrames){s.tailNote.header.type=CLAP_EVENT_NOTE_END;s.tailNote.header.time=i;b->out_events->try_push(b->out_events,&s.tailNote.header);}
         }
         clap_event_param_value_t value{};
         value.header = {sizeof(value), 0, CLAP_CORE_EVENT_SPACE_ID, CLAP_EVENT_PARAM_VALUE, 0};
@@ -218,10 +224,10 @@ struct Plugin {
     }
 };
 const clap_plugin_factory_t factory{
-    [](const clap_plugin_factory_t*) -> uint32_t { return 12; },
-    [](const clap_plugin_factory_t*, uint32_t index) -> const clap_plugin_descriptor_t* { return index < 12 ? &descriptors[index] : nullptr; },
+    [](const clap_plugin_factory_t*) -> uint32_t { return 13; },
+    [](const clap_plugin_factory_t*, uint32_t index) -> const clap_plugin_descriptor_t* { return index < 13 ? &descriptors[index] : nullptr; },
     [](const clap_plugin_factory_t*, const clap_host_t* host, const char* id) -> const clap_plugin_t* {
-        for (int i = 0; i < 12; ++i) if (!std::strcmp(id, ids[i])) return &(new Plugin(host, i))->api;
+        for (int i = 0; i < 13; ++i) if (!std::strcmp(id, ids[i])) return &(new Plugin(host, i))->api;
         return nullptr;
     }};
 }

@@ -1267,14 +1267,33 @@
                     ],
                     "additionalProperties": false
                   }
+                },
+                "state": {
+                  "type": "string"
+                },
+                "preset": {
+                  "type": "string"
                 }
               },
               "required": [
                 "node",
-                "name",
-                "parameters"
+                "name"
               ],
-              "additionalProperties": false
+              "additionalProperties": false,
+              "not": {
+                "required": [
+                  "state",
+                  "preset"
+                ],
+                "properties": {
+                  "state": {
+                    "minLength": 1
+                  },
+                  "preset": {
+                    "minLength": 1
+                  }
+                }
+              }
             }
           },
           "required": [
@@ -1349,6 +1368,10 @@
                   "type": "integer",
                   "minimum": 0,
                   "maximum": 4294967295
+                },
+                "cutTail": {
+                  "type": "boolean",
+                  "default": false
                 }
               },
               "required": [
@@ -2077,7 +2100,10 @@
         "audioReady": {
           "type": "boolean"
         },
-        "midiEventDrops": {"type":"integer","minimum":0},
+        "midiEventDrops": {
+          "type": "integer",
+          "minimum": 0
+        },
         "graphEventDrops": {
           "type": "integer",
           "minimum": 0
@@ -2144,11 +2170,19 @@
             ],
             "additionalProperties": false
           }
+        },
+        "mode": {
+          "enum": [
+            "native",
+            "instances",
+            "unsupported"
+          ]
         }
       },
       "required": [
         "capacity",
-        "contexts"
+        "contexts",
+        "mode"
       ],
       "additionalProperties": false
     },

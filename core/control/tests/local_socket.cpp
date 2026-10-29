@@ -284,6 +284,22 @@ namespace
             const auto defaults=remote.prepareSound(node,"Defaults",{});check(remote.discardSound(node,defaults),"empty patch uses defaults");
         });
     }
+    void instanceClient(const char* plugin)
+    {
+        TemporaryDirectory directory;const auto state=(std::filesystem::path(directory.path)/"sound").string();
+        auto raw=loadPlugin(plugin,"org.kick.test.synth",48000,64);raw->setParameter(7,.25);raw->saveState(state);
+        Fixture f(plugin);auto fd=pair();f.server.adopt(fd[0]);
+        clientWhileRendering(f,[&]{
+            LocalClient client;client.adopt(fd[1]);RemoteControl remote(client);
+            const auto node=remote.nodeId("synth");check(remote.sounds(node).mode=="instances","remote hosted capability");
+            const auto id=remote.prepareSound(node,"Saved",{},state);
+            check(remote.selectSound(node,id),"remote prepared state selection");
+            bool selected=false;for(int i=0;i<40 && !selected;++i)for(const auto& c:remote.sounds(node).contexts)if(c.id==id)selected=c.selectedChannels==65535;
+            check(selected,"remote applied hosted selection");check(remote.selectSound(node,0),"remote default selection");
+            bool retired=false;for(int i=0;i<40 && !retired;++i)retired=remote.discardSound(node,id,true);
+            check(retired,"remote explicit hosted retirement");
+        });
+    }
     void pathPolicy(const char* plugin)
     {
         TemporaryDirectory directory;Fixture f(plugin);
@@ -354,6 +370,7 @@ int main(int argc,char** argv)
             remote.setParameter(remote.nodeId("synth"),1,.83);remote.note(true,60,1);remote.setPlaying(true);
             for(;;)::pause(); // parent deliberately kills this process
         }
+        if(argc==3 && std::string_view(argv[2])=="--instances"){instanceClient(argv[1]);return 0;}
         if(argc==3 && std::string_view(argv[2])=="--sounds"){soundClient(argv[1]);return 0;}
         if(argc==3 && std::string_view(argv[2])=="--path-policy"){pathPolicy(argv[1]);return 0;}
         if(argc==3 && std::string_view(argv[2])=="--named")return named(argv[1],argv[0]);

@@ -15,7 +15,7 @@ design decisions are recorded as [RFCs](rfcs/README.md).
 | Transport: internal tempo or external MIDI clock | Ableton Link, DAW and CV clock sync |
 | Parameter events between plugins (`oscairn.param-target`, [RFC 0002](rfcs/0002-param-target.md)) | Sounds, Performances, Setlists, Projects; file formats and library |
 | Step sequencer, basic synth and delay plugins | Scenes, persistent engines, crash recovery |
-| Basic Synth prepared sound contexts, channel parts and held-note ownership; typed/JSON/remote controls ([RFC 0005](rfcs/0005-sound-contexts.md), currently on the unmerged `native-sound-contexts` branch) | Third-party instance pools, native effect-context transitions, asset-bearing patches and sound-picker UI |
+| Basic Synth prepared sound contexts, channel parts and held-note ownership; typed/JSON/remote controls ([RFC 0005](rfcs/0005-sound-contexts.md)); prepared-instance pools for ordinary CLAP/LV2 instruments | Native effect-context transitions, asset-bearing native patches, persistent pools and sound-picker UI |
 | Offline renderer; desktop app with live audio, MIDI input and panel layouts | Hardware-services interface; the platform as a DAW plugin |
 | A Linux image (Buildroot) that boots into Oscairn, tested in QEMU | Images for real hardware |
 | | Packages: sound packs, libraries, installable plugins |
@@ -236,8 +236,10 @@ layers and transitions, not six independently initialised organs.
   from seamless sound switching. Prepare state on an unused context/instance first;
   only switch new-note routing when it is ready, and retire the outgoing context after
   its voices and tails finish. The Basic Synth now implements native prepared contexts,
-  channel selection and note ownership through the control API ([RFC 0005](rfcs/0005-sound-contexts.md)). Third-party
-  instance pools, native effect-context transitions and asset-bearing patches remain to do.
+  channel selection and note ownership through the control API ([RFC 0005](rfcs/0005-sound-contexts.md)). Ordinary CLAP/LV2 instruments now use a bounded prepared-instance pool.
+  It preserves note ownership, channel parts and state/preset preparation; processed instances
+  keep rendering until explicit retirement because arbitrary plugin tail completion is unknown.
+  Native effect-context transitions and asset-bearing native patches remain to do.
 - Changing setlists keeps resources common to both, prepares missing ones in the
   background and releases the rest when safe.
 

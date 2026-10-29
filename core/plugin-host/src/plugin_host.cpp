@@ -18,9 +18,9 @@ namespace oscairn
             kick::clap::Host host;
             uint32_t soundContextCapacity() const noexcept override {return host.soundContextCapacity();}
             std::vector<oscairn_sound_context_info_t> soundContexts() const override {return host.soundContexts();}
-            uint32_t prepareSound(const std::string& name,const std::vector<oscairn_sound_parameter_t>& p) override {return host.prepareSound(name,p);}
+            uint32_t prepareSound(const std::string& name,const std::vector<oscairn_sound_parameter_t>& p,const std::string& state,const std::string& preset) override {if(!state.empty() || !preset.empty())throw std::invalid_argument("Native contexts accept parameter patches only");return host.prepareSound(name,p);}
             bool selectSound(uint32_t id,int16_t channel) override {return host.selectSound(id,channel);}
-            bool discardSound(uint32_t id) override {return host.discardSound(id);}
+            bool discardSound(uint32_t id,bool) override {return host.discardSound(id);}
             bool supportsState() const noexcept override {return host.supportsState();}
             void saveState(const std::string& directory) override
             {

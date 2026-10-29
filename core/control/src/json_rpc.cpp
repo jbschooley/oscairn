@@ -178,23 +178,23 @@ namespace oscairn
             {
                 fields(p,{"node"});const auto s=c.sounds(node(c,member(p,"node")));
                 std::vector<std::string> contexts;for(const auto& v:s.contexts)contexts.push_back("{\"id\":"+std::to_string(v.id)+",\"name\":"+quote(v.name)+",\"selectedChannels\":"+std::to_string(v.selectedChannels)+",\"activeVoices\":"+std::to_string(v.activeVoices)+",\"idle\":"+(v.idle?"true":"false")+'}');
-                return "{\"capacity\":"+std::to_string(s.capacity)+",\"contexts\":"+join(contexts)+'}';
+                return "{\"capacity\":"+std::to_string(s.capacity)+",\"mode\":"+quote(s.mode)+",\"contexts\":"+join(contexts)+'}';
             }
             if(method=="sounds.prepare")
             {
-                fields(p,{"node","name","parameters"});const auto n=node(c,member(p,"node"));
+                fields(p,{"node","name","parameters","state","preset"});const auto n=node(c,member(p,"node"));
                 std::vector<oscairn_sound_parameter_t> patch;
-                for(auto v:array(member(p,"parameters"),128,0)){fields(v,{"id","value"});patch.push_back({integer(member(v,"id")),number(member(v,"value"))});}
-                try{return "{\"context\":"+std::to_string(c.prepareSound(n,std::string(string(member(p,"name"))),patch))+'}';}
+                if(member(p,"parameters"))for(auto v:array(member(p,"parameters"),128,0)){fields(v,{"id","value"});patch.push_back({integer(member(v,"id")),number(member(v,"value"))});}
+                try{return "{\"context\":"+std::to_string(c.prepareSound(n,std::string(string(member(p,"name"))),patch,member(p,"state")?std::string(string(member(p,"state"))):"",member(p,"preset")?std::string(string(member(p,"preset"))):""))+'}';}
                 catch(const std::runtime_error& e){throw Failure{-32005,e.what()};}
             }
             if(method=="sounds.select" || method=="sounds.discard")
             {
-                if(method=="sounds.select")fields(p,{"node","context","channel"});else fields(p,{"node","context"});
+                if(method=="sounds.select")fields(p,{"node","context","channel"});else fields(p,{"node","context","cutTail"});
                 const auto n=node(c,member(p,"node")),id=integer(member(p,"context"));
                 const double channel=member(p,"channel")?number(member(p,"channel")):-1;
                 if(channel < -1 || channel>15 || std::floor(channel)!=channel)invalid("Invalid sound channel");
-                if(!(method=="sounds.select"?c.selectSound(n,id,static_cast<int16_t>(channel)):c.discardSound(n,id)))
+                if(!(method=="sounds.select"?c.selectSound(n,id,static_cast<int16_t>(channel)):c.discardSound(n,id,member(p,"cutTail")?boolean(member(p,"cutTail")):false)))
                     throw Failure{-32005,"Context unknown, busy, or selection queue full"};
                 return R"({"accepted":true})";
             }

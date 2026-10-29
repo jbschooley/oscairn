@@ -1,87 +1,28 @@
-# KICK CLAP host
+# CLAP host
 
-A C++17 CLAP host core, a reusable JUCE session/editor, and a KICK Plugin-program
-adapter. The core has no JUCE, audio-device, or hardware dependency. The vendored
-CLAP headers are MIT licensed; new host code follows KICK's AGPL-3.0-or-later license.
-The exact SDK revision is recorded in `third_party/clap/upstream.json`.
+Oscairn's raw CLAP adapter retains the `kick::clap` namespace and `kick-clap-*` tool
+names from the KICK host imported with its history. It has no device or JUCE dependency.
+The [shared PluginHost](../plugin-host/include/oscairn/plugin_host.h) and graph build on it;
+new plugin authors should start with the [developer guide](../../docs/developer-guide.md).
+The vendored CLAP SDK revision is in `third_party/clap/upstream.json`.
 
-## Build and test the core
+## Build and use
 
-No dependency downloads or proprietary KICK components are needed:
-
-```sh
-cmake -S Kick -B /tmp/kick-clap -DKICK_CLAP_HOST_ONLY=ON -DCMAKE_BUILD_TYPE=Release
-cmake --build /tmp/kick-clap --parallel
-ctest --test-dir /tmp/kick-clap --output-on-failure
-```
-
-Alternatively configure `Kick/clap_host` directly. Install the scanner into the
-target image with `cmake --install <build> --prefix /usr`. It must be built for the
-same target as KICK. Do not run cross-compiled fixtures on the build host; execute
-CTest on the board or through an explicitly configured emulator.
-
-## Build the standalone host and JUCE integration tests
-
-The standalone app uses the same session, project-state, controls, and rendering
-code as the KICK integration. Supply a local JUCE 7.0.12 or JUCE 8 checkout:
+From the Oscairn root:
 
 ```sh
-cmake -S Kick/clap_host -B /tmp/kick-clap-ui \
-  -DKICK_CLAP_BUILD_JUCE=ON -DKICK_CLAP_BUILD_PLAYER=ON \
-  -DKICK_CLAP_JUCE_PATH=/path/to/JUCE -DCMAKE_BUILD_TYPE=Release
-cmake --build /tmp/kick-clap-ui --parallel
-ctest --test-dir /tmp/kick-clap-ui --output-on-failure
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build build
+ctest --test-dir build --output-on-failure
+build/core/clap-host/kick-clap-scan build/plugins/oscairn-basic-synth.clap
 ```
 
-`kick-clap-player` provides an on-screen MIDI keyboard and audio/MIDI device
-settings. The scanner is copied beside the executable, including inside macOS's
-development app bundle. The JUCE session test can also load a real plugin:
-
-```sh
-/tmp/kick-clap-ui/tests/kick-clap-session-tests /path/to/instrument.clap plugin.unique.id
-```
-
-That test renders notes offline and verifies opaque plugin state survives project
-XML serialization/restoration. It does not open an audio device. The full KICK
-application now integrates the released platform sources and replacement JUCE/serial
-modules; see [application build instructions](../README.md). Its smoke test exercises
-CLAP program creation, rendering, duplication, project save/reopen and shutdown
-inside the actual application with board/audio devices disabled.
-
-## Use in KICK
-
-1. Create a **Plugin** program, assign it to a track, and press its **Edit** button.
-2. **Scan** finds instruments in `CLAP_PATH`, `~/.clap`, `/usr/lib/clap`,
-   `/usr/local/lib/clap`, and `/opt/kick/plugins/clap` on Linux. **Add folder**
-   adds a persistent custom search folder. macOS development builds use its
-   standard CLAP locations too.
-3. Choose an instrument and press **Load**. Every descriptor in a bundle has its
-   own identity. Linux hardware requires Linux AArch64 binaries and compatible
-   runtime libraries; macOS/Windows or Linux x86 binaries do not work there.
-4. Edit or search the generated parameter controls. Assign parameters to the four
-   knob menus. KICK's physical knobs control those assignments while its dialog is
-   active, through the common monolithic/split GUI hardware route. Consumed knob
-   events do not also edit screen/Q-Link controls. Stepped parameters move by
-   whole encoder ticks in both directions. Mappings are stored in the project.
-5. Save the project. Plugin path, exact plugin ID, opaque CLAP state, and knob
-   assignments are stored in the program's `CLAP` ValueTree child. Duplicating a
-   program first snapshots the live state. Explicit save, autosave, and project
-   close/switch share a message-thread preparation barrier before writing XML or
-   destroying programs. Missing plugins retain their saved identity and state; selecting the same plugin ID at a new path relinks it.
-
-An instrument without the state extension can play, but cannot provide reliable
-project recall; saving reports failure rather than pretending parameters are a
-complete substitute for plugin state. A failed snapshot or disk write leaves the
-project dirty and preserves the previous saved file. Save errors identify the
-program/plugin in a global warning and status indicator; failed close/switch
-keeps the current project open for retry or plugin removal. Normal application
-quit also checks saving before destroying windows. **Panic** resets held notes.
-**Remove** explicitly clears the plugin assignment and saved state.
-
-Set `KICK_CLAP_SCANNER` to an absolute worker executable path when it is installed
-somewhere other than beside KICK or in `/usr/bin` / `/usr/local/bin`.
-`kick-clap-scan [directories or .clap paths...]` is also a diagnostic CLI.
-Scanner errors are shown in the page's count, tooltips, and tappable **Scan errors** dialog.
+The raw host can also be built with `cmake -S core/clap-host -B build-clap`.
+Its optional JUCE player/session and benchmark adapters are inherited diagnostic tools,
+not the main Oscairn desktop. Oscairn's app uses JUCE 9 via `OSCAIRN_STANDALONE=ON`;
+see [host instructions](../../hosts/README.md). The optional raw-host tools instead accept
+`KICK_CLAP_JUCE_PATH` for a local JUCE checkout, with `KICK_CLAP_BUILD_PLAYER`,
+`KICK_CLAP_BUILD_JUCE` or `KICK_CLAP_BUILD_DEVICE_BENCH` as appropriate.
 
 ## Processing and lifecycle
 
@@ -94,28 +35,21 @@ Scanner errors are shown in the page's count, tooltips, and tappable **Scan erro
   producers. Events are stably ordered, then rebased when blocks exceed the
   plugin's negotiated maximum size. Parameter cookies are refreshed on rescan.
 - A per-instance atomic gate excludes state/reconfiguration work from processing.
-  The callback returns silence while the gate is held; a long plugin state save or
-  restart can therefore interrupt sound. The control thread never waits for an
-  audio callback that may already have stopped. Dirty opaque state is snapshotted
-  on the message thread in coalesced 250 ms windows (failed snapshots retry after
-  two seconds), even with the editor closed. These automatic snapshots use the
-  same gate and can also interrupt sound. Exclusive stop/reset/flush scopes
+  The callback returns silence while the gate is held; restore/restart can interrupt
+  sound. State save normally runs concurrently with processing as allowed by CLAP;
+  queued parameter commands are flushed under the gate only when audio is not progressing.
+  The graph prepares separate instances for sound changes. Exclusive stop/reset/flush scopes
   are marked as CLAP's **symbolic audio thread**, as explicitly permitted by the
   thread-check specification. They never run concurrently with processing.
 - Input/output port layouts are queried rather than assumed stereo. The core
   supports up to 16 audio ports and 64 channels in each direction, with flattened
   planar routing, silent missing inputs, scratch storage for unused outputs, and
-  mono-to-stereo duplication for a mono instrument on KICK's stereo bus.
-- Native CLAP notes and MIDI note events are translated according to input-port
-  dialects. Core callers can provide timestamped parameter/expression events.
-  KICK's legacy tick-thread MIDI path has **no intra-buffer timestamps**: it enters
-  a bounded queue and is applied at the next block boundary. Adding CLAP does not
-  make that upstream sequencer sample-accurate.
-- Tempo/beat position and play/stop state are supplied from the assigned KICK
-  track. The audio session reads a coherent transport tuple without blocking
-  and interpolates between tick updates. Loop/time-signature and recording flags are not yet advertised. A program shared by multiple tracks
-  receives their latest transport update; use separate programs for independent
-  transport contexts.
+  mono-to-stereo duplication for a mono instrument on the stereo convenience path.
+- Native CLAP notes and MIDI events are translated according to input-port dialects.
+  Core callers supply sample-timed events. Oscairn's graph adds source ownership and
+  prepared sound switching above this raw adapter; see the [developer guide](../../docs/developer-guide.md).
+- The caller supplies CLAP transport flags/positions. Oscairn uses its Session transport;
+  the raw host does not invent an independent timeline or open a MIDI device.
 - Host extensions include thread-check, parameters, state dirty notifications,
   audio/note ports, latency notifications, timers, POSIX file descriptors, tail
   notifications, and bounded log handling. Main-thread callbacks and restart/
@@ -137,7 +71,7 @@ optional opaque state snapshots. It runs as fast as possible. It does not open
 an audio device or measure ALSA xruns.
 
 ```sh
-/tmp/kick-clap-ui/kick-clap-bench --plugin /path/to/instrument.clap \
+build/core/clap-host/kick-clap-bench --plugin /path/to/instrument.clap \
   --id plugin.unique.id --rate 48000 --frames 128 --instances 4 --notes 8 \
   --seconds 30 --warmup 3 --output baseline.json
 ```
@@ -155,7 +89,7 @@ links JUCE's audio-device/events modules and does not need the touchscreen panel
 or player. On Linux this supports ALSA measurement without an X11 GUI:
 
 ```sh
-cmake -S Kick/clap_host -B /tmp/kick-device-bench \
+cmake -S core/clap-host -B /tmp/kick-device-bench \
   -DKICK_CLAP_BUILD_DEVICE_BENCH=ON -DKICK_CLAP_JUCE_PATH=/path/to/JUCE \
   -DCMAKE_BUILD_TYPE=Release
 cmake --build /tmp/kick-device-bench --parallel
@@ -164,8 +98,8 @@ cmake --build /tmp/kick-device-bench --parallel
 List and select an output device:
 
 ```sh
-/tmp/kick-clap-ui/kick-clap-device-bench --list-devices
-/tmp/kick-clap-ui/kick-clap-device-bench --audio --driver ALSA \
+/tmp/kick-device-bench/kick-clap-device-bench --list-devices
+/tmp/kick-device-bench/kick-clap-device-bench --audio --driver ALSA \
   --device 'exact name from the list' --plugin /path/to/instrument.clap \
   --id plugin.unique.id --rate 48000 --frames 128 --instances 4 --notes 8 \
   --seconds 60 --warmup 3 --output device.json
@@ -201,8 +135,8 @@ records the machine/OS alongside each configuration. macOS bundle-directory
 hashes are reported as `null`.
 
 ```sh
-python3 Kick/clap_host/tools/benchmark_matrix.py \
-  --bench /tmp/kick-clap-ui/kick-clap-device-bench --audio --driver ALSA \
+python3 core/clap-host/tools/benchmark_matrix.py \
+  --bench /tmp/kick-device-bench/kick-clap-device-bench --audio --driver ALSA \
   --device 'exact name from the list' --plugin /path/to/instrument.clap \
   --id plugin.unique.id --frames 64,128,256 --instances 1,4,8 \
   --notes 8 --seconds 60 --warmup 3 --output target-matrix.json
@@ -210,7 +144,7 @@ python3 Kick/clap_host/tools/benchmark_matrix.py \
 
 The default case deadline is warmup + duration + 30 wall seconds; override with
 `--timeout` when needed. Keep baseline, knob-stress and snapshot-stress reports
-separate. These tools measure the CLAP workload, not the rest of KICK's graph or
+separate. These tools measure the CLAP workload, not the rest of Oscairn's graph or
 sequencer. Record board revision, image/SDK, CPU governor, temperature and other
 active workloads when comparing target runs. Measure sustained playback and
 round-trip latency on the board before selecting supported configurations.
@@ -219,54 +153,33 @@ Install the tools with `cmake --install <build> --prefix /usr`. Use the matching
 Buildroot SDK to build production AArch64 binaries. CI also cross-builds the
 core/tools with the Debian/Ubuntu toolchain in
 `cmake/aarch64-linux-gnu.cmake`, then runs a fixture smoke check through QEMU.
-That checks target compatibility; its timings are not device measurements. Full
-KICK application builds still require the platform modules listed above.
+That checks target compatibility; its timings are not device measurements. Hardware measurements still require the target board and its complete host workload.
 
 ## Deliberate limits
 
-The KICK page hosts **instruments** with generic touchscreen controls. The core
-also processes audio effects (tested with aliased input/output), but CLAP effects
-are not yet exposed in KICK's existing Airwindows insert browser. Native plugin
-editor embedding, timeline parameter-automation recording, MIDI/SysEx routing
-from plugin outputs, per-note-expression editing, and delay compensation across
-the KICK graph are not implemented. Latency is queried and displayed, not silently
-treated as compensated. Plugin output events are bounded and retained by the
-core; the KICK session currently drains them after parameter telemetry updates.
+Latency is reported, but the Oscairn graph does not yet compensate plugin latency.
+Plugin editors and the CLAP thread-pool extension are not exposed by Oscairn's desktop.
+Graph note/event routing is separate from physical MIDI output, which is not implemented.
+SysEx and pointer-bearing events are deliberately rejected by the bounded event API.
 
-Discovery runs each binary in a separate executable with a deadline, output-size
-limit, cancellation and crash detection. This is crash isolation, not a security
-sandbox. Playback runs in-process: an arbitrary plugin segmentation fault can
-still terminate the host. Processing exceptions, process error statuses and nonfinite
-audio are contained; native memory corruption requires future process isolation.
+Discovery runs binaries in a separate executable with deadlines and crash detection.
+This is crash isolation, not a security sandbox. Playback runs in-process: a plugin memory
+fault can terminate the engine. Error statuses and nonfinite audio fault/silence the instance.
 
 ## Verification
 
-CTest uses actual shared-library fixtures, not mocked plugin calls. Coverage
-includes exact descriptor selection, scan crashes/hangs, multiple instances of a
-binary, lifecycle/thread checks, MIDI/native note conversion, frame offsets,
-oversized blocks, mono/stereo and effect routing, parameters/gestures, queued
-parameter state saving, opaque state recall, concurrent control/rendering,
-bounded-event overflow/panic, idle sleep/wake, process/start/activation failures,
-and a render-time C++ allocation guard. Optional JUCE tests cover MIDI/audio,
-transport-start wake-up without MIDI, continuous/stepped macro edits, missing
-plugin relinking, duplicate/recall, and the actual KickXML autosave/close paths.
-Persistence tests cover failed/unsupported state, preserved disk/opaque snapshots,
-message-thread marshaling, dirty/error notification, and successful retry. Common
-hardware-contract tests cover exclusive dialog ownership, pass-through, lifetime,
-worker dispatch, and the actual split GUI IPC/keyboard producers. Measurement tests exercise
-deadline arithmetic, exact warmup/duration boundaries, allocation-free workload
-and JUCE callback rendering, real gate contention, snapshot errors, JSON/CLI
-validation, and matrix crash/timeout retention. Test fixtures
-are never installed into the target plugin directory.
+The raw-host CTest targets use shared-library fixtures for lifecycle/thread checks,
+native/MIDI note conversion, sample offsets, ports, parameters, state, idle sleep/wake,
+concurrent rendering, overflow recovery, and plugin failures. Scanner fixtures deliberately
+crash/hang in child processes. Oscairn's separate engine tests exercise graph ownership,
+channel routing and native/pooled sound switching above the raw adapter. Inherited JUCE
+player/session tests run only when those optional adapters are enabled.
 
-Enable `-DKICK_CLAP_SANITIZE=ON` for ASan/UBSan on the core, consumers, and all
-fixture MODULE libraries. The render guard supplies scalar/array, sized, aligned,
-and nothrow allocation/deallocation pairs. `.github/workflows/clap-host.yml` runs
-Linux release and default-settings GCC/Clang sanitizer suites, plus JUCE 7/8
-integration suites with a headless display. No allocator-mismatch suppression is
-used. Local AppleClang 15 ASan runtime initialization currently aborts even in a
-minimal empty executable; that environment failure does not clear Linux ASan.
+Enable `-DKICK_CLAP_SANITIZE=ON` for ASan/UBSan on the core, consumers and fixture modules.
+The [CI workflow](../../.github/workflows/ci.yml) runs the Oscairn suite on Linux and
+macOS, plus Linux ThreadSanitizer. Production LV2 probes are documented separately in
+[their test guide](../lv2-host/tests/production/README.md).
 
-Actual hardware boot, ALSA round-trip latency, xrun behavior, and performance with
-Linux AArch64 plugins must be measured on the target. Desktop results do not
-establish a safe voice count or buffer size for the i.MX8M Mini.
+Hardware boot, round-trip latency, xruns and sustained plugin performance must be measured
+on the target. Desktop tests do not establish a safe voice count or buffer size for an
+embedded board.

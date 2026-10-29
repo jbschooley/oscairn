@@ -1,8 +1,10 @@
 # RFC 0005: Native prepared sound contexts
 
 Status: first instrument implementation. The Basic Synth and its typed/JSON/remote
-controls implement this contract. Third-party instance pools, effect-context transitions,
-asset-bearing patches, project persistence and a desktop sound picker remain to do.
+controls implement this contract. Ordinary CLAP/LV2 instruments also have a host-owned instance pool, documented in the
+[control protocol](../control-protocol.md#prepared-sounds); it does not implement this
+plugin extension. Effect-context transitions, asset-bearing native patches, project
+persistence and a desktop sound picker remain to do.
 
 ## Contract
 
@@ -71,7 +73,7 @@ rendering retains its previous behavior.
 ## Control and verification
 
 The control API exposes `sounds.get`, `sounds.prepare`, `sounds.select`, and
-`sounds.discard`; see the [wire contract](../control-protocol.md#prepared-native-sounds).
+`sounds.discard`; see the [wire contract](../control-protocol.md#prepared-sounds).
 They operate immediately on plugin context state, independently of staged graph edits.
 Selection acknowledgement means queued, not already applied; query the selected-channel
 mask to observe application. Closing a control client does not discard contexts.

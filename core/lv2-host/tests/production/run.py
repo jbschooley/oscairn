@@ -52,6 +52,7 @@ def main():
     parser.add_argument("--system-root", type=Path, help="Directory containing ZamComp, fil4 and Guitarix bundles")
     parser.add_argument("--renderer", type=Path, help="Also test complete mixed-format chains using oscairn-render")
     parser.add_argument("--sequencer", type=Path, help="Oscairn CLAP step sequencer for chain tests")
+    parser.add_argument("--prepared-probe", type=Path, help="Also compare instrument switches with independent reference instances")
     parser.add_argument("--only", nargs="+", help="Restrict individual-plugin tests to these case names")
     args = parser.parse_args()
     if not (args.mod_root or args.system_root):
@@ -128,6 +129,12 @@ def main():
             if result["edited_difference_rms"] <= max(1e-6, result["repeat_difference_rms"] * 5):
                 raise RuntimeError("Parameter change not distinguishable from repeat variation")
             if kind == "synth":
+                if args.prepared_probe:
+                    transition = invoke([args.prepared_probe, "--production", bundle, uri, param, value])
+                    transition["case"] = "prepared-instance-switch"
+                    result["runs"].append(transition)
+                    if transition["exit"]:
+                        raise RuntimeError(transition["stderr"] or transition["stdout"])
                 channels = len(baseline) // 96000
                 assert max(map(abs, baseline[:4800 * channels])) < 1e-7, "Audio before first note"
                 path = directory / "held.wav"

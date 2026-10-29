@@ -229,12 +229,14 @@ State methods belong to the one control thread and can exclude this instance's a
 processing; live callbacks emit silence instead of waiting. Queued numeric edits are
 included when saving and discarded on restore. Missed events trigger note-release
 recovery. **In-place restore is not seamless sound switching.** Prepare state on a spare
-instance while the old one renders; switching new-note routing, retaining note ownership,
-and retiring old voices/tails still require the planned context/instance-pool layer.
+instance while the old one renders. New-note switching and note ownership are implemented
+for eligible instruments by the graph's prepared-instance pool. Previously processed
+instances retain their tails until explicit retirement.
 Neither plugin format guarantees multitimbrality. Native Oscairn instruments are required
 to support concurrent sound contexts; the Basic Synth now implements the native interface
 ([RFC 0005](../../docs/rfcs/0005-sound-contexts.md)). Ordinary LV2 instances still require
-the planned prepared-instance pool and note-ownership router.
+the prepared-instance pool and note-ownership router; see the
+[prepared-sound contract](../../docs/control-protocol.md#prepared-sounds).
 See the [persistent-engine design](../../docs/architecture.md#persistent-engines-and-fast-sound-switching).
 
 ## Not implemented yet

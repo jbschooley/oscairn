@@ -39,6 +39,7 @@ try:
     assert 'session.status' in hello['capabilities'] and 'graph.audio-routing' in hello['capabilities']
     assert 'sounds.prepare' in hello['capabilities']
     sounds = rpc('sounds.get', {'node':'synth'})['result']
+    assert sounds['mode'] == 'native'
     assert sounds['capacity'] == 8 and sounds['contexts'][0]['id'] == 0
     prepared = rpc('sounds.prepare', {'node':'synth','name':'Dark','parameters':[{'id':1,'value':.1}]})['result']['context']
     error(rpc('sounds.prepare', {'node':'synth','name':'Bad','parameters':[{'id':999,'value':.1}]}), -32602)

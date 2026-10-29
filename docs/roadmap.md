@@ -85,12 +85,16 @@ Done:
   selection, held-voice preservation, note-ID/FIFO ownership, sustain and safe retirement;
   typed/JSON/remote controls and concurrent reference-audio tests ([RFC 0005](rfcs/0005-sound-contexts.md)).
 
+- prepared-instance switching for ordinary CLAP/LV2 instruments: defaults, state/preset
+  preparation, independent channel parts, held-note ownership and explicit tail retirement;
+  typed/JSON/remote controls and fixture/production reference-audio tests.
+
 To do:
 
 - tracks, patterns, swing and more lanes in the sequencer;
-- prepared-instance switching and note ownership for third-party plugins; native effect
-  contexts/tails, asset-bearing patches, persistence and a desktop sound picker;
-- expose plugin state/presets and patch properties through the control API, then plugin
+- native effect contexts/tails, asset-bearing native patches, pool/project persistence
+  and a desktop sound picker;
+- expose state export, preset enumeration and patch properties through the control API, then plugin
   discovery and selection in the desktop; custom UIs and other extensions follow
   ([current scope](../core/lv2-host/README.md));
 - define hardware capabilities, timestamped input, scheduled output and engine backend

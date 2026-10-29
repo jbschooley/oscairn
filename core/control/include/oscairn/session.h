@@ -30,9 +30,9 @@ namespace oscairn
         // Edits are staged; a failed commit leaves the live plan unchanged and the
         // staging area available for correction. Empty names address nodes by ID only.
         Sounds sounds(NodeId node) const override;
-        uint32_t prepareSound(NodeId node,const std::string& name,const std::vector<oscairn_sound_parameter_t>& p) override {return graph_.host(node).prepareSound(name,p);}
+        uint32_t prepareSound(NodeId node,const std::string& name,const std::vector<oscairn_sound_parameter_t>& p,const std::string& state={},const std::string& preset={}) override {return graph_.host(node).prepareSound(name,p,state,preset);}
         bool selectSound(NodeId node,uint32_t id,int16_t channel=-1) override {return graph_.host(node).selectSound(id,channel);}
-        bool discardSound(NodeId node,uint32_t id) override {return graph_.host(node).discardSound(id);}
+        bool discardSound(NodeId node,uint32_t id,bool cutTail=false) override {return graph_.host(node).discardSound(id,cutTail);}
         GraphState graphState() const override;
         NodeId add( const std::string& name, const std::string& path, const std::string& pluginId = {} ) override;
         void remove( NodeId node ) override;

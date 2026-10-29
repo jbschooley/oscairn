@@ -21,6 +21,7 @@ target_include_directories(oscairn_clap_headers INTERFACE clap-host/third_party/
 add_library(oscairn_engine STATIC
     engine/src/chain.cpp
     engine/src/graph.cpp
+    engine/src/PreparedInstrument.cpp
     engine/src/midi_input.cpp
     engine/src/transport.cpp
     engine/src/wav_file.cpp)
@@ -129,4 +130,14 @@ add_test(NAME write-failure COMMAND oscairn-write-failure-test)
 find_package(Python3 COMPONENTS Interpreter QUIET)
 if(Python3_Interpreter_FOUND)
     add_test(NAME session-service-stop COMMAND "${Python3_EXECUTABLE}" "${PROJECT_SOURCE_DIR}/os/scripts/test_session_stop.py")
+endif()
+
+add_executable(oscairn-prepared-instances-test engine/tests/prepared_instances.cpp)
+target_link_libraries(oscairn-prepared-instances-test PRIVATE oscairn_control_json)
+target_include_directories(oscairn-prepared-instances-test PRIVATE clap-host/tests)
+add_test(NAME prepared-instances COMMAND oscairn-prepared-instances-test $<TARGET_FILE:kick-clap-fixture-normal>)
+set_tests_properties(prepared-instances PROPERTIES TIMEOUT 45)
+if(OSCAIRN_LV2)
+    add_test(NAME prepared-instances-lv2 COMMAND oscairn-prepared-instances-test $<TARGET_FILE:kick-clap-fixture-normal> "${CMAKE_CURRENT_BINARY_DIR}/lv2-host/tests/test fixture.lv2")
+    set_tests_properties(prepared-instances-lv2 PROPERTIES TIMEOUT 45)
 endif()

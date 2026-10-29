@@ -185,20 +185,20 @@ namespace oscairn
     Control::Sounds RemoteControl::sounds(NodeId node)const
     {
         auto doc=impl_->call("sounds.get","{\"node\":"+std::to_string(node)+'}');auto value=field(doc.get(),"result");
-        Sounds result{static_cast<uint32_t>(integer(field(value,"capacity"))),{}};
+        Sounds result{static_cast<uint32_t>(integer(field(value,"capacity"))),{},string(field(value,"mode"))};
         for(auto c:array(field(value,"contexts")))result.contexts.push_back({static_cast<uint32_t>(integer(field(c,"id"))),string(field(c,"name")),static_cast<uint32_t>(integer(field(c,"selectedChannels"))),static_cast<uint32_t>(integer(field(c,"activeVoices"))),boolean(field(c,"idle"))});
         return result;
     }
-    uint32_t RemoteControl::prepareSound(NodeId node,const std::string& name,const std::vector<oscairn_sound_parameter_t>& parameters)
+    uint32_t RemoteControl::prepareSound(NodeId node,const std::string& name,const std::vector<oscairn_sound_parameter_t>& parameters,const std::string& state,const std::string& preset)
     {
         std::string values;for(const auto& p:parameters){if(!values.empty())values+=',';values+="{\"id\":"+std::to_string(p.id)+",\"value\":"+encode(p.value)+'}';}
-        auto doc=impl_->call("sounds.prepare","{\"node\":"+std::to_string(node)+",\"name\":"+quote(name)+",\"parameters\":["+values+"]}");
+        auto doc=impl_->call("sounds.prepare","{\"node\":"+std::to_string(node)+",\"name\":"+quote(name)+",\"parameters\":["+values+"],\"state\":"+quote(state)+",\"preset\":"+quote(preset)+"}");
         return static_cast<uint32_t>(integer(field(field(doc.get(),"result"),"context")));
     }
     bool RemoteControl::selectSound(NodeId node,uint32_t id,int16_t channel)
     {try{impl_->call("sounds.select","{\"node\":"+std::to_string(node)+",\"context\":"+std::to_string(id)+",\"channel\":"+std::to_string(channel)+'}');return true;}catch(const RpcError& e){if(e.code==-32005)return false;throw;}}
-    bool RemoteControl::discardSound(NodeId node,uint32_t id)
-    {try{impl_->call("sounds.discard","{\"node\":"+std::to_string(node)+",\"context\":"+std::to_string(id)+'}');return true;}catch(const RpcError& e){if(e.code==-32005)return false;throw;}}
+    bool RemoteControl::discardSound(NodeId node,uint32_t id,bool cutTail)
+    {try{impl_->call("sounds.discard","{\"node\":"+std::to_string(node)+",\"context\":"+std::to_string(id)+",\"cutTail\":"+(cutTail?"true":"false")+'}');return true;}catch(const RpcError& e){if(e.code==-32005)return false;throw;}}
     NodeId RemoteControl::nodeId(const std::string& name)const
     {for(const auto& [id,n]:impl_->graph.names)if(!name.empty()&&n==name)return id;throw std::invalid_argument("Unknown node name");}
     bool RemoteControl::hasNode(NodeId n)const{return impl_->graph.names.contains(n);}

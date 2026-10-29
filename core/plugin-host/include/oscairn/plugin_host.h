@@ -35,13 +35,14 @@ namespace oscairn
         virtual ~PluginHost() = default;
         virtual void service() = 0;
         // Control thread. Save to a NEW directory; restore from a saved directory.
-        // May silence/reset this instance while excluding rendering/Worker calls.
-        // Prepare a spare instance for transitions; this is not seamless switching.
+        // Raw adapters may silence/reset during restore. Graph-pooled instruments instead
+        // prepare/select a spare; state export still snapshots the selected channel-0 instance.
+        virtual const char* soundContextMode() const noexcept { return soundContextCapacity()?"native":"unsupported"; }
         virtual uint32_t soundContextCapacity() const noexcept { return 0; }
         virtual std::vector<oscairn_sound_context_info_t> soundContexts() const { return {}; }
-        virtual uint32_t prepareSound(const std::string&,const std::vector<oscairn_sound_parameter_t>&) { throw std::invalid_argument("Plugin has no native sound contexts"); }
-        virtual bool selectSound(uint32_t,int16_t=-1) { throw std::invalid_argument("Plugin has no native sound contexts"); }
-        virtual bool discardSound(uint32_t) { throw std::invalid_argument("Plugin has no native sound contexts"); }
+        virtual uint32_t prepareSound(const std::string& /*name*/,const std::vector<oscairn_sound_parameter_t>& /*parameters*/,const std::string& /*state*/ = {},const std::string& /*preset*/ = {}) { throw std::invalid_argument("Plugin has no sound contexts"); }
+        virtual bool selectSound(uint32_t,int16_t=-1) { throw std::invalid_argument("Plugin has no sound contexts"); }
+        virtual bool discardSound(uint32_t,bool=false) { throw std::invalid_argument("Plugin has no sound contexts"); }
         virtual bool supportsState() const noexcept { return false; }
         virtual void saveState(const std::string&) { throw std::runtime_error("Plugin state saving is unsupported"); }
         virtual void loadState(const std::string&) { throw std::runtime_error("Plugin state restoration is unsupported"); }

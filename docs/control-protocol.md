@@ -348,41 +348,77 @@ in directory access, chmod, listen or later operations fail normally. CI sets
 `OSCAIRN_REQUIRE_SOCKET_BIND=1` so that denial fails the test. These tests do not replace
 a live-device listening test or a crash/reopen test of the actual desktop GUI.
 
-## Prepared native sounds
+## Prepared sounds
 
-Capability methods `sounds.get`, `sounds.prepare`, `sounds.select`, and `sounds.discard`
-expose native concurrent sound contexts ([RFC 0005](rfcs/0005-sound-contexts.md)). They
-belong to the control thread, independently of staged graph edits. The current Basic
-Synth implements them; other plugins report capacity zero unless they implement the
-native extension. These operations do not restore state into a playing instance.
+`sounds.get`, `sounds.prepare`, `sounds.select` and `sounds.discard` operate on the control
+thread, independently of staged graph edits. `sounds.get.mode` identifies the mechanism:
+`native` for a plugin implementing [RFC 0005](rfcs/0005-sound-contexts.md), `instances` for
+an ordinary CLAP/LV2 instrument managed by the graph, or `unsupported` (capacity zero).
+These operations never restore state into the outgoing playing instance.
 
 | Method | Parameters | Result |
 | --- | --- | --- |
-| `sounds.get` | `node` | `capacity`, `contexts` |
-| `sounds.prepare` | `node`, `name`, `parameters: [{id, value}, ...]` | `context` ID |
+| `sounds.get` | `node` | `mode`, `capacity`, `contexts` |
+| `sounds.prepare` | `node`, `name`, optional `parameters: [{id, value}, ...]`, `state`, `preset` | `context` ID |
 | `sounds.select` | `node`, `context`, optional `channel` (-1 for all, or 0..15) | `accepted: true` |
-| `sounds.discard` | `node`, `context` | `accepted: true` |
+| `sounds.discard` | `node`, `context`, optional `cutTail` (default false) | `accepted: true` |
 
-Each context reports `id`, `name`, `selectedChannels` (16-bit mask), `activeVoices`, and
-`idle`. Fields are independent telemetry snapshots. A selection takes effect at the next
-plugin processing boundary, before notes and parameter edits in that call. Held notes
-retain their original context. `accepted` acknowledges enqueueing; poll `sounds.get` for
-the applied selection. There is no context notification topic yet.
+Each context reports `id`, `name`, `selectedChannels` (16-bit mask), `activeVoices` and
+`idle`. Fields are independent telemetry snapshots. Selection takes effect at a processing
+boundary before that block's notes. Held notes and per-note expression retain their owner;
+sustain follows the channel across switches. `accepted` means queued, not applied: poll
+`sounds.get` for selection masks. There is no context notification topic yet.
 
-A patch starts from plugin defaults, with up to 128 supplied numeric parameters; an empty
-array selects defaults. Names are at most 63 UTF-8 bytes. Invalid or duplicate parameters
-reject the entire patch. Preparation returns `-32005` if capacity is exhausted; selection
-or discard returns `-32005` for an unknown/busy context or full selection queue. Invalid
-arguments and unsupported native contexts return `-32602`. Discard refuses selected,
-queued, sounding or tailing contexts. The Basic Synth's Default context (ID 0) is protected.
+A patch starts from plugin defaults plus up to 128 numeric parameters. Omitted/empty
+parameters select defaults. Names have at most 63 UTF-8 bytes (hosted names must be nonempty).
+Unknown, duplicate, nonfinite, out-of-range or read-only parameters reject preparation.
+For `instances`, `state` is an existing state-bundle directory on the **engine's** filesystem;
+`preset` is an LV2 preset URI. At most one may be nonempty. The host loads it on a fresh
+instance and applies numeric overrides afterward. It rejects changes to port layout,
+note dialects or parameter metadata. Failed preparation leaves existing sounds unchanged.
+Native contexts currently accept numeric patches only; nonempty state/preset arguments
+are invalid. Preparation is synchronous on the control thread and may take time for samples;
+it never blocks the audio thread, but other control requests wait for it to finish.
 
-For example, prepare a darker patch and select it for new notes while old notes continue:
+The instance pool supports instruments with 1..16 note input ports, audio output, no audio
+input and no note/MIDI output. Effects and event-producing instruments are not pooled.
+Eight slots include protected Default ID 0. Multiple channels can select one slot or
+select independent slots. A global parameter edit affects unique currently requested
+selected instances; an explicit per-note edit follows note ownership. Parameter getters,
+text and property methods show the channel-0 selection. Control-thread parameter writes
+target the selection requested when they are issued, even if audio has not adopted it yet;
+new selection requests can supersede an unapplied request. Direct graph events use the
+selection applied at their processing boundary. Keep these distinctions in part editors.
+
+Outgoing instances continue rendering and summing their outputs, including release and
+internal effect tails. No silence threshold or timer proves an arbitrary plugin tail ended.
+For hosted MIDI instruments, `activeVoices` counts owned held/sustained notes; it cannot
+measure private DSP voices. CLAP notes remain owned until `NOTE_END`. Processed hosted
+instances stay `idle: false`, even if their current output is silent. `discard` without
+`cutTail` only frees never-processed, unselected and unqueued hosted slots. `cutTail: true`
+also permits previously processed slots after their note ownership reaches zero; it can cut remaining
+audio tails. It cannot override selected, pending or note-owned pins. Native plugins keep
+their own stricter idle/tail contract regardless of `cutTail`. ID 0 is protected in both
+implementations. Disposal occurs on the control thread after audio releases its old plan.
+
+Budget CPU and memory for retained instances; the pool does not share plugin-private
+sample memory or stop outgoing DSP based on quiet output. It sums without limiting or
+crossfading. MIDI-only plugins retain MIDI 1.0 limits: a targeted choke can require channel
+all-sound-off and end other notes in that same instance/channel.
+
+Preparation returns `-32005` for capacity exhaustion or state/preset failure. Selection or
+discard returns `-32005` for unknown/busy contexts or exhausted native selection queues.
+Invalid arguments or unsupported contexts return `-32602`. Context IDs are never reused
+within a node's lifetime and become invalid when it is unloaded. `sounds.get` is telemetry,
+not a reservation: always handle a subsequent refused discard.
 
 ```json
 {"jsonrpc":"2.0","id":1,"method":"sounds.prepare","params":{"node":"synth","name":"Dark","parameters":[{"id":1,"value":0.1},{"id":2,"value":0.6}]}}
+{"jsonrpc":"2.0","id":2,"method":"sounds.select","params":{"node":"synth","context":1}}
 ```
 
-Use the returned `context` in `sounds.select`. This is a transient prepared patch, not a
-saved preset file. Context IDs are unique within that instance and become invalid after
-unload. Third-party prepared-instance switching, effect-context changes, persistent
-presets and the desktop sound picker are separate follow-up work.
+Use the actual returned ID, rather than assuming 1. For a pooled instrument, preparation
+from a saved state is `{"node":"instrument","name":"Saved","state":"/absolute/state-bundle"}`.
+The native plugin extension and hosted instance pool are separate mechanisms with the
+same control entry points. State export, preset enumeration, complete project/pool
+persistence, effect transitions and a desktop sound picker remain follow-up work.

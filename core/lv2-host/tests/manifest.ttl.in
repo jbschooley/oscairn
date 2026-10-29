@@ -29,3 +29,6 @@
 <urn:oscairn:test:bad-preset> a <http://lv2plug.in/ns/ext/presets#Preset>; lv2:appliesTo <urn:oscairn:test:state>; rdfs:seeAlso <fixture.ttl> .
 
 <urn:oscairn:test:stereo> a lv2:Plugin; lv2:binary <fixture@CMAKE_SHARED_MODULE_SUFFIX@>; rdfs:seeAlso <fixture.ttl> .
+
+<urn:oscairn:test:instrument> a lv2:Plugin; lv2:binary <fixture@CMAKE_SHARED_MODULE_SUFFIX@>; rdfs:seeAlso <fixture.ttl> .
+<urn:oscairn:test:instrument-preset> a <http://lv2plug.in/ns/ext/presets#Preset>; lv2:appliesTo <urn:oscairn:test:instrument>; rdfs:seeAlso <fixture.ttl> .

@@ -5,13 +5,13 @@ JUCE, device ownership or threads created by the library. Optional JSON-RPC and 
 socket libraries provide the local control transport.
 
 `Session` owns a graph, transport, bounded UI note queue and transport telemetry. A host
-constructs and connects its graph, then renders stereo blocks with `Session::process`.
+constructs and connects its graph, then renders configured input/output channels with `Session::process` (or its stereo convenience overload).
 The caller supplies buffers, block-relative CLAP events and, when following MIDI clock,
 absolute sample timestamps for clock messages from the preceding interval. It owns the
 device, timestamp conversion, block splitting and mono-output adaptation.
 
 `Control` exposes node-name lookup, parameter metadata/values/text, graph editing, gestures,
-change history, transport commands/status, host status and UI notes. The desktop `Engine`
+change history, transport commands/status, host status, prepared sounds and UI notes. The desktop `Engine`
 delegates to `Session::control()` or cached `RemoteControl` when connected to a helper.
 Physical MIDI bypasses the control interface. Node IDs and parameter IDs are numeric;
 `nodeId(name)` resolves an optional unique UI-facing name. Unnamed nodes use numeric IDs.
@@ -33,9 +33,9 @@ Physical MIDI bypasses the control interface. Node IDs and parameter IDs are num
   Accepted consecutive values coalesce until `service()`; refused plugin enqueues are
   retained and retried. Gesture boundaries preserve ordering and their final values.
 - UI note overflow returns false and increments `droppedNotes()`. On the next block the
-  queued burst is discarded and a wildcard note-off is sent to graph-input destinations.
-  This emergency release can affect other sources sharing those destinations. Full note
-  ownership and device-output fail-safe policies belong to the later routing work.
+  queued burst is discarded and graph-input destinations are panicked and their note ledgers cleared.
+  This emergency release can affect other sources sharing those destinations. The graph tracks route ownership and handles normal disconnects separately;
+  device-output failure policy remains a host responsibility.
 - `transportState()` is last-rendered-block telemetry; its fields are individually atomic,
   not a coherent transaction. The host publishes device names, rate, buffer size and
   callback load through `setHostStatus`; `sessionStatus()` also sums plugin deadline misses.

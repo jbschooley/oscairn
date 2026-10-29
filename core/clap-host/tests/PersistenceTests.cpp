@@ -15,7 +15,7 @@ static void pump(int ms) { juce::MessageManager::getInstance()->runDispatchLoopU
 int main(int argc, char** argv) {
     check(argc == 2, "fixture path");
     juce::ScopedJuceInitialiser_GUI gui;
-    const auto catalog = inspect(argv[1]); check(catalog.plugins.size() == 12, "fixtures");
+    const auto catalog = inspect(argv[1]); check(catalog.plugins.size() == 13, "fixtures");
     const auto directory = juce::File::getSpecialLocation(juce::File::tempDirectory).getNonexistentChildFile("kick-persistence", "", false);
     check(directory.createDirectory().wasOk(), "temporary project directory");
     const auto file = directory.getChildFile("project.xml");

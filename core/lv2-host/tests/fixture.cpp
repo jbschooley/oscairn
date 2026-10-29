@@ -25,7 +25,8 @@ struct Fixture
     LV2_Worker_Schedule* schedule=nullptr;
     float workValue=1,completed=0,endRuns=0;
     int32_t sequenceSize=0;
-    std::array<std::array<bool,128>,16> held{};
+    std::array<std::array<bool,128>,16> held{},down{};
+    std::array<bool,16> sustain{};
     std::array<std::array<float,128>,16> pressure{};
     LV2_URID midi,sequence,object,position,bpm,frame,beat,bar,barBeat,beatUnit,beatsPerBar,speed,stateKey,atomFloat;
     float tempo=0,frameValue=0,beatValue=0;
@@ -34,11 +35,14 @@ struct Fixture
         const int c=bytes[0]&15,k=bytes[1];
         switch(bytes[0]&0xf0)
         {
-        case 0x90:held[c][k]=bytes[2]!=0;break;
-        case 0x80:held[c][k]=false;break;
+        case 0x90:down[c][k]=bytes[2]!=0;held[c][k]=down[c][k] || sustain[c];break;
+        case 0x80:down[c][k]=false;if(!sustain[c])held[c][k]=false;break;
         case 0xa0:pressure[c][k]=bytes[2]/127.f;break;
         case 0xd0:for(auto& p:pressure[c])p=bytes[1]/127.f;break;
-        case 0xb0:if(k==120 || k==123)held[c].fill(false);break;
+        case 0xb0:
+            if(k==120){held[c].fill(false);down[c].fill(false);}
+            if(k==123){down[c].fill(false);if(!sustain[c])held[c].fill(false);}
+            if(k==64){sustain[c]=bytes[2]>=64;if(!sustain[c])held[c]=down[c];}break;
         }
     }
 };
@@ -195,6 +199,7 @@ LV2_State_Status restore(LV2_Handle h,LV2_State_Retrieve_Function retrieve,LV2_S
 const LV2_State_Interface stateInterface{save,restore};
 const LV2_Descriptor state{"urn:oscairn:test:state",instantiate,synth.connect_port,nullptr,run,nullptr,synth.cleanup,
     [](const char* uri)->const void*{return !std::strcmp(uri,LV2_STATE__interface)?&stateInterface:nullptr;}};
+const LV2_Descriptor instrument{"urn:oscairn:test:instrument",instantiate,synth.connect_port,nullptr,run,nullptr,synth.cleanup,state.extension_data};
 const LV2_Descriptor large{"urn:oscairn:test:large",instantiate,synth.connect_port,nullptr,largeRun,nullptr,synth.cleanup,nullptr};
 }
 namespace {
@@ -205,4 +210,4 @@ const LV2_Descriptor stereo{"urn:oscairn:test:stereo",
     [](LV2_Handle h,uint32_t n){auto& p=static_cast<Stereo*>(h)->ports;for(uint32_t i=0;i<n;++i){p[2][i]=p[0][i];p[3][i]=p[1][i];}},
     nullptr,[](LV2_Handle h){delete static_cast<Stereo*>(h);},nullptr};
 }
-LV2_SYMBOL_EXPORT const LV2_Descriptor* lv2_descriptor(uint32_t index){return index==0?&synth:index==1?&effect:index==2?&audit:index==3?&worker:index==4?&brokenWorker:index==5?&large:index==6?&state:index==7?&stereo:nullptr;}
+LV2_SYMBOL_EXPORT const LV2_Descriptor* lv2_descriptor(uint32_t index){return index==0?&synth:index==1?&effect:index==2?&audit:index==3?&worker:index==4?&brokenWorker:index==5?&large:index==6?&state:index==7?&stereo:index==8?&instrument:nullptr;}
