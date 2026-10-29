@@ -4,6 +4,9 @@
 
 namespace oscairn
 {
+    // Selected before instantiation; Offline permits synchronous non-RT work.
+    enum class ProcessingMode { Realtime, Offline };
+
     // Shared graph host contract. Events and metadata retain the existing CLAP-shaped
     // representation; format adapters translate at their boundary. Control methods
     // belong to one main thread; process/outputEvents belong to one audio thread.
@@ -31,5 +34,5 @@ namespace oscairn
     };
     // CLAP module or LV2 bundle directory; pluginId is a CLAP ID or an LV2 URI.
     std::shared_ptr<PluginHost> loadPlugin(const std::string& path, const std::string& pluginId,
-                                           double sampleRate, uint32_t maxFrames);
+                                           double sampleRate, uint32_t maxFrames, ProcessingMode mode = ProcessingMode::Realtime);
 }

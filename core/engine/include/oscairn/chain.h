@@ -20,8 +20,8 @@ namespace oscairn
     public:
         static constexpr uint32_t channels = Graph::channels;
 
-        Chain( double sampleRate, uint32_t maxFrames )
-            : graph_( sampleRate, maxFrames )
+        Chain( double sampleRate, uint32_t maxFrames, ProcessingMode mode = ProcessingMode::Realtime )
+            : graph_( sampleRate, maxFrames, mode )
         {
         }
 

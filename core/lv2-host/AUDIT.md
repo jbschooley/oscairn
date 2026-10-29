@@ -6,6 +6,11 @@ the adapter's contracts and lifecycle, not a security certification or a claim
 that every plugin supported by these hosts now works in Oscairn. The upstream
 applications were inspected, not built or benchmarked against Oscairn.
 
+Follow-up: Worker support has since been implemented with an attributed C++ adaptation
+of Jalv's design. See [the current scope and tests](README.md#worker-and-offline-rendering)
+and [credits](../../CREDITS.md). Recommendations and validation below describe the
+original audit, before that implementation.
+
 ## Sources and attribution
 
 All links below pin the revisions inspected. Credits and the policy for any

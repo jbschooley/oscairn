@@ -71,11 +71,13 @@ Done:
   MIDI/pressure translation and time atoms, with fixture and upstream-example tests.
 - [LV2 prior-art audit](../core/lv2-host/AUDIT.md) against Jalv, MOD mod-host, Carla and
   Ardour, with contract/recovery fixes, regression tests and source credits.
+- LV2 Worker scheduling adapted from Jalv, with bounded queues, draining teardown,
+  synchronous offline work and independent upstream sampler Worker tests.
 
 To do:
 
 - tracks, patterns, swing and more lanes in the sequencer;
-- extend LV2 coverage with worker scheduling and state/preset handling, then plugin
+- extend LV2 coverage with state/preset and patch handling, then plugin
   discovery and selection in the desktop; custom UIs and other extensions follow
   ([current scope](../core/lv2-host/README.md));
 - define hardware capabilities, timestamped input, scheduled output and engine backend

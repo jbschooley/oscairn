@@ -12,3 +12,4 @@
 <urn:oscairn:test:audit> a lv2:Plugin; lv2:binary <fixture@CMAKE_SHARED_MODULE_SUFFIX@>; rdfs:seeAlso <fixture.ttl> .
 <urn:oscairn:test:required-option> a lv2:Plugin; lv2:binary <fixture@CMAKE_SHARED_MODULE_SUFFIX@>; rdfs:seeAlso <fixture.ttl> .
 <urn:oscairn:test:required-atom> a lv2:Plugin; lv2:binary <fixture@CMAKE_SHARED_MODULE_SUFFIX@>; rdfs:seeAlso <fixture.ttl> .
+<urn:oscairn:test:bad-worker> a lv2:Plugin; lv2:binary <fixture@CMAKE_SHARED_MODULE_SUFFIX@>; rdfs:seeAlso <fixture.ttl> .

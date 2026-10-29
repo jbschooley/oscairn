@@ -7,7 +7,7 @@
 namespace oscairn
 {
 #ifdef OSCAIRN_LV2
-    std::shared_ptr<PluginHost> loadLv2Plugin(const std::string&,const std::string&,double,uint32_t);
+    std::shared_ptr<PluginHost> loadLv2Plugin(const std::string&,const std::string&,double,uint32_t,ProcessingMode);
 #endif
     namespace
     {
@@ -33,8 +33,9 @@ namespace oscairn
             bool process(const float* const* inputs, uint32_t ni, float* const* outputs, uint32_t no, uint32_t frames, const kick::clap::Event* events, uint32_t count, const clap_event_transport_t* transport) noexcept override { return host.process(inputs,ni,outputs,no,frames,events,count,transport); }
         };
     }
-    std::shared_ptr<PluginHost> loadPlugin(const std::string& path,const std::string& id,double rate,uint32_t frames)
+    std::shared_ptr<PluginHost> loadPlugin(const std::string& path,const std::string& id,double rate,uint32_t frames,ProcessingMode mode)
     {
+        (void)mode; // CLAP behavior is unchanged; LV2 uses the mode for Worker.
         if(path.find('\0')!=std::string::npos || id.find('\0')!=std::string::npos)
             throw std::invalid_argument("Plugin path and ID must not contain NUL bytes");
         auto source=std::filesystem::path(path).lexically_normal();
@@ -42,7 +43,7 @@ namespace oscairn
         if(source.extension()==".lv2")
         {
 #ifdef OSCAIRN_LV2
-            return loadLv2Plugin(path,id,rate,frames);
+            return loadLv2Plugin(path,id,rate,frames,mode);
 #else
             throw std::runtime_error("LV2 support is disabled; build with -DOSCAIRN_LV2=ON");
 #endif

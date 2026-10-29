@@ -19,7 +19,15 @@ jobs:
 
       - name: Install Ninja (Linux)
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y ninja-build liblilv-dev lv2-dev lv2-examples
+        run: sudo apt-get update && sudo apt-get install -y ninja-build liblilv-dev lv2-dev lv2-examples libsndfile1-dev libsamplerate0-dev
+
+      - name: Check out pinned upstream LV2 examples (Linux)
+        if: runner.os == 'Linux'
+        uses: actions/checkout@v4
+        with:
+          repository: lv2/lv2
+          ref: 0bcde338db1c63bbc503b4d1f6d7b55ed43154af
+          path: upstream-lv2
 
       - name: Install Ninja (macOS)
         if: runner.os == 'macOS'
@@ -29,6 +37,7 @@ jobs:
         run: >
           cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DOSCAIRN_LV2=ON
           -DOSCAIRN_LV2_EXAMPLE_DIR="${{ runner.os == 'Linux' && '/usr/lib/lv2' || '' }}"
+          -DOSCAIRN_LV2_SOURCE_DIR="${{ runner.os == 'Linux' && format('{0}/upstream-lv2', github.workspace) || '' }}"
 
       - name: Build
         run: cmake --build build

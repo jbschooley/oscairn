@@ -30,6 +30,23 @@ that audit.
 | Carla | Filipe Coelho and contributors | `CarlaPluginLV2.cpp` and the inspected utility sources carry GPL-2.0-or-later notices. |
 | Ardour | Carl Hetherington, Paul Davis, David Robillard, Robin Gareus, John Emmas, Michael R. Fisher, Tim Mayberry, Damien Zammit, Nick Mainsbridge, Johannes Mueller and contributors | Names from the inspected `lv2_plugin.cc` header; it and `worker.cc` carry GPL-2.0-or-later notices. |
 
+## Adapted Worker implementation
+
+Following that audit, [Worker.cpp](core/lv2-host/Worker.cpp) and
+[Worker.h](core/lv2-host/Worker.h) adapt **David Robillard's Jalv Worker design** into
+Oscairn's C++ host. They retain ISC notices, with the full
+[license](core/lv2-host/third_party/jalv/ISC.txt) and
+[source revision/path/modification record](core/lv2-host/third_party/jalv/upstream.json).
+The adaptation replaces Zix infrastructure, bounds packet/response work, and changes
+offline and shutdown handling. It is not an unchanged vendored copy. LV2-enabled CMake
+installs include the ISC notice; the Buildroot package records it in license metadata.
+
+The independent Worker test builds the unmodified **LV2 eg-sampler** from source
+revision `0bcde338db1c63bbc503b4d1f6d7b55ed43154af` (v1.18.10). Its source credits
+David Robillard, Gabriel M. Beddingfield and James Morris under ISC. The checkout
+remains external and retains its own notices; it is a test dependency, not shipped
+Oscairn plugin code.
+
 ## When importing source
 
 For copied or adapted upstream code, retain the original authors' copyright and

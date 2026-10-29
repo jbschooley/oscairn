@@ -12,6 +12,7 @@ option(OSCAIRN_STANDALONE "Build the desktop app (downloads JUCE)" OFF)
 option(OSCAIRN_ENGINE "Build the separate audio/MIDI engine helper (downloads JUCE)" OFF)
 option(OSCAIRN_LV2 "Enable LV2 hosting (requires Lilv and LV2 development packages)" OFF)
 set(OSCAIRN_LV2_EXAMPLE_DIR "" CACHE PATH "Optional upstream LV2 example bundles for integration tests")
+set(OSCAIRN_LV2_SOURCE_DIR "" CACHE PATH "Optional LV2 source checkout for unmodified eg-sampler Worker tests")
 
 enable_testing()
 

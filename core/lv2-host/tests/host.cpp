@@ -36,7 +36,7 @@ bool render(PluginHost& host,Audio& audio,const Event* events=nullptr,uint32_t c
 void policy(const char* bundle)
 {
     auto reject=[&](const char* id,const char* part){bool rejected=false;try{loadPlugin(bundle,id,48000,512);}catch(const std::runtime_error& e){rejected=std::string(e.what()).find(part)!=std::string::npos;}check(rejected,"unsupported LV2 rejected with useful reason");};
-    reject("","pluginId");reject("urn:oscairn:test:worker","worker#schedule");reject("urn:oscairn:test:cv","port");reject("urn:missing","matching");
+    reject("","pluginId");reject("urn:oscairn:test:bad-worker","Worker interface");reject("urn:oscairn:test:cv","port");reject("urn:missing","matching");
     reject("urn:oscairn:test:required-option","unsupported-option");
     reject("urn:oscairn:test:required-atom","buffer type");
     auto host=loadPlugin(std::string(bundle)+"/","urn:oscairn:test:synth",48000,512);
@@ -134,6 +134,48 @@ void events(const char* bundle)
           "MIDI output overflow releases downstream voices");
     check(render(*host,audio) && audio.l[0]==0,"MIDI input overflow releases held voices on next block");
 }
+void worker(const char* bundle)
+{
+    const auto note=Event::note(true,60,1,7);
+    auto offline=loadPlugin(bundle,"urn:oscairn:test:worker",48000,512,ProcessingMode::Offline);
+    Audio audio;check(render(*offline,audio,&note,1),"offline worker render");
+    check(audio.l[6]==0 && audio.l[7]==1,"offline work and response affect the scheduling sample");
+    check(offline->parameterValue(5)==1 && offline->parameterValue(6)==1,"response precedes end_run");
+    const std::array edits{param(.25,10),param(.5,20)};
+    check(render(*offline,audio,edits.data(),edits.size()) && offline->parameterValue(6)==4,"end_run after every split run, even without replies");
+    auto realtime=loadPlugin(bundle,"urn:oscairn:test:worker",48000,512);
+    check(render(*realtime,audio,&note,1),"realtime worker render");
+    check(audio.l[7]==.5f,"live work response is delivered outside plugin run");
+    bool applied=false;
+    for(int i=0;i<10000 && !applied;++i){check(render(*realtime,audio),"live worker follow-up");applied=audio.l[0]==1;std::this_thread::yield();}
+    check(applied,"background result reaches live audio");
+    {
+        Graph live(48000,512);const auto node=live.add(bundle,"urn:oscairn:test:worker");
+        live.connectNotes(graphInput,node);live.connectAudio(node,graphOutput);live.commit();
+        std::array<Event,64> burst;burst.fill(Event::note(true,60,1));
+        check(live.process(audio.out,64,nullptr,burst.data(),burst.size()),"live graph schedules worker requests");
+        live.remove(node);live.commit();
+        forbidAllocation=true;const auto ok=live.process(audio.out,64,nullptr);forbidAllocation=false;
+        live.collect(); // Plugin/worker teardown belongs to the control thread.
+        check(ok && !live.contains(node) && audio.l[0]==0,"worker node retires while graph rendering continues");
+    }
+    std::vector<float> reference;
+    for(uint32_t block:{37u,512u})
+    {
+        Graph graph(48000,block,ProcessingMode::Offline);auto node=graph.add(bundle,"urn:oscairn:test:worker");
+        graph.connectNotes(graphInput,node);graph.connectAudio(node,graphOutput);graph.commit();
+        std::vector<float> result;Audio out;
+        for(uint32_t offset=0;offset<2048;offset+=block)
+        {
+            const auto frames=std::min(block,2048-offset);
+            auto event=Event::note(true,60,1,offset<=100 && 100<offset+frames?100-offset:0);
+            const bool send=offset<=100 && 100<offset+frames;
+            check(graph.process(out.out,frames,nullptr,send?&event:nullptr,send?1:0),"offline worker graph render");
+            result.insert(result.end(),out.l.begin(),out.l.begin()+frames);
+        }
+        if(reference.empty())reference=result;else check(reference==result,"offline worker graph is independent of block size");
+    }
+}
 void graph(const char* bundle,const char* seq,const char* synth)
 {
     for(uint32_t block:{37u,512u})
@@ -184,6 +226,6 @@ void control(const char* bundle)
 }
 int main(int argc,char** argv)
 {
-    try{if(argc!=4)return 2;uridMapping();policy(argv[1]);audit(argv[1]);events(argv[1]);graph(argv[1],argv[2],argv[3]);control(argv[1]);std::cout<<"ok: LV2 audit regressions, policy, MIDI/pressure/time, sample-accurate mixed graphs, control API and concurrent rendering\n";return 0;}
+    try{if(argc!=4)return 2;uridMapping();policy(argv[1]);audit(argv[1]);events(argv[1]);worker(argv[1]);graph(argv[1],argv[2],argv[3]);control(argv[1]);std::cout<<"ok: LV2 audit regressions, policy, MIDI/pressure/time, sample-accurate mixed graphs, control API and concurrent rendering\n";return 0;}
     catch(const std::exception& e){forbidAllocation=false;std::cerr<<e.what()<<'\n';return 1;}
 }

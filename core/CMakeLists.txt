@@ -7,9 +7,11 @@ target_compile_options(oscairn_plugin_host PRIVATE -Wall -Wextra)
 if(OSCAIRN_LV2)
     find_package(PkgConfig REQUIRED)
     pkg_check_modules(LILV REQUIRED IMPORTED_TARGET lilv-0>=0.24)
-    target_sources(oscairn_plugin_host PRIVATE lv2-host/Host.cpp)
-    target_link_libraries(oscairn_plugin_host PRIVATE PkgConfig::LILV)
+    find_package(Threads REQUIRED)
+    target_sources(oscairn_plugin_host PRIVATE lv2-host/Host.cpp lv2-host/Worker.cpp)
+    target_link_libraries(oscairn_plugin_host PRIVATE PkgConfig::LILV Threads::Threads)
     target_compile_definitions(oscairn_plugin_host PRIVATE OSCAIRN_LV2=1)
+    install(FILES lv2-host/third_party/jalv/ISC.txt DESTINATION share/licenses/oscairn RENAME jalv-worker-ISC.txt)
 endif()
 
 # CLAP API headers for first-party plugins (vendored in clap-host).

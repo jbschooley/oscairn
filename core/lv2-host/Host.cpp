@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #include "oscairn/plugin_host.h"
 #include "Urids.h"
+#include "Worker.h"
 #include <lilv/lilv.h>
 #include <lv2/atom/atom.h>
 #include <lv2/atom/forge.h>
@@ -59,9 +60,11 @@ class Lv2Host final : public PluginHost
     std::vector<Port> ports_;
     std::unique_ptr<std::atomic<double>[]> values_;
     uint32_t noteInputs_=0,noteOutputs_=0;
+    ProcessingMode mode_;
     double rate_;
     uint32_t maxFrames_;
     Urids urids_;
+    lv2::Worker worker_;
     LV2_URID_Map map_{&urids_,Urids::map};
     LV2_URID_Unmap unmap_{&urids_,Urids::unmap};
     LV2_Atom_Forge forge_{};
@@ -69,8 +72,8 @@ class Lv2Host final : public PluginHost
     int32_t minimum_=1, maximum_, sequenceSize_=atomBytes;
     float sampleRate_;
     std::array<LV2_Options_Option,5> options_{};
-    std::array<LV2_Feature,5> features_{};
-    std::array<const LV2_Feature*,6> featurePointers_{};
+    std::array<LV2_Feature,6> features_{};
+    std::array<const LV2_Feature*,7> featurePointers_{};
     // One control producer, one audio consumer; graph callers share this contract.
     std::array<Event,kick::clap::Host::maxEvents> commands_{};
     std::atomic<size_t> head_{0},tail_{0};
@@ -269,7 +272,7 @@ class Lv2Host final : public PluginHost
         }
     }
 public:
-    Lv2Host(const std::string& bundle,const std::string& id,double rate,uint32_t frames):rate_(rate),maxFrames_(frames),maximum_(static_cast<int32_t>(frames)),sampleRate_(static_cast<float>(rate))
+    Lv2Host(const std::string& bundle,const std::string& id,double rate,uint32_t frames,ProcessingMode mode):mode_(mode),rate_(rate),maxFrames_(frames),worker_(mode==ProcessingMode::Offline),maximum_(static_cast<int32_t>(frames)),sampleRate_(static_cast<float>(rate))
     {
         if(!world_ || !std::isfinite(rate) || rate<=0 || !frames || frames>1048576)throw std::invalid_argument("Invalid LV2 host configuration");
         const auto path=std::filesystem::canonical(bundle).string()+"/";
@@ -295,7 +298,7 @@ public:
         options_[2]={LV2_OPTIONS_INSTANCE,0,urids_(LV2_BUF_SIZE__sequenceSize),sizeof(sequenceSize_),urids_(LV2_ATOM__Int),&sequenceSize_};
         options_[3]={LV2_OPTIONS_INSTANCE,0,urids_(LV2_PARAMETERS__sampleRate),sizeof(sampleRate_),urids_(LV2_ATOM__Float),&sampleRate_};
         features_={LV2_Feature{LV2_URID__map,&map_},{LV2_URID__unmap,&unmap_},{LV2_OPTIONS__options,options_.data()},
-                   {LV2_BUF_SIZE__boundedBlockLength,nullptr},{LV2_CORE__inPlaceBroken,nullptr}};
+                   {LV2_BUF_SIZE__boundedBlockLength,nullptr},{LV2_CORE__inPlaceBroken,nullptr},{LV2_WORKER__schedule,worker_.feature()}};
         for(size_t i=0;i<features_.size();++i)featurePointers_[i]=&features_[i];
         std::unique_ptr<LilvNodes,decltype(&lilv_nodes_free)> required(lilv_plugin_get_required_features(plugin),lilv_nodes_free);
         LILV_FOREACH(nodes,i,required.get())
@@ -372,16 +375,25 @@ public:
         }
         instance_.reset(lilv_plugin_instantiate(plugin,rate,featurePointers_.data()));
         if(!instance_)throw std::runtime_error("LV2 instantiation failed: "+descriptor_.id);
-        for(uint32_t i=0;i<ports_.size();++i)
+        try
         {
-            auto& p=ports_[i];void* data=nullptr;
-            if(p.kind==Kind::Audio)data=p.audio.data();else if(p.kind==Kind::Control)data=&p.control;else if(p.kind==Kind::Atom)data=p.atom.data();
-            lilv_instance_connect_port(instance_.get(),i,data);
+            const auto* worker=static_cast<const LV2_Worker_Interface*>(lilv_instance_get_extension_data(instance_.get(),LV2_WORKER__interface));
+            auto workerFeature=uri(LV2_WORKER__schedule);
+            if(worker)worker_.attach(lilv_instance_get_handle(instance_.get()),worker);
+            else if(lilv_nodes_contains(required.get(),workerFeature.get()))throw std::runtime_error("Required LV2 Worker interface is missing");
+            for(uint32_t i=0;i<ports_.size();++i)
+            {
+                auto& p=ports_[i];void* data=nullptr;
+                if(p.kind==Kind::Audio)data=p.audio.data();else if(p.kind==Kind::Control)data=&p.control;else if(p.kind==Kind::Atom)data=p.atom.data();
+                lilv_instance_connect_port(instance_.get(),i,data);
+            }
+            lilv_instance_activate(instance_.get());active_=true;
         }
-        lilv_instance_activate(instance_.get());active_=true;
+        catch(...){worker_.finish();instance_.reset();throw;}
     }
     ~Lv2Host() override
     {
+        worker_.finish(); // join/drain while the instance and its buffers still exist
         if(active_)lilv_instance_deactivate(instance_.get());
         instance_.reset(); // cleanup may still use connected buffers and host features
     }
@@ -407,7 +419,7 @@ public:
     bool popOutput(Event&) noexcept override{return false;} // output control values use atomic telemetry
     uint64_t outputEventDrops() const noexcept override{return 0;}
     const Event* outputEvents(uint32_t& count) const noexcept override{count=emittedCount_;return emitted_.data();}
-    kick::clap::Statistics statistics() const noexcept override{return {blocks_.load(),drops_.load(),errors_.load(),lastUs_.load(),maxUs_.load(),deadlines_.load(),0,0};}
+    kick::clap::Statistics statistics() const noexcept override{return {blocks_.load(),drops_.load()+worker_.drops(),errors_.load()+worker_.errors(),lastUs_.load(),maxUs_.load(),deadlines_.load(),0,0};}
     bool process(const float* const* inputs,uint32_t ni,float* const* outputs,uint32_t no,uint32_t frames,const Event* events,uint32_t count,const clap_event_transport_t* t) noexcept override
     {
         emittedCount_=0;outputPanic_=false;
@@ -455,6 +467,7 @@ public:
                 if(type!=CLAP_EVENT_PARAM_VALUE && type!=CLAP_EVENT_PARAM_GESTURE_BEGIN && type!=CLAP_EVENT_PARAM_GESTURE_END)musical(event,start);
             }
             lilv_instance_run(instance_.get(),end-start);
+            worker_.emitResponses();worker_.endRun();
             for(auto& p:ports_)if(p.kind==Kind::Atom && !p.input)collect(p,start,end-start);
             start=end;
         }
@@ -470,11 +483,11 @@ public:
         // Stable, bounded merge across multiple MIDI output ports.
         for(uint32_t i=1;i<emittedCount_;++i){auto e=emitted_[i];auto j=i;while(j && emitted_[j-1].header()->time>e.header()->time){emitted_[j]=emitted_[j-1];--j;}emitted_[j]=e;}
         const auto us=std::chrono::duration<double,std::micro>(std::chrono::steady_clock::now()-began).count();
-        lastUs_.store(us);if(us>maxUs_.load())maxUs_.store(us);if(us>frames/rate_*1e6)++deadlines_;++blocks_;
+        lastUs_.store(us);if(us>maxUs_.load())maxUs_.store(us);if(mode_==ProcessingMode::Realtime && us>frames/rate_*1e6)++deadlines_;++blocks_;
         return true;
     }
 };
 }
-std::shared_ptr<PluginHost> loadLv2Plugin(const std::string& path,const std::string& id,double rate,uint32_t frames)
-{return std::make_shared<Lv2Host>(path,id,rate,frames);}
+std::shared_ptr<PluginHost> loadLv2Plugin(const std::string& path,const std::string& id,double rate,uint32_t frames,ProcessingMode mode)
+{return std::make_shared<Lv2Host>(path,id,rate,frames,mode);}
 }

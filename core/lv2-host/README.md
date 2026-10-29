@@ -74,13 +74,14 @@ are flattened in port-index order, as for CLAP; there is no surround/bus editor.
   meter-beat units and the host's current bar origin. A tempo ramp is sampled at each
   run boundary; the LV2 time vocabulary has no standard tempo-ramp field.
 - Features: URID map/unmap, options (sample rate, min/max block length, sequence capacity),
-  bounded block length and separate buffers for `inPlaceBroken` plugins. Required
+  Worker scheduling, bounded block length and separate buffers for `inPlaceBroken` plugins. Required
   options are checked before instantiation. Unsupported optional Atom ports are
   connected to null; unsupported required ports are rejected.
-- One control thread and one audio thread per instance. Controls use a bounded SPSC queue;
+- One control thread and one audio thread per instance, plus a background thread for
+  each live instance implementing Worker. Controls use a bounded SPSC queue;
   telemetry is atomic. Plugin creation, metadata reading and destruction happen on the
-  control thread. Host render work uses cached URIDs and does not allocate or wait
-  for a lock. The plugin-facing URID map/unmap callbacks are **not realtime safe**,
+  control thread. The live host render path uses cached URIDs and preallocated queues;
+  it does not allocate or wait for background work. The plugin-facing URID map/unmap callbacks are **not realtime safe**,
   as permitted by LV2: they serialize access and mapping may allocate. Plugins must
   cache their IDs before performance-critical processing.
 
@@ -95,9 +96,51 @@ or malformed MIDI output emits a wildcard note-off to release downstream voices,
 replacing the final event when the output buffer is full.
 Native plugin code is not sandboxed and can still crash or violate its realtime contract.
 
+## Worker and offline rendering
+
+The [Worker implementation](Worker.cpp) adapts David Robillard's Jalv Worker design
+under the ISC license. [Provenance](third_party/jalv/upstream.json) records the exact
+revision, upstream/local files and changes; [credits](../../CREDITS.md) name the authors.
+It uses C++ threads/semaphores and complete-packet SPSC queues instead of adding Zix.
+
+Live processing enqueues copied work requests and wakes one background thread per
+Worker-capable instance. Plugin `work()` calls are serialized. Responses are delivered
+after `run()` in the audio context, followed by `end_run()` after **every** run, including
+sub-runs introduced by parameter edits. Each live response pass consumes at most its
+initial queue snapshot, so a producer cannot make it run indefinitely.
+
+Queues are allocated on attachment, outside rendering; plugins without Worker do not
+pay for their storage. Request and response queues each hold 32 messages of up to 4096 bytes, including
+zero-byte messages. Oversize/full queues return `LV2_WORKER_ERR_NO_SPACE`; invalid
+requests or scheduling outside the attached lifecycle return `LV2_WORKER_ERR_UNKNOWN`.
+Drops and failed plugin callbacks contribute to the existing host statistics. Plugins
+must handle rejected requests/responses and retain or release their own resources
+appropriately. Message bytes are copied, but any plugin-owned objects referenced by
+those bytes must remain valid under the plugin's Worker protocol.
+
+After graph retirement has stopped rendering an instance, destruction drains accepted
+requests and joins the worker before deactivation or cleanup. Successful responses are
+delivered in the quiescent processing context, and any follow-up work they schedule runs
+synchronously. This supports patterns such as replacing a sample and freeing the old
+one from `work_response()`. A plugin whose work never returns can still block teardown;
+there is no safe in-process cancellation of arbitrary native plugin code.
+
+`loadPlugin`, `Graph` and `Chain` accept `ProcessingMode::Offline` at construction;
+the default remains `Realtime`. `oscairn-render` selects Offline. LV2 work then runs
+synchronously, with responses applied before `schedule_work()` returns (after the work
+callback exits, avoiding overlapping work calls). Offline processing may allocate and
+block inside plugin work; it must not be used on a live audio callback. Mode is fixed
+for an instance's lifetime. CLAP processing behavior is unchanged; this does not add
+CLAP render-mode extension negotiation or LV2 freewheel-control handling.
+
+Worker support does not imply state/preset or patch support. A plugin that also requires
+an unsupported feature remains rejected, and a required Worker feature with a missing
+or invalid plugin Worker interface fails loading with a specific error. State restoration
+will need its own serialized work context when implemented.
+
 ## Not implemented yet
 
-Worker scheduling, plugin state/presets, patch/property messages, custom plugin UIs,
+Plugin state/presets, patch/property messages, custom plugin UIs,
 CV ports, legacy event/URI-map ports, dynamic ports, SysEx, MIDI 2.0, per-note IDs and
 non-pressure CLAP expressions. Required unsupported features or non-optional port types
 are rejected with an error instead of pretending to support them. There is no plugin
@@ -116,10 +159,28 @@ with 37- and 512-sample blocks, queue overflow, unsupported features/ports, the 
 control API, and concurrent control/render operation. Rendering runs under the existing
 allocation guard. The fixture exercises a bundle path containing a space.
 
+`lv2-worker` checks copied/zero/maximum-sized messages, request and response saturation,
+callback errors, serialized background work, reentrant follow-up scheduling, response
+thread identity and draining shutdown. The host fixture verifies feature negotiation,
+live response application, sample-exact offline work, end-run calls across split blocks
+and block-size-independent offline graphs. Worker queue operations and live response
+delivery run under the allocation guard.
+
 For independent upstream examples, install `lv2-examples` and configure with
 `-DOSCAIRN_LV2_EXAMPLE_DIR=/usr/lib/lv2`. Additional tests check eg-amp at unity and eg-fifths
 with byte-identical 37/512-sample renders. CI enables LV2 on Linux and macOS and includes
 Linux ThreadSanitizer. CLAP-only builds remain supported.
+
+For an independent Worker implementation, configure
+`-DOSCAIRN_LV2_SOURCE_DIR=/path/to/lv2-source` with libsndfile and libsamplerate development
+packages installed. Linux CI checks out LV2 v1.18.10 at
+`0bcde338db1c63bbc503b4d1f6d7b55ed43154af` and compiles its unmodified eg-sampler.
+`lv2-worker-upstream` uses a direct plugin ABI harness with Oscairn's actual Worker,
+loads/replaces WAV samples through patch events, checks exact-sample offline output
+across 37/512 blocks and repeats, and tests live loading and pending-work shutdown.
+This is a Worker integration test, **not** a claim that eg-sampler can yet be loaded
+through `loadPlugin`: that plugin also requires default-state loading and patch control,
+which the normal adapter does not support. No upstream sampler source is vendored.
 
 The [prior-art audit](AUDIT.md) records the pinned Jalv, MOD mod-host, Carla and Ardour
 comparisons, fixes, remaining gaps and reuse decisions. [Credits](../../CREDITS.md)

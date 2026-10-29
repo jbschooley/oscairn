@@ -75,7 +75,7 @@ int main( int argc, char** argv )
 
     try
     {
-        oscairn::Chain chain( rate, block );
+        oscairn::Chain chain( rate, block, oscairn::ProcessingMode::Offline );
         for( const auto& spec : plugins )
         {
             const auto hash = spec.find( '#' );
