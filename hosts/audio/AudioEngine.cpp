@@ -15,11 +15,16 @@ namespace oscairn::host
         constexpr clap_id brightnessParam = 1; // plugins/basic-synth
     }
 
-    AudioEngine::AudioEngine( const std::string& pluginDir )
+    AudioEngine::AudioEngine( const std::string& pluginDir, AudioConfiguration audio ) : channelMap_(std::move(audio),maxFrames)
     {
         juce::AudioDeviceManager::AudioDeviceSetup preferred;
         preferred.bufferSize = OSCAIRN_AUDIO_BUFFER_FRAMES;
-        const auto error = devices_.initialise( 0, 2, nullptr, true, {}, &preferred );
+        const auto& config=channelMap_.configuration();
+        const auto inputs=ChannelMap::required(config.inputs),outputs=ChannelMap::required(config.outputs);
+        preferred.inputDeviceName=config.inputDevice;preferred.outputDeviceName=config.outputDevice;
+        preferred.useDefaultInputChannels=false;preferred.useDefaultOutputChannels=false;
+        preferred.inputChannels.setRange(0,inputs,true);preferred.outputChannels.setRange(0,outputs,true);
+        const auto error = devices_.initialise(inputs,outputs,nullptr,config.inputDevice.empty() && config.outputDevice.empty(),{},&preferred);
         auto*      device = devices_.getCurrentAudioDevice();
         if( error.isNotEmpty() || !device )
             throw std::runtime_error( "no audio output: " + ( error.isNotEmpty() ? error.toStdString() : std::string( "no device" ) ) );
@@ -28,9 +33,15 @@ namespace oscairn::host
                       device->getCurrentBufferSizeSamples() );
         if( preferred.bufferSize > 0 && device->getCurrentBufferSizeSamples() != preferred.bufferSize )
             std::fprintf( stderr, "oscairn: requested %d frames; using the device's supported size above\n", preferred.bufferSize );
-        scratch_.resize( maxFrames );
+        initialDevice_=device->getName().toStdString();initialInputs_=device->getInputChannelNames();initialOutputs_=device->getOutputChannelNames();
+        juce::AudioDeviceManager::AudioDeviceSetup actual;devices_.getAudioDeviceSetup(actual);
+        if((!config.inputDevice.empty() && actual.inputDeviceName.toStdString()!=config.inputDevice) ||
+           (!config.outputDevice.empty() && actual.outputDeviceName.toStdString()!=config.outputDevice))
+            throw std::runtime_error("Requested audio device was not opened");
+        audioDeviceAboutToStart(device);
+        if(!started_)throw std::runtime_error("Requested audio channels are unavailable; no output fallback is permitted for explicit mappings");
 
-        session_        = std::make_unique<Session>( sampleRate_, maxFrames );
+        session_        = std::make_unique<Session>( sampleRate_, maxFrames, Lv2BufferLimits{}, channelMap_.layout() );
         const auto seq   = session_->add( "sequencer", pluginDir + "/oscairn-step-sequencer.clap" );
         const auto synth = session_->add( "synth", pluginDir + "/oscairn-basic-synth.clap" );
         const auto delay = session_->add( "delay", pluginDir + "/oscairn-delay.clap" );
@@ -68,7 +79,12 @@ namespace oscairn::host
             status.audioDevice = device->getName().toStdString();
             status.sampleRate = device->getCurrentSampleRate();
             status.bufferSize = static_cast<uint32_t>(device->getCurrentBufferSizeSamples());
+            auto describe=[](const auto& selected,const juce::StringArray& names,const juce::BigInteger& active){
+                std::vector<Control::DeviceChannel> result;for(auto i:selected)result.push_back({i,i<static_cast<uint32_t>(names.size())?names[static_cast<int>(i)].toStdString():"Unavailable",active[static_cast<int>(i)]});return result;};
+            status.audioInputs=describe(channelMap_.configuration().inputs,device->getInputChannelNames(),device->getActiveInputChannels());
+            status.audioOutputs=describe(channelMap_.configuration().outputs,device->getOutputChannelNames(),device->getActiveOutputChannels());
         }
+        status.audioReady=started_.load();
         status.cpuLoad = devices_.getCpuUsage();
         for(const auto& input : midiInputs_) status.midiInputs.push_back(input->getName().toStdString());
         session_->setHostStatus(std::move(status));
@@ -112,20 +128,23 @@ namespace oscairn::host
 
     void AudioEngine::audioDeviceAboutToStart( juce::AudioIODevice* device )
     {
-        // The graph is built for the rate the device had at startup. Another rate plays
-        // silence rather than out of tune.
-        started_ = std::abs( device->getCurrentSampleRate() - sampleRate_ ) < 0.5;
+        const auto& config=channelMap_.configuration();
+        const auto inputMask=device->getActiveInputChannels(),outputMask=device->getActiveOutputChannels();
+        bool valid=std::abs(device->getCurrentSampleRate()-sampleRate_)<.5 && device->getName().toStdString()==initialDevice_ &&
+            device->getInputChannelNames()==initialInputs_ && device->getOutputChannelNames()==initialOutputs_;
+        for(uint32_t i=0;i<ChannelMap::required(config.inputs);++i)valid=valid && inputMask[static_cast<int>(i)];
+        const auto required=(!config.explicitOutputs && initialOutputs_.size()==1)?1:ChannelMap::required(config.outputs);
+        for(uint32_t i=0;i<required;++i)valid=valid && outputMask[static_cast<int>(i)];
+        started_=valid;
     }
 
-    void AudioEngine::audioDeviceIOCallbackWithContext( const float* const*, int, float* const* outputs, int numOutputs, int numSamples,
+    void AudioEngine::audioDeviceIOCallbackWithContext( const float* const* inputs, int numInputs, float* const* outputs, int numOutputs, int numSamples,
                                                    const juce::AudioIODeviceCallbackContext& )
     {
-        for( int c = 0; c < numOutputs; ++c )
-            if( outputs[c] )
-                std::fill_n( outputs[c], numSamples, 0.0f );
-        const double now = juce::Time::getMillisecondCounterHiRes() * 0.001;
-        if( !started_ || numOutputs < 1 || !outputs[0] )
-            return;
+        if(numSamples<=0)return;
+        const double now=juce::Time::getMillisecondCounterHiRes()*0.001;
+        if(!started_ || numOutputs<1)
+        {for(int c=0;c<numOutputs;++c)if(outputs[c])std::fill_n(outputs[c],numSamples,0.f);return;}
         // Device timestamps belong to this adapter. The core receives sample times,
         // with the existing policy: notes now, clock timestamps in the preceding block.
         std::array<kick::clap::Event, 128> notes;
@@ -154,16 +173,10 @@ namespace oscairn::host
             for( int i = 0; i < scope.blockSize2; ++i )
                 take( scope.startIndex2 + i );
         }
-        float* right = numOutputs >= 2 && outputs[1] ? outputs[1] : scratch_.data();
-        for( int done = 0; done < numSamples; )
-        {
-            const auto frames = (uint32_t)std::min<int>( (int)maxFrames, numSamples - done );
-            float* out[] = { outputs[0] + done, right == scratch_.data() ? scratch_.data() : right + done };
-            session_->process( out, frames,
-                               { notes.data(), done == 0 ? noteCount : 0 },
-                               { clocks.data(), done == 0 ? clockCount : 0 } );
-            done += (int)frames;
-        }
+        channelMap_.process(inputs,static_cast<uint32_t>(numInputs),outputs,static_cast<uint32_t>(numOutputs),static_cast<uint32_t>(numSamples),
+            [&](const float* const* in,uint32_t ni,float* const* out,uint32_t no,uint32_t frames,uint32_t offset){
+                return session_->process(in,ni,out,no,frames,{notes.data(),offset==0?noteCount:0},{clocks.data(),offset==0?clockCount:0});
+            });
         blockSeconds_   = now;
         lastBlockStart_ = blockSample_;
         blockSample_ += numSamples;

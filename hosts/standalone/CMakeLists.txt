@@ -3,7 +3,8 @@ juce_add_gui_app(oscairn_standalone
     PRODUCT_NAME "Oscairn"
     COMPANY_NAME "Oscairn"
     BUNDLE_ID org.oscairn.standalone
-    MICROPHONE_PERMISSION_ENABLED FALSE)
+    MICROPHONE_PERMISSION_ENABLED TRUE
+    MICROPHONE_PERMISSION_TEXT "Oscairn uses selected audio inputs for live instruments, effects and routing.")
 
 juce_add_binary_data(oscairn_standalone_layouts SOURCES
     layouts/desktop.json

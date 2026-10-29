@@ -99,6 +99,57 @@ the same engine keeps processing; an audible listening check remains separate.
 See the [wire contract](../docs/control-protocol.md) for framing, bounds, status fields
 and timeout semantics. The socket carries JSON-RPC; no WebSocket or gRPC is involved.
 
+## Audio device channels
+
+The default managed desktop still opens no audio inputs and a stereo output. To use
+other channels, launch `oscairn-engine` with an explicit socket and attach the desktop
+with `--connect`, as above. For example, on an interface with at least six outputs:
+
+```sh
+oscairn-engine --socket "$HOME/.oscairn/deck.sock" \
+  --input-device "Your interface" --output-device "Your interface" \
+  --audio-inputs 0,1,2,3 --audio-outputs 0,1,4,5
+```
+
+Use the actual device names. Indices are **zero-based**. List order maps graph channels
+onto physical channels: here logical output 0/1 uses physical 0/1, and logical 2/3 uses
+physical 4/5. Reordering (for example `--audio-outputs 1,0`) is supported. Duplicates,
+negative/out-of-range indices, unavailable explicit outputs and missing named devices
+are rejected. `--audio-inputs none` disables capture; this host requires at least one
+output. The legacy default allows a mono output device and uses the left channel;
+explicit output selections never fall back to mono or another device.
+
+The helper exposes one external input port (ID 0, if enabled) and one external output
+port (ID 0), each with the selected logical channels. `graph.connect` can route each range
+independently; channels 2/3 can be cue without entering channels 0/1 master. The default
+demo remains connected only to the first stereo pair. Enabled inputs are not automatically
+monitored; connect them explicitly through the control API. That API can also connect
+plugin main/aux/sidechain ports and direct input-to-output routes.
+
+The adapter opens a contiguous physical channel prefix through the highest selected
+index, so callback channel indices agree across JUCE backends. Unselected captured
+channels are ignored and unselected outputs are cleared. Input buffers are copied before
+writing any output, including for aliased duplex buffers. Blocks larger than the core's
+maximum are split with the same mapping, using preallocated storage. On macOS, enabling
+inputs may require system microphone/audio-input permission; usage descriptions are
+included in both the helper and desktop app. Default launches do not request capture.
+
+`session.status` reports selected physical channel names/indices/availability and
+`audioReady`; the desktop shows unavailable audio when the device changes incompatibly.
+Sample-rate, device identity or channel-name changes suspend rendering rather than
+silently applying old routes to a different device. Restart with the desired configuration
+to change it. There is no routing editor, device-selection UI, or persistent project
+format yet. Physical multichannel interfaces and target-board drivers still need testing.
+
+The headless `audio-routing`/`audio-routing-lv2` tests check independent master/cue/record
+buses, sidechains, explicit averaging, range/cycle rejection, live edits and mixed CLAP/LV2
+ports under the allocation guard. `audio-device-channel-map` tests reordered/sparse
+physical maps, callback splitting, aliased buffers and missing outputs. JSON and actual
+socket tests verify route and device-status round trips. A muted macOS desktop test with
+`--audio-outputs 1,0` passed on the Multi-Output Device at 48 kHz/128 frames, including
+KICK UI crash/reconnect; it does not establish physical input or four-output operation.
+Pass `--audio-outputs 1,0` to `desktop_lifecycle.py` to repeat that device-mapping check.
+
 ## Diagnosing a listener failure
 
 `bind Unix socket PATH: Operation not permitted` means the OS refused the bind syscall.

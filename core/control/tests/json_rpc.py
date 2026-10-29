@@ -36,10 +36,10 @@ try:
     hello = rpc('session.hello')['result']
     assert hello['protocolVersion'] == 1 and 'notes.send' in hello['capabilities']
     assert 'graph.add' in hello['capabilities'] and 'subscribe' in hello['capabilities']
-    assert 'session.status' in hello['capabilities']
+    assert 'session.status' in hello['capabilities'] and 'graph.audio-routing' in hello['capabilities']
     status = rpc('session.status')['result']
     assert status == {'audioDevice': '', 'midiInputs': [], 'sampleRate': 48000,
-                      'bufferSize': 512, 'cpuLoad': 0, 'deadlineMisses': 0}, status
+                      'bufferSize': 512, 'cpuLoad': 0, 'deadlineMisses': 0, 'audioReady': True, 'audioInputs': [], 'audioOutputs': []}, status
     error(rpc('session.status', {'unknown': True}), -32602)
     for ident in [None, 0, -1, 2**63 + 7, 'hello\x00\n"\\', 'é🎹', 1.5]:
         assert rpc('transport.get', ident=ident)['id'] == ident
@@ -135,6 +135,22 @@ try:
     error(rpc('subscribe', {'topics': ['bad']}), -32602)
     graph = rpc('graph.get')['result']
     assert graph['revision'] == 1 and not graph['staged'] and len(graph['nodes']) == 1
+    topology = rpc('graph.get')['result']
+    assert topology['audioInputs'] == [] and topology['audioOutputs'][0]['channels'] == 2
+    synth = next(n for n in topology['nodes'] if n['name'] == 'synth')
+    ports = dict(kind='audio', **{'from': synth['id'], 'to': topology['output']},
+                 fromPort=synth['audioOutputs'][0]['id'], fromChannel=0,
+                 toPort=0, toChannel=0, channels=2, gain=.5)
+    assert rpc('graph.connect', ports)['result']['accepted']
+    assert ports in rpc('graph.get')['result']['connections']
+    assert rpc('graph.disconnect', ports)['result']['accepted']
+    assert ports not in rpc('graph.get')['result']['connections']
+    for change in [dict(fromChannel=1), dict(channels=0), dict(channels=2**32-1),
+                   dict(toPort=999), dict(gain=17), dict(gain=-17)]:
+        error(rpc('graph.connect', dict(ports, **change)), -32003)
+    incomplete = dict(ports); del incomplete['toChannel']
+    error(rpc('graph.connect', incomplete), -32602)
+    error(rpc('graph.connect', dict(ports, kind='notes')), -32602)
     error(rpc('graph.add', {'path': '/missing/no-plugin.clap'}), -32004)
     error(rpc('graph.add', {'path': sys.argv[2], 'name': 'synth'}), -32602)
     delay = rpc('graph.add', {'path': sys.argv[3], 'name': 'delay'})['result']['node']

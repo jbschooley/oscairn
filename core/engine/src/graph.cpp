@@ -14,14 +14,18 @@ namespace oscairn
     /// preallocated, so processing never allocates or locks.
     struct Graph::Plan
     {
+        struct AudioRoute { int source; uint32_t from, to; float gain; }; // -1: external input
+        std::vector<AudioRoute> outputRoutes;
+        std::vector<float> externalInputs;
         struct Step
         {
             std::shared_ptr<PluginHost> host; // keeps the plugin alive while any plan uses it
             uint32_t                          audioInputs = 0, audioOutputs = 0;
-            std::vector<int>                  audioSources; // step indices, summed
+            std::vector<AudioRoute>           audioSources;
             std::vector<int>                  noteSources;  // step indices; -1 is graphInput
-            bool                              toOutput = false;
-            float*                            out[channels]{};
+            std::vector<float> inputBuffer, outputBuffer;
+            std::vector<float*> out;
+            std::vector<const float*> in;
 
             struct Route // where one of this step's param-target lanes goes
             {
@@ -44,8 +48,6 @@ namespace oscairn
         };
 
         std::vector<Step>              steps;
-        std::vector<float>             buffers; // channels * maxFrames per audio-producing step
-        std::vector<float>             mix;     // the summed audio input of one step
         std::vector<Key>               keys;
         std::vector<kick::clap::Event> merged;
     };
@@ -69,12 +71,27 @@ namespace oscairn
     }
 
     //==============================================================================
-    Graph::Graph( double sampleRate, uint32_t maxFrames, ProcessingMode mode, Lv2BufferLimits lv2Buffers )
+    static uint32_t countChannels(const std::vector<kick::clap::Port>& ports)
+    {
+        uint32_t count=0;std::vector<uint32_t> ids;
+        for(const auto& p:ports)
+        {
+            if(!p.channels || p.channels>Graph::maxAudioChannels-count || std::find(ids.begin(),ids.end(),p.id)!=ids.end())
+                throw std::invalid_argument("Invalid audio ports: zero/too many channels or duplicate port ID");
+            count+=p.channels;ids.push_back(p.id);
+        }
+        return count;
+    }
+
+    Graph::Graph( double sampleRate, uint32_t maxFrames, ProcessingMode mode, Lv2BufferLimits lv2Buffers, AudioLayout audio )
         : sampleRate_( sampleRate )
         , maxFrames_( maxFrames )
         , mode_( mode )
-        , lv2Buffers_( lv2Buffers )
+        , lv2Buffers_( lv2Buffers ), audioLayout_(std::move(audio))
     {
+        if(!std::isfinite(sampleRate) || sampleRate<=0 || !maxFrames || maxFrames>1048576)
+            throw std::invalid_argument("Invalid graph sample rate or block size");
+        inputChannels_=countChannels(audioLayout_.inputs);outputChannels_=countChannels(audioLayout_.outputs);
     }
 
     Graph::~Graph()
@@ -89,10 +106,8 @@ namespace oscairn
     {
         Node node;
         node.host = loadPlugin( path, pluginId, sampleRate_, maxFrames_, mode_, lv2Buffers_ );
-        for( const auto& port : node.host->inputPorts() )
-            node.audioInputs += port.channels;
-        for( const auto& port : node.host->outputPorts() )
-            node.audioOutputs += port.channels;
+        node.audioInputs=countChannels(node.host->inputPorts());
+        node.audioOutputs=countChannels(node.host->outputPorts());
 
         const NodeId id = nextId_++;
         nodes_.emplace( id, std::move( node ) );
@@ -102,6 +117,7 @@ namespace oscairn
     void Graph::remove( NodeId node )
     {
         nodes_.erase( node );
+        std::erase_if(audioRoutes_,[&](const auto& e){return e.from.node==node || e.to.node==node;});
         for( auto it = paramTargets_.begin(); it != paramTargets_.end(); )
             it = ( it->first.first == node || it->second.first == node ) ? paramTargets_.erase( it ) : std::next( it );
         auto touches = [&]( const std::pair<NodeId, NodeId>& e ) { return e.first == node || e.second == node; };
@@ -111,7 +127,7 @@ namespace oscairn
 
     void Graph::checkSource( NodeId from, bool audio ) const
     {
-        if( from == graphInput && !audio )
+        if( from == graphInput && (!audio || inputChannels_) )
             return;
         const auto it = nodes_.find( from );
         if( it == nodes_.end() )
@@ -122,7 +138,7 @@ namespace oscairn
 
     void Graph::checkDestination( NodeId to, bool audio ) const
     {
-        if( to == graphOutput && audio )
+        if( to == graphOutput && audio && outputChannels_ )
             return;
         const auto it = nodes_.find( to );
         if( it == nodes_.end() )
@@ -136,7 +152,48 @@ namespace oscairn
         checkSource( from, true );
         checkDestination( to, true );
         if( std::find( audioEdges_.begin(), audioEdges_.end(), std::make_pair( from, to ) ) == audioEdges_.end() )
+        {
+            if(audioEdges_.size()+audioRoutes_.size()==maxAudioConnections)throw std::invalid_argument("Audio connection limit exceeded");
             audioEdges_.emplace_back( from, to );
+        }
+    }
+
+    uint32_t Graph::resolve(const AudioEndpoint& e,bool source,uint32_t count) const
+    {
+        const std::vector<kick::clap::Port>* ports=nullptr;
+        if(source && e.node==graphInput)ports=&audioLayout_.inputs;
+        else if(!source && e.node==graphOutput)ports=&audioLayout_.outputs;
+        else
+        {
+            const auto it=nodes_.find(e.node);
+            if(it==nodes_.end())throw std::invalid_argument("Unknown audio endpoint node");
+            ports=source?&it->second.host->outputPorts():&it->second.host->inputPorts();
+        }
+        uint32_t offset=0;
+        for(const auto& p:*ports)
+        {
+            if(p.id==e.port)
+            {
+                if(!count || e.channel>=p.channels || count>p.channels-e.channel)throw std::invalid_argument("Audio channel range exceeds selected port");
+                return offset+e.channel;
+            }
+            offset+=p.channels;
+        }
+        throw std::invalid_argument("Unknown audio port ID");
+    }
+    void Graph::connectAudio(const AudioConnection& c)
+    {
+        resolve(c.from,true,c.channels);resolve(c.to,false,c.channels);
+        if(!std::isfinite(c.gain) || std::abs(c.gain)>16)throw std::invalid_argument("Audio route gain must be finite and within -16..16");
+        if(std::find(audioRoutes_.begin(),audioRoutes_.end(),c)!=audioRoutes_.end())return;
+        if(audioEdges_.size()+audioRoutes_.size()==maxAudioConnections)throw std::invalid_argument("Audio connection limit exceeded");
+        audioRoutes_.push_back(c);
+    }
+    void Graph::disconnectAudio(const AudioConnection& c)
+    {
+        resolve(c.from,true,c.channels);resolve(c.to,false,c.channels);
+        if(!std::isfinite(c.gain) || std::abs(c.gain)>16)throw std::invalid_argument("Audio route gain must be finite and within -16..16");
+        std::erase(audioRoutes_,c);
     }
 
     void Graph::connectNotes( NodeId from, NodeId to )
@@ -190,6 +247,7 @@ namespace oscairn
             result.nodes.push_back({id,node.host->descriptor(),node.host->inputPorts(),node.host->outputPorts(),
                                     node.host->noteInputPorts(),node.host->noteOutputPorts()});
         result.audio = audioEdges_;
+        result.audioRoutes=audioRoutes_;result.audioLayout=audioLayout_;
         result.notes = noteEdges_;
         for( const auto& [from,to] : paramTargets_ )
             result.mappings.push_back({from.first,from.second,to.first,to.second});
@@ -204,10 +262,12 @@ namespace oscairn
         for( const auto& [id, node] : nodes_ )
             indegree[id] = 0;
         auto internal = [&]( const std::pair<NodeId, NodeId>& e ) { return nodes_.count( e.first ) && nodes_.count( e.second ); };
+        std::vector<std::pair<NodeId, NodeId>> audioDependencies=audioEdges_;
+        for(const auto& e:audioRoutes_)audioDependencies.emplace_back(e.from.node,e.to.node);
         std::vector<std::pair<NodeId, NodeId>> mappingEdges;
         for( const auto& [from, to] : paramTargets_ )
             mappingEdges.emplace_back( from.first, to.first );
-        for( const auto* edges : { &audioEdges_, &noteEdges_, &std::as_const( mappingEdges ) } )
+        for( const auto* edges : { &std::as_const(audioDependencies), &noteEdges_, &std::as_const( mappingEdges ) } )
             for( const auto& e : *edges )
                 if( internal( e ) )
                     ++indegree[e.second];
@@ -221,7 +281,7 @@ namespace oscairn
             const NodeId id = ready->first;
             ready->second   = -1; // done
             order.push_back( id );
-            for( const auto* edges : { &audioEdges_, &noteEdges_, &std::as_const( mappingEdges ) } )
+            for( const auto* edges : { &std::as_const(audioDependencies), &noteEdges_, &std::as_const( mappingEdges ) } )
                 for( const auto& e : *edges )
                     if( e.first == id && internal( e ) )
                         --indegree[e.second];
@@ -239,14 +299,23 @@ namespace oscairn
             stepOf[id]        = (int)plan->steps.size();
             plan->steps.push_back( std::move( step ) );
         }
-        for( const auto& [from, to] : audioEdges_ )
+        auto route=[&](NodeId from,uint32_t source,NodeId to,uint32_t dest,float gain)
         {
-            if( !nodes_.count( from ) )
-                continue;
-            if( to == graphOutput )
-                plan->steps[(size_t)stepOf[from]].toOutput = true;
-            else if( nodes_.count( to ) )
-                plan->steps[(size_t)stepOf[to]].audioSources.push_back( stepOf[from] );
+            Plan::AudioRoute r{from==graphInput?-1:stepOf.at(from),source,dest,gain};
+            if(to==graphOutput)plan->outputRoutes.push_back(r);
+            else plan->steps[stepOf.at(to)].audioSources.push_back(r);
+        };
+        for(const auto& c:audioRoutes_)
+        {
+            const auto from=resolve(c.from,true,c.channels),to=resolve(c.to,false,c.channels);
+            for(uint32_t i=0;i<c.channels;++i)route(c.from.node,from+i,c.to.node,to+i,static_cast<float>(c.gain));
+        }
+        for(const auto& [from,to]:audioEdges_)
+        {
+            const auto ni=from==graphInput?inputChannels_:nodes_.at(from).audioOutputs;
+            const auto no=to==graphOutput?outputChannels_:nodes_.at(to).audioInputs;
+            for(uint32_t c=0;c<std::min(2u,no);++c)
+                if(c<ni || ni==1)route(from,ni==1?0:c,to,c,1.f);
         }
         for( const auto& [from, to] : noteEdges_ )
         {
@@ -267,19 +336,14 @@ namespace oscairn
             target.paramIn.resize( kick::clap::Host::maxBlockEvents );
         }
 
-        size_t producing = 0;
-        for( const auto& step : plan->steps )
-            producing += step.audioOutputs > 0;
-        plan->buffers.assign( producing * channels * maxFrames_, 0.0f );
-        size_t next = 0;
-        for( auto& step : plan->steps )
-            if( step.audioOutputs > 0 )
-            {
-                for( uint32_t c = 0; c < channels; ++c )
-                    step.out[c] = plan->buffers.data() + ( next * channels + c ) * maxFrames_;
-                ++next;
-            }
-        plan->mix.assign( channels * maxFrames_, 0.0f );
+        plan->externalInputs.resize(size_t(inputChannels_)*maxFrames_);
+        for(auto& step:plan->steps)
+        {
+            step.inputBuffer.resize(size_t(step.audioInputs)*maxFrames_);
+            step.outputBuffer.resize(size_t(step.audioOutputs)*maxFrames_);
+            for(uint32_t c=0;c<step.audioInputs;++c)step.in.push_back(step.inputBuffer.data()+size_t(c)*maxFrames_);
+            for(uint32_t c=0;c<step.audioOutputs;++c)step.out.push_back(step.outputBuffer.data()+size_t(c)*maxFrames_);
+        }
         plan->keys.reserve( kick::clap::Host::maxBlockEvents );
         plan->merged.resize( kick::clap::Host::maxBlockEvents );
         return plan.release();
@@ -301,6 +365,17 @@ namespace oscairn
     bool Graph::process( float* const* outputs, uint32_t frames, const clap_event_transport_t* transport,
                          const kick::clap::Event* events, uint32_t eventCount ) noexcept
     {
+        return process(nullptr,0,outputs,channels,frames,transport,events,eventCount);
+    }
+
+    bool Graph::process(const float* const* inputs,uint32_t ni,float* const* outputs,uint32_t no,uint32_t frames,
+                        const clap_event_transport_t* transport,const kick::clap::Event* events,uint32_t eventCount) noexcept
+    {
+        auto clear=[&]{if(outputs)for(uint32_t c=0;c<no;++c)if(outputs[c])std::fill_n(outputs[c],frames,0.f);};
+        if(!frames || frames>maxFrames_ || ni>maxAudioChannels || no>maxAudioChannels || (ni && !inputs) ||
+           (no && !outputs) || no<outputChannels_ || (eventCount && !events) || eventCount>kick::clap::Host::maxBlockEvents)
+        {clear();return false;}
+        for(uint32_t c=0;c<outputChannels_;++c)if(!outputs[c]){clear();return false;}
         // Adopt the newest plan, retiring the current one, if there is room to retire it.
         if( !current_ || !retired_.full() )
             if( Plan* plan = pending_.exchange( nullptr, std::memory_order_acq_rel ) )
@@ -310,34 +385,24 @@ namespace oscairn
                 current_ = plan;
             }
 
-        for( uint32_t c = 0; c < channels; ++c )
-            std::fill_n( outputs[c], frames, 0.0f );
         Plan* plan = current_;
-        if( !plan )
-            return true;
-        if( frames > maxFrames_ )
-            return false;
-
+        if(!plan){clear();return true;}
+        for(uint32_t c=0;c<inputChannels_;++c)
+        {
+            auto* dest=plan->externalInputs.data()+size_t(c)*maxFrames_;
+            if(c<ni && inputs[c])std::copy_n(inputs[c],frames,dest);else std::fill_n(dest,frames,0.f);
+        }
+        clear();
+        auto mix=[&](const Plan::AudioRoute& r,float* dest)
+        {
+            const float* from=r.source<0?plan->externalInputs.data()+size_t(r.from)*maxFrames_:plan->steps[r.source].out[r.from];
+            for(uint32_t i=0;i<frames;++i)dest[i]+=from[i]*r.gain;
+        };
         bool ok = true;
         for( auto& step : plan->steps )
         {
-            // Audio in: the sum of the sources.
-            float*        mix[channels] = { plan->mix.data(), plan->mix.data() + maxFrames_ };
-            const float* const* inputs  = nullptr;
-            if( !step.audioSources.empty() && step.audioInputs > 0 )
-            {
-                for( uint32_t c = 0; c < channels; ++c )
-                {
-                    std::fill_n( mix[c], frames, 0.0f );
-                    for( int source : step.audioSources )
-                    {
-                        const float* from = plan->steps[(size_t)source].out[c];
-                        for( uint32_t i = 0; i < frames; ++i )
-                            mix[c][i] += from[i];
-                    }
-                }
-                inputs = mix;
-            }
+            for(uint32_t c=0;c<step.audioInputs;++c)std::fill_n(step.inputBuffer.data()+size_t(c)*maxFrames_,frames,0.f);
+            for(const auto& r:step.audioSources)mix(r,step.inputBuffer.data()+size_t(r.to)*maxFrames_);
 
             // Notes in: every source's events this block, merged in time order.
             plan->keys.clear();
@@ -361,14 +426,7 @@ namespace oscairn
                 plan->merged[i] = *plan->keys[i].event;
             const auto merged = (uint32_t)plan->keys.size();
 
-            if( step.audioOutputs > 0 )
-            {
-                ok &= step.host->process( inputs, inputs ? channels : 0, step.out, channels, frames, plan->merged.data(), merged, transport );
-                if( step.audioOutputs == 1 ) // a mono plugin plays in the centre
-                    std::copy_n( step.out[0], frames, step.out[1] );
-            }
-            else
-                ok &= step.host->process( inputs, inputs ? channels : 0, nullptr, 0, frames, plan->merged.data(), merged, transport );
+            ok &= step.host->process(step.in.data(),step.audioInputs,step.out.data(),step.audioOutputs,frames,plan->merged.data(),merged,transport);
             step.paramCount = 0;
 
             // This step's param-target lane events become parameter events for their
@@ -420,11 +478,7 @@ namespace oscairn
             }
         }
 
-        for( const auto& step : plan->steps )
-            if( step.toOutput )
-                for( uint32_t c = 0; c < channels; ++c )
-                    for( uint32_t i = 0; i < frames; ++i )
-                        outputs[c][i] += step.out[c][i];
+        for(const auto& r:plan->outputRoutes)mix(r,outputs[r.to]);
         return ok;
     }
 }

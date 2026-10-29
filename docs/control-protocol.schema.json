@@ -769,6 +769,36 @@
                 },
                 "to": {
                   "$ref": "#/$defs/Node"
+                },
+                "fromPort": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 4294967295
+                },
+                "fromChannel": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 4294967295
+                },
+                "toPort": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 4294967295
+                },
+                "toChannel": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 4294967295
+                },
+                "channels": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 256
+                },
+                "gain": {
+                  "type": "number",
+                  "minimum": -16,
+                  "maximum": 16
                 }
               },
               "required": [
@@ -776,7 +806,58 @@
                 "from",
                 "to"
               ],
-              "additionalProperties": false
+              "additionalProperties": false,
+              "allOf": [
+                {
+                  "if": {
+                    "anyOf": [
+                      {
+                        "required": [
+                          "fromPort"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "fromChannel"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "toPort"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "toChannel"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "channels"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "gain"
+                        ]
+                      }
+                    ]
+                  },
+                  "then": {
+                    "properties": {
+                      "kind": {
+                        "const": "audio"
+                      }
+                    },
+                    "required": [
+                      "fromPort",
+                      "fromChannel",
+                      "toPort",
+                      "toChannel"
+                    ]
+                  }
+                }
+              ]
             }
           },
           "required": [
@@ -812,6 +893,36 @@
                 },
                 "to": {
                   "$ref": "#/$defs/Node"
+                },
+                "fromPort": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 4294967295
+                },
+                "fromChannel": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 4294967295
+                },
+                "toPort": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 4294967295
+                },
+                "toChannel": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 4294967295
+                },
+                "channels": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 256
+                },
+                "gain": {
+                  "type": "number",
+                  "minimum": -16,
+                  "maximum": 16
                 }
               },
               "required": [
@@ -819,7 +930,58 @@
                 "from",
                 "to"
               ],
-              "additionalProperties": false
+              "additionalProperties": false,
+              "allOf": [
+                {
+                  "if": {
+                    "anyOf": [
+                      {
+                        "required": [
+                          "fromPort"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "fromChannel"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "toPort"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "toChannel"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "channels"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "gain"
+                        ]
+                      }
+                    ]
+                  },
+                  "then": {
+                    "properties": {
+                      "kind": {
+                        "const": "audio"
+                      }
+                    },
+                    "required": [
+                      "fromPort",
+                      "fromChannel",
+                      "toPort",
+                      "toChannel"
+                    ]
+                  }
+                }
+              ]
             }
           },
           "required": [
@@ -1262,6 +1424,36 @@
                 "type": "integer",
                 "minimum": 0,
                 "maximum": 4294967295
+              },
+              "fromPort": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 4294967295
+              },
+              "fromChannel": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 4294967295
+              },
+              "toPort": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 4294967295
+              },
+              "toChannel": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 4294967295
+              },
+              "channels": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 256
+              },
+              "gain": {
+                "type": "number",
+                "minimum": -16,
+                "maximum": 16
               }
             },
             "required": [
@@ -1269,7 +1461,58 @@
               "from",
               "to"
             ],
-            "additionalProperties": false
+            "additionalProperties": false,
+            "allOf": [
+              {
+                "if": {
+                  "anyOf": [
+                    {
+                      "required": [
+                        "fromPort"
+                      ]
+                    },
+                    {
+                      "required": [
+                        "fromChannel"
+                      ]
+                    },
+                    {
+                      "required": [
+                        "toPort"
+                      ]
+                    },
+                    {
+                      "required": [
+                        "toChannel"
+                      ]
+                    },
+                    {
+                      "required": [
+                        "channels"
+                      ]
+                    },
+                    {
+                      "required": [
+                        "gain"
+                      ]
+                    }
+                  ]
+                },
+                "then": {
+                  "properties": {
+                    "kind": {
+                      "const": "audio"
+                    }
+                  },
+                  "required": [
+                    "fromPort",
+                    "fromChannel",
+                    "toPort",
+                    "toChannel"
+                  ]
+                }
+              }
+            ]
           }
         },
         "mappings": {
@@ -1305,6 +1548,18 @@
               "param"
             ],
             "additionalProperties": false
+          }
+        },
+        "audioInputs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AudioPort"
+          }
+        },
+        "audioOutputs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AudioPort"
           }
         }
       },
@@ -1583,6 +1838,59 @@
         "deadlineMisses": {
           "type": "integer",
           "minimum": 0
+        },
+        "audioInputs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "deviceChannel": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 255
+              },
+              "name": {
+                "type": "string"
+              },
+              "available": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "deviceChannel",
+              "name",
+              "available"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "audioOutputs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "deviceChannel": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 255
+              },
+              "name": {
+                "type": "string"
+              },
+              "available": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "deviceChannel",
+              "name",
+              "available"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "audioReady": {
+          "type": "boolean"
         }
       },
       "required": [

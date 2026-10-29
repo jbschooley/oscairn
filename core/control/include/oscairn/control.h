@@ -32,6 +32,7 @@ namespace oscairn
             double tempo = 120.0;
             double beat = 0.0;
         };
+        struct DeviceChannel { uint32_t deviceChannel=0; std::string name; bool available=false; };
         struct SessionStatus
         {
             std::string audioDevice;
@@ -39,6 +40,8 @@ namespace oscairn
             double sampleRate = 0, cpuLoad = 0;
             uint32_t bufferSize = 0;
             uint64_t deadlineMisses = 0;
+            std::vector<DeviceChannel> audioInputs, audioOutputs; // logical order -> device channel
+            bool audioReady=true;
         };
         virtual SessionStatus sessionStatus() const = 0;
         struct GraphState
@@ -64,6 +67,8 @@ namespace oscairn
         virtual NodeId add( const std::string& name, const std::string& path, const std::string& pluginId = {} ) = 0;
         virtual void remove( NodeId node ) = 0;
         virtual void connectAudio( NodeId from, NodeId to ) = 0;
+        virtual void connectAudio( const AudioConnection& ) = 0;
+        virtual void disconnectAudio( const AudioConnection& ) = 0;
         virtual void connectNotes( NodeId from, NodeId to ) = 0;
         virtual void disconnectAudio( NodeId from, NodeId to ) = 0;
         virtual void disconnectNotes( NodeId from, NodeId to ) = 0;

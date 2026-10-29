@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>CFBundleIdentifier</key><string>org.oscairn.engine</string>
+<key>CFBundleName</key><string>Oscairn Engine</string>
+<key>NSMicrophoneUsageDescription</key><string>Oscairn uses selected audio inputs for live instruments, effects and routing.</string>
+</dict></plist>

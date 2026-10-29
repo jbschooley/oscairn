@@ -8,3 +8,9 @@ target_link_libraries(oscairn_engine_host PRIVATE oscairn_audio_host oscairn_hos
     juce::juce_recommended_config_flags juce::juce_recommended_warning_flags)
 add_dependencies(oscairn_engine_host oscairn_step_sequencer oscairn_basic_synth oscairn_delay)
 install(TARGETS oscairn_engine_host RUNTIME DESTINATION bin)
+
+if(APPLE)
+    # Console helpers need an embedded usage description for explicitly enabled capture.
+    target_link_options(oscairn_engine_host PRIVATE "LINKER:-sectcreate,__TEXT,__info_plist,${CMAKE_CURRENT_SOURCE_DIR}/Info.plist")
+    set_property(TARGET oscairn_engine_host APPEND PROPERTY LINK_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Info.plist")
+endif()

@@ -289,7 +289,7 @@ Other hardware plugged into an Oscairn device works with it, on any device:
 - **Audio from other hardware** comes in as channels in the graph on devices with inputs.
 - **Sync:** MIDI clock, Ableton Link, and on DJ devices Pro DJ Link (below).
 
-### Audio ports and hardware routing (planned)
+### Audio ports and hardware routing
 
 Stereo and multiple independent audio inputs/outputs are platform requirements.
 Preserve plugin port identities and channel layouts, and route explicit source and
@@ -302,11 +302,22 @@ uses the same model with fewer endpoints. Missing endpoints are reported rather
 than silently sending cue audio to the main output. Routing and buffers are
 prepared outside the audio callback, with explicit mono/stereo mapping policies.
 
-**Current implementation:** the CLAP/LV2 adapters accept multiple audio channels,
-but the graph and chain still render one stereo pair. The desktop audio host opens
-zero hardware inputs and two outputs. Independent graph ports, external audio
-inputs, device-channel selection and separate hardware output buses remain to be
-implemented and tested; plugin-format support alone does not provide them.
+**Current implementation:** the graph now allocates each plugin's actual channels and
+routes explicit port IDs/channel ranges, including external inputs and independent
+output buses. Connections can fan out, sum and apply explicit gains. The C++ Control,
+JSON-RPC and RemoteControl interfaces expose the routes and external port metadata.
+The desktop/helper maps logical channels to selected device channels at startup and
+reports availability. Existing node-only connections retain their first-stereo-pair
+behavior, including centred mono; the default demo still opens no inputs and two outputs.
+
+This is routing infrastructure, not a DJ mixer UI or project-file persistence. The
+renderer/Chain convenience interface still defaults to stereo. Hardware-specific
+channel naming, clock alignment and physical I/O validation belong to Phase 4. The
+current host uses the plugin's active port configuration; alternate CLAP audio-port
+configurations, dynamic ports and automatic LV2 port-group interpretation remain future
+work. Structural CLAP port changes fail the instance until reloaded, preserving existing
+route identities. See [the control contract](control-protocol.md#audio-routing) and
+[device selection](../hosts/README.md#audio-device-channels).
 
 ### Physical controls, takeover and direct position access (planned)
 

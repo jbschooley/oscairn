@@ -15,6 +15,62 @@ using optional methods. Graph editing, parameter coalescing, gestures and subscr
 implemented, as are host/device status and helper connections. The desktop now manages
 helper startup, reattachment and explicit crash recovery by default.
 
+## Audio routing
+
+Capability `graph.audio-routing` adds explicit channel routes to protocol 1. A connection
+uses node IDs/names plus **port IDs** from `graph.get`, not port-array positions. External
+capture/playback endpoints are the numeric `input` and `output` IDs in that result
+(`4294967294` and `4294967295`). The top-level `audioInputs` and `audioOutputs` describe
+the external ports; plugin ports remain inside each node. Audio arrays are flattened in
+port-list order internally, while the control API preserves each port's ID and channels.
+
+For example, route a plugin's stereo output port 30 to channels 2/3 of external port 0:
+
+```json
+{"jsonrpc":"2.0","id":1,"method":"graph.connect","params":{"kind":"audio","from":"deckB","fromPort":30,"fromChannel":0,"to":4294967295,"toPort":0,"toChannel":2,"channels":2,"gain":1}}
+```
+
+Use actual advertised IDs; the numbers above are illustrative. Explicit routes require
+all four fields `fromPort`, `fromChannel`, `toPort`, `toChannel`; `channels` defaults to 1
+and `gain` to 1. Each range must fit wholly within its selected port. Gain must be finite
+and within -16..16. Multiple connections sum, with no hidden normalization or limiting.
+For a stereo-to-mono average, connect each source channel separately to the same target
+channel with gain 0.5. For mono-to-stereo, explicitly connect the source to both destination
+channels. Unconnected channels are silent. Extra plugin outputs remain independent;
+there is no automatic fold into master. Missing ports and invalid ranges reject the edit.
+
+`graph.disconnect` accepts the same fields and removes that exact connection, including
+channel count and gain. Repeating a connection is idempotent. A gain change is a staged
+disconnect/reconnect followed by `graph.commit`; gains do not yet ramp. `graph.get` includes
+all explicit fields in each such connection. Node-only audio connections remain supported:
+they connect the first two flattened channels, duplicate a mono source into stereo, and
+use the left channel for a mono destination, matching the original demo. They do not
+include other channels, and their disconnect removes only that node-only connection.
+Explicit and node-only routes can coexist and their contributions add.
+
+All routing edits take effect at commit, which validates dependency cycles and builds
+buffers/routes outside the audio callback. A failed commit preserves the live plan.
+External audio layouts are supplied when constructing Graph/Session and remain fixed for
+that session. Limits are 256 input and 256 output channels per node or external endpoint
+set, and 4096 audio connections per graph. Format-adapter limits also apply: CLAP currently
+allows 16 ports and 64 channels per direction. Existing 64-KiB wire-message limits still apply
+(no pagination yet); large topologies may require the C++ API until paged snapshots exist.
+Shared-host CLAP instances lock their loaded audio port IDs, order and channel counts.
+A later structural rescan fails that instance under its render gate and preserves the
+original port metadata; reload/reconnect the node to adopt a new layout. Names and flags
+may still refresh. This prevents old cue routes from following a changed port index.
+The stereo `process` overload remains a convenience for stereo layouts; other layouts
+use the overload taking input/output arrays and channel counts. Missing capture channels
+are silent; missing required output buffers fail and silence supplied outputs.
+
+`session.status.audioInputs` and `.audioOutputs` list logical channels in order, each as
+`{"deviceChannel":4,"name":"Output 5","available":true}`. `audioReady` reports whether
+the current device/rate/channel layout can run. The JUCE adapter reports unavailable
+selected channels and does not redirect them. Layout/device changes require restarting
+the helper; UI configuration and runtime device switching remain future work. Older
+servers lack these fields/capability; the current RemoteControl retains their stereo
+snapshot defaults but does not silently downgrade explicit routing requests.
+
 ## Requests and responses
 
 Requests use named `params` objects. Unknown or duplicate method-parameter fields are
@@ -35,8 +91,8 @@ request members.
 
 | Method | `params` | `result` |
 | --- | --- | --- |
-| `session.hello` | omitted or `{}` | `protocolVersion`, `server`, supported method names in `capabilities`, `limits` |
-| `session.status` | omitted or `{}` | `audioDevice`, `midiInputs`, `sampleRate`, `bufferSize`, `cpuLoad`, `deadlineMisses` |
+| `session.hello` | omitted or `{}` | `protocolVersion`, `server`, supported methods and optional features in `capabilities`, `limits` |
+| `session.status` | omitted or `{}` | `audioDevice`, `midiInputs`, `sampleRate`, `bufferSize`, `cpuLoad`, `deadlineMisses`, `audioReady`, mapped `audioInputs`/`audioOutputs` |
 | `params.list` | `{"node":"synth"}` | numeric `node`, array `parameters` of `id`, `name`, `minimum`, `maximum`, `defaultValue`, `stepped`, CLAP `flags` |
 | `params.get` | `{"values":[{"node":"synth","param":3}]}` | `{"values":[{"node":1,"param":3,"value":0.5}]}` |
 | `params.set` | `{"values":[{"node":"synth","param":3,"value":0.7}]}` | same shape as `params.get`, with accepted plain values |
@@ -48,7 +104,7 @@ request members.
 | `graph.get` | omitted or `{}` | staged topology, names/plugin metadata/ports, connections, mappings, `revision`, `staged`, numeric `input`/`output` endpoints |
 | `graph.add` | `path`, optional `name` and `pluginId` | numeric `node` |
 | `graph.remove` | `node` | `{"accepted":true}` |
-| `graph.connect`, `graph.disconnect` | `kind` (`audio` or `notes`), `from`, `to` | `{"accepted":true}` |
+| `graph.connect`, `graph.disconnect` | `kind` (`audio` or `notes`), `from`, `to`; optional explicit audio route fields below | `{"accepted":true}` |
 | `graph.map` | `from`, `lane`, `to`, `param` | `{"accepted":true}` |
 | `graph.unmap` | `from`, `lane` | `{"accepted":true}` |
 | `graph.commit` | omitted or `{}` | new `revision` |

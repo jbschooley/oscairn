@@ -23,7 +23,7 @@ namespace oscairn
         static constexpr size_t commandCapacity = 4096;
         static constexpr size_t historyCapacity = 4096;
 
-        Session( double sampleRate, uint32_t maxFrames, Lv2BufferLimits lv2Buffers = {} );
+        Session( double sampleRate, uint32_t maxFrames, Lv2BufferLimits lv2Buffers = {}, AudioLayout audio = {} );
         Control& control() noexcept { return *this; }
         const Control& control() const noexcept { return *this; }
 
@@ -33,6 +33,8 @@ namespace oscairn
         NodeId add( const std::string& name, const std::string& path, const std::string& pluginId = {} ) override;
         void remove( NodeId node ) override;
         void connectAudio( NodeId from, NodeId to ) override { graph_.connectAudio( from, to ); staged_ = true; }
+        void connectAudio( const AudioConnection& c ) override { graph_.connectAudio(c); staged_=true; }
+        void disconnectAudio( const AudioConnection& c ) override { graph_.disconnectAudio(c); staged_=true; }
         void connectNotes( NodeId from, NodeId to ) override { graph_.connectNotes( from, to ); staged_ = true; }
         void disconnectAudio( NodeId from, NodeId to ) override { graph_.disconnectAudio( from, to ); staged_ = true; }
         void disconnectNotes( NodeId from, NodeId to ) override { graph_.disconnectNotes( from, to ); staged_ = true; }
@@ -77,6 +79,10 @@ namespace oscairn
         bool process( float* const* outputs, uint32_t frames,
                       std::span<const kick::clap::Event> events = {},
                       std::span<const MidiClockEvent> clocks = {} ) noexcept;
+
+        bool process(const float* const* inputs, uint32_t inputChannels, float* const* outputs, uint32_t outputChannels,
+                     uint32_t frames, std::span<const kick::clap::Event> events = {},
+                     std::span<const MidiClockEvent> clocks = {}) noexcept;
 
         uint64_t droppedNotes() const noexcept { return droppedNotes_.load(); }
         double sampleRate() const noexcept { return sampleRate_; }

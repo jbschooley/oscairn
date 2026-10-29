@@ -51,7 +51,10 @@ build-lv2/hosts/oscairn-render example.wav --seconds 4 \
 
 This routes sequencer notes through the LV2 fifths filter into the CLAP synth, then its
 audio through the LV2 amplifier. Mono outputs are centered by the graph. Audio ports
-are flattened in port-index order, as for CLAP; there is no surround/bus editor.
+are flattened in port-index order internally; explicit graph connections address the
+LV2 audio-port IDs and can route independent inputs/outputs and sidechains. See the
+[audio routing contract](../../docs/control-protocol.md#audio-routing). The node-only
+connection helper retains stereo behavior; there is no surround/bus editor.
 
 ## Supported behavior
 

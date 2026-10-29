@@ -151,7 +151,8 @@ namespace oscairn
             const auto s = c.sessionStatus();
             std::vector<std::string> midi;
             for(const auto& name : s.midiInputs) midi.push_back(quote(name));
-            return "{\"audioDevice\":" + quote(s.audioDevice) + ",\"midiInputs\":" + join(midi) +
+            auto channels=[](const auto& list){std::vector<std::string> result;for(const auto& ch:list)result.push_back("{\"deviceChannel\":"+std::to_string(ch.deviceChannel)+",\"name\":"+quote(ch.name)+",\"available\":"+(ch.available?"true":"false")+'}');return join(result);};
+            return "{\"audioReady\":"+std::string(s.audioReady?"true":"false")+",\"audioInputs\":"+channels(s.audioInputs)+",\"audioOutputs\":"+channels(s.audioOutputs)+",\"audioDevice\":" + quote(s.audioDevice) + ",\"midiInputs\":" + join(midi) +
                 ",\"sampleRate\":" + encode(s.sampleRate) + ",\"bufferSize\":" + std::to_string(s.bufferSize) +
                 ",\"cpuLoad\":" + encode(s.cpuLoad) + ",\"deadlineMisses\":" + std::to_string(s.deadlineMisses) + '}';
         }
@@ -160,7 +161,7 @@ namespace oscairn
             if( method == "session.hello" )
             {
                 fields(p, {});
-                return R"({"protocolVersion":1,"server":"oscairn","capabilities":["session.status","params.list","params.get","params.set","params.text","params.gesture","graph.get","graph.add","graph.remove","graph.connect","graph.disconnect","graph.map","graph.unmap","graph.commit","subscribe","unsubscribe","transport.get","transport.set","notes.send"],"limits":{"messageBytes":65536,"depth":32,"batch":64,"parameterChanges":128}})";
+                return R"({"protocolVersion":1,"server":"oscairn","capabilities":["session.status","params.list","params.get","params.set","params.text","params.gesture","graph.audio-routing","graph.get","graph.add","graph.remove","graph.connect","graph.disconnect","graph.map","graph.unmap","graph.commit","subscribe","unsubscribe","transport.get","transport.set","notes.send"],"limits":{"messageBytes":65536,"depth":32,"batch":64,"parameterChanges":128}})";
             }
             if( method == "subscribe" || method == "unsubscribe" )
             {
@@ -196,11 +197,17 @@ namespace oscairn
                         ",\"from\":" + std::to_string(from) + ",\"to\":" + std::to_string(to) + '}');
                 };
                 edges(graph.topology.audio,"audio"); edges(graph.topology.notes,"notes");
+                for(const auto& r:graph.topology.audioRoutes)
+                    connections.push_back("{\"kind\":\"audio\",\"from\":"+std::to_string(r.from.node)+",\"to\":"+std::to_string(r.to.node)+
+                        ",\"fromPort\":"+std::to_string(r.from.port)+",\"fromChannel\":"+std::to_string(r.from.channel)+
+                        ",\"toPort\":"+std::to_string(r.to.port)+",\"toChannel\":"+std::to_string(r.to.channel)+
+                        ",\"channels\":"+std::to_string(r.channels)+",\"gain\":"+encode(r.gain)+'}');
                 for( const auto& m : graph.topology.mappings )
                     mappings.push_back("{\"from\":" + std::to_string(m.source) + ",\"lane\":" + std::to_string(m.lane) +
                         ",\"to\":" + std::to_string(m.target) + ",\"param\":" + std::to_string(m.param) + '}');
                 return "{\"revision\":" + std::to_string(graph.revision) + ",\"staged\":" + (graph.staged ? "true" : "false") +
                     ",\"input\":" + std::to_string(graphInput) + ",\"output\":" + std::to_string(graphOutput) +
+                    ",\"audioInputs\":"+ports(graph.topology.audioLayout.inputs)+",\"audioOutputs\":"+ports(graph.topology.audioLayout.outputs)+
                     ",\"nodes\":" + join(nodes) + ",\"connections\":" + join(connections) + ",\"mappings\":" + join(mappings) + '}';
             }
             if( method == "graph.add" )
@@ -220,13 +227,25 @@ namespace oscairn
             }
             if( method == "graph.connect" || method == "graph.disconnect" )
             {
-                fields(p,{"kind","from","to"});
+                fields(p,{"kind","from","to","fromPort","fromChannel","toPort","toChannel","channels","gain"});
                 const auto kind = string(member(p,"kind"));
                 if( kind != "audio" && kind != "notes" ) invalid("Unknown connection kind");
                 const auto from = node(c,member(p,"from"),true), to = node(c,member(p,"to"),true);
+                const bool explicitRoute=member(p,"fromPort") || member(p,"fromChannel") || member(p,"toPort") || member(p,"toChannel") || member(p,"channels") || member(p,"gain");
+                if(explicitRoute && kind!="audio")invalid("Port/channel routing requires an audio connection");
+                AudioConnection route{{from,0,0},{to,0,0}};
+                if(explicitRoute)
+                {
+                    route.from.port=integer(member(p,"fromPort"));route.from.channel=integer(member(p,"fromChannel"));
+                    route.to.port=integer(member(p,"toPort"));route.to.channel=integer(member(p,"toChannel"));
+                    route.channels=member(p,"channels")?integer(member(p,"channels")):1;
+                    route.gain=member(p,"gain")?number(member(p,"gain")):1;
+                }
                 try
                 {
-                    if( method == "graph.connect" )
+                    if(explicitRoute)
+                    {if(method=="graph.connect")c.connectAudio(route);else c.disconnectAudio(route);}
+                    else if( method == "graph.connect" )
                     {
                         if( kind == "audio" ) c.connectAudio(from,to); else c.connectNotes(from,to);
                     }

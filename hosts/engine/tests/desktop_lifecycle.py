@@ -12,6 +12,7 @@ import argparse
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('engine', type=pathlib.Path)
 parser.add_argument('ui', type=pathlib.Path)
+parser.add_argument('--audio-outputs', help='Explicit zero-based physical output mapping')
 args = parser.parse_args()
 root = pathlib.Path(__file__).resolve().parents[3]
 engine, ui = args.engine.resolve(), args.ui.resolve()
@@ -49,7 +50,10 @@ def snapshot(name):
     assert (artifacts/name).stat().st_size > 1000
 
 try:
-    helper = launch(engine, ['--socket',str(endpoint)],'engine.log')
+    engine_args = ['--socket', str(endpoint)]
+    if args.audio_outputs is not None:
+        engine_args += ['--audio-outputs', args.audio_outputs]
+    helper = launch(engine, engine_args, 'engine.log')
     deadline = time.monotonic()+15
     while not endpoint.exists():
         assert helper.poll() is None, (artifacts/'engine.log').read_text()
@@ -62,7 +66,12 @@ try:
     stream = connection.makefile('rwb')
     assert rpc('session.hello')['protocolVersion'] == 1
     status = rpc('session.status')
-    assert status['audioDevice'] and status['sampleRate'] > 0, status
+    assert status['audioDevice'] and status['sampleRate'] > 0 and status['audioReady'], status
+    if args.audio_outputs is not None:
+        assert [ch['deviceChannel'] for ch in status['audioOutputs']] == list(map(int, args.audio_outputs.split(','))), status
+        assert all(ch['available'] for ch in status['audioOutputs']), status
+    graph = rpc('graph.get')
+    assert graph['audioInputs'] == [] and graph['audioOutputs'][0]['channels'] == len(status['audioOutputs']), graph
     # Exercise the live device callback silently; no listening response is needed.
     rpc('params.set', {'values':[{'node':'synth','param':2,'value':0}]})
     rpc('transport.set', {'playing':True})

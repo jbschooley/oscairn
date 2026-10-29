@@ -124,6 +124,7 @@ struct Host::Impl {
     const clap_plugin_posix_fd_support_t* fdSupport = nullptr;
     Descriptor info;
     std::string message;
+    bool audioLayoutLocked=false;
     std::vector<Parameter> paramInfo;
     uint64_t metadataVersion = 0;
     std::vector<void*> cookies;
@@ -285,6 +286,7 @@ struct Host::Impl {
         active = false;
     }
     void close() {
+        audioLayoutLocked=false;
         loaded.store(false);
         if (plugin) { deactivate(); if (plugin->destroy) plugin->destroy(plugin); }
         plugin = nullptr; params = nullptr; state = nullptr; pluginLatency = nullptr;
@@ -333,13 +335,13 @@ struct Host::Impl {
         ++metadataVersion;
     }
     void readPorts() {
-        inputs.clear(); outputs.clear(); noteInputs.clear(); noteOutputs.clear();
+        std::vector<Port> nextInputs,nextOutputs;
         // A plugin without the audio-ports extension has no audio ports. That is
         // normal for note effects such as sequencers and arpeggiators.
         const auto* audio = static_cast<const clap_plugin_audio_ports_t*>(plugin->get_extension(plugin, CLAP_EXT_AUDIO_PORTS));
         if (audio && (!audio->count || !audio->get)) throw std::runtime_error("Incomplete CLAP audio-ports interface");
         for (bool input : {true, false}) {
-            auto& ports = input ? inputs : outputs;
+            auto& ports = input ? nextInputs : nextOutputs;
             const auto count = audio ? audio->count(plugin, input) : 0;
             if (count > 16) throw std::runtime_error("More than 16 audio ports are unsupported");
             uint32_t channels = 0;
@@ -352,6 +354,12 @@ struct Host::Impl {
                 channels += p.channel_count;
             }
         }
+        auto same=[](const auto& a,const auto& b){
+            return a.size()==b.size() && std::equal(a.begin(),a.end(),b.begin(),[](const Port& x,const Port& y){return x.id==y.id && x.channels==y.channels;});};
+        if(audioLayoutLocked && (!same(inputs,nextInputs) || !same(outputs,nextOutputs)))
+            throw std::runtime_error("CLAP audio port layout changed; reload this graph node before reconnecting audio");
+        inputs=std::move(nextInputs);outputs=std::move(nextOutputs);
+        noteInputs.clear(); noteOutputs.clear();
         const auto* notes = static_cast<const clap_plugin_note_ports_t*>(plugin->get_extension(plugin, CLAP_EXT_NOTE_PORTS));
         if (notes && notes->count && notes->get) {
             for (bool input : {true, false}) {
@@ -574,6 +582,7 @@ bool Host::reconfigure(double rate, uint32_t frames) {
     try { s.deactivate(); s.sampleRate = rate; s.maxFrames = frames; s.activate(); s.failed.store(false); return true; }
     catch (const std::exception& e) { s.fail(e.what()); return false; }
 }
+void Host::lockAudioLayout() { if(impl->main() && impl->plugin)impl->audioLayoutLocked=true; }
 void Host::service() {
     auto& s = *impl;
     if (!s.main() || !s.plugin) return;

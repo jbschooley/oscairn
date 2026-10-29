@@ -58,7 +58,7 @@ namespace oscairn::standalone
     {
         const auto transport=control_->transportState();const auto host=control_->sessionStatus();
         return {connected() && transport.playing,transport.tempo,connected() && transport.playing?static_cast<int>(static_cast<int64_t>(std::floor(transport.beat/.25+1e-9))%16):-1,
-                failure_.empty()?host.audioDevice:"Disconnected: "+failure_,host.midiInputs};
+                failure_.empty()?(host.audioReady?host.audioDevice:"Audio unavailable: "+host.audioDevice):"Disconnected: "+failure_,host.midiInputs};
     }
     void Engine::failed(const std::string& message)
     {

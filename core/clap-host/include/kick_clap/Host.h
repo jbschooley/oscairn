@@ -81,6 +81,8 @@ public:
               const std::vector<uint8_t>& state = {});
     void unload();
     bool reconfigure(double sampleRate, uint32_t maxFrames);
+    // Main thread: reject later port ID/order/channel-count changes under the render gate.
+    void lockAudioLayout();
     void service(); // main-loop callbacks, restart, timers, fd polling, rescans
     bool saveState(std::vector<uint8_t>& destination);
     bool loadState(const std::vector<uint8_t>& source);

@@ -18,6 +18,8 @@ namespace oscairn
         NodeId add(const std::string& name,const std::string& path,const std::string& pluginId = {}) override;
         void remove(NodeId node) override;
         void connectAudio(NodeId from,NodeId to) override;
+        void connectAudio(const AudioConnection&) override;
+        void disconnectAudio(const AudioConnection&) override;
         void connectNotes(NodeId from,NodeId to) override;
         void disconnectAudio(NodeId from,NodeId to) override;
         void disconnectNotes(NodeId from,NodeId to) override;

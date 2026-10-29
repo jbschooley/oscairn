@@ -32,14 +32,24 @@ int main(int argc,char** argv)
 {
     std::string plugins=OSCAIRN_PLUGIN_DIR,socket;
     bool managed=false;
-    for(int i=1;i<argc;++i)
+    oscairn::host::AudioConfiguration audioConfig;
+    try { for(int i=1;i<argc;++i)
     {
         const std::string arg=argv[i];
+        if((arg=="--audio-inputs" || arg=="--audio-outputs" || arg=="--input-device" || arg=="--output-device") && i+1<argc)
+        {
+            const std::string value=argv[++i];
+            if(arg=="--audio-inputs")audioConfig.inputs=oscairn::host::AudioConfiguration::parseChannels(value);
+            else if(arg=="--audio-outputs"){audioConfig.outputs=oscairn::host::AudioConfiguration::parseChannels(value);audioConfig.explicitOutputs=true;}
+            else if(arg=="--input-device")audioConfig.inputDevice=value;else audioConfig.outputDevice=value;
+            continue;
+        }
         if(arg=="--managed"){managed=true;continue;}
-        if(arg=="--help"){std::cout<<"oscairn-engine --socket /private/directory/control.sock [--plugins DIR]\n";return 0;}
+        if(arg=="--help"){std::cout<<"oscairn-engine --socket /private/directory/control.sock [--plugins DIR]\n  [--input-device NAME] [--output-device NAME]\n  [--audio-inputs none|0,1,...] [--audio-outputs 0,1,...]\nChannel indices are zero-based; list order defines logical graph channels.\n";return 0;}
         if((arg=="--socket" || arg=="--plugins") && i+1<argc){(arg=="--socket"?socket:plugins)=argv[++i];continue;}
         std::cerr<<"Unknown or incomplete argument: "<<arg<<'\n';return 2;
     }
+    } catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 2;}
     if(socket.empty()){std::cerr<<"--socket is required; its parent must be a private directory owned by this user\n";return 2;}
     std::signal(SIGINT,[](int){stopping=1;});std::signal(SIGTERM,[](int){stopping=1;});
     juce::ScopedJuceInitialiser_GUI initialise; // JUCE event loop initialization; no GUI modules linked
@@ -47,7 +57,7 @@ int main(int argc,char** argv)
     {
         std::unique_ptr<oscairn::host::EngineLease> lease;
         if(managed)lease=std::make_unique<oscairn::host::EngineLease>(socket);
-        oscairn::host::AudioEngine audio(plugins);
+        oscairn::host::AudioEngine audio(plugins,std::move(audioConfig));
         oscairn::LocalServer server(audio.control());server.listen(socket);
         Pump pump(server);
         std::cout<<"oscairn-engine: listening on "<<socket<<std::endl;

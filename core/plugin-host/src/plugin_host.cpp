@@ -74,6 +74,7 @@ namespace oscairn
             throw std::runtime_error(scan.failures.empty()?"No matching CLAP plugin in "+path:scan.failures.front().message);
         auto host=std::make_shared<ClapHost>();
         if(!host->host.load(*found,rate,frames))throw std::runtime_error("Cannot load "+found->id+": "+host->host.error());
+        host->host.lockAudioLayout();
         return host;
     }
 }

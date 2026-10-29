@@ -76,14 +76,16 @@ Done:
 - shared CLAP/LV2 plugin state API; LV2 default/bundle presets, portable mapped sample
   assets and bounded patch properties, with upstream sampler and production samplv1 tests.
   These are C++ host capabilities; control/UI access and project persistence remain below.
+- explicit graph audio ports/channel ranges, external inputs, independent outputs,
+  sidechains and gain-controlled sums; typed/JSON/remote routing, desktop device-channel
+  mapping and availability reporting. Independent master/cue/record buses and mixed
+  CLAP/LV2 routing are tested; the desktop's default stereo workflow is preserved.
 
 To do:
 
 - tracks, patterns, swing and more lanes in the sequencer;
 - native multitimbral sound contexts, prepared-instance switching for third-party plugins,
   note ownership across transitions and preservation of held voices/effect tails;
-- explicit graph audio ports/channels and hardware input/output mapping: stereo, per-deck,
-  master, booth, headphone cue, recording and sidechain routes, beyond today's stereo graph;
 - expose plugin state/presets and patch properties through the control API, then plugin
   discovery and selection in the desktop; custom UIs and other extensions follow
   ([current scope](../core/lv2-host/README.md));
@@ -101,6 +103,11 @@ Done when: pressing pads and transport buttons programs and plays a pattern thro
 new core, from a UI that talks to it only through the control API.
 
 ## Phase 4: hardware (started)
+
+- Map the existing logical audio endpoints onto each board's real inputs/outputs and
+  validate simultaneous capture/playback, channel identities, isolation, clocking and
+  latency. DJ master/booth/cue controls use the existing independent-bus routing; their
+  complete workflow and UI follow with the DJ application.
 
 - Done: an Oscairn OS image built with current Buildroot, booting into Oscairn in QEMU's
   generic ARM64 machine (no emulator models the target chips).

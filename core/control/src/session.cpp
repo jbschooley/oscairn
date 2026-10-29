@@ -7,8 +7,8 @@
 
 namespace oscairn
 {
-    Session::Session( double sampleRate, uint32_t maxFrames, Lv2BufferLimits lv2Buffers )
-        : sampleRate_( sampleRate ), maxFrames_( maxFrames ), graph_( sampleRate, maxFrames, ProcessingMode::Realtime, lv2Buffers ), transport_( sampleRate )
+    Session::Session( double sampleRate, uint32_t maxFrames, Lv2BufferLimits lv2Buffers, AudioLayout audio )
+        : sampleRate_( sampleRate ), maxFrames_( maxFrames ), graph_( sampleRate, maxFrames, ProcessingMode::Realtime, lv2Buffers, std::move(audio) ), transport_( sampleRate )
     {
         if( !std::isfinite( sampleRate ) || sampleRate <= 0 || maxFrames == 0 )
             throw std::invalid_argument( "session needs a positive sample rate and block size" );
@@ -274,14 +274,16 @@ namespace oscairn
     bool Session::process( float* const* outputs, uint32_t frames,
                            std::span<const kick::clap::Event> events, std::span<const MidiClockEvent> clocks ) noexcept
     {
-        if( !outputs || !outputs[0] || !outputs[1] )
-            return false;
-        if( frames == 0 || frames > maxFrames_ || events.size() > maxInputEvents || clocks.size() > maxClockEvents )
-        {
-            std::fill_n( outputs[0], frames, 0.0f );
-            std::fill_n( outputs[1], frames, 0.0f );
-            return false;
-        }
+        return process(nullptr,0,outputs,2,frames,events,clocks);
+    }
+    bool Session::process(const float* const* inputs,uint32_t ni,float* const* outputs,uint32_t no,uint32_t frames,
+                          std::span<const kick::clap::Event> events,std::span<const MidiClockEvent> clocks) noexcept
+    {
+        auto silence=[&]{if(outputs)for(uint32_t c=0;c<no;++c)if(outputs[c])std::fill_n(outputs[c],frames,0.f);};
+        if(!frames || frames>maxFrames_ || events.size()>maxInputEvents || clocks.size()>maxClockEvents ||
+           ni>Graph::maxAudioChannels || no>Graph::maxAudioChannels || (ni && !inputs) || (no && !outputs) || no<graph_.outputChannels())
+        {silence();return false;}
+        for(uint32_t c=0;c<graph_.outputChannels();++c)if(!outputs[c]){silence();return false;}
 
         const auto source = clockSource_.load();
         if( source != following_ )
@@ -328,7 +330,7 @@ namespace oscairn
         statusPlaying_.store( ( t.flags & CLAP_TRANSPORT_IS_PLAYING ) != 0 );
         statusTempo_.store( t.tempo );
         statusBeat_.store( (double)t.song_pos_beats / (double)CLAP_BEATTIME_FACTOR );
-        const bool ok = graph_.process( outputs, frames, &t, merged_.data(), (uint32_t)count );
+        const bool ok = graph_.process( inputs, ni, outputs, no, frames, &t, merged_.data(), (uint32_t)count );
         transport_.advance( frames );
         return ok;
     }

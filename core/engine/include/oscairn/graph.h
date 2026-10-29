@@ -16,16 +16,35 @@ namespace oscairn
 {
     using NodeId = uint32_t;
 
-    /// The graph's own endpoints: external note events (keyboard, pads, MIDI) enter at
-    /// graphInput, and audio connected to graphOutput is mixed into the main output.
+    /// The graph's own endpoints: external audio and note events (keyboard, pads, MIDI) enter
+    /// at graphInput; graphOutput exposes the configured playback ports.
     constexpr NodeId graphInput  = 0xFFFFFFFEu;
     constexpr NodeId graphOutput = 0xFFFFFFFFu;
+
+    struct AudioEndpoint
+    {
+        NodeId node;
+        uint32_t port = 0, channel = 0; // stable plugin port ID, channel within that port
+        bool operator==(const AudioEndpoint&) const = default;
+    };
+    struct AudioConnection
+    {
+        AudioEndpoint from, to;
+        uint32_t channels = 1; // contiguous range, contained in each selected port
+        double gain = 1;
+        bool operator==(const AudioConnection&) const = default;
+    };
+    struct AudioLayout
+    {
+        std::vector<kick::clap::Port> inputs;
+        std::vector<kick::clap::Port> outputs{{0,"Main",2,0}};
+    };
 
     /// A graph of plugin nodes with audio and note connections, processed in
     /// dependency order within each block, so a sequencer's notes reach the instruments
     /// it plays in the same block. Audio connected into a node is summed; notes from
-    /// several sources are merged in time order. Renders stereo; a mono plugin output
-    /// plays in the centre.
+    /// several sources are merged in time order. Explicit audio routes preserve independent
+    /// ports/channels. Legacy node connections retain the first stereo pair and centre mono.
     ///
     /// Editing (add, remove, connect, commit) happens on the main thread while the audio
     /// thread keeps processing. commit() compiles the edits into a plan and hands it to
@@ -36,9 +55,10 @@ namespace oscairn
     class Graph
     {
     public:
-        static constexpr uint32_t channels = 2;
+        static constexpr uint32_t channels = 2; // default stereo convenience API
+        static constexpr uint32_t maxAudioChannels = 256, maxAudioConnections = 4096;
 
-        Graph( double sampleRate, uint32_t maxFrames, ProcessingMode mode = ProcessingMode::Realtime, Lv2BufferLimits lv2Buffers = {} );
+        Graph( double sampleRate, uint32_t maxFrames, ProcessingMode mode = ProcessingMode::Realtime, Lv2BufferLimits lv2Buffers = {}, AudioLayout audio = {} );
         ~Graph();
 
         Graph( const Graph& )            = delete;
@@ -55,6 +75,10 @@ namespace oscairn
         /// Connections take effect at the next commit(). Throw std::invalid_argument if
         /// the source cannot send or the destination cannot receive that kind of signal.
         void connectAudio( NodeId from, NodeId to );
+        /// Explicit port IDs and channel ranges; gains sum without normalization.
+        /// Disconnect matches the entire connection, including gain and count.
+        void connectAudio( const AudioConnection& connection );
+        void disconnectAudio( const AudioConnection& connection );
         void connectNotes( NodeId from, NodeId to );
         void disconnectAudio( NodeId from, NodeId to );
         void disconnectNotes( NodeId from, NodeId to );
@@ -87,6 +111,8 @@ namespace oscairn
             std::vector<NodeInfo> nodes;
             std::vector<std::pair<NodeId,NodeId>> audio, notes;
             std::vector<Mapping> mappings;
+            std::vector<AudioConnection> audioRoutes;
+            AudioLayout audioLayout;
         };
         /// Control-thread copy of staged topology; audio changes only at commit().
         Description describe() const;
@@ -105,7 +131,18 @@ namespace oscairn
         bool process( float* const* outputs, uint32_t frames, const clap_event_transport_t* transport,
                       const kick::clap::Event* events = nullptr, uint32_t eventCount = 0 ) noexcept;
 
+        /// Planar channels in external port order. Missing input channels are silent;
+        /// all configured outputs must have storage. Extra outputs are cleared.
+        /// Buffers may alias: external inputs are copied before any output is cleared.
+        bool process( const float* const* inputs, uint32_t inputChannels,
+                      float* const* outputs, uint32_t outputChannels, uint32_t frames,
+                      const clap_event_transport_t* transport,
+                      const kick::clap::Event* events = nullptr, uint32_t eventCount = 0 ) noexcept;
+        uint32_t inputChannels() const noexcept { return inputChannels_; }
+        uint32_t outputChannels() const noexcept { return outputChannels_; }
+
     private:
+        uint32_t resolve( const AudioEndpoint&, bool source, uint32_t count ) const;
         struct Node
         {
             std::shared_ptr<PluginHost> host;
@@ -135,6 +172,9 @@ namespace oscairn
         uint32_t maxFrames_;
         ProcessingMode mode_;
         Lv2BufferLimits lv2Buffers_;
+        AudioLayout audioLayout_;
+        uint32_t inputChannels_=0, outputChannels_=0;
+        std::vector<AudioConnection> audioRoutes_;
         NodeId   nextId_ = 1;
 
         std::map<NodeId, Node>                nodes_;

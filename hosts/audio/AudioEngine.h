@@ -2,6 +2,7 @@
 #pragma once
 
 #include "oscairn/session.h"
+#include "ChannelMap.h"
 
 #include <juce_audio_devices/juce_audio_devices.h>
 
@@ -24,7 +25,7 @@ namespace oscairn::host
     public:
         /// Loads the plugins from `pluginDir` and opens the default audio output.
         /// Throws std::runtime_error if a plugin does not load or no audio output opens.
-        explicit AudioEngine( const std::string& pluginDir );
+        explicit AudioEngine( const std::string& pluginDir, AudioConfiguration audio = {} );
         ~AudioEngine() override;
 
         Control& control() noexcept { return session_->control(); }
@@ -38,7 +39,7 @@ namespace oscairn::host
         void audioDeviceIOCallbackWithContext( const float* const* inputs, int numInputs, float* const* outputs, int numOutputs,
                                                int numSamples, const juce::AudioIODeviceCallbackContext& ) override;
         void audioDeviceAboutToStart( juce::AudioIODevice* ) override;
-        void audioDeviceStopped() override {}
+        void audioDeviceStopped() override { started_=false; }
         // MIDI input threads
         void handleIncomingMidiMessage( juce::MidiInput*, const juce::MidiMessage& ) override;
 
@@ -51,7 +52,9 @@ namespace oscairn::host
         static constexpr uint32_t maxFrames  = 512;
 
         std::unique_ptr<Session> session_;
-        std::vector<float>       scratch_; // a second channel for mono devices
+        ChannelMap channelMap_;
+        std::string initialDevice_;
+        juce::StringArray initialInputs_,initialOutputs_;
         std::atomic<bool>        started_{ false }; // the device's rate matched the graph's
 
         // Physical MIDI to the audio thread: many producers, serialised by the mutex
