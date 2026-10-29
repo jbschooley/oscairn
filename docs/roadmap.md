@@ -100,7 +100,10 @@ To do:
 - native effect contexts/tails, asset-bearing native patches, pool/project persistence
   and a desktop sound picker;
 - plugin discovery and selection in the desktop, using the completed state/preset/property
-  controls; custom UIs and other extensions follow
+  controls. Carry stable format identities and state provenance into the library design
+  before persisting projects, following [RFC 0006](rfcs/0006-packages-and-portability.md);
+  package/artifact identity and destination runtime profiles must not become absolute
+  install paths. Custom UIs and other extensions follow
   ([current scope](../core/lv2-host/README.md));
 - define hardware capabilities, timestamped input, scheduled output and engine backend
   selection before hardware MIDI/CV implementation
@@ -160,13 +163,15 @@ looper); the Live workflow (splits, layers, scenes); file formats and the librar
 persistent engines; engine recovery; signed updates with A/B system images; the platform as
 a DAW plugin; and:
 
-- **Packages:** sound packs, libraries and installable plugins, engines and sequencers in
-  one package format, stored once by content hash and loaded once in memory, with no copy
-  protection and no need for a network
-  (see [architecture](architecture.md#packages-sound-packs-libraries-and-plugins)); the
-  platform profile of built-in plugins; engines with factory sample libraries, user
-  samples and the host's asset extension; then online catalogs, and sync with a paired
-  computer.
+- **Packages and portability** ([RFC 0006](rfcs/0006-packages-and-portability.md), proposed):
+  first a clean-machine, offline Performance/Setlist transfer with managed CLAP packages,
+  exact dependency locks, target builds, shared runtime/sample packages, immutable storage
+  and unavailable-node preservation. Storage deduplication and RAM sharing have separate
+  contracts. Prove state portability across supported CPU/OS/runtime profiles, then broaden
+  to LV2, external installations and AU/VST3 alongside their adapters; cross-format state
+  conversion requires tested mappings. Baseline profiles identify what may be omitted from
+  a complete export. Catalogs and paired-device delta sync follow the same package model;
+  vendor-specific installers/activation remain explicit external dependencies.
 - **Keeping plugins loaded:** a memory budget, unloading the least recently used, setlist
   preparation options and a setlist check; CPU, memory and storage meters.
 - **Plugin looks:** pages and themes described in data, then sandboxed custom views.

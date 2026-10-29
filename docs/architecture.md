@@ -235,12 +235,14 @@ voices. The host reports when a transition cannot be seamless.
   host supports audio/control ports, MIDI/time atom sequences and Worker scheduling
   (background work live, synchronous work when rendering offline);
   [implementation scope](../core/lv2-host/README.md) lists the remaining extensions.
-- **VST3** is hosted for compatibility with existing plugins (the SDK is MIT-licensed
-  since 3.8).
+- **VST3** hosting is planned for desktop and compatible Linux hardware builds.
+- **AU** hosting is planned for macOS; AUv2/AUv3 lifecycle and distribution requirements
+  belong to that adapter, not to the portable package contract.
 
 The graph is format-neutral: a CLAP synth, an LV2 reverb and a VST3 effect are all just
 nodes. Format support does not mean binary compatibility: an ARM64 Linux instrument needs
-ARM64 Linux builds of its plugins.
+ARM64 Linux builds compatible with the device's runtime/ABI and host features. Package
+self-containment and cross-format state migration are defined in [RFC 0006](rfcs/0006-packages-and-portability.md).
 
 Plugins loaded through a plugin API are separate works and may use any licence
 ([RFC 0001](rfcs/0001-licence.md)).
@@ -616,7 +618,8 @@ measured timing limits. Played events never pass through the UI control API.
 A patch describes what the instrument is, not how a particular board implements it:
 engine ID and version, complete plugin state, parameters, modulation, macros, sample
 references and metadata. A Performance adds zones, routing, effects, controller mappings,
-scenes and a dependency manifest. Nothing in either is hardware-specific.
+scenes and an exact dependency lock. The document separates logical intent from local
+installation paths and device mappings; a plugin's opaque state may still be platform-specific.
 
 The goal is moving sounds between hardware, the desktop app and the DAW plugin without
 rebuilding them. Smaller hardware may reduce polyphony under an explicit policy or refuse a
@@ -624,8 +627,17 @@ Performance it cannot run, and says so before activating it.
 
 - Stable engine, parameter and macro IDs; versioned schemas with migration rules and tests.
 - Complete plugin state saved alongside the graph.
-- A dependency manifest of plugin identities, versions and required features.
-- Missing dependencies keep their saved state, so installing them restores the Performance.
+- A dependency manifest and lock of product/format identities, exact releases/artifacts,
+  required features, state provenance and assets.
+- Missing dependencies keep their saved state and routes; compatible installation can restore
+  the Performance. A matching product name or successful plugin load does not prove compatibility.
+
+[RFC 0006](rfcs/0006-packages-and-portability.md) defines the proposed one-import transfer
+workflow: collect the entire Performance/Setlist dependency closure, choose destination builds,
+reuse shared packages and preflight before activation. Same-format target builds are preferred.
+AU→VST3 or LV2→CLAP/VST3 changes require tested state, parameter and port mappings; otherwise
+retain an unavailable-node placeholder. Cross-platform state migration and resource admission
+are separate requirements from copying package files.
 
 ### Controls
 
@@ -659,10 +671,14 @@ system.
   hashes), rebuilt by scanning, so files added from a computer appear in the library.
   Moved samples are found again by hash.
 - **One bundle format, three scopes:** a selection (one item and its dependencies), a user
-  export, and a full backup. Import merges by ID and reports missing dependencies.
+  export, and a full backup. Export can collect the full transitive dependency closure for
+  selected destination profiles, including every scene and setlist item. Import reconciles
+  IDs/revisions without overwriting divergent work and reports unresolved dependencies. A
+  lightweight document copy or references-only export is not a complete offline transfer.
 - **Sync** between devices, the desktop app and the DAW plugin uses the same mechanism,
   moving only changed files. Plugins are per-platform binaries: sync copies a plugin only
-  if its package has a build for the other side, and otherwise reports it missing. A
+  if its package has a compatible build and state contract for the other side, and
+  otherwise reports the specific incompatibility. Same CPU architecture alone is insufficient. A
   computer syncs with a device only once paired with it, for example by confirming a code
   shown on the device's screen.
 
@@ -672,19 +688,30 @@ Like the libraries on a MODX or Montage, people can share and reuse sound packs;
 them, without fixed slots, and without DRM. Third-party plugins (engines, effects,
 sequencers), layouts and themes install the same way.
 
+This is planned behavior. [RFC 0006](rfcs/0006-packages-and-portability.md) specifies
+managed packages, shared runtime dependencies, target selection, external vendor plugins
+and missing-plugin handling. A managed package is self-contained through its declared
+dependency closure and platform baseline; it need not duplicate every shared library.
+Import prepares all managed dependencies in one operation. Conventional vendor installers
+and activation services remain external requirements, visibly outside that guarantee.
+
 - **Everything installable is a package:** a manifest (ID, version, author, licence,
   dependencies, the platforms its plugins are built for) and its files. Kinds: content
-  (Sounds, Performances, Projects, samples, presets), code (CLAP, LV2 or VST3 plugins, with
-  builds for ARM64 Linux, x86_64 Linux, macOS and Windows as available), and looks (panel
-  layouts, themes, plugin pages).
+  (Sounds, Performances, Projects, samples, presets), code (plugins and shared runtimes,
+  with builds for supported Linux, macOS and Windows CPU/ABI profiles), and looks (panel
+  layouts, themes, plugin pages). CLAP/LV2/future VST3 can use managed package roots; AU
+  distributions that need OS/app registration may remain external dependencies.
 - **Stored once.** Installed package files live in a content-addressed store, by hash, the
-  way git stores objects. A pack that bundles a plugin or samples already installed costs
-  no extra storage: its manifest points at files already in the store. A user's own work
+  way git stores objects. A pack that references an already stored plugin or sample reuses
+  those bytes; manifests and any required materialized copies still have a cost. A user's own work
   stays plain files in readable folders; installed packages appear in the library, and as
   read-only folders in the Files view.
-- **Loaded once.** The engine loads assets by content hash and plugins by ID and version,
-  so two libraries using the same sample or engine share it in memory (see persistent
-  engines).
+- **Shared dependencies, private DSP state.** Related plugins can depend on one pinned
+  runtime library or sample package. Different versions coexist; code must match the
+  destination ABI. Storage deduplication does not guarantee one RAM copy: immutable code
+  mappings and cooperating asset consumers can share, while decoded buffers, voices, delay
+  lines and other per-instance state remain private. Loader conflicts require isolation
+  or rejection, never a global runtime replacement (see persistent engines and RFC 0006).
 - **Libraries are read-only.** An installed pack appears in the library next to the user's
   own work. Sounds refer to its items by ID and version, so editing never changes the pack;
   saving makes the user's own copy. Updates install side by side, and saved work keeps the
@@ -694,8 +721,9 @@ sequencers), layouts and themes install the same way.
   them: a plugin must work with nothing but its files. Copy protection and licensing are
   strongly discouraged, and the library and catalogs point users to open alternatives.
   Oscairn cannot stop a vendor shipping a plugin with its own licensing, but it does not
-  support it, and such a plugin is confined to its sandbox like any other, so it cannot
-  affect anything else. Packages
+  manage or bypass that activation. Such plugins are external dependencies; planned
+  sandboxing does not make their installation or licensing portable. Runtime plugin
+  isolation is not implemented yet. Packages
   can be signed, which shows who published a package and that it has not been altered:
   authenticity, not copy protection. Licence terms ("do not redistribute") are stated in
   the manifest, not enforced. Paid packs are just files.
@@ -732,14 +760,17 @@ neither has to move with the other:
   sample players read, with the engine's own settings saved beside them; sample packs are
   then useful beyond Oscairn.
 - **Samples are referenced, not copied.** A Sound records the samples it uses by content
-  hash. Exporting it includes the user samples it uses and refers to factory and pack
-  samples by package, so the export is small and complete.
+  hash. A complete offline export includes required user samples and factory/pack assets
+  or their packages, except content guaranteed by the destination baseline. References
+  alone suffice only when the destination already has those exact assets. When a plugin
+  cannot enumerate its dependencies, include its complete permitted library or report the
+  gap; the host cannot infer hidden file references from an opaque preset.
 - **The host gives plugins their samples.** Plugins run sandboxed, so a sampler does not read
   arbitrary files: it asks the host for an asset by ID and gets it read-only, memory-mapped
-  from the store. The host shares one copy between every instance and engine that uses
-  it, can stream large samples from storage, and knows exactly which samples each Sound
-  needs (for export, sync, and the memory budget). This is an Oscairn extension, with the
-  SDK.
+  from the store. Cooperating instances can share immutable mappings and stream large
+  samples; private decoded/processed buffers remain separately budgeted. Complete asset
+  declarations let the host collect what a Sound needs for export/sync. This planned
+  Oscairn SDK extension does not make arbitrary third-party file access enumerable.
 - **Old versions stay while used.** A library update that changes a sample keeps the old one
   in the store while any saved Sound still refers to it; unused files are removed later.
 
@@ -749,15 +780,17 @@ Different devices will ship different built-in plugins: Oscairn's own, and engin
 manufacturer adds. Packs should work across them without carrying copies of everyone's
 defaults.
 
-- **A baseline every device has.** A versioned platform profile ("Oscairn Core 1") lists
-  plugins every Oscairn device includes. A pack that uses only those works everywhere.
+- **A declared baseline.** A versioned platform profile ("Oscairn Core 1") lists plugins
+  and state capabilities each conforming target includes. A baseline-only pack has known
+  dependencies on those targets; its graph must still fit the device's resources and I/O.
 - **Manufacturers' built-ins are ordinary packages**, pre-installed in the read-only system
   area of their devices. Installed on another device, where a build for it exists and its
   licence allows, they work the same way.
-- **Packs refer to plugins; they do not embed built-ins.** A pack's manifest lists the
-  plugins it needs by ID and version range, and the profile it expects. It may include
-  whole packages of third-party plugins it needs, which the store deduplicates; it never
-  includes a device's built-in plugins.
+- **Packs resolve dependencies by target.** A manifest records IDs, compatible ranges and
+  the required baseline; a lock pins concrete releases. An offline export includes missing
+  permitted packages, including manufacturer extras when the destination lacks them. It
+  omits baseline packages only when the target profile guarantees them. The store
+  deduplicates whole-package content; source-device built-ins are not assumed universal.
 - **Missing plugins are reported, not guessed.** Opening a Sound whose plugin is missing
   says which package provides it and where it might come from, and keeps the Sound's saved
   state so it plays once the plugin is installed (see portable sounds). A manufacturer can
@@ -789,9 +822,11 @@ share them, and not be able to break each other or the host.
   run in sandboxed worker processes with no network unless granted, memory and CPU limits,
   and a deadline watchdog, so a plugin that crashes or hangs is recovered on its own and cannot take down
   the host or other plugins (see engine recovery).
-- **Distribution:** a package carries its builds for each platform, its licence, and where
-  its exact source is (an archive in the package, or a repository and commit). Catalogs
-  list packages from anyone; the source travels with the binaries.
+- **Distribution:** a package carries available target builds, licences/notices and exact
+  source/build provenance where available. First-party packages ship source/build recipes;
+  third-party redistributions preserve their applicable source and notice requirements.
+  Catalogs list target availability explicitly; unavailable builds are not created by
+  copying a binary from another OS. External vendor references remain distinct.
 
 ## The platform as a DAW plugin
 

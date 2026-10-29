@@ -147,6 +147,23 @@ instruments instead prepare and select a spare. State export, preset enumeration
 and distinguish queued property acceptance from plugin-confirmed readback.
 Complete projects, context-pool persistence and a sound-library UI are still future work.
 
+## Packaging and portability (planned)
+
+[RFC 0006](rfcs/0006-packages-and-portability.md) is the proposed distribution contract;
+there is no managed package installer yet. Design new engines with stable logical/format
+identities, versioned architecture-independent state and complete asset enumeration.
+Declare shared code/data as versioned dependencies rather than relying on a developer's
+installed system libraries. Build separately for each supported OS/CPU/runtime profile;
+Buildroot hardware needs its target SDK, not an arbitrary Linux binary. Keep mutable DSP
+state independent even when immutable assets or library code can share storage/mappings.
+
+A package may supply several formats for one engine, but AU, CLAP, LV2 and VST3 states and
+parameter/port IDs are not interchangeable by name. A migration must be declared and tested,
+including control mappings, assets, behavior and edits after transfer. Native managed
+engines should share a canonical state representation across their supported builds.
+Current per-plugin state export is not proof of complete project or cross-platform
+portability; preserve opaque third-party state and mark unsupported transfers explicitly.
+
 ## Controllers, hosts and hardware
 
 A plugin's render callback should not call the JSON control API. Audio and performance

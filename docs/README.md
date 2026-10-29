@@ -20,6 +20,7 @@ an implemented capability.
 | Add a desktop panel layout | [Layout format](../hosts/standalone/layouts/README.md) |
 | Configure audio, MIDI and helper processes | [Hosts](../hosts/README.md) |
 | Build the Linux image | [OS instructions](../os/README.md) |
+| Plan installer-free transfers and shared plugin dependencies | [Packages and cross-device portability](rfcs/0006-packages-and-portability.md) (proposed) |
 | Understand hardware acceleration and timestamped I/O plans | [Hardware-services proposal](rfcs/0004-hardware-services.md) |
 | Understand the overall design and priorities | [Architecture](architecture.md), [roadmap](roadmap.md), [RFC index](rfcs/README.md) |
 
