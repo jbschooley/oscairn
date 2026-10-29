@@ -1,4 +1,10 @@
+set(OSCAIRN_AUDIO_BUFFER_FRAMES "128" CACHE STRING "Requested live audio buffer frames (0 uses device default)")
+if(NOT OSCAIRN_AUDIO_BUFFER_FRAMES MATCHES "^(0|[1-9][0-9]*)$" OR OSCAIRN_AUDIO_BUFFER_FRAMES GREATER 1048576)
+    message(FATAL_ERROR "OSCAIRN_AUDIO_BUFFER_FRAMES must be an integer from 0 to 1048576")
+endif()
+
 add_library(oscairn_audio_host STATIC AudioEngine.cpp)
 target_compile_definitions(oscairn_audio_host PUBLIC JUCE_USE_CURL=0 JUCE_WEB_BROWSER=0)
+target_compile_definitions(oscairn_audio_host PRIVATE OSCAIRN_AUDIO_BUFFER_FRAMES=${OSCAIRN_AUDIO_BUFFER_FRAMES})
 target_link_libraries(oscairn_audio_host PUBLIC oscairn_control juce::juce_audio_devices)
 target_compile_options(oscairn_audio_host PRIVATE -Wall -Wextra)

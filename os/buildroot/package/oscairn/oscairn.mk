@@ -29,6 +29,7 @@ OSCAIRN_DEPENDENCIES += oscairn-juce alsa-lib freetype fontconfig \
 # JUCE comes from the oscairn-juce package: nothing is downloaded while building.
 OSCAIRN_CONF_OPTS += \
 	-DOSCAIRN_STANDALONE=ON \
+	-DOSCAIRN_AUDIO_BUFFER_FRAMES=0 \
 	-DFETCHCONTENT_SOURCE_DIR_JUCE=$(OSCAIRN_JUCE_SRCDIR) \
 	-DFETCHCONTENT_FULLY_DISCONNECTED=ON
 endif

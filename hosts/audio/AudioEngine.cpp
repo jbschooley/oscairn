@@ -17,13 +17,17 @@ namespace oscairn::host
 
     AudioEngine::AudioEngine( const std::string& pluginDir )
     {
-        const auto error = devices_.initialiseWithDefaultDevices( 0, 2 );
+        juce::AudioDeviceManager::AudioDeviceSetup preferred;
+        preferred.bufferSize = OSCAIRN_AUDIO_BUFFER_FRAMES;
+        const auto error = devices_.initialise( 0, 2, nullptr, true, {}, &preferred );
         auto*      device = devices_.getCurrentAudioDevice();
         if( error.isNotEmpty() || !device )
             throw std::runtime_error( "no audio output: " + ( error.isNotEmpty() ? error.toStdString() : std::string( "no device" ) ) );
         sampleRate_ = device->getCurrentSampleRate();
         std::fprintf( stderr, "oscairn: audio output \"%s\", %.0f Hz, %d-sample buffer\n", device->getName().toRawUTF8(), sampleRate_,
                       device->getCurrentBufferSizeSamples() );
+        if( preferred.bufferSize > 0 && device->getCurrentBufferSizeSamples() != preferred.bufferSize )
+            std::fprintf( stderr, "oscairn: requested %d frames; using the device's supported size above\n", preferred.bufferSize );
         scratch_.resize( maxFrames );
 
         session_        = std::make_unique<Session>( sampleRate_, maxFrames );

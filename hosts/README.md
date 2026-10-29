@@ -24,26 +24,31 @@ Programs built on the core: a file renderer, a live audio/MIDI engine and a desk
 
 ### Audio buffer size
 
-The shared `AudioEngine` opens the default device through JUCE without requesting a
-buffer size or sample rate. JUCE chooses a supported size using its audio backend's
-device default. The actual values are printed on startup and exposed by
-`session.status` as `bufferSize` (frames) and `sampleRate` (Hz). The macOS test device
-was observed at 512 frames / 48 kHz; that is not a forced setting for every device.
+Desktop builds request **128 frames** when opening the default device through JUCE.
+JUCE selects a supported size if the device cannot provide that request; the startup
+log reports the actual size and notes any difference. Sample rate still uses the
+device/backend default. At 48 kHz, 128 frames span about 2.67 ms, excluding other
+device/driver latency.
+
+Configure another startup request with `-DOSCAIRN_AUDIO_BUFFER_FRAMES=256`, or use `0`
+for the backend/device default. The setting applies to both the managed audio helper
+and in-process mode. It takes effect when a newly built engine starts; reconnecting a
+UI to an already-running engine preserves that engine's existing settings. The actual
+values are exposed by `session.status` as `bufferSize` (frames) and `sampleRate` (Hz).
 
 The engine's internal `maxFrames = 512` is a separate processing/allocation ceiling.
 Device callbacks larger than 512 are split into smaller processing calls; callbacks
 below 512 stay smaller. Splitting does not reduce the device's buffering latency.
 At 48 kHz, 512 frames span about 10.7 ms, excluding other device/driver latency.
 
-Neither the UI nor the control API currently changes audio device settings. Selecting
-a different buffer requires host configuration code using JUCE's `AudioDeviceSetup`
-and `setAudioDeviceSetup`, with device-supported sizes. Persisting that choice and
-exposing it to users remain follow-up work. The graph currently stays at its startup
+Neither the UI nor the control API currently changes audio device settings. The CMake
+setting above chooses the startup request; a runtime settings UI and persistence remain
+follow-up work. The graph currently stays at its startup
 sample rate; a later device rate change deliberately silences playback until restart.
 
-Buildroot Linux on hardware uses this same engine through ALSA, so it currently also
-uses the backend/device default. No separate hardware buffer-size policy is wired in
-yet. A board profile can request and validate a different supported size at startup;
+Buildroot Linux on hardware uses this same engine through ALSA. Its package explicitly
+sets `OSCAIRN_AUDIO_BUFFER_FRAMES=0`, preserving the backend/device default. A board
+profile can override this build option to request a different supported size at startup;
 it should be chosen using measurements on the actual codec/driver under load.
 The QEMU dummy sound card cannot establish real-hardware latency or reliable settings.
 
