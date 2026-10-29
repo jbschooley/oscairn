@@ -291,6 +291,8 @@ layers and transitions, not six independently initialised organs.
   It preserves note ownership, channel parts and state/preset preparation; processed instances
   keep rendering until explicit retirement because arbitrary plugin tail completion is unknown.
   Native effect-context transitions and asset-bearing native patches remain to do.
+  [RFC 0007](rfcs/0007-effect-contexts.md) specifies independent logical effect contexts
+  sharing native engine resources, per-sound audio outputs and preserved outgoing chains.
 - Changing setlists keeps resources common to both, prepares missing ones in the
   background and releases the rest when safe.
 

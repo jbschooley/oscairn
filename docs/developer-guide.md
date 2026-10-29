@@ -296,4 +296,6 @@ instrument. Each needs its own mutable DSP state (delay/reverb buffers, envelope
 history); executable code and explicitly shared immutable resources may be shared.
 Native effect contexts are still planned, unlike the implemented native instrument
 contexts. They may reduce instance overhead, but cannot eliminate independent signal
-histories where the desired processing differs.
+histories where the desired processing differs. The concrete native-effects milestone is
+specified in [RFC 0007](rfcs/0007-effect-contexts.md), including the per-sound audio outputs
+needed to give simultaneous sounds in one instrument different effect chains.

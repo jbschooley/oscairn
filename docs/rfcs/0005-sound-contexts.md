@@ -4,7 +4,8 @@ Status: first instrument implementation. The Basic Synth and its typed/JSON/remo
 controls implement this contract. Ordinary CLAP/LV2 instruments also have a host-owned instance pool, documented in the
 [control protocol](../control-protocol.md#prepared-sounds); it does not implement this
 plugin extension. Effect-context transitions, asset-bearing native patches, project
-persistence and a desktop sound picker remain to do.
+persistence remain to do. The desktop sound picker is implemented; native effect contexts
+and per-sound audio are specified separately in [RFC 0007](0007-effect-contexts.md).
 
 ## Contract
 
@@ -64,7 +65,7 @@ selected contexts for a global event). Unselected outgoing patches retain their 
 Queued selection runs before parameter events at the same processing boundary, so a
 parameter edit in that call affects the newly selected sound. Global selection emits
 parameter-value feedback for the selected patch. Per-channel parts have distinct values;
-the ordinary three-parameter view is not a complete editor for all parts.
+the ordinary selected-patch parameter view is not a complete editor for all parts.
 
 Each context sums and saturates its voices independently; the context outputs then sum.
 This preserves the sound of each patch while several patches play. Default single-context

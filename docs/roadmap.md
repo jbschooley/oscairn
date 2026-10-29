@@ -136,11 +136,15 @@ new core, from a UI that talks to it only through the control API.
 
 ### Next build and test order
 
-1. **Minimal save/reopen:** persist one complete Performance with its graph, scenes/prepared
+1. **Native effect contexts and per-sound audio:** implement the Delay/reference-graph
+   prototype in [RFC 0007](rfcs/0007-effect-contexts.md), then separate Basic Synth context
+   outputs so held sounds retain their insert chains and tails. Measure resource savings
+   and test isolation, parallel/serial/shared routing, exhaustion and retirement.
+2. **Minimal save/reopen:** persist one complete Performance with its graph, scenes/prepared
    sounds, state, asset references and mappings. Preserve provenance and unresolved nodes;
    do not require the future package manager. Test a process restart, missing plugin/assets,
    interrupted save, and render/state comparisons.
-2. Expand native asset-bearing patches, effect-tail transitions and sequencer tracks/patterns
+3. Expand native asset-bearing patches and sequencer tracks/patterns
    against that usable workflow. Keep the shared theme and generated-editor contract current
    as new screens are added.
 
