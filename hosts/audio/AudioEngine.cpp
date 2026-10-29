@@ -10,11 +10,6 @@
 
 namespace oscairn::host
 {
-    namespace
-    {
-        constexpr clap_id brightnessParam = 1; // plugins/basic-synth
-    }
-
     AudioEngine::AudioEngine( const std::string& pluginDir, AudioConfiguration audio ) : channelMap_(std::move(audio),maxFrames)
     {
         juce::AudioDeviceManager::AudioDeviceSetup preferred;
@@ -49,7 +44,7 @@ namespace oscairn::host
         session_->connectNotes( graphInput, synth );
         session_->connectAudio( synth, delay );
         session_->connectAudio( delay, graphOutput );
-        session_->mapParameter( seq, 0, synth, brightnessParam ); // Lock A opens the filter
+        // Brightness locks are opt-in: the demo must not overwrite every selected sound.
         session_->commit();
 
         openMidiInputs();

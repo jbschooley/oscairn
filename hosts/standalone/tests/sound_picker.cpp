@@ -4,6 +4,7 @@
 #include "oscairn/remote_control.h"
 #include <array>
 #include <chrono>
+#include <cmath>
 #include <future>
 #include <iostream>
 #include <sys/socket.h>
@@ -65,12 +66,64 @@ void presets(const char* path)
     check(state.sounds.contexts.size()==1,"confirmed tail retirement removes instance");
 }
 
+void sequencedSounds(const char* synth,const char* sequencer)
+{
+    auto render=[&](size_t choice,bool locks) {
+        Fixture f(synth);
+        const auto seq=f.session.add("sequencer",sequencer);
+        const auto node=f.session.nodeId("synth");
+        f.session.connectNotes(seq,node);f.session.commit();f.tick();
+        auto state=readSoundPicker(f.session);
+        check(state.canToggleBrightnessLocks && !state.brightnessLocks,"brightness locks default off");
+        SoundAction action;action.node=node;action.pluginId=state.pluginId;
+        action.kind=SoundAction::Prepare;action.choice=state.choices[choice];
+        applySoundAction(f.session,action);
+        action.kind=SoundAction::Select;action.context=readSoundPicker(f.session).sounds.contexts.back().id;
+        applySoundAction(f.session,action);f.tick();
+        action.kind=SoundAction::BrightnessLocks;action.enableLocks=locks;
+        f.session.mapParameter(seq,0,node,1);
+        bool stagedRefused=false;
+        try{applySoundAction(f.session,action);}catch(const std::runtime_error&){stagedRefused=true;}
+        check(stagedRefused && f.session.graphState().staged,"toggle must not commit another pending edit");
+        f.session.commit();f.tick();
+        f.remote([&](Control& c){applySoundAction(c,action);});
+        check(readSoundPicker(f.session).brightnessLocks==locks,"lock routing readback");
+        std::array<std::vector<float>,2> audio;
+        f.session.setPlaying(true);
+        for(int i=0;i<750;++i){f.tick();audio[0].insert(audio[0].end(),f.left.begin(),f.left.end());}
+        f.session.setPlaying(false);
+        for(int i=0;i<750;++i)f.tick();
+        check(f.session.note(true,60,.7),"pad note accepted");
+        for(int i=0;i<100;++i){f.tick();audio[1].insert(audio[1].end(),f.left.begin(),f.left.end());}
+        action.enableLocks=false;f.remote([&](Control& c){applySoundAction(c,action);});
+        check(!readSoundPicker(f.session).brightnessLocks,"locks can be disabled");
+        f.session.mapParameter(seq,0,node,2);f.session.commit();f.tick();
+        check(!readSoundPicker(f.session).canToggleBrightnessLocks,"other lane mappings protected");
+        bool refused=false;
+        try{applySoundAction(f.session,action);}catch(const std::runtime_error&){refused=true;}
+        check(refused,"toggle must not remove another mapping");
+        return audio;
+    };
+    for(bool locks:{false,true})
+    {
+        const auto warm=render(0,locks),bright=render(1,locks);
+        for(size_t phase=0;phase<2;++phase)
+        {
+            double difference=0;
+            for(size_t i=0;i<warm[phase].size();++i)difference+=std::abs(warm[phase][i]-bright[phase][i]);
+            check(locks?difference<1e-5:difference>1.0,
+                "Warm/Bright must differ in sequencer and subsequent pads unless explicitly overridden by locks");
+        }
+    }
+}
+
 int main(int argc,char** argv)
 {
     try
     {
-        check(argc==2 || argc==3,"need Basic Synth path or LV2 bundle and --lv2");
-        if(argc==3){presets(argv[1]);std::cout<<"ok: picker LV2 presets, failed preparation and explicit tail retirement\n";return 0;}
+        check(argc==3,"need Basic Synth and sequencer paths or LV2 bundle and --lv2");
+        if(std::string(argv[2])=="--lv2"){presets(argv[1]);std::cout<<"ok: picker LV2 presets, failed preparation and explicit tail retirement\n";return 0;}
+        sequencedSounds(argv[1],argv[2]);
         Fixture f(argv[1]);
         auto state=f.remote([](Control& c){return readSoundPicker(c);});
         check(state.choices.size()==3 && state.sounds.contexts.size()==1,"initial choices/default");

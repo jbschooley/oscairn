@@ -18,11 +18,24 @@ namespace oscairn::standalone
             }
         result.sounds = control.sounds(result.node);
         if(result.pluginId == "org.oscairn.basic-synth")
+        {
             result.choices = {
                 {"Warm", {}, {{1, .15}, {2, .7}, {3, .5}}},
                 {"Bright", {}, {{1, .9}, {2, .7}, {3, .5}}},
                 {"Pressure swell", {}, {{1, .05}, {2, .7}, {3, 1.0}}}
             };
+            for(const auto& node : graph.topology.nodes)
+                if(node.plugin.id == "org.oscairn.step-sequencer" && graph.names.at(node.id) == "sequencer")
+                {
+                    result.canToggleBrightnessLocks = true;
+                    for(const auto& mapping : graph.topology.mappings)
+                        if(mapping.source == node.id && mapping.lane == 0)
+                        {
+                            result.brightnessLocks = mapping.target == result.node && mapping.param == 1;
+                            result.canToggleBrightnessLocks = result.brightnessLocks;
+                        }
+                }
+        }
         else if(result.sounds.capacity)
         {
             result.choices.push_back({"Default", {}, {}});
@@ -38,6 +51,16 @@ namespace oscairn::standalone
         const auto current = readSoundPicker(control);
         if(current.node != action.node || current.pluginId != action.pluginId)
             throw std::runtime_error("The instrument changed. Choose a sound again.");
+        if(action.kind == SoundAction::BrightnessLocks)
+        {
+            if(!current.canToggleBrightnessLocks || control.graphState().staged)
+                throw std::runtime_error("Finish other routing edits before changing brightness locks.");
+            const auto sequencer = control.nodeId("sequencer");
+            if(action.enableLocks)control.mapParameter(sequencer,0,current.node,1);
+            else control.unmapParameter(sequencer,0);
+            control.commit();
+            return;
+        }
         if(action.kind == SoundAction::Prepare)
         {
             control.prepareSound(current.node, action.choice.name, action.choice.parameters, {}, action.choice.preset);

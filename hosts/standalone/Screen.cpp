@@ -22,13 +22,18 @@ namespace oscairn::standalone
 
     Screen::Screen(Engine& engine) : engine_(engine)
     {
-        for(auto* component : std::initializer_list<juce::Component*>{&sounds_, &useSound_, &prepareSound_, &removeSound_, &playingSound_, &soundNotice_})
+        for(auto* component : std::initializer_list<juce::Component*>{&sounds_, &useSound_, &prepareSound_, &removeSound_, &playingSound_, &soundNotice_, &brightnessLocks_})
             addAndMakeVisible(component);
         sounds_.setName("Prepared sounds");
         sounds_.setTextWhenNothingSelected("Choose a prepared sound");
         sounds_.onChange=[this]{refreshPicker();};
         playingSound_.setColour(juce::Label::textColourId, active);
         soundNotice_.setColour(juce::Label::textColourId, dim);
+        brightnessLocks_.setTooltip("Override the sound's brightness on each sequencer step. Off by default so Warm and Bright keep their tone.");
+        brightnessLocks_.onClick=[this] {
+            auto action=selectedAction(SoundAction::BrightnessLocks);
+            action.enableLocks=brightnessLocks_.getToggleState();engine_.soundAction(action);
+        };
         useSound_.setTooltip("Use this sound for new notes on all MIDI channels. Held notes keep their sound.");
         useSound_.onClick=[this]{engine_.soundAction(selectedAction(SoundAction::Select));refreshPicker();};
         prepareSound_.onClick=[this] {
@@ -70,6 +75,8 @@ namespace oscairn::standalone
     void Screen::refreshPicker()
     {
         const auto& state=engine_.soundPicker();
+        brightnessLocks_.setToggleState(state.brightnessLocks,juce::dontSendNotification);
+        brightnessLocks_.setEnabled(state.canToggleBrightnessLocks && engine_.connected() && !engine_.soundBusy());
         const auto oldIndex=sounds_.getSelectedItemIndex();
         const auto oldId=oldIndex>=0 && static_cast<size_t>(oldIndex)<soundIds_.size()?soundIds_[static_cast<size_t>(oldIndex)]:UINT32_MAX;
         std::vector<uint32_t> ids;juce::StringArray labels;juce::StringArray playing;
@@ -98,6 +105,7 @@ namespace oscairn::standalone
         playingSound_.setText("Playing: "+(playing.isEmpty()?juce::String("none"):playing.joinIntoString(" / ")),juce::dontSendNotification);
         const auto notice=!engine_.soundMessage().empty()?juce::String(engine_.soundMessage()):
             engine_.soundBusy()?juce::String("Updating sounds..."):
+            state.brightnessLocks?juce::String("Brightness locks override the sound on each step"):
             juce::String(state.sounds.contexts.size())+" / "+juce::String(state.sounds.capacity)+" prepared | Use sound changes all MIDI channels";
         soundNotice_.setText(notice,juce::dontSendNotification);
         soundNotice_.setTooltip(notice);
@@ -106,7 +114,9 @@ namespace oscairn::standalone
     void Screen::resized()
     {
         auto area=getLocalBounds().withTrimmedTop(juce::roundToInt(header().getHeight())).withHeight(juce::roundToInt(getHeight()*.20f)).reduced(10,0);
-        playingSound_.setBounds(area.removeFromTop(area.getHeight()/3));
+        auto title=area.removeFromTop(area.getHeight()/3);
+        brightnessLocks_.setBounds(title.removeFromRight(title.getWidth()/3));
+        playingSound_.setBounds(title);
         auto row=area.removeFromTop(area.getHeight()/2);
         const int buttonWidth=row.getWidth()/6;
         removeSound_.setBounds(row.removeFromRight(buttonWidth).reduced(2));
@@ -195,7 +205,7 @@ namespace oscairn::standalone
             const auto bar = lockBar( i );
             g.setColour( background );
             g.fillRoundedRectangle( bar, 4.0f * unit );
-            g.setColour( on_[(size_t)i] ? accent.withAlpha( 0.85f ) : dim.withAlpha( 0.4f ) );
+            g.setColour( on_[(size_t)i] && engine_.soundPicker().brightnessLocks ? accent.withAlpha( 0.85f ) : dim.withAlpha( 0.4f ) );
             g.fillRoundedRectangle( bar.withWidth( bar.getWidth() * (float)lock_[(size_t)i] ), 4.0f * unit );
         }
     }

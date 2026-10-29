@@ -97,6 +97,8 @@ Done:
   presets, explicit prepare/use/remove, playing readback and safe retirement. Separate-engine
   requests run off the UI thread; prepared sounds survive UI reconnect. Native and LV2
   remote tests, actual KICK UI controls and live 128-frame reconnect/playback checks passed.
+  Demo brightness locks are opt-in so sequencing preserves prepared sound differences;
+  render regression covers sequencer playback followed by pads.
   In-process diagnostics disable preparation; project persistence remains pending.
 
 To do:

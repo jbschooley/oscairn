@@ -35,7 +35,10 @@ may have unknown effect tails, so removal then asks before cutting that tail. Th
 context remains reserved. Capacity exhaustion, invalid presets and changed/removed contexts
 are reported without replacing the playing sound. Prepared sounds live in the engine and
 survive UI reconnection, but not an engine restart: persistent performances remain planned.
-The sequencer's existing brightness locks still affect the selected sound when PLAY runs.
+**Brightness locks** is off by default. Enable it to map the sequencer's lock lane to
+the Basic Synth's brightness; the orange step bars and picker notice show the override.
+Locks write into the selected sound, so disabling them stops further changes but does not
+restore its previous brightness. Adjust Brightness or prepare a fresh variation to restore it.
 
 Managed mode and `--connect` perform picker requests through a separate worker-owned control
 connection. The UI remains responsive while the engine prepares a preset; existing UI
@@ -47,7 +50,9 @@ the full workflow. A pending preparation has the control API's 30-second timeout
 the UI waits for its outstanding request before destroying the adapter.
 
 `desktop-sound-picker` checks real remote preparation/selection/retirement, held-note
-ownership, failure/capacity preservation and reconnect readback. `desktop-sound-picker-lv2`
+ownership, failure/capacity preservation and reconnect readback. It also renders Warm/Bright
+through the sequencer and subsequent pad notes, checking that they stay distinct with locks
+off and are overridden with locks on. `desktop-sound-picker-lv2`
 checks preset enumeration/restoration, failed preparation and explicit tail retirement.
 The KICK controls were exercised in the app; live reconnect and scripted Warm/Bright note
 overlap ran at 48 kHz/128 frames with zero reported deadline misses or event drops. Jacob

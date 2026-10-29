@@ -15,14 +15,16 @@ namespace oscairn::standalone
         std::string pluginId, instrument;
         Control::Sounds sounds{};
         std::vector<SoundChoice> choices;
+        bool canToggleBrightnessLocks = false, brightnessLocks = false;
     };
     struct SoundAction
     {
-        enum Kind { Refresh, Prepare, Select, Discard } kind = Refresh;
+        enum Kind { Refresh, Prepare, Select, Discard, BrightnessLocks } kind = Refresh;
         NodeId node = 0;
         std::string pluginId;
         uint32_t context = 0;
         bool cutTail = false;
+        bool enableLocks = false;
         SoundChoice choice;
     };
     SoundPickerState readSoundPicker(Control&);

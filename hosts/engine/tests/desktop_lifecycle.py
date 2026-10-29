@@ -98,6 +98,7 @@ try:
         assert [ch['deviceChannel'] for ch in status['audioOutputs']] == list(map(int, args.audio_outputs.split(','))), status
         assert all(ch['available'] for ch in status['audioOutputs']), status
     graph = rpc('graph.get')
+    assert graph['mappings'] == [], 'Demo locks must not overwrite prepared sounds by default'
     assert graph['audioInputs'] == [] and graph['audioOutputs'][0]['channels'] == len(status['audioOutputs']), graph
     # Exercise the live device callback silently; no listening response is needed.
     rpc('params.set', {'values':[{'node':'synth','param':2,'value':0}]})
