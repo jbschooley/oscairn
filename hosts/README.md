@@ -25,7 +25,7 @@ Programs built on the core: a file renderer, a live audio/MIDI engine and a desk
 
 Every panel display now has a picker for the loaded `synth` instrument. **Prepare...**
 adds a ready sound without changing playback. The Basic Synth offers Warm, Bright and
-Pressure swell variations; other prepared instruments expose their default and advertised
+Pressure swell, Detuned saws and Square vibrato variations; other prepared instruments expose their default and advertised
 presets (including LV2 presets). Choose a prepared sound, then **Use sound** to send new
 notes on all MIDI channels to it. The Playing label reflects engine readback; browsing alone
 does not switch sounds. Held notes, sustain and releases retain their existing ownership.
@@ -58,6 +58,9 @@ The KICK controls were exercised in the app; live reconnect and scripted Warm/Br
 overlap ran at 48 kHz/128 frames with zero reported deadline misses or event drops. Jacob
 confirmed that the switching/overlap playback sounded normal on October 29, 2026. Physical
 KICK hardware and MIDI-controller input were not exercised in this picker check.
+The detuned-saw/square-vibrato follow-up exercised sequencing, held-note switching and
+two simultaneous channel parts at 48 kHz/128 frames, also with zero reported deadline
+misses or event drops. Jacob confirmed distinct sounds and working overlap on October 29, 2026.
 
 ## Build and connect
 

@@ -22,7 +22,9 @@ namespace oscairn::standalone
             result.choices = {
                 {"Warm", {}, {{1, .15}, {2, .7}, {3, .5}}},
                 {"Bright", {}, {{1, .9}, {2, .7}, {3, .5}}},
-                {"Pressure swell", {}, {{1, .05}, {2, .7}, {3, 1.0}}}
+                {"Pressure swell", {}, {{1, .05}, {2, .7}, {3, 1.0}}},
+                {"Detuned saws", {}, {{1, .65}, {2, .5}, {3, .5}, {4, 1}, {5, 7}}},
+                {"Square vibrato", {}, {{1, .8}, {2, .4}, {3, .5}, {4, 2}, {6, 18}, {7, 70}}}
             };
             for(const auto& node : graph.topology.nodes)
                 if(node.plugin.id == "org.oscairn.step-sequencer" && graph.names.at(node.id) == "sequencer")

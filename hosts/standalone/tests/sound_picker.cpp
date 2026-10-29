@@ -126,7 +126,7 @@ int main(int argc,char** argv)
         sequencedSounds(argv[1],argv[2]);
         Fixture f(argv[1]);
         auto state=f.remote([](Control& c){return readSoundPicker(c);});
-        check(state.choices.size()==3 && state.sounds.contexts.size()==1,"initial choices/default");
+        check(state.choices.size()==5 && state.sounds.contexts.size()==1,"initial choices/default");
         const auto node=state.node;
         f.session.note(true,60,.7);f.tick();
         SoundAction prepare;prepare.kind=SoundAction::Prepare;prepare.node=node;

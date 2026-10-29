@@ -24,7 +24,28 @@ struct Instrument {
 };
 int main(int argc,char** argv){try{
     if(argc!=2)return 2;
-    const std::vector<oscairn_sound_parameter_t> dark{{1,.08},{2,.3},{3,.5}},bright{{1,.95},{2,.8},{3,.5}};
+    const std::vector<oscairn_sound_parameter_t> dark{{1,.08},{2,.3},{3,.5},{4,1},{5,7}},bright{{1,.95},{2,.8},{3,.5},{4,2},{6,18},{7,70}};
+    auto tone=[&](std::vector<oscairn_sound_parameter_t> patch) {
+        Instrument synth(argv[1]);auto id=synth.host().prepareSound("Tone",patch);synth.host().selectSound(id);
+        std::vector<float> samples;synth.one(Event::note(true,60,.7));
+        for(int i=0;i<30;++i){synth.run();samples.insert(samples.end(),synth.left.begin(),synth.left.end());}
+        return samples;
+    };
+    const auto saw=tone({}),unison=tone({{4,1},{5,0}}),detuned=tone({{4,1},{5,7}});
+    const auto square=tone({{4,2}}),vibrato=tone({{4,2},{6,18},{7,70}});
+    double detuneDifference=0,squareDifference=0,vibratoDifference=0;
+    for(size_t i=0;i<saw.size();++i){
+        check(std::abs(saw[i]-unison[i])<1e-7,"zero-detune pair preserves single-saw level");
+        detuneDifference+=std::abs(saw[i]-detuned[i]);squareDifference+=std::abs(saw[i]-square[i]);vibratoDifference+=std::abs(square[i]-vibrato[i]);
+    }
+    check(detuneDifference>1 && squareDifference>1 && vibratoDifference>1,"oscillator and LFO changes alter audio independently of brightness");
+    check(square==tone({{4,2},{6,18},{7,0}}) && square==tone({{4,2},{6,0},{7,70}}),"zero LFO rate or depth disables vibrato");
+    Instrument validation(argv[1]);
+    for(auto parameter:std::array<oscairn_sound_parameter_t,5>{{{4,3},{4,.5},{5,51},{6,41},{7,201}}}){
+        bool refused=false;try{validation.host().prepareSound("Invalid",{parameter});}catch(const std::exception&){refused=true;}
+        check(refused,"invalid oscillator/LFO settings rejected before preparation");
+    }
+    check(validation.host().parameterText(4,2)=="Square" && validation.host().parameterText(6,18)=="18.0 Hz","oscillator names and physical LFO units exposed");
     Instrument mixed(argv[1]),a(argv[1]),b(argv[1]);
     auto x=mixed.host().prepareSound("Dark",dark),y=mixed.host().prepareSound("Bright",bright);
     auto ax=a.host().prepareSound("Dark",dark),by=b.host().prepareSound("Bright",bright);
@@ -94,6 +115,17 @@ int main(int argc,char** argv){try{
         }return result;
     };
     check(renderTimeline(37)==renderTimeline(512),"context switching is byte-identical across uneven block sizes");
+
+    Instrument parts(argv[1]),partA(argv[1]),partB(argv[1]);
+    parts.host().selectSound(parts.host().prepareSound("Saws",dark),0);
+    parts.host().selectSound(parts.host().prepareSound("Square",bright),1);
+    partA.host().selectSound(partA.host().prepareSound("Saws",dark));partB.host().selectSound(partB.host().prepareSound("Square",bright));
+    const std::array notes{Event::note(true,60,.7,0,0),Event::note(true,67,.7,0,1)};
+    parts.run(notes);partA.one(notes[0]);partB.one(notes[1]);
+    for(int block=0;block<20;++block){
+        for(int i=0;i<512;++i)check(std::abs(parts.left[i]-(partA.left[i]+partB.left[i]))<1e-7,"channel parts equal independently rendered engines");
+        parts.run();partA.run();partB.run();
+    }
 
     Instrument concurrent(argv[1]);std::atomic<bool> stop=false,valid=true;std::atomic<uint32_t> blocks=0;uint32_t preparedCount=0;
     std::thread audio([&]{try{uint32_t i=0;while(!stop){concurrent.one(Event::note((i++%2)==0,60,1));++blocks;}}catch(...){valid=false;}});

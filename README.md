@@ -144,7 +144,8 @@ What is in place:
   routed by the graph to the target's parameter in the same block.
 - **Plugins** (`plugins/`): Oscairn Step Sequencer (a 16-step pattern following the
   transport's beat position, with a lock lane; each step's on/off, note and lock are
-  parameters), Oscairn Basic Synth (Brightness, Level and Pressure parameters; aftertouch
+  parameters), Oscairn Basic Synth (saw, detuned saw pair or square oscillators, per-sound
+  pitch LFO, Brightness, Level and Pressure parameters; aftertouch
   opens each voice's filter; prepared sound contexts preserve held notes across patch
   changes, with independent channel parts) and Oscairn Delay (tempo-synced ping-pong, gliding when the
   tempo changes).

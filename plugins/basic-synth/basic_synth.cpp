@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // Oscairn Basic Synth: a small polyphonic CLAP instrument for tests and demos.
-// Each voice is a band-limited sawtooth through a two-pole low-pass filter whose
+// Each voice uses a band-limited saw, detuned saw pair or square, with a pitch LFO,
+// through a two-pole low-pass filter whose
 // cutoff follows the amplitude envelope, which gives a plucked bass sound.
-// Parameters: Brightness (how far the filter opens), Level, and Pressure (how far
-// pressure opens each voice's filter). All take values and modulation, applied on their
+// Brightness, Level, Pressure, oscillator mode, detune and pitch LFO settings belong
+// to each sound context. Continuous controls take values and modulation on their
 // exact sample. Pressure (CLAP's pressure note expression: polyphonic or, with a wildcard
 // key, channel aftertouch) applies per voice.
 // Events are applied on their exact sample, and the output does not depend on the
@@ -40,12 +41,15 @@ namespace
         features,
     };
 
-    enum ParamId : clap_id
-    {
-        brightnessId = 1,
-        levelId      = 2,
-        pressureId   = 3,
-    };
+    // Stable parameter IDs are the table index + 1.
+    struct Parameter { const char* name; double maximum, initial; const char* unit; bool stepped=false; };
+    constexpr std::array<Parameter,7> parameters{{
+        {"Brightness",1,1,"%"}, {"Level",1,1,"%"}, {"Pressure",1,.5,"%"},
+        {"Oscillator",2,0,"",true}, {"Detune",50,7,"cents"},
+        {"Pitch LFO rate",40,0,"Hz"}, {"Pitch LFO depth",200,0,"cents"}
+    }};
+    constexpr auto defaults=[] {std::array<double,parameters.size()> v{};for(size_t i=0;i<v.size();++i)v[i]=parameters[i].initial;return v;}();
+    constexpr std::array<const char*,3> oscillators{"Saw","Detuned saws","Square"};
     constexpr double pressureCutoff = 6000.0; // Hz the filter opens at full pressure and amount
 
     enum class Stage
@@ -63,7 +67,7 @@ namespace
         Stage    stage    = Stage::Attack;
         int16_t  key      = 0;
         int16_t  channel  = 0;
-        double   phase    = 0.0;
+        double   phase    = 0.0, phase2 = 0.0, lfoPhase = 0.0;
         double   increment = 0.0;
         double   level    = 0.0; // envelope
         double   velocity = 0.0;
@@ -78,7 +82,7 @@ namespace
         bool prepared=false;
         uint32_t id=0;
         char name[64]{};
-        std::array<double,3> values{1,1,.5},modulation{};
+        std::array<double,parameters.size()> values=defaults,modulation{};
         // users includes selected channels, queued selections and active voices.
         std::atomic<uint32_t> users{0},selected{0},voices{0};
     };
@@ -95,7 +99,7 @@ namespace
         static constexpr double sustain = 0.35;
 
         // Values are atomic: the main thread reads them (get_value) while audio runs.
-        std::atomic<double> brightness{ 1.0 }, level{ 1.0 }, pressure{ 0.5 };
+        std::array<std::atomic<double>,parameters.size()> values{};
         static constexpr uint32_t contextCapacity=8,selectionCapacity=32;
         std::array<Context,contextCapacity> contexts;
         std::array<uint32_t,16> selected{}; // audio thread
@@ -104,7 +108,7 @@ namespace
         std::array<Selection,selectionCapacity> selections{};
         std::atomic<uint32_t> selectionHead{0},selectionTail{0};
         uint32_t nextContext=1; // main thread, never reuse IDs
-        Synth(){contexts[0].prepared=true;contexts[0].users=16;contexts[0].selected=65535;std::strcpy(contexts[0].name,"Default");}
+        Synth(){for(size_t i=0;i<values.size();++i)values[i]=defaults[i];contexts[0].prepared=true;contexts[0].users=16;contexts[0].selected=65535;std::strcpy(contexts[0].name,"Default");}
     };
 
     Synth& self( const clap_plugin_t* p )
@@ -217,8 +221,9 @@ namespace
         if(header->type==CLAP_EVENT_PARAM_VALUE){const auto& e=*reinterpret_cast<const clap_event_param_value_t*>(header);id=e.param_id;value=e.value;channel=e.channel;if(e.note_id>=0 || e.key>=0 || e.port_index>0)return;}
         else if(header->type==CLAP_EVENT_PARAM_MOD){const auto& e=*reinterpret_cast<const clap_event_param_mod_t*>(header);id=e.param_id;value=e.amount;channel=e.channel;modulation=true;if(e.note_id>=0 || e.key>=0 || e.port_index>0)return;}
         else return;
-        if(id<1 || id>3 || channel < -1 || channel>15 || !std::isfinite(value))return;
-        if(!modulation){value=std::clamp(value,0.0,1.0);if(id==1)s.brightness=value;else if(id==2)s.level=value;else s.pressure=value;}
+        if(id<1 || id>parameters.size() || channel < -1 || channel>15 || !std::isfinite(value))return;
+        if(!modulation){value=std::clamp(value,0.0,parameters[id-1].maximum);if(parameters[id-1].stepped)value=std::round(value);s.values[id-1]=value;}
+        else if(parameters[id-1].stepped)return;
         std::array<bool,Synth::contextCapacity> changed{};
         for(int ch=0;ch<16;++ch)if(channel<0 || channel==ch)
         {
@@ -242,8 +247,7 @@ namespace
             }
             if(selection.channel<0)
             {
-                s.brightness=next.values[0];s.level=next.values[1];s.pressure=next.values[2];
-                for(uint32_t i=0;i<3;++i){clap_event_param_value_t e{};e.header={sizeof(e),0,CLAP_CORE_EVENT_SPACE_ID,CLAP_EVENT_PARAM_VALUE,0};e.param_id=i+1;e.note_id=e.port_index=e.channel=e.key=-1;e.value=next.values[i];output->try_push(output,&e.header);}
+                for(uint32_t i=0;i<parameters.size();++i){s.values[i]=next.values[i];clap_event_param_value_t e{};e.header={sizeof(e),0,CLAP_CORE_EVENT_SPACE_ID,CLAP_EVENT_PARAM_VALUE,0};e.param_id=i+1;e.note_id=e.port_index=e.channel=e.key=-1;e.value=next.values[i];output->try_push(output,&e.header);}
             }
             next.users.fetch_sub(1,std::memory_order_release); // queued-selection pin
             ++tail;
@@ -255,12 +259,14 @@ namespace
     {
         // Snapshot only contexts pinned by active voices. After a voice finishes,
         // the control thread may reclaim its slot; the rest of this span uses copies.
-        std::array<std::array<double,3>,Synth::contextCapacity> settings{};
+        std::array<std::array<double,parameters.size()>,Synth::contextCapacity> settings{};
+        std::array<double,Synth::contextCapacity> detune{};
         std::array<bool,Synth::contextCapacity> copied{};
         for(const auto& v:s.voices)if(v.active && !copied[v.context])
         {
             copied[v.context]=true;const auto& c=s.contexts[v.context];
-            for(size_t p=0;p<3;++p)settings[v.context][p]=std::clamp(c.values[p]+c.modulation[p],0.0,1.0);
+            for(size_t p=0;p<parameters.size();++p)settings[v.context][p]=std::clamp(c.values[p]+c.modulation[p],0.0,parameters[p].maximum);
+            detune[v.context]=settings[v.context][3]==1?std::pow(2.0,settings[v.context][4]/1200.0):1;
         }
         for( uint32_t i = from; i < to; ++i )
         {
@@ -294,16 +300,36 @@ namespace
                         break;
                 }
 
-                const double saw = 2.0 * v.phase - 1.0 - polyBlep( v.phase, v.increment );
-                v.phase += v.increment;
-                if( v.phase >= 1.0 )
-                    v.phase -= 1.0;
+                const auto& patch=settings[v.context];
+                double increment=v.increment;
+                if(patch[6]>0 && patch[5]>0)
+                    increment*=std::pow(2.0,std::sin(2*pi*v.lfoPhase)*patch[6]/1200.0);
+                v.lfoPhase+=patch[5]/s.sampleRate;v.lfoPhase-=std::floor(v.lfoPhase);
+                const auto mode=static_cast<int>(patch[3]);
+                const double dt=std::min(.49,mode==1?increment/detune[v.context]:increment);
+                double oscillator;
+                if(mode==2)
+                {
+                    const double shifted=v.phase<.5?v.phase+.5:v.phase-.5;
+                    oscillator=(v.phase<.5?1.0:-1.0)+polyBlep(v.phase,dt)-polyBlep(shifted,dt);
+                }
+                else
+                {
+                    oscillator=2.0*v.phase-1.0-polyBlep(v.phase,dt);
+                    if(mode==1)
+                    {
+                        const double dt2=std::min(.49,increment*detune[v.context]);
+                        oscillator=.5*(oscillator+2.0*v.phase2-1.0-polyBlep(v.phase2,dt2));
+                        v.phase2+=dt2;if(v.phase2>=1)v.phase2-=1;
+                    }
+                }
+                v.phase+=dt;if(v.phase>=1)v.phase-=1;
 
                 const double brightness=settings[v.context][0],pressure=settings[v.context][2];
                 levels[v.context]=settings[v.context][1];
                 const double cutoff = 120.0 + v.level * v.level * 5000.0 * v.velocity * brightness + v.pressure * pressure * pressureCutoff;
                 const double g      = 1.0 - std::exp( -2.0 * pi * cutoff / s.sampleRate );
-                v.low1 += g * ( saw - v.low1 );
+                v.low1 += g * ( oscillator - v.low1 );
                 v.low2 += g * ( v.low1 - v.low2 );
 
                 mix[v.context] += v.low2 * v.level * v.velocity * 0.35;
@@ -393,58 +419,46 @@ namespace
         return true;
     }
 
-    uint32_t paramsCount( const clap_plugin_t* )
-    {
-        return 3;
-    }
+    uint32_t paramsCount( const clap_plugin_t* ) { return parameters.size(); }
 
     bool paramsInfo( const clap_plugin_t*, uint32_t index, clap_param_info_t* info )
     {
-        constexpr struct
-        {
-            clap_id     id;
-            const char* name;
-            double      defaultValue;
-        } all[] = { { brightnessId, "Brightness", 1.0 }, { levelId, "Level", 1.0 }, { pressureId, "Pressure", 0.5 } };
-        if( index >= std::size( all ) )
-            return false;
-        *info               = {};
-        info->id            = all[index].id;
-        info->flags         = CLAP_PARAM_IS_AUTOMATABLE | CLAP_PARAM_IS_MODULATABLE;
-        info->min_value     = 0.0;
-        info->max_value     = 1.0;
-        info->default_value = all[index].defaultValue;
-        std::snprintf( info->name, sizeof( info->name ), "%s", all[index].name );
+        if(index>=parameters.size())return false;
+        const auto& parameter=parameters[index];
+        *info={};info->id=index+1;
+        info->flags=CLAP_PARAM_IS_AUTOMATABLE | (parameter.stepped?CLAP_PARAM_IS_STEPPED | CLAP_PARAM_IS_ENUM:CLAP_PARAM_IS_MODULATABLE);
+        info->max_value=parameter.maximum;info->default_value=parameter.initial;
+        std::snprintf(info->name,sizeof(info->name),"%s",parameter.name);
         return true;
     }
 
     bool paramsValue( const clap_plugin_t* p, clap_id id, double* value )
     {
-        if( id == brightnessId )
-            *value = self( p ).brightness;
-        else if( id == levelId )
-            *value = self( p ).level;
-        else if( id == pressureId )
-            *value = self( p ).pressure;
-        else
-            return false;
-        return true;
+        if(id<1 || id>parameters.size())return false;
+        *value=self(p).values[id-1];return true;
     }
 
     bool paramsToText( const clap_plugin_t*, clap_id id, double value, char* text, uint32_t size )
     {
-        if( id != brightnessId && id != levelId && id != pressureId )
-            return false;
-        std::snprintf( text, size, "%.0f%%", value * 100.0 );
+        if(id<1 || id>parameters.size() || !std::isfinite(value))return false;
+        value=std::clamp(value,0.0,parameters[id-1].maximum);
+        if(id==4)std::snprintf(text,size,"%s",oscillators[static_cast<size_t>(std::round(value))]);
+        else if(id<=3)std::snprintf(text,size,"%.0f%%",value*100);
+        else std::snprintf(text,size,"%.1f %s",value,parameters[id-1].unit);
         return true;
     }
 
     bool paramsFromText( const clap_plugin_t*, clap_id id, const char* text, double* value )
     {
-        if( id != brightnessId && id != levelId && id != pressureId )
-            return false;
-        *value = std::clamp( std::atof( text ) / 100.0, 0.0, 1.0 );
-        return true;
+        if(id<1 || id>parameters.size())return false;
+        if(id==4)for(size_t i=0;i<oscillators.size();++i)if(std::strcmp(text,oscillators[i])==0){*value=i;return true;}
+        char* end=nullptr;double parsed=std::strtod(text,&end);
+        if(end==text || !std::isfinite(parsed))return false;
+        while(*end==' ')++end;
+        if(*end && std::strcmp(end,parameters[id-1].unit)!=0)return false;
+        if(id<=3)parsed/=100;
+        if(parsed<0 || parsed>parameters[id-1].maximum || (parameters[id-1].stepped && parsed!=std::round(parsed)))return false;
+        *value=parsed;return true;
     }
 
     void paramsFlush( const clap_plugin_t* p, const clap_input_events_t* in, const clap_output_events_t* )
@@ -464,10 +478,17 @@ namespace
             if(!c.prepared)return false;*info={};info->id=c.id;std::memcpy(info->name,c.name,sizeof(c.name));
             info->selected_channels=c.selected.load();info->active_voices=c.voices.load();info->idle=c.users.load(std::memory_order_acquire)==0;return true;
         },
-        [](const clap_plugin_t* p,const char* name,const oscairn_sound_parameter_t* parameters,uint32_t count)->uint32_t {
-            if(!name || std::strlen(name)>63 || count>3 || (count && !parameters))return CLAP_INVALID_ID;
-            std::array<double,3> patch{1,1,.5};std::array<bool,3> seen{};
-            for(uint32_t i=0;i<count;++i){const auto& v=parameters[i];if(v.id<1 || v.id>3 || seen[v.id-1] || !std::isfinite(v.value) || v.value<0 || v.value>1)return CLAP_INVALID_ID;seen[v.id-1]=true;patch[v.id-1]=v.value;}
+        [](const clap_plugin_t* p,const char* name,const oscairn_sound_parameter_t* supplied,uint32_t count)->uint32_t {
+            if(!name || std::strlen(name)>63 || count>defaults.size() || (count && !supplied))return CLAP_INVALID_ID;
+            auto patch=defaults;std::array<bool,defaults.size()> seen{};
+            for(uint32_t i=0;i<count;++i)
+            {
+                const auto& v=supplied[i];
+                if(v.id<1 || v.id>parameters.size() || seen[v.id-1] || !std::isfinite(v.value))return CLAP_INVALID_ID;
+                const auto& definition=parameters[v.id-1];
+                if(v.value<0 || v.value>definition.maximum || (definition.stepped && v.value!=std::round(v.value)))return CLAP_INVALID_ID;
+                seen[v.id-1]=true;patch[v.id-1]=v.value;
+            }
             auto& s=self(p);if(s.nextContext==CLAP_INVALID_ID)return CLAP_INVALID_ID;
             for(uint32_t i=1;i<Synth::contextCapacity;++i){auto& c=s.contexts[i];if(c.prepared)continue;
                 c.values=patch;c.modulation={};c.id=s.nextContext++;std::strcpy(c.name,name);c.prepared=true;return c.id;}

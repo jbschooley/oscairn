@@ -101,7 +101,7 @@ try:
     raw('!render')
     assert rpc('transport.get')['result']['tempo'] == 120  # rejected transport list changed nothing
     meta = rpc('params.list', {'node': 'synth'})['result']
-    assert meta['node'] == 1 and len(meta['parameters']) == 3
+    assert meta['node'] == 1 and len(meta['parameters']) == 7
     assert meta['parameters'][2]['name'] == 'Pressure' and meta['parameters'][2]['defaultValue'] == 0.5
     assert rpc('params.text', {'node': 1, 'param': 3, 'value': 0.5})['result']['text'] == '50%'
     original = value(1)

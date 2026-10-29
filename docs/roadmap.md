@@ -99,6 +99,8 @@ Done:
   remote tests, actual KICK UI controls and live 128-frame reconnect/playback checks passed.
   Demo brightness locks are opt-in so sequencing preserves prepared sound differences;
   render regression covers sequencer playback followed by pads.
+  Basic Synth contexts also own oscillator mode, saw detune and pitch LFO settings;
+  detuned-saw and square-vibrato sounds overlap and play as independent channel parts.
   In-process diagnostics disable preparation; project persistence remains pending.
 
 To do:
