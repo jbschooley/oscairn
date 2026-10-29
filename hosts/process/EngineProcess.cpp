@@ -113,6 +113,7 @@ namespace oscairn::host
     struct EngineProcess::Impl
     {
         std::string executable,plugins,socket,log;
+        AudioConfiguration audio;
         pid_t child=-1;
         void reap(){if(child>0 && ::waitpid(child,nullptr,WNOHANG)==child)child=-1;}
         void stopFailedStartup()
@@ -148,18 +149,30 @@ namespace oscairn::host
             struct Attributes{posix_spawnattr_t* value;~Attributes(){posix_spawnattr_destroy(value);}}attributeCleanup{&attributes};
             checked(posix_spawnattr_setflags(&attributes,POSIX_SPAWN_SETPGROUP));
             checked(posix_spawnattr_setpgroup(&attributes,0));
-            std::string socketFlag="--socket",pluginFlag="--plugins",managed="--managed";
-            char* args[]{executable.data(),socketFlag.data(),socket.data(),pluginFlag.data(),plugins.data(),managed.data(),nullptr};
-            checked(::posix_spawn(&child,executable.c_str(),&actions,&attributes,args,environ));
+            std::vector<std::string> argStrings = {
+                executable,
+                "--socket", socket,
+                "--plugins", plugins,
+                "--managed"
+            };
+            const auto audioArgs=audio.arguments();
+            argStrings.insert(argStrings.end(),audioArgs.begin(),audioArgs.end());
+            std::vector<char*> args;
+            for(auto& str : argStrings) args.push_back(str.data());
+            args.push_back(nullptr);
+            checked(::posix_spawn(&child,executable.c_str(),&actions,&attributes,args.data(),environ));
         }
     };
-    EngineProcess::EngineProcess(std::string executable,std::string plugins,std::string directory):impl_(std::make_unique<Impl>())
+    EngineProcess::EngineProcess(std::string executable,std::string plugins,std::string directory,const AudioConfiguration& audio):impl_(std::make_unique<Impl>())
     {
         auto& s=*impl_;
         s.executable=fs::absolute(executable).string();s.plugins=fs::canonical(plugins).string();
+        audio.validate();s.audio=audio;
         if(directory.empty())directory=defaultDirectory();
         privateDirectory(directory,true);
-        s.socket=directory+"/engine-"+identity(s.plugins)+".sock";
+        std::string key=std::to_string(s.plugins.size())+":"+s.plugins;
+        for(const auto& arg:audio.arguments())key+=std::to_string(arg.size())+":"+arg;
+        s.socket=directory+"/engine-"+identity(key)+".sock";
         s.log=s.socket+".log";
     }
     EngineProcess::~EngineProcess(){impl_->reap();}

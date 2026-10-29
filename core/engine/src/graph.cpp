@@ -14,14 +14,16 @@ namespace oscairn
     /// preallocated, so processing never allocates or locks.
     struct Graph::Plan
     {
-        struct AudioRoute { int source; uint32_t from, to; float gain; }; // -1: external input
+        struct AudioRoute { int source; uint32_t from, to; float gain; bool first=false; }; // -1: external input
         std::vector<AudioRoute> outputRoutes;
         std::vector<float> externalInputs;
+        std::vector<uint32_t> silentOutputs;
         struct Step
         {
             std::shared_ptr<PluginHost> host; // keeps the plugin alive while any plan uses it
             uint32_t                          audioInputs = 0, audioOutputs = 0;
             std::vector<AudioRoute>           audioSources;
+            std::vector<uint32_t> silentInputs;
             std::vector<int>                  noteSources;  // step indices; -1 is graphInput
             std::vector<float> inputBuffer, outputBuffer;
             std::vector<float*> out;
@@ -38,6 +40,7 @@ namespace oscairn
             std::vector<Route>             routes;
             std::vector<kick::clap::Event> paramIn; // converted events waiting for this step this block
             uint32_t                       paramCount = 0;
+            uint64_t paramDrops = 0;
         };
 
         struct Key // orders merged notes: by time, then by source and position
@@ -116,12 +119,12 @@ namespace oscairn
 
     void Graph::remove( NodeId node )
     {
+        if(auto it=nodes_.find(node);it!=nodes_.end())removedHosts_.push_back(it->second.host);
         nodes_.erase( node );
         std::erase_if(audioRoutes_,[&](const auto& e){return e.from.node==node || e.to.node==node;});
         for( auto it = paramTargets_.begin(); it != paramTargets_.end(); )
             it = ( it->first.first == node || it->second.first == node ) ? paramTargets_.erase( it ) : std::next( it );
         auto touches = [&]( const std::pair<NodeId, NodeId>& e ) { return e.first == node || e.second == node; };
-        audioEdges_.erase( std::remove_if( audioEdges_.begin(), audioEdges_.end(), touches ), audioEdges_.end() );
         noteEdges_.erase( std::remove_if( noteEdges_.begin(), noteEdges_.end(), touches ), noteEdges_.end() );
     }
 
@@ -151,11 +154,22 @@ namespace oscairn
     {
         checkSource( from, true );
         checkDestination( to, true );
-        if( std::find( audioEdges_.begin(), audioEdges_.end(), std::make_pair( from, to ) ) == audioEdges_.end() )
-        {
-            if(audioEdges_.size()+audioRoutes_.size()==maxAudioConnections)throw std::invalid_argument("Audio connection limit exceeded");
-            audioEdges_.emplace_back( from, to );
-        }
+
+        auto mainChannels=[&](NodeId node,bool input) {
+            const bool external=node==graphInput || node==graphOutput;
+            const auto& ports=external?(input?audioLayout_.outputs:audioLayout_.inputs):
+                (input?host(node).inputPorts():host(node).outputPorts());
+            const auto ids=external?std::vector<uint32_t>{ports.front().id}:host(node).mainAudioPorts(input);
+            std::vector<AudioEndpoint> result;
+            for(auto id:ids)for(const auto& p:ports)if(p.id==id)
+                for(uint32_t c=0;c<p.channels;++c)result.push_back({node,id,c});
+            return result;
+        };
+        const auto source=mainChannels(from,false),destination=mainChannels(to,true);
+        std::vector<AudioConnection> connections;
+        const auto count=source.size()==1 && destination.size()==2?2:std::min(source.size(),destination.size());
+        for(size_t i=0;i<count;++i)connections.push_back({source[std::min(i,source.size()-1)],destination[i]});
+        connectAudioBatch(connections);
     }
 
     uint32_t Graph::resolve(const AudioEndpoint& e,bool source,uint32_t count) const
@@ -181,19 +195,40 @@ namespace oscairn
         }
         throw std::invalid_argument("Unknown audio port ID");
     }
-    void Graph::connectAudio(const AudioConnection& c)
+    void Graph::connectAudioBatch(const std::vector<AudioConnection>& connections)
     {
-        resolve(c.from,true,c.channels);resolve(c.to,false,c.channels);
-        if(!std::isfinite(c.gain) || std::abs(c.gain)>16)throw std::invalid_argument("Audio route gain must be finite and within -16..16");
-        if(std::find(audioRoutes_.begin(),audioRoutes_.end(),c)!=audioRoutes_.end())return;
-        if(audioEdges_.size()+audioRoutes_.size()==maxAudioConnections)throw std::invalid_argument("Audio connection limit exceeded");
-        audioRoutes_.push_back(c);
+        // Stage the whole operation locally: invalid ranges or limits cannot leave
+        // half of a mono-to-stereo connection in the editable graph.
+        auto next=audioRoutes_;
+        for(const auto& c:connections)
+        {
+            resolve(c.from,true,c.channels);resolve(c.to,false,c.channels);
+            if(!std::isfinite(c.gain) || std::abs(c.gain)>16)
+                throw std::invalid_argument("Audio route gain must be finite and within -16..16");
+            for(uint32_t i=0;i<c.channels;++i)
+            {
+                AudioConnection channel=c;channel.channels=1;channel.from.channel+=i;channel.to.channel+=i;
+                auto existing=std::find_if(next.begin(),next.end(),[&](const auto& r){return r.from==channel.from && r.to==channel.to;});
+                if(existing!=next.end())existing->gain=c.gain;
+                else
+                {
+                    if(next.size()==maxAudioConnections)throw std::invalid_argument("Audio connection limit exceeded");
+                    next.push_back(channel);
+                }
+            }
+        }
+        audioRoutes_.swap(next);
     }
+    void Graph::connectAudio(const AudioConnection& c) { connectAudioBatch({c}); }
     void Graph::disconnectAudio(const AudioConnection& c)
     {
         resolve(c.from,true,c.channels);resolve(c.to,false,c.channels);
-        if(!std::isfinite(c.gain) || std::abs(c.gain)>16)throw std::invalid_argument("Audio route gain must be finite and within -16..16");
-        std::erase(audioRoutes_,c);
+        std::erase_if(audioRoutes_,[&](const AudioConnection& r) {
+            return r.from.node==c.from.node && r.to.node==c.to.node &&
+                r.from.port==c.from.port && r.to.port==c.to.port &&
+                r.from.channel>=c.from.channel && r.from.channel-c.from.channel<c.channels &&
+                r.to.channel>=c.to.channel && r.to.channel-c.to.channel==r.from.channel-c.from.channel;
+        });
     }
 
     void Graph::connectNotes( NodeId from, NodeId to )
@@ -206,7 +241,9 @@ namespace oscairn
 
     void Graph::disconnectAudio( NodeId from, NodeId to )
     {
-        audioEdges_.erase( std::remove( audioEdges_.begin(), audioEdges_.end(), std::make_pair( from, to ) ), audioEdges_.end() );
+        std::erase_if( audioRoutes_, [&]( const AudioConnection& c ) {
+            return c.from.node == from && c.to.node == to;
+        } );
     }
 
     void Graph::disconnectNotes( NodeId from, NodeId to )
@@ -246,7 +283,6 @@ namespace oscairn
         for( const auto& [id,node] : nodes_ )
             result.nodes.push_back({id,node.host->descriptor(),node.host->inputPorts(),node.host->outputPorts(),
                                     node.host->noteInputPorts(),node.host->noteOutputPorts()});
-        result.audio = audioEdges_;
         result.audioRoutes=audioRoutes_;result.audioLayout=audioLayout_;
         result.notes = noteEdges_;
         for( const auto& [from,to] : paramTargets_ )
@@ -262,7 +298,7 @@ namespace oscairn
         for( const auto& [id, node] : nodes_ )
             indegree[id] = 0;
         auto internal = [&]( const std::pair<NodeId, NodeId>& e ) { return nodes_.count( e.first ) && nodes_.count( e.second ); };
-        std::vector<std::pair<NodeId, NodeId>> audioDependencies=audioEdges_;
+        std::vector<std::pair<NodeId, NodeId>> audioDependencies;
         for(const auto& e:audioRoutes_)audioDependencies.emplace_back(e.from.node,e.to.node);
         std::vector<std::pair<NodeId, NodeId>> mappingEdges;
         for( const auto& [from, to] : paramTargets_ )
@@ -310,13 +346,6 @@ namespace oscairn
             const auto from=resolve(c.from,true,c.channels),to=resolve(c.to,false,c.channels);
             for(uint32_t i=0;i<c.channels;++i)route(c.from.node,from+i,c.to.node,to+i,static_cast<float>(c.gain));
         }
-        for(const auto& [from,to]:audioEdges_)
-        {
-            const auto ni=from==graphInput?inputChannels_:nodes_.at(from).audioOutputs;
-            const auto no=to==graphOutput?outputChannels_:nodes_.at(to).audioInputs;
-            for(uint32_t c=0;c<std::min(2u,no);++c)
-                if(c<ni || ni==1)route(from,ni==1?0:c,to,c,1.f);
-        }
         for( const auto& [from, to] : noteEdges_ )
         {
             if( !nodes_.count( to ) || ( from != graphInput && !nodes_.count( from ) ) )
@@ -336,9 +365,16 @@ namespace oscairn
             target.paramIn.resize( kick::clap::Host::maxBlockEvents );
         }
 
+        auto prepare=[](auto& routes,uint32_t channels,auto& silent) {
+            std::vector<bool> written(channels);
+            for(auto& r:routes){r.first=!written[r.to];written[r.to]=true;}
+            for(uint32_t c=0;c<channels;++c)if(!written[c])silent.push_back(c);
+        };
+        prepare(plan->outputRoutes,outputChannels_,plan->silentOutputs);
         plan->externalInputs.resize(size_t(inputChannels_)*maxFrames_);
         for(auto& step:plan->steps)
         {
+            prepare(step.audioSources,step.audioInputs,step.silentInputs);
             step.inputBuffer.resize(size_t(step.audioInputs)*maxFrames_);
             step.outputBuffer.resize(size_t(step.audioOutputs)*maxFrames_);
             for(uint32_t c=0;c<step.audioInputs;++c)step.in.push_back(step.inputBuffer.data()+size_t(c)*maxFrames_);
@@ -360,6 +396,14 @@ namespace oscairn
     {
         while( Plan* p = retired_.pop() )
             delete p;
+        std::erase_if(removedHosts_,[](const auto& host){return host.use_count()==1;});
+    }
+
+    void Graph::service()
+    {
+        collect();
+        for(const auto& [id,node]:nodes_)node.host->service();
+        for(const auto& host:removedHosts_)host->service();
     }
 
     bool Graph::process( float* const* outputs, uint32_t frames, const clap_event_transport_t* transport,
@@ -392,21 +436,30 @@ namespace oscairn
             auto* dest=plan->externalInputs.data()+size_t(c)*maxFrames_;
             if(c<ni && inputs[c])std::copy_n(inputs[c],frames,dest);else std::fill_n(dest,frames,0.f);
         }
-        clear();
+        for(auto c:plan->silentOutputs)std::fill_n(outputs[c],frames,0.f);
+        for(uint32_t c=outputChannels_;c<no;++c)if(outputs[c])std::fill_n(outputs[c],frames,0.f);
         auto mix=[&](const Plan::AudioRoute& r,float* dest)
         {
             const float* from=r.source<0?plan->externalInputs.data()+size_t(r.from)*maxFrames_:plan->steps[r.source].out[r.from];
-            for(uint32_t i=0;i<frames;++i)dest[i]+=from[i]*r.gain;
+            if(r.first)
+            {
+                if(r.gain==1.f)std::copy_n(from,frames,dest);
+                else for(uint32_t i=0;i<frames;++i)dest[i]=from[i]*r.gain;
+            }
+            else if(r.gain==1.f)for(uint32_t i=0;i<frames;++i)dest[i]+=from[i];
+            else for(uint32_t i=0;i<frames;++i)dest[i]+=from[i]*r.gain;
         };
         bool ok = true;
         for( auto& step : plan->steps )
         {
-            for(uint32_t c=0;c<step.audioInputs;++c)std::fill_n(step.inputBuffer.data()+size_t(c)*maxFrames_,frames,0.f);
+            for(auto c:step.silentInputs)std::fill_n(step.inputBuffer.data()+size_t(c)*maxFrames_,frames,0.f);
             for(const auto& r:step.audioSources)mix(r,step.inputBuffer.data()+size_t(r.to)*maxFrames_);
 
             // Notes in: every source's events this block, merged in time order.
             plan->keys.clear();
             uint32_t order = 0;
+            uint64_t totalEvents=step.paramCount+step.paramDrops;
+            bool overflow=step.paramDrops!=0;
             for( uint32_t i = 0; i < step.paramCount; ++i ) // before notes at the same sample
                 plan->keys.push_back( { step.paramIn[i].header()->time, order++, &step.paramIn[i] } );
             for( int source : step.noteSources )
@@ -415,19 +468,33 @@ namespace oscairn
                 uint32_t                 count = eventCount;
                 if( source >= 0 )
                     list = plan->steps[(size_t)source].host->outputEvents( count );
-                for( uint32_t i = 0; i < count && plan->keys.size() < kick::clap::Host::maxBlockEvents; ++i )
+                for( uint32_t i = 0; i < count; ++i )
                     if( list[i].header()->space_id == CLAP_CORE_EVENT_SPACE_ID ) // lane events are routed, not passed on
-                        plan->keys.push_back( { list[i].header()->time, order++, &list[i] } );
+                    {
+                        ++totalEvents;
+                        if(plan->keys.size()<kick::clap::Host::maxBlockEvents)
+                            plan->keys.push_back( { list[i].header()->time, order++, &list[i] } );
+                        else overflow=true;
+                    }
             }
             std::sort( plan->keys.begin(), plan->keys.end(), []( const Plan::Key& a, const Plan::Key& b ) {
                 return a.time != b.time ? a.time < b.time : a.order < b.order;
             } );
             for( size_t i = 0; i < plan->keys.size(); ++i )
                 plan->merged[i] = *plan->keys[i].event;
-            const auto merged = (uint32_t)plan->keys.size();
+            auto merged = (uint32_t)plan->keys.size();
+            if(overflow)
+            {
+                // Discard this destination's entire burst, including new note-ons,
+                // and release every note port/channel. A late source's note-off
+                // must never disappear behind an earlier source's full budget.
+                eventDrops_.fetch_add(totalEvents,std::memory_order_relaxed);
+                merged=step.host->noteInputPorts()?1:0;
+                plan->merged[0]=kick::clap::Event::note(false,-1,0,0,-1,-1);
+            }
 
             ok &= step.host->process(step.in.data(),step.audioInputs,step.out.data(),step.audioOutputs,frames,plan->merged.data(),merged,transport);
-            step.paramCount = 0;
+            step.paramCount = 0;step.paramDrops=0;
 
             // This step's param-target lane events become parameter events for their
             // targets, which come later in this block.
@@ -446,7 +513,7 @@ namespace oscairn
                         continue; // lane not mapped
                     auto& target = plan->steps[(size_t)route->target];
                     if( target.paramCount == target.paramIn.size() )
-                        continue; // full for this block
+                    {++target.paramDrops;continue;}
                     const double range = route->maximum - route->minimum;
                     if( e.mode == OSCAIRN_PARAM_TARGET_SET )
                     {

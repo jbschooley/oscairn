@@ -52,6 +52,9 @@ namespace oscairn
         virtual const std::vector<kick::clap::Parameter>& parameters() const noexcept = 0;
         virtual const std::vector<kick::clap::Port>& inputPorts() const noexcept = 0;
         virtual const std::vector<kick::clap::Port>& outputPorts() const noexcept = 0;
+        // Control thread: port IDs forming the unambiguous main audio bus.
+        // Format adapters resolve their own bus metadata; ambiguous layouts require explicit routes.
+        virtual std::vector<uint32_t> mainAudioPorts(bool input) const;
         virtual uint32_t noteInputPorts() const noexcept = 0;
         virtual uint32_t noteOutputPorts() const noexcept = 0;
         virtual double parameterValue(clap_id id) const noexcept = 0;

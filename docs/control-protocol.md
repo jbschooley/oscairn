@@ -39,20 +39,26 @@ channel with gain 0.5. For mono-to-stereo, explicitly connect the source to both
 channels. Unconnected channels are silent. Extra plugin outputs remain independent;
 there is no automatic fold into master. Missing ports and invalid ranges reject the edit.
 
-`graph.disconnect` accepts the same fields and removes that exact connection, including
-channel count and gain. Repeating a connection is idempotent. A gain change is a staged
-disconnect/reconnect followed by `graph.commit`; gains do not yet ramp. `graph.get` includes
-all explicit fields in each such connection. Node-only audio connections remain supported:
-they connect the first two flattened channels, duplicate a mono source into stereo, and
-use the left channel for a mono destination, matching the original demo. They do not
-include other channels, and their disconnect removes only that node-only connection.
-Explicit and node-only routes can coexist and their contributions add.
+Audio routes have one identity per source/destination channel pair. Ranges expand into
+these pairs, so overlapping range and single-channel connections cannot duplicate a
+signal. Repeating a connection updates its gain; connections from different source
+channels still sum. `graph.get` always returns explicit single-channel routes (`channels: 1`).
+`graph.disconnect` removes the selected pairs regardless of gain; omit `gain` when
+disconnecting. Gain changes are staged until `graph.commit` and do not yet ramp.
+
+Node-only `graph.connect` is a main-bus convenience operation using the same route
+collection. CLAP uses its declared main port (or its only port). LV2 mono/stereo plugins
+use their one/two separate audio ports; larger ambiguous LV2 layouts require explicit
+port/channel routes. External endpoints use their first configured port. Matching channels
+connect in order, a mono source is duplicated into a stereo destination, and otherwise
+only the shared channel count connects. Additional buses never fold into the main bus.
+Node-only `graph.disconnect` removes **all** audio routes between the two nodes.
 
 All routing edits take effect at commit, which validates dependency cycles and builds
 buffers/routes outside the audio callback. A failed commit preserves the live plan.
 External audio layouts are supplied when constructing Graph/Session and remain fixed for
 that session. Limits are 256 input and 256 output channels per node or external endpoint
-set, and 4096 audio connections per graph. Format-adapter limits also apply: CLAP currently
+set, and 4096 source/destination channel pairs per graph. Format-adapter limits also apply: CLAP currently
 allows 16 ports and 64 channels per direction. Existing 64-KiB wire-message limits still apply
 (no pagination yet); large topologies may require the C++ API until paged snapshots exist.
 Shared-host CLAP instances lock their loaded audio port IDs, order and channel counts.
@@ -92,7 +98,7 @@ request members.
 | Method | `params` | `result` |
 | --- | --- | --- |
 | `session.hello` | omitted or `{}` | `protocolVersion`, `server`, supported methods and optional features in `capabilities`, `limits` |
-| `session.status` | omitted or `{}` | `audioDevice`, `midiInputs`, `sampleRate`, `bufferSize`, `cpuLoad`, `deadlineMisses`, `audioReady`, mapped `audioInputs`/`audioOutputs` |
+| `session.status` | omitted or `{}` | `audioDevice`, `midiInputs`, `sampleRate`, `bufferSize`, `cpuLoad`, `deadlineMisses`, `graphEventDrops`, `audioReady`, mapped `audioInputs`/`audioOutputs` |
 | `params.list` | `{"node":"synth"}` | numeric `node`, array `parameters` of `id`, `name`, `minimum`, `maximum`, `defaultValue`, `stepped`, CLAP `flags` |
 | `params.get` | `{"values":[{"node":"synth","param":3}]}` | `{"values":[{"node":1,"param":3,"value":0.5}]}` |
 | `params.set` | `{"values":[{"node":"synth","param":3,"value":0.7}]}` | same shape as `params.get`, with accepted plain values |
@@ -170,7 +176,8 @@ A cycle fails with `-32003`, leaves the live plan/revision unchanged and retains
 edits for correction. Disconnect the offending edge and commit again. There is no rollback
 method or per-client edit isolation yet. Removing a node prunes its connections and mappings,
 forgets its name and cancels pending controls. The active plan keeps its plugin alive until
-a later successful commit takes effect. Parameter changes are independent of graph staging.
+a later successful commit takes effect; its main-thread callbacks continue to be serviced
+until the last audio plan using it retires. Parameter changes are independent of graph staging.
 
 ## Notifications
 
@@ -196,7 +203,12 @@ the first poll. Re-subscribing does not discard already unread changes.
   not whole-machine CPU usage. `deadlineMisses` sums plugin deadline misses for nodes
   currently in the staging graph; it is not an audio-device underrun counter and may
   decrease when nodes are removed. Without device I/O, names are empty and the session
-  reports its configured sample rate and maximum block size.
+  reports its configured sample rate and maximum block size. `graphEventDrops` counts
+  destination events discarded by graph merge overflow. If a destination exceeds its
+  512-event budget, the graph discards that destination's entire burst and sends a wildcard
+  note release at sample zero across all its note ports/channels. This can release voices
+  from other sources on that destination, but prevents a lost note-off leaving stuck notes.
+  The next block can accept new notes normally.
 - `graph.changed` carries the latest committed `revision`. Several unseen commits can be
   represented by one notification; fetch `graph.get` to inspect the staging area.
 - `session.resync` with `topic: "params.changed"` signals a gap: the bounded 4,096-entry

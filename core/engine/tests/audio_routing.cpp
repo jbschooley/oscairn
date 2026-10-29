@@ -25,7 +25,7 @@ int main(int argc,char** argv){try{
     const AudioConnection cue{{graphInput,11,0},{graphOutput,200,0},2};
     g.connectAudio(cue);g.connectAudio(cue);g.connectAudio({{n,40,0},{graphOutput,300,0}});g.commit();
     Audio a;check(a.run(g),"multichannel render");a.expect({31,62,11,13,3});
-    check(g.describe().audioRoutes.size()==5,"duplicate route idempotent");
+    check(g.describe().audioRoutes.size()==8,"duplicate route idempotent");
     // Buffer sizes, sidechains and routing remain correct with uneven render blocks.
     check(a.run(g,37),"uneven blocks");a.expect({31,62,11,13,3},37);
     rejects([&]{g.connectAudio({{n,0,0},{graphOutput,100,0}});},"port IDs are not array indices");
@@ -44,9 +44,35 @@ int main(int argc,char** argv){try{
     for(size_t c=0;c<5;++c)a.out[c]=a.input[c].data();check(a.run(g),"aliased capture/playback");
     check(a.input[0][0]==31 && a.input[1][0]==62 && a.input[2][0]==12,"input copy precedes output clearing");
     Audio missing;check(g.process(nullptr,0,missing.out.data(),5,64,nullptr),"missing capture is silence");missing.expect({0,0,0,0,0});
-    std::atomic<bool> stop=false,valid=true;std::thread render([&]{Audio live;while(!stop){if(!live.run(g) || live.output[0][0]!=31 || live.output[1][0]!=62 || !((live.output[2][0]==12 && live.output[3][0]==0) || (live.output[2][0]==23 && live.output[3][0]==13)))valid=false;}});
-    for(int i=0;i<50;++i){g.connectAudio(cue);g.commit();g.disconnectAudio(cue);g.commit();g.collect();}
+    const AudioConnection liveCue{{graphInput,7,0},{graphOutput,200,0},2};
+    std::atomic<bool> stop=false,valid=true;std::thread render([&]{Audio live;while(!stop){if(!live.run(g) || live.output[0][0]!=31 || live.output[1][0]!=62 || !((live.output[2][0]==12 && live.output[3][0]==0) || (live.output[2][0]==13 && live.output[3][0]==2)))valid=false;}});
+    for(int i=0;i<50;++i){g.connectAudio(liveCue);g.commit();g.disconnectAudio(liveCue);g.commit();g.collect();}
     stop=true;render.join();check(valid,"live route editing remains allocation-free");
+
+    // Range and single-channel APIs address the same routes; gain is a property.
+    Graph identity(48000,64,ProcessingMode::Realtime,{},layout());
+    identity.connectAudio({{graphInput,7,0},{graphOutput,100,0},2,.5});
+    identity.connectAudio({{graphInput,7,0},{graphOutput,100,0},1,1});identity.commit();
+    Audio gain;check(gain.run(identity),"route gain update");gain.expect({1,1,0,0,0});
+    check(identity.describe().audioRoutes.size()==2,"overlapping ranges do not duplicate channel pairs");
+    identity.disconnectAudio({{graphInput,7,0},{graphOutput,100,0},2});identity.commit();
+    check(gain.run(identity),"disconnect ignores gain");gain.expect({0,0,0,0,0});
+    identity.connectAudio(graphInput,graphOutput);
+    identity.connectAudio({{graphInput,7,0},{graphOutput,100,0},2});
+    check(identity.describe().audioRoutes.size()==2,"main bus helper and explicit routes share storage");
+    identity.disconnectAudio(graphInput,graphOutput);check(identity.describe().audioRoutes.empty(),"node disconnect removes explicit routes");
+
+    // Filling a multi-channel operation cannot leave a partial route on failure.
+    AudioLayout large{{{0,"Mono",1,0},{1,"Sources",255,0}},{{0,"Stereo",2,0},{1,"Destinations",254,0}}};
+    Graph limited(48000,64,ProcessingMode::Realtime,{},large);
+    for(uint32_t i=0;i<Graph::maxAudioConnections-1;++i)
+        limited.connectAudio({{graphInput,1,i/254},{graphOutput,1,i%254}});
+    const auto before=limited.describe().audioRoutes;
+    rejects([&]{limited.connectAudio(graphInput,graphOutput);},"whole mono-to-stereo operation respects capacity");
+    check(limited.describe().audioRoutes==before,"failed convenience operation leaves no partial edit");
+    Graph mainBus(48000,64,ProcessingMode::Realtime,{},layout());auto mainNode=mainBus.add(argv[1]);
+    mainBus.connectAudio(graphInput,mainNode);mainBus.connectAudio(mainNode,graphOutput);mainBus.commit();
+    Audio mainAudio;check(mainAudio.run(mainBus),"automatic main bus routing");mainAudio.expect({1,2,0,0,0});
 
     Session session(48000,64,{},layout());JsonRpc rpc(session);auto id=session.add("effect",argv[1]);
     const auto route="{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"graph.connect\",\"params\":{\"kind\":\"audio\",\"from\":4294967294,\"to\":4294967295,\"fromPort\":11,\"fromChannel\":0,\"toPort\":200,\"toChannel\":0,\"channels\":2}}";
@@ -57,6 +83,10 @@ int main(int argc,char** argv){try{
     auto invalid=rpc.dispatch(R"({"jsonrpc":"2.0","id":3,"method":"graph.connect","params":{"kind":"notes","from":"input","to":"output","fromPort":0}})");check(invalid->find("error")!=std::string::npos,"note routes reject audio fields");
     session.remove(id);session.commit();
     if(argc==3){
+        Graph stereo(48000,64,ProcessingMode::Realtime,{},layout());
+        auto effect=stereo.add(argv[2],"urn:oscairn:test:stereo");
+        stereo.connectAudio(graphInput,effect);stereo.connectAudio(effect,graphOutput);stereo.commit();
+        Audio separate;check(separate.run(stereo),"LV2 stereo main bus");separate.expect({1,2,0,0,0});
         Graph mixed(48000,64,ProcessingMode::Realtime,{},layout());auto lv=mixed.add(argv[2],"urn:oscairn:test:effect");auto cl=mixed.add(argv[1]);
         mixed.connectAudio({{graphInput,9,0},{lv,1,0}});mixed.connectAudio({{lv,2,0},{cl,20,0}});mixed.connectAudio({{cl,30,0},{graphOutput,200,0},2});mixed.commit();
         Audio c;check(c.run(mixed),"mixed LV2/CLAP explicit ports");c.expect({0,0,15,30,0});

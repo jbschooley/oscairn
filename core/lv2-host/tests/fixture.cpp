@@ -194,4 +194,12 @@ const LV2_Descriptor state{"urn:oscairn:test:state",instantiate,synth.connect_po
     [](const char* uri)->const void*{return !std::strcmp(uri,LV2_STATE__interface)?&stateInterface:nullptr;}};
 const LV2_Descriptor large{"urn:oscairn:test:large",instantiate,synth.connect_port,nullptr,largeRun,nullptr,synth.cleanup,nullptr};
 }
-LV2_SYMBOL_EXPORT const LV2_Descriptor* lv2_descriptor(uint32_t index){return index==0?&synth:index==1?&effect:index==2?&audit:index==3?&worker:index==4?&brokenWorker:index==5?&large:index==6?&state:nullptr;}
+namespace {
+struct Stereo { float* ports[4]{}; };
+const LV2_Descriptor stereo{"urn:oscairn:test:stereo",
+    [](const LV2_Descriptor*,double,const char*,const LV2_Feature* const*)->LV2_Handle{return new Stereo;},
+    [](LV2_Handle h,uint32_t i,void* p){if(i<4)static_cast<Stereo*>(h)->ports[i]=static_cast<float*>(p);},nullptr,
+    [](LV2_Handle h,uint32_t n){auto& p=static_cast<Stereo*>(h)->ports;for(uint32_t i=0;i<n;++i){p[2][i]=p[0][i];p[3][i]=p[1][i];}},
+    nullptr,[](LV2_Handle h){delete static_cast<Stereo*>(h);},nullptr};
+}
+LV2_SYMBOL_EXPORT const LV2_Descriptor* lv2_descriptor(uint32_t index){return index==0?&synth:index==1?&effect:index==2?&audit:index==3?&worker:index==4?&brokenWorker:index==5?&large:index==6?&state:index==7?&stereo:nullptr;}

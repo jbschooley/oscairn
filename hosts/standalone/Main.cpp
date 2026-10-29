@@ -197,7 +197,25 @@ namespace oscairn::standalone
             }
             try
             {
+                host::AudioConfiguration audio;
+                bool audioOptions=false;
+                const juce::StringArray valued{"--plugins","--connect","--layout","--snapshot","--size"};
+                for(int i=0;i<args.size();++i)
+                {
+                    const auto name=args[i].toStdString();
+                    if(host::AudioConfiguration::isOption(name) || valued.contains(args[i]))
+                    {
+                        if(i+1==args.size() || args[i+1].startsWith("--"))throw std::invalid_argument("Missing value for "+name);
+                        const auto value=args[++i].unquoted().toStdString();
+                        if(host::AudioConfiguration::isOption(name)){audio.setOption(name,value);audioOptions=true;}
+                    }
+                    else if(name=="--play") {if(i+1<args.size() && !args[i+1].startsWith("--"))++i;}
+                    else if(name!="--fullscreen" && name!="--in-process")throw std::invalid_argument("Unknown argument: "+name);
+                }
+                audio.validate();
                 const auto socket = argument(args, "--connect");
+                if(audioOptions && args.contains("--connect"))
+                    throw std::invalid_argument("Audio options configure a new engine; omit --connect to use them");
                 if(args.contains("--connect") && socket.isEmpty())
                     throw std::invalid_argument("--connect requires a socket path");
                 if(args.contains("--in-process") && !socket.isEmpty())
@@ -205,7 +223,7 @@ namespace oscairn::standalone
                 std::string helper;
                 if(socket.isEmpty() && !args.contains("--in-process"))
                     helper=juce::File::getSpecialLocation(juce::File::currentExecutableFile).getSiblingFile("oscairn-engine").getFullPathName().toStdString();
-                engine_ = std::make_unique<Engine>( dir.unquoted().toStdString(), socket.unquoted().toStdString(), helper );
+                engine_ = std::make_unique<Engine>( dir.unquoted().toStdString(), socket.unquoted().toStdString(), helper, audio );
 
                 auto layouts = builtInLayouts();
                 auto wanted  = argument( args, "--layout" );

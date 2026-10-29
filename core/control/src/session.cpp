@@ -135,6 +135,7 @@ namespace oscairn
     Control::SessionStatus Session::sessionStatus() const
     {
         auto result = hostStatus_;
+        result.graphEventDrops=graph_.eventDrops();
         if(result.sampleRate == 0) result.sampleRate = sampleRate_;
         if(result.bufferSize == 0) result.bufferSize = maxFrames_;
         for(const auto& [node,name] : nodes_) result.deadlineMisses += graph_.host(node).statistics().deadlineMisses;
@@ -201,10 +202,10 @@ namespace oscairn
 
     void Session::service()
     {
+        graph_.service();
         for( const auto& [node,name] : nodes_ )
         {
             auto& host = graph_.host(node);
-            host.service();
             if( outputDrops_[node] != host.outputEventDrops() )
             {
                 outputDrops_[node] = host.outputEventDrops();
@@ -268,7 +269,6 @@ namespace oscairn
             }
             it = commands.empty() ? pending_.erase(it) : std::next(it);
         }
-        graph_.collect();
     }
 
     bool Session::process( float* const* outputs, uint32_t frames,

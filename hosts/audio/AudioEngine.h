@@ -70,6 +70,10 @@ namespace oscairn::host
         std::array<Incoming, 1024>    incoming_{};
         std::atomic<uint64_t>         droppedMidi_{ 0 };
 
+        // Audio thread preallocated event buffers:
+        std::array<kick::clap::Event, 128>        notes_{};
+        std::array<Session::MidiClockEvent, 1024> clocks_{};
+
         // Audio thread: when the last block started (seconds and sample), and where the
         // next one starts, on the transport's timeline. Places MIDI clock in time.
         double  blockSeconds_   = 0.0;

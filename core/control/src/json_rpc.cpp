@@ -154,7 +154,7 @@ namespace oscairn
             auto channels=[](const auto& list){std::vector<std::string> result;for(const auto& ch:list)result.push_back("{\"deviceChannel\":"+std::to_string(ch.deviceChannel)+",\"name\":"+quote(ch.name)+",\"available\":"+(ch.available?"true":"false")+'}');return join(result);};
             return "{\"audioReady\":"+std::string(s.audioReady?"true":"false")+",\"audioInputs\":"+channels(s.audioInputs)+",\"audioOutputs\":"+channels(s.audioOutputs)+",\"audioDevice\":" + quote(s.audioDevice) + ",\"midiInputs\":" + join(midi) +
                 ",\"sampleRate\":" + encode(s.sampleRate) + ",\"bufferSize\":" + std::to_string(s.bufferSize) +
-                ",\"cpuLoad\":" + encode(s.cpuLoad) + ",\"deadlineMisses\":" + std::to_string(s.deadlineMisses) + '}';
+                ",\"cpuLoad\":" + encode(s.cpuLoad) + ",\"deadlineMisses\":" + std::to_string(s.deadlineMisses) + ",\"graphEventDrops\":" + std::to_string(s.graphEventDrops) + '}';
         }
         std::string invoke( Control& c, JsonRpc& client, std::string_view method, Value p )
         {
@@ -196,7 +196,7 @@ namespace oscairn
                     for( const auto& [from,to] : list ) connections.push_back("{\"kind\":" + quote(kind) +
                         ",\"from\":" + std::to_string(from) + ",\"to\":" + std::to_string(to) + '}');
                 };
-                edges(graph.topology.audio,"audio"); edges(graph.topology.notes,"notes");
+                edges(graph.topology.notes,"notes");
                 for(const auto& r:graph.topology.audioRoutes)
                     connections.push_back("{\"kind\":\"audio\",\"from\":"+std::to_string(r.from.node)+",\"to\":"+std::to_string(r.to.node)+
                         ",\"fromPort\":"+std::to_string(r.from.port)+",\"fromChannel\":"+std::to_string(r.from.channel)+
@@ -239,7 +239,7 @@ namespace oscairn
                     route.from.port=integer(member(p,"fromPort"));route.from.channel=integer(member(p,"fromChannel"));
                     route.to.port=integer(member(p,"toPort"));route.to.channel=integer(member(p,"toChannel"));
                     route.channels=member(p,"channels")?integer(member(p,"channels")):1;
-                    route.gain=member(p,"gain")?number(member(p,"gain")):1;
+                    route.gain=member(p,"gain")?number(member(p,"gain")):1.0;
                 }
                 try
                 {

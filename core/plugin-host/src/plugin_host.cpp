@@ -52,6 +52,14 @@ namespace oscairn
             bool process(const float* const* inputs, uint32_t ni, float* const* outputs, uint32_t no, uint32_t frames, const kick::clap::Event* events, uint32_t count, const clap_event_transport_t* transport) noexcept override { return host.process(inputs,ni,outputs,no,frames,events,count,transport); }
         };
     }
+    std::vector<uint32_t> PluginHost::mainAudioPorts(bool input) const
+    {
+        const auto& ports=input?inputPorts():outputPorts();
+        const auto main=std::find_if(ports.begin(),ports.end(),[](const auto& p){return p.flags&CLAP_AUDIO_PORT_IS_MAIN;});
+        if(main!=ports.end())return {main->id};
+        if(ports.size()==1)return {ports.front().id};
+        throw std::invalid_argument("No unambiguous main audio bus; specify port/channel routes");
+    }
     std::shared_ptr<PluginHost> loadPlugin(const std::string& path,const std::string& id,double rate,uint32_t frames,ProcessingMode mode,Lv2BufferLimits lv2Buffers)
     {
         (void)lv2Buffers; // LV2-only resource policy.

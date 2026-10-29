@@ -36,13 +36,9 @@ int main(int argc,char** argv)
     try { for(int i=1;i<argc;++i)
     {
         const std::string arg=argv[i];
-        if((arg=="--audio-inputs" || arg=="--audio-outputs" || arg=="--input-device" || arg=="--output-device") && i+1<argc)
+        if(oscairn::host::AudioConfiguration::isOption(arg) && i+1<argc)
         {
-            const std::string value=argv[++i];
-            if(arg=="--audio-inputs")audioConfig.inputs=oscairn::host::AudioConfiguration::parseChannels(value);
-            else if(arg=="--audio-outputs"){audioConfig.outputs=oscairn::host::AudioConfiguration::parseChannels(value);audioConfig.explicitOutputs=true;}
-            else if(arg=="--input-device")audioConfig.inputDevice=value;else audioConfig.outputDevice=value;
-            continue;
+            audioConfig.setOption(arg,argv[++i]);continue;
         }
         if(arg=="--managed"){managed=true;continue;}
         if(arg=="--help"){std::cout<<"oscairn-engine --socket /private/directory/control.sock [--plugins DIR]\n  [--input-device NAME] [--output-device NAME]\n  [--audio-inputs none|0,1,...] [--audio-outputs 0,1,...]\nChannel indices are zero-based; list order defines logical graph channels.\n";return 0;}

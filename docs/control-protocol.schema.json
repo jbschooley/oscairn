@@ -1446,9 +1446,7 @@
                 "maximum": 4294967295
               },
               "channels": {
-                "type": "integer",
-                "minimum": 1,
-                "maximum": 256
+                "const": 1
               },
               "gain": {
                 "type": "number",
@@ -1465,51 +1463,57 @@
             "allOf": [
               {
                 "if": {
-                  "anyOf": [
-                    {
-                      "required": [
-                        "fromPort"
-                      ]
-                    },
-                    {
-                      "required": [
-                        "fromChannel"
-                      ]
-                    },
-                    {
-                      "required": [
-                        "toPort"
-                      ]
-                    },
-                    {
-                      "required": [
-                        "toChannel"
-                      ]
-                    },
-                    {
-                      "required": [
-                        "channels"
-                      ]
-                    },
-                    {
-                      "required": [
-                        "gain"
-                      ]
-                    }
-                  ]
-                },
-                "then": {
                   "properties": {
                     "kind": {
                       "const": "audio"
                     }
-                  },
+                  }
+                },
+                "then": {
                   "required": [
                     "fromPort",
                     "fromChannel",
                     "toPort",
-                    "toChannel"
+                    "toChannel",
+                    "channels",
+                    "gain"
                   ]
+                },
+                "else": {
+                  "not": {
+                    "anyOf": [
+                      {
+                        "required": [
+                          "fromPort"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "fromChannel"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "toPort"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "toChannel"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "channels"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "gain"
+                        ]
+                      }
+                    ]
+                  }
                 }
               }
             ]
@@ -1570,7 +1574,9 @@
         "output",
         "nodes",
         "connections",
-        "mappings"
+        "mappings",
+        "audioInputs",
+        "audioOutputs"
       ],
       "additionalProperties": false
     },
@@ -1891,6 +1897,10 @@
         },
         "audioReady": {
           "type": "boolean"
+        },
+        "graphEventDrops": {
+          "type": "integer",
+          "minimum": 0
         }
       },
       "required": [
@@ -1899,7 +1909,11 @@
         "sampleRate",
         "bufferSize",
         "cpuLoad",
-        "deadlineMisses"
+        "deadlineMisses",
+        "graphEventDrops",
+        "audioInputs",
+        "audioOutputs",
+        "audioReady"
       ],
       "additionalProperties": false
     }

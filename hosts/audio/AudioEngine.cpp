@@ -147,8 +147,6 @@ namespace oscairn::host
         {for(int c=0;c<numOutputs;++c)if(outputs[c])std::fill_n(outputs[c],numSamples,0.f);return;}
         // Device timestamps belong to this adapter. The core receives sample times,
         // with the existing policy: notes now, clock timestamps in the preceding block.
-        std::array<kick::clap::Event, 128> notes;
-        std::array<Session::MidiClockEvent, 1024> clocks;
         uint32_t noteCount = 0, clockCount = 0;
         {
             const auto scope = fifo_.read( fifo_.getNumReady() );
@@ -161,11 +159,12 @@ namespace oscairn::host
                         return;
                     const auto offset = (int64_t)std::llround( ( in.seconds - blockSeconds_ ) * sampleRate_ );
                     const auto time   = std::clamp<int64_t>( lastBlockStart_ + offset, lastBlockStart_, blockSample_ - 1 );
-                    clocks[clockCount++] = { status, time, (uint16_t)( in.bytes[1] | ( in.bytes[2] << 7 ) ) };
+                    if( clockCount < clocks_.size() )
+                        clocks_[clockCount++] = { status, time, (uint16_t)( in.bytes[1] | ( in.bytes[2] << 7 ) ) };
                     return;
                 }
                 // Notes and aftertouch (as CLAP pressure).
-                if( noteCount < notes.size() && oscairn::midiToClap( in.bytes, in.size, 0, notes[noteCount] ) )
+                if( noteCount < notes_.size() && oscairn::midiToClap( in.bytes, in.size, 0, notes_[noteCount] ) )
                     ++noteCount;
             };
             for( int i = 0; i < scope.blockSize1; ++i )
@@ -175,7 +174,7 @@ namespace oscairn::host
         }
         channelMap_.process(inputs,static_cast<uint32_t>(numInputs),outputs,static_cast<uint32_t>(numOutputs),static_cast<uint32_t>(numSamples),
             [&](const float* const* in,uint32_t ni,float* const* out,uint32_t no,uint32_t frames,uint32_t offset){
-                return session_->process(in,ni,out,no,frames,{notes.data(),offset==0?noteCount:0},{clocks.data(),offset==0?clockCount:0});
+                return session_->process(in,ni,out,no,frames,{notes_.data(),offset==0?noteCount:0},{clocks_.data(),offset==0?clockCount:0});
             });
         blockSeconds_   = now;
         lastBlockStart_ = blockSample_;

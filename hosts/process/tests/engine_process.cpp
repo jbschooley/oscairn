@@ -26,10 +26,11 @@ namespace
         ~Directory(){std::error_code ignored;std::filesystem::remove_all(path,ignored);}
     };
     volatile std::sig_atomic_t stopping=0;
-    int helper(const std::string& path,const std::string& plugins)
+    int helper(const std::string& path,const std::string& plugins,const AudioConfiguration& audio)
     {
         std::signal(SIGTERM,[](int){stopping=1;});
         EngineLease lease(path);
+        {std::ofstream args(path+".audio");for(const auto& arg:audio.arguments())args<<arg<<'\n';}
         {std::ofstream pid(path+".pid");pid<<getpid();}
         if(std::filesystem::exists(plugins+"/stall"))
         {
@@ -67,6 +68,14 @@ namespace
     void policy(const char* executable,const char* plugins)
     {
         Directory directory;EngineProcess process(executable,plugins,directory.path);
+        for(const auto& option:std::vector<std::pair<std::string,std::string>>{
+            {"--audio-inputs","4,1"},{"--audio-outputs","1,0"},{"--audio-outputs","0,1"},
+            {"--input-device","Input with spaces"},{"--output-device","Output with spaces"}})
+        {
+            AudioConfiguration config;config.setOption(option.first,option.second);
+            EngineProcess selected(executable,plugins,directory.path,config);
+            check(selected.socketPath()!=process.socketPath(),"engine identity includes each audio option and explicit-output policy");
+        }
         {
             EngineLease lease(process.socketPath());
             check(process.running(),"lifetime lock indicates running engine");
@@ -134,6 +143,15 @@ namespace
             bool refused=false;try{EngineLease other(endpoint);}catch(const std::runtime_error&){refused=true;}
             check(refused,"live helper cannot be replaced");
         }
+        // A custom configuration launches a separate helper and reaches it intact.
+        AudioConfiguration audio{"Capture with spaces","Playback with spaces",{4,1},{5,2},true};
+        EngineProcess configured(executable,plugins,directory.path,audio);LocalClient customClient;Child customChild;
+        configured.connectOrStart(customClient);customChild.value=pid(configured.socketPath());
+        check(customChild.value!=child.value,"custom configuration cannot attach to default helper");
+        std::ifstream arguments(configured.socketPath()+".audio");
+        std::string actual((std::istreambuf_iterator<char>(arguments)),{}),expected;
+        for(const auto& arg:audio.arguments())expected+=arg+'\n';
+        check(actual==expected,"device names and ordered channel maps reach spawned helper");customClient.disconnect();
         // A listener without our lifetime lock must also be preserved.
         const auto foreign=std::string(directory.path)+"/foreign.sock";
         LocalServer server(probeSession.control());server.listen(foreign);
@@ -147,8 +165,12 @@ int main(int argc,char** argv)
 {
     try
     {
-        if(argc==6 && std::string_view(argv[1])=="--socket" && std::string_view(argv[3])=="--plugins" && std::string_view(argv[5])=="--managed")
-            return helper(argv[2],argv[4]);
+        if(argc>=6 && std::string_view(argv[1])=="--socket" && std::string_view(argv[3])=="--plugins" && std::string_view(argv[5])=="--managed")
+        {
+            AudioConfiguration audio;
+            for(int i=6;i<argc;i+=2){if(i+1==argc)return 2;audio.setOption(argv[i],argv[i+1]);}
+            return helper(argv[2],argv[4],audio);
+        }
         if(argc!=3)return 2;
         if(std::string_view(argv[2])=="--policy"){policy(argv[0],argv[1]);return 0;}
         if(std::string_view(argv[2])=="--lifecycle")return lifecycle(argv[0],argv[1]);

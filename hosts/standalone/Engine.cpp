@@ -9,18 +9,18 @@
 
 namespace oscairn::standalone
 {
-    Engine::Engine(const std::string& pluginDir,const std::string& socketPath,const std::string& helperExecutable):socketPath_(socketPath)
+    Engine::Engine(const std::string& pluginDir,const std::string& socketPath,const std::string& helperExecutable,const host::AudioConfiguration& audio):socketPath_(socketPath)
     {
         if(socketPath.empty() && helperExecutable.empty())
         {
-            audio_=std::make_unique<host::AudioEngine>(pluginDir);control_=&audio_->control();
+            audio_=std::make_unique<host::AudioEngine>(pluginDir,audio);control_=&audio_->control();
         }
         else
         {
             client_=std::make_unique<LocalClient>();
             if(!helperExecutable.empty())
             {
-                process_=std::make_unique<host::EngineProcess>(helperExecutable,pluginDir);
+                process_=std::make_unique<host::EngineProcess>(helperExecutable,pluginDir,std::string{},audio);
                 process_->connectOrStart(*client_);socketPath_=process_->socketPath();
             }
             else client_->connect(socketPath);

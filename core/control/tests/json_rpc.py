@@ -39,7 +39,7 @@ try:
     assert 'session.status' in hello['capabilities'] and 'graph.audio-routing' in hello['capabilities']
     status = rpc('session.status')['result']
     assert status == {'audioDevice': '', 'midiInputs': [], 'sampleRate': 48000,
-                      'bufferSize': 512, 'cpuLoad': 0, 'deadlineMisses': 0, 'audioReady': True, 'audioInputs': [], 'audioOutputs': []}, status
+                      'bufferSize': 512, 'cpuLoad': 0, 'deadlineMisses': 0, 'graphEventDrops': 0, 'audioReady': True, 'audioInputs': [], 'audioOutputs': []}, status
     error(rpc('session.status', {'unknown': True}), -32602)
     for ident in [None, 0, -1, 2**63 + 7, 'hello\x00\n"\\', 'é🎹', 1.5]:
         assert rpc('transport.get', ident=ident)['id'] == ident
@@ -142,9 +142,12 @@ try:
                  fromPort=synth['audioOutputs'][0]['id'], fromChannel=0,
                  toPort=0, toChannel=0, channels=2, gain=.5)
     assert rpc('graph.connect', ports)['result']['accepted']
-    assert ports in rpc('graph.get')['result']['connections']
-    assert rpc('graph.disconnect', ports)['result']['accepted']
-    assert ports not in rpc('graph.get')['result']['connections']
+    expected = [dict(ports, channels=1, fromChannel=c, toChannel=c) for c in range(2)]
+    assert all(route in rpc('graph.get')['result']['connections'] for route in expected)
+    # Omitting gain removes both channel pairs even though their gain is .5.
+    disconnect = dict(ports); del disconnect['gain']
+    assert rpc('graph.disconnect', disconnect)['result']['accepted']
+    assert all(route not in rpc('graph.get')['result']['connections'] for route in expected)
     for change in [dict(fromChannel=1), dict(channels=0), dict(channels=2**32-1),
                    dict(toPort=999), dict(gain=17), dict(gain=-17)]:
         error(rpc('graph.connect', dict(ports, **change)), -32003)

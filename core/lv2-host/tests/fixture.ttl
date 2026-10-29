@@ -173,3 +173,9 @@
  lv2:port [lv2:symbol "gain"; pset:value 0.75] .
 <urn:oscairn:test:bad-preset> a pset:Preset; lv2:appliesTo <urn:oscairn:test:state>;
  rdfs:label "Rejected"; state:state [<urn:oscairn:test:value> "-1.0"^^xsd:float] .
+
+<urn:oscairn:test:stereo> a lv2:Plugin; doap:name "Stereo passthrough fixture"; lv2:port
+ [a lv2:InputPort, lv2:AudioPort; lv2:index 0; lv2:symbol "left_in"; lv2:name "Left In"],
+ [a lv2:InputPort, lv2:AudioPort; lv2:index 1; lv2:symbol "right_in"; lv2:name "Right In"],
+ [a lv2:OutputPort, lv2:AudioPort; lv2:index 2; lv2:symbol "left_out"; lv2:name "Left Out"],
+ [a lv2:OutputPort, lv2:AudioPort; lv2:index 3; lv2:symbol "right_out"; lv2:name "Right Out"] .

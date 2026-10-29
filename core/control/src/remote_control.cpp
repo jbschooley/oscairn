@@ -23,12 +23,6 @@ namespace oscairn
                     if(std::string_view(e->name->string,e->name->string_size)==key)return e->value;
             throw std::runtime_error("Missing RPC field: "+std::string(key));
         }
-        V optional(V v,std::string_view key)
-        {
-            if(v && v->type==json_type_object)for(auto* e=static_cast<const json_object_s*>(v->payload)->start;e;e=e->next)
-                if(std::string_view(e->name->string,e->name->string_size)==key)return e->value;
-            return nullptr;
-        }
         std::string string(V v)
         {
             if(!v || v->type!=json_type_string)throw std::runtime_error("Expected RPC string");
@@ -119,9 +113,10 @@ namespace oscairn
         {
             status.audioDevice=string(field(v,"audioDevice"));status.sampleRate=number(field(v,"sampleRate"));
             status.bufferSize=static_cast<uint32_t>(integer(field(v,"bufferSize")));status.cpuLoad=number(field(v,"cpuLoad"));
-            auto channels=[](V v){std::vector<DeviceChannel> result;if(v)for(auto c:array(v))result.push_back({static_cast<uint32_t>(integer(field(c,"deviceChannel"))),string(field(c,"name")),boolean(field(c,"available"))});return result;};
-            status.audioInputs=channels(optional(v,"audioInputs"));status.audioOutputs=channels(optional(v,"audioOutputs"));
-            status.audioReady=optional(v,"audioReady")?boolean(field(v,"audioReady")):true;
+            auto channels=[](V v){std::vector<DeviceChannel> result;for(auto c:array(v))result.push_back({static_cast<uint32_t>(integer(field(c,"deviceChannel"))),string(field(c,"name")),boolean(field(c,"available"))});return result;};
+            status.audioInputs=channels(field(v,"audioInputs"));status.audioOutputs=channels(field(v,"audioOutputs"));
+            status.audioReady=boolean(field(v,"audioReady"));
+            status.graphEventDrops=integer(field(v,"graphEventDrops"));
             status.deadlineMisses=integer(field(v,"deadlineMisses"));status.midiInputs.clear();
             for(auto name:array(field(v,"midiInputs")))status.midiInputs.push_back(string(name));
         }
@@ -130,8 +125,8 @@ namespace oscairn
             auto doc=call("graph.get");auto root=field(doc.get(),"result");GraphState next;
             next.revision=integer(field(root,"revision"));next.staged=boolean(field(root,"staged"));
             auto ports=[](V v){std::vector<kick::clap::Port> result;for(auto p:array(v))result.push_back({static_cast<uint32_t>(integer(field(p,"id"))),string(field(p,"name")),static_cast<uint32_t>(integer(field(p,"channels"))),static_cast<uint32_t>(integer(field(p,"flags")))});return result;};
-            if(auto p=optional(root,"audioInputs"))next.topology.audioLayout.inputs=ports(p);
-            if(auto p=optional(root,"audioOutputs"))next.topology.audioLayout.outputs=ports(p);
+            next.topology.audioLayout.inputs=ports(field(root,"audioInputs"));
+            next.topology.audioLayout.outputs=ports(field(root,"audioOutputs"));
             for(auto n:array(field(root,"nodes")))
             {
                 Graph::NodeInfo node{};node.id=static_cast<NodeId>(integer(field(n,"id")));next.names[node.id]=string(field(n,"name"));
@@ -144,11 +139,10 @@ namespace oscairn
             {
                 const auto from=static_cast<NodeId>(integer(field(c,"from"))),to=static_cast<NodeId>(integer(field(c,"to")));
                 if(string(field(c,"kind"))=="notes")next.topology.notes.emplace_back(from,to);
-                else if(optional(c,"fromPort"))next.topology.audioRoutes.push_back({
+                else next.topology.audioRoutes.push_back({
                     {from,static_cast<uint32_t>(integer(field(c,"fromPort"))),static_cast<uint32_t>(integer(field(c,"fromChannel")))},
                     {to,static_cast<uint32_t>(integer(field(c,"toPort"))),static_cast<uint32_t>(integer(field(c,"toChannel")))},
                     static_cast<uint32_t>(integer(field(c,"channels"))),number(field(c,"gain"))});
-                else next.topology.audio.emplace_back(from,to);
             }
             for(auto m:array(field(root,"mappings")))next.topology.mappings.push_back({static_cast<NodeId>(integer(field(m,"from"))),static_cast<uint32_t>(integer(field(m,"lane"))),static_cast<NodeId>(integer(field(m,"to"))),static_cast<uint32_t>(integer(field(m,"param")))});
             std::map<NodeId,std::vector<ParamInfo>> metadata;std::map<std::pair<NodeId,uint32_t>,double> snapshot;
@@ -171,7 +165,7 @@ namespace oscairn
             call(method,"{\"kind\":\"audio\",\"from\":"+std::to_string(r.from.node)+",\"to\":"+std::to_string(r.to.node)+
                 ",\"fromPort\":"+std::to_string(r.from.port)+",\"fromChannel\":"+std::to_string(r.from.channel)+
                 ",\"toPort\":"+std::to_string(r.to.port)+",\"toChannel\":"+std::to_string(r.to.channel)+
-                ",\"channels\":"+std::to_string(r.channels)+",\"gain\":"+encode(r.gain)+'}');refresh();
+                ",\"channels\":"+std::to_string(r.channels)+(method=="graph.connect"?",\"gain\":"+encode(r.gain):std::string{})+'}');refresh();
         }
         void edge(std::string_view method,const char* kind,NodeId from,NodeId to)
         {call(method,"{\"kind\":"+quote(kind)+",\"from\":"+std::to_string(from)+",\"to\":"+std::to_string(to)+'}');refresh();}

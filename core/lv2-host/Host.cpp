@@ -598,6 +598,15 @@ public:
     }
     const kick::clap::Descriptor& descriptor() const noexcept override{return descriptor_;}
     const std::vector<Parameter>& parameters() const noexcept override{return parameters_;}
+    std::vector<uint32_t> mainAudioPorts(bool input) const override
+    {
+        const auto& ports=input?inputs_:outputs_;
+        // LV2 audio ports each carry one channel. Do not mistake the first port for
+        // a stereo bus, or guess which channels are main in a larger layout.
+        if(ports.empty() || ports.size()>2)
+            throw std::invalid_argument("Ambiguous LV2 audio bus; specify port/channel routes");
+        std::vector<uint32_t> ids;for(const auto& p:ports)ids.push_back(p.id);return ids;
+    }
     const std::vector<PortInfo>& inputPorts() const noexcept override{return inputs_;}
     const std::vector<PortInfo>& outputPorts() const noexcept override{return outputs_;}
     uint32_t noteInputPorts() const noexcept override{return noteInputs_;}

@@ -242,8 +242,12 @@ namespace
             check(remote.sessionStatus().audioInputs[0].deviceChannel==2 && !remote.sessionStatus().audioReady && !remote.sessionStatus().audioOutputs[1].available,"device mapping and unavailable channels cross socket");
             const auto port=remote.graphState().topology.nodes[0].outputs[0].id;
             const AudioConnection route{{synth,port,0},{graphOutput,0,1},1,.5};
-            remote.connectAudio(route);check(remote.graphState().topology.audioRoutes==std::vector<AudioConnection>{route},"explicit remote route round trip");
-            remote.disconnectAudio(route);check(remote.graphState().topology.audioRoutes.empty(),"explicit remote disconnect");
+            const auto initial=remote.graphState().topology.audioRoutes.size();
+            remote.connectAudio(route);
+            const auto routes=remote.graphState().topology.audioRoutes;
+            check(routes.size()==initial+1 && std::find(routes.begin(),routes.end(),route)!=routes.end(),"explicit remote route round trip");
+            remote.disconnectAudio({route.from,route.to,route.channels});
+            check(remote.graphState().topology.audioRoutes.size()==initial,"remote disconnect ignores gain");
             check(remote.graphState().topology.audioLayout.outputs[0].channels==2,"external port metadata crosses socket");
             check(remote.parameterText(synth,1,.5)=="0.500","remote plugin formatting");
             remote.parameterGesture(synth,1,true);remote.setParameter(synth,1,.63);remote.parameterGesture(synth,1,false);

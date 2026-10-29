@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #pragma once
 #include "oscairn/remote_control.h"
+#include "../audio/AudioConfiguration.h"
 #include <juce_events/juce_events.h>
 #include <memory>
 #include <cstdio>
@@ -13,7 +14,7 @@ namespace oscairn::standalone
     {
     public:
         /// helperExecutable selects managed mode; empty helper + empty socket is in-process.
-        explicit Engine(const std::string& pluginDir, const std::string& socketPath = {}, const std::string& helperExecutable = {});
+        explicit Engine(const std::string& pluginDir, const std::string& socketPath = {}, const std::string& helperExecutable = {}, const host::AudioConfiguration& audio = {});
         ~Engine() override;
         using ParamInfo = Control::ParamInfo;
         bool hasParam(const std::string& node,uint32_t param)const;

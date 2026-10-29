@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #pragma once
 #include "oscairn/local_socket.h"
+#include "../audio/AudioConfiguration.h"
 #include <memory>
 
 namespace oscairn::host
@@ -23,7 +24,7 @@ namespace oscairn::host
     class EngineProcess
     {
     public:
-        EngineProcess(std::string executable,std::string pluginDirectory,std::string runtimeDirectory={});
+        EngineProcess(std::string executable,std::string pluginDirectory,std::string runtimeDirectory={},const AudioConfiguration& audio={});
         ~EngineProcess();
         EngineProcess(const EngineProcess&)=delete;
         EngineProcess& operator=(const EngineProcess&)=delete;

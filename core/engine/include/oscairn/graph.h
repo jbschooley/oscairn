@@ -44,7 +44,7 @@ namespace oscairn
     /// dependency order within each block, so a sequencer's notes reach the instruments
     /// it plays in the same block. Audio connected into a node is summed; notes from
     /// several sources are merged in time order. Explicit audio routes preserve independent
-    /// ports/channels. Legacy node connections retain the first stereo pair and centre mono.
+    /// ports/channels. Node connections resolve the main bus and centre mono into stereo.
     ///
     /// Editing (add, remove, connect, commit) happens on the main thread while the audio
     /// thread keeps processing. commit() compiles the edits into a plan and hands it to
@@ -76,7 +76,8 @@ namespace oscairn
         /// the source cannot send or the destination cannot receive that kind of signal.
         void connectAudio( NodeId from, NodeId to );
         /// Explicit port IDs and channel ranges; gains sum without normalization.
-        /// Disconnect matches the entire connection, including gain and count.
+        /// Ranges expand to unique channel pairs. Reconnecting updates gain.
+        /// Disconnect removes the selected pairs regardless of gain.
         void connectAudio( const AudioConnection& connection );
         void disconnectAudio( const AudioConnection& connection );
         void connectNotes( NodeId from, NodeId to );
@@ -109,7 +110,7 @@ namespace oscairn
         struct Description
         {
             std::vector<NodeInfo> nodes;
-            std::vector<std::pair<NodeId,NodeId>> audio, notes;
+            std::vector<std::pair<NodeId,NodeId>> notes;
             std::vector<Mapping> mappings;
             std::vector<AudioConnection> audioRoutes;
             AudioLayout audioLayout;
@@ -123,6 +124,9 @@ namespace oscairn
 
         /// Frees plans the audio thread has finished with.
         void collect();
+        /// Service staged nodes and removed nodes still owned by an audio plan.
+        void service();
+        uint64_t eventDrops() const noexcept { return eventDrops_.load(std::memory_order_relaxed); }
 
         // Audio thread ------------------------------------------------------------
 
@@ -142,6 +146,7 @@ namespace oscairn
         uint32_t outputChannels() const noexcept { return outputChannels_; }
 
     private:
+        void connectAudioBatch(const std::vector<AudioConnection>&);
         uint32_t resolve( const AudioEndpoint&, bool source, uint32_t count ) const;
         struct Node
         {
@@ -149,6 +154,8 @@ namespace oscairn
             uint32_t                          audioInputs = 0, audioOutputs = 0; // channels
         };
         struct Plan;
+        std::vector<std::shared_ptr<PluginHost>> removedHosts_; // control thread ownership until plan retirement
+        std::atomic<uint64_t> eventDrops_{0};
 
         /// Plans retired by the audio thread, waiting to be freed on the main thread.
         /// Single producer (audio thread), single consumer (main thread).
@@ -178,7 +185,7 @@ namespace oscairn
         NodeId   nextId_ = 1;
 
         std::map<NodeId, Node>                nodes_;
-        std::vector<std::pair<NodeId, NodeId>> audioEdges_, noteEdges_;
+        std::vector<std::pair<NodeId, NodeId>> noteEdges_;
         std::map<std::pair<NodeId, uint32_t>, std::pair<NodeId, clap_id>> paramTargets_; // (source, lane) -> (target, param)
 
         std::atomic<Plan*> pending_{ nullptr };

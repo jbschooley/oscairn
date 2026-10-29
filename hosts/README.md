@@ -12,7 +12,7 @@ Programs built on the core: a file renderer, a live audio/MIDI engine and a desk
   does not close the audio engine or reset its transport/held notes.
 - `process/`: desktop helper startup and lifetime locks, independent of JUCE. A
   launcher attaches to a running engine or starts the bundled helper. Its destruction
-  leaves that helper alive. Concurrent launches share one engine per plugin directory.
+  leaves that helper alive. Concurrent launches share one engine per plugin directory and audio configuration.
 - `standalone/`: `Oscairn`, the desktop UI and panel layouts. It starts or reconnects
   to a helper by default through cached `RemoteControl`. `--in-process` runs audio in
   the UI process; `--connect SOCKET` attaches to an externally managed engine. After
@@ -41,7 +41,7 @@ Device callbacks larger than 512 are split into smaller processing calls; callba
 below 512 stay smaller. Splitting does not reduce the device's buffering latency.
 At 48 kHz, 512 frames span about 10.7 ms, excluding other device/driver latency.
 
-Neither the UI nor the control API currently changes audio device settings. The CMake
+Neither a running UI nor the control API currently changes audio device settings. The CMake
 setting above chooses the startup request; a runtime settings UI and persistence remain
 follow-up work. The graph currently stays at its startup
 sample rate; a later device rate change deliberately silences playback until restart.
@@ -101,9 +101,13 @@ and timeout semantics. The socket carries JSON-RPC; no WebSocket or gRPC is invo
 
 ## Audio device channels
 
-The default managed desktop still opens no audio inputs and a stereo output. To use
-other channels, launch `oscairn-engine` with an explicit socket and attach the desktop
-with `--connect`, as above. For example, on an interface with at least six outputs:
+The desktop and `oscairn-engine` both accept `--input-device`, `--output-device`,
+`--audio-inputs` and `--audio-outputs`. Defaults are no capture and stereo playback.
+Desktop options reach both its managed helper and `--in-process` mode. Managed helpers
+are identified by canonical plugin directory **and** audio configuration, so a different
+channel selection cannot silently attach to an engine with the old selection. Audio
+options cannot be combined with `--connect`; configure that external engine separately.
+For example, on an interface with at least six outputs:
 
 ```sh
 oscairn-engine --socket "$HOME/.oscairn/deck.sock" \
@@ -116,7 +120,7 @@ onto physical channels: here logical output 0/1 uses physical 0/1, and logical 2
 physical 4/5. Reordering (for example `--audio-outputs 1,0`) is supported. Duplicates,
 negative/out-of-range indices, unavailable explicit outputs and missing named devices
 are rejected. `--audio-inputs none` disables capture; this host requires at least one
-output. The legacy default allows a mono output device and uses the left channel;
+output. The default allows a mono output device and uses the left channel;
 explicit output selections never fall back to mono or another device.
 
 The helper exposes one external input port (ID 0, if enabled) and one external output
@@ -128,8 +132,11 @@ plugin main/aux/sidechain ports and direct input-to-output routes.
 
 The adapter opens a contiguous physical channel prefix through the highest selected
 index, so callback channel indices agree across JUCE backends. Unselected captured
-channels are ignored and unselected outputs are cleared. Input buffers are copied before
-writing any output, including for aliased duplex buffers. Blocks larger than the core's
+channels are ignored and unselected outputs are cleared. The adapter passes selected
+capture pointers into the graph, which copies capture once before processing. Playback
+is staged until rendering completes, preserving aliased duplex buffers. Renderers must
+write every logical output, including silence on failure; mapped physical outputs are
+then overwritten without a redundant clear. Blocks larger than the core's
 maximum are split with the same mapping, using preallocated storage. On macOS, enabling
 inputs may require system microphone/audio-input permission; usage descriptions are
 included in both the helper and desktop app. Default launches do not request capture.
@@ -148,7 +155,8 @@ physical maps, callback splitting, aliased buffers and missing outputs. JSON and
 socket tests verify route and device-status round trips. A muted macOS desktop test with
 `--audio-outputs 1,0` passed on the Multi-Output Device at 48 kHz/128 frames, including
 KICK UI crash/reconnect; it does not establish physical input or four-output operation.
-Pass `--audio-outputs 1,0` to `desktop_lifecycle.py` to repeat that device-mapping check.
+Pass `--managed --audio-outputs 1,0` to `desktop_lifecycle.py` to repeat the desktop
+flag-forwarding and device-mapping check, including crashing the UI that launched the helper.
 
 ## Diagnosing a listener failure
 

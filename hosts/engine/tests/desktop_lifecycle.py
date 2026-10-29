@@ -6,12 +6,13 @@ and reconnect, and saves screenshots/logs in a private temporary directory.
 Only processes started by this test are stopped. Requires a desktop session,
 an available audio output, and permission to bind Unix sockets.
 """
-import json, pathlib, socket, subprocess, tempfile, time
+import json, os, pathlib, signal, socket, subprocess, tempfile, time
 
 import argparse
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('engine', type=pathlib.Path)
 parser.add_argument('ui', type=pathlib.Path)
+parser.add_argument('--managed', action='store_true', help='Start the helper through the desktop and verify its audio options')
 parser.add_argument('--audio-outputs', help='Explicit zero-based physical output mapping')
 args = parser.parse_args()
 root = pathlib.Path(__file__).resolve().parents[3]
@@ -23,11 +24,14 @@ handles = []
 connection = None
 stream = None
 ident = 0
+managed_pid = None
+helper = None
 
 def launch(binary, args, log):
     handle = open(artifacts/log, 'w')
     handles.append(handle)
-    process = subprocess.Popen([str(binary), *args], cwd=root, stdout=handle, stderr=subprocess.STDOUT)
+    process = subprocess.Popen([str(binary), *args], cwd=root, stdout=handle, stderr=subprocess.STDOUT,
+                               env=dict(os.environ, OSCAIRN_RUNTIME_DIR=str(artifacts)))
     children.append(process)
     return process
 
@@ -50,16 +54,39 @@ def snapshot(name):
     assert (artifacts/name).stat().st_size > 1000
 
 try:
-    engine_args = ['--socket', str(endpoint)]
-    if args.audio_outputs is not None:
-        engine_args += ['--audio-outputs', args.audio_outputs]
-    helper = launch(engine, engine_args, 'engine.log')
+    if args.managed:
+        ui_args = ['--layout', 'kick']
+        if args.audio_outputs is not None:
+            ui_args += ['--audio-outputs', args.audio_outputs]
+        starter = launch(ui, ui_args, 'managed-ui.log')
+    else:
+        engine_args = ['--socket', str(endpoint)]
+        if args.audio_outputs is not None:
+            engine_args += ['--audio-outputs', args.audio_outputs]
+        helper = launch(engine, engine_args, 'engine.log')
+        starter = helper
     deadline = time.monotonic()+15
-    while not endpoint.exists():
-        assert helper.poll() is None, (artifacts/'engine.log').read_text()
+    while True:
+        if args.managed:
+            candidates = list(artifacts.glob('engine-*.sock'))
+            if candidates:
+                endpoint = candidates[0]
+                managed_pid = int(pathlib.Path(str(endpoint)+'.lock').read_text())
+                break
+        elif endpoint.exists():
+            break
+        assert starter.poll() is None, 'engine/UI exited during startup'
         if time.monotonic()>deadline:
             raise TimeoutError('engine socket startup')
         time.sleep(.05)
+    def engine_running():
+        if helper is not None:
+            return helper.poll() is None
+        try:
+            os.kill(managed_pid, 0)
+            return True
+        except ProcessLookupError:
+            return False
     connection = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     connection.settimeout(5)
     connection.connect(str(endpoint))
@@ -75,6 +102,11 @@ try:
     # Exercise the live device callback silently; no listening response is needed.
     rpc('params.set', {'values':[{'node':'synth','param':2,'value':0}]})
     rpc('transport.set', {'playing':True})
+    if args.managed:
+        # Kill the UI that actually launched the helper, not only a second client.
+        starter.kill()
+        assert starter.wait(timeout=5) == -9
+        assert engine_running()
     snapshot('kick-before.png')
     controller = launch(ui, ['--connect',str(endpoint),'--layout','kick'], 'crashed-ui.log')
     time.sleep(1)
@@ -84,13 +116,13 @@ try:
     assert controller.wait(timeout=5) == -9
     time.sleep(.4)
     after = rpc('transport.get')['beat']
-    assert helper.poll() is None and after > before, (before, after)
+    assert engine_running() and after > before, (before, after)
     rpc('transport.set', {'tempo':143})
     snapshot('kick-after.png')
     state = rpc('transport.get')
     assert state['playing'] and state['tempo'] == 143 and state['beat'] > after, state
     rpc('transport.set', {'playing':False})
-    print(json.dumps({'result':'passed','engine_pid':helper.pid,'audio_status':status,'beat_before_ui_crash':before,'beat_after_ui_crash':after,'reopened_state':state,'artifacts':str(artifacts)},indent=2),flush=True)
+    print(json.dumps({'result':'passed','engine_pid':helper.pid if helper else managed_pid,'audio_status':status,'beat_before_ui_crash':before,'beat_after_ui_crash':after,'reopened_state':state,'artifacts':str(artifacts)},indent=2),flush=True)
 finally:
     if stream is not None:
         stream.close()
@@ -103,9 +135,27 @@ finally:
                 process.wait(timeout=5)
             except subprocess.TimeoutExpired:
                 process.kill(); process.wait(timeout=5)
+    # The managed helper deliberately outlives its UI; this private runtime directory
+    # identifies the helper created by this test, never another running engine.
+    if args.managed and managed_pid is None:
+        locks = list(artifacts.glob('engine-*.sock.lock'))
+        if locks:
+            try:
+                managed_pid = int(locks[0].read_text())
+            except ValueError:
+                pass
+    if managed_pid is not None:
+        try:
+            os.kill(managed_pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+        deadline = time.monotonic()+5
+        while endpoint.exists() and time.monotonic()<deadline:
+            time.sleep(.05)
     for handle in handles:
         handle.close()
     print('Logs and screenshots:',artifacts,flush=True)
 
-assert helper.returncode == 0, (artifacts/"engine.log").read_text()
+if helper is not None:
+    assert helper.returncode == 0, (artifacts/"engine.log").read_text()
 assert not endpoint.exists(), "helper did not remove its socket on orderly shutdown"
