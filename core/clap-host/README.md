@@ -42,7 +42,8 @@ see [host instructions](../../hosts/README.md). The optional raw-host tools inst
   are marked as CLAP's **symbolic audio thread**, as explicitly permitted by the
   thread-check specification. They never run concurrently with processing.
 - Input/output port layouts are queried rather than assumed stereo. The core
-  supports up to 16 audio ports and 64 channels in each direction, with flattened
+  supports up to 64 total channels in each direction (distributed across mono or
+  multichannel buses), with flattened
   planar routing, silent missing inputs, scratch storage for unused outputs, and
   mono-to-stereo duplication for a mono instrument on the stereo convenience path.
 - Native CLAP notes and MIDI events are translated according to input-port dialects.

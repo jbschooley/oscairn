@@ -162,7 +162,7 @@ namespace oscairn
             if( method == "session.hello" )
             {
                 fields(p, {});
-                return R"({"protocolVersion":1,"server":"oscairn","capabilities":["state.info","state.save","presets.list","properties.list","properties.get","properties.set","properties.request","sounds.get","sounds.prepare","sounds.select","sounds.discard","session.status","params.list","params.get","params.set","params.text","params.gesture","graph.audio-routing","graph.get","graph.add","graph.remove","graph.connect","graph.disconnect","graph.map","graph.unmap","graph.commit","subscribe","unsubscribe","transport.get","transport.set","notes.send"],"limits":{"messageBytes":65536,"depth":32,"batch":64,"parameterChanges":128}})";
+                return R"({"protocolVersion":1,"server":"oscairn","capabilities":["state.info","state.save","presets.list","properties.list","properties.get","properties.set","properties.request","sounds.get","sounds.prepare","sounds.select","sounds.discard","session.status","params.list","params.get","params.set","params.text","params.gesture","graph.audio-routing","graph.get","graph.add","graph.remove","graph.replace","graph.connect","graph.disconnect","graph.map","graph.unmap","graph.commit","subscribe","unsubscribe","transport.get","transport.set","notes.send"],"limits":{"messageBytes":65536,"depth":32,"batch":64,"parameterChanges":128}})";
             }
             if( method == "subscribe" || method == "unsubscribe" )
             {
@@ -275,6 +275,15 @@ namespace oscairn
                 if( path.empty() || path.find('\0') != std::string::npos ) invalid("Invalid plugin path");
                 try { return "{\"node\":" + std::to_string(c.add(name,path,plugin)) + '}'; }
                 catch( const std::runtime_error& e ) { throw Failure{-32004,e.what()}; }
+            }
+            if(method=="graph.replace")
+            {
+                fields(p,{"node","path","pluginId","preset"});
+                const auto path=std::string(string(member(p,"path")));
+                if(path.empty() || path.find('\0')!=std::string::npos)invalid("Invalid plugin path");
+                try{c.replace(node(c,member(p,"node")),path,std::string(string(member(p,"pluginId"))),member(p,"preset")?std::string(string(member(p,"preset"))):std::string{});}
+                catch(const std::runtime_error& e){throw Failure{-32004,e.what()};}
+                return "{\"revision\":"+std::to_string(c.graphState().revision)+'}';
             }
             if( method == "graph.remove" )
             {

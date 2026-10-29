@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #include "Panel.h"
+#include "Theme.h"
 
 #include <stdexcept>
 
@@ -7,9 +8,6 @@ namespace oscairn::standalone
 {
     namespace
     {
-        const juce::Colour face{ 0xff2a2e35 }, edge{ 0xff3a404a }, text{ 0xffd8dce2 }, dim{ 0xff8a929e }, accent{ 0xffff8a3d },
-            lit{ 0xff3ddc97 };
-
         /// "synth:1" -> ("synth", 1); false if it is not of that form.
         bool splitParam( const std::string& bind, std::string& node, uint32_t& param )
         {
@@ -30,49 +28,6 @@ namespace oscairn::standalone
         }
     }
 
-    /// Text that scales with the control it is in, so a large panel scaled down stays
-    /// readable, and endless encoders drawn as a ring of LEDs rather than an arc with ends.
-    class PanelLook : public juce::LookAndFeel_V4
-    {
-    public:
-        juce::Font getLabelFont( juce::Label& label ) override
-        {
-            return juce::FontOptions( juce::jmax( 10.0f, label.getHeight() * 0.75f ) );
-        }
-
-        juce::Font getTextButtonFont( juce::TextButton&, int height ) override
-        {
-            return juce::FontOptions( juce::jmax( 10.0f, height * 0.36f ) );
-        }
-
-        void drawRotarySlider( juce::Graphics& g, int x, int y, int width, int height, float position, float start, float end,
-                               juce::Slider& slider ) override
-        {
-            if( !slider.getProperties()["endless"] )
-                return LookAndFeel_V4::drawRotarySlider( g, x, y, width, height, position, start, end, slider );
-
-            // An encoder: a knob that turns forever, with the value shown on its LED ring.
-            const auto bounds = juce::Rectangle<int>( x, y, width, height ).toFloat().reduced( 4.0f );
-            const auto radius = juce::jmin( bounds.getWidth(), bounds.getHeight() ) / 2.0f;
-            const auto centre = bounds.getCentre();
-            constexpr int leds = 16;
-            const int     on   = slider.isEnabled() ? juce::roundToInt( position * leds ) : 0;
-            for( int i = 0; i < leds; ++i )
-            {
-                const auto angle = start + ( end - start ) * ( i + 0.5f ) / leds;
-                const auto at    = centre.getPointOnCircumference( radius * 0.9f, angle );
-                const auto size  = radius * 0.14f;
-                g.setColour( i < on ? slider.findColour( juce::Slider::rotarySliderFillColourId )
-                                     : slider.findColour( juce::Slider::rotarySliderOutlineColourId ) );
-                g.fillEllipse( juce::Rectangle<float>( size, size ).withCentre( at ) );
-            }
-            g.setColour( juce::Colour( 0xff1e2126 ) );
-            g.fillEllipse( juce::Rectangle<float>( radius * 1.4f, radius * 1.4f ).withCentre( centre ) );
-            g.setColour( juce::Colour( 0xff3a404a ) );
-            g.drawEllipse( juce::Rectangle<float>( radius * 1.4f, radius * 1.4f ).withCentre( centre ), radius * 0.05f );
-        }
-    };
-
     /// A rotary knob bound to a parameter or the tempo.
     class Panel::Knob : public juce::Component
     {
@@ -81,8 +36,6 @@ namespace oscairn::standalone
         {
             slider_.setSliderStyle( juce::Slider::RotaryHorizontalVerticalDrag );
             slider_.setTextBoxStyle( juce::Slider::TextBoxBelow, true, 80, 18 );
-            slider_.setColour( juce::Slider::rotarySliderFillColourId, accent );
-            slider_.setColour( juce::Slider::rotarySliderOutlineColourId, edge );
             slider_.setColour( juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack );
             if( c.endless )
             {
@@ -104,9 +57,8 @@ namespace oscairn::standalone
             }
             else if( splitParam( c.bind, node_, param_ ) )
             {
-                if( !engine.hasParam( node_, param_ ) )
-                    throw std::runtime_error( "layout: knob \"" + c.label + "\" is bound to " + c.bind + ", which the engine does not have" );
-                const auto info = engine.paramInfo( node_, param_ );
+                pluginId_=node_=="synth"?"org.oscairn.basic-synth":engine.pluginId(node_);
+                const auto info=engine.hasParam(node_,param_)?engine.paramInfo(node_,param_):Engine::ParamInfo{param_,"Unavailable",0,1,0};
                 slider_.setRange( info.minimum, info.maximum, info.stepped ? 1.0 : 0.0 );
                 slider_.setDoubleClickReturnValue( true, info.defaultValue );
                 slider_.textFromValueFunction = [this]( double v ) { return juce::String( engine_.paramText( node_, param_, v ) ); };
@@ -133,14 +85,23 @@ namespace oscairn::standalone
                 return;
             if( tempo_ )
                 slider_.setValue( engine_.status().tempo, juce::dontSendNotification );
-            else if( !node_.empty() )
-                slider_.setValue( engine_.param( node_, param_ ), juce::dontSendNotification );
+            else if( !node_.empty() ) {
+                const bool available=engine_.hasParam(node_,param_) && engine_.pluginId(node_)==pluginId_;
+                slider_.setEnabled(available);
+                if(available && !available_) {
+                    const auto info=engine_.paramInfo(node_,param_);
+                    slider_.setRange(info.minimum,info.maximum,info.stepped?1.0:0.0);
+                    slider_.setDoubleClickReturnValue(true,info.defaultValue);
+                }
+                available_=available;
+                if(available){slider_.setValue(engine_.param(node_,param_),juce::dontSendNotification);if(engine_.controlReady())slider_.updateText();}
+            }
         }
 
         void paint( juce::Graphics& g ) override
         {
-            g.setColour( slider_.isEnabled() ? text : dim );
-            g.setFont( juce::FontOptions( textHeight() * 0.8f, juce::Font::bold ) );
+            g.setColour( slider_.isEnabled() ? ink(Ink::Text) : ink(Ink::Muted) );
+            g.setFont( juce::FontOptions( textHeight() * 0.8f*themeData().fontScale, juce::Font::bold ) );
             g.drawText( label_, getLocalBounds().removeFromTop( textHeight() ), juce::Justification::centred );
         }
 
@@ -155,9 +116,9 @@ namespace oscairn::standalone
         int textHeight() const { return juce::jlimit( 18, 48, getHeight() / 7 ); }
 
         Engine&       engine_;
-        std::string   label_, node_;
+        std::string   label_, node_, pluginId_;
         uint32_t      param_ = 0;
-        bool          tempo_ = false;
+        bool          tempo_ = false, available_ = false;
         juce::Slider  slider_;
     };
 
@@ -181,17 +142,17 @@ namespace oscairn::standalone
             for( int i = 0; i < control_.rows * control_.cols; ++i )
             {
                 const auto r = pad( i );
-                juce::Colour colour = face;
+                juce::Colour colour = ink(Ink::Raised);
                 if( i == held_ )
-                    colour = accent;
+                    colour = ink(Ink::Accent);
                 else if( control_.steps && i == step_ )
-                    colour = lit.withAlpha( 0.8f );
+                    colour = ink(Ink::Positive).withAlpha( 0.8f );
                 g.setColour( colour );
-                g.fillRoundedRectangle( r, 6.0f );
-                g.setColour( edge );
-                g.drawRoundedRectangle( r, 6.0f, 1.5f );
-                g.setColour( dim );
-                g.setFont( juce::FontOptions( 13.0f ) );
+                g.fillRoundedRectangle( r, themeData().radius );
+                g.setColour( ink(Ink::Border) );
+                g.drawRoundedRectangle( r, themeData().radius, 1.5f );
+                g.setColour( i==held_ || (control_.steps && i==step_) ? colour.contrasting() : ink(Ink::Muted) );
+                g.setFont( juce::FontOptions( 13.0f*themeData().fontScale ) );
                 g.drawText( juce::String( i + 1 ), r.reduced( 8.0f ), juce::Justification::topLeft );
             }
         }
@@ -276,7 +237,6 @@ namespace oscairn::standalone
     public:
         Board( Engine& engine, const Layout& layout ) : engine_( engine ), layout_( layout )
         {
-            setLookAndFeel( &look_ );
             setSize( layout.width, layout.height );
             for( const auto& c : layout.controls )
             {
@@ -349,17 +309,17 @@ namespace oscairn::standalone
 
         void paint( juce::Graphics& g ) override
         {
-            g.fillAll( layout_.background );
+            g.fillAll( ink(Ink::Background) );
             for( const auto& p : layout_.panels )
             {
                 const auto r = p.anchor.place( p.rect, dx_, dy_ );
-                g.setColour( face.darker( 0.3f ) );
-                g.fillRoundedRectangle( r.toFloat(), 8.0f );
-                g.setColour( dim );
-                g.setFont( juce::FontOptions( 13.0f, juce::Font::bold ) );
+                g.setColour( ink(Ink::Raised).darker( 0.3f ) );
+                g.fillRoundedRectangle( r.toFloat(), themeData().radius );
+                g.setColour( ink(Ink::Muted) );
+                g.setFont( juce::FontOptions( 13.0f*themeData().fontScale, juce::Font::bold ) );
                 g.drawText( p.label, r.withHeight( 20 ), juce::Justification::centred );
             }
-            g.setColour( text );
+            g.setColour( ink(Ink::Text) );
             for( const auto& c : layout_.controls )
                 if( c.type == Layout::Control::Type::Label )
                 {
@@ -368,16 +328,15 @@ namespace oscairn::standalone
                 }
         }
 
-        ~Board() override { setLookAndFeel( nullptr ); }
+
 
     private:
         std::unique_ptr<juce::Component> button( const Layout::Control& c )
         {
             auto b = std::make_unique<juce::TextButton>( c.label );
-            b->setColour( juce::TextButton::buttonColourId, face );
-            b->setColour( juce::TextButton::buttonOnColourId, accent.darker( 0.2f ) );
-            b->setColour( juce::TextButton::textColourOffId, c.bind.empty() ? dim : text );
-            if( c.bind == "play" )
+            if(c.bind.empty())b->setEnabled(false);
+            if(c.bind=="plugins")b->onClick=[this]{if(engine_.openBrowser)engine_.openBrowser();};
+            else if( c.bind == "play" )
                 b->onClick = [this] { engine_.setPlaying( true ); };
             else if( c.bind == "stop" )
                 b->onClick = [this] { engine_.setPlaying( false ); };
@@ -394,7 +353,6 @@ namespace oscairn::standalone
 
         Engine&                                       engine_;
         const Layout&                                 layout_;
-        PanelLook                                     look_; // before the controls, so it outlives them
         std::vector<std::unique_ptr<juce::Component>> owned_;
         std::vector<std::pair<juce::Component*, const Layout::Control*>> placed_;
         int                                           dx_ = 0, dy_ = 0;
@@ -408,8 +366,6 @@ namespace oscairn::standalone
     {
         board_ = std::make_unique<Board>( engine, layout_ );
         addAndMakeVisible( *board_ );
-        connectionNotice_.setColour(juce::Label::backgroundColourId,juce::Colour(0xff542d22));
-        connectionNotice_.setColour(juce::Label::textColourId,juce::Colours::white);
         addChildComponent(connectionNotice_);addChildComponent(restartButton_);
         restartButton_.onClick=[this]{engine_.restart();timerCallback();};
         board_->refresh();
@@ -420,7 +376,7 @@ namespace oscairn::standalone
 
     void Panel::paint( juce::Graphics& g )
     {
-        g.fillAll( layout_.background.darker( 0.4f ) );
+        g.fillAll( ink(Ink::Background).darker( 0.4f ) );
     }
 
     void Panel::resized()
@@ -447,7 +403,9 @@ namespace oscairn::standalone
     {
         board_->refresh();
         const auto disconnected=!engine_.connected();
-        board_->setEnabled(!disconnected);
+        board_->setEnabled(!disconnected && !engine_.soundBusy());
+        connectionNotice_.setColour(juce::Label::backgroundColourId,ink(Ink::Danger));
+        connectionNotice_.setColour(juce::Label::textColourId,ink(Ink::Danger).contrasting());
         connectionNotice_.setVisible(disconnected);
         restartButton_.setVisible(disconnected && engine_.canRestart());
         connectionNotice_.setText(engine_.canRestart()?"Engine stopped. Restart opens a fresh session.":"Engine disconnected. Reconnecting...",juce::dontSendNotification);

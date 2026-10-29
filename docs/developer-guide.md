@@ -260,3 +260,40 @@ Scanning has process crash isolation; playback currently runs plugins inside the
 process. A native plugin memory fault can kill that engine. Do not describe the scanner
 or render error checks as a security sandbox. Public APIs are still evolving; pin the
 Oscairn revision you build/test against and state your supported platforms and limits.
+
+## Discovery, generic editors and appearance
+
+`oscairn::scanPlugins` (`oscairn/discovery.h`) scans CLAP and optional LV2 bundles through
+`oscairn-plugin-scan`, using the existing bounded worker protocol, per-bundle timeout and
+cancellation. The UI never loads libraries to inspect metadata. A descriptor's format plus
+CLAP ID/LV2 URI is its identity; the path locates the installed binary. Discovery is not an
+engine-compatibility guarantee. Loaded plugins still execute inside the audio engine.
+
+Expose complete parameter names, ranges, stepped/read-only flags, text formatting and
+presets to make the generated editor useful. `Control::replace` / `graph.replace` prepares
+a candidate and optional preset before publishing one replacement graph plan. The old
+node ID/name remains; incompatible routing or preparation failures preserve the old graph.
+Replacement cuts that slot's old notes/tails and prepared sounds. Use prepared sound
+contexts for seamless switching within an engine instead.
+
+System UI components use the shared semantic palette and look-and-feel; device layouts
+contain geometry and bindings, not private colour schemes. Follow the
+[design language and theme schema](design-language.md) when adding a screen. Generated
+plugin controls inherit the active theme. Vendor-native GUIs do not; declarative custom
+plugin pages and managed theme packages are future work.
+
+### Insert chains and shared effects
+
+The graph can connect an instrument through several effect nodes, fan its output into
+parallel chains, and sum several instruments into one shared effect. Per-route gain can
+serve as a send amount; route the dry and wet paths deliberately. These capabilities exist
+in typed/JSON controls; the initial desktop browser exposes only the demo instrument and
+effect slots, not a general rack/routing editor.
+
+A shared effect instance processes the summed input with one setting/state. Two effect
+nodes with different settings are separate instances, even if both receive the same
+instrument. Each needs its own mutable DSP state (delay/reverb buffers, envelopes, filter
+history); executable code and explicitly shared immutable resources may be shared.
+Native effect contexts are still planned, unlike the implemented native instrument
+contexts. They may reduce instance overhead, but cannot eliminate independent signal
+histories where the desired processing differs.

@@ -42,6 +42,7 @@ namespace oscairn
         bool discardSound(NodeId node,uint32_t id,bool cutTail=false) override {return graph_.host(node).discardSound(id,cutTail);}
         GraphState graphState() const override;
         NodeId add( const std::string& name, const std::string& path, const std::string& pluginId = {} ) override;
+        void replace(NodeId node,const std::string& path,const std::string& pluginId,const std::string& preset = {}) override;
         void remove( NodeId node ) override;
         void connectAudio( NodeId from, NodeId to ) override { graph_.connectAudio( from, to ); staged_ = true; }
         void connectAudio( const AudioConnection& c ) override { graph_.connectAudio(c); staged_=true; }

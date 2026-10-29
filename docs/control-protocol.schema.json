@@ -1632,6 +1632,50 @@
             "params"
           ],
           "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
+              "const": "graph.replace"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "pluginId": {
+                  "type": "string"
+                },
+                "node": {
+                  "$ref": "#/$defs/Node"
+                },
+                "preset": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "node",
+                "path",
+                "pluginId"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "params"
+          ],
+          "additionalProperties": true
         }
       ]
     },

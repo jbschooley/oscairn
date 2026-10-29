@@ -13,7 +13,7 @@ juce_add_binary_data(oscairn_standalone_layouts SOURCES
     layouts/ignite.json
     layouts/keys49.json)
 
-target_sources(oscairn_standalone PRIVATE Main.cpp Engine.cpp Layout.cpp Panel.cpp Screen.cpp SoundPickerModel.cpp)
+target_sources(oscairn_standalone PRIVATE Main.cpp Engine.cpp Layout.cpp Panel.cpp Screen.cpp SoundPickerModel.cpp Theme.cpp PluginBrowser.cpp)
 target_compile_definitions(oscairn_standalone PRIVATE
     JUCE_WEB_BROWSER=0
     JUCE_USE_CURL=0
@@ -30,10 +30,11 @@ target_link_libraries(oscairn_standalone PRIVATE
     juce::juce_gui_extra
     juce::juce_recommended_config_flags
     juce::juce_recommended_warning_flags)
-add_dependencies(oscairn_standalone oscairn_engine_host oscairn_step_sequencer oscairn_basic_synth oscairn_delay oscairn_transpose oscairn_midi_delay)
+add_dependencies(oscairn_standalone oscairn-plugin-scan oscairn_engine_host oscairn_step_sequencer oscairn_basic_synth oscairn_delay oscairn_transpose oscairn_midi_delay)
 set_property(TARGET oscairn_standalone APPEND PROPERTY LINK_DEPENDS
-    "$<TARGET_FILE:oscairn_engine_host>;$<TARGET_FILE:oscairn_step_sequencer>;$<TARGET_FILE:oscairn_basic_synth>;$<TARGET_FILE:oscairn_delay>;$<TARGET_FILE:oscairn_transpose>;$<TARGET_FILE:oscairn_midi_delay>")
+    "$<TARGET_FILE:oscairn-plugin-scan>;$<TARGET_FILE:oscairn_engine_host>;$<TARGET_FILE:oscairn_step_sequencer>;$<TARGET_FILE:oscairn_basic_synth>;$<TARGET_FILE:oscairn_delay>;$<TARGET_FILE:oscairn_transpose>;$<TARGET_FILE:oscairn_midi_delay>")
 add_custom_command(TARGET oscairn_standalone POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:oscairn-plugin-scan> $<TARGET_FILE_DIR:oscairn_standalone>/oscairn-plugin-scan
     COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:oscairn_engine_host> $<TARGET_FILE_DIR:oscairn_standalone>/oscairn-engine
     COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:oscairn_standalone>/plugins
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
@@ -42,3 +43,9 @@ add_custom_command(TARGET oscairn_standalone POST_BUILD
     VERBATIM)
 
 install(TARGETS oscairn_standalone RUNTIME DESTINATION bin BUNDLE DESTINATION Applications)
+
+juce_add_console_app(oscairn_theme_test PRODUCT_NAME "Oscairn Theme Test")
+target_sources(oscairn_theme_test PRIVATE tests/theme.cpp Theme.cpp)
+target_link_libraries(oscairn_theme_test PRIVATE juce::juce_gui_extra juce::juce_recommended_config_flags)
+target_compile_definitions(oscairn_theme_test PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
+add_test(NAME desktop-theme COMMAND oscairn_theme_test "${CMAKE_CURRENT_SOURCE_DIR}/themes/midnight.json")

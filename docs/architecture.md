@@ -15,7 +15,8 @@ design decisions are recorded as [RFCs](rfcs/README.md).
 | Transport: internal tempo or external MIDI clock | Ableton Link, DAW and CV clock sync |
 | Parameter events between plugins (`oscairn.param-target`, [RFC 0002](rfcs/0002-param-target.md)) | Sounds, Performances, Setlists, Projects; file formats and library |
 | Step sequencer, basic synth and delay plugins | Scenes, persistent engines, crash recovery |
-| Basic Synth prepared sound contexts, channel parts and held-note ownership; typed/JSON/remote controls ([RFC 0005](rfcs/0005-sound-contexts.md)); prepared-instance pools for ordinary CLAP/LV2 instruments; desktop picker for the loaded instrument | Native effect-context transitions, asset-bearing native patches, persistent pools and plugin discovery/selection UI |
+| Basic Synth prepared sound contexts, channel parts and held-note ownership; typed/JSON/remote controls ([RFC 0005](rfcs/0005-sound-contexts.md)); prepared-instance pools for ordinary CLAP/LV2 instruments; desktop picker for the loaded instrument | Native effect-context transitions, asset-bearing native patches, persistent pools and general graph-editing UI |
+| Isolated CLAP/LV2 browser, generic parameter/preset editor and atomic slot replacement; installable shared themes | Custom plugin pages, arbitrary graph editor and managed package installation |
 | Offline renderer; desktop app with live audio, MIDI input and panel layouts | Hardware-services interface; the platform as a DAW plugin |
 | A Linux image (Buildroot) that boots into Oscairn, tested in QEMU | Images for real hardware |
 | | Packages: sound packs, libraries, installable plugins |
@@ -697,6 +698,14 @@ editor, a waveform) as sandboxed code running in the UI process, not the engine;
 plugin's own native GUI on the desktop and in a DAW. First-party plugins use the same
 system as third parties. The UI keeps its system areas (header, navigation, transport)
 consistent; a plugin owns its page.
+
+System areas now use a shared semantic palette and look-and-feel. Users can install
+validated data-only themes and apply one appearance across layouts, plugin browsing and
+generated parameter editors; other UI processes share the selection. Layout files own
+geometry/bindings, not colours. See the implemented [design language and theme contract](design-language.md).
+The desktop browser scans CLAP/LV2 in isolated helper processes, replaces instrument/effect
+slots through validated `graph.replace`, and exposes generic parameters and advertised
+presets. Plugin identity is format plus stable ID; filesystem paths locate installations.
 
 The desktop app's panel layouts already work this way for the screen and controls: one
 engine behind any layout ([layouts](../hosts/standalone/layouts/README.md)).

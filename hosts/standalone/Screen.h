@@ -40,6 +40,7 @@ namespace oscairn::standalone
         SoundAction selectedAction(SoundAction::Kind) const;
 
         juce::ComboBox sounds_;
+        juce::TextButton plugins_{"Plugins..."};
         juce::TextButton useSound_{"Use sound"}, prepareSound_{"Prepare..."}, removeSound_{"Remove"};
         juce::Label playingSound_, soundNotice_;
         juce::ToggleButton brightnessLocks_{"Brightness locks"};

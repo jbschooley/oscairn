@@ -352,12 +352,12 @@ struct Host::Impl {
         for (bool input : {true, false}) {
             auto& ports = input ? nextInputs : nextOutputs;
             const auto count = audio ? audio->count(plugin, input) : 0;
-            if (count > 16) throw std::runtime_error("More than 16 audio ports are unsupported");
+            if (count > Host::maxAudioChannels) throw std::runtime_error("Audio bus count exceeds the 64-channel budget");
             uint32_t channels = 0;
             for (uint32_t i = 0; i < count; ++i) {
                 clap_audio_port_info_t p{};
-                if (!audio->get(plugin, i, input, &p) || p.channel_count == 0 || p.channel_count > 64 ||
-                    channels + p.channel_count > 64)
+                if (!audio->get(plugin, i, input, &p) || p.channel_count == 0 || p.channel_count > Host::maxAudioChannels ||
+                    channels + p.channel_count > Host::maxAudioChannels)
                     throw std::runtime_error("Invalid or unsupported audio channel layout");
                 ports.push_back({p.id, std::string(p.name, strnlen(p.name, CLAP_NAME_SIZE)), p.channel_count, p.flags});
                 channels += p.channel_count;

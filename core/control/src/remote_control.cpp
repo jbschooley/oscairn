@@ -258,6 +258,8 @@ namespace oscairn
     Control::TransportState RemoteControl::transportState()const{return impl_->transport;}
     NodeId RemoteControl::add(const std::string& name,const std::string& path,const std::string& plugin)
     {auto doc=impl_->call("graph.add","{\"name\":"+quote(name)+",\"path\":"+quote(path)+",\"pluginId\":"+quote(plugin)+'}');const auto id=static_cast<NodeId>(integer(field(field(doc.get(),"result"),"node")));impl_->refresh();return id;}
+    void RemoteControl::replace(NodeId n,const std::string& path,const std::string& plugin,const std::string& preset)
+    {impl_->call("graph.replace","{\"node\":"+std::to_string(n)+",\"path\":"+quote(path)+",\"pluginId\":"+quote(plugin)+",\"preset\":"+quote(preset)+'}',30000);impl_->refresh();}
     void RemoteControl::remove(NodeId n){impl_->call("graph.remove","{\"node\":"+std::to_string(n)+'}');impl_->refresh();}
     void RemoteControl::connectAudio(NodeId a,NodeId b){impl_->edge("graph.connect","audio",a,b);}
     void RemoteControl::connectAudio(const AudioConnection& c){impl_->audioEdge("graph.connect",c);}

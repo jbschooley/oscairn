@@ -9,6 +9,14 @@
 
 namespace oscairn::standalone
 {
+    static std::map<std::string,Engine::Editor> readEditors(Control& control) {
+        std::map<std::string,Engine::Editor> result;const auto graph=control.graphState();
+        for(const auto& node:graph.topology.nodes) {
+            const auto& name=graph.names.at(node.id);if(name!="synth" && name!="delay")continue;
+            result[name]={node.plugin.name,node.plugin.id,node.plugin.path,control.parameters(node.id),control.presets(node.id)};
+        }
+        return result;
+    }
     Engine::Engine(const std::string& pluginDir,const std::string& socketPath,const std::string& helperExecutable,const host::AudioConfiguration& audio):socketPath_(socketPath)
     {
         if(socketPath.empty() && helperExecutable.empty())
@@ -57,10 +65,19 @@ namespace oscairn::standalone
     bool Engine::followsMidiClock()const{return control_->clockSource()==Transport::ClockSource::MidiClock;}
     void Engine::note(bool on,int key,float velocity){command([this,on,key,velocity]{if(!control_->note(on,key,velocity))std::fprintf(stderr,"oscairn: note queue overflow\n");});}
 
+    std::string Engine::pluginId(const std::string& name) const {
+        const auto graph=control_->graphState();
+        for(const auto& node:graph.topology.nodes)if(graph.names.at(node.id)==name)return node.plugin.id;
+        return {};
+    }
+    void Engine::replacePlugin(const std::string& name,const std::string& path,const std::string& id,const std::string& preset) {
+        SoundAction action;action.kind=SoundAction::Replace;action.node=control_->nodeId(name);action.pluginId=pluginId(name);
+        action.replacementPath=path;action.replacementId=id;action.choice.preset=preset;soundAction(std::move(action));
+    }
     void Engine::soundAction(SoundAction action)
     {
         if(soundBusy() || !connected())return;
-        if(action.kind==SoundAction::Prepare && !canPrepareSounds())
+        if((action.kind==SoundAction::Prepare || action.kind==SoundAction::Replace) && !canPrepareSounds())
         {
             soundMessage_="Preparation requires the separate engine. Relaunch without --in-process.";
             return;
@@ -74,7 +91,7 @@ namespace oscairn::standalone
     {
         if(socketPath_.empty())
         {
-            try{applySoundAction(*control_,action);soundPicker_=readSoundPicker(*control_);}
+            try{applySoundAction(*control_,action);soundPicker_=readSoundPicker(*control_);editors_=readEditors(*control_);}
             catch(const std::exception& e){soundMessage_=e.what();}
             return;
         }
@@ -88,6 +105,7 @@ namespace oscairn::standalone
                 client.connect(socket);RemoteControl control(client);
                 try{applySoundAction(control,request);}catch(const std::exception& e){result.error=e.what();}
                 result.state=readSoundPicker(control);
+                result.editors=readEditors(control);
             }
             catch(const std::exception& e){result.error=e.what();result.disconnected=!client.connected();}
             return result;
@@ -98,7 +116,12 @@ namespace oscairn::standalone
     {
         auto result=soundJob_.get();
         if(!result.error.empty())soundMessage_=result.error;
-        soundPicker_=std::move(result.state);
+        for(const auto& [name,editor]:result.editors) {
+            const auto old=editors_.find(name);
+            if(old==editors_.end() || old->second.id!=editor.id || old->second.path!=editor.path)textCache_.clear();
+        }
+        soundPicker_=std::move(result.state);editors_=std::move(result.editors);
+        if(soundJobKind_==SoundAction::Replace)textCache_.clear();
         if(result.disconnected)
         {
             pendingControls_.clear();

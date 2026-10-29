@@ -90,8 +90,6 @@ namespace oscairn::standalone
             else if( resize == "stretch" ) layout.resize = Resize::Stretch;
             else invalid( "\"resize\" must be fixed, scale or stretch" );
         }
-        if( root.hasProperty( "background" ) )
-            layout.background = juce::Colour::fromString( root["background"].toString().replace( "#", "ff" ) );
 
         if( const auto* panels = root["panels"].getArray() )
             for( int i = 0; i < panels->size(); ++i )

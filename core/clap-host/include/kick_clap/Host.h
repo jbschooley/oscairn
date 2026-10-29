@@ -70,6 +70,7 @@ struct Statistics {
 class Host {
 public:
     static constexpr uint32_t maxEvents = 2048;     // capacity of the control-thread queues
+    static constexpr uint32_t maxAudioChannels = 64; // in each direction, across all buses
     static constexpr uint32_t maxBlockEvents = 512; // direct graph events per process() call; queued commands have a separate budget
     // The event space this host assigns to oscairn.param-target (oscairn-clap/param-target.h)
     // through CLAP's event-registry. Plugins may send these events; the host passes them

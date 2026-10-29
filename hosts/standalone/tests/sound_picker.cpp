@@ -157,6 +157,11 @@ int main(int argc,char** argv)
         check(f.remote([&](Control& c){try{applySoundAction(c,prepare);return false;}catch(const std::exception&){return true;}}),"capacity exhaustion reported");
         state=f.remote([](Control& c){return readSoundPicker(c);});
         check(state.sounds.contexts[0].selectedChannels==65535,"capacity failure preserves selected sound");
+        const auto beforeReplacement=f.session.graphState().revision;
+        check(f.remote([&](Control& c){try{c.replace(node,"/missing/plugin.clap",state.pluginId);return false;}catch(const std::exception& e){return std::string(e.what())!="Internal error";}}),"remote replacement reports the loader failure");
+        check(f.session.graphState().revision==beforeReplacement,"failed remote replacement preserves graph");
+        f.remote([&](Control& c){c.replace(node,argv[1],state.pluginId);});f.tick();
+        check(f.remote([](Control& c){return readSoundPicker(c);}).sounds.contexts.size()==1,"remote replacement refreshes prepared sound pool");
         select.pluginId="different-engine";
         check(f.remote([&](Control& c){try{applySoundAction(c,select);return false;}catch(const std::exception&){return true;}}),"stale engine choice refused");
         std::cout<<"ok: picker prepare/select/retire, held voices, failure/capacity and reconnect\n";

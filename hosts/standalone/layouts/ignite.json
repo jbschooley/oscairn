@@ -1,7 +1,6 @@
 {
   "name": "Ignite",
   "size": [2800, 1803],
-  "background": "#141416",
   "controls": [
     {"type": "screen", "rect": [334, 153, 1024, 600]},
     {"type": "label", "rect": [632, 743, 426, 55], "label": "IGNITE", "align": "centre"},

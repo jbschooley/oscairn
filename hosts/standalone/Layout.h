@@ -77,7 +77,6 @@ namespace oscairn::standalone
             Stretch
         };
         Resize               resize = Resize::Scale;
-        juce::Colour         background{ 0xff1b1d21 };
         std::vector<Panel>   panels;
         std::vector<Control> controls;
 

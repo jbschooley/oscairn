@@ -158,6 +158,18 @@ namespace oscairn
         return result;
     }
 
+    void Session::replace(NodeId node,const std::string& path,const std::string& pluginId,const std::string& preset)
+    {
+        if(staged_)throw std::invalid_argument("Finish pending graph edits before replacing a plugin");
+        if(!graph_.contains(node))throw std::invalid_argument("Unknown node");
+        if(path.empty() || pluginId.empty())throw std::invalid_argument("Plugin replacement requires an installation path and stable plugin ID");
+        graph_.replace(node,path,pluginId,preset);
+        for(auto it=pending_.begin();it!=pending_.end();)
+            if(it->first.first==node){commandCount_-=it->second.size();it=pending_.erase(it);}else ++it;
+        std::erase_if(observed_,[&](const auto& entry){return entry.first.first==node;});
+        outputDrops_.erase(node);++revision_;publish(ChangeKind::Graph);
+    }
+
     void Session::remove( NodeId node )
     {
         if( !graph_.contains(node) ) throw std::invalid_argument("unknown node");

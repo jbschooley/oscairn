@@ -1,7 +1,6 @@
 {
   "name": "KICK screen",
   "size": [1024, 600],
-  "background": "#000000",
   "controls": [
     {"type": "screen", "rect": [0, 0, 1024, 600]}
   ]

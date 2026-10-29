@@ -465,3 +465,25 @@ inspect the destination/context inventory after reconnecting instead of blindly 
 An LV2 state export may briefly silence that instance while taking its snapshot; preparing
 a spare sound avoids restoring over a held instance. These operations are for preparation,
 not sample-timed performance changes.
+
+### Validated plugin replacement
+
+`graph.replace` takes `{node, path, pluginId, preset?}` and returns `{revision}`.
+`pluginId` is required and nonempty (CLAP ID or LV2 URI); `path` is the engine-local
+installation location, not portable identity. An optional LV2 preset URI is loaded on
+an isolated candidate before adoption. No separate `graph.commit` is required.
+
+Replacement refuses staged graph edits or parameter mappings touching the node. It loads
+and activates the candidate, validates connected note ports and remaps connected main
+audio buses by channel before compiling/publishing one plan. Same-width main buses can
+have different format-specific port IDs; mono outputs can feed stereo, and a mono source
+can be expanded back into a directly connected stereo port. Ambiguous/secondary bus
+routes and incompatible input widths require explicit routing, and are refused here.
+Any preparation/validation failure leaves the playing graph, node identity and revision
+unchanged. Success retains the node ID/name and graph connections, clears old pending
+parameter commands, and publishes `graph.changed` so clients rebuild metadata.
+
+This intentionally stops the replaced node's current voices/tails and discards its prepared
+sounds; use `sounds.select` for seamless sound changes within an engine. Native plugin
+code still runs in the audio-engine process after loading: scanner isolation protects
+scanning, not a plugin that crashes or hangs during instantiation/processing.

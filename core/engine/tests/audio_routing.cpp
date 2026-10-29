@@ -74,6 +74,14 @@ int main(int argc,char** argv){try{
     mainBus.connectAudio(graphInput,mainNode);mainBus.connectAudio(mainNode,graphOutput);mainBus.commit();
     Audio mainAudio;check(mainAudio.run(mainBus),"automatic main bus routing");mainAudio.expect({1,2,0,0,0});
 
+    Graph many(48000,64,ProcessingMode::Realtime,{},layout());const auto multi=many.add(argv[1],"org.oscairn.test.many-ports");
+    check(many.host(multi).inputPorts().size()==17 && many.host(multi).outputPorts().size()==17,"17 stereo buses fit the 64-channel budget");
+    many.connectAudio(graphInput,multi);many.connectAudio(multi,graphOutput);many.commit();
+    Audio stereo;check(stereo.run(many),"many-bus default render");stereo.expect({1,2,0,0,0});
+    many.connectAudio({{graphInput,11,0},{multi,116,0},2});many.connectAudio({{multi,216,0},{graphOutput,200,0},2});many.commit();
+    check(stereo.run(many),"last auxiliary bus can be explicitly routed without audio allocation");stereo.expect({1,2,11,13,0});
+    rejects([&]{many.add(argv[1],"org.oscairn.test.excessive-ports");},"total channels remain bounded");
+
     Session session(48000,64,{},layout());JsonRpc rpc(session);auto id=session.add("effect",argv[1]);
     const auto route="{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"graph.connect\",\"params\":{\"kind\":\"audio\",\"from\":4294967294,\"to\":4294967295,\"fromPort\":11,\"fromChannel\":0,\"toPort\":200,\"toChannel\":0,\"channels\":2}}";
     auto response=rpc.dispatch(route);check(response->find("error")==std::string::npos,"explicit JSON route accepted");session.commit();

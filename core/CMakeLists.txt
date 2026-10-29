@@ -1,6 +1,6 @@
 add_subdirectory(clap-host)
 
-add_library(oscairn_plugin_host STATIC plugin-host/src/plugin_host.cpp)
+add_library(oscairn_plugin_host STATIC plugin-host/src/plugin_host.cpp plugin-host/src/discovery.cpp)
 target_include_directories(oscairn_plugin_host PUBLIC plugin-host/include)
 target_link_libraries(oscairn_plugin_host PUBLIC kick_clap_host)
 target_compile_options(oscairn_plugin_host PRIVATE -Wall -Wextra)
@@ -13,6 +13,10 @@ if(OSCAIRN_LV2)
     target_compile_definitions(oscairn_plugin_host PRIVATE OSCAIRN_LV2=1)
     install(FILES lv2-host/third_party/jalv/ISC.txt DESTINATION share/licenses/oscairn RENAME jalv-worker-ISC.txt)
 endif()
+
+add_executable(oscairn-plugin-scan plugin-host/src/scan.cpp)
+target_link_libraries(oscairn-plugin-scan PRIVATE oscairn_plugin_host)
+install(TARGETS oscairn-plugin-scan RUNTIME DESTINATION bin)
 
 # CLAP API headers for first-party plugins (vendored in clap-host).
 add_library(oscairn_clap_headers INTERFACE)
@@ -150,3 +154,18 @@ target_link_libraries(oscairn-midi-effects-test PRIVATE oscairn_engine)
 target_include_directories(oscairn-midi-effects-test PRIVATE clap-host/tests)
 add_test(NAME midi-effects COMMAND oscairn-midi-effects-test $<TARGET_FILE:oscairn_transpose> $<TARGET_FILE:oscairn_midi_delay> $<TARGET_FILE:oscairn_basic_synth> $<TARGET_FILE:oscairn-audio-midi-fixture>)
 set_tests_properties(midi-effects PROPERTIES TIMEOUT 30)
+
+add_executable(oscairn-plugin-selection-test engine/tests/plugin_selection.cpp)
+target_link_libraries(oscairn-plugin-selection-test PRIVATE oscairn_control)
+target_include_directories(oscairn-plugin-selection-test PRIVATE clap-host/tests)
+add_test(NAME plugin-selection COMMAND oscairn-plugin-selection-test
+    $<TARGET_FILE:oscairn_basic_synth> $<TARGET_FILE:oscairn_delay> $<TARGET_FILE:oscairn_step_sequencer>
+    $<TARGET_FILE:oscairn-plugin-scan> $<TARGET_FILE:kick-clap-fixture-crash>)
+set_tests_properties(plugin-selection PROPERTIES TIMEOUT 30)
+if(OSCAIRN_LV2)
+    add_test(NAME plugin-selection-lv2 COMMAND oscairn-plugin-selection-test
+        $<TARGET_FILE:oscairn_basic_synth> $<TARGET_FILE:oscairn_delay> $<TARGET_FILE:oscairn_step_sequencer>
+        $<TARGET_FILE:oscairn-plugin-scan> $<TARGET_FILE:kick-clap-fixture-crash>
+        "${CMAKE_CURRENT_BINARY_DIR}/lv2-host/tests/test fixture.lv2")
+    set_tests_properties(plugin-selection-lv2 PROPERTIES TIMEOUT 30)
+endif()

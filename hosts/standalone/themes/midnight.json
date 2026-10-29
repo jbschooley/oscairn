@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "id": "midnight",
+  "name": "Midnight",
+  "font": "Default Sans Serif",
+  "fontScale": 1.0,
+  "radius": 8,
+  "colours": {
+    "background": "#101724",
+    "surface": "#172439",
+    "raised": "#24354C",
+    "border": "#637B97",
+    "text": "#F0F5FC",
+    "muted": "#A9BBD1",
+    "accent": "#7CCEFF",
+    "positive": "#7DDEB2",
+    "danger": "#FF9994"
+  }
+}

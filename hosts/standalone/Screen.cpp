@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #include "Screen.h"
+#include "Theme.h"
 #include <juce_audio_basics/juce_audio_basics.h>
 
 #include <cmath>
@@ -11,9 +12,6 @@ namespace oscairn::standalone
         // Sequencer parameter ids (plugins/step-sequencer): kind * 100 + step.
         constexpr uint32_t onParam = 100, noteParam = 200, lockParam = 300;
 
-        const juce::Colour background{ 0xff0d0f12 }, panel{ 0xff1c2027 }, text{ 0xffe8eaed }, dim{ 0xff7a828e },
-            accent{ 0xffff8a3d }, active{ 0xff3ddc97 };
-
         juce::String noteName( int note )
         {
             return juce::MidiMessage::getMidiNoteName( note, true, true, 4 ); // middle C (60) is C4
@@ -22,13 +20,12 @@ namespace oscairn::standalone
 
     Screen::Screen(Engine& engine) : engine_(engine)
     {
-        for(auto* component : std::initializer_list<juce::Component*>{&sounds_, &useSound_, &prepareSound_, &removeSound_, &playingSound_, &soundNotice_, &brightnessLocks_})
+        for(auto* component : std::initializer_list<juce::Component*>{&sounds_, &useSound_, &prepareSound_, &removeSound_, &playingSound_, &soundNotice_, &brightnessLocks_, &plugins_})
             addAndMakeVisible(component);
+        plugins_.onClick=[this]{if(engine_.openBrowser)engine_.openBrowser();};
         sounds_.setName("Prepared sounds");
         sounds_.setTextWhenNothingSelected("Choose a prepared sound");
         sounds_.onChange=[this]{refreshPicker();};
-        playingSound_.setColour(juce::Label::textColourId, active);
-        soundNotice_.setColour(juce::Label::textColourId, dim);
         brightnessLocks_.setTooltip("Override the sound's brightness on each sequencer step. Off by default so Warm and Bright keep their tone.");
         brightnessLocks_.onClick=[this] {
             auto action=selectedAction(SoundAction::BrightnessLocks);
@@ -116,6 +113,7 @@ namespace oscairn::standalone
         auto area=getLocalBounds().withTrimmedTop(juce::roundToInt(header().getHeight())).withHeight(juce::roundToInt(getHeight()*.20f)).reduced(10,0);
         auto title=area.removeFromTop(area.getHeight()/3);
         brightnessLocks_.setBounds(title.removeFromRight(title.getWidth()/3));
+        plugins_.setBounds(title.removeFromRight(title.getWidth()/3).reduced(2));
         playingSound_.setBounds(title);
         auto row=area.removeFromTop(area.getHeight()/2);
         const int buttonWidth=row.getWidth()/6;
@@ -166,11 +164,11 @@ namespace oscairn::standalone
 
     void Screen::paint( juce::Graphics& g )
     {
-        g.fillAll( background );
+        g.fillAll( ink(Ink::Background) );
         const float unit = juce::jmin( getHeight() / 600.0f, getWidth() / 1024.0f ); // drawn for the KICK's 1024 x 600
 
         auto top = header().reduced( 14.0f * unit, 0.0f );
-        g.setColour( text );
+        g.setColour( ink(Ink::Text) );
         g.setFont( juce::FontOptions( 30.0f * unit, juce::Font::bold ) );
         g.drawText( "GROOVEBOX", top, juce::Justification::centredLeft );
         g.setFont( juce::FontOptions( 22.0f * unit ) );
@@ -178,35 +176,35 @@ namespace oscairn::standalone
                                                      : juce::String( (int)status_.midiInputs.size() ) + " MIDI in";
         const auto state = juce::String( status_.playing ? "PLAYING" : "STOPPED" ) + "   " + juce::String( status_.tempo, 1 ) + " BPM"
                          + ( engine_.followsMidiClock() ? "  (MIDI clock)" : "" ) + "   " + midi;
-        g.setColour( status_.playing ? active : dim );
+        g.setColour( status_.playing ? ink(Ink::Positive) : ink(Ink::Muted) );
         g.drawText( state, top, juce::Justification::centredRight );
 
         for( int i = 0; i < steps; ++i )
         {
             const auto c       = cell( i );
             const bool playing = i == status_.step;
-            g.setColour( on_[(size_t)i] ? panel.brighter( 0.15f ) : panel );
-            g.fillRoundedRectangle( c, 8.0f * unit );
+            g.setColour( on_[(size_t)i] ? ink(Ink::Surface).brighter( 0.15f ) : ink(Ink::Surface) );
+            g.fillRoundedRectangle( c, themeData().radius * unit );
             if( playing )
             {
-                g.setColour( accent );
-                g.drawRoundedRectangle( c.reduced( 1.5f * unit ), 8.0f * unit, 3.0f * unit );
+                g.setColour( ink(Ink::Accent) );
+                g.drawRoundedRectangle( c.reduced( 1.5f * unit ), themeData().radius * unit, 3.0f * unit );
             }
 
             auto inner = c.reduced( 10.0f * unit );
-            g.setColour( dim );
+            g.setColour( ink(Ink::Muted) );
             g.setFont( juce::FontOptions( 18.0f * unit ) );
             g.drawText( juce::String( i + 1 ), inner.removeFromTop( 22.0f * unit ), juce::Justification::topLeft );
-            g.setColour( on_[(size_t)i] ? text : dim.darker( 0.5f ) );
+            g.setColour( on_[(size_t)i] ? ink(Ink::Text) : ink(Ink::Muted).darker( 0.5f ) );
             g.setFont( juce::FontOptions( 34.0f * unit, juce::Font::bold ) );
             g.drawText( on_[(size_t)i] ? noteName( note_[(size_t)i] ) : juce::String( "-" ), inner.withTrimmedBottom( c.getHeight() * 0.3f ),
                         juce::Justification::centred );
 
             const auto bar = lockBar( i );
-            g.setColour( background );
-            g.fillRoundedRectangle( bar, 4.0f * unit );
-            g.setColour( on_[(size_t)i] && engine_.soundPicker().brightnessLocks ? accent.withAlpha( 0.85f ) : dim.withAlpha( 0.4f ) );
-            g.fillRoundedRectangle( bar.withWidth( bar.getWidth() * (float)lock_[(size_t)i] ), 4.0f * unit );
+            g.setColour( ink(Ink::Background) );
+            g.fillRoundedRectangle( bar, themeData().radius*.5f * unit );
+            g.setColour( on_[(size_t)i] && engine_.soundPicker().brightnessLocks ? ink(Ink::Accent).withAlpha( 0.85f ) : ink(Ink::Muted).withAlpha( 0.4f ) );
+            g.fillRoundedRectangle( bar.withWidth( bar.getWidth() * (float)lock_[(size_t)i] ), themeData().radius*.5f * unit );
         }
     }
 

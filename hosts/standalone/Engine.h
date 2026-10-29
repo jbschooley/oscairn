@@ -46,14 +46,21 @@ namespace oscairn::standalone
         Status status()const;
         const SoundPickerState& soundPicker() const { return soundPicker_; }
         const std::string& soundMessage() const { return soundMessage_; }
+        bool controlReady() const { return !soundJob_.valid(); }
         bool soundBusy() const { return pendingSound_.has_value() || (soundJob_.valid() && soundJobKind_!=SoundAction::Refresh); }
         bool canPrepareSounds() const { return !socketPath_.empty(); }
         void soundAction(SoundAction action);
+        std::function<void()> openBrowser;
+        std::string pluginId(const std::string& node) const;
+        void replacePlugin(const std::string& node,const std::string& path,const std::string& id,const std::string& preset={});
+        struct Editor { std::string name,id,path;std::vector<ParamInfo> parameters;std::vector<PresetInfo> presets; };
+        const std::map<std::string,Editor>& editors() const {return editors_;}
+
     private:
         void timerCallback()override;
         template<class F> void command(F&& f)
         {
-            if(!failure_.empty())return;
+            if(!failure_.empty() || (soundJob_.valid() && soundJobKind_==SoundAction::Replace))return;
             if(soundJob_.valid()) { pendingControls_.emplace_back(std::forward<F>(f)); return; }
             try{f();}catch(const std::exception& e)
             {
@@ -64,11 +71,12 @@ namespace oscairn::standalone
         void failed(const std::string& message);
         void refreshSounds(SoundAction action = {});
         void finishSounds();
-        struct SoundResult { SoundPickerState state; std::string error; bool disconnected = false; };
+        struct SoundResult { std::map<std::string,Editor> editors;SoundPickerState state; std::string error; bool disconnected = false; };
         std::future<SoundResult> soundJob_;
         SoundAction::Kind soundJobKind_=SoundAction::Refresh;
         std::optional<SoundAction> pendingSound_;
         SoundPickerState soundPicker_;
+        std::map<std::string,Editor> editors_;
         std::string soundMessage_;
         uint32_t soundTicks_ = 0;
         std::deque<std::function<void()>> pendingControls_;

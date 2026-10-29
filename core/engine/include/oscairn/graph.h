@@ -71,6 +71,8 @@ namespace oscairn
         /// require pluginId (the URI); CLAP defaults to the module's first plugin.
         /// Throws std::runtime_error on failure.
         NodeId add( const std::string& path, const std::string& pluginId = {} );
+        /// Validates and commits replacement atomically; failure preserves the current graph.
+        void replace(NodeId node,const std::string& path,const std::string& pluginId,const std::string& preset = {});
         void   remove( NodeId node );
 
         /// Connections take effect at the next commit(). Throw std::invalid_argument if

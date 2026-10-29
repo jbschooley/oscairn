@@ -103,17 +103,24 @@ Done:
   detuned-saw and square-vibrato sounds overlap and play as independent channel parts.
   In-process diagnostics disable preparation; project persistence remains pending.
 
+
+- desktop plugin browser: isolated CLAP/LV2 discovery, search and folder selection,
+  generic parameters/presets and atomic instrument/effect replacement. Failed loads preserve
+  the working graph; compatible main buses remap, ambiguous buses and parameter mappings
+  require explicit edits. The first UI exposes the demo instrument/effect slots.
+- shared [design language and installable themes](design-language.md): semantic colours,
+  typography and control styling across layouts, browser and generated editors; built-in
+  Dark/Light, validated JSON installation and per-device selection shared across UI processes.
+  Theme changes do not touch audio or routing.
+
 To do:
 
 - tracks, patterns, swing and more lanes in the sequencer;
 - native effect contexts/tails, asset-bearing native patches and pool/project persistence;
-- plugin discovery and selection in the desktop, using the completed state/preset/property
-  controls. Carry stable format identities and state provenance into the library design
-  before persisting projects, following [RFC 0006](rfcs/0006-packages-and-portability.md);
-  package/artifact identity and destination runtime profiles must not become absolute
-  install paths. Distinguish native portability from external-plugin availability and from
-  the implemented sound-context capability. Custom UIs and other extensions follow
-  ([current scope](../core/lv2-host/README.md));
+- carry stable format/plugin identities and state provenance into persistent library data,
+  following [RFC 0006](rfcs/0006-packages-and-portability.md). Installation paths locate
+  binaries but must not become portable package identities. Custom plugin pages and
+  broader graph editing follow the current generic editor.
 - define hardware capabilities, timestamped input, scheduled output and engine backend
   selection before hardware MIDI/CV implementation
   ([RFC 0004](rfcs/0004-hardware-services.md), proposed); the control API remains outside
@@ -129,16 +136,13 @@ new core, from a UI that talks to it only through the control API.
 
 ### Next build and test order
 
-1. **Plugin discovery and selection:** reuse the existing CLAP scanner process and add the
-   corresponding LV2 discovery path, stable format IDs and generic parameter/preset controls.
-   Keep scanning away from live rendering; report failed/crashed scans and incompatible ports
-   without replacing a working graph. Test bundled plugins and production CLAP/LV2 instruments
-   and effects, repeated selection, routing and engine/UI reconnection.
-2. **Minimal save/reopen:** persist one complete Performance with its graph, scenes/prepared
+1. **Minimal save/reopen:** persist one complete Performance with its graph, scenes/prepared
    sounds, state, asset references and mappings. Preserve provenance and unresolved nodes;
    do not require the future package manager. Test a process restart, missing plugin/assets,
-   interrupted save, and render/state comparisons. Then expand native asset-bearing patches,
-   effect-tail transitions and sequencer tracks/patterns against that usable workflow.
+   interrupted save, and render/state comparisons.
+2. Expand native asset-bearing patches, effect-tail transitions and sequencer tracks/patterns
+   against that usable workflow. Keep the shared theme and generated-editor contract current
+   as new screens are added.
 
 Package-manager comparison comes at the package milestone, before permanent distribution
 format commitments: evaluate libmamba/Nix and libsolv as a narrower fallback using the

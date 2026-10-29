@@ -50,6 +50,12 @@ namespace oscairn::standalone
     void applySoundAction(Control& control, const SoundAction& action)
     {
         if(action.kind == SoundAction::Refresh) return;
+        if(action.kind==SoundAction::Replace) {
+            const auto graph=control.graphState();
+            const auto found=std::find_if(graph.topology.nodes.begin(),graph.topology.nodes.end(),[&](const auto& n){return n.id==action.node && n.plugin.id==action.pluginId;});
+            if(found==graph.topology.nodes.end())throw std::runtime_error("The loaded plugin changed. Choose again.");
+            control.replace(action.node,action.replacementPath,action.replacementId,action.choice.preset);return;
+        }
         const auto current = readSoundPicker(control);
         if(current.node != action.node || current.pluginId != action.pluginId)
             throw std::runtime_error("The instrument changed. Choose a sound again.");

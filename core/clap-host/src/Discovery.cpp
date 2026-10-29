@@ -69,17 +69,17 @@ std::vector<fs::path> defaultSearchPaths() {
 #endif
     return paths;
 }
-std::vector<fs::path> findBinaries(const std::vector<fs::path>& roots) {
+std::vector<fs::path> findBinaries(const std::vector<fs::path>& roots, const std::string& extension) {
     std::set<fs::path> found;
     for (const auto& root : roots) {
         std::error_code ec;
         if (!fs::exists(root, ec)) continue;
-        if (root.extension() == ".clap") { found.insert(fs::canonical(root, ec)); continue; }
+        if (root.extension() == extension) { found.insert(fs::canonical(root, ec)); continue; }
         fs::recursive_directory_iterator it(root, fs::directory_options::skip_permission_denied, ec), end;
         for (; it != end; it.increment(ec)) {
             if (ec) { ec.clear(); continue; }
             if (it.depth() > 8) { it.disable_recursion_pending(); continue; }
-            if (it->path().extension() == ".clap") {
+            if (it->path().extension() == extension) {
                 auto path = fs::canonical(it->path(), ec);
                 if (!ec) found.insert(path);
                 if (it->is_directory(ec)) it.disable_recursion_pending();
@@ -146,14 +146,14 @@ bool decodeScan(const std::string& source, ScanResult& result) {
         result = std::move(decoded); return true;
     } catch (...) { return false; }
 }
-ScanResult scan(const std::vector<fs::path>& roots, const fs::path& helper, uint32_t timeoutMs, const std::atomic<bool>* cancelled) {
+ScanResult scan(const std::vector<fs::path>& roots, const fs::path& helper, uint32_t timeoutMs, const std::atomic<bool>* cancelled, const std::string& extension) {
     ScanResult result;
     if (timeoutMs == 0 || timeoutMs > 60000) { result.failures.push_back({helper.string(), "Invalid scanner timeout"}); return result; }
 #ifdef _WIN32
     (void)roots; (void)cancelled;
     result.failures.push_back({helper.string(), "Isolated scanning currently supports Linux and macOS"});
 #else
-    for (const auto& path : findBinaries(roots)) {
+    for (const auto& path : findBinaries(roots,extension)) {
         if (cancelled && cancelled->load()) break;
         int pipes[2];
         if (::pipe(pipes) != 0) { result.failures.push_back({path.string(), "Cannot create scanner pipe"}); continue; }

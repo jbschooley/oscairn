@@ -13,6 +13,7 @@
 #include "Engine.h"
 #include "Layout.h"
 #include "Panel.h"
+#include "PluginBrowser.h"
 
 #include <BinaryData.h>
 #include <juce_gui_extra/juce_gui_extra.h>
@@ -56,14 +57,23 @@ namespace oscairn::standalone
         }
     }
 
+    class LibraryWindow final : public juce::DocumentWindow {
+    public:
+        LibraryWindow(Engine& engine,Theme& theme,const juce::File& plugins):DocumentWindow("Oscairn - Plugins and appearance",ink(Ink::Background),DocumentWindow::allButtons) {
+            setUsingNativeTitleBar(true);setContentOwned(new PluginBrowser(engine,theme,plugins),true);
+            setResizable(true,false);setResizeLimits(900,620,1800,1200);centreWithSize(1060,760);setVisible(true);
+        }
+        void closeButtonPressed() override {setVisible(false);}
+    };
+
     class Window : public juce::DocumentWindow, public juce::MenuBarModel
     {
     public:
-        Window( Engine& engine, std::vector<NamedLayout> layouts, const Layout& first, bool fullScreen )
+        Window( Engine& engine, std::vector<NamedLayout> layouts, const Layout& first, bool fullScreen,Theme& theme,const juce::File& plugins )
             : DocumentWindow( "Oscairn", juce::Colours::black, DocumentWindow::allButtons )
             , engine_( engine )
             , layouts_( std::move( layouts ) )
-            , fullScreen_( fullScreen )
+            , fullScreen_( fullScreen ),theme_(theme),plugins_(plugins)
         {
             setUsingNativeTitleBar( !fullScreen );
             if( fullScreen )
@@ -74,12 +84,14 @@ namespace oscairn::standalone
             if( !fullScreen ) // a device's screen has no menu bar
                 setMenuBar( this );
 #endif
+            engine_.openBrowser=[this]{showLibrary();};
             show( first );
             setVisible( true );
         }
 
         ~Window() override
         {
+            engine_.openBrowser={};
 #if JUCE_MAC
             juce::MenuBarModel::setMacMainMenu( nullptr );
 #else
@@ -114,11 +126,13 @@ namespace oscairn::standalone
 
         void closeButtonPressed() override { juce::JUCEApplication::getInstance()->systemRequestedQuit(); }
 
-        juce::StringArray getMenuBarNames() override { return { "View" }; }
+        juce::StringArray getMenuBarNames() override { return { "View", "Plugins", "Appearance" }; }
 
-        juce::PopupMenu getMenuForIndex( int, const juce::String& ) override
+        juce::PopupMenu getMenuForIndex( int index, const juce::String& ) override
         {
             juce::PopupMenu menu;
+            if(index==1){menu.addItem(2000,"Browse plugins and edit parameters...");return menu;}
+            if(index==2){themeItems_=theme_.installed();for(size_t i=0;i<themeItems_.size();++i)menu.addItem(3000+int(i),themeItems_[i].second,true,themeItems_[i].first==themeData().id);menu.addSeparator();menu.addItem(4000,"Manage themes...");return menu;}
             const auto*     current = dynamic_cast<Panel*>( getContentComponent() );
             for( size_t i = 0; i < layouts_.size(); ++i )
             {
@@ -133,6 +147,8 @@ namespace oscairn::standalone
 
         void menuItemSelected( int id, int ) override
         {
+            if(id==2000 || id==4000){showLibrary();return;}
+            if(id>=3000 && size_t(id-3000)<themeItems_.size()){try{theme_.apply(themeItems_[size_t(id-3000)].first);}catch(const std::exception& e){juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,"Theme not applied",e.what());}return;}
             if( id == 1000 )
             {
                 chooser_ = std::make_unique<juce::FileChooser>( "Open a panel layout", juce::File(), "*.json" );
@@ -147,6 +163,7 @@ namespace oscairn::standalone
         }
 
     private:
+        void showLibrary(){if(!library_)library_=std::make_unique<LibraryWindow>(engine_,theme_,plugins_);library_->setVisible(true);library_->toFront(true);}
         static juce::String title( const NamedLayout& l )
         {
             try
@@ -175,6 +192,10 @@ namespace oscairn::standalone
         std::vector<NamedLayout>           layouts_;
         std::unique_ptr<juce::FileChooser> chooser_;
         bool                               fullScreen_;
+        Theme& theme_;
+        juce::File plugins_;
+        std::unique_ptr<LibraryWindow> library_;
+        std::vector<std::pair<juce::String,juce::String>> themeItems_;
     };
 
     class Application : public juce::JUCEApplication
@@ -197,6 +218,7 @@ namespace oscairn::standalone
             }
             try
             {
+                theme_=std::make_unique<Theme>();
                 host::AudioConfiguration audio;
                 bool audioOptions=false;
                 const juce::StringArray valued{"--plugins","--connect","--layout","--snapshot","--size"};
@@ -240,7 +262,7 @@ namespace oscairn::standalone
                         throw std::runtime_error( "no layout named " + wanted.toStdString() + " and no such file" );
                     json = file.loadFileAsString();
                 }
-                window_ = std::make_unique<Window>( *engine_, std::move( layouts ), Layout::parse( json ), args.contains( "--fullscreen" ) );
+                window_ = std::make_unique<Window>( *engine_, std::move( layouts ), Layout::parse( json ), args.contains( "--fullscreen" ),*theme_,juce::File(dir.unquoted()) );
                 if( args.contains( "--play" ) )
                     engine_->setPlaying( true );
 
@@ -280,6 +302,7 @@ namespace oscairn::standalone
         {
             window_.reset(); // the panel uses the engine
             engine_.reset();
+            theme_.reset();
         }
 
     private:
@@ -301,6 +324,7 @@ namespace oscairn::standalone
             }
         }
 
+        std::unique_ptr<Theme> theme_;
         std::unique_ptr<Engine> engine_;
         std::unique_ptr<Window> window_;
     };

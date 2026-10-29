@@ -301,7 +301,54 @@ Add `-DOSCAIRN_LV2=ON` when configuring either the renderer or the desktop/helpe
 use the same graph adapter. `oscairn-render` accepts `bundle.lv2#plugin-uri` alongside
 CLAP paths; `graph.add` accepts a bundle path plus the URI in `pluginId`. See
 [LV2 hosting](../core/lv2-host/README.md). The desktop layout and default CLAP demo are
-unchanged; the sound picker works with a loaded instrument, while plugin discovery and
-selection UI remain pending. LV2-enabled macOS builds
+unchanged; the sound picker works with the loaded instrument. The plugin browser below
+can replace the instrument/effect. LV2-enabled macOS builds
 currently link to the installed Lilv libraries; packaging those dependencies for another
 Mac is separate from the existing helper/plugin copying step.
+
+## Plugin browser and appearance
+
+Open **Plugins…** on any panel screen, the **Plugins** menu, or KICK **BROWSE**.
+Scan the bundled and standard CLAP/LV2 locations, or **Add folder…**. Folder choices persist
+in `plugin-folders.txt` in the Oscairn configuration directory. Scans run off the UI thread
+in a fresh helper per binary/bundle, with timeout/cancellation and visible failure reports.
+The browser searches by name, maker or format, separating instrument and effect candidates.
+
+Select **Instrument** or **Effect** and explicitly **Replace instrument/effect**. These are
+the demo graph's `synth` and `delay` slots; this is not yet a general rack/graph editor.
+The current plugin keeps playing until the candidate is ready and routing is validated.
+Failed loads keep it intact. Successful replacement stops that slot's notes/tails and removes
+its prepared sounds. Finish staged routing and remove its parameter-lock mappings first.
+Fixed Basic Synth knob bindings disable for other instruments; use the searchable generic
+parameter editor, with host formatting, gestures, stepped and read-only controls.
+The existing sound picker exposes instrument presets as prepared sounds. **Reload with
+preset** in the browser also supports effect presets by preparing a replacement instance.
+
+Stable identity is `(format, plugin ID)` (CLAP ID or LV2 URI), displayed separately from its
+current installation path. Scanning does not promise that a plugin is compatible with the
+engine or hardware; the loader checks ports and requirements. Plugin code during loading
+and playback still runs in the engine process. `--in-process` remains diagnostic: browsing
+and parameter inspection work, while replacement/preparation requires the separate engine.
+
+**System theme** applies appearance across layouts, panels, browser and generated editors.
+Install a data-only theme with **Install theme…**; built-in Dark and Light remain available.
+See the [design language, format and install locations](../docs/design-language.md).
+
+Validation on October 29, 2026: all 54 local LV2-enabled desktop/core tests passed,
+including isolated scan failure, repeated atomic replacement, failed-load reference audio,
+CLAP/LV2 bus changes, remote replacement errors and theme validation/install/reopen.
+The macOS browser scanned 15 installed/bundled descriptors; MDA ePiano and Ambience
+loaded through it, and ePiano's Default preset reloaded. Jacob confirmed chords and
+sequencer playback sounded normal at 48 kHz/128 frames, with zero reported deadline misses
+or dropped MIDI/graph events. Dark, Light and installed Midnight were visually checked.
+Element FX advertises 17 stereo input buses and 17 stereo output buses (34 channels in
+each direction): Main plus Aux 1–16. This exposed an unnecessary 16-bus restriction,
+removed while retaining the 64-total-channel limit per direction. Default graph connections
+select the declared main bus; explicit routes can use auxiliary buses without folding
+them into the main output. A 17-bus fixture tests both paths and rejects 66 channels.
+
+After the bus-limit fix, the installed Element FX instance loads with all 17 buses.
+Its default configuration produced silence in a one-second headless chain, so audible
+Element processing is not validated. The MOD ePiano/Ambience listening result above is
+separate. One earlier prepared-instance stress run failed; 20 immediate isolated repeats
+and subsequent full-suite runs passed without a code change to that subsystem.

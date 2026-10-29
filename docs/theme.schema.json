@@ -1,0 +1,94 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Oscairn theme version 1",
+  "type": "object",
+  "properties": {
+    "version": {
+      "const": 1
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9-]{1,64}$"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 80
+    },
+    "font": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 80
+    },
+    "fontScale": {
+      "type": "number",
+      "minimum": 0.8,
+      "maximum": 1.4
+    },
+    "radius": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 16
+    },
+    "colours": {
+      "type": "object",
+      "properties": {
+        "background": {
+          "type": "string",
+          "pattern": "^#[0-9a-fA-F]{6}$"
+        },
+        "surface": {
+          "type": "string",
+          "pattern": "^#[0-9a-fA-F]{6}$"
+        },
+        "raised": {
+          "type": "string",
+          "pattern": "^#[0-9a-fA-F]{6}$"
+        },
+        "border": {
+          "type": "string",
+          "pattern": "^#[0-9a-fA-F]{6}$"
+        },
+        "text": {
+          "type": "string",
+          "pattern": "^#[0-9a-fA-F]{6}$"
+        },
+        "muted": {
+          "type": "string",
+          "pattern": "^#[0-9a-fA-F]{6}$"
+        },
+        "accent": {
+          "type": "string",
+          "pattern": "^#[0-9a-fA-F]{6}$"
+        },
+        "positive": {
+          "type": "string",
+          "pattern": "^#[0-9a-fA-F]{6}$"
+        },
+        "danger": {
+          "type": "string",
+          "pattern": "^#[0-9a-fA-F]{6}$"
+        }
+      },
+      "required": [
+        "background",
+        "surface",
+        "raised",
+        "border",
+        "text",
+        "muted",
+        "accent",
+        "positive",
+        "danger"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "version",
+    "id",
+    "name",
+    "colours"
+  ],
+  "additionalProperties": false
+}

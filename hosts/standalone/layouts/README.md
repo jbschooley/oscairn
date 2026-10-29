@@ -20,7 +20,6 @@ Others can be opened with View > Open Layout File... or `--layout path.json`.
 {
   "name": "Desktop",
   "size": [1280, 800],
-  "background": "#1b1d21",
   "resize": "stretch",
   "panels": [ {"rect": [870, 80, 370, 470], "label": "SOUND", "anchor": "right top"} ],
   "controls": [
@@ -55,3 +54,6 @@ Others can be opened with View > Open Layout File... or `--layout path.json`.
 
   A control without `bind` is drawn but does nothing yet. An unknown type or binding stops
   the layout loading, with the reason.
+
+Colours, fonts and control styling come from the system [theme](../../../docs/design-language.md).
+Layouts define geometry and bindings; they do not override the selected theme.

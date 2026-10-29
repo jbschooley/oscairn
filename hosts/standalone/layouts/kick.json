@@ -1,7 +1,6 @@
 {
   "name": "KICK",
   "size": [1800, 960],
-  "background": "#16181c",
   "panels": [
     {"rect": [20, 70, 580, 310], "label": ""},
     {"rect": [1656, 14, 132, 556], "label": "Q-LINK"},
@@ -18,7 +17,7 @@
     {"type": "button", "rect": [300, 280, 280, 80], "label": "ERASE"},
     {"type": "pads", "rect": [20, 390, 580, 550], "rows": 4, "cols": 4, "note": 36, "steps": true},
     {"type": "button", "rect": [630, 662, 112, 58], "label": "MAIN"},
-    {"type": "button", "rect": [630, 732, 112, 58], "label": "BROWSE"},
+    {"type": "button", "rect": [630, 732, 112, 58], "label": "BROWSE", "bind": "plugins"},
     {"type": "button", "rect": [630, 802, 112, 58], "label": "TRACK MIX"},
     {"type": "button", "rect": [630, 872, 112, 58], "label": "TRACK MUTE"},
     {"type": "button", "rect": [750, 662, 112, 58], "label": "NEXT SEQ"},
