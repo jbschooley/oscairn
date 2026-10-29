@@ -39,7 +39,7 @@ void Worker::attach(LV2_Handle instance,const LV2_Worker_Interface* interface)
     auto responses=std::make_unique<Queue>();
     auto requests=offline_?nullptr:std::make_unique<Queue>();
     responses_=std::move(responses);requests_=std::move(requests);
-    instance_=instance;interface_=interface;accepting_=true;
+    instance_=instance;interface_=interface;accepting_=true;live_=!offline_;
     if(!offline_)thread_=std::thread([this]{run();});
 }
 void Worker::work(uint32_t size,const void* data) noexcept
@@ -96,7 +96,7 @@ void Worker::endRun() noexcept
 {
     if(interface_ && interface_->end_run && interface_->end_run(instance_)!=LV2_WORKER_SUCCESS)++errors_;
 }
-void Worker::finish() noexcept
+void Worker::quiesce() noexcept
 {
     if(!accepting_)return;
     // Rendering is quiescent. Drain every accepted request before joining.
@@ -109,7 +109,18 @@ void Worker::finish() noexcept
     offline_=true;
     const bool pending=responses_->available()!=0;
     while(responses_->available())emitResponses();
-    accepting_=false;
     if(pending)endRun();
+}
+void Worker::resume()
+{
+    if(accepting_ && live_ && !thread_.joinable())
+    {
+        stopping_.store(false,std::memory_order_release);
+        thread_=std::thread([this]{run();});offline_=false;
+    }
+}
+void Worker::finish() noexcept
+{
+    quiesce();accepting_=false;
 }
 }

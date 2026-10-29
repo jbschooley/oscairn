@@ -2,6 +2,9 @@
 #include "oscairn/plugin_host.h"
 #include "Urids.h"
 #include "Worker.h"
+#include "StateBridge.h"
+#include "Patch.h"
+#include "../plugin-host/src/StateFiles.h"
 #include <lilv/lilv.h>
 #include <lv2/atom/atom.h>
 #include <lv2/atom/forge.h>
@@ -9,6 +12,8 @@
 #include <lv2/midi/midi.h>
 #include <lv2/options/options.h>
 #include <lv2/parameters/parameters.h>
+#include <lv2/state/state.h>
+#include <lv2/presets/presets.h>
 #include <lv2/port-props/port-props.h>
 #include <lv2/resize-port/resize-port.h>
 #include <lv2/time/time.h>
@@ -43,12 +48,13 @@ class Lv2Host final : public PluginHost
     struct Port
     {
         Kind kind=Kind::Ignored;
-        bool input=false, midi=false, time=false, toggle=false, optional=false;
+        bool input=false, midi=false, time=false, toggle=false, optional=false, patch=false;
         uint32_t requestedBytes=0;
         uint32_t channel=0, midiIndex=0;
         float control=0;
         std::vector<float> audio;
         std::vector<uint64_t> atom; // 8-byte alignment
+        std::string symbol;
         uint32_t atomBytes() const {return static_cast<uint32_t>(atom.size()*sizeof(uint64_t));}
         LV2_Atom_Sequence* sequence(){return reinterpret_cast<LV2_Atom_Sequence*>(atom.data());}
     };
@@ -56,6 +62,31 @@ class Lv2Host final : public PluginHost
     std::unique_ptr<LilvWorld,decltype(&lilv_world_free)> world_{lilv_world_new(),lilv_world_free};
     std::unique_ptr<LilvInstance,decltype(&lilv_instance_free)> instance_{nullptr,lilv_instance_free};
     bool active_=false;
+    const LilvPlugin* plugin_=nullptr;
+    const LV2_State_Interface* state_=nullptr;
+    bool statePortError_=false;
+    state_files::TemporaryDirectory scratch_;
+    std::unique_ptr<lv2::Patch> patch_;
+    uint32_t patchInput_=UINT32_MAX;
+    LV2_URID atomObject_=0,atomBlank_=0;
+    std::atomic_flag gate_=ATOMIC_FLAG_INIT;
+    std::atomic<bool> stateBusy_{false},resumePanic_{false},faulted_{false};
+    std::atomic<uint64_t> stateSilences_{0};
+    struct Quiescent
+    {
+        Lv2Host& host;
+        explicit Quiescent(Lv2Host& h):host(h)
+        {
+            host.stateBusy_.store(true);
+            while(host.gate_.test_and_set(std::memory_order_acquire))std::this_thread::sleep_for(std::chrono::microseconds(50));
+            host.worker_.quiesce();
+        }
+        ~Quiescent()
+        {
+            try{host.worker_.resume();}catch(...){host.faulted_=true;++host.errors_;}
+            host.gate_.clear(std::memory_order_release);host.stateBusy_.store(false);
+        }
+    };
     kick::clap::Descriptor descriptor_;
     std::vector<Parameter> parameters_;
     std::vector<PortInfo> inputs_,outputs_;
@@ -74,8 +105,10 @@ class Lv2Host final : public PluginHost
     int32_t minimum_=1, maximum_, sequenceSize_=0;
     float sampleRate_;
     std::array<LV2_Options_Option,5> options_{};
-    std::array<LV2_Feature,6> features_{};
-    std::array<const LV2_Feature*,7> featurePointers_{};
+    LV2_State_Make_Path makePath_{this,makePath};
+    LV2_State_Free_Path freePath_{nullptr,[](void*,char* path){std::free(path);}};
+    std::array<LV2_Feature,9> features_{};
+    std::array<const LV2_Feature*,10> featurePointers_{};
     // One control producer, one audio consumer; graph callers share this contract.
     std::array<Event,kick::clap::Host::maxEvents> commands_{};
     std::atomic<size_t> head_{0},tail_{0};
@@ -85,6 +118,60 @@ class Lv2Host final : public PluginHost
     bool inputPanic_=false,outputPanic_=false;
     std::atomic<uint64_t> blocks_{0},drops_{0},errors_{0},deadlines_{0};
     std::atomic<double> lastUs_{0},maxUs_{0};
+
+    static char* makePath(void* handle,const char* relative) noexcept
+    {
+        try
+        {
+            if(!relative)return nullptr;
+            const auto path=std::filesystem::path(relative).lexically_normal();
+            if(path.is_absolute())return nullptr;
+            for(const auto& part:path)if(part=="..")return nullptr;
+            const auto result=static_cast<Lv2Host*>(handle)->scratch_.path/path;
+            std::filesystem::create_directories(result.parent_path());return ::strdup(result.c_str());
+        }
+        catch(...){return nullptr;}
+    }
+    static const void* getPort(const char* symbol,void* data,uint32_t* size,uint32_t* type)
+    {
+        auto& host=*static_cast<Lv2Host*>(data);
+        for(auto& port:host.ports_)if(port.symbol==symbol && port.kind==Kind::Control && port.input)
+        {*size=sizeof(float);*type=host.urids_(LV2_ATOM__Float);return &port.control;}
+        *size=0;*type=0;return nullptr;
+    }
+    static void setPort(const char* symbol,void* data,const void* value,uint32_t size,uint32_t type)
+    {
+        auto& host=*static_cast<Lv2Host*>(data);
+        double number=0;bool valid=true;
+        if(type==host.urids_(LV2_ATOM__Float) && size==sizeof(float)){float v;std::memcpy(&v,value,size);number=v;}
+        else if(type==host.urids_(LV2_ATOM__Double) && size==sizeof(double))std::memcpy(&number,value,size);
+        else if(type==host.urids_(LV2_ATOM__Int) && size==sizeof(int32_t)){int32_t v;std::memcpy(&v,value,size);number=v;}
+        else valid=false;
+        for(uint32_t i=0;i<host.ports_.size();++i)if(host.ports_[i].symbol==symbol && host.writable(i))
+        {
+            if(!valid || !std::isfinite(number)){host.statePortError_=true;return;}
+            clap_event_param_value_t e{};e.param_id=i;e.value=number;e.note_id=e.port_index=e.channel=e.key=-1;
+            host.apply(Event::from(e));return;
+        }
+    }
+    void restore(const LilvState* state)
+    {
+        if(!state || text(lilv_state_get_plugin_uri(state))!=descriptor_.id)throw std::runtime_error("State belongs to a different LV2 plugin");
+        if(lilv_state_get_num_properties(state) && !state_)throw std::runtime_error("LV2 plugin has no state interface");
+        Quiescent guard(*this);
+        const bool wasActive=active_;statePortError_=false;
+        if(active_){lilv_instance_deactivate(instance_.get());active_=false;}
+        try
+        {
+            lv2::StateBridge bridge(instance_.get(),state_);
+            lilv_state_restore(state,state_?&bridge.proxy:nullptr,setPort,this,0,featurePointers_.data());
+            if(bridge.status!=LV2_STATE_SUCCESS || bridge.missingPath || statePortError_)throw std::runtime_error(bridge.missingPath?"Missing LV2 state asset":"LV2 plugin rejected state");
+            tail_.store(head_.load());
+            if(patch_)patch_->clear();
+            lilv_instance_activate(instance_.get());active_=true;faulted_=false;resumePanic_=wasActive;
+        }
+        catch(...){faulted_=true;throw;}
+    }
 
     Node uri(const char* value) const { return own(lilv_new_uri(world_.get(),value)); }
     bool is(const LilvPlugin* plugin,const LilvPort* port,const char* klass) const
@@ -248,6 +335,8 @@ class Lv2Host final : public PluginHost
             const auto* e=reinterpret_cast<const LV2_Atom_Event*>(reinterpret_cast<const uint8_t*>(seq)+offset);
             const uint64_t size=(uint64_t(sizeof(*e))+e->body.size+7)&~uint64_t(7);
             if(size>end-offset){++errors_;outputPanic_|=port.midi;break;}
+            if(port.patch && patch_ && (e->body.type==atomObject_ || e->body.type==atomBlank_))
+                if(!patch_->collect(&e->body))++drops_;
             if(port.midi && e->body.type==midi_)
             {
                 const auto* bytes=reinterpret_cast<const uint8_t*>(e+1);
@@ -294,6 +383,7 @@ public:
         }
         else {auto key=uri(id.c_str());plugin=lilv_plugins_get_by_uri(plugins,key.get());}
         if(!plugin || !lilv_plugin_verify(plugin))throw std::runtime_error("No valid matching LV2 plugin in "+bundle);
+        plugin_=plugin;
         descriptor_.path=std::filesystem::canonical(bundle).string();descriptor_.id=text(lilv_plugin_get_uri(plugin));
         auto name=own(lilv_plugin_get_name(plugin));descriptor_.name=text(name.get());
         auto author=own(lilv_plugin_get_author_name(plugin));descriptor_.vendor=text(author.get());descriptor_.features={"lv2"};
@@ -306,7 +396,8 @@ public:
         options_[2]={LV2_OPTIONS_INSTANCE,0,urids_(LV2_BUF_SIZE__sequenceSize),sizeof(sequenceSize_),urids_(LV2_ATOM__Int),&sequenceSize_};
         options_[3]={LV2_OPTIONS_INSTANCE,0,urids_(LV2_PARAMETERS__sampleRate),sizeof(sampleRate_),urids_(LV2_ATOM__Float),&sampleRate_};
         features_={LV2_Feature{LV2_URID__map,&map_},{LV2_URID__unmap,&unmap_},{LV2_OPTIONS__options,options_.data()},
-                   {LV2_BUF_SIZE__boundedBlockLength,nullptr},{LV2_CORE__inPlaceBroken,nullptr},{LV2_WORKER__schedule,worker_.feature()}};
+                   {LV2_BUF_SIZE__boundedBlockLength,nullptr},{LV2_CORE__inPlaceBroken,nullptr},{LV2_WORKER__schedule,worker_.feature()},
+                   {LV2_STATE__loadDefaultState,nullptr},{LV2_STATE__makePath,&makePath_},{LV2_STATE__freePath,&freePath_}};
         for(size_t i=0;i<features_.size();++i)featurePointers_[i]=&features_[i];
         std::unique_ptr<LilvNodes,decltype(&lilv_nodes_free)> required(lilv_plugin_get_required_features(plugin),lilv_nodes_free);
         LILV_FOREACH(nodes,i,required.get())
@@ -331,6 +422,7 @@ public:
         for(uint32_t i=0;i<count;++i)
         {
             const auto* source=lilv_plugin_get_port_by_index(plugin,i);auto& port=ports_[i];values_[i].store(0);
+            port.symbol=text(lilv_port_get_symbol(plugin,source));
             port.input=is(plugin,source,LV2_CORE__InputPort);
             if(port.input==is(plugin,source,LV2_CORE__OutputPort))throw std::runtime_error("LV2 port has ambiguous direction");
             auto label=own(lilv_port_get_name(plugin,source));
@@ -395,6 +487,7 @@ public:
                 }
                 port.kind=Kind::Atom;port.requestedBytes=static_cast<uint32_t>(bytes);
                 port.midi=supports(plugin,source,LV2_MIDI__MidiEvent);port.time=supports(plugin,source,LV2_TIME__Position);
+                port.patch=supports(plugin,source,LV2_PATCH__Message) || supports(plugin,source,LV2_PATCH__Set) || supports(plugin,source,LV2_PATCH__Get);
             }
             else if(!property(plugin,source,LV2_CORE__connectionOptional))throw std::runtime_error("Unsupported required LV2 port: "+text(label.get()));
         }
@@ -413,10 +506,17 @@ public:
             sequenceSize_=std::max(sequenceSize_,static_cast<int32_t>(port.atomBytes()));
         }
         for(auto& port:ports_)if(port.kind==Kind::Atom && port.midi)port.midiIndex=port.input?noteInputs_++:noteOutputs_++;
+        for(uint32_t i=0;i<ports_.size();++i)if(ports_[i].kind==Kind::Atom && ports_[i].patch)
+        {
+            if(!patch_){patch_=std::make_unique<lv2::Patch>(world_.get(),plugin,urids_,&map_);atomObject_=urids_(LV2_ATOM__Object);atomBlank_=urids_(LV2_ATOM__Blank);}
+            if(ports_[i].input && patchInput_==UINT32_MAX)patchInput_=i;
+        }
         instance_.reset(lilv_plugin_instantiate(plugin,rate,featurePointers_.data()));
         if(!instance_)throw std::runtime_error("LV2 instantiation failed: "+descriptor_.id);
         try
         {
+            state_=static_cast<const LV2_State_Interface*>(lilv_instance_get_extension_data(instance_.get(),LV2_STATE__interface));
+            if(state_ && (!state_->save || !state_->restore))throw std::runtime_error("Invalid LV2 state interface");
             const auto* worker=static_cast<const LV2_Worker_Interface*>(lilv_instance_get_extension_data(instance_.get(),LV2_WORKER__interface));
             auto workerFeature=uri(LV2_WORKER__schedule);
             if(worker)worker_.attach(lilv_instance_get_handle(instance_.get()),worker);
@@ -427,7 +527,16 @@ public:
                 if(p.kind==Kind::Audio)data=p.audio.data();else if(p.kind==Kind::Control)data=&p.control;else if(p.kind==Kind::Atom)data=p.atom.data();
                 lilv_instance_connect_port(instance_.get(),i,data);
             }
-            lilv_instance_activate(instance_.get());active_=true;
+            auto stateKey=uri(LV2_STATE__state);
+            std::unique_ptr<LilvNodes,decltype(&lilv_nodes_free)> defaults(lilv_plugin_get_value(plugin,stateKey.get()),lilv_nodes_free);
+            if(lilv_nodes_size(defaults.get()))
+            {
+                std::unique_ptr<LilvState,decltype(&lilv_state_free)> initial(lilv_state_new_from_world(world_.get(),&map_,lilv_plugin_get_uri(plugin)),lilv_state_free);
+                if(!initial)throw std::runtime_error("Cannot read LV2 default state");
+                restore(initial.get());
+            }
+            else if(auto feature=uri(LV2_STATE__loadDefaultState);lilv_nodes_contains(required.get(),feature.get()))throw std::runtime_error("Required LV2 default state is missing");
+            else {lilv_instance_activate(instance_.get());active_=true;}
         }
         catch(...){worker_.finish();instance_.reset();throw;}
     }
@@ -437,7 +546,56 @@ public:
         if(active_)lilv_instance_deactivate(instance_.get());
         instance_.reset(); // cleanup may still use connected buffers and host features
     }
-    void service() override {}
+    void service() override {if(patch_)errors_+=patch_->service();}
+    std::vector<PropertyInfo> properties() const override{return patch_?patch_->properties():std::vector<PropertyInfo>{};}
+    bool setProperty(const std::string& uri,const PropertyValue& value) override
+    {return patch_ && patchInput_!=UINT32_MAX && patch_->request(uri,&value,ports_[patchInput_].atomBytes());}
+    bool requestProperty(const std::string& uri) override
+    {return patch_ && patchInput_!=UINT32_MAX && patch_->request(uri,nullptr,ports_[patchInput_].atomBytes());}
+    std::optional<PropertyValue> propertyValue(const std::string& uri) const override{return patch_?patch_->value(uri):std::optional<PropertyValue>{};}
+    bool supportsState() const noexcept override{return state_!=nullptr;}
+    void saveState(const std::string& directory) override
+    {
+        if(!supportsState())throw std::runtime_error("LV2 plugin has no complete state interface");
+        state_files::Bundle bundle(directory);Quiescent guard(*this);
+        if(faulted_)throw std::runtime_error("Cannot save a failed LV2 instance");
+        if(patch_ && patch_->pending())throw std::runtime_error("Process queued LV2 property requests before saving state");
+        auto tail=tail_.load();const auto head=head_.load();
+        while(tail!=head){apply(commands_[tail%commands_.size()]);++tail;}tail_=tail;
+        lv2::StateBridge bridge(instance_.get(),state_);
+        const auto dir=bundle.temporary.path.string();
+        std::unique_ptr<LilvState,decltype(&lilv_state_free)> state(lilv_state_new_from_instance(plugin_,&bridge.proxy,&map_,scratch_.path.c_str(),dir.c_str(),dir.c_str(),dir.c_str(),getPort,this,LV2_STATE_IS_POD|LV2_STATE_IS_PORTABLE,featurePointers_.data()),lilv_state_free);
+        if(!state || bridge.status!=LV2_STATE_SUCCESS)throw std::runtime_error("LV2 plugin state saving failed");
+        if(lilv_state_save(world_.get(),&map_,&unmap_,state.get(),nullptr,dir.c_str(),"state.ttl"))throw std::runtime_error("Cannot write LV2 state");
+        state_files::materialize(bundle.temporary.path);bundle.publish();
+    }
+    void loadState(const std::string& directory) override
+    {
+        const auto file=std::filesystem::canonical(directory)/"state.ttl";
+        if(std::filesystem::file_size(file)>kick::clap::Host::maxStateBytes)throw std::runtime_error("LV2 state file exceeds size limit");
+        std::unique_ptr<LilvState,decltype(&lilv_state_free)> state(lilv_state_new_from_file(world_.get(),&map_,nullptr,file.c_str()),lilv_state_free);
+        if(!state)throw std::runtime_error("Cannot read LV2 state");
+        restore(state.get());
+    }
+    std::vector<PresetInfo> presets() override
+    {
+        auto type=uri(LV2_PRESETS__Preset),label=uri("http://www.w3.org/2000/01/rdf-schema#label");
+        std::unique_ptr<LilvNodes,decltype(&lilv_nodes_free)> related(lilv_plugin_get_related(plugin_,type.get()),lilv_nodes_free);
+        std::vector<PresetInfo> result;
+        LILV_FOREACH(nodes,i,related.get())
+        {
+            auto* node=lilv_nodes_get(related.get(),i);lilv_world_load_resource(world_.get(),node);
+            auto name=own(lilv_world_get(world_.get(),node,label.get(),nullptr));result.push_back({text(node),text(name.get())});
+        }
+        return result;
+    }
+    void loadPreset(const std::string& id) override
+    {
+        const auto available=presets();if(std::none_of(available.begin(),available.end(),[&](const auto& p){return p.uri==id;}))throw std::invalid_argument("Unknown LV2 preset");
+        auto node=uri(id.c_str());std::unique_ptr<LilvState,decltype(&lilv_state_free)> state(lilv_state_new_from_world(world_.get(),&map_,node.get()),lilv_state_free);
+        if(!state)throw std::runtime_error("Cannot read LV2 preset");
+        restore(state.get());
+    }
     const kick::clap::Descriptor& descriptor() const noexcept override{return descriptor_;}
     const std::vector<Parameter>& parameters() const noexcept override{return parameters_;}
     const std::vector<PortInfo>& inputPorts() const noexcept override{return inputs_;}
@@ -459,13 +617,18 @@ public:
     bool popOutput(Event&) noexcept override{return false;} // output control values use atomic telemetry
     uint64_t outputEventDrops() const noexcept override{return 0;}
     const Event* outputEvents(uint32_t& count) const noexcept override{count=emittedCount_;return emitted_.data();}
-    kick::clap::Statistics statistics() const noexcept override{return {blocks_.load(),drops_.load()+worker_.drops(),errors_.load()+worker_.errors(),lastUs_.load(),maxUs_.load(),deadlines_.load(),0,0};}
+    kick::clap::Statistics statistics() const noexcept override{return {blocks_.load(),drops_.load()+worker_.drops(),errors_.load()+worker_.errors(),lastUs_.load(),maxUs_.load(),deadlines_.load(),stateSilences_.load(),0};}
     bool process(const float* const* inputs,uint32_t ni,float* const* outputs,uint32_t no,uint32_t frames,const Event* events,uint32_t count,const clap_event_transport_t* t) noexcept override
     {
         emittedCount_=0;outputPanic_=false;
         auto silence=[&]{if(outputs)for(uint32_t c=0;c<no;++c)if(outputs[c])std::fill_n(outputs[c],frames,0.f);};
         if(!frames)return true;
         if(frames>maxFrames_ || (no && !outputs) || (count && !events) || count>maxEvents){silence();++errors_;return false;}
+        auto releaseOutputs=[&]{if(noteOutputs_)emitted_[emittedCount_++]=Event::note(false,-1,0,0,-1,-1);};
+        if(stateBusy_.load() || gate_.test_and_set(std::memory_order_acquire)){silence();releaseOutputs();resumePanic_=true;++stateSilences_;return true;}
+        struct Release {std::atomic_flag& gate;~Release(){gate.clear(std::memory_order_release);}} release{gate_};
+        if(faulted_){silence();releaseOutputs();++errors_;return false;}
+        if(resumePanic_.exchange(false)){inputPanic_=true;releaseOutputs();}
         const auto began=std::chrono::steady_clock::now();
         uint32_t total=0;auto tail=tail_.load(std::memory_order_relaxed);const auto head=head_.load(std::memory_order_acquire);
         while(tail!=head && total<maxEvents){ordered_[total]={commands_[tail%commands_.size()],total};++total;++tail;}
@@ -501,6 +664,15 @@ public:
             if(start==0 && releaseInputs)
                 for(int c=0;c<16;++c)
                 {sendMidi(-1,0,static_cast<uint8_t>(0xb0|c),120,0);sendMidi(-1,0,static_cast<uint8_t>(0xb0|c),123,0);}
+            if(start==0 && patch_ && patchInput_!=UINT32_MAX)
+            {
+                const auto pending=patch_->pending();lv2::Patch::Packet packet;
+                for(uint32_t i=0;i<pending && patch_->pop(packet);++i)
+                {
+                    const auto* atom=reinterpret_cast<const LV2_Atom*>(packet.bytes.data());
+                    append(ports_[patchInput_],0,atom->type,atom+1,atom->size);
+                }
+            }
             while(next<total && ordered_[next].event.header()->time<end)
             {
                 const auto& event=ordered_[next++].event;const auto type=event.header()->type;

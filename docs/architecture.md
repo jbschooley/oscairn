@@ -8,7 +8,7 @@ design decisions are recorded as [RFCs](rfcs/README.md).
 
 | Built | Not built yet |
 | --- | --- |
-| Graph of CLAP and optional LV2 plugins: audio/note connections, dependency order, lock-free live editing; LV2 Worker with offline rendering | Remaining LV2 extensions (state, patch, UI), VST3 hosting |
+| Graph of CLAP and optional LV2 plugins: audio/note connections, dependency order, lock-free live editing; LV2 Worker, state/presets and scalar patch properties | Remaining LV2 extensions (UI, CV), VST3 hosting |
 | Sample-accurate event routing; renders identical at different block sizes (tested in CI) | Persistent session recovery |
 | JUCE-free session and typed local/remote Control interface, including host/device status | Gesture ownership/undo |
 | JSON-RPC graph editing, parameter coalescing/gestures, notifications and bounded Unix sockets; default engine/UI separation with startup, reattachment and explicit recovery | UI engine shutdown and session persistence |
@@ -192,12 +192,27 @@ definitions and running sound contexts (voices, envelopes, effect history) separ
 Six organ patches are six patch definitions plus enough running contexts for simultaneous
 layers and transitions, not six independently initialised organs.
 
-- Platform engines may implement optional, narrow capabilities: prepare patches in the
+- Native Oscairn instruments must support simultaneous sound contexts and prepared
+  sound switching: held notes retain their old sound while new notes use the selected
+  sound. Native effects must preserve outgoing contexts/tails when used in transitions.
+  Share engine code and suitable read-only assets; keep patch-dependent voices,
+  envelopes, modulation and effect history separate. These are platform requirements,
+  not guarantees provided by CLAP or LV2 themselves.
+- Platform engines expose narrow capabilities: prepare patches in the
   background, share read-only data, activate a prepared context at a scheduled audio
   boundary, keep outgoing voices separately, report when a context is silent.
 - Ordinary CLAP, LV2 and VST3 plugins are supported through persistent instances and a
   pool of prepared instances: new notes go to the prepared instance while the old one
   finishes its notes and tails.
+- Note ownership survives a sound change: note-offs, sustain and expression are routed
+  to the contexts owning the notes, including overlapping presses of the same key.
+  Multitimbral third-party plugins may supply their own parts/contexts; otherwise use
+  prepared instances. Do not assume a program-change message preserves old voices.
+- State restore into an existing instance may pause/reset it and is explicitly separate
+  from seamless sound switching. Prepare state on an unused context/instance first;
+  only switch new-note routing when it is ready, and retire the outgoing context after
+  its voices and tails finish. The current basic synth and host do not yet implement
+  this complete context lifecycle or automatic note-ownership routing.
 - Changing setlists keeps resources common to both, prepares missing ones in the
   background and releases the rest when safe.
 
@@ -273,6 +288,25 @@ Other hardware plugged into an Oscairn device works with it, on any device:
   millisecond added at most).
 - **Audio from other hardware** comes in as channels in the graph on devices with inputs.
 - **Sync:** MIDI clock, Ableton Link, and on DJ devices Pro DJ Link (below).
+
+### Audio ports and hardware routing (planned)
+
+Stereo and multiple independent audio inputs/outputs are platform requirements.
+Preserve plugin port identities and channel layouts, and route explicit source and
+destination ports/channels rather than implicitly folding everything into stereo.
+A DJ configuration can have per-deck stereo inputs/outputs, master, booth, headphone
+cue (including split cue), recording buses, and effect sends/returns or sidechains.
+The hardware audio service exposes the available device channels; the graph and
+control API describe, connect and persist those routes. Mono/stereo-only hardware
+uses the same model with fewer endpoints. Missing endpoints are reported rather
+than silently sending cue audio to the main output. Routing and buffers are
+prepared outside the audio callback, with explicit mono/stereo mapping policies.
+
+**Current implementation:** the CLAP/LV2 adapters accept multiple audio channels,
+but the graph and chain still render one stereo pair. The desktop audio host opens
+zero hardware inputs and two outputs. Independent graph ports, external audio
+inputs, device-channel selection and separate hardware output buses remain to be
+implemented and tested; plugin-format support alone does not provide them.
 
 ### Physical controls, takeover and direct position access (planned)
 

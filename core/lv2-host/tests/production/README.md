@@ -130,3 +130,25 @@ this validates normal DSP loading and processing, not UI support.
 Full rerun WAVs/logs are in `/private/tmp/oscairn-atom-results/` locally.
 The updated fixture additionally exercises allocations and bounds above 16 KiB under
 an allocation guard and Linux AddressSanitizer/UndefinedBehaviorSanitizer.
+
+## Production sampler state and patch test
+
+`oscairn-lv2-sampler-state-test /usr/lib/lv2/samplv1.lv2` uses the normal `PluginHost`
+API with Rui Nuno Capela's [samplv1](https://samplv1.sourceforge.io/), without modifying
+its code or metadata. Local validation on Linux arm64 used Debian 13 `samplv1-lv2`
+**1.3.1-2**. Linux CI also tests the packaged version and prints its version.
+For headless testing set `QT_QPA_PLATFORM=offscreen` (the plugin initializes Qt even
+without opening its editor). This is offline rendering, not an audible hardware test.
+
+The test creates a sample, sends patch Set/Get and checks plugin confirmation, saves a
+queued control edit with the sample state, renders audio, moves the snapshot, deletes
+the original sample and restores into a fresh instance. Both renders had summed squared
+stereo sample amplitude **244.715**, with no process errors or dropped events. The test
+checks nonzero finite audio and restored control values; identical sound is not assumed
+for arbitrary plugins. The relocated bundle contains owned files, not external symlinks.
+Normal-host upstream eg-sampler and fixture tests cover concurrent live state exclusion,
+held-sound overlap between instances, failure recovery and malformed property messages.
+
+samplv1 notifications include an additional zero terminator in Path atoms. The host
+accepts trailing zero padding while rejecting embedded trailing text and unterminated
+strings. That compatibility case has a bounded-parser regression test.

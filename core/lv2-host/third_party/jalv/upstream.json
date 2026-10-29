@@ -5,5 +5,5 @@
   "license": "ISC",
   "upstream_paths": ["src/worker.c", "src/worker.h", "LICENSES/ISC.txt"],
   "local_paths": ["core/lv2-host/Worker.cpp", "core/lv2-host/Worker.h", "core/lv2-host/third_party/jalv/ISC.txt"],
-  "modifications": "C++ adaptation of request/response lifecycle. Zix rings, semaphores and threads replaced by fixed complete-packet SPSC queues, std::counting_semaphore and std::thread. Atomic shutdown drains accepted work and responses before plugin cleanup; offline replies arrive before schedule returns; zero-length packets supported; queue sizes and render response delivery bounded. Original Worker copyright added alongside the upstream ISC license notice. State restoration is not implemented."
+  "modifications": "C++ adaptation of request/response lifecycle. Zix rings, semaphores and threads replaced by fixed complete-packet SPSC queues, std::counting_semaphore and std::thread. Atomic shutdown drains accepted work and responses before plugin cleanup; offline replies arrive before schedule returns; zero-length packets supported; queue sizes and render response delivery bounded. Original Worker copyright added alongside the upstream ISC license notice. Added reversible quiesce/resume: exclude rendering, drain/join Worker requests, deliver replies and synchronous follow-up work, then resume background processing after state operations."
 }

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #include "oscairn/plugin_host.h"
+#include "StateFiles.h"
 #include <kick_clap/Discovery.h>
 #include <algorithm>
 #include <filesystem>
@@ -15,6 +16,24 @@ namespace oscairn
         {
         public:
             kick::clap::Host host;
+            bool supportsState() const noexcept override {return host.supportsState();}
+            void saveState(const std::string& directory) override
+            {
+                state_files::Bundle bundle(directory);std::vector<uint8_t> bytes;
+                if(!host.saveState(bytes))throw std::runtime_error(host.error());
+                const auto& id=host.descriptor().id;
+                state_files::write(bundle.temporary.path/"plugin.id",id.data(),id.size());
+                state_files::write(bundle.temporary.path/"state.clap",bytes.data(),bytes.size());
+                bundle.publish();
+            }
+            void loadState(const std::string& directory) override
+            {
+                const auto path=std::filesystem::canonical(directory);
+                const auto id=state_files::read(path/"plugin.id",65536);
+                if(std::string(id.begin(),id.end())!=host.descriptor().id)throw std::runtime_error("State belongs to a different CLAP plugin");
+                const auto bytes=state_files::read(path/"state.clap",kick::clap::Host::maxStateBytes);
+                if(!host.loadState(bytes))throw std::runtime_error("CLAP state restore failed: "+host.error());
+            }
             void service() override { host.service(); }
             const kick::clap::Descriptor& descriptor() const noexcept override { return host.descriptor(); }
             const std::vector<kick::clap::Parameter>& parameters() const noexcept override { return host.parameters(); }

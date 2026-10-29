@@ -15,8 +15,9 @@ here only to describe compatibility.
 > following its own tempo or an external MIDI clock, rendered offline to a WAV file, and a
 > desktop demo app with live audio, MIDI input and switchable panel layouts, and a Linux
 > image that boots into Oscairn (tested in QEMU, [`os/`](os/README.md)). Optional LV2 hosting
-> supports mixed CLAP/LV2 graphs with audio, controls and MIDI/time atoms. No VST3, patch
-> library or real-hardware image yet.
+> supports mixed CLAP/LV2 graphs with audio, controls, MIDI/time atoms, Worker, plugin
+> state/presets and scalar patch properties. State/property access is currently C++ only.
+> No VST3, patch library or real-hardware image yet.
 
 ## Try it
 

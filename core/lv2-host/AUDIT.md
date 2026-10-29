@@ -7,9 +7,12 @@ that every plugin supported by these hosts now works in Oscairn. The upstream
 applications were inspected, not built or benchmarked against Oscairn.
 
 Follow-up: Worker support has since been implemented with an attributed C++ adaptation
-of Jalv's design. See [the current scope and tests](README.md#worker-and-offline-rendering)
-and [credits](../../CREDITS.md). Recommendations and validation below describe the
-original audit, before that implementation.
+of Jalv's design. Configurable Atom sizing and normal-host state/presets/patch support
+have also landed. State serialization/path mapping reuse Lilv, with rendering/Worker
+exclusion, symbol-addressed ports, owned file assets, missing-asset checks and error
+propagation; no additional source chunks from the audited hosts were imported.
+See [current scope and tests](README.md) and [credits](../../CREDITS.md).
+Recommendations and validation below describe the original audit.
 
 ## Sources and attribution
 

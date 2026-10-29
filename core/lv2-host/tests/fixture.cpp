@@ -9,6 +9,7 @@
 #include <lv2/parameters/parameters.h>
 #include <lv2/buf-size/buf-size.h>
 #include <lv2/worker/worker.h>
+#include <lv2/state/state.h>
 #include <algorithm>
 #include <array>
 #include <cstring>
@@ -25,7 +26,7 @@ struct Fixture
     int32_t sequenceSize=0;
     std::array<std::array<bool,128>,16> held{};
     std::array<std::array<float,128>,16> pressure{};
-    LV2_URID midi,sequence,object,position,bpm,frame,beat,bar,barBeat,beatUnit,beatsPerBar,speed;
+    LV2_URID midi,sequence,object,position,bpm,frame,beat,bar,barBeat,beatUnit,beatsPerBar,speed,stateKey,atomFloat;
     float tempo=0,frameValue=0,beatValue=0;
     void message(const uint8_t* bytes)
     {
@@ -54,6 +55,7 @@ LV2_Handle instantiate(const LV2_Descriptor* descriptor,double rate,const char*,
         for(auto o=static_cast<const LV2_Options_Option*>((*f)->data);o->key;++o)
             if(o->key==id(LV2_BUF_SIZE__sequenceSize) && o->type==id(LV2_ATOM__Int) && o->size==sizeof(int32_t))
                 s->sequenceSize=*static_cast<const int32_t*>(o->value);
+    s->stateKey=id("urn:oscairn:test:value");s->atomFloat=id(LV2_ATOM__Float);
     s->midi=id(LV2_MIDI__MidiEvent);s->sequence=id(LV2_ATOM__Sequence);s->object=id(LV2_ATOM__Object);s->position=id(LV2_TIME__Position);
     s->bpm=id(LV2_TIME__beatsPerMinute);s->frame=id(LV2_TIME__frame);s->beat=id(LV2_TIME__beat);
     s->bar=id(LV2_TIME__bar);s->barBeat=id(LV2_TIME__barBeat);s->beatUnit=id(LV2_TIME__beatUnit);
@@ -172,6 +174,24 @@ void largeRun(LV2_Handle instance,uint32_t frames)
     if(bad==1)echo->atom.size=capacity+1; // Just beyond this port's actual allocation.
     if(bad==2)e->body.size=0xffffffff; // Overflow-sized event within a valid outer size.
 }
+LV2_State_Status save(LV2_Handle h,LV2_State_Store_Function store,LV2_State_Handle context,uint32_t,const LV2_Feature* const*)
+{
+    auto& s=*static_cast<Fixture*>(h);
+    if(*static_cast<float*>(s.ports[8])==3)return LV2_STATE_ERR_UNKNOWN;
+    return store(context,s.stateKey,&s.workValue,sizeof(float),s.atomFloat,LV2_STATE_IS_POD|LV2_STATE_IS_PORTABLE);
+}
+LV2_State_Status restore(LV2_Handle h,LV2_State_Retrieve_Function retrieve,LV2_State_Handle context,uint32_t,const LV2_Feature* const*)
+{
+    auto& s=*static_cast<Fixture*>(h);size_t size=0;uint32_t type=0,flags=0;
+    auto* value=retrieve(context,s.stateKey,&size,&type,&flags);
+    if(!value){s.workValue=1;return LV2_STATE_SUCCESS;}
+    if(size!=sizeof(float) || type!=s.atomFloat)return LV2_STATE_ERR_BAD_TYPE;
+    std::memcpy(&s.workValue,value,size);
+    return s.workValue<0?LV2_STATE_ERR_UNKNOWN:LV2_STATE_SUCCESS;
+}
+const LV2_State_Interface stateInterface{save,restore};
+const LV2_Descriptor state{"urn:oscairn:test:state",instantiate,synth.connect_port,nullptr,run,nullptr,synth.cleanup,
+    [](const char* uri)->const void*{return !std::strcmp(uri,LV2_STATE__interface)?&stateInterface:nullptr;}};
 const LV2_Descriptor large{"urn:oscairn:test:large",instantiate,synth.connect_port,nullptr,largeRun,nullptr,synth.cleanup,nullptr};
 }
-LV2_SYMBOL_EXPORT const LV2_Descriptor* lv2_descriptor(uint32_t index){return index==0?&synth:index==1?&effect:index==2?&audit:index==3?&worker:index==4?&brokenWorker:index==5?&large:nullptr;}
+LV2_SYMBOL_EXPORT const LV2_Descriptor* lv2_descriptor(uint32_t index){return index==0?&synth:index==1?&effect:index==2?&audit:index==3?&worker:index==4?&brokenWorker:index==5?&large:index==6?&state:nullptr;}

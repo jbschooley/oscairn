@@ -24,6 +24,9 @@ public:
     // Attach before activation. Call finish after rendering stops, before cleanup.
     void attach(LV2_Handle instance,const LV2_Worker_Interface* interface);
     void finish() noexcept;
+    // Rendering must be excluded. Drain/join, then allow synchronous state work.
+    void quiesce() noexcept;
+    void resume();
     void emitResponses() noexcept;
     void endRun() noexcept;
     LV2_Worker_Schedule* feature() noexcept {return &schedule_;}
@@ -46,7 +49,7 @@ private:
     std::thread thread_;
     std::atomic<bool> stopping_{false};
     std::atomic<uint64_t> drops_{0},errors_{0};
-    bool offline_,accepting_=false,working_=false,delivering_=false;
+    bool offline_,live_=false,accepting_=false,working_=false,delivering_=false;
     LV2_Handle instance_=nullptr;
     const LV2_Worker_Interface* interface_=nullptr;
     LV2_Worker_Schedule schedule_{this,schedule};

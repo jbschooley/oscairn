@@ -127,7 +127,8 @@ connected buffer (or the configured default when there are none). Each input pac
 output-capacity announcement and output-validation check uses that port's own size.
 Processing neither allocates nor resizes buffers. This implements static `minimumSize`
 requests, not the dynamic `resize-port:resize` feature or `asLargeAs` relationships.
-Larger buffers do not enable custom UIs, patch messaging or larger graph event queues.
+Larger buffers do not enable custom UIs or larger graph event queues. Patch requests
+and notifications have their own bounded queues, described below.
 
 ## Worker and offline rendering
 
@@ -166,14 +167,74 @@ block inside plugin work; it must not be used on a live audio callback. Mode is 
 for an instance's lifetime. CLAP processing behavior is unchanged; this does not add
 CLAP render-mode extension negotiation or LV2 freewheel-control handling.
 
-Worker support does not imply state/preset or patch support. A plugin that also requires
-an unsupported feature remains rejected, and a required Worker feature with a missing
-or invalid plugin Worker interface fails loading with a specific error. State restoration
-will need its own serialized work context when implemented.
+A plugin that also requires an unsupported feature remains rejected, and a required
+Worker feature with a missing or invalid plugin Worker interface fails loading with a
+specific error. State operations exclude rendering, drain/join the worker, deliver
+pending responses and synchronous follow-up work, then resume the background worker.
+This serialization also applies to plugins that do not advertise thread-safe restore.
+
+## State, presets and patch properties
+
+The shared C++ `PluginHost` API now exposes `supportsState()`, `saveState(directory)`
+and `loadState(directory)` for CLAP and LV2. Access it directly or through `Graph::host`.
+These operations are not yet exposed through the JSON-RPC/control API or desktop UI,
+and this is not whole-graph/project persistence.
+
+Saving requires a **new directory**. A private staging directory is published only after
+successful serialization; an existing destination is never deliberately overwritten.
+LV2 uses Lilv for Turtle, symbol-addressed control-port values, default state and path
+mapping. File assets registered by the plugin through `state:mapPath` are copied into
+the snapshot, including materializing Lilv's external-file links. `makePath` provides
+instance-local scratch storage; directory assets are currently rejected. Snapshot
+relocation depends on plugins using the LV2 path contract correctly; arbitrary strings
+or embedded absolute paths cannot be repaired automatically. Missing mapped assets and
+plugin save/restore errors are reported. A failed restore silences the affected instance
+until a successful restore, rather than rendering partially restored state. State Turtle
+and CLAP opaque-state files are limited to 64 MiB; sample asset sizes are not capped.
+
+CLAP wraps the existing host state stream with plugin identity. It does **not** rewrite
+or copy asset paths hidden inside opaque CLAP data. CLAP preset discovery/loading
+extensions remain unimplemented. LV2 `presets()` and `loadPreset(uri)` enumerate/load
+preset resources associated with the selected bundle; there is no global preset-library
+scan yet. Complete state support is advertised only when the plugin supplies its state
+interface, not merely because some parameters can be saved. LV2 default state is loaded
+before activation when declared; plugins without one retain their normal startup state.
+
+`properties()` reports advertised LV2 patch properties and their known scalar types.
+`setProperty(uri, value)` and `requestProperty(uri)` enqueue requests for the next process
+block. Supported values are Bool, Int, Long, Float, Double, String and Path (`FilePath`),
+with finite numeric validation and existing regular-file checks for outgoing paths.
+Acceptance means queued, not successfully loaded. Call `service()` on the control thread
+and read `propertyValue(uri)` for the last plugin-confirmed value; it remains absent
+until reported. Set and Put notifications are decoded, including safe trailing zero
+padding used by samplv1. Unsupported/custom Atom types are not a generic UI transport.
+CLAP has no direct equivalent of LV2's generic patch protocol; these capabilities remain
+explicitly unsupported in its adapter.
+
+There are at most 256 advertised properties, 32 requests and 32 notifications per
+instance, each at most 4096 bytes; outgoing strings/paths are limited to 2048 bytes.
+Queues are allocated only for instances with connected patch ports. The first patch
+input receives requests. Parsing/strings/cache updates happen in `service()`, while
+rendering only copies bounded packets. Requests must also fit the input Atom port; full
+queues reject requests, and overflowed output or malformed notifications contribute to
+host counters. A full Atom input block can still drop an accepted request, so callers
+must check confirmation/counters. No acknowledgements, request IDs, arbitrary nested
+property values, or sample-offset scheduling API are implied. Queued patch requests
+must be processed before saving; Worker requests already accepted are drained first.
+
+State methods belong to the one control thread and can exclude this instance's audio
+processing; live callbacks emit silence instead of waiting. Queued numeric edits are
+included when saving and discarded on restore. Missed events trigger note-release
+recovery. **In-place restore is not seamless sound switching.** Prepare state on a spare
+instance while the old one renders; switching new-note routing, retaining note ownership,
+and retiring old voices/tails still require the planned context/instance-pool layer.
+Neither plugin format guarantees multitimbrality. Native Oscairn instruments are required
+to support concurrent sound contexts; the current basic synth does not yet do so.
+See the [persistent-engine design](../../docs/architecture.md#persistent-engines-and-fast-sound-switching).
 
 ## Not implemented yet
 
-Plugin state/presets, patch/property messages, custom plugin UIs,
+Custom plugin UIs,
 CV ports, legacy event/URI-map ports, dynamic ports, SysEx, MIDI 2.0, per-note IDs and
 non-pressure CLAP expressions. Required unsupported features or non-optional port types
 are rejected with an error instead of pretending to support them. There is no plugin
@@ -225,9 +286,19 @@ packages installed. Linux CI checks out LV2 v1.18.10 at
 `lv2-worker-upstream` uses a direct plugin ABI harness with Oscairn's actual Worker,
 loads/replaces WAV samples through patch events, checks exact-sample offline output
 across 37/512 blocks and repeats, and tests live loading and pending-work shutdown.
-This is a Worker integration test, **not** a claim that eg-sampler can yet be loaded
-through `loadPlugin`: that plugin also requires default-state loading and patch control,
-which the normal adapter does not support. No upstream sampler source is vendored.
+`plugin-state` additionally loads the unmodified sampler through the normal adapter:
+default state, patch sample replacement, relocation after deleting the original sample,
+shared CLAP state, live Worker/render exclusion, and two independent instances where
+preparing the incoming sound leaves the outgoing sample playing. This is not an automatic
+sound-switching test. No upstream sampler source is vendored.
+
+`lv2-state-contract` tests bundle presets, symbol-addressed controls, queued edits,
+save/restore failures and recovery, plugin identity, bounded property queues, typed
+values, Set/Put notifications and malformed nested atoms/strings. Worker tests include
+repeated quiesce/resume with synchronous follow-up work. These paths run under the live
+allocation guard and sanitizers. The optional production `oscairn-lv2-sampler-state-test`
+checks samplv1 sample loading, Get/Set notifications, audio, queued control state and
+relocation with owned assets; Linux CI runs it with Qt's offscreen backend.
 
 The [prior-art audit](AUDIT.md) records the pinned Jalv, MOD mod-host, Carla and Ardour
 comparisons, fixes, remaining gaps and reuse decisions. [Credits](../../CREDITS.md)

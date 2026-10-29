@@ -19,7 +19,7 @@ jobs:
 
       - name: Install Ninja (Linux)
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y ninja-build liblilv-dev lv2-dev lv2-examples libsndfile1-dev libsamplerate0-dev x42-plugins
+        run: sudo apt-get update && sudo apt-get install -y ninja-build liblilv-dev lv2-dev lv2-examples libsndfile1-dev libsamplerate0-dev x42-plugins samplv1-lv2
 
       - name: Check out pinned upstream LV2 examples (Linux)
         if: runner.os == 'Linux'
@@ -75,6 +75,14 @@ jobs:
         if: runner.os == 'Linux'
         run: python3 core/lv2-host/tests/production/run.py build/core/lv2-host/tests/oscairn-lv2-production-probe build/x42-production-results --system-root /usr/lib/lv2 --only x42-fil4-stereo
 
+      - name: Test production sampler patch and portable state (Linux)
+        if: runner.os == 'Linux'
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          dpkg-query -W samplv1-lv2
+          build/core/lv2-host/tests/oscairn-lv2-sampler-state-test /usr/lib/lv2/samplv1.lv2
+
       - name: Upload production test measurements
         if: always()
         uses: actions/upload-artifact@v4
@@ -90,11 +98,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install Ninja
-        run: sudo apt-get update && sudo apt-get install -y ninja-build liblilv-dev lv2-dev
+        run: sudo apt-get update && sudo apt-get install -y ninja-build liblilv-dev lv2-dev libsndfile1-dev libsamplerate0-dev
+      - name: Check out pinned upstream sampler
+        uses: actions/checkout@v4
+        with:
+          repository: lv2/lv2
+          ref: 0bcde338db1c63bbc503b4d1f6d7b55ed43154af
+          path: upstream-lv2
       - name: Configure
         run: >
           cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug
           -DOSCAIRN_LV2=ON
+          -DOSCAIRN_LV2_SOURCE_DIR="${{ github.workspace }}/upstream-lv2"
           -DCMAKE_CXX_FLAGS="-fsanitize=thread -g"
           -DCMAKE_EXE_LINKER_FLAGS=-fsanitize=thread
           -DCMAKE_SHARED_LINKER_FLAGS=-fsanitize=thread

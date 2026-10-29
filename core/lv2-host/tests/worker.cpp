@@ -90,6 +90,21 @@ void saturationAndShutdown()
     check(p.replies==p.successfulReplies && p.replies==Worker::queueCapacity && p.rejectedReplies==1,"shutdown delivers every accepted response; response saturation is explicit");
     check(worker.drops()==2,"request and response overflow counted");
 }
+void stateCycles()
+{
+    Worker worker(false);Plugin p{worker};worker.attach(&p,&Plugin::interface);
+    for(int i=0;i<20;++i)
+    {
+        check(worker.feature()->schedule_work(&worker,0,nullptr)==LV2_WORKER_SUCCESS,"work before state pause");
+        worker.quiesce();
+        check(p.works==p.replies && p.active==0,"state pause drains requests and replies");
+        p.offline=true;p.followup=true;
+        check(worker.feature()->schedule_work(&worker,0,nullptr)==LV2_WORKER_SUCCESS,"state work runs synchronously");
+        check(p.works==p.replies && p.valid,"state follow-up work completes serially");
+        p.offline=false;worker.resume();
+    }
+    worker.finish();check(p.valid && p.works==60,"repeated state pause/resume preserves lifecycle");
+}
 void liveDelivery()
 {
     Worker worker(false);Plugin p{worker};worker.attach(&p,&Plugin::interface);
@@ -106,6 +121,6 @@ void liveDelivery()
 }
 int main()
 {
-    try{offline();saturationAndShutdown();liveDelivery();std::cout<<"ok: Worker packets, threading, offline timing, saturation and shutdown\n";return 0;}
+    try{offline();saturationAndShutdown();stateCycles();liveDelivery();std::cout<<"ok: Worker packets, threading, offline timing, saturation and shutdown\n";return 0;}
     catch(const std::exception& e){forbidAllocation=false;std::cerr<<e.what()<<'\n';return 1;}
 }

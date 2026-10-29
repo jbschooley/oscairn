@@ -73,11 +73,18 @@ Done:
   Ardour, with contract/recovery fixes, regression tests and source credits.
 - LV2 Worker scheduling adapted from Jalv, with bounded queues, draining teardown,
   synchronous offline work and independent upstream sampler Worker tests.
+- shared CLAP/LV2 plugin state API; LV2 default/bundle presets, portable mapped sample
+  assets and bounded patch properties, with upstream sampler and production samplv1 tests.
+  These are C++ host capabilities; control/UI access and project persistence remain below.
 
 To do:
 
 - tracks, patterns, swing and more lanes in the sequencer;
-- extend LV2 coverage with state/preset and patch handling, then plugin
+- native multitimbral sound contexts, prepared-instance switching for third-party plugins,
+  note ownership across transitions and preservation of held voices/effect tails;
+- explicit graph audio ports/channels and hardware input/output mapping: stereo, per-deck,
+  master, booth, headphone cue, recording and sidechain routes, beyond today's stereo graph;
+- expose plugin state/presets and patch properties through the control API, then plugin
   discovery and selection in the desktop; custom UIs and other extensions follow
   ([current scope](../core/lv2-host/README.md));
 - define hardware capabilities, timestamped input, scheduled output and engine backend

@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #pragma once
 #include <kick_clap/Host.h>
+#include <optional>
+#include <stdexcept>
+#include <variant>
 
 namespace oscairn
 {
@@ -16,6 +19,12 @@ namespace oscairn
         uint32_t maxTotalBytes = 4 * 1024 * 1024;
     };
 
+    struct FilePath { std::string value; bool operator==(const FilePath&) const = default; };
+    using PropertyValue = std::variant<bool, int32_t, int64_t, float, double, std::string, FilePath>;
+    enum class PropertyType { Unknown, Bool, Int, Long, Float, Double, String, Path };
+    struct PropertyInfo { std::string uri, name; PropertyType type=PropertyType::Unknown; bool readable=false, writable=false; };
+    struct PresetInfo { std::string uri, name; };
+
     // Shared graph host contract. Events and metadata retain the existing CLAP-shaped
     // representation; format adapters translate at their boundary. Control methods
     // belong to one main thread; process/outputEvents belong to one audio thread.
@@ -25,6 +34,20 @@ namespace oscairn
     public:
         virtual ~PluginHost() = default;
         virtual void service() = 0;
+        // Control thread. Save to a NEW directory; restore from a saved directory.
+        // May silence/reset this instance while excluding rendering/Worker calls.
+        // Prepare a spare instance for transitions; this is not seamless switching.
+        virtual bool supportsState() const noexcept { return false; }
+        virtual void saveState(const std::string&) { throw std::runtime_error("Plugin state saving is unsupported"); }
+        virtual void loadState(const std::string&) { throw std::runtime_error("Plugin state restoration is unsupported"); }
+        virtual std::vector<PresetInfo> presets() { return {}; }
+        virtual void loadPreset(const std::string&) { throw std::runtime_error("Plugin presets are unsupported"); }
+        virtual std::vector<PropertyInfo> properties() const { return {}; }
+        // Acceptance queues a next-block request, not confirmation of plugin success.
+        virtual bool setProperty(const std::string&,const PropertyValue&) { return false; }
+        virtual bool requestProperty(const std::string&) { return false; }
+        // Last plugin-confirmed value, updated by service(); absent until reported.
+        virtual std::optional<PropertyValue> propertyValue(const std::string&) const { return {}; }
         virtual const kick::clap::Descriptor& descriptor() const noexcept = 0;
         virtual const std::vector<kick::clap::Parameter>& parameters() const noexcept = 0;
         virtual const std::vector<kick::clap::Port>& inputPorts() const noexcept = 0;
