@@ -60,7 +60,7 @@ users can add their own or port a DAW.
 | 2. Host core | Platform | Graph, plugin hosting, transport and clock sync, sample-accurate event routing, stable addressing of every node parameter, bus recording, scene and mute snapshots, the project container |
 | 3. Event sources and processors | Plugins, official and community | Sequencers, arpeggiators, loopers, splits and zones, chord and generative tools |
 | 4. Engines and effects | Plugins, official and community | Synths, samplers (including slicing and pad banks), drum engines, effects |
-| 5. UI | First-party, or anything that speaks the control API | Screen UI, control-surface mapping, browsing and editing; a separate process from the audio core |
+| 5. UI and controller services | First-party, or anything that speaks the control API | Screen UI, control-surface mapping, browsing and editing; outside the audio thread. Controller services can run without the screen UI. |
 
 ### Two kinds of thing: plugins and the UI
 
@@ -272,6 +272,84 @@ Other hardware plugged into an Oscairn device works with it, on any device:
   millisecond added at most).
 - **Audio from other hardware** comes in as channels in the graph on devices with inputs.
 - **Sync:** MIDI clock, Ableton Link, and on DJ devices Pro DJ Link (below).
+
+### Physical controls, takeover and direct position access (planned)
+
+The shared **controller-mapping service** owns soft takeover (pickup), bank/scene
+assignments and relative-encoder value tracking. The same implementation serves
+built-in panels and external controllers, including knobs, sliders and pedals.
+It runs without the screen UI. This is a planned contract, not an implemented
+control API or plugin extension.
+
+Hardware services report calibrated physical positions or encoder deltas, control
+identity, available resolution and timestamps. Drivers handle electrical noise and
+calibration; they do not decide which parameter a control owns in a scene. Preserve
+the available measurement precision until a destination adapter requires quantization.
+An encoder delta must not be presented as an absolute physical position.
+
+Keep three distinct values:
+
+| Value | Meaning and owner |
+| --- | --- |
+| Physical position/movement | What the hardware reported, before takeover. "Direct" means unaffected by pickup, not an unfiltered ADC reading or precision beyond the hardware's resolution. |
+| Accepted mapped value | The value the mapping permits to reach its destination after takeover, scaling and range conversion. |
+| Destination value | The current plugin parameter or external-device value, when known. Host/plugin feedback is authoritative; an unconfirmed last-sent MIDI value is only an estimate. |
+
+Mappings select the intended behavior per assignment:
+
+- **Pickup:** for absolute knobs and sliders, suppress destination writes until
+  movement reaches or crosses the current target in the mapping's control-position
+  space. Use a tolerance appropriate to resolution/noise, including nonlinear or
+  reversed mappings. Show waiting/caught-up status and direction where a display or
+  LEDs permit it. A bank or scene change alone must not send the physical position
+  as a parameter edit.
+- **Direct:** pass the position through immediately when the player moves the
+  control. This is an explicit choice for controls whose position is itself the
+  intended input, such as a performance fader. It deliberately permits a value jump.
+- **Relative:** apply encoder movement to the destination's known value, maintaining
+  independent values for each destination across banks. Convert to absolute MIDI
+  CC only at an output that requires it. Relative MIDI encodings are decoded by
+  the controller adapter.
+
+**Plugins may request direct position input, accepted mapped input, or both.**
+Ordinary plugin parameters receive accepted changes and need no takeover awareness.
+A plugin needing the physical position can opt into a separately routed controller
+input, or the user can explicitly bind a direct mapping to one of its parameters.
+For example, a plugin may use accepted cutoff changes for sound while using the
+physical fader position for an indicator or a separate performance calculation.
+Receiving both must not write the same parameter twice: direct observations and
+accepted edits remain distinct inputs, even while pickup is waiting. The plugin
+declares the inputs it supports; the mapping/user chooses what to connect. Plugins
+do not gain implicit access to every physical control.
+
+Use portable logical control identities rather than board-specific ADC channels.
+Events carry their source timestamp and binding generation so consumers can correlate
+physical observations with accepted edits and reject stale events after reassignment.
+A subscription/rebinding snapshot must be distinguishable from new player movement.
+Define the optional graph event/capability contract and CLAP/LV2 adapters before
+implementation; do not assume existing plugin formats universally expose both streams.
+Plugins consuming direct position as an intentional performance input may implement
+their own interpretation, without changing takeover policy for other mappings.
+
+Pickup state belongs to each physical control/binding, not globally to a parameter:
+two sliders can target the same parameter while only one has caught up. Refresh
+targets on scene/preset changes and relevant feedback from other controllers, plugin
+edits or automation; distinguish acknowledgments of the mapping's own writes to
+avoid feedback loops. Rebinding, reconnects and lost-event resynchronization must
+invalidate stale pickup state. Define active-gesture/automation arbitration explicitly
+before implementation so feedback cannot repeatedly seize and release a moving control.
+When an external device supplies no feedback, expose the uncertainty and an explicit
+initialization policy; remembering the last sent value cannot guarantee jump-free
+behavior after an unseen preset change. Persist mappings/policies, not a claim that
+a physical control is still caught up after restarting.
+
+The control API configures mappings and exposes value/takeover status. Physical
+performance events retain timestamps through the bounded direct event path described
+in [RFC 0004](rfcs/0004-hardware-services.md); they need not round-trip through the
+screen UI or JSON-RPC. Motorized-control feedback and touch sensing are separate
+capabilities and must not be mistaken for new player movement. Implementation tests
+must cover bank/scene changes, pickup crossings, sliders, encoders, direct/both-input
+consumers, competing controllers, automation, feedback echoes and reconnect/overflow.
 
 ### Touch
 

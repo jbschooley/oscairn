@@ -83,6 +83,10 @@ To do:
   ([RFC 0004](rfcs/0004-hardware-services.md), proposed); the control API remains outside
   this performance-event path;
 - the KICK's real panel as a control surface.
+- shared controller mappings with knob/slider pickup, direct position access,
+  relative-encoder tracking and explicit feedback/ownership rules; plugins may opt
+  into physical observations, accepted changes or both
+  ([planned architecture](architecture.md#physical-controls-takeover-and-direct-position-access-planned)).
 
 Done when: pressing pads and transport buttons programs and plays a pattern through the
 new core, from a UI that talks to it only through the control API.
