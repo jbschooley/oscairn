@@ -16,6 +16,10 @@ must arrange in a complicated rack.
 Yamaha's [MONTAGE M effect documentation](https://manual.yamaha.com/mi/synth/montage_m/en/om01basicoperation0100.html)
 describes per-Part insertion effects, shared system effects and master effects. That is
 useful workflow precedent, not evidence about Yamaha's internal allocation or DSP sharing.
+Separately, [local ESP 3.0.1 inspection](../yamaha-esp-effects-research.md) found central
+routing buffers alongside block-owned arrays and algorithm instances. This supports the
+shared-infrastructure/independent-state distinction below, but does not measure savings
+or establish the hardware implementation.
 
 ## Logical effects and shared processing resources
 
