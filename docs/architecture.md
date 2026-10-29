@@ -703,6 +703,20 @@ A disposable download cache is separate from installed content pinned for offlin
 Offline installs use the same lock and local/imported packages; missing files never trigger
 an unrequested version substitution.
 
+Exports default to the required binaries/runtimes for a versioned set of supported Oscairn
+Buildroot Linux profiles, with shared content/assets. A Mac/PC exporter does not include its
+own desktop binaries by default. Advanced settings select other or multiple targets; an
+explicit named-device export can target just that device. The export reports offline
+completeness per profile and warns if a required hardware build is unavailable.
+
+Import installs only compatible target artifacts and shared dependencies, leaving unrelated
+binaries out of the installed store while retaining their release metadata. It first reuses
+local content, then downloads exact missing destination builds from configured sources when
+enabled, or reports what must be installed. A Linux-default package imported on a Mac/PC can
+therefore acquire desktop binaries without carrying them on every offline hardware device.
+The source archive is preserved; full-archive retention is an explicit backup choice. See
+[the target policy](rfcs/0006-packages-and-portability.md#default-export-targets-and-selective-installation).
+
 **Oscairn-native** identifies a tested portability contract: declared dependencies, stable
 engine/state/assets, builds for advertised profiles and normal operation in other hosts.
 It is open to third-party authors and is independent of file format. **External** plugins

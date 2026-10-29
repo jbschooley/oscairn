@@ -168,7 +168,10 @@ a DAW plugin; and:
   first a clean-machine, offline Performance/Setlist transfer with managed CLAP packages,
   project manifests/exact dependency locks, target builds, project-local dependency views
   backed by a shared installed store, shared runtime/sample packages and unavailable-node
-  preservation. Keep disposable download caches separate from pinned offline installations.
+  preservation. Default exports to supported Buildroot Linux profiles, with advanced target
+  selection; import installs only relevant artifacts, fetches exact missing target builds
+  when enabled, or reports required installations. Keep disposable download caches separate
+  from pinned offline installations.
   Storage deduplication and RAM sharing have separate contracts. Prove state portability across supported CPU/OS/runtime profiles, then broaden
   to LV2, external installations and AU/VST3 alongside their adapters; cross-format state
   conversion requires tested mappings. Baseline profiles identify what may be omitted from

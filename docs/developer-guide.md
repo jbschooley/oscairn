@@ -157,8 +157,13 @@ Design new engines with stable logical/format
 identities, versioned architecture-independent state and complete asset enumeration.
 Declare shared code/data as versioned dependencies rather than relying on a developer's
 installed system libraries. Build separately for each supported OS/CPU/runtime profile;
-Buildroot hardware needs its target SDK, not an arbitrary Linux binary. Keep mutable DSP
-state independent even when immutable assets or library code can share storage/mappings.
+Buildroot hardware needs its target SDK, not an arbitrary Linux binary. Native package
+releases should publish artifacts and hashes per supported profile so Linux-default exports
+can include hardware builds while other hosts acquire their exact destination builds later.
+Imports install only relevant target artifacts; absent builds remain explicit failures,
+not permission to upgrade or substitute another format. Advanced exports can include other
+platforms for offline use. Keep mutable DSP state independent even when immutable assets
+or library code can share storage/mappings.
 
 A package may supply several formats for one engine, but AU, CLAP, LV2 and VST3 states and
 parameter/port IDs are not interchangeable by name. A migration must be declared and tested,

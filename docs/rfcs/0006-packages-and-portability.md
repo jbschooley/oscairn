@@ -113,6 +113,57 @@ an existing locked performance. Missing exact releases are reported rather than 
 whatever version happens to be installed. Unmanaged plugins retain observed identity/version
 and available fingerprint information; weak identification is reported as such.
 
+## Default export targets and selective installation
+
+The normal **Export for another device** preset prioritizes offline Oscairn hardware:
+include the required native-plugin builds and runtime dependencies for the exporter's
+versioned default set of supported Oscairn Buildroot Linux profiles, plus shared content,
+state and assets. Do not include macOS/Windows builds merely because export runs on a
+Mac/PC. This policy applies to exported packages/libraries as well as Sounds, Performances
+and Setlists with collected dependencies; it does not restrict what a publisher offers in
+its full release or what a user deliberately includes in a full backup.
+
+The preset names its exact CPU/runtime profiles. "Linux" alone is not a target, and one
+ARM64 binary is not assumed compatible with every Buildroot release. The default profile
+set is versioned with the exporter/platform tooling; the export records the profiles it
+actually covers. No build is invented when a package lacks a default target: report that
+profile's unresolved dependency and do not mark it complete for offline use. An export
+explicitly addressed to a named/paired device can select only that device's profile.
+
+Advanced export controls can add macOS, Windows or other supported profiles, narrow the
+Linux targets, include several destinations for offline travel, or produce a references-only
+export. Show size and per-target offline readiness before writing the archive. Optional
+online acquisition can assemble missing Linux builds on the source computer; if that is
+unavailable, the result must state which dependencies still need to be supplied.
+
+On import, select only the destination-compatible artifacts and required shared dependencies
+for the installed store. A multi-target archive must not cause unrelated platform binaries
+to consume the hardware's permanent plugin storage. Keep the authenticated release metadata,
+artifact hashes and lock information needed to resolve other targets later, without keeping
+their payloads. Select complete target artifacts; do not strip members from signed bundles
+or mutate their signatures. Full-archive retention is a separate explicit backup/cache choice;
+the importer does not delete or rewrite the user's source archive on USB or disk.
+
+If a destination needs a build absent from the archive, resolve in this order:
+
+1. Reuse the exact compatible release already installed or available in the verified local
+   store. Check transitive runtimes/assets and state compatibility too.
+2. When online acquisition is enabled, obtain missing artifacts for the locked release from
+   its configured authenticated source as part of the normal import transaction. Download
+   only that destination's requirements, not the publisher's entire multi-platform release.
+3. If offline, no compatible build exists, retrieval fails, or a vendor installation is
+   required, report the exact missing packages/targets and how they can be supplied. Allow
+   the document/library to import with unavailable nodes, preserve state and warn that the
+   affected performance is not ready. A paired computer or USB repository can supply the
+   same locked artifacts later.
+
+Downloading another platform build does not authorize a version upgrade, make an external
+plugin native, or establish cross-format state compatibility. External plugins retain their
+installation/conversion rules. Neither download nor installation occurs on the audio thread
+or as a surprise when a performer starts playback. A Linux-default export may therefore be
+complete offline for its advertised hardware profiles while requiring downloads on a Mac/PC;
+that distinction is part of the export/import status, not an error in the default policy.
+
 ## One import, explicit completeness
 
 The normal library file is lightweight: graph/state/metadata plus asset and dependency
@@ -122,9 +173,10 @@ The UI offers **Export for another device** on Sounds, Performances, Setlists an
 1. Collect the transitive closure: all songs, inactive scenes, layers, effects, MIDI
    processors, prepared sounds, plugin runtime dependencies and required assets. It must
    not collect only the currently sounding patch.
-2. Select a known destination profile, or select multiple target profiles for an offline
-   travel bundle. A paired device can report its installed hashes and runtime capabilities.
-   An unknown destination cannot be promised universal compatibility.
+2. Start with the default Oscairn Buildroot Linux target preset described above. Use the
+   explicit destination profile for a named device, or advanced settings for other/multiple
+   targets. A paired device can report installed hashes and runtime capabilities. Record
+   actual covered profiles; an unspecified destination is not universally compatible.
 3. Resolve exact builds, state compatibility and permissions to include files. Show total
    size, reusable installed content, material that must be acquired separately, and any
    missing/unsupported dependency. Fetching from a catalog is optional; no downloads occur
@@ -135,8 +187,10 @@ The UI offers **Export for another device** on Sounds, Performances, Setlists an
    use unless the destination already has everything. An unavailable download is not an
    included dependency. A multi-target bundle includes each selected available binary build;
    it does not synthesize new ones.
-5. Import shows one consolidated plan for added code/content and unresolved items. Stage,
-   verify, resolve and scan away from live processing; publish atomically after success.
+5. Import selects destination artifacts, reuses installed dependencies and resolves missing
+   locked builds by download when enabled, otherwise reporting required installations. Show
+   one consolidated plan for added code/content and unresolved items. Stage, verify, resolve
+   and scan away from live processing; publish atomically after success.
    No per-plugin installer dialogs or package-provided installation scripts for managed
    packages. Cancellation/failure preserves existing installations and the live performance.
    A document may be imported with unresolved placeholders without installing unavailable
@@ -404,7 +458,11 @@ those workers exist.
 6. **Distribution/UI polish:** catalog downloads, paired-device deltas, storage cleanup,
    migration tools and optional rendered alternatives use the same manifest and lock.
 
-Required tests include clean/offline import of an entire setlist; one-copy shared resources;
+Required tests include Linux-default export on a Mac/PC without desktop binaries; advanced
+multi-target export that installs only destination artifacts on hardware; exact-release
+fetch on a desktop importing a Linux-only archive; offline/download-failure warnings that
+preserve state; explicit missing-build reports for default profiles; and preservation of
+signed target bundles. Also test clean/offline import of an entire setlist; one-copy shared resources;
 conflicting runtime versions; missing transitive libraries; wrong CPU/runtime/features;
 interrupted/corrupt import; old-project restore after update; unavailable-plugin re-export;
 samples moved from their original paths; stale alternate-format state after edits; and a
