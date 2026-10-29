@@ -180,8 +180,10 @@ This serialization also applies to plugins that do not advertise thread-safe res
 
 The shared C++ `PluginHost` API now exposes `supportsState()`, `saveState(directory)`
 and `loadState(directory)` for CLAP and LV2. Access it directly or through `Graph::host`.
-These operations are not yet exposed through the JSON-RPC/control API or desktop UI,
-and this is not whole-graph/project persistence.
+State export, preset enumeration and typed patch properties are also exposed through
+[Control/JSON-RPC](../../docs/control-protocol.md#state-export-presets-and-patch-properties).
+Eligible instruments load state/presets through `sounds.prepare` followed by `sounds.select`.
+The desktop sound picker and whole-graph/project persistence remain future work.
 
 Saving requires a **new directory**. A private staging directory is published only after
 successful serialization; an existing destination is never deliberately overwritten.

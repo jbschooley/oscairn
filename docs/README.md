@@ -14,6 +14,8 @@ an implemented capability.
 | Load CLAP plugins and measure them | [CLAP host](../core/clap-host/README.md) |
 | Port or load an LV2 plugin | [LV2 support and limits](../core/lv2-host/README.md) |
 | Preserve held notes across sound changes | [Native context contract](rfcs/0005-sound-contexts.md), [prepared-sound control API](control-protocol.md#prepared-sounds) |
+| Write a MIDI effect or route audio-generated notes | [MIDI references](../plugins/midi-effects/README.md), [hybrid routing and feedback](architecture.md#midi-effects-hybrid-plugins-and-feedback) |
+| Export plugin state or edit sample properties | [Sound-management controls](control-protocol.md#state-export-presets-and-patch-properties) |
 | Emit parameter-lock lanes from a sequencer | [Parameter-target extension](rfcs/0002-param-target.md) |
 | Add a desktop panel layout | [Layout format](../hosts/standalone/layouts/README.md) |
 | Configure audio, MIDI and helper processes | [Hosts](../hosts/README.md) |

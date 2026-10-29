@@ -124,6 +124,54 @@ on the same channel/key and pedal cannot be isolated completely; use separate ch
 or instances where that distinction matters. Retiring a MIDI-only route sends All Sound Off
 on its owned channels, which can cut other routes sharing those channels.
 
+### MIDI effects, hybrid plugins and feedback
+
+Audio and note connections share one dependency order. A plugin may emit sound and MIDI
+at once; an audio analyzer can send generated notes to another instrument while forwarding
+its audio. Fan-out and merge work for both. Pure MIDI processors such as transpose and
+MIDI delay are ordinary graph nodes; the [reference implementations](../plugins/midi-effects/README.md)
+exercise mapped note identities, expression, sustain and sample-timed releases. A regression
+fixture passes audio through, generates notes at threshold crossings and plays a downstream
+synth through transpose, checking both outputs against a directly scheduled reference.
+
+All current cycles are rejected, including mixed audio/MIDI/parameter cycles. Adding an
+ordinary delay plugin does not remove the dependency cycle. Feedback requires an explicit
+**delayed return edge** with a documented minimum delay, cross-block storage, deterministic
+ordering, cancellation, bounded growth, panic handling and latency reporting. That scheduler
+work is planned; do not implement feedback as recursive processing or silently use previous
+block contents. MIDI echo feedback also needs repetition/voice limits to avoid event storms.
+
+The planned Live screen presents named instrument layers, keyboard/velocity zones, MIDI
+processors and effect chains, backed by the same graph an advanced routing editor uses.
+Neither that zone editor nor a full arbitrary parameter-mapping matrix exists today.
+Parameter-target lanes currently have one target each. Hybrid instruments with note outputs
+work as ordinary graph nodes but are deliberately excluded from prepared-instance pooling:
+multiple outgoing MIDI owners need a separate sound-transition contract.
+
+### Desktop performance-host compatibility (planned)
+
+Oscairn should also serve as a desktop performance host: prepare sounds before playing,
+keep held notes on their owners, expose clear zones/layers and allow advanced audio/MIDI
+routing. This is a product direction, not a claim of Gig Performer feature or performance
+parity. Measure full input-to-output latency, deadline misses, memory, plugin loading and
+sound switches under realistic sustained load before making such claims.
+
+Current format adapters are CLAP and optional LV2. Plan **VST3** for macOS/Windows/Linux
+and **Audio Units** for macOS; AUv2 and AUv3 require separate hosting/lifecycle decisions.
+VST3 is the principal additional Windows format; AU is Apple-specific. VST2 compatibility
+is not promised. Gig Performer currently advertises VST2, VST3 and AU
+([vendor](https://gigperformer.com/)); VST3's supported desktop platforms are documented by
+[Steinberg](https://steinbergmedia.github.io/vst3_dev_portal/pages/Technical%2BDocumentation/VST%2BModule%2BArchitecture/Index.html).
+Keep format-specific state, bus negotiation, note dialects, parameters, GUI ownership and
+preset discovery inside adapters, retaining the shared graph/control model.
+
+Windows desktop support also needs process supervision, local IPC, filesystem/state helpers,
+packaging and audio/MIDI backend validation; the current desktop/helper uses POSIX facilities.
+Plugin scanning, custom GUI embedding, crash isolation and compatibility testing are separate
+work from loading a new format. Current engine plugins execute inside the engine process;
+a crashing plugin can still stop it. Desktop binaries cannot run unchanged on ARM Linux
+hardware, and plugins do not gain DSP support without a compatible backend implementation.
+
 ### Parameter events between plugins
 
 One extension beyond standard CLAP is needed: a sequencer's per-step parameter locks and

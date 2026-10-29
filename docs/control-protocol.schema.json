@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Oscairn control protocol 1: graph, parameters, transport and notifications",
+  "title": "Oscairn control protocol 1: graph, sound management, parameters, transport and notifications",
   "description": "Complete JSON document. Byte/depth limits, duplicate-member rejection, finite double range, unique parameter addresses and queue semantics are specified in control-protocol.md.",
   "oneOf": [
     {
@@ -1387,6 +1387,251 @@
             "params"
           ],
           "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
+              "const": "state.info"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "node": {
+                  "$ref": "#/$defs/Node"
+                }
+              },
+              "required": [
+                "node"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "params"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
+              "const": "state.save"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "node": {
+                  "$ref": "#/$defs/Node"
+                },
+                "directory": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "node",
+                "directory"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "params"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
+              "const": "presets.list"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "node": {
+                  "$ref": "#/$defs/Node"
+                }
+              },
+              "required": [
+                "node"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "params"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
+              "const": "properties.list"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "node": {
+                  "$ref": "#/$defs/Node"
+                }
+              },
+              "required": [
+                "node"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "params"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
+              "const": "properties.get"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "node": {
+                  "$ref": "#/$defs/Node"
+                },
+                "uri": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "node",
+                "uri"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "params"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
+              "const": "properties.request"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "node": {
+                  "$ref": "#/$defs/Node"
+                },
+                "uri": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "node",
+                "uri"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "params"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
+              "const": "properties.set"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "node": {
+                  "$ref": "#/$defs/Node"
+                },
+                "uri": {
+                  "type": "string"
+                },
+                "value": {
+                  "$ref": "#/$defs/PropertyValue"
+                }
+              },
+              "required": [
+                "node",
+                "uri",
+                "value"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "params"
+          ],
+          "additionalProperties": true
         }
       ]
     },
@@ -1438,6 +1683,21 @@
                 },
                 {
                   "$ref": "#/$defs/PreparedSound"
+                },
+                {
+                  "$ref": "#/$defs/StateInfo"
+                },
+                {
+                  "$ref": "#/$defs/StateSaved"
+                },
+                {
+                  "$ref": "#/$defs/PresetList"
+                },
+                {
+                  "$ref": "#/$defs/PropertyList"
+                },
+                {
+                  "$ref": "#/$defs/PropertyResult"
                 }
               ]
             }
@@ -2197,6 +2457,251 @@
       },
       "required": [
         "context"
+      ],
+      "additionalProperties": false
+    },
+    "PropertyValue": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "bool"
+            },
+            "value": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "type",
+            "value"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "int"
+            },
+            "value": {
+              "type": "integer",
+              "minimum": -2147483648,
+              "maximum": 2147483647
+            }
+          },
+          "required": [
+            "type",
+            "value"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "long"
+            },
+            "value": {
+              "type": "string",
+              "pattern": "^-?[0-9]+$",
+              "description": "Signed 64-bit decimal string; server enforces range."
+            }
+          },
+          "required": [
+            "type",
+            "value"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "float"
+            },
+            "value": {
+              "type": "number",
+              "minimum": -3.4028234663852886e+38,
+              "maximum": 3.4028234663852886e+38
+            }
+          },
+          "required": [
+            "type",
+            "value"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "double"
+            },
+            "value": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "type",
+            "value"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "string"
+            },
+            "value": {
+              "type": "string",
+              "maxLength": 4096
+            }
+          },
+          "required": [
+            "type",
+            "value"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "path"
+            },
+            "value": {
+              "type": "string",
+              "maxLength": 4096
+            }
+          },
+          "required": [
+            "type",
+            "value"
+          ],
+          "additionalProperties": false
+        }
+      ],
+      "description": "Strings/paths also have a 4096 UTF-8 byte limit and cannot contain NUL. Adapter packet limits may be smaller. Int requires an integer JSON token."
+    },
+    "StateInfo": {
+      "type": "object",
+      "properties": {
+        "supported": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "supported"
+      ],
+      "additionalProperties": false
+    },
+    "StateSaved": {
+      "type": "object",
+      "properties": {
+        "saved": {
+          "const": true
+        }
+      },
+      "required": [
+        "saved"
+      ],
+      "additionalProperties": false
+    },
+    "PresetList": {
+      "type": "object",
+      "properties": {
+        "presets": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "uri": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "uri",
+              "name"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "presets"
+      ],
+      "additionalProperties": false
+    },
+    "PropertyList": {
+      "type": "object",
+      "properties": {
+        "properties": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "uri": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "type": {
+                "enum": [
+                  "unknown",
+                  "bool",
+                  "int",
+                  "long",
+                  "float",
+                  "double",
+                  "string",
+                  "path"
+                ]
+              },
+              "readable": {
+                "type": "boolean"
+              },
+              "writable": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "uri",
+              "name",
+              "type",
+              "readable",
+              "writable"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "properties"
+      ],
+      "additionalProperties": false
+    },
+    "PropertyResult": {
+      "type": "object",
+      "properties": {
+        "value": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/PropertyValue"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "value"
       ],
       "additionalProperties": false
     }

@@ -76,7 +76,8 @@ Done:
   synchronous offline work and independent upstream sampler Worker tests.
 - shared CLAP/LV2 plugin state API; LV2 default/bundle presets, portable mapped sample
   assets and bounded patch properties, with upstream sampler and production samplv1 tests.
-  These are C++ host capabilities; control/UI access and project persistence remain below.
+  State export, preset enumeration and typed patch properties now also have typed/JSON/remote
+  controls; confirmed readback and state round trips are tested. Project persistence remains below.
 - explicit graph audio ports/channel ranges, external inputs, independent outputs,
   sidechains and gain-controlled sums; typed/JSON/remote routing, desktop device-channel
   mapping and availability reporting. Independent master/cue/record buses and mixed
@@ -89,13 +90,17 @@ Done:
   preparation, independent channel parts, held-note ownership and explicit tail retirement;
   typed/JSON/remote controls and fixture/production reference-audio tests.
 
+- transpose and MIDI delay CLAP reference plugins, including mapped releases/pressure,
+  sustain, bounded queues, exact timing, stop/overflow recovery and portable state;
+  mixed audio-to-MIDI graph regression and documented feedback/desktop-host boundaries.
+
 To do:
 
 - tracks, patterns, swing and more lanes in the sequencer;
 - native effect contexts/tails, asset-bearing native patches, pool/project persistence
   and a desktop sound picker;
-- expose state export, preset enumeration and patch properties through the control API, then plugin
-  discovery and selection in the desktop; custom UIs and other extensions follow
+- plugin discovery and selection in the desktop, using the completed state/preset/property
+  controls; custom UIs and other extensions follow
   ([current scope](../core/lv2-host/README.md));
 - define hardware capabilities, timestamped input, scheduled output and engine backend
   selection before hardware MIDI/CV implementation
@@ -149,7 +154,8 @@ new core, from a UI that talks to it only through the control API.
 
 ## Phase 5: the rest of the architecture
 
-Each starts as an RFC: VST3 hosting; the sampler workflow (slicing, resampling,
+Each starts as an RFC: VST3 hosting, macOS Audio Units hosting (AUv2/AUv3 scope to decide),
+Windows desktop/process/IPC support; the sampler workflow (slicing, resampling,
 looper); the Live workflow (splits, layers, scenes); file formats and the library;
 persistent engines; engine recovery; signed updates with A/B system images; the platform as
 a DAW plugin; and:

@@ -65,3 +65,19 @@ if(UNIX)
     add_test(NAME control-native-sounds COMMAND oscairn-local-socket-test $<TARGET_FILE:oscairn_basic_synth> --sounds)
     set_tests_properties(control-native-sounds PROPERTIES TIMEOUT 30)
 endif()
+
+add_executable(oscairn-sound-management-test tests/sound_management.cpp)
+target_link_libraries(oscairn-sound-management-test PRIVATE oscairn_control_json)
+target_include_directories(oscairn-sound-management-test SYSTEM PRIVATE third_party)
+add_test(NAME control-sound-management COMMAND oscairn-sound-management-test)
+if(OSCAIRN_LV2 AND OSCAIRN_LV2_SOURCE_DIR)
+    add_test(NAME control-sound-management-lv2 COMMAND oscairn-sound-management-test
+        "${PROJECT_BINARY_DIR}/core/lv2-host/tests/upstream sampler.lv2" "${PROJECT_BINARY_DIR}/core/lv2-host/tests/test fixture.lv2")
+    set_tests_properties(control-sound-management-lv2 PROPERTIES TIMEOUT 30)
+endif()
+
+if(UNIX AND OSCAIRN_LV2 AND OSCAIRN_LV2_SOURCE_DIR)
+    add_test(NAME control-remote-properties COMMAND oscairn-local-socket-test
+        "${PROJECT_BINARY_DIR}/core/lv2-host/tests/upstream sampler.lv2" --properties)
+    set_tests_properties(control-remote-properties PROPERTIES TIMEOUT 30)
+endif()

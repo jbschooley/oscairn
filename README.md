@@ -16,9 +16,9 @@ here only to describe compatibility.
 > desktop demo app with live audio, MIDI input and switchable panel layouts, and a Linux
 > image that boots into Oscairn (tested in QEMU, [`os/`](os/README.md)). Optional LV2 hosting
 > supports mixed CLAP/LV2 graphs with audio, controls, MIDI/time atoms, Worker, plugin
-> state/presets and scalar patch properties. Prepared instrument state/preset selection is available through the control API;
-> state export and patch-property access remain C++ only.
-> No VST3, patch library or real-hardware image yet.
+> state/presets and scalar patch properties. The control API supports prepared sounds,
+> state export, preset enumeration and typed property access. Transpose and MIDI delay
+> are included as reference plugins. No AU/VST3, patch library or real-hardware image yet.
 
 See the [roadmap](docs/roadmap.md) for implementation status and planned work.
 For plugins, controllers and integrations, start with the [developer guide](docs/developer-guide.md)
@@ -155,6 +155,11 @@ What is in place:
   The control/session test compares its rendered audio with the existing graph path,
   including tempo and pressure changes, and checks MIDI clock, input validation, UI-note
   overflow recovery and concurrent control/rendering with an allocation guard.
+
+The [MIDI effect references](plugins/midi-effects/README.md) add transpose and a single-stream
+MIDI delay, with held-note ownership, expression/sustain and exact sample scheduling.
+State export, preset enumeration and typed patch properties are available through the
+[control API](docs/control-protocol.md#state-export-presets-and-patch-properties).
 
 ## Design in brief
 

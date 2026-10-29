@@ -64,6 +64,17 @@ namespace oscairn
         };
         struct Changes { uint64_t latest = 0; bool lost = false; std::vector<Change> events; };
 
+        // Control thread, engine-local paths. Export creates a NEW portable directory;
+        // pooled instruments export the selected channel-0 instance.
+        virtual bool supportsState(NodeId node) const = 0;
+        virtual void saveState(NodeId node,const std::string& directory) = 0;
+        virtual std::vector<PresetInfo> presets(NodeId node) = 0;
+        virtual std::vector<PropertyInfo> properties(NodeId node) const = 0;
+        // Acceptance queues a request; propertyValue is last plugin-confirmed state.
+        virtual bool setProperty(NodeId node,const std::string& uri,const PropertyValue& value) = 0;
+        virtual bool requestProperty(NodeId node,const std::string& uri) = 0;
+        virtual std::optional<PropertyValue> propertyValue(NodeId node,const std::string& uri) const = 0;
+
         struct SoundInfo { uint32_t id;std::string name;uint32_t selectedChannels,activeVoices;bool idle; };
         struct Sounds { uint32_t capacity;std::vector<SoundInfo> contexts;std::string mode; };
         virtual Sounds sounds(NodeId node) const = 0;

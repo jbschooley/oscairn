@@ -11,7 +11,8 @@ absolute sample timestamps for clock messages from the preceding interval. It ow
 device, timestamp conversion, block splitting and mono-output adaptation.
 
 `Control` exposes node-name lookup, parameter metadata/values/text, graph editing, gestures,
-change history, transport commands/status, host status, prepared sounds and UI notes. The desktop `Engine`
+change history, transport commands/status, host status, prepared sounds, state export,
+preset enumeration, typed patch properties and UI notes. The desktop `Engine`
 delegates to `Session::control()` or cached `RemoteControl` when connected to a helper.
 Physical MIDI bypasses the control interface. Node IDs and parameter IDs are numeric;
 `nodeId(name)` resolves an optional unique UI-facing name. Unnamed nodes use numeric IDs.
@@ -74,3 +75,15 @@ The desktop now starts or reconnects to a managed helper by default; `hosts/proc
 handles lifecycle outside the core. Named-socket tests and silent live-device KICK GUI
 crash/reopen/recovery tests pass on macOS. Audible MIDI testing remains separate. Graph staging remains shared across clients, and gestures
 have no per-client ownership/undo implementation yet.
+
+## Plugin data
+
+`supportsState`/`saveState` export one plugin snapshot to a new directory on the engine's
+filesystem. For pooled instruments this is the channel-0 selected instance. Session first
+services pending edits and refuses export if target commands remain backlogged. Raw
+format adapters provide their own snapshot/Worker exclusion; this can briefly silence an
+LV2 instance. Use `prepareSound`/`selectSound` to load eligible instruments into spare contexts.
+`presets` enumerates LV2 bundle presets, while `properties`, `setProperty`, `requestProperty`
+and `propertyValue` expose typed patch data. Acceptance means queued; reads return only the
+last plugin-confirmed value. See the [wire contract](../../docs/control-protocol.md#state-export-presets-and-patch-properties)
+for type encoding, error codes, limits and timeout semantics. All belong on the control thread.

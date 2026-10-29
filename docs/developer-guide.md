@@ -10,7 +10,7 @@ that matches your component; the [documentation index](README.md) links the full
 | Component | Interface today | Reference |
 | --- | --- | --- |
 | Instrument, sampler or effect | CLAP; optional LV2 hosting | [First-party plugins](../plugins/README.md), [LV2 subset](../core/lv2-host/README.md) |
-| Sequencer or note processor | CLAP note output ports and transport; optional parameter-target events | [Step Sequencer](../plugins/step-sequencer/step_sequencer.cpp), [RFC 0002](rfcs/0002-param-target.md) |
+| Sequencer or note processor | CLAP note output ports and transport; optional parameter-target events | [Step Sequencer](../plugins/step-sequencer/step_sequencer.cpp), [MIDI effects](../plugins/midi-effects/README.md), [RFC 0002](rfcs/0002-param-target.md) |
 | Native multitimbral instrument | CLAP plus `oscairn.sound-contexts/draft` | [Basic Synth](../plugins/basic-synth/basic_synth.cpp), [RFC 0005](rfcs/0005-sound-contexts.md) |
 | UI, editor or automation script | Typed `Control` or JSON-RPC over the local Unix socket | [Protocol and schema](control-protocol.md) |
 | New host/application | C++20 `Session` or `Graph`, supplied audio buffers and events | [Core](../core/README.md), [hosts](../hosts/README.md) |
@@ -43,7 +43,7 @@ the [LV2 guide](../core/lv2-host/README.md). The default build does not require 
 
 ## Make a first CLAP plugin
 
-The three [reference plugins](../plugins/README.md) are working code rather than pseudocode.
+The [reference plugins](../plugins/README.md) are working code rather than pseudocode.
 For an in-tree native instrument, copy `plugins/basic-synth/basic_synth.cpp` into a new
 plugin directory. Change its descriptor ID, name and vendor before loading it alongside
 the original. Keep the lifecycle, event and sound-context handling while changing DSP.
@@ -142,8 +142,9 @@ For persistent plugin data, implement the format's state extension. Parameter li
 cannot reconstruct sample assets, modulation or arbitrary internal state. The C++
 `PluginHost` state API saves a **new** directory and reports failure rather than overwriting
 an existing bundle. Raw adapter restore can reset/silence that instance; graph-pooled
-instruments instead prepare and select a spare. Save/export and LV2 patch-property methods
-remain C++ APIs; prepared state/preset selection is also exposed through JSON-RPC.
+instruments instead prepare and select a spare. State export, preset enumeration and typed LV2 patch-property methods also use the
+[control API](control-protocol.md#state-export-presets-and-patch-properties). Query capabilities
+and distinguish queued property acceptance from plugin-confirmed readback.
 Complete projects, context-pool persistence and a sound-library UI are still future work.
 
 ## Controllers, hosts and hardware

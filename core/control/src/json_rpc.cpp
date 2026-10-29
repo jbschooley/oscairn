@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #include "oscairn/json_rpc.h"
+#include "PropertyWire.h"
 #include "sheredom/json.h"
 
 #include <algorithm>
@@ -161,7 +162,7 @@ namespace oscairn
             if( method == "session.hello" )
             {
                 fields(p, {});
-                return R"({"protocolVersion":1,"server":"oscairn","capabilities":["sounds.get","sounds.prepare","sounds.select","sounds.discard","session.status","params.list","params.get","params.set","params.text","params.gesture","graph.audio-routing","graph.get","graph.add","graph.remove","graph.connect","graph.disconnect","graph.map","graph.unmap","graph.commit","subscribe","unsubscribe","transport.get","transport.set","notes.send"],"limits":{"messageBytes":65536,"depth":32,"batch":64,"parameterChanges":128}})";
+                return R"({"protocolVersion":1,"server":"oscairn","capabilities":["state.info","state.save","presets.list","properties.list","properties.get","properties.set","properties.request","sounds.get","sounds.prepare","sounds.select","sounds.discard","session.status","params.list","params.get","params.set","params.text","params.gesture","graph.audio-routing","graph.get","graph.add","graph.remove","graph.connect","graph.disconnect","graph.map","graph.unmap","graph.commit","subscribe","unsubscribe","transport.get","transport.set","notes.send"],"limits":{"messageBytes":65536,"depth":32,"batch":64,"parameterChanges":128}})";
             }
             if( method == "subscribe" || method == "unsubscribe" )
             {
@@ -172,6 +173,37 @@ namespace oscairn
                     if( string(topic) != "params.changed" && string(topic) != "transport" && string(topic) != "graph.changed" && string(topic) != "status" )
                         invalid("Unknown subscription topic");
                 for( auto topic : topics ) client.subscription(string(topic),method == "subscribe",all);
+                return R"({"accepted":true})";
+            }
+            if(method=="state.info") {
+                fields(p,{"node"});return std::string("{\"supported\":")+(c.supportsState(node(c,member(p,"node")))?"true}":"false}");
+            }
+            if(method=="state.save") {
+                fields(p,{"node","directory"});const auto n=node(c,member(p,"node"));
+                try{c.saveState(n,std::string(string(member(p,"directory"))));}
+                catch(const std::runtime_error& e){throw Failure{-32005,e.what()};}
+                return R"({"saved":true})";
+            }
+            if(method=="presets.list") {
+                fields(p,{"node"});std::vector<std::string> values;
+                for(const auto& v:c.presets(node(c,member(p,"node"))))values.push_back("{\"uri\":"+quote(v.uri)+",\"name\":"+quote(v.name)+'}');
+                return "{\"presets\":"+join(values)+'}';
+            }
+            if(method=="properties.list") {
+                fields(p,{"node"});std::vector<std::string> values;
+                for(const auto& v:c.properties(node(c,member(p,"node"))))values.push_back("{\"uri\":"+quote(v.uri)+",\"name\":"+quote(v.name)+",\"type\":"+quote(property_wire::typeName(v.type))+",\"readable\":"+(v.readable?"true":"false")+",\"writable\":"+(v.writable?"true":"false")+'}');
+                return "{\"properties\":"+join(values)+'}';
+            }
+            if(method=="properties.get" || method=="properties.request" || method=="properties.set") {
+                if(method=="properties.set")fields(p,{"node","uri","value"});else fields(p,{"node","uri"});
+                const auto n=node(c,member(p,"node"));const auto uri=std::string(string(member(p,"uri")));
+                const auto properties=c.properties(n);const auto found=std::find_if(properties.begin(),properties.end(),[&](const auto& v){return v.uri==uri;});
+                if(found==properties.end())invalid("Unknown property URI");
+                if(method=="properties.get") {const auto v=c.propertyValue(n,uri);return "{\"value\":"+(v?property_wire::encode(*v,quote,encode):"null")+'}';}
+                if(method=="properties.request" && !found->readable)invalid("Property is not readable");
+                if(method=="properties.set" && !found->writable)invalid("Property is read-only");
+                const bool ok=method=="properties.set"?c.setProperty(n,uri,property_wire::decode(member(p,"value"))):c.requestProperty(n,uri);
+                if(!ok)throw Failure{-32005,"Property request rejected (type, size, capability or queue limit)"};
                 return R"({"accepted":true})";
             }
             if(method=="sounds.get")

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #include "oscairn/remote_control.h"
+#include "PropertyWire.h"
 #include "sheredom/json.h"
 #include <algorithm>
 #include <charconv>
@@ -87,9 +88,9 @@ namespace oscairn
         std::map<std::pair<NodeId,uint32_t>,double> values;
         std::deque<Change> history;uint64_t sequence=0;
         explicit Impl(LocalClient& c):client(c){}
-        Doc call(std::string_view method,std::string_view params="{}")
+        Doc call(std::string_view method,std::string_view params="{}",unsigned timeout=1000)
         {
-            auto doc=parse(client.call(method,params));
+            auto doc=parse(client.call(method,params,timeout));
             V error=nullptr;try{error=field(doc.get(),"error");}catch(const std::runtime_error&){}
             if(error)
             {
@@ -182,6 +183,35 @@ namespace oscairn
     RemoteControl::~RemoteControl()=default;
     Control::GraphState RemoteControl::graphState()const{return impl_->graph;}
     Control::SessionStatus RemoteControl::sessionStatus()const{return impl_->status;}
+    bool RemoteControl::supportsState(NodeId node) const {
+        auto d=impl_->call("state.info","{\"node\":"+std::to_string(node)+'}');return boolean(field(field(d.get(),"result"),"supported"));
+    }
+    void RemoteControl::saveState(NodeId node,const std::string& directory) {
+        impl_->call("state.save","{\"node\":"+std::to_string(node)+",\"directory\":"+quote(directory)+'}',30000);
+    }
+    std::vector<PresetInfo> RemoteControl::presets(NodeId node) {
+        auto d=impl_->call("presets.list","{\"node\":"+std::to_string(node)+'}');std::vector<PresetInfo> result;
+        for(auto v:array(field(field(d.get(),"result"),"presets")))result.push_back({string(field(v,"uri")),string(field(v,"name"))});
+        return result;
+    }
+    std::vector<PropertyInfo> RemoteControl::properties(NodeId node) const {
+        auto d=impl_->call("properties.list","{\"node\":"+std::to_string(node)+'}');std::vector<PropertyInfo> result;
+        for(auto v:array(field(field(d.get(),"result"),"properties")))result.push_back({string(field(v,"uri")),string(field(v,"name")),property_wire::type(string(field(v,"type"))),boolean(field(v,"readable")),boolean(field(v,"writable"))});
+        return result;
+    }
+    bool RemoteControl::setProperty(NodeId node,const std::string& uri,const PropertyValue& value) {
+        try{impl_->call("properties.set","{\"node\":"+std::to_string(node)+",\"uri\":"+quote(uri)+",\"value\":"+property_wire::encode(value,quote,encode)+'}');return true;}
+        catch(const RpcError& e){if(e.code==-32005)return false;throw;}
+    }
+    bool RemoteControl::requestProperty(NodeId node,const std::string& uri) {
+        try{impl_->call("properties.request","{\"node\":"+std::to_string(node)+",\"uri\":"+quote(uri)+'}');return true;}
+        catch(const RpcError& e){if(e.code==-32005)return false;throw;}
+    }
+    std::optional<PropertyValue> RemoteControl::propertyValue(NodeId node,const std::string& uri) const {
+        auto d=impl_->call("properties.get","{\"node\":"+std::to_string(node)+",\"uri\":"+quote(uri)+'}');auto v=field(field(d.get(),"result"),"value");
+        if(v && v->type==json_type_null)return {};
+        return property_wire::decode(v);
+    }
     Control::Sounds RemoteControl::sounds(NodeId node)const
     {
         auto doc=impl_->call("sounds.get","{\"node\":"+std::to_string(node)+'}');auto value=field(doc.get(),"result");
@@ -192,7 +222,7 @@ namespace oscairn
     uint32_t RemoteControl::prepareSound(NodeId node,const std::string& name,const std::vector<oscairn_sound_parameter_t>& parameters,const std::string& state,const std::string& preset)
     {
         std::string values;for(const auto& p:parameters){if(!values.empty())values+=',';values+="{\"id\":"+std::to_string(p.id)+",\"value\":"+encode(p.value)+'}';}
-        auto doc=impl_->call("sounds.prepare","{\"node\":"+std::to_string(node)+",\"name\":"+quote(name)+",\"parameters\":["+values+"],\"state\":"+quote(state)+",\"preset\":"+quote(preset)+"}");
+        auto doc=impl_->call("sounds.prepare","{\"node\":"+std::to_string(node)+",\"name\":"+quote(name)+",\"parameters\":["+values+"],\"state\":"+quote(state)+",\"preset\":"+quote(preset)+"}",30000);
         return static_cast<uint32_t>(integer(field(field(doc.get(),"result"),"context")));
     }
     bool RemoteControl::selectSound(NodeId node,uint32_t id,int16_t channel)

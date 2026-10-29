@@ -2,6 +2,7 @@
 #include "oscairn/local_socket.h"
 #include "oscairn/session.h"
 #include "oscairn/remote_control.h"
+#include "oscairn/wav_file.h"
 #include "AllocationGuard.h"
 #include <array>
 #include <atomic>
@@ -295,9 +296,34 @@ namespace
             const auto id=remote.prepareSound(node,"Saved",{},state);
             check(remote.selectSound(node,id),"remote prepared state selection");
             bool selected=false;for(int i=0;i<40 && !selected;++i)for(const auto& c:remote.sounds(node).contexts)if(c.id==id)selected=c.selectedChannels==65535;
-            check(selected,"remote applied hosted selection");check(remote.selectSound(node,0),"remote default selection");
+            check(selected,"remote applied hosted selection");
+            check(remote.supportsState(node),"remote state capability");
+            check(remote.presets(node).empty() && remote.properties(node).empty(),"remote empty CLAP metadata");
+            const auto exported=directory.child("exported");remote.setParameter(node,7,.75);remote.saveState(node,exported);
+            auto restored=loadPlugin(plugin,"org.kick.test.synth",48000,64);restored->loadState(exported);
+            check(restored->parameterValue(7)==.75,"remote export includes pending parameter edit on selected instance");
+            bool refused=false;try{remote.saveState(node,exported);}catch(const std::exception&){refused=true;}check(refused,"remote export cannot overwrite state");
+            check(remote.selectSound(node,0),"remote default selection");
             bool retired=false;for(int i=0;i<40 && !retired;++i)retired=remote.discardSound(node,id,true);
             check(retired,"remote explicit hosted retirement");
+        });
+    }
+    void propertyClient(const char* plugin)
+    {
+        TemporaryDirectory directory;const auto sample=directory.child("sample.wav");
+        writeWavFile(sample,std::vector<float>(48000,.25f),1,48000);
+        Fixture f(plugin);auto fd=pair();f.server.adopt(fd[0]);
+        clientWhileRendering(f,[&]{
+            LocalClient client;client.adopt(fd[1]);RemoteControl remote(client);const auto node=remote.nodeId("synth");
+            const std::string uri="http://lv2plug.in/plugins/eg-sampler#sample";
+            const auto properties=remote.properties(node);bool found=false;
+            for(const auto& p:properties)if(p.uri==uri)found=p.type==PropertyType::Path && p.writable;
+            check(found,"remote LV2 property metadata");check(!remote.setProperty(node,uri,std::string(sample)),"remote rejects mismatched type");
+            check(remote.setProperty(node,uri,FilePath{sample}),"remote accepts sample path");
+            bool confirmed=false;for(int i=0;i<2000 && !confirmed;++i){
+                const auto value=remote.propertyValue(node,uri);confirmed=value && std::holds_alternative<FilePath>(*value) && std::get<FilePath>(*value).value==sample;
+                if(!confirmed)std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }check(confirmed,"remote plugin-confirmed typed sample readback");
         });
     }
     void pathPolicy(const char* plugin)
@@ -370,6 +396,7 @@ int main(int argc,char** argv)
             remote.setParameter(remote.nodeId("synth"),1,.83);remote.note(true,60,1);remote.setPlaying(true);
             for(;;)::pause(); // parent deliberately kills this process
         }
+        if(argc==3 && std::string_view(argv[2])=="--properties"){propertyClient(argv[1]);return 0;}
         if(argc==3 && std::string_view(argv[2])=="--instances"){instanceClient(argv[1]);return 0;}
         if(argc==3 && std::string_view(argv[2])=="--sounds"){soundClient(argv[1]);return 0;}
         if(argc==3 && std::string_view(argv[2])=="--path-policy"){pathPolicy(argv[1]);return 0;}

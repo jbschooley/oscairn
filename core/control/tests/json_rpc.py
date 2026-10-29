@@ -38,7 +38,15 @@ try:
     assert 'graph.add' in hello['capabilities'] and 'subscribe' in hello['capabilities']
     assert 'session.status' in hello['capabilities'] and 'graph.audio-routing' in hello['capabilities']
     assert 'sounds.prepare' in hello['capabilities']
-    sounds = rpc('sounds.get', {'node':'synth'})['result']
+    assert 'state.save' in hello['capabilities'] and 'properties.set' in hello['capabilities']
+    assert rpc('state.info', {'node':'synth'})['result'] == {'supported':False}
+    assert rpc('presets.list', {'node':'synth'})['result'] == {'presets':[]}
+    assert rpc('properties.list', {'node':'synth'})['result'] == {'properties':[]}
+    error(rpc('properties.get', {'node':'synth','uri':'unknown'}), -32602)
+    error(rpc('properties.request', {'node':'synth','uri':'unknown'}), -32602)
+    error(rpc('state.info', {'node':'synth','extra':True}), -32602)
+    error(rpc('state.save', {'node':'synth','directory':'unused'}), -32005)
+    sounds = rpc('sounds.get' , {'node':'synth'})['result']
     assert sounds['mode'] == 'native'
     assert sounds['capacity'] == 8 and sounds['contexts'][0]['id'] == 0
     prepared = rpc('sounds.prepare', {'node':'synth','name':'Dark','parameters':[{'id':1,'value':.1}]})['result']['context']

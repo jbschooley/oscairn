@@ -99,6 +99,13 @@ request members.
 | --- | --- | --- |
 | `session.hello` | omitted or `{}` | `protocolVersion`, `server`, supported methods and optional features in `capabilities`, `limits` |
 | `session.status` | omitted or `{}` | `audioDevice`, `midiInputs`, `sampleRate`, `bufferSize`, `cpuLoad`, `deadlineMisses`, `graphEventDrops`, `midiEventDrops`, `audioReady`, mapped `audioInputs`/`audioOutputs` |
+| `state.info` | `{"node":"synth"}` | `{"supported":true}` when opaque state export is available |
+| `state.save` | `{"node":"synth","directory":"/path/to/new-state"}` | `{"saved":true}` after publishing a new state directory |
+| `presets.list` | `{"node":"synth"}` | `{"presets":[{"uri":"urn:example:preset","name":"Warm"}]}` |
+| `properties.list` | `{"node":"sampler"}` | `properties` entries: `uri`, `name`, `type`, `readable`, `writable` |
+| `properties.get` | `{"node":"sampler","uri":"…"}` | `{"value":null}` or a typed plugin-confirmed value |
+| `properties.request` | `{"node":"sampler","uri":"…"}` | `{"accepted":true}` when a readable property's refresh is queued |
+| `properties.set` | `{"node":"sampler","uri":"…","value":{"type":"path","value":"/samples/piano.wav"}}` | `{"accepted":true}` when a writable property's change is queued |
 | `params.list` | `{"node":"synth"}` | numeric `node`, array `parameters` of `id`, `name`, `minimum`, `maximum`, `defaultValue`, `stepped`, CLAP `flags` |
 | `params.get` | `{"values":[{"node":"synth","param":3}]}` | `{"values":[{"node":1,"param":3,"value":0.5}]}` |
 | `params.set` | `{"values":[{"node":"synth","param":3,"value":0.7}]}` | same shape as `params.get`, with accepted plain values |
@@ -422,3 +429,39 @@ from a saved state is `{"node":"instrument","name":"Saved","state":"/absolute/st
 The native plugin extension and hosted instance pool are separate mechanisms with the
 same control entry points. State export, preset enumeration, complete project/pool
 persistence, effect transitions and a desktop sound picker remain follow-up work.
+
+## State export, presets and patch properties
+
+These methods are available through typed `Control`, `Session`, JSON-RPC and `RemoteControl`.
+Paths refer to the **engine's filesystem**. `state.save` creates a new portable directory;
+it refuses an existing destination and includes pending parameter edits, or reports failure
+if they cannot be delivered. It exports the channel-0 selected instance for pooled
+instruments. This is one plugin snapshot, not project/pool persistence. `state.info` may be
+false even when native numeric sound contexts work (currently Basic Synth). Preset enumeration
+currently exposes LV2 bundle presets; an empty list does not imply a plugin cannot load state.
+Use `sounds.prepare` with `state` or `preset`, then `sounds.select`, for eligible instruments.
+State export does not add an in-place restore command for effects.
+
+Property values carry their exact type: `bool`, signed 32-bit `int`, signed 64-bit `long`,
+`float`, `double`, `string` or `path`. A `long` uses a decimal **string**, for example
+`{"type":"long","value":"9223372036854775807"}`, so JavaScript clients do not round it.
+`int` uses an integer JSON token; floating values must be finite and representable. Strings
+and paths reject NUL and exceedance of 4096 UTF-8 bytes; the plugin adapter's bounded atom
+packet can impose a smaller limit. A path is distinct from a string and must satisfy the
+adapter's existing asset checks. `unknown` is metadata only and cannot be sent as a value.
+
+`properties.get` returns only the last plugin-confirmed value, or null before confirmation;
+it does not send a request or claim an accepted write succeeded. `properties.request` sends
+an asynchronous refresh only for a declared readable property. A plugin may publish a
+writable property's value without declaring it readable. Poll `properties.get` after normal
+engine service to observe confirmation; no property subscription exists yet. Unknown URIs,
+malformed typed values and unsupported access receive `-32602`; a rejected write/refresh
+(type mismatch, size, capability, asset or full queue) receives `-32005`.
+
+State export/preparation can perform filesystem I/O and background-work draining on the
+control thread. `RemoteControl` waits up to 30 seconds for `state.save` and `sounds.prepare`;
+other calls retain their normal timeout. A timeout is an **unknown outcome**, not cancellation:
+inspect the destination/context inventory after reconnecting instead of blindly retrying.
+An LV2 state export may briefly silence that instance while taking its snapshot; preparing
+a spare sound avoids restoring over a held instance. These operations are for preparation,
+not sample-timed performance changes.

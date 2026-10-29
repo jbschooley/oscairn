@@ -132,6 +132,15 @@ namespace oscairn
         return {graph_.describe(),nodes_,revision_,staged_};
     }
 
+    void Session::saveState(NodeId node,const std::string& directory)
+    {
+        auto& host=graph_.host(node);
+        service();
+        for(const auto& [address,commands]:pending_)if(address.first==node && !commands.empty())
+            throw std::runtime_error("Parameter edits are still pending; retry state export after processing");
+        host.saveState(directory);
+    }
+
     Control::Sounds Session::sounds(NodeId node) const
     {
         const auto& host=graph_.host(node);Sounds result{host.soundContextCapacity(),{},host.soundContextMode()};
