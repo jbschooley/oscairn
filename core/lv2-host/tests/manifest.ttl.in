@@ -9,3 +9,6 @@
 <urn:oscairn:test:effect> a lv2:Plugin; lv2:binary <fixture@CMAKE_SHARED_MODULE_SUFFIX@>; rdfs:seeAlso <fixture.ttl> .
 <urn:oscairn:test:worker> a lv2:Plugin; lv2:binary <fixture@CMAKE_SHARED_MODULE_SUFFIX@>; rdfs:seeAlso <fixture.ttl> .
 <urn:oscairn:test:cv> a lv2:Plugin; lv2:binary <fixture@CMAKE_SHARED_MODULE_SUFFIX@>; rdfs:seeAlso <fixture.ttl> .
+<urn:oscairn:test:audit> a lv2:Plugin; lv2:binary <fixture@CMAKE_SHARED_MODULE_SUFFIX@>; rdfs:seeAlso <fixture.ttl> .
+<urn:oscairn:test:required-option> a lv2:Plugin; lv2:binary <fixture@CMAKE_SHARED_MODULE_SUFFIX@>; rdfs:seeAlso <fixture.ttl> .
+<urn:oscairn:test:required-atom> a lv2:Plugin; lv2:binary <fixture@CMAKE_SHARED_MODULE_SUFFIX@>; rdfs:seeAlso <fixture.ttl> .

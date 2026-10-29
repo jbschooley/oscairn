@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #include "oscairn/plugin_host.h"
+#include "Urids.h"
 #include <lilv/lilv.h>
 #include <lv2/atom/atom.h>
 #include <lv2/atom/forge.h>
@@ -33,41 +34,7 @@ using Node = std::unique_ptr<LilvNode, decltype(&lilv_node_free)>;
 Node own(LilvNode* n) { return Node(n, lilv_node_free); }
 std::string text(const LilvNode* n) { return n ? lilv_node_as_string(n) : ""; }
 
-// Fixed storage keeps URI pointers stable and supports lookup without allocation.
-// No worker/UI extension is advertised. Concurrent new mappings fail rather than
-// blocking the render thread; existing mappings remain readable by every thread.
-struct Urids
-{
-    std::array<std::array<char, 512>, 512> names{};
-    std::atomic<uint32_t> count{0};
-    std::atomic_flag writing = ATOMIC_FLAG_INIT;
-    static LV2_URID map(void* handle, const char* uri)
-    {
-        auto& s = *static_cast<Urids*>(handle);
-        if(!uri) return 0;
-        auto find = [&]() -> LV2_URID {
-            const auto n = s.count.load(std::memory_order_acquire);
-            for(uint32_t i=0; i<n; ++i) if(!std::strcmp(uri,s.names[i].data())) return i+1;
-            return 0;
-        };
-        if(const auto id=find()) return id;
-        if(s.writing.test_and_set(std::memory_order_acquire)) return 0;
-        struct Unlock { std::atomic_flag& flag; ~Unlock(){flag.clear(std::memory_order_release);} } unlock{s.writing};
-        if(const auto id=find()) return id;
-        const auto n=s.count.load(std::memory_order_relaxed);
-        const auto length=strnlen(uri,s.names[0].size());
-        if(n==s.names.size() || length==s.names[0].size()) return 0;
-        std::memcpy(s.names[n].data(),uri,length+1);
-        s.count.store(n+1,std::memory_order_release);
-        return n+1;
-    }
-    static const char* unmap(void* handle, LV2_URID id)
-    {
-        auto& s=*static_cast<Urids*>(handle);
-        return id && id<=s.count.load(std::memory_order_acquire) ? s.names[id-1].data() : nullptr;
-    }
-    LV2_URID operator()(const char* uri) { return map(this,uri); }
-};
+using lv2::Urids;
 
 class Lv2Host final : public PluginHost
 {
@@ -75,7 +42,7 @@ class Lv2Host final : public PluginHost
     struct Port
     {
         Kind kind=Kind::Ignored;
-        bool input=false, midi=false, time=false;
+        bool input=false, midi=false, time=false, toggle=false;
         uint32_t channel=0, midiIndex=0;
         float control=0;
         std::vector<float> audio;
@@ -107,7 +74,7 @@ class Lv2Host final : public PluginHost
     // One control producer, one audio consumer; graph callers share this contract.
     std::array<Event,kick::clap::Host::maxEvents> commands_{};
     std::atomic<size_t> head_{0},tail_{0};
-    std::array<Timed,maxEvents> ordered_{};
+    std::array<Timed,2*maxEvents> ordered_{}; // Separate budgets for queued controls and graph events.
     std::array<Event,maxEvents> emitted_{};
     uint32_t emittedCount_=0;
     bool inputPanic_=false,outputPanic_=false;
@@ -143,7 +110,8 @@ class Lv2Host final : public PluginHost
         if(!p || (p->flags&CLAP_PARAM_IS_READONLY) || !std::isfinite(e.value) || e.note_id!=-1 ||
            e.port_index!=-1 || e.channel!=-1 || e.key!=-1){++drops_;return;}
         auto value=std::clamp(e.value,p->minimum,p->maximum);
-        if(p->flags&CLAP_PARAM_IS_STEPPED)value=std::trunc(value);
+        if(ports_[p->id].toggle)value=value>0?1:0;
+        else if(p->flags&CLAP_PARAM_IS_STEPPED)value=std::clamp(std::trunc(value),p->minimum,p->maximum);
         ports_[e.param_id].control=static_cast<float>(value);
         values_[e.param_id].store(value,std::memory_order_relaxed);
     }
@@ -226,24 +194,36 @@ class Lv2Host final : public PluginHost
         auto forge=forge_;lv2_atom_forge_set_buffer(&forge,buffer,sizeof(buffer));
         LV2_Atom_Forge_Frame object;lv2_atom_forge_object(&forge,&object,0,position_);
         const bool playing=t->flags&CLAP_TRANSPORT_IS_PLAYING;
+        const bool meter=(t->flags&CLAP_TRANSPORT_HAS_TIME_SIGNATURE) && t->tsig_num && t->tsig_denom;
+        const double beatScale=meter?t->tsig_denom/4.0:1.0;
+        const bool hasTempo=(t->flags&CLAP_TRANSPORT_HAS_TEMPO) && std::isfinite(t->tempo) && t->tempo>0 && std::isfinite(t->tempo_inc);
+        const double elapsed=playing?start:0;
         auto key=[&](LV2_URID id){lv2_atom_forge_key(&forge,id);};
         key(speed_);lv2_atom_forge_float(&forge,playing?1.f:0.f);
-        if(t->flags&CLAP_TRANSPORT_HAS_TEMPO){key(bpm_);lv2_atom_forge_float(&forge,static_cast<float>(t->tempo));}
+        if(hasTempo){key(bpm_);lv2_atom_forge_float(&forge,static_cast<float>((t->tempo+elapsed*t->tempo_inc)*beatScale));}
+        if(meter)
+        {
+            key(beatUnit_);lv2_atom_forge_int(&forge,t->tsig_denom);
+            key(beatsPerBar_);lv2_atom_forge_float(&forge,t->tsig_num);
+        }
         if(t->flags&CLAP_TRANSPORT_HAS_SECONDS_TIMELINE)
         {
             key(frame_);lv2_atom_forge_long(&forge,static_cast<int64_t>(std::llround(static_cast<double>(t->song_pos_seconds)/CLAP_SECTIME_FACTOR*rate_))+(playing?start:0));
         }
-        if(t->flags&CLAP_TRANSPORT_HAS_BEATS_TIMELINE)
+        // Without tempo, only the block-start beat is known while playing.
+        if((t->flags&CLAP_TRANSPORT_HAS_BEATS_TIMELINE) && (!elapsed || hasTempo))
         {
-            const double beat=static_cast<double>(t->song_pos_beats)/CLAP_BEATTIME_FACTOR+(playing?start/rate_*t->tempo/60:0);
+            const double quarter=static_cast<double>(t->song_pos_beats)/CLAP_BEATTIME_FACTOR+
+                (hasTempo?(elapsed*t->tempo+elapsed*(elapsed-1)*.5*t->tempo_inc)/rate_/60:0);
+            const double beat=quarter*beatScale;
             key(beat_);lv2_atom_forge_double(&forge,beat);
-            if((t->flags&CLAP_TRANSPORT_HAS_TIME_SIGNATURE) && t->tsig_num && t->tsig_denom)
+            if(meter)
             {
-                const auto beatsPerBar=static_cast<float>(t->tsig_num);const double meterBeat=beat*t->tsig_denom/4.0;
-                key(bar_);lv2_atom_forge_long(&forge,static_cast<int64_t>(std::floor(meterBeat/beatsPerBar)));
-                key(barBeat_);lv2_atom_forge_float(&forge,static_cast<float>(meterBeat-std::floor(meterBeat/beatsPerBar)*beatsPerBar));
-                key(beatUnit_);lv2_atom_forge_int(&forge,t->tsig_denom);
-                key(beatsPerBar_);lv2_atom_forge_float(&forge,beatsPerBar);
+                // Respect the host's bar origin: previous bars may use another meter.
+                const double relative=(quarter-static_cast<double>(t->bar_start)/CLAP_BEATTIME_FACTOR)*beatScale;
+                const auto bars=static_cast<int64_t>(std::floor(relative/t->tsig_num));
+                key(bar_);lv2_atom_forge_long(&forge,static_cast<int64_t>(t->bar_number)+bars);
+                key(barBeat_);lv2_atom_forge_float(&forge,static_cast<float>(relative-bars*t->tsig_num));
             }
         }
         lv2_atom_forge_pop(&forge,&object);
@@ -255,19 +235,19 @@ class Lv2Host final : public PluginHost
         const auto* seq=port.sequence();
         if(seq->atom.type==chunk_)return; // plugin wrote nothing
         if(seq->atom.type!=sequence_ || seq->atom.size<sizeof(seq->body) || seq->atom.size>atomBytes-sizeof(LV2_Atom) ||
-           (seq->body.unit!=0 && seq->body.unit!=frameTime_)){++errors_;return;}
+           (seq->body.unit!=0 && seq->body.unit!=frameTime_)){++errors_;outputPanic_|=port.midi;return;}
         size_t offset=sizeof(LV2_Atom_Sequence),end=sizeof(LV2_Atom)+seq->atom.size;
         while(offset<end)
         {
-            if(end-offset<sizeof(LV2_Atom_Event)){++errors_;break;}
+            if(end-offset<sizeof(LV2_Atom_Event)){++errors_;outputPanic_|=port.midi;break;}
             const auto* e=reinterpret_cast<const LV2_Atom_Event*>(reinterpret_cast<const uint8_t*>(seq)+offset);
             const uint64_t size=(uint64_t(sizeof(*e))+e->body.size+7)&~uint64_t(7);
-            if(size>end-offset){++errors_;break;}
+            if(size>end-offset){++errors_;outputPanic_|=port.midi;break;}
             if(port.midi && e->body.type==midi_)
             {
                 const auto* bytes=reinterpret_cast<const uint8_t*>(e+1);
                 if(e->time.frames<0 || e->time.frames>=frames || e->body.size<1 || e->body.size>3 ||
-                   midiSize(bytes[0])!=e->body.size || (e->body.size>1 && bytes[1]>127) || (e->body.size>2 && bytes[2]>127)){++drops_;}
+                   midiSize(bytes[0])!=e->body.size || (e->body.size>1 && bytes[1]>127) || (e->body.size>2 && bytes[2]>127)){++drops_;outputPanic_=true;}
                 else if(emittedCount_==emitted_.size()){++drops_;outputPanic_=true;}
                 else
                 {
@@ -324,6 +304,16 @@ public:
             if(std::none_of(features_.begin(),features_.end(),[&](const auto& f){return feature==f.URI;}))
                 throw std::runtime_error("Unsupported required LV2 feature: "+feature);
         }
+        auto requiredOption=uri(LV2_OPTIONS__requiredOption);
+        std::unique_ptr<LilvNodes,decltype(&lilv_nodes_free)> requiredOptions(lilv_plugin_get_value(plugin,requiredOption.get()),lilv_nodes_free);
+        LILV_FOREACH(nodes,i,requiredOptions.get())
+        {
+            const auto* option=lilv_nodes_get(requiredOptions.get(),i);
+            const auto name=text(option);
+            if(!lilv_node_is_uri(option) || std::none_of(options_.begin(),options_.end(),[&](const auto& o){
+                const auto* key=Urids::unmap(&urids_,o.key);return key && name==key;}))
+                throw std::runtime_error("Unsupported required LV2 option: "+name);
+        }
         const auto count=lilv_plugin_get_num_ports(plugin);
         if(count>256)throw std::runtime_error("LV2 port limit exceeded (256)");
         ports_.resize(count);values_=std::make_unique<std::atomic<double>[]>(count);
@@ -344,20 +334,36 @@ public:
                 auto defaultNode=own(d),minNode=own(lo),maxNode=own(hi);
                 auto number=[](LilvNode* n,double fallback){return n && (lilv_node_is_float(n)||lilv_node_is_int(n))?static_cast<double>(lilv_node_as_float(n)):fallback;};
                 const auto scale=property(plugin,source,LV2_CORE__sampleRate)?rate:1.0;
-                double minimum=number(lo,0)*scale,maximum=number(hi,1)*scale,initial=number(d,0)*scale;
+                double minimum=number(lo,0)*scale,maximum=number(hi,1)*scale,initial=number(d,0);
                 if(!std::isfinite(minimum)||!std::isfinite(maximum)||!std::isfinite(initial)||minimum>maximum ||
                    std::abs(minimum)>std::numeric_limits<float>::max()||std::abs(maximum)>std::numeric_limits<float>::max())throw std::runtime_error("Invalid LV2 control range");
                 uint32_t flags=port.input?CLAP_PARAM_IS_AUTOMATABLE:CLAP_PARAM_IS_READONLY;
-                if(property(plugin,source,LV2_CORE__integer)||property(plugin,source,LV2_CORE__toggled))flags|=CLAP_PARAM_IS_STEPPED;
+                port.toggle=property(plugin,source,LV2_CORE__toggled);
+                if(port.toggle){minimum=0;maximum=1;initial=initial>0?1:0;flags|=CLAP_PARAM_IS_STEPPED;}
+                else if(property(plugin,source,LV2_CORE__integer))
+                {
+                    minimum=std::ceil(minimum);maximum=std::floor(maximum);
+                    if(minimum>maximum)throw std::runtime_error("LV2 integer range contains no integer");
+                    initial=std::trunc(initial);flags|=CLAP_PARAM_IS_STEPPED;
+                }
                 initial=std::clamp(initial,minimum,maximum);port.control=static_cast<float>(initial);values_[i].store(initial);
                 parameters_.push_back({i,text(label.get()),"",minimum,maximum,initial,flags});
             }
             else if(is(plugin,source,LV2_ATOM__AtomPort))
             {
-                auto type=uri(LV2_ATOM__bufferType);auto bufferType=own(lilv_port_get(plugin,source,type.get()));
-                if(text(bufferType.get())!=LV2_ATOM__Sequence)throw std::runtime_error("Unsupported LV2 atom buffer type (requires Sequence)");
+                auto type=uri(LV2_ATOM__bufferType),sequenceType=uri(LV2_ATOM__Sequence);
+                std::unique_ptr<LilvNodes,decltype(&lilv_nodes_free)> types(lilv_port_get_value(plugin,source,type.get()),lilv_nodes_free);
+                if(!lilv_nodes_contains(types.get(),sequenceType.get()))
+                {
+                    if(property(plugin,source,LV2_CORE__connectionOptional))continue;
+                    throw std::runtime_error("Unsupported LV2 atom buffer type (requires Sequence)");
+                }
                 auto minimumKey=uri(LV2_RESIZE_PORT__minimumSize);auto minimum=own(lilv_port_get(plugin,source,minimumKey.get()));
-                if(minimum && (!lilv_node_is_int(minimum.get()) || lilv_node_as_int(minimum.get())<0 || lilv_node_as_int(minimum.get())>static_cast<int>(atomBytes)))throw std::runtime_error("LV2 atom buffer minimum exceeds 16384 bytes");
+                if(minimum && (!lilv_node_is_int(minimum.get()) || lilv_node_as_int(minimum.get())<0 || lilv_node_as_int(minimum.get())>static_cast<int>(atomBytes)))
+                {
+                    if(property(plugin,source,LV2_CORE__connectionOptional))continue;
+                    throw std::runtime_error("LV2 atom buffer minimum exceeds 16384 bytes");
+                }
                 port.kind=Kind::Atom;port.atom.resize(atomBytes/sizeof(uint64_t));
                 port.midi=supports(plugin,source,LV2_MIDI__MidiEvent);port.time=supports(plugin,source,LV2_TIME__Position);
                 if(port.midi)port.midiIndex=port.input?noteInputs_++:noteOutputs_++;
@@ -391,7 +397,8 @@ public:
     bool setParameter(clap_id id,double value) noexcept override
     {
         if(!writable(id)||!std::isfinite(value))return false;
-        const auto* p=parameter(id);value=std::clamp(value,p->minimum,p->maximum);if(p->flags&CLAP_PARAM_IS_STEPPED)value=std::trunc(value);
+        const auto* p=parameter(id);value=std::clamp(value,p->minimum,p->maximum);if(ports_[p->id].toggle)value=value>0?1:0;
+        else if(p->flags&CLAP_PARAM_IS_STEPPED)value=std::clamp(std::trunc(value),p->minimum,p->maximum);
         clap_event_param_value_t e{};e.header={sizeof(e),0,CLAP_CORE_EVENT_SPACE_ID,CLAP_EVENT_PARAM_VALUE,0};
         e.param_id=id;e.note_id=-1;e.port_index=e.channel=e.key=-1;e.value=value;
         return queue(Event::from(e));
@@ -409,7 +416,7 @@ public:
         if(frames>maxFrames_ || (no && !outputs) || (count && !events) || count>maxEvents){silence();++errors_;return false;}
         const auto began=std::chrono::steady_clock::now();
         uint32_t total=0;auto tail=tail_.load(std::memory_order_relaxed);const auto head=head_.load(std::memory_order_acquire);
-        while(tail!=head && total+count<maxEvents){ordered_[total]={commands_[tail%commands_.size()],total};++total;++tail;}
+        while(tail!=head && total<maxEvents){ordered_[total]={commands_[tail%commands_.size()],total};++total;++tail;}
         tail_.store(tail,std::memory_order_release);
         for(uint32_t i=0;i<count;++i)if(valid(events[i],frames)){ordered_[total]={events[i],total};++total;}else ++drops_;
         std::sort(ordered_.begin(),ordered_.begin()+total,[](const auto& a,const auto& b){return a.event.header()->time!=b.event.header()->time?a.event.header()->time<b.event.header()->time:a.order<b.order;});
@@ -455,7 +462,11 @@ public:
         for(const auto& p:ports_)if(p.kind==Kind::Audio && !p.input && p.channel<no && outputs[p.channel])std::copy_n(p.audio.data(),frames,outputs[p.channel]);
         for(const auto& p:parameters_)if(p.flags&CLAP_PARAM_IS_READONLY)
         {const auto value=ports_[p.id].control;if(std::isfinite(value))values_[p.id].store(value);else ++errors_;}
-        if(outputPanic_)emitted_[emittedCount_-1]=Event::note(false,-1,0,frames-1,-1,-1);
+        if(outputPanic_)
+        {
+            const auto index=emittedCount_<emitted_.size()?emittedCount_++:emittedCount_-1;
+            emitted_[index]=Event::note(false,-1,0,frames-1,-1,-1);
+        }
         // Stable, bounded merge across multiple MIDI output ports.
         for(uint32_t i=1;i<emittedCount_;++i){auto e=emitted_[i];auto j=i;while(j && emitted_[j-1].header()->time>e.header()->time){emitted_[j]=emitted_[j-1];--j;}emitted_[j]=e;}
         const auto us=std::chrono::duration<double,std::micro>(std::chrono::steady_clock::now()-began).count();

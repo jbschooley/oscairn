@@ -49,3 +49,52 @@
  [a lv2:OutputPort, lv2:ControlPort; lv2:index 7; lv2:symbol "beat"; lv2:name "Beat"; lv2:minimum 0; lv2:maximum 1000000; lv2:default 0],
  [a lv2:InputPort, lv2:ControlPort; lv2:index 8; lv2:symbol "bad_output"; lv2:name "Bad Output"; lv2:minimum 0; lv2:maximum 3; lv2:default 0; lv2:portProperty lv2:integer]
 , [a lv2:InputPort, lv2:CVPort; lv2:index 9; lv2:symbol "cv"; lv2:name "CV"] .
+
+<urn:oscairn:test:audit> a lv2:Plugin; doap:name "Oscairn synth fixture"; lv2:requiredFeature urid:map; lv2:port
+ [a lv2:InputPort, lv2:ControlPort; lv2:index 0; lv2:symbol "gain"; lv2:name "Gain"; lv2:minimum 0; lv2:maximum 2; lv2:default 0.5],
+ [a lv2:InputPort, lv2:AudioPort; lv2:index 1; lv2:symbol "in"; lv2:name "In"],
+ [a lv2:OutputPort, lv2:AudioPort; lv2:index 2; lv2:symbol "out"; lv2:name "Out"],
+ [a lv2:InputPort, atom:AtomPort; lv2:index 3; lv2:symbol "events_in"; lv2:name "Events In"; atom:bufferType atom:Chunk, atom:Sequence; atom:supports midi:MidiEvent, time:Position],
+ [a lv2:OutputPort, atom:AtomPort; lv2:index 4; lv2:symbol "events_out"; lv2:name "Events Out"; atom:bufferType atom:Sequence; atom:supports midi:MidiEvent],
+ [a lv2:OutputPort, lv2:ControlPort; lv2:index 5; lv2:symbol "tempo"; lv2:name "Tempo"; lv2:minimum 0; lv2:maximum 1000; lv2:default 0],
+ [a lv2:OutputPort, lv2:ControlPort; lv2:index 6; lv2:symbol "frame"; lv2:name "Frame"; lv2:minimum 0; lv2:maximum 1000000; lv2:default 0],
+ [a lv2:OutputPort, lv2:ControlPort; lv2:index 7; lv2:symbol "beat"; lv2:name "Beat"; lv2:minimum 0; lv2:maximum 1000000; lv2:default 0],
+ [a lv2:InputPort, lv2:ControlPort; lv2:index 8; lv2:symbol "bad_output"; lv2:name "Bad Output"; lv2:minimum 0; lv2:maximum 3; lv2:default 0; lv2:portProperty lv2:integer] ,
+ [a lv2:InputPort, lv2:ControlPort; lv2:index 9; lv2:symbol "frequency"; lv2:name "Frequency"; lv2:minimum 0; lv2:maximum 0.5; lv2:default 440; lv2:portProperty lv2:sampleRate],
+ [a lv2:InputPort, lv2:ControlPort; lv2:index 10; lv2:symbol "toggle"; lv2:name "Toggle"; lv2:minimum -1; lv2:maximum 1; lv2:default 0.25; lv2:portProperty lv2:toggled],
+ [a lv2:InputPort, lv2:ControlPort; lv2:index 11; lv2:symbol "integer"; lv2:name "Integer"; lv2:minimum -1.5; lv2:maximum 2.5; lv2:default -1.9; lv2:portProperty lv2:integer],
+ [a lv2:InputPort, atom:AtomPort; lv2:index 12; lv2:symbol "optional"; lv2:name "Optional"; atom:bufferType atom:Chunk; lv2:portProperty lv2:connectionOptional],
+ [a lv2:OutputPort, lv2:ControlPort; lv2:index 13; lv2:symbol "bar"; lv2:name "Bar"],
+ [a lv2:OutputPort, lv2:ControlPort; lv2:index 14; lv2:symbol "bar_beat"; lv2:name "Bar Beat"],
+ [a lv2:OutputPort, lv2:ControlPort; lv2:index 15; lv2:symbol "beat_unit"; lv2:name "Beat Unit"],
+ [a lv2:OutputPort, lv2:ControlPort; lv2:index 16; lv2:symbol "beats_per_bar"; lv2:name "Beats Per Bar"],
+ [a lv2:OutputPort, lv2:ControlPort; lv2:index 17; lv2:symbol "speed"; lv2:name "Speed"],
+ [a lv2:InputPort, atom:AtomPort; lv2:index 18; lv2:symbol "large_optional"; lv2:name "Large Optional"; atom:bufferType atom:Sequence; <http://lv2plug.in/ns/ext/resize-port#minimumSize> 65536; lv2:portProperty lv2:connectionOptional]
+ .
+<urn:oscairn:test:audit> <http://lv2plug.in/ns/ext/options#requiredOption> <http://lv2plug.in/ns/ext/parameters#sampleRate>, <http://lv2plug.in/ns/ext/buf-size#maxBlockLength> .
+
+<urn:oscairn:test:required-option> a lv2:Plugin; doap:name "Oscairn synth fixture"; lv2:requiredFeature urid:map; lv2:port
+ [a lv2:InputPort, lv2:ControlPort; lv2:index 0; lv2:symbol "gain"; lv2:name "Gain"; lv2:minimum 0; lv2:maximum 2; lv2:default 0.5],
+ [a lv2:InputPort, lv2:AudioPort; lv2:index 1; lv2:symbol "in"; lv2:name "In"],
+ [a lv2:OutputPort, lv2:AudioPort; lv2:index 2; lv2:symbol "out"; lv2:name "Out"],
+ [a lv2:InputPort, atom:AtomPort; lv2:index 3; lv2:symbol "events_in"; lv2:name "Events In"; atom:bufferType atom:Sequence; atom:supports midi:MidiEvent, time:Position],
+ [a lv2:OutputPort, atom:AtomPort; lv2:index 4; lv2:symbol "events_out"; lv2:name "Events Out"; atom:bufferType atom:Sequence; atom:supports midi:MidiEvent],
+ [a lv2:OutputPort, lv2:ControlPort; lv2:index 5; lv2:symbol "tempo"; lv2:name "Tempo"; lv2:minimum 0; lv2:maximum 1000; lv2:default 0],
+ [a lv2:OutputPort, lv2:ControlPort; lv2:index 6; lv2:symbol "frame"; lv2:name "Frame"; lv2:minimum 0; lv2:maximum 1000000; lv2:default 0],
+ [a lv2:OutputPort, lv2:ControlPort; lv2:index 7; lv2:symbol "beat"; lv2:name "Beat"; lv2:minimum 0; lv2:maximum 1000000; lv2:default 0],
+ [a lv2:InputPort, lv2:ControlPort; lv2:index 8; lv2:symbol "bad_output"; lv2:name "Bad Output"; lv2:minimum 0; lv2:maximum 3; lv2:default 0; lv2:portProperty lv2:integer]
+ .
+<urn:oscairn:test:required-option> <http://lv2plug.in/ns/ext/options#requiredOption> <urn:oscairn:unsupported-option> .
+
+<urn:oscairn:test:required-atom> a lv2:Plugin; doap:name "Oscairn synth fixture"; lv2:requiredFeature urid:map; lv2:port
+ [a lv2:InputPort, lv2:ControlPort; lv2:index 0; lv2:symbol "gain"; lv2:name "Gain"; lv2:minimum 0; lv2:maximum 2; lv2:default 0.5],
+ [a lv2:InputPort, lv2:AudioPort; lv2:index 1; lv2:symbol "in"; lv2:name "In"],
+ [a lv2:OutputPort, lv2:AudioPort; lv2:index 2; lv2:symbol "out"; lv2:name "Out"],
+ [a lv2:InputPort, atom:AtomPort; lv2:index 3; lv2:symbol "events_in"; lv2:name "Events In"; atom:bufferType atom:Sequence; atom:supports midi:MidiEvent, time:Position],
+ [a lv2:OutputPort, atom:AtomPort; lv2:index 4; lv2:symbol "events_out"; lv2:name "Events Out"; atom:bufferType atom:Sequence; atom:supports midi:MidiEvent],
+ [a lv2:OutputPort, lv2:ControlPort; lv2:index 5; lv2:symbol "tempo"; lv2:name "Tempo"; lv2:minimum 0; lv2:maximum 1000; lv2:default 0],
+ [a lv2:OutputPort, lv2:ControlPort; lv2:index 6; lv2:symbol "frame"; lv2:name "Frame"; lv2:minimum 0; lv2:maximum 1000000; lv2:default 0],
+ [a lv2:OutputPort, lv2:ControlPort; lv2:index 7; lv2:symbol "beat"; lv2:name "Beat"; lv2:minimum 0; lv2:maximum 1000000; lv2:default 0],
+ [a lv2:InputPort, lv2:ControlPort; lv2:index 8; lv2:symbol "bad_output"; lv2:name "Bad Output"; lv2:minimum 0; lv2:maximum 3; lv2:default 0; lv2:portProperty lv2:integer]
+ .
+<urn:oscairn:test:required-atom> lv2:port [a lv2:InputPort, atom:AtomPort; lv2:index 9; lv2:symbol "required"; lv2:name "Required"; atom:bufferType atom:Chunk] .

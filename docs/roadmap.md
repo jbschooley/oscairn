@@ -69,6 +69,8 @@ Done:
   Jacob confirmed SMK37 notes, pressure response and PLAY/STOP on October 28, 2026.
 - optional LV2 hosting through Lilv: mixed CLAP/LV2 graphs, sample-timed control ports,
   MIDI/pressure translation and time atoms, with fixture and upstream-example tests.
+- [LV2 prior-art audit](../core/lv2-host/AUDIT.md) against Jalv, MOD mod-host, Carla and
+  Ardour, with contract/recovery fixes, regression tests and source credits.
 
 To do:
 

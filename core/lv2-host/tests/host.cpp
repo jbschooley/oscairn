@@ -4,6 +4,7 @@
 #include "oscairn/json_rpc.h"
 #include "oscairn/transport.h"
 #include "AllocationGuard.h"
+#include "../Urids.h"
 #include <clap/ext/params.h>
 #include <algorithm>
 #include <array>
@@ -36,6 +37,8 @@ void policy(const char* bundle)
 {
     auto reject=[&](const char* id,const char* part){bool rejected=false;try{loadPlugin(bundle,id,48000,512);}catch(const std::runtime_error& e){rejected=std::string(e.what()).find(part)!=std::string::npos;}check(rejected,"unsupported LV2 rejected with useful reason");};
     reject("","pluginId");reject("urn:oscairn:test:worker","worker#schedule");reject("urn:oscairn:test:cv","port");reject("urn:missing","matching");
+    reject("urn:oscairn:test:required-option","unsupported-option");
+    reject("urn:oscairn:test:required-atom","buffer type");
     auto host=loadPlugin(std::string(bundle)+"/","urn:oscairn:test:synth",48000,512);
     check(host->descriptor().name=="Oscairn synth fixture" && host->parameters().size()==5,"metadata loaded from Turtle");
     check(host->noteInputPorts()==1 && host->noteOutputPorts()==1 && host->outputPorts().size()==1,"port inventory");
@@ -52,7 +55,56 @@ void policy(const char* bundle)
         check(host->setParameter(8,mode),"bad output mode");auto note=Event::note(true,60,1);
         const auto before=host->statistics();check(render(*host,audio,&note,1),"malformed plugin output contained");
         const auto after=host->statistics();check(after.processErrors>before.processErrors || after.droppedEvents>before.droppedEvents,"bad output reported");
+        uint32_t count=0;const auto* output=host->outputEvents(count);
+        check(count && output[count-1].header()->type==CLAP_EVENT_NOTE_OFF &&
+              reinterpret_cast<const clap_event_note_t*>(output[count-1].header())->key==-1,"malformed MIDI output releases downstream voices even with no valid events");
     }
+}
+void uridMapping()
+{
+    lv2::Urids urids;
+    const std::string longUri="urn:oscairn:"+std::string(2048,'x');
+    const auto longId=urids(longUri.c_str());const char* stable=lv2::Urids::unmap(&urids,longId);
+    check(longId && stable && longUri==stable,"long URI round trips");
+    std::atomic<bool> good{true};std::array<std::thread,4> threads;
+    for(auto& thread:threads)thread=std::thread([&]{
+        for(int i=0;i<1500;++i)
+        {
+            const auto uri="urn:oscairn:concurrent:"+std::to_string(i);
+            const auto id=urids(uri.c_str());const auto* unmapped=lv2::Urids::unmap(&urids,id);
+            if(!id || !unmapped || uri!=unmapped || urids(uri.c_str())!=id)good=false;
+        }
+    });
+    for(auto& thread:threads)thread.join();
+    check(good && lv2::Urids::unmap(&urids,longId)==stable && longUri==stable,"concurrent URI mapping grows beyond 512 and preserves pointers");
+    check(!lv2::Urids::unmap(&urids,0) && !lv2::Urids::unmap(&urids,100000) && !urids(nullptr),"invalid URI mapping inputs");
+}
+void audit(const char* bundle)
+{
+    auto host=loadPlugin(bundle,"urn:oscairn:test:audit",48000,512);Audio audio;
+    check(render(*host,audio),"audit fixture renders with required options and optional ports");
+    check(audio.l[0]==440 && audio.l[1]==1 && audio.l[2]==-1 && audio.l[3]==0,"sample-rate default, toggle, integer and disconnected optional atom ports");
+    const auto& frequency=*std::find_if(host->parameters().begin(),host->parameters().end(),[](const auto& p){return p.id==9;});
+    check(frequency.minimum==0 && frequency.maximum==24000 && frequency.defaultValue==440,"sample rate scales bounds only");
+    const std::array edits{param(.25,0,10),param(-1.5,0,11),param(30000,0,9)};
+    check(render(*host,audio,edits.data(),edits.size()) && audio.l[0]==24000 && audio.l[1]==1 && audio.l[2]==-1,"sample-timed controls normalize and clamp correctly");
+    check(host->setParameter(10,-.2) && host->setParameter(11,2.5),"queue audit controls");
+    check(render(*host,audio) && audio.l[1]==0 && audio.l[2]==2,"queued controls use the same normalization");
+    clap_event_transport_t t{};
+    t.flags=CLAP_TRANSPORT_HAS_TEMPO|CLAP_TRANSPORT_HAS_BEATS_TIMELINE|CLAP_TRANSPORT_HAS_SECONDS_TIMELINE|CLAP_TRANSPORT_HAS_TIME_SIGNATURE|CLAP_TRANSPORT_IS_PLAYING;
+    t.tempo=120;t.tempo_inc=.1;t.tsig_num=6;t.tsig_denom=8;
+    t.song_pos_beats=static_cast<int64_t>(8.9999*CLAP_BEATTIME_FACTOR);
+    t.song_pos_seconds=CLAP_SECTIME_FACTOR;t.bar_start=6*CLAP_BEATTIME_FACTOR;t.bar_number=42;
+    const auto split=param(.5,17);
+    check(render(*host,audio,&split,1,&t),"6/8 transport across parameter split");
+    const auto quarter=static_cast<double>(t.song_pos_beats)/CLAP_BEATTIME_FACTOR+(17*120+17*16*.5*.1)/48000/60;
+    check(std::abs(host->parameterValue(5)-243.4)<1e-4 && std::abs(host->parameterValue(7)-quarter*2)<1e-5,"meter-beat tempo and position include tempo increment");
+    check(host->parameterValue(13)==43 && std::abs(host->parameterValue(14)-(quarter-9)*2)<1e-5,"bar origin survives meter history and split crossing");
+    check(host->parameterValue(6)==48017 && host->parameterValue(15)==8 && host->parameterValue(16)==6 && host->parameterValue(17)==1,"frame and meter telemetry");
+    t.flags&=~CLAP_TRANSPORT_IS_PLAYING;
+    check(render(*host,audio,&split,1,&t) && host->parameterValue(6)==48000 && host->parameterValue(13)==42 && host->parameterValue(17)==0,"stopped transport does not advance at a split");
+    t.tsig_num=3;t.tsig_denom=4;t.tempo_inc=0;t.song_pos_beats=-CLAP_BEATTIME_FACTOR;t.bar_start=-3*CLAP_BEATTIME_FACTOR;t.bar_number=-1;
+    check(render(*host,audio,nullptr,0,&t) && host->parameterValue(7)==-1 && host->parameterValue(13)==-1 && host->parameterValue(14)==2,"negative preroll positions");
 }
 void events(const char* bundle)
 {
@@ -72,6 +124,8 @@ void events(const char* bundle)
     const auto held=Event::note(true,60,1,0,2);
     check(render(*host,audio,&held,1),"held note before atom overflow");
     std::array<Event,kick::clap::Host::maxBlockEvents> burst;
+    burst.fill(pressure(2,60,0,0));
+    check(host->setParameter(0,.75) && render(*host,audio,burst.data(),burst.size()) && audio.l[0]==.75f,"full graph event budget cannot starve queued controls");
     burst.fill(pressure(-1,-1,1,0)); // expands across all 16 channels
     check(render(*host,audio,burst.data(),burst.size()),"bounded atom overflow handled");
     output=host->outputEvents(count);
@@ -130,6 +184,6 @@ void control(const char* bundle)
 }
 int main(int argc,char** argv)
 {
-    try{if(argc!=4)return 2;policy(argv[1]);events(argv[1]);graph(argv[1],argv[2],argv[3]);control(argv[1]);std::cout<<"ok: LV2 policy, MIDI/pressure/time, sample-accurate mixed graphs, control API and concurrent rendering\n";return 0;}
+    try{if(argc!=4)return 2;uridMapping();policy(argv[1]);audit(argv[1]);events(argv[1]);graph(argv[1],argv[2],argv[3]);control(argv[1]);std::cout<<"ok: LV2 audit regressions, policy, MIDI/pressure/time, sample-accurate mixed graphs, control API and concurrent rendering\n";return 0;}
     catch(const std::exception& e){forbidAllocation=false;std::cerr<<e.what()<<'\n';return 1;}
 }

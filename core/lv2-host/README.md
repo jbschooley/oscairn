@@ -58,7 +58,9 @@ are flattened in port-index order, as for CLAP; there is no surround/bus editor.
 - Audio ports: preallocated float buffers, separate input/output storage, silent missing
   input channels, unused outputs retained in scratch buffers.
 - Control ports: input parameters, read-only output telemetry, ranges/defaults, integer
-  and toggle flags, and sample-rate-scaled ranges. Formatting is numeric. Gesture
+  and toggle normalization, and sample-rate-scaled bounds (defaults stay in port units).
+  Missing bounds use 0/1 as the generic control range; this is a UI/control policy,
+  not a claim that LV2 requires those bounds. Formatting is numeric. Gesture
   notifications remain in the control API; LV2 control ports have no gesture message.
 - Control changes and mapped CLAP parameter locks: processing splits at the exact sample
   of each change. Plugins requiring fixed or power-of-two block lengths are rejected.
@@ -68,20 +70,29 @@ are flattened in port-index order, as for CLAP; there is no surround/bus editor.
   the physical desktop input currently forwards only its existing notes/pressure/clock
   subset. Wildcard note-offs issue all-notes-off on the addressed channels/ports.
 - Transport: play/stop speed, tempo, sample position, beat, bar and time signature.
-  Positions are rebased when control changes split a block.
+  Positions are rebased when control changes split a block, including tempo increments,
+  meter-beat units and the host's current bar origin. A tempo ramp is sampled at each
+  run boundary; the LV2 time vocabulary has no standard tempo-ramp field.
 - Features: URID map/unmap, options (sample rate, min/max block length, sequence capacity),
-  bounded block length and separate buffers for `inPlaceBroken` plugins.
+  bounded block length and separate buffers for `inPlaceBroken` plugins. Required
+  options are checked before instantiation. Unsupported optional Atom ports are
+  connected to null; unsupported required ports are rejected.
 - One control thread and one audio thread per instance. Controls use a bounded SPSC queue;
   telemetry is atomic. Plugin creation, metadata reading and destruction happen on the
-  control thread. Render work does not allocate or wait for a lock.
+  control thread. Host render work uses cached URIDs and does not allocate or wait
+  for a lock. The plugin-facing URID map/unmap callbacks are **not realtime safe**,
+  as permitted by LV2: they serialize access and mapping may allocate. Plugins must
+  cache their IDs before performance-critical processing.
 
 Limits: 256 ports, 16 KiB per atom buffer, 512 input/output graph events per block,
-2048 queued control events, and 512 URIDs of at most 511 bytes each. New URID mappings
-use fixed storage and return zero on exhaustion or concurrent creation contention;
-existing IDs remain stable. All atom output sizes/times are validated before traversal.
+2048 queued control events. Each block can drain 512 queued controls independently of
+the 512 graph-event budget, so busy MIDI cannot starve controls. The URID map grows
+dynamically and preserves IDs and returned string addresses across insertions. All atom
+output sizes/times are validated before traversal.
 Malformed/unsupported events and full event buffers increment drop/error counters.
-Input MIDI overflow schedules all-sound/all-notes-off for the next block; output overflow
-replaces the final event with a wildcard note-off to release downstream voices.
+Input MIDI overflow schedules all-sound/all-notes-off for the next block. Output overflow
+or malformed MIDI output emits a wildcard note-off to release downstream voices,
+replacing the final event when the output buffer is full.
 Native plugin code is not sandboxed and can still crash or violate its realtime contract.
 
 ## Not implemented yet
@@ -91,7 +102,10 @@ CV ports, legacy event/URI-map ports, dynamic ports, SysEx, MIDI 2.0, per-note I
 non-pressure CLAP expressions. Required unsupported features or non-optional port types
 are rejected with an error instead of pretending to support them. There is no plugin
 catalog, LV2 scanner process, latency compensation, or automatic LV2 selection in the
-fixed desktop demo. These are explicit follow-up work, not broad LV2 compatibility claims.
+fixed desktop demo. Control-port designations such as tempo, freewheeling and latency
+are not yet driven/interpreted automatically; tempo is supplied through Atom Sequence
+ports only. A keyed CLAP choke currently translates to MIDI note-off (release semantics).
+These are explicit follow-up work, not broad LV2 compatibility claims.
 
 ## Verification
 
@@ -106,6 +120,10 @@ For independent upstream examples, install `lv2-examples` and configure with
 `-DOSCAIRN_LV2_EXAMPLE_DIR=/usr/lib/lv2`. Additional tests check eg-amp at unity and eg-fifths
 with byte-identical 37/512-sample renders. CI enables LV2 on Linux and macOS and includes
 Linux ThreadSanitizer. CLAP-only builds remain supported.
+
+The [prior-art audit](AUDIT.md) records the pinned Jalv, MOD mod-host, Carla and Ardour
+comparisons, fixes, remaining gaps and reuse decisions. [Credits](../../CREDITS.md)
+distinguish dependencies, reference work and imported code.
 
 Reference contracts: [LV2 core](https://lv2plug.in/ns/lv2core),
 [Atom](https://lv2plug.in/ns/ext/atom), [URID](https://lv2plug.in/ns/ext/urid),

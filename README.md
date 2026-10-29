@@ -187,4 +187,7 @@ The design the code is built towards; most of it is not built yet. In full:
 Oscairn is licensed under the GNU Affero General Public License v3.0 or later. See
 [`LICENSE`](LICENSE) and [RFC 0001](docs/rfcs/0001-licence.md).
 
+See [credits and source provenance](CREDITS.md) for dependency and prior-art
+acknowledgments, including the [LV2 host audit](core/lv2-host/AUDIT.md).
+
 Plugins loaded through CLAP, LV2 or VST3 are separate works and may use any licence.
