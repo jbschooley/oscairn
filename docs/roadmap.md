@@ -116,7 +116,7 @@ Done:
 To do:
 
 - tracks, patterns, swing and more lanes in the sequencer;
-- native effect contexts/tails, asset-bearing native patches and pool/project persistence;
+- automatic Sound/effect-chain preparation and retirement, asset-bearing native patches and pool/project persistence;
 - carry stable format/plugin identities and state provenance into persistent library data,
   following [RFC 0006](rfcs/0006-packages-and-portability.md). Installation paths locate
   binaries but must not become portable package identities. Custom plugin pages and
@@ -136,10 +136,10 @@ new core, from a UI that talks to it only through the control API.
 
 ### Next build and test order
 
-1. **Native effect contexts and per-sound audio:** implement the Delay/reference-graph
-   prototype in [RFC 0007](rfcs/0007-effect-contexts.md), then separate Basic Synth context
-   outputs so held sounds retain their insert chains and tails. Measure resource savings
-   and test isolation, parallel/serial/shared routing, exhaustion and retirement.
+1. **Native effect contexts and per-sound audio — implemented foundation:** Delay contexts,
+   Basic Synth output buses and typed/JSON/remote controls now pass independent-reference,
+   lifetime, tail and resource tests ([RFC 0007](rfcs/0007-effect-contexts.md)). Explicit
+   routing preserves outgoing voices/chains; automatic chain management remains for save/reopen.
 2. **Minimal save/reopen:** persist one complete Performance with its graph, scenes/prepared
    sounds, state, asset references and mappings. Preserve provenance and unresolved nodes;
    do not require the future package manager. Test a process restart, missing plugin/assets,

@@ -1,8 +1,9 @@
 # RFC 0007: Independent effects on shared native engines
 
-Status: proposed implementation. The graph already supports insert chains, parallel paths
-and shared sends using separate plugin nodes. Shared native effect contexts and separate
-Basic Synth context outputs are not implemented yet.
+Status: first implementation complete. Delay provides independently scheduled contexts
+sharing one native engine; Basic Synth provides eight sound buses in addition to Main.
+Typed/JSON/remote control, state, resource telemetry and reference-graph tests are implemented.
+Automatic Sound-to-chain management and complete Performance persistence remain planned.
 
 ## Musician-facing behavior
 
@@ -44,9 +45,11 @@ The same logical UI and saved graph must work with that fallback.
 
 ## Per-sound audio and transitions
 
-The Basic Synth currently sums all contexts to its main stereo output. Once mixed, the
-host cannot recover separate sound streams. Add explicit per-context output routing before
-claiming that different sounds in one engine can have different insert chains.
+Basic Synth parameter 8 selects Main (0) or sound bus 1–8 for new notes. Each voice
+captures its bus at note-on and retains it through sustain/release. Ports are permanent
+buses, not reusable context IDs: preparing another Sound on a bus deliberately joins that
+bus's processing chain. Routed voices are excluded from Main. Give simultaneous independent
+chains different buses; the host cannot separate sounds after they have been summed.
 
 A voice retains its sound context and output ownership until it ends, including sustain
 and release. New-note selection does not move held voices onto the new chain. Keep the
@@ -82,7 +85,42 @@ algorithms, latency and required routing must be known during preparation. A dev
 have fixed hardware effect slots; exceeding them must be explicit. Do not change a
 musician's independent processing into a shared send to fit a budget.
 
-## First implementation and acceptance checks
+## Implemented contract and validation
+
+The draft extension [effect-contexts.h](../../core/clap-ext/include/oscairn-clap/effect-contexts.h)
+creates child CLAP interfaces with normal parameter/state/port/lifecycle APIs. Each is one
+logical graph node, retains the module and engine independently, and can run before or
+after siblings according to graph dependencies. Graph plan ownership delays destruction
+until rendering is finished. Node IDs are not recycled to address another context.
+
+`effects.create` creates a default patch on the source engine; `effects.resources` reports
+shared/context bytes, capacity, prepared count and tail activity. Delay permits 16 contexts
+including its originating interface, allocates rings only for prepared contexts, and
+keeps all surviving contexts intact when preparation fails. Context creation and destruction
+use the control thread. Current scheduling is serial on one audio thread. Removal is an
+explicit tail cut; to preserve a tail, retain its node and output route, stop its input,
+and wait for `tailActive: false` before removal/commit. A disconnected input does not stop
+processing the remaining node. This is not yet an automatic chain-retirement manager.
+
+Delay patch parameters are beats, feedback and wet level. CLAP state stores parameters,
+not running history. Its original dry-plus-wet gain law and tempo glide remain. Histories
+below 1e-12 are zeroed to bound tail completion and avoid denormals. Standard hosts can
+use a single Delay without understanding this extension.
+
+The `effect-contexts` test compares independent and shared serial/parallel graphs, a summed
+send, and two sound buses feeding different delays against separate instrument/effect
+chains. It also covers exact automation, sustain/release, tails, capacity exhaustion,
+parent removal, state round trips and concurrent preparation. Render calls use AllocationGuard.
+The socket and JSON tests cover creation, resource readback and independent controls.
+
+On the arm64 release build at 48 kHz, reported plugin-owned memory is 768,248 bytes for
+one Delay, 1,536,472 for two shared contexts, and 1,536,496 for two separate engines.
+Only 24 bytes are saved: this algorithm has no large immutable assets to share. Host
+queues/scratch, shared_ptr control blocks and allocator overhead are excluded. One local
+benchmark rendered 508,000 context-frames in about 3.3 ms in either configuration; this
+is wall time, not a hardware-independent speedup claim. The test prints fresh measurements.
+
+## Acceptance sequence and remaining integration
 
 1. Give native Delay independently configured contexts with per-context tempo division,
    feedback and wet/dry values. Preserve current default audio. Expose each context as a
@@ -101,5 +139,6 @@ musician's independent processing into a shared send to fit a budget.
 5. Persist the logical Sounds/chains and provenance in the Performance save/reopen milestone.
    Runtime IDs and physical DSP slots are reconstructed on preparation, not saved as identity.
 
-This is the next native-effects milestone. It does not require a package manager, a
-complete arbitrary-rack UI, or actual Yamaha hardware.
+The first four checks above are implemented as the explicit-routing prototype; automatic
+Sound/chain setup and retirement belong with the next Performance save/reopen milestone.
+A package manager, general rack editor and hardware acceleration are not prerequisites.

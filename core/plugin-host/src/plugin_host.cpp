@@ -16,6 +16,14 @@ namespace oscairn
         {
         public:
             kick::clap::Host host;
+            std::shared_ptr<PluginHost> createEffectContext() override {
+                auto child=std::make_shared<ClapHost>();
+                if(!child->host.loadEffectContext(host))throw std::runtime_error(child->host.error());
+                child->host.lockAudioLayout();return child;
+            }
+            std::optional<oscairn_effect_resources_t> effectResources() const override {
+                oscairn_effect_resources_t r{};if(host.effectResources(r))return r;return {};
+            }
             uint32_t soundContextCapacity() const noexcept override {return host.soundContextCapacity();}
             std::vector<oscairn_sound_context_info_t> soundContexts() const override {return host.soundContexts();}
             uint32_t prepareSound(const std::string& name,const std::vector<oscairn_sound_parameter_t>& p,const std::string& state,const std::string& preset) override {if(!state.empty() || !preset.empty())throw std::invalid_argument("Native contexts accept parameter patches only");return host.prepareSound(name,p);}

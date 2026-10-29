@@ -12,4 +12,4 @@ Number them in order (`0002-...md`) and keep the status line up to date
 | [0004](0004-hardware-services.md) | Hardware services, event timing and engine backends | proposed |
 | [0005](0005-sound-contexts.md) | Native prepared sound contexts | first instrument implementation; effect/asset contexts remain planned |
 | [0006](0006-packages-and-portability.md) | Packages and cross-device portability | proposed |
-| [0007](0007-effect-contexts.md) | Independent effects on shared native engines | proposed; logical contexts, per-sound audio and preserved tails |
+| [0007](0007-effect-contexts.md) | Independent effects on shared native engines | implemented Delay/bus foundation; automatic chain management planned |

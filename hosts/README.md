@@ -352,3 +352,18 @@ Its default configuration produced silence in a one-second headless chain, so au
 Element processing is not validated. The MOD ePiano/Ambience listening result above is
 separate. One earlier prepared-instance stress run failed; 20 immediate isolated repeats
 and subsequent full-suite runs passed without a code change to that subsystem.
+
+### Shared native effect demonstration
+
+On a fresh disposable engine session running Basic Synth and native Delay, run
+`python3 hosts/engine/examples/shared-effects.py /path/to/control.sock` from the repo root.
+This configures Saws / short echo and Square / long echo as prepared sounds on buses 1/2,
+with two independent Delay contexts sharing an engine. It prints graph routes, actual
+parameter values and resource telemetry. Open the KICK UI on that socket and select the
+prepared sounds; the existing Main route also keeps default sounds usable.
+
+Add `--play` on initial setup for 26 seconds of notes, overlapping patches and tails;
+use `--play-only` to replay a configured session. The script leaves the sounds/chains
+available for pads or sequencer testing. It modifies the session, so use a fresh test
+engine rather than a working Performance. This is an explicit-routing example; automatic
+Sound/chain management and persistence remain planned.

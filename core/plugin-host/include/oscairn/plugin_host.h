@@ -34,6 +34,8 @@ namespace oscairn
     public:
         virtual ~PluginHost() = default;
         virtual void service() = 0;
+        virtual std::shared_ptr<PluginHost> createEffectContext() { throw std::runtime_error("Plugin has no native effect contexts"); }
+        virtual std::optional<oscairn_effect_resources_t> effectResources() const { return {}; }
         // Control thread. Save to a NEW directory; restore from a saved directory.
         // Raw adapters may silence/reset during restore. Graph-pooled instruments instead
         // prepare/select a spare; state export still snapshots the selected channel-0 instance.

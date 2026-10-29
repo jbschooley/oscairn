@@ -312,6 +312,32 @@ struct Host::Impl {
         carryCount = 0;
         ++metadataVersion;
     }
+    void initialize(double sampleRate,uint32_t frames,const std::vector<uint8_t>& bytes) {
+        auto& s=*this;
+        if (!s.plugin || !s.plugin->init || !s.plugin->destroy || !s.plugin->activate || !s.plugin->deactivate ||
+            !s.plugin->start_processing || !s.plugin->stop_processing || !s.plugin->reset ||
+            !s.plugin->process || !s.plugin->get_extension || !s.plugin->on_main_thread)
+            throw std::runtime_error("Incomplete CLAP plugin interface");
+        if (!s.plugin->init(s.plugin)) throw std::runtime_error("Plugin initialization failed");
+        s.params = static_cast<const clap_plugin_params_t*>(s.plugin->get_extension(s.plugin, CLAP_EXT_PARAMS));
+        if (s.params && (!s.params->count || !s.params->get_info || !s.params->get_value || !s.params->flush))
+            throw std::runtime_error("Incomplete CLAP parameter interface");
+        s.sounds = static_cast<const oscairn_plugin_sound_contexts_t*>(s.plugin->get_extension(s.plugin,OSCAIRN_EXT_SOUND_CONTEXTS));
+        if(s.sounds && (!s.sounds->capacity || !s.sounds->get || !s.sounds->prepare || !s.sounds->select || !s.sounds->discard || s.sounds->capacity(s.plugin)>256))
+            throw std::runtime_error("Invalid sound-context interface");
+        s.state = static_cast<const clap_plugin_state_t*>(s.plugin->get_extension(s.plugin, CLAP_EXT_STATE));
+        s.pluginLatency = static_cast<const clap_plugin_latency_t*>(s.plugin->get_extension(s.plugin, CLAP_EXT_LATENCY));
+        s.timerSupport = static_cast<const clap_plugin_timer_support_t*>(s.plugin->get_extension(s.plugin, CLAP_EXT_TIMER_SUPPORT));
+        s.fdSupport = static_cast<const clap_plugin_posix_fd_support_t*>(s.plugin->get_extension(s.plugin, CLAP_EXT_POSIX_FD_SUPPORT));
+        if (!bytes.empty()) {
+            if (bytes.size() > maxStateBytes || !s.state || !s.state->load) throw std::runtime_error("Plugin cannot restore saved state");
+            Stream stream; stream.bytes = bytes;
+            clap_istream_t input{&stream, Stream::read};
+            if (!s.state->load(s.plugin, &input)) throw std::runtime_error("Plugin rejected saved state");
+        }
+        s.sampleRate = sampleRate; s.maxFrames = frames;
+        s.activate(); s.loaded.store(true); s.dirty.store(false);
+    }
     void readParameters() {
         struct Item { Parameter info; void* cookie; double value; };
         std::vector<Item> items;
@@ -557,33 +583,32 @@ bool Host::load(const Descriptor& descriptor, double sampleRate, uint32_t frames
         if (!chosen) throw std::runtime_error("Saved plugin ID is absent from this binary");
         s.info = detail::describe(s.library->path, *chosen);
         s.plugin = factory->create_plugin(factory, &s.host, chosen->id);
-        if (!s.plugin || !s.plugin->init || !s.plugin->destroy || !s.plugin->activate || !s.plugin->deactivate ||
-            !s.plugin->start_processing || !s.plugin->stop_processing || !s.plugin->reset ||
-            !s.plugin->process || !s.plugin->get_extension || !s.plugin->on_main_thread)
-            throw std::runtime_error("Incomplete CLAP plugin interface");
-        if (!s.plugin->init(s.plugin)) throw std::runtime_error("Plugin initialization failed");
-        s.params = static_cast<const clap_plugin_params_t*>(s.plugin->get_extension(s.plugin, CLAP_EXT_PARAMS));
-        if (s.params && (!s.params->count || !s.params->get_info || !s.params->get_value || !s.params->flush))
-            throw std::runtime_error("Incomplete CLAP parameter interface");
-        s.sounds = static_cast<const oscairn_plugin_sound_contexts_t*>(s.plugin->get_extension(s.plugin,OSCAIRN_EXT_SOUND_CONTEXTS));
-        if(s.sounds && (!s.sounds->capacity || !s.sounds->get || !s.sounds->prepare || !s.sounds->select || !s.sounds->discard || s.sounds->capacity(s.plugin)>256))
-            throw std::runtime_error("Invalid sound-context interface");
-        s.state = static_cast<const clap_plugin_state_t*>(s.plugin->get_extension(s.plugin, CLAP_EXT_STATE));
-        s.pluginLatency = static_cast<const clap_plugin_latency_t*>(s.plugin->get_extension(s.plugin, CLAP_EXT_LATENCY));
-        s.timerSupport = static_cast<const clap_plugin_timer_support_t*>(s.plugin->get_extension(s.plugin, CLAP_EXT_TIMER_SUPPORT));
-        s.fdSupport = static_cast<const clap_plugin_posix_fd_support_t*>(s.plugin->get_extension(s.plugin, CLAP_EXT_POSIX_FD_SUPPORT));
-        if (!bytes.empty()) {
-            if (bytes.size() > maxStateBytes || !s.state || !s.state->load) throw std::runtime_error("Plugin cannot restore saved state");
-            Stream stream; stream.bytes = bytes;
-            clap_istream_t input{&stream, Stream::read};
-            if (!s.state->load(s.plugin, &input)) throw std::runtime_error("Plugin rejected saved state");
-        }
-        s.sampleRate = sampleRate; s.maxFrames = frames;
-        s.activate(); s.loaded.store(true); s.dirty.store(false);
+        s.initialize(sampleRate,frames,bytes);
         return true;
     } catch (const std::exception& e) { s.message = e.what(); }
       catch (...) { s.message = "Plugin threw during initialization"; }
     s.close(); s.failed.store(true); return false;
+}
+bool Host::loadEffectContext(const Host& source) {
+    auto& s=*impl;const auto& parent=*source.impl;
+    if(this==&source || !s.main() || !parent.plugin || !parent.loaded.load())return false;
+    Gate guard(s.gate);s.close();s.message.clear();
+    try {
+        const auto* ext=static_cast<const oscairn_plugin_effect_contexts_t*>(parent.plugin->get_extension(parent.plugin,OSCAIRN_EXT_EFFECT_CONTEXTS));
+        if(!ext || !ext->create || !ext->resources)throw std::runtime_error("Plugin has no native effect contexts");
+        s.library=parent.library;s.info=parent.info;
+        s.plugin=ext->create(parent.plugin,&s.host);
+        if(!s.plugin)throw std::runtime_error("Effect context capacity exhausted");
+        s.initialize(parent.sampleRate,parent.maxFrames,{});
+        return true;
+    } catch(const std::exception& e){s.message=e.what();}
+      catch(...){s.message="Plugin threw preparing an effect context";}
+    s.close();s.failed.store(true);return false;
+}
+bool Host::effectResources(oscairn_effect_resources_t& result) const {
+    if(!impl->plugin)return false;
+    const auto* ext=static_cast<const oscairn_plugin_effect_contexts_t*>(impl->plugin->get_extension(impl->plugin,OSCAIRN_EXT_EFFECT_CONTEXTS));
+    return ext && ext->resources && ext->resources(impl->plugin,&result);
 }
 void Host::unload() { auto& s = *impl; if (!s.main()) return; Gate guard(s.gate); s.close(); }
 bool Host::reconfigure(double rate, uint32_t frames) {

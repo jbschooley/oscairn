@@ -258,6 +258,14 @@ namespace oscairn
     Control::TransportState RemoteControl::transportState()const{return impl_->transport;}
     NodeId RemoteControl::add(const std::string& name,const std::string& path,const std::string& plugin)
     {auto doc=impl_->call("graph.add","{\"name\":"+quote(name)+",\"path\":"+quote(path)+",\"pluginId\":"+quote(plugin)+'}');const auto id=static_cast<NodeId>(integer(field(field(doc.get(),"result"),"node")));impl_->refresh();return id;}
+    NodeId RemoteControl::addEffectContext(const std::string& name,NodeId source)
+    {auto doc=impl_->call("effects.create","{\"name\":"+quote(name)+",\"source\":"+std::to_string(source)+'}');const auto id=static_cast<NodeId>(integer(field(field(doc.get(),"result"),"node")));impl_->refresh();return id;}
+    std::optional<oscairn_effect_resources_t> RemoteControl::effectResources(NodeId n) const
+    {
+        auto doc=impl_->call("effects.resources","{\"node\":"+std::to_string(n)+'}');const auto* r=field(doc.get(),"result");
+        if(r->type==json_type_null)return {};
+        return oscairn_effect_resources_t{integer(field(r,"sharedBytes")),integer(field(r,"contextBytes")),static_cast<uint32_t>(integer(field(r,"capacity"))),static_cast<uint32_t>(integer(field(r,"prepared"))),boolean(field(r,"tailActive"))};
+    }
     void RemoteControl::replace(NodeId n,const std::string& path,const std::string& plugin,const std::string& preset)
     {impl_->call("graph.replace","{\"node\":"+std::to_string(n)+",\"path\":"+quote(path)+",\"pluginId\":"+quote(plugin)+",\"preset\":"+quote(preset)+'}',30000);impl_->refresh();}
     void RemoteControl::remove(NodeId n){impl_->call("graph.remove","{\"node\":"+std::to_string(n)+'}');impl_->refresh();}

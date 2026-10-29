@@ -43,10 +43,11 @@ namespace
 
     // Stable parameter IDs are the table index + 1.
     struct Parameter { const char* name; double maximum, initial; const char* unit; bool stepped=false; };
-    constexpr std::array<Parameter,7> parameters{{
+    constexpr std::array<Parameter,8> parameters{{
         {"Brightness",1,1,"%"}, {"Level",1,1,"%"}, {"Pressure",1,.5,"%"},
         {"Oscillator",2,0,"",true}, {"Detune",50,7,"cents"},
-        {"Pitch LFO rate",40,0,"Hz"}, {"Pitch LFO depth",200,0,"cents"}
+        {"Pitch LFO rate",40,0,"Hz"}, {"Pitch LFO depth",200,0,"cents"},
+        {"Output bus",8,0,"",true}
     }};
     constexpr auto defaults=[] {std::array<double,parameters.size()> v{};for(size_t i=0;i<v.size();++i)v[i]=parameters[i].initial;return v;}();
     constexpr std::array<const char*,3> oscillators{"Saw","Detuned saws","Square"};
@@ -62,7 +63,7 @@ namespace
     struct Voice
     {
         bool     active   = false, held = false;
-        uint32_t context = 0;
+        uint32_t context = 0, outputBus = 0;
         int32_t noteId = -1;
         Stage    stage    = Stage::Attack;
         int16_t  key      = 0;
@@ -160,7 +161,7 @@ namespace
         voice->active=voice->held=true;voice->key=note.key;voice->channel=note.channel;voice->noteId=note.note_id;
         voice->context=s.selected[note.channel];voice->velocity=note.velocity;
         voice->increment=440.0*std::pow(2.0,(note.key-69)/12.0)/s.sampleRate;voice->started=++s.notesStarted;
-        auto& c=s.contexts[voice->context];c.users.fetch_add(1,std::memory_order_relaxed);c.voices.fetch_add(1,std::memory_order_relaxed);
+        auto& c=s.contexts[voice->context];voice->outputBus=static_cast<uint32_t>(c.values[7]);c.users.fetch_add(1,std::memory_order_relaxed);c.voices.fetch_add(1,std::memory_order_relaxed);
     }
     bool matches(const Voice& v,int32_t id,int16_t key,int16_t channel)
     {return v.active && (id<0 || v.noteId==id) && (key<0 || v.key==key) && (channel<0 || v.channel==channel);}
@@ -255,7 +256,7 @@ namespace
         s.selectionTail.store(tail,std::memory_order_release);
     }
 
-    void render( Synth& s, float* left, float* right, uint32_t from, uint32_t to )
+    void render( Synth& s, const clap_process_t* process, uint32_t from, uint32_t to )
     {
         // Snapshot only contexts pinned by active voices. After a voice finishes,
         // the control thread may reclaim its slot; the rest of this span uses copies.
@@ -271,7 +272,8 @@ namespace
         for( uint32_t i = from; i < to; ++i )
         {
             s.eventTime=i;
-            std::array<double,Synth::contextCapacity> mix{},levels{};
+            std::array<std::array<double,9>,Synth::contextCapacity> mix{};
+            std::array<double,Synth::contextCapacity> levels{};
             for( auto& v : s.voices )
             {
                 if( !v.active )
@@ -332,12 +334,13 @@ namespace
                 v.low1 += g * ( oscillator - v.low1 );
                 v.low2 += g * ( v.low1 - v.low2 );
 
-                mix[v.context] += v.low2 * v.level * v.velocity * 0.35;
+                mix[v.context][v.outputBus] += v.low2 * v.level * v.velocity * 0.35;
             }
-            double sum=0;for(size_t c=0;c<mix.size();++c)if(mix[c]!=0)sum+=std::tanh(mix[c]*levels[c]);
-            const auto sample=static_cast<float>(sum);
-            left[i]           = sample;
-            right[i]          = sample;
+            for(uint32_t bus=0;bus<std::min(9u,process->audio_outputs_count);++bus) {
+                double sum=0;for(size_t c=0;c<mix.size();++c)if(mix[c][bus]!=0)sum+=std::tanh(mix[c][bus]*levels[c]);
+                auto& out=process->audio_outputs[bus];
+                if(out.channel_count>=2 && out.data32 && out.data32[0] && out.data32[1])out.data32[0][i]=out.data32[1][i]=static_cast<float>(sum);
+            }
         }
     }
 
@@ -346,8 +349,6 @@ namespace
         auto& s = self( p );
         if( process->audio_outputs_count < 1 || process->audio_outputs[0].channel_count < 2 )
             return CLAP_PROCESS_ERROR;
-        float* left  = process->audio_outputs[0].data32[0];
-        float* right = process->audio_outputs[0].data32[1];
 
         s.output=process->out_events;s.eventTime=0;
         struct ClearOutput {Synth& s;~ClearOutput(){s.output=nullptr;}} clearOutput{s};
@@ -363,7 +364,7 @@ namespace
             const uint32_t at = header->time < frames ? header->time : frames;
             if( at > done )
             {
-                render( s, left, right, done, at );
+                render( s, process, done, at );
                 done = at;
             }
             s.eventTime=at;
@@ -381,25 +382,26 @@ namespace
             else if( header->type == CLAP_EVENT_NOTE_EXPRESSION )
                 applyExpression( s, *reinterpret_cast<const clap_event_note_expression_t*>( header ) );
         }
-        render( s, left, right, done, frames );
+        render( s, process, done, frames );
         return CLAP_PROCESS_CONTINUE;
     }
 
     uint32_t audioPortsCount( const clap_plugin_t*, bool isInput )
     {
-        return isInput ? 0 : 1;
+        return isInput ? 0 : 9;
     }
 
     bool audioPortsGet( const clap_plugin_t*, uint32_t index, bool isInput, clap_audio_port_info_t* info )
     {
-        if( isInput || index != 0 )
+        if( isInput || index > 8 )
             return false;
-        info->id            = 0;
-        info->flags         = CLAP_AUDIO_PORT_IS_MAIN;
+        info->id            = index;
+        info->flags         = index==0?CLAP_AUDIO_PORT_IS_MAIN:0;
         info->channel_count = 2;
         info->port_type     = CLAP_PORT_STEREO;
         info->in_place_pair = CLAP_INVALID_ID;
-        std::snprintf( info->name, sizeof( info->name ), "%s", "Output" );
+        if(index==0)std::snprintf(info->name,sizeof(info->name),"Main");
+        else std::snprintf(info->name,sizeof(info->name),"Sound bus %u",index);
         return true;
     }
 

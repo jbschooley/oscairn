@@ -290,9 +290,9 @@ layers and transitions, not six independently initialised organs.
   channel selection and note ownership through the control API ([RFC 0005](rfcs/0005-sound-contexts.md)). Ordinary CLAP/LV2 instruments now use a bounded prepared-instance pool.
   It preserves note ownership, channel parts and state/preset preparation; processed instances
   keep rendering until explicit retirement because arbitrary plugin tail completion is unknown.
-  Native effect-context transitions and asset-bearing native patches remain to do.
-  [RFC 0007](rfcs/0007-effect-contexts.md) specifies independent logical effect contexts
-  sharing native engine resources, per-sound audio outputs and preserved outgoing chains.
+  Native Delay contexts and Basic Synth output buses now support independent chains with
+  held-note routing and outgoing tails through explicit graph edits ([RFC 0007](rfcs/0007-effect-contexts.md)).
+  Automatic chain preparation/retirement, asset-bearing native patches and persistence remain to do.
 - Changing setlists keeps resources common to both, prepares missing ones in the
   background and releases the rest when safe.
 

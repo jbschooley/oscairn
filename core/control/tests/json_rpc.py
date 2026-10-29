@@ -101,7 +101,7 @@ try:
     raw('!render')
     assert rpc('transport.get')['result']['tempo'] == 120  # rejected transport list changed nothing
     meta = rpc('params.list', {'node': 'synth'})['result']
-    assert meta['node'] == 1 and len(meta['parameters']) == 7
+    assert meta['node'] == 1 and len(meta['parameters']) == 8
     assert meta['parameters'][2]['name'] == 'Pressure' and meta['parameters'][2]['defaultValue'] == 0.5
     assert rpc('params.text', {'node': 1, 'param': 3, 'value': 0.5})['result']['text'] == '50%'
     original = value(1)
@@ -182,6 +182,18 @@ try:
     error(rpc('graph.add', {'path': '/missing/no-plugin.clap'}), -32004)
     error(rpc('graph.add', {'path': sys.argv[2], 'name': 'synth'}), -32602)
     delay = rpc('graph.add', {'path': sys.argv[3], 'name': 'delay'})['result']['node']
+    assert 'effects.create' in hello['capabilities']
+    assert rpc('effects.resources', {'node':'synth'})['result'] is None
+    error(rpc('effects.create', {'source':'synth'}), -32004)
+    sibling = rpc('effects.create', {'source':delay, 'name':'sibling'})['result']['node']
+    resources = rpc('effects.resources', {'node':sibling})['result']
+    assert resources['prepared'] == 2 and resources['contextBytes'] >= 768008
+    assert resources['capacity'] == 16 and resources['tailActive'] is False
+    assert rpc('state.info', {'node':sibling})['result']['supported']
+    error(rpc('effects.create', {'source':delay, 'name':'sibling'}), -32602)
+    error(rpc('effects.resources', {'node':delay, 'junk':1}), -32602)
+    rpc('graph.remove', {'node':sibling})
+
     assert rpc('graph.get')['result']['staged']
     assert 'result' in rpc('graph.connect', {'kind': 'audio', 'from': 1, 'to': delay})
     assert 'result' in rpc('graph.connect', {'kind': 'audio', 'from': delay, 'to': delay})

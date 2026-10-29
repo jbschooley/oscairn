@@ -84,6 +84,8 @@ namespace oscairn
 
         virtual GraphState graphState() const = 0;
         virtual NodeId add( const std::string& name, const std::string& path, const std::string& pluginId = {} ) = 0;
+        virtual NodeId addEffectContext(const std::string& name,NodeId source) = 0;
+        virtual std::optional<oscairn_effect_resources_t> effectResources(NodeId node) const = 0;
         virtual void replace(NodeId node,const std::string& path,const std::string& pluginId,const std::string& preset = {}) = 0;
         virtual void remove( NodeId node ) = 0;
         virtual void connectAudio( NodeId from, NodeId to ) = 0;

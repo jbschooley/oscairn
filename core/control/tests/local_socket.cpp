@@ -268,6 +268,19 @@ namespace
         for(int i=0;i<10;++i)f.tick();
         check(f.left[0]>.62f,"typed remote client exit leaves audio running");
     }
+    void effectClient(const char* synth,const char* delay)
+    {
+        Fixture f(synth);auto fd=pair();f.server.adopt(fd[0]);
+        clientWhileRendering(f,[&]{
+            LocalClient client;client.adopt(fd[1]);RemoteControl remote(client);
+            check(!remote.effectResources(remote.nodeId("synth")),"unsupported resources cross socket");
+            const auto first=remote.add("delay",delay),second=remote.addEffectContext("second",first);
+            remote.connectAudio(remote.nodeId("synth"),first);remote.connectAudio(first,second);remote.connectAudio(second,graphOutput);remote.commit();
+            const auto r=remote.effectResources(second);check(r && r->prepared==2 && r->capacity==16,"remote shared engine accounting");
+            check(remote.setParameter(second,2,.7),"remote independent parameters");
+            remote.remove(first);remote.commit();check(remote.hasNode(second),"remote child survives parent removal");
+        });
+    }
     void soundClient(const char* plugin)
     {
         Fixture f(plugin);auto fd=pair();f.server.adopt(fd[0]);
@@ -398,6 +411,7 @@ int main(int argc,char** argv)
         }
         if(argc==3 && std::string_view(argv[2])=="--properties"){propertyClient(argv[1]);return 0;}
         if(argc==3 && std::string_view(argv[2])=="--instances"){instanceClient(argv[1]);return 0;}
+        if(argc==4 && std::string_view(argv[2])=="--effects"){effectClient(argv[1],argv[3]);return 0;}
         if(argc==3 && std::string_view(argv[2])=="--sounds"){soundClient(argv[1]);return 0;}
         if(argc==3 && std::string_view(argv[2])=="--path-policy"){pathPolicy(argv[1]);return 0;}
         if(argc==3 && std::string_view(argv[2])=="--named")return named(argv[1],argv[0]);

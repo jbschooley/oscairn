@@ -74,6 +74,7 @@ namespace oscairn
         /// Validates and commits replacement atomically; failure preserves the current graph.
         void replace(NodeId node,const std::string& path,const std::string& pluginId,const std::string& preset = {});
         void   remove( NodeId node );
+        NodeId addEffectContext(NodeId source);
 
         /// Connections take effect at the next commit(). Throw std::invalid_argument if
         /// the source cannot send or the destination cannot receive that kind of signal.

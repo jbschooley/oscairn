@@ -162,7 +162,7 @@ namespace oscairn
             if( method == "session.hello" )
             {
                 fields(p, {});
-                return R"({"protocolVersion":1,"server":"oscairn","capabilities":["state.info","state.save","presets.list","properties.list","properties.get","properties.set","properties.request","sounds.get","sounds.prepare","sounds.select","sounds.discard","session.status","params.list","params.get","params.set","params.text","params.gesture","graph.audio-routing","graph.get","graph.add","graph.remove","graph.replace","graph.connect","graph.disconnect","graph.map","graph.unmap","graph.commit","subscribe","unsubscribe","transport.get","transport.set","notes.send"],"limits":{"messageBytes":65536,"depth":32,"batch":64,"parameterChanges":128}})";
+                return R"({"protocolVersion":1,"server":"oscairn","capabilities":["state.info","state.save","presets.list","properties.list","properties.get","properties.set","properties.request","sounds.get","sounds.prepare","sounds.select","sounds.discard","session.status","params.list","params.get","params.set","params.text","params.gesture","graph.audio-routing","graph.get","graph.add","effects.create","effects.resources","graph.remove","graph.replace","graph.connect","graph.disconnect","graph.map","graph.unmap","graph.commit","subscribe","unsubscribe","transport.get","transport.set","notes.send"],"limits":{"messageBytes":65536,"depth":32,"batch":64,"parameterChanges":128}})";
             }
             if( method == "subscribe" || method == "unsubscribe" )
             {
@@ -265,6 +265,16 @@ namespace oscairn
                     ",\"input\":" + std::to_string(graphInput) + ",\"output\":" + std::to_string(graphOutput) +
                     ",\"audioInputs\":"+ports(graph.topology.audioLayout.inputs)+",\"audioOutputs\":"+ports(graph.topology.audioLayout.outputs)+
                     ",\"nodes\":" + join(nodes) + ",\"connections\":" + join(connections) + ",\"mappings\":" + join(mappings) + '}';
+            }
+            if(method=="effects.create") {
+                fields(p,{"name","source"});
+                try{return "{\"node\":"+std::to_string(c.addEffectContext(member(p,"name")?std::string(string(member(p,"name"))):"",node(c,member(p,"source"))))+'}';}
+                catch(const std::runtime_error& e){throw Failure{-32004,e.what()};}
+            }
+            if(method=="effects.resources") {
+                fields(p,{"node"});const auto r=c.effectResources(node(c,member(p,"node")));
+                if(!r)return "null";
+                return "{\"sharedBytes\":"+std::to_string(r->shared_bytes)+",\"contextBytes\":"+std::to_string(r->context_bytes)+",\"capacity\":"+std::to_string(r->capacity)+",\"prepared\":"+std::to_string(r->prepared)+",\"tailActive\":"+(r->tail_active?"true":"false")+'}';
             }
             if( method == "graph.add" )
             {

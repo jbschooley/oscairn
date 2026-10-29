@@ -26,6 +26,17 @@ namespace oscairn
         return id;
     }
 
+    NodeId Session::addEffectContext(const std::string& name,NodeId source)
+    {
+        if( !name.empty() && std::any_of(nodes_.begin(),nodes_.end(),[&](const auto& n){ return n.second == name; }) )
+            throw std::invalid_argument( "duplicate node name: " + name );
+        const auto id = graph_.addEffectContext(source);
+        nodes_.emplace( id, name );
+        for( const auto& p : graph_.host(id).parameters() ) observed_[{id,p.id}] = graph_.host(id).parameterValue(p.id);
+        staged_ = true;
+        return id;
+    }
+
     NodeId Session::nodeId( const std::string& name ) const
     {
         const auto it = std::find_if(nodes_.begin(),nodes_.end(),[&](const auto& n){ return !name.empty() && n.second == name; });

@@ -3,6 +3,7 @@
 
 #include <clap/clap.h>
 #include <oscairn-clap/sound-contexts.h>
+#include <oscairn-clap/effect-contexts.h>
 #include <array>
 #include <cstdint>
 #include <cstring>
@@ -84,6 +85,8 @@ public:
 
     bool load(const Descriptor&, double sampleRate, uint32_t maxFrames,
               const std::vector<uint8_t>& state = {});
+    bool loadEffectContext(const Host& source);
+    bool effectResources(oscairn_effect_resources_t&) const;
     void unload();
     bool reconfigure(double sampleRate, uint32_t maxFrames);
     // Main thread: reject later port ID/order/channel-count changes under the render gate.

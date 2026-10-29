@@ -81,3 +81,8 @@ if(UNIX AND OSCAIRN_LV2 AND OSCAIRN_LV2_SOURCE_DIR)
         "${PROJECT_BINARY_DIR}/core/lv2-host/tests/upstream sampler.lv2" --properties)
     set_tests_properties(control-remote-properties PROPERTIES TIMEOUT 30)
 endif()
+
+if(UNIX)
+    add_test(NAME control-native-effects COMMAND oscairn-local-socket-test $<TARGET_FILE:oscairn_basic_synth> --effects $<TARGET_FILE:oscairn_delay>)
+    set_tests_properties(control-native-effects PROPERTIES TIMEOUT 30)
+endif()

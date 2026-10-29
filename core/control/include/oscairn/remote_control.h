@@ -27,6 +27,8 @@ namespace oscairn
         GraphState graphState() const override;
         SessionStatus sessionStatus() const override;
         NodeId add(const std::string& name,const std::string& path,const std::string& pluginId = {}) override;
+        NodeId addEffectContext(const std::string& name,NodeId source) override;
+        std::optional<oscairn_effect_resources_t> effectResources(NodeId node) const override;
         void replace(NodeId node,const std::string& path,const std::string& pluginId,const std::string& preset = {}) override;
         void remove(NodeId node) override;
         void connectAudio(NodeId from,NodeId to) override;

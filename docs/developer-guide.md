@@ -122,7 +122,7 @@ and DSP history independent. Follow the exact threading, pinning, IDs and retire
 contract in [RFC 0005](rfcs/0005-sound-contexts.md) and its
 [C header](../core/clap-ext/include/oscairn-clap/sound-contexts.h). The extension is a draft,
 not a standard CLAP extension. Plugins must still behave normally in hosts that do not use it.
-Native effect-context transitions remain planned; the current Delay does not implement them.
+Native Delay now implements independent effect contexts; see [the contract below](#insert-chains-and-shared-effects).
 
 Ordinary instruments need no custom extension for the host pool. Today it supports
 instruments with note input, audio output, no audio input and no note/MIDI output. It has
@@ -291,11 +291,21 @@ in typed/JSON controls; the initial desktop browser exposes only the demo instru
 effect slots, not a general rack/routing editor.
 
 A shared effect instance processes the summed input with one setting/state. Two effect
-nodes with different settings are separate instances, even if both receive the same
+nodes with different settings need independent processing state, even if both receive the same
 instrument. Each needs its own mutable DSP state (delay/reverb buffers, envelopes, filter
 history); executable code and explicitly shared immutable resources may be shared.
-Native effect contexts are still planned, unlike the implemented native instrument
-contexts. They may reduce instance overhead, but cannot eliminate independent signal
-histories where the desired processing differs. The concrete native-effects milestone is
-specified in [RFC 0007](rfcs/0007-effect-contexts.md), including the per-sound audio outputs
-needed to give simultaneous sounds in one instrument different effect chains.
+Native Delay implements [effect-contexts.h](../core/clap-ext/include/oscairn-clap/effect-contexts.h).
+Create a sibling using `Control::addEffectContext(name, source)` / `effects.create`, then
+use ordinary graph routes, parameters and state saving. Each sibling is a distinct graph
+node and CLAP interface sharing native resources. Its engine/module survives removal of
+the originating node. Other plugins continue using separate instances unless they provide
+this extension. Explicit creation fails for unsupported plugins rather than claiming sharing.
+
+Basic Synth's Output bus parameter (ID 8) selects Main or bus 1–8 for new notes. Pass it
+in a prepared sound patch and route that port to its effect chain. Held voices retain
+that bus, and voices routed separately are absent from Main. Buses are persistent routing
+destinations; multiple sounds assigned the same bus intentionally share its chain.
+Keep old chains routed until their voices and effects finish. `effects.resources` reports
+Delay tail activity; removing a node deliberately cuts its tail. Automatic chain management
+and complete Performance persistence remain future work. [RFC 0007](rfcs/0007-effect-contexts.md)
+records measured costs and validation; sharing Delay saves essentially no history RAM.

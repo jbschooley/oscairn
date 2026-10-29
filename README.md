@@ -151,8 +151,9 @@ What is in place:
   parameters), Oscairn Basic Synth (saw, detuned saw pair or square oscillators, per-sound
   pitch LFO, Brightness, Level and Pressure parameters; aftertouch
   opens each voice's filter; prepared sound contexts preserve held notes across patch
-  changes, with independent channel parts) and Oscairn Delay (tempo-synced ping-pong, gliding when the
-  tempo changes).
+  changes, with independent channel parts and eight separate sound buses) and Oscairn Delay
+  (tempo-synced ping-pong with parameters/state, smooth tempo changes and independent
+  native effect contexts; [contract and measured costs](docs/rfcs/0007-effect-contexts.md)).
 - **Tests:** every sequencer note lands on its exact sample when processed in uneven blocks;
   rendering with 512- and 37-sample blocks gives byte-identical files; following a 140 BPM
   MIDI clock, steps land within 2 samples of their pulses; graph fan-out, summing, note

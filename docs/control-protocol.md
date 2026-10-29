@@ -487,3 +487,29 @@ This intentionally stops the replaced node's current voices/tails and discards i
 sounds; use `sounds.select` for seamless sound changes within an engine. Native plugin
 code still runs in the audio-engine process after loading: scanner isolation protects
 scanning, not a plugin that crashes or hangs during instantiation/processing.
+
+## Native effect contexts
+
+`effects.create` accepts `source` (existing node name/ID) and optional unique `name`,
+returning a new numeric `node`. It stages a separately addressable logical effect sharing
+that native engine. Use `graph.connect` and `graph.commit` normally; parameters, state and
+serial/parallel ordering use the ordinary node APIs. New contexts start with defaults,
+not a copy of the source patch. Unsupported plugins and exhausted engines return -32004.
+
+`effects.resources` accepts `node` and returns `null` for unsupported plugins, or
+`{sharedBytes, contextBytes, capacity, prepared, tailActive}`. Shared bytes count once per
+engine; context bytes count per logical effect. These plugin-owned figures exclude host
+and allocator overhead. `tailActive` is an independent telemetry snapshot, not permission
+to free a context still referenced by a render plan. Delay supports 16 contexts; preparation
+failure leaves existing audio intact. Removing the originating node does not remove siblings.
+
+To preserve a Delay tail, keep its output routed, disconnect its input after old notes
+finish, and continue rendering until `tailActive` is false. Then remove/commit. Removing
+a node intentionally cuts its tail. Graph ownership defers destruction until prior plans
+retire. Complete Performance persistence and automatic chain retirement remain planned.
+
+For Basic Synth, prepare patches with parameter 8 = output bus (0 = Main, 1–8 = separate
+stereo ports with matching IDs). Voices capture the bus at note-on through sustain/release;
+changing sounds or Output bus cannot move held notes. Routed voices are excluded from Main.
+Buses are permanent destinations, not sound-context IDs; assigning two sounds to one bus
+intentionally combines them before the effects. Allocate different buses for different chains.
