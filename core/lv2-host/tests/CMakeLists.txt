@@ -21,6 +21,11 @@ target_compile_options(oscairn-lv2-worker-test PRIVATE -Wall -Wextra)
 add_test(NAME lv2-worker COMMAND oscairn-lv2-worker-test)
 set_tests_properties(lv2-worker PROPERTIES TIMEOUT 30)
 
+# Opt-in invocations against separately installed production bundles, never fixtures.
+add_executable(oscairn-lv2-production-probe production/probe.cpp)
+target_link_libraries(oscairn-lv2-production-probe PRIVATE oscairn_engine)
+target_compile_options(oscairn-lv2-production-probe PRIVATE -Wall -Wextra)
+
 if(OSCAIRN_LV2_SOURCE_DIR)
     pkg_check_modules(SNDFILE REQUIRED IMPORTED_TARGET sndfile)
     pkg_check_modules(SAMPLERATE REQUIRED IMPORTED_TARGET samplerate)

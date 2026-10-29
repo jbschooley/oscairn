@@ -45,6 +45,40 @@ jobs:
       - name: Test
         run: ctest --test-dir build --output-on-failure
 
+      - name: Check out pinned MOD MDA sources
+        uses: actions/checkout@v4
+        with:
+          repository: mod-audio/mda-lv2
+          ref: b2df88cb28540856b7ec7d0210809efd7ca6bcd7
+          path: upstream-mod-mda
+
+      - name: Check out pinned MOD metadata
+        uses: actions/checkout@v4
+        with:
+          repository: mod-audio/mod-lv2-data
+          ref: 4d4fb43010296d1e672cc0759a4d1afdb7f02fe0
+          path: upstream-mod-data
+          sparse-checkout: |
+            plugins-fixed/mod-mda-JX10.lv2
+            plugins-fixed/mod-mda-DX10.lv2
+            plugins-fixed/mod-mda-EPiano.lv2
+            plugins-fixed/mod-mda-Ambience.lv2
+            plugins-fixed/mod-mda-DubDelay.lv2
+            plugins-fixed/mod-mda-Overdrive.lv2
+
+      - name: Build and test production MOD instruments and effects
+        run: |
+          python3 core/lv2-host/tests/production/build_mod_mda.py upstream-mod-mda build/production-lv2 --mod-data upstream-mod-data
+          python3 core/lv2-host/tests/production/run.py build/core/lv2-host/tests/oscairn-lv2-production-probe build/production-results --mod-root build/production-lv2 --renderer build/hosts/oscairn-render --sequencer build/plugins/oscairn-step-sequencer.clap
+
+      - name: Upload production test measurements
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-lv2-${{ matrix.os }}
+          path: build/production-results/results.json
+          if-no-files-found: ignore
+
   thread-sanitizer:
     runs-on: ubuntu-24.04
     steps:

@@ -152,6 +152,12 @@ These are explicit follow-up work, not broad LV2 compatibility claims.
 
 ## Verification
 
+[Production-plugin tests](tests/production/README.md) cover three MOD MDA instruments,
+three MOD MDA effects, ZamComp and three Guitarix effects through the normal adapter,
+plus mixed CLAP/LV2 chains. The report records exact builds, measurements and the
+x42 stereo EQ's current Atom-buffer incompatibility. CI repeats the six pinned MOD
+plugins on Linux and macOS; packaged-plugin tests are opt-in.
+
 `lv2-host` uses a real native bundle with Turtle metadata, an instrument/effect, an atom
 MIDI echo, transport telemetry and intentionally malformed output. It checks exact-sample
 notes/pressure/control edits, mixed CLAP/LV2 routing in both directions, parameter locks
