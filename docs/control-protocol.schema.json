@@ -1191,6 +1191,179 @@
             "params"
           ],
           "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
+              "const": "sounds.get"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "node": {
+                  "$ref": "#/$defs/Node"
+                }
+              },
+              "required": [
+                "node"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "params"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
+              "const": "sounds.prepare"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "node": {
+                  "$ref": "#/$defs/Node"
+                },
+                "name": {
+                  "type": "string",
+                  "maxLength": 63
+                },
+                "parameters": {
+                  "type": "array",
+                  "maxItems": 128,
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 4294967295
+                      },
+                      "value": {
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "value"
+                    ],
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "required": [
+                "node",
+                "name",
+                "parameters"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "params"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
+              "const": "sounds.select"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "node": {
+                  "$ref": "#/$defs/Node"
+                },
+                "context": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 4294967295
+                },
+                "channel": {
+                  "type": "integer",
+                  "minimum": -1,
+                  "maximum": 15
+                }
+              },
+              "required": [
+                "node",
+                "context"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "params"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
+              "const": "sounds.discard"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "node": {
+                  "$ref": "#/$defs/Node"
+                },
+                "context": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 4294967295
+                }
+              },
+              "required": [
+                "node",
+                "context"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "params"
+          ],
+          "additionalProperties": true
         }
       ]
     },
@@ -1236,6 +1409,12 @@
                 },
                 {
                   "$ref": "#/$defs/SessionStatus"
+                },
+                {
+                  "$ref": "#/$defs/SoundsResult"
+                },
+                {
+                  "$ref": "#/$defs/PreparedSound"
                 }
               ]
             }
@@ -1914,6 +2093,74 @@
         "audioInputs",
         "audioOutputs",
         "audioReady"
+      ],
+      "additionalProperties": false
+    },
+    "SoundsResult": {
+      "type": "object",
+      "properties": {
+        "capacity": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 256
+        },
+        "contexts": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 4294967295
+              },
+              "name": {
+                "type": "string",
+                "maxLength": 63
+              },
+              "selectedChannels": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 65535
+              },
+              "activeVoices": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 4294967295
+              },
+              "idle": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "selectedChannels",
+              "activeVoices",
+              "idle"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "capacity",
+        "contexts"
+      ],
+      "additionalProperties": false
+    },
+    "PreparedSound": {
+      "type": "object",
+      "properties": {
+        "context": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        }
+      },
+      "required": [
+        "context"
       ],
       "additionalProperties": false
     }

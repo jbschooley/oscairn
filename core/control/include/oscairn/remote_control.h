@@ -13,6 +13,10 @@ namespace oscairn
         explicit RemoteControl(LocalClient& client);
         ~RemoteControl() override;
         void service();
+        Sounds sounds(NodeId node) const override;
+        uint32_t prepareSound(NodeId node,const std::string& name,const std::vector<oscairn_sound_parameter_t>& parameters) override;
+        bool selectSound(NodeId node,uint32_t id,int16_t channel=-1) override;
+        bool discardSound(NodeId node,uint32_t id) override;
         GraphState graphState() const override;
         SessionStatus sessionStatus() const override;
         NodeId add(const std::string& name,const std::string& path,const std::string& pluginId = {}) override;

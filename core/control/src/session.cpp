@@ -132,6 +132,13 @@ namespace oscairn
         return {graph_.describe(),nodes_,revision_,staged_};
     }
 
+    Control::Sounds Session::sounds(NodeId node) const
+    {
+        const auto& host=graph_.host(node);Sounds result{host.soundContextCapacity(),{}};
+        for(const auto& c:host.soundContexts())result.contexts.push_back({c.id,c.name,c.selected_channels,c.active_voices,c.idle});
+        return result;
+    }
+
     Control::SessionStatus Session::sessionStatus() const
     {
         auto result = hostStatus_;

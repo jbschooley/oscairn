@@ -48,11 +48,11 @@ namespace oscairn
                     std::find( allowed.begin(), allowed.end(), view( e->name ) ) == allowed.end() )
                     invalid( "Unknown or duplicate parameter field" );
         }
-        std::vector<Value> array( Value v, size_t limit )
+        std::vector<Value> array( Value v, size_t limit, size_t minimum=1 )
         {
             if( !v || v->type != json_type_array ) invalid( "Expected an array" );
             const auto* a = static_cast<const json_array_s*>( v->payload );
-            if( a->length == 0 || a->length > limit ) invalid( "Array size outside permitted range" );
+            if( a->length < minimum || a->length > limit ) invalid( "Array size outside permitted range" );
             std::vector<Value> result;
             result.reserve( a->length );
             for( auto* e = a->start; e; e = e->next ) result.push_back( e->value );
@@ -161,7 +161,7 @@ namespace oscairn
             if( method == "session.hello" )
             {
                 fields(p, {});
-                return R"({"protocolVersion":1,"server":"oscairn","capabilities":["session.status","params.list","params.get","params.set","params.text","params.gesture","graph.audio-routing","graph.get","graph.add","graph.remove","graph.connect","graph.disconnect","graph.map","graph.unmap","graph.commit","subscribe","unsubscribe","transport.get","transport.set","notes.send"],"limits":{"messageBytes":65536,"depth":32,"batch":64,"parameterChanges":128}})";
+                return R"({"protocolVersion":1,"server":"oscairn","capabilities":["sounds.get","sounds.prepare","sounds.select","sounds.discard","session.status","params.list","params.get","params.set","params.text","params.gesture","graph.audio-routing","graph.get","graph.add","graph.remove","graph.connect","graph.disconnect","graph.map","graph.unmap","graph.commit","subscribe","unsubscribe","transport.get","transport.set","notes.send"],"limits":{"messageBytes":65536,"depth":32,"batch":64,"parameterChanges":128}})";
             }
             if( method == "subscribe" || method == "unsubscribe" )
             {
@@ -172,6 +172,30 @@ namespace oscairn
                     if( string(topic) != "params.changed" && string(topic) != "transport" && string(topic) != "graph.changed" && string(topic) != "status" )
                         invalid("Unknown subscription topic");
                 for( auto topic : topics ) client.subscription(string(topic),method == "subscribe",all);
+                return R"({"accepted":true})";
+            }
+            if(method=="sounds.get")
+            {
+                fields(p,{"node"});const auto s=c.sounds(node(c,member(p,"node")));
+                std::vector<std::string> contexts;for(const auto& v:s.contexts)contexts.push_back("{\"id\":"+std::to_string(v.id)+",\"name\":"+quote(v.name)+",\"selectedChannels\":"+std::to_string(v.selectedChannels)+",\"activeVoices\":"+std::to_string(v.activeVoices)+",\"idle\":"+(v.idle?"true":"false")+'}');
+                return "{\"capacity\":"+std::to_string(s.capacity)+",\"contexts\":"+join(contexts)+'}';
+            }
+            if(method=="sounds.prepare")
+            {
+                fields(p,{"node","name","parameters"});const auto n=node(c,member(p,"node"));
+                std::vector<oscairn_sound_parameter_t> patch;
+                for(auto v:array(member(p,"parameters"),128,0)){fields(v,{"id","value"});patch.push_back({integer(member(v,"id")),number(member(v,"value"))});}
+                try{return "{\"context\":"+std::to_string(c.prepareSound(n,std::string(string(member(p,"name"))),patch))+'}';}
+                catch(const std::runtime_error& e){throw Failure{-32005,e.what()};}
+            }
+            if(method=="sounds.select" || method=="sounds.discard")
+            {
+                if(method=="sounds.select")fields(p,{"node","context","channel"});else fields(p,{"node","context"});
+                const auto n=node(c,member(p,"node")),id=integer(member(p,"context"));
+                const double channel=member(p,"channel")?number(member(p,"channel")):-1;
+                if(channel < -1 || channel>15 || std::floor(channel)!=channel)invalid("Invalid sound channel");
+                if(!(method=="sounds.select"?c.selectSound(n,id,static_cast<int16_t>(channel)):c.discardSound(n,id)))
+                    throw Failure{-32005,"Context unknown, busy, or selection queue full"};
                 return R"({"accepted":true})";
             }
             if( method == "session.status" ) { fields(p,{}); return status(c); }

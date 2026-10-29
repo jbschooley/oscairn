@@ -44,6 +44,9 @@ namespace oscairn
             out           = kick::clap::Event::note( on, bytes[1], bytes[2] / 127.0, time, channel, port );
             return true;
         }
+        case 0xB0:
+            if(bytes[1]!=64 && bytes[1]!=120 && bytes[1]!=123)return false;
+            out=kick::clap::Event::midi(bytes[0],bytes[1],bytes[2],time,port);return true;
         case 0xA0: out = pressure( time, port, channel, bytes[1], bytes[2] ); return true;
         default: return false;
         }

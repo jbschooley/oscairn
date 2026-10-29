@@ -51,6 +51,10 @@ int main()
                && expression( e ).channel == 4 && std::abs( expression( e ).value - 64.0 / 127.0 ) < 1e-12,
            "channel aftertouch is pressure on every note of the channel" );
 
+    for(uint8_t cc:{64,120,123})
+        check(convert({0xb3,cc,127},e,9) && e.header()->type==CLAP_EVENT_MIDI && e.header()->time==9 &&
+            reinterpret_cast<const clap_event_midi_t*>(e.header())->data[1]==cc,"sustain and emergency releases pass through");
+
     kick::clap::Event untouched = kick::clap::Event::note( true, 1, 0.5 );
     e                           = untouched;
     check( !convert( { 0xB0, 1, 64 }, e ) && e.bytes == untouched.bytes, "controllers are not converted, and leave the event alone" );

@@ -211,8 +211,9 @@ layers and transitions, not six independently initialised organs.
 - State restore into an existing instance may pause/reset it and is explicitly separate
   from seamless sound switching. Prepare state on an unused context/instance first;
   only switch new-note routing when it is ready, and retire the outgoing context after
-  its voices and tails finish. The current basic synth and host do not yet implement
-  this complete context lifecycle or automatic note-ownership routing.
+  its voices and tails finish. The Basic Synth now implements native prepared contexts,
+  channel selection and note ownership through the control API ([RFC 0005](rfcs/0005-sound-contexts.md)). Third-party
+  instance pools, native effect-context transitions and asset-bearing patches remain to do.
 - Changing setlists keeps resources common to both, prepares missing ones in the
   background and releases the rest when safe.
 

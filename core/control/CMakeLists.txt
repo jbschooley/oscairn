@@ -58,3 +58,8 @@ if(UNIX)
     set_tests_properties(control-local-stream control-local-path-policy control-local-path PROPERTIES TIMEOUT 30)
     set_tests_properties(control-local-path PROPERTIES SKIP_RETURN_CODE 77)
 endif()
+
+if(UNIX)
+    add_test(NAME control-native-sounds COMMAND oscairn-local-socket-test $<TARGET_FILE:oscairn_basic_synth> --sounds)
+    set_tests_properties(control-native-sounds PROPERTIES TIMEOUT 30)
+endif()
