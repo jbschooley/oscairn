@@ -42,7 +42,7 @@ namespace oscairn
             uint64_t deadlineMisses = 0;
             std::vector<DeviceChannel> audioInputs, audioOutputs; // logical order -> device channel
             bool audioReady=true;
-            uint64_t graphEventDrops=0;
+            uint64_t graphEventDrops=0,midiEventDrops=0;
         };
         virtual SessionStatus sessionStatus() const = 0;
         struct GraphState

@@ -15,6 +15,7 @@ design decisions are recorded as [RFCs](rfcs/README.md).
 | Transport: internal tempo or external MIDI clock | Ableton Link, DAW and CV clock sync |
 | Parameter events between plugins (`oscairn.param-target`, [RFC 0002](rfcs/0002-param-target.md)) | Sounds, Performances, Setlists, Projects; file formats and library |
 | Step sequencer, basic synth and delay plugins | Scenes, persistent engines, crash recovery |
+| Basic Synth prepared sound contexts, channel parts and held-note ownership; typed/JSON/remote controls ([RFC 0005](rfcs/0005-sound-contexts.md), currently on the unmerged `native-sound-contexts` branch) | Third-party instance pools, native effect-context transitions, asset-bearing patches and sound-picker UI |
 | Offline renderer; desktop app with live audio, MIDI input and panel layouts | Hardware-services interface; the platform as a DAW plugin |
 | A Linux image (Buildroot) that boots into Oscairn, tested in QEMU | Images for real hardware |
 | | Packages: sound packs, libraries, installable plugins |
@@ -101,13 +102,36 @@ sub-graph node that the core still manages.
   own UI, or runs as a standalone app that owns the audio device through the hardware
   services layer, with an explicit mode switch.
 
+### Live note routes
+
+Each note connection has a bounded ownership ledger, shared by successive render plans.
+The graph assigns distinct destination note IDs and remaps releases, expression and
+explicit per-note parameter events. Removing a route or its source releases its voices
+when the new plan becomes active. Native CLAP destinations receive scoped chokes; their
+`NOTE_END` events reclaim ownership slots. CLAP wildcard addressing stays intact; only
+raw MIDI repeated presses use FIFO release. Pedal values pass through unchanged for plugin
+sustain/half-pedal handling. On route retirement, CC64 returns to the highest value remembered
+by the remaining routes on that port/channel (zero if none). Pedal control is channel-wide;
+individual native voices can still be choked by their route-owned IDs.
+
+There are 512 tracked voices per connection and 512 merged destination events per block.
+Exhaustion discards the burst and panics that destination, including sustain. The desktop
+also recovers from physical MIDI FIFO and callback-buffer overflow and reports
+`midiEventDrops`. A panic can cut other sources sharing that destination. Destination IDs
+are not reused during a graph's lifetime; exhausting the signed 31-bit ID range requires
+recreating the graph. MIDI-only destinations have no per-voice IDs: overlapping sources
+on the same channel/key and pedal cannot be isolated completely; use separate channels
+or instances where that distinction matters. Retiring a MIDI-only route sends All Sound Off
+on its owned channels, which can cut other routes sharing those channels.
+
 ### Parameter events between plugins
 
 One extension beyond standard CLAP is needed: a sequencer's per-step parameter locks and
 automation lanes must change parameters of *other* plugins. A plugin sends values on
 numbered lanes without knowing what they control; the graph maps each (plugin, lane) to a
 (target plugin, parameter) and delivers standard CLAP parameter events to the target in the
-same block, at the exact sample, before notes at that sample. See
+same block, at the exact sample. Global locks precede notes; explicit per-note locks
+follow same-sample notes after their destination IDs are assigned. See
 [RFC 0002](rfcs/0002-param-target.md). Built.
 
 ## Sounds, performances and projects

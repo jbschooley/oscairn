@@ -77,6 +77,7 @@ namespace oscairn
                     break;
                 if( pulses_ >= 0 )
                 {
+                    if( sampleTime <= lastPulseTime_ ) break;
                     intervals_[intervalNext_] = sampleTime - lastPulseTime_;
                     intervalNext_             = ( intervalNext_ + 1 ) % intervals_.size();
                     intervalCount_            = std::min( intervalCount_ + 1, intervals_.size() );

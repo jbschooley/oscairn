@@ -42,13 +42,19 @@ voice stealing policy applies across the instrument. Context preparation itself 
 steals a voice.
 
 A voice keeps its owning context, key, channel and CLAP note ID through a sound change.
-Explicit note IDs release or express their matching voices. Repeated ID-less presses of
-the same key/channel use oldest-held-first note-off ownership; wildcard releases apply
-to all matches. Key/channel pressure without note IDs applies to all matching voices,
+Explicit note IDs release or express their matching voices. CLAP `-1` fields always mean
+wildcards, including the note ID: a key-specific off with ID `-1` releases all matching
+CLAP voices. Only raw MIDI repeated presses use oldest-held-first release. A CLAP note-on
+with zero velocity remains a note-on. The graph assigns destination IDs per route so
+identical source IDs do not collide, and the synth emits `NOTE_END` when voices finish or
+are stolen. Key/channel pressure without note IDs applies to all matching voices,
 including outgoing contexts, because that input cannot distinguish individual presses.
-Sustain follows the MIDI channel across switches. CC64 releases pedal-held voices in
-outgoing contexts, CC120 stops that channel immediately, and wildcard emergency note-offs
-release all matching voices even with the pedal held. Release envelopes finish before
+Sustain follows the MIDI channel across switches; CC64 reaches the plugin unchanged.
+Disconnecting a native route chokes its owned voices, including sustained voices, then
+restores the highest CC64 value remembered by remaining routes on that port/channel.
+Other routes' held notes survive; channel-wide pedal changes can release their sustained
+tails if no remaining route owns a down pedal. CC120 stops the addressed channel; overflow recovery resets the affected
+destination and clears sustain. Release envelopes finish before
 an outgoing context becomes idle.
 
 Ordinary parameter events edit the contexts currently selected for their channel (all

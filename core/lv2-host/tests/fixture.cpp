@@ -11,6 +11,7 @@
 #include <lv2/worker/worker.h>
 #include <lv2/state/state.h>
 #include <algorithm>
+#include <limits>
 #include <array>
 #include <cstring>
 #include <string_view>
@@ -126,6 +127,8 @@ void run(LV2_Handle instance,uint32_t frames)
         out[3]=(s.ports[12] || s.ports[18])?1.f:0.f;
     }
     const auto mode=*static_cast<float*>(s.ports[8]);
+    if(mode==4 && frames)out[frames-1]=std::numeric_limits<float>::quiet_NaN();
+    if(mode==5 && frames)out[0]=std::numeric_limits<float>::infinity();
     if(mode==1)echo->atom.size=0xffffffff;
     else if(mode==2){echo->atom.size=sizeof(echo->body)+sizeof(LV2_Atom_Event);auto* e=lv2_atom_sequence_begin(&echo->body);e->body={0xffffffff,s.midi};}
     else if(mode==3 && echo->atom.size>sizeof(echo->body))lv2_atom_sequence_begin(&echo->body)->time.frames=frames;

@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <iostream>
 #include <limits>
 #include <new>
@@ -66,6 +67,27 @@ int main(int argc, char** argv) {
     check(second.loadState(saved), "restore on activated plugin");
     check(second.reconfigure(44100, 256), "sample-rate and buffer reconfiguration");
 
+    std::array<Event, Host::maxBlockEvents> fullBlock;
+    fullBlock.fill(Event::note(true, 60, 1));
+    check(second.setParameter(7, .35) && render(second, out, 128, fullBlock.data(), fullBlock.size()) && left[0] == .35f,
+          "a full graph block cannot starve queued controls");
+#ifndef _WIN32
+    auto blockProcess = reinterpret_cast<void(*)()>(dlsym(diagnostics, "fixture_block_process"));
+    auto enteredProcess = reinterpret_cast<bool(*)()>(dlsym(diagnostics, "fixture_entered_process"));
+    auto releaseProcess = reinterpret_cast<void(*)()>(dlsym(diagnostics, "fixture_release_process"));
+    check(blockProcess && enteredProcess && releaseProcess, "process barrier diagnostics");
+    check(second.setParameter(7, .2), "queue gain before concurrent save");
+    blockProcess();
+    std::thread blockedAudio([&] { render(second, out, 128); });
+    while (!enteredProcess()) std::this_thread::yield();
+    // The command has left the queue, but the fixture has not applied it yet.
+    std::thread releaseAudio([&] { std::this_thread::sleep_for(std::chrono::milliseconds(25)); releaseProcess(); });
+    const bool savedAfterProcessing = second.saveState(saved);
+    blockedAudio.join(); releaseAudio.join();
+    double savedGain=0; if(saved.size()==sizeof(savedGain))std::memcpy(&savedGain,saved.data(),sizeof(savedGain));
+    check(savedAfterProcessing && savedGain==.2, "save waits for dequeued commands to reach DSP");
+#endif
+
     // Buffers may alias when the host is an insert effect.
     check(h.load(catalog.plugins[1], 48000, 128), "load effect descriptor");
     left.fill(.4f); right.fill(-.8f);
@@ -75,6 +97,10 @@ int main(int argc, char** argv) {
     check(h.load(catalog.plugins[2], 48000, 128), "MIDI-only plugin");
     Event note = Event::note(true, 64, .8);
     check(render(h, out, 128, &note, 1) && left[0] == .5f, "native notes translated for MIDI-only ports");
+    for (const auto& off : {Event::note(false,64,0,0,-1,-1), Event::note(false,-1,0,0,0,0), Event::note(false,-1,0,0,-1,-1)}) {
+        check(render(h,out,128,&note,1) && left[0]==.5f,"MIDI-only held note");
+        check(render(h,out,128,&off,1) && left[0]==0,"wildcard release expands to legal MIDI on every addressed port/channel");
+    }
     check(h.setParameter(7, .95), "request restart parameter");
     check(render(h, out, 128), "plugin requests restart from processing");
     h.service();

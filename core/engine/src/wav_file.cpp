@@ -72,6 +72,7 @@ namespace oscairn
             throw std::runtime_error( "cannot write " + path.string() );
         file.write( reinterpret_cast<const char*>( header.data() ), (std::streamsize)header.size() );
         file.write( reinterpret_cast<const char*>( samples.data() ), (std::streamsize)samples.size() );
+        file.close();
         if( !file )
             throw std::runtime_error( "error writing " + path.string() );
     }

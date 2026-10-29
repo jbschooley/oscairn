@@ -61,6 +61,18 @@ void policy(const char* bundle)
               reinterpret_cast<const clap_event_note_t*>(output[count-1].header())->key==-1,"malformed MIDI output releases downstream voices even with no valid events");
     }
 }
+void nonfiniteAudio(const char* bundle)
+{
+    for(int mode:{4,5}) {
+        auto host=loadPlugin(bundle,"urn:oscairn:test:synth",48000,512);Audio audio;
+        check(host->setParameter(8,mode),"invalid audio mode");const auto note=Event::note(true,60,1);
+        check(!render(*host,audio,&note,1) && host->statistics().processErrors==1,"nonfinite audio faults instance");
+        for(int i=0;i<64;++i)check(audio.l[i]==0 && audio.r[i]==0,"whole failed block silenced");
+        uint32_t count=0;const auto* events=host->outputEvents(count);
+        check(count && events[count-1].header()->type==CLAP_EVENT_NOTE_OFF,"fault releases downstream notes");
+        check(!render(*host,audio),"fault persists on subsequent blocks");
+    }
+}
 void uridMapping()
 {
     lv2::Urids urids;
@@ -274,6 +286,6 @@ void control(const char* bundle)
 }
 int main(int argc,char** argv)
 {
-    try{if(argc!=4)return 2;uridMapping();policy(argv[1]);audit(argv[1]);atomBuffers(argv[1]);events(argv[1]);worker(argv[1]);graph(argv[1],argv[2],argv[3]);control(argv[1]);std::cout<<"ok: LV2 buffer limits, audit regressions, policy, MIDI/pressure/time, sample-accurate mixed graphs, control API and concurrent rendering\n";return 0;}
+    try{if(argc!=4)return 2;uridMapping();policy(argv[1]);nonfiniteAudio(argv[1]);audit(argv[1]);atomBuffers(argv[1]);events(argv[1]);worker(argv[1]);graph(argv[1],argv[2],argv[3]);control(argv[1]);std::cout<<"ok: LV2 buffer limits, audit regressions, policy, MIDI/pressure/time, sample-accurate mixed graphs, control API and concurrent rendering\n";return 0;}
     catch(const std::exception& e){forbidAllocation=false;std::cerr<<e.what()<<'\n';return 1;}
 }

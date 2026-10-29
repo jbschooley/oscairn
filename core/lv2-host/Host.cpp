@@ -609,6 +609,7 @@ public:
     }
     const std::vector<PortInfo>& inputPorts() const noexcept override{return inputs_;}
     const std::vector<PortInfo>& outputPorts() const noexcept override{return outputs_;}
+    void panic() noexcept override {resumePanic_=true;}
     uint32_t noteInputPorts() const noexcept override{return noteInputs_;}
     uint32_t noteOutputPorts() const noexcept override{return noteOutputs_;}
     double parameterValue(clap_id id) const noexcept override{return parameter(id)?values_[id].load():0;}
@@ -693,6 +694,9 @@ public:
             start=end;
         }
         silence();
+        for(const auto& p:ports_)if(p.kind==Kind::Audio && !p.input)
+            for(uint32_t i=0;i<frames;++i)if(!std::isfinite(p.audio[i]))
+            {faulted_=true;++errors_;emittedCount_=0;releaseOutputs();return false;}
         for(const auto& p:ports_)if(p.kind==Kind::Audio && !p.input && p.channel<no && outputs[p.channel])std::copy_n(p.audio.data(),frames,outputs[p.channel]);
         for(const auto& p:parameters_)if(p.flags&CLAP_PARAM_IS_READONLY)
         {const auto value=ports_[p.id].control;if(std::isfinite(value))values_[p.id].store(value);else ++errors_;}

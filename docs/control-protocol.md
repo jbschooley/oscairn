@@ -98,7 +98,7 @@ request members.
 | Method | `params` | `result` |
 | --- | --- | --- |
 | `session.hello` | omitted or `{}` | `protocolVersion`, `server`, supported methods and optional features in `capabilities`, `limits` |
-| `session.status` | omitted or `{}` | `audioDevice`, `midiInputs`, `sampleRate`, `bufferSize`, `cpuLoad`, `deadlineMisses`, `graphEventDrops`, `audioReady`, mapped `audioInputs`/`audioOutputs` |
+| `session.status` | omitted or `{}` | `audioDevice`, `midiInputs`, `sampleRate`, `bufferSize`, `cpuLoad`, `deadlineMisses`, `graphEventDrops`, `midiEventDrops`, `audioReady`, mapped `audioInputs`/`audioOutputs` |
 | `params.list` | `{"node":"synth"}` | numeric `node`, array `parameters` of `id`, `name`, `minimum`, `maximum`, `defaultValue`, `stepped`, CLAP `flags` |
 | `params.get` | `{"values":[{"node":"synth","param":3}]}` | `{"values":[{"node":1,"param":3,"value":0.5}]}` |
 | `params.set` | `{"values":[{"node":"synth","param":3,"value":0.7}]}` | same shape as `params.get`, with accepted plain values |
@@ -204,11 +204,13 @@ the first poll. Re-subscribing does not discard already unread changes.
   currently in the staging graph; it is not an audio-device underrun counter and may
   decrease when nodes are removed. Without device I/O, names are empty and the session
   reports its configured sample rate and maximum block size. `graphEventDrops` counts
-  destination events discarded by graph merge overflow. If a destination exceeds its
-  512-event budget, the graph discards that destination's entire burst and sends a wildcard
-  note release at sample zero across all its note ports/channels. This can release voices
+  destination events discarded by graph merge or note-ownership overflow. If a destination
+  exceeds its 512-event budget, the graph discards that destination's entire burst and
+  requests format-specific panic/reset, including sustain recovery. This can cut voices
   from other sources on that destination, but prevents a lost note-off leaving stuck notes.
-  The next block can accept new notes normally.
+  `midiEventDrops` counts physical MIDI FIFO rejections and note/pressure events discarded
+  during recovery from FIFO or 128-event callback-buffer overflow. Recovery discards the
+  burst and panics graph-input destinations. The next block accepts new notes normally.
 - `graph.changed` carries the latest committed `revision`. Several unseen commits can be
   represented by one notification; fetch `graph.get` to inspect the staging area.
 - `session.resync` with `topic: "params.changed"` signals a gap: the bounded 4,096-entry

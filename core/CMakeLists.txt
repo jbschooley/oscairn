@@ -115,3 +115,18 @@ target_include_directories(oscairn-sound-contexts-test PRIVATE clap-host/tests)
 add_dependencies(oscairn-sound-contexts-test oscairn_basic_synth)
 add_test(NAME sound-contexts COMMAND oscairn-sound-contexts-test $<TARGET_FILE:oscairn_basic_synth>)
 set_tests_properties(sound-contexts PROPERTIES TIMEOUT 30)
+
+add_executable(oscairn-note-routing-test engine/tests/note_routing.cpp)
+target_link_libraries(oscairn-note-routing-test PRIVATE oscairn_engine)
+target_include_directories(oscairn-note-routing-test PRIVATE clap-host/tests)
+add_test(NAME note-routing COMMAND oscairn-note-routing-test $<TARGET_FILE:oscairn_basic_synth> $<TARGET_FILE:oscairn-lifecycle-fixture> $<TARGET_FILE:kick-clap-fixture-normal>)
+set_tests_properties(note-routing PROPERTIES TIMEOUT 30)
+
+add_executable(oscairn-write-failure-test engine/tests/write_failure.cpp)
+target_link_libraries(oscairn-write-failure-test PRIVATE oscairn_engine)
+add_test(NAME write-failure COMMAND oscairn-write-failure-test)
+
+find_package(Python3 COMPONENTS Interpreter QUIET)
+if(Python3_Interpreter_FOUND)
+    add_test(NAME session-service-stop COMMAND "${Python3_EXECUTABLE}" "${PROJECT_SOURCE_DIR}/os/scripts/test_session_stop.py")
+endif()

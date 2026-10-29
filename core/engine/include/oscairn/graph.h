@@ -14,6 +14,7 @@
 
 namespace oscairn
 {
+    struct NoteRoute;
     using NodeId = uint32_t;
 
     /// The graph's own endpoints: external audio and note events (keyboard, pads, MIDI) enter
@@ -87,7 +88,8 @@ namespace oscairn
         /// Routes a plugin's oscairn.param-target lane (oscairn-clap/param-target.h) to a
         /// parameter of another node, replacing any earlier mapping of that lane. The target
         /// is processed after the source, and the lane's events reach it in the same block
-        /// as standard CLAP parameter events, before notes at the same sample. Takes effect
+        /// as standard CLAP parameter events: global locks before notes, explicit per-note locks
+        /// after notes at the same sample (through the corresponding note connection). Takes effect
         /// at the next commit(). Throws std::invalid_argument for unknown nodes, a parameter
         /// the target does not have or cannot change, or source == target.
         void mapParamTarget( NodeId source, uint32_t lane, NodeId target, clap_id param );
@@ -142,6 +144,7 @@ namespace oscairn
                       float* const* outputs, uint32_t outputChannels, uint32_t frames,
                       const clap_event_transport_t* transport,
                       const kick::clap::Event* events = nullptr, uint32_t eventCount = 0 ) noexcept;
+        void panicInput() noexcept { panicInput_=true; } // audio thread only
         uint32_t inputChannels() const noexcept { return inputChannels_; }
         uint32_t outputChannels() const noexcept { return outputChannels_; }
 
@@ -185,10 +188,13 @@ namespace oscairn
         NodeId   nextId_ = 1;
 
         std::map<NodeId, Node>                nodes_;
-        std::vector<std::pair<NodeId, NodeId>> noteEdges_;
+        std::map<std::pair<NodeId, NodeId>,std::shared_ptr<NoteRoute>> noteEdges_;
+        // shortcut: after 2^31 notes recreate the graph; add safe ID recycling for longer lifetimes.
+        uint32_t nextNoteId_=0; // audio thread; IDs are never reused within this graph
         std::map<std::pair<NodeId, uint32_t>, std::pair<NodeId, clap_id>> paramTargets_; // (source, lane) -> (target, param)
 
         std::atomic<Plan*> pending_{ nullptr };
+        bool panicInput_=false;
         Plan*              current_ = nullptr; // audio thread only
         Retired            retired_;
     };

@@ -25,12 +25,15 @@ A small CLAP extension, defined in `core/clap-ext/include/oscairn-clap/param-tar
   to the target's plain values (rounding stepped parameters).
 - **Standard CLAP events at the target.** The host turns each lane event into a
   `CLAP_EVENT_PARAM_VALUE` (SET) or `CLAP_EVENT_PARAM_MOD` (MODULATE) for the target, at the
-  same sample, with the note, port, channel and key fields copied over. Target plugins need
+  same sample, with port, channel and key fields copied over. An explicit note ID is
+  remapped through the source-to-target note connection; without that connection the
+  per-note lane event is dropped and counted. Target plugins need
   no knowledge of the extension.
-- **Same block, before notes.** A mapping is a dependency: the target is processed after
+- **Same block, sample ordered.** A mapping is a dependency: the target is processed after
   the source in every block, so the converted events arrive in the block they were sent, at
-  their exact sample. They are ordered before notes at the same sample, so a step's lock
-  applies to that step's note.
+  their exact sample. Global/channel/key locks are ordered before notes at the same sample,
+  so a step's lock applies to that step's note. Explicit per-note events follow same-sample
+  notes so the destination ID exists before the event is delivered.
 - **Discovered through CLAP's own mechanisms.** The event space is obtained with the stable
   `clap.event-registry` extension (name `oscairn.param-target`); the Oscairn host returns
   space 1000. A host that does not know it returns false and the plugin sends nothing.
@@ -55,7 +58,8 @@ is held is exactly its gain. Every step's output equals that step's lock value f
 step's first sample, with 256- and 37-sample blocks; without the mapping the gain stays at
 its default.
 
-Not yet verified by a test: the ordering before notes at the same sample (the test
+`note-routing` checks explicit per-note lane ID remapping and ordering after same-sample
+notes. Not yet verified by a test: the ordering of global locks before notes at the same sample (the test
 instruments read parameters every sample, so the order does not change their output), and
 the `MODULATE` path (no first-party plugin sends it yet).
 

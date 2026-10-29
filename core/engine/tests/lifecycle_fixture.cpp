@@ -19,6 +19,7 @@ namespace
         clap_plugin_t api{};
         std::atomic<double> value{0.5};
         bool gate = false;
+        int32_t lastNoteId=-1;
         const clap_host_t* host;
         uint16_t laneSpace=0;
         std::atomic<int> mode{0},callbacks{0};
@@ -29,12 +30,12 @@ namespace
             for(uint32_t i=0; i<in->size(in); ++i)
             {
                 const auto* e = in->get(in,i);
-                if(e->type == CLAP_EVENT_NOTE_ON) s.gate = true;
+                if(e->type == CLAP_EVENT_NOTE_ON) {s.gate = true;s.lastNoteId=reinterpret_cast<const clap_event_note_t*>(e)->note_id;}
                 if(e->type == CLAP_EVENT_NOTE_OFF) s.gate = false;
                 if(e->type == CLAP_EVENT_PARAM_VALUE)
                 {
                     const auto& v=*reinterpret_cast<const clap_event_param_value_t*>(e);
-                    if(v.param_id==1)s.mode=static_cast<int>(v.value);else s.value=v.value;
+                    if(v.param_id==1)s.mode=static_cast<int>(v.value);else {s.value=v.value;if(v.note_id>=0)s.gate=v.note_id==s.lastNoteId;}
                 }
                 if(e->type == CLAP_EVENT_PARAM_GESTURE_BEGIN || e->type == CLAP_EVENT_PARAM_GESTURE_END) out->try_push(out,e);
             }
@@ -57,7 +58,14 @@ namespace
                 auto& s=get(p);
                 s.host->request_callback(s.host);
                 const int mode=s.mode.exchange(0);
-                for(int i=0;i<(mode==-1?1:std::abs(mode));++i)
+                if(mode==-2) {
+                    oscairn_event_param_target_t value{};value.header={sizeof(value),0,s.laneSpace,OSCAIRN_EVENT_PARAM_TARGET,0};
+                    value.note_id=7;value.key=60;value.value=.5;
+                    b->out_events->try_push(b->out_events,&value.header);
+                    clap_event_note_t note{};note.header={sizeof(note),0,CLAP_CORE_EVENT_SPACE_ID,CLAP_EVENT_NOTE_ON,0};
+                    note.note_id=7;note.key=60;note.velocity=1;b->out_events->try_push(b->out_events,&note.header);
+                }
+                for(int i=0;i<(mode==-2?0:mode==-1?1:std::abs(mode));++i)
                 {
                     if(mode==-512)
                     {

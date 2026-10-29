@@ -46,6 +46,7 @@ public:
 inline void write(const fs::path& path,const void* data,size_t size)
 {
     std::ofstream file(path,std::ios::binary);file.write(static_cast<const char*>(data),size);
+    file.close(); // Buffered write failures can first appear when closing.
     if(!file)throw std::runtime_error("Cannot write state file: "+path.string());
 }
 inline std::vector<uint8_t> read(const fs::path& path,size_t limit)
