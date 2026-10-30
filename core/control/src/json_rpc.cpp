@@ -34,13 +34,7 @@ namespace oscairn
             if( !v || v->type != json_type_string ) invalid( "Expected a string" );
             return view( static_cast<const json_string_s*>( v->payload ) );
         }
-        Value member( Value v, std::string_view name )
-        {
-            if( !v || v->type != json_type_object ) return nullptr;
-            for( auto* e = static_cast<const json_object_s*>( v->payload )->start; e; e = e->next )
-                if( view( e->name ) == name ) return e->value;
-            return nullptr;
-        }
+        using detail::member;
         void fields( Value v, std::initializer_list<std::string_view> allowed )
         {
             if( !v || v->type != json_type_object ) invalid( "Expected named parameters" );
@@ -91,18 +85,7 @@ namespace oscairn
         }
 
         // The parser preserves number tokens, so request IDs never pass through double.
-        std::string quote( std::string_view s )
-        {
-            constexpr char hex[] = "0123456789abcdef";
-            std::string result = "\"";
-            for( unsigned char c : s )
-            {
-                if( c == '"' || c == '\\' ) { result += '\\'; result += static_cast<char>(c); }
-                else if( c < 32 ) { result += "\\u00"; result += hex[c >> 4]; result += hex[c & 15]; }
-                else result += static_cast<char>(c);
-            }
-            return result + '"';
-        }
+        using detail::quote;
         std::string encode( double n )
         {
             if( !std::isfinite( n ) ) throw std::runtime_error( "Nonfinite control result" );

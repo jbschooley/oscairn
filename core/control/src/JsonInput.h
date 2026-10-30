@@ -1,8 +1,33 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #pragma once
+#include "sheredom/json.h"
+#include <string>
 #include <string_view>
 
 namespace oscairn::detail {
+// A JSON string literal: quotes, backslashes and control characters escaped.
+inline std::string quote( std::string_view s )
+{
+    constexpr char hex[] = "0123456789abcdef";
+    std::string result = "\"";
+    for( unsigned char c : s )
+    {
+        if( c == '"' || c == '\\' ) { result += '\\'; result += static_cast<char>(c); }
+        else if( c < 32 ) { result += "\\u00"; result += hex[c >> 4]; result += hex[c & 15]; }
+        else result += static_cast<char>(c);
+    }
+    return result + '"';
+}
+
+// The value of an object member, or null when v is not an object or lacks key.
+inline const json_value_s* member( const json_value_s* v, std::string_view key )
+{
+    if( !v || v->type != json_type_object ) return nullptr;
+    for( auto* e = static_cast<const json_object_s*>( v->payload )->start; e; e = e->next )
+        if( std::string_view( e->name->string, e->name->string_size ) == key ) return e->value;
+    return nullptr;
+}
+
 // Check encoding and depth before the recursive parser.
 inline std::string_view jsonPreflight( std::string_view s, size_t maxDepth )
 {

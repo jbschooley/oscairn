@@ -2,6 +2,7 @@
 #include "oscairn/remote_control.h"
 #include "PropertyWire.h"
 #include "sheredom/json.h"
+#include "JsonInput.h"
 #include <algorithm>
 #include <charconv>
 #include <cmath>
@@ -19,9 +20,7 @@ namespace oscairn
         using Doc=std::unique_ptr<json_value_s,decltype(&std::free)>;
         V field(V v,std::string_view key)
         {
-            if(v && v->type==json_type_object)
-                for(auto* e=static_cast<const json_object_s*>(v->payload)->start;e;e=e->next)
-                    if(std::string_view(e->name->string,e->name->string_size)==key)return e->value;
+            if(V value=detail::member(v,key))return value;
             throw std::runtime_error("Missing RPC field: "+std::string(key));
         }
         std::string string(V v)
@@ -53,13 +52,7 @@ namespace oscairn
             if(!v || v->type!=json_type_array)throw std::runtime_error("Expected RPC array");
             std::vector<V> result;for(auto* e=static_cast<const json_array_s*>(v->payload)->start;e;e=e->next)result.push_back(e->value);return result;
         }
-        std::string quote(std::string_view s)
-        {
-            std::string result="\"";constexpr char hex[]="0123456789abcdef";
-            for(unsigned char c:s)if(c=='"'||c=='\\'){result+='\\';result+=static_cast<char>(c);}
-                else if(c<32){result+="\\u00";result+=hex[c>>4];result+=hex[c&15];}else result+=static_cast<char>(c);
-            return result+'"';
-        }
+        using detail::quote;
         std::string encode(double value)
         {
             if(!std::isfinite(value))throw std::invalid_argument("Nonfinite control value");

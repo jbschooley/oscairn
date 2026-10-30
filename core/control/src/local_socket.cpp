@@ -2,6 +2,7 @@
 #include "oscairn/local_socket.h"
 #include "oscairn/json_rpc.h"
 #include "sheredom/json.h"
+#include "JsonInput.h"
 
 #include <algorithm>
 #include <array>
@@ -124,24 +125,9 @@ namespace oscairn
                 result=input.substr(0,newline);input.erase(0,newline+1);return true;
             }
         };
-        std::string quote(std::string_view text)
-        {
-            constexpr char hex[]="0123456789abcdef";
-            std::string result="\"";
-            for(unsigned char c:text)
-                if(c=='"' || c=='\\'){result+='\\';result+=static_cast<char>(c);}
-                else if(c<32){result+="\\u00";result+=hex[c>>4];result+=hex[c&15];}
-                else result+=static_cast<char>(c);
-            return result+'"';
-        }
+        using detail::quote;
+        using detail::member;
         using Document=std::unique_ptr<json_value_s,decltype(&std::free)>;
-        const json_value_s* member(const json_value_s* v,std::string_view key)
-        {
-            if(!v || v->type!=json_type_object)return nullptr;
-            for(auto* e=static_cast<const json_object_s*>(v->payload)->start;e;e=e->next)
-                if(std::string_view(e->name->string,e->name->string_size)==key)return e->value;
-            return nullptr;
-        }
         Document frame(std::string_view line)
         {
             size_t depth=0;bool quoted=false,escaped=false;
