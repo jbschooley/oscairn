@@ -130,9 +130,12 @@ void samples(const char* path)
     auto state=f.remote([](Control& c){return readSoundPicker(c);});
     check(state.importsSamples && state.choices.empty(),"sampler offers import instead of presets");
     SoundAction action;action.kind=SoundAction::Prepare;action.node=state.node;action.pluginId=state.pluginId;
-    for(const char* file:{"Soft pad.wav","Pitched.sfz"}){action.importPath=(dir/file).string();f.remote([&](Control& c){applySoundAction(c,action);return 0;});}
+    std::string longName;for(int i=0;i<40;++i)longName+="\xD0\xB6"; // 80 bytes of two-byte characters
+    std::filesystem::copy_file(dir/"Soft pad.wav",dir/(longName+".wav"));
+    for(const auto& file:{std::string("Soft pad.wav"),std::string("Pitched.sfz"),longName+".wav"}){action.importPath=(dir/file).string();f.remote([&](Control& c){applySoundAction(c,action);return 0;});}
     state=f.remote([](Control& c){return readSoundPicker(c);});
-    check(state.sounds.contexts.size()==3 && state.sounds.contexts[1].name=="Soft pad" && state.sounds.contexts[2].name=="Pitched","WAV and SFZ imports prepared");
+    check(state.sounds.contexts.size()==4 && state.sounds.contexts[1].name=="Soft pad" && state.sounds.contexts[2].name=="Pitched","WAV and SFZ imports prepared");
+    check(state.sounds.contexts[3].name==longName.substr(0,62),"long non-ASCII names are cut between characters");
     for(const auto& [file,expected]:std::initializer_list<std::pair<const char*,const char*>>{{"Broken.sfz","line 2: unsupported opcode pan"},{"notes.txt","Choose a .wav"}}){
         action.importPath=(dir/file).string();
         const auto error=f.remote([&](Control& c){try{applySoundAction(c,action);}catch(const std::exception& e){return std::string(e.what());}return std::string();});

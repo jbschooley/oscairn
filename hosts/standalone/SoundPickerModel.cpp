@@ -59,7 +59,13 @@ namespace oscairn::standalone
         auto extension = file.extension().string();
         std::transform(extension.begin(), extension.end(), extension.begin(), [](unsigned char c) { return char(std::tolower(c)); });
         SoundChoice choice;
-        choice.name = file.stem().string().substr(0, 63);
+        choice.name = file.stem().string();
+        if(choice.name.size() > 63)
+        {
+            size_t end = 63; // cut at a character boundary: names must stay valid UTF-8
+            while(end > 0 && (static_cast<unsigned char>(choice.name[end]) & 0xC0) == 0x80) --end;
+            choice.name.resize(end);
+        }
         choice.directory = file.parent_path().string();
         if(extension == ".wav")
             choice.sfz = "<region> sample=" + file.filename().string() + "\n";
