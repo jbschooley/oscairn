@@ -48,10 +48,15 @@ namespace
 
     uint64_t contentHash(const Sample& s)
     {
-        // FNV-1a over format and PCM: identity follows content, not the file name.
+        // FNV-1a style over format and PCM, 64 bits at a time: identity follows content, not the
+        // file name. Each step is invertible, so changing any single word changes the result.
         uint64_t h = 1469598103934665603ull;
-        auto mix = [&](const void* p, size_t n) { auto* b = static_cast<const unsigned char*>(p); for(size_t i = 0; i < n; ++i) { h ^= b[i]; h *= 1099511628211ull; } };
-        mix(&s.rate, sizeof(s.rate)); mix(&s.channels, sizeof(s.channels)); mix(s.data.data(), s.bytes());
+        auto step = [&](uint64_t word) { h ^= word; h *= 1099511628211ull; };
+        step(uint64_t(uint32_t(s.rate)) << 32 | uint32_t(s.channels));
+        const auto* bytes = reinterpret_cast<const unsigned char*>(s.data.data());
+        size_t at = 0;
+        for(; at + 8 <= s.bytes(); at += 8) { uint64_t word; std::memcpy(&word, bytes + at, 8); step(word); }
+        for(; at < s.bytes(); ++at) step(bytes[at]);
         return h;
     }
 
