@@ -72,7 +72,8 @@ namespace
     struct Voice : oscairn::contexts::VoiceBase
     {
         const Sample* sample = nullptr;
-        double position = 0, step = 0, gain = 0, level = 1, releaseStep = 0;
+        double position = 0, step = 0, gain = 0, level = 1, releaseFactor = 1, releaseDelta = 0;
+        int64_t releaseLeft = 0; // samples until the release ends; 0 while held
         bool releasing = false;
     };
 
@@ -247,9 +248,17 @@ namespace
             v.step = v.sample->rate / sampleRate * std::pow(2.0, cents / 1200.0);
             // SFZ default amp_veltrack=100: gain follows velocity squared.
             v.gain = std::pow(10.0, r.volume / 20.0) * v.velocity * v.velocity;
-            v.releaseStep = r.release > 0 ? 1.0 / (r.release * sampleRate) : 1.0;
         }
-        void release(Voice& v) { v.releasing = true; }
+        // Exponential release reaching -60 dB at ampeg_release, then silence: liquidsfz's curve.
+        void release(Voice& v)
+        {
+            if(v.releasing) return;
+            const double ratio = .001;
+            v.releaseLeft = std::max<int64_t>(std::llround(contexts[v.context].patch.region.release * sampleRate), 1);
+            v.releaseFactor = std::exp(-std::log((ratio + 1) / ratio) / double(v.releaseLeft));
+            v.releaseDelta = -ratio * v.level * (1 - v.releaseFactor);
+            v.releasing = true;
+        }
         void selectedGlobally(Context&, const clap_output_events_t*) {}
         void applyParam(const clap_event_header_t*) {}
         void render(const clap_process_t* process, uint32_t from, uint32_t to)
@@ -265,7 +274,7 @@ namespace
                     const auto& s = *v.sample;
                     const auto index = size_t(v.position);
                     if(index >= s.frames) { finishVoice(v); continue; } // no_loop: the sample end ends the voice
-                    if(v.releasing && (v.level -= v.releaseStep) <= 0) { finishVoice(v); continue; }
+                    if(v.releasing) { if(v.releaseLeft-- <= 0) { finishVoice(v); continue; } v.level = v.level * v.releaseFactor + v.releaseDelta; }
                     const double fraction = v.position - double(index), gain = v.gain * v.level;
                     auto at = [&](size_t frame, int channel) { return frame < s.frames ? double(s.data[frame * s.channels + channel]) : 0.0; };
                     const double l = at(index, 0) + (at(index + 1, 0) - at(index, 0)) * fraction;

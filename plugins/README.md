@@ -30,7 +30,7 @@ most 64 MiB decoded each and 256 MiB per instance. Contexts with identical audio
 decoded copy, identified by content rather than file name.
 
 Playback uses linear interpolation; the sample end finishes the voice (`no_loop`);
-release fades linearly to silence over `ampeg_release`. Velocity gain is squared (the
+release falls exponentially to −60 dB over `ampeg_release` and then stops, the curve liquidsfz uses. Velocity gain is squared (the
 SFZ `amp_veltrack=100` default). Mono samples play on both outputs. Pressure is tracked
 per voice but not mapped to sound. The single stereo output is unsaturated.
 

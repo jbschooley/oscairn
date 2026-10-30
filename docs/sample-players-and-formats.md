@@ -90,6 +90,40 @@ Checked at liquidsfz `4cc901d18b316cd377276f7eb6b8c325329b9860` for the
 - `lib/samplecache.cc`: a `std::thread` background loader per process-wide cache.
 - `lib/` is about 10,000 lines of liquidsfz plus 14,400 of vendored pugixml (Hydrogen import).
 
+### Reference renders against liquidsfz
+
+[`liquidsfz_compare.cpp`](../tools/sampler-research/liquidsfz_compare.cpp) renders one
+second of a generated mono 48 kHz tone through liquidsfz and the Oscairn Sampler with the
+same one-region patches (2026-10-30, liquidsfz `4cc901d1`, macOS arm64):
+
+| Case | Oscairn / liquidsfz RMS | Residual after matching level |
+| --- | --- | --- |
+| Key 60, velocity 127 | 2.295 | 0.34% |
+| Key 60, velocity 64 | 2.295 | 0.34% |
+| Up 7 semitones | 2.295 | 0.31% |
+| Down 5 semitones | 2.295 | 0.01% |
+| `volume=-6 tune=30` | 2.295 | 0.27% |
+| `ampeg_release=0.1`, released at 0.25 s | 2.295 | 0.01% |
+
+The constant level ratio (+7.2 dB) comes from two liquidsfz conventions in `lib/voice.cc`:
+a default CC7 volume of 100 through its volume curve ((100/127)², about −4.2 dB) and a
+constant-power pan law (centred mono at 1/√2 per channel, −3 dB). The release row was 16%
+before the Sampler adopted liquidsfz's exponential release (`lib/envelope.hh`: −60 dB at
+the release time, then silence). Velocity follows the same squared curve in both.
+
+Reproduce with the liquidsfz checkout from the probe above, from the Oscairn root after
+building `oscairn_sampler`:
+
+```sh
+c++ -std=c++17 -O2 -pthread -I core/clap-host/third_party/clap/include -I core/clap-ext/include \
+  -I /tmp/oscairn-liquidsfz/lib $(pkg-config --cflags sndfile) tools/sampler-research/liquidsfz_compare.cpp \
+  /tmp/oscairn-liquidsfz/lib/*.cc $(pkg-config --libs sndfile) -o /tmp/oscairn-liquidsfz-compare
+/tmp/oscairn-liquidsfz-compare build/plugins/oscairn-sampler.clap /tmp/oscairn-liquidsfz-compare-out
+```
+
+This compares rendered numbers, not listening. It does not cover stereo samples,
+sample-rate conversion, sustain pedal or simultaneous voices.
+
 FluidSynth's [dynamic sample-loading setting](https://www.fluidsynth.org/api/settings_synth.html)
 can allocate during preset changes and is documented as unsuitable for real-time use.
 Preparation must happen before a performance-time selection, regardless of player choice.
