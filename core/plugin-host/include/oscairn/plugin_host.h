@@ -88,4 +88,9 @@ namespace oscairn
     // CLAP module or LV2 bundle directory; pluginId is a CLAP ID or an LV2 URI.
     std::shared_ptr<PluginHost> loadPlugin(const std::string& path, const std::string& pluginId,
                                            double sampleRate, uint32_t maxFrames, ProcessingMode mode = ProcessingMode::Realtime, Lv2BufferLimits lv2Buffers = {});
+    // RFC 0010 step 2: a CLAP plugin hosted by the worker executable `program` in its own
+    // process. Returns null for plugins with native sound or effect contexts, which stay
+    // in the engine. loadPlugin uses it when OSCAIRN_PLUGIN_WORKER names the executable.
+    std::shared_ptr<PluginHost> loadPluginInWorker(const std::string& program, const std::string& path, const std::string& pluginId,
+                                                   double sampleRate, uint32_t maxFrames, ProcessingMode mode = ProcessingMode::Realtime);
 }

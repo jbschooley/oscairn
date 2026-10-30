@@ -175,7 +175,9 @@ new core, from a UI that talks to it only through the control API.
    ([RFC 0010](rfcs/0010-plugin-worker-isolation.md)). Moved here from Phase 5 on October 30,
    2026, ahead of Phase 4 hardware work and further third-party plugin features. Hand-off
    measured on macOS ([step 1](rfcs/0010-plugin-worker-isolation.md#step-1-measurements));
-   native Linux and the aarch64 target remain.
+   native Linux and the aarch64 target remain. Step 2, one plugin per worker with identical
+   rendering, is implemented ([status](rfcs/0010-plugin-worker-isolation.md#step-2-status));
+   next is containing crashes, hangs and overruns (step 3).
 7. **Sequencer evaluation — written, decisions pending:** [the comparison](sequencer-evaluation.md)
    of the KICK firmware's sequencer (with chillbeast's work), zynseq and hosted plugins
    recommends the KICK model and workflow with sample-accurate playback rewritten in an
@@ -208,6 +210,13 @@ format commitments: evaluate libmamba/Nix and libsolv as a narrower fallback usi
 No package-manager dependency or prototype is required for the next desktop step.
 
 ## Phase 4: hardware (started)
+
+- Sample rates: 48 kHz is the default, and 44.1, 96 and 192 kHz must work where users or
+  hardware call for them. The engine already runs at the rate the audio device reports, and
+  plugins are activated at that rate, but changing the device's rate while running stops
+  audio instead of reactivating the graph, and the tests render almost only at 48 kHz.
+  Needed: reactivation at a new rate, render tests at each rate, and the device's ALSA
+  configuration.
 
 - Map the existing logical audio endpoints onto each board's real inputs/outputs and
   validate simultaneous capture/playback, channel identities, isolation, clocking and

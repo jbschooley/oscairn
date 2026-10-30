@@ -1,8 +1,10 @@
 add_subdirectory(clap-host)
 
-add_library(oscairn_plugin_host STATIC plugin-host/src/plugin_host.cpp plugin-host/src/discovery.cpp plugin-host/src/assets.cpp)
+find_package(Threads REQUIRED)
+add_library(oscairn_plugin_host STATIC plugin-host/src/plugin_host.cpp plugin-host/src/discovery.cpp plugin-host/src/assets.cpp
+    plugin-host/src/Worker.cpp plugin-host/src/WorkerHost.cpp)
 target_include_directories(oscairn_plugin_host PUBLIC plugin-host/include)
-target_link_libraries(oscairn_plugin_host PUBLIC kick_clap_host)
+target_link_libraries(oscairn_plugin_host PUBLIC kick_clap_host PRIVATE Threads::Threads)
 target_compile_options(oscairn_plugin_host PRIVATE -Wall -Wextra)
 if(OSCAIRN_LV2)
     find_package(PkgConfig REQUIRED)
@@ -13,6 +15,11 @@ if(OSCAIRN_LV2)
     target_compile_definitions(oscairn_plugin_host PRIVATE OSCAIRN_LV2=1)
     install(FILES lv2-host/third_party/jalv/ISC.txt DESTINATION share/licenses/oscairn RENAME jalv-worker-ISC.txt)
 endif()
+
+# RFC 0010: hosts one plugin in its own process for the engine.
+add_executable(oscairn-plugin-worker plugin-host/src/worker_main.cpp)
+target_link_libraries(oscairn-plugin-worker PRIVATE oscairn_plugin_host)
+install(TARGETS oscairn-plugin-worker RUNTIME DESTINATION bin)
 
 add_executable(oscairn-plugin-scan plugin-host/src/scan.cpp)
 target_link_libraries(oscairn-plugin-scan PRIVATE oscairn_plugin_host)
@@ -198,3 +205,26 @@ if(UNIX)
     add_test(NAME handoff-bench COMMAND oscairn-handoff-bench --check)
     add_test(NAME handoff-bench-plugin COMMAND oscairn-handoff-bench --check --plugin $<TARGET_FILE:oscairn_basic_synth> --id org.oscairn.basic-synth)
 endif()
+
+add_executable(oscairn-worker-host-test engine/tests/worker_host.cpp)
+target_link_libraries(oscairn-worker-host-test PRIVATE oscairn_plugin_host)
+add_test(NAME worker-host COMMAND oscairn-worker-host-test $<TARGET_FILE:oscairn-plugin-worker>
+    $<TARGET_FILE:kick-clap-fixture-normal> $<TARGET_FILE:oscairn-audio-fixture> $<TARGET_FILE:oscairn_transpose>
+    $<TARGET_FILE:oscairn_midi_delay> $<TARGET_FILE:oscairn_step_sequencer> $<TARGET_FILE:oscairn_basic_synth>)
+set_tests_properties(worker-host PROPERTIES TIMEOUT 60)
+
+# The existing graph tests again, with every CLAP plugin that has no native contexts in a worker.
+set(worker_tests
+    "chain-mono|oscairn-chain-mono-test|$<TARGET_FILE:kick-clap-fixture-normal>"
+    "param-target|oscairn-param-target-test|$<TARGET_FILE:oscairn_step_sequencer>|$<TARGET_FILE:kick-clap-fixture-normal>"
+    "audio-routing|oscairn-audio-routing-test|$<TARGET_FILE:oscairn-audio-fixture>"
+    "graph-lifecycle|oscairn-graph-lifecycle-test|$<TARGET_FILE:oscairn-lifecycle-fixture>"
+    "note-routing|oscairn-note-routing-test|$<TARGET_FILE:oscairn_basic_synth>|$<TARGET_FILE:oscairn-lifecycle-fixture>|$<TARGET_FILE:kick-clap-fixture-normal>"
+    "prepared-instances|oscairn-prepared-instances-test|$<TARGET_FILE:kick-clap-fixture-normal>"
+    "midi-effects|oscairn-midi-effects-test|$<TARGET_FILE:oscairn_transpose>|$<TARGET_FILE:oscairn_midi_delay>|$<TARGET_FILE:oscairn_basic_synth>|$<TARGET_FILE:oscairn-audio-midi-fixture>")
+foreach(entry IN LISTS worker_tests)
+    string(REPLACE "|" ";" parts "${entry}")
+    list(POP_FRONT parts name)
+    add_test(NAME ${name}-workers COMMAND ${parts})
+    set_tests_properties(${name}-workers PROPERTIES TIMEOUT 120 ENVIRONMENT "OSCAIRN_PLUGIN_WORKER=$<TARGET_FILE:oscairn-plugin-worker>")
+endforeach()

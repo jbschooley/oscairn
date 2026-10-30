@@ -8,6 +8,7 @@
 #include <iomanip>
 #include <locale>
 #include <cmath>
+#include <cstdlib>
 #include <stdexcept>
 namespace oscairn
 {
@@ -138,6 +139,8 @@ namespace oscairn
             throw std::runtime_error("LV2 support is disabled; build with -DOSCAIRN_LV2=ON");
 #endif
         }
+        if(const char* worker=std::getenv("OSCAIRN_PLUGIN_WORKER"); worker && *worker)
+            if(auto host=loadPluginInWorker(worker,path,id,rate,frames,mode))return host;
         const auto scan=kick::clap::inspect(path);
         const auto found=std::find_if(scan.plugins.begin(),scan.plugins.end(),[&](const auto& p){return id.empty() || p.id==id;});
         if(found==scan.plugins.end())

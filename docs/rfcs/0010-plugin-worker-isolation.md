@@ -1,6 +1,7 @@
 # RFC 0010: Plugin worker isolation
 
-Status: proposed, 2026-10-30. Step 1 measured on macOS only ([results](#step-1-measurements)); nothing else implemented. Moved ahead of Phase 4 hardware work and further
+Status: proposed, 2026-10-30. Step 1 measured on macOS only ([results](#step-1-measurements));
+step 2 implemented ([status](#step-2-status)); steps 3–7 not started. Moved ahead of Phase 4 hardware work and further
 third-party plugin features ([roadmap](../roadmap.md#next-build-and-test-order)); it makes
 concrete the [engine recovery](../architecture.md#engine-recovery) and sandboxed-worker
 isolation the architecture already describes.
@@ -149,6 +150,39 @@ per row (20,000 for the Basic Synth), on a loaded desktop (load average 23–30)
 first-party plugins in the engine. Up to 8 workers in one chain cost under 15% of a 128-frame
 block at p99.9; beyond that, group a chain's plugins in one worker. Run independent branches in
 parallel: with 8 workers it cuts the p99.9 block time from 766 µs to 253 µs here.
+
+## Step 2 status
+
+Implemented 2026-10-30 in `core/plugin-host` (`Worker.*`, `WorkerHost.cpp`) and the
+`oscairn-plugin-worker` executable:
+
+- `loadPluginInWorker` starts the worker with `posix_spawn`, loads the plugin there through
+  the ordinary `loadPlugin`, and returns a `PluginHost` the graph uses like any other.
+  `loadPlugin` does this for every CLAP plugin when `OSCAIRN_PLUGIN_WORKER` names the
+  worker executable. Nothing enables it by default yet.
+- **Audio path:** one shared-memory block per worker (created with `shm_open`, unlinked at
+  once and passed over the socket), holding audio, the block's events, transport, output
+  events, statistics and parameter values. The engine wakes the worker with
+  `os_sync_wait_on_address` or a futex and waits for completion. The shared buffer holds
+  8,192 frames, so the worker's host splits larger blocks exactly as an in-engine host
+  does; larger still are split by the engine.
+- **Control path:** a socket carries initialisation, parameter changes, gestures, parameter
+  text, state save and load, and `service`. The worker calls the plugin's `service`
+  itself every 10 ms.
+- **Stays in the engine:** plugins with native sound or effect contexts (Basic Synth,
+  Sampler, Delay), until step 5 moves contexts into workers. Presets, properties and asset
+  resolution are not forwarded yet.
+- **Deadline:** the engine waits at most four blocks or 50 ms (10 s offline), and a block
+  not answered in time is silent and counted as a deadline miss. This is a hang detector,
+  not the per-node budget, which is step 3.
+
+Verification: `worker-host` renders 300 blocks of each test plugin in the engine and in a
+worker and finds identical audio and output events, parameter values and text, and saved
+state. The graph tests `param-target`, `chain-mono`, `audio-routing`, `graph-lifecycle`,
+`note-routing`, `prepared-instances` and `midi-effects` run again as `*-workers` with every
+eligible plugin in a worker (6 to 127 workers per test), including their checks that
+rendering does not allocate. They pass 20 times in a row, and under ThreadSanitizer and
+AddressSanitizer on macOS. Not yet run on Linux or the device.
 
 ## Open questions
 
