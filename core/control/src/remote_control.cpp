@@ -290,14 +290,14 @@ namespace oscairn
     {Changes result{impl_->sequence,seq>impl_->sequence||(!impl_->history.empty()&&seq<impl_->history.front().sequence-1),{}};for(const auto& event:impl_->history)if(event.sequence>seq)result.events.push_back(event);return result;}
     void RemoteControl::service()
     {
-        impl_->client.poll();bool refresh=false;
+        impl_->client.poll();bool refresh=false,resync=false;
         for(const auto& message:impl_->client.takeNotifications())
         {
             auto doc=parse(message);const auto method=string(field(doc.get(),"method"));auto params=field(doc.get(),"params");
             if(method=="transport")impl_->readTransport(params);
             else if(method=="status")impl_->readStatus(params);
             else if(method=="graph.changed"){refresh=true;impl_->publish({0,ChangeKind::Graph});}
-            else if(method=="session.resync"){refresh=true;impl_->publish({0,ChangeKind::Resync});}
+            else if(method=="session.resync"){refresh=resync=true;impl_->publish({0,ChangeKind::Resync});}
             else if(method=="params.changed")for(auto c:array(field(params,"changes")))
             {
                 Change change;change.node=static_cast<NodeId>(integer(field(c,"node")));change.param=static_cast<uint32_t>(integer(field(c,"param")));
@@ -308,5 +308,11 @@ namespace oscairn
             }
         }
         if(refresh)impl_->refresh();
+        if(resync)
+        {
+            // Transport and status notifications are sent only on change; reread any that were lost.
+            auto state=impl_->call("transport.get");impl_->readTransport(field(state.get(),"result"));
+            auto status=impl_->call("session.status");impl_->readStatus(field(status.get(),"result"));
+        }
     }
 }

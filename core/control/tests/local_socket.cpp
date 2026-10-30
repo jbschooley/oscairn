@@ -115,6 +115,18 @@ namespace
         send(fd[1],half);shutdown(fd[1],SHUT_WR);f.tick();
         check(read(fd[1]).find("\"id\":3")!=std::string::npos,"write half-close drains the response");::close(fd[1]);
     }
+    void slowReader(const char* plugin)
+    {
+        // Notifications pile up while a client is busy with calls; overflow becomes one resync, not a disconnect.
+        Fixture f(plugin);auto fd=pair();f.server.adopt(fd[0]);LocalClient client;client.adopt(fd[1]);
+        clientWhileRendering(f,[&]{client.call("subscribe",R"({"topics":["params.changed","transport"]})");});
+        const auto synth=f.session.nodeId("synth");uint64_t now=1;
+        float* out[]{f.left.data(),f.right.data()};
+        for(int i=0;i<300;++i){check(f.session.setParameter(synth,1,(i%2)?.2:.8),"parameter change");check(f.session.process(out,64),"render");f.session.service();f.server.poll(now+=20000000);client.poll();}
+        const auto notices=client.takeNotifications();
+        check(notices.size()<=128 && std::any_of(notices.begin(),notices.end(),[](const auto& n){return n.find("session.resync")!=std::string::npos;}),"overflow becomes resync");
+        clientWhileRendering(f,[&]{check(client.call("transport.get").find("\"tempo\"")!=std::string::npos,"replies continue after overflow");});
+    }
     void clientAndReconnect(const char* plugin)
     {
         Fixture f(plugin);auto fd=pair();f.server.adopt(fd[0]);
@@ -420,7 +432,7 @@ int main(int argc,char** argv)
         if(argc==3 && std::string_view(argv[2])=="--path-policy"){pathPolicy(argv[1]);return 0;}
         if(argc==3 && std::string_view(argv[2])=="--named")return named(argv[1],argv[0]);
         if(argc!=2)return 2;
-        framing(argv[1]);clientAndReconnect(argv[1]);pressure(argv[1]);clientFailures();typedClient(argv[1]);controllerCrash(argv[1],argv[0]);
+        framing(argv[1]);slowReader(argv[1]);clientAndReconnect(argv[1]);pressure(argv[1]);clientFailures();typedClient(argv[1]);controllerCrash(argv[1],argv[0]);
         std::cout<<"ok: real Unix streams, framing, backpressure, notifications, reconnect, continuing audio and client failures\n";
     }
     catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}

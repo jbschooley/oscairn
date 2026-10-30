@@ -279,9 +279,18 @@ namespace oscairn
             {
                 if(stream->line(line))
                 {
-                    frame(line);
+                    const bool notification=!member(frame(line).get(),"id");
                     if(messages.size()>=128 || line.size()>LocalServer::maxQueuedBytes-messageBytes)
-                        throw std::runtime_error("Local RPC receive queue full");
+                    {
+                        // A reader that falls behind loses intermediate state, not its connection:
+                        // queued notifications collapse into one resync; replies are never dropped.
+                        static const std::string resync=R"({"jsonrpc":"2.0","method":"session.resync","params":{"topic":"all"}})";
+                        std::erase_if(messages,[&](const std::string& m){const bool drop=!member(frame(m).get(),"id");if(drop)messageBytes-=m.size();return drop;});
+                        messageBytes+=resync.size();messages.push_back(resync);
+                        if(notification)continue;
+                        if(messages.size()>=128 || line.size()>LocalServer::maxQueuedBytes-messageBytes)
+                            throw std::runtime_error("Local RPC receive queue full");
+                    }
                     messageBytes+=line.size();messages.push_back(std::move(line));
                 }
                 else if(reads++>=16 || !stream->read(LocalServer::maxQueuedBytes))break;
