@@ -23,7 +23,10 @@ namespace oscairn
         bool requestProperty(NodeId node,const std::string& uri) override;
         std::optional<PropertyValue> propertyValue(NodeId node,const std::string& uri) const override;
         Sounds sounds(NodeId node) const override;
-        uint32_t prepareSound(NodeId node,const std::string& name,const std::vector<oscairn_sound_parameter_t>& parameters,const std::string& state={},const std::string& preset={},const std::string& sfz={},const std::string& directory={}) override;
+        uint32_t prepareSound(NodeId node,const std::string& name,const std::vector<oscairn_sound_parameter_t>& parameters,const std::string& state={},const std::string& preset={},const std::string& sfz={},const std::string& library={},const std::string& directory={}) override;
+        AssetFolder registerAssetFolder(const std::string& folder) override;
+        kick::clap::AssetReference importAsset(const std::string& file) override;
+        std::vector<AssetLibrary> assetLibraries() const override;
         bool selectSound(NodeId node,uint32_t id,int16_t channel=-1) override;
         bool discardSound(NodeId node,uint32_t id,bool cutTail=false) override;
         GraphState graphState() const override;

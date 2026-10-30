@@ -53,7 +53,7 @@ namespace oscairn::standalone
         return result;
     }
 
-    SoundChoice importSound(const std::string& path)
+    SoundChoice importSound(Control& control, const std::string& path)
     {
         const std::filesystem::path file(path);
         auto extension = file.extension().string();
@@ -66,10 +66,15 @@ namespace oscairn::standalone
             while(end > 0 && (static_cast<unsigned char>(choice.name[end]) & 0xC0) == 0x80) --end;
             choice.name.resize(end);
         }
-        choice.directory = file.parent_path().string();
         // SFZ's default 1 ms release ticks when a sustained sample stops; give raw WAVs a short fade.
+        // A single WAV is copied into the user library, so tidying the original folder cannot break it.
         if(extension == ".wav")
-            choice.sfz = "<region> ampeg_release=0.03 sample=" + file.filename().string() + "\n";
+        {
+            const auto asset = control.importAsset(path);
+            const std::filesystem::path stored(asset.path);
+            choice.sfz = "<region> ampeg_release=0.03 sample=" + stored.filename().string() + "\n";
+            choice.library = asset.library; choice.directory = stored.parent_path().generic_string();
+        }
         else if(extension == ".sfz")
         {
             std::error_code error;
@@ -77,6 +82,9 @@ namespace oscairn::standalone
             std::ifstream in(file, std::ios::binary);std::ostringstream text;text << in.rdbuf();
             if(!in) throw std::runtime_error("Could not read that SFZ file.");
             choice.sfz = text.str();
+            // An SFZ's folder is used in place as (or inside) a registered library.
+            const auto folder = control.registerAssetFolder(file.parent_path().string());
+            choice.library = folder.library; choice.directory = folder.directory;
         }
         else throw std::runtime_error("Choose a .wav sample or an .sfz patch.");
         return choice;
@@ -112,8 +120,8 @@ namespace oscairn::standalone
         }
         if(action.kind == SoundAction::Prepare)
         {
-            const auto choice = action.importPath.empty() ? action.choice : importSound(action.importPath);
-            control.prepareSound(current.node, choice.name, choice.parameters, {}, choice.preset, choice.sfz, choice.directory);
+            const auto choice = action.importPath.empty() ? action.choice : importSound(control, action.importPath);
+            control.prepareSound(current.node, choice.name, choice.parameters, {}, choice.preset, choice.sfz, choice.library, choice.directory);
             return; // Preparation never changes the playing sound.
         }
         const auto found = std::find_if(current.sounds.contexts.begin(), current.sounds.contexts.end(),

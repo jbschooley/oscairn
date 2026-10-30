@@ -380,11 +380,30 @@ boundary before that block's notes. Held notes and per-note expression retain th
 sustain follows the channel across switches. `accepted` means queued, not applied: poll
 `sounds.get` for selection masks. There is no context notification topic yet.
 
-`sfz` and `directory` go together and only to native engines that define patch text: the
-Oscairn Sampler takes an SFZ patch whose `sample=` paths are relative to the absolute
-`directory`. The engine reads those files on its control thread; a rejected patch returns
-`-32005` with the plugin's diagnostic, such as `line 2: unsupported opcode pan`. The whole
-request must fit the 64 KiB message limit.
+`sfz` goes only to native engines that define patch text, together with the asset `library`
+holding its files and the patch's `directory` inside that library (empty for the root): the
+Oscairn Sampler takes an SFZ patch whose `sample=` paths are relative to that folder and may
+use `../` without leaving the library. The engine resolves and reads those files on its
+control thread; a rejected patch returns `-32005` with the plugin's diagnostic, such as
+`line 2: unsupported opcode pan`. The whole request must fit the 64 KiB message limit.
+
+### Sound assets
+
+Sound assets are files that sounds use without copying them into a Performance
+([RFC 0009](rfcs/0009-sound-assets-and-dependencies.md)). The engine's store lives in
+`OSCAIRN_DATA_HOME/assets`, else `~/Library/Application Support/Oscairn/assets` (macOS) or
+`$XDG_DATA_HOME/oscairn/assets`/`~/.local/share/oscairn/assets` (Linux).
+
+| Method | Parameters | Result |
+| --- | --- | --- |
+| `assets.register` | `folder`: absolute path on the engine's filesystem | `library`, `directory`: the library containing the folder (registering the folder as a new library when none does) and the folder's path in it |
+| `assets.import` | `file`: absolute path | `library` (`user`), `path`, `sha256`: a copy in the user library |
+| `assets.libraries` | none | `libraries: [{id, name, path, files}]` |
+
+Registering hashes every file in the folder once, so it can take seconds for a large library;
+`RemoteControl` waits up to 10 minutes. Later lookups re-hash only files whose size or
+modification time changed. A reference with a known hash is also satisfied by identical bytes
+in any other library. Failures return `-32005` with the reason.
 
 A parameter patch starts from plugin defaults plus up to 128 numeric parameters. Omitted/empty
 parameters select defaults. Names have at most 63 UTF-8 bytes (hosted names must be nonempty).

@@ -218,11 +218,22 @@ namespace oscairn
         for(auto c:array(field(value,"contexts")))result.contexts.push_back({static_cast<uint32_t>(integer(field(c,"id"))),string(field(c,"name")),static_cast<uint32_t>(integer(field(c,"selectedChannels"))),static_cast<uint32_t>(integer(field(c,"activeVoices"))),boolean(field(c,"idle"))});
         return result;
     }
-    uint32_t RemoteControl::prepareSound(NodeId node,const std::string& name,const std::vector<oscairn_sound_parameter_t>& parameters,const std::string& state,const std::string& preset,const std::string& sfz,const std::string& directory)
+    uint32_t RemoteControl::prepareSound(NodeId node,const std::string& name,const std::vector<oscairn_sound_parameter_t>& parameters,const std::string& state,const std::string& preset,const std::string& sfz,const std::string& library,const std::string& directory)
     {
         std::string values;for(const auto& p:parameters){if(!values.empty())values+=',';values+="{\"id\":"+std::to_string(p.id)+",\"value\":"+encode(p.value)+'}';}
-        auto doc=impl_->call("sounds.prepare","{\"node\":"+std::to_string(node)+",\"name\":"+quote(name)+",\"parameters\":["+values+"],\"state\":"+quote(state)+",\"preset\":"+quote(preset)+",\"sfz\":"+quote(sfz)+",\"directory\":"+quote(directory)+"}",30000);
+        auto doc=impl_->call("sounds.prepare","{\"node\":"+std::to_string(node)+",\"name\":"+quote(name)+",\"parameters\":["+values+"],\"state\":"+quote(state)+",\"preset\":"+quote(preset)+",\"sfz\":"+quote(sfz)+",\"library\":"+quote(library)+",\"directory\":"+quote(directory)+"}",30000);
         return static_cast<uint32_t>(integer(field(field(doc.get(),"result"),"context")));
+    }
+    // Registration hashes every file in a folder, so allow time for large libraries.
+    Control::AssetFolder RemoteControl::registerAssetFolder(const std::string& folder)
+    {auto doc=impl_->call("assets.register","{\"folder\":"+quote(folder)+"}",600000);auto r=field(doc.get(),"result");return {string(field(r,"library")),string(field(r,"directory"))};}
+    kick::clap::AssetReference RemoteControl::importAsset(const std::string& file)
+    {auto doc=impl_->call("assets.import","{\"file\":"+quote(file)+"}",60000);auto r=field(doc.get(),"result");return {string(field(r,"library")),string(field(r,"path")),string(field(r,"sha256"))};}
+    std::vector<Control::AssetLibrary> RemoteControl::assetLibraries() const
+    {
+        auto doc=impl_->call("assets.libraries");std::vector<AssetLibrary> result;
+        for(auto l:array(field(field(doc.get(),"result"),"libraries")))result.push_back({string(field(l,"id")),string(field(l,"name")),string(field(l,"path")),static_cast<size_t>(integer(field(l,"files")))});
+        return result;
     }
     bool RemoteControl::selectSound(NodeId node,uint32_t id,int16_t channel)
     {try{impl_->call("sounds.select","{\"node\":"+std::to_string(node)+",\"context\":"+std::to_string(id)+",\"channel\":"+std::to_string(channel)+'}');return true;}catch(const RpcError& e){if(e.code==-32005)return false;throw;}}

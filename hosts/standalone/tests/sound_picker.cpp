@@ -2,6 +2,7 @@
 #include "../SoundPickerModel.h"
 #include "oscairn/session.h"
 #include "oscairn/remote_control.h"
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <cmath>
@@ -123,13 +124,17 @@ void sequencedSounds(const char* synth,const char* sequencer)
 
 void samples(const char* path)
 {
-    Fixture f(path);state_files::TemporaryDirectory temp;
+    state_files::TemporaryDirectory temp;setenv("OSCAIRN_DATA_HOME",temp.path.c_str(),1); // never the user's own asset store
+    Fixture f(path);
     const auto dir=temp.path/"My samples";std::filesystem::create_directory(dir);
     writeWavFile(dir/"Soft pad.wav",std::vector<float>(4800,.25f),1,48000);
     {std::ofstream(dir/"Pitched.sfz")<<"<region> sample=Soft pad.wav transpose=12\n";std::ofstream(dir/"Broken.sfz")<<"<region>\nsample=Soft pad.wav pan=10\n";}
     auto state=f.remote([](Control& c){return readSoundPicker(c);});
     check(state.importsSamples && state.choices.empty(),"sampler offers import instead of presets");
-    check(importSound((dir/"Soft pad.wav").string()).sfz=="<region> ampeg_release=0.03 sample=Soft pad.wav\n","WAV imports fade out over 30 ms instead of ticking");
+    const auto wav=f.remote([&](Control& c){return importSound(c,(dir/"Soft pad.wav").string());});
+    check(wav.sfz=="<region> ampeg_release=0.03 sample=Soft pad.wav\n" && wav.library=="user" && wav.directory.size()==16,"WAV imports are copied into the user library and fade out over 30 ms");
+    const auto sfz=f.remote([&](Control& c){return importSound(c,(dir/"Pitched.sfz").string());});
+    check(sfz.library.size()==16 && sfz.directory.empty(),"an SFZ's folder becomes a library used in place");
     SoundAction action;action.kind=SoundAction::Prepare;action.node=state.node;action.pluginId=state.pluginId;
     std::string longName;for(int i=0;i<40;++i)longName+="\xD0\xB6"; // 80 bytes of two-byte characters
     std::filesystem::copy_file(dir/"Soft pad.wav",dir/(longName+".wav"));
@@ -137,6 +142,8 @@ void samples(const char* path)
     state=f.remote([](Control& c){return readSoundPicker(c);});
     check(state.sounds.contexts.size()==4 && state.sounds.contexts[1].name=="Soft pad" && state.sounds.contexts[2].name=="Pitched","WAV and SFZ imports prepared");
     check(state.sounds.contexts[3].name==longName.substr(0,62),"long non-ASCII names are cut between characters");
+    const auto libraries=f.remote([](Control& c){return c.assetLibraries();});
+    check(libraries.size()==2 && std::any_of(libraries.begin(),libraries.end(),[](const auto& l){return l.id=="user" && l.files==2;}),"re-importing a WAV reuses its copy; each file name is kept once");
     for(const auto& [file,expected]:std::initializer_list<std::pair<const char*,const char*>>{{"Broken.sfz","line 2: unsupported opcode pan"},{"notes.txt","Choose a .wav"}}){
         action.importPath=(dir/file).string();
         const auto error=f.remote([&](Control& c){try{applySoundAction(c,action);}catch(const std::exception& e){return std::string(e.what());}return std::string();});

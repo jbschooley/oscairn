@@ -11,7 +11,7 @@ and per-sound audio are specified separately in [RFC 0007](0007-effect-contexts.
 
 ## Contract
 
-`oscairn.sound-contexts/draft-3` separates preparation from selecting the sound for new
+`oscairn.sound-contexts/draft-4` separates preparation from selecting the sound for new
 notes. Preparation belongs to the single control thread and must be safe concurrently
 with rendering. It does not reset, gate or reconfigure the playing plugin. Selection
 uses a bounded queue and takes effect at the next plugin processing boundary, before
@@ -21,9 +21,11 @@ This first version does not schedule a selection at a future absolute sample.
 Each prepared context has an instance-local ID, name, independent patch values and DSP
 state. IDs are never reused within that plugin instance, even after a slot is reclaimed.
 Preparing from numeric values starts with the plugin's defaults and applies the supplied
-values; it is not a snapshot of whatever happens to be playing. Draft 3 adds an optional
-patch text and asset directory for engines that define one (the Sampler takes SFZ), and a
-message buffer the plugin fills with a diagnostic when it rejects a patch. Unknown/duplicate
+values; it is not a snapshot of whatever happens to be playing. Draft 3 added an optional
+patch text for engines that define one (the Sampler takes SFZ) and a message buffer the
+plugin fills with a diagnostic when it rejects a patch. Draft 4 gives the patch a base asset
+reference, a library folder whose files the plugin resolves through `oscairn.assets`
+([RFC 0009](0009-sound-assets-and-dependencies.md)), instead of an absolute directory. Unknown/duplicate
 parameters and invalid values reject the complete preparation.
 
 A context is pinned by selected channels, queued selections, active voices and any

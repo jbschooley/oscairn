@@ -1,9 +1,8 @@
 # RFC 0009: Sound assets and dependencies
 
-Status: proposed, 2026-10-29. Not implemented. This is the concrete asset contract that
-[RFC 0006](0006-packages-and-portability.md) leaves as "the planned host asset API" and
-"assets must be declared by the plugin". The [Sampler's current snapshot](0008-sfz-native-samples-and-conversion.md#step-2-status)
-is an interim form that this replaces.
+Status: steps 1–2 implemented 2026-10-30 (see [Implementation status](#implementation-status));
+steps 3–4 planned. This is the concrete asset contract that [RFC 0006](0006-packages-and-portability.md)
+leaves as "the planned host asset API" and "assets must be declared by the plugin".
 
 ## Outcome
 
@@ -179,6 +178,37 @@ would, and a cross-plugin service would face differing sample formats, cross-plu
 lifetime tracking, worker-process isolation, and plugins that would not use it. Revisit
 only if a measured Performance on target hardware runs out of memory because different
 plugins load the same library.
+
+## Implementation status
+
+Steps 1 and 2 are implemented and tested (`assets`, `sampler`, `desktop-sound-picker`):
+
+- [`oscairn::assets::Store`](../../core/plugin-host/include/oscairn/assets.h) keeps
+  `libraries.tsv` (ID, fingerprint, path, name) and one `index/<id>.tsv` per library (size,
+  modification time, SHA-256, path) under the data directory given in the
+  [control protocol](../control-protocol.md#sound-assets). Registering hashes every regular
+  file once (at most 200,000; links skipped). Lookups re-hash only changed files, check paths
+  stay inside the library (no `..`, links or escapes), then fall back to identical content in
+  any library. Registry changes re-read the file under an exclusive `flock`, so engines in
+  several processes keep each other's registrations; indexes are caches and may be rebuilt.
+- Single-file imports go to the `user` library as `<first 16 hex digits of SHA-256>/<name>`.
+- The host extension `oscairn.assets/draft-1` and plugin extension
+  `oscairn.asset-dependencies/draft-1` are in [`oscairn-clap/assets.h`](../../core/clap-ext/include/oscairn-clap/assets.h);
+  `oscairn.sound-contexts/draft-4` passes the patch's base reference. The Oscairn Sampler
+  uses both and no longer reads directories itself.
+- Control: `assets.register`, `assets.import`, `assets.libraries`, and `sounds.prepare` with
+  `library`/`directory`. The desktop picker copies an imported WAV into the user library and
+  registers an imported SFZ's folder.
+- Performances record `libraries` and per-node `assets`, and check every reference before any
+  plugin loads ([format](../performance-format.md#snapshot-rules)). A test reopens a saved
+  Performance in a fresh store: it is refused, naming the library, until the folder is
+  registered under a new ID, and then plays identically.
+
+Not done: LV2 path mapping and `create` (step 3), packages, export and garbage collection (step
+4), a desktop screen for managing libraries, and fingerprint matching of whole libraries; files
+resolve individually by content, which already covers a folder registered again elsewhere.
+Registration runs on the engine's control thread and blocks other control requests while a
+large folder is hashed.
 
 ## Ruled out
 

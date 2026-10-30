@@ -6,10 +6,12 @@
 // anything else rejects the patch with its line number. Parsing, file access, decoding
 // and freeing happen on the main thread; contexts that use identical audio share one
 // immutable decoded copy. Playback reads it with linear interpolation. Samples are
-// dependencies of a saved Performance, not part of it: snapshots record where each one
-// is and its content hash, and loading fails if it is missing or has changed.
+// dependencies of a saved Performance, not part of it (docs/rfcs/0009): each sound names a
+// library, its folder there and the sample's SHA-256, and the host's oscairn.assets
+// extension finds and verifies the file. The sampler never searches the file system itself.
 
 #include "../common/SoundContexts.h"
+#include <oscairn-clap/assets.h>
 #include <clap/ext/log.h>
 #include <sndfile.h>
 
@@ -74,7 +76,7 @@ namespace
     {
         std::shared_ptr<const Sample> sample;
         Region region;
-        fs::path directory; // canonical directory the sample path is relative to
+        std::string library, directory, sha256; // the patch's folder in a library, and the sample's content
     };
 
     struct Voice : oscairn::contexts::VoiceBase
@@ -193,19 +195,16 @@ namespace
         return r;
     }
 
-    // Resolve a relative sample path inside root, rejecting escapes through ".." or links.
-    fs::path resolve(const fs::path& root, std::string name)
+    // The sample's path in its library: the patch's folder joined with sample=, which may use "../"
+    // (common in SFZ libraries) but may not leave the library. The host checks links and files.
+    std::string inLibrary(const std::string& directory, std::string name)
     {
         std::replace(name.begin(), name.end(), '\\', '/');
         const fs::path relative(name);
         if(relative.is_absolute() || relative.has_root_name()) fail(0, "sample path must be relative: " + name);
-        std::error_code ec;
-        const auto path = fs::canonical(root / relative, ec);
-        if(ec) fail(0, "sample not found: " + name);
-        const auto [rootEnd, pathAt] = std::mismatch(root.begin(), root.end(), path.begin(), path.end());
-        if(rootEnd != root.end()) fail(0, "sample is outside the patch directory: " + name);
-        if(!fs::is_regular_file(path, ec)) fail(0, "sample is not a regular file: " + name);
-        return path;
+        const auto joined = (fs::path(directory) / relative).lexically_normal().generic_string();
+        if(joined.empty() || joined == "." || joined.rfind("..", 0) == 0) fail(0, "sample is outside its library: " + name);
+        return joined;
     }
 
     std::shared_ptr<Sample> decode(const fs::path& path)
@@ -240,7 +239,8 @@ namespace
         std::vector<std::shared_ptr<const Sample>> restoring; // sounds restored so far by the current snapshot
         const clap_host_t* host = nullptr;
         const clap_host_log_t* log = nullptr;
-        static constexpr const char* stateVersion = "oscairn-sampler-1";
+        const oscairn_host_assets_t* assets = nullptr;
+        static constexpr const char* stateVersion = "oscairn-sampler-2";
         static constexpr size_t maxStateBytes = 1 << 20;
 
         bool accepts(const Patch& p, const clap_event_note_t& note)
@@ -298,14 +298,20 @@ namespace
         // Main thread. Shares audio already held by another sound when the content matches.
         // Only new audio counts against the budget, so sharing is checked first; a rejected
         // sample is therefore decoded (at most 64 MiB) before it is freed again.
-        Patch load(const std::string& text, const fs::path& directory)
+        // An empty sha256 accepts the file as it is now; a saved one must still match.
+        Patch load(const std::string& text, const std::string& library, const std::string& directory, const std::string& sha256 = {})
         {
-            Patch patch; patch.region = parse(text);
-            std::error_code ec;
-            const auto root = fs::canonical(directory, ec);
-            if(ec || !fs::is_directory(root)) fail(0, "sample not found: " + patch.region.sample + " (its folder is missing)");
-            patch.directory = root;
-            auto decoded = decode(resolve(root, patch.region.sample));
+            Patch patch; patch.region = parse(text); patch.library = library; patch.directory = directory;
+            if(!assets) fail(0, "this host does not provide sound assets");
+            oscairn_asset_ref_t ref{};
+            const auto path = inLibrary(directory, patch.region.sample);
+            if(library.size() >= sizeof(ref.library) || path.size() >= sizeof(ref.path) || sha256.size() >= sizeof(ref.sha256)) fail(0, "sample reference too long");
+            std::memcpy(ref.library, library.c_str(), library.size() + 1); std::memcpy(ref.path, path.c_str(), path.size() + 1);
+            std::memcpy(ref.sha256, sha256.c_str(), sha256.size() + 1);
+            char file[4096]{}, reason[512]{};
+            if(!assets->resolve(host, &ref, file, sizeof(file), reason, sizeof(reason))) fail(0, std::string("sample unavailable: ") + reason);
+            patch.sha256 = ref.sha256;
+            auto decoded = decode(file);
             auto same = [&](const Sample& s) { return s.hash == decoded->hash && s.rate == decoded->rate && s.channels == decoded->channels && s.data == decoded->data; };
             for(const auto& c : contexts) if(c.prepared && c.patch.sample && same(*c.patch.sample)) { patch.sample = c.patch.sample; return patch; }
             for(const auto& s : restoring) if(same(*s)) { patch.sample = s; return patch; }
@@ -320,17 +326,17 @@ namespace
             return patch;
         }
         static uint32_t prepare(const clap_plugin_t* p, const char* name, const oscairn_sound_parameter_t*, uint32_t count,
-                                const char* text, const char* directory, char* message, uint32_t capacity)
+                                const char* text, const oscairn_asset_ref_t* base, char* message, uint32_t capacity)
         {
             auto& s = self(p);
             try
             {
                 if(!name || std::strlen(name) > 63) fail(0, "invalid sound name");
                 if(count) fail(0, "the sampler has no parameters; describe the sound in SFZ");
-                if(!text || !directory) fail(0, "an SFZ patch and its directory are required");
+                if(!text || !base) fail(0, "an SFZ patch and its library folder are required");
                 auto* c = s.freeSlot();
                 if(!c) fail(0, "no free sound slot");
-                c->patch = s.load(text, directory);
+                c->patch = s.load(text, std::string(base->library, strnlen(base->library, sizeof(base->library))), std::string(base->path, strnlen(base->path, sizeof(base->path))));
                 return s.publish(*c, name);
             }
             catch(const Error& e) { if(message && capacity) std::snprintf(message, capacity, "%s", e.message.c_str()); }
@@ -339,8 +345,8 @@ namespace
         }
         void discarded(Context& c) { c.patch = Patch{}; } // frees unshared audio on the main thread
 
-        // Snapshots store, per sound, its sample directory, a normalized one-region SFZ and the
-        // sample's content hash. The audio itself stays where it is, like the plugin binary.
+        // Snapshots store, per sound, its library and folder, a normalized one-region SFZ and the
+        // sample's SHA-256. The audio itself stays in its library, like the plugin binary.
         static std::string normalized(const Patch& p)
         {
             if(!p.sample) return {};
@@ -351,31 +357,54 @@ namespace
         }
         bool writePatch(std::ostream& out, const Patch& p)
         {
-            out << ' ' << std::quoted(p.directory.string()) << ' ' << std::quoted(normalized(p)) << ' ' << (p.sample ? p.sample->hash : 0);
+            out << ' ' << std::quoted(p.library) << ' ' << std::quoted(p.directory) << ' ' << std::quoted(normalized(p)) << ' ' << std::quoted(p.sha256);
             return true;
         }
         bool readPatch(std::istream& in, Patch& p)
         {
-            std::string directory, text; uint64_t hash;
-            if(!(in >> std::quoted(directory) >> std::quoted(text) >> hash)) return false;
+            std::string library, directory, text, sha256;
+            if(!(in >> std::quoted(library) >> std::quoted(directory) >> std::quoted(text) >> std::quoted(sha256))) return false;
             if(text.empty()) { p = Patch{}; return true; }
+            if(sha256.size() != 64) return false;
             // The host shows the logged reason when it reports the rejected snapshot.
             auto reject = [&](const std::string& why) { if(log) log->log(host, CLAP_LOG_ERROR, why.c_str()); return false; };
-            try { p = load(text, directory); }
-            catch(const Error& e) { return reject(e.message + " (in " + directory + ")"); }
+            try { p = load(text, library, directory, sha256); }
+            catch(const Error& e) { return reject(e.message); }
             catch(const std::exception& e) { return reject(e.what()); }
-            if(p.sample->hash != hash) return reject("sample changed since the sound was saved: " + p.region.sample + " (in " + directory + ")");
             restoring.push_back(p.sample);
             return true;
         }
         void snapshotLoading(bool active) { restoringSnapshot = active; restoring.clear(); }
         void restored() {}
+
+        // Main thread: every sample the prepared sounds use, once each.
+        std::vector<oscairn_asset_ref_t> dependencies() const
+        {
+            std::vector<oscairn_asset_ref_t> result;
+            for(const auto& c : contexts)
+            {
+                if(!c.prepared || !c.patch.sample) continue;
+                oscairn_asset_ref_t ref{}; const auto path = inLibrary(c.patch.directory, c.patch.region.sample);
+                std::snprintf(ref.library, sizeof(ref.library), "%s", c.patch.library.c_str());
+                std::snprintf(ref.path, sizeof(ref.path), "%s", path.c_str());
+                std::snprintf(ref.sha256, sizeof(ref.sha256), "%s", c.patch.sha256.c_str());
+                if(std::none_of(result.begin(), result.end(), [&](const auto& r) { return !std::strcmp(r.library, ref.library) && !std::strcmp(r.path, ref.path) && !std::strcmp(r.sha256, ref.sha256); }))
+                    result.push_back(ref);
+            }
+            return result;
+        }
     };
 
     Sampler& self(const clap_plugin_t* p) { return *static_cast<Sampler*>(p->plugin_data); }
 
     const clap_plugin_state_t snapshot{Sampler::saveSnapshot, Sampler::loadSnapshot};
     const oscairn_plugin_sound_contexts_t soundContexts{Sampler::capacity, Sampler::get, Sampler::prepare, Sampler::select, Sampler::discard, &snapshot};
+    const oscairn_plugin_asset_dependencies_t assetDependencies{
+        [](const clap_plugin_t* p) -> uint32_t { return uint32_t(self(p).dependencies().size()); },
+        [](const clap_plugin_t* p, uint32_t index, oscairn_asset_ref_t* ref) -> bool {
+            const auto all = self(p).dependencies(); if(!ref || index >= all.size()) return false; *ref = all[index]; return true;
+        },
+    };
 
     const clap_plugin_audio_ports_t audioPorts{
         [](const clap_plugin_t*, bool input) -> uint32_t { return input ? 0 : 1; },
@@ -400,7 +429,12 @@ namespace
         s->host = host;
         s->plugin.desc = &descriptor;
         s->plugin.plugin_data = s;
-        s->plugin.init = [](const clap_plugin_t* p) { auto& s = self(p); s.log = static_cast<const clap_host_log_t*>(s.host->get_extension(s.host, CLAP_EXT_LOG)); return true; };
+        s->plugin.init = [](const clap_plugin_t* p) {
+            auto& s = self(p);
+            s.log = static_cast<const clap_host_log_t*>(s.host->get_extension(s.host, CLAP_EXT_LOG));
+            s.assets = static_cast<const oscairn_host_assets_t*>(s.host->get_extension(s.host, OSCAIRN_EXT_ASSETS));
+            return true;
+        };
         s->plugin.destroy = [](const clap_plugin_t* p) { delete &self(p); };
         s->plugin.activate = [](const clap_plugin_t* p, double rate, uint32_t, uint32_t) { auto& s = self(p); s.sampleRate = rate; s.resetVoices(); return true; };
         s->plugin.deactivate = [](const clap_plugin_t*) {};
@@ -410,6 +444,7 @@ namespace
         s->plugin.process = Sampler::process;
         s->plugin.get_extension = [](const clap_plugin_t*, const char* id) -> const void* {
             if(std::strcmp(id, OSCAIRN_EXT_SOUND_CONTEXTS) == 0) return &soundContexts;
+            if(std::strcmp(id, OSCAIRN_EXT_ASSET_DEPENDENCIES) == 0) return &assetDependencies;
             if(std::strcmp(id, CLAP_EXT_AUDIO_PORTS) == 0) return &audioPorts;
             if(std::strcmp(id, CLAP_EXT_NOTE_PORTS) == 0) return &notePorts;
             return nullptr;

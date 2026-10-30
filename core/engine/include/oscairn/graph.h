@@ -79,6 +79,8 @@ namespace oscairn
         NodeId addEffectContext(NodeId source);
         NodeId effectSource(NodeId node) const;
         std::unique_ptr<Graph> prepareReplacement() const;
+        // Where plugins added from now on resolve sound assets (RFC 0009); must outlive the graph.
+        void setAssets(kick::clap::AssetResolver* assets) noexcept { assets_ = assets; }
         // onPublish must not throw; called after successful compilation/allocation, before publication.
         void publishReplacement(Graph& prepared,size_t noteCutoff,const std::function<void()>& onPublish);
         // Audio thread: adopt once before Session computes transport for this block.
@@ -194,6 +196,7 @@ namespace oscairn
         uint32_t maxFrames_;
         ProcessingMode mode_;
         Lv2BufferLimits lv2Buffers_;
+        kick::clap::AssetResolver* assets_ = nullptr;
         AudioLayout audioLayout_;
         uint32_t inputChannels_=0, outputChannels_=0;
         std::vector<AudioConnection> audioRoutes_;

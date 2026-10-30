@@ -96,7 +96,7 @@ namespace
         void selectedGlobally(Context& next,const clap_output_events_t* out);
         void applyParam(const clap_event_header_t* header);
         void render(const clap_process_t* process,uint32_t from,uint32_t to);
-        static uint32_t prepare(const clap_plugin_t* p,const char* name,const oscairn_sound_parameter_t* supplied,uint32_t count,const char* patch,const char* directory,char* message,uint32_t capacity);
+        static uint32_t prepare(const clap_plugin_t* p,const char* name,const oscairn_sound_parameter_t* supplied,uint32_t count,const char* patch,const oscairn_asset_ref_t* base,char* message,uint32_t capacity);
         bool writePatch(std::ostream& out,const Patch& patch){for(double value:patch.values)out<<' '<<value;return true;}
         bool readPatch(std::istream& in,Patch& patch)
         {
@@ -326,9 +326,9 @@ namespace
     const clap_plugin_audio_ports_t audioPorts = { audioPortsCount, audioPortsGet };
     const clap_plugin_note_ports_t  notePorts  = { notePortsCount, notePortsGet };
 
-    uint32_t Synth::prepare(const clap_plugin_t* p,const char* name,const oscairn_sound_parameter_t* supplied,uint32_t count,const char* text,const char* directory,char*,uint32_t)
+    uint32_t Synth::prepare(const clap_plugin_t* p,const char* name,const oscairn_sound_parameter_t* supplied,uint32_t count,const char* text,const oscairn_asset_ref_t* base,char*,uint32_t)
     {
-        if(text || directory || !name || std::strlen(name)>63 || count>defaults.size() || (count && !supplied))return CLAP_INVALID_ID;
+        if(text || base || !name || std::strlen(name)>63 || count>defaults.size() || (count && !supplied))return CLAP_INVALID_ID;
         Patch patch;std::array<bool,defaults.size()> seen{};
         for(uint32_t i=0;i<count;++i)
         {

@@ -146,7 +146,7 @@ namespace oscairn
             if( method == "session.hello" )
             {
                 fields(p, {});
-                return R"({"protocolVersion":1,"server":"oscairn","capabilities":["performance.save","performance.load","state.info","state.save","presets.list","properties.list","properties.get","properties.set","properties.request","sounds.get","sounds.prepare","sounds.select","sounds.discard","session.status","params.list","params.get","params.set","params.text","params.gesture","graph.audio-routing","graph.get","graph.add","effects.create","effects.resources","graph.remove","graph.replace","graph.connect","graph.disconnect","graph.map","graph.unmap","graph.commit","subscribe","unsubscribe","transport.get","transport.set","notes.send"],"limits":{"messageBytes":65536,"depth":32,"batch":64,"parameterChanges":128}})";
+                return R"({"protocolVersion":1,"server":"oscairn","capabilities":["performance.save","performance.load","state.info","state.save","presets.list","properties.list","properties.get","properties.set","properties.request","sounds.get","sounds.prepare","sounds.select","sounds.discard","assets.register","assets.import","assets.libraries","session.status","params.list","params.get","params.set","params.text","params.gesture","graph.audio-routing","graph.get","graph.add","effects.create","effects.resources","graph.remove","graph.replace","graph.connect","graph.disconnect","graph.map","graph.unmap","graph.commit","subscribe","unsubscribe","transport.get","transport.set","notes.send"],"limits":{"messageBytes":65536,"depth":32,"batch":64,"parameterChanges":128}})";
             }
             if( method == "subscribe" || method == "unsubscribe" )
             {
@@ -204,12 +204,31 @@ namespace oscairn
             }
             if(method=="sounds.prepare")
             {
-                fields(p,{"node","name","parameters","state","preset","sfz","directory"});const auto n=node(c,member(p,"node"));
+                fields(p,{"node","name","parameters","state","preset","sfz","library","directory"});const auto n=node(c,member(p,"node"));
                 std::vector<oscairn_sound_parameter_t> patch;
                 auto optional=[&](const char* name){return member(p,name)?std::string(string(member(p,name))):std::string();};
                 if(member(p,"parameters"))for(auto v:array(member(p,"parameters"),128,0)){fields(v,{"id","value"});patch.push_back({integer(member(v,"id")),number(member(v,"value"))});}
-                try{return "{\"context\":"+std::to_string(c.prepareSound(n,std::string(string(member(p,"name"))),patch,optional("state"),optional("preset"),optional("sfz"),optional("directory")))+'}';}
+                try{return "{\"context\":"+std::to_string(c.prepareSound(n,std::string(string(member(p,"name"))),patch,optional("state"),optional("preset"),optional("sfz"),optional("library"),optional("directory")))+'}';}
                 catch(const std::runtime_error& e){throw Failure{-32005,e.what()};}
+            }
+            if(method=="assets.register")
+            {
+                fields(p,{"folder"});
+                try{const auto f=c.registerAssetFolder(std::string(string(member(p,"folder"))));return "{\"library\":"+quote(f.library)+",\"directory\":"+quote(f.directory)+'}';}
+                catch(const std::runtime_error& e){throw Failure{-32005,e.what()};}
+            }
+            if(method=="assets.import")
+            {
+                fields(p,{"file"});
+                try{const auto r=c.importAsset(std::string(string(member(p,"file"))));return "{\"library\":"+quote(r.library)+",\"path\":"+quote(r.path)+",\"sha256\":"+quote(r.sha256)+'}';}
+                catch(const std::runtime_error& e){throw Failure{-32005,e.what()};}
+            }
+            if(method=="assets.libraries")
+            {
+                fields(p,{});std::vector<std::string> libraries;
+                try{for(const auto& l:c.assetLibraries())libraries.push_back("{\"id\":"+quote(l.id)+",\"name\":"+quote(l.name)+",\"path\":"+quote(l.path)+",\"files\":"+std::to_string(l.files)+'}');}
+                catch(const std::runtime_error& e){throw Failure{-32005,e.what()};}
+                return "{\"libraries\":"+join(libraries)+'}';
             }
             if(method=="sounds.select" || method=="sounds.discard")
             {

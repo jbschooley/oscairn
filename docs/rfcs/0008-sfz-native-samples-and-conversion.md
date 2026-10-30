@@ -269,7 +269,7 @@ acceptance has not happened** and is queued with the other listening tests.
   preloaded mono/stereo WAV with libsndfile; behavior and limits are in the
   [plugins guide](../../plugins/README.md#sampler-sounds). Basic Synth and Sampler share
   [one context implementation](../../plugins/common/SoundContexts.h).
-- `sounds.prepare` takes `sfz` and `directory` through typed, JSON and remote controls; the
+- `sounds.prepare` takes `sfz` with an asset `library` and `directory` (RFC 0009) through typed, JSON and remote controls; the
   desktop picker imports a `.wav` or `.sfz` file through the same model code.
 - The `sampler` test covers exact timing, pitch, velocity, held-note survival, simultaneous
   sounds, note-ID release, stereo isolation, ranges, sample end, release, every rejection

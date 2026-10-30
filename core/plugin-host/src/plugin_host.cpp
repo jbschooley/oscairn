@@ -30,10 +30,12 @@ namespace oscairn
             }
             uint32_t soundContextCapacity() const noexcept override {return host.soundContextCapacity();}
             std::vector<oscairn_sound_context_info_t> soundContexts() const override {return host.soundContexts();}
-            uint32_t prepareSound(const std::string& name,const std::vector<oscairn_sound_parameter_t>& p,const std::string& state,const std::string& preset,const std::string& sfz,const std::string& directory) override {if(!state.empty() || !preset.empty())throw std::invalid_argument("Native contexts accept parameter or SFZ patches only");return host.prepareSound(name,p,sfz,directory);}
+            uint32_t prepareSound(const std::string& name,const std::vector<oscairn_sound_parameter_t>& p,const std::string& state,const std::string& preset,const std::string& sfz,const std::string& library,const std::string& directory) override {if(!state.empty() || !preset.empty())throw std::invalid_argument("Native contexts accept parameter or SFZ patches only");return host.prepareSound(name,p,sfz,library,directory);}
             bool selectSound(uint32_t id,int16_t channel) override {return host.selectSound(id,channel);}
             bool discardSound(uint32_t id,bool) override {return host.discardSound(id);}
             bool supportsState() const noexcept override {return host.supportsState();}
+            void setAssets(kick::clap::AssetResolver* assets) noexcept override {host.setAssets(assets);}
+            std::vector<kick::clap::AssetReference> assetDependencies() const override {return host.assetDependencies();}
             void saveSnapshot(const std::string& directory) override {
                 if(soundContextCapacity() && !host.supportsSoundSnapshot())throw std::runtime_error("Native engine has no complete sound-context snapshot interface");
                 PluginHost::saveSnapshot(directory);

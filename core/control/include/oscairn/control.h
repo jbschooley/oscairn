@@ -81,9 +81,19 @@ namespace oscairn
         struct SoundInfo { uint32_t id;std::string name;uint32_t selectedChannels,activeVoices;bool idle; };
         struct Sounds { uint32_t capacity;std::vector<SoundInfo> contexts;std::string mode; };
         virtual Sounds sounds(NodeId node) const = 0;
-        virtual uint32_t prepareSound(NodeId node,const std::string& name,const std::vector<oscairn_sound_parameter_t>& parameters,const std::string& state={},const std::string& preset={},const std::string& sfz={},const std::string& directory={}) = 0;
+        // sfz patches name files in directory of asset library (see the asset calls below).
+        virtual uint32_t prepareSound(NodeId node,const std::string& name,const std::vector<oscairn_sound_parameter_t>& parameters,const std::string& state={},const std::string& preset={},const std::string& sfz={},const std::string& library={},const std::string& directory={}) = 0;
         virtual bool selectSound(NodeId node,uint32_t id,int16_t channel=-1) = 0;
         virtual bool discardSound(NodeId node,uint32_t id,bool cutTail=false) = 0;
+
+        // Sound assets (docs/rfcs/0009): libraries of files that sounds use without copying them.
+        struct AssetFolder { std::string library,directory; };      // a folder's place in a library
+        struct AssetLibrary { std::string id,name,path;size_t files; };
+        // The library containing folder (registering folder as a new library if none does).
+        virtual AssetFolder registerAssetFolder(const std::string& folder) = 0;
+        // Copies one file into the user library and returns its reference.
+        virtual kick::clap::AssetReference importAsset(const std::string& file) = 0;
+        virtual std::vector<AssetLibrary> assetLibraries() const = 0;
 
         virtual GraphState graphState() const = 0;
         virtual NodeId add( const std::string& name, const std::string& path, const std::string& pluginId = {} ) = 0;

@@ -1,6 +1,6 @@
 add_subdirectory(clap-host)
 
-add_library(oscairn_plugin_host STATIC plugin-host/src/plugin_host.cpp plugin-host/src/discovery.cpp)
+add_library(oscairn_plugin_host STATIC plugin-host/src/plugin_host.cpp plugin-host/src/discovery.cpp plugin-host/src/assets.cpp)
 target_include_directories(oscairn_plugin_host PUBLIC plugin-host/include)
 target_link_libraries(oscairn_plugin_host PUBLIC kick_clap_host)
 target_compile_options(oscairn_plugin_host PRIVATE -Wall -Wextra)
@@ -124,6 +124,10 @@ target_include_directories(oscairn-sound-contexts-test PRIVATE clap-host/tests)
 add_dependencies(oscairn-sound-contexts-test oscairn_basic_synth)
 add_test(NAME sound-contexts COMMAND oscairn-sound-contexts-test $<TARGET_FILE:oscairn_basic_synth>)
 set_tests_properties(sound-contexts PROPERTIES TIMEOUT 30)
+
+add_executable(oscairn-assets-test engine/tests/assets.cpp)
+target_link_libraries(oscairn-assets-test PRIVATE oscairn_plugin_host)
+add_test(NAME assets COMMAND oscairn-assets-test)
 
 add_executable(oscairn-sampler-test engine/tests/sampler.cpp)
 target_link_libraries(oscairn-sampler-test PRIVATE oscairn_control_json)

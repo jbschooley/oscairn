@@ -35,8 +35,9 @@ My Performance/
 LV2 state directories contain `state.ttl` and materialized assets. CLAP state is preserved
 as supplied by the plugin; the host cannot discover external sample paths hidden inside
 an arbitrary CLAP state blob. A plugin whose state is not self-contained may still require
-its original sample library. The Oscairn Sampler's samples are dependencies in the same
-way: its snapshot records each sample's location and content hash, not its audio.
+its original sample library. Plugins that declare their files through
+`oscairn.asset-dependencies`, such as the Oscairn Sampler, store asset references instead
+([RFC 0009](rfcs/0009-sound-assets-and-dependencies.md)): the files stay in their libraries.
 Package-managed dependency resolution remains planned in [RFC 0006](rfcs/0006-packages-and-portability.md).
 
 Required top-level fields:
@@ -71,9 +72,15 @@ inventing a second save format.
 - Native Basic Synth stores every prepared patch, name and all 16 channel selections,
   including accepted selections still queued at save time. Voices, pedal state and pitch
   modulation in progress are excluded. IDs are reconstructed, not persisted.
-- The Sampler stores every prepared SFZ patch (normalized), its sample directory and the
-  sample's content hash. Loading fails, preserving the live graph, if a sample is missing
-  or its content changed. Moving the Performance folder does not move the samples.
+- Each node lists the sound assets its plugin declares as `assets: [{library, path, sha256}]`,
+  and the top-level `libraries: [{id, name, fingerprint}]` names the libraries they come from.
+  Before any plugin loads, every reference must resolve: by library and path, or by identical
+  content in any registered library. Otherwise loading fails, preserving the live graph,
+  with a message per sound and library such as `Piano: 641 of 641 files from library
+  'Salamander' unavailable, e.g. …`. Moving the Performance folder does not move the samples;
+  registering the same folder on another device is enough.
+- The Sampler's `oscairn-sampler-2` snapshot stores every prepared SFZ patch (normalized) with
+  its library, folder and the sample's SHA-256.
 - Hosted instrument pools snapshot every prepared instance and the selected slot per
   channel. Restoring a pool checks every instance against the plugin's layout/parameters.
 - Plugins with state support use their full state interface. LV2 asset links produced by

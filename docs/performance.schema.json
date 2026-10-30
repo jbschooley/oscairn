@@ -10,6 +10,31 @@
     "version": {
       "const": 1
     },
+    "libraries": {
+      "type": "array",
+      "maxItems": 4096,
+      "description": "Asset libraries the nodes' sound assets come from (RFC 0009)",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "fingerprint": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "fingerprint"
+        ],
+        "additionalProperties": false
+      }
+    },
     "transport": {
       "type": "object",
       "properties": {
@@ -264,6 +289,32 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 16
+        },
+        "assets": {
+          "type": "array",
+          "maxItems": 65536,
+          "description": "Sound assets the plugin's state uses: dependencies, never copied into the Performance",
+          "items": {
+            "type": "object",
+            "properties": {
+              "library": {
+                "type": "string"
+              },
+              "path": {
+                "type": "string"
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              }
+            },
+            "required": [
+              "library",
+              "path",
+              "sha256"
+            ],
+            "additionalProperties": false
+          }
         }
       },
       "required": [

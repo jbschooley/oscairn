@@ -12,6 +12,7 @@ namespace oscairn
     {
         if( !std::isfinite( sampleRate ) || sampleRate <= 0 || maxFrames == 0 )
             throw std::invalid_argument( "session needs a positive sample rate and block size" );
+        graph_.setAssets( &assets_ );
         transport_.setPlaying( false );
     }
 

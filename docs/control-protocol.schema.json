@@ -1278,7 +1278,12 @@
                   "type": "string"
                 },
                 "directory": {
-                  "type": "string"
+                  "type": "string",
+                  "description": "The patch's folder inside the library; empty for the library root"
+                },
+                "library": {
+                  "type": "string",
+                  "description": "Asset library holding the patch's files (from assets.register or assets.import)"
                 }
               },
               "required": [
@@ -1806,6 +1811,98 @@
               "required": [
                 "directory"
               ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "params"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
+              "const": "assets.register"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "folder": {
+                  "type": "string",
+                  "description": "Absolute folder path, used in place"
+                }
+              },
+              "required": [
+                "folder"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "params"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
+              "const": "assets.import"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "file": {
+                  "type": "string",
+                  "description": "Absolute path of a file to copy into the user library"
+                }
+              },
+              "required": [
+                "file"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "params"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
+              "const": "assets.libraries"
+            },
+            "params": {
+              "type": "object",
+              "properties": {},
+              "required": [],
               "additionalProperties": false
             }
           },
@@ -2938,6 +3035,80 @@
       },
       "required": [
         "loaded"
+      ],
+      "additionalProperties": false
+    },
+    "AssetFolder": {
+      "type": "object",
+      "properties": {
+        "library": {
+          "type": "string"
+        },
+        "directory": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "library",
+        "directory"
+      ],
+      "additionalProperties": false
+    },
+    "AssetReference": {
+      "type": "object",
+      "properties": {
+        "library": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      },
+      "required": [
+        "library",
+        "path",
+        "sha256"
+      ],
+      "additionalProperties": false
+    },
+    "AssetLibraries": {
+      "type": "object",
+      "properties": {
+        "libraries": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "path": {
+                "type": "string"
+              },
+              "files": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "path",
+              "files"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "libraries"
       ],
       "additionalProperties": false
     }

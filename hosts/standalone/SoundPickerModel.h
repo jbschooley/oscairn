@@ -9,7 +9,7 @@ namespace oscairn::standalone
     {
         std::string name, preset;
         std::vector<oscairn_sound_parameter_t> parameters;
-        std::string sfz{}, directory{}; // patch text and its asset directory
+        std::string sfz{}, library{}, directory{}; // patch text, and the asset library folder its files are in
     };
     struct SoundPickerState
     {
@@ -34,8 +34,8 @@ namespace oscairn::standalone
         std::string importPath; // Prepare from this .sfz or .wav instead of choice
     };
     SoundPickerState readSoundPicker(Control&);
-    // A .sfz file as written, or a one-region SFZ patch with a 30 ms release for a .wav file;
-    // throws if unreadable.
-    SoundChoice importSound(const std::string& path);
+    // A .sfz file as written (its folder registered as an asset library), or a one-region SFZ
+    // patch with a 30 ms release for a .wav file copied into the user library; throws if unusable.
+    SoundChoice importSound(Control&, const std::string& path);
     void applySoundAction(Control&, const SoundAction&);
 }

@@ -14,6 +14,7 @@
 #include <clap/ext/event-registry.h>
 #include <oscairn-clap/param-target.h>
 #include <algorithm>
+#include <cstdio>
 #include <chrono>
 #include <cmath>
 #include <thread>
@@ -127,6 +128,8 @@ struct Host::Impl {
     const clap_plugin_state_t* state = nullptr;
     bool exclusiveState=false;
     const oscairn_plugin_sound_contexts_t* sounds = nullptr;
+    const oscairn_plugin_asset_dependencies_t* assetDependencies = nullptr;
+    AssetResolver* assets = nullptr;
     const clap_plugin_latency_t* pluginLatency = nullptr;
     const clap_plugin_timer_support_t* timerSupport = nullptr;
     const clap_plugin_posix_fd_support_t* fdSupport = nullptr;
@@ -246,6 +249,22 @@ struct Host::Impl {
         s.fds.erase(std::remove_if(s.fds.begin(), s.fds.end(), [=](const Fd& item) { return item.fd == fd; }), s.fds.end());
         return old != s.fds.size();
     }
+    static bool CLAP_ABI resolveAsset(const clap_host_t* h, oscairn_asset_ref_t* ref, char* path, uint32_t pathCapacity, char* message, uint32_t messageCapacity) {
+        auto report = [&](const std::string& text) { if (message && messageCapacity) { std::snprintf(message, messageCapacity, "%s", text.c_str()); } return false; };
+        if (!isMain(h)) return report("assets resolve on the main thread only");
+        if (!ref || !path || !pathCapacity) return report("invalid asset request");
+        auto& s = self(h);
+        if (!s.assets) return report("this host has no sound asset store");
+        const std::string library(ref->library, strnlen(ref->library, sizeof(ref->library))), relative(ref->path, strnlen(ref->path, sizeof(ref->path)));
+        std::string hash(ref->sha256, strnlen(ref->sha256, sizeof(ref->sha256)));
+        try {
+            const auto file = s.assets->resolve(library, relative, hash);
+            if (file.size() + 1 > pathCapacity || hash.size() >= sizeof(ref->sha256)) return report("asset path too long");
+            std::memcpy(path, file.c_str(), file.size() + 1);
+            std::memcpy(ref->sha256, hash.c_str(), hash.size() + 1);
+            return true;
+        } catch (const std::exception& e) { return report(e.what()); }
+    }
     static const void* CLAP_ABI extension(const clap_host_t*, const char* id) {
         static const clap_host_thread_check_t threads{isMain, isAudio};
         static const clap_host_params_t parameters{rescanParams, clearParams, requestFlush};
@@ -258,7 +277,9 @@ struct Host::Impl {
         static const clap_host_event_registry_t registry{queryEventSpace};
         static const clap_host_timer_support_t timer{registerTimer, unregisterTimer};
         static const clap_host_posix_fd_support_t descriptors{registerFd, modifyFd, unregisterFd};
+        static const oscairn_host_assets_t assets{resolveAsset};
         if (!id) return nullptr;
+        if (!std::strcmp(id, OSCAIRN_EXT_ASSETS)) return &assets;
         if (!std::strcmp(id, CLAP_EXT_THREAD_CHECK)) return &threads;
         if (!std::strcmp(id, CLAP_EXT_PARAMS)) return &parameters;
         if (!std::strcmp(id, CLAP_EXT_STATE)) return &state;
@@ -301,7 +322,7 @@ struct Host::Impl {
         audioLayoutLocked=false;
         loaded.store(false);
         if (plugin) { deactivate(); if (plugin->destroy) plugin->destroy(plugin); }
-        plugin = nullptr; params = nullptr; state = nullptr; sounds = nullptr; pluginLatency = nullptr;
+        plugin = nullptr; params = nullptr; state = nullptr; sounds = nullptr; assetDependencies = nullptr; pluginLatency = nullptr;
         timerSupport = nullptr; fdSupport = nullptr;
         timers.clear(); fds.clear();
         paramInfo.clear(); paramValues.reset(); cookies.clear(); inputs.clear(); outputs.clear(); noteInputs.clear(); noteOutputs.clear();
@@ -332,6 +353,8 @@ struct Host::Impl {
         s.exclusiveState=s.sounds && s.sounds->state;
         if(s.exclusiveState)s.state=s.sounds->state;
         if(s.state && (!s.state->save || !s.state->load))throw std::runtime_error("Incomplete plugin state interface");
+        s.assetDependencies = static_cast<const oscairn_plugin_asset_dependencies_t*>(s.plugin->get_extension(s.plugin, OSCAIRN_EXT_ASSET_DEPENDENCIES));
+        if(s.assetDependencies && (!s.assetDependencies->count || !s.assetDependencies->get))throw std::runtime_error("Incomplete asset-dependency interface");
         s.pluginLatency = static_cast<const clap_plugin_latency_t*>(s.plugin->get_extension(s.plugin, CLAP_EXT_LATENCY));
         s.timerSupport = static_cast<const clap_plugin_timer_support_t*>(s.plugin->get_extension(s.plugin, CLAP_EXT_TIMER_SUPPORT));
         s.fdSupport = static_cast<const clap_plugin_posix_fd_support_t*>(s.plugin->get_extension(s.plugin, CLAP_EXT_POSIX_FD_SUPPORT));
@@ -745,6 +768,19 @@ bool Host::loadState(const std::vector<uint8_t>& bytes) {
         s.activate(); s.dirty.store(false); s.failed.store(false); return true;
     } catch (...) { s.fail("Plugin state restoration failed"); return false; }
 }
+void Host::setAssets(AssetResolver* assets) noexcept { impl->assets = assets; }
+bool Host::declaresAssets() const noexcept { return impl->assetDependencies; }
+std::vector<AssetReference> Host::assetDependencies() const {
+    auto& s = *impl; std::vector<AssetReference> result;
+    if (!s.assetDependencies) return result;
+    const auto count = std::min<uint32_t>(s.assetDependencies->count(s.plugin), 65536);
+    for (uint32_t i = 0; i < count; ++i) {
+        oscairn_asset_ref_t ref{};
+        if (!s.assetDependencies->get(s.plugin, i, &ref)) throw std::runtime_error("Plugin did not describe an asset it uses");
+        result.push_back({{ref.library, strnlen(ref.library, sizeof(ref.library))}, {ref.path, strnlen(ref.path, sizeof(ref.path))}, {ref.sha256, strnlen(ref.sha256, sizeof(ref.sha256))}});
+    }
+    return result;
+}
 bool Host::supportsState() const noexcept { return impl->state && impl->state->save && impl->state->load; }
 bool Host::supportsSoundSnapshot() const noexcept { return impl->exclusiveState && supportsState(); }
 bool Host::loaded() const noexcept { return impl->loaded.load(); }
@@ -954,19 +990,22 @@ std::vector<oscairn_sound_context_info_t> Host::soundContexts() const {
     for(uint32_t i=0;i<soundContextCapacity();++i){oscairn_sound_context_info_t info{};if(impl->sounds->get(impl->plugin,i,&info)){info.name[63]=0;result.push_back(info);}}
     return result;
 }
-uint32_t Host::prepareSound(const std::string& name,const std::vector<oscairn_sound_parameter_t>& parameters,const std::string& patch,const std::string& directory) {
+uint32_t Host::prepareSound(const std::string& name,const std::vector<oscairn_sound_parameter_t>& parameters,const std::string& patch,const std::string& library,const std::string& directory) {
     if(!impl->sounds)throw std::invalid_argument("Plugin has no native sound contexts");
     if(name.size()>63 || name.find('\0')!=std::string::npos || parameters.size()>128 || patch.size()>maxPatchBytes ||
-       patch.find('\0')!=std::string::npos || directory.find('\0')!=std::string::npos || patch.empty()!=directory.empty())throw std::invalid_argument("Invalid sound patch");
+       patch.find('\0')!=std::string::npos || patch.empty()!=library.empty() || (patch.empty() && !directory.empty()) ||
+       library.size()>=sizeof(oscairn_asset_ref_t::library) || directory.size()>=sizeof(oscairn_asset_ref_t::path) ||
+       library.find('\0')!=std::string::npos || directory.find('\0')!=std::string::npos)throw std::invalid_argument("Invalid sound patch");
     for(size_t i=0;i<parameters.size();++i){const auto& v=parameters[i];
         const auto p=std::find_if(impl->paramInfo.begin(),impl->paramInfo.end(),[&](const auto& p){return p.id==v.id;});
         if(p==impl->paramInfo.end() || (p->flags&CLAP_PARAM_IS_READONLY) || !std::isfinite(v.value) || v.value<p->minimum || v.value>p->maximum)
             throw std::invalid_argument("Invalid sound parameter");
         for(size_t j=0;j<i;++j)if(parameters[j].id==v.id)throw std::invalid_argument("Duplicate sound parameter");
     }
-    char message[512]{};
+    char message[512]{};oscairn_asset_ref_t base{};
+    std::memcpy(base.library,library.c_str(),library.size()+1);std::memcpy(base.path,directory.c_str(),directory.size()+1);
     const auto id=impl->sounds->prepare(impl->plugin,name.c_str(),parameters.data(),static_cast<uint32_t>(parameters.size()),
-        patch.empty()?nullptr:patch.c_str(),directory.empty()?nullptr:directory.c_str(),message,sizeof(message));
+        patch.empty()?nullptr:patch.c_str(),patch.empty()?nullptr:&base,message,sizeof(message));
     message[sizeof(message)-1]=0;
     if(id==CLAP_INVALID_ID)throw std::runtime_error(message[0]?std::string("Sound preparation rejected: ")+message:"Sound preparation rejected: invalid patch or context capacity exhausted");
     return id;

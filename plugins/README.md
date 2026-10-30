@@ -36,9 +36,10 @@ volume 100 on a squared curve and centre panning at 1/√2, together −7.2 dB; 
 are not implemented yet. Mono samples play on both outputs. Pressure is tracked
 per voice but not mapped to sound. The single stereo output is unsaturated.
 
-Saving uses `clap.resource-directory`: each distinct sample is written once as a float WAV
-named by its content hash, and the `oscairn-sampler-1` snapshot stores a normalized SFZ per
-sound that refers to it.
+Samples are Performance dependencies, not saved with it (RFC 0009): the Sampler asks the host
+for every file through `oscairn.assets` and never searches the file system itself. Its
+`oscairn-sampler-2` snapshot stores, per sound, the library, the patch's folder there, a
+normalized SFZ and the sample's SHA-256, and `oscairn.asset-dependencies` lists them.
 
 ## Basic Synth sounds
 

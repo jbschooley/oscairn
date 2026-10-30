@@ -17,6 +17,7 @@ using V=const json_value_s*;
 namespace fs=std::filesystem;
 [[noreturn]] void bad(const std::string& why){throw std::runtime_error("Performance: "+why);}
 std::string text(V v){if(!v || v->type!=json_type_string)bad("expected string");const auto* s=static_cast<const json_string_s*>(v->payload);std::string out(s->string,s->string_size);if(out.size()>4096 || out.find('\0')!=std::string::npos)bad("invalid string");return out;}
+V member(V v,std::string_view key){return detail::member(v,key);}
 V field(V v,std::string_view key){if(!v || v->type!=json_type_object)bad("expected object");if(V value=detail::member(v,key))return value;bad("missing field "+std::string(key));}
 void fields(V v,std::initializer_list<std::string_view> allowed){if(!v || v->type!=json_type_object)bad("expected object");std::set<std::string_view> seen;for(auto* e=static_cast<const json_object_s*>(v->payload)->start;e;e=e->next){std::string_view key(e->name->string,e->name->string_size);if(!seen.insert(key).second || std::find(allowed.begin(),allowed.end(),key)==allowed.end())bad("unknown or duplicate field");}}
 std::vector<V> array(V v,size_t limit){if(!v || v->type!=json_type_array)bad("expected array");const auto* a=static_cast<const json_array_s*>(v->payload);if(a->length>limit)bad("too many entries");std::vector<V> out;for(auto* e=a->start;e;e=e->next)out.push_back(e->value);return out;}
@@ -39,17 +40,22 @@ void Session::savePerformance(const std::string& directory) {
     state_files::Bundle bundle(directory);fs::create_directory(bundle.temporary.path/"nodes");
     std::map<NodeId,std::string> keys{{graphInput,"input"},{graphOutput,"output"}};
     for(size_t i=0;i<graph.nodes.size();++i)keys[graph.nodes[i].id]="node-"+std::to_string(i+1);
-    std::vector<std::string> nodes,audio,notes,mappings;
+    std::vector<std::string> nodes,audio,notes,mappings;std::set<std::string> libraries;
     for(const auto& n:graph.nodes){const auto& key=keys.at(n.id);auto& h=graph_.host(n.id);
+        // Sound assets are dependencies (RFC 0009): record references, never the files.
+        std::vector<std::string> assets;
+        for(const auto& a:h.assetDependencies()){libraries.insert(a.library);assets.push_back("{\"library\":"+quote(a.library)+",\"path\":"+quote(a.path)+",\"sha256\":"+quote(a.sha256)+'}');}
         try{h.saveSnapshot((bundle.temporary.path/"nodes"/key).string());}catch(const std::exception& e){bad("cannot save "+nodes_.at(n.id)+" ("+n.plugin.id+"): "+e.what());}
         const bool lv2=lv2Path(n.plugin.path);
-        nodes.push_back("{\"key\":"+quote(key)+",\"name\":"+quote(nodes_.at(n.id))+",\"plugin\":{\"format\":"+quote(lv2?"lv2":"clap")+",\"id\":"+quote(n.plugin.id)+",\"version\":"+quote(n.plugin.version)+",\"pathHint\":"+quote(n.plugin.path)+"},\"engine\":"+quote(keys.at(graph_.effectSource(n.id)))+",\"inputs\":"+ports(n.inputs)+",\"outputs\":"+ports(n.outputs)+",\"noteInputs\":"+std::to_string(n.noteInputs)+",\"noteOutputs\":"+std::to_string(n.noteOutputs)+'}');
+        nodes.push_back("{\"key\":"+quote(key)+",\"name\":"+quote(nodes_.at(n.id))+",\"plugin\":{\"format\":"+quote(lv2?"lv2":"clap")+",\"id\":"+quote(n.plugin.id)+",\"version\":"+quote(n.plugin.version)+",\"pathHint\":"+quote(n.plugin.path)+"},\"engine\":"+quote(keys.at(graph_.effectSource(n.id)))+",\"inputs\":"+ports(n.inputs)+",\"outputs\":"+ports(n.outputs)+",\"noteInputs\":"+std::to_string(n.noteInputs)+",\"noteOutputs\":"+std::to_string(n.noteOutputs)+",\"assets\":"+join(assets)+'}');
     }
     auto endpoint=[&](const AudioEndpoint& e){return "{\"node\":"+quote(keys.at(e.node))+",\"port\":"+std::to_string(e.port)+",\"channel\":"+std::to_string(e.channel)+'}';};
     for(const auto& c:graph.audioRoutes)audio.push_back("{\"from\":"+endpoint(c.from)+",\"to\":"+endpoint(c.to)+",\"channels\":"+std::to_string(c.channels)+",\"gain\":"+numeric(c.gain)+'}');
     for(const auto& [from,to]:graph.notes)notes.push_back("{\"from\":"+quote(keys.at(from))+",\"to\":"+quote(keys.at(to))+'}');
     for(const auto& m:graph.mappings)mappings.push_back("{\"from\":"+quote(keys.at(m.source))+",\"lane\":"+std::to_string(m.lane)+",\"to\":"+quote(keys.at(m.target))+",\"param\":"+std::to_string(m.param)+'}');
-    const auto out="{\"format\":\"oscairn.performance\",\"version\":1,\"transport\":{\"tempo\":"+numeric(tempo_.load())+",\"clockSource\":"+quote(clockSource_.load()==Transport::ClockSource::Internal?"internal":"midi")+"},\"audioInputs\":"+ports(graph.audioLayout.inputs)+",\"audioOutputs\":"+ports(graph.audioLayout.outputs)+",\"nodes\":"+join(nodes)+",\"audio\":"+join(audio)+",\"notes\":"+join(notes)+",\"mappings\":"+join(mappings)+"}\n";
+    std::vector<std::string> named;
+    for(const auto& l:assets_.libraries())if(libraries.count(l.id))named.push_back("{\"id\":"+quote(l.id)+",\"name\":"+quote(l.name)+",\"fingerprint\":"+quote(l.fingerprint)+'}');
+    const auto out="{\"format\":\"oscairn.performance\",\"version\":1,\"libraries\":"+join(named)+",\"transport\":{\"tempo\":"+numeric(tempo_.load())+",\"clockSource\":"+quote(clockSource_.load()==Transport::ClockSource::Internal?"internal":"midi")+"},\"audioInputs\":"+ports(graph.audioLayout.inputs)+",\"audioOutputs\":"+ports(graph.audioLayout.outputs)+",\"nodes\":"+join(nodes)+",\"audio\":"+join(audio)+",\"notes\":"+join(notes)+",\"mappings\":"+join(mappings)+"}\n";
     if(out.size()>4*1024*1024)bad("manifest exceeds size limit");
     const auto encoding=detail::jsonPreflight(out,32);if(!encoding.empty())bad(std::string(encoding));
     state_files::write(bundle.temporary.path/"performance.json",out.data(),out.size());validateTree(bundle.temporary.path);bundle.publish();
@@ -58,14 +64,30 @@ void Session::savePerformance(const std::string& directory) {
 void Session::loadPerformance(const std::string& directory) {
     if(directory.empty() || directory.find('\0')!=std::string::npos)bad("invalid directory");
     const auto root=fs::canonical(directory);validateTree(root);const auto doc=document(root);V d=doc.get();
-    fields(d,{"format","version","transport","audioInputs","audioOutputs","nodes","audio","notes","mappings"});
+    fields(d,{"format","version","libraries","transport","audioInputs","audioOutputs","nodes","audio","notes","mappings"});
     if(text(field(d,"format"))!="oscairn.performance" || integer(field(d,"version"))!=1)bad("unsupported format version");
     const auto transport=field(d,"transport");fields(transport,{"tempo","clockSource"});const double tempo=number(field(transport,"tempo"));
     const auto clock=text(field(transport,"clockSource"));if(tempo<1 || tempo>1000 || (clock!="internal" && clock!="midi"))bad("invalid transport");
     const auto layout=graph_.describe().audioLayout;checkPorts(field(d,"audioInputs"),layout.inputs);checkPorts(field(d,"audioOutputs"),layout.outputs);
+    // Every sound asset must resolve before any plugin loads; report all that do not.
+    {
+        std::map<std::string,std::string> names;
+        if(member(d,"libraries"))for(auto l:array(field(d,"libraries"),4096)){fields(l,{"id","name","fingerprint"});names[text(field(l,"id"))]=text(field(l,"name"));}
+        std::vector<std::string> missing;
+        for(auto node:array(field(d,"nodes"),256)){
+            if(!member(node,"assets"))continue;
+            std::map<std::string,std::pair<size_t,std::string>> unavailable;size_t total=0;
+            for(auto a:array(field(node,"assets"),65536)){fields(a,{"library","path","sha256"});++total;
+                assets::Ref ref{text(field(a,"library")),text(field(a,"path")),text(field(a,"sha256"))};const auto library=ref.library;
+                try{assets_.resolve(ref);}catch(const std::exception& e){auto& u=unavailable[library];if(!u.first++)u.second=e.what();}}
+            for(const auto& [library,u]:unavailable)
+                missing.push_back(text(field(node,"name"))+": "+std::to_string(u.first)+" of "+std::to_string(total)+" files from library '"+(names.count(library)?names[library]:library)+"' unavailable, e.g. "+u.second);
+        }
+        if(!missing.empty()){std::string all;for(const auto& m:missing)all+=(all.empty()?"":"; ")+m;bad("missing sound assets: "+all);}
+    }
     auto next=graph_.prepareReplacement();std::map<std::string,NodeId> ids{{"input",graphInput},{"output",graphOutput}};std::map<NodeId,std::string> names;std::set<std::string> usedNames;
     std::map<std::string,V> definitions;const auto nodes=array(field(d,"nodes"),256);
-    for(auto node:nodes){fields(node,{"key","name","plugin","engine","inputs","outputs","noteInputs","noteOutputs"});const auto key=text(field(node,"key"));
+    for(auto node:nodes){fields(node,{"key","name","plugin","engine","inputs","outputs","noteInputs","noteOutputs","assets"});const auto key=text(field(node,"key"));
         if(key.size()<6 || key.size()>12 || key.substr(0,5)!="node-" || !std::all_of(key.begin()+5,key.end(),[](char c){return c>='0' && c<='9';}) || !definitions.emplace(key,node).second)bad("invalid or duplicate node key");
         const auto name=text(field(node,"name"));if(!name.empty() && !usedNames.insert(name).second)bad("duplicate node name");}
     // Roots first; siblings can refer forward to a root, never to an arbitrary chain.

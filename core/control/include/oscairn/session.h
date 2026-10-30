@@ -2,6 +2,7 @@
 #pragma once
 
 #include "oscairn/control.h"
+#include "oscairn/assets.h"
 
 #include <array>
 #include <atomic>
@@ -39,7 +40,11 @@ namespace oscairn
         bool requestProperty(NodeId node,const std::string& uri) override {return graph_.host(node).requestProperty(uri);}
         std::optional<PropertyValue> propertyValue(NodeId node,const std::string& uri) const override {return graph_.host(node).propertyValue(uri);}
         Sounds sounds(NodeId node) const override;
-        uint32_t prepareSound(NodeId node,const std::string& name,const std::vector<oscairn_sound_parameter_t>& p,const std::string& state={},const std::string& preset={},const std::string& sfz={},const std::string& directory={}) override {return graph_.host(node).prepareSound(name,p,state,preset,sfz,directory);}
+        assets::Store& assets() noexcept { return assets_; }
+        uint32_t prepareSound(NodeId node,const std::string& name,const std::vector<oscairn_sound_parameter_t>& p,const std::string& state={},const std::string& preset={},const std::string& sfz={},const std::string& library={},const std::string& directory={}) override {return graph_.host(node).prepareSound(name,p,state,preset,sfz,library,directory);}
+        AssetFolder registerAssetFolder(const std::string& folder) override {AssetFolder f;if(!assets_.locate(folder,f.library,f.directory))f.library=assets_.registerFolder(folder);return f;}
+        kick::clap::AssetReference importAsset(const std::string& file) override {return assets_.import(file);}
+        std::vector<AssetLibrary> assetLibraries() const override {std::vector<AssetLibrary> r;for(const auto& l:assets_.libraries())r.push_back({l.id,l.name,l.path,l.files});return r;}
         bool selectSound(NodeId node,uint32_t id,int16_t channel=-1) override {return graph_.host(node).selectSound(id,channel);}
         bool discardSound(NodeId node,uint32_t id,bool cutTail=false) override {return graph_.host(node).discardSound(id,cutTail);}
         GraphState graphState() const override;
@@ -113,6 +118,7 @@ namespace oscairn
 
         double sampleRate_;
         uint32_t maxFrames_;
+        assets::Store assets_; // outlives the graph whose plugins resolve through it
         Graph graph_;
         SessionStatus hostStatus_;
         std::map<NodeId,std::string> nodes_;

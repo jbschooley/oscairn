@@ -121,7 +121,8 @@ namespace oscairn
     {
         if(nextId_>=graphInput)throw std::overflow_error("Graph node IDs exhausted");
         Node node;
-        node.host = preparedInstrument(loadPlugin(path,pluginId,sampleRate_,maxFrames_,mode_,lv2Buffers_),sampleRate_,maxFrames_,mode_,lv2Buffers_);
+        auto loaded=loadPlugin(path,pluginId,sampleRate_,maxFrames_,mode_,lv2Buffers_);loaded->setAssets(assets_);
+        node.host = preparedInstrument(std::move(loaded),sampleRate_,maxFrames_,mode_,lv2Buffers_);
         node.audioInputs=countChannels(node.host->inputPorts());
         node.audioOutputs=countChannels(node.host->outputPorts());
 
@@ -145,7 +146,7 @@ namespace oscairn
     }
     std::unique_ptr<Graph> Graph::prepareReplacement() const {
         auto next=std::make_unique<Graph>(sampleRate_,maxFrames_,mode_,lv2Buffers_,audioLayout_);
-        next->nextId_=nextId_;return next;
+        next->nextId_=nextId_;next->assets_=assets_;return next;
     }
     void Graph::publishReplacement(Graph& next,size_t cutoff,const std::function<void()>& onPublish) {
         if(next.sampleRate_!=sampleRate_ || next.maxFrames_!=maxFrames_ || next.inputChannels_!=inputChannels_ || next.outputChannels_!=outputChannels_)
@@ -166,7 +167,7 @@ namespace oscairn
         for(const auto& [from,to]:paramTargets_)
             if(from.first==id || to.first==id)throw std::invalid_argument("Remove parameter mappings on this node before replacing its plugin");
         Node next;
-        auto loaded=loadPlugin(path,pluginId,sampleRate_,maxFrames_,mode_,lv2Buffers_);
+        auto loaded=loadPlugin(path,pluginId,sampleRate_,maxFrames_,mode_,lv2Buffers_);loaded->setAssets(assets_);
         if(!preset.empty())loaded->loadPreset(preset);
         next.host=preparedInstrument(std::move(loaded),sampleRate_,maxFrames_,mode_,lv2Buffers_);
         next.audioInputs=countChannels(next.host->inputPorts());next.audioOutputs=countChannels(next.host->outputPorts());

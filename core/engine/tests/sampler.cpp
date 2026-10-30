@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
+#include "oscairn/assets.h"
 #include "oscairn/graph.h"
 #include "oscairn/json_rpc.h"
 #include "oscairn/session.h"
@@ -28,16 +29,20 @@ void check(bool ok, const std::string& why) { if(!ok) throw std::runtime_error(w
 std::string quote(const std::string& s)
 { std::string out = "\""; for(char c : s) { if(c == '"' || c == '\\') out += '\\'; if(c == '\n') out += "\\n"; else out += c; } return out + '"'; }
 
+assets::Store* store = nullptr; // the test's own asset store, under its temporary folder
+Control::AssetFolder place(const fs::path& dir)
+{ Control::AssetFolder f; if(!store->locate(dir, f.library, f.directory)) f.library = store->registerFolder(dir); return f; }
+
 struct Sampler {
-    Graph graph{48000, 512}; NodeId node;
+    Graph graph{48000, 512}; NodeId node{};
     std::array<float, 512> left{}, right{}; float* out[2]{left.data(), right.data()};
-    explicit Sampler(const char* path) : node(graph.add(path)) { graph.connectNotes(graphInput, node); graph.connectAudio(node, graphOutput); graph.commit(); }
+    explicit Sampler(const char* path) { graph.setAssets(store); node = graph.add(path); graph.connectNotes(graphInput, node); graph.connectAudio(node, graphOutput); graph.commit(); }
     PluginHost& host() { return graph.host(node); }
     void run(std::span<const Event> events = {}) { forbidAllocation = true; const bool ok = graph.process(out, 512, nullptr, events.data(), events.size()); forbidAllocation = false; check(ok, "sampler render"); }
     void one(const Event& e) { run({&e, 1}); }
-    uint32_t prepare(const std::string& sfz, const fs::path& dir, const char* name = "Sound") { return host().prepareSound(name, {}, {}, {}, sfz, dir.string()); }
+    uint32_t prepare(const std::string& sfz, const fs::path& dir, const char* name = "Sound") { const auto f = place(dir); return host().prepareSound(name, {}, {}, {}, sfz, f.library, f.directory); }
     std::string rejection(const std::string& sfz, const fs::path& dir, std::vector<oscairn_sound_parameter_t> parameters = {})
-    { try { host().prepareSound("Bad", parameters, {}, {}, sfz, dir.string()); } catch(const std::exception& e) { return e.what(); } return "accepted"; }
+    { try { const auto f = place(dir); host().prepareSound("Bad", parameters, {}, {}, sfz, f.library, f.directory); } catch(const std::exception& e) { return e.what(); } return "accepted"; }
     oscairn_sound_context_info_t info(uint32_t id) { for(const auto& s : host().soundContexts()) if(s.id == id) return s; throw std::runtime_error("missing sound"); }
     void use(const std::string& sfz, const fs::path& dir) { check(host().selectSound(prepare(sfz, dir)), "select"); }
 };
@@ -52,6 +57,8 @@ int main(int argc, char** argv) { try {
     if(argc != 2) return 2;
     const char* plugin = argv[1];
     state_files::TemporaryDirectory temp;
+    setenv("OSCAIRN_DATA_HOME", (temp.path / "data").c_str(), 1); // Sessions here never touch the user's asset store
+    assets::Store local(temp.path / "test-assets"); store = &local;
     const auto dir = temp.path / "Sampler fixtures \xC3\xBC"; fs::create_directory(dir); // spaces and Unicode
     const auto wave = tone(24000, 220);
     writeWavFile(dir / "ton \xC3\xA9.wav", wave, 1, 48000);
@@ -119,9 +126,9 @@ int main(int argc, char** argv) { try {
         rejects(live, "<region> lokey=70 hikey=60 sample=short.wav", dir, "lokey is above hikey");
         rejects(live, "<region> tune=500 sample=short.wav", dir, "out of range");
         rejects(live, "<region> lokey=60", dir, "no sample");
-        rejects(live, "<region> sample=missing.wav", dir, "not found");
-        rejects(live, "<region> sample=../outside.wav", dir, "outside the patch directory");
-        rejects(live, "<region> sample=link.wav", dir, "outside the patch directory");
+        rejects(live, "<region> sample=missing.wav", dir, "missing.wav not found in library");
+        rejects(live, "<region> sample=../outside.wav", dir, "outside its library");
+        rejects(live, "<region> sample=link.wav", dir, "outside library");
         rejects(live, "<region> sample=" + outside.string(), dir, "must be relative");
         rejects(live, "<region> sample=text.wav", dir, "cannot read WAV");
         rejects(live, "<region> sample=cut.wav", dir, "cannot read WAV");
@@ -152,10 +159,11 @@ int main(int argc, char** argv) { try {
         { // A reopened Performance keeps shared audio shared: three sounds on one 60 MiB sample restore as
           // one copy, leaving room for two more distinct 60 MiB samples (300 MiB if restored unshared).
             Session original(48000, 512); const auto n = original.add("sampler", plugin); original.connectAudio(n, graphOutput); original.commit();
-            for(int i = 0; i < 3; ++i) original.prepareSound(n, "Shared " + std::to_string(i), {}, {}, {}, "<region> sample=distinct0.wav tune=" + std::to_string(i), dir.string());
+            const auto folder = original.registerAssetFolder(dir.string());
+            for(int i = 0; i < 3; ++i) original.prepareSound(n, "Shared " + std::to_string(i), {}, {}, {}, "<region> sample=distinct0.wav tune=" + std::to_string(i), folder.library, folder.directory);
             const auto saved = temp.path / "shared"; original.savePerformance(saved.string());
             Session reopened(48000, 512); reopened.loadPerformance(saved.string()); const auto m = reopened.nodeId("sampler");
-            for(int i = 1; i <= 2; ++i) reopened.prepareSound(m, "More", {}, {}, {}, "<region> sample=distinct" + std::to_string(i) + ".wav", dir.string());
+            for(int i = 1; i <= 2; ++i) reopened.prepareSound(m, "More", {}, {}, {}, "<region> sample=distinct" + std::to_string(i) + ".wav", folder.library, folder.directory);
             check(reopened.sounds(m).contexts.size() == 6, "restored sounds share audio and leave budget");
         }
 #endif
@@ -187,11 +195,14 @@ int main(int argc, char** argv) { try {
             void render() { float* out[]{left.data(), right.data()}; session.service(); check(session.process(out, 512), "session render"); session.service(); }
         };
         Fixture f; const auto n = f.session.add("sampler", plugin); f.session.connectNotes(graphInput, n); f.session.connectAudio(n, graphOutput); f.session.commit();
-        const auto bad = f.call("sounds.prepare", "{\"node\":\"sampler\",\"name\":\"Bad\",\"sfz\":\"<region>\\nfoo=1\",\"directory\":" + quote(dir.string()) + '}');
+        const auto registered = f.call("assets.register", "{\"folder\":" + quote(dir.string()) + '}');
+        const auto library = registered.substr(registered.find("\"library\":\"") + 11, 16);
+        check(registered.find("\"directory\":\"\"") != std::string::npos && library.find('"') == std::string::npos, "wire registers the folder as a library: " + registered);
+        const auto bad = f.call("sounds.prepare", "{\"node\":\"sampler\",\"name\":\"Bad\",\"sfz\":\"<region>\\nfoo=1\",\"library\":" + quote(library) + '}');
         check(bad.find("-32005") != std::string::npos && bad.find("line 2") != std::string::npos, "wire reports the diagnostic: " + bad);
-        const auto reply = f.call("sounds.prepare", "{\"node\":\"sampler\",\"name\":\"Pitched\",\"sfz\":" + quote(b) + ",\"directory\":" + quote(dir.string()) + '}');
+        const auto reply = f.call("sounds.prepare", "{\"node\":\"sampler\",\"name\":\"Pitched\",\"sfz\":" + quote(b) + ",\"library\":" + quote(library) + '}');
         check(reply.find("\"context\":1") != std::string::npos, "wire preparation: " + reply);
-        f.session.prepareSound(n, "Mono", {}, {}, {}, a, dir.string());
+        f.session.prepareSound(n, "Mono", {}, {}, {}, a, library, "");
         check(f.call("sounds.select", R"({"node":"sampler","context":1,"channel":-1})").find("\"accepted\":true") != std::string::npos, "wire selection");
         f.render(); f.session.note(true, 64, 1); f.render(); const auto before = f.left;
         double energy = 0; for(float v : before) energy += std::abs(v); check(energy > 10, "saved sound is audible");
@@ -199,17 +210,30 @@ int main(int argc, char** argv) { try {
         f.session.savePerformance(saved.string()); fs::rename(saved, moved);
         size_t copied = 0; for(const auto& e : fs::recursive_directory_iterator(moved)) copied += e.path().extension() == ".wav";
         check(copied == 0, "samples are dependencies, not copied into the Performance");
+        { std::ifstream in(moved / "performance.json"); const std::string manifest((std::istreambuf_iterator<char>(in)), {});
+          check(manifest.find("\"assets\":[{\"library\":\"" + library + "\"") != std::string::npos && manifest.find("\"name\":\"Sampler fixtures") != std::string::npos, "the manifest lists sample references and library names"); }
         Fixture g; g.session.loadPerformance(moved.string()); g.render(); g.session.note(true, 64, 1); g.render();
         check(g.left == before, "moved Performance reopens and plays identically");
         const auto sounds = g.session.sounds(g.session.nodeId("sampler"));
         check(sounds.contexts.size() == 3 && sounds.contexts[1].name == "Pitched" && sounds.contexts[2].name == "Mono", "every prepared sound is restored");
+        { // Another device: a fresh asset store does not know the library until the folder is registered,
+          // under a new ID; the samples then resolve by content.
+            setenv("OSCAIRN_DATA_HOME", (temp.path / "other-device").c_str(), 1);
+            Fixture other; std::string why;
+            try { other.session.loadPerformance(moved.string()); } catch(const std::exception& e) { why = e.what(); }
+            check(why.find("missing sound assets: sampler: 1 of 1 files from library 'Sampler fixtures") != std::string::npos, "an unknown library is named before loading: " + why);
+            check(other.session.registerAssetFolder(dir.string()).library != library, "the same folder gets a new library ID on another device");
+            other.session.loadPerformance(moved.string()); other.render(); other.session.note(true, 64, 1); other.render();
+            check(other.left == before, "samples resolve by content hash under the new library");
+            setenv("OSCAIRN_DATA_HOME", (temp.path / "data").c_str(), 1);
+        }
         auto refused = [&](const std::string& reason) { const auto revision = g.session.graphState().revision; std::string why;
             try { g.session.loadPerformance(moved.string()); } catch(const std::exception& e) { why = e.what(); }
             return why.find(reason) != std::string::npos && g.session.graphState().revision == revision; };
         writeWavFile(dir / "ton \xC3\xA9.wav", tone(24000, 330), 1, 48000);
-        check(refused("sample changed since the sound was saved: ton \xC3\xA9.wav"), "a changed sample is named and fails before replacing the live graph");
+        check(refused("missing sound assets: sampler: 1 of 1 files") && refused("ton \xC3\xA9.wav changed since it was saved"), "a changed sample is named and fails before replacing the live graph");
         fs::remove_all(dir);
-        check(refused("sample not found: ton \xC3\xA9.wav"), "a missing sample is named and fails before replacing the live graph");
+        check(refused("ton \xC3\xA9.wav not found in library Sampler fixtures"), "a missing sample is named and fails before replacing the live graph");
         g.render(); check(g.left != std::array<float, 512>{}, "the current sound keeps playing");
     }
     std::cout << "ok: sampler playback, ownership, validation, sharing and sample dependencies\n";

@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: AGPL-3.0-or-later */
 #pragma once
 #include <clap/clap.h>
+#include <oscairn-clap/assets.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -11,8 +12,9 @@ extern "C" {
  * Capacity is constant for the instance lifetime. Telemetry may change while read.
  * prepare builds an independent patch from plugin defaults plus supplied values, or
  * from patch text when the plugin defines one (the Oscairn Sampler takes SFZ). Asset
- * paths in that text are relative to directory, an absolute path the plugin must not
- * read outside of; both are null for parameter-only patches. Preparation may read files.
+ * paths in that text are relative to base, a library folder whose files the plugin
+ * resolves through the host's oscairn.assets extension (base->sha256 is unused). Both
+ * are null for parameter-only patches. Preparation may read files.
  * select queues a bounded operation for the next process boundary, before notes;
  * channel -1 selects all channels. Accepted selections pin their context until
  * consumed. Voices, sustain and expression retain their owning context.
@@ -20,7 +22,7 @@ extern "C" {
  * never reused during an instance lifetime. Unload invalidates all IDs.
  * No format-level claim is made for plugins not implementing this extension.
  */
-static const char OSCAIRN_EXT_SOUND_CONTEXTS[] = "oscairn.sound-contexts/draft-3";
+static const char OSCAIRN_EXT_SOUND_CONTEXTS[] = "oscairn.sound-contexts/draft-4";
 typedef struct oscairn_sound_parameter { clap_id id; double value; } oscairn_sound_parameter_t;
 typedef struct oscairn_sound_context_info {
     uint32_t id;
@@ -35,7 +37,7 @@ typedef struct oscairn_plugin_sound_contexts {
     /* CLAP_INVALID_ID means rejected: invalid patch or no free context. On rejection the
      * plugin may write a NUL-terminated diagnostic (with source line) into message. */
     uint32_t (CLAP_ABI *prepare)(const clap_plugin_t*,const char* name,const oscairn_sound_parameter_t*,uint32_t count,
-                                 const char* patch,const char* directory,char* message,uint32_t message_capacity);
+                                 const char* patch,const oscairn_asset_ref_t* base,char* message,uint32_t message_capacity);
     bool (CLAP_ABI *select)(const clap_plugin_t*,uint32_t id,int16_t channel);
     bool (CLAP_ABI *discard)(const clap_plugin_t*,uint32_t id);
     /* Optional full patch/context/channel snapshot. Unlike the concurrent methods

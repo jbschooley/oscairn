@@ -4,6 +4,7 @@
 #include <clap/clap.h>
 #include <oscairn-clap/sound-contexts.h>
 #include <oscairn-clap/effect-contexts.h>
+#include <oscairn-clap/assets.h>
 #include <array>
 #include <cstdint>
 #include <cstring>
@@ -54,6 +55,16 @@ struct Event {
                       int channel = 0, int port = 0, int noteId = -1) noexcept;
 };
 
+// A sound asset reference (RFC 0009): library ID, library-relative path, SHA-256 hex or empty.
+struct AssetReference { std::string library, path, sha256; };
+// Resolves asset references for plugins through the oscairn.assets host extension. Main thread.
+struct AssetResolver {
+    virtual ~AssetResolver() = default;
+    // The local path of library/path. An empty sha256 is filled in; a given one must match.
+    // Throws std::exception carrying the reason.
+    virtual std::string resolve(const std::string& library, const std::string& path, std::string& sha256) = 0;
+};
+
 struct Statistics {
     uint64_t blocks = 0, droppedEvents = 0, processErrors = 0;
     double lastMicroseconds = 0, maximumMicroseconds = 0;
@@ -97,9 +108,15 @@ public:
     bool loadState(const std::vector<uint8_t>& source);
     bool supportsState() const noexcept;
     bool supportsSoundSnapshot() const noexcept;
+    // Main thread. Where plugins resolve sound assets; null rejects every resolution.
+    void setAssets(AssetResolver*) noexcept;
+    // The assets the plugin's state uses (oscairn.asset-dependencies); empty if not declared.
+    std::vector<AssetReference> assetDependencies() const;
+    bool declaresAssets() const noexcept;
     uint32_t soundContextCapacity() const noexcept;
     std::vector<oscairn_sound_context_info_t> soundContexts() const;
-    uint32_t prepareSound(const std::string& name,const std::vector<oscairn_sound_parameter_t>& parameters,const std::string& patch={},const std::string& directory={});
+    // patch: instrument-defined text (SFZ for the Sampler) whose files are in directory of asset library.
+    uint32_t prepareSound(const std::string& name,const std::vector<oscairn_sound_parameter_t>& parameters,const std::string& patch={},const std::string& library={},const std::string& directory={});
     bool selectSound(uint32_t id,int16_t channel=-1);
     bool discardSound(uint32_t id);
     bool loaded() const noexcept;
