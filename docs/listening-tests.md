@@ -49,8 +49,9 @@ behind it, not the JUCE menu, file chooser or button state.
   again: opening fails with a message naming the sample, and the current sound keeps
   playing.
 
-Level note: liquidsfz renders the same patch about 7 dB quieter (default CC7 volume and
-pan law; see RFC 0008 step 2 status). Judge whether the Sampler's level sounds right.
+Level note: the Sampler matches liquidsfz's default level, 7.2 dB below the sample's own
+level (default CC7 volume and centre pan law; see RFC 0008 step 2 status). Judge whether
+that sounds right next to the Basic Synth.
 
 ## Repeatable setup
 

@@ -98,18 +98,19 @@ same one-region patches (2026-10-30, liquidsfz `4cc901d1`, macOS arm64):
 
 | Case | Oscairn / liquidsfz RMS | Residual after matching level |
 | --- | --- | --- |
-| Key 60, velocity 127 | 2.295 | 0.34% |
-| Key 60, velocity 64 | 2.295 | 0.34% |
-| Up 7 semitones | 2.295 | 0.31% |
-| Down 5 semitones | 2.295 | 0.01% |
-| `volume=-6 tune=30` | 2.295 | 0.27% |
-| `ampeg_release=0.1`, released at 0.25 s | 2.295 | 0.01% |
+| Key 60, velocity 127 | 1.006 | 0.34% |
+| Key 60, velocity 64 | 1.006 | 0.34% |
+| Up 7 semitones | 1.006 | 0.31% |
+| Down 5 semitones | 1.006 | 0.01% |
+| `volume=-6 tune=30` | 1.006 | 0.27% |
+| `ampeg_release=0.1`, released at 0.25 s | 1.006 | 0.01% |
 
-The constant level ratio (+7.2 dB) comes from two liquidsfz conventions in `lib/voice.cc`:
-a default CC7 volume of 100 through its volume curve ((100/127)², about −4.2 dB) and a
-constant-power pan law (centred mono at 1/√2 per channel, −3 dB). The release row was 16%
-before the Sampler adopted liquidsfz's exponential release (`lib/envelope.hh`: −60 dB at
-the release time, then silence). Velocity follows the same squared curve in both.
+The level ratio was 2.295 (+7.2 dB) before the Sampler adopted liquidsfz's default level
+from `lib/voice.cc`: a CC7 volume of 100 through its squared volume curve (about −4.2 dB)
+and the sine pan law at centre (1/√2 per channel, −3 dB). The remaining 0.6% is not in
+that gain path and is unexplained. The release row was 16% before the Sampler adopted
+liquidsfz's exponential release (`lib/envelope.hh`: −60 dB at the release time, then
+silence). Velocity follows the same squared curve in both.
 
 Reproduce with the liquidsfz checkout from the probe above, from the Oscairn root after
 building `oscairn_sampler`:

@@ -44,6 +44,7 @@ struct Sampler {
 void rejects(Sampler& s, const std::string& sfz, const fs::path& dir, const std::string& expected)
 { const auto why = s.rejection(sfz, dir); check(why.find(expected) != std::string::npos, "expected rejection '" + expected + "', got: " + why); }
 
+constexpr double level = 100.0 * 100.0 / (127.0 * 127.0) * 0.70710678118654752; // liquidsfz default (CC7 100, centre pan)
 std::vector<float> tone(size_t frames, double hz, double amplitude = .5)
 { std::vector<float> w(frames); for(size_t i = 0; i < frames; ++i) w[i] = float(amplitude * std::sin(2 * M_PI * hz * double(i) / 48000)); return w; }
 
@@ -62,11 +63,11 @@ int main(int argc, char** argv) { try {
     { // Exact sample timing, unity pitch and mono to both channels.
         Sampler s(plugin); s.use(a, dir); s.one(Event::note(true, 60, 1, 37));
         for(int i = 0; i < 37; ++i) check(s.left[i] == 0, "silent before the note");
-        for(int i = 37; i < 512; ++i) check(s.left[i] == wave[i - 37] && s.right[i] == s.left[i], "sample starts on its exact frame");
+        for(int i = 37; i < 512; ++i) check(s.left[i] == float(level * wave[i - 37]) && s.right[i] == s.left[i], "sample starts on its exact frame");
         Sampler octave(plugin); octave.use(a, dir); octave.one(Event::note(true, 72, 1));
-        for(int i = 0; i < 200; ++i) check(std::abs(octave.left[i] - wave[2 * i]) < 1e-7, "one octave up reads every second frame");
+        for(int i = 0; i < 200; ++i) check(std::abs(octave.left[i] - level * wave[2 * i]) < 1e-7, "one octave up reads every second frame");
         Sampler soft(plugin); soft.use(a, dir); soft.one(Event::note(true, 60, .5));
-        for(int i = 0; i < 512; ++i) check(std::abs(soft.left[i] - .25f * wave[i]) < 1e-7, "default velocity curve is squared");
+        for(int i = 0; i < 512; ++i) check(std::abs(soft.left[i] - .25 * level * wave[i]) < 1e-7, "default velocity curve is squared");
     }
     { // Held notes keep their sound; two sounds play at once; note IDs release independently.
         Sampler mixed(plugin), refA(plugin), refB(plugin);
@@ -92,7 +93,7 @@ int main(int argc, char** argv) { try {
         range.one(Event::note(true, 61, 1)); range.one(Event::note(true, 60, .5));
         for(float v : range.left) check(v == 0, "notes outside key or velocity range are silent");
         Sampler end(plugin); const auto id = end.prepare("<region> sample=short.wav", dir); end.host().selectSound(id); end.one(Event::note(true, 60, 1));
-        check(end.left[99] == .25f && end.left[100] == 0 && end.info(id).active_voices == 0, "sample end finishes the voice");
+        check(end.left[99] == float(level * .25) && end.left[100] == 0 && end.info(id).active_voices == 0, "sample end finishes the voice");
         end.host().selectSound(0); end.run(); check(end.host().discardSound(id), "finished sound can be discarded");
         Sampler rel(plugin); rel.use("<region> sample=ton \xC3\xA9.wav ampeg_release=0.005", dir);
         rel.one(Event::note(true, 60, 1)); rel.one(Event::note(false, 60, 0));

@@ -31,7 +31,9 @@ decoded copy, identified by content rather than file name.
 
 Playback uses linear interpolation; the sample end finishes the voice (`no_loop`);
 release falls exponentially to −60 dB over `ampeg_release` and then stops, the curve liquidsfz uses. Velocity gain is squared (the
-SFZ `amp_veltrack=100` default). Mono samples play on both outputs. Pressure is tracked
+SFZ `amp_veltrack=100` default). The overall level matches liquidsfz's defaults: MIDI
+volume 100 on a squared curve and centre panning at 1/√2, together −7.2 dB; CC7/CC10 changes
+are not implemented yet. Mono samples play on both outputs. Pressure is tracked
 per voice but not mapped to sound. The single stereo output is unsaturated.
 
 Saving uses `clap.resource-directory`: each distinct sample is written once as a float WAV

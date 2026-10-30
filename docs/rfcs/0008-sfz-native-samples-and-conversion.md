@@ -282,10 +282,11 @@ acceptance has not happened** and is queued with the other listening tests.
 - Reference renders against liquidsfz `4cc901d1` ([comparison tool](../../tools/sampler-research/liquidsfz_compare.cpp),
   [results](../sample-players-and-formats.md#reference-renders-against-liquidsfz)): after
   matching level, pitch, transposition, tuning, volume, velocity and release agree within
-  0.34% RMS. The release now uses liquidsfz's exponential curve. liquidsfz renders 7.2 dB
-  quieter because it applies a default CC7 volume of 100 and a constant-power pan law;
-  whether to adopt those conventions is **undecided**, so the baseline table is not yet
-  published as verified opcode documentation.
+  0.34% RMS. The release uses liquidsfz's exponential curve, and (Jacob, 2026-10-30) the
+  Sampler adopts liquidsfz's default level: CC7 volume 100 on its squared curve and the
+  sine pan law at centre, together −7.2 dB. Levels now agree within 0.05 dB; the remaining
+  0.6% is not in liquidsfz's gain path and is unexplained. CC7 and CC10 changes are not
+  implemented yet; only their default values are matched.
 - Not done: FLAC, multisample/streaming (step 3, required by the Salamander Grand Piano:
   641 regions, release triggers, round robin and pedal triggers in 12 groups), and an
   interactive run of the desktop import, queued as [listening test 3](../listening-tests.md#3-sampler-import-and-playback-rfc-0008-step-2).

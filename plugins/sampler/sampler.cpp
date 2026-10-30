@@ -36,6 +36,9 @@ namespace
     // shortcut: fixed preload budgets; replace with a measured memory policy when streaming lands.
     constexpr uint64_t maxAssetBytes = 64ull << 20, maxTotalBytes = 256ull << 20;
     constexpr int maxRate = 192000, minRate = 8000;
+    // liquidsfz's default level, so libraries sound as loud as in that player: MIDI volume
+    // (CC7) 100 on its squared volume curve, times the sine pan law at centre (1/sqrt 2).
+    constexpr double defaultLevel = 100.0 * 100.0 / (127.0 * 127.0) * 0.70710678118654752;
 
     struct Sample
     {
@@ -253,7 +256,7 @@ namespace
             const double cents = (v.key - r.keycenter) * r.keytrack + r.transpose * 100.0 + r.tune;
             v.step = v.sample->rate / sampleRate * std::pow(2.0, cents / 1200.0);
             // SFZ default amp_veltrack=100: gain follows velocity squared.
-            v.gain = std::pow(10.0, r.volume / 20.0) * v.velocity * v.velocity;
+            v.gain = defaultLevel * std::pow(10.0, r.volume / 20.0) * v.velocity * v.velocity;
         }
         // Exponential release reaching -60 dB at ampeg_release, then silence: liquidsfz's curve.
         void release(Voice& v)
