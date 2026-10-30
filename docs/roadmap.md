@@ -179,8 +179,21 @@ new core, from a UI that talks to it only through the control API.
 7. **Sequencer evaluation — written, decisions pending:** [the comparison](sequencer-evaluation.md)
    of the KICK firmware's sequencer (with chillbeast's work), zynseq and hosted plugins
    recommends the KICK model and workflow with sample-accurate playback rewritten in an
-   Oscairn plugin. Swing and further sequencer workflow follow from that choice.
+   Oscairn plugin. Swing and further sequencer workflow follow from that choice. Decided
+   October 30, 2026: build more than one sequencer type (KICK-style linear sequences and
+   launcher-style patterns and scenes) and settle on one or combine them later.
    Keep the shared theme and generated-editor contract current as new screens are added.
+8. **Performance UI model — after worker isolation:** step 1 of
+   [RFC 0011](rfcs/0011-performance-ui-and-editors.md#build-order-and-gates): wire
+   ownership, implicit Mix nodes and port-level routes with channel rules, the base for the
+   Parts, Routing and Mixer views and Oscairn-drawn plugin editors.
+9. **Modular instrument — engine imported:** chillbeast's engine is in
+   [plugins/modular](../plugins/modular/README.md) with its history; the CLAP wrapper,
+   render tests and the upstream sample-grid fix remain.
+
+Plugins and apps (sequencers, instruments, the UI) are kept as separate components, each in
+its own folder with its own build target and depending only on Oscairn's public headers, so
+they can later move to their own repositories or ship as packages.
 
 The subsequent [conversion plan](rfcs/0008-sfz-native-samples-and-conversion.md#conversion-and-modx-m-migration)
 covers SFZ interchange and Jacob's MODX M library migration: inventory first, explicit

@@ -17,6 +17,13 @@ authoritative.
   distributed in any binary/image. The independent eg-amp and eg-fifths test
   plugins are upstream LV2 examples, installed separately.
 
+## Instrument engines
+
+- **Modular:** chillbeast ([chillbeast/0700-AAM](https://github.com/chillbeast/0700-AAM)),
+  AGPL-3.0-or-later. The engine, module library and patch code under
+  [plugins/modular/upstream](plugins/modular/upstream) are imported unchanged with their
+  history from his KICK firmware fork; see [its README](plugins/modular/README.md).
+
 ## Interface font
 
 - **Inter** 4.1, by Rasmus Andersson and the Inter Project Authors

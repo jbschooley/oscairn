@@ -3,7 +3,9 @@
 Research note, 2026-10-30. Whether to port chillbeast's *Modular* instrument engine from his
 KICK firmware fork ([chillbeast/0700-AAM](https://github.com/chillbeast/0700-AAM), branch
 `desktop-build` at `3598ab49`) as an Oscairn instrument plugin, and what keeping that port up to
-date would cost. **Nothing is imported yet.**
+date would cost. Option A was chosen on 2026-10-30: the engine files are imported with
+their history in [plugins/modular](../plugins/modular/README.md); the CLAP wrapper is not
+written yet.
 
 ## What it is
 
