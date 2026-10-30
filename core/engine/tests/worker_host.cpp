@@ -39,7 +39,11 @@ namespace
         const kick::clap::Parameter* writable = nullptr;
         for(const auto& p : local->parameters()) if(!(p.flags & CLAP_PARAM_IS_READONLY)) { writable = &p; break; }
 
-        uint64_t phase = 0; size_t events = 0; bool same = true;
+        uint64_t phase = 0; size_t events = 0; bool same = true; double energy = 0;
+        clap_event_transport_t transport{};
+        transport.header = {sizeof(transport), 0, CLAP_CORE_EVENT_SPACE_ID, CLAP_EVENT_TRANSPORT, 0};
+        transport.flags = CLAP_TRANSPORT_IS_PLAYING | CLAP_TRANSPORT_HAS_TEMPO | CLAP_TRANSPORT_HAS_BEATS_TIMELINE | CLAP_TRANSPORT_HAS_SECONDS_TIMELINE | CLAP_TRANSPORT_HAS_TIME_SIGNATURE;
+        transport.tempo = 120; transport.tsig_num = 4; transport.tsig_denom = 4;
         for(uint32_t block = 0; block < 300; ++block)
         {
             for(uint32_t i = 0; i < frames; ++i, ++phase)
@@ -55,10 +59,16 @@ namespace
                 const double value = (writable->flags & CLAP_PARAM_IS_STEPPED) ? std::round(v) : v;
                 check(local->setParameter(writable->id, value) && remote->setParameter(writable->id, value), name + ": set parameter");
             }
-            const bool okA = local->process(inp.data(), ni, ap.data(), no, frames, ev.data(), uint32_t(ev.size()), nullptr);
-            const bool okB = remote->process(inp.data(), ni, bp.data(), no, frames, ev.data(), uint32_t(ev.size()), nullptr);
+            const double seconds = double(block) * frames / rate;
+            transport.song_pos_seconds = clap_sectime(seconds * CLAP_SECTIME_FACTOR);
+            transport.song_pos_beats = clap_beattime(seconds * 2 * CLAP_BEATTIME_FACTOR);
+            transport.bar_start = clap_beattime(std::floor(seconds * 2 / 4) * 4 * CLAP_BEATTIME_FACTOR);
+            transport.bar_number = int32_t(seconds * 2 / 4);
+            const bool okA = local->process(inp.data(), ni, ap.data(), no, frames, ev.data(), uint32_t(ev.size()), &transport);
+            const bool okB = remote->process(inp.data(), ni, bp.data(), no, frames, ev.data(), uint32_t(ev.size()), &transport);
             check(okA == okB, name + ": process result, block " + std::to_string(block));
             same = same && a == b;
+            for(const auto& c : a) for(float x : c) energy += double(x) * x;
             uint32_t ca = 0, cb = 0; const auto* ea = local->outputEvents(ca); const auto* eb = remote->outputEvents(cb);
             check(ca == cb, name + ": output event count, block " + std::to_string(block));
             for(uint32_t i = 0; i < std::min(ca, cb); ++i) same = same && ea[i].bytes == eb[i].bytes;
@@ -79,7 +89,8 @@ namespace
         }
         remote->panic();
         check(remote->process(inp.data(), ni, bp.data(), no, frames, nullptr, 0, nullptr) == local->process(inp.data(), ni, ap.data(), no, frames, nullptr, 0, nullptr), name + ": process after panic");
-        std::printf("%s: %u in, %u out, %zu output events, identical: %s\n", name.c_str(), ni, no, events, same ? "yes" : "no");
+        check(events > 0 || energy > 0, name + ": the comparison must cover sound or events");
+        std::printf("%s: %u in, %u out, audio energy %.3g, %zu output events, identical: %s\n", name.c_str(), ni, no, energy, events, same ? "yes" : "no");
     }
 }
 
