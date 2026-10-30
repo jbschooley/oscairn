@@ -122,6 +122,43 @@ Standards carry everything they can. Our own protocol adds the rest and is optio
 | Prepare, then switch together | MIDI Show Control: LOAD prepares a cue, GO fires it, TIMED_GO fires it at a time. These are universal SysEx messages, so they travel over DIN, USB and network MIDI |
 | Readiness, error reports, setlist and song names, device discovery and pairing | The existing control API, carried over the network with mDNS discovery and paired keys. MIDI has no reliable two-way acknowledgement or naming |
 
+### Device profiles
+
+Devices disagree on how to select a program, song or scene. A **device profile** describes
+one model's conventions as data, in both directions. Oscairn uses a profile to drive that
+device, and to read what that device sends when it leads. A profile is chosen per port, or
+per port and channel, and can be edited, shared and installed as a package (RFC 0006).
+
+A profile lists, for each action it supports (select song, program or Performance, select
+scene, start, stop and so on), the message that performs it:
+
+| Kind | Example |
+| --- | --- |
+| Program Change, optionally after Bank Select MSB/LSB | Most synths; 0- or 1-based numbering declared |
+| A CC whose value range picks the target | MODX scenes: a configurable "Scene CC" (default 92), values split into eight ranges of 16 for Scenes 1–8 (forum-reported; confirm against Yamaha's Data List) |
+| A CC per target, or a CC value per target | Loopers and footswitch-driven gear |
+| NRPN | Devices with large program ranges |
+| Note on a given channel | Pedals that select by note |
+| Song Select, MIDI Show Control, MIDI Machine Control | Standard cueing and transport |
+| A SysEx template with fields for bank, number or name | Devices with vendor-specific selection |
+
+Each entry also declares:
+- the channel (fixed, the device's own, or a setting);
+- whether a CC number is the device's setting, as the MODX's Scene CC is;
+- delays some devices need between messages (for example after Bank Select);
+- whether the device confirms a change, and how.
+
+A setlist entry then names targets rather than raw messages ("Scene 3", "Program A12"), and
+the profile turns them into bytes.
+
+Receiving works the same way, through a profile or a hand-made mapping. A MODX leading the
+rig sends its Performance's Program Change and its Scene CC, and each Oscairn device maps
+those to its own song and scene. A **generic** profile covers gear without one: the musician
+picks the message kind, channel and numbers directly.
+
+The first profiles to write: Oscairn itself (Song Select and MIDI Show Control), the MODX and
+MODX M, and a generic Program Change device.
+
 Oscairn-to-Oscairn switching therefore works over plain MIDI cables with clock. The network
 layer only adds readiness display, names and setlist sharing. A device can follow a MODX's
 Program Changes, and a MODX or looper can follow an Oscairn leader.
@@ -145,7 +182,7 @@ trusted as the musician's own cabling, as it is today.
 | 2. Clock out | MIDI clock, Start/Stop/Continue and Song Position out; Song Position and transport in | An external drum machine follows start, stop and a jump to bar 9 without drift over ten minutes |
 | 3. Link | Ableton Link in the transport | Two Oscairn devices and one other Link app stay within 1 ms of phase |
 | 4. External instruments | Parts for external synths: Program Change/Bank Select sounds, audio return, MIDNAM names | A MODX part changes sound with the Performance and plays through its audio return |
-| 5. Setlist cues | Program Change/Song Select send and follow; MIDI Show Control LOAD/GO/TIMED_GO | A keyboard leader switches a KICK and a MODX on the same bar, over cables only |
+| 5. Setlist cues | Device profiles (send and receive); Program Change/Song Select; MIDI Show Control LOAD/GO/TIMED_GO; Oscairn, MODX and generic profiles | A keyboard leader switches a KICK and a MODX (Performance and scene) on the same bar, over cables only; a MODX leading switches an Oscairn device |
 | 6. Network ensemble | Discovery, pairing, readiness, names, setlist sharing; any-device leading | The leader shows each device's readiness; a missing device keeps the others switching |
 | 7. CV and MMC | CV/Gate and clock outputs with calibration; MIDI Machine Control | An Ignite drives a modular voice in tune across five octaves |
 
@@ -153,7 +190,10 @@ trusted as the musician's own cabling, as it is today.
 
 - How a follower maps a leader's song to its own Performance when names differ: by setlist
   position, by a shared song ID, or by an explicit table.
-- Whether scenes travel as Show Control cues inside a song, or as separate Program Changes.
+- Whether Oscairn's own scenes travel as Show Control cues inside a song, or as separate
+  messages from its profile.
+- A profile file format, and whether to read existing community formats for device MIDI
+  maps.
 - MIDI 2.0: whether Property Exchange should later carry names and readiness instead of
   our network protocol.
 - Measuring external latency automatically (send a note, record the audio return).
