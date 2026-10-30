@@ -2,6 +2,7 @@
 #include <kick_clap/Discovery.h>
 #include "Internal.h"
 #include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <cstdlib>
 #include <set>
@@ -155,14 +156,17 @@ ScanResult scan(const std::vector<fs::path>& roots, const fs::path& helper, uint
 #else
     for (const auto& path : findBinaries(roots,extension)) {
         if (cancelled && cancelled->load()) break;
-        int pipes[2];
+        int pipes[2], errors[2];
         if (::pipe(pipes) != 0) { result.failures.push_back({path.string(), "Cannot create scanner pipe"}); continue; }
-        ::fcntl(pipes[0], F_SETFD, FD_CLOEXEC); ::fcntl(pipes[1], F_SETFD, FD_CLOEXEC);
+        if (::pipe(errors) != 0) { ::close(pipes[0]); ::close(pipes[1]); result.failures.push_back({path.string(), "Cannot create scanner pipe"}); continue; }
+        for (int fd : {pipes[0], pipes[1], errors[0], errors[1]}) ::fcntl(fd, F_SETFD, FD_CLOEXEC);
         posix_spawn_file_actions_t actions; posix_spawn_file_actions_init(&actions);
         posix_spawn_file_actions_adddup2(&actions, pipes[1], STDOUT_FILENO);
         posix_spawn_file_actions_addclose(&actions, pipes[0]);
         posix_spawn_file_actions_addclose(&actions, pipes[1]);
-        posix_spawn_file_actions_addopen(&actions, STDERR_FILENO, "/dev/null", O_WRONLY, 0);
+        posix_spawn_file_actions_adddup2(&actions, errors[1], STDERR_FILENO);
+        posix_spawn_file_actions_addclose(&actions, errors[0]);
+        posix_spawn_file_actions_addclose(&actions, errors[1]);
         posix_spawnattr_t attributes; posix_spawnattr_init(&attributes);
         posix_spawnattr_setflags(&attributes, POSIX_SPAWN_SETPGROUP);
         posix_spawnattr_setpgroup(&attributes, 0);
@@ -172,9 +176,18 @@ ScanResult scan(const std::vector<fs::path>& roots, const fs::path& helper, uint
         pid_t pid = 0;
         const auto spawned = posix_spawn(&pid, program.c_str(), &actions, &attributes, arguments, environ);
         posix_spawnattr_destroy(&attributes); posix_spawn_file_actions_destroy(&actions);
-        ::close(pipes[1]);
-        if (spawned != 0) { ::close(pipes[0]); result.failures.push_back({path.string(), "Cannot launch kick-clap-scan helper"}); continue; }
+        ::close(pipes[1]); ::close(errors[1]);
+        if (spawned != 0) { ::close(pipes[0]); ::close(errors[0]); result.failures.push_back({path.string(), "Cannot launch kick-clap-scan helper"}); continue; }
         ::fcntl(pipes[0], F_SETFL, ::fcntl(pipes[0], F_GETFL) | O_NONBLOCK);
+        ::fcntl(errors[0], F_SETFL, ::fcntl(errors[0], F_GETFL) | O_NONBLOCK);
+        std::string stderrTail; // last 2 KiB the plugin wrote to stderr, for the failure message
+        auto drainErrors = [&] {
+            char bytes[4096]; ssize_t n;
+            while ((n = ::read(errors[0], bytes, sizeof(bytes))) > 0) {
+                stderrTail.append(bytes, static_cast<size_t>(n));
+                if (stderrTail.size() > 2048) stderrTail.erase(0, stderrTail.size() - 2048);
+            }
+        };
         std::string wire; int status = 0; bool done = false, timedOut = false, oversized = false;
         const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeoutMs);
         while (!done) {
@@ -183,6 +196,7 @@ ScanResult scan(const std::vector<fs::path>& roots, const fs::path& helper, uint
                 if (wire.size() + static_cast<size_t>(n) > maxWireBytes) { oversized = true; break; }
                 wire.append(bytes, static_cast<size_t>(n));
             }
+            drainErrors();
             const auto waited = ::waitpid(pid, &status, WNOHANG);
             if (waited == pid) { done = true; break; }
             if (waited < 0 && errno != EINTR) { done = true; status = -1; break; }
@@ -200,11 +214,15 @@ ScanResult scan(const std::vector<fs::path>& roots, const fs::path& helper, uint
             wire.append(tail, static_cast<size_t>(n));
         }
         ::close(pipes[0]);
+        drainErrors(); ::close(errors[0]);
+        while (!stderrTail.empty() && std::isspace(static_cast<unsigned char>(stderrTail.back()))) stderrTail.pop_back();
+        for (auto& c : stderrTail) if (c == '\n' || c == '\r') c = ' ';
+        const auto detail = stderrTail.empty() ? std::string() : ": " + stderrTail;
         ScanResult single;
-        if (timedOut) result.failures.push_back({binary, cancelled && cancelled->load() ? "Scan cancelled" : "Plugin scan timed out"});
-        else if (oversized) result.failures.push_back({binary, "Plugin scanner output exceeded size limit"});
-        else if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) result.failures.push_back({binary, "Plugin crashed or failed during scan"});
-        else if (!decodeScan(wire, single)) result.failures.push_back({binary, "Invalid scanner response"});
+        if (timedOut) result.failures.push_back({binary, (cancelled && cancelled->load() ? "Scan cancelled" : "Plugin scan timed out") + detail});
+        else if (oversized) result.failures.push_back({binary, "Plugin scanner output exceeded size limit" + detail});
+        else if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) result.failures.push_back({binary, "Plugin crashed or failed during scan" + detail});
+        else if (!decodeScan(wire, single)) result.failures.push_back({binary, "Invalid scanner response" + detail});
         else {
             result.plugins.insert(result.plugins.end(), single.plugins.begin(), single.plugins.end());
             result.failures.insert(result.failures.end(), single.failures.begin(), single.failures.end());

@@ -245,9 +245,12 @@ CLAP_EXPORT const clap_plugin_entry_t clap_entry{
     CLAP_VERSION,
     [](const char*) {
 #ifdef FIXTURE_crash
+        std::fputs("fixture: crashing during scan\n", stderr);
         std::abort();
 #elif defined(FIXTURE_hang)
         std::this_thread::sleep_for(std::chrono::seconds(20));
+#elif defined(FIXTURE_hog)
+        { auto* memory = new char[size_t(2) << 30]; memory[0] = 1; static volatile char* keep; keep = memory; } // 2 GiB while scanned
 #endif
         ++entryUsers; return true;
     },

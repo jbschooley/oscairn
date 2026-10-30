@@ -1,4 +1,4 @@
-foreach(kind normal crash hang slow held_state process_crash process_hang)
+foreach(kind normal crash hang slow held_state process_crash process_hang hog)
     add_library(kick-clap-fixture-${kind} MODULE Fixture.cpp)
     target_include_directories(kick-clap-fixture-${kind} PRIVATE ../third_party/clap/include)
     target_compile_features(kick-clap-fixture-${kind} PRIVATE cxx_std_17)
@@ -12,7 +12,7 @@ add_executable(kick-clap-tests HostTests.cpp)
 target_link_libraries(kick-clap-tests PRIVATE kick_clap_host)
 add_test(NAME kick-clap-host COMMAND kick-clap-tests
     $<TARGET_FILE:kick-clap-fixture-normal> $<TARGET_FILE:kick-clap-scan>
-    $<TARGET_FILE:kick-clap-fixture-crash> $<TARGET_FILE:kick-clap-fixture-hang>)
+    $<TARGET_FILE:kick-clap-fixture-crash> $<TARGET_FILE:kick-clap-fixture-hang> $<TARGET_FILE:kick-clap-fixture-hog>)
 set_tests_properties(kick-clap-host PROPERTIES TIMEOUT 30)
 if(NOT WIN32)
     add_test(NAME kick-clap-scanner-cli COMMAND ${CMAKE_COMMAND} -E env

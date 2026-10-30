@@ -24,7 +24,7 @@ static bool render(Host& h, float* const* out, uint32_t n, const Event* e = null
     return ok;
 }
 int main(int argc, char** argv) {
-    check(argc == 5, "fixture paths");
+    check(argc == 6, "fixture paths");
 #ifndef _WIN32
     auto diagnostics = dlopen(argv[1], RTLD_NOW);
     check(diagnostics != nullptr, "keep fixture diagnostics alive through all unloads");
@@ -36,8 +36,21 @@ int main(int argc, char** argv) {
     check(!decodeScan("broken", decoded) && !decodeScan(encodeScan(catalog).substr(0, 20), decoded), "reject malformed scanner output");
     auto isolated = scan({argv[1]}, argv[2]);
     check(isolated.plugins.size() == 13 && isolated.failures.empty(), "isolated scanner enumeration");
-    check(scan({argv[3]}, argv[2], 1000).failures.size() == 1, "scanner crash isolation");
+    const auto crashed = scan({argv[3]}, argv[2], 1000);
+    check(crashed.failures.size() == 1, "scanner crash isolation");
+    check(crashed.failures[0].message.find("fixture: crashing during scan") != std::string::npos, "scanner failure keeps the plugin's error output");
     check(scan({argv[4]}, argv[2], 100).failures.size() == 1, "scanner timeout isolation");
+#if defined(__has_feature)
+#if __has_feature(address_sanitizer) || __has_feature(thread_sanitizer) || __has_feature(memory_sanitizer)
+#define KICK_SCAN_SANITIZED 1
+#endif
+#endif
+#if defined(__SANITIZE_ADDRESS__) || defined(__SANITIZE_THREAD__)
+#define KICK_SCAN_SANITIZED 1
+#endif
+#if defined(__linux__) && !defined(KICK_SCAN_SANITIZED) // same condition as the limit in tools/scan.cpp
+    check(scan({argv[5]}, argv[2], 10000).failures.size() == 1, "scanner memory limit stops a plugin allocating 2 GiB");
+#endif
 
     Host h;
     check(h.load(catalog.plugins[0], 48000, 128), "load exact instrument ID");
