@@ -67,8 +67,9 @@ namespace oscairn::standalone
             choice.name.resize(end);
         }
         choice.directory = file.parent_path().string();
+        // SFZ's default 1 ms release ticks when a sustained sample stops; give raw WAVs a short fade.
         if(extension == ".wav")
-            choice.sfz = "<region> sample=" + file.filename().string() + "\n";
+            choice.sfz = "<region> ampeg_release=0.03 sample=" + file.filename().string() + "\n";
         else if(extension == ".sfz")
         {
             std::error_code error;

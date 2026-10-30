@@ -129,6 +129,7 @@ void samples(const char* path)
     {std::ofstream(dir/"Pitched.sfz")<<"<region> sample=Soft pad.wav transpose=12\n";std::ofstream(dir/"Broken.sfz")<<"<region>\nsample=Soft pad.wav pan=10\n";}
     auto state=f.remote([](Control& c){return readSoundPicker(c);});
     check(state.importsSamples && state.choices.empty(),"sampler offers import instead of presets");
+    check(importSound((dir/"Soft pad.wav").string()).sfz=="<region> ampeg_release=0.03 sample=Soft pad.wav\n","WAV imports fade out over 30 ms instead of ticking");
     SoundAction action;action.kind=SoundAction::Prepare;action.node=state.node;action.pluginId=state.pluginId;
     std::string longName;for(int i=0;i<40;++i)longName+="\xD0\xB6"; // 80 bytes of two-byte characters
     std::filesystem::copy_file(dir/"Soft pad.wav",dir/(longName+".wav"));
