@@ -172,13 +172,13 @@ int main(int argc, char** argv) { try {
         check(g.left == before, "moved Performance reopens and plays identically");
         const auto sounds = g.session.sounds(g.session.nodeId("sampler"));
         check(sounds.contexts.size() == 3 && sounds.contexts[1].name == "Pitched" && sounds.contexts[2].name == "Mono", "every prepared sound is restored");
-        auto refused = [&] { const auto revision = g.session.graphState().revision; bool failed = false;
-            try { g.session.loadPerformance(moved.string()); } catch(const std::exception&) { failed = true; }
-            return failed && g.session.graphState().revision == revision; };
+        auto refused = [&](const std::string& reason) { const auto revision = g.session.graphState().revision; std::string why;
+            try { g.session.loadPerformance(moved.string()); } catch(const std::exception& e) { why = e.what(); }
+            return why.find(reason) != std::string::npos && g.session.graphState().revision == revision; };
         writeWavFile(dir / "ton \xC3\xA9.wav", tone(24000, 330), 1, 48000);
-        check(refused(), "a changed sample fails before replacing the live graph");
+        check(refused("sample changed since the sound was saved: ton \xC3\xA9.wav"), "a changed sample is named and fails before replacing the live graph");
         fs::remove_all(dir);
-        check(refused(), "a missing sample fails before replacing the live graph");
+        check(refused("sample not found: ton \xC3\xA9.wav"), "a missing sample is named and fails before replacing the live graph");
         g.render(); check(g.left != std::array<float, 512>{}, "the current sound keeps playing");
     }
     std::cout << "ok: sampler playback, ownership, validation, sharing and sample dependencies\n";

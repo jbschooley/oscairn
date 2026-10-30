@@ -10,6 +10,7 @@
 // is and its content hash, and loading fails if it is missing or has changed.
 
 #include "../common/SoundContexts.h"
+#include <clap/ext/log.h>
 #include <sndfile.h>
 
 #include <algorithm>
@@ -227,6 +228,8 @@ namespace
     struct Sampler : oscairn::contexts::Engine<Sampler, Voice, Patch>
     {
         double sampleRate = 48000;
+        const clap_host_t* host = nullptr;
+        const clap_host_log_t* log = nullptr;
         static constexpr const char* stateVersion = "oscairn-sampler-1";
         static constexpr size_t maxStateBytes = 1 << 20;
 
@@ -280,7 +283,7 @@ namespace
             Patch patch; patch.region = parse(text);
             std::error_code ec;
             const auto root = fs::canonical(directory, ec);
-            if(ec || !fs::is_directory(root)) fail(0, "patch directory not found");
+            if(ec || !fs::is_directory(root)) fail(0, "sample not found: " + patch.region.sample + " (its folder is missing)");
             patch.directory = root;
             uint64_t used = 0; std::vector<const Sample*> counted;
             for(const auto& c : contexts) if(c.prepared && c.patch.sample && std::find(counted.begin(), counted.end(), c.patch.sample.get()) == counted.end())
@@ -333,9 +336,13 @@ namespace
             std::string directory, text; uint64_t hash;
             if(!(in >> std::quoted(directory) >> std::quoted(text) >> hash)) return false;
             if(text.empty()) { p = Patch{}; return true; }
+            // The host shows the logged reason when it reports the rejected snapshot.
+            auto reject = [&](const std::string& why) { if(log) log->log(host, CLAP_LOG_ERROR, why.c_str()); return false; };
             try { p = load(text, directory); }
-            catch(...) { return false; } // shortcut: the reason is lost; report missing/changed samples when hosts can receive diagnostics.
-            return p.sample->hash == hash; // the sample must still have the content that was saved
+            catch(const Error& e) { return reject(e.message + " (in " + directory + ")"); }
+            catch(const std::exception& e) { return reject(e.what()); }
+            if(p.sample->hash != hash) return reject("sample changed since the sound was saved: " + p.region.sample + " (in " + directory + ")");
+            return true;
         }
         void restored() {}
     };
@@ -362,12 +369,13 @@ namespace
         },
     };
 
-    const clap_plugin_t* create()
+    const clap_plugin_t* create(const clap_host_t* host)
     {
         auto* s = new Sampler;
+        s->host = host;
         s->plugin.desc = &descriptor;
         s->plugin.plugin_data = s;
-        s->plugin.init = [](const clap_plugin_t*) { return true; };
+        s->plugin.init = [](const clap_plugin_t* p) { auto& s = self(p); s.log = static_cast<const clap_host_log_t*>(s.host->get_extension(s.host, CLAP_EXT_LOG)); return true; };
         s->plugin.destroy = [](const clap_plugin_t* p) { delete &self(p); };
         s->plugin.activate = [](const clap_plugin_t* p, double rate, uint32_t, uint32_t) { auto& s = self(p); s.sampleRate = rate; s.resetVoices(); return true; };
         s->plugin.deactivate = [](const clap_plugin_t*) {};
@@ -388,8 +396,8 @@ namespace
     const clap_plugin_factory_t factory = {
         [](const clap_plugin_factory_t*) -> uint32_t { return 1; },
         [](const clap_plugin_factory_t*, uint32_t index) -> const clap_plugin_descriptor_t* { return index == 0 ? &descriptor : nullptr; },
-        [](const clap_plugin_factory_t*, const clap_host_t*, const char* id) -> const clap_plugin_t* {
-            return std::strcmp(id, descriptor.id) == 0 ? create() : nullptr;
+        [](const clap_plugin_factory_t*, const clap_host_t* host, const char* id) -> const clap_plugin_t* {
+            return std::strcmp(id, descriptor.id) == 0 && host ? create(host) : nullptr;
         },
     };
 }

@@ -132,6 +132,7 @@ struct Host::Impl {
     const clap_plugin_posix_fd_support_t* fdSupport = nullptr;
     Descriptor info;
     std::string message;
+    std::string lastLoggedError; // main thread only: explains a following failed call
     bool audioLayoutLocked=false;
     std::vector<Parameter> paramInfo;
     uint64_t metadataVersion = 0;
@@ -205,10 +206,11 @@ struct Host::Impl {
     static void CLAP_ABI audioRescan(const clap_host_t* h, uint32_t) { self(h).restart.store(true); }
     static uint32_t CLAP_ABI dialects(const clap_host_t*) { return CLAP_NOTE_DIALECT_CLAP | CLAP_NOTE_DIALECT_MIDI | CLAP_NOTE_DIALECT_MIDI_MPE; }
     static void CLAP_ABI noteRescan(const clap_host_t* h, uint32_t) { self(h).restart.store(true); }
-    static void CLAP_ABI log(const clap_host_t* h, clap_log_severity severity, const char*) {
+    static void CLAP_ABI log(const clap_host_t* h, clap_log_severity severity, const char* text) {
         // Logging from audio callbacks must not format strings, write files, or lock.
         if (severity == CLAP_LOG_FATAL || severity == CLAP_LOG_PLUGIN_MISBEHAVING) self(h).errors.fetch_add(1);
         if (severity == CLAP_LOG_FATAL) self(h).failed.store(true);
+        if (severity == CLAP_LOG_ERROR && text && isMain(h)) self(h).lastLoggedError.assign(text, strnlen(text, 512));
     }
     static bool CLAP_ABI registerTimer(const clap_host_t* h, uint32_t ms, clap_id* id) {
         auto& s = self(h);
@@ -734,7 +736,10 @@ bool Host::loadState(const std::vector<uint8_t>& bytes) {
     try {
         s.deactivate();
         Stream stream; stream.bytes = bytes; clap_istream_t input{&stream, Stream::read};
-        if (!s.state->load(s.plugin, &input)) { s.activate(); s.message = "Plugin rejected state"; return false; }
+        s.lastLoggedError.clear();
+        if (!s.state->load(s.plugin, &input)) {
+            s.activate(); s.message = "Plugin rejected state" + (s.lastLoggedError.empty() ? std::string() : ": " + s.lastLoggedError); return false;
+        }
         Event e; while (s.commands.pop(e)) s.pendingCommands.fetch_sub(1);
         s.carryCount = 0;
         s.activate(); s.dirty.store(false); s.failed.store(false); return true;
