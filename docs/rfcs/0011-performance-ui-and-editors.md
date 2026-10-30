@@ -1,0 +1,298 @@
+# RFC 0011: Performance UI, routing views and plugin editors
+
+Status: proposed, 2026-10-30. Not implemented. Builds on the graph, note routes and parameter
+lanes that exist today ([architecture](../architecture.md#live-note-routes)), the planned
+controller-mapping service ([physical controls](../architecture.md#physical-controls-takeover-and-direct-position-access-planned))
+and the theme contract ([design language](../design-language.md)).
+
+## Problem
+
+Oscairn's graph can already route audio, notes and parameter lanes between any plugins, but
+there is no way for a musician to build a performance on the device: no parts, layers,
+shared effects, mixer or editors. Two familiar models each solve half of it:
+
+- **Gig Performer** wires anything to anything, but every input and output is drawn by
+  hand for every performance.
+- **The MODX** organises a Performance as parts with zones, inserts and shared effects,
+  which is quick to set up but fixed in shape.
+
+Both also leave most physical controls to be assigned by hand, unless you start from a
+factory performance (Jacob's experience with both).
+
+The device must support building and editing sounds without a computer. The desktop is a
+second, larger surface for the same work.
+
+## Outcome
+
+- One graph, several views of it. Most playing and setup happens in a **Parts** list.
+  Routing appears only where the parts cannot express something, and nothing drawn in
+  Routing is hidden from the other views.
+- Common shapes need no wiring:
+  - a new part listens to the keyboard (or an audio input) and plays to Main;
+  - layers, splits, parallel effects and shared effects are made with dedicated controls.
+- Edits in one view never silently break work done in another.
+- Every plugin gets a usable editor on the device. First-party and willing third-party
+  plugins can ask Oscairn to draw a richer editor in the system theme, controlled by the
+  device's physical controls.
+- **Physical controls work as soon as a sound is loaded** and can be reassigned to anything
+  in the performance.
+
+## Views
+
+| View | Shows | Like |
+| --- | --- | --- |
+| **Parts** | One row per part: input and zone, chain, sends, level, mute. Shared buses as rows under the parts. Scenes. | MODX parts, Gig Performer's front panel |
+| **Part** | One part's chain, left to right, with split lanes, its zone and quick controls. A **Pedal view** of the same chain shows bypass lights and footswitches. | Ableton device chain, pedalboards |
+| **Routing** | The real graph as nodes and wires, in columns: inputs, note processing, instruments, effects and buses, outputs | Gig Performer's wiring view, Bitwig |
+| **Mixer** | A strip per part, bus and output: sends, pan, fader, meter, mute and solo | Any mixer |
+| **Plugin editor** | Knob pages, or a structured editor the plugin describes, or the plugin's own window (desktop) | |
+
+Mockups of these views at the device's 1024 × 600 size were reviewed on 2026-10-30.
+
+## The model behind the views
+
+The graph stays the only model. The views are projections of it, plus a small amount of
+layout data (part order, names, colours, which nodes are grouped), saved in the Performance.
+
+### Parts
+
+A **part** is an input selection plus the chain of nodes reached from it, ending at an
+output. The input is any of:
+
+- a note source with a zone (keyboard, pads, a MIDI port or channel, key and velocity range);
+- an audio input (a guitar part is a part whose input is Audio In 1);
+- a generator inside the chain, such as a sequencer.
+
+A node belongs to a part when everything feeding it comes from that part. A node fed by
+several parts is **shared** (see below).
+
+### Who owns a wire
+
+Every wire records who made it:
+
+- **Part wires** are created and maintained by the Parts and Part views (the input into the
+  first box, box to box, the last box to the output, sends).
+- **User wires** are drawn in Routing.
+
+The rules that keep the views from breaking each other:
+
+- The part views change only part wires.
+- User wires are attached to a node and port, not to a position in the chain, so they move
+  with the node when it is moved, reordered or copied.
+- Inserting a node between A and B replaces the part wire A→B with A→new→B; user wires on
+  A or B stay.
+- Deleting a node with user wires first lists them and asks whether to reconnect them to
+  its neighbours or remove them.
+- Replacing a plugin remaps wires by port (main to main, sidechain to sidechain) using the
+  channel rules below. A wire that cannot be remapped stays visible as unconnected; the
+  replacement is not refused. Today the engine refuses with "Incompatible audio buses;
+  explicit routing is required" (`core/engine/src/graph.cpp`); that behaviour changes.
+- Nodes with user wires show a badge in the part views; tapping it opens Routing at that node.
+- Every edit is compiled and checked before publication, as today, and every edit is undoable.
+
+### Split and join
+
+Host-provided nodes, drawn as narrow pills about a third of a box's width, that can appear
+anywhere in a chain. Each split pairs with a join, and the lanes between them stack
+vertically.
+
+| Split | Lanes get | Join | Result |
+| --- | --- | --- | --- |
+| Notes: Layer, Keys, Velocity, Channel | the same notes, or a zone of them | Mix | summed audio |
+| Audio: Copy | a full copy each | Mix | parallel processing, dry/wet |
+| Audio: Left / Right | one mono channel each | Join to L / R | stereo |
+| Audio: Mid / Side | mid and side | Mid / Side to stereo | stereo |
+| Audio: Bands | frequency bands from a built-in crossover | Mix | multiband processing |
+
+- **Mix** has a level, pan, mute and solo for each lane, shown on the chain itself.
+- **Plugins with several outputs** are drawn the same way: a crossover or a multi-out drum
+  sampler is a plugin box followed by one lane per output port. The graph already supports
+  plugins with several ports and one output feeding several inputs, so the built-in Bands
+  mode and crossover plugins coexist.
+
+### Shared buses and shared nodes
+
+A **shared bus** is a Mix node followed by a chain, playing to an output. Parts reach it in
+one of two ways:
+
+- **Send:** a copy at a set level, after the part's chain, alongside the dry sound;
+- **Output:** the part plays through the bus instead of straight to Main.
+
+These are not the plugin sound buses of [RFC 0007](0007-effect-contexts.md), which are
+output ports of one native engine.
+
+How a bus shows in each view:
+
+- **Parts:** a row under the parts, showing what feeds it and its chain. Part rows show
+  their send levels.
+- **Mixer:** a strip.
+- **Routing:** a Mix node (labelled with the bus name) in the effects and buses column,
+  followed by the bus chain. Sends are part wires into the Mix node, each labelled with its
+  level.
+
+**Shared effects wired by hand.** A musician may skip buses and, in Routing, wire two parts
+into one reverb. The graph then has a node with two sources. The views treat this the same
+as a bus, because it is one:
+
+- Wiring a second source into an input that already has one inserts an implicit Mix node in
+  front of it, so levels, mute and solo stay available per source.
+- The Parts list shows the shared node as an unnamed bus row ("Shared · Hall Reverb, fed by
+  Piano and Pad") that can be named.
+- Each feeding part's chain ends in an exit chip ("→ Hall Reverb, shared") instead of Out.
+
+So whether a musician uses the bus controls or draws wires, the result is the same structure
+and every view shows it.
+
+### Groups
+
+Several boxes can be grouped into one box that opens into its contents. A group is a
+sub-graph node that the core still manages ([architecture](../architecture.md#two-kinds-of-thing-plugins-and-the-ui)),
+so routing, crash recovery and parameter addressing still see every plugin inside it. A group
+can expose its own knobs, each driving any parameters inside it.
+
+### Moving, copying and sharing an effect
+
+From a box's menu:
+
+- **Move** to another part, with its settings and its user wires.
+- **Copy** into several parts, each with its own settings from then on.
+- **Share:** one instance on a new or existing bus, fed by the chosen parts by send or output.
+
+The dialog states what will change before it is applied.
+
+### Long chains
+
+About five boxes fit between In and Out on the device screen. Longer chains scroll sideways
+with snapping, edge fades and position dots; the selected box stays in view, and the
+selection knob moves through it. A compact mode shows boxes by name only. Grouping is the
+remedy for chains that stay long.
+
+## Ports and channels
+
+Plugins declare audio ports (main, sidechain, auxiliary) with channel counts. The UI wires
+ports to ports, and the core applies these rules when a port connects to a port:
+
+| From → to | Rule |
+| --- | --- |
+| Same channel count | One to one |
+| Mono → stereo | Copied to both sides, with a pan control on the wire |
+| Stereo → mono | Summed, at −3 dB |
+| Anything else | A channel picker on the wire; never guessed |
+
+A chain follows main ports. Extra outputs appear as sockets on the box, each able to start
+lanes or another chain. Extra inputs, such as a sidechain, appear as sockets on the box's
+left that stay empty until wired.
+
+Today the engine stores routes per channel and only maps mono to stereo when replacing a
+plugin. Port-level routes with these rules are new core work.
+
+## Plugin roles
+
+A role is worked out from the plugin's ports, not chosen by hand. CLAP's feature strings
+(`instrument`, `audio-effect`, `note-effect`, `note-detector`, `analyzer`) are hints.
+
+| Takes in | Puts out | Role |
+| --- | --- | --- |
+| notes | notes | Note effect (transpose, arpeggiator, MIDI delay) |
+| transport only | notes | Note generator (sequencer) |
+| notes | audio | Instrument |
+| audio | audio | Effect |
+| audio + notes | audio | Effect played by notes (vocoder, keyboard-tracked filter) |
+| audio | notes | Audio to notes (pitch or drum trigger) |
+| nothing | audio | Generator (looper playback, test tone) |
+| audio | nothing | Analyzer (tuner, meter, recorder) |
+| anything | parameter lanes | Modulator ([RFC 0002](0002-param-target.md) lanes) |
+| notes | notes + audio | Instrument with note output |
+
+The colour of a box follows its main output (notes, instrument, effect). A second tag names
+the input when it is unusual ("Effect · played by notes").
+
+## Plugin editors
+
+Oscairn draws editors for plugins on the device. Plugin windows exist only on the desktop
+and for plugins with no description.
+
+1. **Knob pages, for every plugin:** generated from the plugin's parameters, grouped by
+   CLAP parameter module paths where present, in pages matching the device's knob banks.
+   Each knob shows what modulates it (parameter lanes, aftertouch).
+2. **Structured editors**, which a plugin describes and Oscairn draws in the system theme
+   with the physical controls mapped: a module grid (chillbeast's Modular,
+   [evaluation](../modular-engine-evaluation.md)), a sample map, a step lane, an envelope.
+   Editing actions travel as plugin-defined operations through the control API, not as
+   pixels.
+3. **The plugin's own window:** for third-party plugins on the desktop. On the device such a
+   plugin gets knob pages. Windows from worker processes ([RFC 0010](0010-plugin-worker-isolation.md))
+   are an open question there.
+
+The description format is a new Oscairn extension, defined in a later revision of this RFC.
+
+## Physical controls
+
+Controls follow the device: the KICK, the Ignite and a MODX-style keyboard have different
+knobs, sliders and buttons. A device **layout** names its logical controls
+([design language](../design-language.md)). The planned controller-mapping service owns
+pickup, relative encoders and bank state.
+
+### Defaults, so nothing must be programmed
+
+Assignments resolve in layers. Each layer fills only what the layers above it left empty.
+
+1. **Performance overrides** set by the musician (below).
+2. **The sound's own assignments**, saved with the sound by its author: Assign 1–8 and
+   named macros. They travel with the sound to another performance or device.
+3. **Fixed role banks**, filled from roles the plugin declares (cutoff, resonance, attack,
+   release, effect mix). They are the same on every instrument. A role the plugin lacks
+   shows as a blank control rather than something unrelated. Third-party plugins without
+   declared roles get Assign banks from their first parameters until someone maps them.
+4. **Performance conventions:**
+   - sliders control part levels;
+   - buttons control part mute, or scenes;
+   - knobs follow the selected part's banks;
+   - the mod wheel, pedals and aftertouch are sent to every part as standard controllers.
+5. **Effects bank:** the main control of each effect box in the selected part, in chain order.
+
+Banks come in fours. A four-knob device pages through them (Assign 1–4, Assign 5–8, Filter,
+Amp EG, Effects), and an eight-knob device shows two at once.
+
+### Overrides
+
+Any physical control can be assigned to anything in the performance: a parameter of any
+node, a group or macro knob, a mix level, a send, a bypass, a scene, or the transport. Ways
+to assign:
+
+- **learn:** move the control, then touch the target on screen;
+- from a target's menu;
+- in a mapping list per performance.
+
+Overrides are stored by logical control identity. Opening a performance on a device that
+lacks a control falls back to the defaults for the others, and the performance reports any
+override it could not apply.
+
+## Build order and gates
+
+| Step | Deliverable | Gate |
+| --- | --- | --- |
+| 1. Model | Part and wire ownership, implicit Mix nodes, port-level routes with channel rules, saved in the Performance format | Edits through the part views never remove user wires; replacing a plugin keeps or flags every wire; round-trips through save and load |
+| 2. Parts and Part views | Parts list, chain, zones, scenes; desktop and device | A two-layer split and a shared reverb built without opening Routing |
+| 3. Split, join, buses | Split and join nodes, Mix with mute and solo, shared buses, Mixer | Rendering identical to the same graph wired by hand |
+| 4. Routing view | Nodes and wires, part wires shown and hidable, user wires, badges | Every structure from steps 2–3 appears; wiring a second source creates a shared row |
+| 5. Editors | Knob pages for every plugin, structured-editor description draft, Modular grid as the first case | Basic Synth, Sampler and one third-party plugin editable on the device without a plugin window |
+| 6. Physical controls | Default layers, overrides, learn, per-layout banks | A new performance with three sounds has working knobs, sliders and buttons with no programming |
+| 7. Groups, pedal view, move/copy/share | | |
+
+## Open questions
+
+- The extension for plugin roles (cutoff, attack and so on) and structured editor
+  descriptions.
+- Pre- or post-fader sends, and whether a part may send from the middle of its chain.
+- How scenes store the bypass and mute state shown in the pedal view.
+- The Ignite's physical controls, and default layouts for each device.
+- How the desktop and device share an editing session when both are open.
+
+## Ruled out
+
+- Wiring every input and output by hand for common performances.
+- A separate part model alongside the graph: the views must not drift from what plays.
+- Container plugins that host plugins inside themselves (already ruled out in the
+  architecture); groups are sub-graphs instead.
+- Plugin-drawn windows as the default editor on the device.
