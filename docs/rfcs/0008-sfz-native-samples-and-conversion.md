@@ -273,15 +273,22 @@ acceptance has not happened** and is queued with the other listening tests.
   desktop picker imports a `.wav` or `.sfz` file through the same model code.
 - The `sampler` test covers exact timing, pitch, velocity, held-note survival, simultaneous
   sounds, note-ID release, stereo isolation, ranges, sample end, release, every rejection
-  path, content-based sharing within one instance, concurrent preparation/retirement with
-  the allocation guard, JSON diagnostics and saved sample dependencies. It and the picker
+  path, content-based sharing within one instance, the 256 MiB budget, concurrent
+  preparation/retirement with the allocation guard, JSON diagnostics and saved sample
+  dependencies, including reopen failures that name the missing or changed sample. It and the picker
   test also pass under ThreadSanitizer and AddressSanitizer/UBSan on macOS (ASan with
   `detect_odr_violation=0`: every plugin exports `clap_entry`).
-- Not done: a reference render against liquidsfz, FLAC, multisample/streaming (step 3,
-  required by the Salamander Grand Piano: 641 regions, release triggers, round robin and
-  pedal triggers in 12 groups), Linux/Buildroot build verification of the new libsndfile
-  dependency, a budget-exhaustion test, and an interactive run of the desktop import.
-  Snapshot-load failures report only "Plugin rejected state", not which sample is missing.
+- Linux and macOS CI, including Linux ThreadSanitizer, pass with the libsndfile dependency.
+- Reference renders against liquidsfz `4cc901d1` ([comparison tool](../../tools/sampler-research/liquidsfz_compare.cpp),
+  [results](../sample-players-and-formats.md#reference-renders-against-liquidsfz)): after
+  matching level, pitch, transposition, tuning, volume, velocity and release agree within
+  0.34% RMS. The release now uses liquidsfz's exponential curve. liquidsfz renders 7.2 dB
+  quieter because it applies a default CC7 volume of 100 and a constant-power pan law;
+  whether to adopt those conventions is **undecided**, so the baseline table is not yet
+  published as verified opcode documentation.
+- Not done: FLAC, multisample/streaming (step 3, required by the Salamander Grand Piano:
+  641 regions, release triggers, round robin and pedal triggers in 12 groups), and an
+  interactive run of the desktop import, queued as [listening test 3](../listening-tests.md#3-sampler-import-and-playback-rfc-0008-step-2).
 
 ## Integration checklist
 

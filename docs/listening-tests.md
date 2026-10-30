@@ -1,6 +1,6 @@
 # Queued listening tests
 
-Status: **pending Jacob's listening**, October 29, 2026. Jacob is away; do not start
+Status: **pending Jacob's listening**, October 29, 2026; section 3 added October 30. Jacob is away; do not start
 playback until he is available. Automated rendering does not count as audible acceptance.
 Before each grouped listening prompt, run `/Users/jacob/.codex/bin/prompt-ding` immediately
 before the listening window. Report if the notification fails; command success does not
@@ -29,6 +29,28 @@ Earlier automated/live telemetry checks are not a substitute for this response.
   original note when that pad is released. Physical MIDI keeps its own channel.
 - [ ] Save/restart/open and repeat; patterns, lengths, channels, mutes and sounds survive.
   Opening is intentionally stopped and rewound; held notes are not restored.
+
+## 3. Sampler import and playback (RFC 0008 step 2)
+
+Also the first interactive run of the desktop import; automated tests cover the model code
+behind it, not the JUCE menu, file chooser or button state.
+
+- [ ] Replace the synth with **Oscairn Sampler** in the plugin browser. **Prepare...** is
+  enabled and offers **Import sample or SFZ...** only.
+- [ ] Import a mono or stereo WAV (at most 64 MiB decoded). It appears named after the
+  file. **Use sound**, then play: middle C (60) is the recorded pitch, other keys are
+  transposed, and a released note fades out quickly (default `ampeg_release` 1 ms).
+- [ ] Import an `.sfz` beside a WAV containing `<region> sample=NAME.wav ampeg_release=0.5`.
+  Hold a note on the first sound, switch to the second, play: the held note keeps its
+  sound and both overlap; the new release takes half a second.
+- [ ] Import an `.sfz` with an unsupported opcode such as `pan=10`: the picker shows
+  `line N: unsupported opcode pan` and playback is not interrupted.
+- [ ] Save, restart, open and replay: both sounds return. Then rename the WAV and open
+  again: opening fails with a message naming the sample, and the current sound keeps
+  playing.
+
+Level note: liquidsfz renders the same patch about 7 dB quieter (default CC7 volume and
+pan law; see RFC 0008 step 2 status). Judge whether the Sampler's level sounds right.
 
 ## Repeatable setup
 
