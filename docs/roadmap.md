@@ -173,8 +173,9 @@ new core, from a UI that talks to it only through the control API.
 6. **Plugin worker isolation — next:** run plugins in supervised worker processes so a
    crash, hang or overrun silences only its own node and the plugin recovers
    ([RFC 0010](rfcs/0010-plugin-worker-isolation.md)). Moved here from Phase 5 on October 30,
-   2026, ahead of Phase 4 hardware work and further third-party plugin features, starting with
-   the hand-off measurements.
+   2026, ahead of Phase 4 hardware work and further third-party plugin features. Hand-off
+   measured on macOS ([step 1](rfcs/0010-plugin-worker-isolation.md#step-1-measurements));
+   native Linux and the aarch64 target remain.
 7. **Sequencer evaluation — written, decisions pending:** [the comparison](sequencer-evaluation.md)
    of the KICK firmware's sequencer (with chillbeast's work), zynseq and hosted plugins
    recommends the KICK model and workflow with sample-accurate playback rewritten in an
