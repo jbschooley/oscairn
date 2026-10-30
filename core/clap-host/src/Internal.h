@@ -11,6 +11,18 @@
 #else
 #include <dlfcn.h>
 #endif
+// AddressSanitizer keeps stale poisoning for an unloaded library's globals, which turns the next
+// library mapped at that address into false global-buffer-overflow reports, so ASan builds never unload.
+#if defined(__SANITIZE_ADDRESS__)
+#define OSCAIRN_ASAN 1
+#elif defined(__has_feature)
+#if __has_feature(address_sanitizer)
+#define OSCAIRN_ASAN 1
+#endif
+#endif
+#ifndef OSCAIRN_ASAN
+#define OSCAIRN_ASAN 0
+#endif
 
 namespace kick::clap::detail {
 inline std::string safeString(const char* text) { return text ? text : ""; }
@@ -58,7 +70,7 @@ struct Library {
         if (handle) {
 #ifdef _WIN32
             FreeLibrary(static_cast<HMODULE>(handle));
-#else
+#elif !OSCAIRN_ASAN
             dlclose(handle);
 #endif
         }
