@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #include "Engine.h"
+#include "../../plugins/step-sequencer/Parameters.h"
 #include "../audio/AudioEngine.h"
 #include "EngineProcess.h"
 #include <bit>
@@ -63,7 +64,22 @@ namespace oscairn::standalone
     void Engine::setTempo(double v){command([this,v]{control_->setTempo(v);});}
     void Engine::setFollowMidiClock(bool v){command([this,v]{control_->setClockSource(v?Transport::ClockSource::MidiClock:Transport::ClockSource::Internal);});}
     bool Engine::followsMidiClock()const{return control_->clockSource()==Transport::ClockSource::MidiClock;}
-    void Engine::note(bool on,int key,float velocity){command([this,on,key,velocity]{if(!control_->note(on,key,velocity))std::fprintf(stderr,"oscairn: note queue overflow\n");});}
+    int Engine::trackChannel()const{return static_cast<int>(param("sequencer",sequencer::channel(sequenceTrack_)));}
+    void Engine::note(bool on,int key,float velocity)
+    {
+        if(key<0 || key>=128)return;
+        const auto channel=trackChannel();
+        command([this,on,key,velocity,channel]{
+            auto& held=padChannels_[static_cast<size_t>(key)];
+            if(on){
+                if(control_->note(true,key,velocity,channel))held|=uint16_t(1u<<channel);
+                else std::fprintf(stderr,"oscairn: note queue overflow\n");
+            }else for(int c=0;c<16;++c)if(held&(1u<<c)){
+                if(control_->note(false,key,0,c))held&=uint16_t(~(1u<<c));
+                else std::fprintf(stderr,"oscairn: note release queue overflow\n");
+            }
+        });
+    }
 
     std::string Engine::pluginId(const std::string& name) const {
         const auto graph=control_->graphState();
@@ -131,7 +147,7 @@ namespace oscairn::standalone
             return;
         }
         // Replay deferred releases on failure; successful replacement discarded their voices.
-        if(soundJobKind_==SoundAction::LoadPerformance && result.error.empty())pendingControls_.clear();
+        if(soundJobKind_==SoundAction::LoadPerformance && result.error.empty()){pendingControls_.clear();padChannels_.fill(0);}
         auto pending=std::move(pendingControls_);pendingControls_.clear();
         for(auto& action:pending)command(std::move(action));
         if(pendingSound_ && connected())
@@ -142,7 +158,7 @@ namespace oscairn::standalone
     Engine::Status Engine::status()const
     {
         const auto transport=control_->transportState();const auto host=control_->sessionStatus();
-        return {connected() && transport.playing,transport.tempo,connected() && transport.playing?static_cast<int>(static_cast<int64_t>(std::floor(transport.beat/.25+1e-9))%16):-1,
+        return {connected() && transport.playing,transport.tempo,connected() && transport.playing?static_cast<int>(param("sequencer",sequencer::playhead(sequenceTrack_))):-1,
                 failure_.empty()?(host.audioReady?host.audioDevice:"Audio unavailable: "+host.audioDevice):"Disconnected: "+failure_,host.midiInputs};
     }
     void Engine::failed(const std::string& message)

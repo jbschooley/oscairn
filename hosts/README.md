@@ -21,21 +21,50 @@ Programs built on the core: a file renderer, a live audio/MIDI engine and a desk
   If its managed engine stops, a banner offers **Restart engine**, which opens a fresh
   demo session. Startup failures offer Retry/Quit; snapshot commands fail immediately.
 
+## Sequencer tracks and patterns
+
+The display has two tracks and two patterns, A and B. Choose a track, its MIDI channel,
+length (1–16 steps), and mute state. Track 2 starts muted. Length, notes, on/off and locks
+belong to the edited pattern; channel and mute belong to the track across both patterns.
+Steps past the length are dimmed but remain editable and saved. Both tracks share tempo.
+
+**Edit A/B** changes the pattern shown without interrupting playback. **Launch pattern**
+requests that pattern for both tracks at the next bar boundary (immediate while stopped).
+Playing/Queued labels show engine state; the step cursor appears only on the playing
+pattern. A launch restarts both track cycles, releases outgoing notes and preserves synth
+release/effect tails. Mute or a MIDI-channel edit releases the track's existing notes using
+their original channel and note IDs. Unmuting joins the next step without resetting phase.
+
+**Use sound** assigns the chosen patch to the selected track's channel. Tracks sharing a
+channel share its selected sound. Different sounds need different channels; independent
+brightness locks also need separate sound contexts because parameters belong to a context.
+All musical settings are saved in the [Performance folder](../docs/performance-format.md).
+The selected editor tab is view state and is not saved.
+
+Sequencer version 0.2.0 changes the parameter layout. The current exact-version loader
+rejects older Performances containing sequencer 0.1.0; it preserves the current session and
+original folder. There is no migration yet. Keep an old build to reopen those folders.
+
+A repeatable two-sound/shared-effect example and the deferred listening checklist are in
+[queued listening tests](../docs/listening-tests.md). No listening has been signed off for
+this milestone yet.
+
 ## Desktop sound picker
 
 Every panel display now has a picker for the loaded `synth` instrument. **Prepare...**
 adds a ready sound without changing playback. The Basic Synth offers Warm, Bright and
 Pressure swell, Detuned saws and Square vibrato variations; other prepared instruments expose their default and advertised
 presets (including LV2 presets). Choose a prepared sound, then **Use sound** to send new
-notes on all MIDI channels to it. The Playing label reflects engine readback; browsing alone
+notes on the selected sequencer track’s MIDI channel to it. On-screen pads follow that
+track too; physical MIDI retains its incoming channel. The Playing label reflects engine readback; browsing alone
 does not switch sounds. Held notes, sustain and releases retain their existing ownership.
 
 **Remove** retires an unselected sound once no notes own it. Ordinary plugin instances
 may have unknown effect tails, so removal then asks before cutting that tail. The default
 context remains reserved. Capacity exhaustion, invalid presets and changed/removed contexts
 are reported without replacing the playing sound. Prepared sounds live in the engine and
-survive UI reconnection, but not an engine restart: persistent performances remain planned.
-**Brightness locks** is off by default. Enable it to map the sequencer's lock lane to
+survive UI reconnection. Save a Performance to retain them across an engine restart.
+**Brightness locks** is off by default. Enable it to map the selected track's channel-scoped lock lane to
 the Basic Synth's brightness; the orange step bars and picker notice show the override.
 Locks write into the selected sound, so disabling them stops further changes but does not
 restore its previous brightness. Adjust Brightness or prepare a fresh variation to restore it.

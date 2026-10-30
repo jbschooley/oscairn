@@ -1,26 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//
-// Oscairn Step Sequencer: a CLAP note-effect plugin. It plays a 16-step pattern of
-// sixteenth notes in time with the host transport and sends the notes on to the
-// next plugin. It has no audio ports.
-//
-// Steps are placed by the transport's beat position, so the sequencer follows
-// whatever drives the transport (its own tempo, MIDI clock, a DAW). Each step plays
-// once even if the position jitters, and a jump in position (song position, loop)
-// restarts from the new place. With a steady tempo the output does not depend on the
-// host's block size.
-//
-// Each step also sends a parameter lock on lane 0 ("Lock A") through
-// oscairn.param-target, at the step's sample and just before its note, when the host
-// supports that event space. The host decides which parameter the lane controls.
-//
-// Every step is editable through CLAP parameters: on/off (ids 100-115), note (200-215)
-// and lock value (300-315). The default pattern is an A minor bassline. A parameter
-// change takes effect from its sample: it applies to steps that start at or after it.
-
+// Two tracks, two editable patterns. Requests launch at a bar boundary; note releases
+// retain their original ID/channel across edits, mutes and pattern changes.
+#include "Parameters.h"
 #include <clap/clap.h>
 #include <oscairn-clap/param-target.h>
-
 #include <algorithm>
 #include <array>
 #include <atomic>
@@ -31,420 +14,470 @@
 
 namespace
 {
-    // The default pattern: an A minor arpeggio bassline, alternating octaves.
-    constexpr std::array<int16_t, 16> pattern{ 45, 57, 52, 57, 48, 60, 55, 60, 43, 55, 50, 55, 47, 59, 52, 59 };
-    constexpr double                  stepBeats  = 0.25; // sixteenth notes
-    constexpr double                  gateLength = 0.5;  // fraction of a step
-    // Default Lock A, per step, normalised 0..1 over whatever parameter the host maps it to.
-    constexpr std::array<double, 16>  locks{ 0.8, 0.2, 0.5, 0.35, 0.8, 0.2, 0.5, 0.35, 0.65, 0.15, 0.4, 0.25, 0.65, 0.15, 0.4, 0.25 };
+    namespace ids = oscairn::sequencer;
+    constexpr std::array<int16_t, 16> notes{45, 57, 52, 57, 48, 60, 55, 60, 43, 55, 50, 55, 47, 59, 52, 59};
+    constexpr std::array<double, 16> locks{.8, .2, .5, .35, .8, .2, .5, .35, .65, .15, .4, .25, .65, .15, .4, .25};
+    constexpr double stepBeats = .25, gateLength = .5;
+    const char *const features[]{CLAP_PLUGIN_FEATURE_NOTE_EFFECT, nullptr};
+    const clap_plugin_descriptor_t descriptor{CLAP_VERSION_INIT,
+                                              "org.oscairn.step-sequencer",
+                                              "Oscairn Step Sequencer",
+                                              "Oscairn",
+                                              "https://github.com/jbschooley/oscairn",
+                                              "",
+                                              "",
+                                              "0.2.0",
+                                              "Two tracks and two patterns following the host transport",
+                                              features};
 
-    constexpr size_t steps = pattern.size();
-
-    // Parameter ids: kind * 100 + step.
-    enum ParamKind : clap_id
+    bool paramsInfo(const clap_plugin_t *, uint32_t index, clap_param_info_t *info)
     {
-        stepOnKind   = 1,
-        stepNoteKind = 2,
-        stepLockKind = 3,
+        if (index >= ids::parameterCount)
+            return false;
+        *info = {};
+        info->id = ids::parameterId(index);
+        info->flags = CLAP_PARAM_IS_AUTOMATABLE | CLAP_PARAM_IS_STEPPED;
+        if (index < 2)
+        {
+            info->max_value = 1;
+            std::snprintf(info->name, sizeof(info->name), "%s", index ? "Playing pattern" : "Launch pattern");
+            if (index)
+                info->flags = CLAP_PARAM_IS_READONLY | CLAP_PARAM_IS_STEPPED;
+            return true;
+        }
+        index -= 2;
+        if (index < 4 * ids::tracks)
+        {
+            const auto track = index / 4, kind = index % 4;
+            std::snprintf(info->module, sizeof(info->module), "Track %u", track + 1);
+            if (kind == 0)
+            {
+                info->max_value = 15;
+                info->default_value = track;
+                std::strcpy(info->name, "MIDI channel");
+            }
+            else if (kind == 1)
+            {
+                info->max_value = 1;
+                info->default_value = track ? 1 : 0;
+                std::strcpy(info->name, "Mute");
+            }
+            else if (kind == 3)
+            {
+                info->max_value = 1;
+                info->default_value = 0;
+                std::strcpy(info->name, "Channel-scoped locks");
+            }
+            else
+            {
+                info->min_value = -1;
+                info->max_value = 15;
+                info->default_value = -1;
+                info->flags = CLAP_PARAM_IS_READONLY | CLAP_PARAM_IS_STEPPED;
+                std::strcpy(info->name, "Playing step");
+            }
+            return true;
+        }
+        index -= 4 * ids::tracks;
+        const auto bank = index / ids::parametersPerTrack, member = index % ids::parametersPerTrack;
+        const auto pattern = bank / ids::tracks, track = bank % ids::tracks;
+        std::snprintf(info->module, sizeof(info->module), "Pattern %c/Track %u", 'A' + pattern, track + 1);
+        if (!member)
+        {
+            info->min_value = 1;
+            info->max_value = ids::steps;
+            info->default_value = ids::steps;
+            std::strcpy(info->name, "Length");
+            return true;
+        }
+        const auto kind = (member - 1) / ids::steps, step = (member - 1) % ids::steps;
+        if (kind == 0)
+        {
+            info->max_value = 1;
+            info->default_value = 1;
+            std::snprintf(info->name, sizeof(info->name), "Step %u On", step + 1);
+        }
+        else if (kind == 1)
+        {
+            info->max_value = 127;
+            info->default_value = notes[step] + 12 * track + 5 * pattern;
+            std::snprintf(info->name, sizeof(info->name), "Step %u Note", step + 1);
+        }
+        else
+        {
+            info->max_value = 1;
+            info->default_value = locks[step];
+            info->flags = CLAP_PARAM_IS_AUTOMATABLE;
+            std::snprintf(info->name, sizeof(info->name), "Step %u Lock", step + 1);
+        }
+        return true;
+    }
+    struct Held
+    {
+        int64_t step = -1;
+        int16_t key = -1, channel = 0;
+        int32_t id = -1;
     };
-
-    const char* const features[] = { CLAP_PLUGIN_FEATURE_NOTE_EFFECT, nullptr };
-
-    const clap_plugin_descriptor_t descriptor = {
-        CLAP_VERSION_INIT,
-        "org.oscairn.step-sequencer",
-        "Oscairn Step Sequencer",
-        "Oscairn",
-        "https://github.com/jbschooley/oscairn",
-        "",
-        "",
-        "0.1.0",
-        "A 16-step pattern sequencer that follows the host transport",
-        features,
-    };
-
     struct Sequencer
     {
-        clap_plugin_t      plugin{};
-        const clap_host_t* host       = nullptr;
-        bool               canLock    = false; // the host offers oscairn.param-target
-        uint16_t           lockSpace  = 0;
-        double             sampleRate = 48000.0;
-        int64_t            lastStep   = -1; // the last step played; -1 when stopped
-        int64_t            heldStep   = -1; // the step whose note is sounding
-        int16_t            heldKey    = -1;
-        // Values are atomic: the main thread reads them (get_value) while audio runs.
-        std::array<std::atomic<double>, steps> on, note, lock;
-
+        clap_plugin_t plugin{};
+        const clap_host_t *host = nullptr;
+        bool canLock = false;
+        uint16_t lockSpace = 0;
+        double sampleRate = 48000;
+        std::array<std::atomic<double>, ids::parameterCount> values{};
+        std::array<Held, ids::tracks> held{};
+        std::array<bool, ids::tracks + 1> readbackDirty{};
+        int64_t lastStep = -1, patternStart = 0;
+        double launchBeat = -1;
+        uint32_t queued = 0, nextNote = 0;
         Sequencer()
         {
-            for( size_t i = 0; i < steps; ++i )
+            for (uint32_t i = 0; i < values.size(); ++i)
             {
-                on[i]   = 1.0;
-                note[i] = pattern[i];
-                lock[i] = locks[i];
+                clap_param_info_t info{};
+                paramsInfo(nullptr, i, &info);
+                values[i] = info.default_value;
             }
         }
+        double value(uint32_t id) const
+        {
+            return values[ids::parameterIndex(id)].load(std::memory_order_relaxed);
+        }
     };
-
-    Sequencer& self( const clap_plugin_t* p )
+    Sequencer &self(const clap_plugin_t *p)
     {
-        return *static_cast<Sequencer*>( p->plugin_data );
+        return *static_cast<Sequencer *>(p->plugin_data);
     }
-
-    // The parameter a step parameter id names, or nullptr.
-    std::atomic<double>* stepParam( Sequencer& s, clap_id id )
+    void applyParam(Sequencer &s, const clap_event_header_t *h)
     {
-        const auto step = id % 100;
-        if( step >= steps )
-            return nullptr;
-        switch( id / 100 )
-        {
-        case stepOnKind: return &s.on[step];
-        case stepNoteKind: return &s.note[step];
-        case stepLockKind: return &s.lock[step];
-        default: return nullptr;
-        }
-    }
-
-    double clampParam( clap_id id, double value )
-    {
-        switch( id / 100 )
-        {
-        case stepOnKind: return value >= 0.5 ? 1.0 : 0.0;
-        case stepNoteKind: return std::clamp( std::round( value ), 0.0, 127.0 );
-        default: return std::clamp( value, 0.0, 1.0 );
-        }
-    }
-
-    void applyParam( Sequencer& s, const clap_event_header_t* header )
-    {
-        if( header->space_id != CLAP_CORE_EVENT_SPACE_ID || header->type != CLAP_EVENT_PARAM_VALUE )
+        if (!h || h->space_id != CLAP_CORE_EVENT_SPACE_ID || h->type != CLAP_EVENT_PARAM_VALUE ||
+            h->size < sizeof(clap_event_param_value_t))
             return;
-        const auto* e = reinterpret_cast<const clap_event_param_value_t*>( header );
-        if( auto* param = stepParam( s, e->param_id ) )
-            *param = clampParam( e->param_id, e->value );
+        const auto &e = *reinterpret_cast<const clap_event_param_value_t *>(h);
+        const auto index = ids::parameterIndex(e.param_id);
+        clap_param_info_t info{};
+        if (!paramsInfo(nullptr, index, &info) || (info.flags & CLAP_PARAM_IS_READONLY) || !std::isfinite(e.value) || e.note_id != -1 ||
+            e.port_index != -1 || e.channel != -1 || e.key != -1)
+            return;
+        auto value = std::clamp(e.value, info.min_value, info.max_value);
+        if (info.flags & CLAP_PARAM_IS_STEPPED)
+            value = std::round(value);
+        s.values[index] = value;
     }
-
-    struct Pending
+    void readback(Sequencer &s, uint32_t id, double value, uint32_t time, const clap_output_events_t *out)
     {
-        enum Kind
-        {
-            Off, // ordered first at the same time
-            Lock,
-            On
-        };
-        int64_t time;
-        Kind    kind;
-        int16_t key;
-        double  value; // velocity for On, lock value for Lock
-    };
-
-    bool pushLock( const Sequencer& s, const clap_output_events_t* out, uint32_t time, double value )
-    {
-        oscairn_event_param_target_t e{};
-        e.header.size     = sizeof( e );
-        e.header.time     = time;
-        e.header.space_id = s.lockSpace;
-        e.header.type     = OSCAIRN_EVENT_PARAM_TARGET;
-        e.lane            = 0;
-        e.mode            = OSCAIRN_PARAM_TARGET_SET;
-        e.note_id         = -1;
-        e.port_index = e.channel = e.key = -1;
-        e.value           = value;
-        return out->try_push( out, &e.header );
+        const auto index = ids::parameterIndex(id), dirty = id == ids::activePattern ? 0 : (id - ids::playhead(0)) / 10 + 1;
+        if (s.values[index].load() == value && !s.readbackDirty[dirty])
+            return;
+        s.values[index] = value;
+        clap_event_param_value_t e{};
+        e.header = {sizeof(e), time, CLAP_CORE_EVENT_SPACE_ID, CLAP_EVENT_PARAM_VALUE, 0};
+        e.param_id = id;
+        e.value = value;
+        e.note_id = e.port_index = e.channel = e.key = -1;
+        s.readbackDirty[dirty] = !out->try_push(out, &e.header);
     }
-
-    bool pushNote( const clap_output_events_t* out, uint32_t time, bool on, int16_t key, double velocity )
+    bool pushNote(const clap_output_events_t *out, uint32_t time, bool on, const Held &note, double velocity)
     {
         clap_event_note_t e{};
-        e.header.size     = sizeof( e );
-        e.header.time     = time;
-        e.header.space_id = CLAP_CORE_EVENT_SPACE_ID;
-        e.header.type     = on ? CLAP_EVENT_NOTE_ON : CLAP_EVENT_NOTE_OFF;
-        e.note_id         = -1;
-        e.port_index      = 0;
-        e.channel         = 0;
-        e.key             = key;
-        e.velocity        = velocity;
-        return out->try_push( out, &e.header );
+        e.header = {sizeof(e), time, CLAP_CORE_EVENT_SPACE_ID, uint16_t(on ? CLAP_EVENT_NOTE_ON : CLAP_EVENT_NOTE_OFF), 0};
+        e.note_id = note.id;
+        e.port_index = 0;
+        e.channel = note.channel;
+        e.key = note.key;
+        e.velocity = velocity;
+        return out->try_push(out, &e.header);
     }
-
-    clap_process_status process( const clap_plugin_t* p, const clap_process_t* process )
+    bool release(Sequencer &s, uint32_t track, uint32_t time, const clap_output_events_t *out)
     {
-        auto&          s      = self( p );
-        const auto*    t      = process->transport;
-        const auto     frames = (int64_t)process->frames_count;
-
-        // Input events are in time order; apply parameter changes up to a given sample.
-        const auto* in       = process->in_events;
-        uint32_t    inNext   = 0;
-        const auto  inCount  = in->size( in );
-        auto applyParamsUntil = [&]( int64_t time ) {
-            for( ; inNext < inCount && (int64_t)in->get( in, inNext )->time <= time; ++inNext )
-                applyParam( s, in->get( in, inNext ) );
-        };
-
-        const bool playing = t && ( t->flags & CLAP_TRANSPORT_IS_PLAYING ) && ( t->flags & CLAP_TRANSPORT_HAS_TEMPO )
-                          && ( t->flags & CLAP_TRANSPORT_HAS_BEATS_TIMELINE ) && t->tempo > 0.0;
-        if( !playing )
+        auto &held = s.held[track];
+        if (held.key < 0)
+            return true;
+        if (!pushNote(out, time, false, held, 0))
+            return false;
+        held = {};
+        return true;
+    }
+    bool pushLock(const Sequencer &s, const clap_output_events_t *out, uint32_t time, uint32_t track, int16_t channel, double value)
+    {
+        oscairn_event_param_target_t e{};
+        e.header = {sizeof(e), time, s.lockSpace, OSCAIRN_EVENT_PARAM_TARGET, 0};
+        e.lane = track;
+        e.mode = OSCAIRN_PARAM_TARGET_SET;
+        e.note_id = e.port_index = e.key = -1;
+        e.channel = s.value(ids::lockScope(track)) ? channel : -1;
+        e.value = value;
+        return out->try_push(out, &e.header);
+    }
+    void stop(Sequencer &s)
+    {
+        s.lastStep = -1;
+        s.patternStart = 0;
+        s.launchBeat = -1;
+        s.held = {};
+    }
+    clap_process_status process(const clap_plugin_t *p, const clap_process_t *block)
+    {
+        auto &s = self(p);
+        const auto *t = block->transport;
+        const auto frames = block->frames_count;
+        const auto *out = block->out_events;
+        const auto *in = block->in_events;
+        const uint32_t count = in ? in->size(in) : 0;
+        uint32_t input = 0;
+        const bool playing = t && (t->flags & CLAP_TRANSPORT_IS_PLAYING) && (t->flags & CLAP_TRANSPORT_HAS_TEMPO) &&
+                             (t->flags & CLAP_TRANSPORT_HAS_BEATS_TIMELINE) && std::isfinite(t->tempo) && t->tempo >= 1 && t->tempo <= 1000;
+        auto applyUntil = [&](uint32_t time)
         {
-            applyParamsUntil( frames );
-            if( s.heldKey >= 0 )
-                pushNote( process->out_events, 0, false, s.heldKey, 0.0 );
-            s.heldKey = -1;
-            s.heldStep = s.lastStep = -1;
+            while (input < count)
+            {
+                const auto *h = in->get(in, input);
+                if (h && h->time > time)
+                    break;
+                applyParam(s, h);
+                ++input;
+            }
+        };
+        if (!playing)
+        {
+            applyUntil(frames);
+            for (uint32_t track = 0; track < ids::tracks; ++track)
+                if (!release(s, track, 0, out))
+                    return CLAP_PROCESS_CONTINUE;
+            stop(s);
+            readback(s, ids::activePattern, s.value(ids::requestedPattern), 0, out);
+            for (uint32_t track = 0; track < ids::tracks; ++track)
+                readback(s, ids::playhead(track), -1, 0, out);
             return CLAP_PROCESS_CONTINUE;
         }
-
-        const double beatStart      = (double)t->song_pos_beats / (double)CLAP_BEATTIME_FACTOR;
-        const double samplesPerBeat = s.sampleRate * 60.0 / t->tempo;
-        auto offsetOf = [&]( double beat ) { return (int64_t)std::llround( ( beat - beatStart ) * samplesPerBeat ); };
-
-        // Where to continue: after the last step played, unless the position jumped
-        // (backwards, or forwards by more than a step), or we are just starting. On a
-        // start or jump, a step that began within its gate time still plays, late,
-        // rather than being skipped (a clocked start always arrives slightly after
-        // the beat).
+        const double beatStart = double(t->song_pos_beats) / CLAP_BEATTIME_FACTOR, samplesPerBeat = s.sampleRate * 60 / t->tempo;
+        auto offset = [&](double beat) -> uint32_t
+        {
+            const auto v = (beat - beatStart) * samplesPerBeat;
+            return v <= 0 ? 0 : v >= frames ? frames : uint32_t(std::llround(v));
+        };
         int64_t next = s.lastStep + 1;
-        if( s.lastStep < 0 || next * stepBeats < beatStart - stepBeats || s.lastStep * stepBeats > beatStart + 1e-9 )
+        const bool starting = s.lastStep < 0;
+        if (starting || next * stepBeats < beatStart - stepBeats || s.lastStep * stepBeats > beatStart + 1e-9)
         {
-            const auto current = (int64_t)std::floor( beatStart / stepBeats + 1e-9 );
-            const bool inGate  = beatStart - current * stepBeats < gateLength * stepBeats;
-            next               = std::max<int64_t>( inGate ? current : current + 1, 0 );
-        }
-
-        std::array<Pending, 64> pending{}; // hosts split blocks to maxFrames, so this is ample
-        size_t                  count = 0;
-        auto endHeldNoteBefore = [&]( int64_t limit ) {
-            if( s.heldStep < 0 )
-                return;
-            const auto off = std::max<int64_t>( 0, offsetOf( ( s.heldStep + gateLength ) * stepBeats ) );
-            if( off < limit )
+            for (uint32_t track = 0; track < ids::tracks; ++track)
+                if (!release(s, track, 0, out))
+                    return CLAP_PROCESS_CONTINUE;
+            const auto current = int64_t(std::floor(beatStart / stepBeats + 1e-9));
+            next = std::max<int64_t>(beatStart - current * stepBeats < gateLength * stepBeats ? current : current + 1, 0);
+            if (!starting)
             {
-                pending[count++] = { off, Pending::Off, s.heldKey, 0.0 };
-                s.heldStep = -1;
-                s.heldKey  = -1;
+                s.patternStart = 0;
+                s.launchBeat = -1;
             }
-        };
-
-        for( int64_t k = next; count + 3 <= pending.size(); ++k )
+        }
+        double barBeats = 4;
+        if ((t->flags & CLAP_TRANSPORT_HAS_TIME_SIGNATURE) && t->tsig_num && t->tsig_denom)
+            barBeats = double(t->tsig_num) * 4 / t->tsig_denom;
+        const double barStart = double(t->bar_start) / CLAP_BEATTIME_FACTOR;
+        uint32_t time = 0;
+        // Bound adversarial hosts; normal audio rates/blocks and the host's event limits fit comfortably.
+        for (uint32_t work = 0; work < 4096; ++work)
         {
-            const auto on = std::max<int64_t>( 0, offsetOf( k * stepBeats ) );
-            if( on >= frames )
-                break;
-            endHeldNoteBefore( on + 1 );
-            if( s.heldStep >= 0 ) // still sounding at the next step: end it there
+            for (uint32_t track = 0; track < ids::tracks; ++track)
+                if (s.held[track].key >= 0 && offset((s.held[track].step + gateLength) * stepBeats) <= time &&
+                    !release(s, track, time, out))
+                    return CLAP_PROCESS_CONTINUE;
+            applyUntil(time);
+            for (uint32_t track = 0; track < ids::tracks; ++track)
+                if (s.held[track].key >= 0 && (s.value(ids::mute(track)) || s.held[track].channel != s.value(ids::channel(track))) &&
+                    !release(s, track, time, out))
+                    return CLAP_PROCESS_CONTINUE;
+            const auto request = uint32_t(s.value(ids::requestedPattern));
+            if (request == s.value(ids::activePattern))
+                s.launchBeat = -1;
+            else if (starting && time == 0)
             {
-                pending[count++] = { on, Pending::Off, s.heldKey, 0.0 };
-                s.heldStep = -1;
-                s.heldKey  = -1;
+                readback(s, ids::activePattern, request, time, out);
+                s.launchBeat = -1;
             }
-            s.lastStep = k;
-            applyParamsUntil( on );
-            const auto step = (size_t)( k % (int64_t)steps );
-            if( s.on[step] < 0.5 )
-                continue; // a rest: the previous note has already ended
-            const auto key = (int16_t)s.note[step].load();
-            if( s.canLock )
-                pending[count++] = { on, Pending::Lock, 0, s.lock[step] };
-            pending[count++]  = { on, Pending::On, key, ( k % 4 == 0 ) ? 1.0 : 0.7 };
-            s.heldStep        = k;
-            s.heldKey         = key;
-        }
-        endHeldNoteBefore( frames );
-        applyParamsUntil( frames );
-
-        const auto before = []( const Pending& a, const Pending& b ) {
-            return a.time != b.time ? a.time < b.time : a.kind < b.kind; // offs, then locks, then ons
-        };
-        // Stable insertion sort for at most 64 events. std::stable_sort may allocate
-        // a temporary buffer, which is not allowed in the audio callback.
-        for( size_t i = 1; i < count; ++i )
-        {
-            const auto event = pending[i];
-            auto j = i;
-            while( j > 0 && before( event, pending[j - 1] ) )
+            else if (s.launchBeat < 0 || s.queued != request)
             {
-                pending[j] = pending[j - 1];
-                --j;
+                const double beat = beatStart + time / samplesPerBeat;
+                s.launchBeat = barStart + std::ceil((beat - barStart) / barBeats - 1e-9) * barBeats;
+                s.queued = request;
             }
-            pending[j] = event;
+            if (s.launchBeat >= 0 && offset(s.launchBeat) <= time)
+            {
+                for (uint32_t track = 0; track < ids::tracks; ++track)
+                    if (!release(s, track, time, out))
+                        return CLAP_PROCESS_CONTINUE;
+                s.patternStart = next = std::max<int64_t>(0, int64_t(std::ceil(s.launchBeat / stepBeats - 1e-9)));
+                readback(s, ids::activePattern, request, time, out);
+                s.launchBeat = -1;
+            }
+            readback(s, ids::activePattern, s.value(ids::activePattern), time, out);
+            if (offset(next * stepBeats) <= time)
+            {
+                for (uint32_t track = 0; track < ids::tracks; ++track)
+                    if (!release(s, track, time, out))
+                        return CLAP_PROCESS_CONTINUE;
+                const auto pattern = uint32_t(s.value(ids::activePattern));
+                s.lastStep = next;
+                for (uint32_t track = 0; track < ids::tracks; ++track)
+                {
+                    const auto length = int64_t(s.value(ids::length(pattern, track)));
+                    const auto step = uint32_t(((next - s.patternStart) % length + length) % length);
+                    readback(s, ids::playhead(track), step, time, out);
+                    if (s.value(ids::mute(track)) || !s.value(ids::step(pattern, track, ids::On, step)))
+                        continue;
+                    Held held{next, int16_t(s.value(ids::step(pattern, track, ids::Note, step))), int16_t(s.value(ids::channel(track))),
+                              int32_t(s.nextNote)};
+                    s.nextNote = (s.nextNote + 1) & 0x7fffffff;
+                    if (s.canLock && !pushLock(s, out, time, track, held.channel, s.value(ids::step(pattern, track, ids::Lock, step))))
+                        return CLAP_PROCESS_CONTINUE;
+                    if (!pushNote(out, time, true, held, step % 4 == 0 ? 1 : .7))
+                        return CLAP_PROCESS_CONTINUE;
+                    s.held[track] = held;
+                }
+                ++next;
+            }
+            uint32_t due = offset(next * stepBeats);
+            for (uint32_t track = 0; track < ids::tracks; ++track)
+            {
+                if (s.held[track].key >= 0)
+                    due = std::min(due, offset((s.held[track].step + gateLength) * stepBeats));
+                readback(s, ids::playhead(track), s.value(ids::playhead(track)), time, out);
+            }
+            if (input < count)
+            {
+                const auto *h = in->get(in, input);
+                due = std::min(due, h ? h->time : time);
+            }
+            if (s.launchBeat >= 0)
+                due = std::min(due, offset(s.launchBeat));
+            if (due >= frames)
+                return CLAP_PROCESS_CONTINUE;
+            time = std::max(time, due);
         }
-        for( size_t i = 0; i < count; ++i )
+        return CLAP_PROCESS_ERROR;
+    }
+    const clap_plugin_note_ports_t notePorts{[](const clap_plugin_t *, bool input) -> uint32_t { return input ? 0 : 1; },
+                                             [](const clap_plugin_t *, uint32_t index, bool input, clap_note_port_info_t *info) -> bool
+                                             {
+                                                 if (input || index)
+                                                     return false;
+                                                 *info = {};
+                                                 info->id = 0;
+                                                 info->supported_dialects = info->preferred_dialect = CLAP_NOTE_DIALECT_CLAP;
+                                                 std::strcpy(info->name, "Tracks");
+                                                 return true;
+                                             }};
+    const clap_plugin_params_t params{[](const clap_plugin_t *) -> uint32_t { return ids::parameterCount; },
+                                      paramsInfo,
+                                      [](const clap_plugin_t *p, clap_id id, double *value) -> bool
+                                      {
+                                          const auto index = ids::parameterIndex(id);
+                                          if (index == ids::parameterCount)
+                                              return false;
+                                          *value = self(p).values[index];
+                                          return true;
+                                      },
+                                      [](const clap_plugin_t *, clap_id id, double value, char *text, uint32_t size) -> bool
+                                      {
+                                          clap_param_info_t info{};
+                                          if (!paramsInfo(nullptr, ids::parameterIndex(id), &info))
+                                              return false;
+                                          if (id == ids::requestedPattern || id == ids::activePattern)
+                                              std::snprintf(text, size, "%c", value >= .5 ? 'B' : 'A');
+                                          else if (id == ids::channel(0) || id == ids::channel(1))
+                                              std::snprintf(text, size, "%.0f", value + 1);
+                                          else if (!(info.flags & CLAP_PARAM_IS_STEPPED))
+                                              std::snprintf(text, size, "%.0f%%", value * 100);
+                                          else
+                                              std::snprintf(text, size, "%.0f", value);
+                                          return true;
+                                      },
+                                      [](const clap_plugin_t *, clap_id id, const char *text, double *value) -> bool
+                                      {
+                                          clap_param_info_t info{};
+                                          if (!paramsInfo(nullptr, ids::parameterIndex(id), &info) || (info.flags & CLAP_PARAM_IS_READONLY))
+                                              return false;
+                                          if (id == ids::requestedPattern && (std::strcmp(text, "A") == 0 || std::strcmp(text, "B") == 0))
+                                              *value = text[0] == 'B';
+                                          else
+                                          {
+                                              char *end = nullptr;
+                                              *value = std::strtod(text, &end);
+                                              if (end == text || !std::isfinite(*value))
+                                                  return false;
+                                              if (id == ids::channel(0) || id == ids::channel(1))
+                                                  *value -= 1;
+                                              else if (!(info.flags & CLAP_PARAM_IS_STEPPED))
+                                                  *value /= 100;
+                                          }
+                                          *value = std::clamp(*value, info.min_value, info.max_value);
+                                          if (info.flags & CLAP_PARAM_IS_STEPPED)
+                                              *value = std::round(*value);
+                                          return true;
+                                      },
+                                      [](const clap_plugin_t *p, const clap_input_events_t *in, const clap_output_events_t *)
+                                      {
+                                          for (uint32_t i = 0; i < in->size(in); ++i)
+                                              applyParam(self(p), in->get(in, i));
+                                      }};
+    const oscairn_plugin_param_target_lanes_t lanes{
+        [](const clap_plugin_t *) -> uint32_t { return ids::tracks; },
+        [](const clap_plugin_t *, uint32_t index, oscairn_param_target_lane_info_t *info) -> bool
         {
-            const auto& e = pending[i];
-            if( e.kind == Pending::Lock )
-                pushLock( s, process->out_events, (uint32_t)e.time, e.value );
-            else
-                pushNote( process->out_events, (uint32_t)e.time, e.kind == Pending::On, e.key, e.value );
-        }
-        return CLAP_PROCESS_CONTINUE;
-    }
-
-    uint32_t notePortsCount( const clap_plugin_t*, bool isInput )
-    {
-        return isInput ? 0 : 1;
-    }
-
-    bool notePortsGet( const clap_plugin_t*, uint32_t index, bool isInput, clap_note_port_info_t* info )
-    {
-        if( isInput || index != 0 )
-            return false;
-        info->id                 = 0;
-        info->supported_dialects = CLAP_NOTE_DIALECT_CLAP;
-        info->preferred_dialect  = CLAP_NOTE_DIALECT_CLAP;
-        std::snprintf( info->name, sizeof( info->name ), "%s", "Notes" );
-        return true;
-    }
-
-    const clap_plugin_note_ports_t notePorts = { notePortsCount, notePortsGet };
-
-    uint32_t paramsCount( const clap_plugin_t* )
-    {
-        return 3 * steps;
-    }
-
-    bool paramsInfo( const clap_plugin_t*, uint32_t index, clap_param_info_t* info )
-    {
-        if( index >= 3 * steps )
-            return false;
-        const auto kind = (clap_id)( index / steps + 1 ), step = (clap_id)( index % steps );
-        *info    = {};
-        info->id = kind * 100 + step;
-        info->flags = CLAP_PARAM_IS_AUTOMATABLE;
-        switch( kind )
-        {
-        case stepOnKind:
-            info->flags |= CLAP_PARAM_IS_STEPPED;
-            info->max_value     = 1.0;
-            info->default_value = 1.0;
-            std::snprintf( info->name, sizeof( info->name ), "Step %u On", step + 1 );
-            break;
-        case stepNoteKind:
-            info->flags |= CLAP_PARAM_IS_STEPPED;
-            info->max_value     = 127.0;
-            info->default_value = pattern[step];
-            std::snprintf( info->name, sizeof( info->name ), "Step %u Note", step + 1 );
-            break;
-        default:
-            info->max_value     = 1.0;
-            info->default_value = locks[step];
-            std::snprintf( info->name, sizeof( info->name ), "Step %u Lock A", step + 1 );
-            break;
-        }
-        std::snprintf( info->module, sizeof( info->module ), "Step %u", step + 1 );
-        return true;
-    }
-
-    bool paramsValue( const clap_plugin_t* p, clap_id id, double* value )
-    {
-        const auto* param = stepParam( self( p ), id );
-        if( !param )
-            return false;
-        *value = *param;
-        return true;
-    }
-
-    bool paramsToText( const clap_plugin_t* p, clap_id id, double value, char* text, uint32_t size )
-    {
-        if( !stepParam( self( p ), id ) )
-            return false;
-        switch( id / 100 )
-        {
-        case stepOnKind: std::snprintf( text, size, "%s", value >= 0.5 ? "On" : "Off" ); break;
-        case stepNoteKind: std::snprintf( text, size, "%.0f", value ); break;
-        default: std::snprintf( text, size, "%.0f%%", value * 100.0 ); break;
-        }
-        return true;
-    }
-
-    bool paramsFromText( const clap_plugin_t* p, clap_id id, const char* text, double* value )
-    {
-        if( !stepParam( self( p ), id ) )
-            return false;
-        switch( id / 100 )
-        {
-        case stepOnKind: *value = std::strcmp( text, "On" ) == 0 ? 1.0 : std::strcmp( text, "Off" ) == 0 ? 0.0 : clampParam( id, std::atof( text ) ); break;
-        case stepNoteKind: *value = clampParam( id, std::atof( text ) ); break;
-        default: *value = clampParam( id, std::atof( text ) / 100.0 ); break;
-        }
-        return true;
-    }
-
-    void paramsFlush( const clap_plugin_t* p, const clap_input_events_t* in, const clap_output_events_t* )
-    {
-        for( uint32_t i = 0, n = in->size( in ); i < n; ++i )
-            applyParam( self( p ), in->get( in, i ) );
-    }
-
-    const clap_plugin_params_t params = { paramsCount, paramsInfo, paramsValue, paramsToText, paramsFromText, paramsFlush };
-
-    const oscairn_plugin_param_target_lanes_t lanes = {
-        []( const clap_plugin_t* ) -> uint32_t { return 1; },
-        []( const clap_plugin_t*, uint32_t index, oscairn_param_target_lane_info_t* info ) {
-            if( index != 0 )
+            if (index >= ids::tracks)
                 return false;
-            info->lane = 0;
-            std::snprintf( info->name, sizeof( info->name ), "%s", "Lock A" );
+            info->lane = index;
+            std::snprintf(info->name, sizeof(info->name), "Track %u Lock", index + 1);
             return true;
-        },
-    };
-
-    void stop( Sequencer& s )
+        }};
+    const clap_plugin_t *create(const clap_host_t *host)
     {
-        s.lastStep = s.heldStep = -1;
-        s.heldKey               = -1;
-    }
-
-    const clap_plugin_t* create( const clap_host_t* host )
-    {
-        auto* s                    = new Sequencer;
-        s->host                    = host;
-        s->plugin.desc             = &descriptor;
-        s->plugin.plugin_data      = s;
-        s->plugin.init             = []( const clap_plugin_t* p ) {
-            auto&       s        = self( p );
-            const auto* registry = static_cast<const clap_host_event_registry_t*>( s.host->get_extension( s.host, CLAP_EXT_EVENT_REGISTRY ) );
-            s.canLock = registry && registry->query && registry->query( s.host, OSCAIRN_EVENT_SPACE_PARAM_TARGET, &s.lockSpace );
+        auto *s = new Sequencer;
+        s->host = host;
+        s->plugin.desc = &descriptor;
+        s->plugin.plugin_data = s;
+        s->plugin.init = [](const clap_plugin_t *p)
+        {
+            auto &s = self(p);
+            const auto *r = static_cast<const clap_host_event_registry_t *>(s.host->get_extension(s.host, CLAP_EXT_EVENT_REGISTRY));
+            s.canLock = r && r->query && r->query(s.host, OSCAIRN_EVENT_SPACE_PARAM_TARGET, &s.lockSpace);
             return true;
         };
-        s->plugin.destroy          = []( const clap_plugin_t* p ) { delete &self( p ); };
-        s->plugin.activate         = []( const clap_plugin_t* p, double rate, uint32_t, uint32_t ) {
-            self( p ).sampleRate = rate;
-            stop( self( p ) );
+        s->plugin.destroy = [](const clap_plugin_t *p) { delete &self(p); };
+        s->plugin.activate = [](const clap_plugin_t *p, double rate, uint32_t, uint32_t)
+        {
+            if (!std::isfinite(rate) || rate < 8000)
+                return false;
+            self(p).sampleRate = rate;
+            stop(self(p));
             return true;
         };
-        s->plugin.deactivate       = []( const clap_plugin_t* ) {};
-        s->plugin.start_processing = []( const clap_plugin_t* ) { return true; };
-        s->plugin.stop_processing  = []( const clap_plugin_t* ) {};
-        s->plugin.reset            = []( const clap_plugin_t* p ) { stop( self( p ) ); };
-        s->plugin.process          = process;
-        s->plugin.get_extension    = []( const clap_plugin_t*, const char* id ) -> const void* {
-            if( std::strcmp( id, CLAP_EXT_NOTE_PORTS ) == 0 )
+        s->plugin.deactivate = [](const clap_plugin_t *) {};
+        s->plugin.start_processing = [](const clap_plugin_t *) { return true; };
+        s->plugin.stop_processing = [](const clap_plugin_t *) {};
+        s->plugin.reset = [](const clap_plugin_t *p) { stop(self(p)); };
+        s->plugin.process = process;
+        s->plugin.get_extension = [](const clap_plugin_t *, const char *id) -> const void *
+        {
+            if (!std::strcmp(id, CLAP_EXT_NOTE_PORTS))
                 return &notePorts;
-            if( std::strcmp( id, OSCAIRN_EXT_PARAM_TARGET_LANES ) == 0 )
-                return &lanes;
-            if( std::strcmp( id, CLAP_EXT_PARAMS ) == 0 )
+            if (!std::strcmp(id, CLAP_EXT_PARAMS))
                 return &params;
+            if (!std::strcmp(id, OSCAIRN_EXT_PARAM_TARGET_LANES))
+                return &lanes;
             return nullptr;
         };
-        s->plugin.on_main_thread   = []( const clap_plugin_t* ) {};
+        s->plugin.on_main_thread = [](const clap_plugin_t *) {};
         return &s->plugin;
     }
-
-    const clap_plugin_factory_t factory = {
-        []( const clap_plugin_factory_t* ) -> uint32_t { return 1; },
-        []( const clap_plugin_factory_t*, uint32_t index ) -> const clap_plugin_descriptor_t* { return index == 0 ? &descriptor : nullptr; },
-        []( const clap_plugin_factory_t*, const clap_host_t* host, const char* id ) -> const clap_plugin_t* {
-            return std::strcmp( id, descriptor.id ) == 0 ? create( host ) : nullptr;
-        },
-    };
-}
-
-extern "C" CLAP_EXPORT const clap_plugin_entry_t clap_entry = {
-    CLAP_VERSION_INIT,
-    []( const char* ) { return true; },
-    []() {},
-    []( const char* id ) -> const void* { return std::strcmp( id, CLAP_PLUGIN_FACTORY_ID ) == 0 ? &factory : nullptr; },
-};
+    const clap_plugin_factory_t factory{[](const clap_plugin_factory_t *) -> uint32_t { return 1; },
+                                        [](const clap_plugin_factory_t *, uint32_t index) -> const clap_plugin_descriptor_t *
+                                        { return index ? nullptr : &descriptor; },
+                                        [](const clap_plugin_factory_t *, const clap_host_t *host, const char *id) -> const clap_plugin_t *
+                                        { return !std::strcmp(id, descriptor.id) ? create(host) : nullptr; }};
+} // namespace
+extern "C" CLAP_EXPORT const clap_plugin_entry_t clap_entry{CLAP_VERSION_INIT, [](const char *) { return true; }, []() {},
+                                                            [](const char *id) -> const void *
+                                                            { return !std::strcmp(id, CLAP_PLUGIN_FACTORY_ID) ? &factory : nullptr; }};

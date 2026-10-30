@@ -2,6 +2,7 @@
 #pragma once
 
 #include "Engine.h"
+#include "../../plugins/step-sequencer/Parameters.h"
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
@@ -39,7 +40,13 @@ namespace oscairn::standalone
         void refreshPicker();
         SoundAction selectedAction(SoundAction::Kind) const;
 
-        juce::ComboBox sounds_;
+        juce::ComboBox sounds_, tracks_, channels_, lengths_, patterns_;
+        juce::ToggleButton mute_{"Mute track"};
+        juce::TextButton launch_{"Launch pattern"};
+        juce::Label patternStatus_;
+        uint32_t track_=0, pattern_=0;
+        int length_=16;
+        uint32_t stepParameter(sequencer::StepKind kind,int step) const;
         juce::TextButton plugins_{"Plugins..."};
         juce::TextButton useSound_{"Use sound"}, prepareSound_{"Prepare..."}, removeSound_{"Remove"};
         juce::Label playingSound_, soundNotice_;

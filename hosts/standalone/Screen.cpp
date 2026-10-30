@@ -9,8 +9,7 @@ namespace oscairn::standalone
 {
     namespace
     {
-        // Sequencer parameter ids (plugins/step-sequencer): kind * 100 + step.
-        constexpr uint32_t onParam = 100, noteParam = 200, lockParam = 300;
+        namespace ids=oscairn::sequencer;
 
         juce::String noteName( int note )
         {
@@ -20,8 +19,22 @@ namespace oscairn::standalone
 
     Screen::Screen(Engine& engine) : engine_(engine)
     {
-        for(auto* component : std::initializer_list<juce::Component*>{&sounds_, &useSound_, &prepareSound_, &removeSound_, &playingSound_, &soundNotice_, &brightnessLocks_, &plugins_})
+        for(auto* component : std::initializer_list<juce::Component*>{&sounds_, &useSound_, &prepareSound_, &removeSound_, &playingSound_, &soundNotice_, &brightnessLocks_, &plugins_, &tracks_, &channels_, &lengths_, &patterns_, &mute_, &launch_, &patternStatus_})
             addAndMakeVisible(component);
+        engine_.selectTrack(0);
+        tracks_.setName("Sequencer track");tracks_.addItem("Track 1",1);tracks_.addItem("Track 2",2);
+        tracks_.setSelectedId(1,juce::dontSendNotification);
+        tracks_.onChange=[this]{track_=uint32_t(tracks_.getSelectedId()-1);engine_.selectTrack(track_);refresh();};
+        channels_.setName("Track MIDI channel");lengths_.setName("Pattern track length");
+        for(int i=1;i<=16;++i){channels_.addItem("MIDI "+juce::String(i),i);lengths_.addItem(juce::String(i)+" steps",i);}
+        channels_.onChange=[this]{engine_.setParam("sequencer",ids::channel(track_),channels_.getSelectedId()-1);};
+        lengths_.onChange=[this]{engine_.setParam("sequencer",ids::length(pattern_,track_),lengths_.getSelectedId());};
+        mute_.onClick=[this]{engine_.setParam("sequencer",ids::mute(track_),mute_.getToggleState()?1:0);};
+        patterns_.setName("Pattern to edit");patterns_.addItem("Edit A",1);patterns_.addItem("Edit B",2);
+        patterns_.setSelectedId(1,juce::dontSendNotification);
+        patterns_.onChange=[this]{pattern_=uint32_t(patterns_.getSelectedId()-1);refresh();};
+        launch_.setTooltip("Launch the edited pattern at the next bar, or immediately while stopped. Both tracks switch together.");
+        launch_.onClick=[this]{engine_.setParam("sequencer",ids::requestedPattern,pattern_);};
         plugins_.onClick=[this]{if(engine_.openBrowser)engine_.openBrowser();};
         sounds_.setName("Prepared sounds");
         sounds_.setTextWhenNothingSelected("Choose a prepared sound");
@@ -31,7 +44,7 @@ namespace oscairn::standalone
             auto action=selectedAction(SoundAction::BrightnessLocks);
             action.enableLocks=brightnessLocks_.getToggleState();engine_.soundAction(action);
         };
-        useSound_.setTooltip("Use this sound for new notes on all MIDI channels. Held notes keep their sound.");
+        useSound_.setTooltip("Use this sound for new notes on the selected track’s MIDI channel. Pads follow this track too. Held notes keep their sound.");
         useSound_.onClick=[this]{engine_.soundAction(selectedAction(SoundAction::Select));refreshPicker();};
         prepareSound_.onClick=[this] {
             const auto state=engine_.soundPicker();
@@ -63,7 +76,7 @@ namespace oscairn::standalone
     SoundAction Screen::selectedAction(SoundAction::Kind kind) const
     {
         SoundAction action;action.kind=kind;action.node=engine_.soundPicker().node;
-        action.pluginId=engine_.soundPicker().pluginId;
+        action.pluginId=engine_.soundPicker().pluginId;action.track=track_;action.channel=static_cast<int16_t>(engine_.trackChannel());
         const auto index=sounds_.getSelectedItemIndex();
         if(index>=0 && static_cast<size_t>(index)<soundIds_.size())action.context=soundIds_[static_cast<size_t>(index)];
         return action;
@@ -72,15 +85,15 @@ namespace oscairn::standalone
     void Screen::refreshPicker()
     {
         const auto& state=engine_.soundPicker();
-        brightnessLocks_.setToggleState(state.brightnessLocks,juce::dontSendNotification);
-        brightnessLocks_.setEnabled(state.canToggleBrightnessLocks && engine_.connected() && !engine_.soundBusy());
+        brightnessLocks_.setToggleState(state.brightnessLocks[track_],juce::dontSendNotification);
+        brightnessLocks_.setEnabled(state.canToggleBrightnessLocks[track_] && engine_.connected() && !engine_.soundBusy());
         const auto oldIndex=sounds_.getSelectedItemIndex();
         const auto oldId=oldIndex>=0 && static_cast<size_t>(oldIndex)<soundIds_.size()?soundIds_[static_cast<size_t>(oldIndex)]:UINT32_MAX;
         std::vector<uint32_t> ids;juce::StringArray labels;juce::StringArray playing;
         for(const auto& sound:state.sounds.contexts)
         {
             ids.push_back(sound.id);labels.add(sound.name);
-            if(sound.selectedChannels)playing.add(sound.name);
+            if(sound.selectedChannels & (1u<<engine_.trackChannel()))playing.add(sound.name);
         }
         if(ids!=soundIds_ || labels!=soundLabels_)
         {
@@ -94,7 +107,7 @@ namespace oscairn::standalone
         const auto found=std::find_if(state.sounds.contexts.begin(),state.sounds.contexts.end(),[&](const auto& s){return s.id==id;});
         const bool ready=engine_.connected() && !engine_.soundBusy() && found!=state.sounds.contexts.end();
         sounds_.setEnabled(!engine_.soundBusy() && engine_.connected());
-        useSound_.setEnabled(ready && found->selectedChannels!=65535);
+        useSound_.setEnabled(ready && !(found->selectedChannels & (1u<<engine_.trackChannel())));
         removeSound_.setEnabled(ready && id!=0 && !found->selectedChannels && !found->activeVoices && (found->idle || state.sounds.mode=="instances"));
         prepareSound_.setEnabled(engine_.connected() && !engine_.soundBusy() && engine_.canPrepareSounds() &&
             !state.choices.empty() && state.sounds.contexts.size()<state.sounds.capacity);
@@ -102,8 +115,8 @@ namespace oscairn::standalone
         playingSound_.setText("Playing: "+(playing.isEmpty()?juce::String("none"):playing.joinIntoString(" / ")),juce::dontSendNotification);
         const auto notice=!engine_.soundMessage().empty()?juce::String(engine_.soundMessage()):
             engine_.soundBusy()?juce::String("Updating sounds..."):
-            state.brightnessLocks?juce::String("Brightness locks override the sound on each step"):
-            juce::String(state.sounds.contexts.size())+" / "+juce::String(state.sounds.capacity)+" prepared | Use sound changes all MIDI channels";
+            state.brightnessLocks[track_]?juce::String("Brightness locks override the sound on each step"):
+            juce::String(state.sounds.contexts.size())+" / "+juce::String(state.sounds.capacity)+" prepared | Use sound changes this track’s channel";
         soundNotice_.setText(notice,juce::dontSendNotification);
         soundNotice_.setTooltip(notice);
     }
@@ -121,16 +134,30 @@ namespace oscairn::standalone
         prepareSound_.setBounds(row.removeFromRight(buttonWidth).reduced(2));
         useSound_.setBounds(row.removeFromRight(buttonWidth).reduced(2));
         sounds_.setBounds(row.reduced(2));soundNotice_.setBounds(area);
+        auto controls=getLocalBounds().withTrimmedTop(juce::roundToInt(getHeight()*.32f)).withHeight(juce::roundToInt(getHeight()*.14f)).reduced(10,0);
+        auto trackRow=controls.removeFromTop(controls.getHeight()/2);const auto width=trackRow.getWidth()/4;
+        tracks_.setBounds(trackRow.removeFromLeft(width).reduced(2));channels_.setBounds(trackRow.removeFromLeft(width).reduced(2));
+        lengths_.setBounds(trackRow.removeFromLeft(width).reduced(2));mute_.setBounds(trackRow.reduced(2));
+        patterns_.setBounds(controls.removeFromLeft(width).reduced(2));launch_.setBounds(controls.removeFromLeft(width).reduced(2));patternStatus_.setBounds(controls.reduced(2));
     }
 
     void Screen::refresh()
     {
         status_ = engine_.status();
+        length_=static_cast<int>(engine_.param("sequencer",ids::length(pattern_,track_)));
+        channels_.setSelectedId(engine_.trackChannel()+1,juce::dontSendNotification);
+        lengths_.setSelectedId(length_,juce::dontSendNotification);
+        mute_.setToggleState(engine_.param("sequencer",ids::mute(track_))>=.5,juce::dontSendNotification);
+        const auto active=static_cast<int>(engine_.param("sequencer",ids::activePattern));
+        const auto requested=static_cast<int>(engine_.param("sequencer",ids::requestedPattern));
+        patternStatus_.setText(juce::String("Playing ")+(active?"B":"A")+(requested!=active?juce::String(" / Queued ")+(requested?"B":"A"):juce::String()),juce::dontSendNotification);
+        for(auto* control:std::initializer_list<juce::Component*>{&channels_,&lengths_,&mute_,&launch_})control->setEnabled(engine_.connected());
+        if(pattern_!=static_cast<uint32_t>(active))status_.step=-1;
         for( int i = 0; i < steps; ++i )
         {
-            on_[(size_t)i]   = engine_.param( "sequencer", onParam + (uint32_t)i ) >= 0.5;
-            note_[(size_t)i] = (int)engine_.param( "sequencer", noteParam + (uint32_t)i );
-            lock_[(size_t)i] = engine_.param( "sequencer", lockParam + (uint32_t)i );
+            on_[(size_t)i]   = engine_.param( "sequencer", stepParameter(ids::On,i) ) >= 0.5;
+            note_[(size_t)i] = (int)engine_.param( "sequencer", stepParameter(ids::Note,i) );
+            lock_[(size_t)i] = engine_.param( "sequencer", stepParameter(ids::Lock,i) );
         }
         refreshPicker();
         repaint();
@@ -143,7 +170,7 @@ namespace oscairn::standalone
 
     juce::Rectangle<float> Screen::cell( int step ) const
     {
-        auto       area = getLocalBounds().toFloat().withTrimmedTop( getHeight()*.32f ).reduced( getWidth() * 0.015f );
+        auto       area = getLocalBounds().toFloat().withTrimmedTop( getHeight()*.46f ).reduced( getWidth() * 0.015f );
         const auto w = area.getWidth() / 8.0f, h = area.getHeight() / 2.0f;
         return juce::Rectangle<float>( area.getX() + ( step % 8 ) * w, area.getY() + ( step / 8 ) * h, w, h ).reduced( w * 0.05f );
     }
@@ -203,16 +230,20 @@ namespace oscairn::standalone
             const auto bar = lockBar( i );
             g.setColour( ink(Ink::Background) );
             g.fillRoundedRectangle( bar, themeData().radius*.5f * unit );
-            g.setColour( on_[(size_t)i] && engine_.soundPicker().brightnessLocks ? ink(Ink::Accent).withAlpha( 0.85f ) : ink(Ink::Muted).withAlpha( 0.4f ) );
+            g.setColour( on_[(size_t)i] && engine_.soundPicker().brightnessLocks[track_] ? ink(Ink::Accent).withAlpha( 0.85f ) : ink(Ink::Muted).withAlpha( 0.4f ) );
             g.fillRoundedRectangle( bar.withWidth( bar.getWidth() * (float)lock_[(size_t)i] ), themeData().radius*.5f * unit );
+            if(i>=length_){g.setColour(ink(Ink::Background).withAlpha(.65f));g.fillRoundedRectangle(c,themeData().radius*unit);}
         }
     }
+
+    uint32_t Screen::stepParameter(sequencer::StepKind kind,int step) const
+    {return ids::step(pattern_,track_,kind,static_cast<uint32_t>(step));}
 
     void Screen::setLock( int step, float x )
     {
         const auto bar   = lockBar( step );
         const auto value = juce::jlimit( 0.0f, 1.0f, ( x - bar.getX() ) / bar.getWidth() );
-        engine_.setParam( "sequencer", lockParam + (uint32_t)step, value );
+        engine_.setParam( "sequencer", stepParameter(ids::Lock,step), value );
         refresh();
     }
 
@@ -242,7 +273,7 @@ namespace oscairn::standalone
         {
             drag_            = Drag::Note;
             const auto pitch = juce::jlimit( 0, 127, dragNote_ - (int)std::lround( e.getDistanceFromDragStartY() / ( 8.0f * getHeight() / 600.0f ) ) );
-            engine_.setParam( "sequencer", noteParam + (uint32_t)dragStep_, pitch );
+            engine_.setParam( "sequencer", stepParameter(ids::Note,dragStep_), pitch );
             refresh();
         }
     }
@@ -251,7 +282,7 @@ namespace oscairn::standalone
     {
         if( drag_ == Drag::Toggle )
         {
-            engine_.setParam( "sequencer", onParam + (uint32_t)dragStep_, on_[(size_t)dragStep_] ? 0.0 : 1.0 );
+            engine_.setParam( "sequencer", stepParameter(ids::On,dragStep_), on_[(size_t)dragStep_] ? 0.0 : 1.0 );
             refresh();
         }
         drag_ = Drag::None;
@@ -263,7 +294,7 @@ namespace oscairn::standalone
         if( step < 0 || wheel.deltaY == 0.0f )
             return;
         const auto pitch = juce::jlimit( 0, 127, note_[(size_t)step] + ( wheel.deltaY > 0 ? 1 : -1 ) );
-        engine_.setParam( "sequencer", noteParam + (uint32_t)step, pitch );
+        engine_.setParam( "sequencer", stepParameter(ids::Note,step), pitch );
         refresh();
     }
 }

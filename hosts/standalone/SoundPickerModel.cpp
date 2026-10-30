@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #include "SoundPickerModel.h"
+#include "../../plugins/step-sequencer/Parameters.h"
 #include <algorithm>
 #include <stdexcept>
 
@@ -29,12 +30,12 @@ namespace oscairn::standalone
             for(const auto& node : graph.topology.nodes)
                 if(node.plugin.id == "org.oscairn.step-sequencer" && graph.names.at(node.id) == "sequencer")
                 {
-                    result.canToggleBrightnessLocks = true;
+                    result.canToggleBrightnessLocks.fill(true);
                     for(const auto& mapping : graph.topology.mappings)
-                        if(mapping.source == node.id && mapping.lane == 0)
+                        if(mapping.source == node.id && mapping.lane < result.brightnessLocks.size())
                         {
-                            result.brightnessLocks = mapping.target == result.node && mapping.param == 1;
-                            result.canToggleBrightnessLocks = result.brightnessLocks;
+                            result.brightnessLocks[mapping.lane] = mapping.target == result.node && mapping.param == 1;
+                            result.canToggleBrightnessLocks[mapping.lane] = result.brightnessLocks[mapping.lane];
                         }
                 }
         }
@@ -63,11 +64,15 @@ namespace oscairn::standalone
             throw std::runtime_error("The instrument changed. Choose a sound again.");
         if(action.kind == SoundAction::BrightnessLocks)
         {
-            if(!current.canToggleBrightnessLocks || control.graphState().staged)
+            if(action.track>=current.canToggleBrightnessLocks.size() || !current.canToggleBrightnessLocks[action.track] || control.graphState().staged)
                 throw std::runtime_error("Finish other routing edits before changing brightness locks.");
             const auto sequencer = control.nodeId("sequencer");
-            if(action.enableLocks)control.mapParameter(sequencer,0,current.node,1);
-            else control.unmapParameter(sequencer,0);
+            if(action.enableLocks){
+                if(!control.setParameter(sequencer,oscairn::sequencer::lockScope(action.track),1))
+                    throw std::runtime_error("Could not set track lock scope. Try again.");
+                control.mapParameter(sequencer,action.track,current.node,1);
+            }
+            else control.unmapParameter(sequencer,action.track);
             control.commit();
             return;
         }
@@ -82,7 +87,7 @@ namespace oscairn::standalone
             throw std::runtime_error("That sound is no longer prepared.");
         if(action.kind == SoundAction::Select)
         {
-            if(!control.selectSound(current.node, action.context, -1))
+            if(!control.selectSound(current.node, action.context, action.channel))
                 throw std::runtime_error("Sound change was refused. Try again.");
         }
         else

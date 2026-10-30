@@ -59,7 +59,7 @@ int main( int argc, char** argv )
         for( uint32_t i = 0; i < count; ++i )
         {
             const auto* h = events[i].header();
-            if( h->space_id != CLAP_CORE_EVENT_SPACE_ID ) // parameter locks, not notes
+            if( h->space_id != CLAP_CORE_EVENT_SPACE_ID || (h->type != CLAP_EVENT_NOTE_ON && h->type != CLAP_EVENT_NOTE_OFF) ) // parameter locks, not notes
                 continue;
             if( position + h->time < (int64_t)( 4 * rate ) ) // the last block may run past the end
                 notes.push_back( { position + h->time, h->type == CLAP_EVENT_NOTE_ON } );

@@ -2,13 +2,14 @@
 //
 // The step sequencer's steps are CLAP parameters (on 100-115, note 200-215, lock
 // 300-315). At 120 BPM a step is 6000 samples. Checked:
-// - the host lists 48 parameters, with the default pattern as default values;
+// - the host lists 206 parameters, with the default pattern as default values;
 // - setParameter edits a step: step 2 off plays nothing there, step 3's note changes;
 // - a parameter event inside a block applies from its sample: a note change sent one
 //   sample after a step starts misses that step and takes effect on the next pass,
 //   and one sent at the step's sample applies to it.
 
 #include "oscairn/transport.h"
+#include "../../../plugins/step-sequencer/Parameters.h"
 
 #include <kick_clap/Discovery.h>
 #include <kick_clap/Host.h>
@@ -89,8 +90,8 @@ int main( int argc, char** argv )
         kick::clap::Host host;
         if( !host.load( scan.plugins.front(), rate, block ) )
             return fail( "load" );
-        if( host.parameters().size() != 48 )
-            return fail( "expected 48 parameters" );
+        if( host.parameters().size() != oscairn::sequencer::parameterCount )
+            return fail( "expected 206 parameters" );
         if( host.parameterValue( 100 ) != 1.0 || host.parameterValue( 200 ) != 45.0 || host.parameterValue( 300 ) != 0.8 )
             return fail( "default values" );
 
@@ -123,6 +124,6 @@ int main( int argc, char** argv )
             return fail( "step 2's change should apply on the next pass" );
     }
 
-    std::printf( "ok: 48 step parameters; on/off and note edits apply, from their exact sample\n" );
+    std::printf( "ok: 206 track/pattern parameters; on/off and note edits apply, from their exact sample\n" );
     return 0;
 }

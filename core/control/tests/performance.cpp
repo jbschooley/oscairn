@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #include "oscairn/session.h"
+#include "../../../plugins/step-sequencer/Parameters.h"
 #include "../../plugin-host/src/StateFiles.h"
 #include "AllocationGuard.h"
 #include <algorithm>
@@ -25,6 +26,15 @@ static void configure(Session& s,const char* synth,const char* delay,const char*
     check(s.selectSound(n,a,0) && s.selectSound(n,b,1),"select patches");
     check(s.setParameter(d,1,.125) && s.setParameter(d,2,.2) && s.setParameter(e,1,.75) && s.setParameter(e,2,.7),"effect parameters");
     check(s.setParameter(q,200,48) && s.setParameter(q,101,0),"sequence edits");s.setTempo(137);
+    for(uint32_t pattern=0;pattern<2;++pattern)for(uint32_t track=0;track<2;++track){
+        check(s.setParameter(q,sequencer::length(pattern,track),16-pattern*3-track*4),"track length");
+        for(uint32_t step=0;step<16;++step){
+            check(s.setParameter(q,sequencer::step(pattern,track,sequencer::Note,step),40+pattern*12+track*7+step),"pattern note");
+            check(s.setParameter(q,sequencer::step(pattern,track,sequencer::On,step),(step+track)%3!=1),"pattern gate");
+            check(s.setParameter(q,sequencer::step(pattern,track,sequencer::Lock,step),double(step)/16),"pattern lock");
+        }
+    }
+    s.setParameter(q,sequencer::lockScope(0),1);s.setParameter(q,sequencer::mute(1),0);s.setParameter(q,sequencer::requestedPattern,1);
     Audio audio;audio.run(s);s.service();
 }
 static void compare(Session& a,Session& b) {
@@ -57,7 +67,9 @@ static void native(const char* synth,const char* delay,const char* seq,const fs:
     check(a.transportState().beat==0 && !a.transportState().playing,"load stopped at beat zero");
     const auto sounds=a.sounds(a.nodeId("synth"));
     check(sounds.contexts.size()==3 && sounds.contexts[1].selectedChannels==1 && sounds.contexts[2].selectedChannels==2,"all contexts and channel assignments");
-    check(a.parameter(a.nodeId("sequencer"),200)==48 && a.parameter(a.nodeId("sequencer"),101)==0,"sequencer state");
+    for(uint32_t i=0;i<sequencer::parameterCount;++i){const auto id=sequencer::parameterId(i);
+        check(a.parameter(a.nodeId("sequencer"),id)==b.parameter(b.nodeId("sequencer"),id),"all track/pattern parameters restored");
+    }
     check(a.effectResources(a.nodeId("delay"))->prepared==2 && a.parameter(a.nodeId("long-echo"),2)==.7,"shared effect engine and independent state");
     // The live-configured reference must finish its parameter glides before comparison.
     for(int i=0;i<1000;++i){reset.run(a);reset.run(b);}

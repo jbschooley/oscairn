@@ -148,9 +148,8 @@ What is in place:
 - **oscairn.param-target** ([RFC 0002](docs/rfcs/0002-param-target.md)): a CLAP
   extension for parameter changes between plugins, such as a sequencer's per-step locks,
   routed by the graph to the target's parameter in the same block.
-- **Plugins** (`plugins/`): Oscairn Step Sequencer (a 16-step pattern following the
-  transport's beat position, with a lock lane; each step's on/off, note and lock are
-  parameters), Oscairn Basic Synth (saw, detuned saw pair or square oscillators, per-sound
+- **Plugins** (`plugins/`): Oscairn Step Sequencer (two tracks, two A/B patterns with up to 16 steps per track,
+  independent lengths/MIDI channels/mutes and bar-boundary launches; all edits are parameters), Oscairn Basic Synth (saw, detuned saw pair or square oscillators, per-sound
   pitch LFO, Brightness, Level and Pressure parameters; aftertouch
   opens each voice's filter; prepared sound contexts preserve held notes across patch
   changes, with independent channel parts and eight separate sound buses) and Oscairn Delay

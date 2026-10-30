@@ -5,6 +5,7 @@
 #include "SoundPickerModel.h"
 #include <juce_events/juce_events.h>
 #include <memory>
+#include <algorithm>
 #include <cstdio>
 #include <future>
 #include <deque>
@@ -32,6 +33,8 @@ namespace oscairn::standalone
         void setFollowMidiClock(bool follow);
         bool followsMidiClock()const;
         void note(bool on,int key,float velocity);
+        void selectTrack(uint32_t track){sequenceTrack_=std::min(track,1u);}
+        int trackChannel()const;
         bool connected()const{return failure_.empty();}
         bool canRestart()const{return recoveryAvailable_;}
         void restart();
@@ -85,6 +88,8 @@ namespace oscairn::standalone
         std::unique_ptr<LocalClient> client_;
         std::unique_ptr<RemoteControl> remote_;
         Control* control_=nullptr;
+        uint32_t sequenceTrack_=0;
+        std::array<uint16_t,128> padChannels_{};
         std::string socketPath_,failure_;
         uint32_t reconnectTicks_=0;
         bool recoveryAvailable_=false;

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #pragma once
 #include "oscairn/control.h"
+#include <array>
 
 namespace oscairn::standalone
 {
@@ -15,14 +16,15 @@ namespace oscairn::standalone
         std::string pluginId, instrument;
         Control::Sounds sounds{};
         std::vector<SoundChoice> choices;
-        bool canToggleBrightnessLocks = false, brightnessLocks = false;
+        std::array<bool,2> canToggleBrightnessLocks{}, brightnessLocks{};
     };
     struct SoundAction
     {
         enum Kind { Refresh, Prepare, Select, Discard, BrightnessLocks, Replace, SavePerformance, LoadPerformance } kind = Refresh;
         NodeId node = 0;
         std::string pluginId;
-        uint32_t context = 0;
+        uint32_t context = 0, track = 0;
+        int16_t channel = -1;
         bool cutTail = false;
         bool enableLocks = false;
         SoundChoice choice;

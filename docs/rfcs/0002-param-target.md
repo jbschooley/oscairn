@@ -15,7 +15,7 @@ addresses another plugin's parameters (prior-art review, CLAP ecosystem notes).
 A small CLAP extension, defined in `core/clap-ext/include/oscairn-clap/param-target.h`.
 
 - **Lanes, not addresses.** A plugin sends `oscairn_event_param_target` events on numbered
-  output *lanes* (for the step sequencer, lane 0 is "Lock A"). It does not know what a lane
+  output *lanes* (for the step sequencer, lanes 0/1 are the two track locks). It does not know what a lane
   controls. The host keeps a mapping from (plugin, lane) to (target plugin, parameter), set
   by the user or UI: `Graph::mapParamTarget(source, lane, target, param)`. Plugins stay
   independent of each other and of the host's node IDs, and one sequencer works with any
@@ -47,7 +47,7 @@ A small CLAP extension, defined in `core/clap-ext/include/oscairn-clap/param-tar
   delivers events from non-core spaces to a plugin.
 - `core/engine` (`Graph`): mappings in the graph, as dependencies in the processing order;
   conversion to CLAP parameter events for the target in the same block.
-- `plugins/step-sequencer`: lane 0, a lock value per step, sent at the step's sample before
+- `plugins/step-sequencer`: one lane per track, a lock value per step, sent at the step's sample before
   its note. `plugins/basic-synth` has parameters to lock (Brightness, Level).
 - `oscairn-render --map SRC.LANE=DST.PARAM`.
 
@@ -70,3 +70,7 @@ the `MODULATE` path (no first-party plugin sends it yet).
 - Whether to propose it to the CLAP project as a draft extension, and how it should relate to
   `CLAP_EVENT_PARAM_MOD`'s per-note modulation and to host-side modulation routing.
 - Lane metadata beyond a name (units, default mapping hints, bipolar or unipolar).
+
+The two-track sequencer exposes global (default) and channel-scoped locks. The desktop
+Brightness locks action selects channel scope; generic LV2 control ports need global
+scope. The graph does not silently widen a channel address into a global change. See [the parameter contract](../../plugins/README.md#step-sequencer-020).

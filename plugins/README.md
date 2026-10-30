@@ -63,3 +63,47 @@ Use `Graph::addEffectContext(source)` or `effects.create` through control, then 
 normal audio routes. This preserves serial dependency ordering even when siblings share
 an engine. `effects.resources` reports memory/capacity and whether history remains.
 See [RFC 0007](../docs/rfcs/0007-effect-contexts.md) for retirement and measurements.
+
+## Step Sequencer 0.2.0
+
+Two tracks and A/B patterns share transport; each pattern has a 1–16-step length per track.
+Tracks have separate MIDI channels and mutes. Track 2 defaults muted, channels default to
+MIDI 1 and 2. A launch request waits for the next bar (CLAP time signature, 4/4 fallback),
+or selects immediately while stopped. Launch resets both cycle phases; stop/seek/channel
+changes/mutes send matching note releases. Sound release tails continue in the instrument.
+Sixteenth-note steps use a half-step gate. Swing and variable gate length are not implemented.
+
+[`Parameters.h`](step-sequencer/Parameters.h) is the shared ID contract. All IDs below use
+zero-based pattern `p`, track `t`, and step `i`:
+
+| ID | Meaning / values |
+| --- | --- |
+| 1 | Requested pattern, 0=A / 1=B |
+| 2 | Playing pattern, read-only |
+| `10 + 10*t` | MIDI channel, 0–15 (displayed as 1–16) |
+| `11 + 10*t` | Mute, 0/1 |
+| `12 + 10*t` | Playing step, read-only, −1 stopped / 0–15 |
+| `13 + 10*t` | Lock scope, 0=global (default) / 1=track channel |
+| `10000*p + 1000*t + 50` | Track length, 1–16 |
+| `10000*p + 1000*t + 100 + i` | Step enabled, 0/1 |
+| `10000*p + 1000*t + 200 + i` | MIDI note, 0–127 |
+| `10000*p + 1000*t + 300 + i` | Normalized lock, 0–1 |
+
+There are 206 parameters, 203 writable. The parameter-only snapshot captures all patterns,
+channels, mutes, scopes and the launch request; live playheads/queued timing are not persisted.
+Performance reopening stops/rewinds and makes the saved request active. Version 0.1.0 saves
+require their original plugin version; the current loader does not migrate plugin state.
+
+Lanes 0/1 belong to tracks 1/2. Locks precede their notes and use wildcard note/key/port;
+channel scope selects the track's channel. Native contexts support this addressing.
+Global is the plugin default so generic mappings to global-only targets keep working.
+For an ordinary LV2 control port or a CLAP parameter without per-channel automation, keep
+that track's scope global. Global locks affect the entire target; two lanes
+mapped to the same global parameter are ordered by track. The desktop Brightness locks
+control sets channel scope when enabling its lane. If two channels select the same native
+context, they share its patch edits; select distinct contexts for independent locks.
+
+`sequencer-tracks` checks different lengths/channels, mute/channel release identity,
+inactive edits, launch cancellation and exact 3/4 and 4/4 boundaries across 37/512-frame
+blocks with allocation guards. Performance and sound-picker tests cover persistence and
+channel-specific sound/mapping selection. Audible acceptance is tracked separately.

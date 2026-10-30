@@ -50,8 +50,9 @@ Goal: something new running "on the device" before anyone has the device.
 
 Done:
 
-- a 16-step sequencer plugin whose steps (on/off, note, lock) are parameters, with one
-  parameter-lock lane;
+- a two-track sequencer with editable A/B patterns, independent 1–16-step lengths, MIDI
+  channels, mutes and lock lanes; exact bar-boundary launches, KICK controls and Performance
+  save/reopen. [Listening checks remain queued](listening-tests.md);
 - a desktop app (JUCE) with live audio, MIDI input, a Groovebox screen for editing the
   pattern, and panel layouts described in data: a desktop window, the KICK's panel, and a
   concept keyboard.
@@ -115,7 +116,7 @@ Done:
 
 To do:
 
-- tracks, patterns, swing and more lanes in the sequencer;
+- swing, additional tracks/patterns and more lanes in the sequencer;
 - automatic Sound/effect-chain preparation and retirement, asset-bearing native patches and Setlist/library persistence;
 - carry stable format/plugin identities and state provenance into persistent library data,
   following [RFC 0006](rfcs/0006-packages-and-portability.md). Installation paths locate
@@ -146,9 +147,11 @@ new core, from a UI that talks to it only through the control API.
    graph and original folder; opening unresolved nodes as disabled placeholders, archive
    packaging and dependency resolution remain future work. Process restart, missing
    plugin/assets, save failure and render/state comparisons are tested.
-3. Expand native asset-bearing patches and sequencer tracks/patterns
-   against that usable workflow. Keep the shared theme and generated-editor contract current
-   as new screens are added.
+3. **Two tracks and A/B patterns — implemented:** independent lengths, channels and mutes,
+   bar-boundary launches, per-track sound selection and full parameter persistence.
+   Automated timing/roundtrip tests pass; [audible acceptance is pending](listening-tests.md).
+4. Native asset-bearing patches, then swing and further sequencer workflow. Keep the shared
+   theme and generated-editor contract current as new screens are added.
 
 Package-manager comparison comes at the package milestone, before permanent distribution
 format commitments: evaluate libmamba/Nix and libsolv as a narrower fallback using the

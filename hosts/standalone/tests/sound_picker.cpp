@@ -74,7 +74,7 @@ void sequencedSounds(const char* synth,const char* sequencer)
         const auto node=f.session.nodeId("synth");
         f.session.connectNotes(seq,node);f.session.commit();f.tick();
         auto state=readSoundPicker(f.session);
-        check(state.canToggleBrightnessLocks && !state.brightnessLocks,"brightness locks default off");
+        check(state.canToggleBrightnessLocks[0] && !state.brightnessLocks[0],"brightness locks default off");
         SoundAction action;action.node=node;action.pluginId=state.pluginId;
         action.kind=SoundAction::Prepare;action.choice=state.choices[choice];
         applySoundAction(f.session,action);
@@ -87,7 +87,7 @@ void sequencedSounds(const char* synth,const char* sequencer)
         check(stagedRefused && f.session.graphState().staged,"toggle must not commit another pending edit");
         f.session.commit();f.tick();
         f.remote([&](Control& c){applySoundAction(c,action);});
-        check(readSoundPicker(f.session).brightnessLocks==locks,"lock routing readback");
+        check(readSoundPicker(f.session).brightnessLocks[0]==locks,"lock routing readback");
         std::array<std::vector<float>,2> audio;
         f.session.setPlaying(true);
         for(int i=0;i<750;++i){f.tick();audio[0].insert(audio[0].end(),f.left.begin(),f.left.end());}
@@ -96,9 +96,9 @@ void sequencedSounds(const char* synth,const char* sequencer)
         check(f.session.note(true,60,.7),"pad note accepted");
         for(int i=0;i<100;++i){f.tick();audio[1].insert(audio[1].end(),f.left.begin(),f.left.end());}
         action.enableLocks=false;f.remote([&](Control& c){applySoundAction(c,action);});
-        check(!readSoundPicker(f.session).brightnessLocks,"locks can be disabled");
+        check(!readSoundPicker(f.session).brightnessLocks[0],"locks can be disabled");
         f.session.mapParameter(seq,0,node,2);f.session.commit();f.tick();
-        check(!readSoundPicker(f.session).canToggleBrightnessLocks,"other lane mappings protected");
+        check(!readSoundPicker(f.session).canToggleBrightnessLocks[0],"other lane mappings protected");
         bool refused=false;
         try{applySoundAction(f.session,action);}catch(const std::runtime_error&){refused=true;}
         check(refused,"toggle must not remove another mapping");
@@ -124,6 +124,20 @@ int main(int argc,char** argv)
         check(argc==3,"need Basic Synth and sequencer paths or LV2 bundle and --lv2");
         if(std::string(argv[2])=="--lv2"){presets(argv[1]);std::cout<<"ok: picker LV2 presets, failed preparation and explicit tail retirement\n";return 0;}
         sequencedSounds(argv[1],argv[2]);
+        {
+            Fixture parts(argv[1]);const auto seq=parts.session.add("sequencer",argv[2]);parts.session.commit();parts.tick();
+            auto state=readSoundPicker(parts.session);SoundAction action;action.node=state.node;action.pluginId=state.pluginId;
+            action.kind=SoundAction::Prepare;action.choice=state.choices[3];applySoundAction(parts.session,action);
+            action.kind=SoundAction::Select;action.context=readSoundPicker(parts.session).sounds.contexts.back().id;action.channel=1;
+            parts.remote([&](Control& c){applySoundAction(c,action);});parts.tick();state=readSoundPicker(parts.session);
+            check(state.sounds.contexts[0].selectedChannels==65533 && state.sounds.contexts[1].selectedChannels==2,"track selection changes only its MIDI channel");
+            action.kind=SoundAction::BrightnessLocks;action.track=1;action.enableLocks=true;
+            parts.remote([&](Control& c){applySoundAction(c,action);});parts.tick();state=readSoundPicker(parts.session);
+            check(!state.brightnessLocks[0] && state.brightnessLocks[1],"second track has independent lock mapping");
+            parts.session.mapParameter(seq,0,state.node,2);parts.session.commit();parts.tick();
+            action.enableLocks=false;parts.remote([&](Control& c){applySoundAction(c,action);});parts.tick();state=readSoundPicker(parts.session);
+            check(!state.canToggleBrightnessLocks[0] && state.canToggleBrightnessLocks[1] && !state.brightnessLocks[1],"second track edits preserve unrelated first-track mapping");
+        }
         Fixture f(argv[1]);
         auto state=f.remote([](Control& c){return readSoundPicker(c);});
         check(state.choices.size()==5 && state.sounds.contexts.size()==1,"initial choices/default");
