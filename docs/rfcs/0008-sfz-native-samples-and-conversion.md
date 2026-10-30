@@ -287,6 +287,8 @@ acceptance has not happened** and is queued with the other listening tests.
   sine pan law at centre, together −7.2 dB. Levels now agree within 0.05 dB; the remaining
   0.6% is not in liquidsfz's gain path and is unexplained. CC7 and CC10 changes are not
   implemented yet; only their default values are matched.
+- Step 3 groundwork: reuse sfizz's parser and value helpers, implement the region model and
+  streaming in Oscairn following sfizz's `FilePool` design ([research](../sample-players-and-formats.md#parser-and-streaming-reuse-for-multisample-step-3-groundwork)).
 - Not done: FLAC, multisample/streaming (step 3, required by the Salamander Grand Piano:
   641 regions, release triggers, round robin and pedal triggers in 12 groups), and an
   interactive run of the desktop import, queued as [listening test 3](../listening-tests.md#3-sampler-import-and-playback-rfc-0008-step-2).

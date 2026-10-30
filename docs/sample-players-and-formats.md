@@ -125,6 +125,21 @@ c++ -std=c++17 -O2 -pthread -I core/clap-host/third_party/clap/include -I core/c
 This compares rendered numbers, not listening. It does not cover stereo samples,
 sample-rate conversion, sustain pedal or simultaneous voices.
 
+### Parser and streaming reuse for multisample (step 3 groundwork)
+
+Checked 2026-10-30 at sfizz `f5c6e29f` (BSD-2-Clause) and liquidsfz `4cc901d1` (MPL-2.0), for
+RFC 0008 step 3 (the Salamander piano: 641 regions in 12 groups, FLAC, streaming):
+
+| Piece | sfizz | liquidsfz | Use |
+| --- | --- | --- | --- |
+| Parser | `src/sfizz/parser/` (about 1,050 lines): headers and opcodes reported to a `ParserListener` with source locations; handles `#include`, `#define` and comments. Depends only on `Opcode.h`, Abseil containers/`string_view`/`optional` and a filesystem shim (`ghc/fs_std.hpp`), all replaceable by the C++ standard library. | `sfzreader.cc` (200 lines) is a standalone tokenizer, but `#include`/`#define` handling and every opcode meaning live in `loader.cc` (1,670 lines, 39 calls into its `Synth`). | **Reuse sfizz's parser**, replacing Abseil with standard types, with its notice and pinned provenance. |
+| Opcode values | `Opcode.h/.cpp` (about 700 lines): value parsing, note names, CC-suffix notation. | Inside `loader.cc`. | Reuse sfizz's value helpers; keep Oscairn's own opcode table and semantics (RFC 0008 profile), growing per tested feature. |
+| Region model | `Region.cpp` (1,920 lines) built on sfizz's internal types. | `loader.hh` `Region`, tied to its synth. | Do not import; implement only the profile's opcodes. |
+| Streaming | `FilePool` (about 1,100 lines): preloaded starts of each sample, a background loader, reader pins. Built on sfizz's audio buffers/readers, a real-time semaphore, spin mutex, `atomic_queue` and SIMD helpers. | Background loader thread with a process-wide cache keyed by filename (see above). | Follow `FilePool`'s design in Oscairn's own code; it is not separable as files. |
+
+FLAC decoding comes from libsndfile, which Oscairn already uses; the device build needs
+libsndfile's FLAC/Ogg support enabled first (it is built with `--disable-external-libs`).
+
 FluidSynth's [dynamic sample-loading setting](https://www.fluidsynth.org/api/settings_synth.html)
 can allocate during preset changes and is documented as unsuitable for real-time use.
 Preparation must happen before a performance-time selection, regardless of player choice.
