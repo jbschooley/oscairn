@@ -156,18 +156,29 @@ new core, from a UI that talks to it only through the control API.
    plugin/assets, save failure and render/state comparisons are tested.
 3. **Two tracks and A/B patterns — implemented:** independent lengths, channels and mutes,
    bar-boundary launches, per-track sound selection and full parameter persistence.
-   Automated timing/roundtrip tests pass; [audible acceptance is pending](listening-tests.md).
+   Automated timing/roundtrip tests pass; Jacob listened on October 30, 2026
+   ([results](listening-tests.md)); holding a pad while switching tracks remains untested.
 4. **Native sample patches — first slice implemented, multisample pending:**
    [sample players/formats and the first slice](sample-players-and-formats.md), including
    a reproducible liquidsfz cache-sharing probe and [ESP observations](yamaha-esp-samples-research.md).
    The Oscairn Sampler plays one-region SFZ patches over preloaded WAV with shared PCM,
    held-note ownership, desktop import and samples saved as Performance dependencies
    ([RFC 0008 step 2](rfcs/0008-sfz-native-samples-and-conversion.md#step-2-status));
-   listening acceptance is pending. Next: multisample, FLAC and streaming for large
+   Jacob listened on October 30, 2026. Next: multisample, FLAC and streaming for large
    pianos, reusing sfizz/liquidsfz parsing where it separates cleanly. Extend SFZ only for
    demonstrated gaps; SoundFont remains a separate engine candidate.
-   Swing and further sequencer workflow follow. Keep
-   the shared theme and generated-editor contract current as new screens are added.
+5. **Sound assets as dependencies — steps 1–2 implemented:** asset store, registered
+   folders, the `oscairn.assets` contract and Performance preflight
+   ([RFC 0009](rfcs/0009-sound-assets-and-dependencies.md#implementation-status)).
+6. **Plugin worker isolation — next:** run plugins in supervised worker processes so a
+   crash, hang or overrun silences only its own node and the plugin recovers
+   ([RFC 0010](rfcs/0010-plugin-worker-isolation.md)). Moved here from Phase 5 on October 30,
+   2026, ahead of Phase 4 hardware work and further third-party plugin features, starting with
+   the hand-off measurements.
+7. **Sequencer evaluation:** compare extracting the KICK firmware's sequencer (AGPL, in the
+   `0700-AAM` fork), porting zynseq and hosting existing sequencer plugins before extending
+   Oscairn's own test sequencer. Swing and further sequencer workflow follow from that choice.
+   Keep the shared theme and generated-editor contract current as new screens are added.
 
 The subsequent [conversion plan](rfcs/0008-sfz-native-samples-and-conversion.md#conversion-and-modx-m-migration)
 covers SFZ interchange and Jacob's MODX M library migration: inventory first, explicit
@@ -261,4 +272,4 @@ a DAW plugin; and:
   missing assets; another DAW does not automatically understand our package lock.
 - **Plugin looks:** pages and themes described in data, then sandboxed custom views.
 - **Developer kit:** the MIT SDK and templates, the builder image, the `oscairn` tool,
-  the validator, and plugin isolation in sandboxed workers.
+  the validator. (Plugin isolation in sandboxed workers moved up to Phase 3, item 6.)
