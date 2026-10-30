@@ -148,6 +148,9 @@ namespace oscairn
         auto host=std::make_shared<ClapHost>();
         if(!host->host.load(*found,rate,frames))throw std::runtime_error("Cannot load "+found->id+": "+host->host.error());
         host->host.lockAudioLayout();
+        // The first service (the plugin's init callback, its parameter flush) holds the gate; run it
+        // before any audio thread can see the plugin, or its first block is refused as a control silence.
+        host->service();
         return host;
     }
 }

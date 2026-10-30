@@ -213,10 +213,11 @@ check and passes. In Docker's Linux VM all three failures are detected and named
 timing and identity checks fail even with two healthy plugins, as the VM's scheduling did in
 step 1; native Linux and the target are still to be measured.
 
-Known issue, not caused by workers: `prepared-instances` fails about once in 80 runs in the
-engine and more often with workers (about once in 30, more under AddressSanitizer). A newly
-prepared instance's queued parameter flush in `service()` holds the plugin's gate, and a
-block rendered at that moment is refused as a control silence.
+Fixed race, not caused by workers: a newly loaded plugin's first `service()` (its init
+callback and parameter flush) held the plugin's gate, and a first block rendered at that moment
+was refused as a control silence. `prepared-instances` failed about once in 30 runs. Plugins are
+now serviced once when loaded, and prepared instances again before they are published:
+0 failures in 200 runs, with and without workers, and 0 in 60 under AddressSanitizer.
 
 ## Open questions
 

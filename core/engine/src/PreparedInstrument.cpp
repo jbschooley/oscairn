@@ -154,6 +154,9 @@ public:
         if(!preset.empty())h->loadPreset(preset);
         checkLayout(*h);
         for(const auto& p:patch)if(!h->setParameter(p.id,p.value))throw std::runtime_error("Prepared parameter queue full");
+        // A new instance's first service (main-thread callback, parameter flush) holds its gate;
+        // run it before the audio thread can see the instance, or its first block is refused.
+        h->service();
         auto next=std::make_unique<Plan>(desired_);const auto id=nextContext_;
         next->instances[slot]=std::make_shared<Instance>(std::move(h),id,name,frames_);
         publish(std::move(next));++nextContext_;return id;
@@ -187,7 +190,7 @@ public:
         for(size_t i=0;i<capacity;++i){unsigned used;std::string name;if(!(in>>used) || used>1)throw std::runtime_error("Invalid pool slot");if(!used)continue;
             if(!(in>>std::quoted(name)) || name.size()>63 || name.find('\0')!=std::string::npos)throw std::runtime_error("Invalid pool sound name");
             auto h=loadPlugin(base().descriptor().path,base().descriptor().id,rate_,frames_,mode_,limits_);
-            h->loadSnapshot((std::filesystem::path(directory)/std::to_string(i)).string());checkLayout(*h);
+            h->loadSnapshot((std::filesystem::path(directory)/std::to_string(i)).string());checkLayout(*h);h->service();
             if(nextContext_==CLAP_INVALID_ID)throw std::runtime_error("Sound IDs exhausted");
             next->instances[i]=std::make_shared<Instance>(std::move(h),i?nextContext_++:0,std::move(name),frames_);
         }
