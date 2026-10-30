@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #include "oscairn/wav_file.h"
 
+#include <bit>
 #include <cstdint>
 #include <cstring>
 #include <fstream>
@@ -58,20 +59,24 @@ namespace oscairn
         putTag( header, "data" );
         put32( header, dataBytes );
 
-        std::vector<uint8_t> samples( dataBytes );
-        for( size_t i = 0; i < interleaved.size(); ++i )
-        {
-            uint32_t bits;
-            std::memcpy( &bits, &interleaved[i], 4 );
-            for( int b = 0; b < 4; ++b )
-                samples[i * 4 + b] = (uint8_t)( ( bits >> ( 8 * b ) ) & 0xFF );
-        }
-
         std::ofstream file( path, std::ios::binary );
         if( !file )
             throw std::runtime_error( "cannot write " + path.string() );
         file.write( reinterpret_cast<const char*>( header.data() ), (std::streamsize)header.size() );
-        file.write( reinterpret_cast<const char*>( samples.data() ), (std::streamsize)samples.size() );
+        if constexpr( std::endian::native == std::endian::little ) // floats are already in WAV byte order
+            file.write( reinterpret_cast<const char*>( interleaved.data() ), (std::streamsize)dataBytes );
+        else
+        {
+            std::vector<uint8_t> samples( dataBytes );
+            for( size_t i = 0; i < interleaved.size(); ++i )
+            {
+                uint32_t bits;
+                std::memcpy( &bits, &interleaved[i], 4 );
+                for( int b = 0; b < 4; ++b )
+                    samples[i * 4 + b] = (uint8_t)( ( bits >> ( 8 * b ) ) & 0xFF );
+            }
+            file.write( reinterpret_cast<const char*>( samples.data() ), (std::streamsize)samples.size() );
+        }
         file.close();
         if( !file )
             throw std::runtime_error( "error writing " + path.string() );
