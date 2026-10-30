@@ -129,6 +129,15 @@ int main(int argc, char** argv) { try {
         for(int i = 0; i < 7; ++i) s.prepare(std::string("<region> sample=") + (i % 2 ? "copy.wav" : "big.wav"), dir);
         rejects(s, "<region> sample=short.wav", dir, "no free sound slot");
         fs::remove(dir / "big.wav"); fs::remove(dir / "copy.wav");
+        { // Distinct audio counts against the 256 MiB instance budget: four 60 MiB samples fit, a fifth does not.
+            Sampler budget(plugin); std::vector<float> block((60u << 20) / 4, .1f);
+            for(int i = 0; i < 5; ++i)
+            {
+                block[0] = float(i) / 8; const auto name = "distinct" + std::to_string(i) + ".wav"; writeWavFile(dir / name, block, 1, 48000);
+                if(i < 4) budget.prepare("<region> sample=" + name, dir); else rejects(budget, "<region> sample=" + name, dir, "memory budget");
+                fs::remove(dir / name);
+            }
+        }
         Sampler fresh(plugin), changed(plugin);
         writeWavFile(dir / "edit.wav", wave, 1, 48000); fresh.use("<region> sample=edit.wav", dir);
         writeWavFile(dir / "edit.wav", tone(24000, 330), 1, 48000); changed.use("<region> sample=edit.wav", dir);
