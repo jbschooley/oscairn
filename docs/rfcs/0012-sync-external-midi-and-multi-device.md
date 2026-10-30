@@ -28,6 +28,7 @@ Two setups need more:
 
 ## Outcome
 
+- Any change or control can send arbitrary MIDI to any device or plugin.
 - External MIDI and CV destinations are graph nodes. A sequencer or a part plays them
   exactly as it plays an internal instrument, with timing and latency compensation.
 - One transport drives everything: MIDI clock, song position, transport commands, CV clock
@@ -159,6 +160,36 @@ picks the message kind, channel and numbers directly.
 The first profiles to write: Oscairn itself (Song Select and MIDI Show Control), the MODX and
 MODX M, and a generic Program Change device.
 
+### Actions: arbitrary messages
+
+Profiles cover the common cases; actions cover everything else. An **action** is a list of
+messages attached to a trigger, sent to any destination.
+
+- **Triggers:**
+  - a setlist entry, Performance or scene loading or being left;
+  - a part's sound changing;
+  - a physical control or footswitch, through the assignments of
+    [RFC 0011](0011-performance-ui-and-editors.md#physical-controls);
+  - transport start or stop, or a bar or beat number;
+  - a received MIDI message matching a pattern.
+- **Messages:** any MIDI 1.0 message written out in full: status, channel and data bytes,
+  CC, NRPN, Program Change, SysEx bytes. A message can also name a profile action ("MODX:
+  Scene 3"). A value can come from the trigger, such as the control's position or the
+  received message's value, scaled to a range.
+- **Destinations:**
+  - any MIDI output port and channel;
+  - any graph node's note input, as MIDI events at their exact sample, so plugins receive
+    them exactly like played MIDI;
+  - a node's parameter, as an ordinary parameter change.
+- **Timing:** at once, at the switch point, a set time before or after it, or quantised to
+  the next beat or bar. Messages in one action keep their order, with optional gaps between
+  them.
+
+Actions are saved with whatever owns the trigger: a setlist entry, a Performance or scene, a
+part, or a device's control assignments. Each runs on the engine's event timeline, not in the
+UI, so a heavy screen never delays it. The UI lists every action a Performance will send,
+and a learn mode records a message from a connected device into an action.
+
 Oscairn-to-Oscairn switching therefore works over plain MIDI cables with clock. The network
 layer only adds readiness display, names and setlist sharing. A device can follow a MODX's
 Program Changes, and a MODX or looper can follow an Oscairn leader.
@@ -182,7 +213,7 @@ trusted as the musician's own cabling, as it is today.
 | 2. Clock out | MIDI clock, Start/Stop/Continue and Song Position out; Song Position and transport in | An external drum machine follows start, stop and a jump to bar 9 without drift over ten minutes |
 | 3. Link | Ableton Link in the transport | Two Oscairn devices and one other Link app stay within 1 ms of phase |
 | 4. External instruments | Parts for external synths: Program Change/Bank Select sounds, audio return, MIDNAM names | A MODX part changes sound with the Performance and plays through its audio return |
-| 5. Setlist cues | Device profiles (send and receive); Program Change/Song Select; MIDI Show Control LOAD/GO/TIMED_GO; Oscairn, MODX and generic profiles | A keyboard leader switches a KICK and a MODX (Performance and scene) on the same bar, over cables only; a MODX leading switches an Oscairn device |
+| 5. Setlist cues | Actions (arbitrary messages to ports, plugins and parameters); device profiles (send and receive); Program Change/Song Select; MIDI Show Control LOAD/GO/TIMED_GO; Oscairn, MODX and generic profiles | A keyboard leader switches a KICK and a MODX (Performance and scene) on the same bar, over cables only; a MODX leading switches an Oscairn device; a scene action sends a SysEx string to a port and a CC to a plugin at the switch bar |
 | 6. Network ensemble | Discovery, pairing, readiness, names, setlist sharing; any-device leading | The leader shows each device's readiness; a missing device keeps the others switching |
 | 7. CV and MMC | CV/Gate and clock outputs with calibration; MIDI Machine Control | An Ignite drives a modular voice in tune across five octaves |
 
