@@ -68,7 +68,10 @@ Theme::Theme(juce::File root) {
 }
 Theme::~Theme(){stopTimer();juce::LookAndFeel::setDefaultLookAndFeel(nullptr);}
 void Theme::set(const ThemeData& data) {
-    current=data;setDefaultSansSerifTypefaceName(data.font);
+    current=data;
+    // JUCE on Linux draws no text for a family that is not installed (macOS substitutes one), so a
+    // missing or placeholder name such as "Default Sans Serif" uses the platform default font.
+    setDefaultSansSerifTypefaceName(juce::Font::findAllTypefaceNames().contains(data.font)?data.font:juce::String());
     setColour(juce::ResizableWindow::backgroundColourId,ink(Ink::Background));
     setColour(juce::Label::textColourId,ink(Ink::Text));
     setColour(juce::TextButton::buttonColourId,ink(Ink::Raised));setColour(juce::TextButton::buttonOnColourId,ink(Ink::Accent));

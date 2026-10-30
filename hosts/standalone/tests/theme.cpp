@@ -15,6 +15,15 @@ int main(int argc,char** argv){try{
         check(installed.directory().getChildFile("midnight.json").loadFileAsString()==json,"install copies original data");
         installed.install(juce::File(argv[1]));check(installed.installed().size()==3,"reinstall is idempotent");
         installed.apply("oscairn-light");check(themeData().id=="oscairn-light","built-in selection applied");
+        auto withFont=[&](const juce::String& id,const juce::String& font){
+            const auto file=root.getChildFile(id+".source.json");
+            check(file.replaceWithText(json.replace("\"midnight\"","\""+id+"\"").replace("\"Default Sans Serif\"","\""+font+"\"")),"write font theme");
+            installed.install(file);const auto face=installed.getTypefaceForFont(juce::Font(juce::FontOptions(14.f)));return face?face->getName():juce::String();};
+        const auto fallback=withFont("missing-font","No Such Font Family");
+        check(fallback.isNotEmpty() && fallback!="No Such Font Family","a font that is not installed falls back to the platform default (Linux JUCE otherwise has no typeface)");
+        if(const auto fonts=juce::Font::findAllTypefaceNames();!fonts.isEmpty())
+            check(withFont("installed-font",fonts[0])==fonts[0],"an installed font is used");
+        installed.apply("oscairn-light");
         bool refused=false;try{installed.apply("../escape");}catch(const std::exception&){refused=true;}check(refused && themeData().id=="oscairn-light","invalid selection preserves active theme");}
     const auto selection=root.getChildFile("appearance.txt");selection.setLastModificationTime(juce::Time(1000000000));const auto saved=selection.getLastModificationTime();
     {Theme reopened(root);check(themeData().id=="oscairn-light","selection persists across UI restart");check(selection.getLastModificationTime()==saved,"loading does not rewrite preferences");}
