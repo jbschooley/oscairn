@@ -100,6 +100,7 @@ void concurrent(const char* path){
     for(unsigned i=0;prepared<100 && std::chrono::steady_clock::now()<deadline;++i){s.host().service();s.host().selectSound(0);for(const auto& c:s.host().soundContexts())if(c.id)s.host().discardSound(c.id,true);
         if(s.host().soundContexts().size()<8){auto id=s.prepare(i%2?.25:.75);s.host().selectSound(id);++prepared;}std::this_thread::yield();}
     done=true;audio.join();check(ok && prepared>20,"concurrent preparation, selection, retirement and rendering");
+    check(!s.host().statistics().controlSilences,"no instance refused a block during preparation");
 }
 void protocol(const char* path){
     Session s(48000,512);JsonRpc rpc(s);auto n=s.add("instrument",path,"org.kick.test.midi");

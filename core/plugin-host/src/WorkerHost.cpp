@@ -1,14 +1,16 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
-// Engine side of a plugin worker (RFC 0010 step 2): a PluginHost whose plugin runs in a
+// Engine side of a plugin worker (RFC 0010 steps 2-4): a PluginHost whose plugin runs in a
 // child process. Each block is handed over through shared memory; control calls travel
-// over a socket. Plugins with native sound or effect contexts stay in the engine for now.
+// over a socket. A failed worker is restarted with its last state and parameter values.
+// Plugins with native sound or effect contexts stay in the engine for now.
 #include "Worker.h"
 #include "oscairn/plugin_host.h"
 #include <algorithm>
 #include <array>
 #include <cerrno>
 #include <csignal>
+#include <filesystem>
 #include <fcntl.h>
 #include <cmath>
 #include <condition_variable>
@@ -55,23 +57,9 @@ namespace oscairn
         private:
             void start(const std::string& program, const std::string& path, const std::string& id, double rate, uint32_t frames, ProcessingMode mode)
             {
-                int pair[2];
-                if(socketpair(AF_UNIX, SOCK_STREAM, 0, pair) != 0) throw std::runtime_error("Cannot create a worker socket");
-#ifdef SO_NOSIGPIPE
-                const int one = 1; setsockopt(pair[0], SOL_SOCKET, SO_NOSIGPIPE, &one, sizeof one); setsockopt(pair[1], SOL_SOCKET, SO_NOSIGPIPE, &one, sizeof one);
-#endif
-                fcntl(pair[0], F_SETFD, FD_CLOEXEC);
-                socket_ = pair[0];
-                posix_spawn_file_actions_t actions; posix_spawn_file_actions_init(&actions);
-                posix_spawn_file_actions_adddup2(&actions, pair[1], 3);
-                std::string fd = "3"; char* argv[]{const_cast<char*>(program.c_str()), fd.data(), nullptr};
-                const int spawned = posix_spawn(&pid_, program.c_str(), &actions, nullptr, argv, environ);
-                posix_spawn_file_actions_destroy(&actions);
-                close(pair[1]);
-                if(spawned != 0) { close(socket_); socket_ = -1; pid_ = 0; throw std::runtime_error("Cannot start plugin worker " + program); }
-                timeval t{30, 0}; setsockopt(socket_, SOL_SOCKET, SO_RCVTIMEO, &t, sizeof t);
-
-                Reader r = request(Writer().u8(uint8_t(Op::Init)).str(path).str(id).f64(rate).u32(frames));
+                program_ = program; path_ = path; id_ = id; rate_ = rate; frames_ = frames;
+                Reader r = spawn();
+                init_ = r.data;
                 descriptor_.path = r.str(); descriptor_.id = r.str(); descriptor_.name = r.str(); descriptor_.vendor = r.str();
                 descriptor_.version = r.str(); descriptor_.description = r.str();
                 for(auto n = r.u32(); n--;) descriptor_.features.push_back(r.str());
@@ -81,31 +69,32 @@ namespace oscairn
                 inputs_ = readPorts(r); outputs_ = readPorts(r);
                 noteInputs_ = r.u32(); noteOutputs_ = r.u32();
                 for(uint32_t i = 0; i < noteInputs_; ++i) clapNotes_.push_back(r.u8());
-                rate_ = rate;
                 state_ = r.u8(); const auto contexts = r.u32(); const bool effects = r.u8();
                 if(contexts || effects) { native = true; return; }
 
                 // Shared block, sized for the ports and maximum block, handed over as a descriptor.
                 // Room for large blocks, a multiple of the plugin's maximum, so the worker's host
-                // splits them exactly as an in-engine host would.
+                // splits them exactly as an in-engine host would. The engine keeps it across restarts.
                 capacity_ = frames * std::max<uint32_t>(1, (8192 + frames - 1) / frames);
                 bytes_ = Shared::bytes(channels(inputs_), channels(outputs_), capacity_);
                 const std::string name = "/osc-" + std::to_string(getpid()) + "-" + std::to_string(counter_.fetch_add(1));
-                const int shm = shm_open(name.c_str(), O_CREAT | O_EXCL | O_RDWR, 0600);
-                if(shm < 0) throw std::runtime_error("Cannot create worker shared memory");
+                shm_ = shm_open(name.c_str(), O_CREAT | O_EXCL | O_RDWR, 0600);
+                if(shm_ < 0) throw std::runtime_error("Cannot create worker shared memory");
                 shm_unlink(name.c_str());
-                if(ftruncate(shm, off_t(bytes_)) != 0) { close(shm); throw std::runtime_error("Cannot size worker shared memory"); }
-                void* memory = mmap(nullptr, bytes_, PROT_READ | PROT_WRITE, MAP_SHARED, shm, 0);
-                if(memory == MAP_FAILED) { close(shm); throw std::runtime_error("Cannot map worker shared memory"); }
+                fcntl(shm_, F_SETFD, FD_CLOEXEC); // other plugins' workers must not inherit it
+                if(ftruncate(shm_, off_t(bytes_)) != 0) throw std::runtime_error("Cannot size worker shared memory");
+                void* memory = mmap(nullptr, bytes_, PROT_READ | PROT_WRITE, MAP_SHARED, shm_, 0);
+                if(memory == MAP_FAILED) throw std::runtime_error("Cannot map worker shared memory");
                 shared_ = new(memory) Shared();
                 shared_->inputChannels = channels(inputs_); shared_->outputChannels = channels(outputs_);
                 shared_->maxFrames = capacity_; shared_->sampleRate = rate; shared_->parameterCount = uint32_t(parameters_.size());
                 for(uint32_t i = 0; i < parameters_.size(); ++i) shared_->parameterValues[i].store(parameters_[i].defaultValue);
-                try { sendDescriptor(socket_, shm); } catch(...) { close(shm); throw; }
-                close(shm);
+                sendDescriptor(socket_, shm_);
                 expect(receive(socket_));
                 output_.resize(maxOutputEvents);
                 pending_.reserve(4096);
+                records_ = std::filesystem::temp_directory_path() / name.substr(1);
+                fadeFrames_ = faded_ = uint32_t(rate * .01);
                 // Each block may take half the block's time before it is silenced; a worker that
                 // misses a quarter second of blocks in a row, or leaves one unanswered that long,
                 // has failed. Offline rendering waits instead of silencing.
@@ -121,15 +110,39 @@ namespace oscairn
                 supervisor_ = std::thread([this] { supervise(); });
             }
 
+            // Starts a worker process and loads the plugin in it; the reply describes the plugin.
+            Reader spawn()
+            {
+                int pair[2];
+                if(socketpair(AF_UNIX, SOCK_STREAM, 0, pair) != 0) throw std::runtime_error("Cannot create a worker socket");
+#ifdef SO_NOSIGPIPE
+                const int one = 1; setsockopt(pair[0], SOL_SOCKET, SO_NOSIGPIPE, &one, sizeof one); setsockopt(pair[1], SOL_SOCKET, SO_NOSIGPIPE, &one, sizeof one);
+#endif
+                fcntl(pair[0], F_SETFD, FD_CLOEXEC);
+                socket_ = pair[0];
+                posix_spawn_file_actions_t actions; posix_spawn_file_actions_init(&actions);
+                posix_spawn_file_actions_adddup2(&actions, pair[1], 3);
+                std::string fd = "3"; char* argv[]{program_.data(), fd.data(), nullptr};
+                const int spawned = posix_spawn(&pid_, program_.c_str(), &actions, nullptr, argv, environ);
+                posix_spawn_file_actions_destroy(&actions);
+                close(pair[1]);
+                if(spawned != 0) { close(socket_); socket_ = -1; pid_ = 0; throw std::runtime_error("Cannot start plugin worker " + program_); }
+                reaped_ = false;
+                timeval t{30, 0}; setsockopt(socket_, SOL_SOCKET, SO_RCVTIMEO, &t, sizeof t);
+                send(socket_, Writer().u8(uint8_t(Op::Init)).str(path_).str(id_).f64(rate_).u32(frames_).data);
+                return expect(receive(socket_));
+            }
+
             // Watches the worker: a crash, a block left unanswered past the hang limit, or too
-            // many missed blocks in a row stop it for good and silence the node.
+            // many missed blocks in a row stop it and silence the node until it is restarted.
             void supervise()
             {
                 std::unique_lock lock(superviseMutex_);
                 while(!stopping_)
                 {
                     wakeSupervisor_.wait_for(lock, std::chrono::milliseconds(10));
-                    if(stopping_ || failed_.load(std::memory_order_acquire)) continue;
+                    if(stopping_ || gaveUp_) continue;
+                    if(failed_.load()) { restart(); continue; }
                     int status = 0;
                     if(waitpid(pid_, &status, WNOHANG) == pid_)
                     {
@@ -150,9 +163,76 @@ namespace oscairn
 
             void fail(const std::string& reason)
             {
+                reason_ = reason;
                 { std::lock_guard lock(failureMutex_); failure_ = reason; }
-                failed_.store(true, std::memory_order_release);
+                failed_.store(true);
                 if(!reaped_) { kill(pid_, SIGKILL); int status = 0; waitpid(pid_, &status, 0); reaped_ = true; }
+            }
+
+            // Brings a failed worker back: a new process with the same plugin, the recovery record's
+            // state, then the parameter values last published in the shared block, faded in.
+            // After maxRestarts within a minute the node stays silent.
+            void restart()
+            {
+                const auto now = std::chrono::steady_clock::now();
+                std::erase_if(restarts_, [&](auto t) { return now - t > std::chrono::minutes(1); });
+                auto report = [&](const std::string& text) { std::lock_guard lock(failureMutex_); failure_ = reason_ + "; " + text; };
+                if(restarts_.size() >= maxRestarts)
+                {
+                    gaveUp_ = true;
+                    report("not restarted: " + std::to_string(maxRestarts) + " restarts within a minute");
+                    return;
+                }
+                restarts_.push_back(now);
+                while(busy_.load()) std::this_thread::sleep_for(std::chrono::milliseconds(1)); // the audio thread leaves its last block
+                std::vector<double> values(parameters_.size());
+                for(size_t i = 0; i < values.size(); ++i) values[i] = shared_->parameterValues[i].load();
+                std::lock_guard control(control_);
+                try
+                {
+                    close(socket_); socket_ = -1;
+                    if(spawn().data != init_) throw std::runtime_error("the plugin changed");
+                    auto& s = *shared_;
+                    s.stop.store(0); s.panic.store(0);
+                    s.request.store(requested_.load()); s.done.store(requested_.load()); // the new worker starts idle
+                    sendDescriptor(socket_, shm_);
+                    expect(receive(socket_));
+                    auto call = [&](const Writer& w) { send(socket_, w.data); expect(receive(socket_)); };
+                    if(!record_.empty()) call(Writer().u8(uint8_t(Op::LoadState)).str(record_.string()));
+                    // Only values that differ from what the new worker published, to stay within its event queue.
+                    for(size_t i = 0; i < values.size(); ++i)
+                        if(!(parameters_[i].flags & CLAP_PARAM_IS_READONLY) && s.parameterValues[i].load() != values[i])
+                            call(Writer().u8(uint8_t(Op::SetParameter)).u32(parameters_[i].id).f64(values[i]));
+                }
+                catch(const std::exception& e)
+                {
+                    if(pid_ > 0 && !reaped_) { kill(pid_, SIGKILL); int status = 0; waitpid(pid_, &status, 0); reaped_ = true; }
+                    report(std::string("restart failed: ") + e.what()); // tried again on the next check
+                    return;
+                }
+                tooSlow_.store(false); requestedAt_.store(0);
+                { std::lock_guard lock(failureMutex_); failure_.clear(); }
+                generation_.fetch_add(1);
+                restarted_.fetch_add(1, std::memory_order_relaxed);
+                failed_.store(false);
+            }
+
+            // The recovery record: the plugin's state, saved again each time state is loaded. If a
+            // save fails, the previous record stays.
+            void saveRecord()
+            {
+                if(!state_ || failed_.load()) return;
+                try
+                {
+                    std::lock_guard lock(control_);
+                    const auto next = records_ / std::to_string(++saves_);
+                    send(socket_, Writer().u8(uint8_t(Op::SaveState)).str(next.string()).data);
+                    expect(receive(socket_));
+                    std::error_code ignored;
+                    if(!record_.empty()) std::filesystem::remove_all(record_, ignored);
+                    record_ = next;
+                }
+                catch(const std::exception&) {}
             }
 
             void stop() noexcept
@@ -180,20 +260,27 @@ namespace oscairn
                     reaped_ = true;
                 }
                 if(shared_) { munmap(shared_, bytes_); shared_ = nullptr; }
+                if(shm_ >= 0) { close(shm_); shm_ = -1; }
+                std::error_code ignored;
+                if(!records_.empty()) std::filesystem::remove_all(records_, ignored);
             }
 
         public:
             std::string failure() const override { std::lock_guard lock(failureMutex_); return failure_; }
 
+            // Like the in-engine host's, never throws: a worker that fails here is the supervisor's to
+            // handle, and throwing would stop the graph servicing its other nodes.
             void service() override
             {
-                Reader r = request(Writer().u8(uint8_t(Op::Service)));
+                Reader r;
+                try { r = request(Writer().u8(uint8_t(Op::Service))); }
+                catch(const std::exception&) { return; }
                 pending_.clear(); next_ = 0;
                 for(auto n = r.u32(); n--;) { kick::clap::Event e; r.bytes(e.bytes.data(), e.bytes.size()); pending_.push_back(e); }
             }
             bool supportsState() const noexcept override { return state_; }
             void saveState(const std::string& directory) override { request(Writer().u8(uint8_t(Op::SaveState)).str(directory)); }
-            void loadState(const std::string& directory) override { request(Writer().u8(uint8_t(Op::LoadState)).str(directory)); }
+            void loadState(const std::string& directory) override { request(Writer().u8(uint8_t(Op::LoadState)).str(directory)); saveRecord(); }
             const kick::clap::Descriptor& descriptor() const noexcept override { return descriptor_; }
             const std::vector<kick::clap::Parameter>& parameters() const noexcept override { return parameters_; }
             const std::vector<kick::clap::Port>& inputPorts() const noexcept override { return inputs_; }
@@ -201,7 +288,8 @@ namespace oscairn
             uint32_t noteInputPorts() const noexcept override { return noteInputs_; }
             uint32_t noteOutputPorts() const noexcept override { return noteOutputs_; }
             bool usesClapNotes(uint32_t port) const noexcept override { return port < clapNotes_.size() && clapNotes_[port]; }
-            void panic() noexcept override { shared_->panic.store(1, std::memory_order_release); }
+            // While down, a panic would reach the restarted worker and drop its first block's events.
+            void panic() noexcept override { if(!failed_.load()) shared_->panic.store(1, std::memory_order_release); }
             double parameterValue(clap_id id) const noexcept override
             {
                 const auto i = index_.find(id);
@@ -233,6 +321,7 @@ namespace oscairn
                 s.lastMicroseconds = shared_->lastMicroseconds.load(); s.maximumMicroseconds = shared_->maximumMicroseconds.load();
                 s.deadlineMisses = shared_->deadlineMisses.load() + workerMisses_.load(std::memory_order_relaxed);
                 s.controlSilences = shared_->controlSilences.load(); s.idleBlocks = shared_->idleBlocks.load();
+                s.restarts = restarted_.load(std::memory_order_relaxed);
                 return s;
             }
 
@@ -288,8 +377,12 @@ namespace oscairn
                     return false;
                 };
                 if(!frames) return true;
+                // While busy, a restart waits; it sets failed_ first, so a block that starts later sees it.
+                busy_.store(true);
+                struct Idle { std::atomic<bool>& busy; ~Idle() { busy.store(false); } } idle{busy_};
                 auto& s = *shared_;
-                if(failed_.load(std::memory_order_acquire) || frames > s.maxFrames || count > maxEvents || (count && !events) || (no && !outputs)) return silence();
+                if(failed_.load() || frames > s.maxFrames || count > maxEvents || (count && !events) || (no && !outputs)) return silence();
+                if(const auto g = generation_.load(); g != generation) { generation = g; faded_ = 0; consecutiveMisses_ = 0; } // restarted
                 // A block the worker has not finished yet: stay silent rather than queue another.
                 if(s.done.load(std::memory_order_acquire) != sequence_) { workerMisses_.fetch_add(1, std::memory_order_relaxed); return silence(); }
                 for(uint32_t c = 0; c < s.inputChannels; ++c)
@@ -318,7 +411,9 @@ namespace oscairn
                     if(!outputs[c]) continue;
                     if(c < s.outputChannels) std::copy_n(s.output(c), frames, outputs[c]);
                     else std::fill_n(outputs[c], frames, 0.f);
+                    for(uint32_t f = 0; f < frames && faded_ + f < fadeFrames_; ++f) outputs[c][f] *= float(faded_ + f) / float(fadeFrames_);
                 }
+                faded_ = std::min(fadeFrames_, faded_ + frames);
                 const auto first = outputCount_, kept = std::min(s.outputCount, maxOutputEvents - first);
                 std::copy_n(s.outputs, kept, output_.data() + first);
                 for(uint32_t i = first; i < first + kept; ++i) reinterpret_cast<clap_event_header_t*>(output_[i].bytes.data())->time += offset;
@@ -349,7 +444,10 @@ namespace oscairn
             }
 
             static inline std::atomic<uint32_t> counter_{0};
-            int socket_ = -1; pid_t pid_ = 0;
+            static constexpr size_t maxRestarts = 3;
+            std::string program_, path_, id_, init_, reason_;
+            uint32_t frames_ = 0;
+            int socket_ = -1, shm_ = -1; pid_t pid_ = 0;
             Shared* shared_ = nullptr; size_t bytes_ = 0;
             std::mutex control_;
             std::chrono::nanoseconds budget_{}, hangLimit_{};
@@ -357,7 +455,14 @@ namespace oscairn
             std::atomic<uint32_t> requested_{0};
             std::atomic<int64_t> requestedAt_{0};
             std::atomic<bool> failed_{false}, tooSlow_{false};
-            bool reaped_ = false, stopping_ = false;
+            bool reaped_ = false, stopping_ = false, gaveUp_ = false;
+            std::vector<std::chrono::steady_clock::time_point> restarts_;
+            std::filesystem::path records_, record_; // under control_
+            uint32_t saves_ = 0;
+            std::atomic<bool> busy_{false};
+            std::atomic<uint32_t> generation_{0};
+            std::atomic<uint64_t> restarted_{0};
+            uint32_t generation = 0, faded_ = 0, fadeFrames_ = 0; // audio thread
             std::thread supervisor_;
             std::mutex superviseMutex_;
             std::condition_variable wakeSupervisor_;

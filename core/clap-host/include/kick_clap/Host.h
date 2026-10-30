@@ -70,6 +70,7 @@ struct Statistics {
     double lastMicroseconds = 0, maximumMicroseconds = 0;
     // Cumulative per host. A missed DSP deadline is not an audio-device xrun.
     uint64_t deadlineMisses = 0, controlSilences = 0, idleBlocks = 0;
+    uint64_t restarts = 0; // Oscairn plugin workers restarted after failing (RFC 0010)
 };
 
 // Control API belongs to ONE main/UI thread. process(), enqueue() and atomic

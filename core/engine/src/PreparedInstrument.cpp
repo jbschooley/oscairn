@@ -237,7 +237,7 @@ public:
         for(const auto& s:desired_.instances)if(s){const auto v=s->host->statistics();
             result.blocks=std::max(result.blocks,v.blocks);result.droppedEvents+=v.droppedEvents;result.processErrors+=v.processErrors;
             result.lastMicroseconds+=v.lastMicroseconds;result.maximumMicroseconds+=v.maximumMicroseconds;
-            result.deadlineMisses+=v.deadlineMisses;result.controlSilences+=v.controlSilences;result.idleBlocks+=v.idleBlocks;}
+            result.deadlineMisses+=v.deadlineMisses;result.controlSilences+=v.controlSilences;result.idleBlocks+=v.idleBlocks;result.restarts+=v.restarts;}
         result.droppedEvents+=drops_.load();result.processErrors+=errors_.load();return result;
     }
     bool process(const float* const*,uint32_t,float* const* outputs,uint32_t no,uint32_t frames,const Event* events,uint32_t count,const clap_event_transport_t* transport) noexcept override {
@@ -286,7 +286,9 @@ public:
         for(auto& s:current_->instances)if(s && s->running){
             s->rendered.store(true);
             if(!s->host->process(nullptr,0,s->outputs.data(),s->outputs.size(),frames,s->events.data(),s->count,transport)){
-                ok=false;s->host->panic();for(const auto& n:s->notes.notes)if(n.used)ended(n,0);s->notes.clear();
+                // This instance resets and ends its own notes; a failure reported upward would make
+                // the graph reset the whole node, cutting the other sounds' notes too.
+                s->host->panic();for(const auto& n:s->notes.notes)if(n.used)ended(n,0);s->notes.clear();
             }
             for(size_t c=0;c<std::min<size_t>(no,s->outputs.size());++c)if(outputs && outputs[c])
                 for(uint32_t f=0;f<frames;++f)outputs[c][f]+=s->outputs[c][f];

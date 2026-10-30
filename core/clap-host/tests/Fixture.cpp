@@ -82,11 +82,17 @@ struct Plugin {
     }
     void event(const clap_event_header_t* e) {
         if (!e) { ++threadErrors; return; }
+#ifdef FIXTURE_note_crash
+        if (e->type == CLAP_EVENT_NOTE_ON && reinterpret_cast<const clap_event_note_t*>(e)->key == 0) std::abort();
+#endif
         if (e->type == CLAP_EVENT_NOTE_ON) { if (kind == 2) ++threadErrors; gate = true; }
         if (e->type == CLAP_EVENT_NOTE_OFF || e->type == CLAP_EVENT_NOTE_CHOKE) { if (kind == 2) ++threadErrors; else gate = false; }
         if (e->type == CLAP_EVENT_MIDI) {
             const auto* m = reinterpret_cast<const clap_event_midi_t*>(e);
             const auto kind=m->data[0]&0xf0;
+#ifdef FIXTURE_note_crash
+            if (kind==0x90 && m->data[1]==0 && m->data[2]) std::abort();
+#endif
             if (kind==0x90 && m->data[2]) held=gate=true;
             if (m->data[1] > 127 || m->data[2] > 127) ++threadErrors;
             if (kind==0x80 || (kind==0x90 && !m->data[2])) {held=false;if(!sustain)gate=false;}

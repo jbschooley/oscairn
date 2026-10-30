@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
-// RFC 0010 step 3: a plugin in a worker that crashes, hangs or is too slow stops only its own
-// node. A normal instrument plays next to it in the same graph, paced in real time; its sound
-// must be identical to the same instrument playing alone, every block must finish within the
-// block's time, and the failure must be detected and named.
+// RFC 0010 steps 3-4: a plugin in a worker that crashes, hangs or is too slow stops only its own
+// node, is restarted, and is given up after repeated failures. A normal instrument plays next to
+// it in the same graph, paced in real time; its sound must be identical to the same instrument
+// playing alone, every block must finish within the block's time, and the failure must be
+// detected and named.
 //   oscairn-worker-failures-test WORKER NORMAL.clap CRASH.clap HANG.clap SLOW.clap [--no-timing]
 #include <oscairn/graph.h>
 #include <chrono>
@@ -60,9 +61,13 @@ namespace
         uint32_t overruns = 0, block = 0; double worst = 0, energy = 0; bool same = true;
         const auto start = std::chrono::steady_clock::now();
         auto next = start;
-        // A second of real time: past the 250 ms hang and slowness limits.
-        for(; std::chrono::steady_clock::now() - start < std::chrono::seconds(1); ++block)
+        // Real time until the failing plugin has failed through its restarts (each failure takes up
+        // to the 250 ms hang and slowness limits), at most 3 s; the baseline plays for a second.
+        const auto length = std::chrono::seconds(expected ? 3 : 1);
+        bool givenUp = false;
+        for(; !givenUp && std::chrono::steady_clock::now() - start < length; ++block)
         {
+            if(expected && block % 40 == 0) givenUp = graph.host(b).failure().find("not restarted") != std::string::npos;
             std::this_thread::sleep_until(next);
             next += std::chrono::duration_cast<std::chrono::steady_clock::duration>(std::chrono::duration<double>(period));
             std::vector<kick::clap::Event> notes;
@@ -80,7 +85,8 @@ namespace
         const auto name = std::string(std::strrchr(failing, '/') ? std::strrchr(failing, '/') + 1 : failing);
         check(same, name + ": the other instrument sounds exactly as when playing alone");
         check(energy > 0, name + ": the other instrument made sound");
-        if(expected) check(reason.find(expected) != std::string::npos, name + ": failure reported as \"" + expected + "\", got \"" + reason + "\"");
+        if(expected) check(reason.find(expected) != std::string::npos && reason.find("not restarted") != std::string::npos,
+                           name + ": failure reported as \"" + expected + "\" and given up, got \"" + reason + "\"");
         if(timing) check(overruns == 0, name + ": " + std::to_string(overruns) + " blocks took longer than the block's time");
         std::printf("%s: %u blocks, worst %.0f us of %.0f us, overruns %u, failure: %s\n", name.c_str(), block, worst * 1e6, period * 1e6, overruns, reason.c_str());
     }

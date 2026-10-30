@@ -222,6 +222,11 @@ target_link_libraries(oscairn-worker-failures-test PRIVATE oscairn_engine)
 add_test(NAME worker-failures COMMAND oscairn-worker-failures-test $<TARGET_FILE:oscairn-plugin-worker> $<TARGET_FILE:kick-clap-fixture-normal>
     $<TARGET_FILE:kick-clap-fixture-process_crash> $<TARGET_FILE:kick-clap-fixture-process_hang> $<TARGET_FILE:kick-clap-fixture-slow> ${worker_timing})
 set_tests_properties(worker-failures PROPERTIES TIMEOUT 60 RUN_SERIAL TRUE)
+add_executable(oscairn-worker-recovery-test engine/tests/worker_recovery.cpp)
+target_link_libraries(oscairn-worker-recovery-test PRIVATE oscairn_engine)
+add_test(NAME worker-recovery COMMAND oscairn-worker-recovery-test $<TARGET_FILE:oscairn-plugin-worker>
+    $<TARGET_FILE:kick-clap-fixture-note_crash> $<TARGET_FILE:kick-clap-fixture-process_crash>)
+set_tests_properties(worker-recovery PROPERTIES TIMEOUT 60 ENVIRONMENT OSCAIRN_WORKER_BUDGET_US=50000)
 
 # The existing graph tests again, with every CLAP plugin that has no native contexts in a worker.
 set(worker_tests

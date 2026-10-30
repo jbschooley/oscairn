@@ -1,4 +1,4 @@
-foreach(kind normal crash hang slow held_state process_crash process_hang hog)
+foreach(kind normal crash hang slow held_state process_crash process_hang note_crash hog)
     add_library(kick-clap-fixture-${kind} MODULE Fixture.cpp)
     target_include_directories(kick-clap-fixture-${kind} PRIVATE ../third_party/clap/include)
     target_compile_features(kick-clap-fixture-${kind} PRIVATE cxx_std_17)

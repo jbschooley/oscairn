@@ -195,7 +195,7 @@ Implemented 2026-10-30 in `WorkerHost.cpp`:
   rendering waits up to 10 s instead. Shares smaller than half a block for long chains are
   part of step 5's policies.
 - **Supervisor:** a thread per worker checks every 10 ms and marks the plugin failed, kills
-  its worker and silences the node for good when the worker exits or crashes, leaves a block
+  its worker and silences the node, until step 4 restarts it, when the worker exits or crashes, leaves a block
   unanswered for 250 ms (hung), or misses the budget, by the clock, in every block for a
   quarter second (too slow). `PluginHost::failure()` names the reason; the pooled instrument
   wrapper passes it through. Control calls to a failed worker fail at once.
@@ -218,6 +218,39 @@ callback and parameter flush) held the plugin's gate, and a first block rendered
 was refused as a control silence. `prepared-instances` failed about once in 30 runs. Plugins are
 now serviced once when loaded, and prepared instances again before they are published:
 0 failures in 200 runs, with and without workers, and 0 in 60 under AddressSanitizer.
+
+## Step 4 status
+
+Implemented 2026-10-30 in `WorkerHost.cpp`, for plugins in workers, which so far excludes those
+with native contexts (Basic Synth, Sampler) until step 5:
+
+- **Restart:** the supervisor thread starts a new worker for the same plugin, off the audio and
+  main threads. The engine keeps the shared block, so the new worker reuses it; the plugin must
+  describe itself exactly as before (descriptor, parameters, ports), or the restart fails. The
+  node is silent meanwhile; control calls fail at once and `service()` does nothing.
+- **Recovery record:** the plugin's state, saved by the engine into a private folder each time
+  state is loaded (sounds prepared from state, Performances restored from state), then the
+  parameter values the old worker last published in the shared block. Each prepared sound is a
+  plugin of its own, so each one comes back with its own record.
+- **Fade-in:** the restarted plugin's output fades in over 10 ms.
+- **Bounded:** at most 3 restarts a minute; after that the node stays silent and `failure()`
+  says so ("…; not restarted: 3 restarts within a minute"). `Statistics::restarts` counts
+  restarts, so a crash that recovers is still visible.
+- In the pooled instrument, one prepared sound's failure now resets only that sound; the graph
+  no longer resets the whole node, so the other sounds' notes keep playing. A panic requested
+  while a worker is down no longer reaches the new worker, where it would have dropped the
+  first block's notes.
+- Not yet: state the plugin changes by itself (its own editor, internal edits) is not saved
+  into the record between loads; only parameter values are. A debounced save after changes
+  is the next refinement (see open questions).
+
+Verification: `worker-recovery` crashes one prepared sound of three, one prepared from
+parameters and one from saved state. Each comes back with its value and fades in, while the
+others play on unchanged. A plugin that crashes on every block is given up after 3 restarts.
+`worker-failures` now runs each crashing, hanging and slow fixture through its restarts until
+it is given up, with the normal instrument identical to playing alone and no overruns. On
+macOS: `worker-recovery` passes 200 of 200 runs, `worker-failures` 10 of 10, and both pass 15
+of 15 under AddressSanitizer and ThreadSanitizer. Not yet run on Linux or the device.
 
 ## Open questions
 
