@@ -191,9 +191,11 @@ new core, from a UI that talks to it only through the control API.
    [plugins/modular](../plugins/modular/README.md) with its history; the CLAP wrapper,
    render tests and the upstream sample-grid fix remain.
 
-Plugins and apps (sequencers, instruments, the UI) are kept as separate components, each in
+Plugins and apps (sequencers, instruments, the UI) must stay separate components, each in
 its own folder with its own build target and depending only on Oscairn's public headers, so
-they can later move to their own repositories or ship as packages.
+they can later move to their own repositories or ship as packages. Today the plugins share
+one CMake file and `plugins/common/SoundContexts.h`; that helper becomes part of a public
+plugin SDK before any plugin moves out.
 
 The subsequent [conversion plan](rfcs/0008-sfz-native-samples-and-conversion.md#conversion-and-modx-m-migration)
 covers SFZ interchange and Jacob's MODX M library migration: inventory first, explicit
