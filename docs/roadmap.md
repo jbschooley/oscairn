@@ -177,7 +177,8 @@ new core, from a UI that talks to it only through the control API.
    measured on macOS ([step 1](rfcs/0010-plugin-worker-isolation.md#step-1-measurements));
    native Linux and the aarch64 target remain. Step 2, one plugin per worker with identical
    rendering, is implemented ([status](rfcs/0010-plugin-worker-isolation.md#step-2-status));
-   next is containing crashes, hangs and overruns (step 3).
+   Step 3, containing crashes, hangs and overruns to their own node, is implemented on macOS
+   ([status](rfcs/0010-plugin-worker-isolation.md#step-3-status)); next is recovery (step 4).
 7. **Sequencer evaluation — written, decisions pending:** [the comparison](sequencer-evaluation.md)
    of the KICK firmware's sequencer (with chillbeast's work), zynseq and hosted plugins
    recommends the KICK model and workflow with sample-accurate playback rewritten in an

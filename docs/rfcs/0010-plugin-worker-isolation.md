@@ -1,7 +1,8 @@
 # RFC 0010: Plugin worker isolation
 
 Status: proposed, 2026-10-30. Step 1 measured on macOS only ([results](#step-1-measurements));
-step 2 implemented ([status](#step-2-status)); steps 3–7 not started. Moved ahead of Phase 4 hardware work and further
+steps 2 and 3 implemented on macOS ([step 2](#step-2-status), [step 3](#step-3-status)); steps 4–7
+not started. Moved ahead of Phase 4 hardware work and further
 third-party plugin features ([roadmap](../roadmap.md#next-build-and-test-order)); it makes
 concrete the [engine recovery](../architecture.md#engine-recovery) and sandboxed-worker
 isolation the architecture already describes.
@@ -167,14 +168,12 @@ Implemented 2026-10-30 in `core/plugin-host` (`Worker.*`, `WorkerHost.cpp`) and 
   8,192 frames, so the worker's host splits larger blocks exactly as an in-engine host
   does; larger still are split by the engine.
 - **Control path:** a socket carries initialisation, parameter changes, gestures, parameter
-  text, state save and load, and `service`. The worker calls the plugin's `service`
-  itself every 10 ms.
+  text, state save and load, and `service`. The plugin is serviced only when the engine
+  calls `service`, as in the engine; the worker refreshes parameter values every 10 ms.
 - **Stays in the engine:** plugins with native sound or effect contexts (Basic Synth,
   Sampler, Delay), until step 5 moves contexts into workers. Presets, properties and asset
   resolution are not forwarded yet.
-- **Deadline:** the engine waits at most four blocks or 50 ms (10 s offline), and a block
-  not answered in time is silent and counted as a deadline miss. This is a hang detector,
-  not the per-node budget, which is step 3.
+- **Deadline:** see step 3.
 
 Verification: `worker-host` renders 300 blocks of each test plugin in the engine and in a
 worker and finds identical audio and output events, parameter values and text, and saved
@@ -183,6 +182,41 @@ state. The graph tests `param-target`, `chain-mono`, `audio-routing`, `graph-lif
 eligible plugin in a worker (6 to 127 workers per test), including their checks that
 rendering does not allocate. They pass 20 times in a row, and under ThreadSanitizer and
 AddressSanitizer on macOS. Not yet run on Linux or the device.
+
+## Step 3 status
+
+Implemented 2026-10-30 in `WorkerHost.cpp`:
+
+- **Budget:** each block may take half the block's time (a 128-frame block at 48 kHz gets
+  1.33 ms of its 2.67 ms). An unanswered block is silent and counted as
+  a deadline miss; while the worker is still busy with it, later blocks are silent at once
+  without waiting. `OSCAIRN_WORKER_BUDGET_US` overrides the budget (the identical-render
+  tests use 50 ms because they render faster than real time on ordinary threads). Offline
+  rendering waits up to 10 s instead. Shares smaller than half a block for long chains are
+  part of step 5's policies.
+- **Supervisor:** a thread per worker checks every 10 ms and marks the plugin failed, kills
+  its worker and silences the node for good when the worker exits or crashes, leaves a block
+  unanswered for 250 ms (hung), or misses the budget, by the clock, in every block for a
+  quarter second (too slow). `PluginHost::failure()` names the reason; the pooled instrument
+  wrapper passes it through. Control calls to a failed worker fail at once.
+- The worker's audio thread now uses the block's period for its real-time policy. With the
+  larger shared buffer's period instead, macOS scheduled it behind the engine and healthy
+  workers missed their budget.
+
+Verification: `worker-failures` plays a normal instrument next to a plugin that aborts,
+sleeps 20 s or takes 2 ms per 2.67 ms block, in one graph, paced in real time on a real-time
+thread for one second each. On macOS (M3 Max, load average about 24) the instrument's sound
+is identical to playing alone, every failure is detected and named, and no block takes
+longer than the block's time: worst 1.4 ms with a failing plugin, 0.15 ms with two healthy
+ones, in 10 of 10 runs. Under ThreadSanitizer and AddressSanitizer it runs without the timing
+check and passes. In Docker's Linux VM all three failures are detected and named, but the
+timing and identity checks fail even with two healthy plugins, as the VM's scheduling did in
+step 1; native Linux and the target are still to be measured.
+
+Known issue, not caused by workers: `prepared-instances` fails about once in 80 runs in the
+engine and more often with workers (about once in 30, more under AddressSanitizer). A newly
+prepared instance's queued parameter flush in `service()` holds the plugin's gate, and a
+block rendered at that moment is refused as a control silence.
 
 ## Open questions
 

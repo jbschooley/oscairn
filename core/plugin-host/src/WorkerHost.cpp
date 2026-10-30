@@ -10,6 +10,9 @@
 #include <cerrno>
 #include <csignal>
 #include <fcntl.h>
+#include <cmath>
+#include <condition_variable>
+#include <cstdlib>
 #include <mutex>
 #include <spawn.h>
 #include <sys/mman.h>
@@ -40,6 +43,17 @@ namespace oscairn
         {
         public:
             WorkerHost(const std::string& program, const std::string& path, const std::string& id, double rate, uint32_t frames, ProcessingMode mode)
+            {
+                try { start(program, path, id, rate, frames, mode); }
+                catch(...) { stop(); throw; }
+            }
+
+            ~WorkerHost() override { stop(); }
+
+            bool native = false; // the plugin has native contexts; it must stay in the engine
+
+        private:
+            void start(const std::string& program, const std::string& path, const std::string& id, double rate, uint32_t frames, ProcessingMode mode)
             {
                 int pair[2];
                 if(socketpair(AF_UNIX, SOCK_STREAM, 0, pair) != 0) throw std::runtime_error("Cannot create a worker socket");
@@ -92,29 +106,84 @@ namespace oscairn
                 expect(receive(socket_));
                 output_.resize(maxOutputEvents);
                 pending_.reserve(4096);
-                // shortcut: the wait is a hang detector, not the node's share of the deadline; step 3 sets that budget.
-                timeout_ = mode == ProcessingMode::Offline ? std::chrono::nanoseconds(std::chrono::seconds(10))
-                                                           : std::max<std::chrono::nanoseconds>(std::chrono::milliseconds(50), std::chrono::nanoseconds(int64_t(4e9 * frames / rate)));
+                // Each block may take half the block's time before it is silenced; a worker that
+                // misses a quarter second of blocks in a row, or leaves one unanswered that long,
+                // has failed. Offline rendering waits instead of silencing.
+                const double period = double(frames) / rate;
+                if(mode == ProcessingMode::Offline) { budget_ = std::chrono::seconds(10); hangLimit_ = std::chrono::seconds(10); missLimit_ = UINT32_MAX; }
+                else
+                {
+                    budget_ = std::chrono::nanoseconds(int64_t(0.5e9 * period));
+                    if(const char* us = std::getenv("OSCAIRN_WORKER_BUDGET_US")) budget_ = std::chrono::microseconds(std::max(1L, std::atol(us)));
+                    hangLimit_ = std::chrono::milliseconds(250);
+                    missLimit_ = std::max<uint32_t>(8, uint32_t(std::ceil(0.25 / period)));
+                }
+                supervisor_ = std::thread([this] { supervise(); });
             }
 
-            ~WorkerHost() override
+            // Watches the worker: a crash, a block left unanswered past the hang limit, or too
+            // many missed blocks in a row stop it for good and silence the node.
+            void supervise()
             {
+                std::unique_lock lock(superviseMutex_);
+                while(!stopping_)
+                {
+                    wakeSupervisor_.wait_for(lock, std::chrono::milliseconds(10));
+                    if(stopping_ || failed_.load(std::memory_order_acquire)) continue;
+                    int status = 0;
+                    if(waitpid(pid_, &status, WNOHANG) == pid_)
+                    {
+                        reaped_ = true;
+                        fail(WIFSIGNALED(status) ? "Plugin worker crashed (signal " + std::to_string(WTERMSIG(status)) + ")"
+                                                 : "Plugin worker exited (status " + std::to_string(WEXITSTATUS(status)) + ")");
+                        continue;
+                    }
+                    const auto since = requestedAt_.load(std::memory_order_acquire);
+                    const bool waiting = shared_->done.load(std::memory_order_acquire) != requested_.load(std::memory_order_acquire);
+                    const auto now = std::chrono::steady_clock::now().time_since_epoch().count();
+                    if(waiting && since && std::chrono::nanoseconds(now - since) > hangLimit_)
+                        fail("Plugin hung: a block was not finished within " + std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(hangLimit_).count()) + " ms");
+                    else if(tooSlow_.load(std::memory_order_acquire))
+                        fail("Plugin too slow: " + std::to_string(missLimit_) + " blocks in a row missed their deadline");
+                }
+            }
+
+            void fail(const std::string& reason)
+            {
+                { std::lock_guard lock(failureMutex_); failure_ = reason; }
+                failed_.store(true, std::memory_order_release);
+                if(!reaped_) { kill(pid_, SIGKILL); int status = 0; waitpid(pid_, &status, 0); reaped_ = true; }
+            }
+
+            void stop() noexcept
+            {
+                if(supervisor_.joinable())
+                {
+                    { std::lock_guard lock(superviseMutex_); stopping_ = true; }
+                    wakeSupervisor_.notify_all();
+                    supervisor_.join();
+                }
                 if(socket_ >= 0)
                 {
-                    timeval t{1, 0}; setsockopt(socket_, SOL_SOCKET, SO_RCVTIMEO, &t, sizeof t);
-                    try { std::lock_guard lock(control_); send(socket_, Writer().u8(uint8_t(Op::Shutdown)).data); receive(socket_); } catch(const std::exception&) {}
-                    close(socket_);
+                    if(shared_ && !failed_.load())
+                    {
+                        timeval t{1, 0}; setsockopt(socket_, SOL_SOCKET, SO_RCVTIMEO, &t, sizeof t);
+                        try { std::lock_guard lock(control_); send(socket_, Writer().u8(uint8_t(Op::Shutdown)).data); receive(socket_); } catch(const std::exception&) {}
+                    }
+                    close(socket_); socket_ = -1;
                 }
-                if(pid_ > 0)
+                if(pid_ > 0 && !reaped_)
                 {
                     int status = 0;
-                    for(int i = 0; i < 100 && waitpid(pid_, &status, WNOHANG) == 0; ++i) std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                    for(int i = 0; shared_ && i < 100 && waitpid(pid_, &status, WNOHANG) == 0; ++i) std::this_thread::sleep_for(std::chrono::milliseconds(10));
                     if(waitpid(pid_, &status, WNOHANG) == 0) { kill(pid_, SIGKILL); waitpid(pid_, &status, 0); }
+                    reaped_ = true;
                 }
-                if(shared_) munmap(shared_, bytes_);
+                if(shared_) { munmap(shared_, bytes_); shared_ = nullptr; }
             }
 
-            bool native = false; // the plugin has native contexts; it must stay in the engine
+        public:
+            std::string failure() const override { std::lock_guard lock(failureMutex_); return failure_; }
 
             void service() override
             {
@@ -220,7 +289,7 @@ namespace oscairn
                 };
                 if(!frames) return true;
                 auto& s = *shared_;
-                if(frames > s.maxFrames || count > maxEvents || (count && !events) || (no && !outputs)) return silence();
+                if(failed_.load(std::memory_order_acquire) || frames > s.maxFrames || count > maxEvents || (count && !events) || (no && !outputs)) return silence();
                 // A block the worker has not finished yet: stay silent rather than queue another.
                 if(s.done.load(std::memory_order_acquire) != sequence_) { workerMisses_.fetch_add(1, std::memory_order_relaxed); return silence(); }
                 for(uint32_t c = 0; c < s.inputChannels; ++c)
@@ -231,13 +300,19 @@ namespace oscairn
                 std::copy_n(events, count, s.events);
                 s.frames = frames; s.eventCount = count; s.hasTransport = transport != nullptr;
                 if(transport) s.transport = *transport;
-                s.request.store(++sequence_, std::memory_order_release);
+                const auto sent = std::chrono::steady_clock::now();
+                requestedAt_.store(sent.time_since_epoch().count(), std::memory_order_release);
+                requested_.store(++sequence_, std::memory_order_release);
+                s.request.store(sequence_, std::memory_order_release);
                 wake(s.request);
-                if(!waitWhileEqual(s.done, sequence_ - 1, timeout_) || s.done.load(std::memory_order_acquire) != sequence_)
+                if(!waitWhileEqual(s.done, sequence_ - 1, budget_) || s.done.load(std::memory_order_acquire) != sequence_)
                 {
-                    workerMisses_.fetch_add(1, std::memory_order_relaxed);
+                    missed();
                     return silence();
                 }
+                // Late by the clock counts toward "too slow" even when the wait itself woke late.
+                if(std::chrono::steady_clock::now() - sent > budget_) missed();
+                else consecutiveMisses_ = 0;
                 for(uint32_t c = 0; c < no; ++c)
                 {
                     if(!outputs[c]) continue;
@@ -251,8 +326,17 @@ namespace oscairn
                 return s.ok;
             }
 
+            // A block that ran out of budget. Only these count toward "too slow"; a block the
+            // worker never finishes is a hang, which the supervisor detects.
+            void missed() noexcept
+            {
+                workerMisses_.fetch_add(1, std::memory_order_relaxed);
+                if(++consecutiveMisses_ >= missLimit_) tooSlow_.store(true, std::memory_order_release);
+            }
+
             Reader request(const Writer& w)
             {
+                if(failed_.load(std::memory_order_acquire)) throw std::runtime_error(failure());
                 std::lock_guard lock(control_);
                 send(socket_, w.data);
                 return expect(receive(socket_));
@@ -268,7 +352,17 @@ namespace oscairn
             int socket_ = -1; pid_t pid_ = 0;
             Shared* shared_ = nullptr; size_t bytes_ = 0;
             std::mutex control_;
-            std::chrono::nanoseconds timeout_{};
+            std::chrono::nanoseconds budget_{}, hangLimit_{};
+            uint32_t missLimit_ = UINT32_MAX, consecutiveMisses_ = 0;
+            std::atomic<uint32_t> requested_{0};
+            std::atomic<int64_t> requestedAt_{0};
+            std::atomic<bool> failed_{false}, tooSlow_{false};
+            bool reaped_ = false, stopping_ = false;
+            std::thread supervisor_;
+            std::mutex superviseMutex_;
+            std::condition_variable wakeSupervisor_;
+            mutable std::mutex failureMutex_;
+            std::string failure_;
             kick::clap::Descriptor descriptor_;
             std::vector<kick::clap::Parameter> parameters_;
             std::unordered_map<clap_id, uint32_t> index_;

@@ -83,6 +83,9 @@ namespace oscairn
         virtual uint64_t outputEventDrops() const noexcept = 0;
         virtual const kick::clap::Event* outputEvents(uint32_t& count) const noexcept = 0;
         virtual kick::clap::Statistics statistics() const noexcept = 0;
+        // Why the plugin stopped for good (its worker crashed, hung or was too slow); empty
+        // while it plays. The node is silent from then on. Any thread.
+        virtual std::string failure() const { return {}; }
         virtual bool process(const float* const* inputs, uint32_t ni, float* const* outputs, uint32_t no, uint32_t frames, const kick::clap::Event* events, uint32_t count, const clap_event_transport_t* transport) noexcept = 0;
     };
     // CLAP module or LV2 bundle directory; pluginId is a CLAP ID or an LV2 URI.

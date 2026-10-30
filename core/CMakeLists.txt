@@ -213,6 +213,16 @@ add_test(NAME worker-host COMMAND oscairn-worker-host-test $<TARGET_FILE:oscairn
     $<TARGET_FILE:oscairn_midi_delay> $<TARGET_FILE:oscairn_step_sequencer> $<TARGET_FILE:oscairn_basic_synth>)
 set_tests_properties(worker-host PROPERTIES TIMEOUT 60)
 
+# Sanitizers slow rendering several times over; there the test checks containment, not timing.
+if(KICK_CLAP_SANITIZE OR CMAKE_CXX_FLAGS MATCHES "-fsanitize")
+    set(worker_timing --no-timing)
+endif()
+add_executable(oscairn-worker-failures-test engine/tests/worker_failures.cpp)
+target_link_libraries(oscairn-worker-failures-test PRIVATE oscairn_engine)
+add_test(NAME worker-failures COMMAND oscairn-worker-failures-test $<TARGET_FILE:oscairn-plugin-worker> $<TARGET_FILE:kick-clap-fixture-normal>
+    $<TARGET_FILE:kick-clap-fixture-process_crash> $<TARGET_FILE:kick-clap-fixture-process_hang> $<TARGET_FILE:kick-clap-fixture-slow> ${worker_timing})
+set_tests_properties(worker-failures PROPERTIES TIMEOUT 60 RUN_SERIAL TRUE)
+
 # The existing graph tests again, with every CLAP plugin that has no native contexts in a worker.
 set(worker_tests
     "chain-mono|oscairn-chain-mono-test|$<TARGET_FILE:kick-clap-fixture-normal>"
@@ -226,5 +236,7 @@ foreach(entry IN LISTS worker_tests)
     string(REPLACE "|" ";" parts "${entry}")
     list(POP_FRONT parts name)
     add_test(NAME ${name}-workers COMMAND ${parts})
-    set_tests_properties(${name}-workers PROPERTIES TIMEOUT 120 ENVIRONMENT "OSCAIRN_PLUGIN_WORKER=$<TARGET_FILE:oscairn-plugin-worker>")
+    # These check identical results, not timing; they render faster than real time on ordinary
+    # threads, so each worker block may take up to 50 ms before it counts as missed.
+    set_tests_properties(${name}-workers PROPERTIES TIMEOUT 120 ENVIRONMENT "OSCAIRN_PLUGIN_WORKER=$<TARGET_FILE:oscairn-plugin-worker>;OSCAIRN_WORKER_BUDGET_US=50000")
 endforeach()

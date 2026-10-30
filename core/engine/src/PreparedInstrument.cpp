@@ -205,6 +205,7 @@ public:
     uint32_t noteOutputPorts() const noexcept override {return 0;}
     bool usesClapNotes(uint32_t port) const noexcept override {return port<noteInputPorts();}
     void panic() noexcept override {panic_.store(true);}
+    std::string failure() const override {for(const auto& s:desired_.instances)if(s){auto f=s->host->failure();if(!f.empty())return f;}return {};}
     double parameterValue(clap_id id) const noexcept override {return selected().parameterValue(id);}
     std::string parameterText(clap_id id,double value) const override {return selected().parameterText(id,value);}
     bool setParameter(clap_id id,double value) noexcept override {return selectedCall([&](auto& h){return h.setParameter(id,value);});}

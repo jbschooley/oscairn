@@ -145,13 +145,13 @@ namespace oscairn::worker
         }
 
         // The worker's audio thread: one plugin block per request.
-        void audio(PluginHost& host, Shared& s)
+        void audio(PluginHost& host, Shared& s, uint32_t blockFrames)
         {
             std::vector<const float*> in(s.inputChannels);
             std::vector<float*> out(s.outputChannels);
             for(uint32_t c = 0; c < s.inputChannels; ++c) in[c] = s.input(c);
             for(uint32_t c = 0; c < s.outputChannels; ++c) out[c] = s.output(c);
-            makeRealtime(1e6 * s.maxFrames / s.sampleRate);
+            makeRealtime(1e6 * blockFrames / s.sampleRate); // the block period, not the larger shared buffer
             uint32_t seen = s.done.load(std::memory_order_acquire); // a request may already be waiting
             for(;;)
             {
@@ -199,7 +199,8 @@ namespace oscairn::worker
         {
             pollfd p{socket, POLLIN, 0};
             const int ready = poll(&p, 1, 10);
-            if(ready == 0) { if(host) { host->service(); publishParameters(); } continue; }
+            // The plugin is serviced only when the engine asks, as in the engine; values are refreshed meanwhile.
+            if(ready == 0) { publishParameters(); continue; }
             if(ready < 0) { if(errno == EINTR) continue; break; }
             Reader r;
             try { r.data = receive(socket); } catch(const std::exception&) { break; }
@@ -237,7 +238,7 @@ namespace oscairn::worker
                     if(memory == MAP_FAILED) throw std::runtime_error("Cannot map shared memory");
                     shared = static_cast<Shared*>(memory);
                     publishParameters();
-                    audioThread = std::thread(audio, std::ref(*host), std::ref(*shared));
+                    audioThread = std::thread(audio, std::ref(*host), std::ref(*shared), frames);
                     reply(socket, Writer{});
                     continue;
                 }
