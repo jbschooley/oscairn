@@ -78,7 +78,7 @@ void Session::loadPerformance(const std::string& directory) {
             if(siblings){if(!definitions.contains(engine) || text(field(definitions.at(engine),"engine"))!=engine || !ids.contains(engine))bad("missing shared engine root");
                 const auto& source=next->host(ids.at(engine)).descriptor();if(source.id!=id || source.path!=path)bad("incompatible shared engine identity");runtime=next->addEffectContext(ids.at(engine));}
             else runtime=next->add(path,id);
-            auto& h=next->host(runtime);if(h.descriptor().version!=text(field(plugin,"version")))bad("plugin version changed; migration is required");
+            auto& h=next->host(runtime);if(h.descriptor().version!=text(field(plugin,"version")))bad("saved plugin version does not match the loaded plugin");
             h.loadSnapshot((root/"nodes"/key).string());
             checkPorts(field(node,"inputs"),h.inputPorts());checkPorts(field(node,"outputs"),h.outputPorts());
             if(integer(field(node,"noteInputs"),16)!=h.noteInputPorts() || integer(field(node,"noteOutputs"),16)!=h.noteOutputPorts())bad("note port layout changed");

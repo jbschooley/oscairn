@@ -5,6 +5,23 @@ not need a separate Oscairn plugin format or the desktop UI to write DSP. Platfo
 instruments additionally implement concurrent sound contexts. Start with the path below
 that matches your component; the [documentation index](README.md) links the full contracts.
 
+## Initial-development compatibility policy
+
+Oscairn is in initial development. Our own APIs, extension drafts, data structures and
+saved formats have no backward-compatibility guarantee. Replace obsolete designs outright;
+update callers, tests, fixtures, schemas and documentation together. Do not retain old
+readers, aliases, adapters or parallel implementations solely to support earlier Oscairn
+builds. Recreate development fixtures when a format changes instead of adding migrations.
+
+Keep version/identity checks and input validation: unsupported data must fail clearly,
+without corrupting the current session or overwriting the source files. Version tags
+identify contracts; they do not promise support for earlier versions.
+
+This policy does not remove support for external standards such as CLAP, LV2 and MIDI,
+or the planned cross-device portability contract. Long-term compatibility and migration
+proposals describe future product behavior, not an obligation to preserve today's
+experimental formats. A stable-release compatibility policy must be adopted explicitly.
+
 ## Choose the boundary
 
 | Component | Interface today | Reference |

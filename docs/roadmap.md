@@ -7,6 +7,10 @@ early runs on a desktop.
 Status as of October 29, 2026. Implementation status below includes the current branch;
 it does not mean every completed item has merged to `main`.
 
+Initial development has [no backward-compatibility obligation](developer-guide.md#initial-development-compatibility-policy)
+for earlier Oscairn builds. Replace obsolete structures and recreate development fixtures;
+keep strict validation and clear rejection of unsupported data.
+
 ## Phase 0: a device to develop against, without hardware (done)
 
 The KICK firmware, published by Music Tribe under the AGPL, runs on a desktop with a

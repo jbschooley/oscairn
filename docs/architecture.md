@@ -4,6 +4,10 @@ This is where Oscairn is going: the design the code is built towards. Most of it
 built yet. The [roadmap](roadmap.md) says what exists and in what order the rest comes;
 design decisions are recorded as [RFCs](rfcs/README.md).
 
+During initial development, earlier Oscairn builds are not compatibility targets. Follow
+[the development policy](developer-guide.md#initial-development-compatibility-policy);
+long-term migration and stability plans do not require preserving experimental formats.
+
 ## What exists today
 
 | Built | Not built yet |

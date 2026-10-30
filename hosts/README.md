@@ -41,9 +41,10 @@ brightness locks also need separate sound contexts because parameters belong to 
 All musical settings are saved in the [Performance folder](../docs/performance-format.md).
 The selected editor tab is view state and is not saved.
 
-Sequencer version 0.2.0 changes the parameter layout. The current exact-version loader
-rejects older Performances containing sequencer 0.1.0; it preserves the current session and
-original folder. There is no migration yet. Keep an old build to reopen those folders.
+Development saves are disposable across incompatible changes. Recreate test Performances
+with the current build; the loader rejects mismatched versions and preserves the current
+session and source folder. Earlier Oscairn builds are not a compatibility target; see the
+[development policy](../docs/developer-guide.md#initial-development-compatibility-policy).
 
 A repeatable two-sound/shared-effect example and the deferred listening checklist are in
 [queued listening tests](../docs/listening-tests.md). No listening has been signed off for

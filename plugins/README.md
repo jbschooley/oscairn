@@ -91,8 +91,9 @@ zero-based pattern `p`, track `t`, and step `i`:
 
 There are 206 parameters, 203 writable. The parameter-only snapshot captures all patterns,
 channels, mutes, scopes and the launch request; live playheads/queued timing are not persisted.
-Performance reopening stops/rewinds and makes the saved request active. Version 0.1.0 saves
-require their original plugin version; the current loader does not migrate plugin state.
+Performance reopening stops/rewinds and makes the saved request active. Recreate development
+saves after incompatible changes; supporting earlier Oscairn plugin versions is not required
+by the [development policy](../docs/developer-guide.md#initial-development-compatibility-policy).
 
 Lanes 0/1 belong to tracks 1/2. Locks precede their notes and use wildcard note/key/port;
 channel scope selects the track's channel. Native contexts support this addressing.

@@ -88,8 +88,10 @@ The internal `snapshot` file starts with `state 1`, `parameters 1`, or `pool 1`.
 parameter, using locale-independent round-trip doubles. `pool` contains eight occupancy
 flags with quoted names for occupied slots, then 16 selected slot indices; occupied slots
 have recursive snapshots in directories `0` through `7`. These are host-owned records,
-separate from the plugin's own state version. Future incompatible changes require an
-explicit reader/migration; unknown versions are rejected.
+separate from the plugin's own state version. During initial development, incompatible
+changes replace the format outright; development saves/fixtures are recreated, not migrated.
+Unknown versions are rejected, preserving the current session and original folder. See the
+[compatibility policy](developer-guide.md#initial-development-compatibility-policy).
 
 ## Publication and failure behavior
 

@@ -36,7 +36,7 @@ Use a **fresh disposable** `oscairn-engine` session and attach the UI in KICK la
 Choose a working output explicitly when starting it; the default Multi-Output Device hung
 in an earlier local run, while `--output-device 'MacBook Pro Speakers'` worked. Do not
 reuse a musician's current session: these scripts change its graph and prepared sounds.
-Use the current build (sequencer 0.2.0); old 0.1.0 Performance folders are not migrated.
+Use the current build and recreate test Performances after incompatible changes.
 
 From the repository root, with `SOCKET` pointing to that private test socket:
 
