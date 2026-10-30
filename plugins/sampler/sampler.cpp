@@ -200,7 +200,7 @@ namespace
         return path;
     }
 
-    std::shared_ptr<Sample> decode(const fs::path& path, uint64_t budget)
+    std::shared_ptr<Sample> decode(const fs::path& path)
     {
         SF_INFO info{};
         SNDFILE* file = sf_open(path.c_str(), SFM_READ, &info);
@@ -216,7 +216,6 @@ namespace
         // Check decoded size before allocating.
         const uint64_t bytes = uint64_t(info.frames) * uint64_t(info.channels) * sizeof(float);
         if(bytes > maxAssetBytes) fail(0, "sample exceeds the 64 MiB decoded limit");
-        if(bytes > budget) fail(0, "sampler memory budget (256 MiB) exhausted");
         auto s = std::make_shared<Sample>();
         s->rate = info.samplerate; s->channels = info.channels; s->frames = size_t(info.frames);
         s->data.resize(s->frames * size_t(s->channels));
@@ -229,6 +228,8 @@ namespace
     struct Sampler : oscairn::contexts::Engine<Sampler, Voice, Patch>
     {
         double sampleRate = 48000;
+        bool restoringSnapshot = false;
+        std::vector<std::shared_ptr<const Sample>> restoring; // sounds restored so far by the current snapshot
         const clap_host_t* host = nullptr;
         const clap_host_log_t* log = nullptr;
         static constexpr const char* stateVersion = "oscairn-sampler-1";
@@ -286,7 +287,9 @@ namespace
             }
         }
 
-        // Main thread. Shares audio already held by another context when the content matches.
+        // Main thread. Shares audio already held by another sound when the content matches.
+        // Only new audio counts against the budget, so sharing is checked first; a rejected
+        // sample is therefore decoded (at most 64 MiB) before it is freed again.
         Patch load(const std::string& text, const fs::path& directory)
         {
             Patch patch; patch.region = parse(text);
@@ -294,14 +297,17 @@ namespace
             const auto root = fs::canonical(directory, ec);
             if(ec || !fs::is_directory(root)) fail(0, "sample not found: " + patch.region.sample + " (its folder is missing)");
             patch.directory = root;
-            uint64_t used = 0; std::vector<const Sample*> counted;
-            for(const auto& c : contexts) if(c.prepared && c.patch.sample && std::find(counted.begin(), counted.end(), c.patch.sample.get()) == counted.end())
-            { counted.push_back(c.patch.sample.get()); used += c.patch.sample->bytes(); }
-            auto decoded = decode(resolve(root, patch.region.sample), maxTotalBytes - used);
-            for(const auto& c : contexts)
-                if(c.prepared && c.patch.sample && c.patch.sample->hash == decoded->hash && c.patch.sample->rate == decoded->rate &&
-                   c.patch.sample->channels == decoded->channels && c.patch.sample->data == decoded->data)
-                { patch.sample = c.patch.sample; return patch; }
+            auto decoded = decode(resolve(root, patch.region.sample));
+            auto same = [&](const Sample& s) { return s.hash == decoded->hash && s.rate == decoded->rate && s.channels == decoded->channels && s.data == decoded->data; };
+            for(const auto& c : contexts) if(c.prepared && c.patch.sample && same(*c.patch.sample)) { patch.sample = c.patch.sample; return patch; }
+            for(const auto& s : restoring) if(same(*s)) { patch.sample = s; return patch; }
+            // While a snapshot restores, the sounds it replaces no longer count.
+            std::vector<const Sample*> held;
+            for(const auto& s : restoring) held.push_back(s.get());
+            if(!restoringSnapshot) for(const auto& c : contexts) if(c.prepared && c.patch.sample) held.push_back(c.patch.sample.get());
+            std::sort(held.begin(), held.end()); held.erase(std::unique(held.begin(), held.end()), held.end());
+            uint64_t used = 0; for(const auto* s : held) used += s->bytes();
+            if(used > maxTotalBytes || decoded->bytes() > maxTotalBytes - used) fail(0, "sampler memory budget (256 MiB) exhausted");
             patch.sample = std::move(decoded);
             return patch;
         }
@@ -351,8 +357,10 @@ namespace
             catch(const Error& e) { return reject(e.message + " (in " + directory + ")"); }
             catch(const std::exception& e) { return reject(e.what()); }
             if(p.sample->hash != hash) return reject("sample changed since the sound was saved: " + p.region.sample + " (in " + directory + ")");
+            restoring.push_back(p.sample);
             return true;
         }
+        void snapshotLoading(bool active) { restoringSnapshot = active; restoring.clear(); }
         void restored() {}
     };
 

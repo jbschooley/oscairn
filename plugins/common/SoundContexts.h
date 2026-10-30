@@ -17,6 +17,7 @@
 //   static constexpr const char* stateVersion; static constexpr size_t maxStateBytes
 //   bool writePatch(std::ostream&, const Patch&); bool readPatch(std::istream&, Patch&)
 //   void restored()                                         after a snapshot load
+// and may provide snapshotLoading(bool), called around reading a snapshot's patches.
 
 #pragma once
 #include <clap/clap.h>
@@ -268,6 +269,7 @@ namespace oscairn::contexts
             std::istringstream in(data); in.imbue(std::locale::classic()); std::string version;
             if(!(in >> version) || version != Derived::stateVersion) return false;
             auto& s = self(p);
+            struct Loading { Derived& s; explicit Loading(Derived& d) : s(d) { s.snapshotLoading(true); } ~Loading() { s.snapshotLoading(false); } } loading{s};
             struct Saved { bool used = false; std::string name; Patch patch{}; };
             std::array<Saved, ContextCapacity> saved{}; std::array<uint32_t, 16> selection{}; uint32_t needed = 0;
             for(auto& patch : saved)
@@ -337,5 +339,6 @@ namespace oscairn::contexts
         }
         // Main thread, after a context is unpinned and discarded.
         void discarded(Context&) {}
+        void snapshotLoading(bool) {}
     };
 }
