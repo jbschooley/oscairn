@@ -10,6 +10,8 @@ it does not mean every completed item has merged to `main`.
 Initial development has [no backward-compatibility obligation](developer-guide.md#initial-development-compatibility-policy)
 for earlier Oscairn builds. Replace obsolete structures and recreate development fixtures;
 keep strict validation and clear rejection of unsupported data.
+Backward compatibility becomes a requirement with the first public product release;
+define its version, migration and deprecation policy before that release.
 
 ## Phase 0: a device to develop against, without hardware (done)
 
@@ -154,8 +156,13 @@ new core, from a UI that talks to it only through the control API.
 3. **Two tracks and A/B patterns — implemented:** independent lengths, channels and mutes,
    bar-boundary launches, per-track sound selection and full parameter persistence.
    Automated timing/roundtrip tests pass; [audible acceptance is pending](listening-tests.md).
-4. Native asset-bearing patches, then swing and further sequencer workflow. Keep the shared
-   theme and generated-editor contract current as new screens are added.
+4. **Native asset-bearing patches — research started, implementation pending:**
+   [sample players/formats and the first slice](sample-players-and-formats.md), including
+   a reproducible liquidsfz cache-sharing probe and [ESP observations](yamaha-esp-samples-research.md).
+   First prove bounded WAV preparation, shared immutable PCM, held-note ownership and
+   portable save/reopen with the existing native contexts. Then test SFZ/SoundFont engine
+   reuse against the same contracts. Swing and further sequencer workflow follow. Keep
+   the shared theme and generated-editor contract current as new screens are added.
 
 Package-manager comparison comes at the package milestone, before permanent distribution
 format commitments: evaluate libmamba/Nix and libsolv as a narrower fallback using the

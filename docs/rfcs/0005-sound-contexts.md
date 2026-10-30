@@ -4,7 +4,8 @@ Status: first instrument implementation. The Basic Synth and its typed/JSON/remo
 controls implement this contract. Ordinary CLAP/LV2 instruments also have a host-owned instance pool, documented in the
 [control protocol](../control-protocol.md#prepared-sounds); it does not implement this
 plugin extension. Automatic effect-chain transitions and asset-bearing native patches
-remain to do. Performance persistence is implemented in the
+remain to do; [sample research and implementation scope](../sample-players-and-formats.md)
+cover the next asset milestone. Performance persistence is implemented in the
 [versioned folder format](../performance-format.md). The desktop sound picker is implemented; native effect contexts
 and per-sound audio are specified separately in [RFC 0007](0007-effect-contexts.md).
 
@@ -33,8 +34,8 @@ of selected channels, active voices and idleness. These fields are not a transac
 The ABI is in [sound-contexts.h](../../core/clap-ext/include/oscairn-clap/sound-contexts.h).
 CLAP or LV2 support alone does not imply this capability. A plugin without the extension
 reports capacity zero. In-place plugin state restore remains a separate, potentially
-interrupting operation. The future ordinary-plugin path will prepare spare instances and
-route note ownership between them rather than claim in-place restore is seamless.
+interrupting operation. The implemented ordinary-plugin path prepares spare instances and
+routes note ownership between them rather than claiming in-place restore is seamless.
 
 ## Basic Synth
 

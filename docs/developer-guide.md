@@ -18,9 +18,12 @@ without corrupting the current session or overwriting the source files. Version 
 identify contracts; they do not promise support for earlier versions.
 
 This policy does not remove support for external standards such as CLAP, LV2 and MIDI,
-or the planned cross-device portability contract. Long-term compatibility and migration
-proposals describe future product behavior, not an obligation to preserve today's
-experimental formats. A stable-release compatibility policy must be adopted explicitly.
+or the planned cross-device portability contract. **Backward compatibility becomes a
+product requirement with the first public product release.** Before that release, define
+the supported API/format versions, migration and deprecation rules, and regression fixtures
+for released user data. Preserve released work through supported upgrades; do not apply
+today's recreate-the-fixture policy to customers' saved sounds or Performances. This does
+not require preserving experimental pre-release formats now.
 
 ## Choose the boundary
 
