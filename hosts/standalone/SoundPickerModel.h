@@ -9,7 +9,7 @@ namespace oscairn::standalone
     {
         std::string name, preset;
         std::vector<oscairn_sound_parameter_t> parameters;
-        std::string sfz, directory; // patch text and its asset directory
+        std::string sfz{}, directory{}; // patch text and its asset directory
     };
     struct SoundPickerState
     {
