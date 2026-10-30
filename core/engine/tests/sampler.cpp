@@ -4,6 +4,14 @@
 #include "oscairn/session.h"
 #include "oscairn/wav_file.h"
 #include "AllocationGuard.h"
+#if defined(__has_feature)
+#if __has_feature(address_sanitizer) || __has_feature(thread_sanitizer)
+#define SAMPLER_TEST_SANITIZED 1
+#endif
+#endif
+#if defined(__SANITIZE_ADDRESS__) || defined(__SANITIZE_THREAD__)
+#define SAMPLER_TEST_SANITIZED 1
+#endif
 #include "../../plugin-host/src/StateFiles.h"
 #include <array>
 #include <atomic>
@@ -130,6 +138,8 @@ int main(int argc, char** argv) { try {
         for(int i = 0; i < 7; ++i) s.prepare(std::string("<region> sample=") + (i % 2 ? "copy.wav" : "big.wav"), dir);
         rejects(s, "<region> sample=short.wav", dir, "no free sound slot");
         fs::remove(dir / "big.wav"); fs::remove(dir / "copy.wav");
+#if !defined(SAMPLER_TEST_SANITIZED)
+        // Single-threaded and memory-heavy: sanitizers add minutes here and no coverage.
         { // Distinct audio counts against the 256 MiB instance budget: four 60 MiB samples fit, a fifth does not,
           // but reusing audio already loaded costs nothing even when the budget is nearly spent.
             Sampler budget(plugin); std::vector<float> block((60u << 20) / 4, .1f);
@@ -138,15 +148,16 @@ int main(int argc, char** argv) { try {
             budget.prepare("<region> sample=distinct0.wav transpose=12", dir);
             rejects(budget, "<region> sample=distinct4.wav", dir, "memory budget");
         }
-        { // A reopened Performance keeps shared audio shared: five sounds on one 60 MiB sample restore as
-          // one copy, leaving room for two more distinct 60 MiB samples.
+        { // A reopened Performance keeps shared audio shared: three sounds on one 60 MiB sample restore as
+          // one copy, leaving room for two more distinct 60 MiB samples (300 MiB if restored unshared).
             Session original(48000, 512); const auto n = original.add("sampler", plugin); original.connectAudio(n, graphOutput); original.commit();
-            for(int i = 0; i < 5; ++i) original.prepareSound(n, "Shared " + std::to_string(i), {}, {}, {}, "<region> sample=distinct0.wav tune=" + std::to_string(i), dir.string());
+            for(int i = 0; i < 3; ++i) original.prepareSound(n, "Shared " + std::to_string(i), {}, {}, {}, "<region> sample=distinct0.wav tune=" + std::to_string(i), dir.string());
             const auto saved = temp.path / "shared"; original.savePerformance(saved.string());
             Session reopened(48000, 512); reopened.loadPerformance(saved.string()); const auto m = reopened.nodeId("sampler");
             for(int i = 1; i <= 2; ++i) reopened.prepareSound(m, "More", {}, {}, {}, "<region> sample=distinct" + std::to_string(i) + ".wav", dir.string());
-            check(reopened.sounds(m).contexts.size() == 8, "restored sounds share audio and leave budget");
+            check(reopened.sounds(m).contexts.size() == 6, "restored sounds share audio and leave budget");
         }
+#endif
         for(int i = 0; i < 5; ++i) fs::remove(dir / ("distinct" + std::to_string(i) + ".wav"));
         Sampler fresh(plugin), changed(plugin);
         writeWavFile(dir / "edit.wav", wave, 1, 48000); fresh.use("<region> sample=edit.wav", dir);
