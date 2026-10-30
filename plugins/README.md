@@ -10,6 +10,7 @@ for build commands and the contracts for a new plugin.
 | Step Sequencer | [step_sequencer.cpp](step-sequencer/step_sequencer.cpp) | Note-only source, transport timing, editable steps and parameter-lock lanes |
 | Delay | [delay.cpp](delay/delay.cpp) | Independent native effect contexts, parameter/state APIs, tails and tempo glide |
 | Sampler | [sampler.cpp](sampler/sampler.cpp) | One-region SFZ patches over preloaded WAV audio shared between sound contexts, with portable saved assets |
+| Modular | [modular.cpp](modular/src/modular.cpp), [README](modular/README.md) | chillbeast's patchable grid synth (imported engine) wrapped as a CLAP instrument; links JUCE, built with `OSCAIRN_MODULAR` or the desktop |
 | Transpose / MIDI Delay | [midi_effect.cpp](midi-effects/midi_effect.cpp), [behavior](midi-effects/README.md) | Held-note mapping, pressure/sustain, bounded sample-timed event queues and portable state |
 
 There is no arpeggiator in the current tree. Automatic Sound/effect-chain management is

@@ -60,6 +60,8 @@ The renderer writes an offline WAV; it does not open an audio device. Socket tes
 permission to bind local sockets. For live output build the [desktop/helper](../hosts/README.md).
 For LV2 add `-DOSCAIRN_LV2=ON` and install Lilv/LV2 development packages as described in
 the [LV2 guide](../core/lv2-host/README.md). The default build does not require JUCE.
+`-DOSCAIRN_MODULAR=ON` (implied by `OSCAIRN_STANDALONE`) also builds the
+[Modular instrument](../plugins/modular/README.md), which downloads and links JUCE.
 
 ## Make a first CLAP plugin
 

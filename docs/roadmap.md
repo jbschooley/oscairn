@@ -190,9 +190,10 @@ new core, from a UI that talks to it only through the control API.
    [RFC 0011](rfcs/0011-performance-ui-and-editors.md#build-order-and-gates): wire
    ownership, implicit Mix nodes and port-level routes with channel rules, the base for the
    Parts, Routing and Mixer views and Oscairn-drawn plugin editors.
-9. **Modular instrument — engine imported:** chillbeast's engine is in
-   [plugins/modular](../plugins/modular/README.md) with its history; the CLAP wrapper,
-   render tests and the upstream sample-grid fix remain.
+9. **Modular instrument — playable:** chillbeast's engine is in
+   [plugins/modular](../plugins/modular/README.md) with its history, wrapped as a CLAP
+   instrument with factory presets and bundled in the desktop app. The patch editor, the
+   upstream sample-grid fix and native sound contexts remain.
 
 Plugins and apps (sequencers, instruments, the UI) must stay separate components, each in
 its own folder with its own build target and depending only on Oscairn's public headers, so

@@ -25,10 +25,26 @@ cd -   # back to the Oscairn root
 git subtree pull --prefix=plugins/modular/upstream /tmp/modular desktop-build
 ```
 
-## Status
+## Oscairn plugin
 
-Not built yet. The CLAP wrapper is the next step for this component: events split at their
-sample, the eight macros and level as parameters, the patch as state, factory presets. It
-links JUCE (`juce_core`, `juce_audio_basics`, `juce_data_structures`), which the engine
-and patch code use. The engine's 16-sample modulation grid restarts at every `process()`
-call, so output changes with block splits until that is fixed upstream.
+`org.oscairn.modular` ([src/modular.cpp](src/modular.cpp)), built with `-DOSCAIRN_MODULAR=ON`
+or with the desktop app, which bundles it. It links JUCE 9 (`juce_core`,
+`juce_audio_basics`, `juce_data_structures`); [src/prefix.h](src/prefix.h) supplies what
+KICK's build included for the upstream files, and [src/compat.cpp](src/compat.cpp) puts
+user presets under Oscairn's data directory.
+
+- **Notes:** CLAP notes or MIDI, with velocity, pitch bend (±2 semitones), mod wheel,
+  polyphonic and channel pressure, sustain pedal, all-notes-off. Each event reaches the
+  engine at its sample: the block is rendered in pieces between events.
+- **Parameters:** the engine's Macro 1–8 and Level, plus a stepped Preset that loads one of
+  the factory patches on the main thread.
+- **State:** parameter values, the preset index and the patch as XML.
+- **Not yet:** the patch editor (RFC 0011 structured editors), user presets from Oscairn,
+  native sound contexts, and NOTE_END reporting (the engine does not say when a voice ends).
+
+The engine's 16-sample modulation grid restarts at every render call, so output changes
+slightly with block size and event positions until that is fixed upstream.
+
+`modular` test: notes make sound; the same input renders the same output; a second preset
+sounds different; saved state restores the same, non-default patch; rendering never
+allocates. `worker-host` was also run on it by hand: identical in a worker process.

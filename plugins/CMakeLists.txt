@@ -26,3 +26,8 @@ find_package(PkgConfig REQUIRED)
 pkg_check_modules(SNDFILE REQUIRED IMPORTED_TARGET sndfile)
 oscairn_add_plugin(oscairn_sampler oscairn-sampler sampler/sampler.cpp)
 target_link_libraries(oscairn_sampler PRIVATE PkgConfig::SNDFILE)
+
+# Modular instrument (plugins/modular): downloads JUCE.
+if(OSCAIRN_MODULAR OR OSCAIRN_STANDALONE)
+    add_subdirectory(modular)
+endif()
