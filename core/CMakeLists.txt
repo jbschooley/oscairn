@@ -190,3 +190,11 @@ target_link_libraries(oscairn-effect-contexts-test PRIVATE oscairn_control_json)
 target_include_directories(oscairn-effect-contexts-test PRIVATE clap-host/tests)
 add_test(NAME effect-contexts COMMAND oscairn-effect-contexts-test $<TARGET_FILE:oscairn_delay> $<TARGET_FILE:oscairn_basic_synth>)
 set_tests_properties(effect-contexts PROPERTIES TIMEOUT 60)
+
+# RFC 0010 step 1: plugin worker hand-off measurements (tools/worker-bench).
+if(UNIX)
+    add_executable(oscairn-handoff-bench ../tools/worker-bench/handoff_bench.cpp)
+    target_link_libraries(oscairn-handoff-bench PRIVATE kick_clap_host)
+    add_test(NAME handoff-bench COMMAND oscairn-handoff-bench --check)
+    add_test(NAME handoff-bench-plugin COMMAND oscairn-handoff-bench --check --plugin $<TARGET_FILE:oscairn_basic_synth> --id org.oscairn.basic-synth)
+endif()
