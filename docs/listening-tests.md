@@ -57,7 +57,9 @@ behind it, not the JUCE menu, file chooser or button state.
   transposed, and a released note fades out quickly (default `ampeg_release` 1 ms).
   *October 30: plays (Jacob). Found: the picker stays on the previous sound after an
   import, so **Use sound** looked available but applied nothing until the new sound was
-  chosen; and the 1 ms default release ticks audibly between notes.*
+  chosen; and the 1 ms default release ticks audibly between notes. Both fixed the same
+  day (imports become the shown sound; WAV imports get `ampeg_release=0.03`); Jacob
+  confirmed the fixes by ear.*
 - [x] Import an `.sfz` beside a WAV containing `<region> sample=NAME.wav ampeg_release=0.5`.
   Hold a note on the first sound, switch to the second, play: the held note keeps its
   sound and both overlap; the new release takes half a second. **Jacob: worked, October 30,
