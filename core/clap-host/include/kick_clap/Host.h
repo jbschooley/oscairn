@@ -78,6 +78,7 @@ public:
     // to the caller in outputEvents() and never delivers them to a plugin.
     static constexpr uint16_t paramTargetSpace = 1000;
     static constexpr uint32_t maxStateBytes = 64 * 1024 * 1024;
+    static constexpr size_t maxPatchBytes = 1024 * 1024;
     Host();
     ~Host();
     Host(const Host&) = delete;
@@ -98,7 +99,7 @@ public:
     bool supportsSoundSnapshot() const noexcept;
     uint32_t soundContextCapacity() const noexcept;
     std::vector<oscairn_sound_context_info_t> soundContexts() const;
-    uint32_t prepareSound(const std::string& name,const std::vector<oscairn_sound_parameter_t>& parameters);
+    uint32_t prepareSound(const std::string& name,const std::vector<oscairn_sound_parameter_t>& parameters,const std::string& patch={},const std::string& directory={});
     bool selectSound(uint32_t id,int16_t channel=-1);
     bool discardSound(uint32_t id);
     bool loaded() const noexcept;

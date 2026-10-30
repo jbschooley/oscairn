@@ -949,17 +949,21 @@ std::vector<oscairn_sound_context_info_t> Host::soundContexts() const {
     for(uint32_t i=0;i<soundContextCapacity();++i){oscairn_sound_context_info_t info{};if(impl->sounds->get(impl->plugin,i,&info)){info.name[63]=0;result.push_back(info);}}
     return result;
 }
-uint32_t Host::prepareSound(const std::string& name,const std::vector<oscairn_sound_parameter_t>& parameters) {
+uint32_t Host::prepareSound(const std::string& name,const std::vector<oscairn_sound_parameter_t>& parameters,const std::string& patch,const std::string& directory) {
     if(!impl->sounds)throw std::invalid_argument("Plugin has no native sound contexts");
-    if(name.size()>63 || name.find('\0')!=std::string::npos || parameters.size()>128)throw std::invalid_argument("Invalid sound patch");
+    if(name.size()>63 || name.find('\0')!=std::string::npos || parameters.size()>128 || patch.size()>maxPatchBytes ||
+       patch.find('\0')!=std::string::npos || directory.find('\0')!=std::string::npos || patch.empty()!=directory.empty())throw std::invalid_argument("Invalid sound patch");
     for(size_t i=0;i<parameters.size();++i){const auto& v=parameters[i];
         const auto p=std::find_if(impl->paramInfo.begin(),impl->paramInfo.end(),[&](const auto& p){return p.id==v.id;});
         if(p==impl->paramInfo.end() || (p->flags&CLAP_PARAM_IS_READONLY) || !std::isfinite(v.value) || v.value<p->minimum || v.value>p->maximum)
             throw std::invalid_argument("Invalid sound parameter");
         for(size_t j=0;j<i;++j)if(parameters[j].id==v.id)throw std::invalid_argument("Duplicate sound parameter");
     }
-    const auto id=impl->sounds->prepare(impl->plugin,name.c_str(),parameters.data(),static_cast<uint32_t>(parameters.size()));
-    if(id==CLAP_INVALID_ID)throw std::runtime_error("Sound preparation rejected: invalid patch or context capacity exhausted");
+    char message[512]{};
+    const auto id=impl->sounds->prepare(impl->plugin,name.c_str(),parameters.data(),static_cast<uint32_t>(parameters.size()),
+        patch.empty()?nullptr:patch.c_str(),directory.empty()?nullptr:directory.c_str(),message,sizeof(message));
+    message[sizeof(message)-1]=0;
+    if(id==CLAP_INVALID_ID)throw std::runtime_error(message[0]?std::string("Sound preparation rejected: ")+message:"Sound preparation rejected: invalid patch or context capacity exhausted");
     return id;
 }
 bool Host::selectSound(uint32_t id,int16_t channel) {

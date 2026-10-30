@@ -221,10 +221,11 @@ namespace oscairn
             }
             if(method=="sounds.prepare")
             {
-                fields(p,{"node","name","parameters","state","preset"});const auto n=node(c,member(p,"node"));
+                fields(p,{"node","name","parameters","state","preset","sfz","directory"});const auto n=node(c,member(p,"node"));
                 std::vector<oscairn_sound_parameter_t> patch;
+                auto optional=[&](const char* name){return member(p,name)?std::string(string(member(p,name))):std::string();};
                 if(member(p,"parameters"))for(auto v:array(member(p,"parameters"),128,0)){fields(v,{"id","value"});patch.push_back({integer(member(v,"id")),number(member(v,"value"))});}
-                try{return "{\"context\":"+std::to_string(c.prepareSound(n,std::string(string(member(p,"name"))),patch,member(p,"state")?std::string(string(member(p,"state"))):"",member(p,"preset")?std::string(string(member(p,"preset"))):""))+'}';}
+                try{return "{\"context\":"+std::to_string(c.prepareSound(n,std::string(string(member(p,"name"))),patch,optional("state"),optional("preset"),optional("sfz"),optional("directory")))+'}';}
                 catch(const std::runtime_error& e){throw Failure{-32005,e.what()};}
             }
             if(method=="sounds.select" || method=="sounds.discard")

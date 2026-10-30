@@ -46,7 +46,8 @@ namespace oscairn
         virtual const char* soundContextMode() const noexcept { return soundContextCapacity()?"native":"unsupported"; }
         virtual uint32_t soundContextCapacity() const noexcept { return 0; }
         virtual std::vector<oscairn_sound_context_info_t> soundContexts() const { return {}; }
-        virtual uint32_t prepareSound(const std::string& /*name*/,const std::vector<oscairn_sound_parameter_t>& /*parameters*/,const std::string& /*state*/ = {},const std::string& /*preset*/ = {}) { throw std::invalid_argument("Plugin has no sound contexts"); }
+        // sfz/directory: patch text and asset directory for native engines that define one.
+        virtual uint32_t prepareSound(const std::string& /*name*/,const std::vector<oscairn_sound_parameter_t>& /*parameters*/,const std::string& /*state*/ = {},const std::string& /*preset*/ = {},const std::string& /*sfz*/ = {},const std::string& /*directory*/ = {}) { throw std::invalid_argument("Plugin has no sound contexts"); }
         virtual bool selectSound(uint32_t,int16_t=-1) { throw std::invalid_argument("Plugin has no sound contexts"); }
         virtual bool discardSound(uint32_t,bool=false) { throw std::invalid_argument("Plugin has no sound contexts"); }
         virtual bool supportsState() const noexcept { return false; }

@@ -39,7 +39,7 @@ namespace oscairn
         bool requestProperty(NodeId node,const std::string& uri) override {return graph_.host(node).requestProperty(uri);}
         std::optional<PropertyValue> propertyValue(NodeId node,const std::string& uri) const override {return graph_.host(node).propertyValue(uri);}
         Sounds sounds(NodeId node) const override;
-        uint32_t prepareSound(NodeId node,const std::string& name,const std::vector<oscairn_sound_parameter_t>& p,const std::string& state={},const std::string& preset={}) override {return graph_.host(node).prepareSound(name,p,state,preset);}
+        uint32_t prepareSound(NodeId node,const std::string& name,const std::vector<oscairn_sound_parameter_t>& p,const std::string& state={},const std::string& preset={},const std::string& sfz={},const std::string& directory={}) override {return graph_.host(node).prepareSound(name,p,state,preset,sfz,directory);}
         bool selectSound(NodeId node,uint32_t id,int16_t channel=-1) override {return graph_.host(node).selectSound(id,channel);}
         bool discardSound(NodeId node,uint32_t id,bool cutTail=false) override {return graph_.host(node).discardSound(id,cutTail);}
         GraphState graphState() const override;

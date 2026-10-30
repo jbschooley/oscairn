@@ -137,7 +137,8 @@ public:
         }
         return result;
     }
-    uint32_t prepareSound(const std::string& name,const std::vector<oscairn_sound_parameter_t>& patch,const std::string& state,const std::string& preset) override {
+    uint32_t prepareSound(const std::string& name,const std::vector<oscairn_sound_parameter_t>& patch,const std::string& state,const std::string& preset,const std::string& sfz,const std::string& directory) override {
+        if(!sfz.empty() || !directory.empty())throw std::invalid_argument("Hosted instruments do not accept SFZ patches");
         if(name.empty() || name.size()>63 || name.find('\0')!=std::string::npos || patch.size()>128 ||
            (!state.empty() && !preset.empty()))throw std::invalid_argument("Invalid prepared sound name, patch, or state/preset combination");
         size_t slot=0;while(slot<capacity && desired_.instances[slot])++slot;
@@ -210,9 +211,9 @@ public:
     bool parameterGesture(clap_id id,bool begin) noexcept override {return selectedCall([&](auto& h){return h.parameterGesture(id,begin);});}
     bool supportsState() const noexcept override {return selected().supportsState();}
     void saveState(const std::string& path) override {selected().saveState(path);}
-    void loadState(const std::string& path) override {selectSound(prepareSound("Restored",{},path,{}),-1);}
+    void loadState(const std::string& path) override {selectSound(prepareSound("Restored",{},path,{},{},{}),-1);}
     std::vector<PresetInfo> presets() override {return selected().presets();}
-    void loadPreset(const std::string& uri) override {selectSound(prepareSound("Preset",{},{},uri),-1);}
+    void loadPreset(const std::string& uri) override {selectSound(prepareSound("Preset",{},{},uri,{},{}),-1);}
     std::vector<PropertyInfo> properties() const override {return selected().properties();}
     bool setProperty(const std::string& uri,const PropertyValue& value) override {return selected().setProperty(uri,value);}
     bool requestProperty(const std::string& uri) override {return selected().requestProperty(uri);}

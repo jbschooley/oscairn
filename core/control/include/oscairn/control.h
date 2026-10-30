@@ -81,7 +81,7 @@ namespace oscairn
         struct SoundInfo { uint32_t id;std::string name;uint32_t selectedChannels,activeVoices;bool idle; };
         struct Sounds { uint32_t capacity;std::vector<SoundInfo> contexts;std::string mode; };
         virtual Sounds sounds(NodeId node) const = 0;
-        virtual uint32_t prepareSound(NodeId node,const std::string& name,const std::vector<oscairn_sound_parameter_t>& parameters,const std::string& state={},const std::string& preset={}) = 0;
+        virtual uint32_t prepareSound(NodeId node,const std::string& name,const std::vector<oscairn_sound_parameter_t>& parameters,const std::string& state={},const std::string& preset={},const std::string& sfz={},const std::string& directory={}) = 0;
         virtual bool selectSound(NodeId node,uint32_t id,int16_t channel=-1) = 0;
         virtual bool discardSound(NodeId node,uint32_t id,bool cutTail=false) = 0;
 
