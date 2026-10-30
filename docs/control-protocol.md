@@ -366,7 +366,7 @@ These operations never restore state into the outgoing playing instance.
 | Method | Parameters | Result |
 | --- | --- | --- |
 | `sounds.get` | `node` | `mode`, `capacity`, `contexts` |
-| `sounds.prepare` | `node`, `name`, optional `parameters: [{id, value}, ...]`, `state`, `preset` | `context` ID |
+| `sounds.prepare` | `node`, `name`, optional `parameters: [{id, value}, ...]`, `state`, `preset`, `sfz`, `directory` | `context` ID |
 | `sounds.select` | `node`, `context`, optional `channel` (-1 for all, or 0..15) | `accepted: true` |
 | `sounds.discard` | `node`, `context`, optional `cutTail` (default false) | `accepted: true` |
 
@@ -376,7 +376,13 @@ boundary before that block's notes. Held notes and per-note expression retain th
 sustain follows the channel across switches. `accepted` means queued, not applied: poll
 `sounds.get` for selection masks. There is no context notification topic yet.
 
-A patch starts from plugin defaults plus up to 128 numeric parameters. Omitted/empty
+`sfz` and `directory` go together and only to native engines that define patch text: the
+Oscairn Sampler takes an SFZ patch whose `sample=` paths are relative to the absolute
+`directory`. The engine reads those files on its control thread; a rejected patch returns
+`-32005` with the plugin's diagnostic, such as `line 2: unsupported opcode pan`. The whole
+request must fit the 64 KiB message limit.
+
+A parameter patch starts from plugin defaults plus up to 128 numeric parameters. Omitted/empty
 parameters select defaults. Names have at most 63 UTF-8 bytes (hosted names must be nonempty).
 Unknown, duplicate, nonfinite, out-of-range or read-only parameters reject preparation.
 For `instances`, `state` is an existing state-bundle directory on the **engine's** filesystem;

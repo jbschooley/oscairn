@@ -31,7 +31,7 @@ jobs:
 
       - name: Install Ninja (macOS)
         if: runner.os == 'macOS'
-        run: brew install ninja lilv lv2
+        run: brew install ninja lilv lv2 libsndfile
 
       - name: Configure
         run: >

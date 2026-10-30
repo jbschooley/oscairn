@@ -17,6 +17,13 @@ authoritative.
   distributed in any binary/image. The independent eg-amp and eg-fifths test
   plugins are upstream LV2 examples, installed separately.
 
+## Sample decoding
+
+- **libsndfile:** Erik de Castro Lopo and the libsndfile contributors
+  ([project](https://libsndfile.github.io/libsndfile/), LGPL-2.1-or-later). The Oscairn
+  Sampler links it dynamically to decode WAV samples; it is an external build dependency,
+  not vendored source. Retain its notices in any distributed binary/image.
+
 ## LV2 host reference work
 
 The [LV2 audit](core/lv2-host/AUDIT.md) records pinned revisions, source files and

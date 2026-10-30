@@ -20,3 +20,9 @@ oscairn_add_plugin(oscairn_delay oscairn-delay delay/delay.cpp)
 oscairn_add_plugin(oscairn_transpose oscairn-transpose midi-effects/midi_effect.cpp)
 oscairn_add_plugin(oscairn_midi_delay oscairn-midi-delay midi-effects/midi_effect.cpp)
 target_compile_definitions(oscairn_midi_delay PRIVATE OSCAIRN_MIDI_DELAY=1)
+
+# The sampler decodes WAV assets with libsndfile (LGPL-2.1-or-later), a production dependency.
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(SNDFILE REQUIRED IMPORTED_TARGET sndfile)
+oscairn_add_plugin(oscairn_sampler oscairn-sampler sampler/sampler.cpp)
+target_link_libraries(oscairn_sampler PRIVATE PkgConfig::SNDFILE)

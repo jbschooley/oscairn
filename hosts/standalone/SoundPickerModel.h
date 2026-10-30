@@ -9,11 +9,13 @@ namespace oscairn::standalone
     {
         std::string name, preset;
         std::vector<oscairn_sound_parameter_t> parameters;
+        std::string sfz, directory; // patch text and its asset directory
     };
     struct SoundPickerState
     {
         NodeId node = 0;
         std::string pluginId, instrument;
+        bool importsSamples = false; // the instrument prepares SFZ/WAV files
         Control::Sounds sounds{};
         std::vector<SoundChoice> choices;
         std::array<bool,2> canToggleBrightnessLocks{}, brightnessLocks{};
@@ -29,7 +31,10 @@ namespace oscairn::standalone
         bool enableLocks = false;
         SoundChoice choice;
         std::string replacementPath,replacementId,directory;
+        std::string importPath; // Prepare from this .sfz or .wav instead of choice
     };
     SoundPickerState readSoundPicker(Control&);
+    // A .sfz file as written, or a one-region SFZ patch for a .wav file; throws if unreadable.
+    SoundChoice importSound(const std::string& path);
     void applySoundAction(Control&, const SoundAction&);
 }

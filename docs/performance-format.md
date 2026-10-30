@@ -35,8 +35,9 @@ My Performance/
 LV2 state directories contain `state.ttl` and materialized assets. CLAP state is preserved
 as supplied by the plugin; the host cannot discover external sample paths hidden inside
 an arbitrary CLAP state blob. A plugin whose state is not self-contained may still require
-its original sample library. Native asset-bearing patches and package-managed dependency
-resolution remain planned in [RFC 0006](rfcs/0006-packages-and-portability.md).
+its original sample library. The Oscairn Sampler's samples are dependencies in the same
+way: its snapshot records each sample's location and content hash, not its audio.
+Package-managed dependency resolution remains planned in [RFC 0006](rfcs/0006-packages-and-portability.md).
 
 Required top-level fields:
 
@@ -70,6 +71,9 @@ inventing a second save format.
 - Native Basic Synth stores every prepared patch, name and all 16 channel selections,
   including accepted selections still queued at save time. Voices, pedal state and pitch
   modulation in progress are excluded. IDs are reconstructed, not persisted.
+- The Sampler stores every prepared SFZ patch (normalized), its sample directory and the
+  sample's content hash. Loading fails, preserving the live graph, if a sample is missing
+  or its content changed. Moving the Performance folder does not move the samples.
 - Hosted instrument pools snapshot every prepared instance and the selected slot per
   channel. Restoring a pool checks every instance against the plugin's layout/parameters.
 - Plugins with state support use their full state interface. LV2 asset links produced by

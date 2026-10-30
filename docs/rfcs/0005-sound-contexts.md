@@ -3,7 +3,7 @@
 Status: first instrument implementation. The Basic Synth and its typed/JSON/remote
 controls implement this contract. Ordinary CLAP/LV2 instruments also have a host-owned instance pool, documented in the
 [control protocol](../control-protocol.md#prepared-sounds); it does not implement this
-plugin extension. Automatic effect-chain transitions and asset-bearing native patches
+plugin extension. The Sampler prepares SFZ patches through draft 3. Automatic effect-chain transitions
 remain to do; [sample research and implementation scope](../sample-players-and-formats.md)
 cover the next asset milestone. Performance persistence is implemented in the
 [versioned folder format](../performance-format.md). The desktop sound picker is implemented; native effect contexts
@@ -11,7 +11,7 @@ and per-sound audio are specified separately in [RFC 0007](0007-effect-contexts.
 
 ## Contract
 
-`oscairn.sound-contexts/draft-2` separates preparation from selecting the sound for new
+`oscairn.sound-contexts/draft-3` separates preparation from selecting the sound for new
 notes. Preparation belongs to the single control thread and must be safe concurrently
 with rendering. It does not reset, gate or reconfigure the playing plugin. Selection
 uses a bounded queue and takes effect at the next plugin processing boundary, before
@@ -21,7 +21,9 @@ This first version does not schedule a selection at a future absolute sample.
 Each prepared context has an instance-local ID, name, independent patch values and DSP
 state. IDs are never reused within that plugin instance, even after a slot is reclaimed.
 Preparing from numeric values starts with the plugin's defaults and applies the supplied
-values; it is not a snapshot of whatever happens to be playing. Unknown/duplicate
+values; it is not a snapshot of whatever happens to be playing. Draft 3 adds an optional
+patch text and asset directory for engines that define one (the Sampler takes SFZ), and a
+message buffer the plugin fills with a diagnostic when it rejects a patch. Unknown/duplicate
 parameters and invalid values reject the complete preparation.
 
 A context is pinned by selected channels, queued selections, active voices and any
@@ -37,7 +39,12 @@ reports capacity zero. In-place plugin state restore remains a separate, potenti
 interrupting operation. The implemented ordinary-plugin path prepares spare instances and
 routes note ownership between them rather than claiming in-place restore is seamless.
 
-## Basic Synth
+## Basic Synth and Sampler
+
+Both instruments use one shared implementation of this contract,
+[SoundContexts.h](../../plugins/common/SoundContexts.h); the rules below apply to both,
+except parameters, which the Sampler does not have. A Sampler note outside its region's
+key or velocity range starts no voice and reports `NOTE_END` immediately.
 
 The Basic Synth has eight context slots including a protected Default context (ID 0),
 a shared pool of 16 voices, and a 32-entry selection queue. Context capacity is fixed

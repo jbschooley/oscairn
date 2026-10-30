@@ -1,9 +1,11 @@
 # Sample players, formats and the first native sample milestone
 
-Research and implementation plan, 2026-10-29. **Native sample patches are not implemented
-yet.** This records the prior-art pass and a headless reuse experiment before changing
+Research and implementation plan, 2026-10-29. The first native slice below is implemented;
+see [RFC 0008 step 2 status](rfcs/0008-sfz-native-samples-and-conversion.md#step-2-status). This records the prior-art pass and a headless reuse experiment before changing
 Oscairn's plugin contract. It is not a claim of full format compatibility or a production
-engine selection. [ESP observations](yamaha-esp-samples-research.md) are separate.
+engine selection. [RFC 0008](rfcs/0008-sfz-native-samples-and-conversion.md) owns the
+SFZ-based native format and conversion plan. [ESP observations](yamaha-esp-samples-research.md)
+are separate.
 
 ## Players worth reusing or learning from
 
@@ -76,6 +78,18 @@ NOTE_END, tail completion and event overflow need explicit solutions and tests b
 calling a wrapper a native Oscairn engine. A filename cache also requires stable immutable
 asset paths; rewriting a file in place must not silently reuse old decoded content.
 
+### Integration gaps verified in source
+
+Checked at liquidsfz `4cc901d18b316cd377276f7eb6b8c325329b9860` for the
+[RFC 0008 engine decision](rfcs/0008-sfz-native-samples-and-conversion.md#engine-decision-native-voice-engine-reused-sfz-parts):
+
+- `lib/liquidsfz.hh`: the event API is `add_event_note_on/off(time, channel, key[, velocity])`,
+  `add_event_cc` and `add_event_pitch_bend`; telemetry is aggregate `active_voice_count()`.
+  `load()` takes a filename only.
+- `lib/synth.hh` `note_off()`: releases every active attack voice matching channel and key.
+- `lib/samplecache.cc`: a `std::thread` background loader per process-wide cache.
+- `lib/` is about 10,000 lines of liquidsfz plus 14,400 of vendored pugixml (Hydrogen import).
+
 FluidSynth's [dynamic sample-loading setting](https://www.fluidsynth.org/api/settings_synth.html)
 can allocate during preset changes and is documented as unsuitable for real-time use.
 Preparation must happen before a performance-time selection, regardless of player choice.
@@ -98,8 +112,9 @@ Yamaha factory samples or infer redistribution permission from an installed libr
 
 ## First native sample slice
 
-The next implementation is a **bounded, preloaded WAV patch** using the existing native
-context lifecycle, before a full multisample editor or streaming engine. Reuse libsndfile
+After selecting the minimal SFZ profile and engine approach in RFC 0008, the next slice
+is a **bounded, preloaded WAV patch described by that SFZ profile**, using the existing
+native context lifecycle, before a full multisample editor or streaming engine. Reuse libsndfile
 for decoding: it is installed here and already used by upstream LV2 integration tests.
 It must become an explicit production dependency in desktop CI and Buildroot if selected
 for the implementation; a test-only dependency is not sufficient. [dr_wav](https://github.com/mackron/dr_libs)
@@ -117,29 +132,92 @@ The complete slice must cover:
 3. **Play:** pitched mono/stereo playback, defined sample-end and note-release behavior,
    independent channel sounds and held-note overlap. Reuse current sustain, pressure,
    note-ID, routing and event-timing contracts. Document interpolation quality/limits.
-4. **Persist:** owned asset files plus relative references in the Performance snapshot;
-   deduplicate repeated references within the engine's saved state. Delete the original
-   WAV, move the Performance and prove identical playback after reopening. Missing,
-   malformed or escaping asset paths must fail before replacing the live graph.
+4. **Persist:** samples are dependencies of the Performance, referenced with their
+   content identity rather than copied ([RFC 0008](rfcs/0008-sfz-native-samples-and-conversion.md#runtime-resources-and-persistence)).
+   A moved Performance reopens identically; missing, changed, malformed or escaping
+   samples fail before replacing the live graph.
 5. **Expose:** import/prepare/select through the engine/control API and the shared themed
    sound picker; display preparation failures. The desktop UI must not become the only
    place that knows how to prepare sample state.
 
-This reaches `plugins/basic-synth`, the native context extension, `core/clap-host`,
+This reaches the selected native instrument, the native context extension, `core/clap-host`,
 `core/plugin-host`, typed/JSON/remote controls, snapshot handling, the desktop sound
 picker, schemas/docs, fixtures, dependency configuration and headless/concurrent tests.
-Reuse the Basic Synth's proven context ownership rather than duplicating it in a new
-plugin. Keep single-patch preparation separate from exclusive full-engine restoration.
-The current numeric-only preparation ABI needs an explicit asset-bearing input; it cannot
-be implemented by treating a filename as a numeric parameter. Assess CLAP's vendored
-resource-directory draft for collection/restoration before inventing a parallel asset API.
+Reuse the Basic Synth's proven context ownership without creating competing lifetime
+implementations. RFC 0008's engine evaluation determines DSP placement. Keep single-patch
+preparation separate from exclusive full-engine restoration.
+The preparation ABI (draft 3) carries patch text and an asset directory explicitly.
 
 Acceptance requires zero audio-thread loading/allocation, held-note and two-part reference
 renders, stereo separation, exact sample timing, malformed/truncated/oversized inputs,
-budget/capacity rejection, safe retirement under concurrency and portable save/reopen.
+budget/capacity rejection, safe retirement under concurrency and save/reopen with sample dependencies.
 Audible acceptance is queued only after these pass and Jacob is available.
 
-Then evaluate SFZ via liquidsfz and SoundFont via FluidSynth against those same contracts.
-Do not build a new full SFZ/SF2 parser or adopt a library solely from a feature list.
-Streaming, multisample/velocity mapping, loops, slicing, resampling and package-wide asset
+Use these contracts for the initial SFZ engine evaluation, including liquidsfz; evaluate
+SoundFont via FluidSynth separately when that format is needed. Do not build a new full
+SFZ/SF2 parser or adopt a library solely from a feature list.
+Streaming, multisample/velocity mapping, loops, slicing and package-wide asset
 deduplication are later increments; none is promised by this first slice.
+
+## Richer open formats and Yamaha conversion (planned)
+
+Jacob's requirement: eventually migrate his MODX M sounds and Performances into Oscairn,
+and provide conversion between Oscairn, SFZ and supported Yamaha files, with explicit
+warnings for lost or approximated behavior. This is a future tool, not current support.
+
+SFZ already describes many AWM2-like behaviors: release/legato triggers, sequential or
+random alternates, key switches, controller conditions, crossfades and modulation. Its
+documented dialects and different player subsets require named compatibility profiles;
+an arbitrary `.sfz` file is not a promise of identical playback everywhere. The proposed
+approach in [RFC 0008](rfcs/0008-sfz-native-samples-and-conversion.md) is to build the native
+sampler patch description on SFZ, with documented extensions only for demonstrated gaps.
+Keep Oscairn's public Performance container and other engines' state contracts for complete
+sounds, routing, controllers and other synthesis types. Do not introduce a parallel sampler
+format or force every engine into a sampler-shaped state model.
+
+Other candidates do not eliminate that distinction:
+
+- [Bitwig/PreSonus `.multisample`](https://github.com/bitwig/multisample) is explicitly open,
+  but intentionally covers basic sample mapping and excludes complex articulations,
+  filters, envelopes and effects. Useful interchange, not a full workstation preset.
+- [DecentSampler's documented format](https://decentsampler-developers-guide.readthedocs.io/en/latest/index.html)
+  includes effects, modulators, buses and UI descriptions. It is a richer vendor format,
+  not evidence of an independently standardized implementation across engines.
+- AWM2 names Yamaha's synthesis system, not a neutral file specification or an available
+  open-source DSP library. Independent compatible behavior and Yamaha file adapters are
+  separate work from adopting Yamaha implementation code. Preserve the no-Yamaha-code
+  requirement from the ESP research.
+
+### Existing converter work to evaluate first
+
+- Jürgen Moßgraber's [ConvertWithMoss](https://github.com/git-moss/ConvertWithMoss)
+  (LGPL-3.0) is a reuse candidate for SFZ/multisample conversion. Its
+  [September 2026 manual](https://www.mossgrabers.de/Software/ConvertWithMoss/ConvertWithMoss-Installers-Manual/ConvertWithMoss-Manual.pdf)
+  documents Yamaha support, but MONTAGE M Y2U/Y2L reading is waveform-only; Performance
+  reading/writing targets the older MONTAGE/MODX families. Compressed Yamaha samples and
+  cross-library sample references are listed limitations. Do not infer MODX M Performance
+  conversion from an older MODX checkbox.
+- Johan Adolfsson and contributors' [YSFC Forge](https://github.com/YSFCforge/ysfc-forge)
+  specifically targets MODX M/ESP Y2U/Y2L and publishes parameter mappings. Its reported
+  binary-verification coverage is upstream evidence, not independently verified here.
+  Documented gaps include Smart Morph, incomplete Scene mappings and omitted Live Sets/
+  Patterns in Library Builder. Review its [file-specific notices](https://github.com/YSFCforge/ysfc-forge/blob/main/NOTICE.md)
+  before reuse; the repository includes both MIT project material and third-party notices.
+- Chris Webb's [arachsys/montage](https://github.com/arachsys/montage) provides older
+  X7/X8 file-analysis work. John Melas' [editors](https://www.jmelas.gr/montagem/) are
+  behavioral/interoperability references, not open-source dependencies.
+
+These projects were reviewed at documentation level in this follow-up; no parser was
+adopted or run against Jacob's files. Pin revisions, audit the needed reader/writer paths
+and credit authors before incorporating code. Yamaha documents the shared MONTAGE M/
+MODX M `.Y2U`, `.Y2L`, `.Y2A` family in its
+[compatibility guide](https://fr.yamaha.com/fr/musical-instruments/keyboards/explore/montage-portal/essentials/compatibility.html).
+
+### Conversion workflow and fidelity
+
+The canonical [conversion contract](rfcs/0008-sfz-native-samples-and-conversion.md#conversion-and-modx-m-migration)
+and [build order](rfcs/0008-sfz-native-samples-and-conversion.md#build-order-and-completion-gates)
+are in RFC 0008. Start with a read-only MODX M inventory, preserve source data, report
+mapped/approximated/rendered/unavailable items, and validate each supported destination.
+Full-library accounting and identical sound reproduction are separate goals. No conversion
+implementation is supplied by this research note.

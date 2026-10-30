@@ -9,11 +9,34 @@ for build commands and the contracts for a new plugin.
 | Basic Synth | [basic_synth.cpp](basic-synth/basic_synth.cpp) | Polyphonic instrument, sample-timed parameters/expression, native sound contexts, channel parts and per-voice output buses |
 | Step Sequencer | [step_sequencer.cpp](step-sequencer/step_sequencer.cpp) | Note-only source, transport timing, editable steps and parameter-lock lanes |
 | Delay | [delay.cpp](delay/delay.cpp) | Independent native effect contexts, parameter/state APIs, tails and tempo glide |
+| Sampler | [sampler.cpp](sampler/sampler.cpp) | One-region SFZ patches over preloaded WAV audio shared between sound contexts, with portable saved assets |
 | Transpose / MIDI Delay | [midi_effect.cpp](midi-effects/midi_effect.cpp), [behavior](midi-effects/README.md) | Held-note mapping, pressure/sustain, bounded sample-timed event queues and portable state |
 
 There is no arpeggiator in the current tree. Automatic Sound/effect-chain management is
 not implemented; explicit routing supports independent chains and preserved tails. These small plugins are executable references, not a complete production
 synth/preset library. Keep stable IDs and license notices when adapting their source.
+
+Basic Synth and Sampler share one implementation of native context ownership, voice
+release rules and snapshots: [SoundContexts.h](common/SoundContexts.h).
+
+## Sampler sounds
+
+The Sampler has no parameters: each prepared sound is an SFZ patch in the
+`oscairn-sfz-baseline-0` profile of [RFC 0008](../docs/rfcs/0008-sfz-native-samples-and-conversion.md#baseline-profile-oscairn-sfz-baseline-0)
+(one `<region>`; `sample`, key/velocity ranges, `pitch_keycenter`, `pitch_keytrack`,
+`transpose`, `tune`, `volume`, `ampeg_release`). Anything else is rejected with its line
+number. Samples are 16/24/32-bit PCM or 32-bit float WAV, mono or stereo, 8–192 kHz, at
+most 64 MiB decoded each and 256 MiB per instance. Contexts with identical audio share one
+decoded copy, identified by content rather than file name.
+
+Playback uses linear interpolation; the sample end finishes the voice (`no_loop`);
+release fades linearly to silence over `ampeg_release`. Velocity gain is squared (the
+SFZ `amp_veltrack=100` default). Mono samples play on both outputs. Pressure is tracked
+per voice but not mapped to sound. The single stereo output is unsaturated.
+
+Saving uses `clap.resource-directory`: each distinct sample is written once as a float WAV
+named by its content hash, and the `oscairn-sampler-1` snapshot stores a normalized SFZ per
+sound that refers to it.
 
 ## Basic Synth sounds
 

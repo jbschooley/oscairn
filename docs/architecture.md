@@ -20,7 +20,7 @@ Backward compatibility is required from the first public product release onward.
 | Transport: internal tempo or external MIDI clock | Ableton Link, DAW and CV clock sync |
 | Parameter events between plugins (`oscairn.param-target`, [RFC 0002](rfcs/0002-param-target.md)); [versioned Performance save/reopen](performance-format.md), including prepared contexts/pools and collected state assets | Setlists, standalone Sound/library management, dependency acquisition and automatic session recovery |
 | Two-track A/B step sequencer, Basic Synth and Delay plugins | Swing, further tracks/lanes, scenes and crash recovery |
-| Basic Synth prepared sound contexts, channel parts and held-note ownership; typed/JSON/remote controls ([RFC 0005](rfcs/0005-sound-contexts.md)); prepared-instance pools for ordinary CLAP/LV2 instruments; desktop picker; native Delay contexts and per-sound buses ([RFC 0007](rfcs/0007-effect-contexts.md)) | Automatic effect-chain transitions, asset-bearing native patches and general graph-editing UI |
+| Basic Synth and one-region SFZ Sampler prepared sound contexts, channel parts and held-note ownership; typed/JSON/remote controls ([RFC 0005](rfcs/0005-sound-contexts.md)); prepared-instance pools for ordinary CLAP/LV2 instruments; desktop picker; native Delay contexts and per-sound buses ([RFC 0007](rfcs/0007-effect-contexts.md)) | Automatic effect-chain transitions, multisample/streaming sampler patches and general graph-editing UI |
 | Isolated CLAP/LV2 browser, generic parameter/preset editor and atomic slot replacement; installable shared themes | Custom plugin pages, arbitrary graph editor and managed package installation |
 | Offline renderer; desktop app with live audio, MIDI input and panel layouts | Hardware-services interface; the platform as a DAW plugin |
 | A Linux image (Buildroot) that boots into Oscairn, tested in QEMU | Images for real hardware |
@@ -301,6 +301,10 @@ layers and transitions, not six independently initialised organs.
   ordinary-plugin pools. Automatic chain preparation/retirement and asset-bearing native
   patches remain to do; the [sample research and first implementation scope](sample-players-and-formats.md)
   describe the next slice. Setlist/library persistence remains planned.
+- The planned native sampler uses an SFZ baseline with documented extensions for proven
+  gaps; complete Performances keep their existing container and other engines retain
+  their state contracts. [RFC 0008](rfcs/0008-sfz-native-samples-and-conversion.md) defines
+  the profile/engine evaluation, capability checks and staged SFZ/Yamaha conversion work.
 - Changing setlists keeps resources common to both, prepares missing ones in the
   background and releases the rest when safe.
 

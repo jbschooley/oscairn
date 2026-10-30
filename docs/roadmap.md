@@ -156,13 +156,22 @@ new core, from a UI that talks to it only through the control API.
 3. **Two tracks and A/B patterns — implemented:** independent lengths, channels and mutes,
    bar-boundary launches, per-track sound selection and full parameter persistence.
    Automated timing/roundtrip tests pass; [audible acceptance is pending](listening-tests.md).
-4. **Native asset-bearing patches — research started, implementation pending:**
+4. **Native sample patches — first slice implemented, multisample pending:**
    [sample players/formats and the first slice](sample-players-and-formats.md), including
    a reproducible liquidsfz cache-sharing probe and [ESP observations](yamaha-esp-samples-research.md).
-   First prove bounded WAV preparation, shared immutable PCM, held-note ownership and
-   portable save/reopen with the existing native contexts. Then test SFZ/SoundFont engine
-   reuse against the same contracts. Swing and further sequencer workflow follow. Keep
+   The Oscairn Sampler plays one-region SFZ patches over preloaded WAV with shared PCM,
+   held-note ownership, desktop import and samples saved as Performance dependencies
+   ([RFC 0008 step 2](rfcs/0008-sfz-native-samples-and-conversion.md#step-2-status));
+   listening acceptance is pending. Next: multisample, FLAC and streaming for large
+   pianos, reusing sfizz/liquidsfz parsing where it separates cleanly. Extend SFZ only for
+   demonstrated gaps; SoundFont remains a separate engine candidate.
+   Swing and further sequencer workflow follow. Keep
    the shared theme and generated-editor contract current as new screens are added.
+
+The subsequent [conversion plan](rfcs/0008-sfz-native-samples-and-conversion.md#conversion-and-modx-m-migration)
+covers SFZ interchange and Jacob's MODX M library migration: inventory first, explicit
+fidelity/loss reports, then tested sound/Performance adapters and model-specific Yamaha
+write-back. It is planned work, not part of the first WAV implementation.
 
 Package-manager comparison comes at the package milestone, before permanent distribution
 format commitments: evaluate libmamba/Nix and libsolv as a narrower fallback using the

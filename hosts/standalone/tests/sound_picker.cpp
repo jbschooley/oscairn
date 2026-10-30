@@ -5,6 +5,10 @@
 #include <array>
 #include <chrono>
 #include <cmath>
+#include <filesystem>
+#include <fstream>
+#include "oscairn/wav_file.h"
+#include "../../../core/plugin-host/src/StateFiles.h"
 #include <future>
 #include <iostream>
 #include <sys/socket.h>
@@ -117,11 +121,31 @@ void sequencedSounds(const char* synth,const char* sequencer)
     }
 }
 
+void samples(const char* path)
+{
+    Fixture f(path);state_files::TemporaryDirectory temp;
+    const auto dir=temp.path/"My samples";std::filesystem::create_directory(dir);
+    writeWavFile(dir/"Soft pad.wav",std::vector<float>(4800,.25f),1,48000);
+    {std::ofstream(dir/"Pitched.sfz")<<"<region> sample=Soft pad.wav transpose=12\n";std::ofstream(dir/"Broken.sfz")<<"<region>\nsample=Soft pad.wav pan=10\n";}
+    auto state=f.remote([](Control& c){return readSoundPicker(c);});
+    check(state.importsSamples && state.choices.empty(),"sampler offers import instead of presets");
+    SoundAction action;action.kind=SoundAction::Prepare;action.node=state.node;action.pluginId=state.pluginId;
+    for(const char* file:{"Soft pad.wav","Pitched.sfz"}){action.importPath=(dir/file).string();f.remote([&](Control& c){applySoundAction(c,action);return 0;});}
+    state=f.remote([](Control& c){return readSoundPicker(c);});
+    check(state.sounds.contexts.size()==3 && state.sounds.contexts[1].name=="Soft pad" && state.sounds.contexts[2].name=="Pitched","WAV and SFZ imports prepared");
+    for(const auto& [file,expected]:std::initializer_list<std::pair<const char*,const char*>>{{"Broken.sfz","line 2: unsupported opcode pan"},{"notes.txt","Choose a .wav"}}){
+        action.importPath=(dir/file).string();
+        const auto error=f.remote([&](Control& c){try{applySoundAction(c,action);}catch(const std::exception& e){return std::string(e.what());}return std::string();});
+        check(error.find(expected)!=std::string::npos,"import failure explained");
+    }
+}
+
 int main(int argc,char** argv)
 {
     try
     {
-        check(argc==3,"need Basic Synth and sequencer paths or LV2 bundle and --lv2");
+        check(argc==3 || argc==4,"need Basic Synth, sequencer and optional sampler paths, or LV2 bundle and --lv2");
+        if(argc==4)samples(argv[3]);
         if(std::string(argv[2])=="--lv2"){presets(argv[1]);std::cout<<"ok: picker LV2 presets, failed preparation and explicit tail retirement\n";return 0;}
         sequencedSounds(argv[1],argv[2]);
         {

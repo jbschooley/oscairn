@@ -125,6 +125,13 @@ add_dependencies(oscairn-sound-contexts-test oscairn_basic_synth)
 add_test(NAME sound-contexts COMMAND oscairn-sound-contexts-test $<TARGET_FILE:oscairn_basic_synth>)
 set_tests_properties(sound-contexts PROPERTIES TIMEOUT 30)
 
+add_executable(oscairn-sampler-test engine/tests/sampler.cpp)
+target_link_libraries(oscairn-sampler-test PRIVATE oscairn_control_json)
+target_include_directories(oscairn-sampler-test PRIVATE clap-host/tests)
+add_dependencies(oscairn-sampler-test oscairn_sampler)
+add_test(NAME sampler COMMAND oscairn-sampler-test $<TARGET_FILE:oscairn_sampler>)
+set_tests_properties(sampler PROPERTIES TIMEOUT 60)
+
 add_executable(oscairn-note-routing-test engine/tests/note_routing.cpp)
 target_link_libraries(oscairn-note-routing-test PRIVATE oscairn_engine)
 target_include_directories(oscairn-note-routing-test PRIVATE clap-host/tests)

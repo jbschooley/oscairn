@@ -27,6 +27,10 @@ Setlist/library persistence, AU/VST3 adapter or cross-format state converter.
 sounds and shared effect state using installed plugins; they are not managed packages.
 No changes to the audio graph are required for this proposal: package resolution and state
 preparation belong to library/control services, before a ready graph is published.
+Sample-instrument interoperability and MODX M migration are planned in
+[RFC 0008](0008-sfz-native-samples-and-conversion.md). Its format adapters and loss reports
+complement this package/dependency contract; importing a Yamaha or SFZ file does not by
+itself establish a complete, playable target dependency set.
 
 ## Oscairn-native and external plugins
 

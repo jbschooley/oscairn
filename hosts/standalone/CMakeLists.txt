@@ -30,15 +30,15 @@ target_link_libraries(oscairn_standalone PRIVATE
     juce::juce_gui_extra
     juce::juce_recommended_config_flags
     juce::juce_recommended_warning_flags)
-add_dependencies(oscairn_standalone oscairn-plugin-scan oscairn_engine_host oscairn_step_sequencer oscairn_basic_synth oscairn_delay oscairn_transpose oscairn_midi_delay)
+add_dependencies(oscairn_standalone oscairn-plugin-scan oscairn_engine_host oscairn_step_sequencer oscairn_basic_synth oscairn_delay oscairn_transpose oscairn_midi_delay oscairn_sampler)
 set_property(TARGET oscairn_standalone APPEND PROPERTY LINK_DEPENDS
-    "$<TARGET_FILE:oscairn-plugin-scan>;$<TARGET_FILE:oscairn_engine_host>;$<TARGET_FILE:oscairn_step_sequencer>;$<TARGET_FILE:oscairn_basic_synth>;$<TARGET_FILE:oscairn_delay>;$<TARGET_FILE:oscairn_transpose>;$<TARGET_FILE:oscairn_midi_delay>")
+    "$<TARGET_FILE:oscairn-plugin-scan>;$<TARGET_FILE:oscairn_engine_host>;$<TARGET_FILE:oscairn_step_sequencer>;$<TARGET_FILE:oscairn_basic_synth>;$<TARGET_FILE:oscairn_delay>;$<TARGET_FILE:oscairn_transpose>;$<TARGET_FILE:oscairn_midi_delay>;$<TARGET_FILE:oscairn_sampler>")
 add_custom_command(TARGET oscairn_standalone POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:oscairn-plugin-scan> $<TARGET_FILE_DIR:oscairn_standalone>/oscairn-plugin-scan
     COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:oscairn_engine_host> $<TARGET_FILE_DIR:oscairn_standalone>/oscairn-engine
     COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:oscairn_standalone>/plugins
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        $<TARGET_FILE:oscairn_step_sequencer> $<TARGET_FILE:oscairn_basic_synth> $<TARGET_FILE:oscairn_delay> $<TARGET_FILE:oscairn_transpose> $<TARGET_FILE:oscairn_midi_delay>
+        $<TARGET_FILE:oscairn_step_sequencer> $<TARGET_FILE:oscairn_basic_synth> $<TARGET_FILE:oscairn_delay> $<TARGET_FILE:oscairn_transpose> $<TARGET_FILE:oscairn_midi_delay> $<TARGET_FILE:oscairn_sampler>
         $<TARGET_FILE_DIR:oscairn_standalone>/plugins
     VERBATIM)
 

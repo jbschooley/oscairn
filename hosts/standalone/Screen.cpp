@@ -50,8 +50,21 @@ namespace oscairn::standalone
             const auto state=engine_.soundPicker();
             juce::PopupMenu menu;
             for(size_t i=0;i<state.choices.size();++i)menu.addItem(static_cast<int>(i)+1,state.choices[i].name);
+            constexpr int import=100000;
+            if(state.importsSamples)menu.addItem(import,"Import sample or SFZ...");
             menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&prepareSound_),
                 [safe=juce::Component::SafePointer<Screen>(this),state](int id) {
+                    if(safe && id==import) {
+                        safe->chooser_=std::make_unique<juce::FileChooser>("Import a WAV sample or SFZ patch",juce::File(),"*.wav;*.sfz");
+                        safe->chooser_->launchAsync(juce::FileBrowserComponent::openMode|juce::FileBrowserComponent::canSelectFiles,
+                            [safe,state](const juce::FileChooser& chooser) {
+                                if(!safe || chooser.getResult()==juce::File())return;
+                                SoundAction action;action.kind=SoundAction::Prepare;action.node=state.node;action.pluginId=state.pluginId;
+                                action.importPath=chooser.getResult().getFullPathName().toStdString();
+                                safe->engine_.soundAction(std::move(action));
+                            });
+                        return;
+                    }
                     if(!safe || id<=0 || static_cast<size_t>(id)>state.choices.size())return;
                     SoundAction action;action.kind=SoundAction::Prepare;action.node=state.node;
                     action.pluginId=state.pluginId;action.choice=state.choices[static_cast<size_t>(id)-1];
@@ -110,7 +123,7 @@ namespace oscairn::standalone
         useSound_.setEnabled(ready && !(found->selectedChannels & (1u<<engine_.trackChannel())));
         removeSound_.setEnabled(ready && id!=0 && !found->selectedChannels && !found->activeVoices && (found->idle || state.sounds.mode=="instances"));
         prepareSound_.setEnabled(engine_.connected() && !engine_.soundBusy() && engine_.canPrepareSounds() &&
-            !state.choices.empty() && state.sounds.contexts.size()<state.sounds.capacity);
+            (!state.choices.empty() || state.importsSamples) && state.sounds.contexts.size()<state.sounds.capacity);
         prepareSound_.setTooltip(engine_.canPrepareSounds()?"Prepare a sound without changing playback.":"Preparation needs the separate engine; relaunch without --in-process.");
         playingSound_.setText("Playing: "+(playing.isEmpty()?juce::String("none"):playing.joinIntoString(" / ")),juce::dontSendNotification);
         const auto notice=!engine_.soundMessage().empty()?juce::String(engine_.soundMessage()):

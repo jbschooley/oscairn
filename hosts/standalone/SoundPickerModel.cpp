@@ -2,6 +2,9 @@
 #include "SoundPickerModel.h"
 #include "../../plugins/step-sequencer/Parameters.h"
 #include <algorithm>
+#include <filesystem>
+#include <fstream>
+#include <sstream>
 #include <stdexcept>
 
 namespace oscairn::standalone
@@ -39,6 +42,8 @@ namespace oscairn::standalone
                         }
                 }
         }
+        else if(result.pluginId == "org.oscairn.sampler")
+            result.importsSamples = true;
         else if(result.sounds.capacity)
         {
             result.choices.push_back({"Default", {}, {}});
@@ -46,6 +51,28 @@ namespace oscairn::standalone
                 result.choices.push_back({preset.name, preset.uri, {}});
         }
         return result;
+    }
+
+    SoundChoice importSound(const std::string& path)
+    {
+        const std::filesystem::path file(path);
+        auto extension = file.extension().string();
+        std::transform(extension.begin(), extension.end(), extension.begin(), [](unsigned char c) { return char(std::tolower(c)); });
+        SoundChoice choice;
+        choice.name = file.stem().string().substr(0, 63);
+        choice.directory = file.parent_path().string();
+        if(extension == ".wav")
+            choice.sfz = "<region> sample=" + file.filename().string() + "\n";
+        else if(extension == ".sfz")
+        {
+            std::error_code error;
+            if(std::filesystem::file_size(file, error) > 64 * 1024 || error) throw std::runtime_error("That SFZ file is too large or unreadable.");
+            std::ifstream in(file, std::ios::binary);std::ostringstream text;text << in.rdbuf();
+            if(!in) throw std::runtime_error("Could not read that SFZ file.");
+            choice.sfz = text.str();
+        }
+        else throw std::runtime_error("Choose a .wav sample or an .sfz patch.");
+        return choice;
     }
 
     void applySoundAction(Control& control, const SoundAction& action)
@@ -78,7 +105,8 @@ namespace oscairn::standalone
         }
         if(action.kind == SoundAction::Prepare)
         {
-            control.prepareSound(current.node, action.choice.name, action.choice.parameters, {}, action.choice.preset);
+            const auto choice = action.importPath.empty() ? action.choice : importSound(action.importPath);
+            control.prepareSound(current.node, choice.name, choice.parameters, {}, choice.preset, choice.sfz, choice.directory);
             return; // Preparation never changes the playing sound.
         }
         const auto found = std::find_if(current.sounds.contexts.begin(), current.sounds.contexts.end(),

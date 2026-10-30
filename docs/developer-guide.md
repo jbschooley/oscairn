@@ -31,7 +31,7 @@ not require preserving experimental pre-release formats now.
 | --- | --- | --- |
 | Instrument, sampler or effect | CLAP; optional LV2 hosting | [First-party plugins](../plugins/README.md), [LV2 subset](../core/lv2-host/README.md) |
 | Sequencer or note processor | CLAP note output ports and transport; optional parameter-target events | [Step Sequencer](../plugins/step-sequencer/step_sequencer.cpp), [MIDI effects](../plugins/midi-effects/README.md), [RFC 0002](rfcs/0002-param-target.md) |
-| Native multitimbral instrument | CLAP plus `oscairn.sound-contexts/draft-2` | [Basic Synth](../plugins/basic-synth/basic_synth.cpp), [RFC 0005](rfcs/0005-sound-contexts.md) |
+| Native multitimbral instrument | CLAP plus `oscairn.sound-contexts/draft-3` | [Basic Synth](../plugins/basic-synth/basic_synth.cpp), [Sampler](../plugins/sampler/sampler.cpp), [shared contexts](../plugins/common/SoundContexts.h), [RFC 0005](rfcs/0005-sound-contexts.md) |
 | UI, editor or automation script | Typed `Control` or JSON-RPC over the local Unix socket | [Protocol and schema](control-protocol.md) |
 | New host/application | C++20 `Session` or `Graph`, supplied audio buffers and events | [Core](../core/README.md), [hosts](../hosts/README.md) |
 | Hardware panel/layout | Desktop JSON layouts today; timestamped hardware services are proposed | [Layouts](../hosts/standalone/layouts/README.md), [RFC 0004](rfcs/0004-hardware-services.md) |
