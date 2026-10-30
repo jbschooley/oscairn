@@ -175,9 +175,10 @@ new core, from a UI that talks to it only through the control API.
    ([RFC 0010](rfcs/0010-plugin-worker-isolation.md)). Moved here from Phase 5 on October 30,
    2026, ahead of Phase 4 hardware work and further third-party plugin features, starting with
    the hand-off measurements.
-7. **Sequencer evaluation:** compare extracting the KICK firmware's sequencer (AGPL, in the
-   `0700-AAM` fork), porting zynseq and hosting existing sequencer plugins before extending
-   Oscairn's own test sequencer. Swing and further sequencer workflow follow from that choice.
+7. **Sequencer evaluation — written, decisions pending:** [the comparison](sequencer-evaluation.md)
+   of the KICK firmware's sequencer (with chillbeast's work), zynseq and hosted plugins
+   recommends the KICK model and workflow with sample-accurate playback rewritten in an
+   Oscairn plugin. Swing and further sequencer workflow follow from that choice.
    Keep the shared theme and generated-editor contract current as new screens are added.
 
 The subsequent [conversion plan](rfcs/0008-sfz-native-samples-and-conversion.md#conversion-and-modx-m-migration)
