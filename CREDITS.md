@@ -17,6 +17,16 @@ authoritative.
   distributed in any binary/image. The independent eg-amp and eg-fifths test
   plugins are upstream LV2 examples, installed separately.
 
+## Interface font
+
+- **Inter** 4.1, by Rasmus Andersson and the Inter Project Authors
+  ([rsms/inter](https://github.com/rsms/inter)), SIL Open Font License 1.1. The built-in
+  themes and the Midnight example carry `Inter-Regular.ttf` and `Inter-Bold.ttf` unmodified
+  from the release's `extras/ttf/`, with the licence as `fonts/OFL.txt`. Release archive
+  `Inter-4.1.zip` SHA-256 `9883fdd4a49d4fb66bd8177ba6625ef9a64aa45899767dde3d36aa425756b11e`;
+  `Inter-Regular.ttf` `40d692fce188e4471e2b3cba937be967878f631ad3ebbbdcd587687c7ebe0c82`,
+  `Inter-Bold.ttf` `288316099b1e0a47a4716d159098005eef7c0066921f34e3200393dbdb01947f`.
+
 ## Sample decoding
 
 - **libsndfile:** Erik de Castro Lopo and the libsndfile contributors

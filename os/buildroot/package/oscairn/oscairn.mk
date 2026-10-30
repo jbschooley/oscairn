@@ -23,6 +23,9 @@ OSCAIRN_CONF_OPTS += -DOSCAIRN_LV2=OFF
 endif
 
 ifeq ($(BR2_PACKAGE_OSCAIRN_STANDALONE),y)
+# The built-in themes carry the Inter font.
+OSCAIRN_LICENSE += , OFL-1.1
+OSCAIRN_LICENSE_FILES += hosts/standalone/themes/oscairn-dark/fonts/OFL.txt
 OSCAIRN_DEPENDENCIES += oscairn-juce alsa-lib freetype fontconfig \
 	xlib_libX11 xlib_libXext xlib_libXinerama xlib_libXrandr \
 	xlib_libXcursor xlib_libXrender

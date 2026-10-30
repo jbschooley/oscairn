@@ -31,10 +31,11 @@ plugin branding must leave system navigation/transport consistent.
 
 Open **Plugins…** on the panel (or the **Plugins** menu / KICK **BROWSE** button).
 The browser's **System theme** selector applies a theme throughout Oscairn.
-**Install theme…** validates and copies a JSON theme into the user's theme directory,
-then applies it. The **Appearance** menu also lists installed themes.
-Built-in **Oscairn Dark** and **Oscairn Light** are always available.
-An installable example is [Midnight](../hosts/standalone/themes/midnight.json).
+**Install theme…** asks for a theme folder's `theme.json`, validates the theme and its
+fonts, copies the files it names into the user's theme directory, then applies it. The
+**Appearance** menu also lists installed themes. Built-in **Oscairn Dark** and **Oscairn
+Light** are ordinary theme folders shipped with the app. An installable example is
+[Midnight](../hosts/standalone/theme-examples/midnight/theme.json).
 
 Appearance is a per-user, per-device preference shared by all Oscairn layouts and UI
 processes. Other running UI processes pick up a selection within approximately one second;
@@ -49,26 +50,37 @@ Configuration locations:
 - `OSCAIRN_CONFIG_HOME` overrides the full configuration directory (useful for device images
   and isolated tests).
 
-Installed themes are `themes/<id>.json`; `appearance.txt` contains the selected ID.
-Writes use a temporary file followed by replacement. A different file cannot overwrite an
-installed theme ID; give a modified theme a new ID. Removing or corrupting the selected
-file falls back to the built-in dark theme on the next UI launch. Project exports do not
+Installed themes are folders `themes/<id>/`; `appearance.txt` contains the selected ID.
+Installation stages a copy and renames it into place; the selection is written through a
+temporary file. A different theme cannot overwrite an installed theme ID; give a modified
+theme a new ID. If the selected theme is missing or unusable, Oscairn shows an error and
+uses the default built-in theme.
+
+### Built-in themes and instrument builders
+
+Built-in themes live beside the app: `Oscairn.app/Contents/MacOS/themes/` on macOS and
+`share/oscairn/themes/` under the install prefix on Linux (`/usr/share/oscairn/themes/`
+on Oscairn OS). Each is a theme folder in the same format as installed themes, so the
+bundled font is loaded exactly like a theme author's. An instrument builder can replace
+or add folders there; the file `default` names the theme a new user starts with. Built-in
+IDs are reserved: user themes cannot replace them. If no built-in theme is usable, an
+emergency theme with fixed colours and the platform's default font keeps text visible. Project exports do not
 change a musician's appearance preference. Theme package distribution/sync will use the
 future package system; it is not needed for local theme installation.
 
-## Theme format, version 1
+## Theme format, version 2
 
-See [the schema](theme.schema.json) and the complete Midnight example.
-Themes contain data only: no scripts, shaders, remote URLs, executable code or external
-assets. System font family names use the platform's font fallback. Fonts are not installed
-by importing a theme.
+A theme is a folder named after its ID, holding `theme.json` ([schema](theme.schema.json))
+and the files it names. See the complete Midnight example. Themes contain data and fonts
+only: no scripts, shaders, remote URLs or executable code. Every theme carries its own
+fonts, so text never depends on what a device has installed.
 
 | Field | Contract |
 | --- | --- |
-| `version` | Integer `1` |
-| `id` | 1–64 lowercase letters, digits or hyphens; built-in IDs are reserved |
+| `version` | Integer `2` |
+| `id` | 1–64 lowercase letters, digits or hyphens; the folder's name; built-in IDs are reserved |
 | `name` | Display name, 1–80 characters |
-| `font` | Optional installed font-family name, 1–80 characters |
+| `font` | `regular` and optional `bold` font files (`.ttf`/`.otf`, ≤ 4 MiB each) and the fonts' `license` text (≤ 64 KiB), as relative paths inside the folder |
 | `fontScale` | Optional number, 0.8–1.4; default 1 |
 | `radius` | Optional number, 0–16; default 6 |
 | `colours` | All nine semantic colours below, opaque `#RRGGBB` |
@@ -85,8 +97,13 @@ by importing a theme.
 | `positive` | Playing/active state |
 | `danger` | Errors and unavailable resources |
 
-Files are limited to 16 KiB. Unknown fields, malformed colours, unsafe IDs and out-of-range
-metrics are rejected before installation. Primary text must have at least 4.5:1 contrast
+`theme.json` is limited to 16 KiB. Unknown fields, malformed colours, unsafe IDs,
+out-of-range metrics, paths leaving the folder, linked files, missing licences and files
+that are not TrueType/OpenType fonts are rejected before installation. Only the files a
+theme names are copied. Fonts are parsed in the UI process by the platform's font engine,
+which is not hardened against malicious files: install themes only from trusted sources.
+Version 1 single-file themes are no longer read; recreate them as folders (initial
+development). Primary text must have at least 4.5:1 contrast
 against background, surface and raised colours. Authors should also check secondary text,
 small labels, keyboard focus and selected controls in every supported layout.
 Version 1 deliberately excludes image/knob assets and custom layout code; richer plugin

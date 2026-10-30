@@ -10,6 +10,40 @@ void require(bool condition,const char* message){if(!condition)throw std::runtim
 void fields(const juce::DynamicObject& object,const juce::StringArray& allowed) {
     for(const auto& item:object.getProperties())require(allowed.contains(item.name.toString()),"Unknown theme field");
 }
+constexpr juce::int64 maxThemeBytes=16384,maxFontBytes=4<<20,maxLicenseBytes=64<<10;
+bool validId(const juce::String& id){return id.isNotEmpty() && id.length()<=64 && id.containsOnly("abcdefghijklmnopqrstuvwxyz0123456789-");}
+// A file named by a theme: a relative path inside its folder, no links, within a size limit.
+juce::File inside(const juce::File& folder,const juce::String& relative,juce::int64 limit) {
+    require(relative.isNotEmpty() && relative.length()<=128 && relative.containsOnly("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-/"),"Theme file paths must be relative names inside the theme");
+    for(const auto& part:juce::StringArray::fromTokens(relative,"/",""))require(part.isNotEmpty() && part!="." && part!="..","Theme file paths must stay inside the theme");
+    const auto file=folder.getChildFile(relative);
+    for(auto at=file;at!=folder;at=at.getParentDirectory()){require(!at.isSymbolicLink(),"Theme files must not be links");if(at.getParentDirectory()==at)break;}
+    require(file.existsAsFile(),"Theme file is missing");require(file.getSize()<=limit,"Theme file is too large");
+    return file;
+}
+// JUCE dereferences a failed font parse, so check the font container first: signature, a table
+// directory inside the file and the tables a usable font needs. Not a full font validator.
+bool fontContainer(const juce::MemoryBlock& data) {
+    const auto* b=static_cast<const juce::uint8*>(data.getData());const auto size=data.getSize();
+    auto u32=[&](size_t at){return juce::uint32(b[at])<<24|juce::uint32(b[at+1])<<16|juce::uint32(b[at+2])<<8|b[at+3];};
+    if(size<12)return false;
+    const auto signature=u32(0);if(signature!=0x00010000u && signature!=0x74727565u && signature!=0x4f54544fu)return false; // 1.0, 'true', 'OTTO'
+    const size_t tables=size_t(b[4])<<8|b[5];if(tables<1 || tables>64 || 12+16*tables>size)return false;
+    juce::StringArray tags;
+    for(size_t i=0;i<tables;++i){const auto at=12+16*i;
+        if(uint64_t(u32(at+8))+u32(at+12)>size)return false;
+        tags.add(juce::String::fromUTF8(reinterpret_cast<const char*>(b+at),4));}
+    for(const auto* tag:{"cmap","head","hhea","hmtx","maxp","name"})if(!tags.contains(tag))return false;
+    return (tags.contains("glyf") && tags.contains("loca")) || tags.contains("CFF ") || tags.contains("CFF2");
+}
+juce::Typeface::Ptr typeface(const juce::File& file) {
+    require(file.hasFileExtension("ttf;otf"),"Theme fonts must be .ttf or .otf files");
+    juce::MemoryBlock data;require(file.loadFileAsData(data),"Cannot read theme font");
+    require(fontContainer(data),"Theme font is not a TrueType or OpenType font");
+    auto face=juce::Typeface::createSystemTypefaceFor(data.getData(),data.getSize());
+    require(face!=nullptr && face->getNominalGlyphForCodepoint('A').has_value(),"Theme font cannot be used");
+    return face;
+}
 void write(const juce::File& destination,const juce::String& text) {
     require(destination.getParentDirectory().createDirectory().wasOk(),"Cannot create theme directory");
     juce::TemporaryFile temporary(destination);
@@ -18,21 +52,18 @@ void write(const juce::File& destination,const juce::String& text) {
 }
 const ThemeData& themeData(){return current;}
 juce::Colour ink(Ink role){return current.colours[static_cast<size_t>(role)];}
-ThemeData ThemeData::light() {
-    ThemeData t;t.id="oscairn-light";t.name="Oscairn Light";
-    const std::array<juce::uint32,9> colours{0xffe9edf2,0xfff7f9fc,0xffdce3eb,0xff6a7888,0xff172332,0xff4f6073,0xff964600,0xff006b49,0xffb12831};
-    for(size_t i=0;i<colours.size();++i)t.colours[i]=juce::Colour(colours[i]);return t;
-}
 ThemeData ThemeData::parse(const juce::String& json) {
-    require(json.getNumBytesAsUTF8()<=16384,"Theme exceeds 16 KiB");
+    require(json.getNumBytesAsUTF8()<=maxThemeBytes,"Theme exceeds 16 KiB");
     juce::var value;require(juce::JSON::parse(json,value).wasOk(),"Invalid theme JSON");
     const auto* object=value.getDynamicObject();require(object,"Theme must be an object");
     fields(*object,{"version","id","name","font","fontScale","radius","colours"});
-    require(value["version"].isInt() && int(value["version"])==1,"Unsupported theme version");
+    require(value["version"].isInt() && int(value["version"])==2,"Unsupported theme version");
     ThemeData t;t.id=value["id"].toString();t.name=value["name"].toString();
-    require(value["id"].isString() && t.id.length()>0 && t.id.length()<=64 && t.id.containsOnly("abcdefghijklmnopqrstuvwxyz0123456789-"),"Theme ID must contain lowercase letters, digits or hyphens");
+    require(value["id"].isString() && validId(t.id),"Theme ID must contain lowercase letters, digits or hyphens");
     require(value["name"].isString() && t.name.isNotEmpty() && t.name.length()<=80,"Theme needs a short name");
-    if(object->hasProperty("font")){require(value["font"].isString(),"Invalid theme font");t.font=value["font"].toString();require(t.font.isNotEmpty() && t.font.length()<=80,"Invalid theme font");}
+    const auto* font=value["font"].getDynamicObject();require(font,"Theme needs its font files");fields(*font,{"regular","bold","license"});
+    auto path=[&](const char* key,bool required){const auto v=font->getProperty(key);if(!required && v.isVoid())return juce::String();require(v.isString(),"Theme font paths must be strings");return v.toString();};
+    t.font={path("regular",true),path("bold",false),path("license",true)};
     auto number=[&](const char* key,float fallback,float low,float high) {
         if(!object->hasProperty(key))return fallback;const auto v=value[key];
         require(v.isInt() || v.isDouble(),"Theme metric must be a number");const double n=v;
@@ -51,7 +82,13 @@ ThemeData ThemeData::parse(const juce::String& json) {
     }
     return t;
 }
-Theme::Theme(juce::File root) {
+Theme::Theme(juce::File root,juce::File builtIn) {
+    if(builtIn==juce::File()) {
+        // Beside the app (macOS bundle, build tree) or installed under share/ (Linux devices).
+        const auto binary=juce::File::getSpecialLocation(juce::File::currentExecutableFile).getParentDirectory();
+        builtIn=binary.getChildFile("themes").isDirectory()?binary.getChildFile("themes"):binary.getSiblingFile("share").getChildFile("oscairn/themes");
+    }
+    builtIn_=builtIn;
     if(root==juce::File()) {
         const auto env=juce::SystemStats::getEnvironmentVariable("OSCAIRN_CONFIG_HOME",{});
         if(env.isNotEmpty())root=juce::File(env);
@@ -64,14 +101,13 @@ Theme::Theme(juce::File root) {
 #endif
     }
     root_=root;selection_=root_.getChildFile("appearance.txt");
-    set(ThemeData{});reload();juce::LookAndFeel::setDefaultLookAndFeel(this);startTimer(1000);
+    set(Loaded{});reload();juce::LookAndFeel::setDefaultLookAndFeel(this);startTimer(1000);
 }
 Theme::~Theme(){stopTimer();juce::LookAndFeel::setDefaultLookAndFeel(nullptr);}
-void Theme::set(const ThemeData& data) {
-    current=data;
-    // JUCE on Linux draws no text for a family that is not installed (macOS substitutes one), so a
-    // missing or placeholder name such as "Default Sans Serif" uses the platform default font.
-    setDefaultSansSerifTypefaceName(juce::Font::findAllTypefaceNames().contains(data.font)?data.font:juce::String());
+void Theme::set(const Loaded& loaded) {
+    current=loaded.data;regular_=loaded.regular;bold_=loaded.bold;
+    // Without theme fonts (the emergency theme) text uses the platform default font.
+    setDefaultSansSerifTypefaceName({});juce::Typeface::clearTypefaceCache();
     setColour(juce::ResizableWindow::backgroundColourId,ink(Ink::Background));
     setColour(juce::Label::textColourId,ink(Ink::Text));
     setColour(juce::TextButton::buttonColourId,ink(Ink::Raised));setColour(juce::TextButton::buttonOnColourId,ink(Ink::Accent));
@@ -95,33 +131,67 @@ void Theme::set(const ThemeData& data) {
     for(int i=0;i<juce::Desktop::getInstance().getNumComponents();++i){auto* component=juce::Desktop::getInstance().getComponent(i);component->sendLookAndFeelChange();refreshText(refreshText,*component);}
 
 }
-ThemeData Theme::read(const juce::String& id) const {
-    require(id.isNotEmpty() && id.length()<=64 && id.containsOnly("abcdefghijklmnopqrstuvwxyz0123456789-"),"Invalid theme ID");
-    require(directory().getChildFile(id+".json").getSize()<=16384,"Theme exceeds 16 KiB");
-    const auto data=id=="oscairn-dark"?ThemeData{}:id=="oscairn-light"?ThemeData::light():ThemeData::parse(directory().getChildFile(id+".json").loadFileAsString());
-    require(data.id==id,"Theme ID mismatch");return data;
+Theme::Loaded Theme::load(const juce::File& folder) const {
+    const auto file=inside(folder,"theme.json",maxThemeBytes);
+    Loaded result{ThemeData::parse(file.loadFileAsString()),nullptr,nullptr};
+    require(folder.getFileName()==result.data.id,"Theme folder must be named after its ID");
+    const auto& font=result.data.font;
+    result.regular=typeface(inside(folder,font.regular,maxFontBytes));
+    if(font.bold.isNotEmpty())result.bold=typeface(inside(folder,font.bold,maxFontBytes));
+    inside(folder,font.license,maxLicenseBytes);
+    return result;
+}
+juce::File Theme::find(const juce::String& id) const {
+    require(validId(id),"Invalid theme ID");
+    return builtIn_.getChildFile(id).isDirectory()?builtIn_.getChildFile(id):directory().getChildFile(id);
+}
+juce::String Theme::defaultId() const {
+    const auto id=builtIn_.getChildFile("default").loadFileAsString().trim();
+    return validId(id) && builtIn_.getChildFile(id).isDirectory()?id:juce::String("oscairn-dark");
 }
 void Theme::apply(const juce::String& id) {
-    const auto data=read(id);write(selection_,id);lastSelection_=id;set(data);error_.clear();
+    const auto loaded=load(find(id));write(selection_,id);lastSelection_=id;set(loaded);error_.clear();
 }
 void Theme::install(const juce::File& source) {
-    require(source.getSize()<=16384,"Theme exceeds 16 KiB");const auto text=source.loadFileAsString();const auto data=ThemeData::parse(text);
-    require(data.id!="oscairn-dark" && data.id!="oscairn-light","Built-in theme IDs are reserved");
-    const auto destination=directory().getChildFile(data.id+".json");
-    require(!destination.exists() || destination.loadFileAsString()==text,"That theme ID is already installed; use a new ID for a different theme");
-    write(destination,text);apply(data.id);
+    const auto folder=source.isDirectory()?source:source.getParentDirectory();
+    require(source.isDirectory() || source.getFileName()=="theme.json","Choose a theme folder or its theme.json");
+    const auto loaded=load(folder);const auto& id=loaded.data.id;const auto& font=loaded.data.font;
+    require(!builtIn_.getChildFile(id).isDirectory(),"Built-in theme IDs are reserved");
+    juce::StringArray files{"theme.json",font.regular,font.license};if(font.bold.isNotEmpty())files.add(font.bold);
+    const auto destination=directory().getChildFile(id);
+    if(destination.exists()) {
+        for(const auto& name:files)require(destination.getChildFile(name).existsAsFile() && destination.getChildFile(name).hasIdenticalContentTo(folder.getChildFile(name)),"That theme ID is already installed; use a new ID for a different theme");
+    } else {
+        // Copy only the files the theme names, into a staging folder renamed into place.
+        const auto staging=directory().getNonexistentChildFile("."+id+"-install","",false);
+        require(staging.createDirectory().wasOk(),"Cannot create theme directory");
+        try {
+            for(const auto& name:files){const auto target=staging.getChildFile(name);require(target.getParentDirectory().createDirectory().wasOk() && folder.getChildFile(name).copyFileTo(target),"Cannot copy theme files");}
+            require(staging.moveFileTo(destination),"Cannot install theme");
+        } catch(...) { staging.deleteRecursively(); throw; }
+    }
+    apply(id);
 }
 std::vector<std::pair<juce::String,juce::String>> Theme::installed() const {
-    std::vector<std::pair<juce::String,juce::String>> result{{"oscairn-dark","Oscairn Dark"},{"oscairn-light","Oscairn Light"}};
-    for(const auto& file:directory().findChildFiles(juce::File::findFiles,false,"*.json"))try{require(file.getSize()<=16384,"Theme exceeds 16 KiB");const auto data=ThemeData::parse(file.loadFileAsString());if(file.getFileNameWithoutExtension()==data.id)result.emplace_back(data.id,data.name);}catch(const std::exception&){}
+    std::vector<std::pair<juce::String,juce::String>> result;
+    for(const auto& folder:{builtIn_,directory()})
+        for(const auto& theme:folder.findChildFiles(juce::File::findDirectories,false))
+            try{const auto data=ThemeData::parse(inside(theme,"theme.json",maxThemeBytes).loadFileAsString());
+                if(theme.getFileName()==data.id && (folder==builtIn_ || !builtIn_.getChildFile(data.id).isDirectory()))result.emplace_back(data.id,data.name);}catch(const std::exception&){}
     return result;
 }
 void Theme::reload() {
-    const auto id=selection_.loadFileAsString().trim();if(id==lastSelection_)return;
+    const auto id=selection_.loadFileAsString().trim();if(id==lastSelection_ && lastSelection_.isNotEmpty())return;
     lastSelection_=id;
-    try{set(read(id.isEmpty()?"oscairn-dark":id));error_.clear();}catch(const std::exception& e){error_=e.what();set(ThemeData{});}
+    try{set(load(find(id.isEmpty()?defaultId():id)));error_.clear();return;}catch(const std::exception& e){error_=e.what();}
+    // The selected theme is unusable: use the default theme, or the emergency theme without fonts.
+    try{set(load(find(defaultId())));}catch(const std::exception&){set(Loaded{});}
 }
 void Theme::timerCallback(){reload();}
+juce::Typeface::Ptr Theme::getTypefaceForFont(const juce::Font& font) {
+    if(regular_ && font.getTypefaceName()==juce::Font::getDefaultSansSerifFontName())return font.isBold() && bold_?bold_:regular_;
+    return LookAndFeel_V4::getTypefaceForFont(font);
+}
 juce::Font Theme::getLabelFont(juce::Label& label){return juce::FontOptions(juce::jlimit(12.f,28.f,label.getHeight()*.7f)*current.fontScale);}
 juce::Font Theme::getTextButtonFont(juce::TextButton&,int height){return juce::FontOptions(juce::jlimit(13.f,22.f,height*.36f)*current.fontScale);}
 void Theme::drawButtonBackground(juce::Graphics& g,juce::Button& button,const juce::Colour& colour,bool hover,bool down) {

@@ -144,7 +144,7 @@ What is in place:
 - **Desktop workflow:** isolated CLAP/LV2 discovery, plugin selection for the demo instrument
   and effect, generic parameter/preset controls, and prepared sound switching. A shared
   [design language](docs/design-language.md) covers all layouts and generated editors;
-  users can install data-only themes and apply them throughout Oscairn.
+  users can install themes (data plus their own fonts) and apply them throughout Oscairn.
 - **oscairn.param-target** ([RFC 0002](docs/rfcs/0002-param-target.md)): a CLAP
   extension for parameter changes between plugins, such as a sequencer's per-step locks,
   routed by the graph to the target's parameter in the same block.

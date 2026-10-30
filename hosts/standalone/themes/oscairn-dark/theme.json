@@ -1,0 +1,23 @@
+{
+  "version": 2,
+  "id": "oscairn-dark",
+  "name": "Oscairn Dark",
+  "font": {
+    "regular": "fonts/Inter-Regular.ttf",
+    "bold": "fonts/Inter-Bold.ttf",
+    "license": "fonts/OFL.txt"
+  },
+  "fontScale": 1.0,
+  "radius": 6,
+  "colours": {
+    "background": "#15181D",
+    "surface": "#20252D",
+    "raised": "#2C333D",
+    "border": "#526070",
+    "text": "#EDF1F5",
+    "muted": "#A3AEBB",
+    "accent": "#FFA45B",
+    "positive": "#5AD9A4",
+    "danger": "#FF8D87"
+  }
+}

@@ -1,8 +1,12 @@
 {
-  "version": 1,
+  "version": 2,
   "id": "midnight",
   "name": "Midnight",
-  "font": "Default Sans Serif",
+  "font": {
+    "regular": "fonts/Inter-Regular.ttf",
+    "bold": "fonts/Inter-Bold.ttf",
+    "license": "fonts/OFL.txt"
+  },
   "fontScale": 1.0,
   "radius": 8,
   "colours": {

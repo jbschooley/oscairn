@@ -37,15 +37,20 @@ add_custom_command(TARGET oscairn_standalone POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:oscairn-plugin-scan> $<TARGET_FILE_DIR:oscairn_standalone>/oscairn-plugin-scan
     COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:oscairn_engine_host> $<TARGET_FILE_DIR:oscairn_standalone>/oscairn-engine
     COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:oscairn_standalone>/plugins
+    COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_SOURCE_DIR}/themes $<TARGET_FILE_DIR:oscairn_standalone>/themes
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         $<TARGET_FILE:oscairn_step_sequencer> $<TARGET_FILE:oscairn_basic_synth> $<TARGET_FILE:oscairn_delay> $<TARGET_FILE:oscairn_transpose> $<TARGET_FILE:oscairn_midi_delay> $<TARGET_FILE:oscairn_sampler>
         $<TARGET_FILE_DIR:oscairn_standalone>/plugins
     VERBATIM)
 
 install(TARGETS oscairn_standalone RUNTIME DESTINATION bin BUNDLE DESTINATION Applications)
+# Built-in themes (with their fonts) are ordinary theme folders; Linux finds them under share/.
+if(NOT APPLE)
+    install(DIRECTORY themes/ DESTINATION share/oscairn/themes)
+endif()
 
 juce_add_console_app(oscairn_theme_test PRODUCT_NAME "Oscairn Theme Test")
 target_sources(oscairn_theme_test PRIVATE tests/theme.cpp Theme.cpp)
 target_link_libraries(oscairn_theme_test PRIVATE juce::juce_gui_extra juce::juce_recommended_config_flags)
 target_compile_definitions(oscairn_theme_test PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
-add_test(NAME desktop-theme COMMAND oscairn_theme_test "${CMAKE_CURRENT_SOURCE_DIR}/themes/midnight.json")
+add_test(NAME desktop-theme COMMAND oscairn_theme_test "${CMAKE_CURRENT_SOURCE_DIR}/themes" "${CMAKE_CURRENT_SOURCE_DIR}/theme-examples/midnight")

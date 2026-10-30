@@ -1,10 +1,10 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Oscairn theme version 1",
+  "title": "Oscairn theme version 2 (theme.json inside a theme folder)",
   "type": "object",
   "properties": {
     "version": {
-      "const": 1
+      "const": 2
     },
     "id": {
       "type": "string",
@@ -16,9 +16,32 @@
       "maxLength": 80
     },
     "font": {
-      "type": "string",
-      "minLength": 1,
-      "maxLength": 80
+      "type": "object",
+      "properties": {
+        "regular": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*$",
+          "maxLength": 128,
+          "description": "TrueType/OpenType font for regular text, at most 4 MiB"
+        },
+        "bold": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*$",
+          "maxLength": 128,
+          "description": "Optional bold font, at most 4 MiB"
+        },
+        "license": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*$",
+          "maxLength": 128,
+          "description": "The font's licence text, at most 64 KiB"
+        }
+      },
+      "required": [
+        "regular",
+        "license"
+      ],
+      "additionalProperties": false
     },
     "fontScale": {
       "type": "number",
@@ -88,6 +111,7 @@
     "version",
     "id",
     "name",
+    "font",
     "colours"
   ],
   "additionalProperties": false

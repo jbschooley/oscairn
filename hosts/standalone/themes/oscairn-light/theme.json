@@ -1,0 +1,23 @@
+{
+  "version": 2,
+  "id": "oscairn-light",
+  "name": "Oscairn Light",
+  "font": {
+    "regular": "fonts/Inter-Regular.ttf",
+    "bold": "fonts/Inter-Bold.ttf",
+    "license": "fonts/OFL.txt"
+  },
+  "fontScale": 1.0,
+  "radius": 6,
+  "colours": {
+    "background": "#E9EDF2",
+    "surface": "#F7F9FC",
+    "raised": "#DCE3EB",
+    "border": "#6A7888",
+    "text": "#172332",
+    "muted": "#4F6073",
+    "accent": "#964600",
+    "positive": "#006B49",
+    "danger": "#B12831"
+  }
+}

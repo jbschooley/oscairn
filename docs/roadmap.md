@@ -117,7 +117,8 @@ Done:
   require explicit edits. The first UI exposes the demo instrument/effect slots.
 - shared [design language and installable themes](design-language.md): semantic colours,
   typography and control styling across layouts, browser and generated editors; built-in
-  Dark/Light, validated JSON installation and per-device selection shared across UI processes.
+  Dark/Light shipped as replaceable theme folders with the bundled Inter font, validated
+  theme-folder installation and per-device selection shared across UI processes.
   Theme changes do not touch audio or routing.
 
 To do:
