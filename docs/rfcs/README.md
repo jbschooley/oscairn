@@ -14,3 +14,4 @@ Number them in order (`0002-...md`) and keep the status line up to date
 | [0006](0006-packages-and-portability.md) | Packages and cross-device portability | proposed |
 | [0007](0007-effect-contexts.md) | Independent effects on shared native engines | implemented Delay/bus foundation; automatic chain management planned |
 | [0008](0008-sfz-native-samples-and-conversion.md) | SFZ-based native samples and Yamaha conversion | one-region Sampler implemented; multisample, extensions and converters planned |
+| [0009](0009-sound-assets-and-dependencies.md) | Sound assets and dependencies | proposed |

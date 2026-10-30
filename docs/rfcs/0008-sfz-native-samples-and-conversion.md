@@ -115,7 +115,8 @@ requirement, fails without changing the current graph or the saved folder, as a 
 plugin does today. Moving Performances between devices is a packaging operation in
 [RFC 0006](0006-packages-and-portability.md): it installs each sample library once in a
 shared store and resolves references to it, together with future unavailable-node
-preservation and library-level identities instead of absolute locations.
+preservation. [RFC 0009](0009-sound-assets-and-dependencies.md) defines the asset references,
+libraries and plugin contract that replace the current absolute locations.
 
 ## Conversion and MODX M migration
 

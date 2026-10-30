@@ -382,7 +382,7 @@ Factory sample libraries and user content follow the same model.
   two required library versions cannot safely coexist in one loader namespace, isolate
   instances in separate workers or reject that combination until isolation is available.
 - Distinguish storage from RAM: OS mappings can share immutable code pages, and cooperating
-  plugins can share immutable samples through the planned host asset API. Independently
+  plugins can share immutable samples through the planned host asset API ([RFC 0009](0009-sound-assets-and-dependencies.md)). Independently
   allocated or decoded samples, voices, delay lines and other mutable DSP state are private.
   No blanket "loaded once" memory promise for arbitrary plugins or across worker processes.
 - Pins come from explicitly retained packages, saved documents/revisions, backups as
@@ -392,7 +392,7 @@ Factory sample libraries and user content follow the same model.
   Updates install side by side; rollback selects the old lock. Garbage collection is an
   explicit storage operation, never work on the audio callback.
 
-Assets must be declared/exported by the plugin or integration. For an opaque third-party
+Assets must be declared/exported by the plugin or integration; [RFC 0009](0009-sound-assets-and-dependencies.md) defines how. For an opaque third-party
 sampler, copying its preset blob does not discover every file it might open. Include the
 whole required library if its working subset cannot be established and inclusion is
 permitted, or mark the export unresolved. Do not label factory-library references "small
