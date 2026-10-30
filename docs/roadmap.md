@@ -219,6 +219,9 @@ No package-manager dependency or prototype is required for the next desktop step
   audio instead of reactivating the graph, and the tests render almost only at 48 kHz.
   Needed: reactivation at a new rate, render tests at each rate, and the device's ALSA
   configuration.
+- External MIDI and CV, clock and Link out, and setlists across several devices
+  ([RFC 0012](rfcs/0012-sync-external-midi-and-multi-device.md)): needed by the Ignite and by
+  rigs of several Oscairn devices. Steps 1–2 (MIDI out, clock out) come first.
 
 - Map the existing logical audio endpoints onto each board's real inputs/outputs and
   validate simultaneous capture/playback, channel identities, isolation, clocking and
