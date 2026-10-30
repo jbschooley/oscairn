@@ -89,7 +89,8 @@ plugins. Oscairn can host any of them once they suit, but none should be the mai
 - Whether the sequencer plugin may keep JUCE (`ValueTree`, undo) internally, or the model is
   ported to plain C++ with undo handled by Oscairn's control layer. The core avoids JUCE; a
   plugin may use it, at a cost in size and in sharing code with non-JUCE hosts.
-- Whether to evaluate chillbeast's Modular engine as an Oscairn instrument plugin.
+- Chillbeast's Modular engine as an Oscairn instrument plugin: evaluated separately in
+  [Modular engine evaluation](modular-engine-evaluation.md).
 
 Not done: zynseq's pattern and timebase code was skimmed, not reviewed in depth; neither
 candidate was built or run here.

@@ -17,6 +17,7 @@ an implemented capability.
 | Write a MIDI effect or route audio-generated notes | [MIDI references](../plugins/midi-effects/README.md), [hybrid routing and feedback](architecture.md#midi-effects-hybrid-plugins-and-feedback) |
 | Export plugin state or edit sample properties | [Sound-management controls](control-protocol.md#state-export-presets-and-patch-properties) |
 | Choose or build the main sequencer | [Sequencer evaluation](sequencer-evaluation.md) |
+| Port chillbeast's Modular instrument | [Modular engine evaluation](modular-engine-evaluation.md) |
 | Build native sample support or choose a sample format | [SFZ-based native samples and conversion plan](rfcs/0008-sfz-native-samples-and-conversion.md), [player/format research](sample-players-and-formats.md), [ESP observations](yamaha-esp-samples-research.md) (first one-region slice implemented; multisample planned) |
 | Save, reopen, import or export a Performance | [Format and behavior](performance-format.md), [JSON Schema](performance.schema.json) |
 | Emit parameter-lock lanes from a sequencer | [Parameter-target extension](rfcs/0002-param-target.md) |
