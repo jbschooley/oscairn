@@ -110,9 +110,11 @@ namespace oscairn::standalone
         }
         if(ids!=soundIds_ || labels!=soundLabels_)
         {
+            // A single newly prepared sound (an import or menu choice) becomes the one shown, ready to use.
+            std::vector<uint32_t> added;for(auto id:ids)if(!soundIds_.empty() && std::find(soundIds_.begin(),soundIds_.end(),id)==soundIds_.end())added.push_back(id);
             soundIds_=std::move(ids);soundLabels_=labels;sounds_.clear(juce::dontSendNotification);
             sounds_.addItemList(labels,1);
-            auto selected=std::find(soundIds_.begin(),soundIds_.end(),oldId);
+            auto selected=std::find(soundIds_.begin(),soundIds_.end(),added.size()==1?added.front():oldId);
             if(selected!=soundIds_.end())sounds_.setSelectedItemIndex(static_cast<int>(selected-soundIds_.begin()),juce::dontSendNotification);
             else if(!soundIds_.empty())sounds_.setSelectedItemIndex(static_cast<int>(soundIds_.size())-1,juce::dontSendNotification);
         }
