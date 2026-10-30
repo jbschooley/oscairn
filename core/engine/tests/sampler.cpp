@@ -99,6 +99,7 @@ int main(int argc, char** argv) { try {
         { std::ofstream(dir / "text.wav") << "not audio"; }
         writeWavFile(dir / "three.wav", std::vector<float>(300, .1f), 3, 48000);
         fs::copy_file(dir / "short.wav", dir / "cut.wav"); fs::resize_file(dir / "cut.wav", 20);
+        check(live.prepare("\xEF\xBB\xBF<region> sample=short.wav", dir) != CLAP_INVALID_ID, "a UTF-8 byte-order mark is ignored");
         rejects(live, "<region> sample=short.wav\nfoo=1", dir, "line 2: unsupported opcode foo");
         rejects(live, "<group>\n<region> sample=short.wav", dir, "line 1: unsupported header <group>");
         rejects(live, "#include \"other.sfz\"", dir, "line 1: preprocessor");

@@ -113,7 +113,7 @@ namespace
     Region parse(const std::string& text)
     {
         Region r; bool region = false, sample = false;
-        int line = 1; size_t at = 0;
+        int line = 1; size_t at = text.compare(0, 3, "\xEF\xBB\xBF") == 0 ? 3 : 0; // skip a UTF-8 byte-order mark
         auto space = [&](char c) { return c == ' ' || c == '\t' || c == '\r'; };
         while(at < text.size())
         {
