@@ -65,6 +65,8 @@ namespace oscairn::standalone
             PartRow row;
             row.id = p.id; row.name = p.name; row.bus = p.input.kind == PartInput::Kind::Bus;
             row.level = p.level; row.pan = p.pan; row.mute = p.mute; row.solo = p.solo; row.through = p.bus;
+            // Its own mute, or someone else's solo: the wires where it plays are muted either way.
+            row.silenced = !p.mute && std::any_of(g.wires.begin(), g.wires.end(), [&](const Wire& w) { return w.owner == WireOwner::Part && w.part == p.id && w.fader && w.mute; });
             row.notes = p.input.kind == PartInput::Kind::Notes; row.devices = p.input.devices;
             for(const auto& s : p.sends) row.sends[s.bus] = s.level;
             if(!p.input.zones.empty()) { const auto& z = p.input.zones.front(); row.lowKey = z.lowKey; row.highKey = z.highKey; row.transpose = z.transpose; }

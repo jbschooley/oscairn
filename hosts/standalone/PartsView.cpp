@@ -304,6 +304,7 @@ namespace oscairn::standalone
                 const auto& p = *rows[i];
                 if(p.bus && (i == 0 || !rows[i - 1]->bus)) area.removeFromLeft(busGap);
                 auto strip = area.removeFromLeft(width); area.removeFromLeft(gap);
+                const size_t first = controls_.size(); // the strip's controls, faded while it is muted or silenced
                 auto inner = strip.reduced(6);
                 auto name = std::make_unique<juce::Label>(juce::String(), text(p.name));
                 name->setFont(juce::FontOptions(14.0f * themeData().fontScale, juce::Font::bold)); name->setJustificationType(juce::Justification::centred);
@@ -344,6 +345,13 @@ namespace oscairn::standalone
                 fader->setTooltip("The part's level, before its sends");
                 updates.push_back(update);
                 strips_.push_back({p.id, strip, meter});
+                std::vector<juce::Component*> faded;
+                for(size_t i = first; i < controls_.size(); ++i) faded.push_back(controls_[i].get());
+                auto fade = std::make_shared<std::function<void()>>([this, faded, id = p.id] {
+                    const auto* q = part(id); const float alpha = q && (q->mute || q->silenced) ? .45f : 1.0f;
+                    for(auto* c : faded) c->setAlpha(alpha);
+                });
+                (*fade)(); updates.push_back(fade);
             }
         }
         else if(controlsShown)
@@ -854,7 +862,7 @@ namespace oscairn::standalone
             for(const auto& s : strips_)
             {
                 const auto* p = part(s.part);
-                g.setColour(p && p->mute ? ink(Ink::Surface).withAlpha(.5f) : ink(Ink::Surface));
+                g.setColour(p && (p->mute || p->silenced) ? ink(Ink::Surface).withAlpha(.5f) : ink(Ink::Surface));
                 g.fillRoundedRectangle(s.bounds.toFloat(), themeData().radius);
                 g.setColour(ink(Ink::Raised)); g.fillRoundedRectangle(s.meter.toFloat(), 3);
                 const auto peak = peaks_.count(s.part) ? peaks_.at(s.part) : 0.0;
@@ -911,7 +919,7 @@ namespace oscairn::standalone
                 for(const auto& p : *rows)
                 {
                     auto r = rowBounds(row++);
-                    g.setColour(p.mute ? ink(Ink::Surface).withAlpha(.5f) : ink(Ink::Surface));
+                    g.setColour(p.mute || p.silenced ? ink(Ink::Surface).withAlpha(.5f) : ink(Ink::Surface));
                     g.fillRoundedRectangle(r.toFloat(), themeData().radius);
                     auto rr = r.reduced(8, 6);
                     g.setColour(ink(Ink::Muted)); g.setFont(juce::FontOptions(14.0f * scale));

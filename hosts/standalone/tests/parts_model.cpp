@@ -64,6 +64,12 @@ int main(int argc, char** argv)
         setOutput(s, lead, room); check(readParts(s.graphState()).parts[1].through == room, "the lead plays through the room");
         setSendLevel(s, bass, room, 0); check(readParts(s.graphState()).parts[0].sends.empty(), "a send at 0 is removed");
         check(roleOf({0, {}, {}, {}, 0, 1}) == "Sequencer", "a node with only note outputs is a sequencer");
+        // Solo: the other parts read as silenced, which dims them in the Parts list and Mixer.
+        s.setPartSolo(lead, true); s.commit();
+        auto soloed = readParts(s.graphState());
+        check(soloed.parts[0].silenced && !soloed.parts[1].silenced && !soloed.parts[0].mute, "another part's solo silences the bass, without muting it");
+        s.setPartSolo(lead, false); s.commit();
+        check(!readParts(s.graphState()).parts[0].silenced, "and no longer");
 
         // The Plays from menu: a connected device picked by name, a kind added, Any device clears.
         const MidiEndpoint keylab{MidiEndpoint::Kind::Usb, 3, "KeyLab 61"}, din{MidiEndpoint::Kind::Port, 4, "MIDI 2", 2};

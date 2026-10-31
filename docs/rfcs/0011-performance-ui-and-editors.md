@@ -442,7 +442,8 @@ separate; `control-parts` checks a left/right split with a delay on one side ren
 as wired by hand, also after saving and opening, and mid/side and band lanes.
 
 **The Mixer** followed: **Mixer** on the Parts view shows a strip per part and bus, with its
-sends, pan, a fader (−12 dB halfway up), its level in dB, mute, solo and a meter. Parts gained
+sends, pan, a fader (−12 dB halfway up), its level in dB, mute, solo and a meter; a strip
+another part's solo silences fades, as a muted one does, and so does its Parts row. Parts gained
 solo: while any part is soloed, only soloed parts, the parts that feed them and the buses
 they feed are heard, so a soloed part keeps its reverb bus. The graph records each node's
 largest output sample; the Session turns these into each part's peak after its fader, held
@@ -452,8 +453,7 @@ and falling by about 17 dB a second, and the Mixer reads them 20 times a second
 test and `desktop-pad-editor` the rest.
 
 Not yet:
-- **Mixer details:** strips dimmed when another part's solo silences them, and meters that
-  sum a part's lanes.
+- **Mixer details:** meters that sum a part's lanes.
 - **Nested splits in the views:** a split inside a lane shows as a gap there.
 - **Smooth crossover changes:** a new crossover frequency applies at the next block.
 

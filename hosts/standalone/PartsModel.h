@@ -42,6 +42,7 @@ namespace oscairn::standalone
         std::vector<PartBox> chain;
         double level = 1, pan = 0;
         bool mute = false, solo = false;
+        bool silenced = false;           // another part's solo silences it
         uint32_t through = 0;            // the bus it plays through, or 0 for Main
         std::map<uint32_t, double> sends; // bus -> level
         std::vector<std::string> exits;  // "→ Hall (shared)": nodes outside it its boxes are wired to in Routing
