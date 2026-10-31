@@ -219,6 +219,7 @@ void Session::loadPerformance(const std::string& directory) {
     std::vector<Wire> wires;std::vector<Part> parts;uint32_t nextPart=1;
     {
         std::set<uint32_t> partIds;
+        std::set<NodeId> partNodes; // a node belongs to one part
         for(auto p:array(field(d,"parts"),256)){
             fields(p,{"id","name","input","chain","splits","output","bus","sends","level","pan","mute","solo"});Part part;part.id=integer(field(p,"id"));part.name=text(field(p,"name"));
             if(!part.id || !partIds.insert(part.id).second)bad("invalid or duplicate part");
@@ -230,7 +231,7 @@ void Session::loadPerformance(const std::string& directory) {
             auto chain=[&](V list){std::vector<NodeId> out;for(auto n:array(list,256)){
                 NodeId id;
                 if(n->type==json_type_object){fields(n,{"split"});const auto s=integer(field(n,"split"));if(!s || s>=splitMark)bad("invalid split entry");id=splitMark|s;}
-                else{id=node(n);if(id==graphInput || id==graphOutput)bad("invalid part chain");}
+                else{id=node(n);if(id==graphInput || id==graphOutput)bad("invalid part chain");if(!partNodes.insert(id).second)bad("a node appears in two parts");}
                 if(!seen.insert(id).second)bad("a node or split appears twice in a part");out.push_back(id);}return out;};
             part.chain=chain(field(p,"chain"));
             for(auto sp:array(field(p,"splits"),256)){
@@ -239,7 +240,7 @@ void Session::loadPerformance(const std::string& directory) {
                 // Its own Split and Join nodes, by key, for the kinds that have them.
                 auto own=[&](const char* name,const char* plugin,bool needed){
                     const auto v=field(sp,name);if(v->type==json_type_null){if(needed)bad("a split is missing its nodes");return NodeId(0);}
-                    const auto id=node(v);if(!needed || id==graphInput || id==graphOutput || !seen.insert(id).second || next->describe().nodes.end()==std::find_if(next->describe().nodes.begin(),next->describe().nodes.end(),[&](const auto& n){return n.id==id && n.plugin.id==plugin;}))bad("invalid split node");
+                    const auto id=node(v);if(!needed || id==graphInput || id==graphOutput || !seen.insert(id).second || !partNodes.insert(id).second || next->describe().nodes.end()==std::find_if(next->describe().nodes.begin(),next->describe().nodes.end(),[&](const auto& n){return n.id==id && n.plugin.id==plugin;}))bad("invalid split node");
                     return id;};
                 const bool joins=split.kind==Split::Kind::LeftRight || split.kind==Split::Kind::MidSide;
                 split.splitter=own("splitter",splitPlugin,split.kind!=Split::Kind::Copy);split.joiner=own("joiner",joinPlugin,joins);

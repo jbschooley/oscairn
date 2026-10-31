@@ -71,6 +71,11 @@ namespace
         check(s.hasNode(synth) && s.hasNode(fx), "the part's nodes stay");
         bool refused = false; try { s.insertIntoPart(keys, 0, synth); } catch(const std::invalid_argument&) { refused = true; }
         check(refused, "unknown part refused");
+        // A node belongs to one part: in two it would play twice (the 2026-10-31 audit).
+        const auto a = s.addPart("A"), b = s.addPart("B");
+        s.insertIntoPart(a, 0, synth);
+        refused = false; try { s.insertIntoPart(b, 0, synth); } catch(const std::invalid_argument&) { refused = true; }
+        check(refused && s.parts().back().chain.empty(), "a node already in another part is refused");
         s.commit();
     }
 
@@ -727,6 +732,25 @@ namespace
         t.savePerformance(again.string());
         const auto first = state_files::read(saved / "performance.json", 1 << 22), second = state_files::read(again / "performance.json", 1 << 22);
         check(first == second, "saving the loaded Performance gives the same manifest");
+
+        // A file listing one node in two parts is refused, the session untouched.
+        {
+            auto text = std::string(first.begin(), first.end());
+            auto keyAfter = [&](const std::string& name) {
+                const auto at = text.find("\"chain\":[\"", text.find("\"name\":\"" + name + "\""));
+                return std::pair{at + 10, text.find('"', at + 10)};
+            };
+            const auto [keyStart, keyEnd] = keyAfter("Keys");
+            const auto key = text.substr(keyStart, keyEnd - keyStart);
+            const auto [guitarStart, guitarEnd] = keyAfter("Guitar");
+            text.replace(guitarStart, guitarEnd - guitarStart, key);
+            const auto twice = root / "twice";
+            fs::copy(saved, twice, fs::copy_options::recursive);
+            state_files::write(twice / "performance.json", text.data(), text.size());
+            const auto before = describe(t);
+            bool refusedTwice = false; try { t.loadPerformance(twice.string()); } catch(const std::runtime_error& e) { refusedTwice = std::string(e.what()).find("two parts") != std::string::npos; }
+            check(refusedTwice && describe(t) == before, "a node in two parts is refused in a file: " + key);
+        }
 
         // An earlier format version is refused clearly, the session untouched.
         const auto old = root / "version-1";

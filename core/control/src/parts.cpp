@@ -840,7 +840,8 @@ namespace oscairn
         if(splitNode(node)) throw std::invalid_argument("the node belongs to a split");
         auto& part = findPart(id);
         if(index > chainAt(part, place).size()) throw std::invalid_argument("chain position out of range");
-        if(holds(part, node)) throw std::invalid_argument("the node is already in this part");
+        // A node belongs to one part (RFC 0011): in two, it would play twice and both would own it.
+        if(std::any_of(parts_.begin(), parts_.end(), [&](Part& p) { return holds(p, node); })) throw std::invalid_argument("the node is already in a part");
         editWires([&] { auto& c = chainAt(findPart(id), place); c.insert(c.begin() + std::ptrdiff_t(index), node); buildParts(); });
     }
 
