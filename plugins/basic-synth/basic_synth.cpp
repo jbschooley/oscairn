@@ -12,7 +12,7 @@
 // host's block size.
 
 #include <clap/clap.h>
-#include "../common/SoundContexts.h"
+#include <oscairn-clap/sound-contexts-plugin.hpp>
 
 #include <algorithm>
 #include <array>

@@ -271,9 +271,10 @@ Also open:
 
 Plugins and apps (sequencers, instruments, the UI) must stay separate components, each in
 its own folder with its own build target and depending only on Oscairn's public headers, so
-they can later move to their own repositories or ship as packages. Today the plugins share
-one CMake file and `plugins/common/SoundContexts.h`; that helper becomes part of a public
-plugin SDK before any plugin moves out.
+they can later move to their own repositories or ship as packages. The sound-contexts helper
+they shared is now part of the MIT plugin SDK beside the extension headers
+(`core/clap-ext/include/oscairn-clap/sound-contexts-plugin.hpp`), so a plugin in its own
+repository vendors that folder.
 
 The subsequent [conversion plan](rfcs/0008-sfz-native-samples-and-conversion.md#conversion-and-modx-m-migration)
 covers SFZ interchange and Jacob's MODX M library migration: inventory first, explicit

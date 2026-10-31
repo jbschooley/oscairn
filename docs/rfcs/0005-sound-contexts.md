@@ -44,7 +44,7 @@ routes note ownership between them rather than claiming in-place restore is seam
 ## Basic Synth and Sampler
 
 Both instruments use one shared implementation of this contract,
-[SoundContexts.h](../../plugins/common/SoundContexts.h); the rules below apply to both,
+[sound-contexts-plugin.hpp](../../core/clap-ext/include/oscairn-clap/sound-contexts-plugin.hpp); the rules below apply to both,
 except parameters, which the Sampler does not have. A Sampler note outside its region's
 key or velocity range starts no voice and reports `NOTE_END` immediately.
 

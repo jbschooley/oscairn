@@ -1,4 +1,7 @@
-// SPDX-License-Identifier: AGPL-3.0-or-later
+// SPDX-License-Identifier: MIT
+//
+// Part of the Oscairn plugin SDK (MIT, like the extension headers beside it; relicensed from
+// AGPL-3.0-or-later on 2026-10-31 so plugins of any licence can use it).
 //
 // Native sound-context ownership shared by Oscairn instruments: preparation slots,
 // the bounded selection queue, voice ownership and release rules, NOTE_END, and the

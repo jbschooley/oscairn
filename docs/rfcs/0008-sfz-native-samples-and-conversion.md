@@ -270,7 +270,7 @@ acceptance has not happened** and is queued with the other listening tests.
 - [Oscairn Sampler](../../plugins/sampler/sampler.cpp) plays the baseline profile over
   preloaded mono/stereo WAV with libsndfile; behavior and limits are in the
   [plugins guide](../../plugins/README.md#sampler-sounds). Basic Synth and Sampler share
-  [one context implementation](../../plugins/common/SoundContexts.h).
+  [one context implementation](../../core/clap-ext/include/oscairn-clap/sound-contexts-plugin.hpp).
 - `sounds.prepare` takes `sfz` with an asset `library` and `directory` (RFC 0009) through typed, JSON and remote controls; the
   desktop picker imports a `.wav` or `.sfz` file through the same model code.
 - The `sampler` test covers exact timing, pitch, velocity, held-note survival, simultaneous

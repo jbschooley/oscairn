@@ -10,7 +10,7 @@
 // library, its folder there and the sample's SHA-256, and the host's oscairn.assets
 // extension finds and verifies the file. The sampler never searches the file system itself.
 
-#include "../common/SoundContexts.h"
+#include <oscairn-clap/sound-contexts-plugin.hpp>
 #include <oscairn-clap/assets.h>
 #include <clap/ext/log.h>
 #include <sndfile.h>

@@ -19,7 +19,8 @@ not implemented; explicit routing supports independent chains and preserved tail
 synth/preset library. Keep stable IDs and license notices when adapting their source.
 
 Basic Synth and Sampler share one implementation of native context ownership, voice
-release rules and snapshots: [SoundContexts.h](common/SoundContexts.h).
+release rules and snapshots: [sound-contexts-plugin.hpp](../core/clap-ext/include/oscairn-clap/sound-contexts-plugin.hpp),
+part of the MIT plugin SDK beside the extension headers.
 
 ## Sampler sounds
 

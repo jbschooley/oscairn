@@ -25,7 +25,9 @@ licence, including proprietary ones. Code linked into the core is covered by the
 The Oscairn CLAP extension headers (`core/clap-ext/include/oscairn-clap/`) are **MIT**
 licensed, as is CLAP itself (decided by Jacob, October 30, 2026). A plugin includes them to
 use Oscairn's extensions, so an AGPL licence there would have contradicted the boundary
-above. The rest of the core stays AGPL. They become part of the planned MIT plugin SDK.
+above. The rest of the core stays AGPL. They are the start of the MIT plugin SDK, with
+`sound-contexts-plugin.hpp`, the C++ helper that implements native sound contexts for an
+instrument (relicensed from AGPL to MIT by Jacob, October 31, 2026).
 
 ## Copied code
 
