@@ -19,7 +19,7 @@ jobs:
 
       - name: Install Ninja (Linux)
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y ninja-build liblilv-dev lv2-dev lv2-examples libsndfile1-dev libsamplerate0-dev x42-plugins samplv1-lv2
+        run: sudo apt-get update && sudo apt-get install -y ninja-build liblilv-dev lv2-dev lv2-examples libsndfile1-dev libsamplerate0-dev x42-plugins samplv1-lv2 python3-jsonschema
 
       - name: Check out pinned upstream LV2 examples (Linux)
         if: runner.os == 'Linux'

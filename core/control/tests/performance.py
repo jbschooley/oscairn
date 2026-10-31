@@ -2,6 +2,7 @@
 """Exercise the on-disk contract through RPC, including independent process reopen."""
 import copy
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -47,6 +48,8 @@ try:
         try:
             import jsonschema
         except ImportError:
+            if os.environ.get('CI') and sys.platform.startswith('linux'):
+                raise  # Linux CI installs it, so the schemas are always checked there
             print('JSON Schema validator not installed; parser/roundtrip checks still run')
         else:
             jsonschema.Draft202012Validator.check_schema(json.loads(schema.read_text()))
