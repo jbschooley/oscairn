@@ -110,7 +110,7 @@ namespace oscairn::standalone
                 // Follow the row: a new parameter takes its range and name; none disables it.
                 const auto& row = engine_.row();
                 const auto* bound = size_t( row_ ) <= row.size() ? &row[size_t( row_ - 1 )] : nullptr;
-                if( !bound ) { node_.clear(); slider_.setEnabled( false ); if( label_ != layoutLabel_ ) { label_ = layoutLabel_; repaint(); } return; }
+                if( !bound ) { node_.clear(); slider_.setEnabled( false ); slider_.updateText(); if( label_ != layoutLabel_ ) { label_ = layoutLabel_; repaint(); } return; }
                 if( bound->node != node_ || bound->param != param_ )
                 {
                     node_ = bound->node; param_ = bound->param; label_ = bound->name; repaint();

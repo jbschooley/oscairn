@@ -70,16 +70,19 @@ namespace oscairn::standalone
 
         void paint(juce::Graphics&) override;
         void resized() override;
-        void mouseDown(const juce::MouseEvent&) override; // a tap on a tile selects its row
-        // The row the device's knobs play (RFC 0019): its tiles' parameters, left to right.
-        void selectRow(int y);
+        void mouseDown(const juce::MouseEvent&) override; // a tap on a tile selects its row or column
+        // The line of tiles the device's knobs play (RFC 0019): a row, left to right, when the
+        // knobs sit above or below the screen; a column, top to bottom, when they sit beside it.
+        void selectLine(const juce::Rectangle<int>& tile);
         std::vector<std::string> rowShown() const { std::vector<std::string> n; for(const auto& r : engine_.row()) n.push_back(r.name); return n; }
 
     private:
         class Choices;
-        void publishRow();               // the selected row to the engine, for "row:N" knobs
+        void publishRow();               // the selected line to the engine, for "row:N" knobs
+        bool columns() const;            // the knobs sit beside the screen: they play a column
+        bool inLine(const juce::Rectangle<int>& tile) const { return (columns() ? tile.getX() : tile.getY()) == line_; }
         juce::Rectangle<int> strip_;     // names what each of the device's row knobs plays
-        int rowY_ = -1;                  // the selected row's top, in the content
+        int line_ = -1;                  // the selected row's top, or column's left, in the content
         struct Page { std::string name; std::vector<size_t> params; };
         struct Tile
         {

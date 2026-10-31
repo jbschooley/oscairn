@@ -455,10 +455,16 @@ namespace oscairn::standalone
             for(const auto& p : grid_.panels_) drawSection(g, p, ink(Ink::Surface));
             g.setColour(ink(Ink::Muted)); g.setFont(juce::FontOptions(textSize(TextRole::Small, mode), juce::Font::bold));
             for(const auto& h : grid_.headings_) g.drawText(h.text, h.bounds, juce::Justification::bottomLeft, true);
-            // The row the device's knobs play: an accent line along its tiles' tops, over the cards.
+            // The line the device's knobs play: its tiles tinted and outlined in the accent.
             if(grid_.engine_.rowKnobs() > 0)
                 for(const auto& t : grid_.tiles_)
-                    if(t.bounds.getY() == grid_.rowY_) { g.setColour(ink(Ink::Accent)); g.fillRect(t.bounds.getX() + 6, t.bounds.getY(), t.bounds.getWidth() - 12, 3); }
+                    if(grid_.inLine(t.bounds))
+                    {
+                        const auto r = t.bounds.toFloat().reduced(1.5f);
+                        const float corner = t.linked ? 0.f : themeData().radius + 2;
+                        g.setColour(ink(Ink::Accent).withAlpha(.12f)); g.fillRoundedRectangle(r, corner);
+                        g.setColour(ink(Ink::Accent)); g.drawRoundedRectangle(r, corner, 1.5f);
+                    }
         }
     private:
         ParameterGrid& grid_;
@@ -512,12 +518,14 @@ namespace oscairn::standalone
     void ParameterGrid::mouseDown(const juce::MouseEvent& e)
     {
         const auto at = e.getEventRelativeTo(content_.get()).getPosition();
-        for(const auto& t : tiles_) if(t.bounds.contains(at)) { selectRow(t.bounds.getY()); return; }
+        for(const auto& t : tiles_) if(t.bounds.contains(at)) { selectLine(t.bounds); return; }
     }
 
-    void ParameterGrid::selectRow(int y)
+    bool ParameterGrid::columns() const { return engine_.rowEdge() == Engine::Edge::Left || engine_.rowEdge() == Engine::Edge::Right; }
+
+    void ParameterGrid::selectLine(const juce::Rectangle<int>& tile)
     {
-        rowY_ = y;
+        line_ = columns() ? tile.getX() : tile.getY();
         publishRow();
         content_->repaint(); repaint(strip_);
     }
@@ -525,8 +533,8 @@ namespace oscairn::standalone
     void ParameterGrid::publishRow()
     {
         std::vector<const Tile*> row;
-        for(const auto& t : tiles_) if(t.bounds.getY() == rowY_) row.push_back(&t);
-        std::sort(row.begin(), row.end(), [](const Tile* a, const Tile* b) { return a->bounds.getX() < b->bounds.getX(); });
+        for(const auto& t : tiles_) if(inLine(t.bounds)) row.push_back(&t);
+        std::sort(row.begin(), row.end(), [this](const Tile* a, const Tile* b) { return columns() ? a->bounds.getY() < b->bounds.getY() : a->bounds.getX() < b->bounds.getX(); });
         std::vector<Engine::RowParam> published;
         for(const auto* t : row) published.push_back({name_, params_[t->param].id, params_[t->param].name});
         engine_.setRow(std::move(published));
@@ -903,8 +911,9 @@ namespace oscairn::standalone
             y += height + gap + 6;
         }
         content_->setSize(width, std::max(y, 1));
-        // Keep the row selected if it is still there, else the first.
-        if(std::none_of(tiles_.begin(), tiles_.end(), [&](const Tile& t) { return t.bounds.getY() == rowY_; })) rowY_ = tiles_.empty() ? -1 : tiles_.front().bounds.getY();
+        // Keep the line selected if it is still there, else the first.
+        if(std::none_of(tiles_.begin(), tiles_.end(), [&](const Tile& t) { return inLine(t.bounds); }))
+            line_ = tiles_.empty() ? -1 : this->columns() ? 0 : tiles_.front().bounds.getY();
         publishRow();
         stale_ = !engine_.controlReady(); // the engine answers value texts only when it is free
         for(auto& t : tiles_) show(t, engine_.param(name_, params_[t.param].id));

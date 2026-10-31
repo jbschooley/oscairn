@@ -265,16 +265,20 @@ drawn for the type its value text names.
   Synth's linked LFO, and given the engines, that the analog filter envelope's stages stay
   together at 1,180 and 560 pixels and that no controls overlap on any of their pages.
 - *Physical knobs following the screen* (step 6): done for parameter pages. A layout's knob
-  bound `row:N` plays the Nth parameter of the row selected on screen; the panel counts them
-  and works out the screen's edge they sit beyond. On a parameter page a tap on a tile selects
-  its row (the first row until then), an accent line marks it, and a strip along that edge
+  bound `row:N` plays the Nth parameter of the line selected on screen; the panel counts them
+  and works out the screen's edge they sit beyond. Knobs above or below the screen play a row,
+  left to right; knobs beside it play a column, top to bottom. On a parameter page a tap on a
+  tile selects its line (the first until then), its tiles take a tint and a border in the
+  accent, and a strip along that edge
   names each knob's parameter (and its value, when the strip runs down a side). A device
   without such knobs shows no strip. On device layouts the Parts views now sit over the
   screen, scaled with it, so the panel's knobs stay in reach. The KICK's P1 to P4 and the
   concept keyboard's Mod 1 to 3 are row knobs. `desktop-shell` checks, on a panel with four
-  row knobs right of its screen, that the first row is theirs, that tapping a tile in the
-  next row moves them there, that turning P1 sets that row's first parameter, and that the
-  row and the knobs go with their page and panel. Not yet: rows on the Part page, Mixer and
+  knobs right of its screen, that the first column is theirs, that tapping a tile in the next
+  column moves them there, that turning P1 sets its first parameter, and that the line and the
+  knobs go with their page and panel; and on a panel with knobs under its screen, that they
+  play the first row. These are sound-editing controls: what the knobs do while playing, with
+  no page open, is RFC 0011 step 6's defaults. Not yet: rows on the Part page, Mixer and
   Routing; defaults for the knobs when no page is open; endless encoders' relative turns.
 - *No fixed effect sends or EQ in the Mixer:* sends go to the Performance's own buses, and an
   EQ is a plugin put wherever it is needed (RFC 0016).

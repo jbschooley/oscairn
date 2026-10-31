@@ -340,11 +340,12 @@ int main(int argc, char** argv)
                 standalone::setDesktopMode(*grid, 2);
                 panel.overlay(grid.get());
                 for(int i = 0; i < 20; ++i) juce::MessageManager::getInstance()->runDispatchLoopUntil(10);
+                // Knobs beside the screen play a column, top to bottom.
                 const auto first = grid->rowShown();
-                check(!first.empty() && first[0] == "Brightness", "the first row is the knobs' until another is chosen");
-                // Tap a tile in the next row.
+                check(first.size() >= 2 && first[0] == "Brightness" && first[1] != "Level", "the first column is the side knobs' until another is chosen");
+                // Tap a tile in the next column.
                 juce::Component* tile = nullptr;
-                std::function<void(juce::Component&)> find = [&](juce::Component& c) { for(auto* child : c.getChildren()) { if(auto* s = dynamic_cast<juce::Slider*>(child); s && s->isRotary() && s->getY() > 100 && !tile) tile = s; find(*child); } };
+                std::function<void(juce::Component&)> find = [&](juce::Component& c) { for(auto* child : c.getChildren()) { if(auto* s = dynamic_cast<juce::Slider*>(child); s && s->isRotary() && s->getX() > 150 && s->getY() < 100 && !tile) tile = s; find(*child); } };
                 find(*grid);
                 if(tile)
                 {
@@ -353,7 +354,7 @@ int main(int argc, char** argv)
                     grid->mouseDown(juce::MouseEvent(mouse, at, {}, 1, 0, 0, 0, 0, tile, tile, juce::Time::getCurrentTime(), at, juce::Time::getCurrentTime(), 1, false));
                 }
                 const auto second = grid->rowShown();
-                check(tile && !second.empty() && second != first, "tapping a tile in another row gives the knobs that row");
+                check(tile && !second.empty() && second != first && second[0] == "Level", "tapping a tile in another column gives the knobs that column");
                 // P1 now plays that row's first parameter.
                 juce::Slider* p1 = nullptr;
                 std::function<void(juce::Component&)> knob = [&](juce::Component& c) { // the slider in P1's place on the panel
@@ -376,6 +377,21 @@ int main(int argc, char** argv)
                 check(engine.row().empty(), "the row goes with its page");
             }
             check(engine.rowKnobs() == 0, "and the knobs with their panel");
+            {
+                // Knobs under the screen play a row, left to right.
+                const auto layout = standalone::Layout::parse(R"({"name": "Row test", "size": [1024, 760], "controls": [
+                    {"type": "screen", "rect": [0, 0, 1024, 600]},
+                    {"type": "knob", "rect": [20, 620, 120, 120], "label": "K1", "bind": "row:1"}, {"type": "knob", "rect": [160, 620, 120, 120], "label": "K2", "bind": "row:2"},
+                    {"type": "knob", "rect": [300, 620, 120, 120], "label": "K3", "bind": "row:3"}]})");
+                standalone::Panel panel(engine, layout);
+                check(engine.rowKnobs() == 3 && engine.rowEdge() == standalone::Engine::Edge::Bottom, "knobs under the screen");
+                NodeId synth = 0;
+                for(const auto& [id, n] : engine.graph().names) if(n == "Basic Synth") synth = id;
+                standalone::ParameterGrid grid(engine, synth, "Basic Synth");
+                standalone::setDesktopMode(grid, 2); grid.setSize(1024, 600);
+                const auto row = grid.rowShown();
+                check(row.size() >= 3 && row[0] == "Brightness" && row[1] == "Level" && row[2] == "Oscillator", "the first row, left to right");
+            }
             // The preference: Automatic until one is saved, then what was saved.
             const auto folder = juce::File::createTempFile("oscairn-input");
             check(standalone::readInputMode(folder) == standalone::InputMode::Automatic, "no saved preference reads as Automatic");
