@@ -228,7 +228,9 @@ namespace oscairn
                 auto reply=call("params.list","{\"node\":"+std::to_string(n.id)+'}');
                 for(auto p:array(field(field(reply.get(),"result"),"parameters")))
                 {
-                    ParamInfo param{static_cast<uint32_t>(integer(field(p,"id"))),string(field(p,"name")),number(field(p,"minimum")),number(field(p,"maximum")),number(field(p,"defaultValue")),boolean(field(p,"stepped")),static_cast<uint32_t>(integer(field(p,"flags"))),string(field(p,"module"))};
+                    ParamInfo param{static_cast<uint32_t>(integer(field(p,"id"))),string(field(p,"name")),number(field(p,"minimum")),number(field(p,"maximum")),number(field(p,"defaultValue")),boolean(field(p,"stepped")),static_cast<uint32_t>(integer(field(p,"flags"))),string(field(p,"module")),
+                                    widgetNamed(std::string(string(field(p,"widget")))),static_cast<uint32_t>(integer(field(p,"priority")))};
+                    if(param.widget==OSCAIRN_WIDGET_RANGE)param.rangeHigh=static_cast<uint32_t>(integer(field(p,"rangeHigh")));
                     metadata[n.id].push_back(param);if(count)batch+=',';batch+='{'+address(n.id,param.id)+'}';if(++count==128)flush();
                 }
                 metadata.try_emplace(n.id);

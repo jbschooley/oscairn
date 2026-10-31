@@ -5,6 +5,7 @@
 #include "oscairn/parts.h"
 #include "oscairn/pads.h"
 #include "oscairn/transport.h"
+#include <oscairn-clap/ui.h>
 
 #include <string>
 #include <map>
@@ -12,6 +13,18 @@
 
 namespace oscairn
 {
+    // oscairn.ui's widgets by name, as the control protocol writes them ("knob"); unknown: auto.
+    inline const char* widgetName(uint32_t widget)
+    {
+        static const char* const names[] = {"auto", "slider", "knob", "buttons", "switch", "list", "range"};
+        return widget < std::size(names) ? names[widget] : "auto";
+    }
+    inline uint32_t widgetNamed(const std::string& name)
+    {
+        for(uint32_t w = 0; w <= OSCAIRN_WIDGET_RANGE; ++w) if(name == widgetName(w)) return w;
+        return OSCAIRN_WIDGET_AUTO;
+    }
+
     /// In-process control boundary. All calls belong to one control/main thread;
     /// audio and hardware input do not call this interface. No device or plugin handles
     /// escape it. The socket/JSON adapter will implement the same control operations.
@@ -28,6 +41,9 @@ namespace oscairn
             bool        stepped = false;
             uint32_t    flags = 0;
             std::string module; // CLAP's module path ("Oscillator 1/Pitch"): where editors group it
+            // The plugin's oscairn.ui hint: enum oscairn_widget, a priority (0: none), and for a
+            // range its high parameter.
+            uint32_t widget = 0, priority = 0, rangeHigh = CLAP_INVALID_ID;
         };
         struct TransportState
         {

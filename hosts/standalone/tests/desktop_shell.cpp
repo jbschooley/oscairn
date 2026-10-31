@@ -192,6 +192,19 @@ int main(int argc, char** argv)
                 standalone::ParameterGrid grid(engine, node, name);
                 holder.addAndMakeVisible(grid); grid.setBounds(holder.getLocalBounds().reduced(16));
                 check(grid.pages() > 0, "the plugin's parameters make at least one page: " + name);
+                if(name == "Basic Synth")
+                {
+                    // Its oscairn.ui hints: the most played first, knobs, the oscillator as buttons.
+                    grid.showPage(0);
+                    const auto names = grid.namesShown();
+                    check(names.size() == 8 && names[0] == "Brightness" && names[1] == "Level" && names[2] == "Oscillator" && names.back() == "Output bus", "tiles in the plugin's priority order");
+                    int knobs = 0;
+                    std::function<void(juce::Component&)> count = [&](juce::Component& c) {
+                        for(auto* child : c.getChildren()) { if(auto* s = dynamic_cast<juce::Slider*>(child); s && s->isRotary()) ++knobs; count(*child); }
+                    };
+                    count(grid);
+                    check(knobs == 6, "the knobs it asks for: " + std::to_string(knobs));
+                }
                 auto save = [&, name = name](const juce::String& suffix) {
                     for(int i = 0; i < 10; ++i) juce::MessageManager::getInstance()->runDispatchLoopUntil(10);
                     const auto image = holder.createComponentSnapshot(holder.getLocalBounds());

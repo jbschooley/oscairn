@@ -15,6 +15,7 @@
 #include <clap/ext/preset-load.h>
 #include <clap/factory/preset-discovery.h>
 #include <oscairn-clap/param-target.h>
+#include <oscairn-clap/ui.h>
 #include <algorithm>
 #include <filesystem>
 #include <cstdio>
@@ -128,6 +129,7 @@ struct Host::Impl {
     std::shared_ptr<detail::Library> library;
     const clap_plugin_t* plugin = nullptr;
     const clap_plugin_params_t* params = nullptr;
+    const oscairn_plugin_ui_t* ui = nullptr;
     const clap_plugin_state_t* state = nullptr;
     bool exclusiveState=false;
     const oscairn_plugin_sound_contexts_t* sounds = nullptr;
@@ -355,6 +357,8 @@ struct Host::Impl {
             throw std::runtime_error("Incomplete CLAP plugin interface");
         if (!s.plugin->init(s.plugin)) throw std::runtime_error("Plugin initialization failed");
         s.params = static_cast<const clap_plugin_params_t*>(s.plugin->get_extension(s.plugin, CLAP_EXT_PARAMS));
+        s.ui = static_cast<const oscairn_plugin_ui_t*>(s.plugin->get_extension(s.plugin, OSCAIRN_EXT_UI));
+        if (s.ui && !s.ui->param_hint) s.ui = nullptr;
         if (s.params && (!s.params->count || !s.params->get_info || !s.params->get_value || !s.params->flush))
             throw std::runtime_error("Incomplete CLAP parameter interface");
         s.sounds = static_cast<const oscairn_plugin_sound_contexts_t*>(s.plugin->get_extension(s.plugin,OSCAIRN_EXT_SOUND_CONTEXTS));
@@ -399,6 +403,24 @@ struct Host::Impl {
                                       p.min_value, p.max_value, p.default_value, p.flags}, p.cookie, value});
             }
         }
+        // Hints from oscairn.ui, each kept only where it fits its parameter: a control for
+        // stepped values on a stepped parameter, a switch on two values, a range whose high end
+        // is another parameter. Anything else is drawn as the host decides.
+        if (ui)
+            for (auto& item : items) {
+                oscairn_param_hint_t hint{OSCAIRN_WIDGET_AUTO, 0, CLAP_INVALID_ID};
+                if (!ui->param_hint(plugin, item.info.id, &hint)) continue;
+                auto& p = item.info;
+                const bool stepped = (p.flags & CLAP_PARAM_IS_STEPPED) != 0;
+                const auto values = stepped ? std::llround(p.maximum - p.minimum) + 1 : 0;
+                const bool high = std::any_of(items.begin(), items.end(), [&](const Item& o) { return o.info.id == hint.range_high && o.info.id != p.id; });
+                const bool fits = hint.widget == OSCAIRN_WIDGET_SLIDER || hint.widget == OSCAIRN_WIDGET_KNOB ||
+                                  ((hint.widget == OSCAIRN_WIDGET_BUTTONS || hint.widget == OSCAIRN_WIDGET_LIST) && stepped) ||
+                                  (hint.widget == OSCAIRN_WIDGET_SWITCH && values == 2) || (hint.widget == OSCAIRN_WIDGET_RANGE && high);
+                p.widget = fits ? hint.widget : OSCAIRN_WIDGET_AUTO;
+                p.rangeHigh = p.widget == OSCAIRN_WIDGET_RANGE ? hint.range_high : CLAP_INVALID_ID;
+                p.priority = hint.priority;
+            }
         std::sort(items.begin(), items.end(), [](const Item& a, const Item& b) { return a.info.id < b.info.id; });
         paramInfo.clear(); cookies.clear();
         paramValues = std::make_unique<std::atomic<double>[]>(items.size());

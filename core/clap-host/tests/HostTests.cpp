@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #include <kick_clap/Host.h>
 #include <kick_clap/Discovery.h>
+#include <oscairn-clap/ui.h>
 #include <atomic>
 #include <cmath>
 #include <cstdio>
@@ -53,8 +54,20 @@ int main(int argc, char** argv) {
 #endif
 
     Host h;
+    {
+        // oscairn.ui hints, kept only where they fit their parameter.
+        Host hinted;
+        check(hinted.load(catalog.plugins[8], 48000, 128), "load the stepped fixture");
+        auto hint = [&](clap_id id) { for (const auto& p : hinted.parameters()) if (p.id == id) return p; return Parameter{}; };
+        check(hint(7).widget == OSCAIRN_WIDGET_RANGE && hint(7).rangeHigh == 99 && hint(7).priority == 1, "a range with its high parameter");
+        check(hint(8).widget == OSCAIRN_WIDGET_SWITCH && hint(8).priority == 2, "a switch on two values");
+        check(hint(9).widget == OSCAIRN_WIDGET_AUTO && hint(9).priority == 3, "a switch on five values is the host's choice; its priority stays");
+        check(hint(99).widget == OSCAIRN_WIDGET_AUTO, "an unknown widget is the host's choice");
+        hinted.unload();
+    }
     check(h.load(catalog.plugins[0], 48000, 128), "load exact instrument ID");
     check(h.parameters().size() == 2 && h.latency() == 13 && h.supportsState(), "parameters, latency, state");
+    check(h.parameters()[0].widget == OSCAIRN_WIDGET_AUTO && h.parameters()[0].priority == 0, "no hints without oscairn.ui");
     h.service();
     std::this_thread::sleep_for(std::chrono::milliseconds(2)); h.service();
     std::array<float, 1025> left{}, right{};

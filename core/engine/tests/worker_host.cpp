@@ -55,6 +55,13 @@ namespace
         const auto name = std::filesystem::path(path).filename().string();
         check(local->descriptor().id == remote->descriptor().id, name + ": descriptor");
         check(local->parameters().size() == remote->parameters().size(), name + ": parameters");
+        // The same metadata on both sides, editor hints included (the Basic Synth gives them).
+        for(size_t i = 0; i < local->parameters().size() && i < remote->parameters().size(); ++i)
+        {
+            const auto& a = local->parameters()[i]; const auto& b = remote->parameters()[i];
+            check(a.id == b.id && a.name == b.name && a.module == b.module && a.widget == b.widget && a.priority == b.priority && a.rangeHigh == b.rangeHigh,
+                  name + ": parameter " + a.name + " and its hints cross the worker");
+        }
         check(channels(local->inputPorts()) == channels(remote->inputPorts()) && channels(local->outputPorts()) == channels(remote->outputPorts()), name + ": ports");
         check(local->noteInputPorts() == remote->noteInputPorts() && local->noteOutputPorts() == remote->noteOutputPorts(), name + ": note ports");
 

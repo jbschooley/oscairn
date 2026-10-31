@@ -216,7 +216,7 @@ namespace oscairn
                 descriptor_.version = r.str(); descriptor_.description = r.str();
                 for(auto n = r.u32(); n--;) descriptor_.features.push_back(r.str());
                 parameters_.resize(r.u32());
-                for(auto& p : parameters_) { p.id = r.u32(); p.name = r.str(); p.module = r.str(); p.minimum = r.f64(); p.maximum = r.f64(); p.defaultValue = r.f64(); p.flags = r.u32(); }
+                for(auto& p : parameters_) { p.id = r.u32(); p.name = r.str(); p.module = r.str(); p.minimum = r.f64(); p.maximum = r.f64(); p.defaultValue = r.f64(); p.flags = r.u32(); p.widget = r.u32(); p.priority = r.u32(); p.rangeHigh = r.u32(); }
                 for(uint32_t i = 0; i < parameters_.size(); ++i) index_[parameters_[i].id] = i;
                 inputs_ = readPorts(r); outputs_ = readPorts(r);
                 noteInputs_ = r.u32(); noteOutputs_ = r.u32();

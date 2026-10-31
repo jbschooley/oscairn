@@ -310,7 +310,26 @@ void Theme::drawButtonBackground(juce::Graphics& g,juce::Button& button,const ju
     g.fillRoundedRectangle(bounds,radius);drawEdge(g,bounds,radius,button.hasKeyboardFocus(true));
 }
 void Theme::drawRotarySlider(juce::Graphics& g,int x,int y,int width,int height,float position,float start,float end,juce::Slider& slider) {
-    if(!slider.getProperties()["endless"]){LookAndFeel_V4::drawRotarySlider(g,x,y,width,height,position,start,end,slider);return;}
+    if(!slider.getProperties()["endless"]) {
+        // A thin track arc, the value lit along it in the accent (from the centre when the range
+        // is centred on zero), and a disc with a pointer, like the sliders' thumbs.
+        const auto bounds=juce::Rectangle<int>(x,y,width,height).toFloat().reduced(2);
+        const float radius=std::min(bounds.getWidth(),bounds.getHeight())/2,line=std::max(2.f,radius*.14f);
+        const auto centre=bounds.getCentre();const float angle=start+position*(end-start);
+        auto arc=[&](float from,float to,juce::Colour colour){juce::Path p;p.addCentredArc(centre.x,centre.y,radius-line/2,radius-line/2,0,from,to,true);g.setColour(colour);g.strokePath(p,juce::PathStrokeType(line,juce::PathStrokeType::curved,juce::PathStrokeType::rounded));};
+        const float alpha=slider.isEnabled()?1.f:.5f;
+        arc(start,end,ink(Ink::Border).withAlpha(.55f*alpha));
+        const bool bipolar=slider.getProperties()["bipolar"];const float from=bipolar?(start+end)/2:start;
+        if(std::abs(angle-from)>.001f)arc(std::min(from,angle),std::max(from,angle),slider.findColour(juce::Slider::rotarySliderFillColourId).withMultipliedAlpha(alpha));
+        const auto disc=juce::Rectangle<float>(radius*1.3f,radius*1.3f).withCentre(centre);
+        if(current.style.depth==ThemeStyle::Depth::Soft){g.setColour(juce::Colours::black.withAlpha(darkTheme()?.4f:.15f));g.fillEllipse(disc.translated(0,1));}
+        g.setColour(current.style.sliders==ThemeStyle::Sliders::Filled?ink(Ink::Raised):juce::Colours::white.withMultipliedAlpha(alpha));g.fillEllipse(disc);
+        g.setColour(ink(Ink::Border).withAlpha(.8f));g.drawEllipse(disc.reduced(.5f),1.f);
+        const auto tip=centre.getPointOnCircumference(radius*.55f,angle),root=centre.getPointOnCircumference(radius*.15f,angle);
+        g.setColour(current.style.sliders==ThemeStyle::Sliders::Filled?ink(Ink::Text):ink(Ink::Background));
+        g.drawLine({root,tip},std::max(1.5f,radius*.1f));
+        return;
+    }
     const auto bounds=juce::Rectangle<int>(x,y,width,height).toFloat().reduced(4);const auto radius=std::min(bounds.getWidth(),bounds.getHeight())/2,centreX=bounds.getCentreX(),centreY=bounds.getCentreY();
     const int on=slider.isEnabled()?juce::roundToInt(position*16):0;
     for(int i=0;i<16;++i){const auto at=juce::Point<float>(centreX,centreY).getPointOnCircumference(radius*.9f,start+(end-start)*(i+.5f)/16);g.setColour(ink(i<on?Ink::Accent:Ink::Border));g.fillEllipse(juce::Rectangle<float>(radius*.14f,radius*.14f).withCentre(at));}

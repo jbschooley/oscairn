@@ -67,7 +67,7 @@ namespace oscairn
 
     Control::ParamInfo Session::describe( const kick::clap::Parameter& p )
     {
-        return { p.id, p.name, p.minimum, p.maximum, p.defaultValue, ( p.flags & CLAP_PARAM_IS_STEPPED ) != 0, p.flags, p.module };
+        return { p.id, p.name, p.minimum, p.maximum, p.defaultValue, ( p.flags & CLAP_PARAM_IS_STEPPED ) != 0, p.flags, p.module, p.widget, p.priority, p.rangeHigh };
     }
 
     std::vector<Control::ParamInfo> Session::parameters( NodeId node ) const

@@ -144,6 +144,22 @@
         "module": {
           "type": "string",
           "description": "The CLAP module path, levels separated by /; empty when the plugin gives none"
+        },
+        "widget": {
+          "enum": ["auto", "slider", "knob", "buttons", "switch", "list", "range"],
+          "description": "The control the plugin wants (oscairn.ui), checked against the parameter; auto: the editor decides"
+        },
+        "priority": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295,
+          "description": "1 is the most important; 0 is none"
+        },
+        "rangeHigh": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295,
+          "description": "widget range only: the range's high parameter"
         }
       },
       "required": [
@@ -154,7 +170,9 @@
         "defaultValue",
         "stepped",
         "flags",
-        "module"
+        "module",
+        "widget",
+        "priority"
       ],
       "additionalProperties": false
     },

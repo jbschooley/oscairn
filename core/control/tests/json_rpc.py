@@ -103,6 +103,10 @@ try:
     meta = rpc('params.list', {'node': 'synth'})['result']
     assert meta['node'] == 1 and len(meta['parameters']) == 8
     assert meta['parameters'][2]['name'] == 'Pressure' and meta['parameters'][2]['defaultValue'] == 0.5
+    # The Basic Synth's oscairn.ui hints: knobs, the oscillator as buttons, brightness first.
+    hints = {p['name']: (p['widget'], p['priority']) for p in meta['parameters']}
+    assert hints['Brightness'] == ('knob', 1) and hints['Oscillator'] == ('buttons', 3) and hints['Output bus'] == ('list', 0), hints
+    assert all('rangeHigh' not in p for p in meta['parameters'])
     assert rpc('params.text', {'node': 1, 'param': 3, 'value': 0.5})['result']['text'] == '50%'
     original = value(1)
     error(rpc('params.set', {'values': [{'node': 1, 'param': 1, 'value': 0.91}, {'node': 1, 'param': 999, 'value': 1}]}), -32002)

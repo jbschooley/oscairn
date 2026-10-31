@@ -247,11 +247,15 @@ Since then: parameters with 2 to 4 values are rows of buttons (Mono | Poly), lis
 drawn for the type its value text names.
 
 **From the MODX's screens (2026-10-31), still to build:**
-- *Knobs where a plugin wants them.* A knob is the plugin's choice, not the theme's: the
-  widget hint in `oscairn.ui` (knob, slider, buttons, range), read through the worker protocol
-  (RFC 0010) like the other extensions.
-- *Ranges* (a low and a high as one two-sided control), by hint, as the keyboard already does
-  for a part's keys and velocities.
+- *Knobs and ranges where a plugin wants them:* done in `oscairn.ui/draft-1`
+  (`oscairn-clap/ui.h`), a hint per parameter: knob, slider, buttons, switch, list or range
+  (with its high parameter), and a priority. The host reads the hints with the parameters'
+  info, keeps each only where it fits, carries them through workers and `params.list`, and
+  the pages draw them and order a section's tiles by priority. The Basic Synth gives them.
+  `kick-clap-host` checks the host's checks on a fixture's good and bad hints, `worker-host`
+  that they cross a worker, `control-json-protocol` the protocol, and `desktop-shell` the
+  Basic Synth's knobs and order. A range's two-sided slider is drawn but not yet checked by a
+  test; no plugin gives a range yet.
 - *Physical knobs following the screen* (step 6): a layout says how many assignable knobs a
   device has and on which edge of the screen; the page's selected row of tiles is bound to
   them in order, and a strip along that edge names what each knob does now, as the MODX's six

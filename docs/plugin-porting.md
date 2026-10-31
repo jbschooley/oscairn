@@ -128,7 +128,7 @@ pinned commit.
 | Native effect contexts (`effect-contexts.h`, [RFC 0007](rfcs/0007-effect-contexts.md)) | Many independent effect slots sharing one engine's memory, with tails reported. | Delay |
 | Parameter-target lanes (`param-target.h`, [RFC 0002](rfcs/0002-param-target.md)) | For sequencers and modulators: change other plugins' parameters at an exact sample in the same block (parameter locks). | Step Sequencer |
 | Sound assets (`assets.h`, [RFC 0009](rfcs/0009-sound-assets-and-dependencies.md)) | For samplers: the host resolves sample files, and Performances list their samples so they can be checked and moved between machines. | Sampler |
-| Editor descriptions ([RFC 0011](rfcs/0011-performance-ui-and-editors.md#plugin-editors)) | Planned: describe an editor (a module grid, a sample map, an envelope) for Oscairn to draw in the system theme with the device's knobs. Not defined yet. | Modular, first |
+| Editor hints (`ui.h`, `oscairn.ui/draft-1`, [RFC 0019](rfcs/0019-adaptive-ui.md)) | A hint per parameter: the control it wants (knob, slider, buttons, switch, list, or a range with its high parameter) and a priority, 1 first, which orders its tiles and will order the physical knobs. The host keeps a hint only where it fits (a switch on two values, a range whose high end exists). Every parameter stays reachable either way. Describing whole editors (a module grid, a sample map) comes later. | Basic Synth |
 
 ## Testing
 

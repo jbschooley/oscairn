@@ -580,6 +580,22 @@ namespace oscairn::standalone
                 if(tabNames_.empty()) add(after(m, 1), i);
                 else if(level(m, 1) == tabNames_[tab_]) add(after(m, 2), i);
             }
+        // A range's high end is drawn by its low end's tile; the rest by the plugin's priorities,
+        // numbered first, then the others in its order.
+        for(auto& [heading, members] : groups)
+        {
+            std::erase_if(members, [&](size_t i) { return std::any_of(params_.begin(), params_.end(), [&](const Engine::ParamInfo& q) { return q.widget == OSCAIRN_WIDGET_RANGE && q.rangeHigh == params_[i].id && &q != &params_[i]; }); });
+            std::stable_sort(members.begin(), members.end(), [&](size_t a, size_t b) {
+                const auto pa = params_[a].priority ? params_[a].priority : UINT32_MAX, pb = params_[b].priority ? params_[b].priority : UINT32_MAX;
+                return pa < pb;
+            });
+        }
+        std::erase_if(groups, [](const auto& g) { return g.second.empty(); });
+        // Knobs want room: a page that has any gets taller tiles.
+        const bool knobs = std::any_of(groups.begin(), groups.end(), [&](const auto& g) {
+            return std::any_of(g.second.begin(), g.second.end(), [&](size_t i) { return params_[i].widget == OSCAIRN_WIDGET_KNOB; });
+        });
+        const int height = knobs ? tileHeight + (mode == 2 ? 36 : 30) : tileHeight;
         int y = 0;
         for(const auto& [heading, members] : groups)
         {
@@ -616,8 +632,8 @@ namespace oscairn::standalone
             for(size_t k = 0; k < members.size(); ++k)
             {
                 const auto column = int(k % size_t(columns));
-                if(k && !column) y += tileHeight + gap;
-                Tile tile{members[k], {column * (tileWidth + gap), y, tileWidth, tileHeight}};
+                if(k && !column) y += height + gap;
+                Tile tile{members[k], {column * (tileWidth + gap), y, tileWidth, height}};
                 const auto& p = params_[tile.param];
                 auto inner = tile.bounds.reduced(10, 8);
                 auto top = inner.removeFromTop(18);
@@ -635,16 +651,61 @@ namespace oscairn::standalone
                 const int count = values(p);
                 if((p.flags & CLAP_PARAM_IS_READONLY) == 0)
                 {
+                    // The control: the plugin's hint where it gave one (oscairn.ui, checked by the
+                    // host), else by its values: a few as buttons (Off and On a switch), up to 64
+                    // as a list, the rest a slider.
+                    enum class Control { Buttons, Switch, List, Slider, Knob, Range } control;
                     juce::StringArray names;
-                    if(count >= 2 && count <= maxChoices) for(int v = 0; v < count; ++v) names.add(text(engine_.paramText(node, id, p.minimum + v)));
-                    if(count >= 2 && count <= maxChoices && !(count == 2 && onOff(names[0], names[1])))
+                    auto named = [&] { if(names.isEmpty()) for(int v = 0; v < count; ++v) names.add(text(engine_.paramText(node, id, p.minimum + v))); };
+                    switch(p.widget)
+                    {
+                    case OSCAIRN_WIDGET_KNOB: control = Control::Knob; break;
+                    case OSCAIRN_WIDGET_SLIDER: control = Control::Slider; break;
+                    case OSCAIRN_WIDGET_BUTTONS: control = count <= 8 ? Control::Buttons : count <= maxListed ? Control::List : Control::Slider; break;
+                    case OSCAIRN_WIDGET_SWITCH: control = Control::Switch; break;
+                    case OSCAIRN_WIDGET_LIST: control = count <= maxListed ? Control::List : Control::Slider; break;
+                    case OSCAIRN_WIDGET_RANGE: control = Control::Range; break;
+                    default:
+                        if(count >= 2 && count <= maxChoices) named();
+                        control = count >= 2 && count <= maxChoices && !(count == 2 && onOff(names[0], names[1])) ? Control::Buttons
+                                : count == 2 ? Control::Switch : count > 2 && count <= maxListed ? Control::List : Control::Slider;
+                    }
+                    if(control == Control::Buttons) named();
+                    const auto high = std::find_if(params_.begin(), params_.end(), [&](const Engine::ParamInfo& q) { return q.id == p.rangeHigh; });
+                    if(control == Control::Range && high == params_.end()) control = Control::Slider;
+                    if(control == Control::Range)
+                    {
+                        // One two-sided slider sets both ends (the high end has no tile of its own).
+                        auto s = std::make_unique<juce::Slider>(juce::Slider::TwoValueHorizontal, juce::Slider::NoTextBox);
+                        s->setRange(std::min(p.minimum, high->minimum), std::max(p.maximum, high->maximum), p.stepped ? 1.0 : 0.0);
+                        const auto highId = high->id;
+                        s->onValueChange = [this, raw = s.get(), node, id, highId] { engine_.setParam(node, id, raw->getMinValue()); engine_.setParam(node, highId, raw->getMaxValue()); };
+                        s->onDragStart = [this, node, id, highId] { engine_.paramGesture(node, id, true); engine_.paramGesture(node, highId, true); };
+                        s->onDragEnd = [this, node, id, highId] { engine_.paramGesture(node, id, false); engine_.paramGesture(node, highId, false); };
+                        s->setBounds(inner.withHeight(std::min(inner.getHeight(), 24)));
+                        tile.range = s.get(); tile.high = size_t(high - params_.begin());
+                        content_->addAndMakeVisible(*s); controls_.push_back(std::move(s));
+                    }
+                    else if(control == Control::Knob)
+                    {
+                        auto s = std::make_unique<juce::Slider>(juce::Slider::RotaryHorizontalVerticalDrag, juce::Slider::NoTextBox);
+                        s->setRange(p.minimum, p.maximum, p.stepped ? 1.0 : 0.0);
+                        s->setDoubleClickReturnValue(true, p.defaultValue);
+                        s->onValueChange = [this, raw = s.get(), node, id] { engine_.setParam(node, id, raw->getValue()); };
+                        s->onDragStart = [this, node, id] { engine_.paramGesture(node, id, true); };
+                        s->onDragEnd = [this, node, id] { engine_.paramGesture(node, id, false); };
+                        const int side = std::min(inner.getHeight(), 64);
+                        s->setBounds(inner.withSizeKeepingCentre(side, side));
+                        tile.slider = s.get(); content_->addAndMakeVisible(*s); controls_.push_back(std::move(s));
+                    }
+                    else if(control == Control::Buttons)
                     {
                         auto choices = std::make_unique<Choices>(names);
                         choices->onChoose = [this, node, id, p](int v) { engine_.setParam(node, id, p.minimum + v); };
-                        choices->setBounds(inner.withHeight(std::min(inner.getHeight(), 28)));
+                        choices->setBounds(inner.withSizeKeepingCentre(inner.getWidth(), std::min(inner.getHeight(), 28)));
                         tile.choices = choices.get(); content_->addAndMakeVisible(*choices); controls_.push_back(std::move(choices));
                     }
-                    else if(count == 2)
+                    else if(control == Control::Switch)
                     {
                         auto b = std::make_unique<juce::TextButton>();
                         b->setClickingTogglesState(true);
@@ -652,7 +713,7 @@ namespace oscairn::standalone
                         b->setBounds(inner.withHeight(std::min(inner.getHeight(), 28)).withWidth(std::min(inner.getWidth(), 110)));
                         tile.toggle = b.get(); content_->addAndMakeVisible(*b); controls_.push_back(std::move(b));
                     }
-                    else if(count > 2 && count <= maxListed)
+                    else if(control == Control::List)
                     {
                         auto list = std::make_unique<juce::ComboBox>(text(p.name));
                         for(int v = 0; v < count; ++v) list->addItem(text(engine_.paramText(node, id, p.minimum + v)), v + 1);
@@ -676,7 +737,7 @@ namespace oscairn::standalone
                 }
                 tiles_.push_back(tile);
             }
-            y += tileHeight + gap + 6;
+            y += height + gap + 6;
         }
         content_->setSize(width, std::max(y, 1));
         stale_ = !engine_.controlReady(); // the engine answers value texts only when it is free
@@ -692,6 +753,13 @@ namespace oscairn::standalone
         t.value->setText(t.list || t.toggle || t.choices ? juce::String() : shown, juce::dontSendNotification);
         if(t.choices) { t.choices->chosen = int(std::lround(value - p.minimum)); t.choices->repaint(); }
         if(t.slider && !t.slider->isMouseButtonDown()) t.slider->setValue(value, juce::dontSendNotification);
+        if(t.range)
+        {
+            const auto& high = params_[t.high];
+            t.shownHigh = engine_.param(name_, high.id);
+            t.value->setText(shown + juce::String::fromUTF8(" – ") + text(engine_.paramText(name_, high.id, t.shownHigh)), juce::dontSendNotification);
+            if(!t.range->isMouseButtonDown()) t.range->setMinAndMaxValues(value, t.shownHigh, juce::dontSendNotification);
+        }
         if(t.list) t.list->setSelectedId(int(std::lround(value - p.minimum)) + 1, juce::dontSendNotification);
         if(t.toggle) { t.toggle->setToggleState(value > p.minimum, juce::dontSendNotification); t.toggle->setButtonText(shown); }
     }
@@ -702,6 +770,6 @@ namespace oscairn::standalone
         if(!panels_.empty()) content_->repaint(); // envelopes follow their parameters too
         // Values change from automation, scenes, controls and other clients: follow them.
         for(auto& t : tiles_)
-            if(const double v = engine_.param(name_, params_[t.param].id); v != t.shown) show(t, v);
+            if(const double v = engine_.param(name_, params_[t.param].id); v != t.shown || (t.range && engine_.param(name_, params_[t.high].id) != t.shownHigh)) show(t, v);
     }
 }

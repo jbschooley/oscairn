@@ -39,7 +39,8 @@ namespace oscairn::standalone
     struct FilterResponse { enum class Kind { None, LowPass, HighPass, BandPass, Notch, Unknown } kind = Kind::LowPass; int poles = 2; };
     FilterResponse filterNamed(const juce::String& text);
 
-    /// Every parameter of one plugin, as pages of tiles (RFC 0019's generated editor): a page per
+    /// Every parameter of one plugin, as pages of tiles (RFC 0019's generated editor), drawn with
+    /// the controls and in the priority order the plugin's oscairn.ui hints ask for: a page per
     /// top-level CLAP module path; on a page of more than 24, tabs for the second level; a heading
     /// per module below that; and a tile per parameter with
     /// its name, its value as the plugin writes it, and a control. Stepped parameters with a few
@@ -57,6 +58,7 @@ namespace oscairn::standalone
         void showTab(size_t tab);
         size_t tabs() const { return tabNames_.size(); }
         size_t tilesShown() const { return tiles_.size(); }
+        std::vector<std::string> namesShown() const { std::vector<std::string> n; for(const auto& t : tiles_) n.push_back(params_[t.param].name); return n; }
         size_t panelsShown() const { return panels_.size(); } // envelopes and LFOs
         // Any page's parameters whose name or module has the text; empty: the page again.
         void search(const juce::String& text) { search_.setText(text, false); search_.onTextChange(); }
@@ -76,6 +78,9 @@ namespace oscairn::standalone
             juce::ComboBox* list = nullptr;
             juce::Button* toggle = nullptr;
             Choices* choices = nullptr;
+            juce::Slider* range = nullptr;   // a two-sided range: this parameter its low end
+            size_t high = 0;                 // and this one (an index into params_) its high
+            double shownHigh = std::numeric_limits<double>::quiet_NaN();
             double shown = std::numeric_limits<double>::quiet_NaN();
         };
         struct Heading { juce::String text; juce::Rectangle<int> bounds; };

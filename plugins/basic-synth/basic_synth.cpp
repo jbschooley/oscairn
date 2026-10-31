@@ -13,6 +13,7 @@
 
 #include <clap/clap.h>
 #include <oscairn-clap/sound-contexts-plugin.hpp>
+#include <oscairn-clap/ui.h>
 
 #include <algorithm>
 #include <array>
@@ -44,13 +45,14 @@ namespace
         features,
     };
 
-    // Stable parameter IDs are the table index + 1.
-    struct Parameter { const char* name; double maximum, initial; const char* unit; bool stepped=false; };
+    // Stable parameter IDs are the table index + 1. Each with the control it wants and its
+    // priority (oscairn.ui): the most played first, so physical knobs take them in that order.
+    struct Parameter { const char* name; double maximum, initial; const char* unit; bool stepped=false; uint32_t widget=OSCAIRN_WIDGET_KNOB, priority=0; };
     constexpr std::array<Parameter,8> parameters{{
-        {"Brightness",1,1,"%"}, {"Level",1,1,"%"}, {"Pressure",1,.5,"%"},
-        {"Oscillator",2,0,"",true}, {"Detune",50,7,"cents"},
-        {"Pitch LFO rate",40,0,"Hz"}, {"Pitch LFO depth",200,0,"cents"},
-        {"Output bus",8,0,"",true}
+        {"Brightness",1,1,"%",false,OSCAIRN_WIDGET_KNOB,1}, {"Level",1,1,"%",false,OSCAIRN_WIDGET_KNOB,2}, {"Pressure",1,.5,"%",false,OSCAIRN_WIDGET_KNOB,5},
+        {"Oscillator",2,0,"",true,OSCAIRN_WIDGET_BUTTONS,3}, {"Detune",50,7,"cents",false,OSCAIRN_WIDGET_KNOB,4},
+        {"Pitch LFO rate",40,0,"Hz",false,OSCAIRN_WIDGET_KNOB,6}, {"Pitch LFO depth",200,0,"cents",false,OSCAIRN_WIDGET_KNOB,7},
+        {"Output bus",8,0,"",true,OSCAIRN_WIDGET_LIST,0}
     }};
     constexpr auto defaults=[] {std::array<double,parameters.size()> v{};for(size_t i=0;i<v.size();++i)v[i]=parameters[i].initial;return v;}();
     constexpr std::array<const char*,3> oscillators{"Saw","Detuned saws","Square"};
@@ -323,6 +325,11 @@ namespace
     }
 
     const clap_plugin_params_t      params     = { paramsCount, paramsInfo, paramsValue, paramsToText, paramsFromText, paramsFlush };
+    const oscairn_plugin_ui_t       ui         = { []( const clap_plugin_t*, clap_id id, oscairn_param_hint_t* hint ) {
+        if( id < 1 || id > parameters.size() ) return false;
+        *hint = { parameters[id - 1].widget, parameters[id - 1].priority, CLAP_INVALID_ID };
+        return true;
+    } };
     const clap_plugin_audio_ports_t audioPorts = { audioPortsCount, audioPortsGet };
     const clap_plugin_note_ports_t  notePorts  = { notePortsCount, notePortsGet };
 
@@ -375,6 +382,8 @@ namespace
                 return &notePorts;
             if( std::strcmp( id, CLAP_EXT_PARAMS ) == 0 )
                 return &params;
+            if( std::strcmp( id, OSCAIRN_EXT_UI ) == 0 )
+                return &ui;
             return nullptr;
         };
         s->plugin.on_main_thread   = []( const clap_plugin_t* ) {};

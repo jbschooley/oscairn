@@ -24,6 +24,10 @@ struct Parameter {
     std::string name, module;
     double minimum = 0, maximum = 1, defaultValue = 0;
     uint32_t flags = 0;
+    // The plugin's oscairn.ui hint, checked against the parameter: the control it wants
+    // (enum oscairn_widget), its priority (0: none) and, for a range, its high parameter.
+    uint32_t widget = 0, priority = 0;
+    clap_id rangeHigh = CLAP_INVALID_ID;
 };
 
 struct Port {

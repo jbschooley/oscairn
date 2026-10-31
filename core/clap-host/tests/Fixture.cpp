@@ -9,6 +9,7 @@
 #include <clap/ext/latency.h>
 #include <clap/ext/preset-load.h>
 #include <clap/factory/preset-discovery.h>
+#include <oscairn-clap/ui.h>
 #include <filesystem>
 #include <fstream>
 #include <string>
@@ -230,6 +231,18 @@ struct Plugin {
         if (!std::strcmp(id, CLAP_EXT_AUDIO_PORTS)) return &audio;
         if (!std::strcmp(id, CLAP_EXT_NOTE_PORTS)) return &notes;
         if (!std::strcmp(id, CLAP_EXT_PARAMS)) return &params;
+        // The stepped fixture's editor hints, some that fit their parameters and some that do
+        // not, which the host must replace with "the host decides".
+        static const oscairn_plugin_ui_t ui{[](const clap_plugin_t*, clap_id id, oscairn_param_hint_t* hint) {
+            switch (id) {
+            case 7: *hint = {OSCAIRN_WIDGET_RANGE, 1, 99}; return true;         // a range up to "Read only": fits
+            case 8: *hint = {OSCAIRN_WIDGET_SWITCH, 2, CLAP_INVALID_ID}; return true; // two values: fits
+            case 9: *hint = {OSCAIRN_WIDGET_SWITCH, 3, CLAP_INVALID_ID}; return true; // five values: no switch
+            case 99: *hint = {42, 0, CLAP_INVALID_ID}; return true;              // no such widget
+            default: return false;
+            }
+        }};
+        if (!std::strcmp(id, OSCAIRN_EXT_UI)) return get(plugin).kind == 8 ? &ui : nullptr;
         if (!std::strcmp(id, CLAP_EXT_STATE)) return get(plugin).kind == 9 ? nullptr : &state;
         if (!std::strcmp(id, CLAP_EXT_LATENCY)) return &latency;
         if (!std::strcmp(id, CLAP_EXT_TIMER_SUPPORT)) return &timers;
