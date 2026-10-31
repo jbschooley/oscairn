@@ -64,7 +64,7 @@ namespace oscairn::standalone
             double tempo=120;
             int step=-1;
             std::string audioDevice;
-            std::vector<std::string> midiInputs;
+            std::vector<MidiEndpoint> midiInputs;
         };
         Status status()const;
         const SoundPickerState& soundPicker() const { return soundPicker_; }

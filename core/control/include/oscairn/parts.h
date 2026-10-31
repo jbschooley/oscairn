@@ -3,6 +3,7 @@
 
 #include "oscairn/graph.h"
 
+#include <array>
 #include <string>
 #include <utility>
 #include <vector>
@@ -42,13 +43,48 @@ namespace oscairn
         bool connected = true; // false: kept, though it no longer fits (after a plugin replacement)
     };
 
+    // RFC 0012 selectors. A MIDI input the host has: its source number (note_zone.h), name and
+    // kind; port is the number of a DIN or TRS port.
+    struct MidiEndpoint
+    {
+        enum class Kind { BuiltIn, Port, Usb, Network } kind = Kind::Usb;
+        uint8_t source = 0;
+        std::string name;
+        uint32_t port = 0;
+        bool operator==(const MidiEndpoint&) const = default;
+    };
+
+    // The names files and the control protocol use, indexed by the enums.
+    inline constexpr std::array<const char*, 4> endpointKinds{"builtIn", "port", "usb", "network"};
+    inline constexpr std::array<const char*, 7> deviceRuleKinds{"builtIn", "external", "all", "port", "usb", "usbNamed", "network"};
+    inline constexpr std::array<const char*, 3> deviceMatches{"equals", "contains", "regex"};
+
+    // A rule choosing MIDI inputs: by kind, port number, or name (USB named; Network with a
+    // pattern). Names match ignoring case.
+    struct DeviceRule
+    {
+        enum class Kind { BuiltIn, External, All, Port, Usb, UsbNamed, Network } kind = Kind::All;
+        enum class Match { Equals, Contains, Regex } match = Match::Contains;
+        uint32_t port = 0;
+        std::string pattern;
+        bool operator==(const DeviceRule&) const = default;
+        bool valid() const; // a usable pattern where one is needed
+        bool matches(const MidiEndpoint&) const;
+    };
+    // The sources a selector chooses, as a zone's source mask: everything for no rules. Built in
+    // always includes the panel's own notes (builtInSource).
+    uint64_t resolveDevices(const std::vector<DeviceRule>& rules, const std::vector<MidiEndpoint>& endpoints);
+
     struct PartInput
     {
         // None: the chain generates (a sequencer). Bus: a shared bus, fed by other parts' sends and outputs.
         enum class Kind { Notes, Audio, None, Bus } kind = Kind::Notes;
         uint32_t port = 0;                                         // graph input port, for audio
         std::vector<NoteZone> zones;                               // notes: the part's zones (splits, layers, curves)
+        std::vector<DeviceRule> devices;                           // notes: which inputs play it; none: all
     };
+    // The zones a part's input wire carries: its own, each hearing only its selected devices.
+    std::vector<NoteZone> inputZones(const PartInput& input, const std::vector<MidiEndpoint>& endpoints);
 
     struct Send { uint32_t bus = 0; double level = 1; }; // a copy of a part's sound into a shared bus
 

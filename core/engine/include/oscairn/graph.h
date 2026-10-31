@@ -159,10 +159,12 @@ namespace oscairn
         /// Planar channels in external port order. Missing input channels are silent;
         /// all configured outputs must have storage. Extra outputs are cleared.
         /// Buffers may alias: external inputs are copied before any output is cleared.
+        /// `sources`, when given, says where each event came from (note_zone.h).
         bool process( const float* const* inputs, uint32_t inputChannels,
                       float* const* outputs, uint32_t outputChannels, uint32_t frames,
                       const clap_event_transport_t* transport,
-                      const kick::clap::Event* events = nullptr, uint32_t eventCount = 0, bool adopt = true ) noexcept;
+                      const kick::clap::Event* events = nullptr, uint32_t eventCount = 0, bool adopt = true,
+                      const uint8_t* sources = nullptr ) noexcept;
         void panicInput() noexcept { panicInput_=true; } // audio thread only
         uint32_t inputChannels() const noexcept { return inputChannels_; }
         uint32_t outputChannels() const noexcept { return outputChannels_; }

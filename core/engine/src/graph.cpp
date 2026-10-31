@@ -61,6 +61,7 @@ namespace oscairn
             NoteRoute* route=nullptr;
             bool afterNotes=false;
             const NoteZones* zones=nullptr;
+            uint8_t source=untaggedSource;
         };
 
         std::vector<Step>              steps;
@@ -521,7 +522,7 @@ namespace oscairn
     }
 
     bool Graph::process(const float* const* inputs,uint32_t ni,float* const* outputs,uint32_t no,uint32_t frames,
-                        const clap_event_transport_t* transport,const kick::clap::Event* events,uint32_t eventCount,bool adopt) noexcept
+                        const clap_event_transport_t* transport,const kick::clap::Event* events,uint32_t eventCount,bool adopt,const uint8_t* sources) noexcept
     {
         auto clear=[&]{if(outputs)for(uint32_t c=0;c<no;++c)if(outputs[c])std::fill_n(outputs[c],frames,0.f);};
         if(!frames || frames>maxFrames_ || ni>maxAudioChannels || no>maxAudioChannels || (ni && !inputs) ||
@@ -581,7 +582,8 @@ namespace oscairn
                     {
                         ++totalEvents;
                         if(plan->keys.size()<kick::clap::Host::maxBlockEvents)
-                            plan->keys.push_back( { list[i].header()->time, order++, &list[i],connection.route.get(),false,&connection.zones } );
+                            plan->keys.push_back( { list[i].header()->time, order++, &list[i],connection.route.get(),false,&connection.zones,
+                                                    source<0 && sources?sources[i]:untaggedSource } );
                         else overflow=true;
                     }
             }
@@ -593,7 +595,7 @@ namespace oscairn
             uint32_t merged=0;
             auto emit=[&](const auto& e){if(merged==plan->merged.size())return false;plan->merged[merged++]=e;return true;};
             if(!overflow)for(const auto& key:plan->keys)
-                if(!(key.route && key.time<frames?key.route->route(*key.event,nextNoteId_,emit,key.zones):emit(*key.event))){overflow=true;break;}
+                if(!(key.route && key.time<frames?key.route->route(*key.event,nextNoteId_,emit,key.zones,key.source):emit(*key.event))){overflow=true;break;}
             if(overflow)
             {
                 // A lost release must reset the destination in its own dialect.

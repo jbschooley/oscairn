@@ -1959,6 +1959,14 @@
                       "items": {
                         "$ref": "#/$defs/Zone"
                       }
+                    },
+                    "devices": {
+                      "type": "array",
+                      "maxItems": 16,
+                      "items": {
+                        "$ref": "#/$defs/DeviceRule"
+                      },
+                      "description": "Which MIDI inputs play the part (RFC 0012); none: all"
                     }
                   },
                   "required": [
@@ -2364,6 +2372,14 @@
                       "items": {
                         "$ref": "#/$defs/Zone"
                       }
+                    },
+                    "devices": {
+                      "type": "array",
+                      "maxItems": 16,
+                      "items": {
+                        "$ref": "#/$defs/DeviceRule"
+                      },
+                      "description": "Which MIDI inputs play the part (RFC 0012); none: all"
                     }
                   },
                   "required": [
@@ -3917,7 +3933,7 @@
         "midiInputs": {
           "type": "array",
           "items": {
-            "type": "string"
+            "$ref": "#/$defs/MidiEndpoint"
           }
         },
         "sampleRate": {
@@ -4629,12 +4645,21 @@
               "items": {
                 "$ref": "#/$defs/Zone"
               }
+            },
+            "devices": {
+              "type": "array",
+              "maxItems": 16,
+              "items": {
+                "$ref": "#/$defs/DeviceRule"
+              },
+              "description": "Which MIDI inputs play the part (RFC 0012); none: all"
             }
           },
           "required": [
             "kind",
             "port",
-            "zones"
+            "zones",
+            "devices"
           ],
           "additionalProperties": false
         },
@@ -5202,6 +5227,81 @@
       },
       "required": [
         "control"
+      ],
+      "additionalProperties": false
+    },
+    "DeviceRule": {
+      "type": "object",
+      "description": "RFC 0012 device selector rule: which MIDI inputs play a part. builtIn includes the panel's own notes; names match ignoring case.",
+      "properties": {
+        "kind": {
+          "enum": [
+            "builtIn",
+            "external",
+            "all",
+            "port",
+            "usb",
+            "usbNamed",
+            "network"
+          ]
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295,
+          "description": "For port: the DIN or TRS port number"
+        },
+        "pattern": {
+          "type": "string",
+          "maxLength": 256,
+          "description": "For usbNamed (required) and network (optional): the name to match"
+        },
+        "match": {
+          "enum": [
+            "equals",
+            "contains",
+            "regex"
+          ],
+          "description": "How pattern matches a name; regex is ECMAScript"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "additionalProperties": false
+    },
+    "MidiEndpoint": {
+      "type": "object",
+      "description": "A MIDI input the host has, for device selectors",
+      "properties": {
+        "source": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 63,
+          "description": "The number events from it carry; 0 is the built-in panel"
+        },
+        "name": {
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "builtIn",
+            "port",
+            "usb",
+            "network"
+          ]
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        }
+      },
+      "required": [
+        "source",
+        "name",
+        "kind",
+        "port"
       ],
       "additionalProperties": false
     }

@@ -45,6 +45,27 @@ std::vector<NoteZone> zonesFrom(V v){
     }
     return zones;
 }
+// RFC 0012 device selectors on a part's input.
+std::string devicesText(const std::vector<DeviceRule>& rules){
+    std::vector<std::string> out;
+    for(const auto& r:rules)out.push_back(std::string("{\"kind\":\"")+deviceRuleKinds[size_t(r.kind)]+"\",\"port\":"+std::to_string(r.port)+",\"pattern\":"+quote(r.pattern)+",\"match\":\""+deviceMatches[size_t(r.match)]+"\"}");
+    return join(out);
+}
+template<class Names> size_t named(const Names& names,const std::string& name,const char* error){
+    const auto at=std::find_if(names.begin(),names.end(),[&](const char* n){return name==n;});
+    if(at==names.end())bad(error);
+    return size_t(at-names.begin());
+}
+std::vector<DeviceRule> devicesFrom(V v){
+    std::vector<DeviceRule> rules;
+    for(auto r:array(v,16)){
+        fields(r,{"kind","port","pattern","match"});DeviceRule rule;
+        rule.kind=DeviceRule::Kind(named(deviceRuleKinds,text(field(r,"kind")),"invalid device rule kind"));rule.port=integer(field(r,"port"));
+        rule.pattern=text(field(r,"pattern"));rule.match=DeviceRule::Match(named(deviceMatches,text(field(r,"match")),"invalid device rule match"));
+        if(!rule.valid())bad("invalid device rule");rules.push_back(std::move(rule));
+    }
+    return rules;
+}
 // The pad map (pads.h): the selected bank and every bank's 16 pads.
 const char* pressureName(PadAssignment::Pressure p){return p==PadAssignment::Pressure::Poly?"poly":p==PadAssignment::Pressure::Channel?"channel":"none";}
 std::string padsText(const PadMap& map){
@@ -102,7 +123,7 @@ void Session::savePerformance(const std::string& directory) {
         std::vector<std::string> chain;for(const auto n:p.chain)chain.push_back(quote(keys.at(n)));
         const char* kind=p.input.kind==PartInput::Kind::Notes?"notes":p.input.kind==PartInput::Kind::Audio?"audio":p.input.kind==PartInput::Kind::Bus?"bus":"none";
         std::vector<std::string> sends;for(const auto& s:p.sends)sends.push_back("{\"bus\":"+std::to_string(s.bus)+",\"level\":"+numeric(s.level)+'}');
-        parts.push_back("{\"id\":"+std::to_string(p.id)+",\"name\":"+quote(p.name)+",\"input\":{\"kind\":\""+kind+"\",\"port\":"+std::to_string(p.input.port)+",\"zones\":"+zonesText(p.input.zones)+"},\"chain\":"+join(chain)+",\"output\":"+std::to_string(p.output)+",\"level\":"+numeric(p.level)+",\"mute\":"+(p.mute?"true":"false")+",\"bus\":"+std::to_string(p.bus)+",\"sends\":"+join(sends)+'}');
+        parts.push_back("{\"id\":"+std::to_string(p.id)+",\"name\":"+quote(p.name)+",\"input\":{\"kind\":\""+kind+"\",\"port\":"+std::to_string(p.input.port)+",\"zones\":"+zonesText(p.input.zones)+",\"devices\":"+devicesText(p.input.devices)+"},\"chain\":"+join(chain)+",\"output\":"+std::to_string(p.output)+",\"level\":"+numeric(p.level)+",\"mute\":"+(p.mute?"true":"false")+",\"bus\":"+std::to_string(p.bus)+",\"sends\":"+join(sends)+'}');
     }
     for(const auto& m:graph.mappings)mappings.push_back("{\"from\":"+quote(keys.at(m.source))+",\"lane\":"+std::to_string(m.lane)+",\"to\":"+quote(keys.at(m.target))+",\"param\":"+std::to_string(m.param)+'}');
     // Scenes: each part's fader and each scene parameter's value; and the scene last selected.
@@ -193,9 +214,9 @@ void Session::loadPerformance(const std::string& directory) {
         for(auto p:array(field(d,"parts"),256)){
             fields(p,{"id","name","input","chain","output","bus","sends","level","mute"});Part part;part.id=integer(field(p,"id"));part.name=text(field(p,"name"));
             if(!part.id || !partIds.insert(part.id).second)bad("invalid or duplicate part");
-            const auto input=field(p,"input");fields(input,{"kind","port","zones"});const auto kind=text(field(input,"kind"));
+            const auto input=field(p,"input");fields(input,{"kind","port","zones","devices"});const auto kind=text(field(input,"kind"));
             part.input.kind=kind=="notes"?PartInput::Kind::Notes:kind=="audio"?PartInput::Kind::Audio:kind=="none"?PartInput::Kind::None:kind=="bus"?PartInput::Kind::Bus:(bad("invalid part input"),PartInput::Kind::None);
-            part.input.port=integer(field(input,"port"));part.input.zones=zonesFrom(field(input,"zones"));part.output=integer(field(p,"output"));
+            part.input.port=integer(field(input,"port"));part.input.zones=zonesFrom(field(input,"zones"));part.input.devices=devicesFrom(field(input,"devices"));part.output=integer(field(p,"output"));
             for(auto n:array(field(p,"chain"),256)){const auto id=node(n);if(id==graphInput || id==graphOutput || std::find(part.chain.begin(),part.chain.end(),id)!=part.chain.end())bad("invalid part chain");part.chain.push_back(id);}
             part.bus=integer(field(p,"bus"));part.level=number(field(p,"level"));part.mute=boolean(field(p,"mute"));if(part.level<0)bad("invalid part level");
             for(auto s:array(field(p,"sends"),256)){fields(s,{"bus","level"});Send send{integer(field(s,"bus")),number(field(s,"level"))};if(send.level<0)bad("invalid send level");part.sends.push_back(send);}
@@ -279,6 +300,9 @@ void Session::loadPerformance(const std::string& directory) {
         for(const auto& m:macros)if(reaches(m.id,m.id,0))bad("controls loop");
         for(const auto& s:scenes)for(const auto& [m,v]:s.macros)if(!macroIds.count(m))bad("a scene value for an unknown control");
     }
+    // A part's input wires hear the devices its selector chooses here (RFC 0012); files keep selectors, not sources.
+    for(auto& w:wires)if(w.owner==WireOwner::Part && w.kind==WireKind::Notes && w.from==graphInput)
+        for(const auto& p:parts)if(p.id==w.part)w.zones=inputZones(p.input,hostStatus_.midiInputs);
     compileWires(*next,wires);
     std::set<std::pair<NodeId,uint32_t>> mappings;
     for(auto m:array(field(d,"mappings"),4096)){fields(m,{"from","lane","to","param"});const auto from=node(field(m,"from")),lane=integer(field(m,"lane"));if(!mappings.emplace(from,lane).second)bad("duplicate parameter mapping");next->mapParamTarget(from,lane,node(field(m,"to")),integer(field(m,"param")));}

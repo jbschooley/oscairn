@@ -30,10 +30,10 @@ namespace
         {
             graph.connectNotes(graphInput, node, zones); graph.commit();
         }
-        std::vector<Arrived> play(std::vector<Event> events)
+        std::vector<Arrived> play(std::vector<Event> events, std::vector<uint8_t> sources = {})
         {
             forbidAllocation = true;
-            const bool ok = graph.process(out, 128, nullptr, events.data(), uint32_t(events.size()));
+            const bool ok = graph.process(nullptr, 0, out, 2, 128, nullptr, events.data(), uint32_t(events.size()), true, sources.empty() ? nullptr : sources.data());
             forbidAllocation = false;
             check(ok, "render");
             std::vector<Arrived> result;
@@ -94,6 +94,20 @@ int main(int argc, char** argv)
             const auto a = p.play({Event::note(true, 60, .8, 0, 0), Event::note(true, 61, .8, 1, 1), Event::midi(0x90, 62, 100), Event::midi(0x91, 63, 100, 2)});
             check(keys(a, true) == std::vector<int>{61, 63}, "only channel 2 passes, CLAP and MIDI notes");
         }
+        { // Sources (RFC 0012 selectors): a zone hears only its devices; untagged events pass.
+            NoteZone devices; devices.sources = 1u << 0 | 1u << 1 | 1u << 3;
+            Probe p(transpose, {devices});
+            auto a = p.play({Event::note(true, 60, .8, 0), Event::note(true, 61, .8, 1), Event::note(true, 62, .8, 2), Event::midi(0x90, 63, 100, 3), Event::note(true, 64, .8, 4)},
+                            {1, 2, untaggedSource, 2, 0});
+            check(keys(a, true) == std::vector<int>{60, 62, 64}, "sources 1 and 0 and untagged pass; source 2 does not, CLAP or MIDI");
+            // The same key from two devices: each device's release ends only its own note.
+            a = p.play({Event::note(false, 60, 0, 0), Event::note(true, 60, .8, 1)}, {1, 3});
+            check(keys(a, false) == std::vector<int>{60} && keys(a, true) == std::vector<int>{60}, "release from 1, then 60 from 3");
+            a = p.play({Event::note(false, 60, 0, 0)}, {1});
+            check(keys(a, false).empty(), "source 1 has no 60 left; 3's stays held");
+            a = p.play({Event::note(false, 60, 0, 0)}, {3});
+            check(keys(a, false) == std::vector<int>{60}, "source 3 releases its own");
+        }
         { // Editing the zone while a note is held still releases the key it played.
             NoteZone up; up.transpose = 12;
             Probe p(transpose, {up});
@@ -114,6 +128,6 @@ int main(int argc, char** argv)
         }
     }
     catch(const std::exception& e) { forbidAllocation = false; std::fprintf(stderr, "FAIL: %s\n", e.what()); return 1; }
-    if(!failures) std::puts("ok: note zones split, layer, shape velocity, filter channels and keep releases");
+    if(!failures) std::puts("ok: note zones split, layer, shape velocity, filter channels and devices, and keep releases");
     return failures ? 1 : 0;
 }

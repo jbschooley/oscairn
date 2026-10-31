@@ -33,6 +33,8 @@ int main(int argc, char** argv)
         session.add("sequencer", (dir / "oscairn-step-sequencer.clap").string());
         const auto synth = session.add("synth", (dir / "oscairn-basic-synth.clap").string());
         session.connectNotes(graphInput, synth); session.connectAudio(synth, graphOutput); session.commit();
+        Control::SessionStatus status; status.midiInputs = {{MidiEndpoint::Kind::Usb, 3, "KeyLab 61"}, {MidiEndpoint::Kind::Port, 4, "MIDI In 2", 2}};
+        session.setHostStatus(status);
         LocalServer server(session);
         server.listen(socket.string());
         std::atomic<bool> running = true;
@@ -79,6 +81,8 @@ int main(int argc, char** argv)
                 standalone::insertPlugin(c, bass, 0, plugin("Basic Synth")); standalone::insertPlugin(c, lead, 0, plugin("Basic Synth"));
                 standalone::insertPlugin(c, lead, 1, plugin("Delay")); standalone::insertPlugin(c, room, 0, plugin("Delay"));
                 standalone::setZone(c, bass, 0, 59, -12); standalone::setZone(c, lead, 60, 127, 0);
+                standalone::setDevices(c, lead, {{DeviceRule::Kind::BuiltIn}, {DeviceRule::Kind::UsbNamed, DeviceRule::Match::Equals, 0, "KeyLab 61"}});
+                standalone::setDevices(c, bass, {{DeviceRule::Kind::UsbNamed, DeviceRule::Match::Equals, 0, "nanoKEY2"}}); // not connected
                 standalone::setSendLevel(c, bass, room, .5); standalone::setSendLevel(c, lead, room, .3);
                 c.setPartLevel(lead, .8, false); c.commit();
                 c.addScene("Verse"); c.setPartLevel(bass, .5, true); c.commit(); c.addScene("Chorus");

@@ -373,6 +373,8 @@ velocity. The graph applies them where it routes notes; each accepting zone play
 copy (layers), and held notes keep their releases when zones change. Tested in
 `note-zones` (split, layer, MIDI and CLAP notes, velocity, channels, editing while held),
 `control-parts` (a two-part keyboard split moved while notes are held) and over the socket.
+Zones also carry a source mask, which a part's device selector sets
+([RFC 0012](0012-sync-external-midi-and-multi-device.md#choosing-devices-selectors)).
 
 **Shared buses** followed: a bus is a part with input kind `bus`, fed by other parts' sends
 (each with a level) and outputs, with its own chain and output; loops are refused, and

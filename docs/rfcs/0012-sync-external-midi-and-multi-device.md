@@ -1,6 +1,7 @@
 # RFC 0012: Sync, external MIDI devices and multi-device setlists
 
-Status: proposed, 2026-10-30. Not implemented. Covers two related needs:
+Status: proposed, 2026-10-30. Input device selectors implemented (below); the rest not
+implemented. Covers two related needs:
 - the Ignite's role as a sequencer for external MIDI and CV instruments;
 - several Oscairn devices (and other gear) following one performance.
 
@@ -95,6 +96,23 @@ A selector is a list of rules; an event or device matching any of them is select
 - **Learn:** press a key on a controller and the part's selector becomes that device by
   name; it can then be widened to a pattern.
 - Device profiles (below) attach to the devices a selector matches.
+
+**Implementation status (inputs).** Every event entering the graph carries a source: 0 for
+the panel (and notes sent over the control protocol), 1–63 for the host's MIDI inputs, or
+untagged. Note zones ([RFC 0011](0011-performance-ui-and-editors.md#step-1-status)) gained a
+source mask; a part's input stores its rules, and the Session resolves them into its input
+wire's zones whenever parts change, a Performance opens, or the host's list of inputs
+changes (applied at once unless edits are staged). Notes and other channel messages from an
+unselected input do not reach the part, and a release or pressure from one input does not
+touch another input's held note on the same key. A Performance stores the rules. The
+desktop app numbers each MIDI input by device and keeps the number while it runs; it
+reports every input as USB, since telling ports and network sessions apart needs the
+device's own input table. The Part page's **Plays from** menu picks kinds and connected
+devices by name, and a part matching nothing is shown "No device". Tested in `note-zones`,
+`control-parts` (resolution, hotplug, staging, persistence), over the socket and in the
+desktop views. Not yet: learn, pattern entry in the Part page (patterns are set over the
+protocol), one sustain pedal per input (a pedal still holds every input's notes on its
+channel), and output selectors, which come with external destinations (step 1).
 
 ## Transport and clock
 

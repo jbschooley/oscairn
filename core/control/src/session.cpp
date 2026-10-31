@@ -353,15 +353,17 @@ namespace oscairn
     }
 
     bool Session::process( float* const* outputs, uint32_t frames,
-                           std::span<const kick::clap::Event> events, std::span<const MidiClockEvent> clocks ) noexcept
+                           std::span<const kick::clap::Event> events, std::span<const MidiClockEvent> clocks,
+                           std::span<const uint8_t> sources ) noexcept
     {
-        return process(nullptr,0,outputs,2,frames,events,clocks);
+        return process(nullptr,0,outputs,2,frames,events,clocks,sources);
     }
     bool Session::process(const float* const* inputs,uint32_t ni,float* const* outputs,uint32_t no,uint32_t frames,
-                          std::span<const kick::clap::Event> events,std::span<const MidiClockEvent> clocks) noexcept
+                          std::span<const kick::clap::Event> events,std::span<const MidiClockEvent> clocks,
+                          std::span<const uint8_t> sources) noexcept
     {
         auto silence=[&]{if(outputs)for(uint32_t c=0;c<no;++c)if(outputs[c])std::fill_n(outputs[c],frames,0.f);};
-        if(!frames || frames>maxFrames_ || events.size()>maxInputEvents || clocks.size()>maxClockEvents ||
+        if(!frames || frames>maxFrames_ || events.size()>maxInputEvents || clocks.size()>maxClockEvents || (!sources.empty() && sources.size()!=events.size()) ||
            ni>Graph::maxAudioChannels || no>Graph::maxAudioChannels || (ni && !inputs) || (no && !outputs) || no<graph_.outputChannels())
         {silence();return false;}
         for(uint32_t c=0;c<graph_.outputChannels();++c)if(!outputs[c]){silence();return false;}
@@ -405,18 +407,22 @@ namespace oscairn
         else
             while( tail != head )
             {
+                mergedSources_[count] = builtInSource;
                 merged_[count++] = notes_[tail % notes_.size()];
                 ++tail;
             }
         noteTail_.store( tail, std::memory_order_release );
-        for( const auto& e : events )
-            merged_[count++] = e;
+        for( size_t i = 0; i < events.size(); ++i )
+        {
+            mergedSources_[count] = sources.empty() ? untaggedSource : sources[i];
+            merged_[count++] = events[i];
+        }
 
         const auto t = transport_.current();
         statusPlaying_.store( ( t.flags & CLAP_TRANSPORT_IS_PLAYING ) != 0 );
         statusTempo_.store( t.tempo );
         statusBeat_.store( (double)t.song_pos_beats / (double)CLAP_BEATTIME_FACTOR );
-        const bool ok = graph_.process( inputs, ni, outputs, no, frames, &t, merged_.data(), (uint32_t)count, false );
+        const bool ok = graph_.process( inputs, ni, outputs, no, frames, &t, merged_.data(), (uint32_t)count, false, mergedSources_.data() );
         transport_.advance( frames );
         return ok;
     }

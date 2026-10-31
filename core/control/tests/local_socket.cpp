@@ -246,12 +246,12 @@ namespace
     void typedClient(const char* plugin)
     {
         Fixture f(plugin);auto fd=pair();f.server.adopt(fd[0]);
-        f.session.setHostStatus({"Test device",{"Test MIDI"},48000,.25,64,7,{{2,"Input 3",true}},{{4,"Output 5",true},{5,"Output 6",false}},false});
+        f.session.setHostStatus({"Test device",{{MidiEndpoint::Kind::Port,3,"Test MIDI",2}},48000,.25,64,7,{{2,"Input 3",true}},{{4,"Output 5",true},{5,"Output 6",false}},false});
         clientWhileRendering(f,[&]{
             LocalClient client;client.adopt(fd[1]);RemoteControl remote(client);
             const auto synth=remote.nodeId("synth");
             check(remote.hasParameter(synth,1) && remote.parameters(synth).size()==1,"remote metadata snapshot");
-            check(remote.sessionStatus().audioDevice=="Test device" && remote.sessionStatus().midiInputs.size()==1,"host status crosses socket");
+            check(remote.sessionStatus().audioDevice=="Test device" && remote.sessionStatus().midiInputs==std::vector<MidiEndpoint>{{MidiEndpoint::Kind::Port,3,"Test MIDI",2}},"host status crosses socket");
             check(remote.sessionStatus().audioInputs[0].deviceChannel==2 && !remote.sessionStatus().audioReady && !remote.sessionStatus().audioOutputs[1].available,"device mapping and unavailable channels cross socket");
             const auto port=remote.graphState().topology.nodes[0].outputs[0].id;
             const AudioConnection route{{synth,port,0},{graphOutput,0,1},1,.5};
@@ -451,9 +451,11 @@ void partsClient(const char* plugin,const char* delay)
         check(remote.graphState().macros.size()==1 && remote.graphState().macros[0].targets[0].curve==MacroTarget::Curve::SCurve && std::abs(remote.graphState().parts[0].level-(1-.25*.25*(3-2*.25)))<1e-9,"a control over the socket drives the part's level along its curve");
         remote.removeMacro(knob);
         NoteZone split;split.highKey=59;split.transpose=12;
-        remote.setPartInput(part,{PartInput::Kind::Notes,0,{split}});
+        const std::vector<DeviceRule> devices{{DeviceRule::Kind::BuiltIn},{DeviceRule::Kind::UsbNamed,DeviceRule::Match::Regex,0,"^Key\\w+"},{DeviceRule::Kind::Port,DeviceRule::Match::Contains,5}};
+        remote.setPartInput(part,{PartInput::Kind::Notes,0,{split},devices});
         const auto zoned=remote.graphState().parts[0].input.zones;
         check(zoned.size()==1 && zoned[0].highKey==59 && zoned[0].transpose==12,"a part's zone set and read back over the socket");
+        check(remote.graphState().parts[0].input.devices==devices,"a part's device selector set and read back over the socket");
         bool refused=false;try{remote.insertIntoPart(99,0,synth);}catch(const std::exception&){refused=true;}
         check(refused,"an unknown part is refused over the socket");
         remote.movePartNode(part,1,0);remote.removeFromPart(part,fx);remote.disconnectWire(id);

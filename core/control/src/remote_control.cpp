@@ -103,6 +103,13 @@ namespace oscairn
             transport={boolean(field(v,"playing")),number(field(v,"tempo")),number(field(v,"beat"))};
             clock=string(field(v,"clockSource"))=="internal"?Transport::ClockSource::Internal:Transport::ClockSource::MidiClock;
         }
+        // An enum from its name in one of parts.h's tables.
+        template<class Names> static size_t named(const Names& names,const std::string& name)
+        {
+            const auto at=std::find_if(names.begin(),names.end(),[&](const char* n){return name==n;});
+            if(at==names.end())throw std::runtime_error("Unknown name: "+name);
+            return size_t(at-names.begin());
+        }
         void readStatus(V v)
         {
             status.audioDevice=string(field(v,"audioDevice"));status.sampleRate=number(field(v,"sampleRate"));
@@ -112,7 +119,8 @@ namespace oscairn
             status.audioReady=boolean(field(v,"audioReady"));
             status.graphEventDrops=integer(field(v,"graphEventDrops"));status.midiEventDrops=integer(field(v,"midiEventDrops"));
             status.deadlineMisses=integer(field(v,"deadlineMisses"));status.midiInputs.clear();
-            for(auto name:array(field(v,"midiInputs")))status.midiInputs.push_back(string(name));
+            for(auto e:array(field(v,"midiInputs")))
+                status.midiInputs.push_back({MidiEndpoint::Kind(named(endpointKinds,string(field(e,"kind")))),uint8_t(integer(field(e,"source"))),string(field(e,"name")),static_cast<uint32_t>(integer(field(e,"port")))});
         }
         void refresh()
         {
@@ -154,7 +162,10 @@ namespace oscairn
                 Part part;part.id=static_cast<uint32_t>(integer(field(p,"id")));part.name=string(field(p,"name"));
                 auto input=field(p,"input");const auto kind=string(field(input,"kind"));
                 part.input.kind=kind=="notes"?PartInput::Kind::Notes:kind=="audio"?PartInput::Kind::Audio:kind=="bus"?PartInput::Kind::Bus:PartInput::Kind::None;
-                part.input.port=static_cast<uint32_t>(integer(field(input,"port")));part.input.zones=zones(field(input,"zones"));part.output=static_cast<uint32_t>(integer(field(p,"output")));
+                part.input.port=static_cast<uint32_t>(integer(field(input,"port")));part.input.zones=zones(field(input,"zones"));
+                for(auto r:array(field(input,"devices")))part.input.devices.push_back({DeviceRule::Kind(named(deviceRuleKinds,string(field(r,"kind")))),
+                    DeviceRule::Match(named(deviceMatches,string(field(r,"match")))),static_cast<uint32_t>(integer(field(r,"port"))),string(field(r,"pattern"))});
+                part.output=static_cast<uint32_t>(integer(field(p,"output")));
                 for(auto n:array(field(p,"chain")))part.chain.push_back(static_cast<NodeId>(integer(n)));
                 part.bus=static_cast<uint32_t>(integer(field(p,"bus")));
                 part.level=number(field(p,"level"));part.mute=boolean(field(p,"mute"));
@@ -382,7 +393,9 @@ namespace oscairn
         std::string inputText(const PartInput& input)
         {
             const char* kind=input.kind==PartInput::Kind::Notes?"notes":input.kind==PartInput::Kind::Audio?"audio":input.kind==PartInput::Kind::Bus?"bus":"none";
-            return "{\"kind\":\""+std::string(kind)+"\",\"port\":"+std::to_string(input.port)+",\"zones\":"+zonesText(input.zones)+'}';
+            std::string devices="[";
+            for(const auto& r:input.devices){if(devices.size()>1)devices+=',';devices+=std::string("{\"kind\":\"")+deviceRuleKinds[size_t(r.kind)]+"\",\"port\":"+std::to_string(r.port)+",\"pattern\":"+quote(r.pattern)+",\"match\":\""+deviceMatches[size_t(r.match)]+"\"}";}
+            return "{\"kind\":\""+std::string(kind)+"\",\"port\":"+std::to_string(input.port)+",\"zones\":"+zonesText(input.zones)+",\"devices\":"+devices+"]}";
         }
     }
     uint32_t RemoteControl::addPart(const std::string& name,PartInput input,std::optional<uint32_t> output)

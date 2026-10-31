@@ -44,6 +44,7 @@ namespace oscairn::standalone
             PartRow row;
             row.id = p.id; row.name = p.name; row.bus = p.input.kind == PartInput::Kind::Bus;
             row.level = p.level; row.mute = p.mute; row.through = p.bus;
+            row.notes = p.input.kind == PartInput::Kind::Notes; row.devices = p.input.devices;
             for(const auto& s : p.sends) row.sends[s.bus] = s.level;
             if(!p.input.zones.empty()) { const auto& z = p.input.zones.front(); row.lowKey = z.lowKey; row.highKey = z.highKey; row.transpose = z.transpose; }
             for(const auto node : p.chain)
@@ -55,7 +56,7 @@ namespace oscairn::standalone
             switch(p.input.kind)
             {
             case PartInput::Kind::Notes:
-                row.input = "Keyboard · " + (row.lowKey == 0 && row.highKey == 127 ? std::string("all keys") : range(row.lowKey, row.highKey));
+                row.input = devicesName(row.devices) + " · " + (row.lowKey == 0 && row.highKey == 127 ? std::string("all keys") : range(row.lowKey, row.highKey));
                 if(row.transpose) row.input += " · " + std::string(row.transpose > 0 ? "+" : "−") + std::to_string(std::abs(row.transpose));
                 break;
             case PartInput::Kind::Audio: row.input = "Audio in " + std::to_string(p.input.port + 1); break;
@@ -129,6 +130,60 @@ namespace oscairn::standalone
         if(input.zones.empty()) { if(!everything) input.zones.push_back(zone); }
         else if(everything && input.zones.size() == 1) input.zones.clear();
         else input.zones.front() = zone;
+        c.setPartInput(part, input);
+        c.commit();
+    }
+
+    std::string devicesName(const std::vector<DeviceRule>& rules)
+    {
+        if(rules.empty()) return "Any device";
+        std::string out;
+        for(const auto& r : rules)
+        {
+            std::string name;
+            switch(r.kind)
+            {
+            case DeviceRule::Kind::BuiltIn: name = "Built in"; break;
+            case DeviceRule::Kind::External: name = "All external"; break;
+            case DeviceRule::Kind::All: name = "Any device"; break;
+            case DeviceRule::Kind::Port: name = "Port " + std::to_string(r.port); break;
+            case DeviceRule::Kind::Usb: name = "All USB"; break;
+            case DeviceRule::Kind::UsbNamed: case DeviceRule::Kind::Network:
+                name = r.kind == DeviceRule::Kind::Network ? (r.pattern.empty() ? "Network" : "Network ") : "";
+                if(!r.pattern.empty()) name += r.match == DeviceRule::Match::Equals ? r.pattern : r.match == DeviceRule::Match::Contains ? "“" + r.pattern + "”" : "/" + r.pattern + "/";
+                break;
+            }
+            out += (out.empty() ? "" : " + ") + name;
+        }
+        return out;
+    }
+
+    DeviceRule ruleFor(const MidiEndpoint& e)
+    {
+        switch(e.kind)
+        {
+        case MidiEndpoint::Kind::BuiltIn: return {DeviceRule::Kind::BuiltIn};
+        case MidiEndpoint::Kind::Port: return {DeviceRule::Kind::Port, DeviceRule::Match::Contains, e.port};
+        case MidiEndpoint::Kind::Network: return {DeviceRule::Kind::Network, DeviceRule::Match::Equals, 0, e.name};
+        case MidiEndpoint::Kind::Usb: break;
+        }
+        return {DeviceRule::Kind::UsbNamed, DeviceRule::Match::Equals, 0, e.name};
+    }
+
+    std::vector<DeviceRule> toggled(std::vector<DeviceRule> rules, const DeviceRule& rule)
+    {
+        if(rule.kind == DeviceRule::Kind::All) return {};
+        if(std::erase(rules, rule) == 0) rules.push_back(rule);
+        return rules;
+    }
+
+    void setDevices(Control& c, uint32_t part, const std::vector<DeviceRule>& devices)
+    {
+        const auto parts = c.graphState().parts;
+        const auto found = std::find_if(parts.begin(), parts.end(), [&](const Part& p) { return p.id == part; });
+        if(found == parts.end()) throw std::invalid_argument("unknown part");
+        auto input = found->input;
+        input.devices = devices;
         c.setPartInput(part, input);
         c.commit();
     }

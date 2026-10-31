@@ -39,10 +39,10 @@ int main(int argc, char** argv)
         const auto state = readParts(s.graphState());
         check(state.parts.size() == 2 && state.buses.size() == 1, "two parts and a bus");
         const auto& b = state.parts[0];
-        check(b.name == "Bass" && b.input == "Keyboard · C-1–B3" && b.sound == "Basic Synth", "the bass row: " + b.input);
+        check(b.name == "Bass" && b.input == "Any device · C-1–B3" && b.sound == "Basic Synth", "the bass row: " + b.input);
         check(b.chain.size() == 2 && b.chain[0].role == "Notes" && b.chain[1].role == "Instrument" && b.chain[1].name == "Basic Synth", "the bass chain: a note effect, then the synth");
         check(state.parts[1].chain[0].name == "Basic Synth 2", "a second synth gets its own name");
-        check(state.parts[1].input == "Keyboard · C4–G9", "the lead row: " + state.parts[1].input);
+        check(state.parts[1].input == "Any device · C4–G9", "the lead row: " + state.parts[1].input);
         check(state.buses[0].input == "From Bass, Lead" && state.buses[0].chain[0].role == "Effect", "the bus row: " + state.buses[0].input);
         check(b.sends.at(room) == .5 && state.parts[1].sends.at(room) == .3, "the sends read back");
         size_t user = 0; for(const auto& w : s.wires()) user += w.owner == WireOwner::User;
@@ -60,10 +60,20 @@ int main(int argc, char** argv)
         removeBox(s, bass, readParts(s.graphState()).parts[0].chain[0].node);
         check(readParts(s.graphState()).parts[0].chain.size() == 1, "the note effect removed");
         setZone(s, lead, 0, 127, 0);
-        check(readParts(s.graphState()).parts[1].input == "Keyboard · all keys" && s.parts()[1].input.zones.empty(), "all keys again: no zone left");
+        check(readParts(s.graphState()).parts[1].input == "Any device · all keys" && s.parts()[1].input.zones.empty(), "all keys again: no zone left");
         setOutput(s, lead, room); check(readParts(s.graphState()).parts[1].through == room, "the lead plays through the room");
         setSendLevel(s, bass, room, 0); check(readParts(s.graphState()).parts[0].sends.empty(), "a send at 0 is removed");
         check(roleOf({0, {}, {}, {}, 0, 1}) == "Sequencer", "a node with only note outputs is a sequencer");
+
+        // The Plays from menu: a connected device picked by name, a kind added, Any device clears.
+        const MidiEndpoint keylab{MidiEndpoint::Kind::Usb, 3, "KeyLab 61"}, din{MidiEndpoint::Kind::Port, 4, "MIDI 2", 2};
+        auto devices = toggled({}, ruleFor(keylab));
+        devices = toggled(devices, {DeviceRule::Kind::BuiltIn});
+        setDevices(s, lead, devices);
+        check(s.parts()[1].input.devices == devices && readParts(s.graphState()).parts[1].input == "KeyLab 61 + Built in · all keys", "picked: " + readParts(s.graphState()).parts[1].input);
+        check(toggled(devices, ruleFor(keylab)) == std::vector<DeviceRule>{{DeviceRule::Kind::BuiltIn}}, "picking it again removes it");
+        check(toggled(devices, {DeviceRule::Kind::All}).empty() && devicesName(toggled({}, ruleFor(din))) == "Port 2", "Any device clears; a DIN port by number");
+        check(devicesName({{DeviceRule::Kind::UsbNamed, DeviceRule::Match::Contains, 0, "key"}, {DeviceRule::Kind::Network}}) == "“key” + Network", "patterns and kinds named");
     }
     catch(const std::exception& e) { std::fprintf(stderr, "FAIL: %s\n", e.what()); return 1; }
     if(!failures) std::puts("ok: a split and a shared delay built through the Parts views' model");

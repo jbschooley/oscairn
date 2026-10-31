@@ -38,7 +38,7 @@ namespace oscairn
         struct SessionStatus
         {
             std::string audioDevice;
-            std::vector<std::string> midiInputs;
+            std::vector<MidiEndpoint> midiInputs; // the host's MIDI inputs, for device selectors
             double sampleRate = 0, cpuLoad = 0;
             uint32_t bufferSize = 0;
             uint64_t deadlineMisses = 0;

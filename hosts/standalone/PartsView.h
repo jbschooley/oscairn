@@ -32,6 +32,7 @@ namespace oscairn::standalone
         const PartRow* part(uint32_t id) const;
         juce::Rectangle<int> rowBounds(size_t row) const;
         void insertMenu(size_t index, juce::Component& at);
+        void devicesMenu(uint32_t part, juce::Component& at);
         void sceneControlsMenu(NodeId node, juce::Component& at);
         void targetMenu(uint32_t macro, juce::Component& at);
         std::string describe(const MacroTarget&) const;
@@ -43,6 +44,7 @@ namespace oscairn::standalone
         std::future<std::vector<PluginChoice>> scan_;
         std::vector<PluginChoice> plugins_;
         PartsState state_;
+        std::vector<MidiEndpoint> endpoints_; // the host's MIDI inputs
         std::vector<Scene> scenes_;
         std::vector<SceneParameter> sceneParameters_;
         uint32_t scene_ = 0;

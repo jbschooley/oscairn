@@ -14,14 +14,17 @@ struct NoteRoute
 {
     using Event=kick::clap::Event;
     // address: the note as its source sent it, which releases and expressions match; key: the
-    // key it plays here, after its zone's transpose; zone: which zone let it through, or -1.
-    struct Note { clap_event_note_t address{}; int32_t id=-1; bool used=false,held=false,midi=false; int16_t key=-1; int8_t zone=-1; };
+    // key it plays here, after its zone's transpose; zone: which zone let it through, or -1;
+    // source: where it entered the graph, so another device's release of the same key leaves it.
+    struct Note { clap_event_note_t address{}; int32_t id=-1; bool used=false,held=false,midi=false; int16_t key=-1; int8_t zone=-1; uint8_t source=untaggedSource; };
     std::array<Note,kick::clap::Host::maxBlockEvents> notes{};
     std::array<std::array<uint8_t,16>,16> pedal{};
     std::array<bool,16> clap{};
     uint32_t ports=0;
     explicit NoteRoute(const PluginHost& host):ports(host.noteInputPorts()) {for(uint32_t p=0;p<clap.size();++p)clap[p]=host.usesClapNotes(p);}
     void clear() noexcept {for(auto& n:notes)n.used=false;for(auto& p:pedal)p.fill(0);}
+    // Whether an event from `source` may release or shape a note: untagged events reach every note.
+    static bool from(const Note& n,uint8_t source) noexcept {return source==untaggedSource || n.source==source;}
     static bool matches(const Note& n,int32_t id,int16_t port,int16_t channel,int16_t key) noexcept
     {return n.used && (id<0 || id==n.address.note_id) && (port<0 || port==n.address.port_index) &&
         (channel<0 || channel==n.address.channel) && (key<0 || key==n.address.key);}
@@ -53,11 +56,11 @@ struct NoteRoute
         }
         clear();return ok;
     }
-    template<class Emit> bool route(Event e,uint32_t& nextId,Emit&& emit,const NoteZones* zones=nullptr) noexcept
-    {return route(e,nextId,emit,[](const Note&,uint32_t){},zones);}
+    template<class Emit> bool route(Event e,uint32_t& nextId,Emit&& emit,const NoteZones* zones=nullptr,uint8_t source=untaggedSource) noexcept
+    {return route(e,nextId,emit,[](const Note&,uint32_t){},zones,source);}
     // zones, when given, decide which notes pass and how they change (note_zone.h); each zone
-    // that accepts a note plays its own copy.
-    template<class Emit,class End> bool route(Event e,uint32_t& nextId,Emit&& emit,End&& end,const NoteZones* zones=nullptr) noexcept
+    // that accepts a note plays its own copy. source: where the event entered the graph.
+    template<class Emit,class End> bool route(Event e,uint32_t& nextId,Emit&& emit,End&& end,const NoteZones* zones=nullptr,uint8_t source=untaggedSource) noexcept
     {
         if(!e.valid())return emit(e);
         const auto* h=e.header();
@@ -68,7 +71,7 @@ struct NoteRoute
             const auto m=*reinterpret_cast<const clap_event_midi_t*>(h);
             if(m.port_index>=ports || m.port_index>=16)return emit(e);
             const auto kind=m.data[0]&0xf0,channel=m.data[0]&15;
-            if(zones && zones->count && kind>=0x80 && kind<0xf0 && !zones->channel(channel))return true; // another zone's channel
+            if(zones && zones->count && kind>=0x80 && kind<0xf0 && !zones->passes(channel,source))return true; // another zone's channel or device
             if(kind==0x90 || kind==0x80) {
                 e=Event::note(kind==0x90 && m.data[2],m.data[1],m.data[2]/127.0,h->time,channel,m.port_index);midi=true;h=e.header();
             } else if(kind==0xb0 && m.data[1]==64) {
@@ -79,12 +82,12 @@ struct NoteRoute
             } else if(kind==0xb0 && (m.data[1]==120 || m.data[1]==123)) {
                 auto n=Event::note(false,-1,0,h->time,channel,m.port_index);
                 if(m.data[1]==120)reinterpret_cast<clap_event_header_t*>(n.bytes.data())->type=CLAP_EVENT_NOTE_CHOKE;
-                return route(n,nextId,emit,end,zones);
+                return route(n,nextId,emit,end,zones,source);
             } else if(kind==0xa0 || kind==0xd0) {
                 Event pressure;
                 if(!midiToClap(m.data,kind==0xd0?2:3,h->time,pressure))return emit(e);
                 reinterpret_cast<clap_event_note_expression_t*>(pressure.bytes.data())->port_index=m.port_index;
-                return route(pressure,nextId,emit,end,zones);
+                return route(pressure,nextId,emit,end,zones,source);
             } else return emit(e);
         }
         if(h->type==CLAP_EVENT_NOTE_ON && h->size==sizeof(clap_event_note_t))
@@ -94,14 +97,14 @@ struct NoteRoute
             auto play=[&](int8_t zone,int16_t key,double velocity) {
                 for(auto& slot:notes)if(!slot.used) {
                     if(nextId>INT32_MAX)return false;
-                    slot={n,static_cast<int32_t>(nextId++),true,true,midi,key,zone};
+                    slot={n,static_cast<int32_t>(nextId++),true,true,midi,key,zone,source};
                     auto copy=n;copy.key=key;copy.velocity=velocity;copy.note_id=clap[n.port_index]?slot.id:-1;return emit(Event::from(copy));
                 }
                 return false;
             };
             if(!zones || !zones->count)return play(-1,n.key,n.velocity);
             bool ok=true;
-            for(size_t z=0;z<zones->count;++z)if(const auto& zone=zones->zones[z];zone.accepts(n.key,n.velocity,n.channel))
+            for(size_t z=0;z<zones->count;++z)if(const auto& zone=zones->zones[z];zone.accepts(n.key,n.velocity,n.channel,source))
                 if(const auto key=n.key+zone.transpose;key>=0 && key<=127)ok=play(int8_t(z),int16_t(key),zone.shape(n.velocity)) && ok;
             return ok; // no zone took it: dropped, and so is its release
 
@@ -111,10 +114,10 @@ struct NoteRoute
             const auto n=*reinterpret_cast<const clap_event_note_t*>(h);const bool choke=h->type==CLAP_EVENT_NOTE_CHOKE;
             // A repeated MIDI key releases its oldest note, in each zone that played it.
             std::array<Note*,NoteZones::capacity+1> oldest{};
-            if(midi)for(auto& slot:notes)if(slot.held && slot.midi && matches(slot,-1,n.port_index,n.channel,n.key))
+            if(midi)for(auto& slot:notes)if(slot.held && slot.midi && from(slot,source) && matches(slot,-1,n.port_index,n.channel,n.key))
                 if(auto& o=oldest[size_t(slot.zone+1)];!o || slot.id<o->id)o=&slot;
             bool ok=true;
-            for(auto& slot:notes)if(matches(slot,n.note_id,n.port_index,n.channel,n.key) && (!midi || &slot==oldest[size_t(slot.zone+1)])) {
+            for(auto& slot:notes)if(from(slot,source) && matches(slot,n.note_id,n.port_index,n.channel,n.key) && (!midi || &slot==oldest[size_t(slot.zone+1)])) {
                 slot.held=false;
                 const bool sustained=pedal[slot.address.port_index][slot.address.channel]>=64;
                 auto output=release(slot,h->time,choke);
@@ -127,7 +130,7 @@ struct NoteRoute
         if(h->type==CLAP_EVENT_NOTE_EXPRESSION && h->size==sizeof(clap_event_note_expression_t))
         {
             const auto expression=*reinterpret_cast<const clap_event_note_expression_t*>(h);bool ok=true;
-            for(const auto& slot:notes)if(matches(slot,expression.note_id,expression.port_index,expression.channel,expression.key)) {
+            for(const auto& slot:notes)if(from(slot,source) && matches(slot,expression.note_id,expression.port_index,expression.channel,expression.key)) {
                 auto copy=expression;copy.note_id=clap[slot.address.port_index]?slot.id:-1;
                 copy.port_index=slot.address.port_index;copy.channel=slot.address.channel;copy.key=slot.key;
                 ok=emit(Event::from(copy)) && ok;

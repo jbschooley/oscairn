@@ -135,7 +135,8 @@ namespace oscairn
         {
             const auto s = c.sessionStatus();
             std::vector<std::string> midi;
-            for(const auto& name : s.midiInputs) midi.push_back(quote(name));
+            for(const auto& e : s.midiInputs)
+                midi.push_back("{\"source\":" + std::to_string(e.source) + ",\"name\":" + quote(e.name) + ",\"kind\":\"" + endpointKinds[size_t(e.kind)] + "\",\"port\":" + std::to_string(e.port) + '}');
             auto channels=[](const auto& list){std::vector<std::string> result;for(const auto& ch:list)result.push_back("{\"deviceChannel\":"+std::to_string(ch.deviceChannel)+",\"name\":"+quote(ch.name)+",\"available\":"+(ch.available?"true":"false")+'}');return join(result);};
             return "{\"audioReady\":"+std::string(s.audioReady?"true":"false")+",\"audioInputs\":"+channels(s.audioInputs)+",\"audioOutputs\":"+channels(s.audioOutputs)+",\"audioDevice\":" + quote(s.audioDevice) + ",\"midiInputs\":" + join(midi) +
                 ",\"sampleRate\":" + encode(s.sampleRate) + ",\"bufferSize\":" + std::to_string(s.bufferSize) +
@@ -175,14 +176,45 @@ namespace oscairn
             }
             return zones;
         }
+        std::string devicesJson( const std::vector<DeviceRule>& rules )
+        {
+            std::vector<std::string> out;
+            for( const auto& r : rules )
+                out.push_back(std::string("{\"kind\":\"") + deviceRuleKinds[size_t(r.kind)] + "\",\"port\":" + std::to_string(r.port) + ",\"pattern\":" + quote(r.pattern) + ",\"match\":\"" + deviceMatches[size_t(r.match)] + "\"}");
+            return join(out);
+        }
+        std::vector<DeviceRule> devicesFrom( Value v )
+        {
+            if( !v || v->type != json_type_array ) invalid("devices is an array");
+            std::vector<DeviceRule> rules;
+            auto pick = [](const auto& names, std::string_view name, const char* error) {
+                const auto at = std::find_if(names.begin(), names.end(), [&](const char* n) { return name == n; });
+                if( at == names.end() ) invalid(error);
+                return size_t(at - names.begin());
+            };
+            for( auto* e = static_cast<const json_array_s*>(v->payload)->start; e; e = e->next )
+            {
+                if( rules.size() == 16 ) invalid("At most 16 device rules");
+                fields(e->value,{"kind","port","pattern","match"});
+                DeviceRule r;
+                r.kind = DeviceRule::Kind(pick(deviceRuleKinds, string(member(e->value,"kind")), "Unknown device rule kind"));
+                if( member(e->value,"port") ) r.port = integer(member(e->value,"port"));
+                if( member(e->value,"pattern") ) r.pattern = string(member(e->value,"pattern"));
+                if( member(e->value,"match") ) r.match = DeviceRule::Match(pick(deviceMatches, string(member(e->value,"match")), "match is equals, contains or regex"));
+                if( !r.valid() ) invalid("Invalid device rule");
+                rules.push_back(r);
+            }
+            return rules;
+        }
         PartInput inputFrom( Value in )
         {
-            fields(in,{"kind","port","zones"});
+            fields(in,{"kind","port","zones","devices"});
             PartInput input;
             const auto kind = string(member(in,"kind"));
             input.kind = kind == "notes" ? PartInput::Kind::Notes : kind == "audio" ? PartInput::Kind::Audio : kind == "none" ? PartInput::Kind::None : kind == "bus" ? PartInput::Kind::Bus : (invalid("input kind is notes, audio, none or bus"), PartInput::Kind::None);
             input.port = member(in,"port") ? integer(member(in,"port")) : 0;
             if( member(in,"zones") ) input.zones = zonesFrom(member(in,"zones"));
+            if( member(in,"devices") ) input.devices = devicesFrom(member(in,"devices"));
             return input;
         }
         const char* pressureName( PadAssignment::Pressure p ) { return p == PadAssignment::Pressure::Poly ? "poly" : p == PadAssignment::Pressure::Channel ? "channel" : "none"; }
@@ -296,7 +328,7 @@ namespace oscairn
             std::vector<std::string> chain;
             for( const auto n : p.chain ) chain.push_back(std::to_string(n));
             return "{\"id\":" + std::to_string(p.id) + ",\"name\":" + quote(p.name) + ",\"input\":{\"kind\":\"" + inputKind(p.input.kind) +
-                "\",\"port\":" + std::to_string(p.input.port) + ",\"zones\":" + zonesJson(p.input.zones) + "},\"chain\":" + join(chain) + ",\"output\":" + std::to_string(p.output) +
+                "\",\"port\":" + std::to_string(p.input.port) + ",\"zones\":" + zonesJson(p.input.zones) + ",\"devices\":" + devicesJson(p.input.devices) + "},\"chain\":" + join(chain) + ",\"output\":" + std::to_string(p.output) +
                 ",\"level\":" + encode(p.level) + ",\"mute\":" + (p.mute ? "true" : "false") + ",\"bus\":" + std::to_string(p.bus) + ",\"sends\":" + [&]{ std::vector<std::string> v; for( const auto& s : p.sends ) v.push_back("{\"bus\":" + std::to_string(s.bus) + ",\"level\":" + encode(s.level) + '}'); return join(v); }() + '}';
         }
 

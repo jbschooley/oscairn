@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <set>
 #include <cstdio>
 #include <stdexcept>
 
@@ -82,39 +83,77 @@ namespace oscairn::host
         status.audioReady=started_.load();
         status.cpuLoad = devices_.getCpuUsage();
         status.midiEventDrops=droppedMidi_.load();
-        for(const auto& input : midiInputs_) status.midiInputs.push_back(input->getName().toStdString());
+        // shortcut: every desktop input is reported as USB; port and network kinds need the device's own input table (RFC 0012).
+        for(size_t i = 0; i < midiInputs_.size(); ++i) status.midiInputs.push_back({MidiEndpoint::Kind::Usb, midiSources_[i], midiInputs_[i]->getName().toStdString()});
         session_->setHostStatus(std::move(status));
     }
 
     void AudioEngine::openMidiInputs()
     {
-        for( auto& input : midiInputs_ )
-            input->stop();
-        midiInputs_.clear();
+        {
+            // Stopped outside the lock: a callback waiting for it must not block stop().
+            std::vector<std::unique_ptr<juce::MidiInput>> old;
+            {
+                std::lock_guard lock( pushLock_ );
+                old.swap( midiInputs_ );
+                midiSources_.clear();
+            }
+            for( auto& input : old )
+                input->stop();
+        }
+        std::vector<std::unique_ptr<juce::MidiInput>> inputs;
+        std::vector<uint8_t> sources;
         for( const auto& info : juce::MidiInput::getAvailableDevices() )
+        {
+            auto known = sourceOf_.find( info.identifier );
+            if( known == sourceOf_.end() )
+            {
+                // The lowest free number; past 63 devices, one of an absent device.
+                std::set<uint8_t> used;
+                for( const auto& [id, source] : sourceOf_ ) used.insert( source );
+                uint8_t source = 1;
+                while( source < maxSources && used.count( source ) ) ++source;
+                if( source == maxSources )
+                    for( auto it = sourceOf_.begin(); it != sourceOf_.end(); ++it )
+                        if( std::none_of( sources.begin(), sources.end(), [&]( uint8_t s ) { return s == it->second; } ) )
+                            { source = it->second; sourceOf_.erase( it ); break; }
+                if( source == maxSources ) continue; // 63 inputs open at once
+                known = sourceOf_.emplace( info.identifier, source ).first;
+            }
             if( auto input = juce::MidiInput::openDevice( info.identifier, this ) )
             {
-                input->start();
-                midiInputs_.push_back( std::move( input ) );
+                inputs.push_back( std::move( input ) );
+                sources.push_back( known->second );
             }
+        }
+        {
+            std::lock_guard lock( pushLock_ );
+            midiInputs_ = std::move( inputs );
+            midiSources_ = std::move( sources );
+        }
+        for( auto& input : midiInputs_ )
+            input->start();
     }
 
-    void AudioEngine::handleIncomingMidiMessage( juce::MidiInput*, const juce::MidiMessage& message )
+    void AudioEngine::handleIncomingMidiMessage( juce::MidiInput* input, const juce::MidiMessage& message )
     {
         if( message.isNoteOnOrOff() || (message.isController() && (message.getControllerNumber()==64 || message.getControllerNumber()==120 || message.getControllerNumber()==123)) || message.isAftertouch() || message.isChannelPressure() || message.isMidiClock() || message.isMidiStart() || message.isMidiContinue() || message.isMidiStop()
             || message.isSongPositionPointer() )
-            push( message );
+            push( message, input );
     }
 
-    void AudioEngine::push( const juce::MidiMessage& message )
+    void AudioEngine::push( const juce::MidiMessage& message, const juce::MidiInput* input )
     {
         Incoming in{};
         const auto size = std::min( message.getRawDataSize(), 3 );
         std::copy_n( message.getRawData(), size, in.bytes );
         in.size = (uint8_t)size;
+        in.source = untaggedSource;
         in.seconds = juce::Time::getMillisecondCounterHiRes() * 0.001;
 
         std::lock_guard lock( pushLock_ );
+        for( size_t i = 0; i < midiInputs_.size(); ++i )
+            if( midiInputs_[i].get() == input ) in.source = midiSources_[i];
         const auto      scope = fifo_.write( 1 );
         if( scope.blockSize1 + scope.blockSize2 == 0 )
             {++droppedMidi_;midiOverflow_.store(true,std::memory_order_release);}
@@ -161,7 +200,7 @@ namespace oscairn::host
                     return;
                 }
                 // Notes and aftertouch (as CLAP pressure).
-                notes_.append(in.bytes,in.size);
+                notes_.append(in.bytes,in.size,in.source);
             };
             for( int i = 0; i < scope.blockSize1; ++i )
                 take( scope.startIndex1 + i );
@@ -174,7 +213,8 @@ namespace oscairn::host
         channelMap_.process(inputs,static_cast<uint32_t>(numInputs),outputs,static_cast<uint32_t>(numOutputs),static_cast<uint32_t>(numSamples),
             [&](const float* const* in,uint32_t ni,float* const* out,uint32_t no,uint32_t frames,uint32_t offset){
                 if(offset==0 && panic)session_->panicInput();
-                return session_->process(in,ni,out,no,frames,{notes_.events.data(),offset==0?notes_.count:0},{clocks_.data(),offset==0?clockCount:0});
+                return session_->process(in,ni,out,no,frames,{notes_.events.data(),offset==0?notes_.count:0},{clocks_.data(),offset==0?clockCount:0},
+                    {notes_.sources.data(),offset==0?notes_.count:0});
             });
         blockSeconds_   = now;
         lastBlockStart_ = blockSample_;

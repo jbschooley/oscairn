@@ -141,7 +141,9 @@ To do:
 - MIDI input curves and filters: implemented as note zones (key, velocity and channel ranges,
   transpose, velocity curve or fixed velocity) on part inputs and note wires
   ([RFC 0011](rfcs/0011-performance-ui-and-editors.md#step-1-status)); editors for them come
-  with the Parts views.
+  with the Parts views. Parts also choose which MIDI inputs play them, by kind, port or
+  name, whatever channel they send on
+  ([RFC 0012 selectors](rfcs/0012-sync-external-midi-and-multi-device.md#choosing-devices-selectors)).
 - shared controller mappings with knob/slider pickup, direct position access,
   relative-encoder tracking and explicit feedback/ownership rules; plugins may opt
   into physical observations, accepted changes or both

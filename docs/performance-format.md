@@ -49,7 +49,7 @@ Required top-level fields:
 | `audioInputs`, `audioOutputs` | Required logical graph ports: ID, channels, flags |
 | `nodes` | Local key, display name, plugin identity/version, path hint, shared engine key, expected audio/note ports |
 | `wires` | Audio and note wires: owner (`part`, with its part ID, or `user`), source and destination node and audio port, explicit channel pairs or none (the channel rules), the source's level, pan, mute and solo in the destination's Mix, and a note wire's zones |
-| `parts` | ID, name, input (`notes` with its zones, `audio` with a graph input port, `none`, or `bus` for a shared bus), the chain of node keys, the graph output port or the `bus` it plays through, and its `sends` to buses with their levels |
+| `parts` | ID, name, input (`notes` with its zones and device rules (selectors, resolved against the devices of the machine that opens it), `audio` with a graph input port, `none`, or `bus` for a shared bus), the chain of node keys, the graph output port or the `bus` it plays through, and its `sends` to buses with their levels |
 | `mappings` | Source node/lane to destination node/parameter |
 | `scenes`, `sceneParameters`, `scene` | Each scene's part faders and scene-parameter values, which parameters scenes set, and the scene last selected |
 | `controls` | The control tree: each control's name, value and targets (kind, node key and parameter, part or control; start, end, curve, relative and base) |

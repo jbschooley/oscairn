@@ -8,6 +8,7 @@
 #include <juce_audio_devices/juce_audio_devices.h>
 
 #include <atomic>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -44,7 +45,7 @@ namespace oscairn::host
         // MIDI input threads
         void handleIncomingMidiMessage( juce::MidiInput*, const juce::MidiMessage& ) override;
 
-        void push( const juce::MidiMessage& message );
+        void push( const juce::MidiMessage& message, const juce::MidiInput* input );
         void openMidiInputs();
         void timerCallback() override { service(); }
 
@@ -64,6 +65,7 @@ namespace oscairn::host
         {
             uint8_t bytes[3];
             uint8_t size; // bytes used
+            uint8_t source; // the input's source number (note_zone.h)
             double  seconds; // Time::getMillisecondCounterHiRes() / 1000 at arrival
         };
         std::mutex                    pushLock_;
@@ -81,8 +83,12 @@ namespace oscairn::host
         double  blockSeconds_   = 0.0;
         int64_t lastBlockStart_ = 0, blockSample_ = 0;
 
-        // MIDI inputs, main thread.
+        // MIDI inputs, main thread; each with its source number. The input threads read both
+        // under pushLock_, which the main thread holds to change them. A device keeps its
+        // number while the app runs, so selectors resolved before it was unplugged still match.
         std::vector<std::unique_ptr<juce::MidiInput>> midiInputs_;
+        std::vector<uint8_t>                          midiSources_;
+        std::map<juce::String, uint8_t>               sourceOf_; // by device identifier
         juce::MidiDeviceListConnection                midiDevicesChanged_;
         std::atomic<bool>                             midiDevicesDirty_{ false };
     };

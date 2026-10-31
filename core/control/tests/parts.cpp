@@ -175,6 +175,77 @@ namespace
         check(refused, "an invalid zone is refused");
     }
 
+    // RFC 0012 device selectors: rules resolve against the host's MIDI inputs, again whenever
+    // they change, and a part hears only the devices its selector chooses.
+    void devices(const char* fixture, const fs::path& root)
+    {
+        using K = DeviceRule::Kind; using M = DeviceRule::Match; using E = MidiEndpoint::Kind;
+        const std::vector<MidiEndpoint> table{{E::Usb, 1, "Arturia KeyLab 61"}, {E::Usb, 2, "nanoKONTROL2"}, {E::Port, 3, "MIDI 2", 2}, {E::Network, 4, "Session 1"}};
+        auto mask = [&](std::vector<DeviceRule> rules) { return resolveDevices(rules, table); };
+        check(mask({}) == ~0ull && mask({{K::All}}) == ~0ull, "no rules, or All: everything");
+        check(mask({{K::BuiltIn}}) == 1, "built in: the panel's own notes");
+        check(mask({{K::External}}) == 0b11110, "all external");
+        check(mask({{K::UsbNamed, M::Contains, 0, "keylab"}}) == 0b10, "USB named, containing a text, ignoring case");
+        check(mask({{K::UsbNamed, M::Regex, 0, "^nano"}}) == 0b100, "USB named by a regular expression");
+        check(mask({{K::UsbNamed, M::Equals, 0, "Arturia KeyLab"}}) == 0, "equals is the whole name");
+        check(mask({{K::Port, M::Contains, 2}}) == 0b1000 && mask({{K::Port, M::Contains, 1}}) == 0, "a numbered port");
+        check(mask({{K::Network}, {K::BuiltIn}}) == 0b10001, "network sessions, and a list of rules");
+        check(!DeviceRule{K::UsbNamed, M::Regex, 0, "("}.valid() && !DeviceRule{K::UsbNamed}.valid(), "a bad pattern, or none, is invalid");
+
+        Session s(48000, frames);
+        const auto inside = s.add("inside", fixture, "org.kick.test.synth"), outside = s.add("outside", fixture, "org.kick.test.synth");
+        s.setParameter(inside, 7, .25); s.setParameter(outside, 7, .5);
+        Control::SessionStatus status; status.midiInputs = {{E::Usb, 5, "Arturia KeyLab 61"}};
+        s.setHostStatus(status);
+        const auto keys = s.addPart("Keys", {PartInput::Kind::Notes, 0, {}, {{K::BuiltIn}}});
+        const auto ext = s.addPart("External", {PartInput::Kind::Notes, 0, {}, {{K::UsbNamed, M::Contains, 0, "keylab"}}});
+        s.insertIntoPart(keys, 0, inside); s.insertIntoPart(ext, 0, outside); s.commit();
+        Audio x; x.run(s);
+        auto play = [&](bool on, int key, uint8_t source) {
+            const auto e = kick::clap::Event::midi(on ? 0x90 : 0x80, uint8_t(key), on ? 127 : 0);
+            s.service(); forbidAllocation = true;
+            const bool ok = s.process(nullptr, 0, x.out, 2, frames, {&e, 1}, {}, {&source, 1});
+            forbidAllocation = false; check(ok, "render with sources");
+        };
+        s.note(true, 60, 1); x.run(s); check(near(x.l[0], .25), "the panel plays only Keys: " + std::to_string(x.l[0]));
+        play(true, 62, 5); check(near(x.l[0], .75), "the KeyLab, on the same channel, plays External");
+        play(true, 64, 6); check(near(x.l[0], .75), "another device plays neither");
+        play(false, 62, 5); s.note(false, 60, 0); x.run(s); check(near(x.l[0], 0), "both released");
+        // Plugged in again under another number: the selector follows it, applied at once.
+        status.midiInputs = {{E::Usb, 7, "Arturia KeyLab 61"}}; s.setHostStatus(status);
+        play(true, 62, 7); check(near(x.l[0], .5) && !s.graphState().staged, "the KeyLab as source 7 plays External, no commit needed");
+        play(false, 62, 7); play(true, 62, 5); check(near(x.l[0], 0), "its old number no longer does");
+        play(false, 62, 5);
+        // With edits staged, the new devices wait for their commit.
+        s.setPartLevel(ext, .5, false);
+        status.midiInputs = {{E::Usb, 8, "Arturia KeyLab 61"}}; s.setHostStatus(status);
+        check(s.graphState().staged, "staged edits stay staged");
+        s.commit(); play(true, 62, 8); check(near(x.l[0], .25), "committed together: source 8 at half level");
+        play(false, 62, 8);
+        // Unplugged: the part hears nothing, and keeps its selector.
+        status.midiInputs = {}; s.setHostStatus(status);
+        play(true, 62, 8); check(near(x.l[0], 0) && s.parts()[1].input.devices.size() == 1, "no device: silent, selector kept");
+        play(false, 62, 8);
+        bool refused = false;
+        try { s.setPartInput(ext, {PartInput::Kind::Notes, 0, {}, {{K::UsbNamed, M::Regex, 0, "["}}}); } catch(const std::invalid_argument&) { refused = true; }
+        check(refused, "an invalid pattern is refused");
+
+        // Performances store selectors; another machine resolves them against its own devices.
+        const auto saved = root / "devices";
+        s.savePerformance(saved.string());
+        Session t(48000, frames);
+        status.midiInputs = {{E::Usb, 9, "KeyLab mkII 49"}}; t.setHostStatus(status);
+        t.loadPerformance(saved.string());
+        check(t.parts()[1].input.devices == s.parts()[1].input.devices, "selectors round-trip");
+        Audio y; y.run(t);
+        const auto e = kick::clap::Event::midi(0x90, 62, 127); const uint8_t nine = 9;
+        t.service(); const bool ok = t.process(nullptr, 0, y.out, 2, frames, {&e, 1}, {}, {&nine, 1});
+        check(ok && near(y.l[0], .25), "a different KeyLab there plays External: " + std::to_string(y.l[0]));
+        const auto off = kick::clap::Event::midi(0x80, 62, 0), other = kick::clap::Event::midi(0x90, 64, 127); const uint8_t five = 5;
+        t.process(nullptr, 0, y.out, 2, frames, {&off, 1}, {}, {&nine, 1}); t.process(nullptr, 0, y.out, 2, frames, {&other, 1}, {}, {&five, 1});
+        check(near(y.l[0], 0), "a device that does not match there plays nothing");
+    }
+
     // RFC 0011 step 2's gate: a two-layer split and a shared reverb (a delay here) built with part
     // edits only render exactly as the same graph wired by hand on the engine's Graph.
     void buses(const char* fixture, const char* delay)
@@ -408,12 +479,13 @@ int main(int argc, char** argv)
         channels(argv[2]);
         replacement(argv[2], argv[3]);
         zones(argv[1]);
+        devices(argv[1], temp.path);
         buses(argv[1], argv[3]);
         scenes(argv[1], temp.path);
         controls(argv[1], temp.path);
         persistence(argv[1], argv[2], argv[3], temp.path);
     }
     catch(const std::exception& e) { forbidAllocation = false; std::fprintf(stderr, "FAIL: %s\n", e.what()); return 1; }
-    if(!failures) std::puts("ok: part and wire ownership, Mix, channel rules, replacement and persistence");
+    if(!failures) std::puts("ok: part and wire ownership, Mix, channel rules, replacement, devices and persistence");
     return failures ? 1 : 0;
 }

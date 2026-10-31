@@ -98,7 +98,7 @@ request members.
 | Method | `params` | `result` |
 | --- | --- | --- |
 | `session.hello` | omitted or `{}` | `protocolVersion`, `server`, supported methods and optional features in `capabilities`, `limits` |
-| `session.status` | omitted or `{}` | `audioDevice`, `midiInputs`, `sampleRate`, `bufferSize`, `cpuLoad`, `deadlineMisses`, `graphEventDrops`, `midiEventDrops`, `audioReady`, mapped `audioInputs`/`audioOutputs` |
+| `session.status` | omitted or `{}` | `audioDevice`, `midiInputs` (each `{"source","name","kind","port"}`, below), `sampleRate`, `bufferSize`, `cpuLoad`, `deadlineMisses`, `graphEventDrops`, `midiEventDrops`, `audioReady`, mapped `audioInputs`/`audioOutputs` |
 | `state.info` | `{"node":"synth"}` | `{"supported":true}` when opaque state export is available |
 | `state.save` | `{"node":"synth","directory":"/path/to/new-state"}` | `{"saved":true}` after publishing a new state directory |
 | `presets.list` | `{"node":"synth"}` | `{"presets":[{"uri":"urn:example:preset","name":"Warm"}]}` |
@@ -126,7 +126,7 @@ request members.
 | `parts.insert` | `part`, `index`, `node` | `{"accepted":true}` |
 | `parts.removeNode` | `part`, `node` | `{"accepted":true}` |
 | `parts.move` | `part`, `from`, `to` (chain positions) | `{"accepted":true}` |
-| `parts.input` | `part`, `input` (as for `parts.add`, with optional `zones`) | `{"accepted":true}` |
+| `parts.input` | `part`, `input` (as for `parts.add`, with optional `zones` and `devices`) | `{"accepted":true}` |
 | `parts.output` | `part`, and `bus` (play through that bus) or optional `port` (a graph output) | `{"accepted":true}` |
 | `parts.send` | `part`, `bus`, optional `level` (without one, the send is removed) | `{"accepted":true}` |
 | `parts.level` | `part`, `level`, `mute`: its fader; sends are post-fader | `{"accepted":true}` |
@@ -248,6 +248,21 @@ report the compiled per-channel routes.
   zone accepts it, and each accepting zone plays its own copy, so two zones layer. Up to
   eight per wire; a part's input `zones` apply to its wire into the first node. Held notes
   keep their releases when zones change.
+- **Devices** ([RFC 0012](rfcs/0012-sync-external-midi-and-multi-device.md#choosing-devices-selectors))
+  choose which MIDI inputs play a part, whatever channel they send on. A part's input
+  `devices` is a list of rules, `{"kind","port","pattern","match"}`; a note or message
+  plays the part if any rule matches the input it came from, and an empty list (the
+  default) takes every input. Kinds: `builtIn` (the panel, its keys and pads, and notes
+  sent over this protocol), `external`, `all`, `port` (DIN or TRS port number `port`),
+  `usb`, `usbNamed` (a USB device whose name matches `pattern`) and `network` (every
+  network session, or those matching `pattern`). `match` is `equals`, `contains` (the
+  default) or `regex` (ECMAScript); names match ignoring case. Up to 16 rules; an invalid
+  pattern is refused. The server resolves rules against `session.status`'s `midiInputs`
+  whenever that list changes, applying the result at once unless edits are staged. A
+  part whose rules match no input is silent. Each MIDI input has a `source` number (1–63;
+  0 is built in), a `name`, a `kind` (`builtIn`, `port`, `usb` or `network`) and its
+  `port` number. The desktop app reports every input as `usb`; ports and network
+  sessions need the device's own input table.
 - A wire a plugin replacement could not map stays with `connected: false`; port 4294967294
   is a main port awaiting one, 4294967295 none.
 

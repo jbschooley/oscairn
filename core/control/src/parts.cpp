@@ -6,8 +6,10 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <map>
 #include <optional>
+#include <regex>
 #include <set>
 #include <stdexcept>
 #include <tuple>
@@ -66,6 +68,67 @@ namespace oscairn
             if(*m == 2) for(auto& p : result) p.gain *= p.to ? std::min(1.0, 1 + w.pan) : std::min(1.0, 1 - w.pan);
             return result;
         }
+    }
+
+    namespace
+    {
+        std::string lower(std::string s) { for(auto& c : s) c = char(std::tolower(static_cast<unsigned char>(c))); return s; }
+        bool named(const DeviceRule& rule, const std::string& name)
+        {
+            switch(rule.match)
+            {
+                case DeviceRule::Match::Equals: return lower(name) == lower(rule.pattern);
+                case DeviceRule::Match::Contains: return lower(name).find(lower(rule.pattern)) != std::string::npos;
+                case DeviceRule::Match::Regex: return std::regex_search(name, std::regex(rule.pattern, std::regex::ECMAScript | std::regex::icase));
+            }
+            return false;
+        }
+    }
+
+    bool DeviceRule::valid() const
+    {
+        if(kind == Kind::UsbNamed && pattern.empty()) return false;
+        if(match == Match::Regex) try { std::regex(pattern, std::regex::ECMAScript | std::regex::icase); } catch(const std::regex_error&) { return false; }
+        return pattern.size() <= 256;
+    }
+
+    bool DeviceRule::matches(const MidiEndpoint& e) const
+    {
+        using K = MidiEndpoint::Kind;
+        switch(kind)
+        {
+            case Kind::BuiltIn: return e.kind == K::BuiltIn;
+            case Kind::External: return e.kind != K::BuiltIn;
+            case Kind::All: return true;
+            case Kind::Port: return e.kind == K::Port && e.port == port;
+            case Kind::Usb: return e.kind == K::Usb;
+            case Kind::UsbNamed: return e.kind == K::Usb && named(*this, e.name);
+            case Kind::Network: return e.kind == K::Network && (pattern.empty() || named(*this, e.name));
+        }
+        return false;
+    }
+
+    uint64_t resolveDevices(const std::vector<DeviceRule>& rules, const std::vector<MidiEndpoint>& endpoints)
+    {
+        if(rules.empty()) return ~0ull;
+        uint64_t mask = 0;
+        for(const auto& r : rules)
+        {
+            if(r.kind == DeviceRule::Kind::All) return ~0ull;
+            if(r.kind == DeviceRule::Kind::BuiltIn) mask |= 1ull << builtInSource;
+            for(const auto& e : endpoints) if(e.source < maxSources && r.matches(e)) mask |= 1ull << e.source;
+        }
+        return mask;
+    }
+
+    std::vector<NoteZone> inputZones(const PartInput& input, const std::vector<MidiEndpoint>& endpoints)
+    {
+        auto zones = input.zones;
+        if(input.devices.empty()) return zones;
+        if(zones.empty()) zones.emplace_back(); // a zone passing every note, to carry the devices
+        const auto mask = resolveDevices(input.devices, endpoints);
+        for(auto& z : zones) z.sources = mask;
+        return zones;
     }
 
     // Compiles the wires into the graph's routes, changing only what differs, and marks each
@@ -160,7 +223,7 @@ namespace oscairn
             wires_.push_back(std::move(w));
         };
         auto audioWire = [&](NodeId from, uint32_t fromPort, NodeId to, uint32_t toPort) { Wire w; w.from = from; w.fromPort = fromPort; w.to = to; w.toPort = toPort; add(w); };
-        auto noteWire = [&](NodeId from, NodeId to) { Wire w; w.kind = WireKind::Notes; w.from = from; w.to = to; if(from == graphInput) w.zones = part.input.zones; add(w); };
+        auto noteWire = [&](NodeId from, NodeId to) { Wire w; w.kind = WireKind::Notes; w.from = from; w.to = to; if(from == graphInput) w.zones = inputZones(part.input, hostStatus_.midiInputs); add(w); };
         // The previous box, or the input; whether it sends audio and notes.
         NodeId previousNode = graphInput;
         bool audio = part.input.kind == PartInput::Kind::Audio, notes = part.input.kind == PartInput::Kind::Notes;
@@ -202,6 +265,12 @@ namespace oscairn
             if(zones.size() > NoteZones::capacity || std::any_of(zones.begin(), zones.end(), [](const NoteZone& z) { return !z.valid(); }))
                 throw std::invalid_argument("invalid or too many note zones");
         }
+        void checkInput(const PartInput& input)
+        {
+            checkZones(input.zones);
+            if(input.devices.size() > 16 || std::any_of(input.devices.begin(), input.devices.end(), [](const DeviceRule& r) { return !r.valid(); }))
+                throw std::invalid_argument("invalid or too many device rules");
+        }
     }
 
     Part& Session::findPart(uint32_t id)
@@ -215,7 +284,7 @@ namespace oscairn
     {
         const auto layout = graph_.describe().audioLayout;
         if(layout.outputs.empty()) throw std::invalid_argument("the graph has no audio outputs");
-        checkZones(input.zones);
+        checkInput(input);
         Part part{nextPart_, name, input, {}, output.value_or(layout.outputs.front().id)};
         if(!channelsOf(graph_, layout, graphOutput, part.output, true)) throw std::invalid_argument("no such graph output port");
         if(input.kind == PartInput::Kind::Audio && !channelsOf(graph_, layout, graphInput, input.port, false)) throw std::invalid_argument("no such graph input port");
@@ -226,7 +295,7 @@ namespace oscairn
     void Session::setPartInput(uint32_t id, const PartInput& input)
     {
         findPart(id);
-        checkZones(input.zones);
+        checkInput(input);
         const auto layout = graph_.describe().audioLayout;
         if(input.kind == PartInput::Kind::Audio && !channelsOf(graph_, layout, graphInput, input.port, false)) throw std::invalid_argument("no such graph input port");
         editWires([&] { findPart(id).input = input; buildParts(); });
@@ -487,6 +556,16 @@ namespace oscairn
             scene.values = std::move(values);
         }
         sceneParameters_ = parameters;
+    }
+
+    void Session::setHostStatus(SessionStatus status)
+    {
+        const bool moved = status.midiInputs != hostStatus_.midiInputs;
+        hostStatus_ = std::move(status);
+        if(!moved || std::none_of(parts_.begin(), parts_.end(), [](const Part& p) { return !p.input.devices.empty(); })) return;
+        const bool staged = staged_;
+        try { editWires([&] { buildParts(); }); if(!staged) commit(); }
+        catch(const std::exception& e) { std::fprintf(stderr, "oscairn: device selectors not re-resolved: %s\n", e.what()); }
     }
 
     void Session::setZones(uint32_t id, const std::vector<NoteZone>& zones)

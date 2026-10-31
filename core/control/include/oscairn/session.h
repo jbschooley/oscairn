@@ -100,7 +100,9 @@ namespace oscairn
         /// Call at each control tick (desktop: 5 ms), never on the audio thread.
         void service();
         SessionStatus sessionStatus() const override;
-        void setHostStatus(SessionStatus status) { hostStatus_ = std::move(status); }
+        /// From the host's main loop. A changed list of MIDI inputs re-resolves the parts'
+        /// device selectors, applied at once unless edits are staged (then with them).
+        void setHostStatus(SessionStatus status);
         uint64_t changeSequence() const override { return sequence_; }
         Changes changesAfter( uint64_t sequence ) const override;
 
@@ -136,13 +138,16 @@ namespace oscairn
         /// MIDI-clock events (at most maxClockEvents) describe the preceding interval,
         /// as Transport requires.
         /// UI notes precede direct events at sample 0. No wall clock, locks or allocation.
+        /// `sources`, empty or one per direct event, says which MIDI input each came from
+        /// (note_zone.h); UI notes are built in, direct events without one untagged.
         bool process( float* const* outputs, uint32_t frames,
                       std::span<const kick::clap::Event> events = {},
-                      std::span<const MidiClockEvent> clocks = {} ) noexcept;
+                      std::span<const MidiClockEvent> clocks = {},
+                      std::span<const uint8_t> sources = {} ) noexcept;
 
         bool process(const float* const* inputs, uint32_t inputChannels, float* const* outputs, uint32_t outputChannels,
                      uint32_t frames, std::span<const kick::clap::Event> events = {},
-                     std::span<const MidiClockEvent> clocks = {}) noexcept;
+                     std::span<const MidiClockEvent> clocks = {}, std::span<const uint8_t> sources = {}) noexcept;
 
         void panicInput() noexcept { graph_.panicInput(); } // audio thread only
         uint64_t droppedNotes() const noexcept { return droppedNotes_.load(); }
@@ -215,5 +220,6 @@ namespace oscairn
         std::atomic<bool> panic_{ false };
         std::atomic<uint64_t> droppedNotes_{ 0 };
         std::array<kick::clap::Event, noteQueueCapacity + maxInputEvents + 1> merged_{};
+        std::array<uint8_t, noteQueueCapacity + maxInputEvents + 1> mergedSources_{};
     };
 }

@@ -68,15 +68,16 @@ namespace oscairn::standalone
         try
         {
             graph_ = engine_.graph();
-            state_ = readParts(graph_); scenes_ = graph_.scenes; sceneParameters_ = graph_.sceneParameters; scene_ = graph_.scene; macros_ = graph_.macros;
+            state_ = readParts(graph_); endpoints_ = engine_.status().midiInputs; scenes_ = graph_.scenes; sceneParameters_ = graph_.sceneParameters; scene_ = graph_.scene; macros_ = graph_.macros;
         }
         catch(const std::exception&) { return; }
         if(page_ && page_ != controlsPage && !part(page_)) { page_ = 0; shape_.clear(); }
+        for(auto& p : state_.parts) if(p.notes && !p.devices.empty() && !resolveDevices(p.devices, endpoints_)) p.input = "No device: " + p.input;
         message_.setText(text(engine_.editError()), juce::dontSendNotification);
         // Controls are rebuilt only when the structure changes, so a slider being dragged survives.
         std::string shape = std::to_string(page_) + "/" + std::to_string(selected_) + "/" + std::to_string(getWidth()) + "x" + std::to_string(getHeight());
         for(const auto* list : {&state_.parts, &state_.buses})
-            for(const auto& p : *list) { shape += "|" + std::to_string(p.id) + ":" + p.name + ":" + std::to_string(p.through); for(const auto& b : p.chain) shape += "," + std::to_string(b.node); }
+            for(const auto& p : *list) { shape += "|" + std::to_string(p.id) + ":" + p.name + ":" + std::to_string(p.through) + ":" + devicesName(p.devices); for(const auto& b : p.chain) shape += "," + std::to_string(b.node); }
         shape += "|scenes:" + std::to_string(scene_);
         for(const auto& s : scenes_) shape += "," + std::to_string(s.id) + ":" + s.name;
         shape += "|controls";
@@ -274,8 +275,13 @@ namespace oscairn::standalone
                 l->setBounds(r.removeFromLeft(130)); addAndMakeVisible(*l); controls_.push_back(std::move(l));
                 return r;
             };
-            if(!p->bus && p->input.rfind("Keyboard", 0) == 0)
+            if(p->notes)
             {
+                // Which devices play it (RFC 0012), picked from a menu.
+                auto from = labelled("Plays from");
+                auto* pick = button(from.removeFromLeft(340).reduced(2), text(devicesName(p->devices)), {});
+                pick->setTooltip("Which keyboards and controllers play this part, whatever channel they send on");
+                pick->onClick = [this, id, pick] { devicesMenu(id, *pick); };
                 // The zone: lowest and highest key, and a transpose.
                 auto r = labelled("Keys");
                 auto keyBox = [&](juce::Rectangle<int> at, bool high) {
@@ -410,6 +416,34 @@ namespace oscairn::standalone
         });
     }
 
+    // Kinds of device, then each connected one by name; each item adds or removes its rule.
+    void PartsView::devicesMenu(uint32_t id, juce::Component& at)
+    {
+        const auto* p = part(id);
+        if(!p) return;
+        const std::vector<DeviceRule> kinds{{DeviceRule::Kind::All}, {DeviceRule::Kind::BuiltIn}, {DeviceRule::Kind::External}, {DeviceRule::Kind::Usb}, {DeviceRule::Kind::Network}};
+        std::vector<DeviceRule> choices;
+        juce::PopupMenu menu;
+        auto add = [&](const DeviceRule& r, const std::string& label) {
+            choices.push_back(r);
+            const bool ticked = r.kind == DeviceRule::Kind::All ? p->devices.empty() : std::find(p->devices.begin(), p->devices.end(), r) != p->devices.end();
+            menu.addItem(int(choices.size()), text(label), true, ticked);
+        };
+        for(const auto& r : kinds) add(r, devicesName({r}));
+        menu.addSectionHeader("Connected");
+        if(endpoints_.empty()) menu.addItem(-1, "No MIDI devices", false);
+        for(const auto& e : endpoints_) add(ruleFor(e), e.kind == MidiEndpoint::Kind::Port ? devicesName({ruleFor(e)}) + " (" + e.name + ")" : e.name);
+        // Other rules (patterns, devices not connected) stay listed, so they can be removed.
+        for(const auto& r : p->devices)
+            if(std::find(choices.begin(), choices.end(), r) == choices.end()) add(r, devicesName({r}) + (resolveDevices({r}, endpoints_) ? "" : " (not connected)"));
+        menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&at), [safe = juce::Component::SafePointer<PartsView>(this), id, choices](int chosen) {
+            if(!safe || chosen <= 0 || size_t(chosen) > choices.size()) return;
+            const auto* q = safe->part(id); if(!q) return;
+            const auto devices = toggled(q->devices, choices[size_t(chosen) - 1]);
+            safe->edit([id, devices](Control& c) { setDevices(c, id, devices); });
+        });
+    }
+
     void PartsView::insertMenu(size_t index, juce::Component& at)
     {
         juce::PopupMenu menu;
@@ -483,7 +517,7 @@ namespace oscairn::standalone
                     auto from = rr.removeFromLeft(fromWidth);
                     g.setColour(ink(Ink::Text)); g.setFont(juce::FontOptions(13.0f * scale));
                     g.drawText(text(p.input), from.removeFromTop(from.getHeight() / 2 + 4), juce::Justification::bottomLeft, true);
-                    if(!p.bus && p.input.rfind("Keyboard", 0) == 0)
+                    if(p.notes)
                     {
                         // The zone over the whole keyboard.
                         auto bar = from.reduced(0, 6).withWidth(from.getWidth() - 20).toFloat();
