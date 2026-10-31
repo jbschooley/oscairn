@@ -313,9 +313,12 @@ expects incompatible replacements to be accepted with flagged wires. All tests p
 macOS, under AddressSanitizer and ThreadSanitizer, and in the desktop build; the manifest
 validates against the schema.
 
+Parts and wires are in the control protocol (`parts.*`, `wires.*`, `graph.get`, the remote
+client), tested end to end over the local socket (`control-remote-parts`) and against the
+protocol schema with a live `graph.get`.
+
 Not yet: zones (key and velocity ranges) on note inputs, shared buses and sends as parts
-of the model, groups, undo, and parts and wires in the control protocol, which step 2's
-views need.
+of the model, groups and undo.
 
 ## Open questions
 

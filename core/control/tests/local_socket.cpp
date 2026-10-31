@@ -411,6 +411,42 @@ namespace
         std::cout<<"ok: pathname listener, permissions, connect, cleanup and process crash/reconnect\n";return 0;
     }
 }
+// RFC 0011 parts and wires through the remote client and JSON-RPC.
+void partsClient(const char* plugin,const char* delay)
+{
+    Fixture f(plugin);auto fd=pair();f.server.adopt(fd[0]);
+    const auto fx=f.session.add("fx",delay);f.session.commit();
+    clientWhileRendering(f,[&]{
+        LocalClient client;client.adopt(fd[1]);RemoteControl remote(client);
+        const auto synth=remote.nodeId("synth");
+        auto owned=[&](WireOwner o){size_t n=0;for(const auto& w:remote.graphState().wires)n+=w.owner==o;return n;};
+        check(owned(WireOwner::User)==2 && owned(WireOwner::Part)==0,"the fixture's connections are user wires");
+        const auto part=remote.addPart("Keys");
+        remote.insertIntoPart(part,0,synth);remote.insertIntoPart(part,1,fx);
+        auto g=remote.graphState();
+        check(g.parts.size()==1 && g.parts[0].name=="Keys" && g.parts[0].chain==std::vector<NodeId>{synth,fx},"a part built over the socket");
+        check(owned(WireOwner::Part)==3 && owned(WireOwner::User)==2,"its three wires, and the user wires kept");
+        uint32_t out=0,in=0;
+        for(const auto& n:g.topology.nodes){if(n.id==synth)out=n.outputs.front().id;if(n.id==fx)in=n.inputs.front().id;}
+        Wire w;w.from=synth;w.fromPort=out;w.to=fx;w.toPort=in;w.channels={{0,1}};
+        const auto id=remote.connectPorts(w);
+        remote.setMix(id,.5,.25,true,false);
+        bool found=false;
+        for(const auto& x:remote.graphState().wires)if(x.id==id)
+            found=x.owner==WireOwner::User && x.channels==w.channels && x.level==.5 && x.pan==.25 && x.mute && !x.solo && x.connected;
+        check(found,"a user wire with explicit channels and its Mix settings read back");
+        bool refused=false;try{remote.insertIntoPart(99,0,synth);}catch(const std::exception&){refused=true;}
+        check(refused,"an unknown part is refused over the socket");
+        remote.movePartNode(part,1,0);remote.removeFromPart(part,fx);remote.disconnectWire(id);
+        check(owned(WireOwner::User)==2,"part edits and wire removal over the socket keep the other user wires");
+        remote.connectAudio(synth,fx);remote.connectAudio(fx,graphOutput);
+        remote.remove(fx,UserWires::Reconnect);remote.removePart(part);remote.commit();
+        size_t direct=0;for(const auto& x:remote.graphState().wires)direct+=x.from==synth && x.to==graphOutput && x.owner==WireOwner::User;
+        check(direct==2 && !remote.hasNode(fx) && remote.graphState().parts.empty(),"removing a node reconnects its user wires");
+    });
+    check(f.session.parts().empty() && f.session.wires().size()==3,"the session agrees with the client");
+}
+
 int main(int argc,char** argv)
 {
     if(argc<2)return 2;
@@ -429,6 +465,7 @@ int main(int argc,char** argv)
         if(argc==3 && std::string_view(argv[2])=="--instances"){instanceClient(argv[1]);return 0;}
         if(argc==4 && std::string_view(argv[2])=="--effects"){effectClient(argv[1],argv[3]);return 0;}
         if(argc==3 && std::string_view(argv[2])=="--sounds"){soundClient(argv[1]);return 0;}
+        if(argc==4 && std::string_view(argv[2])=="--parts"){partsClient(argv[1],argv[3]);return 0;}
         if(argc==3 && std::string_view(argv[2])=="--path-policy"){pathPolicy(argv[1]);return 0;}
         if(argc==3 && std::string_view(argv[2])=="--named")return named(argv[1],argv[0]);
         if(argc!=2)return 2;

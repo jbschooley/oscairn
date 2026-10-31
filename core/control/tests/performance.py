@@ -58,6 +58,13 @@ try:
                                      'params':{'directory':'/tmp/example'}}, protocol)
             for key in ['saved', 'loaded']:
                 jsonschema.validate({'jsonrpc':'2.0','id':1,'result':{key:True}}, protocol)
+            # A live graph.get with a part and its wires (RFC 0011).
+            part = rpc('parts.add', {'name': 'Check'})['result']['part']
+            rpc('parts.insert', {'part': part, 'index': 0, 'node': 'synth'})
+            graph = rpc('graph.get')['result']
+            assert graph['parts'][0]['name'] == 'Check' and any(w['owner'] == 'part' for w in graph['wires'])
+            jsonschema.validate({'jsonrpc':'2.0','id':1,'result':graph}, protocol)
+            rpc('parts.remove', {'part': part})
         # The folder remains usable after the saving engine exits and the folder moves.
         p.stdin.close()
         assert p.wait(timeout=10) == 0

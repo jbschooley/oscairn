@@ -86,6 +86,8 @@ endif()
 if(UNIX)
     add_test(NAME control-native-effects COMMAND oscairn-local-socket-test $<TARGET_FILE:oscairn_basic_synth> --effects $<TARGET_FILE:oscairn_delay>)
     set_tests_properties(control-native-effects PROPERTIES TIMEOUT 30)
+    add_test(NAME control-remote-parts COMMAND oscairn-local-socket-test $<TARGET_FILE:oscairn_basic_synth> --parts $<TARGET_FILE:oscairn_delay>)
+    set_tests_properties(control-remote-parts PROPERTIES TIMEOUT 30)
 endif()
 
 add_executable(oscairn-parts-test tests/parts.cpp)

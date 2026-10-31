@@ -204,8 +204,9 @@ namespace oscairn
         });
     }
 
-    uint32_t Session::connectPorts(Wire wire)
+    uint32_t Session::connectPorts(const Wire& request)
     {
+        Wire wire = request;
         const auto layout = graph_.describe().audioLayout;
         wire.owner = WireOwner::User; wire.part = 0; wire.id = nextWire_;
         if(!std::isfinite(wire.level) || wire.level < 0 || !std::isfinite(wire.pan) || wire.pan < -1 || wire.pan > 1) throw std::invalid_argument("invalid level or pan");

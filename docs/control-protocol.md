@@ -114,13 +114,21 @@ request members.
 | `transport.set` | one or more of `playing` (boolean), `tempo` (1..1000), `clockSource` (`"internal"` or `"midi"`) | `{"accepted":true}` |
 | `params.gesture` | `node`, `param`, `begin` (boolean) | `{"accepted":true}` |
 | `subscribe`, `unsubscribe` | `topics` (1..4 of `params.changed`, `transport`, `graph.changed`, `status`), optional `allChanges` boolean | `{"accepted":true}` |
-| `graph.get` | omitted or `{}` | staged topology, names/plugin metadata/ports, connections, mappings, `revision`, `staged`, numeric `input`/`output` endpoints |
+| `graph.get` | omitted or `{}` | staged topology, names/plugin metadata/ports, connections, mappings, parts, wires, `revision`, `staged`, numeric `input`/`output` endpoints |
 | `graph.add` | `path`, optional `name` and `pluginId` | numeric `node` |
-| `graph.remove` | `node` | `{"accepted":true}` |
+| `graph.remove` | `node`, optional `userWires` (`remove`, the default, or `reconnect`) | `{"accepted":true}` |
 | `graph.connect`, `graph.disconnect` | `kind` (`audio` or `notes`), `from`, `to`; optional explicit audio route fields below | `{"accepted":true}` |
 | `graph.map` | `from`, `lane`, `to`, `param` | `{"accepted":true}` |
 | `graph.unmap` | `from`, `lane` | `{"accepted":true}` |
 | `graph.commit` | omitted or `{}` | new `revision` |
+| `parts.add` | optional `name`, `input` (`{"kind":"notes"\|"audio"\|"none","port":N}`, default notes) and `output` port | numeric `part` |
+| `parts.remove` | `part` | `{"accepted":true}` |
+| `parts.insert` | `part`, `index`, `node` | `{"accepted":true}` |
+| `parts.removeNode` | `part`, `node` | `{"accepted":true}` |
+| `parts.move` | `part`, `from`, `to` (chain positions) | `{"accepted":true}` |
+| `wires.connect` | `kind`, `from`, `to`; for audio `fromPort`, `toPort`, optional `channels` pairs; optional `level`, `pan` | numeric `wire` |
+| `wires.disconnect` | `wire` | `{"accepted":true}` |
+| `wires.mix` | `wire`, `level`, `pan`, `mute`, `solo` | `{"accepted":true}` |
 | `notes.send` | `on` (boolean), `key` (0..127), optional `velocity` (0..1), optional `channel` (0..15) | `{"accepted":true}` |
 
 `graph.add` accepts a CLAP module or, in an LV2-enabled engine, a `.lv2` bundle directory.
@@ -181,10 +189,36 @@ IDs returned by `graph.get`.
 
 A cycle fails with `-32003`, leaves the live plan/revision unchanged and retains the staged
 edits for correction. Disconnect the offending edge and commit again. There is no rollback
-method or per-client edit isolation yet. Removing a node prunes its connections and mappings,
-forgets its name and cancels pending controls. The active plan keeps its plugin alive until
+method or per-client edit isolation yet. Removing a node prunes its wires and mappings (with
+`userWires: "reconnect"`, its user sources are first wired to its user destinations), takes it
+out of any part's chain, forgets its name and cancels pending controls. The active plan keeps its plugin alive until
 a later successful commit takes effect; its main-thread callbacks continue to be serviced
 until the last audio plan using it retires. Parameter changes are independent of graph staging.
+
+## Parts and wires
+
+The graph's audio routes and note connections are compiled from wires
+([RFC 0011](rfcs/0011-performance-ui-and-editors.md#step-1-status)). `graph.get` lists them
+under `wires`: each has an `id`, `kind`, `owner` (`part` with its `part` ID, or `user`), `from`
+and `to` node IDs, audio `fromPort`/`toPort`, explicit `channels` pairs or none, the source's
+Mix `level`, `pan`, `mute` and `solo`, and whether it is `connected`. `connections` still
+report the compiled per-channel routes.
+
+- `graph.connect` and `graph.disconnect` make and remove user wires; `wires.connect` makes
+  one between two ports with the channel rules (equal counts one to one, mono to stereo
+  copied with pan, stereo to mono summed at −3 dB) or explicit `[from, to]` channel pairs,
+  refusing other widths without pairs (`-32003`).
+- The wires into one input port form its Mix: `wires.mix` sets a source's level, pan (for a
+  stereo destination), mute and solo. Solo silences the unsoloed sources; mute silences a
+  source even when soloed.
+- `parts` lists each part's `id`, `name`, `input`, `chain` of node IDs and `output` port.
+  The part methods rebuild only that part's own wires: input into the first node, node to
+  node along main ports and notes, last node to the output. User wires are never changed
+  by them.
+- A wire a plugin replacement could not map stays with `connected: false`; port 4294967294
+  is a main port awaiting one, 4294967295 none.
+
+All of these stage edits like the other graph methods; `graph.commit` publishes them.
 
 ## Notifications
 
@@ -503,14 +537,13 @@ installation location, not portable identity. An optional LV2 preset URI is load
 an isolated candidate before adoption. No separate `graph.commit` is required.
 
 Replacement refuses staged graph edits or parameter mappings touching the node. It loads
-and activates the candidate, validates connected note ports and remaps connected main
-audio buses by channel before compiling/publishing one plan. Same-width main buses can
-have different format-specific port IDs; mono outputs can feed stereo, and a mono source
-can be expanded back into a directly connected stereo port. Ambiguous/secondary bus
-routes and incompatible input widths require explicit routing, and are refused here.
-Any preparation/validation failure leaves the playing graph, node identity and revision
-unchanged. Success retains the node ID/name and graph connections, clears old pending
-parameter commands, and publishes `graph.changed` so clients rebuild metadata.
+and activates the candidate, moves the node's wires to its ports in the same role (main to
+main, other ports in order) and compiles them with the channel rules into one published
+plan. Wires that no longer fit stay, with `connected: false`, instead of the replacement
+being refused; a main-port wire reconnects when a later replacement has a main port.
+Any preparation failure leaves the playing graph, node identity and revision unchanged.
+Success retains the node ID/name and its wires, clears old pending parameter commands, and
+publishes `graph.changed` so clients rebuild metadata.
 
 This intentionally stops the replaced node's current voices/tails and discards its prepared
 sounds; use `sounds.select` for seamless sound changes within an engine. Native plugin

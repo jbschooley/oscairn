@@ -141,12 +141,32 @@ namespace oscairn
                 ",\"sampleRate\":" + encode(s.sampleRate) + ",\"bufferSize\":" + std::to_string(s.bufferSize) +
                 ",\"cpuLoad\":" + encode(s.cpuLoad) + ",\"deadlineMisses\":" + std::to_string(s.deadlineMisses) + ",\"graphEventDrops\":" + std::to_string(s.graphEventDrops) + ",\"midiEventDrops\":" + std::to_string(s.midiEventDrops) + '}';
         }
+        // RFC 0011 parts and wires, as graph.get reports them.
+        std::string wireJson( const Wire& w )
+        {
+            std::vector<std::string> pairs;
+            for( const auto& [a,b] : w.channels ) pairs.push_back("[" + std::to_string(a) + "," + std::to_string(b) + "]");
+            return "{\"id\":" + std::to_string(w.id) + ",\"kind\":" + (w.kind == WireKind::Audio ? "\"audio\"" : "\"notes\"") +
+                ",\"owner\":" + (w.owner == WireOwner::Part ? "\"part\",\"part\":" + std::to_string(w.part) : std::string("\"user\"")) +
+                ",\"from\":" + std::to_string(w.from) + ",\"to\":" + std::to_string(w.to) + ",\"fromPort\":" + std::to_string(w.fromPort) +
+                ",\"toPort\":" + std::to_string(w.toPort) + ",\"channels\":" + join(pairs) + ",\"level\":" + encode(w.level) + ",\"pan\":" + encode(w.pan) +
+                ",\"mute\":" + (w.mute ? "true" : "false") + ",\"solo\":" + (w.solo ? "true" : "false") + ",\"connected\":" + (w.connected ? "true" : "false") + '}';
+        }
+        const char* inputKind( PartInput::Kind k ) { return k == PartInput::Kind::Notes ? "notes" : k == PartInput::Kind::Audio ? "audio" : "none"; }
+        std::string partJson( const Part& p )
+        {
+            std::vector<std::string> chain;
+            for( const auto n : p.chain ) chain.push_back(std::to_string(n));
+            return "{\"id\":" + std::to_string(p.id) + ",\"name\":" + quote(p.name) + ",\"input\":{\"kind\":\"" + inputKind(p.input.kind) +
+                "\",\"port\":" + std::to_string(p.input.port) + "},\"chain\":" + join(chain) + ",\"output\":" + std::to_string(p.output) + '}';
+        }
+
         std::string invoke( Control& c, JsonRpc& client, std::string_view method, Value p )
         {
             if( method == "session.hello" )
             {
                 fields(p, {});
-                return R"({"protocolVersion":1,"server":"oscairn","capabilities":["performance.save","performance.load","state.info","state.save","presets.list","properties.list","properties.get","properties.set","properties.request","sounds.get","sounds.prepare","sounds.select","sounds.discard","assets.register","assets.import","assets.libraries","session.status","params.list","params.get","params.set","params.text","params.gesture","graph.audio-routing","graph.get","graph.add","effects.create","effects.resources","graph.remove","graph.replace","graph.connect","graph.disconnect","graph.map","graph.unmap","graph.commit","subscribe","unsubscribe","transport.get","transport.set","notes.send"],"limits":{"messageBytes":65536,"depth":32,"batch":64,"parameterChanges":128}})";
+                return R"({"protocolVersion":1,"server":"oscairn","capabilities":["performance.save","performance.load","state.info","state.save","presets.list","properties.list","properties.get","properties.set","properties.request","sounds.get","sounds.prepare","sounds.select","sounds.discard","assets.register","assets.import","assets.libraries","session.status","params.list","params.get","params.set","params.text","params.gesture","graph.audio-routing","graph.get","graph.add","effects.create","effects.resources","graph.remove","graph.replace","graph.connect","graph.disconnect","graph.map","graph.unmap","graph.commit","parts.add","parts.remove","parts.insert","parts.removeNode","parts.move","wires.connect","wires.disconnect","wires.mix","subscribe","unsubscribe","transport.get","transport.set","notes.send"],"limits":{"messageBytes":65536,"depth":32,"batch":64,"parameterChanges":128}})";
             }
             if( method == "subscribe" || method == "unsubscribe" )
             {
@@ -274,7 +294,9 @@ namespace oscairn
                 return "{\"revision\":" + std::to_string(graph.revision) + ",\"staged\":" + (graph.staged ? "true" : "false") +
                     ",\"input\":" + std::to_string(graphInput) + ",\"output\":" + std::to_string(graphOutput) +
                     ",\"audioInputs\":"+ports(graph.topology.audioLayout.inputs)+",\"audioOutputs\":"+ports(graph.topology.audioLayout.outputs)+
-                    ",\"nodes\":" + join(nodes) + ",\"connections\":" + join(connections) + ",\"mappings\":" + join(mappings) + '}';
+                    ",\"nodes\":" + join(nodes) + ",\"connections\":" + join(connections) + ",\"mappings\":" + join(mappings) +
+                    ",\"parts\":" + [&]{ std::vector<std::string> v; for( const auto& x : graph.parts ) v.push_back(partJson(x)); return join(v); }() +
+                    ",\"wires\":" + [&]{ std::vector<std::string> v; for( const auto& x : graph.wires ) v.push_back(wireJson(x)); return join(v); }() + '}';
             }
             if(method=="effects.create") {
                 fields(p,{"name","source"});
@@ -307,8 +329,73 @@ namespace oscairn
             }
             if( method == "graph.remove" )
             {
-                fields(p,{"node"}); c.remove(node(c,member(p,"node")));
+                fields(p,{"node","userWires"});
+                auto choice = UserWires::Remove;
+                if( member(p,"userWires") )
+                {
+                    const auto s = string(member(p,"userWires"));
+                    if( s == "reconnect" ) choice = UserWires::Reconnect; else if( s != "remove" ) invalid("userWires is remove or reconnect");
+                }
+                c.remove(node(c,member(p,"node")),choice);
                 return R"({"accepted":true})";
+            }
+            if( method.substr(0,6) == "parts." || method.substr(0,6) == "wires." )
+            {
+                try
+                {
+                    if( method == "parts.add" )
+                    {
+                        fields(p,{"name","input","output"});
+                        PartInput input;
+                        if( const auto in = member(p,"input") )
+                        {
+                            fields(in,{"kind","port"});
+                            const auto kind = string(member(in,"kind"));
+                            input.kind = kind == "notes" ? PartInput::Kind::Notes : kind == "audio" ? PartInput::Kind::Audio : kind == "none" ? PartInput::Kind::None : (invalid("input kind is notes, audio or none"), PartInput::Kind::None);
+                            input.port = member(in,"port") ? integer(member(in,"port")) : 0;
+                        }
+                        const auto name = member(p,"name") ? std::string(string(member(p,"name"))) : std::string();
+                        const auto output = member(p,"output") ? std::optional<uint32_t>(integer(member(p,"output"))) : std::nullopt;
+                        return "{\"part\":" + std::to_string(c.addPart(name,input,output)) + '}';
+                    }
+                    if( method == "parts.remove" ) { fields(p,{"part"}); c.removePart(integer(member(p,"part"))); return R"({"accepted":true})"; }
+                    if( method == "parts.insert" ) { fields(p,{"part","index","node"}); c.insertIntoPart(integer(member(p,"part")),integer(member(p,"index")),node(c,member(p,"node"))); return R"({"accepted":true})"; }
+                    if( method == "parts.removeNode" ) { fields(p,{"part","node"}); c.removeFromPart(integer(member(p,"part")),node(c,member(p,"node"))); return R"({"accepted":true})"; }
+                    if( method == "parts.move" ) { fields(p,{"part","from","to"}); c.movePartNode(integer(member(p,"part")),integer(member(p,"from")),integer(member(p,"to"))); return R"({"accepted":true})"; }
+                    if( method == "wires.connect" )
+                    {
+                        fields(p,{"kind","from","to","fromPort","toPort","channels","level","pan"});
+                        Wire w;
+                        const auto kind = string(member(p,"kind"));
+                        if( kind != "audio" && kind != "notes" ) invalid("Unknown wire kind");
+                        w.kind = kind == "audio" ? WireKind::Audio : WireKind::Notes;
+                        w.from = node(c,member(p,"from"),true); w.to = node(c,member(p,"to"),true);
+                        if( w.kind == WireKind::Audio ) { w.fromPort = integer(member(p,"fromPort")); w.toPort = integer(member(p,"toPort")); }
+                        else if( member(p,"fromPort") || member(p,"toPort") || member(p,"channels") ) invalid("Note wires have no ports or channels");
+                        if( const auto pairs = member(p,"channels") )
+                        {
+                            if( pairs->type != json_type_array ) invalid("channels is an array of [from, to] pairs");
+                            for( auto* e = static_cast<const json_array_s*>(pairs->payload)->start; e; e = e->next )
+                            {
+                                if( !e->value || e->value->type != json_type_array || static_cast<const json_array_s*>(e->value->payload)->length != 2 ) invalid("channels is an array of [from, to] pairs");
+                                const auto* first = static_cast<const json_array_s*>(e->value->payload)->start;
+                                w.channels.push_back({integer(first->value,Graph::maxAudioChannels - 1),integer(first->next->value,Graph::maxAudioChannels - 1)});
+                                if( w.channels.size() > Graph::maxAudioChannels ) invalid("Too many channel pairs");
+                            }
+                        }
+                        if( member(p,"level") ) w.level = number(member(p,"level"));
+                        if( member(p,"pan") ) w.pan = number(member(p,"pan"));
+                        return "{\"wire\":" + std::to_string(c.connectPorts(w)) + '}';
+                    }
+                    if( method == "wires.disconnect" ) { fields(p,{"wire"}); c.disconnectWire(integer(member(p,"wire"))); return R"({"accepted":true})"; }
+                    if( method == "wires.mix" )
+                    {
+                        fields(p,{"wire","level","pan","mute","solo"});
+                        c.setMix(integer(member(p,"wire")),number(member(p,"level")),number(member(p,"pan")),boolean(member(p,"mute")),boolean(member(p,"solo")));
+                        return R"({"accepted":true})";
+                    }
+                }
+                catch( const std::invalid_argument& e ) { throw Failure{-32003,e.what()}; }
             }
             if( method == "graph.connect" || method == "graph.disconnect" )
             {

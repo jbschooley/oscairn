@@ -64,19 +64,19 @@ namespace oscairn
 
         // RFC 0011 step 1: parts and wire ownership. Part edits change only their part's wires;
         // user wires stay until removed. Edits are staged, like graph edits.
-        uint32_t addPart(const std::string& name, PartInput input = {}, std::optional<uint32_t> output = {});
-        void removePart(uint32_t part); // its wires; its nodes stay
-        void insertIntoPart(uint32_t part, size_t index, NodeId node);
-        void removeFromPart(uint32_t part, NodeId node);
-        void movePartNode(uint32_t part, size_t from, size_t to);
+        uint32_t addPart(const std::string& name, PartInput input = {}, std::optional<uint32_t> output = {}) override;
+        void removePart(uint32_t part) override; // its wires; its nodes stay
+        void insertIntoPart(uint32_t part, size_t index, NodeId node) override;
+        void removeFromPart(uint32_t part, NodeId node) override;
+        void movePartNode(uint32_t part, size_t from, size_t to) override;
         const std::vector<Part>& parts() const { return parts_; }
         const std::vector<Wire>& wires() const { return wires_; }
         // A user wire between audio ports (channel rules or explicit pairs) or note endpoints.
-        uint32_t connectPorts(Wire wire);
-        void disconnectWire(uint32_t wire);
+        uint32_t connectPorts(const Wire& wire) override;
+        void disconnectWire(uint32_t wire) override;
         // A source's level, pan, mute and solo in its destination input's implicit Mix.
-        void setMix(uint32_t wire, double level, double pan, bool mute, bool solo);
-        void remove(NodeId node, UserWires userWires);
+        void setMix(uint32_t wire, double level, double pan, bool mute, bool solo) override;
+        void remove(NodeId node, UserWires userWires) override;
         void mapParameter( NodeId from, uint32_t lane, NodeId to, uint32_t param ) override { graph_.mapParamTarget( from, lane, to, param ); staged_ = true; }
         void unmapParameter( NodeId from, uint32_t lane ) override { graph_.unmapParamTarget( from, lane ); staged_ = true; }
         void commit() override;

@@ -728,6 +728,12 @@
               "properties": {
                 "node": {
                   "$ref": "#/$defs/Node"
+                },
+                "userWires": {
+                  "enum": [
+                    "remove",
+                    "reconnect"
+                  ]
                 }
               },
               "required": [
@@ -1912,6 +1918,394 @@
             "params"
           ],
           "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
+              "const": "parts.add"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "input": {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "enum": [
+                        "notes",
+                        "audio",
+                        "none"
+                      ]
+                    },
+                    "port": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 4294967295
+                    }
+                  },
+                  "required": [
+                    "kind"
+                  ],
+                  "additionalProperties": false
+                },
+                "output": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 4294967295
+                }
+              },
+              "required": [],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "params"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
+              "const": "parts.remove"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "part": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 4294967295
+                }
+              },
+              "required": [
+                "part"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "params"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
+              "const": "parts.insert"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "part": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 4294967295
+                },
+                "index": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 4294967295
+                },
+                "node": {
+                  "$ref": "#/$defs/Node"
+                }
+              },
+              "required": [
+                "part",
+                "index",
+                "node"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "params"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
+              "const": "parts.removeNode"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "part": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 4294967295
+                },
+                "node": {
+                  "$ref": "#/$defs/Node"
+                }
+              },
+              "required": [
+                "part",
+                "node"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "params"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
+              "const": "parts.move"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "part": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 4294967295
+                },
+                "from": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 4294967295
+                },
+                "to": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 4294967295
+                }
+              },
+              "required": [
+                "part",
+                "from",
+                "to"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "params"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
+              "const": "wires.connect"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "enum": [
+                    "audio",
+                    "notes"
+                  ]
+                },
+                "from": {
+                  "$ref": "#/$defs/Node"
+                },
+                "to": {
+                  "$ref": "#/$defs/Node"
+                },
+                "fromPort": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 4294967295
+                },
+                "toPort": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 4294967295
+                },
+                "channels": {
+                  "type": "array",
+                  "maxItems": 256,
+                  "items": {
+                    "type": "array",
+                    "prefixItems": [
+                      {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 255
+                      },
+                      {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 255
+                      }
+                    ],
+                    "minItems": 2,
+                    "maxItems": 2
+                  }
+                },
+                "level": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "pan": {
+                  "type": "number",
+                  "minimum": -1,
+                  "maximum": 1
+                }
+              },
+              "required": [
+                "kind",
+                "from",
+                "to"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "params"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
+              "const": "wires.disconnect"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "wire": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 4294967295
+                }
+              },
+              "required": [
+                "wire"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "params"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
+              "const": "wires.mix"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "wire": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 4294967295
+                },
+                "level": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "pan": {
+                  "type": "number",
+                  "minimum": -1,
+                  "maximum": 1
+                },
+                "mute": {
+                  "type": "boolean"
+                },
+                "solo": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "wire",
+                "level",
+                "pan",
+                "mute",
+                "solo"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "params"
+          ],
+          "additionalProperties": true
         }
       ]
     },
@@ -1987,6 +2381,12 @@
                 },
                 {
                   "$ref": "#/$defs/PerformanceLoaded"
+                },
+                {
+                  "$ref": "#/$defs/PartResult"
+                },
+                {
+                  "$ref": "#/$defs/WireResult"
                 }
               ]
             }
@@ -2316,6 +2716,18 @@
           "items": {
             "$ref": "#/$defs/AudioPort"
           }
+        },
+        "parts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Part"
+          }
+        },
+        "wires": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Wire"
+          }
         }
       },
       "required": [
@@ -2327,7 +2739,9 @@
         "connections",
         "mappings",
         "audioInputs",
-        "audioOutputs"
+        "audioOutputs",
+        "parts",
+        "wires"
       ],
       "additionalProperties": false
     },
@@ -3109,6 +3523,213 @@
       },
       "required": [
         "libraries"
+      ],
+      "additionalProperties": false
+    },
+    "Wire": {
+      "description": "An RFC 0011 wire as graph.get reports it.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "kind": {
+          "enum": [
+            "audio",
+            "notes"
+          ]
+        },
+        "owner": {
+          "enum": [
+            "part",
+            "user"
+          ]
+        },
+        "part": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "from": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "to": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "fromPort": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "toPort": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "channels": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "type": "array",
+            "prefixItems": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 255
+              },
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 255
+              }
+            ],
+            "minItems": 2,
+            "maxItems": 2
+          }
+        },
+        "level": {
+          "type": "number",
+          "minimum": 0
+        },
+        "pan": {
+          "type": "number",
+          "minimum": -1,
+          "maximum": 1
+        },
+        "mute": {
+          "type": "boolean"
+        },
+        "solo": {
+          "type": "boolean"
+        },
+        "connected": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "owner",
+        "from",
+        "to",
+        "fromPort",
+        "toPort",
+        "channels",
+        "level",
+        "pan",
+        "mute",
+        "solo",
+        "connected"
+      ],
+      "if": {
+        "properties": {
+          "owner": {
+            "const": "part"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "part"
+        ]
+      },
+      "else": {
+        "not": {
+          "required": [
+            "part"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "Part": {
+      "description": "An RFC 0011 part as graph.get reports it.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "name": {
+          "type": "string"
+        },
+        "input": {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "enum": [
+                "notes",
+                "audio",
+                "none"
+              ]
+            },
+            "port": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 4294967295
+            }
+          },
+          "required": [
+            "kind",
+            "port"
+          ],
+          "additionalProperties": false
+        },
+        "chain": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 4294967295
+          }
+        },
+        "output": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "input",
+        "chain",
+        "output"
+      ],
+      "additionalProperties": false
+    },
+    "PartResult": {
+      "type": "object",
+      "properties": {
+        "part": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        }
+      },
+      "required": [
+        "part"
+      ],
+      "additionalProperties": false
+    },
+    "WireResult": {
+      "type": "object",
+      "properties": {
+        "wire": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        }
+      },
+      "required": [
+        "wire"
       ],
       "additionalProperties": false
     }

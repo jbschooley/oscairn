@@ -138,6 +138,28 @@ namespace oscairn
                     {to,static_cast<uint32_t>(integer(field(c,"toPort"))),static_cast<uint32_t>(integer(field(c,"toChannel")))},
                     static_cast<uint32_t>(integer(field(c,"channels"))),number(field(c,"gain"))});
             }
+            for(auto p:array(field(root,"parts")))
+            {
+                Part part;part.id=static_cast<uint32_t>(integer(field(p,"id")));part.name=string(field(p,"name"));
+                auto input=field(p,"input");const auto kind=string(field(input,"kind"));
+                part.input.kind=kind=="notes"?PartInput::Kind::Notes:kind=="audio"?PartInput::Kind::Audio:PartInput::Kind::None;
+                part.input.port=static_cast<uint32_t>(integer(field(input,"port")));part.output=static_cast<uint32_t>(integer(field(p,"output")));
+                for(auto n:array(field(p,"chain")))part.chain.push_back(static_cast<NodeId>(integer(n)));
+                next.parts.push_back(std::move(part));
+            }
+            for(auto w:array(field(root,"wires")))
+            {
+                Wire wire;wire.id=static_cast<uint32_t>(integer(field(w,"id")));
+                wire.kind=string(field(w,"kind"))=="audio"?WireKind::Audio:WireKind::Notes;
+                wire.owner=string(field(w,"owner"))=="part"?WireOwner::Part:WireOwner::User;
+                if(wire.owner==WireOwner::Part)wire.part=static_cast<uint32_t>(integer(field(w,"part")));
+                wire.from=static_cast<NodeId>(integer(field(w,"from")));wire.to=static_cast<NodeId>(integer(field(w,"to")));
+                wire.fromPort=static_cast<uint32_t>(integer(field(w,"fromPort")));wire.toPort=static_cast<uint32_t>(integer(field(w,"toPort")));
+                for(auto pair:array(field(w,"channels"))){const auto ends=array(pair);if(ends.size()!=2)throw std::runtime_error("Invalid wire channel pair");wire.channels.push_back({static_cast<uint32_t>(integer(ends[0])),static_cast<uint32_t>(integer(ends[1]))});}
+                wire.level=number(field(w,"level"));wire.pan=number(field(w,"pan"));
+                wire.mute=boolean(field(w,"mute"));wire.solo=boolean(field(w,"solo"));wire.connected=boolean(field(w,"connected"));
+                next.wires.push_back(std::move(wire));
+            }
             for(auto m:array(field(root,"mappings")))next.topology.mappings.push_back({static_cast<NodeId>(integer(field(m,"from"))),static_cast<uint32_t>(integer(field(m,"lane"))),static_cast<NodeId>(integer(field(m,"to"))),static_cast<uint32_t>(integer(field(m,"param")))});
             std::map<NodeId,std::vector<ParamInfo>> metadata;std::map<std::pair<NodeId,uint32_t>,double> snapshot;
             std::string batch;size_t count=0;
@@ -278,7 +300,33 @@ namespace oscairn
     }
     void RemoteControl::replace(NodeId n,const std::string& path,const std::string& plugin,const std::string& preset)
     {impl_->call("graph.replace","{\"node\":"+std::to_string(n)+",\"path\":"+quote(path)+",\"pluginId\":"+quote(plugin)+",\"preset\":"+quote(preset)+'}',30000);impl_->refresh();}
-    void RemoteControl::remove(NodeId n){impl_->call("graph.remove","{\"node\":"+std::to_string(n)+'}');impl_->refresh();}
+    void RemoteControl::remove(NodeId n){remove(n,UserWires::Remove);}
+    void RemoteControl::remove(NodeId n,UserWires w){impl_->call("graph.remove","{\"node\":"+std::to_string(n)+",\"userWires\":"+(w==UserWires::Reconnect?"\"reconnect\"":"\"remove\"")+'}');impl_->refresh();}
+    uint32_t RemoteControl::addPart(const std::string& name,PartInput input,std::optional<uint32_t> output)
+    {
+        const char* kind=input.kind==PartInput::Kind::Notes?"notes":input.kind==PartInput::Kind::Audio?"audio":"none";
+        auto reply=impl_->call("parts.add","{\"name\":"+quote(name)+",\"input\":{\"kind\":\""+kind+"\",\"port\":"+std::to_string(input.port)+'}'+(output?",\"output\":"+std::to_string(*output):std::string{})+'}');
+        const auto id=static_cast<uint32_t>(integer(field(field(reply.get(),"result"),"part")));impl_->refresh();return id;
+    }
+    void RemoteControl::removePart(uint32_t part){impl_->call("parts.remove","{\"part\":"+std::to_string(part)+'}');impl_->refresh();}
+    void RemoteControl::insertIntoPart(uint32_t part,size_t index,NodeId node){impl_->call("parts.insert","{\"part\":"+std::to_string(part)+",\"index\":"+std::to_string(index)+",\"node\":"+std::to_string(node)+'}');impl_->refresh();}
+    void RemoteControl::removeFromPart(uint32_t part,NodeId node){impl_->call("parts.removeNode","{\"part\":"+std::to_string(part)+",\"node\":"+std::to_string(node)+'}');impl_->refresh();}
+    void RemoteControl::movePartNode(uint32_t part,size_t from,size_t to){impl_->call("parts.move","{\"part\":"+std::to_string(part)+",\"from\":"+std::to_string(from)+",\"to\":"+std::to_string(to)+'}');impl_->refresh();}
+    uint32_t RemoteControl::connectPorts(const Wire& w)
+    {
+        std::string params="{\"kind\":"+std::string(w.kind==WireKind::Audio?"\"audio\"":"\"notes\"")+",\"from\":"+std::to_string(w.from)+",\"to\":"+std::to_string(w.to);
+        if(w.kind==WireKind::Audio)
+        {
+            params+=",\"fromPort\":"+std::to_string(w.fromPort)+",\"toPort\":"+std::to_string(w.toPort);
+            if(!w.channels.empty()){params+=",\"channels\":[";for(size_t i=0;i<w.channels.size();++i)params+=(i?",[":"[")+std::to_string(w.channels[i].first)+","+std::to_string(w.channels[i].second)+"]";params+="]";}
+        }
+        params+=",\"level\":"+encode(w.level)+",\"pan\":"+encode(w.pan)+'}';
+        auto reply=impl_->call("wires.connect",params);
+        const auto id=static_cast<uint32_t>(integer(field(field(reply.get(),"result"),"wire")));impl_->refresh();return id;
+    }
+    void RemoteControl::disconnectWire(uint32_t wire){impl_->call("wires.disconnect","{\"wire\":"+std::to_string(wire)+'}');impl_->refresh();}
+    void RemoteControl::setMix(uint32_t wire,double level,double pan,bool mute,bool solo)
+    {impl_->call("wires.mix","{\"wire\":"+std::to_string(wire)+",\"level\":"+encode(level)+",\"pan\":"+encode(pan)+",\"mute\":"+(mute?"true":"false")+",\"solo\":"+(solo?"true":"false")+'}');impl_->refresh();}
     void RemoteControl::connectAudio(NodeId a,NodeId b){impl_->edge("graph.connect","audio",a,b);}
     void RemoteControl::connectAudio(const AudioConnection& c){impl_->audioEdge("graph.connect",c);}
     void RemoteControl::disconnectAudio(const AudioConnection& c){impl_->audioEdge("graph.disconnect",c);}
