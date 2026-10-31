@@ -228,7 +228,10 @@ command line (the FM and analog engines were checked: 595 and 294 parameters). A
 than 24 parameters gets a tab per second-level module, and a search box finds parameters on
 any page by name or module. Step 5's envelope widget is drawn where a module's parameters
 are named like an ADSR, a DX7 envelope or an FM-X one, until plugins can describe theirs;
-dragging a point sets its time and level.
+dragging a point sets its time and level. LFOs get a preview of their waveform the same way.
+The desktop's Part page edits keys and velocities on a keyboard (`ZoneEditor`): drag either
+end of a range or the whole range; split lanes have the keys. The parts model now reads and
+sets a part's velocity range.
 
 Not yet: the views' state on view models of their own, the parts views redrawn for the
 desktop (they are the device's, with the desktop's text), and Panel renders in the same test.

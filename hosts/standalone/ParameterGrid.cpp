@@ -105,6 +105,89 @@ namespace oscairn::standalone
         return e;
     }
 
+    LfoShape lfoOf(const std::vector<std::string>& names)
+    {
+        auto either = [&](std::initializer_list<const char*> options) {
+            for(const auto* o : options) for(size_t i = 0; i < names.size(); ++i) if(juce::String(names[i]).equalsIgnoreCase(o)) return int(i);
+            return -1;
+        };
+        LfoShape l;
+        l.wave = either({"Wave", "Waveform", "Type", "Shape"}); l.speed = either({"Speed", "Rate", "Frequency"});
+        l.delay = either({"Delay"}); l.fade = either({"Fade In", "Attack"}); l.phase = either({"Phase"});
+        for(int n = 1; n <= 64; ++n) { const auto name = "User Step " + std::to_string(n); const int i = either({name.c_str()}); if(i < 0) break; l.steps.push_back(i); }
+        return l;
+    }
+
+    Wave waveNamed(const juce::String& name)
+    {
+        const auto t = name.toLowerCase();
+        if(t.contains("sin")) return Wave::Sine;
+        if(t.contains("tri")) return Wave::Triangle;
+        if(t.contains("square") || t.contains("pulse")) return Wave::Square;
+        if(t.contains("saw")) return t.contains("down") ? Wave::SawDown : Wave::SawUp;
+        if(t.contains("sample") || t.contains("s&h") || t.contains("noise") || t.contains("random")) return Wave::Random;
+        if(t.contains("user") || t.contains("step")) return Wave::Steps;
+        return Wave::None;
+    }
+
+    /// An LFO's waveform over a few cycles (more when faster), after its delay and fading in, as
+    /// its parameters set it. A preview: its tiles edit it.
+    class ParameterGrid::Lfo : public juce::Component
+    {
+    public:
+        Lfo(ParameterGrid& grid, LfoShape shape, std::vector<size_t> params) : grid_(grid), shape_(std::move(shape)), params_(std::move(params)) {}
+        void paint(juce::Graphics& g) override
+        {
+            const int mode = std::max(1, desktopMode(*this));
+            const auto& wave = grid_.params_[params_[size_t(shape_.wave)]];
+            const auto name = juce::String::fromUTF8(grid_.engine_.paramText(grid_.name_, wave.id, grid_.engine_.param(grid_.name_, wave.id)).c_str());
+            g.setColour(ink(Ink::Muted)); g.setFont(juce::FontOptions(textSize(TextRole::Small, mode), juce::Font::bold));
+            g.drawText("LFO  " + juce::String::fromUTF8("·") + "  " + name, getLocalBounds().reduced(10, 8).removeFromTop(16), juce::Justification::topLeft);
+            const auto area = getLocalBounds().toFloat().reduced(14, 10).withTrimmedTop(18);
+            g.setColour(ink(Ink::Border).withAlpha(.35f)); g.drawHorizontalLine(int(area.getCentreY()), area.getX(), area.getRight());
+            const auto kind = waveNamed(name);
+            if(kind == Wave::None || (kind == Wave::Steps && shape_.steps.empty()))
+            {
+                g.setColour(ink(Ink::Muted)); g.setFont(juce::FontOptions(textSize(TextRole::Small, mode)));
+                g.drawText("Drawn by the plugin", area, juce::Justification::centred);
+                return;
+            }
+            auto value = [&](int index) { return index >= 0 ? grid_.normal(params_[size_t(index)]) : 0.0; };
+            const double cycles = 1 + 4 * value(shape_.speed), phase = value(shape_.phase);
+            const double delay = .25 * value(shape_.delay), fade = .25 * value(shape_.fade);
+            juce::Path line;
+            const int n = int(area.getWidth());
+            for(int i = 0; i <= n; ++i)
+            {
+                const double x = double(i) / n;
+                double y = 0;
+                if(x >= delay)
+                {
+                    const double t = std::fmod((x - delay) / (1 - delay) * cycles + phase, 1.0);
+                    switch(kind)
+                    {
+                    case Wave::Sine: y = std::sin(t * juce::MathConstants<double>::twoPi); break;
+                    case Wave::Triangle: y = t < .25 ? t * 4 : t < .75 ? 2 - t * 4 : t * 4 - 4; break;
+                    case Wave::Square: y = t < .5 ? 1 : -1; break;
+                    case Wave::SawUp: y = t * 2 - 1; break;
+                    case Wave::SawDown: y = 1 - t * 2; break;
+                    case Wave::Random: { const int step = int((x - delay) / (1 - delay) * cycles * 2); y = std::sin(step * 12.9898) * 43758.5453; y = (y - std::floor(y)) * 2 - 1; break; } // the same steps each time
+                    case Wave::Steps: { const auto s = size_t(t * double(shape_.steps.size())); y = value(shape_.steps[std::min(s, shape_.steps.size() - 1)]) * 2 - 1; break; }
+                    case Wave::None: break;
+                    }
+                    if(fade > 0) y *= std::min(1.0, (x - delay) / fade);
+                }
+                const float px = area.getX() + float(i), py = area.getCentreY() - float(y) * area.getHeight() / 2;
+                if(i == 0) line.startNewSubPath(px, py); else line.lineTo(px, py);
+            }
+            g.setColour(ink(Ink::Accent)); g.strokePath(line, juce::PathStrokeType(2.f, juce::PathStrokeType::mitered, juce::PathStrokeType::rounded));
+        }
+    private:
+        ParameterGrid& grid_;
+        LfoShape shape_;
+        std::vector<size_t> params_;
+    };
+
     /// An envelope's curve, drawn from its parameters; drag a point to change the time (across)
     /// and the level (up and down) it is reached at. The parameters keep their own tiles.
     class ParameterGrid::Envelope : public juce::Component
@@ -384,10 +467,18 @@ namespace oscairn::standalone
         for(const auto& [heading, members] : groups)
         {
             if(!heading.empty()) { headings_.push_back({text(heading).replace("/", juce::String::fromUTF8(" › ")), {0, y, width, 28}}); y += 30; }
-            // An envelope among them: its curve first, across the row.
+            // An LFO or an envelope among them: drawn first, across the row.
             {
                 std::vector<std::string> names;
                 for(const auto i : members) names.push_back(params_[i].name);
+                if(auto shape = lfoOf(names); !shape.empty())
+                {
+                    const juce::Rectangle<int> bounds(0, y, width, mode == 2 ? 140 : 110);
+                    auto view = std::make_unique<Lfo>(*this, std::move(shape), members);
+                    view->setBounds(bounds); content_->addAndMakeVisible(*view); controls_.push_back(std::move(view));
+                    panels_.push_back(bounds);
+                    y += bounds.getHeight() + gap;
+                }
                 if(auto shape = envelopeOf(names); !shape.empty())
                 {
                     const juce::Rectangle<int> bounds(0, y, width, mode == 2 ? 180 : 150);

@@ -9,6 +9,7 @@
 //   oscairn_desktop_shell_test PLUGIN_DIR SCANNER THEMES [SNAPSHOTS [PLUGIN.clap...]]
 #include "../DesktopShell.h"
 #include "../ParameterGrid.h"
+#include "../ZoneEditor.h"
 #include "oscairn/local_socket.h"
 #include "oscairn/session.h"
 #include <juce_gui_extra/juce_gui_extra.h>
@@ -125,6 +126,11 @@ int main(int argc, char** argv)
                 check(fmx.start == 3 && fmx.points.size() == 5 && fmx.points[0].time == 8 && fmx.points[3].sustain && fmx.points[4].level == 3,
                       "an FM-X envelope: from its hold level, through each stage, back to it");
                 check(standalone::envelopeOf({"Cutoff", "Resonance", "Release Shape"}).empty(), "no envelope where there is none");
+                const auto fmLfo = standalone::lfoOf({"Speed", "Delay", "Pitch Depth", "Amp Depth", "Key Sync", "Wave"});
+                check(fmLfo.wave == 5 && fmLfo.speed == 0 && fmLfo.delay == 1, "an LFO: its wave, speed and delay");
+                check(standalone::lfoOf({"Cutoff", "Wave Folder"}).empty(), "no LFO without a wave and a speed");
+                check(standalone::waveNamed("Saw down") == standalone::Wave::SawDown && standalone::waveNamed("Sawtooth") == standalone::Wave::SawUp &&
+                      standalone::waveNamed("Sample and hold") == standalone::Wave::Random && standalone::waveNamed("MSEG") == standalone::Wave::None, "waves by their names");
             }
             // Parameter pages, in Oscairn Dark with a mouse.
             theme.apply("oscairn-dark");
@@ -138,6 +144,25 @@ int main(int argc, char** argv)
                 bool shown = false;
                 for(auto* c : view.getChildren()) shown |= dynamic_cast<standalone::ParameterGrid*>(c) && c->isVisible() && c->getHeight() > 100;
                 check(synth && shown, "a selected plugin's parameters show on the Part page");
+                // The keys and velocities on the desktop's Part page: drag the lowest key up to C3.
+                view.selectBox(0);
+                standalone::ZoneEditor* zone = nullptr;
+                for(auto* c : view.getChildren()) if(auto* z = dynamic_cast<standalone::ZoneEditor*>(c)) zone = z;
+                check(zone != nullptr, "the Part page has its keys and velocities");
+                if(zone)
+                {
+                    auto mouse = juce::Desktop::getInstance().getMainMouseSource();
+                    const auto keys = zone->getLocalBounds().toFloat().withTrimmedTop(18).withTrimmedBottom(26);
+                    const float white = keys.getWidth() / 75;
+                    const juce::Point<float> from(keys.getX() + 1, keys.getBottom() - 4), to(keys.getX() + 28.5f * white, keys.getBottom() - 4); // C3 (48) is the 29th white key
+                    auto event = [&](juce::Point<float> at, bool dragged) { return juce::MouseEvent(mouse, at, juce::ModifierKeys::leftButtonModifier, 1, 0, 0, 0, 0, zone, zone, juce::Time::getCurrentTime(), from, juce::Time::getCurrentTime(), 1, dragged); };
+                    zone->mouseDown(event(from, false)); zone->mouseDrag(event(to, true)); zone->mouseUp(event(to, true));
+                    auto lowKey = [&] { for(const auto& p : standalone::readParts(engine.graph()).parts) if(p.id == piano) return p.lowKey; return -1; };
+                    for(int i = 0; i < 200 && lowKey() != 48; ++i) juce::MessageManager::getInstance()->runDispatchLoopUntil(10);
+                    check(lowKey() == 48, "dragging the range's low end sets the part's lowest key: " + std::to_string(lowKey()));
+                    if(argc >= 5) { const juce::File out{juce::String(argv[4]) + "-part-zone.png"}; out.deleteFile(); juce::FileOutputStream stream(out); juce::PNGImageFormat().writeImageToStream(view.createComponentSnapshot(view.getLocalBounds()), stream); }
+                    engine.edit([&](Control& c) { standalone::setZone(c, piano, 0, 127, 0); });
+                }
                 view.selectBox(0);
                 shown = false;
                 for(auto* c : view.getChildren()) shown |= dynamic_cast<standalone::ParameterGrid*>(c) != nullptr;
@@ -180,7 +205,7 @@ int main(int argc, char** argv)
                     check(first > 0 && total > first, "a tabbed page splits its parameters between its tabs");
                     if(!tabbed) { grid.showTab(0); save("tabs"); tabbed = true; }
                 }
-                // The analog and FM engines' envelopes show as curves where their pages have them.
+                // The analog and FM engines' envelopes and LFOs show where their pages have them.
                 if(name == "oscairn-analog" || name == "oscairn-fm")
                 {
                     size_t envelopes = 0; bool saved = false;
@@ -190,11 +215,11 @@ int main(int argc, char** argv)
                         for(size_t tab = 0; tab < std::max<size_t>(1, grid.tabs()); ++tab)
                         {
                             if(grid.tabs()) grid.showTab(tab);
-                            envelopes += grid.envelopesShown();
-                            if(grid.envelopesShown() && !saved) { save("envelope"); saved = true; }
+                            envelopes += grid.panelsShown();
+                            if(grid.panelsShown() && !saved) { save("envelope"); saved = true; }
                         }
                     }
-                    check(envelopes >= 2, name + "'s envelopes are drawn: " + std::to_string(envelopes));
+                    check(envelopes >= 2, name + "'s envelopes and LFOs are drawn: " + std::to_string(envelopes));
                 }
                 // Dragging the analog engine's filter envelope's attack point to the right lengthens
                 // its attack (the point starts where a zero attack leaves it: the curve's top left).

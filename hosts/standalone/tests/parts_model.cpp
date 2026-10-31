@@ -61,6 +61,12 @@ int main(int argc, char** argv)
         check(readParts(s.graphState()).parts[0].chain.size() == 1, "the note effect removed");
         setZone(s, lead, 0, 127, 0);
         check(readParts(s.graphState()).parts[1].input == "Any device · all keys" && s.parts()[1].input.zones.empty(), "all keys again: no zone left");
+        // A velocity range, kept apart from the keys; the whole range again leaves no zone.
+        setVelocities(s, lead, 64, 127); setZone(s, lead, 48, 72, 0);
+        const auto soft = readParts(s.graphState()).parts[1];
+        check(soft.lowVelocity == 64 && soft.highVelocity == 127 && soft.lowKey == 48 && soft.highKey == 72, "velocities and keys together");
+        setVelocities(s, lead, 0, 127); setZone(s, lead, 0, 127, 0);
+        check(s.parts()[1].input.zones.empty(), "all keys and velocities again: no zone left");
         setOutput(s, lead, room); check(readParts(s.graphState()).parts[1].through == room, "the lead plays through the room");
         setSendLevel(s, bass, room, 0); check(readParts(s.graphState()).parts[0].sends.empty(), "a send at 0 is removed");
         check(roleOf({0, {}, {}, {}, 0, 1}) == "Sequencer", "a node with only note outputs is a sequencer");

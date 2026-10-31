@@ -40,6 +40,7 @@ namespace oscairn::standalone
         std::vector<DeviceRule> devices; // which inputs (RFC 0012); none: any
         int maxNotes = 0;                // notes at once (RFC 0018); 0: no limit
         int lowKey = 0, highKey = 127, transpose = 0; // the input's first zone, or all keys
+        int lowVelocity = 0, highVelocity = 127;      // its velocities, as MIDI values
         std::vector<PartBox> chain;
         double level = 1, pan = 0;
         bool mute = false, solo = false;
@@ -99,6 +100,7 @@ namespace oscairn::standalone
     void setLaneKeys(Control&, uint32_t part, uint32_t split, uint32_t lane, int lowKey, int highKey);
     void removeBox(Control&, uint32_t part, NodeId node);                         // the node, reconnecting its user wires
     void setZone(Control&, uint32_t part, int lowKey, int highKey, int transpose);
+    void setVelocities(Control&, uint32_t part, int low, int high); // MIDI values 0 to 127 the part plays
     // Device selectors, as the Part page shows and picks them: "Built in + KeyLab 61".
     std::string devicesName(const std::vector<DeviceRule>&);
     DeviceRule ruleFor(const MidiEndpoint&);      // that device by name, or its port number

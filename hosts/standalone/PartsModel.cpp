@@ -69,7 +69,12 @@ namespace oscairn::standalone
             row.silenced = !p.mute && std::any_of(g.wires.begin(), g.wires.end(), [&](const Wire& w) { return w.owner == WireOwner::Part && w.part == p.id && w.fader && w.mute; });
             row.notes = p.input.kind == PartInput::Kind::Notes; row.devices = p.input.devices; row.maxNotes = p.input.maxNotes;
             for(const auto& s : p.sends) row.sends[s.bus] = s.level;
-            if(!p.input.zones.empty()) { const auto& z = p.input.zones.front(); row.lowKey = z.lowKey; row.highKey = z.highKey; row.transpose = z.transpose; }
+            if(!p.input.zones.empty())
+            {
+                const auto& z = p.input.zones.front();
+                row.lowKey = z.lowKey; row.highKey = z.highKey; row.transpose = z.transpose;
+                row.lowVelocity = int(std::lround(z.lowVelocity * 127)); row.highVelocity = int(std::lround(z.highVelocity * 127));
+            }
             // Boxes in chain order; a split is a box holding its lanes' boxes.
             std::function<std::vector<PartBox>(const std::vector<NodeId>&)> boxes = [&](const std::vector<NodeId>& chain) {
                 std::vector<PartBox> out;
@@ -364,21 +369,40 @@ namespace oscairn::standalone
         c.commit();
     }
 
-    void setZone(Control& c, uint32_t part, int lowKey, int highKey, int transpose)
+    namespace
     {
+        // A change to the part's first zone; a zone that passes everything is dropped.
+        void editZone(Control& c, uint32_t part, const std::function<void(NoteZone&)>& change)
+        {
         const auto parts = c.graphState().parts;
         const auto found = std::find_if(parts.begin(), parts.end(), [&](const Part& p) { return p.id == part; });
         if(found == parts.end()) throw std::invalid_argument("unknown part");
         auto input = found->input;
         NoteZone zone = input.zones.empty() ? NoteZone{} : input.zones.front();
-        zone.lowKey = uint8_t(std::clamp(lowKey, 0, 127)); zone.highKey = uint8_t(std::clamp(highKey, int(zone.lowKey), 127));
-        zone.transpose = int8_t(std::clamp(transpose, -48, 48));
+        change(zone);
         const bool everything = zone == NoteZone{};
         if(input.zones.empty()) { if(!everything) input.zones.push_back(zone); }
         else if(everything && input.zones.size() == 1) input.zones.clear();
         else input.zones.front() = zone;
         c.setPartInput(part, input);
         c.commit();
+        }
+    }
+
+    void setZone(Control& c, uint32_t part, int lowKey, int highKey, int transpose)
+    {
+        editZone(c, part, [&](NoteZone& zone) {
+            zone.lowKey = uint8_t(std::clamp(lowKey, 0, 127)); zone.highKey = uint8_t(std::clamp(highKey, int(zone.lowKey), 127));
+            zone.transpose = int8_t(std::clamp(transpose, -48, 48));
+        });
+    }
+
+    void setVelocities(Control& c, uint32_t part, int low, int high)
+    {
+        editZone(c, part, [&](NoteZone& zone) {
+            low = std::clamp(low, 0, 127); high = std::clamp(high, low, 127);
+            zone.lowVelocity = low / 127.0; zone.highVelocity = high / 127.0;
+        });
     }
 
     std::string devicesName(const std::vector<DeviceRule>& rules)

@@ -2,6 +2,7 @@
 #include "PartsView.h"
 #include "Icons.h"
 #include "ParameterGrid.h"
+#include "ZoneEditor.h"
 #include "Theme.h"
 
 namespace oscairn::standalone
@@ -187,6 +188,15 @@ namespace oscairn::standalone
             auto b = std::make_unique<juce::TextButton>(label);
             b->onClick = std::move(click); b->setBounds(at); addAndMakeVisible(*b);
             auto* raw = b.get(); controls_.push_back(std::move(b)); return raw;
+        };
+        // Keys (and velocities): a keyboard to drag the range on, following the state.
+        auto zoneEditor = [&](juce::Rectangle<int> at, std::function<std::array<int, 4>()> range, std::function<void(int, int)> keys, std::function<void(int, int)> velocities) {
+            auto z = std::make_unique<ZoneEditor>();
+            z->onKeys = std::move(keys); z->onVelocities = std::move(velocities);
+            const auto r = range(); z->set(r[0], r[1], r[2], r[3]);
+            z->setBounds(at); addAndMakeVisible(*z);
+            auto* raw = z.get(); controls_.push_back(std::move(z));
+            updates.push_back(std::make_shared<std::function<void()>>([raw, range] { const auto r = range(); raw->set(r[0], r[1], r[2], r[3]); }));
         };
         auto plusButton = [this](juce::Rectangle<int> at) {
             auto b = std::make_unique<IconButton>(IconButton::Glyph::Plus, "Insert");
@@ -537,8 +547,8 @@ namespace oscairn::standalone
             // (RFC 0019), several to a row; on a device's screen, one row each.
             const int columns = std::clamp(panel.getWidth() / 300, 2, 4), tileGap = sectionGap(8);
             const int tileWidth = (panel.getWidth() - tileGap * (columns - 1)) / columns, tileHeight = 16 + 18 + lineHeight + 6;
-            int column = 0, tileTop = -1;
-            auto labelled = [&](const juce::String& label, int span = 1) {
+            int column = 0, tileTop = -1, rowHeight = tileHeight;
+            auto labelled = [&](const juce::String& label, int span = 1, int height = 0) {
                 if(!embedded_)
                 {
                     auto r = panel.removeFromTop(lineHeight);
@@ -553,9 +563,10 @@ namespace oscairn::standalone
                 {
                     // The row's last tile takes the cells left over, so no row ends in a hole.
                     if(column < columns && !tiles_.empty()) tiles_.back().setRight(panel.getRight());
-                    column = 0; tileTop += tileHeight + tileGap;
+                    column = 0; tileTop += rowHeight + tileGap; rowHeight = tileHeight;
                 }
-                const juce::Rectangle<int> tile(panel.getX() + column * (tileWidth + tileGap), tileTop, tileWidth * span + tileGap * (span - 1), tileHeight);
+                if(height) rowHeight = std::max(rowHeight, height);
+                const juce::Rectangle<int> tile(panel.getX() + column * (tileWidth + tileGap), tileTop, tileWidth * span + tileGap * (span - 1), height ? height : tileHeight);
                 column += span;
                 tiles_.push_back(tile);
                 auto inner = tile.reduced(12, 8);
@@ -601,6 +612,12 @@ namespace oscairn::standalone
                         button(actions.removeFromLeft(130).reduced(2), "Remove lane", [this, id, sp, lane] { selectedLane_ = -1; edit([id, sp, lane](Control& c) { removeLaneAndBoxes(c, id, sp, lane); }); })
                             ->setTooltip("Remove this lane and its plugins");
                     panel.removeFromTop(8);
+                    if(embedded_)
+                        zoneEditor(labelled("Lane keys", columns, 120), [this, id, sp, lane] {
+                            if(const auto* q = part(id)) for(const auto& b : q->chain) if(b.split == sp && lane < b.lanes.size()) return std::array<int, 4>{b.lanes[lane].lowKey, b.lanes[lane].highKey, 0, 127};
+                            return std::array<int, 4>{0, 127, 0, 127};
+                        }, [this, id, sp, lane](int low, int high) { edit([id, sp, lane, low, high](Control& c) { setLaneKeys(c, id, sp, lane, low, high); }); }, {});
+                    else {
                     auto r = labelled("Lane keys", 2);
                     auto keyBox = [&](juce::Rectangle<int> at, bool high) {
                         auto box = std::make_unique<juce::ComboBox>(high ? "Highest key" : "Lowest key");
@@ -616,6 +633,7 @@ namespace oscairn::standalone
                     keyBox(r.removeFromLeft(110).reduced(2), false);
                     keyBox(r.removeFromLeft(110).reduced(2), true);
                     button(r.removeFromLeft(100).reduced(2), "All keys", [this, id, sp, lane] { edit([id, sp, lane](Control& c) { setLaneKeys(c, id, sp, lane, 0, 127); }); });
+                    }
                     auto laneOf = [this, id, sp, lane]() -> const PartLane* {
                         if(const auto* q = part(id)) for(const auto& b : q->chain) if(b.split == sp && lane < b.lanes.size()) return &b.lanes[lane];
                         return nullptr;
@@ -656,6 +674,13 @@ namespace oscairn::standalone
                 limit->onChange = [this, id, raw = limit.get()] { const int n = raw->getSelectedId() - 1; edit([id, n](Control& c) { setMaxNotes(c, id, n); }); };
                 limit->setBounds(limitRow.removeFromLeft(160).reduced(2)); addAndMakeVisible(*limit); controls_.push_back(std::move(limit));
                 // The zone: lowest and highest key, and a transpose.
+                if(embedded_)
+                    zoneEditor(labelled("Keys and velocity", columns, 140), [this, id] {
+                        const auto* q = part(id);
+                        return q ? std::array<int, 4>{q->lowKey, q->highKey, q->lowVelocity, q->highVelocity} : std::array<int, 4>{0, 127, 0, 127};
+                    }, [this, id](int low, int high) { const auto* q = part(id); const int t = q ? q->transpose : 0; edit([id, low, high, t](Control& c) { setZone(c, id, low, high, t); }); },
+                       [this, id](int low, int high) { edit([id, low, high](Control& c) { setVelocities(c, id, low, high); }); });
+                else {
                 auto r = labelled("Keys", 2);
                 auto keyBox = [&](juce::Rectangle<int> at, bool high) {
                     auto box = std::make_unique<juce::ComboBox>(high ? "Highest key" : "Lowest key");
@@ -673,6 +698,7 @@ namespace oscairn::standalone
                 auto to = std::make_unique<juce::Label>(juce::String(), "to"); to->setFont(juce::FontOptions(bodyText)); to->setJustificationType(juce::Justification::centred); to->setBounds(r.removeFromLeft(30)); addAndMakeVisible(*to); controls_.push_back(std::move(to));
                 keyBox(r.removeFromLeft(110).reduced(2), true);
                 button(r.removeFromLeft(100).reduced(2), "All keys", [this, id] { const auto* q = part(id); const int t = q ? q->transpose : 0; edit([id, t](Control& c) { setZone(c, id, 0, 127, t); }); });
+                }
                 auto t = labelled("Transpose");
                 auto [transpose, update] = slider(t.removeFromLeft(320).reduced(2, 8), -24, 24, [this, id] { const auto* q = part(id); return q ? double(q->transpose) : 0.0; },
                                                   [this, id](double v) { const auto* q = part(id); if(!q) return; const int low = q->lowKey, high = q->highKey, semis = int(std::lround(v)); edit([id, low, high, semis](Control& c) { setZone(c, id, low, high, semis); }); });

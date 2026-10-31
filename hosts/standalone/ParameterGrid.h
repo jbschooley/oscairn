@@ -21,6 +21,15 @@ namespace oscairn::standalone
     // shortcut: recognised by name only (ADSR; DX7 rates and levels; FM-X times and levels), case-insensitive; replace with the plugins' own descriptions once oscairn.ui exists (RFC 0019).
     EnvelopeShape envelopeOf(const std::vector<std::string>& names);
 
+    /// An LFO recognised from its parameters' names: its wave and its speed, and a delay, fade-in,
+    /// phase and user steps when it has them. Indices as for EnvelopeShape.
+    struct LfoShape { int wave = -1, speed = -1, delay = -1, fade = -1, phase = -1; std::vector<int> steps; bool empty() const { return wave < 0 || speed < 0; } };
+    // shortcut: by name only (Wave, Type or Shape with Speed, Rate or Frequency), as envelopeOf.
+    LfoShape lfoOf(const std::vector<std::string>& names);
+    // The waveform a wave's value text names: sine, triangle, square, saw up or down, random (sample and hold, noise), steps (user), or none.
+    enum class Wave { None, Sine, Triangle, Square, SawUp, SawDown, Random, Steps };
+    Wave waveNamed(const juce::String& text);
+
     /// Every parameter of one plugin, as pages of tiles (RFC 0019's generated editor): a page per
     /// top-level CLAP module path; on a page of more than 24, tabs for the second level; a heading
     /// per module below that; and a tile per parameter with
@@ -38,7 +47,7 @@ namespace oscairn::standalone
         void showTab(size_t tab);
         size_t tabs() const { return tabNames_.size(); }
         size_t tilesShown() const { return tiles_.size(); }
-        size_t envelopesShown() const { return panels_.size(); }
+        size_t panelsShown() const { return panels_.size(); } // envelopes and LFOs
         // Any page's parameters whose name or module has the text; empty: the page again.
         void search(const juce::String& text) { search_.setText(text, false); search_.onTextChange(); }
 
@@ -60,6 +69,7 @@ namespace oscairn::standalone
         struct Heading { juce::String text; juce::Rectangle<int> bounds; };
         class Content;
         class Envelope;
+        class Lfo;
         double normal(size_t param) const;               // its value, 0 to 1 over its range
         void setNormal(size_t param, double value);      // from 0 to 1, rounded when stepped
         void timerCallback() override;

@@ -101,6 +101,10 @@ Everything else is handled for you:
     and `Hold`); `Rate 1`–`4` with `Level 1`–`4` (DX7); or `Attack Time`, `Attack Level`,
     `Decay 1 Time` and so on with `Release Time` (FM-X). A stopgap until plugins can describe
     their editors;
+  - an LFO's waveform is previewed when one module has a `Wave` (or `Type`, `Shape`) with a
+    `Speed` (or `Rate`, `Frequency`), and optionally `Delay`, `Fade In`, `Phase` and
+    `User Step 1`… The wave's value text picks the drawing (sine, triangle, square, saw up or
+    down, sample and hold or noise, user steps); others show as drawn by the plugin;
   - list parameters in the order a player reads them (attack before decay), since tiles follow
     the plugin's order within a page;
   - a stepped parameter with 2 values is a switch, with up to 32 a list of their value texts,
