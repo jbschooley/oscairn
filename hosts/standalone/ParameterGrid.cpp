@@ -13,7 +13,7 @@ namespace oscairn::standalone
     namespace
     {
         juce::String text(const std::string& s) { return juce::String::fromUTF8(s.c_str()); }
-        constexpr int maxListed = 32; // more values than this get a slider
+        constexpr int maxListed = 64; // more values than this get a slider (filter types run to dozens)
         int values(const Engine::ParamInfo& p) { return p.stepped ? int(std::lround(p.maximum - p.minimum)) + 1 : 0; }
         // "Operator 12" -> ("Operator", 12); a name without a trailing number has none.
         std::pair<std::string, int> numbered(const std::string& name)
@@ -45,6 +45,8 @@ namespace oscairn::standalone
             bool tab_;
         };
         constexpr size_t tabbedAbove = 24; // a page with more parameters than this gets tabs
+        constexpr int maxChoices = 4;      // up to this many values: buttons side by side
+        bool onOff(const juce::String& a, const juce::String& b) { return a.equalsIgnoreCase("off") && b.equalsIgnoreCase("on"); }
         std::string level(const std::string& module, size_t n) // the module path's nth level, or ""
         {
             size_t from = 0;
@@ -129,6 +131,87 @@ namespace oscairn::standalone
         if(t.contains("user") || t.contains("step")) return Wave::Steps;
         return Wave::None;
     }
+
+    FilterShape filterOf(const std::vector<std::string>& names)
+    {
+        auto find = [&](std::initializer_list<const char*> options) {
+            for(const auto* o : options) for(size_t i = 0; i < names.size(); ++i) if(juce::String(names[i]).equalsIgnoreCase(o)) return int(i);
+            return -1;
+        };
+        return {find({"Cutoff", "Frequency"}), find({"Resonance", "Q"}), find({"Type", "Filter Type"})};
+    }
+
+    FilterResponse filterNamed(const juce::String& name)
+    {
+        using K = FilterResponse::Kind;
+        const auto t = name.toUpperCase().removeCharacters(" ");
+        FilterResponse r;
+        if(t == "OFF" || t == "THRU") { r.kind = K::None; return r; }
+        const bool lp = t.contains("LP"), hp = t.contains("HP"), bp = t.contains("BP"), notch = t.contains("BEF") || t.contains("NOTCH") || t.startsWith("N");
+        r.kind = bp || (lp && hp) ? K::BandPass : notch ? K::Notch : hp ? K::HighPass : lp ? K::LowPass : K::Unknown;
+        r.poles = t.contains("24") ? 4 : t.contains("18") ? 3 : t.contains("12") ? 2 : t.contains("6") ? 1 : 2;
+        return r;
+    }
+
+    /// A filter's response across the audio range: its cutoff (across) and resonance (the peak)
+    /// for the type its value text names. A preview: its tiles edit it.
+    class ParameterGrid::Filter : public juce::Component
+    {
+    public:
+        Filter(ParameterGrid& grid, FilterShape shape, std::vector<size_t> params) : grid_(grid), shape_(shape), params_(std::move(params)) {}
+        void paint(juce::Graphics& g) override
+        {
+            const int mode = std::max(1, desktopMode(*this));
+            juce::String name = "Filter";
+            FilterResponse response;
+            if(shape_.type >= 0)
+            {
+                const auto& type = grid_.params_[params_[size_t(shape_.type)]];
+                const auto text = juce::String::fromUTF8(grid_.engine_.paramText(grid_.name_, type.id, grid_.engine_.param(grid_.name_, type.id)).c_str());
+                name << juce::String::fromUTF8("  ·  ") << text; response = filterNamed(text);
+            }
+            g.setColour(ink(Ink::Muted)); g.setFont(juce::FontOptions(textSize(TextRole::Small, mode), juce::Font::bold));
+            g.drawText(name, getLocalBounds().reduced(10, 8).removeFromTop(16), juce::Justification::topLeft);
+            const auto area = getLocalBounds().toFloat().reduced(14, 10).withTrimmedTop(18);
+            g.setColour(ink(Ink::Border).withAlpha(.35f)); g.drawRect(area, 1.f);
+            if(response.kind == FilterResponse::Kind::Unknown)
+            {
+                g.setColour(ink(Ink::Muted)); g.setFont(juce::FontOptions(textSize(TextRole::Small, mode)));
+                g.drawText("Drawn by the plugin", area, juce::Justification::centred);
+                return;
+            }
+            // A resonant two-pole section, raised to the type's order: across 20 Hz to 20 kHz on a
+            // log scale, the cutoff at its parameter's place, the top at +24 dB.
+            const double cutoff = std::pow(1000.0, grid_.normal(params_[size_t(shape_.cutoff)])) * 20, q = .707 + 8 * grid_.normal(params_[size_t(shape_.resonance)]);
+            juce::Path line, fill;
+            const int n = int(area.getWidth());
+            for(int i = 0; i <= n; ++i)
+            {
+                const double f = std::pow(1000.0, double(i) / n) * 20, x = f / cutoff, d = std::sqrt((1 - x * x) * (1 - x * x) + (x / q) * (x / q));
+                double gain = 1;
+                switch(response.kind)
+                {
+                case FilterResponse::Kind::LowPass: gain = 1 / d; break;
+                case FilterResponse::Kind::HighPass: gain = x * x / d; break;
+                case FilterResponse::Kind::BandPass: gain = (x / q) / d; break;
+                case FilterResponse::Kind::Notch: gain = std::abs(1 - x * x) / d; break;
+                default: break;
+                }
+                const double db = std::clamp(20 * std::log10(std::max(1e-6, std::pow(gain, response.poles / 2.0))), -48.0, 24.0);
+                const float px = area.getX() + float(i), py = area.getY() + float((24 - db) / 72) * area.getHeight();
+                if(i == 0) { line.startNewSubPath(px, py); fill.startNewSubPath(px, area.getBottom()); }
+                else line.lineTo(px, py);
+                fill.lineTo(px, py);
+            }
+            fill.lineTo(area.getRight(), area.getBottom()); fill.closeSubPath();
+            g.setColour(ink(Ink::Accent).withAlpha(.14f)); g.fillPath(fill);
+            g.setColour(ink(Ink::Accent)); g.strokePath(line, juce::PathStrokeType(2.f));
+        }
+    private:
+        ParameterGrid& grid_;
+        FilterShape shape_;
+        std::vector<size_t> params_;
+    };
 
     /// An LFO's waveform over a few cycles (more when faster), after its delay and fading in, as
     /// its parameters set it. A preview: its tiles edit it.
@@ -289,6 +372,40 @@ namespace oscairn::standalone
         if(p.stepped) v = std::round(v);
         engine_.setParam(name_, p.id, v);
     }
+
+    /// A few values side by side (Mono | Poly), the one set lifted out of the track, like the
+    /// desktop's tabs; choosing one sets it.
+    class ParameterGrid::Choices : public juce::Component
+    {
+    public:
+        explicit Choices(juce::StringArray names) : names_(std::move(names)) {}
+        std::function<void(int)> onChoose;
+        int chosen = 0;
+        void paint(juce::Graphics& g) override
+        {
+            const auto r = getLocalBounds().toFloat().reduced(1);
+            const float radius = buttonRadius(r.getHeight());
+            g.setColour(ink(Ink::Raised)); g.fillRoundedRectangle(r, radius);
+            drawEdge(g, r, radius);
+            const float w = r.getWidth() / float(names_.size());
+            g.setFont(juce::FontOptions(textSize(TextRole::Button, std::max(1, desktopMode(*this)))));
+            for(int i = 0; i < names_.size(); ++i)
+            {
+                const auto cell = juce::Rectangle<float>(r.getX() + w * float(i), r.getY(), w, r.getHeight());
+                if(i == chosen) { g.setColour(ink(Ink::Accent)); g.fillRoundedRectangle(cell.reduced(2), std::max(0.f, radius - 2)); }
+                g.setColour(i == chosen ? ink(Ink::Accent).contrasting() : ink(Ink::Muted));
+                g.drawFittedText(names_[i], cell.reduced(4, 0).toNearestInt(), juce::Justification::centred, 1, .8f);
+            }
+        }
+        void mouseUp(const juce::MouseEvent& e) override
+        {
+            if(!getLocalBounds().contains(e.getPosition()) || names_.isEmpty()) return;
+            const int i = std::clamp(int(e.position.x / (float(getWidth()) / float(names_.size()))), 0, names_.size() - 1);
+            if(onChoose) onChoose(i);
+        }
+    private:
+        juce::StringArray names_;
+    };
 
     /// The scrolling area: the tiles' backgrounds and the headings, under their controls.
     class ParameterGrid::Content : public juce::Component
@@ -471,6 +588,14 @@ namespace oscairn::standalone
             {
                 std::vector<std::string> names;
                 for(const auto i : members) names.push_back(params_[i].name);
+                if(auto shape = filterOf(names); !shape.empty())
+                {
+                    const juce::Rectangle<int> bounds(0, y, width, mode == 2 ? 160 : 130);
+                    auto view = std::make_unique<Filter>(*this, shape, members);
+                    view->setBounds(bounds); content_->addAndMakeVisible(*view); controls_.push_back(std::move(view));
+                    panels_.push_back(bounds);
+                    y += bounds.getHeight() + gap;
+                }
                 if(auto shape = lfoOf(names); !shape.empty())
                 {
                     const juce::Rectangle<int> bounds(0, y, width, mode == 2 ? 140 : 110);
@@ -510,7 +635,16 @@ namespace oscairn::standalone
                 const int count = values(p);
                 if((p.flags & CLAP_PARAM_IS_READONLY) == 0)
                 {
-                    if(count == 2)
+                    juce::StringArray names;
+                    if(count >= 2 && count <= maxChoices) for(int v = 0; v < count; ++v) names.add(text(engine_.paramText(node, id, p.minimum + v)));
+                    if(count >= 2 && count <= maxChoices && !(count == 2 && onOff(names[0], names[1])))
+                    {
+                        auto choices = std::make_unique<Choices>(names);
+                        choices->onChoose = [this, node, id, p](int v) { engine_.setParam(node, id, p.minimum + v); };
+                        choices->setBounds(inner.withHeight(std::min(inner.getHeight(), 28)));
+                        tile.choices = choices.get(); content_->addAndMakeVisible(*choices); controls_.push_back(std::move(choices));
+                    }
+                    else if(count == 2)
                     {
                         auto b = std::make_unique<juce::TextButton>();
                         b->setClickingTogglesState(true);
@@ -555,7 +689,8 @@ namespace oscairn::standalone
         const auto& p = params_[t.param];
         t.shown = value;
         const auto shown = text(engine_.paramText(name_, p.id, value));
-        t.value->setText(t.list || t.toggle ? juce::String() : shown, juce::dontSendNotification);
+        t.value->setText(t.list || t.toggle || t.choices ? juce::String() : shown, juce::dontSendNotification);
+        if(t.choices) { t.choices->chosen = int(std::lround(value - p.minimum)); t.choices->repaint(); }
         if(t.slider && !t.slider->isMouseButtonDown()) t.slider->setValue(value, juce::dontSendNotification);
         if(t.list) t.list->setSelectedId(int(std::lround(value - p.minimum)) + 1, juce::dontSendNotification);
         if(t.toggle) { t.toggle->setToggleState(value > p.minimum, juce::dontSendNotification); t.toggle->setButtonText(shown); }

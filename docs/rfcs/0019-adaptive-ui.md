@@ -242,6 +242,23 @@ layout and key lists are gone, and its Parts view uses the touch sizes. `desktop
 every view on the Desktop in both input modes, and `desktop-pad-editor` renders them on the
 Panel at 1024 × 600.
 
+Since then: parameters with 2 to 4 values are rows of buttons (Mono | Poly), lists hold up to
+64 values (filter types), and a module with a cutoff and resonance gets its filter's response
+drawn for the type its value text names.
+
+**From the MODX's screens (2026-10-31), still to build:**
+- *Knobs where a plugin wants them.* A knob is the plugin's choice, not the theme's: the
+  widget hint in `oscairn.ui` (knob, slider, buttons, range), read through the worker protocol
+  (RFC 0010) like the other extensions.
+- *Ranges* (a low and a high as one two-sided control), by hint, as the keyboard already does
+  for a part's keys and velocities.
+- *Physical knobs following the screen* (step 6): a layout says how many assignable knobs a
+  device has and on which edge of the screen; the page's selected row of tiles is bound to
+  them in order, and a strip along that edge names what each knob does now, as the MODX's six
+  knobs under its screen do. A device without such knobs shows no strip.
+- *No fixed effect sends or EQ in the Mixer:* sends go to the Performance's own buses, and an
+  EQ is a plugin put wherever it is needed (RFC 0016).
+
 Not yet: the Mixer and Routing views' layout is still in `PartsView`, and the device's chain
 row, tabs and header are the older ones; Compact has no renderer (by design, RFC step 3).
 

@@ -131,6 +131,14 @@ int main(int argc, char** argv)
                 check(standalone::lfoOf({"Cutoff", "Wave Folder"}).empty(), "no LFO without a wave and a speed");
                 check(standalone::waveNamed("Saw down") == standalone::Wave::SawDown && standalone::waveNamed("Sawtooth") == standalone::Wave::SawUp &&
                       standalone::waveNamed("Sample and hold") == standalone::Wave::Random && standalone::waveNamed("MSEG") == standalone::Wave::None, "waves by their names");
+                const auto filter = standalone::filterOf({"Subtype", "Type", "Cutoff", "Drive", "Resonance"});
+                check(filter.cutoff == 2 && filter.resonance == 4 && filter.type == 1, "a filter: its cutoff, resonance and type");
+                check(standalone::filterOf({"Cutoff", "Drive"}).empty(), "no filter without a resonance");
+                using FK = standalone::FilterResponse::Kind;
+                const auto lp24 = standalone::filterNamed("LP 24 dB"), fmLp = standalone::filterNamed("LPF24D"), hp = standalone::filterNamed("HPF12"), bef = standalone::filterNamed("BEF6");
+                check(lp24.kind == FK::LowPass && lp24.poles == 4 && fmLp.kind == FK::LowPass && fmLp.poles == 4 && hp.kind == FK::HighPass && hp.poles == 2 &&
+                      bef.kind == FK::Notch && bef.poles == 1 && standalone::filterNamed("LPF12+HPF12").kind == FK::BandPass &&
+                      standalone::filterNamed("Thru").kind == FK::None && standalone::filterNamed("FX Comb +").kind == FK::Unknown, "filter types by their names");
             }
             // Parameter pages, in Oscairn Dark with a mouse.
             theme.apply("oscairn-dark");
@@ -208,7 +216,7 @@ int main(int argc, char** argv)
                 // The analog and FM engines' envelopes and LFOs show where their pages have them.
                 if(name == "oscairn-analog" || name == "oscairn-fm")
                 {
-                    size_t envelopes = 0; bool saved = false;
+                    size_t envelopes = 0; bool saved = false, savedFilter = false;
                     for(size_t page = 0; page < grid.pages(); ++page)
                     {
                         grid.showPage(page);
@@ -217,6 +225,18 @@ int main(int argc, char** argv)
                             if(grid.tabs()) grid.showTab(tab);
                             envelopes += grid.panelsShown();
                             if(grid.panelsShown() && !saved) { save("envelope"); saved = true; }
+                            if(grid.panelsShown() && (grid.pageName(page) == "Filter" || grid.pageName(page) == "Filter 1") && !savedFilter)
+                            {
+                                // Cutoff halfway and some resonance, so the curve shows its peak.
+                                for(const auto& p : engine.parameters(node))
+                                {
+                                    if(p.module != grid.pageName(page)) continue;
+                                    if(p.name == "Cutoff" || p.name == "Resonance") engine.setParam(name, p.id, p.minimum + (p.maximum - p.minimum) * (p.name == "Cutoff" ? .5 : .7));
+                                    if(p.name == "Type") engine.setParam(name, p.id, p.minimum + 2); // the analog engine's LP 24 dB
+                                }
+                                for(int i = 0; i < 20; ++i) juce::MessageManager::getInstance()->runDispatchLoopUntil(10);
+                                save("filter"); savedFilter = true;
+                            }
                         }
                     }
                     check(envelopes >= 2, name + "'s envelopes and LFOs are drawn: " + std::to_string(envelopes));

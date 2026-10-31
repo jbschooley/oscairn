@@ -30,6 +30,15 @@ namespace oscairn::standalone
     enum class Wave { None, Sine, Triangle, Square, SawUp, SawDown, Random, Steps };
     Wave waveNamed(const juce::String& text);
 
+    /// A filter recognised from its parameters' names: Cutoff and Resonance, and its Type when it
+    /// has one, whose value text gives the response (FilterResponse).
+    struct FilterShape { int cutoff = -1, resonance = -1, type = -1; bool empty() const { return cutoff < 0 || resonance < 0; } };
+    // shortcut: by name only, as envelopeOf.
+    FilterShape filterOf(const std::vector<std::string>& names);
+    // A filter type's name as a response: "LP 24 dB" or "LPF24D" a 4-pole low-pass; "Off" or "Thru" none.
+    struct FilterResponse { enum class Kind { None, LowPass, HighPass, BandPass, Notch, Unknown } kind = Kind::LowPass; int poles = 2; };
+    FilterResponse filterNamed(const juce::String& text);
+
     /// Every parameter of one plugin, as pages of tiles (RFC 0019's generated editor): a page per
     /// top-level CLAP module path; on a page of more than 24, tabs for the second level; a heading
     /// per module below that; and a tile per parameter with
@@ -43,6 +52,7 @@ namespace oscairn::standalone
         ~ParameterGrid() override;
         NodeId node() const { return node_; }
         size_t pages() const { return pages_.size(); }
+        std::string pageName(size_t page) const { return page < pages_.size() ? pages_[page].name : std::string(); }
         void showPage(size_t page);
         void showTab(size_t tab);
         size_t tabs() const { return tabNames_.size(); }
@@ -55,6 +65,7 @@ namespace oscairn::standalone
         void resized() override;
 
     private:
+        class Choices;
         struct Page { std::string name; std::vector<size_t> params; };
         struct Tile
         {
@@ -64,12 +75,14 @@ namespace oscairn::standalone
             juce::Slider* slider = nullptr;
             juce::ComboBox* list = nullptr;
             juce::Button* toggle = nullptr;
+            Choices* choices = nullptr;
             double shown = std::numeric_limits<double>::quiet_NaN();
         };
         struct Heading { juce::String text; juce::Rectangle<int> bounds; };
         class Content;
         class Envelope;
         class Lfo;
+        class Filter;
         double normal(size_t param) const;               // its value, 0 to 1 over its range
         void setNormal(size_t param, double value);      // from 0 to 1, rounded when stepped
         void timerCallback() override;
