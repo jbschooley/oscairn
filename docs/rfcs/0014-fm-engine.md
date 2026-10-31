@@ -28,8 +28,8 @@ Performances.
 | Operator pitch EG | Initial and attack levels, attack and decay times | – |
 | Level scaling | Break point; low and high depth; curves −Lin, −Exp, +Exp, +Lin; velocity sensitivity; level controller sensitivity | most |
 | Pitch | Key follow, velocity sensitivity, pitch controller sensitivity | – |
-| Part LFO | Wave, speed (normal and extended 0–415), phase, delay, key-on reset, per-operator depth offsets and Part LFO destination ratios | – |
-| 2nd LFO | Triangle, saw down and up, square, sine, S/H; speed, phase, delay, key-on reset; pitch, amplitude and filter depth | – |
+| Part LFO | Wave, speed, phase, delay, key-on reset, per-operator depth offsets and Part LFO destination ratios | – |
+| 2nd LFO | Triangle, saw down and up, square, sine, S/H; speed 0–99, or 0–415 when LFO Speed Range is Extended; phase, delay, key-on reset; pitch, amplitude and filter depth | – |
 | Part PEG | Initial, attack, decay 1 and 2, release levels and times; depth (8, 2, 1 or 0.5 oct); velocity and key follow | – |
 | Filter | The same 19-type filter, FEG and scaling breakpoints as an AWM2 element | – |
 | Macro controls | FM Depth, Harmonics, Attack, Decay, Sustain, Release, Texture (±99) | – |
