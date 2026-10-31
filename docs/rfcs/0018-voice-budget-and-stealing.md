@@ -176,14 +176,15 @@ Note limits, 2026-10-31: a part's input has `maxNotes` (0 to 128, 0 for none), s
 protocol and on the Part page as **Notes at once**. It rides on the part's input wires as a
 zone setting, and the note router enforces it where the notes enter the instrument: before
 a note past the limit, it chokes the oldest released note still sounding, else the oldest
-held one. A stolen note stops counting at once, is not released again, and frees its slot
+held one, sparing the highest and lowest held keys (melody and bass) while another can go. A stolen note stops counting at once, is not released again, and frees its slot
 when the plugin ends it. Only where the plugin takes CLAP notes; a MIDI-only plugin is not
 limited, since MIDI cannot choke one note. With lanes, each lane's instrument has the limit.
-`note-routing` checks the order (released first, though older notes are held), the stolen
-note's release going nowhere, and no limit; `control-parts` the Session and saving it.
+`note-routing` checks the order (released first, though older notes are held; the bass and
+melody spared), the stolen note's release going nowhere, and no limit; `control-parts` the
+Session and saving it.
 
-Not yet: protecting the highest and lowest held keys, reserves and priority (with step 3's
-shared budget), and one count across a part's lanes.
+Not yet: reserves and priority (with step 3's shared budget), and one count across a part's
+lanes.
 
 ## Build order and gates
 

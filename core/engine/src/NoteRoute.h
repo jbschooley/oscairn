@@ -4,6 +4,7 @@
 #include "oscairn/midi_input.h"
 #include "oscairn/note_zone.h"
 #include <array>
+#include <algorithm>
 #include <climits>
 
 namespace oscairn
@@ -96,15 +97,19 @@ struct NoteRoute
             const auto n=*reinterpret_cast<const clap_event_note_t*>(h);
             if(n.port_index>=16 || static_cast<uint32_t>(n.port_index)>=ports)return emit(e);
             // A note limit: before a note past it, the oldest released note goes, else the oldest
-            // held one. Only where the plugin takes CLAP notes: MIDI cannot choke one note.
+            // held one, sparing the highest and lowest held keys (melody and bass) while another
+            // can go. Only where the plugin takes CLAP notes: MIDI cannot choke one note.
             const uint16_t limit=zones && zones->count && clap[n.port_index]?zones->zones[0].maxNotes:0;
             auto makeRoom=[&]()->bool {
                 if(!limit)return true;
                 for(;;) {
-                    Note* victim=nullptr;size_t playing=0;
+                    Note* victim=nullptr;size_t playing=0,held=0;int16_t low=INT16_MAX,high=-1;
+                    for(const auto& slot:notes)if(slot.used && !slot.stolen && slot.held){++held;low=std::min(low,slot.key);high=std::max(high,slot.key);}
+                    auto spared=[&](const Note& n){return n.held && held>2 && (n.key==low || n.key==high);};
                     for(auto& slot:notes)if(slot.used && !slot.stolen) {
                         ++playing;
-                        if(!victim || (victim->held && !slot.held) || (victim->held==slot.held && slot.id<victim->id))victim=&slot;
+                        if(!victim || (spared(*victim) && !spared(slot)) || (spared(*victim)==spared(slot) &&
+                           ((victim->held && !slot.held) || (victim->held==slot.held && slot.id<victim->id))))victim=&slot;
                     }
                     if(playing<limit || !victim)return true;
                     victim->stolen=true;victim->held=false;

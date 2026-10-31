@@ -54,6 +54,12 @@ int main(int argc,char** argv){try{
         check(count==mark,"a stolen note's release goes nowhere");
         zones.zones[0].maxNotes=0;mark=count;route.route(Event::note(true,67,1),nextId,emit,ignoreEnd,&zones);
         check(chokes(mark).empty(),"no limit, no chokes");
+        // Melody and bass: with three held, a fourth spares the highest and lowest keys.
+        NoteRoute spare(graph.host(synth));NoteZones three;three.count=1;three.zones[0].maxNotes=3;
+        spare.route(Event::note(true,48,1),nextId,emit,ignoreEnd,&three);spare.route(Event::note(true,60,1),nextId,emit,ignoreEnd,&three);
+        spare.route(Event::note(true,72,1),nextId,emit,ignoreEnd,&three);
+        mark=count;spare.route(Event::note(true,64,1),nextId,emit,ignoreEnd,&three);
+        check(chokes(mark)==std::vector<int>{60},"the oldest held note goes unless it is the bass or the melody");
     }
     graph.connectNotes(a,synth);graph.connectNotes(b,synth);graph.connectNotes(graphInput,synth);
     graph.connectAudio(synth,graphOutput);graph.commit();
