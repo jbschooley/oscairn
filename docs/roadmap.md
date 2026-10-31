@@ -201,8 +201,9 @@ new core, from a UI that talks to it only through the control API.
    [plugins/modular](../plugins/modular/README.md) with its history, wrapped as a CLAP
    instrument with factory presets and bundled in the desktop app. The patch editor, the
    upstream sample-grid fix and native sound contexts remain.
-10. **CI failing since worker step 2 — fixes pushed, waiting for CI to confirm:** GitHub Actions
-   failed on every push since "Run plugins in worker processes" (October 30, 2026):
+10. **CI failing since worker step 2 — fixed:** GitHub Actions failed on every push since "Run
+   plugins in worker processes" (October 30, 2026); all three jobs pass again from run
+   41152651659 (October 31). The causes:
    - `worker-failures` on the hosted VMs, which cannot keep real time (as in Docker): it now
      runs with `--no-timing` when `CI` is set, as under sanitizers, and then compares the
      healthy instrument's sound only if it met every deadline. Timing stays for local and
