@@ -57,6 +57,6 @@
     {"type": "knob", "rect": [2259, 1222, 141, 204], "label": "14", "bind": "sequencer:213", "mode": "endless"},
     {"type": "knob", "rect": [2429, 1222, 141, 204], "label": "15", "bind": "sequencer:214", "mode": "endless"},
     {"type": "knob", "rect": [2600, 1222, 141, 204], "label": "16", "bind": "sequencer:215", "mode": "endless"},
-    {"type": "pads", "rect": [32, 1486, 2713, 179], "rows": 1, "cols": 16, "note": 36, "steps": true}
+    {"type": "pads", "rect": [32, 1486, 2713, 179], "rows": 1, "cols": 16, "steps": true}
   ]
 }

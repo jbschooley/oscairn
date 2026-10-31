@@ -133,6 +133,10 @@ request members.
 | `wires.disconnect` | `wire` | `{"accepted":true}` |
 | `wires.mix` | `wire`, `level`, `pan`, `mute`, `solo` | `{"accepted":true}` |
 | `wires.zones` | `wire` (a note wire), `zones` | `{"accepted":true}` |
+| `pads.get` | omitted or `{}` | the pad map: `bank` and eight `banks` of 16 pads, each `note`, `channel` (-1 follows the player), `velocity` (0 as played), `pressure` (`none`, `poly`, `channel`) |
+| `pads.set` | `map` (as `pads.get` returns it) | `{"accepted":true}` |
+| `pads.play` | `pad` (0..15, from the bottom-left), `on`, optional `velocity` and `channel` (the player's) | `{"accepted":true}` |
+| `pads.pressure` | `pad`, `pressure` (0..1) | `{"accepted":true}` |
 | `notes.send` | `on` (boolean), `key` (0..127), optional `velocity` (0..1), optional `channel` (0..15) | `{"accepted":true}` |
 
 `graph.add` accepts a CLAP module or, in an LV2-enabled engine, a `.lv2` bundle directory.

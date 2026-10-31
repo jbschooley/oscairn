@@ -13,7 +13,7 @@
     {"type": "knob", "rect": [50, 220, 130, 150], "label": "Mod 1"},
     {"type": "knob", "rect": [185, 220, 130, 150], "label": "Mod 2"},
     {"type": "knob", "rect": [320, 220, 130, 150], "label": "Mod 3"},
-    {"type": "pads", "rect": [1140, 60, 420, 200], "rows": 2, "cols": 8, "note": 36, "steps": true},
+    {"type": "pads", "rect": [1140, 60, 420, 200], "rows": 2, "cols": 8, "steps": true},
     {"type": "button", "rect": [1140, 280, 130, 60], "label": "PLAY", "bind": "play"},
     {"type": "button", "rect": [1285, 280, 130, 60], "label": "STOP", "bind": "stop"},
     {"type": "button", "rect": [1430, 280, 130, 60], "label": "MIDI SYNC", "bind": "sync"},

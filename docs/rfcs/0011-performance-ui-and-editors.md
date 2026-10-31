@@ -253,6 +253,21 @@ Assignments resolve in layers. Each layer fills only what the layers above it le
 Banks come in fours. A four-knob device pages through them (Assign 1–4, Assign 5–8, Filter,
 Amp EG, Effects), and an eight-knob device shows two at once.
 
+### Pads
+
+Which note each pad plays is part of the Performance, not of the device: a **pad map** of
+eight banks (A–H) of 16 pads, numbered from the bottom-left as on the KICK. Each pad has a
+note, a MIDI channel (or the channel of the track being played), a velocity (as played, or
+fixed) and how pressure is sent (poly aftertouch, channel pressure or not), as in the stock
+KICK firmware's MIDI Control mode. Fills set the notes of a bank or all banks at once:
+chromatic from a note (the KICK's own mapping is A01 = 0), a General MIDI drum kit, or in a
+key with rows that continue or rise a fourth or a third, like chillbeast's layouts and
+Push. A pad's release ends the note its press started, even if the map or bank changed in
+between. The pad editor shows the grid, plays a pad as it is selected, and applies every
+change at once; "set all" copies a pad's channel, velocity and pressure to its bank.
+Implemented 2026-10-31 (`pads.h`, the `pads.*` control methods and the desktop's **Pads...**
+editor); a "learn" mode that takes a note from the keyboard is still to do.
+
 ### Overrides
 
 Any physical control can be assigned to anything in the performance: a parameter of any

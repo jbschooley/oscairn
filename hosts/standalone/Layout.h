@@ -57,7 +57,7 @@ namespace oscairn::standalone
             /// "stop", "play-stop" or "sync". Empty: drawn, but does nothing yet.
             std::string bind;
             int         rows = 4, cols = 4; // pads
-            int         note  = 36;         // pads: the first pad's note; keys: the lowest key
+            int         note  = 36;         // keys: the lowest key
             int         count = 25;         // keys
             bool        steps = false;      // pads light with the sequencer's playhead
             bool        endless = false;    // knobs: an endless encoder rather than a pot with end stops

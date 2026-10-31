@@ -45,6 +45,28 @@ std::vector<NoteZone> zonesFrom(V v){
     }
     return zones;
 }
+// The pad map (pads.h): the selected bank and every bank's 16 pads.
+const char* pressureName(PadAssignment::Pressure p){return p==PadAssignment::Pressure::Poly?"poly":p==PadAssignment::Pressure::Channel?"channel":"none";}
+std::string padsText(const PadMap& map){
+    std::vector<std::string> banks;
+    for(const auto& bank:map.assignments){std::vector<std::string> pads;for(const auto& a:bank)pads.push_back("{\"note\":"+std::to_string(a.note)+",\"channel\":"+std::to_string(a.channel)+",\"velocity\":"+numeric(a.velocity)+",\"pressure\":\""+pressureName(a.pressure)+"\"}");banks.push_back(join(pads));}
+    return "{\"bank\":"+std::to_string(map.bank)+",\"banks\":"+join(banks)+'}';
+}
+PadMap padsFrom(V v){
+    fields(v,{"bank","banks"});PadMap map;map.bank=uint8_t(integer(field(v,"bank"),PadMap::banks-1));
+    const auto banks=array(field(v,"banks"),PadMap::banks);if(banks.size()!=PadMap::banks)bad("the pad map has eight banks");
+    for(size_t b=0;b<PadMap::banks;++b){
+        const auto pads=array(banks[b],PadMap::pads);if(pads.size()!=PadMap::pads)bad("a pad bank has 16 pads");
+        for(size_t i=0;i<PadMap::pads;++i){
+            fields(pads[i],{"note","channel","velocity","pressure"});auto& a=map.assignments[b][i];
+            a.note=uint8_t(integer(field(pads[i],"note"),127));const auto c=number(field(pads[i],"channel"));if(c<-1 || c>15 || c!=std::floor(c))bad("invalid pad channel");a.channel=int8_t(c);
+            a.velocity=number(field(pads[i],"velocity"));const auto p=text(field(pads[i],"pressure"));
+            a.pressure=p=="poly"?PadAssignment::Pressure::Poly:p=="channel"?PadAssignment::Pressure::Channel:p=="none"?PadAssignment::Pressure::None:(bad("invalid pad pressure"),PadAssignment::Pressure::None);
+        }
+    }
+    if(!map.valid())bad("invalid pad map");
+    return map;
+}
 bool lv2Path(const std::string& path){auto p=fs::path(path).lexically_normal();if(p.filename().empty())p=p.parent_path();return p.extension()==".lv2";}
 std::string ports(const std::vector<kick::clap::Port>& list){std::vector<std::string> out;for(const auto& p:list)out.push_back("{\"id\":"+std::to_string(p.id)+",\"channels\":"+std::to_string(p.channels)+",\"flags\":"+std::to_string(p.flags)+'}');return join(out);}
 void checkPorts(V list,const std::vector<kick::clap::Port>& expected){const auto entries=array(list,Graph::maxAudioChannels);if(entries.size()!=expected.size())bad("audio port layout changed");for(size_t i=0;i<entries.size();++i){fields(entries[i],{"id","channels","flags"});if(integer(field(entries[i],"id"))!=expected[i].id || integer(field(entries[i],"channels"))!=expected[i].channels || integer(field(entries[i],"flags"))!=expected[i].flags)bad("audio port layout changed");}}
@@ -85,7 +107,7 @@ void Session::savePerformance(const std::string& directory) {
     for(const auto& m:graph.mappings)mappings.push_back("{\"from\":"+quote(keys.at(m.source))+",\"lane\":"+std::to_string(m.lane)+",\"to\":"+quote(keys.at(m.target))+",\"param\":"+std::to_string(m.param)+'}');
     std::vector<std::string> named;
     for(const auto& l:assets_.libraries())if(libraries.count(l.id))named.push_back("{\"id\":"+quote(l.id)+",\"name\":"+quote(l.name)+",\"fingerprint\":"+quote(l.fingerprint)+'}');
-    const auto out="{\"format\":\"oscairn.performance\",\"version\":2,\"libraries\":"+join(named)+",\"transport\":{\"tempo\":"+numeric(tempo_.load())+",\"clockSource\":"+quote(clockSource_.load()==Transport::ClockSource::Internal?"internal":"midi")+"},\"audioInputs\":"+ports(graph.audioLayout.inputs)+",\"audioOutputs\":"+ports(graph.audioLayout.outputs)+",\"nodes\":"+join(nodes)+",\"wires\":"+join(wires)+",\"parts\":"+join(parts)+",\"mappings\":"+join(mappings)+"}\n";
+    const auto out="{\"format\":\"oscairn.performance\",\"version\":2,\"libraries\":"+join(named)+",\"transport\":{\"tempo\":"+numeric(tempo_.load())+",\"clockSource\":"+quote(clockSource_.load()==Transport::ClockSource::Internal?"internal":"midi")+"},\"audioInputs\":"+ports(graph.audioLayout.inputs)+",\"audioOutputs\":"+ports(graph.audioLayout.outputs)+",\"nodes\":"+join(nodes)+",\"wires\":"+join(wires)+",\"parts\":"+join(parts)+",\"mappings\":"+join(mappings)+",\"pads\":"+padsText(padMap_)+"}\n";
     if(out.size()>4*1024*1024)bad("manifest exceeds size limit");
     const auto encoding=detail::jsonPreflight(out,32);if(!encoding.empty())bad(std::string(encoding));
     state_files::write(bundle.temporary.path/"performance.json",out.data(),out.size());validateTree(bundle.temporary.path);bundle.publish();
@@ -94,7 +116,8 @@ void Session::savePerformance(const std::string& directory) {
 void Session::loadPerformance(const std::string& directory) {
     if(directory.empty() || directory.find('\0')!=std::string::npos)bad("invalid directory");
     const auto root=fs::canonical(directory);validateTree(root);const auto doc=document(root);V d=doc.get();
-    fields(d,{"format","version","libraries","transport","audioInputs","audioOutputs","nodes","wires","parts","mappings"});
+    fields(d,{"format","version","libraries","transport","audioInputs","audioOutputs","nodes","wires","parts","mappings","pads"});
+    const auto pads=padsFrom(field(d,"pads"));
     if(text(field(d,"format"))!="oscairn.performance" || integer(field(d,"version"))!=2)bad("unsupported format version");
     const auto transport=field(d,"transport");fields(transport,{"tempo","clockSource"});const double tempo=number(field(transport,"tempo"));
     const auto clock=text(field(transport,"clockSource"));if(tempo<1 || tempo>1000 || (clock!="internal" && clock!="midi"))bad("invalid transport");
@@ -187,7 +210,7 @@ void Session::loadPerformance(const std::string& directory) {
     if(history.size()==historyCapacity)history.pop_front();
     history.push_back({sequence_+1,ChangeKind::Resync,0,0,0,false});
     graph_.publishReplacement(*next,noteHead_.load(std::memory_order_acquire),[&]() noexcept {
-        nodes_.swap(names);observed_.swap(observed);parts_.swap(parts);wires_.swap(wires);nextPart_=nextPart;nextWire_=nextWire;pending_.clear();commandCount_=0;outputDrops_.clear();staged_=false;
+        nodes_.swap(names);observed_.swap(observed);parts_.swap(parts);wires_.swap(wires);nextPart_=nextPart;nextWire_=nextWire;padMap_=pads;heldPads_={};pending_.clear();commandCount_=0;outputDrops_.clear();staged_=false;
         tempo_.store(tempo);clockSource_.store(clock=="internal"?Transport::ClockSource::Internal:Transport::ClockSource::MidiClock);playing_.store(false);
         ++revision_;++sequence_;history_.swap(history);
     });

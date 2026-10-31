@@ -185,6 +185,45 @@ namespace oscairn
             if( member(in,"zones") ) input.zones = zonesFrom(member(in,"zones"));
             return input;
         }
+        const char* pressureName( PadAssignment::Pressure p ) { return p == PadAssignment::Pressure::Poly ? "poly" : p == PadAssignment::Pressure::Channel ? "channel" : "none"; }
+        std::string padsJson( const PadMap& map )
+        {
+            std::vector<std::string> banks;
+            for( const auto& bank : map.assignments )
+            {
+                std::vector<std::string> pads;
+                for( const auto& a : bank ) pads.push_back("{\"note\":" + std::to_string(a.note) + ",\"channel\":" + std::to_string(a.channel) + ",\"velocity\":" + encode(a.velocity) + ",\"pressure\":\"" + pressureName(a.pressure) + "\"}");
+                banks.push_back(join(pads));
+            }
+            return "{\"bank\":" + std::to_string(map.bank) + ",\"banks\":" + join(banks) + '}';
+        }
+        PadMap padsFrom( Value v )
+        {
+            fields(v,{"bank","banks"});
+            PadMap map;
+            map.bank = uint8_t(integer(member(v,"bank"),PadMap::banks - 1));
+            const auto banks = member(v,"banks");
+            if( !banks || banks->type != json_type_array || static_cast<const json_array_s*>(banks->payload)->length != PadMap::banks ) invalid("banks is eight arrays of 16 pads");
+            size_t b = 0;
+            for( auto* e = static_cast<const json_array_s*>(banks->payload)->start; e; e = e->next, ++b )
+            {
+                if( !e->value || e->value->type != json_type_array || static_cast<const json_array_s*>(e->value->payload)->length != PadMap::pads ) invalid("A bank is 16 pads");
+                size_t i = 0;
+                for( auto* q = static_cast<const json_array_s*>(e->value->payload)->start; q; q = q->next, ++i )
+                {
+                    fields(q->value,{"note","channel","velocity","pressure"});
+                    auto& a = map.assignments[b][i];
+                    a.note = uint8_t(integer(member(q->value,"note"),127));
+                    const auto c = number(member(q->value,"channel")); if( c < -1 || c > 15 || c != std::floor(c) ) invalid("A pad channel is -1..15");
+                    a.channel = int8_t(c);
+                    a.velocity = number(member(q->value,"velocity"));
+                    const auto p = string(member(q->value,"pressure"));
+                    a.pressure = p == "poly" ? PadAssignment::Pressure::Poly : p == "channel" ? PadAssignment::Pressure::Channel : p == "none" ? PadAssignment::Pressure::None : (invalid("pressure is none, poly or channel"), PadAssignment::Pressure::None);
+                }
+            }
+            if( !map.valid() ) invalid("Invalid pad map");
+            return map;
+        }
         std::string wireJson( const Wire& w )
         {
             std::vector<std::string> pairs;
@@ -210,7 +249,7 @@ namespace oscairn
             if( method == "session.hello" )
             {
                 fields(p, {});
-                return R"({"protocolVersion":1,"server":"oscairn","capabilities":["performance.save","performance.load","state.info","state.save","presets.list","properties.list","properties.get","properties.set","properties.request","sounds.get","sounds.prepare","sounds.select","sounds.discard","assets.register","assets.import","assets.libraries","session.status","params.list","params.get","params.set","params.text","params.gesture","graph.audio-routing","graph.get","graph.add","effects.create","effects.resources","graph.remove","graph.replace","graph.connect","graph.disconnect","graph.map","graph.unmap","graph.commit","parts.add","parts.remove","parts.insert","parts.removeNode","parts.move","parts.input","parts.output","parts.send","wires.connect","wires.disconnect","wires.mix","wires.zones","subscribe","unsubscribe","transport.get","transport.set","notes.send"],"limits":{"messageBytes":65536,"depth":32,"batch":64,"parameterChanges":128}})";
+                return R"({"protocolVersion":1,"server":"oscairn","capabilities":["performance.save","performance.load","state.info","state.save","presets.list","properties.list","properties.get","properties.set","properties.request","sounds.get","sounds.prepare","sounds.select","sounds.discard","assets.register","assets.import","assets.libraries","session.status","params.list","params.get","params.set","params.text","params.gesture","graph.audio-routing","graph.get","graph.add","effects.create","effects.resources","graph.remove","graph.replace","graph.connect","graph.disconnect","graph.map","graph.unmap","graph.commit","parts.add","parts.remove","parts.insert","parts.removeNode","parts.move","parts.input","parts.output","parts.send","wires.connect","wires.disconnect","wires.mix","wires.zones","subscribe","unsubscribe","transport.get","transport.set","notes.send","pads.get","pads.set","pads.play","pads.pressure"],"limits":{"messageBytes":65536,"depth":32,"batch":64,"parameterChanges":128}})";
             }
             if( method == "subscribe" || method == "unsubscribe" )
             {
@@ -370,6 +409,26 @@ namespace oscairn
                 try{c.replace(node(c,member(p,"node")),path,std::string(string(member(p,"pluginId"))),member(p,"preset")?std::string(string(member(p,"preset"))):std::string{});}
                 catch(const std::runtime_error& e){throw Failure{-32004,e.what()};}
                 return "{\"revision\":"+std::to_string(c.graphState().revision)+'}';
+            }
+            if( method == "pads.get" ) { fields(p,{}); return padsJson(c.padMap()); }
+            if( method == "pads.set" ) { fields(p,{"map"}); c.setPadMap(padsFrom(member(p,"map"))); return R"({"accepted":true})"; }
+            if( method == "pads.play" )
+            {
+                fields(p,{"pad","on","velocity","channel"});
+                const auto pad = integer(member(p,"pad"),PadMap::pads - 1);
+                const bool on = boolean(member(p,"on"));
+                const double velocity = member(p,"velocity") ? number(member(p,"velocity")) : (on ? 1.0 : 0.0);
+                if( velocity < 0 || velocity > 1 ) invalid("velocity is 0..1");
+                if( !c.pad(pad,on,velocity,member(p,"channel") ? int(integer(member(p,"channel"),15)) : 0) ) throw Failure{ -32005, "UI note queue full; emergency release scheduled" };
+                return R"({"accepted":true})";
+            }
+            if( method == "pads.pressure" )
+            {
+                fields(p,{"pad","pressure"});
+                const auto pressure = number(member(p,"pressure"));
+                if( pressure < 0 || pressure > 1 ) invalid("pressure is 0..1");
+                if( !c.padPressure(integer(member(p,"pad"),PadMap::pads - 1),pressure) ) throw Failure{ -32005, "UI note queue full; emergency release scheduled" };
+                return R"({"accepted":true})";
             }
             if( method == "graph.remove" )
             {

@@ -122,6 +122,9 @@
         "additionalProperties": false
       },
       "maxItems": 4096
+    },
+    "pads": {
+      "$ref": "#/$defs/PadMap"
     }
   },
   "required": [
@@ -133,7 +136,8 @@
     "nodes",
     "wires",
     "parts",
-    "mappings"
+    "mappings",
+    "pads"
   ],
   "additionalProperties": false,
   "$defs": {
@@ -581,6 +585,71 @@
         "curve",
         "fixedVelocity"
       ]
+    },
+    "Pad": {
+      "type": "object",
+      "properties": {
+        "note": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 127
+        },
+        "channel": {
+          "type": "integer",
+          "minimum": -1,
+          "maximum": 15,
+          "description": "-1: the channel the player is on"
+        },
+        "velocity": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "0: as played"
+        },
+        "pressure": {
+          "enum": [
+            "none",
+            "poly",
+            "channel"
+          ]
+        }
+      },
+      "required": [
+        "note",
+        "channel",
+        "velocity",
+        "pressure"
+      ],
+      "additionalProperties": false
+    },
+    "PadMap": {
+      "description": "Which note each pad plays: eight banks (A..H) of 16 pads from the bottom-left, row by row.",
+      "type": "object",
+      "properties": {
+        "bank": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 7
+        },
+        "banks": {
+          "type": "array",
+          "minItems": 8,
+          "maxItems": 8,
+          "items": {
+            "type": "array",
+            "minItems": 16,
+            "maxItems": 16,
+            "items": {
+              "$ref": "#/$defs/Pad"
+            }
+          }
+        }
+      },
+      "required": [
+        "bank",
+        "banks"
+      ],
+      "additionalProperties": false
     }
   }
 }

@@ -295,6 +295,36 @@ namespace oscairn
     {try{impl_->call("params.gesture",'{'+address(n,p)+",\"begin\":"+(begin?"true":"false")+'}');return true;}catch(const RpcError& e){if(e.code==-32005)return false;throw;}}
     bool RemoteControl::note(bool on,int key,double velocity,int channel)
     {try{impl_->call("notes.send",std::string("{\"on\":")+(on?"true":"false")+",\"key\":"+std::to_string(key)+",\"velocity\":"+encode(velocity)+",\"channel\":"+std::to_string(channel)+'}');return true;}catch(const RpcError& e){if(e.code==-32005)return false;throw;}}
+    PadMap RemoteControl::padMap() const
+    {
+        auto doc=impl_->call("pads.get");auto root=field(doc.get(),"result");PadMap map;
+        map.bank=uint8_t(integer(field(root,"bank")));
+        const auto banks=array(field(root,"banks"));if(banks.size()!=PadMap::banks)throw std::runtime_error("Invalid pad map");
+        for(size_t b=0;b<PadMap::banks;++b){
+            const auto pads=array(banks[b]);if(pads.size()!=PadMap::pads)throw std::runtime_error("Invalid pad bank");
+            for(size_t i=0;i<PadMap::pads;++i){
+                auto& a=map.assignments[b][i];a.note=uint8_t(integer(field(pads[i],"note")));a.channel=int8_t(number(field(pads[i],"channel")));
+                a.velocity=number(field(pads[i],"velocity"));const auto p=string(field(pads[i],"pressure"));
+                a.pressure=p=="poly"?PadAssignment::Pressure::Poly:p=="channel"?PadAssignment::Pressure::Channel:PadAssignment::Pressure::None;
+            }
+        }
+        return map;
+    }
+    void RemoteControl::setPadMap(const PadMap& map)
+    {
+        std::string banks="[";
+        for(size_t b=0;b<PadMap::banks;++b){
+            banks+=b?",[":"[";
+            for(size_t i=0;i<PadMap::pads;++i){const auto& a=map.assignments[b][i];
+                banks+=std::string(i?",":"")+"{\"note\":"+std::to_string(a.note)+",\"channel\":"+std::to_string(a.channel)+",\"velocity\":"+encode(a.velocity)+",\"pressure\":\""+(a.pressure==PadAssignment::Pressure::Poly?"poly":a.pressure==PadAssignment::Pressure::Channel?"channel":"none")+"\"}";}
+            banks+="]";
+        }
+        impl_->call("pads.set","{\"map\":{\"bank\":"+std::to_string(map.bank)+",\"banks\":"+banks+"]}}");
+    }
+    bool RemoteControl::pad(uint32_t pad,bool on,double velocity,int channel)
+    {try{impl_->call("pads.play","{\"pad\":"+std::to_string(pad)+",\"on\":"+(on?"true":"false")+",\"velocity\":"+encode(velocity)+",\"channel\":"+std::to_string(channel)+'}');return true;}catch(const RpcError& e){if(e.code==-32005)return false;throw;}}
+    bool RemoteControl::padPressure(uint32_t pad,double pressure)
+    {try{impl_->call("pads.pressure","{\"pad\":"+std::to_string(pad)+",\"pressure\":"+encode(pressure)+'}');return true;}catch(const RpcError& e){if(e.code==-32005)return false;throw;}}
     void RemoteControl::setPlaying(bool playing){impl_->call("transport.set",std::string("{\"playing\":")+(playing?"true":"false")+'}');}
     void RemoteControl::setTempo(double bpm){impl_->call("transport.set","{\"tempo\":"+encode(bpm)+'}');}
     void RemoteControl::setClockSource(Transport::ClockSource source)

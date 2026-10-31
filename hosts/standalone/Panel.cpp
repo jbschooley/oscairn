@@ -122,7 +122,8 @@ namespace oscairn::standalone
         juce::Slider  slider_;
     };
 
-    /// A grid of pads that play notes; with `steps`, they light with the sequencer's playhead.
+    /// A grid of pads that play through the engine's pad map, pad 1 at the bottom-left as on the
+    /// KICK, each labelled with its note; with `steps`, they light with the sequencer's playhead.
     class Panel::Pads : public juce::Component
     {
     public:
@@ -154,6 +155,11 @@ namespace oscairn::standalone
                 g.setColour( i==held_ || (control_.steps && i==step_) ? colour.contrasting() : ink(Ink::Muted) );
                 g.setFont( juce::FontOptions( 13.0f*themeData().fontScale ) );
                 g.drawText( juce::String( i + 1 ), r.reduced( 8.0f ), juce::Justification::topLeft );
+                if( i < int(PadMap::pads) )
+                {
+                    const auto& map = engine_.padMap();
+                    g.drawText( juce::String::fromUTF8( noteName( map.assignments[map.bank][size_t(i)].note ).c_str() ), r.reduced( 8.0f ), juce::Justification::bottomRight );
+                }
             }
         }
 
@@ -165,7 +171,7 @@ namespace oscairn::standalone
                 // Harder towards the top of the pad, like pressure on a velocity pad.
                 const auto r        = pad( held_ );
                 const auto velocity = juce::jlimit( 0.2f, 1.0f, 1.0f - ( e.position.y - r.getY() ) / r.getHeight() * 0.8f );
-                engine_.note( true, control_.note + held_, velocity );
+                engine_.pad( held_, true, velocity );
             }
             repaint();
         }
@@ -173,16 +179,16 @@ namespace oscairn::standalone
         void mouseUp( const juce::MouseEvent& ) override
         {
             if( held_ >= 0 )
-                engine_.note( false, control_.note + held_, 0.0f );
+                engine_.pad( held_, false, 0.0f );
             held_ = -1;
             repaint();
         }
 
     private:
-        juce::Rectangle<float> pad( int i ) const
+        juce::Rectangle<float> pad( int i ) const // pad 0 at the bottom-left, row by row upwards
         {
             const auto w = getWidth() / (float)control_.cols, h = getHeight() / (float)control_.rows;
-            return { ( i % control_.cols ) * w + 4.0f, ( i / control_.cols ) * h + 4.0f, w - 8.0f, h - 8.0f };
+            return { ( i % control_.cols ) * w + 4.0f, ( control_.rows - 1 - i / control_.cols ) * h + 4.0f, w - 8.0f, h - 8.0f };
         }
 
         int padAt( juce::Point<float> p ) const

@@ -3,6 +3,7 @@
 
 #include "oscairn/graph.h"
 #include "oscairn/parts.h"
+#include "oscairn/pads.h"
 #include "oscairn/transport.h"
 
 #include <string>
@@ -155,5 +156,13 @@ namespace oscairn
         /// False means overflow; the session discards queued UI notes and broadcasts
         /// release on the next block. This may release other voices on shared destinations.
         virtual bool note( bool on, int key, double velocity, int channel = 0 ) = 0;
+
+        // Pads (pads.h): the Performance's pad map, and playing a pad through it. A pad press
+        // plays its assigned note, on its channel or else `channel`; its release ends the note
+        // it started, even if the map or bank changed meanwhile.
+        virtual PadMap padMap() const = 0;
+        virtual void setPadMap( const PadMap& map ) = 0;
+        virtual bool pad( uint32_t pad, bool on, double velocity, int channel = 0 ) = 0;
+        virtual bool padPressure( uint32_t pad, double pressure ) = 0; // 0..1, as the pad's assignment sends it
     };
 }

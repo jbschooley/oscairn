@@ -36,6 +36,7 @@ namespace oscairn::standalone
             remote_=std::make_unique<RemoteControl>(*client_);control_=remote_.get();
         }
         refreshSounds();
+        refreshPads();
         startTimer(16);
     }
     Engine::~Engine(){stopTimer();pendingSound_.reset();if(soundJob_.valid()){soundJob_.wait();finishSounds();}}
@@ -81,6 +82,19 @@ namespace oscairn::standalone
         });
     }
 
+    void Engine::pad(int index,bool on,float velocity)
+    {
+        if(index<0 || index>=int(PadMap::pads))return;
+        const auto channel=trackChannel();
+        command([this,index,on,velocity,channel]{if(!control_->pad(uint32_t(index),on,juce::jlimit(0.0f,1.0f,velocity),channel))std::fprintf(stderr,"oscairn: note queue overflow\n");});
+    }
+    void Engine::padPressure(int index,float pressure)
+    {
+        if(index<0 || index>=int(PadMap::pads))return;
+        command([this,index,pressure]{control_->padPressure(uint32_t(index),juce::jlimit(0.0f,1.0f,pressure));});
+    }
+    void Engine::setPadMap(const PadMap& map){padMap_=map;command([this,map]{control_->setPadMap(map);});}
+    void Engine::refreshPads(){try{padMap_=control_->padMap();}catch(const std::exception& e){std::fprintf(stderr,"oscairn: pad map: %s\n",e.what());}}
     std::string Engine::pluginId(const std::string& name) const {
         const auto graph=control_->graphState();
         for(const auto& node:graph.topology.nodes)if(graph.names.at(node.id)==name)return node.plugin.id;
@@ -147,7 +161,7 @@ namespace oscairn::standalone
             return;
         }
         // Replay deferred releases on failure; successful replacement discarded their voices.
-        if(soundJobKind_==SoundAction::LoadPerformance && result.error.empty()){pendingControls_.clear();padChannels_.fill(0);}
+        if(soundJobKind_==SoundAction::LoadPerformance && result.error.empty()){pendingControls_.clear();padChannels_.fill(0);refreshPads();}
         auto pending=std::move(pendingControls_);pendingControls_.clear();
         for(auto& action:pending)command(std::move(action));
         if(pendingSound_ && connected())
@@ -175,7 +189,7 @@ namespace oscairn::standalone
         {
             process_->connectOrStart(*client_);
             auto fresh=std::make_unique<RemoteControl>(*client_);
-            remote_=std::move(fresh);control_=remote_.get();failure_.clear();textCache_.clear();recoveryAvailable_=false;
+            remote_=std::move(fresh);control_=remote_.get();failure_.clear();textCache_.clear();recoveryAvailable_=false;refreshPads();
         }
         catch(const std::exception& e){failed(e.what());}
     }
@@ -204,7 +218,7 @@ namespace oscairn::standalone
             {
                 client_->connect(socketPath_,100);
                 auto fresh=std::make_unique<RemoteControl>(*client_);
-                remote_=std::move(fresh);control_=remote_.get();failure_.clear();textCache_.clear();recoveryAvailable_=false;
+                remote_=std::move(fresh);control_=remote_.get();failure_.clear();textCache_.clear();recoveryAvailable_=false;refreshPads();
             }
             catch(const std::exception&)
             {

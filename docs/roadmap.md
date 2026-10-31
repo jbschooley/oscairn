@@ -133,7 +133,9 @@ To do:
   selection before hardware MIDI/CV implementation
   ([RFC 0004](rfcs/0004-hardware-services.md), proposed); the control API remains outside
   this performance-event path;
-- the KICK's real panel as a control surface.
+- the KICK's real panel as a control surface. Pad mapping is in place: a per-Performance
+  pad map (note, channel, velocity, pressure per pad, banks A–H, chromatic, drum and in-key
+  fills) with the desktop's pad editor ([RFC 0011](rfcs/0011-performance-ui-and-editors.md#pads)).
 - undo and redo for every graph, part, wire and Mix edit, which
   [RFC 0011](rfcs/0011-performance-ui-and-editors.md) promises for its views;
 - MIDI input curves and filters: implemented as note zones (key, velocity and channel ranges,

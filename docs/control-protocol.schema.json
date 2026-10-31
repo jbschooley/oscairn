@@ -2515,6 +2515,151 @@
             "params"
           ],
           "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
+              "const": "pads.get"
+            },
+            "params": {
+              "type": "object",
+              "properties": {},
+              "required": [],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
+              "const": "pads.set"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "map": {
+                  "$ref": "#/$defs/PadMap"
+                }
+              },
+              "required": [
+                "map"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "params"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
+              "const": "pads.play"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "pad": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 15
+                },
+                "on": {
+                  "type": "boolean"
+                },
+                "velocity": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                },
+                "channel": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 15
+                }
+              },
+              "required": [
+                "pad",
+                "on"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "params"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
+              "const": "pads.pressure"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "pad": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 15
+                },
+                "pressure": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                }
+              },
+              "required": [
+                "pad",
+                "pressure"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "params"
+          ],
+          "additionalProperties": true
         }
       ]
     },
@@ -2596,6 +2741,9 @@
                 },
                 {
                   "$ref": "#/$defs/WireResult"
+                },
+                {
+                  "$ref": "#/$defs/PadMap"
                 }
               ]
             }
@@ -4056,6 +4204,71 @@
           "maximum": 1
         }
       },
+      "additionalProperties": false
+    },
+    "Pad": {
+      "type": "object",
+      "properties": {
+        "note": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 127
+        },
+        "channel": {
+          "type": "integer",
+          "minimum": -1,
+          "maximum": 15,
+          "description": "-1: the channel the player is on"
+        },
+        "velocity": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "0: as played"
+        },
+        "pressure": {
+          "enum": [
+            "none",
+            "poly",
+            "channel"
+          ]
+        }
+      },
+      "required": [
+        "note",
+        "channel",
+        "velocity",
+        "pressure"
+      ],
+      "additionalProperties": false
+    },
+    "PadMap": {
+      "description": "Which note each pad plays: eight banks (A..H) of 16 pads from the bottom-left, row by row.",
+      "type": "object",
+      "properties": {
+        "bank": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 7
+        },
+        "banks": {
+          "type": "array",
+          "minItems": 8,
+          "maxItems": 8,
+          "items": {
+            "type": "array",
+            "minItems": 16,
+            "maxItems": 16,
+            "items": {
+              "$ref": "#/$defs/Pad"
+            }
+          }
+        }
+      },
+      "required": [
+        "bank",
+        "banks"
+      ],
       "additionalProperties": false
     }
   }

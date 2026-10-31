@@ -47,8 +47,9 @@ Others can be opened with View > Open Layout File... or `--layout path.json`.
     `"mode": "endless"` draws an endless encoder (a ring of LEDs showing the value) instead of a
     pot with end stops (`absolute`, the default).
   - `button`: `bind` is `play`, `stop`, `play-stop` or `sync` (follow MIDI clock).
-  - `pads`: `rows` x `cols` pads playing notes from `note` upwards, left to right from the
-    top; with `"steps": true` they light with the sequencer's playhead.
+  - `pads`: `rows` x `cols` pads, pad 1 at the bottom-left, row by row upwards; each plays
+    what the Performance's pad map assigns it (**Pads...** on the screen edits it). With
+    `"steps": true` they light with the sequencer's playhead.
   - `keys`: a piano keyboard of `count` keys from `note`.
   - `label`: text; `"align"` is `left` (the default), `centre` or `right`.
 

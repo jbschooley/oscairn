@@ -14,6 +14,7 @@
 #include "Layout.h"
 #include "Panel.h"
 #include "PluginBrowser.h"
+#include "PadEditor.h"
 
 #include <BinaryData.h>
 #include <juce_gui_extra/juce_gui_extra.h>
@@ -85,6 +86,7 @@ namespace oscairn::standalone
                 setMenuBar( this );
 #endif
             engine_.openBrowser=[this]{showLibrary();};
+            engine_.openPads=[this]{showPads();};
             show( first );
             setVisible( true );
         }
@@ -92,6 +94,7 @@ namespace oscairn::standalone
         ~Window() override
         {
             engine_.openBrowser={};
+            engine_.openPads={};
 #if JUCE_MAC
             juce::MenuBarModel::setMacMainMenu( nullptr );
 #else
@@ -101,6 +104,7 @@ namespace oscairn::standalone
 
         void show( const Layout& layout )
         {
+            pads_.reset();
             setContentOwned( new Panel( engine_, layout ), false );
             setName( "Oscairn - " + juce::String( layout.name ) );
 
@@ -125,6 +129,12 @@ namespace oscairn::standalone
         }
 
         void closeButtonPressed() override { juce::JUCEApplication::getInstance()->systemRequestedQuit(); }
+
+        void resized() override
+        {
+            DocumentWindow::resized();
+            if( pads_ && getContentComponent() ) pads_->setBounds( getContentComponent()->getBounds() );
+        }
 
         juce::StringArray getMenuBarNames() override { return { "Performance", "View", "Plugins", "Appearance" }; }
 
@@ -176,6 +186,14 @@ namespace oscairn::standalone
 
     private:
         void showLibrary(){if(!library_)library_=std::make_unique<LibraryWindow>(engine_,theme_,plugins_);library_->setVisible(true);library_->toFront(true);}
+        // The pad editor covers the panel, so it fits a device's single screen too.
+        void showPads()
+        {
+            pads_ = std::make_unique<PadEditor>( engine_ );
+            pads_->onDone = [this] { juce::MessageManager::callAsync( [safe = juce::Component::SafePointer<Window>( this )] { if( safe ) safe->pads_.reset(); } ); };
+            addAndMakeVisible( *pads_ );
+            if( getContentComponent() ) pads_->setBounds( getContentComponent()->getBounds() );
+        }
         static juce::String title( const NamedLayout& l )
         {
             try
@@ -207,6 +225,7 @@ namespace oscairn::standalone
         Theme& theme_;
         juce::File plugins_;
         std::unique_ptr<LibraryWindow> library_;
+        std::unique_ptr<PadEditor> pads_;
         std::vector<std::pair<juce::String,juce::String>> themeItems_;
     };
 

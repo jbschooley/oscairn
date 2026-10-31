@@ -127,6 +127,11 @@ namespace oscairn
     {
         if( key < 0 || key > 127 || channel < 0 || channel > 15 || !std::isfinite( velocity ) || velocity < 0 || velocity > 1 )
             throw std::invalid_argument( "invalid note key, channel or velocity" );
+        return enqueue( kick::clap::Event::note( on && velocity > 0, key, velocity, 0, channel ) );
+    }
+
+    bool Session::enqueue( const kick::clap::Event& event )
+    {
         const auto head = noteHead_.load( std::memory_order_relaxed );
         if( head - noteTail_.load( std::memory_order_acquire ) == notes_.size() )
         {
@@ -134,9 +139,38 @@ namespace oscairn
             panic_.store( true, std::memory_order_release );
             return false;
         }
-        notes_[head % notes_.size()] = kick::clap::Event::note( on && velocity > 0, key, velocity, 0, channel );
+        notes_[head % notes_.size()] = event;
         noteHead_.store( head + 1, std::memory_order_release );
         return true;
+    }
+
+    void Session::setPadMap( const PadMap& map )
+    {
+        if( !map.valid() ) throw std::invalid_argument( "invalid pad map" );
+        padMap_ = map; // held pads keep the notes they started
+    }
+
+    bool Session::pad( uint32_t index, bool on, double velocity, int channel )
+    {
+        if( index >= PadMap::pads || channel < 0 || channel > 15 || !std::isfinite( velocity ) || velocity < 0 || velocity > 1 )
+            throw std::invalid_argument( "invalid pad, channel or velocity" );
+        auto& held = heldPads_[index];
+        bool ok = true;
+        if( held.key >= 0 ) { ok = note( false, held.key, 0, held.channel ); held.key = -1; } // a release, or a press without one
+        if( !on ) return ok;
+        const auto& a = padMap_.assignments[padMap_.bank][index];
+        held = { a.note, int8_t( a.channel >= 0 ? a.channel : channel ), a.pressure };
+        return note( true, a.note, a.velocity > 0 ? a.velocity : velocity, held.channel ) && ok;
+    }
+
+    bool Session::padPressure( uint32_t index, double pressure )
+    {
+        if( index >= PadMap::pads || !std::isfinite( pressure ) || pressure < 0 || pressure > 1 ) throw std::invalid_argument( "invalid pad or pressure" );
+        const auto& held = heldPads_[index];
+        if( held.key < 0 || held.pressure == PadAssignment::Pressure::None ) return true;
+        const auto value = uint8_t( std::lround( pressure * 127 ) );
+        return enqueue( held.pressure == PadAssignment::Pressure::Poly ? kick::clap::Event::midi( 0xa0 | held.channel, uint8_t( held.key ), value )
+                                                                        : kick::clap::Event::midi( 0xd0 | held.channel, value, 0 ) );
     }
 
     Control::GraphState Session::graphState() const

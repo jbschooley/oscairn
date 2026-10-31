@@ -33,6 +33,13 @@ namespace oscairn::standalone
         void setFollowMidiClock(bool follow);
         bool followsMidiClock()const;
         void note(bool on,int key,float velocity);
+        // Pads play through the Performance's pad map (pads.h), on the selected track's MIDI
+        // channel unless a pad has its own. The map is cached here and refreshed after a load.
+        void pad(int index,bool on,float velocity);
+        void padPressure(int index,float pressure);
+        const PadMap& padMap() const {return padMap_;}
+        void setPadMap(const PadMap& map);
+        std::function<void()> openPads;
         void selectTrack(uint32_t track){sequenceTrack_=std::min(track,1u);}
         int trackChannel()const;
         bool connected()const{return failure_.empty();}
@@ -90,6 +97,8 @@ namespace oscairn::standalone
         Control* control_=nullptr;
         uint32_t sequenceTrack_=0;
         std::array<uint16_t,128> padChannels_{};
+        PadMap padMap_;
+        void refreshPads();
         std::string socketPath_,failure_;
         uint32_t reconnectTicks_=0;
         bool recoveryAvailable_=false;

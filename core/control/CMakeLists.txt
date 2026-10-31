@@ -1,4 +1,4 @@
-add_library(oscairn_control STATIC src/session.cpp src/performance.cpp src/parts.cpp)
+add_library(oscairn_control STATIC src/session.cpp src/performance.cpp src/parts.cpp src/pads.cpp)
 target_include_directories(oscairn_control SYSTEM PRIVATE third_party)
 target_include_directories(oscairn_control PUBLIC include)
 target_link_libraries(oscairn_control PUBLIC oscairn_engine)
@@ -96,6 +96,11 @@ target_link_libraries(oscairn-parts-test PRIVATE oscairn_control)
 add_test(NAME control-parts COMMAND oscairn-parts-test
     $<TARGET_FILE:kick-clap-fixture-normal> $<TARGET_FILE:oscairn-audio-fixture> $<TARGET_FILE:oscairn_delay>)
 set_tests_properties(control-parts PROPERTIES TIMEOUT 60)
+
+add_executable(oscairn-pads-test tests/pads.cpp)
+target_include_directories(oscairn-pads-test PRIVATE ../clap-host/tests)
+target_link_libraries(oscairn-pads-test PRIVATE oscairn_control)
+add_test(NAME control-pads COMMAND oscairn-pads-test $<TARGET_FILE:kick-clap-fixture-normal> $<TARGET_FILE:oscairn_basic_synth>)
 
 add_executable(oscairn-performance-test tests/performance.cpp)
 target_include_directories(oscairn-performance-test PRIVATE ../clap-host/tests)

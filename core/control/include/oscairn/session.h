@@ -107,6 +107,10 @@ namespace oscairn
         Transport::ClockSource clockSource() const override { return clockSource_.load(); }
         TransportState transportState() const override;
         bool note( bool on, int key, double velocity, int channel = 0 ) override;
+        PadMap padMap() const override { return padMap_; }
+        void setPadMap( const PadMap& map ) override;
+        bool pad( uint32_t pad, bool on, double velocity, int channel = 0 ) override;
+        bool padPressure( uint32_t pad, double pressure ) override;
 
         struct MidiClockEvent
         {
@@ -135,6 +139,7 @@ namespace oscairn
     private:
         static ParamInfo describe( const kick::clap::Parameter& param );
         static void compileWires(Graph& graph, std::vector<Wire>& wires);
+        bool enqueue(const kick::clap::Event& event);
         void syncWires();
         void dropNode(NodeId node);
         template<class Edit> void editWires(Edit&& edit);
@@ -157,6 +162,9 @@ namespace oscairn
         Graph graph_;
         SessionStatus hostStatus_;
         std::map<NodeId,std::string> nodes_;
+        PadMap padMap_;
+        struct HeldPad { int16_t key = -1; int8_t channel = 0; PadAssignment::Pressure pressure = PadAssignment::Pressure::None; };
+        std::array<HeldPad, PadMap::pads> heldPads_{};
         std::vector<Part> parts_;
         std::vector<Wire> wires_;
         uint32_t nextPart_ = 1, nextWire_ = 1;

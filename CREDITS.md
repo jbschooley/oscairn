@@ -23,6 +23,10 @@ authoritative.
   AGPL-3.0-or-later. The engine, module library and patch code under
   [plugins/modular/upstream](plugins/modular/upstream) are imported unchanged with their
   history from his KICK firmware fork; see [its README](plugins/modular/README.md).
+- **Pad layouts:** the in-key pad fills (rows continuing, up a fourth or up a third, in key or
+  chromatic) in [core/control/src/pads.cpp](core/control/src/pads.cpp) follow chillbeast's
+  `PadLayout` in the same fork (`kick_pad_layout.h`, AGPL-3.0-or-later). The per-pad note,
+  channel, velocity and pressure settings follow the stock KICK firmware's MIDI Control mode.
 
 ## Interface font
 
