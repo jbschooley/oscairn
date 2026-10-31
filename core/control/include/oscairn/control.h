@@ -97,6 +97,21 @@ namespace oscairn
         // in a NEW folder; load validates before replacing the current graph.
         virtual void savePerformance(const std::string& directory) = 0;
         virtual void loadPerformance(const std::string& directory) = 0;
+        // The Performance's own details (format 3's info block, RFC 0021): saved with it, read
+        // by the library. The ID is made on the first save and kept.
+        struct PerformanceInfo { std::string id, name, description; std::vector<std::string> tags; };
+        virtual PerformanceInfo performanceInfo() const = 0;
+        virtual void setPerformanceInfo(const PerformanceInfo& info) = 0; // the ID is kept as it is
+        // The library (RFC 0021): the device's Performances, by tags, text, favourites and
+        // recent use. Performances save into it by name; loading by ID marks one used.
+        struct LibraryItem { std::string id, kind = "performance", name, description, path; std::vector<std::string> tags; bool favourite = false; uint32_t recent = 0; };
+        struct LibraryQuery { std::string text; std::vector<std::string> tags; bool favourites = false, recent = false; uint32_t limit = 200; };
+        struct LibraryResult { std::vector<LibraryItem> items; std::vector<std::pair<std::string, uint32_t>> tags; uint32_t total = 0; };
+        virtual LibraryResult libraryQuery(const LibraryQuery& query) = 0;
+        virtual void libraryFavourite(const std::string& id, bool favourite) = 0;
+        virtual uint32_t libraryRescan() = 0;                          // items found
+        virtual std::string savePerformanceToLibrary(const std::string& name) = 0; // its ID
+        virtual void loadPerformanceFromLibrary(const std::string& id) = 0;
         // Per-node export saves the selected channel-0 instance of a hosted pool.
         virtual bool supportsState(NodeId node) const = 0;
         virtual void saveState(NodeId node,const std::string& directory) = 0;

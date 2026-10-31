@@ -41,7 +41,7 @@ try:
             rpc('sounds.select', {'node': 'synth', 'context': context, 'channel': i})
         rpc('performance.save', {'directory': str(saved)})
         manifest = json.loads((saved / 'performance.json').read_text())
-        assert manifest['format'] == 'oscairn.performance' and manifest['version'] == 2
+        assert manifest['format'] == 'oscairn.performance' and manifest['version'] == 3
         assert manifest['nodes'][0]['key'] == 'node-1'
         assert manifest['nodes'][0]['plugin']['id'] == 'org.oscairn.basic-synth'
         schema = Path(__file__).resolve().parents[3] / 'docs/performance.schema.json'
@@ -104,7 +104,11 @@ try:
             value = copy.deepcopy(manifest)
             edit(value)
             mutations.append(json.dumps(value))
-        changed(lambda m: m.update(version=3))
+        changed(lambda m: m.update(version=2))
+        changed(lambda m: m.pop('info'))
+        changed(lambda m: m['info'].update(id=''))
+        changed(lambda m: m['info'].update(extra=1))
+        changed(lambda m: m['info'].update(tags=['']))
         changed(lambda m: m.update(unknown=True))
         changed(lambda m: m['nodes'][0].update(key='../escape'))
         changed(lambda m: m['nodes'][0]['plugin'].update(version='incompatible'))

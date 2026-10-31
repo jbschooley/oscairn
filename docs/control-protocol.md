@@ -677,7 +677,7 @@ intentionally combines them before the effects. Allocate different buses for dif
 
 `performance.save` and `performance.load` take `{"directory":"/path/to/performance"}`;
 returns are `{"saved":true}` and `{"loaded":true}`. Both are advertised by `session.hello`.
-Files use the [Performance version 2 format/schema](performance-format.md). Saving refuses
+Files use the [Performance version 3 format/schema](performance-format.md). Saving refuses
 existing directories and staged graph edits. Loading validates a complete replacement;
 a load failure leaves the playing graph intact. Successful publication emits a graph resync,
 invalidates old node/context references, and starts stopped at beat zero on adoption.
@@ -685,3 +685,31 @@ The current note/tail audio is not saved. Resource/state/format failures use `-3
 malformed RPC arguments use `-32602`. These control-thread calls can take time; remote
 wrappers allow 30 seconds, and callers must reread the graph after a timeout before retrying
 because a disconnected request is not cancellation. The app runs them on its control worker.
+
+## Library
+
+The library ([RFC 0021](rfcs/0021-sounds-performances-and-library.md)) is the Performances
+in the data folder's `Performances/` (`OSCAIRN_DATA_HOME`, else Application Support on macOS,
+else `XDG_DATA_HOME/oscairn` or `~/.local/share/oscairn`). Each file's `info` block is the
+truth; `library/index.json` caches what was read, by each file's modification time, so a
+rescan reads only changed files and deleting the cache loses nothing. Favourites and recently
+used (at most 50) are the user's, in `library/user.json`. Files the library cannot read, and
+hidden folders, are skipped; of two files with one ID the first found is listed.
+
+- `performance.info` (`{}`) returns the open Performance's `{id,name,description,tags}`; the
+  ID is empty until the first save. `performance.setInfo` takes `{name,description,tags}`
+  (the ID is kept) and returns the same. These are not undoable edits.
+- `library.query` takes optional `text` (case-insensitive, over name, description and tags),
+  `tags` (all must match), `favourites`, `recent` and `limit` (1–1000, default 200). It returns
+  `{items,tags,total}`: items with `id`, `kind` (`performance`), `name`, `description`,
+  `path`, `tags`, `favourite` and `recent` (1 is the most recent, 0 none), sorted by name or,
+  with `recent`, most recent first; `tags` counts each tag over every match, and `total`
+  counts matches before the limit.
+- `library.favourite` takes `{id,favourite}`; `library.rescan` (`{}`) returns `{"items":n}`.
+- `library.save` takes an optional `name` and returns `{"id":…}`. A Performance opened from
+  the library is saved over its folder (saved beside it, then swapped); any other gets a new
+  folder named after it. `library.load` takes `{id}`. Both mark the item recently used.
+
+The typed methods are `Control::performanceInfo`, `setPerformanceInfo`, `libraryQuery`,
+`libraryFavourite`, `libraryRescan`, `savePerformanceToLibrary` and
+`loadPerformanceFromLibrary`. Errors use `-32005`; malformed arguments `-32602`.

@@ -8,6 +8,7 @@
 #include <cmath>
 #include <functional>
 #include <locale>
+#include <random>
 #include <set>
 #include <sstream>
 #include <tuple>
@@ -162,18 +163,26 @@ void Session::savePerformance(const std::string& directory) {
     }
     std::vector<std::string> named;
     for(const auto& l:assets_.libraries())if(libraries.count(l.id))named.push_back("{\"id\":"+quote(l.id)+",\"name\":"+quote(l.name)+",\"fingerprint\":"+quote(l.fingerprint)+'}');
-    const auto out="{\"format\":\"oscairn.performance\",\"version\":2,\"libraries\":"+join(named)+",\"transport\":{\"tempo\":"+numeric(tempo_.load())+",\"clockSource\":"+quote(clockSource_.load()==Transport::ClockSource::Internal?"internal":"midi")+"},\"audioInputs\":"+ports(graph.audioLayout.inputs)+",\"audioOutputs\":"+ports(graph.audioLayout.outputs)+",\"nodes\":"+join(nodes)+",\"wires\":"+join(wires)+",\"parts\":"+join(parts)+",\"mappings\":"+join(mappings)+",\"pads\":"+padsText(padMap_)+scenesText+"}\n";
+    // RFC 0021: the library's info; the ID is made at the first save and kept by every later one.
+    auto info=info_;
+    if(info.id.empty()){std::random_device random;constexpr char hex[]="0123456789abcdef";for(int i=0;i<16;++i)info.id+=hex[random()&15];}
+    if(info.name.empty())info.name=fs::path(directory).stem().string();
+    std::vector<std::string> tags;for(const auto& t:info.tags)tags.push_back(quote(t));
+    const auto infoText="{\"id\":"+quote(info.id)+",\"name\":"+quote(info.name)+",\"description\":"+quote(info.description)+",\"tags\":"+join(tags)+'}';
+    const auto out="{\"format\":\"oscairn.performance\",\"version\":3,\"info\":"+infoText+",\"libraries\":"+join(named)+",\"transport\":{\"tempo\":"+numeric(tempo_.load())+",\"clockSource\":"+quote(clockSource_.load()==Transport::ClockSource::Internal?"internal":"midi")+"},\"audioInputs\":"+ports(graph.audioLayout.inputs)+",\"audioOutputs\":"+ports(graph.audioLayout.outputs)+",\"nodes\":"+join(nodes)+",\"wires\":"+join(wires)+",\"parts\":"+join(parts)+",\"mappings\":"+join(mappings)+",\"pads\":"+padsText(padMap_)+scenesText+"}\n";
     if(out.size()>4*1024*1024)bad("manifest exceeds size limit");
     const auto encoding=detail::jsonPreflight(out,32);if(!encoding.empty())bad(std::string(encoding));
     state_files::write(bundle.temporary.path/"performance.json",out.data(),out.size());validateTree(bundle.temporary.path);bundle.publish();
+    info_=info;
 }
 
 void Session::loadPerformance(const std::string& directory) {
     if(directory.empty() || directory.find('\0')!=std::string::npos)bad("invalid directory");
     const auto root=fs::canonical(directory);validateTree(root);const auto doc=document(root);V d=doc.get();
-    fields(d,{"format","version","libraries","transport","audioInputs","audioOutputs","nodes","wires","parts","mappings","pads","scenes","sceneParameters","scene","controls"});
+    fields(d,{"format","version","info","libraries","transport","audioInputs","audioOutputs","nodes","wires","parts","mappings","pads","scenes","sceneParameters","scene","controls"});
     const auto pads=padsFrom(field(d,"pads"));
-    if(text(field(d,"format"))!="oscairn.performance" || integer(field(d,"version"))!=2)bad("unsupported format version");
+    if(text(field(d,"format"))!="oscairn.performance" || integer(field(d,"version"))!=3)bad("unsupported format version");
+    fields(field(d,"info"),{"id","name","description","tags"});const auto info=readPerformanceInfo(root);
     const auto transport=field(d,"transport");fields(transport,{"tempo","clockSource"});const double tempo=number(field(transport,"tempo"));
     const auto clock=text(field(transport,"clockSource"));if(tempo<1 || tempo>1000 || (clock!="internal" && clock!="midi"))bad("invalid transport");
     const auto layout=graph_.describe().audioLayout;checkPorts(field(d,"audioInputs"),layout.inputs);checkPorts(field(d,"audioOutputs"),layout.outputs);
@@ -360,6 +369,41 @@ void Session::loadPerformance(const std::string& directory) {
         tempo_.store(tempo);clockSource_.store(clock=="internal"?Transport::ClockSource::Internal:Transport::ClockSource::MidiClock);playing_.store(false);
         ++revision_;++sequence_;history_.swap(history);
     });
+    info_=info;
     clearHistory(); // undo does not reach back into another Performance
+}
+
+void Session::setPerformanceInfo(const PerformanceInfo& info) {
+    if(info.name.size()>256 || info.description.size()>4096 || info.tags.size()>32 ||
+       std::any_of(info.tags.begin(),info.tags.end(),[](const std::string& t){return t.empty() || t.size()>64 || t.find('\0')!=std::string::npos;}) ||
+       info.name.find('\0')!=std::string::npos || info.description.find('\0')!=std::string::npos)bad("invalid info");
+    const auto id=info_.id;info_=info;info_.id=id;
+}
+
+std::string Session::savePerformanceToLibrary(const std::string& name) {
+    auto& l=library();
+    // An open library Performance is saved over itself; anything else gets a new folder.
+    const auto* item=info_.id.empty()?nullptr:l.find(info_.id);
+    if(!name.empty())info_.name=name;
+    const auto folder=item?fs::path(item->path):l.newFolder(info_.name.empty()?"Performance":info_.name);
+    fs::create_directories(folder.parent_path());
+    if(!item)savePerformance(folder.string());
+    else{
+        // Saving refuses an existing folder, so save beside it and swap; the old one goes only once the new is in place.
+        const auto fresh=folder.parent_path()/("."+folder.filename().string()+".new"),old=folder.parent_path()/("."+folder.filename().string()+".old");
+        fs::remove_all(fresh);fs::remove_all(old);
+        savePerformance(fresh.string());
+        fs::rename(folder,old);fs::rename(fresh,folder);fs::remove_all(old);
+    }
+    l.rescan();l.used(info_.id);
+    return info_.id;
+}
+
+void Session::loadPerformanceFromLibrary(const std::string& id) {
+    auto& l=library();
+    const auto* item=l.find(id);
+    if(!item)bad("no such library item");
+    loadPerformance(item->path);
+    l.used(id);
 }
 }

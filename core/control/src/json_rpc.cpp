@@ -366,7 +366,7 @@ namespace oscairn
             if( method == "session.hello" )
             {
                 fields(p, {});
-                return R"({"protocolVersion":1,"server":"oscairn","capabilities":["performance.save","performance.load","state.info","state.save","presets.list","properties.list","properties.get","properties.set","properties.request","sounds.get","sounds.prepare","sounds.select","sounds.discard","assets.register","assets.import","assets.libraries","session.status","params.list","params.get","params.set","params.text","params.gesture","graph.audio-routing","graph.get","graph.add","effects.create","effects.resources","graph.remove","graph.replace","graph.connect","graph.disconnect","graph.map","graph.unmap","graph.commit","parts.add","parts.remove","parts.insert","parts.removeNode","parts.move","parts.addSplit","parts.removeSplit","parts.addLane","parts.removeLane","parts.lane","parts.input","parts.output","parts.send","parts.level","parts.name","parts.solo","parts.pan","parts.meters","edit.undo","edit.redo","edit.history","wires.connect","wires.disconnect","wires.mix","wires.zones","scenes.add","scenes.store","scenes.select","scenes.remove","scenes.name","scenes.parameters","controls.add","controls.remove","controls.name","controls.targets","controls.set","subscribe","unsubscribe","transport.get","transport.set","notes.send","pads.get","pads.set","pads.play","pads.pressure"],"limits":{"messageBytes":65536,"depth":32,"batch":64,"parameterChanges":128}})";
+                return R"({"protocolVersion":1,"server":"oscairn","capabilities":["performance.save","performance.load","performance.info","performance.setInfo","library.query","library.favourite","library.rescan","library.save","library.load","state.info","state.save","presets.list","properties.list","properties.get","properties.set","properties.request","sounds.get","sounds.prepare","sounds.select","sounds.discard","assets.register","assets.import","assets.libraries","session.status","params.list","params.get","params.set","params.text","params.gesture","graph.audio-routing","graph.get","graph.add","effects.create","effects.resources","graph.remove","graph.replace","graph.connect","graph.disconnect","graph.map","graph.unmap","graph.commit","parts.add","parts.remove","parts.insert","parts.removeNode","parts.move","parts.addSplit","parts.removeSplit","parts.addLane","parts.removeLane","parts.lane","parts.input","parts.output","parts.send","parts.level","parts.name","parts.solo","parts.pan","parts.meters","edit.undo","edit.redo","edit.history","wires.connect","wires.disconnect","wires.mix","wires.zones","scenes.add","scenes.store","scenes.select","scenes.remove","scenes.name","scenes.parameters","controls.add","controls.remove","controls.name","controls.targets","controls.set","subscribe","unsubscribe","transport.get","transport.set","notes.send","pads.get","pads.set","pads.play","pads.pressure"],"limits":{"messageBytes":65536,"depth":32,"batch":64,"parameterChanges":128}})";
             }
             if( method == "subscribe" || method == "unsubscribe" )
             {
@@ -384,6 +384,49 @@ namespace oscairn
                 try{if(method=="performance.save")c.savePerformance(directory);else c.loadPerformance(directory);}
                 catch(const std::exception& e){throw Failure{-32005,e.what()};}
                 return method=="performance.save"?R"({"saved":true})":R"({"loaded":true})";
+            }
+            // RFC 0021: the open Performance's info and the library of saved ones.
+            if(method=="performance.info" || method=="performance.setInfo") {
+                auto tags=[&](const std::vector<std::string>& v){std::vector<std::string> out;for(const auto& t:v)out.push_back(quote(t));return join(out);};
+                if(method=="performance.setInfo") {
+                    fields(p,{"name","description","tags"});Control::PerformanceInfo info;
+                    info.name=std::string(string(member(p,"name")));info.description=std::string(string(member(p,"description")));
+                    for(auto t:array(member(p,"tags"),32,0))info.tags.push_back(std::string(string(t)));
+                    try{c.setPerformanceInfo(info);}catch(const std::exception& e){throw Failure{-32005,e.what()};}
+                } else fields(p,{});
+                const auto i=c.performanceInfo();
+                return "{\"id\":"+quote(i.id)+",\"name\":"+quote(i.name)+",\"description\":"+quote(i.description)+",\"tags\":"+tags(i.tags)+'}';
+            }
+            if(method=="library.query") {
+                fields(p,{"text","tags","favourites","recent","limit"});Control::LibraryQuery q;
+                if(member(p,"text"))q.text=std::string(string(member(p,"text")));
+                if(member(p,"tags"))for(auto t:array(member(p,"tags"),32,0))q.tags.push_back(std::string(string(t)));
+                if(member(p,"favourites"))q.favourites=boolean(member(p,"favourites"));
+                if(member(p,"recent"))q.recent=boolean(member(p,"recent"));
+                if(member(p,"limit")){q.limit=integer(member(p,"limit"));if(!q.limit || q.limit>1000)invalid("Invalid limit");}
+                Control::LibraryResult r;
+                try{r=c.libraryQuery(q);}catch(const std::exception& e){throw Failure{-32005,e.what()};}
+                std::vector<std::string> items,counts;
+                for(const auto& i:r.items){std::vector<std::string> t;for(const auto& x:i.tags)t.push_back(quote(x));
+                    items.push_back("{\"id\":"+quote(i.id)+",\"kind\":"+quote(i.kind)+",\"name\":"+quote(i.name)+",\"description\":"+quote(i.description)+",\"path\":"+quote(i.path)+",\"tags\":"+join(t)+",\"favourite\":"+(i.favourite?"true":"false")+",\"recent\":"+std::to_string(i.recent)+'}');}
+                for(const auto& [tag,n]:r.tags)counts.push_back("{\"tag\":"+quote(tag)+",\"count\":"+std::to_string(n)+'}');
+                return "{\"items\":"+join(items)+",\"tags\":"+join(counts)+",\"total\":"+std::to_string(r.total)+'}';
+            }
+            if(method=="library.favourite") {
+                fields(p,{"id","favourite"});
+                try{c.libraryFavourite(std::string(string(member(p,"id"))),boolean(member(p,"favourite")));}catch(const std::exception& e){throw Failure{-32005,e.what()};}
+                return R"({"accepted":true})";
+            }
+            if(method=="library.rescan") {
+                fields(p,{});
+                try{return "{\"items\":"+std::to_string(c.libraryRescan())+'}';}catch(const std::exception& e){throw Failure{-32005,e.what()};}
+            }
+            if(method=="library.save" || method=="library.load") {
+                if(method=="library.save")fields(p,{"name"});else fields(p,{"id"});
+                try{
+                    if(method=="library.save")return "{\"id\":"+quote(c.savePerformanceToLibrary(member(p,"name")?std::string(string(member(p,"name"))):std::string()))+'}';
+                    c.loadPerformanceFromLibrary(std::string(string(member(p,"id"))));return R"({"loaded":true})";
+                }catch(const std::exception& e){throw Failure{-32005,e.what()};}
             }
             if(method=="state.info") {
                 fields(p,{"node"});return std::string("{\"supported\":")+(c.supportsState(node(c,member(p,"node")))?"true}":"false}");

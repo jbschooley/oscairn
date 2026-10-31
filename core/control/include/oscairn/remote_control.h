@@ -15,6 +15,13 @@ namespace oscairn
         void service();
         void savePerformance(const std::string& directory) override;
         void loadPerformance(const std::string& directory) override;
+        PerformanceInfo performanceInfo() const override;
+        void setPerformanceInfo(const PerformanceInfo& info) override;
+        LibraryResult libraryQuery(const LibraryQuery& query) override;
+        void libraryFavourite(const std::string& id, bool favourite) override;
+        uint32_t libraryRescan() override;
+        std::string savePerformanceToLibrary(const std::string& name) override;
+        void loadPerformanceFromLibrary(const std::string& id) override;
         bool supportsState(NodeId node) const override;
         void saveState(NodeId node,const std::string& directory) override;
         std::vector<PresetInfo> presets(NodeId node) override;

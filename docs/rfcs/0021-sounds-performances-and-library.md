@@ -1,6 +1,11 @@
 # RFC 0021: Sounds, Performances and the library
 
-Status: proposed, 2026-10-31. Not implemented. Builds on parts, splits, buses, wire ownership,
+Status: in progress, 2026-10-31. Started with Performances: format version 3 with the info
+block (id, name, description, tags; no provenance or control owners yet), and a library of the
+Performances in the user's folder with the index as a cache, the user file (favourites and
+recents), query, rescan and save and load by ID (`library.*`, `performance.info`/`setInfo`,
+see [control-protocol.md](../control-protocol.md#library)). Not yet: Sound documents, user
+tags, the vocabulary, packages, `LibraryModel` and every UI step. Builds on parts, splits, buses, wire ownership,
 scenes and controls ([RFC 0011](0011-performance-ui-and-editors.md)), prepared sounds
 ([RFC 0005](0005-sound-contexts.md), [RFC 0007](0007-effect-contexts.md)), sound assets
 ([RFC 0009](0009-sound-assets-and-dependencies.md)), packages ([RFC 0006](0006-packages-and-portability.md))

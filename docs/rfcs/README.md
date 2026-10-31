@@ -26,5 +26,5 @@ Number them in order (`0002-...md`) and keep the status line up to date
 | [0018](0018-voice-budget-and-stealing.md) | Voice budget and stealing | proposed |
 | [0019](0019-adaptive-ui.md) | One UI across desktop, touch panel and small screens | proposed |
 | [0020](0020-recording.md) | Recording | proposed |
-| [0021](0021-sounds-performances-and-library.md) | Sounds, Performances and the library | proposed |
+| [0021](0021-sounds-performances-and-library.md) | Sounds, Performances and the library | in progress |
 | [0022](0022-apps-and-requests.md) | Apps that open each other | proposed |

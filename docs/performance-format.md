@@ -1,4 +1,4 @@
-# Performance format, version 2
+# Performance format, version 3
 
 A Performance saves the graph, all prepared sounds and their MIDI-channel assignments,
 plugin settings/state, its wires and parts ([RFC 0011](rfcs/0011-performance-ui-and-editors.md)),
@@ -44,7 +44,8 @@ Required top-level fields:
 
 | Field | Meaning |
 | --- | --- |
-| `format`, `version` | Exactly `oscairn.performance` and integer `2` |
+| `format`, `version` | Exactly `oscairn.performance` and integer `3` |
+| `info` | What the library shows ([RFC 0021](rfcs/0021-sounds-performances-and-library.md)): `id` (made at the first save, kept by every later one), `name` (the folder's name when none is set), `description` and up to 32 free `tags` |
 | `transport` | Tempo and `internal` or `midi` clock source |
 | `audioInputs`, `audioOutputs` | Required logical graph ports: ID, channels, flags |
 | `nodes` | Local key, display name, plugin identity/version, path hint, shared engine key, expected audio/note ports |
@@ -155,7 +156,7 @@ has adopted it. The typed methods are `Control::savePerformance` / `loadPerforma
 See [control-protocol.md](control-protocol.md).
 
 `control-parts` saves and reloads parts, wires of both owners, Mix settings and a flagged
-wire, comparing the model and rendered audio, and checks a version 1 document is refused.
+wire, comparing the model and rendered audio, and checks a version 2 document is refused.
 `control-performance` checks sample-identical audio against a separately configured graph,
 prepared native/hosted sounds, shared delay state, sequencer edits, load failures, queued
 selections and concurrent publication with an audio allocation guard.

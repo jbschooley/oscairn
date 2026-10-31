@@ -266,6 +266,38 @@ namespace oscairn
     void RemoteControl::loadPerformance(const std::string& directory) {
         impl_->call("performance.load","{\"directory\":"+quote(directory)+'}',30000);impl_->refresh();
     }
+    namespace {
+        std::vector<std::string> strings(V v){std::vector<std::string> out;for(auto e:array(v))out.push_back(string(e));return out;}
+        std::string quoted(const std::vector<std::string>& values){std::string out="[";for(const auto& v:values){if(out.size()>1)out+=',';out+=quote(v);}return out+']';}
+    }
+    Control::PerformanceInfo RemoteControl::performanceInfo() const {
+        auto d=impl_->call("performance.info");auto r=field(d.get(),"result");
+        return {string(field(r,"id")),string(field(r,"name")),string(field(r,"description")),strings(field(r,"tags"))};
+    }
+    void RemoteControl::setPerformanceInfo(const PerformanceInfo& info) {
+        impl_->call("performance.setInfo","{\"name\":"+quote(info.name)+",\"description\":"+quote(info.description)+",\"tags\":"+quoted(info.tags)+'}');
+    }
+    Control::LibraryResult RemoteControl::libraryQuery(const LibraryQuery& q) {
+        auto d=impl_->call("library.query","{\"text\":"+quote(q.text)+",\"tags\":"+quoted(q.tags)+",\"favourites\":"+(q.favourites?"true":"false")+",\"recent\":"+(q.recent?"true":"false")+",\"limit\":"+std::to_string(q.limit)+'}');
+        auto r=field(d.get(),"result");LibraryResult result;
+        for(auto i:array(field(r,"items")))result.items.push_back({string(field(i,"id")),string(field(i,"kind")),string(field(i,"name")),string(field(i,"description")),string(field(i,"path")),strings(field(i,"tags")),boolean(field(i,"favourite")),static_cast<uint32_t>(integer(field(i,"recent")))});
+        for(auto t:array(field(r,"tags")))result.tags.emplace_back(string(field(t,"tag")),static_cast<uint32_t>(integer(field(t,"count"))));
+        result.total=static_cast<uint32_t>(integer(field(r,"total")));
+        return result;
+    }
+    void RemoteControl::libraryFavourite(const std::string& id,bool favourite) {
+        impl_->call("library.favourite","{\"id\":"+quote(id)+",\"favourite\":"+(favourite?"true":"false")+'}');
+    }
+    // A rescan, save or load reads or writes every Performance file, so allow time.
+    uint32_t RemoteControl::libraryRescan() {
+        auto d=impl_->call("library.rescan","{}",30000);return static_cast<uint32_t>(integer(field(field(d.get(),"result"),"items")));
+    }
+    std::string RemoteControl::savePerformanceToLibrary(const std::string& name) {
+        auto d=impl_->call("library.save","{\"name\":"+quote(name)+'}',30000);return string(field(field(d.get(),"result"),"id"));
+    }
+    void RemoteControl::loadPerformanceFromLibrary(const std::string& id) {
+        impl_->call("library.load","{\"id\":"+quote(id)+'}',30000);impl_->refresh();
+    }
     bool RemoteControl::supportsState(NodeId node) const {
         auto d=impl_->call("state.info","{\"node\":"+std::to_string(node)+'}');return boolean(field(field(d.get(),"result"),"supported"));
     }

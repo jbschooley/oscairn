@@ -4,6 +4,7 @@
 #include "oscairn/control.h"
 #include "oscairn/assets.h"
 #include "oscairn/parts.h"
+#include "oscairn/library.h"
 
 #include <array>
 #include <chrono>
@@ -35,6 +36,13 @@ namespace oscairn
         // staging area available for correction. Empty names address nodes by ID only.
         void savePerformance(const std::string& directory) override;
         void loadPerformance(const std::string& directory) override;
+        PerformanceInfo performanceInfo() const override {return info_;}
+        void setPerformanceInfo(const PerformanceInfo& info) override;
+        LibraryResult libraryQuery(const LibraryQuery& query) override {return library().query(query);}
+        void libraryFavourite(const std::string& id,bool favourite) override {library().setFavourite(id,favourite);}
+        uint32_t libraryRescan() override {return library().rescan();}
+        std::string savePerformanceToLibrary(const std::string& name) override;
+        void loadPerformanceFromLibrary(const std::string& id) override;
         bool supportsState(NodeId node) const override {return graph_.host(node).supportsState();}
         void saveState(NodeId node,const std::string& directory) override;
         std::vector<PresetInfo> presets(NodeId node) override {return graph_.host(node).presets();}
@@ -256,6 +264,9 @@ namespace oscairn
         std::vector<Macro> macros_;
         uint32_t nextMacro_ = 1;
         bool staged_ = false;
+        PerformanceInfo info_; // the open Performance's; its ID is made at its first save
+        std::unique_ptr<Library> library_; // made at first use, so a session without the library never reads the user's folders
+        Library& library() {if(!library_)library_=std::make_unique<Library>();return *library_;}
         uint64_t revision_ = 0, sequence_ = 0;
         using Address = std::pair<NodeId,uint32_t>;
         struct Command { ChangeKind kind; double value; };

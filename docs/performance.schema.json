@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Oscairn Performance version 2",
+  "title": "Oscairn Performance version 3",
   "description": "performance.json inside a Performance folder. See performance-format.md for binary state, asset limits, plugin validation and transactional loading. Runtime node/context IDs and live voices are not persisted. Wires and parts (RFC 0011) define the graph's audio routes and note connections.",
   "type": "object",
   "properties": {
@@ -8,7 +8,42 @@
       "const": "oscairn.performance"
     },
     "version": {
-      "const": 2
+      "const": 3
+    },
+    "info": {
+      "type": "object",
+      "description": "What the library shows (RFC 0021): an ID made at the first save and kept by every later one, a name, a description and free tags",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "name": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "tags": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          }
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "description",
+        "tags"
+      ],
+      "additionalProperties": false
     },
     "libraries": {
       "type": "array",
@@ -157,6 +192,7 @@
   "required": [
     "format",
     "version",
+    "info",
     "transport",
     "audioInputs",
     "audioOutputs",
