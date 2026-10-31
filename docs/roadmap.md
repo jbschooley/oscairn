@@ -134,6 +134,10 @@ To do:
   ([RFC 0004](rfcs/0004-hardware-services.md), proposed); the control API remains outside
   this performance-event path;
 - the KICK's real panel as a control surface.
+- undo and redo for every graph, part, wire and Mix edit, which
+  [RFC 0011](rfcs/0011-performance-ui-and-editors.md) promises for its views;
+- MIDI input curves and filters with the part zones (RFC 0011 step 2): velocity curves,
+  transpose, and key and velocity ranges, as Gig Performer's MIDI In blocks offer.
 - shared controller mappings with knob/slider pickup, direct position access,
   relative-encoder tracking and explicit feedback/ownership rules; plugins may opt
   into physical observations, accepted changes or both
@@ -325,5 +329,14 @@ a DAW plugin; and:
   separate Oscairn app to be running. Test old DAW-session state, runtime versions and
   missing assets; another DAW does not automatically understand our package lock.
 - **Plugin looks:** pages and themes described in data, then sandboxed custom views.
+- **From Gig Performer's feature set** (compared October 31, 2026):
+  - **Backing tracks:** an audio file player that follows the transport and setlist, as
+    an app or plugin.
+  - **Recorder:** record any output or bus, as an app or plugin.
+  - **OSC** control in and out, alongside MIDI and the control protocol.
+  - **Smooth transitions:** parameter changes on a scene or variation change glide over a
+    set time instead of jumping.
+  - **Scripting:** user scripts that react to events and drive the graph and controls,
+    sandboxed like plugins; language and API to be decided in an RFC.
 - **Developer kit:** the MIT SDK and templates, the builder image, the `oscairn` tool,
   the validator. (Plugin isolation in sandboxed workers moved up to Phase 3, item 6.)
