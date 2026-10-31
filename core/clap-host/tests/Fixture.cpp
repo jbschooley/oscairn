@@ -214,6 +214,8 @@ struct Plugin {
             },
             [](const clap_plugin_t* p, const clap_istream_t* in) {
                 auto& s = get(p); s.main(); if (s.active) ++threadErrors;
+                // One slow load, for hosts' reply timeouts: when the file named here exists, it is removed and the load takes 3 s.
+                if (const char* once = std::getenv("KICK_FIXTURE_SLOW_LOAD_ONCE")) if (std::remove(once) == 0) std::this_thread::sleep_for(std::chrono::seconds(3));
                 double value = 0;
                 if (in->read(in, &value, sizeof(value)) != sizeof(value) || !std::isfinite(value)) return false;
                 s.gain = value; return true;

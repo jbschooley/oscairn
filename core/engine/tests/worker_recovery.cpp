@@ -16,6 +16,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
 #include <string>
 #include <thread>
 #include <vector>
@@ -119,6 +120,36 @@ namespace
         while(list && std::fgets(line, sizeof line, list)) ++n;
         if(list) pclose(list);
         return n;
+    }
+
+    // A control request that outlasts its reply timeout fails the worker, which is restarted, so
+    // the requests after it get their own replies (the 2026-10-31 audit's first finding: before,
+    // the late reply was read as the next request's). On a bare worker host: an instrument in a
+    // graph loads state into a new instance, which a failure discards.
+    void lostReply(const char* plugin, const std::filesystem::path& directory)
+    {
+        const auto state = directory / "slow-state", marker = directory / "slow-once";
+        { auto raw = oscairn::loadPlugin(plugin, "org.kick.test.midi", rate, frames); raw->setParameter(gain, .6); raw->service(); raw->saveState(state.string()); }
+        setenv("OSCAIRN_WORKER_REPLY_SECONDS", "1", 1);
+        setenv("KICK_FIXTURE_SLOW_LOAD_ONCE", marker.c_str(), 1);
+        {
+            auto host = oscairn::loadPlugin(plugin, "org.kick.test.midi", rate, frames);
+            host->setParameter(gain, .25); host->service();
+            std::ofstream(marker) << "once";
+            bool timedOut = false;
+            try { host->loadState(state.string()); } catch(const std::runtime_error& e) { timedOut = std::string(e.what()).find("stopped answering") != std::string::npos; }
+            check(timedOut, "a load that outlasts the reply timeout fails the request");
+            for(int i = 0; i < 500 && host->statistics().restarts == 0; ++i) std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            check(host->statistics().restarts == 1, "the worker is restarted: " + host->failure());
+            // The slow worker is gone, so no late reply is waiting: each request gets its own.
+            std::this_thread::sleep_for(std::chrono::seconds(3));
+            check(host->setParameter(gain, .3), "a parameter set after the restart");
+            host->service();
+            check(std::abs(host->parameterValue(gain) - .3) < 1e-9, "and read back: " + std::to_string(host->parameterValue(gain)));
+            host->loadState(state.string()); host->service();
+            check(std::abs(host->parameterValue(gain) - .6) < 1e-9 && host->failure().empty(), "a state load answered as its own: " + std::to_string(host->parameterValue(gain)));
+        }
+        unsetenv("OSCAIRN_WORKER_REPLY_SECONDS"); unsetenv("KICK_FIXTURE_SLOW_LOAD_ONCE");
     }
 
     // Per-plugin overrides of where a plugin runs.
@@ -249,6 +280,7 @@ int main(int argc, char** argv)
     try
     {
         recovers(argv[2], directory);
+        lostReply(argv[2], directory);
         givesUp(argv[3]);
         natives(argv[4], argv[5], argv[6], directory / "natives");
         placement(argv[4]);

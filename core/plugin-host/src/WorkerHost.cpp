@@ -137,17 +137,32 @@ namespace oscairn
                 close(pair[1]);
                 if(spawned != 0) { close(socket); socket = -1; pid = 0; throw std::runtime_error("Cannot start plugin worker " + program); }
                 reaped = false;
-                timeval t{30, 0}; setsockopt(socket, SOL_SOCKET, SO_RCVTIMEO, &t, sizeof t);
+                // How long a control request may take (a big preset load). OSCAIRN_WORKER_REPLY_SECONDS shortens it for tests.
+                long seconds = 30;
+                if(const char* s = std::getenv("OSCAIRN_WORKER_REPLY_SECONDS")) seconds = std::max(1L, std::atol(s));
+                timeval t{seconds, 0}; setsockopt(socket, SOL_SOCKET, SO_RCVTIMEO, &t, sizeof t);
                 return exchange(Writer().u8(uint8_t(Op::Init)).str(path).str(id).f64(rate).u32(frames).data);
+            }
+
+            // A request or reply lost on the socket (a timeout, a broken connection): the replies no
+            // longer match the requests, so the worker is failed and the supervisor restarts it.
+            // Under control; the supervisor reaps the process.
+            [[noreturn]] void lost(const std::exception& e)
+            {
+                { std::lock_guard lock(failureMutex); reason = std::string("Plugin worker stopped answering: ") + e.what(); failureText = reason; }
+                failed.store(true);
+                if(pid > 0) kill(pid, SIGKILL);
+                throw std::runtime_error(std::string("Plugin worker stopped answering: ") + e.what());
             }
 
             // One request and its reply, answering the worker's asset requests in between. Under control.
             Reader exchange(const std::string& message)
             {
-                send(socket, message);
+                try { send(socket, message); } catch(const std::exception& e) { lost(e); }
                 for(;;)
                 {
-                    auto reply = receive(socket);
+                    std::string reply;
+                    try { reply = receive(socket); } catch(const std::exception& e) { lost(e); }
                     if(reply.empty() || reply[0] != ResolveAsset) return expect(std::move(reply));
                     Reader r; r.data = std::move(reply); r.at = 1;
                     const auto library = r.str(), file = r.str(); auto sha256 = r.str();
@@ -161,7 +176,7 @@ namespace oscairn
                         answer = std::string(1, Done) + Writer().str(local).str(sha256).data;
                     }
                     catch(const std::exception& e) { answer = std::string(1, Failed) + e.what(); }
-                    send(socket, answer);
+                    try { send(socket, answer); } catch(const std::exception& e) { lost(e); }
                 }
             }
             static Reader expect(std::string reply)
@@ -175,8 +190,7 @@ namespace oscairn
             std::string failure() const { std::lock_guard lock(failureMutex); return failureText; }
             void fail(const std::string& why)
             {
-                reason = why;
-                { std::lock_guard lock(failureMutex); failureText = why; }
+                { std::lock_guard lock(failureMutex); reason = why; failureText = why; }
                 failed.store(true);
                 if(!reaped) { kill(pid, SIGKILL); int status = 0; waitpid(pid, &status, 0); reaped = true; }
             }
@@ -718,6 +732,8 @@ namespace oscairn
             for(auto* n : list) n->capture();
             try
             {
+                // A worker failed by a lost reply was killed but not yet reaped.
+                if(pid > 0 && !reaped) { kill(pid, SIGKILL); int status = 0; waitpid(pid, &status, 0); reaped = true; }
                 if(socket >= 0) { close(socket); socket = -1; }
                 Reader r = start();
                 const auto rootNode = std::find_if(list.begin(), list.end(), [](auto* n) { return n->isRoot(); });
