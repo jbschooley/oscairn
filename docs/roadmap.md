@@ -4,7 +4,7 @@ How Oscairn gets from nothing to the [architecture](architecture.md): the smalle
 that each produce something that runs. Nobody has the target hardware yet, so everything
 early runs on a desktop.
 
-Status as of October 29, 2026. Implementation status below includes the current branch;
+Status as of October 31, 2026. Implementation status below includes the current branch;
 it does not mean every completed item has merged to `main`.
 
 Initial development has [no backward-compatibility obligation](developer-guide.md#initial-development-compatibility-policy)
@@ -50,7 +50,7 @@ Not done: the hardware-services interface, file formats and the library index, t
 complete control API, CPU and deadline measurements. Its in-process foundation is in
 place (Phase 3 below).
 
-## Phase 3: first sequencer and first workflow (in progress)
+## Phase 3: first sequencer and first workflow (milestone met; one check open)
 
 Goal: something new running "on the device" before anyone has the device.
 
@@ -121,43 +121,16 @@ Done:
   theme-folder installation and per-device selection shared across UI processes.
   Theme changes do not touch audio or routing.
 
-To do:
-
-- swing, additional tracks/patterns and more lanes in the sequencer;
-- automatic Sound/effect-chain preparation and retirement, asset-bearing native patches and Setlist/library persistence;
-- carry stable format/plugin identities and state provenance into persistent library data,
-  following [RFC 0006](rfcs/0006-packages-and-portability.md). Installation paths locate
-  binaries but must not become portable package identities. Custom plugin pages and
-  broader graph editing follow the current generic editor.
-- define hardware capabilities, timestamped input, scheduled output and engine backend
-  selection before hardware MIDI/CV implementation
-  ([RFC 0004](rfcs/0004-hardware-services.md), proposed); the control API remains outside
-  this performance-event path;
-- the KICK's real panel as a control surface. Pad mapping is in place: a per-Performance
-  pad map (note, channel, velocity, pressure per pad, banks A–H, chromatic, drum and in-key
-  fills) with the desktop's pad editor ([RFC 0011](rfcs/0011-performance-ui-and-editors.md#pads)).
-- a voice budget shared by every part, Kronos-style: when a Performance asks for more than the
-  processor can play, the least audible notes are faded and stolen across parts instead of
-  missing the deadline, with per-part note limits, reserves and priority; later, plugins
-  that opt in steal their own voices ([RFC 0018](rfcs/0018-voice-budget-and-stealing.md));
-- undo and redo: implemented for parts, wires, splits, Mix settings, scenes, controls,
-  pads, nodes and parameter values ([status](rfcs/0011-performance-ui-and-editors.md#undo-status));
-  preset and state loads, and keyboard shortcuts, remain;
-- MIDI input curves and filters: implemented as note zones (key, velocity and channel ranges,
-  transpose, velocity curve or fixed velocity) on part inputs and note wires
-  ([RFC 0011](rfcs/0011-performance-ui-and-editors.md#step-1-status)); editors for them come
-  with the Parts views. Parts also choose which MIDI inputs play them, by kind, port or
-  name, whatever channel they send on
-  ([RFC 0012 selectors](rfcs/0012-sync-external-midi-and-multi-device.md#choosing-devices-selectors)).
-- shared controller mappings with knob/slider pickup, direct position access,
-  relative-encoder tracking and explicit feedback/ownership rules; plugins may opt
-  into physical observations, accepted changes or both
-  ([planned architecture](architecture.md#physical-controls-takeover-and-direct-position-access-planned)).
-
 Done when: pressing pads and transport buttons programs and plays a pattern through the
 new core, from a UI that talks to it only through the control API.
 
-### Next build and test order
+**Milestone met** (October 31, 2026): the two-track sequencer, the Groovebox screen and the
+KICK layout drive a separate engine process only through the control API; Jacob checked
+notes, pressure and PLAY/STOP on October 28 and listened to the sequencer on October 30
+([results](listening-tests.md)). One check is open: holding a pad while switching tracks.
+The work still open moved to [Phase 3b](#phase-3b-performance-instrument-in-progress).
+
+### Finished in the build order
 
 1. **Native effect contexts and per-sound audio — implemented foundation:** Delay contexts,
    Basic Synth output buses and typed/JSON/remote controls now pass independent-reference,
@@ -173,7 +146,52 @@ new core, from a UI that talks to it only through the control API.
    bar-boundary launches, per-track sound selection and full parameter persistence.
    Automated timing/roundtrip tests pass; Jacob listened on October 30, 2026
    ([results](listening-tests.md)); holding a pad while switching tracks remains untested.
-4. **Native sample patches — first slice implemented, multisample pending:**
+4. **Sound assets as dependencies — steps 1–2 implemented:** asset store, registered
+   folders, the `oscairn.assets` contract and Performance preflight
+   ([RFC 0009](rfcs/0009-sound-assets-and-dependencies.md#implementation-status)).
+5. **CI failing since worker step 2 — fixed:** GitHub Actions failed on every push since "Run
+   plugins in worker processes" (October 30, 2026); all three jobs pass again from run
+   41152651659 (October 31). The causes:
+   - `worker-failures` on the hosted VMs, which cannot keep real time (as in Docker): it now
+     runs with `--no-timing` when `CI` is set, as under sanitizers, and then compares the
+     healthy instrument's sound only if it met every deadline. Timing stays for local and
+     device runs.
+   - An aborting worker could be reported as hung, not crashed, when its exit outlasted the
+     250 ms hang limit (ThreadSanitizer). The worker's signal handler now marks its shared
+     blocks, and the supervisor names the crash.
+   - `worker-recovery` found no workers on Linux, which shortens process names to 15
+     characters; it now matches the command line.
+   - `worker-host` compared output events byte for byte, alignment padding included (a note's
+     between key and velocity), which differs between processes on x86_64 Linux; it now
+     compares them field by field. Reproduced and confirmed in an x86_64 Ubuntu 24.04
+     container.
+
+## Phase 3b: performance instrument (in progress)
+
+Goal: the desktop app as a complete performance instrument before the hardware: parts that
+layer, split and share effects, scenes and controls, editing on the device's own screen
+without a plugin window or the Routing view, sound engines worth playing, and a plugin that
+fails silencing only itself.
+
+Done when (proposed): a Performance with layered and split parts, shared effects, scenes and
+a control tree is built, played, edited and undone at 1024 × 600, with every plugin edited
+through Oscairn's own editors, while a crashing plugin in it is restarted without a dropout
+in the others.
+
+### Next build and test order
+
+1. **Performance UI — steps 1–3 and undo implemented:** [RFC 0011](rfcs/0011-performance-ui-and-editors.md#step-1-status)
+   wire ownership, parts, implicit Mixes and port-level routes with channel rules, saved in
+   Performance format version 2, and in the control protocol; step 2's zones, shared buses
+   and the desktop's Parts and Part views, and scenes; step 3's splits (lanes with zones and
+   a Mix, joining after) in the model, protocol and Part page
+   ([status](rfcs/0011-performance-ui-and-editors.md#step-3-status)), including left/right,
+   mid/side and band splits through the bundled Split and Join plugins, and the Mixer
+   with part solo and meters, and undo for every edit
+   ([status](rfcs/0011-performance-ui-and-editors.md#undo-status); preset and state loads,
+   and keyboard shortcuts, remain). Next: step 4's Routing view, then step 5's editors and
+   plugin windows, and step 6's physical controls.
+2. **Native sample patches — first slice implemented, multisample pending:**
    [sample players/formats and the first slice](sample-players-and-formats.md), including
    a reproducible liquidsfz cache-sharing probe and [ESP observations](yamaha-esp-samples-research.md).
    The Oscairn Sampler plays one-region SFZ patches over preloaded WAV with shared PCM,
@@ -193,10 +211,7 @@ new core, from a UI that talks to it only through the control API.
    MSFA ([RFC 0014](rfcs/0014-fm-engine.md)), an analog-modelling engine
    ([RFC 0015](rfcs/0015-analog-modelling-engine.md)) and effects covering every MODX M
    effect type and slot ([RFC 0016](rfcs/0016-effects-suite.md)), all proposed.
-5. **Sound assets as dependencies — steps 1–2 implemented:** asset store, registered
-   folders, the `oscairn.assets` contract and Performance preflight
-   ([RFC 0009](rfcs/0009-sound-assets-and-dependencies.md#implementation-status)).
-6. **Plugin worker isolation — steps 1–5 implemented:** run plugins in supervised worker processes so a
+3. **Plugin worker isolation — steps 1–5 implemented:** run plugins in supervised worker processes so a
    crash, hang or overrun silences only its own node and the plugin recovers
    ([RFC 0010](rfcs/0010-plugin-worker-isolation.md)). Moved here from Phase 5 on October 30,
    2026, ahead of Phase 4 hardware work and further third-party plugin features. Hand-off
@@ -212,41 +227,47 @@ new core, from a UI that talks to it only through the control API.
    ([status](rfcs/0010-plugin-worker-isolation.md#step-5-status)). Steps 6 (memory and CPU
    limits, sandboxing) and 7 (LV2 in workers) remain, as do native Linux and target
    measurements and the choice to use workers by default in the app.
-7. **Sequencer evaluation — written, decisions pending:** [the comparison](sequencer-evaluation.md)
+4. **Sequencer evaluation — written, decisions pending:** [the comparison](sequencer-evaluation.md)
    of the KICK firmware's sequencer (with chillbeast's work), zynseq and hosted plugins
    recommends the KICK model and workflow with sample-accurate playback rewritten in an
    Oscairn plugin. Swing and further sequencer workflow follow from that choice. Decided
    October 30, 2026: build more than one sequencer type (KICK-style linear sequences and
    launcher-style patterns and scenes) and settle on one or combine them later.
    Keep the shared theme and generated-editor contract current as new screens are added.
-8. **Performance UI model — step 1 implemented:** [RFC 0011](rfcs/0011-performance-ui-and-editors.md#step-1-status)
-   wire ownership, parts, implicit Mixes and port-level routes with channel rules, saved in
-   Performance format version 2, and in the control protocol; step 2's zones, shared buses
-   and the desktop's Parts and Part views, and scenes; step 3's splits (lanes with zones and
-   a Mix, joining after) in the model, protocol and Part page
-   ([status](rfcs/0011-performance-ui-and-editors.md#step-3-status)), including left/right,
-   mid/side and band splits through the bundled Split and Join plugins, and the Mixer
-   with part solo and meters, and undo for every edit. Next: step 4's Routing view.
-9. **Modular instrument — playable:** chillbeast's engine is in
+5. **Modular instrument — playable:** chillbeast's engine is in
    [plugins/modular](../plugins/modular/README.md) with its history, wrapped as a CLAP
    instrument with factory presets and bundled in the desktop app. The patch editor, the
    upstream sample-grid fix and native sound contexts remain.
-10. **CI failing since worker step 2 — fixed:** GitHub Actions failed on every push since "Run
-   plugins in worker processes" (October 30, 2026); all three jobs pass again from run
-   41152651659 (October 31). The causes:
-   - `worker-failures` on the hosted VMs, which cannot keep real time (as in Docker): it now
-     runs with `--no-timing` when `CI` is set, as under sanitizers, and then compares the
-     healthy instrument's sound only if it met every deadline. Timing stays for local and
-     device runs.
-   - An aborting worker could be reported as hung, not crashed, when its exit outlasted the
-     250 ms hang limit (ThreadSanitizer). The worker's signal handler now marks its shared
-     blocks, and the supervisor names the crash.
-   - `worker-recovery` found no workers on Linux, which shortens process names to 15
-     characters; it now matches the command line.
-   - `worker-host` compared output events byte for byte, alignment padding included (a note's
-     between key and velocity), which differs between processes on x86_64 Linux; it now
-     compares them field by field. Reproduced and confirmed in an x86_64 Ubuntu 24.04
-     container.
+6. **Voice budget — planned:** stealing the least audible notes across parts, fading them
+   first, with per-part note limits, reserves and priority; later, plugins that opt in steal
+   their own voices ([RFC 0018](rfcs/0018-voice-budget-and-stealing.md)). Step 1 (fade and
+   choke, and the Basic Synth and Sampler handling both) comes first.
+
+Also open:
+
+- swing, additional tracks/patterns and more lanes in the sequencer;
+- automatic Sound/effect-chain preparation and retirement, asset-bearing native patches and Setlist/library persistence;
+- carry stable format/plugin identities and state provenance into persistent library data,
+  following [RFC 0006](rfcs/0006-packages-and-portability.md). Installation paths locate
+  binaries but must not become portable package identities. Custom plugin pages and
+  broader graph editing follow the current generic editor.
+- define hardware capabilities, timestamped input, scheduled output and engine backend
+  selection before hardware MIDI/CV implementation
+  ([RFC 0004](rfcs/0004-hardware-services.md), proposed); the control API remains outside
+  this performance-event path;
+- the KICK's real panel as a control surface. Pad mapping is in place: a per-Performance
+  pad map (note, channel, velocity, pressure per pad, banks A–H, chromatic, drum and in-key
+  fills) with the desktop's pad editor ([RFC 0011](rfcs/0011-performance-ui-and-editors.md#pads)).
+- MIDI input curves and filters: implemented as note zones (key, velocity and channel ranges,
+  transpose, velocity curve or fixed velocity) on part inputs and note wires
+  ([RFC 0011](rfcs/0011-performance-ui-and-editors.md#step-1-status)). The Part page edits
+  key ranges and transpose; velocity and curve editors remain. Parts also choose which MIDI inputs play them, by kind, port or
+  name, whatever channel they send on
+  ([RFC 0012 selectors](rfcs/0012-sync-external-midi-and-multi-device.md#choosing-devices-selectors)).
+- shared controller mappings with knob/slider pickup, direct position access,
+  relative-encoder tracking and explicit feedback/ownership rules; plugins may opt
+  into physical observations, accepted changes or both
+  ([planned architecture](architecture.md#physical-controls-takeover-and-direct-position-access-planned)).
 
 Plugins and apps (sequencers, instruments, the UI) must stay separate components, each in
 its own folder with its own build target and depending only on Oscairn's public headers, so

@@ -1,6 +1,6 @@
 # Sequencer evaluation
 
-Research note, 2026-10-30. Roadmap Phase 3, item 7: before extending Oscairn's own step
+Research note, 2026-10-30. Roadmap [Phase 3b, item 4](roadmap.md#next-build-and-test-order) (Phase 3, item 7, when written): before extending Oscairn's own step
 sequencer, compare reusing the KICK firmware's sequencer (Behringer's release plus chillbeast's
 work), porting Zynthian's zynseq, and hosting an existing sequencer plugin. **Nothing is
 decided or imported yet.** The current [`plugins/step-sequencer`](../plugins/step-sequencer/step_sequencer.cpp)
