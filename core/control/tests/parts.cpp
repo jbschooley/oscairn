@@ -1,0 +1,218 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//
+// RFC 0011 step 1: parts and wire ownership, implicit Mixes, port-level routes with channel
+// rules, plugin replacement and Performance persistence.
+//   oscairn-parts-test FIXTURE.clap AUDIO_FIXTURE.clap DELAY.clap
+#include "oscairn/session.h"
+#include "AllocationGuard.h"
+#include "../../plugin-host/src/StateFiles.h"
+#include <algorithm>
+#include <array>
+#include <cmath>
+#include <cstdio>
+#include <string>
+
+using namespace oscairn;
+namespace fs = std::filesystem;
+
+namespace
+{
+    int failures = 0;
+    void check(bool ok, const std::string& what) { if(!ok) { std::fprintf(stderr, "FAIL: %s\n", what.c_str()); ++failures; } }
+
+    constexpr uint32_t frames = 64;
+    const AudioLayout stereoIn{{{0, "In", 2, 0}}, {{0, "Main", 2, 0}}};
+
+    struct Audio
+    {
+        std::array<float, frames> inL{}, inR{}, l{}, r{};
+        const float* in[2]{inL.data(), inR.data()};
+        float* out[2]{l.data(), r.data()};
+        void run(Session& s, uint32_t inputs = 0)
+        {
+            s.service(); forbidAllocation = true;
+            const bool ok = s.process(inputs ? in : nullptr, inputs, out, 2, frames);
+            forbidAllocation = false; check(ok, "render");
+        }
+    };
+    std::vector<uint32_t> ids(const Session& s, WireOwner owner)
+    {
+        std::vector<uint32_t> r;
+        for(const auto& w : s.wires()) if(w.owner == owner) r.push_back(w.id);
+        return r;
+    }
+    const Wire& wire(const Session& s, NodeId from, NodeId to, WireKind kind = WireKind::Audio)
+    {
+        for(const auto& w : s.wires()) if(w.from == from && w.to == to && w.kind == kind) return w;
+        throw std::runtime_error("missing wire");
+    }
+    bool near(float a, double b) { return std::abs(a - b) < 1e-6; }
+
+    // Part edits change only part wires; a part's wires follow its chain.
+    void ownership(const char* fixture, const char* delay)
+    {
+        Session s(48000, frames);
+        const auto synth = s.add("synth", fixture, "org.kick.test.synth"), fx = s.add("fx", delay), send = s.add("send", delay);
+        const auto keys = s.addPart("Keys");
+        s.insertIntoPart(keys, 0, synth);
+        check(wire(s, graphInput, synth, WireKind::Notes).owner == WireOwner::Part && wire(s, synth, graphOutput).owner == WireOwner::Part, "a new part listens to the keyboard and plays to Main");
+        s.connectAudio(synth, send); s.connectAudio(send, graphOutput); // a send drawn in Routing
+        const auto user = ids(s, WireOwner::User);
+        check(user.size() == 2, "two user wires");
+        s.insertIntoPart(keys, 1, fx);
+        check(wire(s, synth, fx).owner == WireOwner::Part && wire(s, fx, graphOutput).owner == WireOwner::Part, "inserting replaces synth→Main with synth→fx→Main");
+        check(std::none_of(s.wires().begin(), s.wires().end(), [&](const Wire& w) { return w.from == synth && w.to == graphOutput; }), "the old part wire is gone");
+        check(ids(s, WireOwner::User) == user, "inserting keeps the user wires");
+        s.movePartNode(keys, 1, 0); check(ids(s, WireOwner::User) == user, "reordering keeps the user wires");
+        s.removeFromPart(keys, synth); check(ids(s, WireOwner::User) == user, "removing from the chain keeps the user wires");
+        s.insertIntoPart(keys, 0, synth); s.movePartNode(keys, 1, 0); s.movePartNode(keys, 0, 1);
+        s.removePart(keys);
+        check(ids(s, WireOwner::User) == user && ids(s, WireOwner::Part).empty(), "removing the part keeps the user wires and its nodes");
+        check(s.hasNode(synth) && s.hasNode(fx), "the part's nodes stay");
+        bool refused = false; try { s.insertIntoPart(keys, 0, synth); } catch(const std::invalid_argument&) { refused = true; }
+        check(refused, "unknown part refused");
+        s.commit();
+    }
+
+    // Port-level routes: mono to stereo copied with pan, stereo to mono summed at -3 dB, explicit
+    // pairs, and anything else refused without a choice. Each input's implicit Mix: level, pan,
+    // mute and solo per source.
+    void channels(const char* audio)
+    {
+        Session s(48000, frames, {}, stereoIn);
+        const auto a = s.add("a", audio, "org.oscairn.test.audio-ports");
+        // The input's stereo into a's mono sidechain (port 20), a's mono aux (port 40) to Main.
+        Wire side; side.from = graphInput; side.fromPort = 0; side.to = a; side.toPort = 20;
+        Wire aux; aux.from = a; aux.fromPort = 40; aux.to = graphOutput; aux.toPort = 0;
+        s.connectPorts(side); const auto auxId = s.connectPorts(aux); s.commit();
+        Audio x; x.inL.fill(.2f); x.inR.fill(.6f);
+        x.run(s, 2);
+        const double summed = (.2 + .6) * M_SQRT1_2;
+        check(near(x.l[0], summed) && near(x.r[0], summed), "stereo to mono sums at -3 dB, mono to stereo copies: " + std::to_string(x.l[0]));
+        s.setMix(auxId, 1, -1, false, false); s.commit(); x.run(s, 2);
+        check(near(x.l[0], summed) && near(x.r[0], 0), "pan left on a mono-to-stereo wire");
+        // Explicit pairs: only the input's right channel into the sidechain.
+        Wire right = side; right.channels = {{1, 0}};
+        s.disconnectAudio(graphInput, a); s.connectPorts(right); s.setMix(auxId, 1, 0, false, false); s.commit(); x.run(s, 2);
+        check(near(x.l[0], .6) && near(x.r[0], .6), "an explicit channel pair");
+        // A second source into Main makes a Mix: the input's stereo straight through.
+        Wire direct; direct.from = graphInput; direct.fromPort = 0; direct.to = graphOutput; direct.toPort = 0;
+        const auto directId = s.connectPorts(direct); s.commit(); x.run(s, 2);
+        check(near(x.l[0], .8) && near(x.r[0], 1.2), "two sources sum in the Mix");
+        s.setMix(directId, .5, 0, false, false); s.commit(); x.run(s, 2);
+        check(near(x.l[0], .7) && near(x.r[0], .9), "a source's level");
+        s.setMix(directId, .5, 0, false, true); s.commit(); x.run(s, 2);
+        check(near(x.l[0], .1) && near(x.r[0], .3), "solo silences the other sources");
+        s.setMix(directId, .5, 0, true, true); s.commit(); x.run(s, 2);
+        check(near(x.l[0], 0) && near(x.r[0], 0), "a muted source stays silent when soloed, and its solo still silences the others");
+        // Anything else needs a choice.
+        Session quad(48000, frames, {}, {{{0, "In", 2, 0}}, {{0, "Quad", 4, 0}}});
+        Wire four; four.from = graphInput; four.to = graphOutput;
+        bool refused = false; try { quad.connectPorts(four); } catch(const std::invalid_argument&) { refused = true; }
+        check(refused, "stereo to four channels needs an explicit choice");
+        four.channels = {{0, 0}, {1, 1}, {0, 2}, {1, 3}}; quad.connectPorts(four); quad.commit();
+        check(quad.graphState().topology.audioRoutes.size() >= 1, "with pairs it connects");
+    }
+
+    // Replacing a plugin keeps or flags every wire; removing a node can reconnect its user wires.
+    void replacement(const char* audio, const char* delay)
+    {
+        Session s(48000, frames, {}, stereoIn);
+        const auto a = s.add("a", audio, "org.oscairn.test.audio-ports");
+        const auto guitar = s.addPart("Guitar", {PartInput::Kind::Audio, 0});
+        s.insertIntoPart(guitar, 0, a);
+        Wire side; side.from = graphInput; side.fromPort = 0; side.to = a; side.toPort = 20; s.connectPorts(side);
+        s.commit();
+        s.replace(a, delay, "org.oscairn.delay");
+        check(s.wires().size() == 3, "replacement keeps every wire");
+        size_t connected = 0, flagged = 0;
+        for(const auto& w : s.wires()) (w.connected ? connected : flagged)++;
+        check(connected == 2 && flagged == 1, "the part wires move to the delay's main ports; the sidechain wire stays, unconnected");
+        for(const auto& w : s.wires()) if(!w.connected) check(w.owner == WireOwner::User && w.to == a, "the flagged wire is the sidechain one");
+        Audio x; x.inL.fill(.5f); x.inR.fill(.5f);
+        for(int i = 0; i < 4; ++i) x.run(s, 2);
+        check(x.l[frames - 1] != 0, "the delay plays in the part");
+
+        // Removing a node between two user wires, reconnecting them.
+        Session r(48000, frames, {}, stereoIn);
+        const auto b = r.add("b", delay);
+        r.connectAudio(graphInput, b); r.connectAudio(b, graphOutput); r.commit();
+        r.remove(b, UserWires::Reconnect); r.commit();
+        check(r.wires().size() == 1 && r.wires()[0].from == graphInput && r.wires()[0].to == graphOutput && r.wires()[0].owner == WireOwner::User, "reconnected around the removed node");
+        Audio y; y.inL.fill(.25f); y.inR.fill(.75f); y.run(r, 2);
+        check(near(y.l[0], .25) && near(y.r[0], .75), "the input plays straight to Main");
+    }
+
+    // Parts, wires with owners and Mix settings, and flagged wires survive save and load, and play
+    // the same; an earlier format version is refused.
+    void persistence(const char* fixture, const char* audio, const char* delay, const fs::path& root)
+    {
+        Session s(48000, frames, {}, stereoIn);
+        const auto synth = s.add("synth", fixture, "org.kick.test.synth"), a = s.add("a", audio, "org.oscairn.test.audio-ports"), fx = s.add("fx", delay);
+        const auto keys = s.addPart("Keys");
+        s.insertIntoPart(keys, 0, synth); s.insertIntoPart(keys, 1, fx);
+        const auto guitar = s.addPart("Guitar", {PartInput::Kind::Audio, 0});
+        s.insertIntoPart(guitar, 0, a);
+        s.connectAudio(synth, a); // synth's mono into a's stereo main: a user wire into a Mix with the guitar's input
+        s.setMix(wire(s, synth, a).id, .5, .25, false, false);
+        Wire side; side.from = graphInput; side.fromPort = 0; side.to = a; side.toPort = 20; side.channels = {{1, 0}}; s.connectPorts(side);
+        s.setParameter(synth, 7, .5); s.commit();
+        Audio warm; warm.run(s, 2);
+        const auto saved = root / "saved";
+        s.savePerformance(saved.string());
+
+        Session t(48000, frames, {}, stereoIn);
+        t.loadPerformance(saved.string());
+        auto describe = [](const Session& x) {
+            std::vector<std::string> out;
+            const auto names = x.graphState().names;
+            auto name = [&](NodeId n) { return n == graphInput ? std::string("input") : n == graphOutput ? std::string("output") : names.at(n); };
+            for(const auto& p : x.parts()) { std::string chain; for(auto n : p.chain) chain += name(n) + ","; out.push_back("part " + std::to_string(p.id) + " " + p.name + " " + chain + " " + std::to_string(int(p.input.kind)) + " " + std::to_string(p.output)); }
+            for(const auto& w : x.wires())
+            {
+                std::string pairs; for(const auto& [f, g] : w.channels) pairs += std::to_string(f) + ">" + std::to_string(g) + ",";
+                out.push_back("wire " + std::to_string(int(w.kind)) + " " + std::to_string(int(w.owner)) + " " + std::to_string(w.part) + " " + name(w.from) + ":" + std::to_string(w.fromPort) + " " + name(w.to) + ":" + std::to_string(w.toPort)
+                              + " " + pairs + " " + std::to_string(w.level) + " " + std::to_string(w.pan) + " " + std::to_string(w.mute) + std::to_string(w.solo) + std::to_string(w.connected));
+            }
+            std::sort(out.begin(), out.end());
+            return out;
+        };
+        check(describe(t) == describe(s), "parts and wires round-trip");
+        Audio x, y; x.inL.fill(.3f); x.inR.fill(.1f); y.inL = x.inL; y.inR = x.inR;
+        s.note(true, 60, 1); t.note(true, 60, 1);
+        bool same = true; double energy = 0;
+        for(int i = 0; i < 20; ++i) { x.run(s, 2); y.run(t, 2); same = same && x.l == y.l && x.r == y.r; for(float v : x.l) energy += std::abs(v); }
+        check(same && energy > 0, "the loaded Performance plays the same");
+        // Saving it again gives the same manifest.
+        const auto again = root / "again";
+        t.savePerformance(again.string());
+        const auto first = state_files::read(saved / "performance.json", 1 << 22), second = state_files::read(again / "performance.json", 1 << 22);
+        check(first == second, "saving the loaded Performance gives the same manifest");
+
+        // An earlier format version is refused clearly, the session untouched.
+        const auto old = root / "version-1";
+        fs::copy(saved, old, fs::copy_options::recursive);
+        auto text = std::string(first.begin(), first.end());
+        text.replace(text.find("\"version\":2"), 11, "\"version\":1");
+        state_files::write(old / "performance.json", text.data(), text.size());
+        const auto before = describe(t);
+        bool refused = false; try { t.loadPerformance(old.string()); } catch(const std::runtime_error& e) { refused = std::string(e.what()).find("unsupported format version") != std::string::npos; }
+        check(refused && describe(t) == before, "a version 1 Performance is refused and the session kept");
+    }
+}
+
+int main(int argc, char** argv)
+{
+    if(argc < 4) { std::fprintf(stderr, "usage: %s FIXTURE AUDIO_FIXTURE DELAY\n", argv[0]); return 2; }
+    try
+    {
+        state_files::TemporaryDirectory temp;
+        ownership(argv[1], argv[3]);
+        channels(argv[2]);
+        replacement(argv[2], argv[3]);
+        persistence(argv[1], argv[2], argv[3], temp.path);
+    }
+    catch(const std::exception& e) { forbidAllocation = false; std::fprintf(stderr, "FAIL: %s\n", e.what()); return 1; }
+    if(!failures) std::puts("ok: part and wire ownership, Mix, channel rules, replacement and persistence");
+    return failures ? 1 : 0;
+}

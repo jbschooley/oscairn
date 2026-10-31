@@ -193,10 +193,10 @@ new core, from a UI that talks to it only through the control API.
    October 30, 2026: build more than one sequencer type (KICK-style linear sequences and
    launcher-style patterns and scenes) and settle on one or combine them later.
    Keep the shared theme and generated-editor contract current as new screens are added.
-8. **Performance UI model — after worker isolation:** step 1 of
-   [RFC 0011](rfcs/0011-performance-ui-and-editors.md#build-order-and-gates): wire
-   ownership, implicit Mix nodes and port-level routes with channel rules, the base for the
-   Parts, Routing and Mixer views and Oscairn-drawn plugin editors.
+8. **Performance UI model — step 1 implemented:** [RFC 0011](rfcs/0011-performance-ui-and-editors.md#step-1-status)
+   wire ownership, parts, implicit Mixes and port-level routes with channel rules, saved in
+   Performance format version 2. Next: parts and wires in the control protocol, then step 2,
+   the Parts and Part views with zones.
 9. **Modular instrument — playable:** chillbeast's engine is in
    [plugins/modular](../plugins/modular/README.md) with its history, wrapped as a CLAP
    instrument with factory presets and bundled in the desktop app. The patch editor, the

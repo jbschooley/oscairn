@@ -22,6 +22,7 @@ V field(V v,std::string_view key){if(!v || v->type!=json_type_object)bad("expect
 void fields(V v,std::initializer_list<std::string_view> allowed){if(!v || v->type!=json_type_object)bad("expected object");std::set<std::string_view> seen;for(auto* e=static_cast<const json_object_s*>(v->payload)->start;e;e=e->next){std::string_view key(e->name->string,e->name->string_size);if(!seen.insert(key).second || std::find(allowed.begin(),allowed.end(),key)==allowed.end())bad("unknown or duplicate field");}}
 std::vector<V> array(V v,size_t limit){if(!v || v->type!=json_type_array)bad("expected array");const auto* a=static_cast<const json_array_s*>(v->payload);if(a->length>limit)bad("too many entries");std::vector<V> out;for(auto* e=a->start;e;e=e->next)out.push_back(e->value);return out;}
 double number(V v){if(!v || v->type!=json_type_number)bad("expected number");const auto* n=static_cast<const json_number_s*>(v->payload);std::istringstream in(std::string(n->number,n->number_size));in.imbue(std::locale::classic());double value;if(!(in>>value) || !in.eof() || !std::isfinite(value))bad("invalid number");return value;}
+bool boolean(V v){if(!v || (v->type!=json_type_true && v->type!=json_type_false))bad("expected boolean");return v->type==json_type_true;}
 uint32_t integer(V v,uint32_t max=UINT32_MAX){const auto n=number(v);if(n<0 || n>max || n!=std::floor(n))bad("invalid integer");return static_cast<uint32_t>(n);}
 std::string quote(std::string_view s){if(s.size()>4096 || s.find('\0')!=std::string_view::npos)bad("invalid string");return detail::quote(s);}
 std::string numeric(double value){if(!std::isfinite(value))bad("nonfinite value");char buffer[64];const auto result=std::to_chars(buffer,buffer+sizeof(buffer),value);if(result.ec!=std::errc{})bad("number encoding failed");return {buffer,result.ptr};}
@@ -40,7 +41,7 @@ void Session::savePerformance(const std::string& directory) {
     state_files::Bundle bundle(directory);fs::create_directory(bundle.temporary.path/"nodes");
     std::map<NodeId,std::string> keys{{graphInput,"input"},{graphOutput,"output"}};
     for(size_t i=0;i<graph.nodes.size();++i)keys[graph.nodes[i].id]="node-"+std::to_string(i+1);
-    std::vector<std::string> nodes,audio,notes,mappings;std::set<std::string> libraries;
+    std::vector<std::string> nodes,wires,parts,mappings;std::set<std::string> libraries;
     for(const auto& n:graph.nodes){const auto& key=keys.at(n.id);auto& h=graph_.host(n.id);
         // Sound assets are dependencies (RFC 0009): record references, never the files.
         std::vector<std::string> assets;
@@ -49,13 +50,23 @@ void Session::savePerformance(const std::string& directory) {
         const bool lv2=lv2Path(n.plugin.path);
         nodes.push_back("{\"key\":"+quote(key)+",\"name\":"+quote(nodes_.at(n.id))+",\"plugin\":{\"format\":"+quote(lv2?"lv2":"clap")+",\"id\":"+quote(n.plugin.id)+",\"version\":"+quote(n.plugin.version)+",\"pathHint\":"+quote(n.plugin.path)+"},\"engine\":"+quote(keys.at(graph_.effectSource(n.id)))+",\"inputs\":"+ports(n.inputs)+",\"outputs\":"+ports(n.outputs)+",\"noteInputs\":"+std::to_string(n.noteInputs)+",\"noteOutputs\":"+std::to_string(n.noteOutputs)+",\"assets\":"+join(assets)+'}');
     }
-    auto endpoint=[&](const AudioEndpoint& e){return "{\"node\":"+quote(keys.at(e.node))+",\"port\":"+std::to_string(e.port)+",\"channel\":"+std::to_string(e.channel)+'}';};
-    for(const auto& c:graph.audioRoutes)audio.push_back("{\"from\":"+endpoint(c.from)+",\"to\":"+endpoint(c.to)+",\"channels\":"+std::to_string(c.channels)+",\"gain\":"+numeric(c.gain)+'}');
-    for(const auto& [from,to]:graph.notes)notes.push_back("{\"from\":"+quote(keys.at(from))+",\"to\":"+quote(keys.at(to))+'}');
+    // RFC 0011: wires with their owners and Mix settings, and the parts; graph routes follow from them.
+    if(wires_.size()>Graph::maxAudioConnections || parts_.size()>256)bad("wires or parts exceed Performance limits");
+    for(const auto& w:wires_){
+        std::vector<std::string> pairs;for(const auto& [a,b]:w.channels)pairs.push_back("["+std::to_string(a)+","+std::to_string(b)+"]");
+        wires.push_back(std::string("{\"kind\":")+(w.kind==WireKind::Audio?"\"audio\"":"\"notes\"")+",\"owner\":"+(w.owner==WireOwner::Part?"\"part\",\"part\":"+std::to_string(w.part):"\"user\"")
+            +",\"from\":"+quote(keys.at(w.from))+",\"to\":"+quote(keys.at(w.to))+",\"fromPort\":"+std::to_string(w.fromPort)+",\"toPort\":"+std::to_string(w.toPort)
+            +",\"channels\":"+join(pairs)+",\"level\":"+numeric(w.level)+",\"pan\":"+numeric(w.pan)+",\"mute\":"+(w.mute?"true":"false")+",\"solo\":"+(w.solo?"true":"false")+'}');
+    }
+    for(const auto& p:parts_){
+        std::vector<std::string> chain;for(const auto n:p.chain)chain.push_back(quote(keys.at(n)));
+        const char* kind=p.input.kind==PartInput::Kind::Notes?"notes":p.input.kind==PartInput::Kind::Audio?"audio":"none";
+        parts.push_back("{\"id\":"+std::to_string(p.id)+",\"name\":"+quote(p.name)+",\"input\":{\"kind\":\""+kind+"\",\"port\":"+std::to_string(p.input.port)+"},\"chain\":"+join(chain)+",\"output\":"+std::to_string(p.output)+'}');
+    }
     for(const auto& m:graph.mappings)mappings.push_back("{\"from\":"+quote(keys.at(m.source))+",\"lane\":"+std::to_string(m.lane)+",\"to\":"+quote(keys.at(m.target))+",\"param\":"+std::to_string(m.param)+'}');
     std::vector<std::string> named;
     for(const auto& l:assets_.libraries())if(libraries.count(l.id))named.push_back("{\"id\":"+quote(l.id)+",\"name\":"+quote(l.name)+",\"fingerprint\":"+quote(l.fingerprint)+'}');
-    const auto out="{\"format\":\"oscairn.performance\",\"version\":1,\"libraries\":"+join(named)+",\"transport\":{\"tempo\":"+numeric(tempo_.load())+",\"clockSource\":"+quote(clockSource_.load()==Transport::ClockSource::Internal?"internal":"midi")+"},\"audioInputs\":"+ports(graph.audioLayout.inputs)+",\"audioOutputs\":"+ports(graph.audioLayout.outputs)+",\"nodes\":"+join(nodes)+",\"audio\":"+join(audio)+",\"notes\":"+join(notes)+",\"mappings\":"+join(mappings)+"}\n";
+    const auto out="{\"format\":\"oscairn.performance\",\"version\":2,\"libraries\":"+join(named)+",\"transport\":{\"tempo\":"+numeric(tempo_.load())+",\"clockSource\":"+quote(clockSource_.load()==Transport::ClockSource::Internal?"internal":"midi")+"},\"audioInputs\":"+ports(graph.audioLayout.inputs)+",\"audioOutputs\":"+ports(graph.audioLayout.outputs)+",\"nodes\":"+join(nodes)+",\"wires\":"+join(wires)+",\"parts\":"+join(parts)+",\"mappings\":"+join(mappings)+"}\n";
     if(out.size()>4*1024*1024)bad("manifest exceeds size limit");
     const auto encoding=detail::jsonPreflight(out,32);if(!encoding.empty())bad(std::string(encoding));
     state_files::write(bundle.temporary.path/"performance.json",out.data(),out.size());validateTree(bundle.temporary.path);bundle.publish();
@@ -64,8 +75,8 @@ void Session::savePerformance(const std::string& directory) {
 void Session::loadPerformance(const std::string& directory) {
     if(directory.empty() || directory.find('\0')!=std::string::npos)bad("invalid directory");
     const auto root=fs::canonical(directory);validateTree(root);const auto doc=document(root);V d=doc.get();
-    fields(d,{"format","version","libraries","transport","audioInputs","audioOutputs","nodes","audio","notes","mappings"});
-    if(text(field(d,"format"))!="oscairn.performance" || integer(field(d,"version"))!=1)bad("unsupported format version");
+    fields(d,{"format","version","libraries","transport","audioInputs","audioOutputs","nodes","wires","parts","mappings"});
+    if(text(field(d,"format"))!="oscairn.performance" || integer(field(d,"version"))!=2)bad("unsupported format version");
     const auto transport=field(d,"transport");fields(transport,{"tempo","clockSource"});const double tempo=number(field(transport,"tempo"));
     const auto clock=text(field(transport,"clockSource"));if(tempo<1 || tempo>1000 || (clock!="internal" && clock!="midi"))bad("invalid transport");
     const auto layout=graph_.describe().audioLayout;checkPorts(field(d,"audioInputs"),layout.inputs);checkPorts(field(d,"audioOutputs"),layout.outputs);
@@ -108,15 +119,34 @@ void Session::loadPerformance(const std::string& directory) {
         }catch(const std::exception& e){bad("cannot restore "+name+" ("+id+"): "+e.what());}
     }
     auto node=[&](V v){const auto key=text(v);const auto it=ids.find(key);if(it==ids.end())bad("unknown node reference "+key);return it->second;};
-    auto endpoint=[&](V v){fields(v,{"node","port","channel"});return AudioEndpoint{node(field(v,"node")),integer(field(v,"port")),integer(field(v,"channel"),Graph::maxAudioChannels-1)};};
-    std::set<std::tuple<NodeId,uint32_t,uint32_t,NodeId,uint32_t,uint32_t>> audioRoutes;
-    for(auto c:array(field(d,"audio"),Graph::maxAudioConnections)){
-        fields(c,{"from","to","channels","gain"});const auto from=endpoint(field(c,"from")),to=endpoint(field(c,"to"));const auto count=integer(field(c,"channels"),Graph::maxAudioChannels);
-        for(uint32_t i=0;i<count;++i)if(!audioRoutes.emplace(from.node,from.port,from.channel+i,to.node,to.port,to.channel+i).second)bad("duplicate audio route");
-        next->connectAudio({from,to,count,number(field(c,"gain"))});
+    std::vector<Wire> wires;std::vector<Part> parts;uint32_t nextPart=1;
+    {
+        std::set<uint32_t> partIds;
+        for(auto p:array(field(d,"parts"),256)){
+            fields(p,{"id","name","input","chain","output"});Part part;part.id=integer(field(p,"id"));part.name=text(field(p,"name"));
+            if(!part.id || !partIds.insert(part.id).second)bad("invalid or duplicate part");
+            const auto input=field(p,"input");fields(input,{"kind","port"});const auto kind=text(field(input,"kind"));
+            part.input.kind=kind=="notes"?PartInput::Kind::Notes:kind=="audio"?PartInput::Kind::Audio:kind=="none"?PartInput::Kind::None:(bad("invalid part input"),PartInput::Kind::None);
+            part.input.port=integer(field(input,"port"));part.output=integer(field(p,"output"));
+            for(auto n:array(field(p,"chain"),256)){const auto id=node(n);if(id==graphInput || id==graphOutput || std::find(part.chain.begin(),part.chain.end(),id)!=part.chain.end())bad("invalid part chain");part.chain.push_back(id);}
+            nextPart=std::max(nextPart,part.id+1);parts.push_back(std::move(part));
+        }
+        for(auto c:array(field(d,"wires"),Graph::maxAudioConnections)){
+            Wire w;const auto kind=text(field(c,"kind")),owner=text(field(c,"owner"));
+            if((kind!="audio" && kind!="notes") || (owner!="part" && owner!="user"))bad("invalid wire");
+            if(owner=="part")fields(c,{"kind","owner","part","from","to","fromPort","toPort","channels","level","pan","mute","solo"});
+            else fields(c,{"kind","owner","from","to","fromPort","toPort","channels","level","pan","mute","solo"});
+            w.kind=kind=="audio"?WireKind::Audio:WireKind::Notes;w.owner=owner=="part"?WireOwner::Part:WireOwner::User;
+            if(owner=="part"){w.part=integer(field(c,"part"));if(!partIds.count(w.part))bad("wire of an unknown part");}
+            w.from=node(field(c,"from"));w.to=node(field(c,"to"));w.fromPort=integer(field(c,"fromPort"));w.toPort=integer(field(c,"toPort"));
+            for(auto pair:array(field(c,"channels"),Graph::maxAudioChannels)){const auto ends=array(pair,2);if(ends.size()!=2)bad("invalid channel pair");w.channels.push_back({integer(ends[0],Graph::maxAudioChannels-1),integer(ends[1],Graph::maxAudioChannels-1)});}
+            w.level=number(field(c,"level"));w.pan=number(field(c,"pan"));w.mute=boolean(field(c,"mute"));w.solo=boolean(field(c,"solo"));
+            if(w.level<0 || w.pan<-1 || w.pan>1)bad("invalid wire level or pan");
+            wires.push_back(std::move(w));
+        }
     }
-    std::set<std::pair<NodeId,NodeId>> noteRoutes;
-    for(auto c:array(field(d,"notes"),4096)){fields(c,{"from","to"});const auto from=node(field(c,"from")),to=node(field(c,"to"));if(!noteRoutes.emplace(from,to).second)bad("duplicate note route");next->connectNotes(from,to);}
+    uint32_t nextWire=1;for(auto& w:wires)w.id=nextWire++;
+    compileWires(*next,wires);
     std::set<std::pair<NodeId,uint32_t>> mappings;
     for(auto m:array(field(d,"mappings"),4096)){fields(m,{"from","lane","to","param"});const auto from=node(field(m,"from")),lane=integer(field(m,"lane"));if(!mappings.emplace(from,lane).second)bad("duplicate parameter mapping");next->mapParamTarget(from,lane,node(field(m,"to")),integer(field(m,"param")));}
     std::map<Address,double> observed;for(const auto& [id,name]:names)for(const auto& p:next->host(id).parameters())observed[{id,p.id}]=next->host(id).parameterValue(p.id);
@@ -126,7 +156,7 @@ void Session::loadPerformance(const std::string& directory) {
     if(history.size()==historyCapacity)history.pop_front();
     history.push_back({sequence_+1,ChangeKind::Resync,0,0,0,false});
     graph_.publishReplacement(*next,noteHead_.load(std::memory_order_acquire),[&]() noexcept {
-        nodes_.swap(names);observed_.swap(observed);pending_.clear();commandCount_=0;outputDrops_.clear();staged_=false;
+        nodes_.swap(names);observed_.swap(observed);parts_.swap(parts);wires_.swap(wires);nextPart_=nextPart;nextWire_=nextWire;pending_.clear();commandCount_=0;outputDrops_.clear();staged_=false;
         tempo_.store(tempo);clockSource_.store(clock=="internal"?Transport::ClockSource::Internal:Transport::ClockSource::MidiClock);playing_.store(false);
         ++revision_;++sequence_;history_.swap(history);
     });

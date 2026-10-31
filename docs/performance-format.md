@@ -1,8 +1,8 @@
-# Performance format, version 1
+# Performance format, version 2
 
 A Performance saves the graph, all prepared sounds and their MIDI-channel assignments,
-plugin settings/state, explicit audio and note routes, parameter mappings, sequencer
-parameters, tempo and clock source. **Save, reopen, import and export use the same data
+plugin settings/state, its wires and parts ([RFC 0011](rfcs/0011-performance-ui-and-editors.md)),
+parameter mappings, sequencer parameters, tempo and clock source. **Save, reopen, import and export use the same data
 model.** The machine-readable contract is [performance.schema.json](performance.schema.json),
 using JSON Schema draft 2020-12. JSON matches our existing control and theme contracts,
 has explicit types and broad tooling, and needs no YAML implicit typing/aliases or XML
@@ -44,12 +44,12 @@ Required top-level fields:
 
 | Field | Meaning |
 | --- | --- |
-| `format`, `version` | Exactly `oscairn.performance` and integer `1` |
+| `format`, `version` | Exactly `oscairn.performance` and integer `2` |
 | `transport` | Tempo and `internal` or `midi` clock source |
 | `audioInputs`, `audioOutputs` | Required logical graph ports: ID, channels, flags |
 | `nodes` | Local key, display name, plugin identity/version, path hint, shared engine key, expected audio/note ports |
-| `audio` | Exact source/destination node, port and channel, count and gain |
-| `notes` | Source/destination note routes |
+| `wires` | Audio and note wires: owner (`part`, with its part ID, or `user`), source and destination node and audio port, explicit channel pairs or none (the channel rules), and the source's level, pan, mute and solo in the destination's Mix |
+| `parts` | ID, name, input (`notes`, `audio` with a graph input port, or `none`), the chain of node keys and the graph output port |
 | `mappings` | Source node/lane to destination node/parameter |
 
 `node-1` etc. are document-local keys, not runtime node IDs. `input` and `output` name
@@ -59,10 +59,15 @@ root node for shared native effect contexts. Roots are restored first, then sibl
 independent state. If the original root interface was removed before saving, a surviving
 sibling becomes the saved root. No history buffers or pointers cross this boundary.
 
+The graph's channel routes and note connections are compiled from the wires on load, as
+during editing. A wire port of 4294967294 or 4294967295 marks an end a plugin replacement
+could not map (a main port awaiting one, or none); such a wire is kept and loads
+unconnected.
+
 Plugin identity is `(format, id)`, plus the observed version as state provenance.
 `pathHint` currently locates an installed binary/bundle and is verified against that
 identity/version. It is **not** a package ID or portability guarantee. Version mismatches
-fail explicitly; there are no silent upgrades or untested state conversions. Version 1
+fail explicitly; there are no silent upgrades or untested state conversions. The format
 has no package manifest, dependency lockfile, binary payload, resolver, archive reader or
 cross-format conversion. Those can wrap/reference this Performance data later without
 inventing a second save format.
@@ -115,7 +120,7 @@ An abruptly killed process can leave a hidden `.oscairn-state-*` staging directo
 Loading parses and validates the complete document, creates new plugin instances, restores
 all their state/assets, checks ports and compiles routes/cycle constraints before publication.
 Missing plugins/assets, incompatible versions, invalid state or insufficient resources fail
-without modifying the playing graph or the original Performance folder. Version 1 reports
+without modifying the playing graph or the original Performance folder. A failed load reports
 the failure instead of opening a partial graph with disabled placeholder nodes; that richer
 missing-dependency workflow remains planned.
 
@@ -128,10 +133,11 @@ thread. Output-device settings and physical channel maps are host preferences, n
 Performance data. Logical port layouts must match exactly; cue audio is never silently
 folded into the master output.
 
-The reader rejects duplicate/unknown fields, invalid references, duplicate routes, cycles,
+The reader rejects duplicate/unknown fields, invalid references, duplicate part IDs or chain
+entries, part wires of unknown parts, cycles,
 path-traversal node keys, nonfinite numbers, missing state and symlinks/special files in the
 bundle. Limits: 4 MiB manifest, nesting depth 32, strings 4096 UTF-8 bytes, 256 nodes,
-4096 audio channel routes/note routes/mappings each, 256 audio channels, 16 note ports,
+4096 wires and mappings each, 256 parts, 256 audio channels, 16 note ports,
 65536 filesystem entries and 16 GiB aggregate assets. Plugin state has its own bounded
 reader. JSON Schema describes document structure; the engine additionally checks graph,
 plugin, asset and real-time constraints that a schema cannot express. Load only trusted
@@ -145,6 +151,8 @@ failing plugin/reason. Load acknowledgement means publication, not proof the aud
 has adopted it. The typed methods are `Control::savePerformance` / `loadPerformance`.
 See [control-protocol.md](control-protocol.md).
 
+`control-parts` saves and reloads parts, wires of both owners, Mix settings and a flagged
+wire, comparing the model and rendered audio, and checks a version 1 document is refused.
 `control-performance` checks sample-identical audio against a separately configured graph,
 prepared native/hosted sounds, shared delay state, sequencer edits, load failures, queued
 selections and concurrent publication with an audio allocation guard.

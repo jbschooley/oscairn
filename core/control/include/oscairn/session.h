@@ -3,6 +3,7 @@
 
 #include "oscairn/control.h"
 #include "oscairn/assets.h"
+#include "oscairn/parts.h"
 
 #include <array>
 #include <atomic>
@@ -52,13 +53,30 @@ namespace oscairn
         NodeId addEffectContext(const std::string& name,NodeId source) override;
         std::optional<oscairn_effect_resources_t> effectResources(NodeId node) const override {return graph_.host(node).effectResources();}
         void replace(NodeId node,const std::string& path,const std::string& pluginId,const std::string& preset = {}) override;
-        void remove( NodeId node ) override;
-        void connectAudio( NodeId from, NodeId to ) override { graph_.connectAudio( from, to ); staged_ = true; }
-        void connectAudio( const AudioConnection& c ) override { graph_.connectAudio(c); staged_=true; }
-        void disconnectAudio( const AudioConnection& c ) override { graph_.disconnectAudio(c); staged_=true; }
-        void connectNotes( NodeId from, NodeId to ) override { graph_.connectNotes( from, to ); staged_ = true; }
-        void disconnectAudio( NodeId from, NodeId to ) override { graph_.disconnectAudio( from, to ); staged_ = true; }
-        void disconnectNotes( NodeId from, NodeId to ) override { graph_.disconnectNotes( from, to ); staged_ = true; }
+        void remove( NodeId node ) override { remove(node, UserWires::Remove); }
+        // Audio and note connections are user wires (parts.h), compiled into graph routes.
+        void connectAudio( NodeId from, NodeId to ) override;
+        void connectAudio( const AudioConnection& c ) override;
+        void disconnectAudio( const AudioConnection& c ) override;
+        void connectNotes( NodeId from, NodeId to ) override;
+        void disconnectAudio( NodeId from, NodeId to ) override;
+        void disconnectNotes( NodeId from, NodeId to ) override;
+
+        // RFC 0011 step 1: parts and wire ownership. Part edits change only their part's wires;
+        // user wires stay until removed. Edits are staged, like graph edits.
+        uint32_t addPart(const std::string& name, PartInput input = {}, std::optional<uint32_t> output = {});
+        void removePart(uint32_t part); // its wires; its nodes stay
+        void insertIntoPart(uint32_t part, size_t index, NodeId node);
+        void removeFromPart(uint32_t part, NodeId node);
+        void movePartNode(uint32_t part, size_t from, size_t to);
+        const std::vector<Part>& parts() const { return parts_; }
+        const std::vector<Wire>& wires() const { return wires_; }
+        // A user wire between audio ports (channel rules or explicit pairs) or note endpoints.
+        uint32_t connectPorts(Wire wire);
+        void disconnectWire(uint32_t wire);
+        // A source's level, pan, mute and solo in its destination input's implicit Mix.
+        void setMix(uint32_t wire, double level, double pan, bool mute, bool solo);
+        void remove(NodeId node, UserWires userWires);
         void mapParameter( NodeId from, uint32_t lane, NodeId to, uint32_t param ) override { graph_.mapParamTarget( from, lane, to, param ); staged_ = true; }
         void unmapParameter( NodeId from, uint32_t lane ) override { graph_.unmapParamTarget( from, lane ); staged_ = true; }
         void commit() override;
@@ -112,6 +130,15 @@ namespace oscairn
 
     private:
         static ParamInfo describe( const kick::clap::Parameter& param );
+        static void compileWires(Graph& graph, std::vector<Wire>& wires);
+        void syncWires();
+        void dropNode(NodeId node);
+        template<class Edit> void editWires(Edit&& edit);
+        void buildPart(const Part& part);
+        Part& findPart(uint32_t id);
+        void removePairs(const AudioConnection& c);
+        void remapPorts(NodeId node, const std::vector<kick::clap::Port>& oldInputs, const std::vector<kick::clap::Port>& oldOutputs,
+                        const std::vector<uint32_t>& oldMainIn, const std::vector<uint32_t>& oldMainOut);
         const kick::clap::Parameter& findParameter( NodeId node, uint32_t param ) const;
         bool queue( NodeId node, uint32_t param, ChangeKind kind, double value );
         void publish( ChangeKind kind, NodeId node = 0, uint32_t param = 0, double value = 0, bool plugin = false );
@@ -122,6 +149,9 @@ namespace oscairn
         Graph graph_;
         SessionStatus hostStatus_;
         std::map<NodeId,std::string> nodes_;
+        std::vector<Part> parts_;
+        std::vector<Wire> wires_;
+        uint32_t nextPart_ = 1, nextWire_ = 1;
         bool staged_ = false;
         uint64_t revision_ = 0, sequence_ = 0;
         using Address = std::pair<NodeId,uint32_t>;

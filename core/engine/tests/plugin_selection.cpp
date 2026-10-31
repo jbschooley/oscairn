@@ -22,11 +22,19 @@ int main(int argc,char** argv){try {
     auto render=[&]{session.service();reference.service();forbidAllocation=true;const auto ok=session.process(out,512)&&reference.process(ref,512);forbidAllocation=false;check(ok,"render after replacement");};
     session.note(true,60,.7);reference.note(true,60,.7);render();
     const auto revision=session.graphState().revision;
-    for(const auto& [path,id]:std::array<std::pair<const char*,const char*>,3>{{{"/missing/plugin.clap","org.oscairn.basic-synth"},{argv[2],"org.oscairn.delay"},{argv[3],"org.oscairn.step-sequencer"}}}) {
-        bool refused=false;try{session.replace(synth,path,id);}catch(const std::exception&){refused=true;}
-        check(refused,"bad or incompatible replacement rejected");render();check(left==expected,"failed replacement preserves held audio byte for byte");
+    {
+        bool refused=false;try{session.replace(synth,"/missing/plugin.clap","org.oscairn.basic-synth");}catch(const std::exception&){refused=true;}
+        check(refused,"a plugin that cannot load is refused");render();check(left==expected,"failed replacement preserves held audio byte for byte");
         check(session.graphState().revision==revision,"failed replacement leaves revision unchanged");
     }
+    // RFC 0011: a plugin whose ports do not fit is accepted; the wires that no longer fit stay, unconnected.
+    auto connected=[&](WireKind kind){for(const auto& w:session.wires())if(w.kind==kind)return w.connected;throw std::runtime_error("missing wire");};
+    session.replace(synth,argv[2],"org.oscairn.delay");
+    check(session.wires().size()==2 && !connected(WireKind::Notes) && connected(WireKind::Audio),"an effect in the synth's place keeps its note wire, unconnected");
+    session.replace(synth,argv[3],"org.oscairn.step-sequencer");
+    check(session.wires().size()==2 && !connected(WireKind::Audio),"a sequencer in its place keeps the audio wire, unconnected");
+    session.replace(synth,argv[1],"org.oscairn.basic-synth");
+    check(connected(WireKind::Notes) && connected(WireKind::Audio),"both wires connect again when a synth returns");
     session.setParameter(synth,1,.01);
     session.replace(synth,argv[1],"org.oscairn.basic-synth");render();
     check(session.sounds(synth).contexts.size()==1 && session.parameter(synth,1)==1,"replacement clears old sound pool and pending parameter edits");

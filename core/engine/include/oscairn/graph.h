@@ -73,8 +73,10 @@ namespace oscairn
         /// require pluginId (the URI); CLAP defaults to the module's first plugin.
         /// Throws std::runtime_error on failure.
         NodeId add( const std::string& path, const std::string& pluginId = {} );
-        /// Validates and commits replacement atomically; failure preserves the current graph.
-        void replace(NodeId node,const std::string& path,const std::string& pluginId,const std::string& preset = {});
+        /// Validates and commits replacement atomically; failure preserves the current graph. The
+        /// node's routes and note edges are removed; rewire, called with the new plugin in place,
+        /// connects what it wants before the commit (the Session moves its wires, RFC 0011).
+        void replace(NodeId node,const std::string& path,const std::string& pluginId,const std::string& preset,const std::function<void()>& rewire);
         void   remove( NodeId node );
         NodeId addEffectContext(NodeId source);
         NodeId effectSource(NodeId node) const;

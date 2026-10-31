@@ -1,14 +1,14 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Oscairn Performance version 1",
-  "description": "performance.json inside a Performance folder. See performance-format.md for binary state, asset limits, plugin validation and transactional loading. Runtime node/context IDs and live voices are not persisted.",
+  "title": "Oscairn Performance version 2",
+  "description": "performance.json inside a Performance folder. See performance-format.md for binary state, asset limits, plugin validation and transactional loading. Runtime node/context IDs and live voices are not persisted. Wires and parts (RFC 0011) define the graph's audio routes and note connections.",
   "type": "object",
   "properties": {
     "format": {
       "const": "oscairn.performance"
     },
     "version": {
-      "const": 1
+      "const": 2
     },
     "libraries": {
       "type": "array",
@@ -77,32 +77,19 @@
       },
       "maxItems": 256
     },
-    "audio": {
+    "wires": {
       "type": "array",
       "items": {
-        "$ref": "#/$defs/Audio"
+        "$ref": "#/$defs/Wire"
       },
       "maxItems": 4096
     },
-    "notes": {
+    "parts": {
       "type": "array",
       "items": {
-        "type": "object",
-        "properties": {
-          "from": {
-            "$ref": "#/$defs/EndpointKey"
-          },
-          "to": {
-            "$ref": "#/$defs/NodeKey"
-          }
-        },
-        "required": [
-          "from",
-          "to"
-        ],
-        "additionalProperties": false
+        "$ref": "#/$defs/Part"
       },
-      "maxItems": 4096
+      "maxItems": 256
     },
     "mappings": {
       "type": "array",
@@ -144,8 +131,8 @@
     "audioInputs",
     "audioOutputs",
     "nodes",
-    "audio",
-    "notes",
+    "wires",
+    "parts",
     "mappings"
   ],
   "additionalProperties": false,
@@ -190,30 +177,6 @@
         "id",
         "channels",
         "flags"
-      ],
-      "additionalProperties": false
-    },
-    "Endpoint": {
-      "type": "object",
-      "properties": {
-        "node": {
-          "$ref": "#/$defs/EndpointKey"
-        },
-        "port": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 4294967295
-        },
-        "channel": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 255
-        }
-      },
-      "required": [
-        "node",
-        "port",
-        "channel"
       ],
       "additionalProperties": false
     },
@@ -329,31 +292,169 @@
       ],
       "additionalProperties": false
     },
-    "Audio": {
+    "Wire": {
+      "description": "A wire between two nodes (RFC 0011). Audio wires join ports by stable port ID; 4294967294 marks a main port a plugin replacement could not map, 4294967295 a port it could not map at all. Empty channels apply the channel rules.",
       "type": "object",
       "properties": {
-        "from": {
-          "$ref": "#/$defs/Endpoint"
+        "kind": {
+          "enum": [
+            "audio",
+            "notes"
+          ]
         },
-        "to": {
-          "$ref": "#/$defs/Endpoint"
+        "owner": {
+          "enum": [
+            "part",
+            "user"
+          ]
         },
-        "channels": {
+        "part": {
           "type": "integer",
           "minimum": 1,
-          "maximum": 256
+          "maximum": 4294967295,
+          "description": "The part that made it; only for part wires"
         },
-        "gain": {
+        "from": {
+          "$ref": "#/$defs/EndpointKey"
+        },
+        "to": {
+          "$ref": "#/$defs/EndpointKey"
+        },
+        "fromPort": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "toPort": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "channels": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "type": "array",
+            "prefixItems": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 255
+              },
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 255
+              }
+            ],
+            "minItems": 2,
+            "maxItems": 2
+          }
+        },
+        "level": {
           "type": "number",
-          "minimum": -16,
-          "maximum": 16
+          "minimum": 0
+        },
+        "pan": {
+          "type": "number",
+          "minimum": -1,
+          "maximum": 1
+        },
+        "mute": {
+          "type": "boolean"
+        },
+        "solo": {
+          "type": "boolean"
         }
       },
       "required": [
+        "kind",
+        "owner",
         "from",
         "to",
+        "fromPort",
+        "toPort",
         "channels",
-        "gain"
+        "level",
+        "pan",
+        "mute",
+        "solo"
+      ],
+      "if": {
+        "properties": {
+          "owner": {
+            "const": "part"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "part"
+        ]
+      },
+      "else": {
+        "not": {
+          "required": [
+            "part"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "Part": {
+      "description": "An input, the chain of nodes it reaches, and the graph output port it plays to (RFC 0011).",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4294967295
+        },
+        "name": {
+          "type": "string"
+        },
+        "input": {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "enum": [
+                "notes",
+                "audio",
+                "none"
+              ]
+            },
+            "port": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 4294967295
+            }
+          },
+          "required": [
+            "kind",
+            "port"
+          ],
+          "additionalProperties": false
+        },
+        "chain": {
+          "type": "array",
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/NodeKey"
+          }
+        },
+        "output": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "input",
+        "chain",
+        "output"
       ],
       "additionalProperties": false
     }

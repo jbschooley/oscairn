@@ -161,7 +161,7 @@ namespace oscairn
         delete pending_.exchange(plan.release(),std::memory_order_acq_rel);
     }
 
-    void Graph::replace(NodeId id,const std::string& path,const std::string& pluginId,const std::string& preset)
+    void Graph::replace(NodeId id,const std::string& path,const std::string& pluginId,const std::string& preset,const std::function<void()>& rewire)
     {
         const auto old=nodes_.at(id);
         for(const auto& [from,to]:paramTargets_)
@@ -171,43 +171,18 @@ namespace oscairn
         if(!preset.empty())loaded->loadPreset(preset);
         next.host=preparedInstrument(std::move(loaded),sampleRate_,maxFrames_,mode_,lv2Buffers_);
         next.audioInputs=countChannels(next.host->inputPorts());next.audioOutputs=countChannels(next.host->outputPorts());
-        auto routes=audioRoutes_;
-        auto channels=[&](const PluginHost& h,bool input) {
-            std::vector<AudioEndpoint> result;
-            const auto ids=h.mainAudioPorts(input);
-            for(auto port:ids)for(const auto& p:input?h.inputPorts():h.outputPorts())if(p.id==port)
-                for(uint32_t c=0;c<p.channels;++c)result.push_back({id,port,c});
-            return result;
-        };
-        auto remap=[&](AudioEndpoint& endpoint,bool input,const AudioEndpoint& peer) {
-            if(endpoint.node!=id)return;
-            const auto before=channels(*old.host,input),after=channels(*next.host,input);
-            const auto found=std::find(before.begin(),before.end(),endpoint);
-            if(found!=before.end() && !input && before.size()==1 && after.size()==2) {
-                const auto& ports=peer.node==graphOutput?audioLayout_.outputs:host(peer.node).inputPorts();
-                const auto p=std::find_if(ports.begin(),ports.end(),[&](const auto& p){return p.id==peer.port;});
-                if(p!=ports.end() && p->channels==2 && peer.channel<2){endpoint=after[peer.channel];return;}
-            }
-            if(found==before.end() || after.empty() || (before.size()!=after.size() && (input || after.size()!=1)))
-                throw std::invalid_argument("Incompatible audio buses; explicit routing is required");
-            endpoint=after[after.size()==1?0:static_cast<size_t>(found-before.begin())];
-        };
-        for(auto& route:routes){remap(route.from,false,route.to);remap(route.to,true,route.from);}
-        auto notes=noteEdges_;
-        for(auto& [edge,state]:notes)if(edge.first==id || edge.second==id)
-        {
-            if((edge.first==id && !next.host->noteOutputPorts()) || (edge.second==id && !next.host->noteInputPorts()))
-                throw std::invalid_argument("Incompatible note ports");
-            state=std::make_shared<NoteRoute>(edge.second==id?*next.host:host(edge.second));
-        }
-        nodes_.at(id)=std::move(next);audioRoutes_.swap(routes);noteEdges_.swap(notes);
+        const auto routes=audioRoutes_;const auto notes=noteEdges_;
+        std::erase_if(audioRoutes_,[&](const auto& e){return e.from.node==id || e.to.node==id;});
+        std::erase_if(noteEdges_,[&](const auto& edge){return edge.first.first==id || edge.first.second==id;});
+        nodes_.at(id)=std::move(next);
         try
         {
+            rewire();
             std::unique_ptr<Plan> plan(compile());
             removedHosts_.push_back(old.host);
             collect();delete pending_.exchange(plan.release(),std::memory_order_acq_rel);
         }
-        catch(...){nodes_.at(id)=old;audioRoutes_.swap(routes);noteEdges_.swap(notes);throw;}
+        catch(...){nodes_.at(id)=old;audioRoutes_=routes;noteEdges_=notes;throw;}
     }
 
     void Graph::remove( NodeId node )

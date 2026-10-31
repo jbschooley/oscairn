@@ -175,16 +175,24 @@ namespace oscairn
         if(staged_)throw std::invalid_argument("Finish pending graph edits before replacing a plugin");
         if(!graph_.contains(node))throw std::invalid_argument("Unknown node");
         if(path.empty() || pluginId.empty())throw std::invalid_argument("Plugin replacement requires an installation path and stable plugin ID");
-        graph_.replace(node,path,pluginId,preset);
+        // Wires move to the new plugin's ports in the same roles; any that no longer fit stay,
+        // unconnected (RFC 0011), so the replacement is never refused for its wiring.
+        const auto& old=graph_.host(node);
+        const auto inputs=old.inputPorts(),outputs=old.outputPorts();
+        auto mains=[&](bool input){try{return old.mainAudioPorts(input);}catch(const std::exception&){return std::vector<uint32_t>{};}};
+        const auto mainIn=mains(true),mainOut=mains(false);
+        auto parts=parts_;auto wires=wires_;
+        try{graph_.replace(node,path,pluginId,preset,[&]{remapPorts(node,inputs,outputs,mainIn,mainOut);compileWires(graph_,wires_);});}
+        catch(...){parts_.swap(parts);wires_.swap(wires);throw;}
         for(auto it=pending_.begin();it!=pending_.end();)
             if(it->first.first==node){commandCount_-=it->second.size();it=pending_.erase(it);}else ++it;
         std::erase_if(observed_,[&](const auto& entry){return entry.first.first==node;});
         outputDrops_.erase(node);++revision_;publish(ChangeKind::Graph);
     }
 
-    void Session::remove( NodeId node )
+    // Removes a node from the graph and the Session's records of it; its wires are the caller's.
+    void Session::dropNode( NodeId node )
     {
-        if( !graph_.contains(node) ) throw std::invalid_argument("unknown node");
         graph_.remove(node);
         nodes_.erase(node);
         outputDrops_.erase(node);
@@ -192,7 +200,6 @@ namespace oscairn
             if( it->first.first == node ) { commandCount_ -= it->second.size(); it = pending_.erase(it); }
             else ++it;
         std::erase_if(observed_,[&](const auto& entry){ return entry.first.first == node; });
-        staged_ = true;
     }
 
     void Session::commit()

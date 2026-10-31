@@ -81,7 +81,7 @@ static void native(const char* synth,const char* delay,const char* seq,const fs:
     auto rejects=[&](const fs::path& path){const auto revision=a.graphState().revision;bool failed=false;try{a.loadPerformance(path.string());}catch(const std::exception&){failed=true;}
         check(failed && a.graphState().revision==revision,"invalid restore changed current graph");};
     for(int which=0;which<5;++which){const auto bad=root/("bad"+std::to_string(which));fs::copy(file,bad,fs::copy_options::recursive);
-        if(which==0)replaceText(bad/"performance.json","\"version\":1","\"version\":999");
+        if(which==0)replaceText(bad/"performance.json","\"version\":2","\"version\":999");
         if(which==1)replaceText(bad/"performance.json",synth,"/missing/plugin.clap");
         if(which==2)fs::remove(bad/"nodes/node-1/state/state.clap");
         if(which==3)replaceText(bad/"performance.json","\"engine\":\"node-1\"","\"engine\":\"node-4\"");

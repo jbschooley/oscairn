@@ -40,7 +40,7 @@ try:
             rpc('sounds.select', {'node': 'synth', 'context': context, 'channel': i})
         rpc('performance.save', {'directory': str(saved)})
         manifest = json.loads((saved / 'performance.json').read_text())
-        assert manifest['format'] == 'oscairn.performance' and manifest['version'] == 1
+        assert manifest['format'] == 'oscairn.performance' and manifest['version'] == 2
         assert manifest['nodes'][0]['key'] == 'node-1'
         assert manifest['nodes'][0]['plugin']['id'] == 'org.oscairn.basic-synth'
         schema = Path(__file__).resolve().parents[3] / 'docs/performance.schema.json'
@@ -82,17 +82,20 @@ try:
             value = copy.deepcopy(manifest)
             edit(value)
             mutations.append(json.dumps(value))
-        changed(lambda m: m.update(version=2))
+        changed(lambda m: m.update(version=3))
         changed(lambda m: m.update(unknown=True))
         changed(lambda m: m['nodes'][0].update(key='../escape'))
         changed(lambda m: m['nodes'][0]['plugin'].update(version='incompatible'))
         changed(lambda m: m['nodes'][0]['plugin'].update(id='missing'))
         changed(lambda m: m['nodes'][0]['outputs'][0].update(channels=1))
-        changed(lambda m: m['audio'].append(copy.deepcopy(m['audio'][0])))
-        changed(lambda m: m['notes'].append(copy.deepcopy(m['notes'][0])))
+        changed(lambda m: m['wires'].append({**m['wires'][0], 'owner': 'part', 'part': 99}))
+        changed(lambda m: m['wires'][0].update(kind='cv'))
+        changed(lambda m: m['wires'][0].update(level=-1))
+        changed(lambda m: m['wires'][0].update(channels=[[0]]))
         changed(lambda m: m['nodes'].append(copy.deepcopy(m['nodes'][0])))
-        changed(lambda m: m['audio'][0]['from'].update(node='missing'))
-        changed(lambda m: m['notes'].append({'from':'node-1','to':'node-1'}))
+        changed(lambda m: m['wires'][0].update(**{'from': 'missing'}))
+        changed(lambda m: m['parts'].append({'id': 1, 'name': 'Twice', 'input': {'kind': 'notes', 'port': 0}, 'chain': ['node-1', 'node-1'], 'output': 0}))
+        changed(lambda m: m.update(audio=[]))
         mutations += ['{"version":1,"version":1}', '[' * 33 + '0' + ']' * 33, '{"format":']
         live = rpc('graph.get')['result']
         for i, text in enumerate(mutations):

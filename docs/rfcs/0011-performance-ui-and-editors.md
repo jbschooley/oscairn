@@ -85,8 +85,7 @@ The rules that keep the views from breaking each other:
   its neighbours or remove them.
 - Replacing a plugin remaps wires by port (main to main, sidechain to sidechain) using the
   channel rules below. A wire that cannot be remapped stays visible as unconnected; the
-  replacement is not refused. Today the engine refuses with "Incompatible audio buses;
-  explicit routing is required" (`core/engine/src/graph.cpp`); that behaviour changes.
+  replacement is not refused. (Implemented in step 1.)
 - Nodes with user wires show a badge in the part views; tapping it opens Routing at that node.
 - Every edit is compiled and checked before publication, as today, and every edit is undoable.
 
@@ -183,8 +182,8 @@ A chain follows main ports. Extra outputs appear as sockets on the box, each abl
 lanes or another chain. Extra inputs, such as a sidechain, appear as sockets on the box's
 left that stay empty until wired.
 
-Today the engine stores routes per channel and only maps mono to stereo when replacing a
-plugin. Port-level routes with these rules are new core work.
+The graph stores routes per channel; since step 1 the Session's wires are port-level and
+compile into them with these rules.
 
 ## Plugin roles
 
@@ -279,6 +278,44 @@ override it could not apply.
 | 5. Editors | Knob pages for every plugin, structured-editor description draft, Modular grid as the first case | Basic Synth, Sampler and one third-party plugin editable on the device without a plugin window |
 | 6. Physical controls | Default layers, overrides, learn, per-layout banks | A new performance with three sounds has working knobs, sliders and buttons with no programming |
 | 7. Groups, pedal view, move/copy/share | | |
+
+## Step 1 status
+
+Implemented 2026-10-31 in `core/control` (`parts.h`, `src/parts.cpp`) and the Performance
+format, version 2:
+
+- **Wires** are kept by the Session: audio wires port to port, note wires node to node, each
+  with its owner (a part, or the user) and its source's level, pan, mute and solo. Every
+  edit compiles them into the graph's channel routes and note connections, changing only
+  what differs. The existing connection calls (node to node, channel ranges, notes) make
+  user wires, so the control protocol and the desktop are unchanged.
+- **Channel rules** as above: equal counts one to one, mono to stereo copied with a pan,
+  stereo to mono summed at −3 dB, anything else refused unless channel pairs are given.
+- **Implicit Mix:** the wires into one input port are its Mix. Solo silences the unsoloed
+  sources, mute silences a source even when soloed. It compiles into route gains, so no
+  audio node is added; the Routing view can still draw it.
+- **Parts:** an input (notes, an audio input port, or none for a generator), a chain of
+  nodes and a graph output port. Adding, inserting, removing, reordering and removing a
+  part rebuild only that part's wires, keeping the Mix settings of wires it recreates.
+- **Replacing a plugin** moves its wires to the new plugin's ports in the same role (main to
+  main, the other ports in order) in the same commit. A wire with no counterpart stays,
+  unconnected; a main-port wire reconnects when a plugin with a main port returns.
+- **Removing a node** either removes its user wires or reconnects its user sources to its
+  user destinations.
+
+Verification: `control-parts` checks that inserting, reordering, removing from a chain and
+removing a part keep every user wire; the channel rules, pan, level, mute and solo against
+computed output; replacement keeping or flagging every wire; reconnection on removal; and
+that parts, wires and Mix settings round-trip through save and load, play identically, save
+the same manifest again, and that a version 1 document is refused. Deliberately breaking
+the −3 dB sum or letting part edits remove user wires makes it fail. `plugin-selection` now
+expects incompatible replacements to be accepted with flagged wires. All tests pass on
+macOS, under AddressSanitizer and ThreadSanitizer, and in the desktop build; the manifest
+validates against the schema.
+
+Not yet: zones (key and velocity ranges) on note inputs, shared buses and sends as parts
+of the model, groups, undo, and parts and wires in the control protocol, which step 2's
+views need.
 
 ## Open questions
 
