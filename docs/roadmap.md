@@ -201,16 +201,19 @@ new core, from a UI that talks to it only through the control API.
    [plugins/modular](../plugins/modular/README.md) with its history, wrapped as a CLAP
    instrument with factory presets and bundled in the desktop app. The patch editor, the
    upstream sample-grid fix and native sound contexts remain.
-10. **CI failing since worker step 2 — to fix, not started:** GitHub Actions has failed on every
-   push since "Run plugins in worker processes" (October 30, 2026). From the run logs:
-   - macOS runner: `worker-failures`' timing check, with 1–2 blocks over their time next to a
-     failing plugin. Hosted VMs cannot keep real time (as in Docker); run it there with
-     `--no-timing`, as under sanitizers, and keep timing for local and device runs.
-   - ThreadSanitizer job (Linux): an aborting worker is reported as hung, not crashed, because
-     its exit under TSan outlasts the 250 ms hang limit, failing the failure-name checks in
-     `worker-failures` and `worker-recovery`. Fix the classification, not the test.
-   - Ubuntu: `worker-host`'s transpose identity check failed until `b9e6fa2` and has passed
-     since; probably the first-service race fixed there, unconfirmed.
+10. **CI failing since worker step 2 — fixes pushed, waiting for CI to confirm:** GitHub Actions
+   failed on every push since "Run plugins in worker processes" (October 30, 2026):
+   - `worker-failures` on the hosted VMs, which cannot keep real time (as in Docker): it now
+     runs with `--no-timing` when `CI` is set, as under sanitizers, and then compares the
+     healthy instrument's sound only if it met every deadline. Timing stays for local and
+     device runs.
+   - An aborting worker could be reported as hung, not crashed, when its exit outlasted the
+     250 ms hang limit (ThreadSanitizer). The worker's signal handler now marks its shared
+     blocks, and the supervisor names the crash.
+   - `worker-recovery` found no workers on Linux, which shortens process names to 15
+     characters; it now matches the command line.
+   - `worker-host` compared output events' whole fixed-size buffers, unused bytes included,
+     which differ on Linux; it now compares each event's own bytes.
 
 Plugins and apps (sequencers, instruments, the UI) must stay separate components, each in
 its own folder with its own build target and depending only on Oscairn's public headers, so

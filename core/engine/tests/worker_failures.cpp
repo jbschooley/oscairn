@@ -6,6 +6,7 @@
 // playing alone, every block must finish within the block's time, and the failure must be
 // detected and named.
 //   oscairn-worker-failures-test WORKER NORMAL.clap CRASH.clap HANG.clap SLOW.clap [--no-timing]
+// --no-timing skips the overrun check, and the identity check when the normal instrument missed blocks.
 #include <oscairn/graph.h>
 #include <chrono>
 #include <cmath>
@@ -83,12 +84,16 @@ namespace
         }
         const auto reason = expected ? graph.host(b).failure() : std::string();
         const auto name = std::string(std::strrchr(failing, '/') ? std::strrchr(failing, '/') + 1 : failing);
-        check(same, name + ": the other instrument sounds exactly as when playing alone");
+        // Without real time (sanitizers, CI's virtual machines) the healthy instrument may itself miss
+        // blocks; its sound must then match only if it met every deadline.
+        const auto misses = graph.host(a).statistics().deadlineMisses;
+        if(timing || !misses) check(same, name + ": the other instrument sounds exactly as when playing alone");
         check(energy > 0, name + ": the other instrument made sound");
         if(expected) check(reason.find(expected) != std::string::npos && reason.find("not restarted") != std::string::npos,
                            name + ": failure reported as \"" + expected + "\" and given up, got \"" + reason + "\"");
         if(timing) check(overruns == 0, name + ": " + std::to_string(overruns) + " blocks took longer than the block's time");
-        std::printf("%s: %u blocks, worst %.0f us of %.0f us, overruns %u, failure: %s\n", name.c_str(), block, worst * 1e6, period * 1e6, overruns, reason.c_str());
+        std::printf("%s: %u blocks, worst %.0f us of %.0f us, overruns %u, other instrument's missed blocks %llu, failure: %s\n",
+                    name.c_str(), block, worst * 1e6, period * 1e6, overruns, (unsigned long long)misses, reason.c_str());
     }
 }
 

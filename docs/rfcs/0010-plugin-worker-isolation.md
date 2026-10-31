@@ -199,6 +199,8 @@ Implemented 2026-10-30 in `WorkerHost.cpp`:
   unanswered for 250 ms (hung), or misses the budget, by the clock, in every block for a
   quarter second (too slow). `PluginHost::failure()` names the reason; the pooled instrument
   wrapper passes it through. Control calls to a failed worker fail at once.
+- A crashing worker's signal handler marks its shared blocks, so a crash whose exit outlasts
+  the hang limit (under sanitizers) is still named a crash.
 - The worker's audio thread now uses the block's period for its real-time policy. With the
   larger shared buffer's period instead, macOS scheduled it behind the engine and healthy
   workers missed their budget.

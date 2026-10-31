@@ -214,7 +214,8 @@ add_test(NAME worker-host COMMAND oscairn-worker-host-test $<TARGET_FILE:oscairn
 set_tests_properties(worker-host PROPERTIES TIMEOUT 60)
 
 # Sanitizers slow rendering several times over; there the test checks containment, not timing.
-if(KICK_CLAP_SANITIZE OR CMAKE_CXX_FLAGS MATCHES "-fsanitize")
+# CI's virtual machines cannot keep real time either (GitHub sets CI).
+if(KICK_CLAP_SANITIZE OR CMAKE_CXX_FLAGS MATCHES "-fsanitize" OR DEFINED ENV{CI})
     set(worker_timing --no-timing)
 endif()
 add_executable(oscairn-worker-failures-test engine/tests/worker_failures.cpp)

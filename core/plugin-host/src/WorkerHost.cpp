@@ -255,7 +255,7 @@ namespace oscairn
                 node_ = reply.u32();
                 if(reply.data.substr(reply.at) != description_) throw std::runtime_error("the plugin changed");
                 auto& s = *shared_;
-                s.stop.store(0); s.panic.store(0);
+                s.stop.store(0); s.panic.store(0); s.crashed.store(0);
                 s.request.store(requested_.load()); s.done.store(requested_.load());
                 connect();
             }
@@ -294,10 +294,11 @@ namespace oscairn
             void capture() { values_.resize(parameters_.size()); for(size_t i = 0; i < values_.size(); ++i) values_[i] = shared_->parameterValues[i].load(); }
             bool busy() const { return busy_.load(); }
             bool isRoot() const { return root_; }
-            // The supervisor's per-node checks: a block left unanswered past the hang limit, or
-            // too many late ones in a row.
+            // The supervisor's per-node checks: a worker marked as crashing, a block left unanswered
+            // past the hang limit, or too many late ones in a row.
             std::string trouble(int64_t now) const
             {
+                if(const auto signal = shared_->crashed.load()) return "Plugin worker crashed (signal " + std::to_string(signal) + ")";
                 const auto since = requestedAt_.load(std::memory_order_acquire);
                 const bool waiting = shared_->done.load(std::memory_order_acquire) != requested_.load(std::memory_order_acquire);
                 if(waiting && since && std::chrono::nanoseconds(now - since) > process_->hangLimit)

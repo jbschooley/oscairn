@@ -3,6 +3,7 @@
 #include "oscairn/plugin_host.h"
 #include <algorithm>
 #include <cerrno>
+#include <csignal>
 #include <cstdlib>
 #include <thread>
 #include <poll.h>
@@ -160,6 +161,17 @@ namespace oscairn::worker
             w.u8(host.supportsState()).u32(host.soundContextCapacity()).u8(host.effectResources().has_value());
         }
 
+        // A crashing worker may take longer to exit than the hang limit (sanitizers report first), so
+        // its signal handler marks every shared block: the engine then names a crash, not a hang.
+        constexpr size_t maxNodes = 256;
+        std::atomic<Shared*> mapped[maxNodes];
+        extern "C" void crashed(int signal)
+        {
+            for(auto& m : mapped) if(auto* s = m.load()) s->crashed.store(uint32_t(signal));
+            std::signal(signal, SIG_DFL);
+            std::raise(signal);
+        }
+
         // The plugin's sound assets resolve through the engine's store: a request to the engine,
         // answered before the worker's reply to the request it is serving.
         struct EngineAssets final : kick::clap::AssetResolver
@@ -221,6 +233,7 @@ namespace oscairn::worker
     int run(int socket)
     {
         setPlacementPolicy({}); // the worker hosts the plugin itself
+        for(const int signal : {SIGABRT, SIGSEGV, SIGBUS, SIGILL, SIGFPE}) std::signal(signal, crashed);
         struct Node
         {
             std::shared_ptr<PluginHost> host;
@@ -239,7 +252,11 @@ namespace oscairn::worker
                     shared->stop.store(1, std::memory_order_release); shared->request.fetch_add(1, std::memory_order_release); wake(shared->request);
                     audio.join();
                 }
-                if(shared) { munmap(shared, bytes); shared = nullptr; }
+                if(shared)
+                {
+                    for(auto& m : mapped) if(m.load() == shared) m.store(nullptr);
+                    munmap(shared, bytes); shared = nullptr;
+                }
             }
         };
         std::vector<std::unique_ptr<Node>> nodes; // by index; null once destroyed
@@ -265,6 +282,7 @@ namespace oscairn::worker
                 close(fd);
                 if(memory == MAP_FAILED) throw std::runtime_error("Cannot map shared memory");
                 n->shared = static_cast<Shared*>(memory);
+                if(nodes.size() < maxNodes) mapped[nodes.size()].store(n->shared);
                 n->publish();
                 n->audio = std::thread(audio, std::ref(*n->host), std::ref(*n->shared), frames);
             }

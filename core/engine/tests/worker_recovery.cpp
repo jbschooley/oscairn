@@ -111,9 +111,10 @@ namespace
         std::printf("%s\n", reason.c_str());
     }
 
+    // By command line: Linux shortens process names to 15 characters.
     int workers()
     {
-        FILE* list = popen(("pgrep -P " + std::to_string(getpid()) + " oscairn-plugin-worker").c_str(), "r");
+        FILE* list = popen(("pgrep -P " + std::to_string(getpid()) + " -f oscairn-plugin-worker").c_str(), "r");
         char line[32]; int n = 0;
         while(list && std::fgets(line, sizeof line, list)) ++n;
         if(list) pclose(list);
@@ -137,7 +138,7 @@ namespace
     // Kills this process's plugin workers, as a crash would.
     void killWorkers()
     {
-        FILE* list = popen(("pgrep -P " + std::to_string(getpid()) + " oscairn-plugin-worker").c_str(), "r");
+        FILE* list = popen(("pgrep -P " + std::to_string(getpid()) + " -f oscairn-plugin-worker").c_str(), "r");
         char line[32]; int killed = 0;
         while(list && std::fgets(line, sizeof line, list)) if(kill(std::atoi(line), SIGKILL) == 0) ++killed;
         if(list) pclose(list);

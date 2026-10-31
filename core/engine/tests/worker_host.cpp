@@ -5,6 +5,7 @@
 //   oscairn-worker-host-test WORKER PLUGIN.clap [PLUGIN.clap...]
 #include <oscairn/plugin_host.h>
 #include <cmath>
+#include <cstring>
 #include <cstdio>
 #include <filesystem>
 #include <string>
@@ -70,7 +71,9 @@ namespace
             for(const auto& c : a) for(float x : c) energy += double(x) * x;
             uint32_t ca = 0, cb = 0; const auto* ea = local->outputEvents(ca); const auto* eb = remote->outputEvents(cb);
             check(ca == cb, name + ": output event count, block " + std::to_string(block));
-            for(uint32_t i = 0; i < std::min(ca, cb); ++i) same = same && ea[i].bytes == eb[i].bytes;
+            // An event's own bytes; the rest of its fixed-size buffer is unused and may differ.
+            for(uint32_t i = 0; i < std::min(ca, cb); ++i)
+                same = same && ea[i].header()->size == eb[i].header()->size && std::memcmp(ea[i].header(), eb[i].header(), ea[i].header()->size) == 0;
             events += ca;
             local->service(); remote->service();
         }
