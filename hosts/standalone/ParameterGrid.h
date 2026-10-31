@@ -8,7 +8,8 @@
 namespace oscairn::standalone
 {
     /// Every parameter of one plugin, as pages of tiles (RFC 0019's generated editor): a page per
-    /// top-level CLAP module path, a heading per module below that, and a tile per parameter with
+    /// top-level CLAP module path; on a page of more than 24, tabs for the second level; a heading
+    /// per module below that; and a tile per parameter with
     /// its name, its value as the plugin writes it, and a control. Stepped parameters with a few
     /// values get a list of them; two values, a switch; the rest a slider. Hidden parameters are
     /// left out; read-only ones show their value only. Values follow the engine as they change.
@@ -20,6 +21,11 @@ namespace oscairn::standalone
         NodeId node() const { return node_; }
         size_t pages() const { return pages_.size(); }
         void showPage(size_t page);
+        void showTab(size_t tab);
+        size_t tabs() const { return tabNames_.size(); }
+        size_t tilesShown() const { return tiles_.size(); }
+        // Any page's parameters whose name or module has the text; empty: the page again.
+        void search(const juce::String& text) { search_.setText(text, false); search_.onTextChange(); }
 
         void paint(juce::Graphics&) override;
         void resized() override;
@@ -39,7 +45,9 @@ namespace oscairn::standalone
         struct Heading { juce::String text; juce::Rectangle<int> bounds; };
         class Content;
         void timerCallback() override;
-        void build();                   // the tiles of the page shown
+        std::vector<std::string> tabsFor(size_t page) const; // second-level modules, when a page needs them
+        void refresh();                 // tabs, layout and tiles for the page, tab and search shown
+        void build();                   // the tiles shown
         void show(Tile&, double value); // a value into a tile's control and text
 
         Engine& engine_;
@@ -47,8 +55,11 @@ namespace oscairn::standalone
         std::string name_;
         std::vector<Engine::ParamInfo> params_;
         std::vector<Page> pages_;
-        size_t page_ = 0;
-        std::vector<std::unique_ptr<juce::Button>> pageButtons_;
+        size_t page_ = 0, tab_ = 0;
+        bool stale_ = false; // built while the engine was busy: value texts were placeholders
+        std::vector<std::string> tabNames_;
+        std::vector<std::unique_ptr<juce::Button>> pageButtons_, tabButtons_;
+        juce::TextEditor search_;
         juce::Viewport viewport_;
         std::unique_ptr<Content> content_;
         std::vector<std::unique_ptr<juce::Component>> controls_;

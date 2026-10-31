@@ -224,7 +224,9 @@ with sections joined edge to edge).
 Step 3 started: selecting a plugin on the desktop's Part page shows all its parameters as
 pages of tiles (`ParameterGrid`), built from their CLAP module paths, which `params.list` now
 carries. `desktop-shell` renders the Basic Synth's pages, and those of any plugin given on its
-command line (the FM and analog engines were checked: 595 and 294 parameters).
+command line (the FM and analog engines were checked: 595 and 294 parameters). A page of more
+than 24 parameters gets a tab per second-level module, and a search box finds parameters on
+any page by name or module.
 
 Not yet: the views' state on view models of their own, the parts views redrawn for the
 desktop (they are the device's, with the desktop's text), and Panel renders in the same test.

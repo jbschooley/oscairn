@@ -92,7 +92,10 @@ Everything else is handled for you:
 - **Parameter metadata:** clear names, CLAP module paths for grouping, value text, and the
   stepped and read-only flags. The generated editors are built from them:
   - the first level of the module path names the page (`Operator 1`, `LFO 2`); numbered pages
-    of one kind are kept together in number order; the rest of the path is a heading;
+    of one kind are kept together in number order. A page of more than 24 parameters gets a
+    tab for each second level (`Operator 1/Envelope`); the rest of the path is a heading. So
+    give a large page second levels of a dozen or so parameters each;
+  - a search box finds parameters on any page by name or module, so keep names specific;
   - list parameters in the order a player reads them (attack before decay), since tiles follow
     the plugin's order within a page;
   - a stepped parameter with 2 values is a switch, with up to 32 a list of their value texts,

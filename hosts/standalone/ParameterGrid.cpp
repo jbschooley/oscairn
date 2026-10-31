@@ -25,21 +25,38 @@ namespace oscairn::standalone
         }
 
         /// A page in the list down the left: its name, and a fill when it is the one shown.
+        /// A page in the list down the left, or a tab across the top of a page: its name, and a
+        /// fill with an accent mark (left, or under a tab) when it is the one shown.
         class PageButton : public juce::Button
         {
         public:
-            explicit PageButton(const juce::String& name) : juce::Button(name) {}
+            PageButton(const juce::String& name, bool tab) : juce::Button(name), tab_(tab) {}
             bool shown = false;
             void paintButton(juce::Graphics& g, bool hover, bool) override
             {
                 const auto r = getLocalBounds().toFloat();
                 if(shown || hover) { g.setColour(shown ? ink(Ink::Raised) : ink(Ink::Raised).withAlpha(.5f)); g.fillRoundedRectangle(r, std::min(themeData().radius, r.getHeight() / 2)); }
-                if(shown) { g.setColour(ink(Ink::Accent)); g.fillRect(r.withWidth(3.f)); }
+                if(shown) { g.setColour(ink(Ink::Accent)); g.fillRect(tab_ ? r.withTop(r.getBottom() - 2.f).reduced(themeData().radius, 0) : r.withWidth(3.f)); }
                 g.setColour(shown ? ink(Ink::Text) : ink(Ink::Muted));
-                g.setFont(juce::FontOptions(textSize(TextRole::Body, std::max(1, desktopMode(*this))), shown ? juce::Font::bold : juce::Font::plain));
-                g.drawText(getName(), r.withTrimmedLeft(12), juce::Justification::centredLeft, true);
+                g.setFont(juce::FontOptions(textSize(tab_ ? TextRole::Button : TextRole::Body, std::max(1, desktopMode(*this))), shown ? juce::Font::bold : juce::Font::plain));
+                g.drawText(getName(), tab_ ? r : r.withTrimmedLeft(12), tab_ ? juce::Justification::centred : juce::Justification::centredLeft, true);
             }
+        private:
+            bool tab_;
         };
+        constexpr size_t tabbedAbove = 24; // a page with more parameters than this gets tabs
+        std::string level(const std::string& module, size_t n) // the module path's nth level, or ""
+        {
+            size_t from = 0;
+            for(size_t i = 0; i < n; ++i) { const auto slash = module.find('/', from); if(slash == std::string::npos) return {}; from = slash + 1; }
+            return module.substr(from, module.find('/', from) - from);
+        }
+        std::string after(const std::string& module, size_t n) // the path below its first n levels
+        {
+            size_t from = 0;
+            for(size_t i = 0; i < n; ++i) { const auto slash = module.find('/', from); if(slash == std::string::npos) return {}; from = slash + 1; }
+            return module.substr(from);
+        }
     }
 
     /// The scrolling area: the tiles' backgrounds and the headings, under their controls.
@@ -52,7 +69,7 @@ namespace oscairn::standalone
             const int mode = std::max(1, desktopMode(*this));
             for(const auto& t : grid_.tiles_) drawSection(g, t.bounds, ink(Ink::Surface));
             g.setColour(ink(Ink::Muted)); g.setFont(juce::FontOptions(textSize(TextRole::Small, mode), juce::Font::bold));
-            for(const auto& h : grid_.headings_) g.drawText(h.text.toUpperCase(), h.bounds, juce::Justification::bottomLeft, true);
+            for(const auto& h : grid_.headings_) g.drawText(h.text, h.bounds, juce::Justification::bottomLeft, true);
         }
     private:
         ParameterGrid& grid_;
@@ -84,13 +101,19 @@ namespace oscairn::standalone
         if(pages_.size() > 1)
             for(size_t i = 0; i < pages_.size(); ++i)
             {
-                auto b = std::make_unique<PageButton>(text(pages_[i].name));
+                auto b = std::make_unique<PageButton>(text(pages_[i].name), false);
                 b->onClick = [this, i] { showPage(i); };
                 addAndMakeVisible(*b); pageButtons_.push_back(std::move(b));
             }
         viewport_.setViewedComponent(content_.get(), false);
         viewport_.setScrollBarsShown(true, false);
         addAndMakeVisible(viewport_);
+        search_.setTextToShowWhenEmpty("Search parameters", ink(Ink::Muted));
+        search_.setJustification(juce::Justification::centredLeft); search_.setIndents(10, 0);
+        search_.setTooltip("Find a parameter on any page by its name or module");
+        search_.onTextChange = [this] { tab_ = 0; viewport_.setViewPosition(0, 0); refresh(); };
+        search_.onEscapeKey = [this] { search_.clear(); };
+        if(params_.size() > tabbedAbove) addAndMakeVisible(search_);
         startTimer(60);
     }
 
@@ -99,9 +122,28 @@ namespace oscairn::standalone
     void ParameterGrid::showPage(size_t page)
     {
         if(page >= pages_.size()) return;
-        page_ = page; viewport_.setViewPosition(0, 0);
-        build(); resized();
+        page_ = page; tab_ = 0; viewport_.setViewPosition(0, 0);
+        if(search_.isEmpty()) refresh(); else search_.clear(); // clearing the search refreshes
     }
+
+    void ParameterGrid::showTab(size_t tab)
+    {
+        if(tab >= tabNames_.size()) return;
+        tab_ = tab; viewport_.setViewPosition(0, 0);
+        refresh();
+    }
+
+    std::vector<std::string> ParameterGrid::tabsFor(size_t page) const
+    {
+        std::vector<std::string> names;
+        if(page >= pages_.size() || pages_[page].params.size() <= tabbedAbove) return names;
+        for(const auto i : pages_[page].params)
+            if(const auto name = level(params_[i].module, 1); std::find(names.begin(), names.end(), name) == names.end()) names.push_back(name);
+        if(names.size() < 2) names.clear();
+        return names;
+    }
+
+    void ParameterGrid::resized() { refresh(); }
 
     void ParameterGrid::paint(juce::Graphics& g)
     {
@@ -113,26 +155,51 @@ namespace oscairn::standalone
         }
     }
 
-    void ParameterGrid::resized()
+    void ParameterGrid::refresh()
     {
         const int mode = std::max(1, desktopMode(*this));
-        auto area = getLocalBounds();
-        if(!pageButtons_.empty())
+        // The tabs for this page (none while searching), remade only when they change.
+        const auto names = search_.isEmpty() ? tabsFor(page_) : std::vector<std::string>{};
+        if(names != tabNames_)
         {
-            // The pages down the left, the one shown marked like a selected row.
+            tabNames_ = names; tabButtons_.clear();
+            for(size_t i = 0; i < tabNames_.size(); ++i)
+            {
+                auto b = std::make_unique<PageButton>(tabNames_[i].empty() ? juce::String("General") : text(tabNames_[i]), true);
+                b->onClick = [this, i] { showTab(i); };
+                addAndMakeVisible(*b); tabButtons_.push_back(std::move(b));
+            }
+        }
+        auto area = getLocalBounds();
+        const int height = mode == 2 ? 44 : 30;
+        if(!pageButtons_.empty() || search_.isVisible())
+        {
+            // The search and the pages down the left, the page shown marked like a selected row.
             auto list = area.removeFromLeft(mode == 2 ? 200 : 170);
             area.removeFromLeft(sectionGap(8));
-            const int height = mode == 2 ? 44 : 30;
+            if(search_.isVisible()) { search_.setFont(juce::FontOptions(textSize(TextRole::Body, mode))); search_.setBounds(list.removeFromTop(height)); list.removeFromTop(8); }
             for(size_t i = 0; i < pageButtons_.size(); ++i)
             {
                 auto& b = static_cast<PageButton&>(*pageButtons_[i]);
-                b.shown = i == page_; b.repaint();
+                b.shown = i == page_ && search_.isEmpty(); b.repaint();
                 b.setBounds(list.removeFromTop(height)); list.removeFromTop(2);
             }
         }
+        if(!tabButtons_.empty())
+        {
+            auto strip = area.removeFromTop(height);
+            area.removeFromTop(8);
+            const juce::Font font(juce::FontOptions(textSize(TextRole::Button, mode), juce::Font::bold));
+            for(size_t i = 0; i < tabButtons_.size(); ++i)
+            {
+                auto& b = static_cast<PageButton&>(*tabButtons_[i]);
+                b.shown = i == tab_; b.repaint();
+                b.setBounds(strip.removeFromLeft(juce::GlyphArrangement::getStringWidthInt(font, b.getName()) + 28)); strip.removeFromLeft(2);
+            }
+        }
         viewport_.setBounds(area);
-        const int width = area.getWidth() - viewport_.getScrollBarThickness();
-        if(width != content_->getWidth() || tiles_.empty()) { content_->setSize(width, content_->getHeight()); build(); }
+        content_->setSize(area.getWidth() - viewport_.getScrollBarThickness(), content_->getHeight());
+        build();
     }
 
     void ParameterGrid::build()
@@ -142,21 +209,32 @@ namespace oscairn::standalone
         const int mode = std::max(1, desktopMode(*this)), width = content_->getWidth();
         const int gap = sectionGap(6), columns = std::clamp(width / 210, 2, 6);
         const int tileWidth = (width - gap * (columns - 1)) / columns, tileHeight = mode == 2 ? 78 : 64;
-        // The page's parameters by the rest of their module path, each group under its heading.
+        // What shows, each group under its heading: a search's matches from every page by their
+        // whole module path; else the page's (or its tab's) parameters by the rest of the path.
         std::vector<std::pair<std::string, std::vector<size_t>>> groups;
-        for(const auto i : pages_[page_].params)
-        {
-            const auto& m = params_[i].module;
-            const auto slash = m.find('/');
-            const auto rest = slash == std::string::npos ? std::string() : m.substr(slash + 1);
-            auto it = std::find_if(groups.begin(), groups.end(), [&](const auto& g) { return g.first == rest; });
-            if(it == groups.end()) { groups.push_back({rest, {}}); it = groups.end() - 1; }
+        auto add = [&](const std::string& heading, size_t i) {
+            auto it = std::find_if(groups.begin(), groups.end(), [&](const auto& g) { return g.first == heading; });
+            if(it == groups.end()) { groups.push_back({heading, {}}); it = groups.end() - 1; }
             it->second.push_back(i);
+        };
+        if(!search_.isEmpty())
+        {
+            const auto query = search_.getText().trim().toLowerCase();
+            for(size_t i = 0; i < params_.size(); ++i)
+                if(text(params_[i].name).toLowerCase().contains(query) || text(params_[i].module).toLowerCase().contains(query))
+                    add(params_[i].module.empty() ? std::string("Main") : params_[i].module, i);
         }
+        else
+            for(const auto i : pages_[page_].params)
+            {
+                const auto& m = params_[i].module;
+                if(tabNames_.empty()) add(after(m, 1), i);
+                else if(level(m, 1) == tabNames_[tab_]) add(after(m, 2), i);
+            }
         int y = 0;
         for(const auto& [heading, members] : groups)
         {
-            if(!heading.empty()) { headings_.push_back({text(heading), {0, y, width, 28}}); y += 30; }
+            if(!heading.empty()) { headings_.push_back({text(heading).replace("/", juce::String::fromUTF8(" › ")), {0, y, width, 28}}); y += 30; }
             for(size_t k = 0; k < members.size(); ++k)
             {
                 const auto column = int(k % size_t(columns));
@@ -214,6 +292,7 @@ namespace oscairn::standalone
             y += tileHeight + gap + 6;
         }
         content_->setSize(width, std::max(y, 1));
+        stale_ = !engine_.controlReady(); // the engine answers value texts only when it is free
         for(auto& t : tiles_) show(t, engine_.param(name_, params_[t.param].id));
         content_->repaint();
     }
@@ -231,6 +310,7 @@ namespace oscairn::standalone
 
     void ParameterGrid::timerCallback()
     {
+        if(stale_ && engine_.controlReady()) { refresh(); return; }
         // Values change from automation, scenes, controls and other clients: follow them.
         for(auto& t : tiles_)
             if(const double v = engine_.param(name_, params_[t.param].id); v != t.shown) show(t, v);

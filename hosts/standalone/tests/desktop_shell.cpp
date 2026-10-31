@@ -146,16 +146,38 @@ int main(int argc, char** argv)
                 standalone::ParameterGrid grid(engine, node, name);
                 holder.addAndMakeVisible(grid); grid.setBounds(holder.getLocalBounds().reduced(16));
                 check(grid.pages() > 0, "the plugin's parameters make at least one page: " + name);
-                for(size_t page = 0; page < std::min<size_t>(grid.pages(), 3); ++page)
-                {
-                    grid.showPage(page);
+                auto save = [&, name = name](const juce::String& suffix) {
                     for(int i = 0; i < 10; ++i) juce::MessageManager::getInstance()->runDispatchLoopUntil(10);
                     const auto image = holder.createComponentSnapshot(holder.getLocalBounds());
                     check(image.getWidth() == 1180, "a parameter page renders");
-                    if(argc < 5) continue;
-                    const juce::File out{juce::String(argv[4]) + "-params-" + juce::String(name).replaceCharacter(' ', '-').toLowerCase() + "-" + juce::String(int(page + 1)) + ".png"};
+                    if(argc < 5) return;
+                    const juce::File out{juce::String(argv[4]) + "-params-" + juce::String(name).replaceCharacter(' ', '-').toLowerCase() + "-" + suffix + ".png"};
                     out.deleteFile(); juce::FileOutputStream stream(out); juce::PNGImageFormat().writeImageToStream(image, stream);
+                };
+                for(size_t page = 0; page < std::min<size_t>(grid.pages(), 3); ++page) { grid.showPage(page); save(juce::String(int(page + 1))); }
+                // A large page gets tabs, each showing part of it; the first such page, saved.
+                bool tabbed = false;
+                for(size_t page = 0; page < grid.pages(); ++page)
+                {
+                    grid.showPage(page);
+                    if(grid.tabs() < 2) continue;
+                    const auto first = grid.tilesShown();
+                    size_t total = 0;
+                    for(size_t tab = 0; tab < grid.tabs(); ++tab) { grid.showTab(tab); total += grid.tilesShown(); }
+                    check(first > 0 && total > first, "a tabbed page splits its parameters between its tabs");
+                    if(!tabbed) { grid.showTab(0); save("tabs"); tabbed = true; }
                 }
+                // A search finds parameters on every page; clearing it returns to the page.
+                grid.showPage(0);
+                const auto pageTiles = grid.tilesShown();
+                grid.search("a");
+                check(grid.tilesShown() > 0 && grid.tabs() == 0, "a search shows its matches, without tabs");
+                grid.search("release");
+                save("search");
+                grid.search("no parameter is called this");
+                check(grid.tilesShown() == 0, "a search with no matches shows nothing");
+                grid.search("");
+                check(grid.tilesShown() == pageTiles, "clearing the search shows the page again");
             }
             // The preference: Automatic until one is saved, then what was saved.
             const auto folder = juce::File::createTempFile("oscairn-input");
