@@ -2660,6 +2660,87 @@
             "params"
           ],
           "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
+              "const": "parts.level"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "part": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 4294967295
+                },
+                "level": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "mute": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "part",
+                "level",
+                "mute"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "params"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
+              "const": "parts.name"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "part": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 4294967295
+                },
+                "name": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "part",
+                "name"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "params"
+          ],
+          "additionalProperties": true
         }
       ]
     },
@@ -3980,6 +4061,10 @@
           "minimum": 0,
           "maximum": 4294967295,
           "description": "For a part's send wire, the bus it sends to; otherwise 0"
+        },
+        "fader": {
+          "type": "boolean",
+          "description": "A part's wire to where it plays, carrying its level and mute"
         }
       },
       "required": [
@@ -3997,7 +4082,8 @@
         "solo",
         "connected",
         "zones",
-        "send"
+        "send",
+        "fader"
       ],
       "if": {
         "properties": {
@@ -4104,6 +4190,14 @@
             ],
             "additionalProperties": false
           }
+        },
+        "level": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Its fader; sends are post-fader"
+        },
+        "mute": {
+          "type": "boolean"
         }
       },
       "required": [
@@ -4113,7 +4207,9 @@
         "chain",
         "output",
         "bus",
-        "sends"
+        "sends",
+        "level",
+        "mute"
       ],
       "additionalProperties": false
     },

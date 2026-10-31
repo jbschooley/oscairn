@@ -72,6 +72,8 @@ namespace oscairn
         void setPartInput(uint32_t part, const PartInput& input) override;
         void setPartOutput(uint32_t part, uint32_t bus, std::optional<uint32_t> port = {}) override; // bus 0: a graph output port
         void setSend(uint32_t part, uint32_t bus, std::optional<double> level) override;            // no level: remove the send
+        void setPartLevel(uint32_t part, double level, bool mute) override;
+        void setPartName(uint32_t part, const std::string& name) override;
         const std::vector<Part>& parts() const { return parts_; }
         const std::vector<Wire>& wires() const { return wires_; }
         // A user wire between audio ports (channel rules or explicit pairs) or note endpoints.

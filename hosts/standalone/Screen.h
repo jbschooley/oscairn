@@ -47,7 +47,7 @@ namespace oscairn::standalone
         uint32_t track_=0, pattern_=0;
         int length_=16;
         uint32_t stepParameter(sequencer::StepKind kind,int step) const;
-        juce::TextButton plugins_{"Plugins..."}, pads_{"Pads..."};
+        juce::TextButton plugins_{"Plugins..."}, pads_{"Pads..."}, parts_{"Parts..."};
         juce::TextButton useSound_{"Use sound"}, prepareSound_{"Prepare..."}, removeSound_{"Remove"};
         std::unique_ptr<juce::FileChooser> chooser_;
         juce::Label playingSound_, soundNotice_;

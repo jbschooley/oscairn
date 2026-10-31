@@ -20,6 +20,7 @@ namespace oscairn::standalone
     }
     Engine::Engine(const std::string& pluginDir,const std::string& socketPath,const std::string& helperExecutable,const host::AudioConfiguration& audio):socketPath_(socketPath)
     {
+        pluginDir_=pluginDir;
         if(socketPath.empty() && helperExecutable.empty())
         {
             audio_=std::make_unique<host::AudioEngine>(pluginDir,audio);control_=&audio_->control();
@@ -92,6 +93,13 @@ namespace oscairn::standalone
     {
         if(index<0 || index>=int(PadMap::pads))return;
         command([this,index,pressure]{control_->padPressure(uint32_t(index),juce::jlimit(0.0f,1.0f,pressure));});
+    }
+    void Engine::edit(std::function<void(Control&)> change)
+    {
+        command([this,change=std::move(change)]{
+            try{change(*control_);editError_.clear();}
+            catch(const std::invalid_argument& e){editError_=e.what();}
+        });
     }
     void Engine::setPadMap(const PadMap& map){padMap_=map;command([this,map]{control_->setPadMap(map);});}
     void Engine::refreshPads(){try{padMap_=control_->padMap();}catch(const std::exception& e){std::fprintf(stderr,"oscairn: pad map: %s\n",e.what());}}

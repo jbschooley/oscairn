@@ -161,6 +161,15 @@ namespace
         s.note(false, 80, 0); x.run(s); check(near(x.l[0], 0), "the lead's held note is released after its zone moved");
         s.note(true, 40, 1); x.run(s); check(near(x.l[0], .75), "the moved split: 40 now plays both parts");
         s.note(false, 40, 0); x.run(s); check(near(x.l[0], 0), "and releases both");
+        // A part's fader and mute.
+        s.setPartLevel(bass, .5, false); s.commit();
+        s.note(true, 20, 1); x.run(s); check(near(x.l[0], .125), "the bass part at half level: " + std::to_string(x.l[0]));
+        s.setPartLevel(bass, .5, true); s.commit(); x.run(s); check(near(x.l[0], 0), "muted");
+        for(const auto& w : s.wires()) if(w.fader && w.part == bass) s.setMix(w.id, 1, 0, false, false);
+        s.commit(); x.run(s);
+        check(near(x.l[0], .25) && s.parts()[0].level == 1 && !s.parts()[0].mute, "the output wire's Mix sets the part's fader");
+        s.note(false, 20, 0); x.run(s);
+        s.setPartName(bass, "Low end"); check(s.parts()[0].name == "Low end", "renamed");
         bool refused = false; NoteZone bad; bad.curve = 0;
         try { s.setPartInput(lead, {PartInput::Kind::Notes, 0, {bad}}); } catch(const std::invalid_argument&) { refused = true; }
         check(refused, "an invalid zone is refused");

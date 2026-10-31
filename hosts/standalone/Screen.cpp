@@ -19,7 +19,7 @@ namespace oscairn::standalone
 
     Screen::Screen(Engine& engine) : engine_(engine)
     {
-        for(auto* component : std::initializer_list<juce::Component*>{&sounds_, &useSound_, &prepareSound_, &removeSound_, &playingSound_, &soundNotice_, &brightnessLocks_, &plugins_, &pads_, &tracks_, &channels_, &lengths_, &patterns_, &mute_, &launch_, &patternStatus_})
+        for(auto* component : std::initializer_list<juce::Component*>{&sounds_, &useSound_, &prepareSound_, &removeSound_, &playingSound_, &soundNotice_, &brightnessLocks_, &plugins_, &pads_, &parts_, &tracks_, &channels_, &lengths_, &patterns_, &mute_, &launch_, &patternStatus_})
             addAndMakeVisible(component);
         engine_.selectTrack(0);
         tracks_.setName("Sequencer track");tracks_.addItem("Track 1",1);tracks_.addItem("Track 2",2);
@@ -38,6 +38,8 @@ namespace oscairn::standalone
         plugins_.onClick=[this]{if(engine_.openBrowser)engine_.openBrowser();};
         pads_.setTooltip("Choose which note each pad plays, its MIDI channel, velocity and pressure.");
         pads_.onClick=[this]{if(engine_.openPads)engine_.openPads();};
+        parts_.setTooltip("Parts: what each part plays from, its chain, level, mute and sends, and shared buses.");
+        parts_.onClick=[this]{if(engine_.openParts)engine_.openParts();};
         sounds_.setName("Prepared sounds");
         sounds_.setTextWhenNothingSelected("Choose a prepared sound");
         sounds_.onChange=[this]{refreshPicker();};
@@ -143,8 +145,9 @@ namespace oscairn::standalone
         auto area=getLocalBounds().withTrimmedTop(juce::roundToInt(header().getHeight())).withHeight(juce::roundToInt(getHeight()*.20f)).reduced(10,0);
         auto title=area.removeFromTop(area.getHeight()/3);
         brightnessLocks_.setBounds(title.removeFromRight(title.getWidth()/3));
-        plugins_.setBounds(title.removeFromRight(title.getWidth()/4).reduced(2));
-        pads_.setBounds(title.removeFromRight(title.getWidth()/3).reduced(2));
+        plugins_.setBounds(title.removeFromRight(title.getWidth()/5).reduced(2));
+        pads_.setBounds(title.removeFromRight(title.getWidth()/4).reduced(2));
+        parts_.setBounds(title.removeFromRight(title.getWidth()/3).reduced(2));
         playingSound_.setBounds(title);
         auto row=area.removeFromTop(area.getHeight()/2);
         const int buttonWidth=row.getWidth()/6;

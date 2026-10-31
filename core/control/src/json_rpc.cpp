@@ -232,7 +232,7 @@ namespace oscairn
                 ",\"owner\":" + (w.owner == WireOwner::Part ? "\"part\",\"part\":" + std::to_string(w.part) : std::string("\"user\"")) +
                 ",\"from\":" + std::to_string(w.from) + ",\"to\":" + std::to_string(w.to) + ",\"fromPort\":" + std::to_string(w.fromPort) +
                 ",\"toPort\":" + std::to_string(w.toPort) + ",\"channels\":" + join(pairs) + ",\"level\":" + encode(w.level) + ",\"pan\":" + encode(w.pan) +
-                ",\"mute\":" + (w.mute ? "true" : "false") + ",\"solo\":" + (w.solo ? "true" : "false") + ",\"zones\":" + zonesJson(w.zones) + ",\"send\":" + std::to_string(w.send) + ",\"connected\":" + (w.connected ? "true" : "false") + '}';
+                ",\"mute\":" + (w.mute ? "true" : "false") + ",\"solo\":" + (w.solo ? "true" : "false") + ",\"zones\":" + zonesJson(w.zones) + ",\"send\":" + std::to_string(w.send) + ",\"fader\":" + (w.fader ? "true" : "false") + ",\"connected\":" + (w.connected ? "true" : "false") + '}';
         }
         const char* inputKind( PartInput::Kind k ) { return k == PartInput::Kind::Notes ? "notes" : k == PartInput::Kind::Audio ? "audio" : k == PartInput::Kind::Bus ? "bus" : "none"; }
         std::string partJson( const Part& p )
@@ -241,7 +241,7 @@ namespace oscairn
             for( const auto n : p.chain ) chain.push_back(std::to_string(n));
             return "{\"id\":" + std::to_string(p.id) + ",\"name\":" + quote(p.name) + ",\"input\":{\"kind\":\"" + inputKind(p.input.kind) +
                 "\",\"port\":" + std::to_string(p.input.port) + ",\"zones\":" + zonesJson(p.input.zones) + "},\"chain\":" + join(chain) + ",\"output\":" + std::to_string(p.output) +
-                ",\"bus\":" + std::to_string(p.bus) + ",\"sends\":" + [&]{ std::vector<std::string> v; for( const auto& s : p.sends ) v.push_back("{\"bus\":" + std::to_string(s.bus) + ",\"level\":" + encode(s.level) + '}'); return join(v); }() + '}';
+                ",\"level\":" + encode(p.level) + ",\"mute\":" + (p.mute ? "true" : "false") + ",\"bus\":" + std::to_string(p.bus) + ",\"sends\":" + [&]{ std::vector<std::string> v; for( const auto& s : p.sends ) v.push_back("{\"bus\":" + std::to_string(s.bus) + ",\"level\":" + encode(s.level) + '}'); return join(v); }() + '}';
         }
 
         std::string invoke( Control& c, JsonRpc& client, std::string_view method, Value p )
@@ -249,7 +249,7 @@ namespace oscairn
             if( method == "session.hello" )
             {
                 fields(p, {});
-                return R"({"protocolVersion":1,"server":"oscairn","capabilities":["performance.save","performance.load","state.info","state.save","presets.list","properties.list","properties.get","properties.set","properties.request","sounds.get","sounds.prepare","sounds.select","sounds.discard","assets.register","assets.import","assets.libraries","session.status","params.list","params.get","params.set","params.text","params.gesture","graph.audio-routing","graph.get","graph.add","effects.create","effects.resources","graph.remove","graph.replace","graph.connect","graph.disconnect","graph.map","graph.unmap","graph.commit","parts.add","parts.remove","parts.insert","parts.removeNode","parts.move","parts.input","parts.output","parts.send","wires.connect","wires.disconnect","wires.mix","wires.zones","subscribe","unsubscribe","transport.get","transport.set","notes.send","pads.get","pads.set","pads.play","pads.pressure"],"limits":{"messageBytes":65536,"depth":32,"batch":64,"parameterChanges":128}})";
+                return R"({"protocolVersion":1,"server":"oscairn","capabilities":["performance.save","performance.load","state.info","state.save","presets.list","properties.list","properties.get","properties.set","properties.request","sounds.get","sounds.prepare","sounds.select","sounds.discard","assets.register","assets.import","assets.libraries","session.status","params.list","params.get","params.set","params.text","params.gesture","graph.audio-routing","graph.get","graph.add","effects.create","effects.resources","graph.remove","graph.replace","graph.connect","graph.disconnect","graph.map","graph.unmap","graph.commit","parts.add","parts.remove","parts.insert","parts.removeNode","parts.move","parts.input","parts.output","parts.send","parts.level","parts.name","wires.connect","wires.disconnect","wires.mix","wires.zones","subscribe","unsubscribe","transport.get","transport.set","notes.send","pads.get","pads.set","pads.play","pads.pressure"],"limits":{"messageBytes":65536,"depth":32,"batch":64,"parameterChanges":128}})";
             }
             if( method == "subscribe" || method == "unsubscribe" )
             {
@@ -469,6 +469,8 @@ namespace oscairn
                         c.setSend(integer(member(p,"part")),integer(member(p,"bus")),member(p,"level") ? std::optional<double>(number(member(p,"level"))) : std::nullopt);
                         return R"({"accepted":true})";
                     }
+                    if( method == "parts.level" ) { fields(p,{"part","level","mute"}); c.setPartLevel(integer(member(p,"part")),number(member(p,"level")),boolean(member(p,"mute"))); return R"({"accepted":true})"; }
+                    if( method == "parts.name" ) { fields(p,{"part","name"}); c.setPartName(integer(member(p,"part")),std::string(string(member(p,"name")))); return R"({"accepted":true})"; }
                     if( method == "parts.input" ) { fields(p,{"part","input"}); c.setPartInput(integer(member(p,"part")),inputFrom(member(p,"input"))); return R"({"accepted":true})"; }
                     if( method == "wires.zones" ) { fields(p,{"wire","zones"}); c.setZones(integer(member(p,"wire")),zonesFrom(member(p,"zones"))); return R"({"accepted":true})"; }
                     if( method == "parts.remove" ) { fields(p,{"part"}); c.removePart(integer(member(p,"part"))); return R"({"accepted":true})"; }

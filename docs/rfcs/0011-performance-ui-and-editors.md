@@ -346,13 +346,24 @@ a two-layer keyboard split with both layers sending to a shared delay, from part
 and checks it renders sample for sample as the same graph wired by hand on the engine's
 `Graph`.
 
-Not yet: the Parts and Part views themselves, groups and undo.
+**The Parts and Part views** followed on the desktop (`PartsView`, `PartsModel`), opened by
+**Parts...** over the main window so they fit a device's single screen. Parts lists each
+part (where it plays from with its zone over the keyboard, its chain as role-coloured boxes,
+level, mute and a send per bus) and the shared buses under them; **+ Add part** and **+ Add
+bus** make them. Tapping a part opens its chain (IN, the boxes with **+** between them to
+insert any plugin the isolated scanner finds, OUT with its sends), where a box can be moved
+or removed, and its keys, transpose, output, level, mute and sends. Parts have a level and
+mute; sends are post-fader. `desktop-parts-model` builds step 2's gate (a two-layer split and
+a shared delay) with only the views' edits; `desktop-pad-editor` renders both views at
+1024 × 600 against a session over the control socket.
+
+Not yet: scenes, the device's physical controls for these views, groups and undo.
 
 ## Open questions
 
 - The extension for plugin roles (cutoff, attack and so on) and structured editor
   descriptions.
-- Pre- or post-fader sends, and whether a part may send from the middle of its chain.
+- Whether a part may send from the middle of its chain (sends are post-fader, from its end).
 - How scenes store the bypass and mute state shown in the pedal view.
 - The Ignite's physical controls, and default layouts for each device.
 - How the desktop and device share an editing session when both are open.

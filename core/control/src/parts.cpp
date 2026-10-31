@@ -176,12 +176,13 @@ namespace oscairn
         if(!audio) return;
         if(part.bus) { const auto [node, port] = busEntry(part.bus); audioWire(previousNode, audioPort, node, port); }
         else audioWire(previousNode, audioPort, graphOutput, part.output);
+        wires_.back().level = part.level; wires_.back().mute = part.mute; wires_.back().fader = true;
         for(const auto& send : part.sends)
         {
             const auto [node, port] = busEntry(send.bus);
             Wire w; w.from = previousNode; w.fromPort = audioPort; w.to = node; w.toPort = port; w.send = send.bus;
             add(w);
-            wires_.back().level = send.level;
+            wires_.back().level = send.level * part.level; wires_.back().mute = part.mute; // post-fader
         }
     }
 
@@ -261,6 +262,19 @@ namespace oscairn
             else sends.push_back({bus, *level});
             buildParts();
         });
+    }
+
+    void Session::setPartLevel(uint32_t id, double level, bool mute)
+    {
+        findPart(id);
+        if(!std::isfinite(level) || level < 0) throw std::invalid_argument("invalid part level");
+        editWires([&] { auto& p = findPart(id); p.level = level; p.mute = mute; buildParts(); });
+    }
+
+    void Session::setPartName(uint32_t id, const std::string& name)
+    {
+        findPart(id);
+        editWires([&] { findPart(id).name = name; });
     }
 
     void Session::setZones(uint32_t id, const std::vector<NoteZone>& zones)
@@ -353,7 +367,14 @@ namespace oscairn
         editWires([&] {
             auto& w = *std::find_if(wires_.begin(), wires_.end(), [&](const Wire& x) { return x.id == id; });
             w.level = level; w.pan = pan; w.mute = mute; w.solo = solo;
-            if(w.owner == WireOwner::Part && w.send) for(auto& s : findPart(w.part).sends) if(s.bus == w.send) s.level = level; // a send keeps its level
+            // A part's output and send wires carry its fader: setting them sets the part and send.
+            if(w.owner == WireOwner::Part && (w.fader || w.send))
+            {
+                auto& p = findPart(w.part);
+                if(w.send) { for(auto& s : p.sends) if(s.bus == w.send) s.level = p.level > 0 ? level / p.level : level; }
+                else { p.level = level; p.mute = mute; }
+                buildParts();
+            }
         });
     }
 

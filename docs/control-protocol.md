@@ -129,6 +129,8 @@ request members.
 | `parts.input` | `part`, `input` (as for `parts.add`, with optional `zones`) | `{"accepted":true}` |
 | `parts.output` | `part`, and `bus` (play through that bus) or optional `port` (a graph output) | `{"accepted":true}` |
 | `parts.send` | `part`, `bus`, optional `level` (without one, the send is removed) | `{"accepted":true}` |
+| `parts.level` | `part`, `level`, `mute`: its fader; sends are post-fader | `{"accepted":true}` |
+| `parts.name` | `part`, `name` | `{"accepted":true}` |
 | `wires.connect` | `kind`, `from`, `to`; for audio `fromPort`, `toPort`, optional `channels` pairs; optional `level`, `pan` | numeric `wire` |
 | `wires.disconnect` | `wire` | `{"accepted":true}` |
 | `wires.mix` | `wire`, `level`, `pan`, `mute`, `solo` | `{"accepted":true}` |
@@ -226,7 +228,8 @@ report the compiled per-channel routes.
 - **Shared buses** are parts with input kind `bus`: fed by other parts, with their own chain
   and output. A part plays through one bus (`bus`, else its `output` port) and sends copies
   to any (`sends`, each with a `level`); its send wires carry `send`, the bus's ID. Setting a
-  send wire's Mix level sets the send's. Edits that would loop a bus into itself are refused;
+  send wire's Mix level sets the send's. A part's `level` and `mute` are its fader: they set
+  its wire to where it plays (`fader: true`) and scale its sends, which are post-fader. Edits that would loop a bus into itself are refused;
   removing a bus returns its parts to the main output and ends their sends to it.
 - **Zones** decide which notes a note wire passes and how they change: each is
   `{"keys":[low,high],"velocities":[low,high],"channels":mask,"transpose":n,"curve":x,"fixedVelocity":v}`

@@ -50,6 +50,8 @@ namespace oscairn
         void setPartInput(uint32_t part,const PartInput& input) override;
         void setPartOutput(uint32_t part,uint32_t bus,std::optional<uint32_t> port = {}) override;
         void setSend(uint32_t part,uint32_t bus,std::optional<double> level) override;
+        void setPartLevel(uint32_t part,double level,bool mute) override;
+        void setPartName(uint32_t part,const std::string& name) override;
         uint32_t connectPorts(const Wire& wire) override;
         void disconnectWire(uint32_t wire) override;
         void setMix(uint32_t wire,double level,double pan,bool mute,bool solo) override;

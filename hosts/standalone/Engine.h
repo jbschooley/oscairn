@@ -40,6 +40,13 @@ namespace oscairn::standalone
         const PadMap& padMap() const {return padMap_;}
         void setPadMap(const PadMap& map);
         std::function<void()> openPads;
+        // The Parts views (RFC 0011): the graph with its parts, and edits made through the control
+        // API in order; a failed edit is reported in editError().
+        Control::GraphState graph() const {return control_->graphState();}
+        void edit(std::function<void(Control&)> change);
+        const std::string& editError() const {return editError_;}
+        const std::string& pluginDir() const {return pluginDir_;}
+        std::function<void()> openParts;
         void selectTrack(uint32_t track){sequenceTrack_=std::min(track,1u);}
         int trackChannel()const;
         bool connected()const{return failure_.empty();}
@@ -98,6 +105,7 @@ namespace oscairn::standalone
         uint32_t sequenceTrack_=0;
         std::array<uint16_t,128> padChannels_{};
         PadMap padMap_;
+        std::string editError_, pluginDir_;
         void refreshPads();
         std::string socketPath_,failure_;
         uint32_t reconnectTicks_=0;

@@ -15,6 +15,7 @@
 #include "Panel.h"
 #include "PluginBrowser.h"
 #include "PadEditor.h"
+#include "PartsView.h"
 
 #include <BinaryData.h>
 #include <juce_gui_extra/juce_gui_extra.h>
@@ -87,6 +88,7 @@ namespace oscairn::standalone
 #endif
             engine_.openBrowser=[this]{showLibrary();};
             engine_.openPads=[this]{showPads();};
+            engine_.openParts=[this]{showParts();};
             show( first );
             setVisible( true );
         }
@@ -95,6 +97,7 @@ namespace oscairn::standalone
         {
             engine_.openBrowser={};
             engine_.openPads={};
+            engine_.openParts={};
 #if JUCE_MAC
             juce::MenuBarModel::setMacMainMenu( nullptr );
 #else
@@ -104,7 +107,7 @@ namespace oscairn::standalone
 
         void show( const Layout& layout )
         {
-            pads_.reset();
+            pads_.reset();parts_.reset();
             setContentOwned( new Panel( engine_, layout ), false );
             setName( "Oscairn - " + juce::String( layout.name ) );
 
@@ -134,6 +137,7 @@ namespace oscairn::standalone
         {
             DocumentWindow::resized();
             if( pads_ && getContentComponent() ) pads_->setBounds( getContentComponent()->getBounds() );
+            if( parts_ && getContentComponent() ) parts_->setBounds( getContentComponent()->getBounds() );
         }
 
         juce::StringArray getMenuBarNames() override { return { "Performance", "View", "Plugins", "Appearance" }; }
@@ -194,6 +198,14 @@ namespace oscairn::standalone
             addAndMakeVisible( *pads_ );
             if( getContentComponent() ) pads_->setBounds( getContentComponent()->getBounds() );
         }
+        void showParts()
+        {
+            const auto scanner = juce::File::getSpecialLocation( juce::File::currentExecutableFile ).getSiblingFile( "oscairn-plugin-scan" ).getFullPathName().toStdString();
+            parts_ = std::make_unique<PartsView>( engine_, scanner );
+            parts_->onDone = [this] { juce::MessageManager::callAsync( [safe = juce::Component::SafePointer<Window>( this )] { if( safe ) safe->parts_.reset(); } ); };
+            addAndMakeVisible( *parts_ );
+            if( getContentComponent() ) parts_->setBounds( getContentComponent()->getBounds() );
+        }
         static juce::String title( const NamedLayout& l )
         {
             try
@@ -226,6 +238,7 @@ namespace oscairn::standalone
         juce::File plugins_;
         std::unique_ptr<LibraryWindow> library_;
         std::unique_ptr<PadEditor> pads_;
+        std::unique_ptr<PartsView> parts_;
         std::vector<std::pair<juce::String,juce::String>> themeItems_;
     };
 

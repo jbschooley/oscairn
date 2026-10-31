@@ -382,6 +382,10 @@
           "minimum": 0,
           "maximum": 4294967295,
           "description": "For a part's send wire, the bus it sends to; otherwise 0"
+        },
+        "fader": {
+          "type": "boolean",
+          "description": "A part's wire to where it plays, carrying its level and mute"
         }
       },
       "required": [
@@ -397,7 +401,8 @@
         "mute",
         "solo",
         "zones",
-        "send"
+        "send",
+        "fader"
       ],
       "if": {
         "properties": {
@@ -504,6 +509,14 @@
             ],
             "additionalProperties": false
           }
+        },
+        "level": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Its fader; sends are post-fader"
+        },
+        "mute": {
+          "type": "boolean"
         }
       },
       "required": [
@@ -513,7 +526,9 @@
         "chain",
         "output",
         "bus",
-        "sends"
+        "sends",
+        "level",
+        "mute"
       ],
       "additionalProperties": false
     },

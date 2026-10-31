@@ -38,6 +38,7 @@ namespace oscairn
         bool mute = false, solo = false;
         std::vector<NoteZone> zones; // note wires: the zones notes must pass (note_zone.h); none passes all
         uint32_t send = 0;           // part wires: the bus this wire sends to, if it is a send
+        bool fader = false;          // part wires: where the part plays, carrying its level and mute
         bool connected = true; // false: kept, though it no longer fits (after a plugin replacement)
     };
 
@@ -62,6 +63,8 @@ namespace oscairn
         uint32_t output = 0; // graph output port ID, when it plays to no bus
         uint32_t bus = 0;    // the bus it plays through instead, or 0
         std::vector<Send> sends;
+        double level = 1;    // its fader: where it plays and its sends (post-fader)
+        bool mute = false;   // silences where it plays and its sends
     };
 
     // What removing a node does with the user wires on it.
