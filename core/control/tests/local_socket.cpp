@@ -442,6 +442,10 @@ void partsClient(const char* plugin,const char* delay)
         auto withBus=remote.graphState().parts;
         check(withBus.size()==2 && withBus[0].bus==room && withBus[0].sends.size()==1 && withBus[0].sends[0].level==.25 && withBus[1].input.kind==PartInput::Kind::Bus,"a bus, a send and an output through it over the socket");
         remote.setSend(part,room,std::nullopt);remote.setPartOutput(part,0);remote.removePart(room);
+        const auto verse=remote.addScene("Verse");remote.setPartLevel(part,.5,true);const auto chorus=remote.addScene("Chorus");
+        remote.selectScene(verse);
+        check(remote.graphState().scene==verse && remote.graphState().scenes.size()==2 && remote.graphState().parts[0].level==1 && !remote.graphState().parts[0].mute,"scenes over the socket: the verse restores the part's fader");
+        remote.removeScene(chorus);remote.removeScene(verse);
         NoteZone split;split.highKey=59;split.transpose=12;
         remote.setPartInput(part,{PartInput::Kind::Notes,0,{split}});
         const auto zoned=remote.graphState().parts[0].input.zones;

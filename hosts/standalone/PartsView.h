@@ -32,12 +32,16 @@ namespace oscairn::standalone
         const PartRow* part(uint32_t id) const;
         juce::Rectangle<int> rowBounds(size_t row) const;
         void insertMenu(size_t index, juce::Component& at);
+        void sceneControlsMenu(NodeId node, juce::Component& at);
         template<class F> void edit(F&& change) { engine_.edit(std::forward<F>(change)); }
 
         Engine& engine_;
         std::future<std::vector<PluginChoice>> scan_;
         std::vector<PluginChoice> plugins_;
         PartsState state_;
+        std::vector<Scene> scenes_;
+        std::vector<SceneParameter> sceneParameters_;
+        uint32_t scene_ = 0;
         std::string shape_; // what the controls were built for; rebuilt when it changes
         uint32_t page_ = 0; // 0: the list; otherwise the part shown
         NodeId selected_ = 0;

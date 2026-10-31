@@ -277,6 +277,79 @@ namespace oscairn
         editWires([&] { findPart(id).name = name; });
     }
 
+    Scene& Session::findScene(uint32_t id)
+    {
+        const auto it = std::find_if(scenes_.begin(), scenes_.end(), [&](const Scene& s) { return s.id == id; });
+        if(it == scenes_.end()) throw std::invalid_argument("unknown scene");
+        return *it;
+    }
+
+    // A scene records every part's fader and each scene parameter's value, pending edits included.
+    void Session::capture(Scene& scene) const
+    {
+        scene.parts.clear(); scene.values.clear();
+        for(const auto& p : parts_) scene.parts.push_back({p.id, p.level, p.mute});
+        for(const auto& at : sceneParameters_) if(graph_.contains(at.node)) scene.values.push_back({at, parameter(at.node, at.param)});
+    }
+
+    uint32_t Session::addScene(const std::string& name)
+    {
+        Scene scene; scene.id = nextScene_; scene.name = name;
+        capture(scene);
+        scenes_.push_back(std::move(scene)); scene_ = nextScene_;
+        return nextScene_++;
+    }
+
+    void Session::storeScene(uint32_t id) { capture(findScene(id)); scene_ = id; }
+
+    // Faders change route gains in a new plan and parameters arrive as events at the next block,
+    // so nothing is rebuilt: held notes and tails go on. Staged graph edits are committed with it.
+    void Session::selectScene(uint32_t id)
+    {
+        const auto scene = findScene(id);
+        editWires([&] {
+            for(const auto& state : scene.parts)
+                for(auto& p : parts_) if(p.id == state.part) { p.level = state.level; p.mute = state.mute; }
+            buildParts();
+        });
+        commit();
+        for(const auto& v : scene.values)
+            if(graph_.contains(v.at.node) && hasParameter(v.at.node, v.at.param)) setParameter(v.at.node, v.at.param, v.value);
+        scene_ = id;
+    }
+
+    void Session::removeScene(uint32_t id)
+    {
+        findScene(id);
+        std::erase_if(scenes_, [&](const Scene& s) { return s.id == id; });
+        if(scene_ == id) scene_ = 0;
+    }
+
+    void Session::setSceneName(uint32_t id, const std::string& name) { findScene(id).name = name; }
+
+    void Session::setSceneParameters(const std::vector<SceneParameter>& parameters)
+    {
+        for(size_t i = 0; i < parameters.size(); ++i)
+        {
+            const auto& at = parameters[i];
+            if(!graph_.contains(at.node) || !hasParameter(at.node, at.param) || (parameterInfo(at.node, at.param).flags & CLAP_PARAM_IS_READONLY))
+                throw std::invalid_argument("not a writable parameter");
+            if(std::find(parameters.begin(), parameters.begin() + std::ptrdiff_t(i), at) != parameters.begin() + std::ptrdiff_t(i)) throw std::invalid_argument("a scene parameter listed twice");
+        }
+        // Each scene keeps its values for parameters still listed; a new one takes its current value.
+        for(auto& scene : scenes_)
+        {
+            std::vector<Scene::Value> values;
+            for(const auto& at : parameters)
+            {
+                const auto had = std::find_if(scene.values.begin(), scene.values.end(), [&](const Scene::Value& v) { return v.at == at; });
+                values.push_back(had != scene.values.end() ? *had : Scene::Value{at, parameter(at.node, at.param)});
+            }
+            scene.values = std::move(values);
+        }
+        sceneParameters_ = parameters;
+    }
+
     void Session::setZones(uint32_t id, const std::vector<NoteZone>& zones)
     {
         checkZones(zones);
@@ -291,6 +364,7 @@ namespace oscairn
         editWires([&] {
             std::erase_if(parts_, [&](const Part& p) { return p.id == id; });
             std::erase_if(wires_, [&](const Wire& w) { return w.owner == WireOwner::Part && w.part == id; });
+            for(auto& scene : scenes_) std::erase_if(scene.parts, [&](const Scene::PartState& s) { return s.part == id; });
             // Parts that played through a removed bus play to the main output; their sends to it end.
             const auto main = graph_.describe().audioLayout.outputs.front().id;
             for(auto& p : parts_)
@@ -454,6 +528,8 @@ namespace oscairn
             dropNode(node);
             for(auto& p : parts_) std::erase(p.chain, node);
             buildParts();
+            std::erase_if(sceneParameters_, [&](const SceneParameter& at) { return at.node == node; });
+            for(auto& scene : scenes_) std::erase_if(scene.values, [&](const Scene::Value& v) { return v.at.node == node; });
         });
     }
 

@@ -67,6 +67,20 @@ namespace oscairn
         bool mute = false;   // silences where it plays and its sends
     };
 
+    // A scene: a state of the Performance for a section of a song. It records every part's level
+    // and mute, and a value for each scene parameter (the plugin parameters scenes control).
+    // Selecting one applies them without rebuilding anything, so held notes and tails go on.
+    struct SceneParameter { NodeId node = 0; uint32_t param = 0; bool operator==(const SceneParameter&) const = default; };
+    struct Scene
+    {
+        struct PartState { uint32_t part = 0; double level = 1; bool mute = false; };
+        struct Value { SceneParameter at; double value = 0; };
+        uint32_t id = 0;
+        std::string name;
+        std::vector<PartState> parts;
+        std::vector<Value> values;
+    };
+
     // What removing a node does with the user wires on it.
     enum class UserWires { Remove, Reconnect }; // Reconnect joins its user sources to its user destinations
 }

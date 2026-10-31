@@ -175,7 +175,7 @@ namespace oscairn
 
     Control::GraphState Session::graphState() const
     {
-        return {graph_.describe(),nodes_,revision_,staged_,parts_,wires_};
+        return {graph_.describe(),nodes_,revision_,staged_,parts_,wires_,scenes_,sceneParameters_,scene_};
     }
 
     void Session::saveState(NodeId node,const std::string& directory)

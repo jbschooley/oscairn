@@ -135,6 +135,11 @@ request members.
 | `wires.disconnect` | `wire` | `{"accepted":true}` |
 | `wires.mix` | `wire`, `level`, `pan`, `mute`, `solo` | `{"accepted":true}` |
 | `wires.zones` | `wire` (a note wire), `zones` | `{"accepted":true}` |
+| `scenes.add` | optional `name`: captures the parts' faders and the scene parameters' values | numeric `scene` |
+| `scenes.store` | `scene`: captures them into it again | `{"accepted":true}` |
+| `scenes.select` | `scene`: applies them at once and commits staged graph edits | `{"accepted":true}` |
+| `scenes.remove`, `scenes.name` | `scene` (and `name`) | `{"accepted":true}` |
+| `scenes.parameters` | `parameters`: the `{node, param}` scenes control; one added takes its current value in every scene | `{"accepted":true}` |
 | `pads.get` | omitted or `{}` | the pad map: `bank` and eight `banks` of 16 pads, each `note`, `channel` (-1 follows the player), `velocity` (0 as played), `pressure` (`none`, `poly`, `channel`) |
 | `pads.set` | `map` (as `pads.get` returns it) | `{"accepted":true}` |
 | `pads.play` | `pad` (0..15, from the bottom-left), `on`, optional `velocity` and `channel` (the player's) | `{"accepted":true}` |
@@ -243,6 +248,12 @@ report the compiled per-channel routes.
   is a main port awaiting one, 4294967295 none.
 
 All of these stage edits like the other graph methods; `graph.commit` publishes them.
+
+**Scenes** are states of the Performance for sections of a song. `graph.get` lists them
+(`scenes`, each with its parts' `level` and `mute` and the scene parameters' `values`),
+`sceneParameters` (which parameters scenes set) and `scene` (the one last selected or
+stored, or 0). Selecting a scene changes route gains and sends parameter events, so held
+notes and tails go on; values jump for now (smooth transitions are planned).
 
 ## Notifications
 

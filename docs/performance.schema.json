@@ -125,6 +125,26 @@
     },
     "pads": {
       "$ref": "#/$defs/PadMap"
+    },
+    "scenes": {
+      "type": "array",
+      "maxItems": 256,
+      "items": {
+        "$ref": "#/$defs/Scene"
+      }
+    },
+    "sceneParameters": {
+      "type": "array",
+      "maxItems": 4096,
+      "items": {
+        "$ref": "#/$defs/SceneParameter"
+      }
+    },
+    "scene": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 4294967295,
+      "description": "The scene last selected or stored, or 0"
     }
   },
   "required": [
@@ -137,7 +157,10 @@
     "wires",
     "parts",
     "mappings",
-    "pads"
+    "pads",
+    "scenes",
+    "sceneParameters",
+    "scene"
   ],
   "additionalProperties": false,
   "$defs": {
@@ -663,6 +686,98 @@
       "required": [
         "bank",
         "banks"
+      ],
+      "additionalProperties": false
+    },
+    "Scene": {
+      "description": "A scene: each part's fader and each scene parameter's value.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4294967295
+        },
+        "name": {
+          "type": "string"
+        },
+        "parts": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "type": "object",
+            "properties": {
+              "part": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 4294967295
+              },
+              "level": {
+                "type": "number",
+                "minimum": 0
+              },
+              "mute": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "part",
+              "level",
+              "mute"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "values": {
+          "type": "array",
+          "maxItems": 4096,
+          "items": {
+            "type": "object",
+            "properties": {
+              "node": {
+                "$ref": "#/$defs/NodeKey"
+              },
+              "param": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 4294967295
+              },
+              "value": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "node",
+              "param",
+              "value"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "parts",
+        "values"
+      ],
+      "additionalProperties": false
+    },
+    "SceneParameter": {
+      "type": "object",
+      "properties": {
+        "node": {
+          "$ref": "#/$defs/NodeKey"
+        },
+        "param": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        }
+      },
+      "required": [
+        "node",
+        "param"
       ],
       "additionalProperties": false
     }

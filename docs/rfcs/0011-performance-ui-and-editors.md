@@ -357,7 +357,15 @@ mute; sends are post-fader. `desktop-parts-model` builds step 2's gate (a two-la
 a shared delay) with only the views' edits; `desktop-pad-editor` renders both views at
 1024 × 600 against a session over the control socket.
 
-Not yet: scenes, the device's physical controls for these views, groups and undo.
+**Scenes** followed: a scene records every part's level and mute and a value for each
+scene parameter (the plugin parameters chosen to follow scenes, from a box's **Scene
+controls...**). The Parts view's scene buttons switch scenes; **+ Scene** and **Store**
+capture the current state. Switching changes route gains and sends parameter events, so held
+notes and tails go on; `control-parts` switches six times while a note is held and checks
+there is no gap. Values jump for now; smooth transitions are on the roadmap.
+
+Not yet: bypass in scenes (with the pedal view), the device's physical controls for these
+views, groups and undo.
 
 ## Open questions
 

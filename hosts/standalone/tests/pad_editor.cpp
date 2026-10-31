@@ -81,6 +81,7 @@ int main(int argc, char** argv)
                 standalone::setZone(c, bass, 0, 59, -12); standalone::setZone(c, lead, 60, 127, 0);
                 standalone::setSendLevel(c, bass, room, .5); standalone::setSendLevel(c, lead, room, .3);
                 c.setPartLevel(lead, .8, false); c.commit();
+                c.addScene("Verse"); c.setPartLevel(bass, .5, true); c.commit(); c.addScene("Chorus");
             });
             // The engine replays edits deferred behind its startup job from its timer.
             for(int i = 0; i < 500 && engine.graph().parts.size() < 3; ++i) juce::MessageManager::getInstance()->runDispatchLoopUntil(10);

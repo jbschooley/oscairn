@@ -56,6 +56,12 @@ namespace oscairn
         void disconnectWire(uint32_t wire) override;
         void setMix(uint32_t wire,double level,double pan,bool mute,bool solo) override;
         void setZones(uint32_t wire,const std::vector<NoteZone>& zones) override;
+        uint32_t addScene(const std::string& name) override;
+        void storeScene(uint32_t scene) override;
+        void selectScene(uint32_t scene) override;
+        void removeScene(uint32_t scene) override;
+        void setSceneName(uint32_t scene,const std::string& name) override;
+        void setSceneParameters(const std::vector<SceneParameter>& parameters) override;
         void remove(NodeId node,UserWires userWires) override;
         void mapParameter(NodeId from,uint32_t lane,NodeId to,uint32_t param) override;
         void unmapParameter(NodeId from,uint32_t lane) override;

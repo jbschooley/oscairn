@@ -105,9 +105,22 @@ void Session::savePerformance(const std::string& directory) {
         parts.push_back("{\"id\":"+std::to_string(p.id)+",\"name\":"+quote(p.name)+",\"input\":{\"kind\":\""+kind+"\",\"port\":"+std::to_string(p.input.port)+",\"zones\":"+zonesText(p.input.zones)+"},\"chain\":"+join(chain)+",\"output\":"+std::to_string(p.output)+",\"level\":"+numeric(p.level)+",\"mute\":"+(p.mute?"true":"false")+",\"bus\":"+std::to_string(p.bus)+",\"sends\":"+join(sends)+'}');
     }
     for(const auto& m:graph.mappings)mappings.push_back("{\"from\":"+quote(keys.at(m.source))+",\"lane\":"+std::to_string(m.lane)+",\"to\":"+quote(keys.at(m.target))+",\"param\":"+std::to_string(m.param)+'}');
+    // Scenes: each part's fader and each scene parameter's value; and the scene last selected.
+    std::string scenesText;
+    {
+        std::vector<std::string> scenes,parameters;
+        for(const auto& s:scenes_){
+            std::vector<std::string> parts,values;
+            for(const auto& p:s.parts)parts.push_back("{\"part\":"+std::to_string(p.part)+",\"level\":"+numeric(p.level)+",\"mute\":"+(p.mute?"true":"false")+'}');
+            for(const auto& v:s.values)values.push_back("{\"node\":"+quote(keys.at(v.at.node))+",\"param\":"+std::to_string(v.at.param)+",\"value\":"+numeric(v.value)+'}');
+            scenes.push_back("{\"id\":"+std::to_string(s.id)+",\"name\":"+quote(s.name)+",\"parts\":"+join(parts)+",\"values\":"+join(values)+'}');
+        }
+        for(const auto& at:sceneParameters_)parameters.push_back("{\"node\":"+quote(keys.at(at.node))+",\"param\":"+std::to_string(at.param)+'}');
+        scenesText=",\"scenes\":"+join(scenes)+",\"sceneParameters\":"+join(parameters)+",\"scene\":"+std::to_string(scene_);
+    }
     std::vector<std::string> named;
     for(const auto& l:assets_.libraries())if(libraries.count(l.id))named.push_back("{\"id\":"+quote(l.id)+",\"name\":"+quote(l.name)+",\"fingerprint\":"+quote(l.fingerprint)+'}');
-    const auto out="{\"format\":\"oscairn.performance\",\"version\":2,\"libraries\":"+join(named)+",\"transport\":{\"tempo\":"+numeric(tempo_.load())+",\"clockSource\":"+quote(clockSource_.load()==Transport::ClockSource::Internal?"internal":"midi")+"},\"audioInputs\":"+ports(graph.audioLayout.inputs)+",\"audioOutputs\":"+ports(graph.audioLayout.outputs)+",\"nodes\":"+join(nodes)+",\"wires\":"+join(wires)+",\"parts\":"+join(parts)+",\"mappings\":"+join(mappings)+",\"pads\":"+padsText(padMap_)+"}\n";
+    const auto out="{\"format\":\"oscairn.performance\",\"version\":2,\"libraries\":"+join(named)+",\"transport\":{\"tempo\":"+numeric(tempo_.load())+",\"clockSource\":"+quote(clockSource_.load()==Transport::ClockSource::Internal?"internal":"midi")+"},\"audioInputs\":"+ports(graph.audioLayout.inputs)+",\"audioOutputs\":"+ports(graph.audioLayout.outputs)+",\"nodes\":"+join(nodes)+",\"wires\":"+join(wires)+",\"parts\":"+join(parts)+",\"mappings\":"+join(mappings)+",\"pads\":"+padsText(padMap_)+scenesText+"}\n";
     if(out.size()>4*1024*1024)bad("manifest exceeds size limit");
     const auto encoding=detail::jsonPreflight(out,32);if(!encoding.empty())bad(std::string(encoding));
     state_files::write(bundle.temporary.path/"performance.json",out.data(),out.size());validateTree(bundle.temporary.path);bundle.publish();
@@ -116,7 +129,7 @@ void Session::savePerformance(const std::string& directory) {
 void Session::loadPerformance(const std::string& directory) {
     if(directory.empty() || directory.find('\0')!=std::string::npos)bad("invalid directory");
     const auto root=fs::canonical(directory);validateTree(root);const auto doc=document(root);V d=doc.get();
-    fields(d,{"format","version","libraries","transport","audioInputs","audioOutputs","nodes","wires","parts","mappings","pads"});
+    fields(d,{"format","version","libraries","transport","audioInputs","audioOutputs","nodes","wires","parts","mappings","pads","scenes","sceneParameters","scene"});
     const auto pads=padsFrom(field(d,"pads"));
     if(text(field(d,"format"))!="oscairn.performance" || integer(field(d,"version"))!=2)bad("unsupported format version");
     const auto transport=field(d,"transport");fields(transport,{"tempo","clockSource"});const double tempo=number(field(transport,"tempo"));
@@ -200,6 +213,25 @@ void Session::loadPerformance(const std::string& directory) {
         }
     }
     uint32_t nextWire=1;for(auto& w:wires)w.id=nextWire++;
+    std::vector<Scene> scenes;std::vector<SceneParameter> sceneParameters;uint32_t nextScene=1;
+    {
+        auto parameterAt=[&](V v){SceneParameter at{node(field(v,"node")),integer(field(v,"param"))};
+            if(at.node==graphInput || at.node==graphOutput || !next->host(at.node).parameters().size())bad("invalid scene parameter");
+            const auto& all=next->host(at.node).parameters();if(std::none_of(all.begin(),all.end(),[&](const auto& p){return p.id==at.param;}))bad("unknown scene parameter");return at;};
+        for(auto at:array(field(d,"sceneParameters"),4096)){fields(at,{"node","param"});const auto p=parameterAt(at);if(std::find(sceneParameters.begin(),sceneParameters.end(),p)!=sceneParameters.end())bad("duplicate scene parameter");sceneParameters.push_back(p);}
+        std::set<uint32_t> sceneIds;
+        for(auto s:array(field(d,"scenes"),256)){
+            fields(s,{"id","name","parts","values"});Scene scene;scene.id=integer(field(s,"id"));scene.name=text(field(s,"name"));
+            if(!scene.id || !sceneIds.insert(scene.id).second)bad("invalid or duplicate scene");
+            for(auto p:array(field(s,"parts"),256)){fields(p,{"part","level","mute"});Scene::PartState st{integer(field(p,"part")),number(field(p,"level")),boolean(field(p,"mute"))};
+                if(st.level<0 || std::none_of(parts.begin(),parts.end(),[&](const Part& x){return x.id==st.part;}))bad("invalid scene part");scene.parts.push_back(st);}
+            for(auto v:array(field(s,"values"),4096)){fields(v,{"node","param","value"});Scene::Value value{parameterAt(v),number(field(v,"value"))};
+                if(std::find(sceneParameters.begin(),sceneParameters.end(),value.at)==sceneParameters.end())bad("a scene value for a parameter scenes do not control");scene.values.push_back(value);}
+            nextScene=std::max(nextScene,scene.id+1);scenes.push_back(std::move(scene));
+        }
+        const auto selected=integer(field(d,"scene"));if(selected && !sceneIds.count(selected))bad("unknown selected scene");
+    }
+    const auto selectedScene=integer(field(d,"scene"));
     compileWires(*next,wires);
     std::set<std::pair<NodeId,uint32_t>> mappings;
     for(auto m:array(field(d,"mappings"),4096)){fields(m,{"from","lane","to","param"});const auto from=node(field(m,"from")),lane=integer(field(m,"lane"));if(!mappings.emplace(from,lane).second)bad("duplicate parameter mapping");next->mapParamTarget(from,lane,node(field(m,"to")),integer(field(m,"param")));}
@@ -210,7 +242,7 @@ void Session::loadPerformance(const std::string& directory) {
     if(history.size()==historyCapacity)history.pop_front();
     history.push_back({sequence_+1,ChangeKind::Resync,0,0,0,false});
     graph_.publishReplacement(*next,noteHead_.load(std::memory_order_acquire),[&]() noexcept {
-        nodes_.swap(names);observed_.swap(observed);parts_.swap(parts);wires_.swap(wires);nextPart_=nextPart;nextWire_=nextWire;padMap_=pads;heldPads_={};pending_.clear();commandCount_=0;outputDrops_.clear();staged_=false;
+        nodes_.swap(names);observed_.swap(observed);parts_.swap(parts);wires_.swap(wires);nextPart_=nextPart;nextWire_=nextWire;padMap_=pads;heldPads_={};scenes_.swap(scenes);sceneParameters_.swap(sceneParameters);scene_=selectedScene;nextScene_=nextScene;pending_.clear();commandCount_=0;outputDrops_.clear();staged_=false;
         tempo_.store(tempo);clockSource_.store(clock=="internal"?Transport::ClockSource::Internal:Transport::ClockSource::MidiClock);playing_.store(false);
         ++revision_;++sequence_;history_.swap(history);
     });

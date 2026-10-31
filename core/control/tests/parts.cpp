@@ -234,6 +234,53 @@ namespace
         check(toMain == 1, "the lead plays to Main again");
     }
 
+    // Scenes: part faders and scene parameters, switched while a note is held without a gap,
+    // and saved with the Performance.
+    void scenes(const char* fixture, const fs::path& root)
+    {
+        Session s(48000, frames);
+        const auto a = s.add("a", fixture, "org.kick.test.synth"), b = s.add("b", fixture, "org.kick.test.synth");
+        s.setParameter(a, 7, .25); s.setParameter(b, 7, .5);
+        const auto pa = s.addPart("A"), pb = s.addPart("B");
+        s.insertIntoPart(pa, 0, a); s.insertIntoPart(pb, 0, b); s.commit();
+        Audio x; x.run(s);
+        s.setSceneParameters({{b, 7}});
+        const auto verse = s.addScene("Verse"); // A .25, B .5
+        s.setPartLevel(pa, .5, false); s.setPartLevel(pb, 1, true); s.setParameter(b, 7, .75); s.commit(); x.run(s);
+        const auto chorus = s.addScene("Chorus"); // A at half, B muted with gain .75
+        check(s.graphState().scenes.size() == 2 && s.graphState().scene == chorus, "two scenes, the last stored selected");
+        s.note(true, 60, 1); x.run(s);
+        check(near(x.l[0], .125), "chorus: A at half, B muted: " + std::to_string(x.l[0]));
+        s.selectScene(verse); x.run(s);
+        check(near(x.l[0], .75), "verse: both at full, B's gain back to .5: " + std::to_string(x.l[0]));
+        // Switching back and forth while the note is held never goes silent.
+        bool gap = false;
+        for(int i = 0; i < 6; ++i) { s.selectScene(i % 2 ? verse : chorus); for(int k = 0; k < 3; ++k) { x.run(s); gap = gap || x.l[0] <= 0; } }
+        check(!gap, "the held note sounds through every scene change");
+        s.selectScene(chorus); x.run(s);
+        s.setPartLevel(pb, 1, false); s.commit(); x.run(s);
+        check(near(x.l[0], .125 + .75), "B unmuted with the chorus gain: " + std::to_string(x.l[0]));
+        // Scene parameters: removing one drops its values; adding one takes the current value in every scene.
+        s.setSceneParameters({});
+        check(s.graphState().scenes[0].values.empty(), "values dropped with their parameter");
+        s.setSceneParameters({{a, 7}});
+        check(s.graphState().scenes[0].values.size() == 1 && s.graphState().scenes[1].values[0].value == .25, "a new scene parameter takes its current value in every scene");
+        bool refused = false; try { s.setSceneParameters({{a, 7}, {a, 7}}); } catch(const std::invalid_argument&) { refused = true; }
+        check(refused, "a parameter listed twice is refused");
+        s.setSceneName(verse, "Intro"); check(s.graphState().scenes[0].name == "Intro", "renamed");
+        // Saved and loaded with the Performance.
+        s.note(false, 60, 0); x.run(s);
+        s.savePerformance((root / "scenes").string());
+        Session t(48000, frames);
+        t.loadPerformance((root / "scenes").string());
+        const auto g = t.graphState();
+        check(g.scenes.size() == 2 && g.scenes[0].name == "Intro" && g.scenes[1].parts.size() == 2 && g.scenes[1].parts[1].mute && g.scene == chorus && g.sceneParameters.size() == 1,
+              "scenes round-trip with the Performance");
+        t.selectScene(verse); t.note(true, 60, 1); Audio y; y.run(t); y.run(t);
+        check(near(y.l[0], .25 + .75), "the loaded verse plays: " + std::to_string(y.l[0]));
+        s.removeScene(chorus); check(s.graphState().scenes.size() == 1 && s.graphState().scene == 0, "removing the selected scene");
+    }
+
     // Parts, wires with owners and Mix settings, and flagged wires survive save and load, and play
     // the same; an earlier format version is refused.
     void persistence(const char* fixture, const char* audio, const char* delay, const fs::path& root)
@@ -308,6 +355,7 @@ int main(int argc, char** argv)
         replacement(argv[2], argv[3]);
         zones(argv[1]);
         buses(argv[1], argv[3]);
+        scenes(argv[1], temp.path);
         persistence(argv[1], argv[2], argv[3], temp.path);
     }
     catch(const std::exception& e) { forbidAllocation = false; std::fprintf(stderr, "FAIL: %s\n", e.what()); return 1; }

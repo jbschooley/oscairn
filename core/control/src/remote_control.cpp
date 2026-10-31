@@ -174,6 +174,15 @@ namespace oscairn
                 wire.mute=boolean(field(w,"mute"));wire.solo=boolean(field(w,"solo"));wire.zones=zones(field(w,"zones"));wire.send=static_cast<uint32_t>(integer(field(w,"send")));wire.fader=boolean(field(w,"fader"));wire.connected=boolean(field(w,"connected"));
                 next.wires.push_back(std::move(wire));
             }
+            for(auto s:array(field(root,"scenes")))
+            {
+                Scene scene;scene.id=static_cast<uint32_t>(integer(field(s,"id")));scene.name=string(field(s,"name"));
+                for(auto p:array(field(s,"parts")))scene.parts.push_back({static_cast<uint32_t>(integer(field(p,"part"))),number(field(p,"level")),boolean(field(p,"mute"))});
+                for(auto v:array(field(s,"values")))scene.values.push_back({{static_cast<NodeId>(integer(field(v,"node"))),static_cast<uint32_t>(integer(field(v,"param")))},number(field(v,"value"))});
+                next.scenes.push_back(std::move(scene));
+            }
+            for(auto at:array(field(root,"sceneParameters")))next.sceneParameters.push_back({static_cast<NodeId>(integer(field(at,"node"))),static_cast<uint32_t>(integer(field(at,"param")))});
+            next.scene=static_cast<uint32_t>(integer(field(root,"scene")));
             for(auto m:array(field(root,"mappings")))next.topology.mappings.push_back({static_cast<NodeId>(integer(field(m,"from"))),static_cast<uint32_t>(integer(field(m,"lane"))),static_cast<NodeId>(integer(field(m,"to"))),static_cast<uint32_t>(integer(field(m,"param")))});
             std::map<NodeId,std::vector<ParamInfo>> metadata;std::map<std::pair<NodeId,uint32_t>,double> snapshot;
             std::string batch;size_t count=0;
@@ -374,6 +383,18 @@ namespace oscairn
     {impl_->call("parts.level","{\"part\":"+std::to_string(part)+",\"level\":"+encode(level)+",\"mute\":"+(mute?"true":"false")+'}');impl_->refresh();}
     void RemoteControl::setPartName(uint32_t part,const std::string& name)
     {impl_->call("parts.name","{\"part\":"+std::to_string(part)+",\"name\":"+quote(name)+'}');impl_->refresh();}
+    uint32_t RemoteControl::addScene(const std::string& name)
+    {auto reply=impl_->call("scenes.add","{\"name\":"+quote(name)+'}');const auto id=static_cast<uint32_t>(integer(field(field(reply.get(),"result"),"scene")));impl_->refresh();return id;}
+    void RemoteControl::storeScene(uint32_t scene){impl_->call("scenes.store","{\"scene\":"+std::to_string(scene)+'}');impl_->refresh();}
+    void RemoteControl::selectScene(uint32_t scene){impl_->call("scenes.select","{\"scene\":"+std::to_string(scene)+'}');impl_->refresh();}
+    void RemoteControl::removeScene(uint32_t scene){impl_->call("scenes.remove","{\"scene\":"+std::to_string(scene)+'}');impl_->refresh();}
+    void RemoteControl::setSceneName(uint32_t scene,const std::string& name){impl_->call("scenes.name","{\"scene\":"+std::to_string(scene)+",\"name\":"+quote(name)+'}');impl_->refresh();}
+    void RemoteControl::setSceneParameters(const std::vector<SceneParameter>& parameters)
+    {
+        std::string list="[";
+        for(const auto& at:parameters){if(list.size()>1)list+=',';list+="{\"node\":"+std::to_string(at.node)+",\"param\":"+std::to_string(at.param)+'}';}
+        impl_->call("scenes.parameters","{\"parameters\":"+list+"]}");impl_->refresh();
+    }
     void RemoteControl::setZones(uint32_t wire,const std::vector<NoteZone>& zones){impl_->call("wires.zones","{\"wire\":"+std::to_string(wire)+",\"zones\":"+zonesText(zones)+'}');impl_->refresh();}
     void RemoteControl::removePart(uint32_t part){impl_->call("parts.remove","{\"part\":"+std::to_string(part)+'}');impl_->refresh();}
     void RemoteControl::insertIntoPart(uint32_t part,size_t index,NodeId node){impl_->call("parts.insert","{\"part\":"+std::to_string(part)+",\"index\":"+std::to_string(index)+",\"node\":"+std::to_string(node)+'}');impl_->refresh();}

@@ -2741,6 +2741,226 @@
             "params"
           ],
           "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
+              "const": "scenes.add"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                }
+              },
+              "required": [],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
+              "const": "scenes.store"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "scene": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 4294967295
+                }
+              },
+              "required": [
+                "scene"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "params"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
+              "const": "scenes.select"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "scene": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 4294967295
+                }
+              },
+              "required": [
+                "scene"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "params"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
+              "const": "scenes.remove"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "scene": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 4294967295
+                }
+              },
+              "required": [
+                "scene"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "params"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
+              "const": "scenes.name"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "scene": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 4294967295
+                },
+                "name": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "scene",
+                "name"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "params"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
+              "const": "scenes.parameters"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "parameters": {
+                  "type": "array",
+                  "maxItems": 4096,
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "node": {
+                        "$ref": "#/$defs/Node"
+                      },
+                      "param": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 4294967295
+                      }
+                    },
+                    "required": [
+                      "node",
+                      "param"
+                    ],
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "required": [
+                "parameters"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "params"
+          ],
+          "additionalProperties": true
         }
       ]
     },
@@ -2825,6 +3045,9 @@
                 },
                 {
                   "$ref": "#/$defs/PadMap"
+                },
+                {
+                  "$ref": "#/$defs/SceneResult"
                 }
               ]
             }
@@ -3166,6 +3389,23 @@
           "items": {
             "$ref": "#/$defs/Wire"
           }
+        },
+        "scenes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Scene"
+          }
+        },
+        "sceneParameters": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/SceneParameter"
+          }
+        },
+        "scene": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
         }
       },
       "required": [
@@ -3179,7 +3419,10 @@
         "audioInputs",
         "audioOutputs",
         "parts",
-        "wires"
+        "wires",
+        "scenes",
+        "sceneParameters",
+        "scene"
       ],
       "additionalProperties": false
     },
@@ -4364,6 +4607,116 @@
       "required": [
         "bank",
         "banks"
+      ],
+      "additionalProperties": false
+    },
+    "Scene": {
+      "description": "A scene: each part's fader and each scene parameter's value.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4294967295
+        },
+        "name": {
+          "type": "string"
+        },
+        "parts": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "type": "object",
+            "properties": {
+              "part": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 4294967295
+              },
+              "level": {
+                "type": "number",
+                "minimum": 0
+              },
+              "mute": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "part",
+              "level",
+              "mute"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "values": {
+          "type": "array",
+          "maxItems": 4096,
+          "items": {
+            "type": "object",
+            "properties": {
+              "node": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 4294967295
+              },
+              "param": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 4294967295
+              },
+              "value": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "node",
+              "param",
+              "value"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "parts",
+        "values"
+      ],
+      "additionalProperties": false
+    },
+    "SceneParameter": {
+      "type": "object",
+      "properties": {
+        "node": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "param": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        }
+      },
+      "required": [
+        "node",
+        "param"
+      ],
+      "additionalProperties": false
+    },
+    "SceneResult": {
+      "type": "object",
+      "properties": {
+        "scene": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        }
+      },
+      "required": [
+        "scene"
       ],
       "additionalProperties": false
     }

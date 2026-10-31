@@ -224,6 +224,19 @@ namespace oscairn
             if( !map.valid() ) invalid("Invalid pad map");
             return map;
         }
+        std::string scenesJson( const Control::GraphState& g )
+        {
+            std::vector<std::string> scenes, parameters;
+            for( const auto& s : g.scenes )
+            {
+                std::vector<std::string> parts, values;
+                for( const auto& p : s.parts ) parts.push_back("{\"part\":" + std::to_string(p.part) + ",\"level\":" + encode(p.level) + ",\"mute\":" + (p.mute ? "true" : "false") + '}');
+                for( const auto& v : s.values ) values.push_back("{\"node\":" + std::to_string(v.at.node) + ",\"param\":" + std::to_string(v.at.param) + ",\"value\":" + encode(v.value) + '}');
+                scenes.push_back("{\"id\":" + std::to_string(s.id) + ",\"name\":" + quote(s.name) + ",\"parts\":" + join(parts) + ",\"values\":" + join(values) + '}');
+            }
+            for( const auto& at : g.sceneParameters ) parameters.push_back("{\"node\":" + std::to_string(at.node) + ",\"param\":" + std::to_string(at.param) + '}');
+            return ",\"scenes\":" + join(scenes) + ",\"sceneParameters\":" + join(parameters) + ",\"scene\":" + std::to_string(g.scene);
+        }
         std::string wireJson( const Wire& w )
         {
             std::vector<std::string> pairs;
@@ -249,7 +262,7 @@ namespace oscairn
             if( method == "session.hello" )
             {
                 fields(p, {});
-                return R"({"protocolVersion":1,"server":"oscairn","capabilities":["performance.save","performance.load","state.info","state.save","presets.list","properties.list","properties.get","properties.set","properties.request","sounds.get","sounds.prepare","sounds.select","sounds.discard","assets.register","assets.import","assets.libraries","session.status","params.list","params.get","params.set","params.text","params.gesture","graph.audio-routing","graph.get","graph.add","effects.create","effects.resources","graph.remove","graph.replace","graph.connect","graph.disconnect","graph.map","graph.unmap","graph.commit","parts.add","parts.remove","parts.insert","parts.removeNode","parts.move","parts.input","parts.output","parts.send","parts.level","parts.name","wires.connect","wires.disconnect","wires.mix","wires.zones","subscribe","unsubscribe","transport.get","transport.set","notes.send","pads.get","pads.set","pads.play","pads.pressure"],"limits":{"messageBytes":65536,"depth":32,"batch":64,"parameterChanges":128}})";
+                return R"({"protocolVersion":1,"server":"oscairn","capabilities":["performance.save","performance.load","state.info","state.save","presets.list","properties.list","properties.get","properties.set","properties.request","sounds.get","sounds.prepare","sounds.select","sounds.discard","assets.register","assets.import","assets.libraries","session.status","params.list","params.get","params.set","params.text","params.gesture","graph.audio-routing","graph.get","graph.add","effects.create","effects.resources","graph.remove","graph.replace","graph.connect","graph.disconnect","graph.map","graph.unmap","graph.commit","parts.add","parts.remove","parts.insert","parts.removeNode","parts.move","parts.input","parts.output","parts.send","parts.level","parts.name","wires.connect","wires.disconnect","wires.mix","wires.zones","scenes.add","scenes.store","scenes.select","scenes.remove","scenes.name","scenes.parameters","subscribe","unsubscribe","transport.get","transport.set","notes.send","pads.get","pads.set","pads.play","pads.pressure"],"limits":{"messageBytes":65536,"depth":32,"batch":64,"parameterChanges":128}})";
             }
             if( method == "subscribe" || method == "unsubscribe" )
             {
@@ -379,7 +392,7 @@ namespace oscairn
                     ",\"audioInputs\":"+ports(graph.topology.audioLayout.inputs)+",\"audioOutputs\":"+ports(graph.topology.audioLayout.outputs)+
                     ",\"nodes\":" + join(nodes) + ",\"connections\":" + join(connections) + ",\"mappings\":" + join(mappings) +
                     ",\"parts\":" + [&]{ std::vector<std::string> v; for( const auto& x : graph.parts ) v.push_back(partJson(x)); return join(v); }() +
-                    ",\"wires\":" + [&]{ std::vector<std::string> v; for( const auto& x : graph.wires ) v.push_back(wireJson(x)); return join(v); }() + '}';
+                    ",\"wires\":" + [&]{ std::vector<std::string> v; for( const auto& x : graph.wires ) v.push_back(wireJson(x)); return join(v); }() + scenesJson(graph) + '}';
             }
             if(method=="effects.create") {
                 fields(p,{"name","source"});
@@ -441,6 +454,33 @@ namespace oscairn
                 }
                 c.remove(node(c,member(p,"node")),choice);
                 return R"({"accepted":true})";
+            }
+            if( method.substr(0,7) == "scenes." )
+            {
+                try
+                {
+                    if( method == "scenes.add" ) { fields(p,{"name"}); return "{\"scene\":" + std::to_string(c.addScene(member(p,"name") ? std::string(string(member(p,"name"))) : std::string())) + '}'; }
+                    if( method == "scenes.store" ) { fields(p,{"scene"}); c.storeScene(integer(member(p,"scene"))); return R"({"accepted":true})"; }
+                    if( method == "scenes.select" ) { fields(p,{"scene"}); c.selectScene(integer(member(p,"scene"))); return R"({"accepted":true})"; }
+                    if( method == "scenes.remove" ) { fields(p,{"scene"}); c.removeScene(integer(member(p,"scene"))); return R"({"accepted":true})"; }
+                    if( method == "scenes.name" ) { fields(p,{"scene","name"}); c.setSceneName(integer(member(p,"scene")),std::string(string(member(p,"name")))); return R"({"accepted":true})"; }
+                    if( method == "scenes.parameters" )
+                    {
+                        fields(p,{"parameters"});
+                        const auto list = member(p,"parameters");
+                        if( !list || list->type != json_type_array ) invalid("parameters is an array of {node, param}");
+                        std::vector<SceneParameter> parameters;
+                        for( auto* e = static_cast<const json_array_s*>(list->payload)->start; e; e = e->next )
+                        {
+                            fields(e->value,{"node","param"});
+                            if( parameters.size() == 4096 ) invalid("At most 4096 scene parameters");
+                            parameters.push_back({node(c,member(e->value,"node")),integer(member(e->value,"param"))});
+                        }
+                        c.setSceneParameters(parameters);
+                        return R"({"accepted":true})";
+                    }
+                }
+                catch( const std::invalid_argument& e ) { throw Failure{-32003,e.what()}; }
             }
             if( method.substr(0,6) == "parts." || method.substr(0,6) == "wires." )
             {

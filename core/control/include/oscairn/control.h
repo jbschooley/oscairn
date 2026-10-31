@@ -55,6 +55,9 @@ namespace oscairn
             bool staged = false;
             std::vector<Part> parts; // RFC 0011: the part views' model, staged with the graph
             std::vector<Wire> wires;
+            std::vector<Scene> scenes;
+            std::vector<SceneParameter> sceneParameters;
+            uint32_t scene = 0; // the scene last selected or stored, or 0
         };
         enum class ChangeKind { Value, GestureBegin, GestureEnd, Graph, Resync };
         struct Change
@@ -126,6 +129,16 @@ namespace oscairn
         virtual void disconnectWire( uint32_t wire ) = 0;
         virtual void setMix( uint32_t wire, double level, double pan, bool mute, bool solo ) = 0;
         virtual void setZones( uint32_t wire, const std::vector<NoteZone>& zones ) = 0; // a note wire's zones
+
+        // Scenes (parts.h). Adding or storing captures the current part levels and mutes and the
+        // scene parameters' values; selecting applies them at once and commits.
+        virtual uint32_t addScene( const std::string& name ) = 0;
+        virtual void storeScene( uint32_t scene ) = 0;
+        virtual void selectScene( uint32_t scene ) = 0;
+        virtual void removeScene( uint32_t scene ) = 0;
+        virtual void setSceneName( uint32_t scene, const std::string& name ) = 0;
+        // Which parameters scenes control. A parameter added takes its current value in every scene.
+        virtual void setSceneParameters( const std::vector<SceneParameter>& parameters ) = 0;
         virtual void remove( NodeId node, UserWires userWires ) = 0;
         virtual void mapParameter( NodeId from, uint32_t lane, NodeId to, uint32_t param ) = 0;
         virtual void unmapParameter( NodeId from, uint32_t lane ) = 0;

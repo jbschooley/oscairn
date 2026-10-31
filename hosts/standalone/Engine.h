@@ -43,6 +43,7 @@ namespace oscairn::standalone
         // The Parts views (RFC 0011): the graph with its parts, and edits made through the control
         // API in order; a failed edit is reported in editError().
         Control::GraphState graph() const {return control_->graphState();}
+        std::vector<Control::ParamInfo> parameters(NodeId node) const {return control_->parameters(node);}
         void edit(std::function<void(Control&)> change);
         const std::string& editError() const {return editError_;}
         const std::string& pluginDir() const {return pluginDir_;}

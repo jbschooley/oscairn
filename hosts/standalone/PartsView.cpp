@@ -62,13 +62,20 @@ namespace oscairn::standalone
 
     void PartsView::refresh()
     {
-        try { state_ = readParts(engine_.graph()); } catch(const std::exception&) { return; }
+        try
+        {
+            const auto graph = engine_.graph();
+            state_ = readParts(graph); scenes_ = graph.scenes; sceneParameters_ = graph.sceneParameters; scene_ = graph.scene;
+        }
+        catch(const std::exception&) { return; }
         if(page_ && !part(page_)) { page_ = 0; shape_.clear(); }
         message_.setText(text(engine_.editError()), juce::dontSendNotification);
         // Controls are rebuilt only when the structure changes, so a slider being dragged survives.
         std::string shape = std::to_string(page_) + "/" + std::to_string(selected_) + "/" + std::to_string(getWidth()) + "x" + std::to_string(getHeight());
         for(const auto* list : {&state_.parts, &state_.buses})
             for(const auto& p : *list) { shape += "|" + std::to_string(p.id) + ":" + p.name + ":" + std::to_string(p.through); for(const auto& b : p.chain) shape += "," + std::to_string(b.node); }
+        shape += "|scenes:" + std::to_string(scene_);
+        for(const auto& s : scenes_) shape += "," + std::to_string(s.id) + ":" + s.name;
         if(shape != shape_) { shape_ = shape; rebuild(); }
         for(const auto& update : updaters_) (*update)();
         repaint();
@@ -129,7 +136,21 @@ namespace oscairn::standalone
         {
             addBus_.setBounds(top.removeFromRight(120).reduced(2));
             addPart_.setBounds(top.removeFromRight(120).reduced(2));
-            title_.setBounds(top);
+            title_.setBounds(top.removeFromLeft(90));
+            // Scenes: tap one to switch to it; Store saves the parts' faders and the scene
+            // parameters into the selected one.
+            const auto sceneWidth = std::min(110, std::max(56, (top.getWidth() - 200) / std::max(1, int(scenes_.size()))));
+            for(const auto& s : scenes_)
+            {
+                auto* b = button(top.removeFromLeft(sceneWidth).reduced(2), text(s.name), [this, id = s.id] { edit([id](Control& c) { c.selectScene(id); }); });
+                b->setColour(juce::TextButton::buttonColourId, s.id == scene_ ? ink(Ink::Accent) : ink(Ink::Raised));
+                b->setTooltip("Switch to this scene");
+            }
+            button(top.removeFromLeft(90).reduced(2), "+ Scene", [this] { const auto n = scenes_.size() + 1; edit([n](Control& c) { c.addScene("Scene " + std::to_string(n)); }); })
+                ->setTooltip("A new scene with the parts' levels and mutes, and the scene controls, as they are now");
+            if(scene_)
+                button(top.removeFromLeft(80).reduced(2), "Store", [this] { const auto id = scene_; edit([id](Control& c) { c.storeScene(id); }); })
+                    ->setTooltip("Save the parts' levels and mutes, and the scene controls, into the selected scene");
             size_t row = 0;
             for(const auto* rows : {&state_.parts, &state_.buses})
                 for(const auto& p : *rows)
@@ -177,6 +198,9 @@ namespace oscairn::standalone
                     button(actions.removeFromLeft(110).reduced(2), "Move left", [this, id, index] { if(index) edit([id, index](Control& c) { c.movePartNode(id, index, index - 1); c.commit(); }); })->setEnabled(index > 0);
                     button(actions.removeFromLeft(110).reduced(2), "Move right", [this, id, index] { edit([id, index](Control& c) { c.movePartNode(id, index, index + 1); c.commit(); }); })->setEnabled(index + 1 < p->chain.size());
                     button(actions.removeFromLeft(110).reduced(2), "Remove", [this, id, node] { selected_ = 0; edit([id, node](Control& c) { removeBox(c, id, node); }); });
+                    auto* controls = button(actions.removeFromLeft(150).reduced(2), "Scene controls...", {});
+                    controls->setTooltip("Choose which of this plugin's parameters scenes set");
+                    controls->onClick = [this, node, controls] { sceneControlsMenu(node, *controls); };
                 }
                 panel.removeFromTop(8);
             }
@@ -233,6 +257,28 @@ namespace oscairn::standalone
                 if(b.id != id) updates.push_back(slider(labelled("Send to " + text(b.name)).removeFromLeft(320).reduced(2, 10), 0, 1, sendOf(id, b.id), setSend(id, b.id)).second);
         }
         updaters_ = std::move(updates); // refresh() runs them
+    }
+
+    // The node's parameters, ticked where scenes control them; choosing one toggles it.
+    void PartsView::sceneControlsMenu(NodeId node, juce::Component& at)
+    {
+        std::vector<Control::ParamInfo> parameters;
+        try { parameters = engine_.parameters(node); } catch(const std::exception&) { return; }
+        juce::PopupMenu menu;
+        for(size_t i = 0; i < parameters.size(); ++i)
+        {
+            const SceneParameter here{node, parameters[i].id};
+            const bool on = std::find(sceneParameters_.begin(), sceneParameters_.end(), here) != sceneParameters_.end();
+            menu.addItem(int(i) + 1, text(parameters[i].name), !(parameters[i].flags & CLAP_PARAM_IS_READONLY), on);
+        }
+        if(parameters.empty()) menu.addItem(1, "No parameters", false);
+        menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&at), [safe = juce::Component::SafePointer<PartsView>(this), node, parameters](int chosen) {
+            if(!safe || chosen <= 0 || size_t(chosen) > parameters.size()) return;
+            auto list = safe->sceneParameters_;
+            const SceneParameter here{node, parameters[size_t(chosen) - 1].id};
+            if(const auto it = std::find(list.begin(), list.end(), here); it != list.end()) list.erase(it); else list.push_back(here);
+            safe->edit([list](Control& c) { c.setSceneParameters(list); });
+        });
     }
 
     void PartsView::insertMenu(size_t index, juce::Component& at)

@@ -82,6 +82,12 @@ namespace oscairn
         // A source's level, pan, mute and solo in its destination input's implicit Mix.
         void setMix(uint32_t wire, double level, double pan, bool mute, bool solo) override;
         void setZones(uint32_t wire, const std::vector<NoteZone>& zones) override;
+        uint32_t addScene(const std::string& name) override;
+        void storeScene(uint32_t scene) override;
+        void selectScene(uint32_t scene) override;
+        void removeScene(uint32_t scene) override;
+        void setSceneName(uint32_t scene, const std::string& name) override;
+        void setSceneParameters(const std::vector<SceneParameter>& parameters) override;
         void remove(NodeId node, UserWires userWires) override;
         void mapParameter( NodeId from, uint32_t lane, NodeId to, uint32_t param ) override { graph_.mapParamTarget( from, lane, to, param ); staged_ = true; }
         void unmapParameter( NodeId from, uint32_t lane ) override { graph_.unmapParamTarget( from, lane ); staged_ = true; }
@@ -150,6 +156,8 @@ namespace oscairn
         std::pair<NodeId, uint32_t> busEntry(uint32_t bus);
         bool feeds(uint32_t from, uint32_t to);
         Part& findBus(uint32_t id);
+        Scene& findScene(uint32_t id);
+        void capture(Scene& scene) const;
         Part& findPart(uint32_t id);
         void removePairs(const AudioConnection& c);
         void remapPorts(NodeId node, const std::vector<kick::clap::Port>& oldInputs, const std::vector<kick::clap::Port>& oldOutputs,
@@ -170,6 +178,9 @@ namespace oscairn
         std::vector<Part> parts_;
         std::vector<Wire> wires_;
         uint32_t nextPart_ = 1, nextWire_ = 1;
+        std::vector<Scene> scenes_;
+        std::vector<SceneParameter> sceneParameters_;
+        uint32_t scene_ = 0, nextScene_ = 1;
         bool staged_ = false;
         uint64_t revision_ = 0, sequence_ = 0;
         using Address = std::pair<NodeId,uint32_t>;
