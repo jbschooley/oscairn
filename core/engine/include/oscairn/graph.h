@@ -148,9 +148,12 @@ namespace oscairn
         /// Service staged nodes and removed nodes still owned by an audio plan.
         void service();
         uint64_t eventDrops() const noexcept { return eventDrops_.load(std::memory_order_relaxed); }
-        /// Control thread: the largest absolute sample on any of a node's audio outputs since the
-        /// last call (for meters); 0 for an unknown node.
-        float takePeak( NodeId node ) noexcept;
+        /// Meters measure a node's first `meterChannels` audio output channels, in port order.
+        static constexpr uint32_t meterChannels = 16;
+        using Peaks = std::array<float, meterChannels>;
+        /// Control thread: the largest absolute sample on each of a node's audio output channels
+        /// since the last call (for meters); zeros for an unknown node.
+        Peaks takePeaks( NodeId node ) noexcept;
 
         // Audio thread ------------------------------------------------------------
 
@@ -178,7 +181,7 @@ namespace oscairn
         {
             std::shared_ptr<PluginHost> host;
             std::shared_ptr<char> effectGroup=std::make_shared<char>();
-            std::shared_ptr<std::atomic<float>> peak=std::make_shared<std::atomic<float>>(0.f); // see takePeak
+            std::shared_ptr<std::array<std::atomic<float>,meterChannels>> peaks=std::make_shared<std::array<std::atomic<float>,meterChannels>>(); // see takePeaks
             uint32_t                          audioInputs = 0, audioOutputs = 0; // channels
         };
         Node node( NodeId id ) const { return nodes_.at( id ); }
@@ -217,6 +220,9 @@ namespace oscairn
         Lv2BufferLimits lv2Buffers_;
         kick::clap::AssetResolver* assets_ = nullptr;
         AudioLayout audioLayout_;
+    public:
+        const AudioLayout& audioLayout() const noexcept { return audioLayout_; }
+    private:
         uint32_t inputChannels_=0, outputChannels_=0;
         std::vector<AudioConnection> audioRoutes_;
         NodeId   nextId_ = 1;

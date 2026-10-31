@@ -8,10 +8,14 @@ Changing either must not change the audio graph, parameters, MIDI assignments or
 ## Shared design rules
 
 - Use the semantic roles below, never private colour constants in a system component.
-- Use an 8-pixel spacing unit, 16-pixel outer margins and 32–36-pixel desktop controls.
+- Use an 8-pixel spacing unit, 16-pixel outer margins and 30-pixel desktop controls with a
+  keyboard and mouse, 44 pixels with touch ([RFC 0019](rfcs/0019-adaptive-ui.md#input-mode)).
   Hardware layouts retain their measured geometry and scale as a unit.
-- Use a sans-serif family, normal labels around 14–16 pixels and bold section titles.
-  Theme font scaling applies to host controls; fit or truncate labels without moving targets.
+- Use a sans-serif family. On the desktop, text sizes are fixed by role, not by the box they
+  sit in: small 12 (13 with touch), body 14 (16), buttons 13 (15), titles 18 (20), times the
+  theme's font scale (`textSize` in `Theme.h`). A device's panel scales its text with the
+  panel. Fit or truncate labels without moving targets.
+- Buttons, dropdowns, text boxes and value boxes share the theme's corner radius and outline.
 - Use one corner radius and visible borders/focus rings. Keep a text label for every action.
 - Accent marks selection or an action; positive marks active playback; danger marks failures.
   State must also be conveyed by text, position, shape or accessibility state, not colour alone.

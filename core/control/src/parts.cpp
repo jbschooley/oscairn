@@ -490,25 +490,46 @@ namespace oscairn
         editWires([&] { findPart(id).solo = solo; buildParts(); });
     }
 
-    // Each part's peak is the largest of its boxes' peaks times the wire carrying them to where it
-    // plays; a muted wire shows nothing. The held value falls by about 17 dB a second at the
-    // desktop's 5 ms control tick.
-    // shortcut: lanes and pans are not summed, so a part with several lanes shows its loudest; measure the summed bus if that misleads.
+    // Each part's meter has a value per channel of the sound its fader wires carry from their
+    // source's port: that channel's peak times the gain the wire plays it with (level and pan),
+    // the largest where a channel reaches the destination twice (mono into stereo). A muted wire
+    // shows nothing. The held value falls by about 17 dB a second at the desktop's 5 ms tick.
+    // shortcut: lanes are not summed, so a part with several lanes shows its loudest per channel; measure the summed Mix if that misleads.
     void Session::meter()
     {
-        std::map<NodeId, float> peaks;
-        for(const auto& w : wires_) if(w.fader && w.owner == WireOwner::Part && !peaks.count(w.from)) peaks[w.from] = graph_.takePeak(w.from);
-        std::map<uint32_t, double> now;
-        for(const auto& w : wires_) if(w.fader && w.owner == WireOwner::Part && !w.mute) now[w.part] = std::max(now[w.part], peaks[w.from] * w.level);
-        std::map<uint32_t, double> held;
-        for(const auto& p : parts_) held[p.id] = std::max(now[p.id], meters_.count(p.id) ? meters_[p.id] * .99 : 0.0);
+        const auto& layout = graph_.audioLayout();
+        std::map<NodeId, Graph::Peaks> peaks;
+        for(const auto& w : wires_) if(w.fader && w.owner == WireOwner::Part && !peaks.count(w.from)) peaks[w.from] = graph_.takePeaks(w.from);
+        std::map<uint32_t, std::vector<double>> now;
+        for(const auto& w : wires_)
+        {
+            if(!w.fader || w.owner != WireOwner::Part) continue;
+            const auto channels = channelsOf(graph_, layout, w.from, w.fromPort, false);
+            if(!channels) continue;
+            auto& bars = now[w.part];
+            bars.resize(std::max<size_t>(bars.size(), std::min(*channels, Graph::meterChannels)));
+            if(w.mute) continue;
+            uint32_t offset = 0; // the port's first channel among the node's outputs
+            if(const auto* list = portsOf(graph_, layout, w.from, false)) for(const auto& p : *list) { if(p.id == w.fromPort) break; offset += p.channels; }
+            if(const auto compiled = pairs(graph_, layout, w, w.level))
+                for(const auto& p : *compiled)
+                    if(p.from < bars.size() && offset + p.from < Graph::meterChannels) bars[p.from] = std::max(bars[p.from], double(peaks[w.from][offset + p.from]) * p.gain);
+        }
+        std::map<uint32_t, std::vector<double>> held;
+        for(const auto& p : parts_)
+        {
+            auto bars = now[p.id];
+            if(const auto it = meters_.find(p.id); it != meters_.end())
+                for(size_t c = 0; c < bars.size() && c < it->second.size(); ++c) bars[c] = std::max(bars[c], it->second[c] * .99);
+            held[p.id] = std::move(bars);
+        }
         meters_.swap(held);
     }
 
     std::vector<PartMeter> Session::partMeters() const
     {
         std::vector<PartMeter> out;
-        for(const auto& [part, peak] : meters_) out.push_back({part, peak});
+        for(const auto& [part, channels] : meters_) out.push_back({part, channels.empty() ? 0.0 : *std::max_element(channels.begin(), channels.end()), channels});
         return out;
     }
 

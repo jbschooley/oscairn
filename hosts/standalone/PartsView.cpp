@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #include "PartsView.h"
+#include "Icons.h"
 #include "Theme.h"
 
 namespace oscairn::standalone
@@ -60,7 +61,7 @@ namespace oscairn::standalone
     {
         if(scan_.valid() && scan_.wait_for(std::chrono::seconds(0)) == std::future_status::ready) plugins_ = scan_.get();
         // The Mixer's meters move at 20 frames a second; the other pages refresh more slowly.
-        if(page_ == mixerPage) { peaks_.clear(); for(const auto& m : engine_.meters()) peaks_[m.part] = m.peak; }
+        if(page_ == mixerPage) { peaks_.clear(); for(const auto& m : engine_.meters()) peaks_[m.part] = m.channels; }
         const int interval = page_ == mixerPage ? 50 : 200;
         if(getTimerInterval() != interval) startTimer(interval);
         refresh();
@@ -143,6 +144,10 @@ namespace oscairn::standalone
         title_.setText(controlsShown ? "Controls" : mixerShown ? "Mixer" : routingShown ? "Routing" : "Parts", juce::dontSendNotification);
         routingBoxes_.clear();
         auto top = getLocalBounds().reduced(16, 8).removeFromTop(header - 8);
+        // On the desktop with a mouse, rows are tighter and text follows the type scale (RFC 0019).
+        const int mode = desktopMode(*this), lineHeight = mode == 1 ? 34 : 40;
+        const float bodyText = mode ? textSize(TextRole::Body, mode) : 15.0f * themeData().fontScale;
+        name_.setFont(juce::FontOptions(mode ? textSize(TextRole::Title, mode) : 18.0f * themeData().fontScale, juce::Font::bold));
         done_.setBounds(top.removeFromRight(80).reduced(2));
         redo_.setBounds(top.removeFromRight(60).reduced(2)); undo_.setBounds(top.removeFromRight(60).reduced(2));
         undo_.setVisible(true); redo_.setVisible(true);
@@ -172,6 +177,11 @@ namespace oscairn::standalone
         auto button = [this](juce::Rectangle<int> at, const juce::String& label, std::function<void()> click) {
             auto b = std::make_unique<juce::TextButton>(label);
             b->onClick = std::move(click); b->setBounds(at); addAndMakeVisible(*b);
+            auto* raw = b.get(); controls_.push_back(std::move(b)); return raw;
+        };
+        auto plusButton = [this](juce::Rectangle<int> at) {
+            auto b = std::make_unique<IconButton>(IconButton::Glyph::Plus, "Insert");
+            b->setBounds(at); addAndMakeVisible(*b);
             auto* raw = b.get(); controls_.push_back(std::move(b)); return raw;
         };
         auto levelOf = [this](uint32_t id) { return [this, id] { const auto* p = part(id); return p ? p->level : 0.0; }; };
@@ -296,7 +306,7 @@ namespace oscairn::standalone
         {
             back_.setBounds(top.removeFromLeft(110).reduced(2));
             title_.setBounds(top.reduced(8, 0));
-            auto area = getLocalBounds().reduced(16).withTrimmedTop(header).withTrimmedBottom(28);
+            auto area = getLocalBounds().reduced(16).withTrimmedTop(embedded_ ? 0 : header).withTrimmedBottom(28);
             std::vector<const PartRow*> rows;
             for(const auto* list : {&state_.parts, &state_.buses}) for(const auto& p : *list) rows.push_back(&p);
             const int gap = 8, busGap = state_.buses.empty() ? 0 : 16, n = std::max(1, int(rows.size()));
@@ -434,7 +444,7 @@ namespace oscairn::standalone
             chain.removeFromLeft(110);
             for(int i = 0; i <= n; ++i)
             {
-                auto* plus = button(chain.removeFromLeft(34).withSizeKeepingCentre(30, 30), "+", {});
+                auto* plus = plusButton(chain.removeFromLeft(34).withSizeKeepingCentre(28, 28));
                 plus->setTooltip("Insert a plugin or a split here");
                 plus->onClick = [this, i, plus] { insertMenu(size_t(i), *plus); };
                 if(i == n) break;
@@ -449,7 +459,7 @@ namespace oscairn::standalone
                     auto inner = row.reduced(4, 2);
                     // shortcut: a split inside a lane is shown as a gap; the views edit one level of splits, the protocol any.
                     for(const auto& box : b.lanes[k].boxes) { auto r = inner.removeFromLeft(laneBox - 4).reduced(2, 0); if(!box.split) boxes_.push_back({box.node, r}); }
-                    auto* lanePlus = button(inner.removeFromLeft(34).withSizeKeepingCentre(28, 28), "+", {});
+                    auto* lanePlus = plusButton(inner.removeFromLeft(34).withSizeKeepingCentre(24, 24));
                     lanePlus->setTooltip("Add a plugin to this lane");
                     const auto at = b.lanes[k].boxes.size(); const ChainPlace place{b.split, uint32_t(k)};
                     lanePlus->onClick = [this, at, place, lanePlus] { insertMenu(at, *lanePlus, place); };
@@ -460,7 +470,7 @@ namespace oscairn::standalone
             // The selected box's actions.
             if(selected_)
             {
-                auto actions = panel.removeFromTop(40);
+                auto actions = panel.removeFromTop(lineHeight);
                 // Where the box is: the part's own chain or a lane, and its position there.
                 std::optional<std::tuple<ChainPlace, size_t, size_t>> found;
                 for(size_t i = 0; i < p->chain.size(); ++i)
@@ -488,9 +498,9 @@ namespace oscairn::standalone
             }
             const auto id = p->id;
             auto labelled = [&](const juce::String& label) {
-                auto r = panel.removeFromTop(40);
+                auto r = panel.removeFromTop(lineHeight);
                 auto l = std::make_unique<juce::Label>(juce::String(), label);
-                l->setFont(juce::FontOptions(15.0f * themeData().fontScale));
+                l->setFont(juce::FontOptions(bodyText));
                 l->setBounds(r.removeFromLeft(130)); addAndMakeVisible(*l); controls_.push_back(std::move(l));
                 return r;
             };
@@ -500,7 +510,7 @@ namespace oscairn::standalone
             if(split && !selected_)
             {
                 const auto sp = split->split;
-                auto actions = panel.removeFromTop(40);
+                auto actions = panel.removeFromTop(lineHeight);
                 if(selectedLane_ < 0 || size_t(selectedLane_) >= split->lanes.size())
                 {
                     const bool bands = split->kind == Split::Kind::Bands;
@@ -599,7 +609,7 @@ namespace oscairn::standalone
                     box->setBounds(at); addAndMakeVisible(*box); controls_.push_back(std::move(box));
                 };
                 keyBox(r.removeFromLeft(110).reduced(2), false);
-                auto to = std::make_unique<juce::Label>(juce::String(), "to"); to->setFont(juce::FontOptions(15.0f * themeData().fontScale)); to->setBounds(r.removeFromLeft(30)); addAndMakeVisible(*to); controls_.push_back(std::move(to));
+                auto to = std::make_unique<juce::Label>(juce::String(), "to"); to->setFont(juce::FontOptions(bodyText)); to->setJustificationType(juce::Justification::centred); to->setBounds(r.removeFromLeft(30)); addAndMakeVisible(*to); controls_.push_back(std::move(to));
                 keyBox(r.removeFromLeft(110).reduced(2), true);
                 button(r.removeFromLeft(100).reduced(2), "All keys", [this, id] { const auto* q = part(id); const int t = q ? q->transpose : 0; edit([id, t](Control& c) { setZone(c, id, 0, 127, t); }); });
                 auto t = labelled("Transpose");
@@ -879,11 +889,19 @@ namespace oscairn::standalone
                 g.setColour(p && (p->mute || p->silenced) ? ink(Ink::Surface).withAlpha(.5f) : ink(Ink::Surface));
                 g.fillRoundedRectangle(s.bounds.toFloat(), themeData().radius);
                 g.setColour(ink(Ink::Raised)); g.fillRoundedRectangle(s.meter.toFloat(), 3);
-                const auto peak = peaks_.count(s.part) ? peaks_.at(s.part) : 0.0;
-                const double db = peak > 0 ? 20 * std::log10(peak) : -100;
-                const float fraction = float(std::clamp((db + 60) / 66, 0.0, 1.0));
-                g.setColour(db > -3 ? ink(Ink::Danger) : db > -12 ? juce::Colour(0xffe8c547) : juce::Colour(0xff5ac46a));
-                g.fillRoundedRectangle(s.meter.toFloat().withTrimmedTop(s.meter.getHeight() * (1 - fraction)), 3);
+                // A bar per channel of the part's sound (mono, stereo or more), side by side.
+                const auto it = peaks_.find(s.part);
+                const auto channels = it == peaks_.end() || it->second.empty() ? std::vector<double>{0.0} : it->second;
+                auto bars = s.meter.toFloat();
+                const float barWidth = (bars.getWidth() - float(channels.size() - 1)) / float(channels.size());
+                for(const auto peak : channels)
+                {
+                    auto bar = bars.removeFromLeft(barWidth); bars.removeFromLeft(1);
+                    const double db = peak > 0 ? 20 * std::log10(peak) : -100;
+                    const float fraction = float(std::clamp((db + 60) / 66, 0.0, 1.0));
+                    g.setColour(db > -3 ? ink(Ink::Danger) : db > -12 ? juce::Colour(0xffe8c547) : juce::Colour(0xff5ac46a));
+                    g.fillRoundedRectangle(bar.withTrimmedTop(bar.getHeight() * (1 - fraction)), 2);
+                }
             }
             return;
         }

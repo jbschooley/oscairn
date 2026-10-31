@@ -198,20 +198,25 @@ Steps 1–3 come before RFC 0011's step 5, and cover its knob pages.
 
 Started 2026-10-31. A layout names its surface (`"surface": "desktop"`), and the desktop
 layout is now the Desktop surface (`hosts/standalone/DesktopShell.cpp`):
-- a toolbar with play and stop, tempo, the scene and Store, the audio device and MIDI inputs,
-  and undo and redo;
-- the parts and buses down the left, each with what plays, its input, mute and solo marks and
-  its level;
-- tabs for the selected part, the Mixer, Routing, Controls and the Sequencer.
+- a toolbar with the tempo (the clock every plugin follows), the scene and Store, the audio
+  device and MIDI inputs, and undo and redo as icons;
+- the parts and buses down the left, each with what plays and from where, mute and solo
+  marks, a meter per channel of its sound and a mark where its fader sits;
+- tabs for the selected part, the Mixer, Routing, Controls and the Sequencer. Each tab, or
+  any tab from its right-click menu, opens in a window of its own as well.
 
-The parts views are embedded as they are, so they are still sized for the device's screen. The
-input mode (View > Input: Automatic, Keyboard and mouse, Touch) is saved beside the theme
-selection, and for now changes the toolbar's, list's and tabs' sizes; Automatic means keyboard
-and mouse. `desktop-shell` builds a small Performance and renders every tab in both input
-modes (to PNGs when given a path). The device layouts are unchanged.
+Play and Stop moved into the Sequencer tab: they start the sequencer, not the window. A part's
+meters have one bar per channel of its sound, its last plugin's main audio output as wired to
+where it plays (`parts.meters`' `channels`), after its fader and pan. On the desktop, text
+follows a type scale by role and every control shares the theme's corners
+([design language](../design-language.md)); the parts views take tighter rows with a mouse.
+The input mode (View > Input: Automatic, Keyboard and mouse, Touch) is saved beside the
+theme selection; Automatic means keyboard and mouse for now. `desktop-shell` builds a small
+Performance, plays a chord, checks the meters move and renders every tab in both input modes
+(to PNGs when given a path). The device layouts are unchanged.
 
-Not yet: the views' state on view models of their own, the parts views drawn for each surface,
-and Panel renders in the same test.
+Not yet: the views' state on view models of their own, the parts views redrawn for the
+desktop (they are the device's, with the desktop's text), and Panel renders in the same test.
 
 ## Open questions
 

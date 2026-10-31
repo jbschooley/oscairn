@@ -32,12 +32,18 @@ int main(int argc, char** argv)
         session.setHostStatus(status);
         LocalServer server(session);
         server.listen(socket.string());
-        std::atomic<bool> running = true;
+        std::atomic<bool> running = true, play = false;
+        // Audio rendered on the same thread, so the meters move: once the Performance is made, a
+        // chord held from the keys.
         std::thread control([&] {
+            std::array<float, 128> l{}, r{}; float* out[2]{l.data(), r.data()};
+            bool held = false;
             while(running)
             {
                 server.poll(uint64_t(std::chrono::steady_clock::now().time_since_epoch().count()));
                 session.service();
+                if(play && !held) { for(const int key : {36, 60, 64, 67, 79}) session.note(true, key, .8); held = true; }
+                session.process(nullptr, 0, out, 2, 128);
                 std::this_thread::sleep_for(std::chrono::milliseconds(1));
             }
         });
@@ -68,6 +74,7 @@ int main(int argc, char** argv)
                 c.setMacroTargets(knob, {level});
             });
             for(int i = 0; i < 500 && engine.graph().parts.size() < 5; ++i) juce::MessageManager::getInstance()->runDispatchLoopUntil(10);
+            play = true;
             const auto made = standalone::readParts(engine.graph());
             check(made.parts.size() == 4 && made.buses.size() == 1 && made.parts[0].sound == "Basic Synth" && made.buses[0].chain.size() == 1 && engine.editError().empty(),
                   "the Performance was made with its plugins: " + std::string(engine.editError()));
@@ -77,12 +84,16 @@ int main(int argc, char** argv)
                 standalone::DesktopShell shell(engine, argv[2], mode);
                 shell.setSize(1440, 900);
                 for(int i = 0; i < 30; ++i) juce::MessageManager::getInstance()->runDispatchLoopUntil(10); // the shell's first ticks
+                // The meters: a value per channel of each part's sound.
+                bool moving = false;
+                for(int i = 0; i < 200 && !moving; ++i) { juce::MessageManager::getInstance()->runDispatchLoopUntil(10); for(const auto& m : engine.meters()) moving |= m.peak > 0; }
+                check(moving, "the parts' meters move while notes play");
                 for(const char* name : {"Part", "Mixer", "Routing", "Controls", "Sequencer"})
                 {
                     standalone::DesktopShell::Tab tab{};
                     check(standalone::DesktopShell::tabNamed(name, tab), std::string("a tab named ") + name);
                     shell.showTab(tab);
-                    for(int i = 0; i < 5; ++i) juce::MessageManager::getInstance()->runDispatchLoopUntil(10);
+                    for(int i = 0; i < 30; ++i) juce::MessageManager::getInstance()->runDispatchLoopUntil(10); // its meters' first readings
                     const auto image = shell.createComponentSnapshot(shell.getLocalBounds());
                     check(image.getWidth() == 1440 && image.getHeight() == 900, std::string("renders ") + name);
                     if(argc < 4) continue;

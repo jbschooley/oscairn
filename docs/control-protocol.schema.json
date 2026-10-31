@@ -5998,7 +5998,7 @@
     },
     "MetersResult": {
       "type": "object",
-      "description": "Each part's and bus's recent peak after its fader, linear, held and falling",
+      "description": "Each part's and bus's recent peak after its fader and pan, linear, held and falling, per channel and the largest",
       "properties": {
         "meters": {
           "type": "array",
@@ -6013,11 +6013,21 @@
               "peak": {
                 "type": "number",
                 "minimum": 0
+              },
+              "channels": {
+                "type": "array",
+                "description": "One value per channel of the part's sound: its last plugin's main audio output as wired to where it plays",
+                "maxItems": 16,
+                "items": {
+                  "type": "number",
+                  "minimum": 0
+                }
               }
             },
             "required": [
               "part",
-              "peak"
+              "peak",
+              "channels"
             ],
             "additionalProperties": false
           }

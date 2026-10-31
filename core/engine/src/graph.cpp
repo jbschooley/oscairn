@@ -25,7 +25,7 @@ namespace oscairn
         struct Step
         {
             std::shared_ptr<PluginHost> host; // keeps the plugin alive while any plan uses it
-            std::shared_ptr<std::atomic<float>> peak; // the node's, shared with every plan
+            std::shared_ptr<std::array<std::atomic<float>,Graph::meterChannels>> peaks; // the node's, shared with every plan
             uint32_t                          audioInputs = 0, audioOutputs = 0;
             std::vector<AudioRoute>           audioSources;
             std::vector<uint32_t> silentInputs;
@@ -418,7 +418,7 @@ namespace oscairn
             const auto& node = nodes_.at( id );
             Plan::Step  step;
             step.host         = node.host;
-            step.peak         = node.peak;
+            step.peaks        = node.peaks;
             step.audioInputs  = node.audioInputs;
             step.audioOutputs = node.audioOutputs;
             stepOf[id]        = (int)plan->steps.size();
@@ -525,10 +525,12 @@ namespace oscairn
         return {};
     }
 
-    float Graph::takePeak( NodeId node ) noexcept
+    Graph::Peaks Graph::takePeaks( NodeId node ) noexcept
     {
-        const auto it = nodes_.find( node );
-        return it == nodes_.end() ? 0.f : it->second.peak->exchange( 0.f, std::memory_order_relaxed );
+        Peaks out{};
+        if( const auto it = nodes_.find( node ); it != nodes_.end() )
+            for( uint32_t c = 0; c < meterChannels; ++c ) out[c] = ( *it->second.peaks )[c].exchange( 0.f, std::memory_order_relaxed );
+        return out;
     }
 
     bool Graph::process( float* const* outputs, uint32_t frames, const clap_event_transport_t* transport,
@@ -632,12 +634,14 @@ namespace oscairn
                 for(auto& source:step.noteSources)source.route->clear();
             }
             ok &= processed;
-            if(processed && step.peak)
-            {
-                float peak=0;
-                for(uint32_t c=0;c<step.audioOutputs;++c)for(uint32_t i=0;i<frames;++i)peak=std::max(peak,std::abs(step.out[c][i]));
-                for(float seen=step.peak->load(std::memory_order_relaxed);peak>seen && !step.peak->compare_exchange_weak(seen,peak,std::memory_order_relaxed););
-            }
+            if(processed && step.peaks)
+                for(uint32_t c=0;c<std::min(step.audioOutputs,meterChannels);++c)
+                {
+                    float peak=0;
+                    for(uint32_t i=0;i<frames;++i)peak=std::max(peak,std::abs(step.out[c][i]));
+                    auto& held=(*step.peaks)[c];
+                    for(float seen=held.load(std::memory_order_relaxed);peak>seen && !held.compare_exchange_weak(seen,peak,std::memory_order_relaxed););
+                }
             step.paramCount = 0;step.paramDrops=0;step.releaseCount=0;step.releaseOverflow=false;
             uint32_t endedCount=0;const auto* ended=step.host->outputEvents(endedCount);
             for(uint32_t i=0;i<endedCount;++i)for(auto& source:step.noteSources)source.route->ended(ended[i]);

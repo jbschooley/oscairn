@@ -192,8 +192,55 @@ juce::Typeface::Ptr Theme::getTypefaceForFont(const juce::Font& font) {
     if(regular_ && font.getTypefaceName()==juce::Font::getDefaultSansSerifFontName())return font.isBold() && bold_?bold_:regular_;
     return LookAndFeel_V4::getTypefaceForFont(font);
 }
-juce::Font Theme::getLabelFont(juce::Label& label){return juce::FontOptions(juce::jlimit(12.f,28.f,label.getHeight()*.7f)*current.fontScale);}
-juce::Font Theme::getTextButtonFont(juce::TextButton&,int height){return juce::FontOptions(juce::jlimit(13.f,22.f,height*.36f)*current.fontScale);}
+int desktopMode(const juce::Component& c) {
+    for(auto* at=&c;at;at=at->getParentComponent())if(const auto* v=at->getProperties().getVarPointer("oscairnDesktop"))return int(*v);
+    return 0;
+}
+void setDesktopMode(juce::Component& c,int mode){c.getProperties().set("oscairnDesktop",mode);}
+float textSize(TextRole role,int mode) {
+    const bool touch=mode==2;
+    const float size=role==TextRole::Small?(touch?13.f:12.f):role==TextRole::Button?(touch?15.f:13.f):role==TextRole::Title?(touch?20.f:18.f):(touch?16.f:14.f);
+    return size*current.fontScale;
+}
+// On the desktop a label keeps the size its code gives it and buttons and menus the type scale;
+// on a device's panel, text follows its box, which the panel scales as a whole.
+juce::Font Theme::getLabelFont(juce::Label& label){return desktopMode(label)?label.getFont():juce::Font(juce::FontOptions(juce::jlimit(12.f,28.f,label.getHeight()*.7f)*current.fontScale));}
+juce::Font Theme::getTextButtonFont(juce::TextButton& b,int height){const int mode=desktopMode(b);return juce::FontOptions(mode?textSize(TextRole::Button,mode):juce::jlimit(13.f,22.f,height*.36f)*current.fontScale);}
+juce::Font Theme::getComboBoxFont(juce::ComboBox& box){const int mode=desktopMode(box);return mode?juce::Font(juce::FontOptions(textSize(TextRole::Body,mode))):LookAndFeel_V4::getComboBoxFont(box);}
+// Dropdowns and text boxes share the buttons' corners and outline.
+void Theme::drawComboBox(juce::Graphics& g,int width,int height,bool,int,int,int,int,juce::ComboBox& box) {
+    const auto bounds=juce::Rectangle<float>(0,0,float(width),float(height)).reduced(1);
+    g.setColour(box.findColour(juce::ComboBox::backgroundColourId).withMultipliedAlpha(box.isEnabled()?1.f:.4f));g.fillRoundedRectangle(bounds,current.radius);
+    const bool focus=box.hasKeyboardFocus(true);
+    g.setColour(ink(focus?Ink::Accent:Ink::Border));g.drawRoundedRectangle(bounds,current.radius,focus?2.f:1.f);
+    const auto arrow=juce::Rectangle<float>(float(width-height),0,float(height),float(height)).withSizeKeepingCentre(height*.3f,height*.15f);
+    juce::Path p;p.startNewSubPath(arrow.getX(),arrow.getY());p.lineTo(arrow.getCentreX(),arrow.getBottom());p.lineTo(arrow.getRight(),arrow.getY());
+    g.setColour(box.findColour(juce::ComboBox::arrowColourId).withMultipliedAlpha(box.isEnabled()?1.f:.4f));
+    g.strokePath(p,juce::PathStrokeType(1.6f,juce::PathStrokeType::curved,juce::PathStrokeType::rounded));
+}
+// A label with a background or outline (a slider's value box) gets the same corners.
+void Theme::drawLabel(juce::Graphics& g,juce::Label& label) {
+    const auto bounds=label.getLocalBounds().toFloat().reduced(.5f);
+    g.setColour(label.findColour(juce::Label::backgroundColourId));g.fillRoundedRectangle(bounds,current.radius);
+    if(!label.isBeingEdited()) {
+        const auto font=getLabelFont(label);
+        g.setColour(label.findColour(juce::Label::textColourId).withMultipliedAlpha(label.isEnabled()?1.f:.5f));g.setFont(font);
+        const auto area=getLabelBorderSize(label).subtractedFrom(label.getLocalBounds());
+        g.drawFittedText(label.getText(),area,label.getJustificationType(),juce::jmax(1,int(float(area.getHeight())/font.getHeight())),label.getMinimumHorizontalScale());
+    }
+    g.setColour(label.findColour(juce::Label::outlineColourId).withMultipliedAlpha(label.isEnabled()?1.f:.5f));
+    g.drawRoundedRectangle(bounds,current.radius,1.f);
+}
+void Theme::fillTextEditorBackground(juce::Graphics& g,int width,int height,juce::TextEditor& editor) {
+    g.setColour(editor.findColour(juce::TextEditor::backgroundColourId));
+    g.fillRoundedRectangle(juce::Rectangle<float>(0,0,float(width),float(height)).reduced(1),current.radius);
+}
+void Theme::drawTextEditorOutline(juce::Graphics& g,int width,int height,juce::TextEditor& editor) {
+    if(!editor.isEnabled())return;
+    const bool focus=editor.hasKeyboardFocus(true) && !editor.isReadOnly();
+    g.setColour(focus?editor.findColour(juce::TextEditor::focusedOutlineColourId):editor.findColour(juce::TextEditor::outlineColourId));
+    g.drawRoundedRectangle(juce::Rectangle<float>(0,0,float(width),float(height)).reduced(1),current.radius,focus?2.f:1.f);
+}
 void Theme::drawButtonBackground(juce::Graphics& g,juce::Button& button,const juce::Colour& colour,bool hover,bool down) {
     const auto bounds=button.getLocalBounds().toFloat().reduced(1);
     g.setColour(colour.withMultipliedAlpha(button.isEnabled()?1.f:.4f).brighter(down?.15f:hover?.07f:0));

@@ -140,7 +140,7 @@ request members.
 | `parts.solo` | `part`, `solo`: while any part is soloed, only soloed parts, the parts feeding them and the buses they feed are heard | `{"accepted":true}` |
 | `edit.undo`, `edit.redo` | omitted or `{}`: undoes the last edit, or redoes the last undone | `undo`, `redo`: what each would now do (empty: nothing) |
 | `edit.history` | omitted or `{}` | `undo`, `redo` labels, as above |
-| `parts.meters` | omitted or `{}` | `meters`: each part's and bus's recent peak after its fader (linear), held and falling |
+| `parts.meters` | omitted or `{}` | `meters`: each part's and bus's recent peak after its fader and pan (linear), held and falling: `peak`, and `channels` with one value per channel of its sound (its last plugin's main audio output as wired to where it plays: one for mono, two for stereo, more for surround) |
 | `wires.connect` | `kind`, `from`, `to`; for audio `fromPort`, `toPort`, optional `channels` pairs; optional `level`, `pan` | numeric `wire` |
 | `wires.disconnect` | `wire` | `{"accepted":true}` |
 | `wires.mix` | `wire`, `level`, `pan`, `mute`, `solo` | `{"accepted":true}` |

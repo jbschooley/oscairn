@@ -14,6 +14,12 @@ struct ThemeData {
 };
 const ThemeData& themeData();
 juce::Colour ink(Ink);
+// The desktop's type scale (RFC 0019): text sizes fixed by role, not by the box they sit in. A
+// component inside the desktop window has its input mode; 0 elsewhere (a device's panel).
+enum class TextRole { Small, Body, Button, Title };
+int desktopMode(const juce::Component&);        // 0: not the desktop, 1: keyboard and mouse, 2: touch
+void setDesktopMode(juce::Component&, int mode);
+float textSize(TextRole, int mode);              // in pixels, with the theme's font scale
 // Per-user Oscairn appearance, shared across layouts, windows and UI processes. A theme is a
 // folder holding theme.json and its fonts. Built-in themes are the same folders, shipped beside
 // the app; instrument builders can replace them and name the default in themes/default.
@@ -30,6 +36,11 @@ public:
     juce::Typeface::Ptr getTypefaceForFont(const juce::Font&) override;
     juce::Font getLabelFont(juce::Label&) override;
     juce::Font getTextButtonFont(juce::TextButton&,int) override;
+    juce::Font getComboBoxFont(juce::ComboBox&) override;
+    void drawComboBox(juce::Graphics&,int,int,bool,int,int,int,int,juce::ComboBox&) override;
+    void fillTextEditorBackground(juce::Graphics&,int,int,juce::TextEditor&) override;
+    void drawLabel(juce::Graphics&,juce::Label&) override;
+    void drawTextEditorOutline(juce::Graphics&,int,int,juce::TextEditor&) override;
     void drawButtonBackground(juce::Graphics&,juce::Button&,const juce::Colour&,bool,bool) override;
     void drawRotarySlider(juce::Graphics&,int,int,int,int,float,float,float,juce::Slider&) override;
 private:

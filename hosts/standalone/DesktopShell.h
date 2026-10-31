@@ -2,6 +2,7 @@
 #pragma once
 
 #include "Engine.h"
+#include "Icons.h"
 #include "PartsModel.h"
 #include "PartsView.h"
 #include "Screen.h"
@@ -19,9 +20,25 @@ namespace oscairn::standalone
     bool touchSized(InputMode);
     juce::String inputModeName(InputMode);
 
+    /// The Sequencer tab: the step sequencer's screen, with its transport above it. Play and
+    /// Stop belong to the sequencer, not to the whole window.
+    class SequencerPane : public juce::Component
+    {
+    public:
+        explicit SequencerPane(Engine& engine);
+        void refresh();
+        void resized() override;
+    private:
+        Engine& engine_;
+        juce::TextButton play_{"Play"}, stop_{"Stop"};
+        juce::ToggleButton sync_{"Follow MIDI clock"};
+        Screen screen_;
+    };
+
     /// The Desktop surface (RFC 0019): the desktop app's own window rather than a device's
-    /// panel. A toolbar with the transport, scenes and undo; the parts and buses down the left;
-    /// tabs for the selected part, the Mixer, Routing, Controls and the Sequencer.
+    /// panel. A toolbar with the tempo, scenes and undo; the parts and buses down the left with
+    /// their meters; tabs for the selected part, the Mixer, Routing, Controls and the Sequencer,
+    /// each of which can also open in a window of its own.
     class DesktopShell : public juce::Component, private juce::Timer
     {
     public:
@@ -32,6 +49,7 @@ namespace oscairn::standalone
         void setInputMode(InputMode mode);
         InputMode inputMode() const { return mode_; }
         void showTab(Tab tab);
+        void detach(Tab tab); // the tab's view in a window of its own, beside this one
         static bool tabNamed(const juce::String& name, Tab& tab);
 
         void paint(juce::Graphics&) override;
@@ -39,31 +57,38 @@ namespace oscairn::standalone
 
     private:
         class PartList;
-        struct Metrics { int control, row, gap; float font; };
+        class TabStrip;
+        struct Metrics { int control, row, gap; };
         Metrics metrics() const;
         void timerCallback() override;
         void refresh();
         void select(uint32_t part);
+        std::unique_ptr<juce::Component> viewFor(Tab tab); // a fresh view, for a window of its own
 
         Engine& engine_;
+        std::string scanner_;
         InputMode mode_;
         Tab tab_ = Tab::Part;
         uint32_t selected_ = 0; // the part the Part tab shows
         PartsState state_;
+        std::map<uint32_t, std::vector<double>> meters_; // per part, per channel
         std::vector<Scene> scenes_;
         uint32_t scene_ = 0;
+        int ticks_ = 0;
 
         // The toolbar.
-        juce::TextButton play_{"Play"}, stop_{"Stop"}, undo_{"Undo"}, redo_{"Redo"};
+        IconButton undo_{IconButton::Glyph::Undo, "Undo"}, redo_{IconButton::Glyph::Redo, "Redo"};
         juce::Slider tempo_{juce::Slider::LinearBar, juce::Slider::TextBoxLeft};
+        juce::Label tempoLabel_{{}, "Tempo"}, sceneLabel_{{}, "Scene"};
         juce::ComboBox sceneBox_;
         juce::TextButton storeScene_{"Store"};
         juce::Label status_;
         // The tabs and what they show.
-        std::array<juce::TextButton, 5> tabs_;
+        std::unique_ptr<TabStrip> tabs_;
         std::unique_ptr<PartList> list_;
         juce::TextButton addPart_{"+ Part"}, addBus_{"+ Bus"};
         PartsView parts_;
-        Screen sequencer_;
+        SequencerPane sequencer_;
+        std::vector<std::unique_ptr<juce::DocumentWindow>> windows_; // detached tabs
     };
 }

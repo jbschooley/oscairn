@@ -146,7 +146,10 @@ namespace oscairn
         bool solo = false;
         bool operator==(const Part&) const = default;
     };
-    struct PartMeter { uint32_t part = 0; double peak = 0; }; // after its fader, linear
+    // A part's meter, after its fader and pan, linear: one value per channel of its sound (its last
+    // plugin's main audio output as wired to where it plays: one for mono, two for stereo, more
+    // for surround), and the largest of them.
+    struct PartMeter { uint32_t part = 0; double peak = 0; std::vector<double> channels; };
 
     // The control tree (RFC 0011): a control (a macro, Assign knob or Super Knob) is a value from
     // 0 to 1 that drives its targets, each with its own range and curve; a target may be another

@@ -638,7 +638,12 @@ namespace oscairn
                     if( method == "parts.meters" )
                     {
                         std::vector<std::string> meters;
-                        for( const auto& m : c.partMeters() ) meters.push_back("{\"part\":" + std::to_string(m.part) + ",\"peak\":" + encode(m.peak) + '}');
+                        for( const auto& m : c.partMeters() )
+                        {
+                            std::vector<std::string> channels;
+                            for( const auto v : m.channels ) channels.push_back( encode( v ) );
+                            meters.push_back("{\"part\":" + std::to_string(m.part) + ",\"peak\":" + encode(m.peak) + ",\"channels\":" + join(channels) + '}');
+                        }
                         return "{\"meters\":" + join(meters) + '}';
                     }
                     if( method == "parts.name" ) { fields(p,{"part","name"}); c.setPartName(integer(member(p,"part")),std::string(string(member(p,"name")))); return R"({"accepted":true})"; }

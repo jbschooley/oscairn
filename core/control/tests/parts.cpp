@@ -496,6 +496,12 @@ namespace
         check(near(x.l[0], .25 + .5 + .125), "A, B and A's send: " + std::to_string(x.l[0]));
         check(std::abs(meter(a) - .25) < 1e-6 && std::abs(meter(b) - .5) < 1e-6 && std::abs(meter(room) - .125) < 1e-6,
               "meters show each part and bus after its fader: " + std::to_string(meter(a)) + " " + std::to_string(meter(b)) + " " + std::to_string(meter(room)));
+        // A value per channel of the part's sound: the fixture synth is mono, the Delay stereo.
+        for(const auto& m : s.partMeters())
+        {
+            if(m.part == b) check(m.channels.size() == 1 && std::abs(m.channels[0] - .5) < 1e-6, "a mono part has one meter: " + std::to_string(m.channels.size()));
+            if(m.part == room) check(m.channels.size() == 2 && std::abs(m.channels[0] - .125) < 1e-6 && std::abs(m.channels[1] - .125) < 1e-6, "a stereo bus has two: " + std::to_string(m.channels.size()));
+        }
         // Pan: A hard left takes it out of the right channel; its send keeps its own image.
         s.setPartPan(a, -1); s.commit(); x.run(s);
         check(near(x.l[0], .875) && near(x.r[0], .5 + .125), "A panned left: " + std::to_string(x.l[0]) + " " + std::to_string(x.r[0]));
