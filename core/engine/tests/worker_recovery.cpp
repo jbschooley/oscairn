@@ -130,10 +130,11 @@ namespace
     {
         const auto state = directory / "slow-state", marker = directory / "slow-once";
         { auto raw = oscairn::loadPlugin(plugin, "org.kick.test.midi", rate, frames); raw->setParameter(gain, .6); raw->service(); raw->saveState(state.string()); }
-        setenv("OSCAIRN_WORKER_REPLY_SECONDS", "1", 1);
         setenv("KICK_FIXTURE_SLOW_LOAD_ONCE", marker.c_str(), 1);
+        setenv("OSCAIRN_WORKER_REPLY_SECONDS", "1", 1);
         {
             auto host = oscairn::loadPlugin(plugin, "org.kick.test.midi", rate, frames);
+            unsetenv("OSCAIRN_WORKER_REPLY_SECONDS"); // read when the worker was made; later ones use the default
             host->setParameter(gain, .25); host->service();
             std::ofstream(marker) << "once";
             bool timedOut = false;
@@ -149,7 +150,7 @@ namespace
             host->loadState(state.string()); host->service();
             check(std::abs(host->parameterValue(gain) - .6) < 1e-9 && host->failure().empty(), "a state load answered as its own: " + std::to_string(host->parameterValue(gain)));
         }
-        unsetenv("OSCAIRN_WORKER_REPLY_SECONDS"); unsetenv("KICK_FIXTURE_SLOW_LOAD_ONCE");
+        unsetenv("KICK_FIXTURE_SLOW_LOAD_ONCE");
     }
 
     // Per-plugin overrides of where a plugin runs.

@@ -53,6 +53,7 @@ namespace oscairn
             std::string program, path, id;
             double rate; uint32_t frames;
             std::chrono::nanoseconds budget{}, hangLimit{};
+            long replySeconds = 30; // how long a control request may take (a big preset load)
             uint32_t missLimit = UINT32_MAX;
             std::mutex control;
             int socket = -1; pid_t pid = 0; bool reaped = true;
@@ -77,6 +78,8 @@ namespace oscairn
             Process(std::string program_, std::string path_, std::string id_, double rate_, uint32_t frames_, ProcessingMode mode)
                 : program(std::move(program_)), path(std::move(path_)), id(std::move(id_)), rate(rate_), frames(frames_)
             {
+                // Read here, on the creating thread: OSCAIRN_WORKER_REPLY_SECONDS shortens it for tests.
+                if(const char* s = std::getenv("OSCAIRN_WORKER_REPLY_SECONDS")) replySeconds = std::max(1L, std::atol(s));
                 // Each block may take half the block's time before it is silenced; a worker that
                 // misses a quarter second of blocks in a row, or leaves one unanswered that long,
                 // has failed. Offline rendering waits instead of silencing.
@@ -137,11 +140,11 @@ namespace oscairn
                 close(pair[1]);
                 if(spawned != 0) { close(socket); socket = -1; pid = 0; throw std::runtime_error("Cannot start plugin worker " + program); }
                 reaped = false;
-                // How long a control request may take (a big preset load). OSCAIRN_WORKER_REPLY_SECONDS shortens it for tests.
-                long seconds = 30;
-                if(const char* s = std::getenv("OSCAIRN_WORKER_REPLY_SECONDS")) seconds = std::max(1L, std::atol(s));
-                timeval t{seconds, 0}; setsockopt(socket, SOL_SOCKET, SO_RCVTIMEO, &t, sizeof t);
-                return exchange(Writer().u8(uint8_t(Op::Init)).str(path).str(id).f64(rate).u32(frames).data);
+                // Starting a worker gets the full 30 s, whatever the requests' timeout.
+                timeval start{std::max(30L, replySeconds), 0}; setsockopt(socket, SOL_SOCKET, SO_RCVTIMEO, &start, sizeof start);
+                auto reply = exchange(Writer().u8(uint8_t(Op::Init)).str(path).str(id).f64(rate).u32(frames).data);
+                timeval t{replySeconds, 0}; setsockopt(socket, SOL_SOCKET, SO_RCVTIMEO, &t, sizeof t);
+                return reply;
             }
 
             // A reply that did not come in time: the worker is alive, and its late reply would be
