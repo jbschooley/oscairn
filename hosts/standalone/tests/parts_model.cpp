@@ -67,6 +67,17 @@ int main(int argc, char** argv)
         check(soft.lowVelocity == 64 && soft.highVelocity == 127 && soft.lowKey == 48 && soft.highKey == 72, "velocities and keys together");
         setVelocities(s, lead, 0, 127); setZone(s, lead, 0, 127, 0);
         check(s.parts()[1].input.zones.empty(), "all keys and velocities again: no zone left");
+        // The Part page's fields, as every surface lays them out: a part that plays notes has
+        // its inputs, keys and transpose; every part where it plays, its level and a send per bus.
+        {
+            const auto state = readParts(s.graphState());
+            std::vector<std::string> labels;
+            for(const auto& f : partFields(state.parts[1], state)) labels.push_back(f.label + (f.span ? "" : " (row)"));
+            const std::vector<std::string> expected{"Plays from", "Notes at once", "Keys and velocity (row)", "Transpose", "Plays to", "Level", "Send to Room"};
+            check(labels == expected, "a part's fields, in order");
+            const auto busFields = partFields(state.buses[0], state);
+            check(busFields.size() == 2 && busFields[0].kind == PartField::Kind::Output && busFields[1].kind == PartField::Kind::Level, "a bus: where it plays and its level, no send to itself");
+        }
         setOutput(s, lead, room); check(readParts(s.graphState()).parts[1].through == room, "the lead plays through the room");
         setSendLevel(s, bass, room, 0); check(readParts(s.graphState()).parts[0].sends.empty(), "a send at 0 is removed");
         check(roleOf({0, {}, {}, {}, 0, 1}) == "Sequencer", "a node with only note outputs is a sequencer");

@@ -233,8 +233,17 @@ The desktop's Part page edits keys and velocities on a keyboard (`ZoneEditor`): 
 end of a range or the whole range; split lanes have the keys. The parts model now reads and
 sets a part's velocity range.
 
-Not yet: the views' state on view models of their own, the parts views redrawn for the
-desktop (they are the device's, with the desktop's text), and Panel renders in the same test.
+Step 1's gate met, 2026-10-31. The views read their state from data that has no drawing in
+it: `readParts` (the Parts list, Mixer strips and meters), `readRouting` and `partFields` (the
+Part page's settings, in order and width), all in `PartsModel` and tested by
+`desktop-parts-model` without a window. The Part page draws those fields as one grid of tiles
+on every surface, with the keyboard, parameter pages, envelopes and LFOs; the device's own row
+layout and key lists are gone, and its Parts view uses the touch sizes. `desktop-shell` renders
+every view on the Desktop in both input modes, and `desktop-pad-editor` renders them on the
+Panel at 1024 × 600.
+
+Not yet: the Mixer and Routing views' layout is still in `PartsView`, and the device's chain
+row, tabs and header are the older ones; Compact has no renderer (by design, RFC step 3).
 
 ## Open questions
 

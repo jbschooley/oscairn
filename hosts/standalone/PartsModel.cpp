@@ -389,6 +389,17 @@ namespace oscairn::standalone
         }
     }
 
+    std::vector<PartField> partFields(const PartRow& p, const PartsState& state)
+    {
+        using K = PartField::Kind;
+        std::vector<PartField> fields;
+        // What plays it and how: only for a part that plays notes.
+        if(p.notes) fields.insert(fields.end(), {{K::Devices, "Plays from"}, {K::NoteLimit, "Notes at once"}, {K::Zone, "Keys and velocity", 0}, {K::Transpose, "Transpose"}});
+        fields.insert(fields.end(), {{K::Output, "Plays to"}, {K::Level, "Level"}});
+        for(const auto& b : state.buses) if(b.id != p.id) fields.push_back({K::Send, "Send to " + b.name, 1, b.id});
+        return fields;
+    }
+
     void setZone(Control& c, uint32_t part, int lowKey, int highKey, int transpose)
     {
         editZone(c, part, [&](NoteZone& zone) {

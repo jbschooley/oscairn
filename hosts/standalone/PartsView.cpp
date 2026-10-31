@@ -150,7 +150,6 @@ namespace oscairn::standalone
         auto top = getLocalBounds().reduced(16, 8).removeFromTop(header - 8);
         // On the desktop with a mouse, rows are tighter and text follows the type scale (RFC 0019).
         const int mode = desktopMode(*this), lineHeight = mode == 1 ? 34 : 40;
-        const float bodyText = mode ? textSize(TextRole::Body, mode) : 15.0f * themeData().fontScale;
         name_.setFont(juce::FontOptions(mode ? textSize(TextRole::Title, mode) : 18.0f * themeData().fontScale, juce::Font::bold));
         done_.setBounds(top.removeFromRight(80).reduced(2));
         redo_.setBounds(top.removeFromRight(60).reduced(2)); undo_.setBounds(top.removeFromRight(60).reduced(2));
@@ -533,8 +532,8 @@ namespace oscairn::standalone
                     controls->onClick = [this, node, controls] { sceneControlsMenu(node, *controls); };
                 }
                 panel.removeFromTop(8);
-                // On the desktop a selected plugin's parameters take the panel, as pages of tiles.
-                if(found && embedded_ && graph_.names.count(selected_))
+                // A selected plugin's parameters take the panel, as pages of tiles.
+                if(found && graph_.names.count(selected_))
                 {
                     grid_ = grid && grid->node() == selected_ ? std::move(grid) : std::make_unique<ParameterGrid>(engine_, selected_, graph_.names.at(selected_));
                     addAndMakeVisible(*grid_); grid_->setBounds(panel);
@@ -543,20 +542,12 @@ namespace oscairn::standalone
                 }
             }
             const auto id = p->id;
-            // On the desktop the settings are a grid of tiles, each its name above its control
-            // (RFC 0019), several to a row; on a device's screen, one row each.
+            // The settings are a grid of tiles, each its name above its control (RFC 0019), as many
+            // to a row as fit, on the desktop and a device's screen alike.
             const int columns = std::clamp(panel.getWidth() / 300, 2, 4), tileGap = sectionGap(8);
             const int tileWidth = (panel.getWidth() - tileGap * (columns - 1)) / columns, tileHeight = 16 + 18 + lineHeight + 6;
             int column = 0, tileTop = -1, rowHeight = tileHeight;
             auto labelled = [&](const juce::String& label, int span = 1, int height = 0) {
-                if(!embedded_)
-                {
-                    auto r = panel.removeFromTop(lineHeight);
-                    auto l = std::make_unique<juce::Label>(juce::String(), label);
-                    l->setFont(juce::FontOptions(bodyText));
-                    l->setBounds(r.removeFromLeft(130)); addAndMakeVisible(*l); controls_.push_back(std::move(l));
-                    return r;
-                }
                 span = std::min(span, columns);
                 if(tileTop < 0) tileTop = panel.getY();
                 if(column + span > columns)
@@ -607,44 +598,26 @@ namespace oscairn::standalone
                 else
                 {
                     const auto lane = uint32_t(selectedLane_);
-                    const auto& l = split->lanes[lane];
                     if(split->kind == Split::Kind::Copy || (split->kind == Split::Kind::Bands && split->lanes.size() > 2))
                         button(actions.removeFromLeft(130).reduced(2), "Remove lane", [this, id, sp, lane] { selectedLane_ = -1; edit([id, sp, lane](Control& c) { removeLaneAndBoxes(c, id, sp, lane); }); })
                             ->setTooltip("Remove this lane and its plugins");
                     panel.removeFromTop(8);
-                    if(embedded_)
-                        zoneEditor(labelled("Lane keys", columns, 120), [this, id, sp, lane] {
-                            if(const auto* q = part(id)) for(const auto& b : q->chain) if(b.split == sp && lane < b.lanes.size()) return std::array<int, 4>{b.lanes[lane].lowKey, b.lanes[lane].highKey, 0, 127};
-                            return std::array<int, 4>{0, 127, 0, 127};
-                        }, [this, id, sp, lane](int low, int high) { edit([id, sp, lane, low, high](Control& c) { setLaneKeys(c, id, sp, lane, low, high); }); }, {});
-                    else {
-                    auto r = labelled("Lane keys", 2);
-                    auto keyBox = [&](juce::Rectangle<int> at, bool high) {
-                        auto box = std::make_unique<juce::ComboBox>(high ? "Highest key" : "Lowest key");
-                        for(int k = 0; k < 128; ++k) box->addItem(text(noteName(k)), k + 1);
-                        box->setSelectedId((high ? l.highKey : l.lowKey) + 1, juce::dontSendNotification);
-                        const int other = high ? l.lowKey : l.highKey;
-                        box->onChange = [this, id, sp, lane, high, other, raw = box.get()] {
-                            const int key = raw->getSelectedId() - 1, low = high ? other : key, hi = high ? key : other;
-                            edit([id, sp, lane, low, hi](Control& c) { setLaneKeys(c, id, sp, lane, low, std::max(low, hi)); });
-                        };
-                        box->setBounds(at); addAndMakeVisible(*box); controls_.push_back(std::move(box));
-                    };
-                    keyBox(r.removeFromLeft(110).reduced(2), false);
-                    keyBox(r.removeFromLeft(110).reduced(2), true);
-                    button(r.removeFromLeft(100).reduced(2), "All keys", [this, id, sp, lane] { edit([id, sp, lane](Control& c) { setLaneKeys(c, id, sp, lane, 0, 127); }); });
-                    }
+                    zoneEditor(labelled("Lane keys", columns, 120), [this, id, sp, lane] {
+                        if(const auto* q = part(id)) for(const auto& b : q->chain) if(b.split == sp && lane < b.lanes.size()) return std::array<int, 4>{b.lanes[lane].lowKey, b.lanes[lane].highKey, 0, 127};
+                        return std::array<int, 4>{0, 127, 0, 127};
+                    }, [this, id, sp, lane](int low, int high) { edit([id, sp, lane, low, high](Control& c) { setLaneKeys(c, id, sp, lane, low, high); }); }, {});
                     auto laneOf = [this, id, sp, lane]() -> const PartLane* {
                         if(const auto* q = part(id)) for(const auto& b : q->chain) if(b.split == sp && lane < b.lanes.size()) return &b.lanes[lane];
                         return nullptr;
                     };
+                    // Mute and solo at the tile's right, the level slider in the rest.
                     auto mix = labelled("Lane level");
-                    updates.push_back(slider(mix.removeFromLeft(320).reduced(2, 10), 0, 1, [laneOf] { const auto* x = laneOf(); return x ? x->level : 1.0; },
-                                             [this, id, sp, lane](double v) { edit([id, sp, lane, v](Control& c) { editLane(c, id, sp, lane, [v](Lane& x) { x.level = v; }); }); }).second);
-                    toggle(mix.removeFromLeft(90).reduced(4, 6), "Mute", [laneOf] { const auto* x = laneOf(); return x && x->mute; },
-                           [this, id, sp, lane](bool m) { edit([id, sp, lane, m](Control& c) { editLane(c, id, sp, lane, [m](Lane& x) { x.mute = m; }); }); });
-                    toggle(mix.removeFromLeft(90).reduced(4, 6), "Solo", [laneOf] { const auto* x = laneOf(); return x && x->solo; },
+                    toggle(mix.removeFromRight(34), "Solo", [laneOf] { const auto* x = laneOf(); return x && x->solo; },
                            [this, id, sp, lane](bool o) { edit([id, sp, lane, o](Control& c) { editLane(c, id, sp, lane, [o](Lane& x) { x.solo = o; }); }); });
+                    toggle(mix.removeFromRight(34), "Mute", [laneOf] { const auto* x = laneOf(); return x && x->mute; },
+                           [this, id, sp, lane](bool m) { edit([id, sp, lane, m](Control& c) { editLane(c, id, sp, lane, [m](Lane& x) { x.mute = m; }); }); });
+                    updates.push_back(slider(mix.reduced(2, 10), 0, 1, [laneOf] { const auto* x = laneOf(); return x ? x->level : 1.0; },
+                                             [this, id, sp, lane](double v) { edit([id, sp, lane, v](Control& c) { editLane(c, id, sp, lane, [v](Lane& x) { x.level = v; }); }); }).second);
                     auto panRow = labelled("Lane pan");
                     auto [lanePan, lanePanUpdate] = slider(panRow.removeFromLeft(320).reduced(2, 10), -1, 1, [laneOf] { const auto* x = laneOf(); return x ? x->pan : 0.0; },
                                                            [this, id, sp, lane](double v) { edit([id, sp, lane, v](Control& c) { editLane(c, id, sp, lane, [v](Lane& x) { x.pan = v; }); }); });
@@ -657,72 +630,69 @@ namespace oscairn::standalone
                 updaters_ = std::move(updates);
                 return;
             }
-            if(p->notes)
+            // The part's settings, as the model lists them (partFields), a tile each.
+            for(const auto& field : partFields(*p, state_))
             {
-                // Which devices play it (RFC 0012), picked from a menu.
-                auto from = labelled("Plays from");
-                auto* pick = button(from.removeFromLeft(340).reduced(2), text(devicesName(p->devices)), {});
-                pick->setTooltip("Which keyboards and controllers play this part, whatever channel they send on");
-                pick->onClick = [this, id, pick] { devicesMenu(id, *pick); };
-                // Notes at once: past it, the part's oldest released note fades out, then its oldest held one.
-                auto limitRow = labelled("Notes at once");
-                auto limit = std::make_unique<juce::ComboBox>("Notes at once");
-                limit->addItem("Any", 1);
-                for(const int n : {1, 2, 3, 4, 5, 6, 7, 8, 10, 12, 16, 24, 32, 64}) limit->addItem(juce::String(n), n + 1);
-                limit->setSelectedId(p->maxNotes + 1, juce::dontSendNotification);
-                limit->setTooltip("How many notes the part plays at once; a note past it fades out the oldest released note, then the oldest held one (CLAP instruments)");
-                limit->onChange = [this, id, raw = limit.get()] { const int n = raw->getSelectedId() - 1; edit([id, n](Control& c) { setMaxNotes(c, id, n); }); };
-                limit->setBounds(limitRow.removeFromLeft(160).reduced(2)); addAndMakeVisible(*limit); controls_.push_back(std::move(limit));
-                // The zone: lowest and highest key, and a transpose.
-                if(embedded_)
-                    zoneEditor(labelled("Keys and velocity", columns, 140), [this, id] {
+                using K = PartField::Kind;
+                auto r = labelled(text(field.label), field.span ? field.span : columns, field.kind == K::Zone ? 140 : 0);
+                switch(field.kind)
+                {
+                case K::Devices:
+                {
+                    // Which devices play it (RFC 0012), picked from a menu.
+                    auto* pick = button(r.removeFromLeft(340).reduced(2), text(devicesName(p->devices)), {});
+                    pick->setTooltip("Which keyboards and controllers play this part, whatever channel they send on");
+                    pick->onClick = [this, id, pick] { devicesMenu(id, *pick); };
+                    break;
+                }
+                case K::NoteLimit:
+                {
+                    // Past it, the part's oldest released note fades out, then its oldest held one.
+                    auto limit = std::make_unique<juce::ComboBox>("Notes at once");
+                    limit->addItem("Any", 1);
+                    for(const int n : {1, 2, 3, 4, 5, 6, 7, 8, 10, 12, 16, 24, 32, 64}) limit->addItem(juce::String(n), n + 1);
+                    limit->setSelectedId(p->maxNotes + 1, juce::dontSendNotification);
+                    limit->setTooltip("How many notes the part plays at once; a note past it fades out the oldest released note, then the oldest held one (CLAP instruments)");
+                    limit->onChange = [this, id, raw = limit.get()] { const int n = raw->getSelectedId() - 1; edit([id, n](Control& c) { setMaxNotes(c, id, n); }); };
+                    limit->setBounds(r.removeFromLeft(160).reduced(2)); addAndMakeVisible(*limit); controls_.push_back(std::move(limit));
+                    break;
+                }
+                case K::Zone:
+                    zoneEditor(r, [this, id] {
                         const auto* q = part(id);
                         return q ? std::array<int, 4>{q->lowKey, q->highKey, q->lowVelocity, q->highVelocity} : std::array<int, 4>{0, 127, 0, 127};
                     }, [this, id](int low, int high) { const auto* q = part(id); const int t = q ? q->transpose : 0; edit([id, low, high, t](Control& c) { setZone(c, id, low, high, t); }); },
                        [this, id](int low, int high) { edit([id, low, high](Control& c) { setVelocities(c, id, low, high); }); });
-                else {
-                auto r = labelled("Keys", 2);
-                auto keyBox = [&](juce::Rectangle<int> at, bool high) {
-                    auto box = std::make_unique<juce::ComboBox>(high ? "Highest key" : "Lowest key");
-                    for(int k = 0; k < 128; ++k) box->addItem(text(noteName(k)), k + 1);
-                    box->setSelectedId((high ? p->highKey : p->lowKey) + 1, juce::dontSendNotification);
-                    box->onChange = [this, id, high, raw = box.get()] {
-                        const auto* q = part(id); if(!q) return;
-                        const int key = raw->getSelectedId() - 1;
-                        const int low = high ? q->lowKey : key, hi = high ? key : q->highKey, t = q->transpose;
-                        edit([id, low, hi, t](Control& c) { setZone(c, id, low, std::max(low, hi), t); });
-                    };
-                    box->setBounds(at); addAndMakeVisible(*box); controls_.push_back(std::move(box));
-                };
-                keyBox(r.removeFromLeft(110).reduced(2), false);
-                auto to = std::make_unique<juce::Label>(juce::String(), "to"); to->setFont(juce::FontOptions(bodyText)); to->setJustificationType(juce::Justification::centred); to->setBounds(r.removeFromLeft(30)); addAndMakeVisible(*to); controls_.push_back(std::move(to));
-                keyBox(r.removeFromLeft(110).reduced(2), true);
-                button(r.removeFromLeft(100).reduced(2), "All keys", [this, id] { const auto* q = part(id); const int t = q ? q->transpose : 0; edit([id, t](Control& c) { setZone(c, id, 0, 127, t); }); });
+                    break;
+                case K::Transpose:
+                {
+                    auto [transpose, update] = slider(r.removeFromLeft(320).reduced(2, 8), -24, 24, [this, id] { const auto* q = part(id); return q ? double(q->transpose) : 0.0; },
+                                                      [this, id](double v) { const auto* q = part(id); if(!q) return; const int low = q->lowKey, high = q->highKey, semis = int(std::lround(v)); edit([id, low, high, semis](Control& c) { setZone(c, id, low, high, semis); }); });
+                    transpose->setRange(-24, 24, 1);
+                    transpose->getProperties().set("bipolar", true);
+                    transpose->setTextBoxStyle(juce::Slider::TextBoxRight, false, 48, 24);
+                    updates.push_back(update);
+                    break;
                 }
-                auto t = labelled("Transpose");
-                auto [transpose, update] = slider(t.removeFromLeft(320).reduced(2, 8), -24, 24, [this, id] { const auto* q = part(id); return q ? double(q->transpose) : 0.0; },
-                                                  [this, id](double v) { const auto* q = part(id); if(!q) return; const int low = q->lowKey, high = q->highKey, semis = int(std::lround(v)); edit([id, low, high, semis](Control& c) { setZone(c, id, low, high, semis); }); });
-                transpose->setRange(-24, 24, 1);
-                transpose->getProperties().set("bipolar", true);
-                transpose->setTextBoxStyle(juce::Slider::TextBoxRight, false, 48, 24);
-                updates.push_back(update);
+                case K::Output:
+                {
+                    auto out = std::make_unique<juce::ComboBox>("Plays to");
+                    out->addItem("Main", 1);
+                    for(const auto& b : state_.buses) if(b.id != id) out->addItem(text(b.name), int(b.id) + 1);
+                    out->setSelectedId(p->through ? int(p->through) + 1 : 1, juce::dontSendNotification);
+                    out->onChange = [this, id, raw = out.get()] { const auto bus = uint32_t(raw->getSelectedId() > 1 ? raw->getSelectedId() - 1 : 0); edit([id, bus](Control& c) { setOutput(c, id, bus); }); };
+                    out->setBounds(r.removeFromLeft(240).reduced(2)); addAndMakeVisible(*out); controls_.push_back(std::move(out));
+                    break;
+                }
+                case K::Level:
+                    toggle(r.removeFromRight(34), "Mute", muteOf(id), setMute(id));
+                    updates.push_back(slider(r.reduced(2, 10), 0, 1, levelOf(id), setLevel(id)).second);
+                    break;
+                case K::Send:
+                    updates.push_back(slider(r.removeFromLeft(320).reduced(2, 10), 0, 1, sendOf(id, field.bus), setSend(id, field.bus)).second);
+                    break;
+                }
             }
-            {
-                auto r = labelled("Plays to");
-                auto out = std::make_unique<juce::ComboBox>("Plays to");
-                out->addItem("Main", 1);
-                for(const auto& b : state_.buses) if(b.id != id) out->addItem(text(b.name), int(b.id) + 1);
-                out->setSelectedId(p->through ? int(p->through) + 1 : 1, juce::dontSendNotification);
-                out->onChange = [this, id, raw = out.get()] { const auto bus = uint32_t(raw->getSelectedId() > 1 ? raw->getSelectedId() - 1 : 0); edit([id, bus](Control& c) { setOutput(c, id, bus); }); };
-                out->setBounds(r.removeFromLeft(240).reduced(2)); addAndMakeVisible(*out); controls_.push_back(std::move(out));
-            }
-            {
-                auto r = labelled("Level");
-                updates.push_back(slider(r.removeFromLeft(320).reduced(2, 10), 0, 1, levelOf(id), setLevel(id)).second);
-                toggle(r.removeFromLeft(90).reduced(4, 6), "Mute", muteOf(id), setMute(id));
-            }
-            for(const auto& b : state_.buses)
-                if(b.id != id) updates.push_back(slider(labelled("Send to " + text(b.name)).removeFromLeft(320).reduced(2, 10), 0, 1, sendOf(id, b.id), setSend(id, b.id)).second);
         }
         updaters_ = std::move(updates); // refresh() runs them
     }

@@ -255,6 +255,7 @@ namespace oscairn::standalone
         {
             if( auto* s = shell() ) { s->showTab( DesktopShell::Tab::Part ); return; } // the desktop has them in its window
             parts_ = std::make_unique<PartsView>( engine_, scanner() );
+            setDesktopMode( *parts_, 2 ); // a device's screen: the type scale and targets for touch
             parts_->onDone = [this] { juce::MessageManager::callAsync( [safe = juce::Component::SafePointer<Window>( this )] { if( safe ) safe->parts_.reset(); } ); };
             addAndMakeVisible( *parts_ );
             if( getContentComponent() ) parts_->setBounds( getContentComponent()->getBounds() );

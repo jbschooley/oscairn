@@ -97,6 +97,7 @@ int main(int argc, char** argv)
             for(int i = 0; i < 500 && engine.graph().parts.size() < 3; ++i) juce::MessageManager::getInstance()->runDispatchLoopUntil(10);
             check(engine.graph().parts.size() == 3 && engine.editError().empty(), "the parts were made: " + std::string(engine.editError()));
             standalone::PartsView view(engine, argv[2]);
+            standalone::setDesktopMode(view, 2); // as the device's window opens it: touch sizes
             view.setSize(1024, 600);
             view.refresh();
             save(view, "-parts.png");

@@ -83,6 +83,17 @@ namespace oscairn::standalone
     std::vector<RoutingInput> inputsOf(const Control::GraphState&, NodeId node);
 
     PartsState readParts(const Control::GraphState&);
+    // The Part page's settings as data (RFC 0019's view model): which a part has, in order, and
+    // how many grid columns each takes (0: the whole row). Every surface lays out the same list.
+    struct PartField
+    {
+        enum class Kind { Devices, NoteLimit, Zone, Transpose, Output, Level, Send };
+        Kind kind;
+        std::string label;
+        int span = 1;
+        uint32_t bus = 0; // Send: the bus
+    };
+    std::vector<PartField> partFields(const PartRow&, const PartsState&);
     // A node's role from its ports: Notes, Instrument, Effect, Sequencer, Generator or Analyzer.
     std::string roleOf(const Graph::NodeInfo&);
     // The plugins a part can add from a folder, found by the isolated scanner `helper`. Blocks; run
