@@ -279,6 +279,8 @@ Also open:
   relative-encoder tracking and explicit feedback/ownership rules; plugins may opt
   into physical observations, accepted changes or both
   ([planned architecture](architecture.md#physical-controls-takeover-and-direct-position-access-planned)).
+- recording as an engine service: any graph input, output, part or bus and the notes played, to
+  WAV/RF64 off the audio thread, with retroactive capture ([RFC 0020](rfcs/0020-recording.md), proposed).
 
 Plugins and apps (sequencers, instruments, the UI) must stay separate components, each in
 its own folder with its own build target and depending only on Oscairn's public headers, so
@@ -391,7 +393,7 @@ a DAW plugin; and:
 - **From Gig Performer's feature set** (compared October 31, 2026):
   - **Backing tracks:** an audio file player that follows the transport and setlist, as
     an app or plugin.
-  - **Recorder:** record any output or bus, as an app or plugin.
+  - **Recorder:** an app on the engine's recording service ([RFC 0020](rfcs/0020-recording.md)).
   - **OSC** control in and out, alongside MIDI and the control protocol.
   - **Smooth transitions:** parameter changes on a scene or variation change glide over a
     set time instead of jumping.
