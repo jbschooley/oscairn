@@ -93,6 +93,18 @@ int main(int argc, char** argv)
         s.addLane(layers, split); insertPlugin(s, layers, 0, delay, {split, 1});
         removeSplitKeepingFirst(s, layers, split);
         check(s.parts().back().chain == kept && s.parts().back().splits.empty() && s.graphState().topology.nodes.size() == nodes - 2, "removing the split keeps its first lane's plugins in place");
+
+        // A left/right split adds its own Split and Join nodes, which are not boxes; its lanes are named.
+        const auto before = s.graphState().topology.nodes.size();
+        const auto sides = insertSplit(s, layers, 1, Split::Kind::LeftRight, plugins);
+        row = readParts(s.graphState()).parts.back();
+        check(s.graphState().topology.nodes.size() == before + 2 && row.chain.size() == 2 && row.chain[1].kind == Split::Kind::LeftRight &&
+              row.chain[1].lanes[0].name == "Left" && row.chain[1].lanes[1].name == "Right" && row.chain[1].name == "Left | Right" && !row.chain[1].splitter.empty(),
+              "a left/right split as the views read it: " + row.chain[1].name);
+        removeSplitKeepingFirst(s, layers, sides);
+        check(s.graphState().topology.nodes.size() == before, "removing it removes its nodes");
+        bool refused = false; try { insertSplit(s, layers, 0, Split::Kind::Bands, {}); } catch(const std::invalid_argument&) { refused = true; }
+        check(refused && s.graphState().topology.nodes.size() == before, "without the Split plugin, nothing is added");
     }
     catch(const std::exception& e) { std::fprintf(stderr, "FAIL: %s\n", e.what()); return 1; }
     if(!failures) std::puts("ok: a split and a shared delay built through the Parts views' model");

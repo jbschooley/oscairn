@@ -329,17 +329,33 @@ namespace oscairn::standalone
                 auto actions = panel.removeFromTop(40);
                 if(selectedLane_ < 0 || size_t(selectedLane_) >= split->lanes.size())
                 {
-                    button(actions.removeFromLeft(110).reduced(2), "Add lane", [this, id, sp] { edit([id, sp](Control& c) { c.addLane(id, sp); c.commit(); }); })
-                        ->setTooltip("Another layer: tap its + to add an instrument or effects");
+                    const bool bands = split->kind == Split::Kind::Bands;
+                    if(split->kind == Split::Kind::Copy || (bands && split->lanes.size() < 4))
+                        button(actions.removeFromLeft(110).reduced(2), bands ? "Add band" : "Add lane", [this, id, sp] { edit([id, sp](Control& c) { c.addLane(id, sp); c.commit(); }); })
+                            ->setTooltip(bands ? "Another frequency band, with its own crossover" : "Another layer: tap its + to add an instrument or effects");
                     button(actions.removeFromLeft(130).reduced(2), "Remove split", [this, id, sp] { selectedSplit_ = 0; edit([id, sp](Control& c) { removeSplitKeepingFirst(c, id, sp); }); })
                         ->setTooltip("Keep the first lane's plugins in the chain; the other lanes' plugins are removed");
+                    // A band split's crossovers (the Split node's parameters 3 to 5), on a frequency scale.
+                    if(bands && !split->splitter.empty())
+                        for(size_t k = 0; k + 1 < split->lanes.size(); ++k)
+                        {
+                            const auto node = split->splitter; const auto param = uint32_t(3 + k);
+                            auto r = labelled("Crossover " + juce::String(int(k + 1)));
+                            auto [crossover, update] = slider(r.removeFromLeft(320).reduced(2, 8), 20, 20000, [this, node, param] { return engine_.param(node, param); },
+                                                              [this, node, param](double v) { engine_.setParam(node, param, v); });
+                            crossover->setSkewFactorFromMidPoint(1000);
+                            crossover->setTextBoxStyle(juce::Slider::TextBoxRight, false, 72, 24);
+                            crossover->setTextValueSuffix(" Hz"); crossover->setNumDecimalPlacesToDisplay(0);
+                            updates.push_back(update);
+                        }
                 }
                 else
                 {
                     const auto lane = uint32_t(selectedLane_);
                     const auto& l = split->lanes[lane];
-                    button(actions.removeFromLeft(130).reduced(2), "Remove lane", [this, id, sp, lane] { selectedLane_ = -1; edit([id, sp, lane](Control& c) { removeLaneAndBoxes(c, id, sp, lane); }); })
-                        ->setTooltip("Remove this lane and its plugins");
+                    if(split->kind == Split::Kind::Copy || (split->kind == Split::Kind::Bands && split->lanes.size() > 2))
+                        button(actions.removeFromLeft(130).reduced(2), "Remove lane", [this, id, sp, lane] { selectedLane_ = -1; edit([id, sp, lane](Control& c) { removeLaneAndBoxes(c, id, sp, lane); }); })
+                            ->setTooltip("Remove this lane and its plugins");
                     panel.removeFromTop(8);
                     auto r = labelled("Lane keys");
                     auto keyBox = [&](juce::Rectangle<int> at, bool high) {
@@ -369,6 +385,9 @@ namespace oscairn::standalone
                            [this, id, sp, lane](bool o) { edit([id, sp, lane, o](Control& c) { editLane(c, id, sp, lane, [o](Lane& x) { x.solo = o; }); }); });
                 }
                 panel.removeFromTop(8);
+                // A selected split or lane has the panel to itself; tapping it again shows the part's settings.
+                updaters_ = std::move(updates);
+                return;
             }
             if(p->notes)
             {
@@ -541,22 +560,29 @@ namespace oscairn::standalone
 
     void PartsView::insertMenu(size_t index, juce::Component& at, ChainPlace place)
     {
-        constexpr int splitItem = 100000;
+        constexpr int splitItem = 100000; // + the split's kind
         juce::PopupMenu menu;
         const auto* p = part(page_);
         if(p && !place.split)
         {
-            menu.addItem(splitItem, "Split here: lanes that join after");
+            // The kinds that divide the sound need the Split and Join plugins.
+            const bool splitters = std::any_of(plugins_.begin(), plugins_.end(), [](const PluginChoice& c) { return c.id == splitPlugin; });
+            menu.addItem(splitItem + int(Split::Kind::Copy), "Split here: layers (each lane gets the notes and a copy of the sound)");
+            menu.addItem(splitItem + int(Split::Kind::LeftRight), "Split here: left / right", splitters);
+            menu.addItem(splitItem + int(Split::Kind::MidSide), "Split here: mid / side", splitters);
+            menu.addItem(splitItem + int(Split::Kind::Bands), "Split here: frequency bands", splitters);
             menu.addSeparator();
         }
         if(plugins_.empty()) menu.addItem(1, scan_.valid() ? "Finding plugins..." : "No plugins found", false);
-        for(size_t i = 0; i < plugins_.size(); ++i) menu.addItem(int(i) + 1, text(plugins_[i].name));
+        // Split and Join belong to splits; they are not boxes of their own.
+        for(size_t i = 0; i < plugins_.size(); ++i) if(plugins_[i].id != splitPlugin && plugins_[i].id != joinPlugin) menu.addItem(int(i) + 1, text(plugins_[i].name));
         menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&at), [safe = juce::Component::SafePointer<PartsView>(this), index, place](int chosen) {
             if(!safe) return;
             const auto id = safe->page_;
-            if(chosen == splitItem)
+            if(chosen >= splitItem && chosen <= splitItem + int(Split::Kind::Bands))
             {
-                safe->edit([id, index](Control& c) { insertSplit(c, id, index); });
+                const auto kind = Split::Kind(chosen - splitItem); const auto plugins = safe->plugins_;
+                safe->edit([id, index, kind, plugins](Control& c) { insertSplit(c, id, index, kind, plugins); });
                 return;
             }
             if(chosen <= 0 || size_t(chosen) > safe->plugins_.size()) return;
@@ -685,7 +711,7 @@ namespace oscairn::standalone
                 g.drawLine(float(s.splitPill.getRight()), float(s.lanes[k].getCentreY()), float(s.lanes[k].getX()), float(s.lanes[k].getCentreY()));
                 g.drawLine(float(s.lanes[k].getRight()), float(s.lanes[k].getCentreY()), float(s.joinPill.getX()), float(s.lanes[k].getCentreY()));
                 // Its keys and level, at the lane's right; "Dry" for a lane without plugins.
-                juce::String about = l.boxes.empty() ? juce::String("Dry · ") : juce::String();
+                juce::String about = !l.name.empty() ? text(l.name) + " · " : l.boxes.empty() ? juce::String("Dry · ") : juce::String();
                 if(l.lowKey != 0 || l.highKey != 127) about << text(noteName(l.lowKey)) << "–" << text(noteName(l.highKey)) << " · ";
                 about << juce::roundToInt(l.level * 100) << "%" << (l.mute ? " · muted" : l.solo ? " · solo" : "");
                 g.setColour(ink(Ink::Muted)); g.setFont(juce::FontOptions(11.0f * scale));

@@ -69,7 +69,7 @@ namespace oscairn
         void insertIntoPart(uint32_t part, size_t index, NodeId node, ChainPlace place = {}) override;
         void removeFromPart(uint32_t part, NodeId node) override;
         void movePartNode(uint32_t part, size_t from, size_t to, ChainPlace place = {}) override;
-        uint32_t addSplit(uint32_t part, size_t index, ChainPlace place = {}) override;
+        uint32_t addSplit(uint32_t part, size_t index, ChainPlace place = {}, Split::Kind kind = Split::Kind::Copy, NodeId splitter = 0, NodeId joiner = 0) override;
         void removeSplit(uint32_t part, uint32_t split) override;
         uint32_t addLane(uint32_t part, uint32_t split) override;
         void removeLane(uint32_t part, uint32_t split, uint32_t lane) override;
@@ -170,6 +170,8 @@ namespace oscairn
         void buildParts();
         struct BusEntry { NodeId node = 0; uint32_t port = 0; double level = 1, pan = 0; bool mute = false; uint32_t split = 0, lane = 0; };
         std::vector<BusEntry> busEntries(uint32_t bus);
+        bool splitNode(NodeId node) const;       // a split's Split or Join node
+        void dropSplitNodes(const Split& split); // removes them from the graph, with their wires
         bool feeds(uint32_t from, uint32_t to);
         Part& findBus(uint32_t id);
         Scene& findScene(uint32_t id);

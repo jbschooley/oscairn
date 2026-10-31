@@ -121,10 +121,12 @@ namespace oscairn
         virtual void insertIntoPart( uint32_t part, size_t index, NodeId node, ChainPlace place = {} ) = 0;
         virtual void removeFromPart( uint32_t part, NodeId node ) = 0; // wherever it is in the part
         virtual void movePartNode( uint32_t part, size_t from, size_t to, ChainPlace place = {} ) = 0; // a node or split entry
-        // Splits (parts.h): a new one has two empty lanes. Removing one keeps its first lane's
-        // chain in its place; other lanes' nodes leave the part. Removing the last lane removes
-        // the split. setLane sets a lane's zones and Mix, not its chain.
-        virtual uint32_t addSplit( uint32_t part, size_t index, ChainPlace place = {} ) = 0;
+        // Splits (parts.h): a new one has two empty lanes. Kinds other than copy take their Split
+        // (and, for left/right and mid/side, Join) node, already added; the split sets their mode
+        // and removes them with itself. Removing one keeps its first lane's chain in its place;
+        // other lanes' nodes leave the part. Removing the last lane removes the split. setLane
+        // sets a lane's zones and Mix, not its chain.
+        virtual uint32_t addSplit( uint32_t part, size_t index, ChainPlace place = {}, Split::Kind kind = Split::Kind::Copy, NodeId splitter = 0, NodeId joiner = 0 ) = 0;
         virtual void removeSplit( uint32_t part, uint32_t split ) = 0;
         virtual uint32_t addLane( uint32_t part, uint32_t split ) = 0; // its index
         virtual void removeLane( uint32_t part, uint32_t split, uint32_t lane ) = 0;

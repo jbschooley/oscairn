@@ -47,7 +47,7 @@ namespace oscairn
         void insertIntoPart(uint32_t part,size_t index,NodeId node,ChainPlace place={}) override;
         void removeFromPart(uint32_t part,NodeId node) override;
         void movePartNode(uint32_t part,size_t from,size_t to,ChainPlace place={}) override;
-        uint32_t addSplit(uint32_t part,size_t index,ChainPlace place={}) override;
+        uint32_t addSplit(uint32_t part,size_t index,ChainPlace place={},Split::Kind kind=Split::Kind::Copy,NodeId splitter=0,NodeId joiner=0) override;
         void removeSplit(uint32_t part,uint32_t split) override;
         uint32_t addLane(uint32_t part,uint32_t split) override;
         void removeLane(uint32_t part,uint32_t split,uint32_t lane) override;

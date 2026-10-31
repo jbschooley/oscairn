@@ -392,6 +392,88 @@ namespace
         }
     }
 
+    // Splits that divide the sound with Split and Join nodes (plugins/splitters): left/right,
+    // mid/side and bands, against the same graph wired by hand.
+    void soundSplits(const char* delay, const char* splitters, const fs::path& root)
+    {
+        Session s(48000, frames, {}, stereoIn);
+        const auto fx = s.add("fx", delay), splitter = s.add("split", splitters, splitPlugin), joiner = s.add("join", splitters, joinPlugin);
+        const auto guitar = s.addPart("Guitar", {PartInput::Kind::Audio, 0});
+        bool refused = false;
+        try { s.addSplit(guitar, 0, {}, Split::Kind::LeftRight, splitter); } catch(const std::invalid_argument&) { refused = true; }
+        check(refused, "a left/right split needs its Join node");
+        const auto split = s.addSplit(guitar, 0, {}, Split::Kind::LeftRight, splitter, joiner);
+        s.insertIntoPart(guitar, 0, fx, {split, 0}); // the delay on the left side only
+        Lane right; right.level = .5; s.setLane(guitar, split, 1, right);
+        s.commit();
+        auto byHand = [&] {
+            auto g = std::make_unique<Graph>(48000, frames, ProcessingMode::Realtime, Lv2BufferLimits{}, stereoIn);
+            const auto gd = g->add(delay), gs = g->add(splitters, splitPlugin), gj = g->add(splitters, joinPlugin);
+            g->connectAudio({{graphInput, 0, 0}, {gs, 0, 0}, 2, 1});
+            g->connectAudio({{gs, 0, 0}, {gd, g->host(gd).mainAudioPorts(true).front(), 0}, 2, 1});
+            g->connectAudio({{gd, g->host(gd).mainAudioPorts(false).front(), 0}, {gj, 0, 0}, 2, 1});
+            g->connectAudio({{gs, 1, 0}, {gj, 1, 0}, 2, .5});
+            g->connectAudio({{gj, 0, 0}, {graphOutput, 0, 0}, 2, 1});
+            g->host(gs).setParameter(1, 0); g->host(gj).setParameter(1, 0);
+            g->commit();
+            return g;
+        };
+        auto compare = [&](Session& x) {
+            auto g = byHand();
+            Audio a; std::array<float, frames> rl{}, rr{}; float* ref[2]{rl.data(), rr.data()};
+            bool same = true; double energy = 0;
+            for(int block = 0; block < 200; ++block)
+            {
+                for(uint32_t i = 0; i < frames; ++i) { const double t = (block * frames + i) / 48000.0; a.inL[i] = float(.5 * std::sin(2 * M_PI * 440 * t)); a.inR[i] = float(.3 * std::sin(2 * M_PI * 660 * t)); }
+                if(block > 100) { a.inL.fill(0); a.inR.fill(0); } // the delay's tail
+                a.run(x, 2);
+                g->process(a.in, 2, ref, 2, frames, nullptr);
+                same = same && a.l == rl && a.r == rr;
+                for(float v : a.l) energy += std::abs(v);
+            }
+            return same && energy > 0;
+        };
+        check(compare(s), "a left/right split with a delay on one side renders exactly as wired by hand");
+        const auto saved = root / "sound-splits";
+        s.savePerformance(saved.string());
+        Session t(48000, frames, {}, stereoIn); t.loadPerformance(saved.string());
+        check(t.parts()[0].splits.size() == 1 && t.parts()[0].splits[0].kind == Split::Kind::LeftRight && t.parts()[0].splits[0].splitter && t.parts()[0].splits[0].joiner, "the split and its nodes round-trip");
+        check(compare(t), "the opened Performance also renders as wired by hand");
+
+        refused = false; try { s.addLane(guitar, split); } catch(const std::invalid_argument&) { refused = true; }
+        check(refused, "left/right keeps two lanes");
+        refused = false; try { s.remove(splitter); } catch(const std::invalid_argument&) { refused = true; }
+        check(refused, "a split's node goes with the split, not alone");
+        const auto nodes = s.graphState().topology.nodes.size();
+        s.removeSplit(guitar, split); s.commit();
+        check(s.graphState().topology.nodes.size() == nodes - 2 && s.parts()[0].chain == std::vector<NodeId>{fx}, "removing the split removes its nodes; the left lane's delay stays");
+        s.removeFromPart(guitar, fx); s.commit();
+
+        // Mid/side with the side lane muted: mono.
+        const auto ms = s.add("ms", splitters, splitPlugin), msJoin = s.add("ms join", splitters, joinPlugin);
+        const auto sideSplit = s.addSplit(guitar, 0, {}, Split::Kind::MidSide, ms, msJoin);
+        Lane silent; silent.mute = true; s.setLane(guitar, sideSplit, 1, silent); s.commit();
+        Audio x; x.inL.fill(.5f); x.inR.fill(.25f); x.run(s, 2); x.run(s, 2);
+        check(std::abs(x.l[10] - .375f) < 1e-6 && x.l[10] == x.r[10], "mid/side with the side muted is mono: " + std::to_string(x.l[10]) + " " + std::to_string(x.r[10]));
+        s.removeSplit(guitar, sideSplit); s.commit();
+
+        // Bands: the band count follows the lanes; a steady input lives in the lowest band.
+        const auto bands = s.add("bands", splitters, splitPlugin);
+        const auto bandSplit = s.addSplit(guitar, 0, {}, Split::Kind::Bands, bands);
+        s.addLane(guitar, bandSplit); s.commit(); x.run(s, 2);
+        check(s.parameter(bands, 1) == 2 && s.parameter(bands, 2) == 3, "bands mode, three bands");
+        Lane off; off.mute = true; s.setLane(guitar, bandSplit, 0, off); s.commit();
+        for(int i = 0; i < 200; ++i) x.run(s, 2);
+        check(std::abs(x.l[10]) < 1e-3, "muting the lowest band removes a steady input: " + std::to_string(x.l[10]));
+        s.setLane(guitar, bandSplit, 0, {}); s.setLane(guitar, bandSplit, 1, off); s.setLane(guitar, bandSplit, 2, off); s.commit();
+        for(int i = 0; i < 200; ++i) x.run(s, 2);
+        check(std::abs(x.l[10] - .5f) < 1e-3 && std::abs(x.r[10] - .25f) < 1e-3, "the lowest band alone keeps it: " + std::to_string(x.l[10]));
+        s.removeLane(guitar, bandSplit, 2); s.commit(); x.run(s, 2);
+        check(s.parameter(bands, 2) == 2, "two bands again");
+        refused = false; try { s.removeLane(guitar, bandSplit, 1); } catch(const std::invalid_argument&) { refused = true; }
+        check(refused, "bands keep at least two lanes");
+    }
+
     // RFC 0011 step 2's gate: a two-layer split and a shared reverb (a delay here) built with part
     // edits only render exactly as the same graph wired by hand on the engine's Graph.
     void buses(const char* fixture, const char* delay)
@@ -617,7 +699,7 @@ namespace
 
 int main(int argc, char** argv)
 {
-    if(argc < 4) { std::fprintf(stderr, "usage: %s FIXTURE AUDIO_FIXTURE DELAY\n", argv[0]); return 2; }
+    if(argc < 5) { std::fprintf(stderr, "usage: %s FIXTURE AUDIO_FIXTURE DELAY SPLITTERS\n", argv[0]); return 2; }
     try
     {
         state_files::TemporaryDirectory temp;
@@ -627,6 +709,7 @@ int main(int argc, char** argv)
         zones(argv[1]);
         devices(argv[1], temp.path);
         splits(argv[1], argv[3], temp.path);
+        soundSplits(argv[3], argv[4], temp.path);
         buses(argv[1], argv[3]);
         scenes(argv[1], temp.path);
         controls(argv[1], temp.path);

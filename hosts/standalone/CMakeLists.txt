@@ -30,7 +30,7 @@ target_link_libraries(oscairn_standalone PRIVATE
     juce::juce_gui_extra
     juce::juce_recommended_config_flags
     juce::juce_recommended_warning_flags)
-set(bundled_plugins oscairn_step_sequencer oscairn_basic_synth oscairn_delay oscairn_transpose oscairn_midi_delay oscairn_sampler)
+set(bundled_plugins oscairn_step_sequencer oscairn_basic_synth oscairn_delay oscairn_transpose oscairn_midi_delay oscairn_sampler oscairn_splitters)
 if(TARGET oscairn_modular)
     list(APPEND bundled_plugins oscairn_modular)
 endif()
@@ -68,6 +68,6 @@ juce_add_console_app(oscairn_pad_editor_test PRODUCT_NAME "Oscairn Pad Editor Te
 target_sources(oscairn_pad_editor_test PRIVATE tests/pad_editor.cpp PadEditor.cpp PartsView.cpp PartsModel.cpp Engine.cpp Theme.cpp SoundPickerModel.cpp)
 target_link_libraries(oscairn_pad_editor_test PRIVATE oscairn_audio_host oscairn_host_process oscairn_control_socket juce::juce_audio_utils juce::juce_gui_extra juce::juce_recommended_config_flags)
 target_compile_definitions(oscairn_pad_editor_test PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_MODAL_LOOPS_PERMITTED=1)
-add_dependencies(oscairn_pad_editor_test oscairn_step_sequencer oscairn_basic_synth oscairn_delay oscairn-plugin-scan)
+add_dependencies(oscairn_pad_editor_test oscairn_step_sequencer oscairn_basic_synth oscairn_delay oscairn_splitters oscairn-plugin-scan)
 add_test(NAME desktop-pad-editor COMMAND oscairn_pad_editor_test "$<TARGET_FILE_DIR:oscairn_step_sequencer>" $<TARGET_FILE:oscairn-plugin-scan>)
 set_tests_properties(desktop-pad-editor PROPERTIES TIMEOUT 60)

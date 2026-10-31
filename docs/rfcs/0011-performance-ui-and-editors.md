@@ -428,11 +428,23 @@ by hand on the engine's `Graph`, also after saving and opening again. It also co
 mute, nesting and edits; `desktop-parts-model` covers the views' edits and
 `desktop-pad-editor` renders a split.
 
+**Left/right, mid/side and band splits** followed. They divide the sound itself with two
+plugins in one bundle (`plugins/splitters`): **Split** (one stereo input, four stereo
+outputs) and **Join** (four stereo inputs, one stereo output). Their ports never change, as
+CLAP requires; a mode parameter decides what flows through them, so one pair of plugins
+serves every kind. Left/right and mid/side have two lanes and a Join; bands (Linkwitz-Riley
+crossovers, 24 dB per octave, with allpass compensation so the bands sum flat) have two to
+four lanes and join by summing. The Session owns a split's nodes: it sets their modes and
+band count, keeps them out of chains, and removes them with the split. Every lane still gets
+the notes. The Part page's **+** offers each kind; a band split shows its crossovers.
+`splitters` checks that a Split and Join give back their input and that bands sum flat and
+separate; `control-parts` checks a left/right split with a delay on one side renders exactly
+as wired by hand, also after saving and opening, and mid/side and band lanes.
+
 Not yet:
-- **Kinds that divide the sound itself:** left/right, mid/side and bands. These need small
-  split and join plugins with a port per lane.
 - **Lane pan in the views:** it is set over the protocol.
 - **Nested splits in the views:** a split inside a lane shows as a gap there.
+- **Smooth crossover changes:** a new crossover frequency applies at the next block.
 - **The Mixer.**
 
 ## Open questions

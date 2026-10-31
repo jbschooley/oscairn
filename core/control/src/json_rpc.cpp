@@ -339,7 +339,8 @@ namespace oscairn
                 for( const auto& l : s.lanes )
                     lanes.push_back("{\"chain\":" + chainJson(l.chain) + ",\"zones\":" + zonesJson(l.zones) + ",\"level\":" + encode(l.level) + ",\"pan\":" + encode(l.pan) +
                         ",\"mute\":" + (l.mute ? "true" : "false") + ",\"solo\":" + (l.solo ? "true" : "false") + '}');
-                out.push_back("{\"id\":" + std::to_string(s.id) + ",\"kind\":\"copy\",\"lanes\":" + join(lanes) + '}');
+                out.push_back("{\"id\":" + std::to_string(s.id) + ",\"kind\":\"" + splitKinds[size_t(s.kind)] + "\",\"splitter\":" + std::to_string(s.splitter) +
+                    ",\"joiner\":" + std::to_string(s.joiner) + ",\"lanes\":" + join(lanes) + '}');
             }
             return join(out);
         }
@@ -630,7 +631,20 @@ namespace oscairn
                     if( method == "parts.insert" ) { fields(p,{"part","index","node","split","lane"}); c.insertIntoPart(integer(member(p,"part")),integer(member(p,"index")),node(c,member(p,"node")),placeFrom(p)); return R"({"accepted":true})"; }
                     if( method == "parts.removeNode" ) { fields(p,{"part","node"}); c.removeFromPart(integer(member(p,"part")),node(c,member(p,"node"))); return R"({"accepted":true})"; }
                     if( method == "parts.move" ) { fields(p,{"part","from","to","split","lane"}); c.movePartNode(integer(member(p,"part")),integer(member(p,"from")),integer(member(p,"to")),placeFrom(p)); return R"({"accepted":true})"; }
-                    if( method == "parts.addSplit" ) { fields(p,{"part","index","split","lane"}); return "{\"split\":" + std::to_string(c.addSplit(integer(member(p,"part")),integer(member(p,"index")),placeFrom(p))) + '}'; }
+                    if( method == "parts.addSplit" )
+                    {
+                        fields(p,{"part","index","split","lane","kind","splitter","joiner"});
+                        auto kind = Split::Kind::Copy;
+                        if( member(p,"kind") )
+                        {
+                            const auto name = string(member(p,"kind"));
+                            const auto at = std::find_if(splitKinds.begin(), splitKinds.end(), [&](const char* k) { return name == k; });
+                            if( at == splitKinds.end() ) invalid("kind is copy, leftRight, midSide or bands");
+                            kind = Split::Kind(at - splitKinds.begin());
+                        }
+                        const NodeId splitter = member(p,"splitter") ? node(c,member(p,"splitter")) : 0, joiner = member(p,"joiner") ? node(c,member(p,"joiner")) : 0;
+                        return "{\"split\":" + std::to_string(c.addSplit(integer(member(p,"part")),integer(member(p,"index")),placeFrom(p),kind,splitter,joiner)) + '}';
+                    }
                     if( method == "parts.removeSplit" ) { fields(p,{"part","split"}); c.removeSplit(integer(member(p,"part")),integer(member(p,"split"))); return R"({"accepted":true})"; }
                     if( method == "parts.addLane" ) { fields(p,{"part","split"}); return "{\"lane\":" + std::to_string(c.addLane(integer(member(p,"part")),integer(member(p,"split")))) + '}'; }
                     if( method == "parts.removeLane" ) { fields(p,{"part","split","lane"}); c.removeLane(integer(member(p,"part")),integer(member(p,"split")),integer(member(p,"lane"))); return R"({"accepted":true})"; }

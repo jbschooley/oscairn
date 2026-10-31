@@ -1055,7 +1055,7 @@
     },
     "Split": {
       "type": "object",
-      "description": "A split in a part's chain: the notes and sound divide into lanes that join again by summing into whatever follows",
+      "description": "A split in a part's chain: the notes and sound divide into lanes that join again",
       "properties": {
         "id": {
           "type": "integer",
@@ -1064,9 +1064,34 @@
         },
         "kind": {
           "enum": [
-            "copy"
+            "copy",
+            "leftRight",
+            "midSide",
+            "bands"
           ],
-          "description": "copy: every lane gets the notes, through its zones, and a copy of the sound"
+          "description": "copy: every lane gets the notes, through its zones, and a copy of the sound. leftRight and midSide (two lanes) and bands (two to four) divide the sound with an Oscairn Split node, lane k taking its output k; leftRight and midSide join through an Oscairn Join node"
+        },
+        "splitter": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/NodeKey"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Its Split node (plugins/splitters), or none for copy"
+        },
+        "joiner": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/NodeKey"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Its Join node, for leftRight and midSide"
         },
         "lanes": {
           "type": "array",
@@ -1080,6 +1105,8 @@
       "required": [
         "id",
         "kind",
+        "splitter",
+        "joiner",
         "lanes"
       ],
       "additionalProperties": false

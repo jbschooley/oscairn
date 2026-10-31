@@ -17,6 +17,13 @@ authoritative.
   distributed in any binary/image. The independent eg-amp and eg-fifths test
   plugins are upstream LV2 examples, installed separately.
 
+## Signal processing
+
+- **Split's crossovers** ([plugins/splitters](plugins/splitters/splitters.cpp)): second-order
+  sections from Robert Bristow-Johnson's *Audio EQ Cookbook* (the published formulas; no
+  source copied), arranged as Linkwitz-Riley crossovers (Siegfried Linkwitz and Russ Riley)
+  with allpass compensation so the bands sum flat.
+
 ## Instrument engines
 
 - **Modular:** chillbeast ([chillbeast/0700-AAM](https://github.com/chillbeast/0700-AAM)),

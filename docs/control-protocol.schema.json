@@ -2210,6 +2210,23 @@
                   "type": "integer",
                   "minimum": 0,
                   "maximum": 4294967295
+                },
+                "kind": {
+                  "enum": [
+                    "copy",
+                    "leftRight",
+                    "midSide",
+                    "bands"
+                  ],
+                  "description": "Default copy"
+                },
+                "splitter": {
+                  "$ref": "#/$defs/Node",
+                  "description": "For leftRight, midSide and bands: an Oscairn Split node, already added"
+                },
+                "joiner": {
+                  "$ref": "#/$defs/Node",
+                  "description": "For leftRight and midSide: an Oscairn Join node, already added"
                 }
               },
               "required": [
@@ -5668,7 +5685,7 @@
     },
     "Split": {
       "type": "object",
-      "description": "A split in a part's chain: the notes and sound divide into lanes that join again by summing into whatever follows",
+      "description": "A split in a part's chain: the notes and sound divide into lanes that join again",
       "properties": {
         "id": {
           "type": "integer",
@@ -5677,9 +5694,24 @@
         },
         "kind": {
           "enum": [
-            "copy"
+            "copy",
+            "leftRight",
+            "midSide",
+            "bands"
           ],
-          "description": "copy: every lane gets the notes, through its zones, and a copy of the sound"
+          "description": "copy: every lane gets the notes, through its zones, and a copy of the sound. leftRight and midSide (two lanes) and bands (two to four) divide the sound with an Oscairn Split node, lane k taking its output k; leftRight and midSide join through an Oscairn Join node"
+        },
+        "splitter": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295,
+          "description": "Its Split node (plugins/splitters), or 0 for copy"
+        },
+        "joiner": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295,
+          "description": "Its Join node, for leftRight and midSide; otherwise 0"
         },
         "lanes": {
           "type": "array",
@@ -5693,6 +5725,8 @@
       "required": [
         "id",
         "kind",
+        "splitter",
+        "joiner",
         "lanes"
       ],
       "additionalProperties": false

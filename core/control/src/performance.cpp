@@ -126,7 +126,8 @@ void Session::savePerformance(const std::string& directory) {
         for(const auto& sp:p.splits){
             std::vector<std::string> lanes;
             for(const auto& l:sp.lanes)lanes.push_back("{\"chain\":"+chainText(l.chain)+",\"zones\":"+zonesText(l.zones)+",\"level\":"+numeric(l.level)+",\"pan\":"+numeric(l.pan)+",\"mute\":"+(l.mute?"true":"false")+",\"solo\":"+(l.solo?"true":"false")+'}');
-            splits.push_back("{\"id\":"+std::to_string(sp.id)+",\"kind\":\"copy\",\"lanes\":"+join(lanes)+'}');
+            auto key=[&](NodeId n){return n?quote(keys.at(n)):std::string("null");};
+            splits.push_back("{\"id\":"+std::to_string(sp.id)+",\"kind\":\""+splitKinds[size_t(sp.kind)]+"\",\"splitter\":"+key(sp.splitter)+",\"joiner\":"+key(sp.joiner)+",\"lanes\":"+join(lanes)+'}');
         }
         const char* kind=p.input.kind==PartInput::Kind::Notes?"notes":p.input.kind==PartInput::Kind::Audio?"audio":p.input.kind==PartInput::Kind::Bus?"bus":"none";
         std::vector<std::string> sends;for(const auto& s:p.sends)sends.push_back("{\"bus\":"+std::to_string(s.bus)+",\"level\":"+numeric(s.level)+'}');
@@ -233,13 +234,21 @@ void Session::loadPerformance(const std::string& directory) {
                 if(!seen.insert(id).second)bad("a node or split appears twice in a part");out.push_back(id);}return out;};
             part.chain=chain(field(p,"chain"));
             for(auto sp:array(field(p,"splits"),256)){
-                fields(sp,{"id","kind","lanes"});Split split;split.id=integer(field(sp,"id"));if(!split.id || split.id>=splitMark)bad("invalid split");
-                if(text(field(sp,"kind"))!="copy")bad("invalid split kind");
+                fields(sp,{"id","kind","splitter","joiner","lanes"});Split split;split.id=integer(field(sp,"id"));if(!split.id || split.id>=splitMark)bad("invalid split");
+                split.kind=Split::Kind(named(splitKinds,text(field(sp,"kind")),"invalid split kind"));
+                // Its own Split and Join nodes, by key, for the kinds that have them.
+                auto own=[&](const char* name,const char* plugin,bool needed){
+                    const auto v=field(sp,name);if(v->type==json_type_null){if(needed)bad("a split is missing its nodes");return NodeId(0);}
+                    const auto id=node(v);if(!needed || id==graphInput || id==graphOutput || !seen.insert(id).second || next->describe().nodes.end()==std::find_if(next->describe().nodes.begin(),next->describe().nodes.end(),[&](const auto& n){return n.id==id && n.plugin.id==plugin;}))bad("invalid split node");
+                    return id;};
+                const bool joins=split.kind==Split::Kind::LeftRight || split.kind==Split::Kind::MidSide;
+                split.splitter=own("splitter",splitPlugin,split.kind!=Split::Kind::Copy);split.joiner=own("joiner",joinPlugin,joins);
                 for(auto l:array(field(sp,"lanes"),16)){
                     fields(l,{"chain","zones","level","pan","mute","solo"});Lane lane;lane.chain=chain(field(l,"chain"));lane.zones=zonesFrom(field(l,"zones"));
                     lane.level=number(field(l,"level"));lane.pan=number(field(l,"pan"));lane.mute=boolean(field(l,"mute"));lane.solo=boolean(field(l,"solo"));
                     if(lane.level<0 || lane.pan<-1 || lane.pan>1)bad("invalid lane level or pan");split.lanes.push_back(std::move(lane));}
                 if(split.lanes.empty() || std::any_of(part.splits.begin(),part.splits.end(),[&](const Split& x){return x.id==split.id;}))bad("invalid or duplicate split");
+                if((joins && split.lanes.size()!=2) || (split.kind==Split::Kind::Bands && (split.lanes.size()<2 || split.lanes.size()>4)))bad("wrong number of lanes for the split's kind");
                 part.splits.push_back(std::move(split));
             }
             std::set<uint32_t> reached;

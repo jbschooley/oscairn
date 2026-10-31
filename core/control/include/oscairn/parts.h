@@ -104,11 +104,17 @@ namespace oscairn
     struct Split
     {
         uint32_t id = 0;
-        // Copy: every lane gets the notes (through its zones) and a copy of the sound. Kinds that
-        // divide the sound itself (left/right, mid/side, bands) come with their split nodes.
-        enum class Kind { Copy } kind = Kind::Copy;
+        // Copy: every lane gets the notes (through its zones) and a copy of the sound. The others
+        // divide the sound with an Oscairn Split node (plugins/splitters), lane k taking its output
+        // k: left/right and mid/side (two lanes, joined again by an Oscairn Join node), and bands
+        // (two to four lanes, joining by summing into what follows). Every lane gets the notes.
+        enum class Kind { Copy, LeftRight, MidSide, Bands } kind = Kind::Copy;
         std::vector<Lane> lanes;
+        NodeId splitter = 0, joiner = 0; // the Split and Join nodes, for the kinds that have them
     };
+    inline constexpr std::array<const char*, 4> splitKinds{"copy", "leftRight", "midSide", "bands"};
+    inline constexpr const char* splitPlugin = "org.oscairn.split";
+    inline constexpr const char* joinPlugin = "org.oscairn.join";
     // Where a chain edit applies: the part's own chain (split 0), or one lane of a split.
     struct ChainPlace { uint32_t split = 0; uint32_t lane = 0; };
     // The two zone lists a note passes in turn, as one: each pair that lets some note through.

@@ -79,6 +79,10 @@ add_executable(oscairn-transport-tempo-test engine/tests/transport_tempo.cpp)
 target_link_libraries(oscairn-transport-tempo-test PRIVATE oscairn_engine)
 add_test(NAME transport-tempo COMMAND oscairn-transport-tempo-test)
 
+add_executable(oscairn-splitters-test engine/tests/splitters.cpp)
+target_link_libraries(oscairn-splitters-test PRIVATE oscairn_engine)
+add_test(NAME splitters COMMAND oscairn-splitters-test $<TARGET_FILE:oscairn_splitters>)
+
 add_executable(oscairn-delay-glide-test engine/tests/delay_glide.cpp)
 target_link_libraries(oscairn-delay-glide-test PRIVATE oscairn_engine)
 add_test(NAME delay-glide COMMAND oscairn-delay-glide-test $<TARGET_FILE:oscairn_delay>)

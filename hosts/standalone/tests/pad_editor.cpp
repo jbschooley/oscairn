@@ -123,6 +123,15 @@ int main(int argc, char** argv)
             view.showPart(bassId);
             view.showLane(split, 1);
             save(view, "-lane.png");
+            // Three frequency bands after the lead's delay, shown with their crossovers.
+            const auto leadId = engine.graph().parts[1].id;
+            uint32_t bands = 0;
+            engine.edit([&](Control& c) { bands = standalone::insertSplit(c, leadId, 2, Split::Kind::Bands, plugins); c.addLane(leadId, bands); c.commit(); });
+            for(int i = 0; i < 500 && (engine.graph().parts[1].splits.empty() || engine.graph().parts[1].splits[0].lanes.size() < 3); ++i) juce::MessageManager::getInstance()->runDispatchLoopUntil(10);
+            check(engine.graph().parts[1].splits.size() == 1 && engine.graph().parts[1].splits[0].kind == Split::Kind::Bands && engine.editError().empty(), "a band split made through the views' edits: " + std::string(engine.editError()));
+            view.showPart(leadId);
+            view.showLane(bands, -1);
+            save(view, "-bands.png");
             view.showPart(0xFFFFFFFFu);
             save(view, "-controls.png");
             juce::LookAndFeel::setDefaultLookAndFeel(nullptr);

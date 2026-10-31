@@ -126,7 +126,7 @@ request members.
 | `parts.insert` | `part`, `index`, `node`; optional `split` and `lane` for a lane's chain | `{"accepted":true}` |
 | `parts.removeNode` | `part`, `node`, wherever it is in the part | `{"accepted":true}` |
 | `parts.move` | `part`, `from`, `to` (chain positions); optional `split` and `lane` | `{"accepted":true}` |
-| `parts.addSplit` | `part`, `index`; optional `split` and `lane` to split inside a lane | numeric `split` |
+| `parts.addSplit` | `part`, `index`; optional `split` and `lane` to split inside a lane; optional `kind` (`copy`, `leftRight`, `midSide`, `bands`) with its `splitter` and `joiner` nodes | numeric `split` |
 | `parts.removeSplit` | `part`, `split`: its first lane's chain takes its place; other lanes' nodes leave the part | `{"accepted":true}` |
 | `parts.addLane` | `part`, `split` | numeric `lane` |
 | `parts.removeLane` | `part`, `split`, `lane`: its nodes leave the part; the last lane removes the split | `{"accepted":true}` |
@@ -255,14 +255,22 @@ report the compiled per-channel routes.
   keep their releases when zones change.
 - **Splits** ([RFC 0011 step 3](rfcs/0011-performance-ui-and-editors.md#step-3-status))
   divide a part's notes and sound into lanes that join again. A part's `chain` lists node
-  IDs and `{"split":id}` entries; its `splits` give each split's `id`, `kind` (`copy`) and
-  `lanes`, each with its own `chain`, `zones`, `level`, `pan`, `mute` and `solo`. Every lane
-  gets the notes, through its zones (after the part's own), and a copy of the sound; the
-  lanes' ends sum into whatever follows the split, or where the part plays, at the lane's
+  IDs and `{"split":id}` entries; its `splits` give each split's `id`, `kind`, `splitter`
+  and `joiner` nodes (0 for none) and `lanes`, each with its own `chain`, `zones`, `level`,
+  `pan`, `mute` and `solo`. Every lane gets the notes, through its zones (after the part's
+  own). With `copy`, every lane gets a copy of the sound; the others divide it with an
+  Oscairn Split node (`org.oscairn.split`, added first and given as `splitter`), lane k
+  taking its output k: `leftRight` and `midSide` have two lanes, joined again by an Oscairn
+  Join node (`org.oscairn.join`, the `joiner`), and `bands` two to four, the band count
+  following `parts.addLane` and `parts.removeLane`, with crossovers as the Split node's
+  parameters. The split sets its nodes' modes, keeps them out of chains, refuses to remove
+  them alone (`graph.remove`), and removes them with itself. The lanes' ends sum into
+  whatever follows the split (or the Join node), or where the part plays, at the lane's
   level and pan. Solo silences the split's other lanes. A lane's chain may hold another
   split. Wires joining from a lane carry its `split` and `lane`, and take their Mix from it:
   `wires.mix` refuses them. A bus may split too: a send or a part playing through it enters
-  each lane at the lane's Mix, and those wires carry the bus's `split` and `lane`.
+  each lane of a copy split at the lane's Mix, and those wires carry the bus's `split` and
+  `lane`; with the other kinds it enters the Split node.
 - **Devices** ([RFC 0012](rfcs/0012-sync-external-midi-and-multi-device.md#choosing-devices-selectors))
   choose which MIDI inputs play a part, whatever channel they send on. A part's input
   `devices` is a list of rules, `{"kind","port","pattern","match"}`; a note or message

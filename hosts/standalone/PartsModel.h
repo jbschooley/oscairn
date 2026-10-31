@@ -15,6 +15,7 @@ namespace oscairn::standalone
     // A split's lane: its boxes, its key range (its first zone, or all keys) and its Mix.
     struct PartLane
     {
+        std::string name; // Left, Right, Mid, Side or Band n for the kinds that divide the sound
         std::vector<PartBox> boxes;
         int lowKey = 0, highKey = 127;
         double level = 1;
@@ -25,6 +26,8 @@ namespace oscairn::standalone
     {
         NodeId node = 0; std::string name, plugin, role;
         uint32_t split = 0;
+        Split::Kind kind = Split::Kind::Copy;
+        std::string splitter;             // its Split node's name, for its crossovers
         std::vector<PartLane> lanes;
     };
     const PartBox* findBox(const std::vector<PartBox>& chain, NodeId node); // anywhere, lanes included
@@ -52,7 +55,8 @@ namespace oscairn::standalone
 
     uint32_t addPart(Control&, const std::string& name, bool bus);
     void insertPlugin(Control&, uint32_t part, size_t index, const PluginChoice&, ChainPlace = {}); // a new node, named uniquely
-    uint32_t insertSplit(Control&, uint32_t part, size_t index);                 // two empty lanes
+    // Two empty lanes; kinds other than copy add their Split and Join nodes from `plugins`.
+    uint32_t insertSplit(Control&, uint32_t part, size_t index, Split::Kind kind = Split::Kind::Copy, const std::vector<PluginChoice>& plugins = {});
     // Removing a split keeps its first lane's boxes; a removed lane's boxes are removed with it.
     void removeSplitKeepingFirst(Control&, uint32_t part, uint32_t split);
     void removeLaneAndBoxes(Control&, uint32_t part, uint32_t split, uint32_t lane);

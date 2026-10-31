@@ -56,14 +56,19 @@ namespace oscairn::standalone
                     {
                         const auto s = std::find_if(p.splits.begin(), p.splits.end(), [&](const Split& x) { return x.id == (entry & ~splitMark); });
                         if(s == p.splits.end()) continue;
-                        PartBox box; box.split = s->id; box.role = "Split";
-                        for(const auto& l : s->lanes)
+                        PartBox box; box.split = s->id; box.role = "Split"; box.kind = s->kind;
+                        if(s->splitter && g.names.count(s->splitter)) box.splitter = g.names.at(s->splitter);
+                        for(size_t k = 0; k < s->lanes.size(); ++k)
                         {
+                            const auto& l = s->lanes[k];
                             PartLane lane; lane.boxes = boxes(l.chain); lane.level = l.level; lane.mute = l.mute; lane.solo = l.solo;
+                            if(s->kind == Split::Kind::LeftRight) lane.name = k ? "Right" : "Left";
+                            else if(s->kind == Split::Kind::MidSide) lane.name = k ? "Side" : "Mid";
+                            else if(s->kind == Split::Kind::Bands) lane.name = "Band " + std::to_string(k + 1);
                             if(!l.zones.empty()) { lane.lowKey = l.zones.front().lowKey; lane.highKey = l.zones.front().highKey; }
                             // A lane is named after its instrument, else its last box.
                             const auto instrument = std::find_if(lane.boxes.begin(), lane.boxes.end(), [](const PartBox& x) { return x.role == "Instrument"; });
-                            box.name += (box.name.empty() ? "" : " | ") + (instrument != lane.boxes.end() ? instrument->name : lane.boxes.empty() ? std::string("Dry") : lane.boxes.back().name);
+                            box.name += (box.name.empty() ? "" : " | ") + (instrument != lane.boxes.end() ? instrument->name : !lane.boxes.empty() ? lane.boxes.back().name : lane.name.empty() ? std::string("Dry") : lane.name);
                             box.lanes.push_back(std::move(lane));
                         }
                         out.push_back(std::move(box));
@@ -129,26 +134,47 @@ namespace oscairn::standalone
         return nullptr;
     }
 
+    namespace
+    {
+        // A node for a plugin, named after it: "Basic Synth", then "Basic Synth 2" and so on.
+        NodeId addNamed(Control& c, const PluginChoice& plugin)
+        {
+            const auto names = c.graphState().names;
+            std::string name;
+            for(int n = 1;; ++n)
+            {
+                name = plugin.name + (n > 1 ? " " + std::to_string(n) : std::string());
+                if(std::none_of(names.begin(), names.end(), [&](const auto& e) { return e.second == name; })) break;
+            }
+            return c.add(name, plugin.path, plugin.id);
+        }
+    }
+
     void insertPlugin(Control& c, uint32_t part, size_t index, const PluginChoice& plugin, ChainPlace place)
     {
-        const auto names = c.graphState().names;
-        std::string name;
-        for(int n = 1;; ++n)
-        {
-            name = plugin.name + (n > 1 ? " " + std::to_string(n) : std::string());
-            if(std::none_of(names.begin(), names.end(), [&](const auto& e) { return e.second == name; })) break;
-        }
-        const auto node = c.add(name, plugin.path, plugin.id);
+        const auto node = addNamed(c, plugin);
         try { c.insertIntoPart(part, index, node, place); }
         catch(...) { c.remove(node); throw; }
         c.commit();
     }
 
-    uint32_t insertSplit(Control& c, uint32_t part, size_t index)
+    uint32_t insertSplit(Control& c, uint32_t part, size_t index, Split::Kind kind, const std::vector<PluginChoice>& plugins)
     {
-        const auto split = c.addSplit(part, index);
-        c.commit();
-        return split;
+        NodeId splitter = 0, joiner = 0;
+        auto choice = [&](const char* id) {
+            const auto found = std::find_if(plugins.begin(), plugins.end(), [&](const PluginChoice& p) { return p.id == id; });
+            if(found == plugins.end()) throw std::invalid_argument("the Split and Join plugins are not installed");
+            return *found;
+        };
+        try
+        {
+            if(kind != Split::Kind::Copy) splitter = addNamed(c, choice(splitPlugin));
+            if(kind == Split::Kind::LeftRight || kind == Split::Kind::MidSide) joiner = addNamed(c, choice(joinPlugin));
+            const auto split = c.addSplit(part, index, {}, kind, splitter, joiner);
+            c.commit();
+            return split;
+        }
+        catch(...) { if(splitter) c.remove(splitter); if(joiner) c.remove(joiner); throw; }
     }
 
     namespace

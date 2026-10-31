@@ -94,7 +94,7 @@ add_executable(oscairn-parts-test tests/parts.cpp)
 target_include_directories(oscairn-parts-test PRIVATE ../clap-host/tests)
 target_link_libraries(oscairn-parts-test PRIVATE oscairn_control)
 add_test(NAME control-parts COMMAND oscairn-parts-test
-    $<TARGET_FILE:kick-clap-fixture-normal> $<TARGET_FILE:oscairn-audio-fixture> $<TARGET_FILE:oscairn_delay>)
+    $<TARGET_FILE:kick-clap-fixture-normal> $<TARGET_FILE:oscairn-audio-fixture> $<TARGET_FILE:oscairn_delay> $<TARGET_FILE:oscairn_splitters>)
 set_tests_properties(control-parts PROPERTIES TIMEOUT 60)
 
 add_executable(oscairn-pads-test tests/pads.cpp)

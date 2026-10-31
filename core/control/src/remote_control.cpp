@@ -169,7 +169,8 @@ namespace oscairn
                 auto chain=[](V list){std::vector<NodeId> result;for(auto n:array(list))result.push_back(n->type==json_type_object?splitMark|static_cast<NodeId>(integer(field(n,"split"))):static_cast<NodeId>(integer(n)));return result;};
                 part.chain=chain(field(p,"chain"));
                 for(auto s:array(field(p,"splits"))){
-                    Split split;split.id=static_cast<uint32_t>(integer(field(s,"id")));
+                    Split split;split.id=static_cast<uint32_t>(integer(field(s,"id")));split.kind=Split::Kind(named(splitKinds,string(field(s,"kind"))));
+                    split.splitter=static_cast<NodeId>(integer(field(s,"splitter")));split.joiner=static_cast<NodeId>(integer(field(s,"joiner")));
                     for(auto l:array(field(s,"lanes")))split.lanes.push_back({chain(field(l,"chain")),zones(field(l,"zones")),number(field(l,"level")),number(field(l,"pan")),boolean(field(l,"mute")),boolean(field(l,"solo"))});
                     part.splits.push_back(std::move(split));
                 }
@@ -454,9 +455,10 @@ namespace oscairn
     void RemoteControl::insertIntoPart(uint32_t part,size_t index,NodeId node,ChainPlace place){impl_->call("parts.insert","{\"part\":"+std::to_string(part)+",\"index\":"+std::to_string(index)+",\"node\":"+std::to_string(node)+placeText(place)+'}');impl_->refresh();}
     void RemoteControl::removeFromPart(uint32_t part,NodeId node){impl_->call("parts.removeNode","{\"part\":"+std::to_string(part)+",\"node\":"+std::to_string(node)+'}');impl_->refresh();}
     void RemoteControl::movePartNode(uint32_t part,size_t from,size_t to,ChainPlace place){impl_->call("parts.move","{\"part\":"+std::to_string(part)+",\"from\":"+std::to_string(from)+",\"to\":"+std::to_string(to)+placeText(place)+'}');impl_->refresh();}
-    uint32_t RemoteControl::addSplit(uint32_t part,size_t index,ChainPlace place)
+    uint32_t RemoteControl::addSplit(uint32_t part,size_t index,ChainPlace place,Split::Kind kind,NodeId splitter,NodeId joiner)
     {
-        auto reply=impl_->call("parts.addSplit","{\"part\":"+std::to_string(part)+",\"index\":"+std::to_string(index)+placeText(place)+'}');
+        auto reply=impl_->call("parts.addSplit","{\"part\":"+std::to_string(part)+",\"index\":"+std::to_string(index)+placeText(place)+",\"kind\":\""+splitKinds[size_t(kind)]+'"'+
+            (splitter?",\"splitter\":"+std::to_string(splitter):std::string{})+(joiner?",\"joiner\":"+std::to_string(joiner):std::string{})+'}');
         const auto id=static_cast<uint32_t>(integer(field(field(reply.get(),"result"),"split")));impl_->refresh();return id;
     }
     void RemoteControl::removeSplit(uint32_t part,uint32_t split){impl_->call("parts.removeSplit","{\"part\":"+std::to_string(part)+",\"split\":"+std::to_string(split)+'}');impl_->refresh();}
