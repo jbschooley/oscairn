@@ -129,8 +129,24 @@ namespace oscairn
         catch(...) { parts_.swap(parts); wires_.swap(wires); syncWires(); throw; }
     }
 
+    // Where sound sent to a bus enters it: its first box, or, with an empty chain, wherever the
+    // bus itself plays. Bus edits are refused if they would loop, so this ends.
+    std::pair<NodeId, uint32_t> Session::busEntry(uint32_t id)
+    {
+        const auto layout = graph_.describe().audioLayout;
+        const auto& bus = findPart(id);
+        for(const auto node : bus.chain) if(takesAudio(graph_, layout, node)) return {node, mainPort(graph_, layout, node, true)};
+        if(bus.bus) return busEntry(bus.bus);
+        return {graphOutput, bus.output};
+    }
+
+    // Rebuilds every part's own wires; each depends only on its own chain and the buses it plays
+    // into, so the order does not matter.
+    void Session::buildParts() { for(const auto& p : parts_) buildPart(p); }
+
     // Rebuilds one part's own wires: its input into the first box, box to box, the last box to
-    // its output. A rebuilt wire keeps the Mix settings of the one it replaces.
+    // its output or bus, and its sends. A rebuilt wire keeps the Mix settings of the one it
+    // replaces; a send's level is the send's.
     void Session::buildPart(const Part& part)
     {
         const auto layout = graph_.describe().audioLayout;
@@ -157,7 +173,25 @@ namespace oscairn
             audio = sendsAudio(graph_, layout, node); notes = sendsNotes(graph_, node);
             if(audio) audioPort = mainPort(graph_, layout, node, false);
         }
-        if(audio) audioWire(previousNode, audioPort, graphOutput, part.output);
+        if(!audio) return;
+        if(part.bus) { const auto [node, port] = busEntry(part.bus); audioWire(previousNode, audioPort, node, port); }
+        else audioWire(previousNode, audioPort, graphOutput, part.output);
+        for(const auto& send : part.sends)
+        {
+            const auto [node, port] = busEntry(send.bus);
+            Wire w; w.from = previousNode; w.fromPort = audioPort; w.to = node; w.toPort = port; w.send = send.bus;
+            add(w);
+            wires_.back().level = send.level;
+        }
+    }
+
+    // Whether sound from part `from` can reach part `to` through outputs and sends.
+    bool Session::feeds(uint32_t from, uint32_t to)
+    {
+        if(from == to) return true;
+        const auto& p = findPart(from);
+        if(p.bus && feeds(p.bus, to)) return true;
+        return std::any_of(p.sends.begin(), p.sends.end(), [&](const Send& s) { return feeds(s.bus, to); });
     }
 
     namespace
@@ -184,7 +218,7 @@ namespace oscairn
         Part part{nextPart_, name, input, {}, output.value_or(layout.outputs.front().id)};
         if(!channelsOf(graph_, layout, graphOutput, part.output, true)) throw std::invalid_argument("no such graph output port");
         if(input.kind == PartInput::Kind::Audio && !channelsOf(graph_, layout, graphInput, input.port, false)) throw std::invalid_argument("no such graph input port");
-        editWires([&] { parts_.push_back(part); buildPart(parts_.back()); });
+        editWires([&] { parts_.push_back(part); buildParts(); });
         return nextPart_++;
     }
 
@@ -194,7 +228,39 @@ namespace oscairn
         checkZones(input.zones);
         const auto layout = graph_.describe().audioLayout;
         if(input.kind == PartInput::Kind::Audio && !channelsOf(graph_, layout, graphInput, input.port, false)) throw std::invalid_argument("no such graph input port");
-        editWires([&] { auto& p = findPart(id); p.input = input; buildPart(p); });
+        editWires([&] { findPart(id).input = input; buildParts(); });
+    }
+
+    Part& Session::findBus(uint32_t id)
+    {
+        auto& bus = findPart(id);
+        if(bus.input.kind != PartInput::Kind::Bus) throw std::invalid_argument("not a bus");
+        return bus;
+    }
+
+    void Session::setPartOutput(uint32_t id, uint32_t bus, std::optional<uint32_t> port)
+    {
+        findPart(id);
+        if(bus) { findBus(bus); if(feeds(bus, id)) throw std::invalid_argument("that would loop the bus into itself"); }
+        const auto layout = graph_.describe().audioLayout;
+        const auto output = port.value_or(layout.outputs.front().id);
+        if(!bus && !channelsOf(graph_, layout, graphOutput, output, true)) throw std::invalid_argument("no such graph output port");
+        editWires([&] { auto& p = findPart(id); p.bus = bus; if(!bus) p.output = output; buildParts(); });
+    }
+
+    void Session::setSend(uint32_t id, uint32_t bus, std::optional<double> level)
+    {
+        findPart(id); findBus(bus);
+        if(level && (!std::isfinite(*level) || *level < 0)) throw std::invalid_argument("invalid send level");
+        if(level && feeds(bus, id)) throw std::invalid_argument("that would loop the bus into itself");
+        editWires([&] {
+            auto& sends = findPart(id).sends;
+            const auto it = std::find_if(sends.begin(), sends.end(), [&](const Send& s) { return s.bus == bus; });
+            if(!level) { if(it != sends.end()) sends.erase(it); }
+            else if(it != sends.end()) it->level = *level;
+            else sends.push_back({bus, *level});
+            buildParts();
+        });
     }
 
     void Session::setZones(uint32_t id, const std::vector<NoteZone>& zones)
@@ -211,6 +277,14 @@ namespace oscairn
         editWires([&] {
             std::erase_if(parts_, [&](const Part& p) { return p.id == id; });
             std::erase_if(wires_, [&](const Wire& w) { return w.owner == WireOwner::Part && w.part == id; });
+            // Parts that played through a removed bus play to the main output; their sends to it end.
+            const auto main = graph_.describe().audioLayout.outputs.front().id;
+            for(auto& p : parts_)
+            {
+                if(p.bus == id) { p.bus = 0; p.output = main; }
+                std::erase_if(p.sends, [&](const Send& s) { return s.bus == id; });
+            }
+            buildParts();
         });
     }
 
@@ -220,14 +294,14 @@ namespace oscairn
         auto& part = findPart(id);
         if(index > part.chain.size()) throw std::invalid_argument("chain position out of range");
         if(std::find(part.chain.begin(), part.chain.end(), node) != part.chain.end()) throw std::invalid_argument("the node is already in this part");
-        editWires([&] { auto& p = findPart(id); p.chain.insert(p.chain.begin() + std::ptrdiff_t(index), node); buildPart(p); });
+        editWires([&] { auto& p = findPart(id); p.chain.insert(p.chain.begin() + std::ptrdiff_t(index), node); buildParts(); });
     }
 
     void Session::removeFromPart(uint32_t id, NodeId node)
     {
         auto& part = findPart(id);
         if(std::find(part.chain.begin(), part.chain.end(), node) == part.chain.end()) throw std::invalid_argument("the node is not in this part");
-        editWires([&] { auto& p = findPart(id); std::erase(p.chain, node); buildPart(p); });
+        editWires([&] { std::erase(findPart(id).chain, node); buildParts(); });
     }
 
     void Session::movePartNode(uint32_t id, size_t from, size_t to)
@@ -239,7 +313,7 @@ namespace oscairn
             const auto node = p.chain[from];
             p.chain.erase(p.chain.begin() + std::ptrdiff_t(from));
             p.chain.insert(p.chain.begin() + std::ptrdiff_t(to), node);
-            buildPart(p);
+            buildParts();
         });
     }
 
@@ -276,7 +350,11 @@ namespace oscairn
         if(!std::isfinite(level) || level < 0 || !std::isfinite(pan) || pan < -1 || pan > 1) throw std::invalid_argument("invalid level or pan");
         const auto it = std::find_if(wires_.begin(), wires_.end(), [&](const Wire& w) { return w.id == id; });
         if(it == wires_.end() || it->kind != WireKind::Audio) throw std::invalid_argument("unknown audio wire");
-        editWires([&] { auto& w = *std::find_if(wires_.begin(), wires_.end(), [&](const Wire& x) { return x.id == id; }); w.level = level; w.pan = pan; w.mute = mute; w.solo = solo; });
+        editWires([&] {
+            auto& w = *std::find_if(wires_.begin(), wires_.end(), [&](const Wire& x) { return x.id == id; });
+            w.level = level; w.pan = pan; w.mute = mute; w.solo = solo;
+            if(w.owner == WireOwner::Part && w.send) for(auto& s : findPart(w.part).sends) if(s.bus == w.send) s.level = level; // a send keeps its level
+        });
     }
 
     // The channel-level and node-level connection calls are user wires too.
@@ -353,7 +431,8 @@ namespace oscairn
             }
             std::erase_if(wires_, [&](const Wire& w) { return w.from == node || w.to == node; });
             dropNode(node);
-            for(auto& p : parts_) if(std::find(p.chain.begin(), p.chain.end(), node) != p.chain.end()) { std::erase(p.chain, node); buildPart(p); }
+            for(auto& p : parts_) std::erase(p.chain, node);
+            buildParts();
         });
     }
 
@@ -382,6 +461,6 @@ namespace oscairn
             if(w.from == node) w.fromPort = counterpart(w.fromPort, false);
             if(w.to == node) w.toPort = counterpart(w.toPort, true);
         }
-        for(auto& p : parts_) if(std::find(p.chain.begin(), p.chain.end(), node) != p.chain.end()) buildPart(p);
+        buildParts();
     }
 }

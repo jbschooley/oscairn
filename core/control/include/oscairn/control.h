@@ -117,6 +117,8 @@ namespace oscairn
         virtual void removeFromPart( uint32_t part, NodeId node ) = 0;
         virtual void movePartNode( uint32_t part, size_t from, size_t to ) = 0;
         virtual void setPartInput( uint32_t part, const PartInput& input ) = 0;
+        virtual void setPartOutput( uint32_t part, uint32_t bus, std::optional<uint32_t> port = {} ) = 0; // through a bus, or (bus 0) to a port
+        virtual void setSend( uint32_t part, uint32_t bus, std::optional<double> level ) = 0;            // without a level, removes the send
         virtual uint32_t connectPorts( const Wire& wire ) = 0; // a user wire; returns its ID
         virtual void disconnectWire( uint32_t wire ) = 0;
         virtual void setMix( uint32_t wire, double level, double pan, bool mute, bool solo ) = 0;

@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <charconv>
 #include <cmath>
+#include <functional>
 #include <locale>
 #include <set>
 #include <sstream>
@@ -73,12 +74,13 @@ void Session::savePerformance(const std::string& directory) {
         std::vector<std::string> pairs;for(const auto& [a,b]:w.channels)pairs.push_back("["+std::to_string(a)+","+std::to_string(b)+"]");
         wires.push_back(std::string("{\"kind\":")+(w.kind==WireKind::Audio?"\"audio\"":"\"notes\"")+",\"owner\":"+(w.owner==WireOwner::Part?"\"part\",\"part\":"+std::to_string(w.part):"\"user\"")
             +",\"from\":"+quote(keys.at(w.from))+",\"to\":"+quote(keys.at(w.to))+",\"fromPort\":"+std::to_string(w.fromPort)+",\"toPort\":"+std::to_string(w.toPort)
-            +",\"channels\":"+join(pairs)+",\"level\":"+numeric(w.level)+",\"pan\":"+numeric(w.pan)+",\"mute\":"+(w.mute?"true":"false")+",\"solo\":"+(w.solo?"true":"false")+",\"zones\":"+zonesText(w.zones)+'}');
+            +",\"channels\":"+join(pairs)+",\"level\":"+numeric(w.level)+",\"pan\":"+numeric(w.pan)+",\"mute\":"+(w.mute?"true":"false")+",\"solo\":"+(w.solo?"true":"false")+",\"zones\":"+zonesText(w.zones)+",\"send\":"+std::to_string(w.send)+'}');
     }
     for(const auto& p:parts_){
         std::vector<std::string> chain;for(const auto n:p.chain)chain.push_back(quote(keys.at(n)));
-        const char* kind=p.input.kind==PartInput::Kind::Notes?"notes":p.input.kind==PartInput::Kind::Audio?"audio":"none";
-        parts.push_back("{\"id\":"+std::to_string(p.id)+",\"name\":"+quote(p.name)+",\"input\":{\"kind\":\""+kind+"\",\"port\":"+std::to_string(p.input.port)+",\"zones\":"+zonesText(p.input.zones)+"},\"chain\":"+join(chain)+",\"output\":"+std::to_string(p.output)+'}');
+        const char* kind=p.input.kind==PartInput::Kind::Notes?"notes":p.input.kind==PartInput::Kind::Audio?"audio":p.input.kind==PartInput::Kind::Bus?"bus":"none";
+        std::vector<std::string> sends;for(const auto& s:p.sends)sends.push_back("{\"bus\":"+std::to_string(s.bus)+",\"level\":"+numeric(s.level)+'}');
+        parts.push_back("{\"id\":"+std::to_string(p.id)+",\"name\":"+quote(p.name)+",\"input\":{\"kind\":\""+kind+"\",\"port\":"+std::to_string(p.input.port)+",\"zones\":"+zonesText(p.input.zones)+"},\"chain\":"+join(chain)+",\"output\":"+std::to_string(p.output)+",\"bus\":"+std::to_string(p.bus)+",\"sends\":"+join(sends)+'}');
     }
     for(const auto& m:graph.mappings)mappings.push_back("{\"from\":"+quote(keys.at(m.source))+",\"lane\":"+std::to_string(m.lane)+",\"to\":"+quote(keys.at(m.target))+",\"param\":"+std::to_string(m.param)+'}');
     std::vector<std::string> named;
@@ -140,19 +142,29 @@ void Session::loadPerformance(const std::string& directory) {
     {
         std::set<uint32_t> partIds;
         for(auto p:array(field(d,"parts"),256)){
-            fields(p,{"id","name","input","chain","output"});Part part;part.id=integer(field(p,"id"));part.name=text(field(p,"name"));
+            fields(p,{"id","name","input","chain","output","bus","sends"});Part part;part.id=integer(field(p,"id"));part.name=text(field(p,"name"));
             if(!part.id || !partIds.insert(part.id).second)bad("invalid or duplicate part");
             const auto input=field(p,"input");fields(input,{"kind","port","zones"});const auto kind=text(field(input,"kind"));
-            part.input.kind=kind=="notes"?PartInput::Kind::Notes:kind=="audio"?PartInput::Kind::Audio:kind=="none"?PartInput::Kind::None:(bad("invalid part input"),PartInput::Kind::None);
+            part.input.kind=kind=="notes"?PartInput::Kind::Notes:kind=="audio"?PartInput::Kind::Audio:kind=="none"?PartInput::Kind::None:kind=="bus"?PartInput::Kind::Bus:(bad("invalid part input"),PartInput::Kind::None);
             part.input.port=integer(field(input,"port"));part.input.zones=zonesFrom(field(input,"zones"));part.output=integer(field(p,"output"));
             for(auto n:array(field(p,"chain"),256)){const auto id=node(n);if(id==graphInput || id==graphOutput || std::find(part.chain.begin(),part.chain.end(),id)!=part.chain.end())bad("invalid part chain");part.chain.push_back(id);}
+            part.bus=integer(field(p,"bus"));
+            for(auto s:array(field(p,"sends"),256)){fields(s,{"bus","level"});Send send{integer(field(s,"bus")),number(field(s,"level"))};if(send.level<0)bad("invalid send level");part.sends.push_back(send);}
             nextPart=std::max(nextPart,part.id+1);parts.push_back(std::move(part));
         }
+        // Buses named by outputs and sends must be buses of this Performance, without loops.
+        auto busOf=[&](uint32_t id)->const Part&{for(const auto& p:parts)if(p.id==id && p.input.kind==PartInput::Kind::Bus)return p;bad("unknown bus");};
+        for(const auto& p:parts){if(p.bus)busOf(p.bus);for(const auto& s:p.sends)busOf(s.bus);}
+        std::function<bool(uint32_t,uint32_t,size_t)> reaches=[&](uint32_t from,uint32_t to,size_t depth){
+            if(depth>parts.size())return true;
+            for(const auto& p:parts)if(p.id==from){if(p.bus==to || (p.bus && reaches(p.bus,to,depth+1)))return true;for(const auto& s:p.sends)if(s.bus==to || reaches(s.bus,to,depth+1))return true;}
+            return false;};
+        for(const auto& p:parts)if(reaches(p.id,p.id,0))bad("a bus loops into itself");
         for(auto c:array(field(d,"wires"),Graph::maxAudioConnections)){
             Wire w;const auto kind=text(field(c,"kind")),owner=text(field(c,"owner"));
             if((kind!="audio" && kind!="notes") || (owner!="part" && owner!="user"))bad("invalid wire");
-            if(owner=="part")fields(c,{"kind","owner","part","from","to","fromPort","toPort","channels","level","pan","mute","solo","zones"});
-            else fields(c,{"kind","owner","from","to","fromPort","toPort","channels","level","pan","mute","solo","zones"});
+            if(owner=="part")fields(c,{"kind","owner","part","from","to","fromPort","toPort","channels","level","pan","mute","solo","zones","send"});
+            else fields(c,{"kind","owner","from","to","fromPort","toPort","channels","level","pan","mute","solo","zones","send"});
             w.kind=kind=="audio"?WireKind::Audio:WireKind::Notes;w.owner=owner=="part"?WireOwner::Part:WireOwner::User;
             if(owner=="part"){w.part=integer(field(c,"part"));if(!partIds.count(w.part))bad("wire of an unknown part");}
             w.from=node(field(c,"from"));w.to=node(field(c,"to"));w.fromPort=integer(field(c,"fromPort"));w.toPort=integer(field(c,"toPort"));
@@ -160,6 +172,7 @@ void Session::loadPerformance(const std::string& directory) {
             w.level=number(field(c,"level"));w.pan=number(field(c,"pan"));w.mute=boolean(field(c,"mute"));w.solo=boolean(field(c,"solo"));
             if(w.level<0 || w.pan<-1 || w.pan>1)bad("invalid wire level or pan");
             w.zones=zonesFrom(field(c,"zones"));if(w.kind==WireKind::Audio && !w.zones.empty())bad("audio wires have no zones");
+            w.send=integer(field(c,"send"));if(w.send && (w.owner!=WireOwner::Part || !std::any_of(parts.begin(),parts.end(),[&](const Part& p){return p.id==w.send;})))bad("a send wire of an unknown bus");
             wires.push_back(std::move(w));
         }
     }

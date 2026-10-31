@@ -153,9 +153,11 @@ namespace oscairn
             {
                 Part part;part.id=static_cast<uint32_t>(integer(field(p,"id")));part.name=string(field(p,"name"));
                 auto input=field(p,"input");const auto kind=string(field(input,"kind"));
-                part.input.kind=kind=="notes"?PartInput::Kind::Notes:kind=="audio"?PartInput::Kind::Audio:PartInput::Kind::None;
+                part.input.kind=kind=="notes"?PartInput::Kind::Notes:kind=="audio"?PartInput::Kind::Audio:kind=="bus"?PartInput::Kind::Bus:PartInput::Kind::None;
                 part.input.port=static_cast<uint32_t>(integer(field(input,"port")));part.input.zones=zones(field(input,"zones"));part.output=static_cast<uint32_t>(integer(field(p,"output")));
                 for(auto n:array(field(p,"chain")))part.chain.push_back(static_cast<NodeId>(integer(n)));
+                part.bus=static_cast<uint32_t>(integer(field(p,"bus")));
+                for(auto s:array(field(p,"sends")))part.sends.push_back({static_cast<uint32_t>(integer(field(s,"bus"))),number(field(s,"level"))});
                 next.parts.push_back(std::move(part));
             }
             for(auto w:array(field(root,"wires")))
@@ -168,7 +170,7 @@ namespace oscairn
                 wire.fromPort=static_cast<uint32_t>(integer(field(w,"fromPort")));wire.toPort=static_cast<uint32_t>(integer(field(w,"toPort")));
                 for(auto pair:array(field(w,"channels"))){const auto ends=array(pair);if(ends.size()!=2)throw std::runtime_error("Invalid wire channel pair");wire.channels.push_back({static_cast<uint32_t>(integer(ends[0])),static_cast<uint32_t>(integer(ends[1]))});}
                 wire.level=number(field(w,"level"));wire.pan=number(field(w,"pan"));
-                wire.mute=boolean(field(w,"mute"));wire.solo=boolean(field(w,"solo"));wire.zones=zones(field(w,"zones"));wire.connected=boolean(field(w,"connected"));
+                wire.mute=boolean(field(w,"mute"));wire.solo=boolean(field(w,"solo"));wire.zones=zones(field(w,"zones"));wire.send=static_cast<uint32_t>(integer(field(w,"send")));wire.connected=boolean(field(w,"connected"));
                 next.wires.push_back(std::move(wire));
             }
             for(auto m:array(field(root,"mappings")))next.topology.mappings.push_back({static_cast<NodeId>(integer(field(m,"from"))),static_cast<uint32_t>(integer(field(m,"lane"))),static_cast<NodeId>(integer(field(m,"to"))),static_cast<uint32_t>(integer(field(m,"param")))});
@@ -323,7 +325,7 @@ namespace oscairn
         }
         std::string inputText(const PartInput& input)
         {
-            const char* kind=input.kind==PartInput::Kind::Notes?"notes":input.kind==PartInput::Kind::Audio?"audio":"none";
+            const char* kind=input.kind==PartInput::Kind::Notes?"notes":input.kind==PartInput::Kind::Audio?"audio":input.kind==PartInput::Kind::Bus?"bus":"none";
             return "{\"kind\":\""+std::string(kind)+"\",\"port\":"+std::to_string(input.port)+",\"zones\":"+zonesText(input.zones)+'}';
         }
     }
@@ -333,6 +335,10 @@ namespace oscairn
         const auto id=static_cast<uint32_t>(integer(field(field(reply.get(),"result"),"part")));impl_->refresh();return id;
     }
     void RemoteControl::setPartInput(uint32_t part,const PartInput& input){impl_->call("parts.input","{\"part\":"+std::to_string(part)+",\"input\":"+inputText(input)+'}');impl_->refresh();}
+    void RemoteControl::setPartOutput(uint32_t part,uint32_t bus,std::optional<uint32_t> port)
+    {impl_->call("parts.output","{\"part\":"+std::to_string(part)+(bus?",\"bus\":"+std::to_string(bus):std::string{})+(port?",\"port\":"+std::to_string(*port):std::string{})+'}');impl_->refresh();}
+    void RemoteControl::setSend(uint32_t part,uint32_t bus,std::optional<double> level)
+    {impl_->call("parts.send","{\"part\":"+std::to_string(part)+",\"bus\":"+std::to_string(bus)+(level?",\"level\":"+encode(*level):std::string{})+'}');impl_->refresh();}
     void RemoteControl::setZones(uint32_t wire,const std::vector<NoteZone>& zones){impl_->call("wires.zones","{\"wire\":"+std::to_string(wire)+",\"zones\":"+zonesText(zones)+'}');impl_->refresh();}
     void RemoteControl::removePart(uint32_t part){impl_->call("parts.remove","{\"part\":"+std::to_string(part)+'}');impl_->refresh();}
     void RemoteControl::insertIntoPart(uint32_t part,size_t index,NodeId node){impl_->call("parts.insert","{\"part\":"+std::to_string(part)+",\"index\":"+std::to_string(index)+",\"node\":"+std::to_string(node)+'}');impl_->refresh();}

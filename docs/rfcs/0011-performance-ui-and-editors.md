@@ -324,7 +324,14 @@ copy (layers), and held notes keep their releases when zones change. Tested in
 `note-zones` (split, layer, MIDI and CLAP notes, velocity, channels, editing while held),
 `control-parts` (a two-part keyboard split moved while notes are held) and over the socket.
 
-Not yet: shared buses and sends as parts of the model, groups and undo.
+**Shared buses** followed: a bus is a part with input kind `bus`, fed by other parts' sends
+(each with a level) and outputs, with its own chain and output; loops are refused, and
+removing a bus returns its parts to the main output. `control-parts` builds step 2's gate,
+a two-layer keyboard split with both layers sending to a shared delay, from part edits only
+and checks it renders sample for sample as the same graph wired by hand on the engine's
+`Graph`.
+
+Not yet: the Parts and Part views themselves, groups and undo.
 
 ## Open questions
 

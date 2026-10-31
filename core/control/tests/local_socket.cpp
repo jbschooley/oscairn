@@ -435,6 +435,11 @@ void partsClient(const char* plugin,const char* delay)
         for(const auto& x:remote.graphState().wires)if(x.id==id)
             found=x.owner==WireOwner::User && x.channels==w.channels && x.level==.5 && x.pan==.25 && x.mute && !x.solo && x.connected;
         check(found,"a user wire with explicit channels and its Mix settings read back");
+        const auto room=remote.addPart("Room",{PartInput::Kind::Bus});
+        remote.setSend(part,room,.25);remote.setPartOutput(part,room);
+        auto withBus=remote.graphState().parts;
+        check(withBus.size()==2 && withBus[0].bus==room && withBus[0].sends.size()==1 && withBus[0].sends[0].level==.25 && withBus[1].input.kind==PartInput::Kind::Bus,"a bus, a send and an output through it over the socket");
+        remote.setSend(part,room,std::nullopt);remote.setPartOutput(part,0);remote.removePart(room);
         NoteZone split;split.highKey=59;split.transpose=12;
         remote.setPartInput(part,{PartInput::Kind::Notes,0,{split}});
         const auto zoned=remote.graphState().parts[0].input.zones;

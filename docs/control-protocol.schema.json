@@ -1944,7 +1944,8 @@
                       "enum": [
                         "notes",
                         "audio",
-                        "none"
+                        "none",
+                        "bus"
                       ]
                     },
                     "port": {
@@ -2348,7 +2349,8 @@
                       "enum": [
                         "notes",
                         "audio",
-                        "none"
+                        "none",
+                        "bus"
                       ]
                     },
                     "port": {
@@ -2415,6 +2417,94 @@
               "required": [
                 "wire",
                 "zones"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "params"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
+              "const": "parts.output"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "part": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 4294967295
+                },
+                "bus": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 4294967295
+                },
+                "port": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 4294967295
+                }
+              },
+              "required": [
+                "part"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "params"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
+              "const": "parts.send"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "part": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 4294967295
+                },
+                "bus": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 4294967295
+                },
+                "level": {
+                  "type": "number",
+                  "minimum": 0
+                }
+              },
+              "required": [
+                "part",
+                "bus"
               ],
               "additionalProperties": false
             }
@@ -3736,6 +3826,12 @@
           "items": {
             "$ref": "#/$defs/Zone"
           }
+        },
+        "send": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295,
+          "description": "For a part's send wire, the bus it sends to; otherwise 0"
         }
       },
       "required": [
@@ -3752,7 +3848,8 @@
         "mute",
         "solo",
         "connected",
-        "zones"
+        "zones",
+        "send"
       ],
       "if": {
         "properties": {
@@ -3794,7 +3891,8 @@
               "enum": [
                 "notes",
                 "audio",
-                "none"
+                "none",
+                "bus"
               ]
             },
             "port": {
@@ -3829,6 +3927,35 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 4294967295
+        },
+        "bus": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295,
+          "description": "The bus it plays through instead of its output port, or 0"
+        },
+        "sends": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "type": "object",
+            "properties": {
+              "bus": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 4294967295
+              },
+              "level": {
+                "type": "number",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "bus",
+              "level"
+            ],
+            "additionalProperties": false
+          }
         }
       },
       "required": [
@@ -3836,7 +3963,9 @@
         "name",
         "input",
         "chain",
-        "output"
+        "output",
+        "bus",
+        "sends"
       ],
       "additionalProperties": false
     },

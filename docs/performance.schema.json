@@ -372,6 +372,12 @@
           "items": {
             "$ref": "#/$defs/Zone"
           }
+        },
+        "send": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295,
+          "description": "For a part's send wire, the bus it sends to; otherwise 0"
         }
       },
       "required": [
@@ -386,7 +392,8 @@
         "pan",
         "mute",
         "solo",
-        "zones"
+        "zones",
+        "send"
       ],
       "if": {
         "properties": {
@@ -428,7 +435,8 @@
               "enum": [
                 "notes",
                 "audio",
-                "none"
+                "none",
+                "bus"
               ]
             },
             "port": {
@@ -463,6 +471,35 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 4294967295
+        },
+        "bus": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295,
+          "description": "The bus it plays through instead of its output port, or 0"
+        },
+        "sends": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "type": "object",
+            "properties": {
+              "bus": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 4294967295
+              },
+              "level": {
+                "type": "number",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "bus",
+              "level"
+            ],
+            "additionalProperties": false
+          }
         }
       },
       "required": [
@@ -470,7 +507,9 @@
         "name",
         "input",
         "chain",
-        "output"
+        "output",
+        "bus",
+        "sends"
       ],
       "additionalProperties": false
     },

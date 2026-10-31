@@ -166,6 +166,65 @@ namespace
         check(refused, "an invalid zone is refused");
     }
 
+    // RFC 0011 step 2's gate: a two-layer split and a shared reverb (a delay here) built with part
+    // edits only render exactly as the same graph wired by hand on the engine's Graph.
+    void buses(const char* fixture, const char* delay)
+    {
+        Session s(48000, frames);
+        const auto low = s.add("low", fixture, "org.kick.test.synth"), high = s.add("high", fixture, "org.kick.test.synth"), reverb = s.add("reverb", delay);
+        s.setParameter(low, 7, .25); s.setParameter(high, 7, .5);
+        NoteZone below; below.highKey = 59;
+        NoteZone above; above.lowKey = 60;
+        const auto room = s.addPart("Room", {PartInput::Kind::Bus});
+        s.insertIntoPart(room, 0, reverb);
+        const auto bass = s.addPart("Bass", {PartInput::Kind::Notes, 0, {below}}), lead = s.addPart("Lead", {PartInput::Kind::Notes, 0, {above}});
+        s.insertIntoPart(bass, 0, low); s.insertIntoPart(lead, 0, high);
+        s.setSend(bass, room, .5); s.setSend(lead, room, .3);
+        s.commit();
+
+        Graph g(48000, frames);
+        const auto gl = g.add(fixture, "org.kick.test.synth"), gh = g.add(fixture, "org.kick.test.synth"), gr = g.add(delay);
+        g.host(gl).setParameter(7, .25); g.host(gh).setParameter(7, .5);
+        g.connectNotes(graphInput, gl, {below}); g.connectNotes(graphInput, gh, {above});
+        for(const auto [node, send] : {std::pair{gl, .5}, std::pair{gh, .3}})
+            for(uint32_t c = 0; c < 2; ++c)
+            {
+                g.connectAudio({{node, 0, 0}, {graphOutput, 0, c}, 1, 1});
+                g.connectAudio({{node, 0, 0}, {gr, g.host(gr).mainAudioPorts(true).front(), c}, 1, send});
+            }
+        g.connectAudio(gr, graphOutput); g.commit();
+
+        Audio x; std::array<float, frames> rl{}, rr{}; float* ref[2]{rl.data(), rr.data()};
+        bool same = true; double wet = 0;
+        for(int block = 0; block < 400; ++block)
+        {
+            std::vector<kick::clap::Event> events;
+            auto note = [&](bool on, int key) { s.note(on, key, 1); events.push_back(kick::clap::Event::note(on, key, 1)); };
+            if(block == 1) { note(true, 40); note(true, 72); }
+            if(block == 30) { note(false, 40); note(false, 72); }
+            x.run(s);
+            g.process(ref, frames, nullptr, events.data(), uint32_t(events.size()));
+            same = same && x.l == rl && x.r == rr;
+            if(block > 40) for(float v : x.l) wet += std::abs(v);
+        }
+        check(same, "the split and shared reverb built from parts render exactly as wired by hand");
+        check(wet > 0, "the reverb's tail sounds after the notes end");
+        // Through the bus: the lead's dry sound goes only through the reverb.
+        s.setPartOutput(lead, room); s.commit();
+        size_t toMain = 0; for(const auto& w : s.wires()) toMain += w.from == high && w.to == graphOutput;
+        check(toMain == 0, "playing through the bus leaves no wire to Main");
+        // Loops are refused, and removing a bus returns its parts to Main.
+        const auto other = s.addPart("Other", {PartInput::Kind::Bus});
+        s.setPartOutput(other, room);
+        bool refused = false; try { s.setSend(room, other, 1); } catch(const std::invalid_argument&) { refused = true; }
+        check(refused, "a bus may not loop into itself");
+        s.removePart(room); s.commit();
+        size_t sends = 0; for(const auto& p : s.parts()) sends += p.sends.size();
+        check(sends == 0 && std::all_of(s.parts().begin(), s.parts().end(), [](const Part& p) { return p.bus == 0; }), "removing the bus ends its sends and outputs");
+        toMain = 0; for(const auto& w : s.wires()) toMain += w.from == high && w.to == graphOutput;
+        check(toMain == 1, "the lead plays to Main again");
+    }
+
     // Parts, wires with owners and Mix settings, and flagged wires survive save and load, and play
     // the same; an earlier format version is refused.
     void persistence(const char* fixture, const char* audio, const char* delay, const fs::path& root)
@@ -177,6 +236,8 @@ namespace
         s.insertIntoPart(keys, 0, synth); s.insertIntoPart(keys, 1, fx);
         const auto guitar = s.addPart("Guitar", {PartInput::Kind::Audio, 0});
         s.insertIntoPart(guitar, 0, a);
+        const auto room = s.addPart("Room", {PartInput::Kind::Bus});
+        s.setSend(keys, room, .4); s.setPartOutput(guitar, room);
         s.connectAudio(synth, a); // synth's mono into a's stereo main: a user wire into a Mix with the guitar's input
         s.setMix(wire(s, synth, a).id, .5, .25, false, false);
         Wire side; side.from = graphInput; side.fromPort = 0; side.to = a; side.toPort = 20; side.channels = {{1, 0}}; s.connectPorts(side);
@@ -192,12 +253,12 @@ namespace
             const auto names = x.graphState().names;
             auto name = [&](NodeId n) { return n == graphInput ? std::string("input") : n == graphOutput ? std::string("output") : names.at(n); };
             auto zones = [](const std::vector<NoteZone>& list) { std::string z; for(const auto& n : list) z += std::to_string(n.lowKey) + "-" + std::to_string(n.highKey) + "/" + std::to_string(n.transpose) + "/" + std::to_string(n.curve) + ";"; return z; };
-            for(const auto& p : x.parts()) { std::string chain; for(auto n : p.chain) chain += name(n) + ","; out.push_back("part " + std::to_string(p.id) + " " + p.name + " " + chain + " " + std::to_string(int(p.input.kind)) + " " + zones(p.input.zones) + " " + std::to_string(p.output)); }
+            for(const auto& p : x.parts()) { std::string chain; for(auto n : p.chain) chain += name(n) + ","; out.push_back("part " + std::to_string(p.id) + " " + p.name + " " + chain + " " + std::to_string(int(p.input.kind)) + " " + zones(p.input.zones) + " " + std::to_string(p.output) + " bus " + std::to_string(p.bus) + " sends " + [&]{ std::string t; for(const auto& x : p.sends) t += std::to_string(x.bus) + "@" + std::to_string(x.level) + ","; return t; }()); }
             for(const auto& w : x.wires())
             {
                 std::string pairs; for(const auto& [f, g] : w.channels) pairs += std::to_string(f) + ">" + std::to_string(g) + ",";
                 out.push_back("wire " + std::to_string(int(w.kind)) + " " + std::to_string(int(w.owner)) + " " + std::to_string(w.part) + " " + name(w.from) + ":" + std::to_string(w.fromPort) + " " + name(w.to) + ":" + std::to_string(w.toPort)
-                              + " " + pairs + " " + zones(w.zones) + " " + std::to_string(w.level) + " " + std::to_string(w.pan) + " " + std::to_string(w.mute) + std::to_string(w.solo) + std::to_string(w.connected));
+                              + " " + pairs + " " + zones(w.zones) + " send " + std::to_string(w.send) + " " + std::to_string(w.level) + " " + std::to_string(w.pan) + " " + std::to_string(w.mute) + std::to_string(w.solo) + std::to_string(w.connected));
             }
             std::sort(out.begin(), out.end());
             return out;
@@ -237,6 +298,7 @@ int main(int argc, char** argv)
         channels(argv[2]);
         replacement(argv[2], argv[3]);
         zones(argv[1]);
+        buses(argv[1], argv[3]);
         persistence(argv[1], argv[2], argv[3], temp.path);
     }
     catch(const std::exception& e) { forbidAllocation = false; std::fprintf(stderr, "FAIL: %s\n", e.what()); return 1; }

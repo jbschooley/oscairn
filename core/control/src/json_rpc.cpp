@@ -180,7 +180,7 @@ namespace oscairn
             fields(in,{"kind","port","zones"});
             PartInput input;
             const auto kind = string(member(in,"kind"));
-            input.kind = kind == "notes" ? PartInput::Kind::Notes : kind == "audio" ? PartInput::Kind::Audio : kind == "none" ? PartInput::Kind::None : (invalid("input kind is notes, audio or none"), PartInput::Kind::None);
+            input.kind = kind == "notes" ? PartInput::Kind::Notes : kind == "audio" ? PartInput::Kind::Audio : kind == "none" ? PartInput::Kind::None : kind == "bus" ? PartInput::Kind::Bus : (invalid("input kind is notes, audio, none or bus"), PartInput::Kind::None);
             input.port = member(in,"port") ? integer(member(in,"port")) : 0;
             if( member(in,"zones") ) input.zones = zonesFrom(member(in,"zones"));
             return input;
@@ -193,15 +193,16 @@ namespace oscairn
                 ",\"owner\":" + (w.owner == WireOwner::Part ? "\"part\",\"part\":" + std::to_string(w.part) : std::string("\"user\"")) +
                 ",\"from\":" + std::to_string(w.from) + ",\"to\":" + std::to_string(w.to) + ",\"fromPort\":" + std::to_string(w.fromPort) +
                 ",\"toPort\":" + std::to_string(w.toPort) + ",\"channels\":" + join(pairs) + ",\"level\":" + encode(w.level) + ",\"pan\":" + encode(w.pan) +
-                ",\"mute\":" + (w.mute ? "true" : "false") + ",\"solo\":" + (w.solo ? "true" : "false") + ",\"zones\":" + zonesJson(w.zones) + ",\"connected\":" + (w.connected ? "true" : "false") + '}';
+                ",\"mute\":" + (w.mute ? "true" : "false") + ",\"solo\":" + (w.solo ? "true" : "false") + ",\"zones\":" + zonesJson(w.zones) + ",\"send\":" + std::to_string(w.send) + ",\"connected\":" + (w.connected ? "true" : "false") + '}';
         }
-        const char* inputKind( PartInput::Kind k ) { return k == PartInput::Kind::Notes ? "notes" : k == PartInput::Kind::Audio ? "audio" : "none"; }
+        const char* inputKind( PartInput::Kind k ) { return k == PartInput::Kind::Notes ? "notes" : k == PartInput::Kind::Audio ? "audio" : k == PartInput::Kind::Bus ? "bus" : "none"; }
         std::string partJson( const Part& p )
         {
             std::vector<std::string> chain;
             for( const auto n : p.chain ) chain.push_back(std::to_string(n));
             return "{\"id\":" + std::to_string(p.id) + ",\"name\":" + quote(p.name) + ",\"input\":{\"kind\":\"" + inputKind(p.input.kind) +
-                "\",\"port\":" + std::to_string(p.input.port) + ",\"zones\":" + zonesJson(p.input.zones) + "},\"chain\":" + join(chain) + ",\"output\":" + std::to_string(p.output) + '}';
+                "\",\"port\":" + std::to_string(p.input.port) + ",\"zones\":" + zonesJson(p.input.zones) + "},\"chain\":" + join(chain) + ",\"output\":" + std::to_string(p.output) +
+                ",\"bus\":" + std::to_string(p.bus) + ",\"sends\":" + [&]{ std::vector<std::string> v; for( const auto& s : p.sends ) v.push_back("{\"bus\":" + std::to_string(s.bus) + ",\"level\":" + encode(s.level) + '}'); return join(v); }() + '}';
         }
 
         std::string invoke( Control& c, JsonRpc& client, std::string_view method, Value p )
@@ -209,7 +210,7 @@ namespace oscairn
             if( method == "session.hello" )
             {
                 fields(p, {});
-                return R"({"protocolVersion":1,"server":"oscairn","capabilities":["performance.save","performance.load","state.info","state.save","presets.list","properties.list","properties.get","properties.set","properties.request","sounds.get","sounds.prepare","sounds.select","sounds.discard","assets.register","assets.import","assets.libraries","session.status","params.list","params.get","params.set","params.text","params.gesture","graph.audio-routing","graph.get","graph.add","effects.create","effects.resources","graph.remove","graph.replace","graph.connect","graph.disconnect","graph.map","graph.unmap","graph.commit","parts.add","parts.remove","parts.insert","parts.removeNode","parts.move","parts.input","wires.connect","wires.disconnect","wires.mix","wires.zones","subscribe","unsubscribe","transport.get","transport.set","notes.send"],"limits":{"messageBytes":65536,"depth":32,"batch":64,"parameterChanges":128}})";
+                return R"({"protocolVersion":1,"server":"oscairn","capabilities":["performance.save","performance.load","state.info","state.save","presets.list","properties.list","properties.get","properties.set","properties.request","sounds.get","sounds.prepare","sounds.select","sounds.discard","assets.register","assets.import","assets.libraries","session.status","params.list","params.get","params.set","params.text","params.gesture","graph.audio-routing","graph.get","graph.add","effects.create","effects.resources","graph.remove","graph.replace","graph.connect","graph.disconnect","graph.map","graph.unmap","graph.commit","parts.add","parts.remove","parts.insert","parts.removeNode","parts.move","parts.input","parts.output","parts.send","wires.connect","wires.disconnect","wires.mix","wires.zones","subscribe","unsubscribe","transport.get","transport.set","notes.send"],"limits":{"messageBytes":65536,"depth":32,"batch":64,"parameterChanges":128}})";
             }
             if( method == "subscribe" || method == "unsubscribe" )
             {
@@ -394,6 +395,20 @@ namespace oscairn
                         const auto name = member(p,"name") ? std::string(string(member(p,"name"))) : std::string();
                         const auto output = member(p,"output") ? std::optional<uint32_t>(integer(member(p,"output"))) : std::nullopt;
                         return "{\"part\":" + std::to_string(c.addPart(name,input,output)) + '}';
+                    }
+                    if( method == "parts.output" )
+                    {
+                        fields(p,{"part","bus","port"});
+                        const auto bus = member(p,"bus") ? integer(member(p,"bus")) : 0;
+                        if( bus && member(p,"port") ) invalid("A part plays through a bus or to a port, not both");
+                        c.setPartOutput(integer(member(p,"part")),bus,member(p,"port") ? std::optional<uint32_t>(integer(member(p,"port"))) : std::nullopt);
+                        return R"({"accepted":true})";
+                    }
+                    if( method == "parts.send" )
+                    {
+                        fields(p,{"part","bus","level"});
+                        c.setSend(integer(member(p,"part")),integer(member(p,"bus")),member(p,"level") ? std::optional<double>(number(member(p,"level"))) : std::nullopt);
+                        return R"({"accepted":true})";
                     }
                     if( method == "parts.input" ) { fields(p,{"part","input"}); c.setPartInput(integer(member(p,"part")),inputFrom(member(p,"input"))); return R"({"accepted":true})"; }
                     if( method == "wires.zones" ) { fields(p,{"wire","zones"}); c.setZones(integer(member(p,"wire")),zonesFrom(member(p,"zones"))); return R"({"accepted":true})"; }

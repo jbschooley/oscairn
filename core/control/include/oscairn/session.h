@@ -70,6 +70,8 @@ namespace oscairn
         void removeFromPart(uint32_t part, NodeId node) override;
         void movePartNode(uint32_t part, size_t from, size_t to) override;
         void setPartInput(uint32_t part, const PartInput& input) override;
+        void setPartOutput(uint32_t part, uint32_t bus, std::optional<uint32_t> port = {}) override; // bus 0: a graph output port
+        void setSend(uint32_t part, uint32_t bus, std::optional<double> level) override;            // no level: remove the send
         const std::vector<Part>& parts() const { return parts_; }
         const std::vector<Wire>& wires() const { return wires_; }
         // A user wire between audio ports (channel rules or explicit pairs) or note endpoints.
@@ -137,6 +139,10 @@ namespace oscairn
         void dropNode(NodeId node);
         template<class Edit> void editWires(Edit&& edit);
         void buildPart(const Part& part);
+        void buildParts();
+        std::pair<NodeId, uint32_t> busEntry(uint32_t bus);
+        bool feeds(uint32_t from, uint32_t to);
+        Part& findBus(uint32_t id);
         Part& findPart(uint32_t id);
         void removePairs(const AudioConnection& c);
         void remapPorts(NodeId node, const std::vector<kick::clap::Port>& oldInputs, const std::vector<kick::clap::Port>& oldOutputs,
