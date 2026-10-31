@@ -182,6 +182,10 @@ new core, from a UI that talks to it only through the control API.
    included. Order: multisample (RFC 0008 step 3), the measurement harness and AEG tables,
    elements and XA Control, filters and FEG, PEG and LFOs, Drum Parts, then full converter
    coverage.
+   The other MODX M engines follow the same rules: an 8-operator FM engine starting from
+   MSFA ([RFC 0014](rfcs/0014-fm-engine.md)), an analog-modelling engine
+   ([RFC 0015](rfcs/0015-analog-modelling-engine.md)) and effects covering every MODX M
+   effect type and slot ([RFC 0016](rfcs/0016-effects-suite.md)), all proposed.
 5. **Sound assets as dependencies — steps 1–2 implemented:** asset store, registered
    folders, the `oscairn.assets` contract and Performance preflight
    ([RFC 0009](rfcs/0009-sound-assets-and-dependencies.md#implementation-status)).

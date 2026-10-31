@@ -19,3 +19,6 @@ Number them in order (`0002-...md`) and keep the status line up to date
 | [0011](0011-performance-ui-and-editors.md) | Performance UI, routing views and plugin editors | proposed |
 | [0012](0012-sync-external-midi-and-multi-device.md) | Sync, external MIDI devices and multi-device setlists | proposed |
 | [0013](0013-awm2-class-sample-engine.md) | An AWM2-class sample engine | proposed |
+| [0014](0014-fm-engine.md) | An 8-operator FM engine | proposed |
+| [0015](0015-analog-modelling-engine.md) | An analog-modelling engine | proposed |
+| [0016](0016-effects-suite.md) | An effects suite covering the MODX M platform | proposed |
