@@ -4,6 +4,8 @@ Oscairn hosts ordinary CLAP plugins and, when enabled at build time, LV2 plugins
 not need a separate Oscairn plugin format or the desktop UI to write DSP. Platform-native
 instruments additionally implement concurrent sound contexts. Start with the path below
 that matches your component; the [documentation index](README.md) links the full contracts.
+Bringing an existing CLAP plugin over? See [Porting a plugin](plugin-porting.md) for what it
+must meet, today's limits and the optional extensions.
 
 ## Initial-development compatibility policy
 
@@ -278,8 +280,10 @@ preparation and concurrent control/rendering under ThreadSanitizer. Use ASan/UBS
 memory errors; a clean offline render is not a target-hardware latency measurement.
 The host's [benchmark tools](../core/clap-host/README.md) can measure plugin workloads.
 
-Scanning has process crash isolation; playback currently runs plugins inside the engine
-process. A native plugin memory fault can kill that engine. Do not describe the scanner
+Scanning has process crash isolation. Playback runs plugins inside the engine process unless
+the placement policy puts them in worker processes ([RFC 0010](rfcs/0010-plugin-worker-isolation.md)),
+where a crash, hang or overrun silences only that plugin, which is restarted; the desktop app
+does not use workers yet. In the engine, a native plugin memory fault can kill it. Do not describe the scanner
 or render error checks as a security sandbox. Public APIs are still evolving; pin the
 Oscairn revision you build/test against and state your supported platforms and limits.
 
@@ -289,12 +293,17 @@ Oscairn revision you build/test against and state your supported platforms and l
 `oscairn-plugin-scan`, using the existing bounded worker protocol, per-bundle timeout and
 cancellation. The UI never loads libraries to inspect metadata. A descriptor's format plus
 CLAP ID/LV2 URI is its identity; the path locates the installed binary. Discovery is not an
-engine-compatibility guarantee. Loaded plugins still execute inside the audio engine.
+engine-compatibility guarantee. Loaded plugins execute inside the audio engine, or in a
+supervised worker process when the [placement policy](rfcs/0010-plugin-worker-isolation.md)
+puts them there.
 
 Expose complete parameter names, ranges, stepped/read-only flags, text formatting and
 presets to make the generated editor useful. `Control::replace` / `graph.replace` prepares
 a candidate and optional preset before publishing one replacement graph plan. The old
-node ID/name remains; incompatible routing or preparation failures preserve the old graph.
+node ID/name remains, and its wires move to the new plugin's ports in the same roles; wires
+that no longer fit are kept, marked unconnected, rather than the replacement being refused
+([RFC 0011](rfcs/0011-performance-ui-and-editors.md#step-1-status)). A plugin that fails to
+load or prepare leaves the old graph playing.
 Replacement cuts that slot's old notes/tails and prepared sounds. Use prepared sound
 contexts for seamless switching within an engine instead.
 

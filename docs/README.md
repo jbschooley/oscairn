@@ -9,6 +9,7 @@ an implemented capability.
 | --- | --- |
 | Build and run Oscairn | [Project README](../README.md) |
 | Write an instrument, effect or sequencer | [Developer guide](developer-guide.md), [reference plugins](../plugins/README.md) |
+| Bring an existing CLAP plugin to Oscairn | [Porting a plugin](plugin-porting.md) |
 | Use the C++ graph or embed the engine | [Core](../core/README.md), [Session and Control](../core/control/README.md) |
 | Write a UI, editor, script or controller | [Control protocol](control-protocol.md), [JSON Schema](control-protocol.schema.json) |
 | Load CLAP plugins and measure them | [CLAP host](../core/clap-host/README.md) |
