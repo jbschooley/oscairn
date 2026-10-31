@@ -202,10 +202,11 @@ layout is now the Desktop surface (`hosts/standalone/DesktopShell.cpp`):
   device and MIDI inputs, and undo and redo as icons;
 - the parts and buses down the left, each with what plays and from where, mute and solo
   marks, a meter per channel of its sound and a mark where its fader sits;
-- tabs for the selected part, the Mixer, Routing, Controls and the Sequencer. Each tab, or
+- tabs for the selected part, the Mixer, Routing and Controls. Each tab, or
   any tab from its right-click menu, opens in a window of its own as well.
 
-Play and Stop moved into the Sequencer tab: they start the sequencer, not the window. A part's
+The Groovebox is an app, not part of the sound editor: it opens from the Apps menu in a window
+of its own, with its Play and Stop, which start the sequencer, not the window. A part's
 meters have one bar per channel of its sound, its last plugin's main audio output as wired to
 where it plays (`parts.meters`' `channels`), after its fader and pan. On the desktop, text
 follows a type scale by role and every control shares the theme's corners

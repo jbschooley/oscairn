@@ -166,7 +166,11 @@ namespace oscairn::standalone
         };
         std::vector<std::shared_ptr<std::function<void()>>> updates;
         auto toggle = [this, &updates](juce::Rectangle<int> at, const juce::String& label, std::function<bool()> value, std::function<void(bool)> set) {
-            auto t = std::make_unique<juce::ToggleButton>(label);
+            // Mute and solo are the same marks everywhere; other toggles are checkboxes.
+            std::unique_ptr<juce::Button> t;
+            if(label == "Mute" || label == "M") { t = std::make_unique<MarkButton>("M", Ink::Danger, "Mute"); at = at.withSizeKeepingCentre(std::min(at.getHeight(), 24), std::min(at.getHeight(), 24)); }
+            else if(label == "Solo" || label == "S") { t = std::make_unique<MarkButton>("S", Ink::Accent, "Solo"); at = at.withSizeKeepingCentre(std::min(at.getHeight(), 24), std::min(at.getHeight(), 24)); }
+            else t = std::make_unique<juce::ToggleButton>(label);
             t->setToggleState(value(), juce::dontSendNotification);
             t->onClick = [t = t.get(), set] { set(t->getToggleState()); };
             t->setBounds(at); addAndMakeVisible(*t);
@@ -337,6 +341,7 @@ namespace oscairn::standalone
                 panLabel->setFont(juce::FontOptions(11.0f * themeData().fontScale)); panLabel->setBounds(inner.removeFromTop(14)); addAndMakeVisible(*panLabel); controls_.push_back(std::move(panLabel));
                 auto [pan, panUpdate] = slider(inner.removeFromTop(22).reduced(2, 2), -1, 1, [this, id = p.id] { const auto* q = part(id); return q ? q->pan : 0.0; },
                                                [this, id = p.id](double v) { edit([id, v](Control& c) { c.setPartPan(id, v); c.commit(); }); });
+                pan->getProperties().set("bipolar", true);
                 pan->setDoubleClickReturnValue(true, 0); pan->setTooltip("Pan: where it plays, left to right; its sends keep their own");
                 updates.push_back(panUpdate);
                 auto buttons = inner.removeFromBottom(28);
@@ -425,10 +430,12 @@ namespace oscairn::standalone
         }
         else if(const auto* p = part(page_))
         {
-            back_.setBounds(top.removeFromLeft(110).reduced(2));
+            if(!embedded_) back_.setBounds(top.removeFromLeft(110).reduced(2));
             removePart_.setBounds(top.removeFromRight(130).reduced(2));
             name_.setBounds(top.reduced(8, 4));
             if(!name_.hasKeyboardFocus(true)) name_.setText(text(p->name), juce::dontSendNotification);
+            name_.applyFontToAllText(name_.getFont());
+            name_.setIndents(10, 0); // the editor centres it vertically; this lines it up with the rows' text
             // The chain: IN, each box or split with a + before it, a last +, OUT. A split stacks its
             // lanes between a split pill and a join pill, each lane with its boxes and a + at its end.
             constexpr int laneHeight = 44, laneBox = 104;
@@ -570,6 +577,7 @@ namespace oscairn::standalone
                     auto panRow = labelled("Lane pan");
                     auto [lanePan, lanePanUpdate] = slider(panRow.removeFromLeft(320).reduced(2, 10), -1, 1, [laneOf] { const auto* x = laneOf(); return x ? x->pan : 0.0; },
                                                            [this, id, sp, lane](double v) { edit([id, sp, lane, v](Control& c) { editLane(c, id, sp, lane, [v](Lane& x) { x.pan = v; }); }); });
+                    lanePan->getProperties().set("bipolar", true);
                     lanePan->setDoubleClickReturnValue(true, 0);
                     updates.push_back(lanePanUpdate);
                 }
@@ -616,6 +624,7 @@ namespace oscairn::standalone
                 auto [transpose, update] = slider(t.removeFromLeft(320).reduced(2, 8), -24, 24, [this, id] { const auto* q = part(id); return q ? double(q->transpose) : 0.0; },
                                                   [this, id](double v) { const auto* q = part(id); if(!q) return; const int low = q->lowKey, high = q->highKey, semis = int(std::lround(v)); edit([id, low, high, semis](Control& c) { setZone(c, id, low, high, semis); }); });
                 transpose->setRange(-24, 24, 1);
+                transpose->getProperties().set("bipolar", true);
                 transpose->setTextBoxStyle(juce::Slider::TextBoxRight, false, 48, 24);
                 updates.push_back(update);
             }
@@ -882,26 +891,18 @@ namespace oscairn::standalone
         }
         if(page_ == mixerPage)
         {
-            // Strips, and meters from -60 to +6 dB: green, yellow above -12, red above -3.
+            // Strips, and their meters (Icons.h).
             for(const auto& s : strips_)
             {
                 const auto* p = part(s.part);
                 g.setColour(p && (p->mute || p->silenced) ? ink(Ink::Surface).withAlpha(.5f) : ink(Ink::Surface));
                 g.fillRoundedRectangle(s.bounds.toFloat(), themeData().radius);
-                g.setColour(ink(Ink::Raised)); g.fillRoundedRectangle(s.meter.toFloat(), 3);
                 // A bar per channel of the part's sound (mono, stereo or more), side by side.
                 const auto it = peaks_.find(s.part);
                 const auto channels = it == peaks_.end() || it->second.empty() ? std::vector<double>{0.0} : it->second;
                 auto bars = s.meter.toFloat();
                 const float barWidth = (bars.getWidth() - float(channels.size() - 1)) / float(channels.size());
-                for(const auto peak : channels)
-                {
-                    auto bar = bars.removeFromLeft(barWidth); bars.removeFromLeft(1);
-                    const double db = peak > 0 ? 20 * std::log10(peak) : -100;
-                    const float fraction = float(std::clamp((db + 60) / 66, 0.0, 1.0));
-                    g.setColour(db > -3 ? ink(Ink::Danger) : db > -12 ? juce::Colour(0xffe8c547) : juce::Colour(0xff5ac46a));
-                    g.fillRoundedRectangle(bar.withTrimmedTop(bar.getHeight() * (1 - fraction)), 2);
-                }
+                for(const auto peak : channels) { drawMeter(g, bars.removeFromLeft(barWidth), peak, true); bars.removeFromLeft(1); }
             }
             return;
         }

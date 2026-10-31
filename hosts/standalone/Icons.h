@@ -50,6 +50,9 @@ namespace oscairn::standalone
                 p.startNewSubPath(box.getRight() - side * .4f, box.getY()); p.lineTo(box.getRight(), box.getY()); p.lineTo(box.getRight(), box.getY() + side * .4f);
                 break;
             }
+            // Centred by what is drawn, so an arrow sits in the middle of its box.
+            const auto drawn = p.getBounds();
+            p.applyTransform(juce::AffineTransform::translation(box.getCentreX() - drawn.getCentreX(), box.getCentreY() - drawn.getCentreY()));
             g.setColour(ink(Ink::Text).withMultipliedAlpha(isEnabled() ? 1.f : .35f));
             g.strokePath(p, juce::PathStrokeType(std::max(1.5f, side * .12f), juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
         }
@@ -57,4 +60,52 @@ namespace oscairn::standalone
     private:
         Glyph glyph_;
     };
+
+    /// Mute and solo, drawn the same everywhere: a small square with its letter, filled in its
+    /// colour when on.
+    inline void drawMark(juce::Graphics& g, juce::Rectangle<float> r, const juce::String& letter, bool on, Ink colour, float alpha = 1.f)
+    {
+        const float side = std::min(r.getWidth(), r.getHeight());
+        r = r.withSizeKeepingCentre(side, side);
+        g.setColour((on ? ink(colour) : ink(Ink::Border).withAlpha(.5f)).withMultipliedAlpha(alpha)); g.fillRoundedRectangle(r, themeData().radius / 2);
+        g.setColour((on ? ink(Ink::Background) : ink(Ink::Muted)).withMultipliedAlpha(alpha));
+        g.setFont(juce::FontOptions(side * .55f, juce::Font::bold));
+        g.drawText(letter, r, juce::Justification::centred);
+    }
+    class MarkButton : public juce::Button
+    {
+    public:
+        MarkButton(const juce::String& letter, Ink colour, const juce::String& name) : juce::Button(name), letter_(letter), colour_(colour) { setClickingTogglesState(true); setTooltip(name); }
+        void paintButton(juce::Graphics& g, bool hover, bool) override
+        {
+            drawMark(g, getLocalBounds().toFloat().reduced(1), letter_, getToggleState(), colour_, isEnabled() ? 1.f : .5f);
+            if(hover) { g.setColour(ink(Ink::Text).withAlpha(.08f)); g.fillRoundedRectangle(getLocalBounds().toFloat().reduced(1).withSizeKeepingCentre(std::min(getWidth(), getHeight()) - 2.f, std::min(getWidth(), getHeight()) - 2.f), themeData().radius / 2); }
+        }
+    private:
+        juce::String letter_;
+        Ink colour_;
+    };
+
+    /// A level meter from -60 to +6 dB in three zones: green, yellow from -12, red from -3. Each
+    /// zone shows its colour as far as the level reaches. Vertical meters fill upwards.
+    inline void drawMeter(juce::Graphics& g, juce::Rectangle<float> r, double peak, bool vertical)
+    {
+        const float round = std::min(r.getWidth(), r.getHeight()) / 2;
+        g.setColour(ink(Ink::Border).withAlpha(.35f)); g.fillRoundedRectangle(r, round);
+        const double db = peak > 0 ? 20 * std::log10(peak) : -100;
+        const auto at = [](double level) { return float(std::clamp((level + 60) / 66, 0.0, 1.0)); };
+        const float lit = at(db);
+        if(lit <= 0) return;
+        juce::Graphics::ScopedSaveState state(g);
+        juce::Path clip; clip.addRoundedRectangle(r, round); g.reduceClipRegion(clip);
+        const struct { float from, to; juce::Colour colour; } zones[] = {{0, at(-12), juce::Colour(0xff5ac46a)}, {at(-12), at(-3), juce::Colour(0xffe8c547)}, {at(-3), 1, ink(Ink::Danger)}};
+        for(const auto& z : zones)
+        {
+            const float from = z.from, to = std::min(z.to, lit);
+            if(to <= from) continue;
+            g.setColour(z.colour);
+            if(vertical) g.fillRect(r.getX(), r.getBottom() - r.getHeight() * to, r.getWidth(), r.getHeight() * (to - from));
+            else g.fillRect(r.getX() + r.getWidth() * from, r.getY(), r.getWidth() * (to - from), r.getHeight());
+        }
+    }
 }

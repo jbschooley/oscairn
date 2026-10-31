@@ -11,7 +11,7 @@
 // sequencer at launch. --input-mode overrides the saved preference for this run. --snapshot
 // renders the window to a PNG and quits: at the layout's design size, or as in a window of
 // --size; with --play SECONDS, the sequencer plays for that long first; with --view, the
-// desktop shows that tab (Part, Mixer, Routing, Controls or Sequencer).
+// desktop shows that tab (Part, Mixer, Routing or Controls).
 
 #include "DesktopShell.h"
 #include "Engine.h"
@@ -163,7 +163,7 @@ namespace oscairn::standalone
         const Layout& layout() const { return layout_; }
         DesktopShell* shell() const { return dynamic_cast<DesktopShell*>( getContentComponent() ); }
 
-        juce::StringArray getMenuBarNames() override { return { "Performance", "Edit", "View", "Plugins", "Appearance" }; }
+        juce::StringArray getMenuBarNames() override { return { "Performance", "Edit", "View", "Plugins", "Appearance", "Apps" }; }
 
         juce::PopupMenu getMenuForIndex( int index, const juce::String& ) override
         {
@@ -173,6 +173,8 @@ namespace oscairn::standalone
                 menu.addItem(6000,h.undo.empty()?juce::String("Undo"):"Undo "+juce::String::fromUTF8(h.undo.c_str()),!h.undo.empty());
                 menu.addItem(6001,h.redo.empty()?juce::String("Redo"):"Redo "+juce::String::fromUTF8(h.redo.c_str()),!h.redo.empty());return menu;}
             if(index==3){menu.addItem(2000,"Browse plugins and edit parameters...");return menu;}
+            // Apps that play the sounds, each in its own window, apart from the sound editor.
+            if(index==5){menu.addItem(8000,"Groovebox");return menu;}
             if(index==4){themeItems_=theme_.installed();for(size_t i=0;i<themeItems_.size();++i)menu.addItem(3000+int(i),themeItems_[i].second,true,themeItems_[i].first==themeData().id);menu.addSeparator();menu.addItem(4000,"Manage themes...");return menu;}
             for( size_t i = 0; i < layouts_.size(); ++i )
             {
@@ -205,6 +207,7 @@ namespace oscairn::standalone
                     });return;
             }
             if(id>=7000 && id<=7002){inputMode_=InputMode(id-7000);writeInputMode(theme_.configuration(),inputMode_);if(auto* s=shell())s->setInputMode(inputMode_);return;}
+            if(id==8000){showGroovebox();return;}
             if(id==6000){engine_.edit([](Control& c){c.undo();});return;}
             if(id==6001){engine_.edit([](Control& c){c.redo();});return;}
             if(id==2000 || id==4000){showLibrary();return;}
@@ -223,6 +226,21 @@ namespace oscairn::standalone
         }
 
     private:
+        void showGroovebox()
+        {
+            struct AppWindow : juce::DocumentWindow
+            {
+                AppWindow(Engine& engine) : DocumentWindow("Oscairn - Groovebox", ink(Ink::Background), DocumentWindow::allButtons)
+                {
+                    setUsingNativeTitleBar(true); setContentOwned(new SequencerPane(engine), false);
+                    setResizable(true, false); centreWithSize(1100, 760); setVisible(true);
+                }
+                void closeButtonPressed() override { setVisible(false); }
+            };
+            if(!groovebox_) groovebox_ = std::make_unique<AppWindow>(engine_);
+            if(auto* content = groovebox_->getContentComponent()) setDesktopMode(*content, inputMode_ == InputMode::Touch ? 2 : 1);
+            groovebox_->setVisible(true); groovebox_->toFront(true);
+        }
         void showLibrary(){if(!library_)library_=std::make_unique<LibraryWindow>(engine_,theme_,plugins_);library_->setVisible(true);library_->toFront(true);}
         // The pad editor covers the panel, so it fits a device's single screen too.
         void showPads()
@@ -272,6 +290,7 @@ namespace oscairn::standalone
         Theme& theme_;
         juce::File plugins_;
         std::unique_ptr<LibraryWindow> library_;
+        std::unique_ptr<juce::DocumentWindow> groovebox_;
         std::unique_ptr<PadEditor> pads_;
         std::unique_ptr<PartsView> parts_;
         std::vector<std::pair<juce::String,juce::String>> themeItems_;
@@ -356,7 +375,7 @@ namespace oscairn::standalone
                 {
                     DesktopShell::Tab tab;
                     if( !window_->shell() || !DesktopShell::tabNamed( view, tab ) )
-                        throw std::invalid_argument( "--view needs the desktop layout and one of Part, Mixer, Routing, Controls, Sequencer" );
+                        throw std::invalid_argument( "--view needs the desktop layout and one of Part, Mixer, Routing, Controls" );
                     window_->shell()->showTab( tab );
                 }
                 if( args.contains( "--play" ) )

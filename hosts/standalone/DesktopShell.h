@@ -20,15 +20,16 @@ namespace oscairn::standalone
     bool touchSized(InputMode);
     juce::String inputModeName(InputMode);
 
-    /// The Sequencer tab: the step sequencer's screen, with its transport above it. Play and
-    /// Stop belong to the sequencer, not to the whole window.
-    class SequencerPane : public juce::Component
+    /// The Groovebox app: the step sequencer's screen with its transport above it, in a window
+    /// of its own. Apps are separate from the sound editor; Play and Stop belong to the app.
+    class SequencerPane : public juce::Component, private juce::Timer
     {
     public:
         explicit SequencerPane(Engine& engine);
         void refresh();
         void resized() override;
     private:
+        void timerCallback() override { refresh(); }
         Engine& engine_;
         juce::TextButton play_{"Play"}, stop_{"Stop"};
         juce::ToggleButton sync_{"Follow MIDI clock"};
@@ -37,12 +38,12 @@ namespace oscairn::standalone
 
     /// The Desktop surface (RFC 0019): the desktop app's own window rather than a device's
     /// panel. A toolbar with the tempo, scenes and undo; the parts and buses down the left with
-    /// their meters; tabs for the selected part, the Mixer, Routing, Controls and the Sequencer,
-    /// each of which can also open in a window of its own.
+    /// their meters; tabs for the selected part, the Mixer, Routing and Controls, each of which
+    /// can also open in a window of its own.
     class DesktopShell : public juce::Component, private juce::Timer
     {
     public:
-        enum class Tab { Part, Mixer, Routing, Controls, Sequencer };
+        enum class Tab { Part, Mixer, Routing, Controls };
         DesktopShell(Engine& engine, const std::string& scanner, InputMode mode);
         ~DesktopShell() override;
 
@@ -88,7 +89,6 @@ namespace oscairn::standalone
         std::unique_ptr<PartList> list_;
         juce::TextButton addPart_{"+ Part"}, addBus_{"+ Bus"};
         PartsView parts_;
-        SequencerPane sequencer_;
         std::vector<std::unique_ptr<juce::DocumentWindow>> windows_; // detached tabs
     };
 }

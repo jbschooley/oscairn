@@ -6,19 +6,9 @@ namespace oscairn::standalone
     namespace
     {
         juce::String text(const std::string& s) { return juce::String::fromUTF8(s.c_str()); }
-        const char* const tabNames[] = {"Part", "Mixer", "Routing", "Controls", "Sequencer"};
+        const char* const tabNames[] = {"Part", "Mixer", "Routing", "Controls"};
         juce::File modeFile(const juce::File& configuration) { return configuration.getChildFile("input-mode.txt"); }
         int modeNumber(InputMode mode) { return touchSized(mode) ? 2 : 1; }
-        // Meter colours from -60 to +6 dB: green, yellow above -12, red above -3.
-        void drawMeter(juce::Graphics& g, juce::Rectangle<float> r, double peak)
-        {
-            g.setColour(ink(Ink::Border).withAlpha(.45f)); g.fillRoundedRectangle(r, r.getHeight() / 2);
-            const double db = peak > 0 ? 20 * std::log10(peak) : -100;
-            const float fraction = float(std::clamp((db + 60) / 66, 0.0, 1.0));
-            if(fraction <= 0) return;
-            g.setColour(db > -3 ? ink(Ink::Danger) : db > -12 ? juce::Colour(0xffe8c547) : juce::Colour(0xff5ac46a));
-            g.fillRoundedRectangle(r.withWidth(std::max(r.getHeight(), r.getWidth() * fraction)), r.getHeight() / 2);
-        }
     }
 
     InputMode readInputMode(const juce::File& configuration)
@@ -42,6 +32,8 @@ namespace oscairn::standalone
         sync_.setTooltip("Start, stop and follow tempo from an external MIDI clock");
         sync_.onClick = [this] { engine_.setFollowMidiClock(sync_.getToggleState()); };
         for(auto* c : std::initializer_list<juce::Component*>{&play_, &stop_, &sync_, &screen_}) addAndMakeVisible(c);
+        refresh();
+        startTimer(200);
     }
     void SequencerPane::refresh()
     {
@@ -90,21 +82,20 @@ namespace oscairn::standalone
                 // Equal padding above the name and below the meters.
                 const int height = pad + int(body) + 4 + int(small) + 6 + bars * 3 + (bars - 1) * 2 + pad;
                 auto r = area.removeFromTop(height);
-                rows_.push_back({p.id, r});
+                rows_.push_back({p.id, r, {}, {}, p.mute, p.solo, p.level});
                 const bool selected = p.id == shell_.selected_ && shell_.tab_ == Tab::Part;
                 if(selected) { g.setColour(ink(Ink::Raised)); g.fillRect(r); g.setColour(ink(Ink::Accent)); g.fillRect(r.withWidth(3)); }
                 r = r.reduced(pad + 4, pad);
                 const float alpha = p.mute || p.silenced ? .5f : 1.f;
                 auto top = r.removeFromTop(int(body) + 4);
-                // Mute and solo marks at the right of the name.
+                // Mute and solo at the right of the name: click to switch them.
                 auto mark = [&](const char* label, bool on, Ink colour) {
-                    auto b = top.removeFromRight(int(body) + 4).toFloat().reduced(1);
+                    auto b = top.removeFromRight(int(body) + 6);
                     top.removeFromRight(4);
-                    g.setColour(on ? ink(colour) : ink(Ink::Border).withAlpha(.5f)); g.fillRoundedRectangle(b, themeData().radius / 2);
-                    g.setColour(on ? ink(Ink::Background) : ink(Ink::Muted)); g.setFont(juce::FontOptions(small - 1, juce::Font::bold));
-                    g.drawText(label, b, juce::Justification::centred);
+                    drawMark(g, b.toFloat(), label, on, colour);
+                    return b;
                 };
-                mark("S", p.solo, Ink::Accent); mark("M", p.mute, Ink::Danger);
+                rows_.back().solo = mark("S", p.solo, Ink::Accent); rows_.back().mute = mark("M", p.mute, Ink::Danger);
                 g.setColour(ink(Ink::Text).withAlpha(alpha)); g.setFont(juce::FontOptions(body, juce::Font::bold));
                 g.drawText(text(p.name), top, juce::Justification::centredLeft, true);
                 const auto detail = p.bus ? (p.chain.empty() ? std::string("Empty bus") : p.chain.front().plugin) : (p.sound.empty() ? std::string("No instrument") : p.sound) + (p.input.empty() ? "" : " · " + p.input);
@@ -113,7 +104,7 @@ namespace oscairn::standalone
                 r.removeFromTop(4);
                 // A meter per channel, and a tick where the fader is (meters run -60 to +6 dB).
                 auto meters = r.toFloat();
-                for(int c = 0; c < bars; ++c) { drawMeter(g, meters.removeFromTop(3), c < int(meter.size()) ? meter[size_t(c)] * alpha : 0.0); meters.removeFromTop(2); }
+                for(int c = 0; c < bars; ++c) { drawMeter(g, meters.removeFromTop(3), c < int(meter.size()) ? meter[size_t(c)] * alpha : 0.0, false); meters.removeFromTop(2); }
                 const double db = p.level > 0 ? 20 * std::log10(p.level) : -100;
                 const float x = r.getX() + r.getWidth() * float(std::clamp((db + 60) / 66, 0.0, 1.0));
                 g.setColour(ink(Ink::Text).withAlpha(.8f * alpha)); g.fillRect(juce::Rectangle<float>(x - 1, float(r.getY()) - 2, 2, float(r.getHeight()) + 4));
@@ -125,11 +116,17 @@ namespace oscairn::standalone
         }
         void mouseDown(const juce::MouseEvent& e) override
         {
-            for(const auto& r : rows_) if(r.bounds.contains(e.getPosition())) { shell_.select(r.part); return; }
+            for(const auto& r : rows_)
+            {
+                const auto id = r.part;
+                if(r.mute.contains(e.getPosition())) { const bool m = !r.muted; const double level = r.level; shell_.engine_.edit([id, level, m](Control& c) { c.setPartLevel(id, level, m); c.commit(); }); return; }
+                if(r.solo.contains(e.getPosition())) { const bool s = !r.soloed; shell_.engine_.edit([id, s](Control& c) { c.setPartSolo(id, s); c.commit(); }); return; }
+                if(r.bounds.contains(e.getPosition())) { shell_.select(id); return; }
+            }
         }
     private:
         DesktopShell& shell_;
-        struct Row { uint32_t part; juce::Rectangle<int> bounds; };
+        struct Row { uint32_t part; juce::Rectangle<int> bounds, mute, solo; bool muted, soloed; double level; };
         std::vector<Row> rows_;
     };
 
@@ -199,12 +196,12 @@ namespace oscairn::standalone
         }
     private:
         DesktopShell& shell_;
-        std::array<juce::Rectangle<int>, 5> tabs_;
+        std::array<juce::Rectangle<int>, std::size(tabNames)> tabs_;
         IconButton detach_{IconButton::Glyph::Detach, "Open in its own window"};
     };
 
     DesktopShell::DesktopShell(Engine& engine, const std::string& scanner, InputMode mode)
-        : engine_(engine), scanner_(scanner), mode_(mode), tabs_(std::make_unique<TabStrip>(*this)), list_(std::make_unique<PartList>(*this)), parts_(engine, scanner), sequencer_(engine)
+        : engine_(engine), scanner_(scanner), mode_(mode), tabs_(std::make_unique<TabStrip>(*this)), list_(std::make_unique<PartList>(*this)), parts_(engine, scanner)
     {
         setDesktopMode(*this, modeNumber(mode));
         undo_.setTooltip("Undo"); redo_.setTooltip("Redo");
@@ -231,7 +228,7 @@ namespace oscairn::standalone
         addBus_.onClick = [this] { const auto n = state_.buses.size(); engine_.edit([n](Control& c) { addPart(c, std::string("Bus ") + char('A' + n % 26), true); }); };
         for(auto* c : std::initializer_list<juce::Component*>{&undo_, &redo_, &tempoLabel_, &tempo_, &sceneLabel_, &sceneBox_, &storeScene_, &status_, tabs_.get(), list_.get(), &addPart_, &addBus_})
             addAndMakeVisible(c);
-        addChildComponent(parts_); addChildComponent(sequencer_);
+        addAndMakeVisible(parts_);
         parts_.setEmbedded(true);
         refresh();
         showTab(Tab::Part);
@@ -259,8 +256,6 @@ namespace oscairn::standalone
     void DesktopShell::showTab(Tab tab)
     {
         tab_ = tab;
-        sequencer_.setVisible(tab == Tab::Sequencer);
-        parts_.setVisible(tab != Tab::Sequencer);
         switch(tab)
         {
         case Tab::Part:
@@ -270,7 +265,6 @@ namespace oscairn::standalone
         case Tab::Mixer: parts_.showPart(PartsView::mixerPage); break;
         case Tab::Routing: parts_.showRouting(0); break;
         case Tab::Controls: parts_.showPart(PartsView::controlsPage); break;
-        case Tab::Sequencer: sequencer_.refresh(); break;
         }
         tabs_->resized();
         list_->repaint();
@@ -278,7 +272,6 @@ namespace oscairn::standalone
 
     std::unique_ptr<juce::Component> DesktopShell::viewFor(Tab tab)
     {
-        if(tab == Tab::Sequencer) { auto pane = std::make_unique<SequencerPane>(engine_); pane->refresh(); return pane; }
         auto view = std::make_unique<PartsView>(engine_, scanner_);
         view->setEmbedded(true);
         if(tab == Tab::Part) view->showPart(selected_);
@@ -353,8 +346,6 @@ namespace oscairn::standalone
         undo_.setEnabled(!history.undo.empty()); redo_.setEnabled(!history.redo.empty());
         undo_.setTooltip(history.undo.empty() ? juce::String("Nothing to undo") : "Undo " + text(history.undo));
         redo_.setTooltip(history.redo.empty() ? juce::String("Nothing to redo") : "Redo " + text(history.redo));
-        if(tab_ == Tab::Sequencer) sequencer_.refresh();
-        for(auto& w : windows_) if(auto* pane = dynamic_cast<SequencerPane*>(w->getContentComponent())) pane->refresh();
     }
 
     void DesktopShell::paint(juce::Graphics& g)
@@ -394,7 +385,7 @@ namespace oscairn::standalone
         list_->setBounds(side);
         area.removeFromLeft(1);
         tabs_->setBounds(area.removeFromTop(m.control + m.gap * 2).withTrimmedTop(m.gap));
-        parts_.setBounds(area); sequencer_.setBounds(area);
+        parts_.setBounds(area);
         repaint();
     }
 }

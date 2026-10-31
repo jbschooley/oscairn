@@ -218,6 +218,25 @@ void Theme::drawComboBox(juce::Graphics& g,int width,int height,bool,int,int,int
     g.setColour(box.findColour(juce::ComboBox::arrowColourId).withMultipliedAlpha(box.isEnabled()?1.f:.4f));
     g.strokePath(p,juce::PathStrokeType(1.6f,juce::PathStrokeType::curved,juce::PathStrokeType::rounded));
 }
+// A slider centred on zero (pan, transpose: the property "bipolar") fills from its centre.
+void Theme::drawLinearSlider(juce::Graphics& g,int x,int y,int width,int height,float position,float minimum,float maximum,juce::Slider::SliderStyle style,juce::Slider& slider) {
+    const bool horizontal=style==juce::Slider::LinearHorizontal;
+    if(!slider.getProperties()["bipolar"] || (!horizontal && style!=juce::Slider::LinearVertical)){LookAndFeel_V4::drawLinearSlider(g,x,y,width,height,position,minimum,maximum,style,slider);return;}
+    const auto area=juce::Rectangle<int>(x,y,width,height).toFloat();
+    const float track=juce::jmin(6.f,(horizontal?area.getHeight():area.getWidth())*.25f);
+    const auto centre=horizontal?juce::Point<float>(area.getCentreX(),area.getCentreY()):juce::Point<float>(area.getCentreX(),area.getCentreY());
+    const auto at=horizontal?juce::Point<float>(position,centre.y):juce::Point<float>(centre.x,position);
+    auto line=[&](juce::Point<float> a,juce::Point<float> b,juce::Colour colour){juce::Path p;p.startNewSubPath(a);p.lineTo(b);g.setColour(colour);g.strokePath(p,juce::PathStrokeType(track,juce::PathStrokeType::curved,juce::PathStrokeType::rounded));};
+    const auto start=horizontal?juce::Point<float>(area.getX()+track,centre.y):juce::Point<float>(centre.x,area.getBottom()-track);
+    const auto end=horizontal?juce::Point<float>(area.getRight()-track,centre.y):juce::Point<float>(centre.x,area.getY()+track);
+    line(start,end,slider.findColour(juce::Slider::backgroundColourId));
+    line(centre,at,slider.findColour(juce::Slider::trackColourId).withMultipliedAlpha(slider.isEnabled()?1.f:.5f));
+    g.setColour(ink(Ink::Muted));
+    if(horizontal)g.fillRect(centre.x-.5f,centre.y-track,1.f,track*2);else g.fillRect(centre.x-track,centre.y-.5f,track*2,1.f);
+    const float thumb=float(getSliderThumbRadius(slider));
+    g.setColour(slider.findColour(juce::Slider::thumbColourId).withMultipliedAlpha(slider.isEnabled()?1.f:.5f));
+    g.fillEllipse(juce::Rectangle<float>(thumb,thumb).withCentre(at));
+}
 // A label with a background or outline (a slider's value box) gets the same corners.
 void Theme::drawLabel(juce::Graphics& g,juce::Label& label) {
     const auto bounds=label.getLocalBounds().toFloat().reduced(.5f);

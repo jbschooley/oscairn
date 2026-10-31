@@ -88,7 +88,7 @@ int main(int argc, char** argv)
                 bool moving = false;
                 for(int i = 0; i < 200 && !moving; ++i) { juce::MessageManager::getInstance()->runDispatchLoopUntil(10); for(const auto& m : engine.meters()) moving |= m.peak > 0; }
                 check(moving, "the parts' meters move while notes play");
-                for(const char* name : {"Part", "Mixer", "Routing", "Controls", "Sequencer"})
+                for(const char* name : {"Part", "Mixer", "Routing", "Controls"})
                 {
                     standalone::DesktopShell::Tab tab{};
                     check(standalone::DesktopShell::tabNamed(name, tab), std::string("a tab named ") + name);

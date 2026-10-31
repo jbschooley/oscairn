@@ -6,7 +6,7 @@ a device that does not exist yet and be tried with the same engine behind it. Bu
 
 | File | Layout |
 | --- | --- |
-| `desktop.json` | The desktop app's own window (the Desktop surface): toolbar, parts list, and tabs for the part, Mixer, Routing, Controls and Sequencer |
+| `desktop.json` | The desktop app's own window (the Desktop surface): toolbar, parts list, and tabs for the part, Mixer, Routing and Controls; apps such as the Groovebox open from the Apps menu |
 | `kick.json` | The KICK's panel, with the geometry of chillbeast's KickEM simulator board (1024 x 600 screen); most buttons do nothing yet |
 | `kick-screen.json` | The KICK's screen alone, 1024 x 600: on the device, the hardware panel supplies the controls |
 | `ignite.json` | The Ignite's panel (BE 0716-AAF), from its front-panel photo, with its 1024 x 600 screen; the 16 step encoders edit each step's note, CUTOFF and VOLUME the synth; most buttons do nothing yet |
