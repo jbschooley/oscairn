@@ -26,6 +26,7 @@
     "depth": "soft",
     "sliders": "line",
     "tabs": "segmented",
-    "marks": "square"
+    "marks": "square",
+    "sections": "separate"
   }
 }

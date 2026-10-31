@@ -135,7 +135,7 @@ namespace oscairn::standalone
 
     void PartsView::rebuild()
     {
-        controls_.clear(); boxes_.clear(); splitAreas_.clear(); strips_.clear(); updaters_.clear();
+        controls_.clear(); boxes_.clear(); splitAreas_.clear(); strips_.clear(); updaters_.clear(); tiles_.clear();
         const bool list = page_ == 0, controlsShown = page_ == controlsPage, mixerShown = page_ == mixerPage, routingShown = page_ == routingPage;
         for(auto* c : std::initializer_list<juce::Component*>{&addPart_, &addBus_, &controlsButton_, &mixerButton_, &routingButton_}) c->setVisible(list);
         for(auto* c : std::initializer_list<juce::Component*>{&removePart_, &name_}) c->setVisible(!list && !controlsShown && !mixerShown && !routingShown);
@@ -313,7 +313,7 @@ namespace oscairn::standalone
             auto area = getLocalBounds().reduced(16).withTrimmedTop(embedded_ ? 0 : header).withTrimmedBottom(28);
             std::vector<const PartRow*> rows;
             for(const auto* list : {&state_.parts, &state_.buses}) for(const auto& p : *list) rows.push_back(&p);
-            const int gap = 8, busGap = state_.buses.empty() ? 0 : 16, n = std::max(1, int(rows.size()));
+            const int gap = sectionGap(8), busGap = state_.buses.empty() ? 0 : sectionGap(16), n = std::max(1, int(rows.size()));
             const int width = std::clamp((area.getWidth() - busGap - gap * (n - 1)) / n, 72, 120);
             auto soloOf = [this](uint32_t id) { return [this, id] { const auto* p = part(id); return p && p->solo; }; };
             auto setSolo = [this](uint32_t id) { return [this, id](bool on) { edit([id, on](Control& c) { c.setPartSolo(id, on); c.commit(); }); }; };
@@ -507,12 +507,36 @@ namespace oscairn::standalone
                 panel.removeFromTop(8);
             }
             const auto id = p->id;
-            auto labelled = [&](const juce::String& label) {
-                auto r = panel.removeFromTop(lineHeight);
+            // On the desktop the settings are a grid of tiles, each its name above its control
+            // (RFC 0019), several to a row; on a device's screen, one row each.
+            const int columns = std::clamp(panel.getWidth() / 300, 2, 4), tileGap = sectionGap(8);
+            const int tileWidth = (panel.getWidth() - tileGap * (columns - 1)) / columns, tileHeight = 16 + 18 + lineHeight + 6;
+            int column = 0, tileTop = -1;
+            auto labelled = [&](const juce::String& label, int span = 1) {
+                if(!embedded_)
+                {
+                    auto r = panel.removeFromTop(lineHeight);
+                    auto l = std::make_unique<juce::Label>(juce::String(), label);
+                    l->setFont(juce::FontOptions(bodyText));
+                    l->setBounds(r.removeFromLeft(130)); addAndMakeVisible(*l); controls_.push_back(std::move(l));
+                    return r;
+                }
+                span = std::min(span, columns);
+                if(tileTop < 0) tileTop = panel.getY();
+                if(column + span > columns)
+                {
+                    // The row's last tile takes the cells left over, so no row ends in a hole.
+                    if(column < columns && !tiles_.empty()) tiles_.back().setRight(panel.getRight());
+                    column = 0; tileTop += tileHeight + tileGap;
+                }
+                const juce::Rectangle<int> tile(panel.getX() + column * (tileWidth + tileGap), tileTop, tileWidth * span + tileGap * (span - 1), tileHeight);
+                column += span;
+                tiles_.push_back(tile);
+                auto inner = tile.reduced(12, 8);
                 auto l = std::make_unique<juce::Label>(juce::String(), label);
-                l->setFont(juce::FontOptions(bodyText));
-                l->setBounds(r.removeFromLeft(130)); addAndMakeVisible(*l); controls_.push_back(std::move(l));
-                return r;
+                l->setFont(juce::FontOptions(textSize(TextRole::Small, mode), juce::Font::bold)); l->setColour(juce::Label::textColourId, ink(Ink::Muted));
+                l->setBorderSize({}); l->setBounds(inner.removeFromTop(18)); addAndMakeVisible(*l); controls_.push_back(std::move(l));
+                return inner;
             };
             // The selected split's actions, or the selected lane's keys and Mix.
             const PartBox* split = nullptr;
@@ -551,7 +575,7 @@ namespace oscairn::standalone
                         button(actions.removeFromLeft(130).reduced(2), "Remove lane", [this, id, sp, lane] { selectedLane_ = -1; edit([id, sp, lane](Control& c) { removeLaneAndBoxes(c, id, sp, lane); }); })
                             ->setTooltip("Remove this lane and its plugins");
                     panel.removeFromTop(8);
-                    auto r = labelled("Lane keys");
+                    auto r = labelled("Lane keys", 2);
                     auto keyBox = [&](juce::Rectangle<int> at, bool high) {
                         auto box = std::make_unique<juce::ComboBox>(high ? "Highest key" : "Lowest key");
                         for(int k = 0; k < 128; ++k) box->addItem(text(noteName(k)), k + 1);
@@ -606,7 +630,7 @@ namespace oscairn::standalone
                 limit->onChange = [this, id, raw = limit.get()] { const int n = raw->getSelectedId() - 1; edit([id, n](Control& c) { setMaxNotes(c, id, n); }); };
                 limit->setBounds(limitRow.removeFromLeft(160).reduced(2)); addAndMakeVisible(*limit); controls_.push_back(std::move(limit));
                 // The zone: lowest and highest key, and a transpose.
-                auto r = labelled("Keys");
+                auto r = labelled("Keys", 2);
                 auto keyBox = [&](juce::Rectangle<int> at, bool high) {
                     auto box = std::make_unique<juce::ComboBox>(high ? "Highest key" : "Lowest key");
                     for(int k = 0; k < 128; ++k) box->addItem(text(noteName(k)), k + 1);
@@ -844,6 +868,7 @@ namespace oscairn::standalone
     void PartsView::paint(juce::Graphics& g)
     {
         g.fillAll(ink(Ink::Background));
+        for(const auto& t : tiles_) drawSection(g, t, ink(Ink::Surface));
         if(page_ == controlsPage) return;
         if(page_ == routingPage)
         {
@@ -898,9 +923,7 @@ namespace oscairn::standalone
             for(const auto& s : strips_)
             {
                 const auto* p = part(s.part);
-                g.setColour(p && (p->mute || p->silenced) ? ink(Ink::Surface).withAlpha(.5f) : ink(Ink::Surface));
-                g.fillRoundedRectangle(s.bounds.toFloat(), themeData().radius + 2);
-                drawEdge(g, s.bounds.toFloat().reduced(.5f), themeData().radius + 2);
+                drawSection(g, s.bounds, p && (p->mute || p->silenced) ? ink(Ink::Surface).withAlpha(.5f) : ink(Ink::Surface));
                 // A bar per channel of the part's sound (mono, stereo or more), side by side.
                 const auto it = peaks_.find(s.part);
                 const auto channels = it == peaks_.end() || it->second.empty() ? std::vector<double>{0.0} : it->second;

@@ -77,6 +77,7 @@ namespace oscairn::standalone
         // The Mixer: a strip per part and bus, with its meter beside the fader.
         struct Strip { uint32_t part; juce::Rectangle<int> bounds, meter; };
         std::vector<Strip> strips_;
+        std::vector<juce::Rectangle<int>> tiles_; // the Part page's settings on the desktop, a tile each
         std::map<uint32_t, std::vector<double>> peaks_; // the parts' meters per channel, read at each tick while the Mixer shows
         // Routing: the graph as nodes in columns, the node selected, and whether part wires show.
         RoutingState routing_;

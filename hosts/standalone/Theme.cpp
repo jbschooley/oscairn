@@ -52,6 +52,16 @@ void write(const juce::File& destination,const juce::String& text) {
 }
 const ThemeData& themeData(){return current;}
 juce::Colour ink(Ink role){return current.colours[static_cast<size_t>(role)];}
+int sectionGap(int separate){return current.style.sections==ThemeStyle::Sections::Joined?0:separate;}
+void drawSection(juce::Graphics& g,juce::Rectangle<int> r,juce::Colour fill) {
+    if(current.style.sections==ThemeStyle::Sections::Joined) {
+        g.setColour(fill);g.fillRect(r);
+        g.setColour(ink(Ink::Border).withAlpha(current.style.edges==ThemeStyle::Edges::Hairline?.6f:1.f));
+        g.drawRect(r.expanded(1,1).withTrimmedRight(1).withTrimmedBottom(1),1);
+        return;
+    }
+    const float radius=current.radius+2;g.setColour(fill);g.fillRoundedRectangle(r.toFloat(),radius);drawEdge(g,r.toFloat().reduced(.5f),radius);
+}
 bool darkTheme(){return ink(Ink::Background).getPerceivedBrightness()<.5f;}
 float buttonRadius(float height){return current.style.buttons==ThemeStyle::Buttons::Pill?height/2:current.radius;}
 float fieldRadius(float height){return std::min(height/2,current.style.buttons==ThemeStyle::Buttons::Pill?current.radius+3:current.radius);}
@@ -84,14 +94,15 @@ ThemeData ThemeData::parse(const juce::String& json) {
         require(colour.isString() && text.length()==7 && text[0]=='#' && text.substring(1).containsOnly("0123456789abcdefABCDEF"),"Theme colours must be #RRGGBB");
         t.colours[i]=juce::Colour(0xff000000u|static_cast<juce::uint32>(text.substring(1).getHexValue32()));}
     const auto* style=value["style"].getDynamicObject();require(style,"Theme needs a style");
-    fields(*style,{"buttons","edges","depth","sliders","tabs","marks"});
+    fields(*style,{"buttons","edges","depth","sliders","tabs","marks","sections"});
     auto choice=[&](const char* key,const juce::StringArray& options){const auto v=style->getProperty(key);const int i=options.indexOf(v.toString());require(v.isString() && i>=0,"Theme style choice is not one of its options");return i;};
     t.style.buttons=ThemeStyle::Buttons(choice("buttons",{"rounded","pill"}));
     t.style.edges=ThemeStyle::Edges(choice("edges",{"none","hairline","outlined"}));
     t.style.depth=ThemeStyle::Depth(choice("depth",{"flat","soft"}));
-    t.style.sliders=ThemeStyle::Sliders(choice("sliders",{"filled","line"}));
+    t.style.sliders=ThemeStyle::Sliders(choice("sliders",{"filled","line","cap"}));
     t.style.tabs=ThemeStyle::Tabs(choice("tabs",{"folder","segmented"}));
     t.style.marks=ThemeStyle::Marks(choice("marks",{"square","round"}));
+    t.style.sections=ThemeStyle::Sections(choice("sections",{"separate","joined"}));
     auto luminance=[](juce::Colour c){auto linear=[](double v){return v<=.04045?v/12.92:std::pow((v+.055)/1.055,2.4);};return .2126*linear(c.getFloatRed())+.7152*linear(c.getFloatGreen())+.0722*linear(c.getFloatBlue());};
     for(auto background:{Ink::Background,Ink::Surface,Ink::Raised}) {
         const auto a=luminance(t.colours[static_cast<size_t>(Ink::Text)]),b=luminance(t.colours[static_cast<size_t>(background)]);
@@ -236,12 +247,12 @@ void Theme::drawComboBox(juce::Graphics& g,int width,int height,bool,int,int,int
 }
 // Linear sliders: the Line style draws a thin track and a light thumb; a slider centred on zero
 // (pan, transpose: the property "bipolar") fills from its centre in either style.
-int Theme::getSliderThumbRadius(juce::Slider& slider){return current.style.sliders==ThemeStyle::Sliders::Line?8:LookAndFeel_V4::getSliderThumbRadius(slider);}
+int Theme::getSliderThumbRadius(juce::Slider& slider){return current.style.sliders!=ThemeStyle::Sliders::Filled?8:LookAndFeel_V4::getSliderThumbRadius(slider);}
 void Theme::drawLinearSlider(juce::Graphics& g,int x,int y,int width,int height,float position,float minimum,float maximum,juce::Slider::SliderStyle style,juce::Slider& slider) {
-    const bool horizontal=style==juce::Slider::LinearHorizontal,line=current.style.sliders==ThemeStyle::Sliders::Line,bipolar=slider.getProperties()["bipolar"];
+    const bool horizontal=style==juce::Slider::LinearHorizontal,line=current.style.sliders!=ThemeStyle::Sliders::Filled,bipolar=slider.getProperties()["bipolar"];
     if((!horizontal && style!=juce::Slider::LinearVertical) || (!line && !bipolar)){LookAndFeel_V4::drawLinearSlider(g,x,y,width,height,position,minimum,maximum,style,slider);return;}
     const auto area=juce::Rectangle<int>(x,y,width,height).toFloat();
-    const float track=line?4.f:juce::jmin(6.f,(horizontal?area.getHeight():area.getWidth())*.25f);
+    const float track=line?(current.style.sliders==ThemeStyle::Sliders::Cap?3.f:4.f):juce::jmin(6.f,(horizontal?area.getHeight():area.getWidth())*.25f);
     const auto centre=area.getCentre();
     const auto at=horizontal?juce::Point<float>(position,centre.y):juce::Point<float>(centre.x,position);
     const auto start=horizontal?juce::Point<float>(area.getX()+track,centre.y):juce::Point<float>(centre.x,area.getBottom()-track);
@@ -252,11 +263,14 @@ void Theme::drawLinearSlider(juce::Graphics& g,int x,int y,int width,int height,
     stroke(bipolar?centre:start,at,slider.findColour(juce::Slider::trackColourId).withMultipliedAlpha(alpha));
     if(bipolar){g.setColour(ink(Ink::Muted));if(horizontal)g.fillRect(centre.x-.5f,centre.y-track-1,1.f,track*2+2);else g.fillRect(centre.x-track-1,centre.y-.5f,track*2+2,1.f);}
     const float radius=float(getSliderThumbRadius(slider));
-    const auto thumb=juce::Rectangle<float>(radius*2,radius*2).withCentre(at);
+    // A cap is a short bar across the track; a line thumb is a disc.
+    const bool cap=current.style.sliders==ThemeStyle::Sliders::Cap;
+    const auto thumb=cap?(horizontal?juce::Rectangle<float>(radius*1.25f,radius*2.25f):juce::Rectangle<float>(radius*2.75f,radius*1.25f)).withCentre(at):juce::Rectangle<float>(radius*2,radius*2).withCentre(at);
+    const float corner=cap?std::min(2.f,current.radius):radius;
     if(line) {
-        if(current.style.depth==ThemeStyle::Depth::Soft){g.setColour(juce::Colours::black.withAlpha(darkTheme()?.45f:.18f));g.fillEllipse(thumb.translated(0,1));}
-        g.setColour(juce::Colours::white.withMultipliedAlpha(alpha));g.fillEllipse(thumb);
-        g.setColour(ink(Ink::Border).withAlpha(.8f));g.drawEllipse(thumb.reduced(.5f),1.f);
+        if(current.style.depth==ThemeStyle::Depth::Soft){g.setColour(juce::Colours::black.withAlpha(darkTheme()?.45f:.18f));g.fillRoundedRectangle(thumb.translated(0,1),corner);}
+        g.setColour(juce::Colours::white.withMultipliedAlpha(alpha));g.fillRoundedRectangle(thumb,corner);
+        g.setColour(ink(Ink::Border).withAlpha(.8f));g.drawRoundedRectangle(thumb.reduced(.5f),corner,1.f);
     } else {g.setColour(slider.findColour(juce::Slider::thumbColourId).withMultipliedAlpha(alpha));g.fillEllipse(thumb.reduced(radius/2));}
 }
 // Checkboxes share the fields' corners and edge.

@@ -132,7 +132,8 @@
         "sliders": {
           "enum": [
             "filled",
-            "line"
+            "line",
+            "cap"
           ]
         },
         "tabs": {
@@ -146,6 +147,12 @@
             "square",
             "round"
           ]
+        },
+        "sections": {
+          "enum": [
+            "separate",
+            "joined"
+          ]
         }
       },
       "required": [
@@ -154,7 +161,8 @@
         "depth",
         "sliders",
         "tabs",
-        "marks"
+        "marks",
+        "sections"
       ],
       "additionalProperties": false
     }

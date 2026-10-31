@@ -13,9 +13,10 @@ int main(int argc,char** argv){try{
     const juce::File builtIn(argv[1]),example(argv[2]);const auto json=example.getChildFile("theme.json").loadFileAsString();
     const auto theme=ThemeData::parse(json);check(theme.id=="midnight" && theme.radius==8 && theme.font.regular=="fonts/Inter-Regular.ttf","valid theme parsed");
     check(theme.style.buttons==ThemeStyle::Buttons::Pill && theme.style.tabs==ThemeStyle::Tabs::Segmented && theme.style.sliders==ThemeStyle::Sliders::Line,"its style parsed");
-    const auto classic=ThemeData::parse(json.replace("\"pill\"","\"rounded\"").replace("\"hairline\"","\"outlined\"").replace("\"soft\"","\"flat\"").replace("\"line\"","\"filled\"").replace("\"segmented\"","\"folder\"").replace("\"square\"","\"round\""));
+    const auto classic=ThemeData::parse(json.replace("\"pill\"","\"rounded\"").replace("\"hairline\"","\"outlined\"").replace("\"soft\"","\"flat\"").replace("\"line\"","\"filled\"").replace("\"segmented\"","\"folder\"").replace("\"square\"","\"round\"").replace("\"separate\"","\"joined\""));
     check(classic.style.buttons==ThemeStyle::Buttons::Rounded && classic.style.edges==ThemeStyle::Edges::Outlined && classic.style.depth==ThemeStyle::Depth::Flat &&
-          classic.style.sliders==ThemeStyle::Sliders::Filled && classic.style.tabs==ThemeStyle::Tabs::Folder && classic.style.marks==ThemeStyle::Marks::Round,"every style choice parsed");
+          classic.style.sliders==ThemeStyle::Sliders::Filled && classic.style.tabs==ThemeStyle::Tabs::Folder && classic.style.marks==ThemeStyle::Marks::Round && classic.style.sections==ThemeStyle::Sections::Joined,"every style choice parsed");
+    check(ThemeData::parse(json.replace("\"line\"","\"cap\"")).style.sliders==ThemeStyle::Sliders::Cap,"slider caps parsed");
     for(auto broken:{json.replace("\"midnight\"","\"../escape\""),json.replace("\"version\": 3","\"version\": 2"),json.replace("\"fontScale\": 1.0","\"fontScale\": 100"),
                      json.replace("#F0F5FC","#101724"),json.replace("#7CCEFF","red"),json.replace("\"radius\": 8","\"script\": \"evil\""),
                      json.replace("\"license\": \"fonts/OFL.txt\"","\"licence\": \"fonts/OFL.txt\""),json.replace("\"regular\": \"fonts/Inter-Regular.ttf\",",""),
@@ -29,11 +30,11 @@ int main(int argc,char** argv){try{
         check(themeData().id=="oscairn-dark" && fresh.error().isEmpty(),"built-in default theme applied on first launch");
         check(face(fresh)=="Inter/Regular" && face(fresh,true)=="Inter/Bold","theme fonts used for regular and bold text");
         const auto list=fresh.installed();
-        check(list.size()==3 && std::all_of(list.begin(),list.end(),[](const auto& t){return t.first.startsWith("oscairn-");}),"built-in themes listed from their folders");}
+        check(list.size()==4 && std::all_of(list.begin(),list.end(),[](const auto& t){return t.first.startsWith("oscairn-");}),"built-in themes listed from their folders");}
     {Theme installed(root,builtIn);installed.install(example.getChildFile("theme.json"));check(themeData().id=="midnight","install applies theme");
         const auto copy=installed.directory().getChildFile("midnight");
         check(copy.getChildFile("theme.json").loadFileAsString()==json && copy.getChildFile("fonts/Inter-Regular.ttf").hasIdenticalContentTo(example.getChildFile("fonts/Inter-Regular.ttf")),"install copies the theme and its fonts");
-        installed.install(example);check(installed.installed().size()==4,"reinstall is idempotent");
+        installed.install(example);check(installed.installed().size()==5,"reinstall is idempotent");
         check(face(installed)=="Inter/Regular","installed theme uses its own font");
         auto refused=[&](const juce::File& folder){bool r=false;try{installed.install(folder);}catch(const std::exception&){r=true;}return r && themeData().id=="midnight";};
         auto variant=[&](const juce::String& id,const juce::String& text){

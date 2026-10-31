@@ -70,7 +70,7 @@ namespace oscairn::standalone
         const float side = std::min(r.getWidth(), r.getHeight());
         r = r.withSizeKeepingCentre(side, side);
         // Square or round, by the theme's style.
-        const float corner = themeData().style.marks == ThemeStyle::Marks::Round ? side / 2 : std::min(6.f, side * .28f);
+        const float corner = themeData().style.marks == ThemeStyle::Marks::Round ? side / 2 : std::min({6.f, side * .28f, themeData().radius});
         g.setColour((on ? ink(colour) : ink(Ink::Border).withAlpha(.5f)).withMultipliedAlpha(alpha)); g.fillRoundedRectangle(r, corner);
         g.setColour((on ? ink(Ink::Background) : ink(Ink::Muted)).withMultipliedAlpha(alpha));
         g.setFont(juce::FontOptions(side * .55f, juce::Font::bold));
@@ -83,7 +83,7 @@ namespace oscairn::standalone
         void paintButton(juce::Graphics& g, bool hover, bool) override
         {
             drawMark(g, getLocalBounds().toFloat().reduced(1), letter_, getToggleState(), colour_, isEnabled() ? 1.f : .5f);
-            if(hover) { const float side = std::min(getWidth(), getHeight()) - 2.f; g.setColour(ink(Ink::Text).withAlpha(.08f)); g.fillRoundedRectangle(getLocalBounds().toFloat().withSizeKeepingCentre(side, side), themeData().style.marks == ThemeStyle::Marks::Round ? side / 2 : std::min(6.f, side * .28f)); }
+            if(hover) { const float side = std::min(getWidth(), getHeight()) - 2.f; g.setColour(ink(Ink::Text).withAlpha(.08f)); g.fillRoundedRectangle(getLocalBounds().toFloat().withSizeKeepingCentre(side, side), themeData().style.marks == ThemeStyle::Marks::Round ? side / 2 : std::min({6.f, side * .28f, themeData().radius})); }
         }
     private:
         juce::String letter_;

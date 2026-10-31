@@ -10,10 +10,15 @@ struct ThemeStyle {
     enum class Buttons { Rounded, Pill } buttons=Buttons::Pill;          // the theme's radius, or fully round ends
     enum class Edges { None, Hairline, Outlined } edges=Edges::Hairline;  // outlines on controls and cards
     enum class Depth { Flat, Soft } depth=Depth::Soft;                    // a small shadow under buttons and thumbs
-    enum class Sliders { Filled, Line } sliders=Sliders::Line;            // an accent thumb, or a thin track with a light thumb
+    enum class Sliders { Filled, Line, Cap } sliders=Sliders::Line;       // an accent thumb, a thin track with a light round thumb, or with a square cap
     enum class Tabs { Folder, Segmented } tabs=Tabs::Segmented;
     enum class Marks { Square, Round } marks=Marks::Square;                // mute and solo
+    enum class Sections { Separate, Joined } sections=Sections::Separate; // gaps between cards, or edge to edge with a line
 };
+int sectionGap(int separate);                    // the gap between sections: `separate`, or 0 when they join
+// A section (a card, a tile, a mixer strip): rounded with its edge when sections are separate;
+// square when they join, its edge on the shared pixel so neighbours draw one line between them.
+void drawSection(juce::Graphics&, juce::Rectangle<int>, juce::Colour fill);
 struct ThemeData {
     juce::String id="oscairn-dark",name="Oscairn Dark";
     ThemeFont font;

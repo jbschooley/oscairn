@@ -1,0 +1,32 @@
+{
+  "version": 3,
+  "id": "oscairn-block",
+  "name": "Oscairn Block",
+  "font": {
+    "regular": "fonts/Inter-Regular.ttf",
+    "bold": "fonts/Inter-Bold.ttf",
+    "license": "fonts/OFL.txt"
+  },
+  "fontScale": 1.0,
+  "radius": 0,
+  "colours": {
+    "background": "#111317",
+    "surface": "#191C21",
+    "raised": "#262B32",
+    "border": "#3A414B",
+    "text": "#F6F8FA",
+    "muted": "#B4BDC8",
+    "accent": "#FF9A45",
+    "positive": "#5AD9A4",
+    "danger": "#FF6B63"
+  },
+  "style": {
+    "buttons": "rounded",
+    "edges": "outlined",
+    "depth": "flat",
+    "sliders": "cap",
+    "tabs": "folder",
+    "marks": "square",
+    "sections": "joined"
+  }
+}

@@ -26,6 +26,7 @@
     "depth": "flat",
     "sliders": "filled",
     "tabs": "folder",
-    "marks": "square"
+    "marks": "square",
+    "sections": "separate"
   }
 }

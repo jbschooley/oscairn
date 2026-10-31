@@ -39,7 +39,8 @@ The browser's **System theme** selector applies a theme throughout Oscairn.
 fonts, copies the files it names into the user's theme directory, then applies it. The
 **Appearance** menu also lists installed themes. Built-in **Oscairn Dark**, **Oscairn
 Light** and **Oscairn Classic** are ordinary theme folders shipped with the app: Dark and
-Light in the soft style below, Classic in the outlined style the app first had. An installable example is
+Light in the soft style below, Classic in the outlined style the app first had, and **Oscairn
+Block** with joined, square sections. An installable example is
 [Midnight](../hosts/standalone/theme-examples/midnight/theme.json).
 
 Appearance is a per-user, per-device preference shared by all Oscairn layouts and UI
@@ -96,9 +97,10 @@ fonts, so text never depends on what a device has installed.
 | `buttons` | `rounded`, `pill` | Buttons with the theme's radius, or fully round ends (fields then use the radius plus 3) |
 | `edges` | `none`, `hairline`, `outlined` | Outlines on buttons, fields and cards: none, faint, or the full border colour. Keyboard focus is always drawn |
 | `depth` | `flat`, `soft` | A small shadow under buttons, slider thumbs and the selected tab |
-| `sliders` | `filled`, `line` | An accent thumb on a thick track, or a thin track with a light thumb |
+| `sliders` | `filled`, `line`, `cap` | An accent thumb on a thick track, a thin track with a light round thumb, or with a square cap |
 | `tabs` | `folder`, `segmented` | Tabs joined to the view below, or a track with the selected tab lifted out |
-| `marks` | `square`, `round` | Mute and solo as rounded squares or circles |
+| `marks` | `square`, `round` | Mute and solo as squares (rounded up to the theme's radius) or circles |
+| `sections` | `separate`, `joined` | Cards, tiles and mixer strips with gaps between them, or edge to edge with one line between each and square corners, which uses small screens best |
 
 Choices, not code: the host draws every combination, so styles can be mixed (a soft style with
 round marks). Which control is used (a pan knob or a slider) is the surface's, not the theme's.

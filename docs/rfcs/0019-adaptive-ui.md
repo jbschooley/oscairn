@@ -216,6 +216,11 @@ theme selection; Automatic means keyboard and mouse for now. `desktop-shell` bui
 Performance, plays a chord, checks the meters move and renders every tab in both input modes
 (to PNGs when given a path). The device layouts are unchanged.
 
+On the desktop the Part page's settings are a grid of tiles, each its name above its control,
+several to a row, the last in a row widening to fill it; device screens keep one row each.
+Themes choose how controls and sections are drawn (format 3: Soft, Classic and Block, the last
+with sections joined edge to edge).
+
 Not yet: the views' state on view models of their own, the parts views redrawn for the
 desktop (they are the device's, with the desktop's text), and Panel renders in the same test.
 

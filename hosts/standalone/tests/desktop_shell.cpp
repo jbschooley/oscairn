@@ -82,7 +82,8 @@ int main(int argc, char** argv)
                   "the Performance was made with its plugins: " + std::string(engine.editError()));
 
             const std::pair<const char*, standalone::InputMode> runs[] = {{"oscairn-dark", standalone::InputMode::Mouse}, {"oscairn-dark", standalone::InputMode::Touch},
-                                                                          {"oscairn-light", standalone::InputMode::Mouse}, {"oscairn-classic", standalone::InputMode::Mouse}};
+                                                                          {"oscairn-light", standalone::InputMode::Mouse}, {"oscairn-classic", standalone::InputMode::Mouse},
+                                                                          {"oscairn-block", standalone::InputMode::Mouse}};
             for(const auto& [themeId, mode] : runs)
             {
                 theme.apply(themeId);
