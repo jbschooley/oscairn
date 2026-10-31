@@ -170,7 +170,7 @@ new core, from a UI that talks to it only through the control API.
 5. **Sound assets as dependencies — steps 1–2 implemented:** asset store, registered
    folders, the `oscairn.assets` contract and Performance preflight
    ([RFC 0009](rfcs/0009-sound-assets-and-dependencies.md#implementation-status)).
-6. **Plugin worker isolation — next:** run plugins in supervised worker processes so a
+6. **Plugin worker isolation — steps 1–5 implemented:** run plugins in supervised worker processes so a
    crash, hang or overrun silences only its own node and the plugin recovers
    ([RFC 0010](rfcs/0010-plugin-worker-isolation.md)). Moved here from Phase 5 on October 30,
    2026, ahead of Phase 4 hardware work and further third-party plugin features. Hand-off
