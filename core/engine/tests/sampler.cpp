@@ -107,6 +107,26 @@ int main(int argc, char** argv) { try {
         for(int i = 240; i < 512; ++i) check(rel.left[i] == 0, "release reaches silence after ampeg_release");
         check(std::abs(rel.left[100]) > 0, "release fades rather than cuts");
     }
+    { // A choke fades the note out over 3 ms (144 frames), exactly, then ends it (RFC 0018 step 1).
+        Sampler s(plugin), ref(plugin); s.use(a, dir); ref.use(a, dir);
+        const auto on = Event::note(true, 60, 1); s.one(on); ref.one(on);
+        clap_event_note_t choke{}; choke.header = {sizeof(choke), 100, CLAP_CORE_EVENT_SPACE_ID, CLAP_EVENT_NOTE_CHOKE, 0};
+        choke.note_id = -1; choke.port_index = 0; choke.channel = 0; choke.key = 60;
+        s.one(Event::from(choke)); ref.run();
+        bool ended = false; uint32_t n = 0; const auto* events = s.host().outputEvents(n);
+        for(uint32_t i = 0; i < n; ++i) ended = ended || events[i].header()->type == CLAP_EVENT_NOTE_END;
+        for(int i = 0; i < 100; ++i) check(s.left[i] == ref.left[i], "unchanged before the choke");
+        for(int i = 100; i < 244; ++i) check(std::abs(s.left[i] - ref.left[i] * (144.0 - (i - 100)) / 144.0) < 1e-6, "a choke fades linearly over 3 ms");
+        for(int i = 244; i < 512; ++i) check(s.left[i] == 0, "then silence");
+        check(ended, "and the note ends");
+        // Per-note volume.
+        Sampler v(plugin); v.use(a, dir); v.one(on);
+        clap_event_note_expression_t volume{}; volume.header = {sizeof(volume), 0, CLAP_CORE_EVENT_SPACE_ID, CLAP_EVENT_NOTE_EXPRESSION, 0};
+        volume.expression_id = CLAP_NOTE_EXPRESSION_VOLUME; volume.note_id = -1; volume.port_index = 0; volume.channel = 0; volume.key = 60; volume.value = .5;
+        Sampler w(plugin); w.use(a, dir); w.one(on);
+        v.one(Event::from(volume)); w.run();
+        for(int i = 0; i < 512; ++i) check(std::abs(v.left[i] - .5 * w.left[i]) < 1e-7, "per-note volume scales the note");
+    }
     { // Invalid input is reported with its location and never disturbs the playing sound.
         Sampler live(plugin), reference(plugin); live.use(a, dir); reference.use(a, dir);
         live.one(Event::note(true, 60, 1)); reference.one(Event::note(true, 60, 1));

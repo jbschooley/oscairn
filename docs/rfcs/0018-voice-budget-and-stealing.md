@@ -160,7 +160,8 @@ fade and choke. They are listed here so they are built once:
 The plugin side, 2026-10-31: the SDK's sound-contexts helper fades a choked voice over 3 ms,
 then ends it (and its note), and applies `CLAP_NOTE_EXPRESSION_VOLUME` per voice; an
 instrument multiplies each voice's samples by `amplitude(voice, offset)`, and a voice that
-does not still ends when its fade would have. The Basic Synth does. `choke-fade` checks a
+does not still ends when its fade would have. The Basic Synth and the Sampler do; the
+`sampler` test checks the Sampler's fade sample by sample. `choke-fade` checks a
 choked note against the same note left alone: most of its level in the first millisecond,
 less than 60% in the second half of the fade, silence and `NOTE_END` after 3 ms, and per-note
 volume halving it; a cut, or a fade that ignored the ramp, fails it.

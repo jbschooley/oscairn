@@ -27,7 +27,7 @@ target_compile_definitions(oscairn_midi_delay PRIVATE OSCAIRN_MIDI_DELAY=1)
 # commit; it decodes WAV assets with libsndfile (LGPL-2.1-or-later). To build a local checkout
 # instead, set FETCHCONTENT_SOURCE_DIR_OSCAIRN_SAMPLER. The OS image builds it from its
 # Buildroot package, which must name the same commit.
-set(OSCAIRN_SAMPLER_COMMIT 20b4282c8246415e2bc61024f587996722387d5a)
+set(OSCAIRN_SAMPLER_COMMIT ca1805622f8eb7d1d3685625769afc4f76c638cf)
 file(STRINGS "${PROJECT_SOURCE_DIR}/os/buildroot/package/oscairn-sampler/oscairn-sampler.mk" sampler_version REGEX "^OSCAIRN_SAMPLER_VERSION = ")
 if(NOT sampler_version STREQUAL "OSCAIRN_SAMPLER_VERSION = ${OSCAIRN_SAMPLER_COMMIT}")
     message(FATAL_ERROR "The Sampler's commit differs between plugins/CMakeLists.txt and os/buildroot/package/oscairn-sampler")
