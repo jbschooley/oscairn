@@ -261,7 +261,8 @@ report the compiled per-channel routes.
   lanes' ends sum into whatever follows the split, or where the part plays, at the lane's
   level and pan. Solo silences the split's other lanes. A lane's chain may hold another
   split. Wires joining from a lane carry its `split` and `lane`, and take their Mix from it:
-  `wires.mix` refuses them. Buses have no splits yet.
+  `wires.mix` refuses them. A bus may split too: a send or a part playing through it enters
+  each lane at the lane's Mix, and those wires carry the bus's `split` and `lane`.
 - **Devices** ([RFC 0012](rfcs/0012-sync-external-midi-and-multi-device.md#choosing-devices-selectors))
   choose which MIDI inputs play a part, whatever channel they send on. A part's input
   `devices` is a list of rules, `{"kind","port","pattern","match"}`; a note or message

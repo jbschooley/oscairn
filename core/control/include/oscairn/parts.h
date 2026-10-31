@@ -39,7 +39,7 @@ namespace oscairn
         bool mute = false, solo = false;
         std::vector<NoteZone> zones; // note wires: the zones notes must pass (note_zone.h); none passes all
         uint32_t send = 0;           // part wires: the bus this wire sends to, if it is a send
-        uint32_t split = 0, lane = 0; // part wires: the split lane this wire joins from (its Mix), if any
+        uint32_t split = 0, lane = 0; // part wires: the split lane this wire joins from, or enters in a bus (its Mix), if any
         bool fader = false;          // part wires: where the part plays, carrying its level and mute
         bool connected = true; // false: kept, though it no longer fits (after a plugin replacement)
     };

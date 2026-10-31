@@ -242,7 +242,6 @@ void Session::loadPerformance(const std::string& directory) {
                 if(split.lanes.empty() || std::any_of(part.splits.begin(),part.splits.end(),[&](const Split& x){return x.id==split.id;}))bad("invalid or duplicate split");
                 part.splits.push_back(std::move(split));
             }
-            if(part.input.kind==PartInput::Kind::Bus && !part.splits.empty())bad("buses have no splits");
             std::set<uint32_t> reached;
             std::function<void(const std::vector<NodeId>&)> reach=[&](const std::vector<NodeId>& c){for(const auto e:c)if(isSplit(e)){
                 const auto it=std::find_if(part.splits.begin(),part.splits.end(),[&](const Split& x){return x.id==(e&~splitMark);});

@@ -544,7 +544,7 @@ namespace oscairn::standalone
         constexpr int splitItem = 100000;
         juce::PopupMenu menu;
         const auto* p = part(page_);
-        if(p && !p->bus && !place.split)
+        if(p && !place.split)
         {
             menu.addItem(splitItem, "Split here: lanes that join after");
             menu.addSeparator();

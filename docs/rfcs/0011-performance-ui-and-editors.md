@@ -411,7 +411,8 @@ split: lanes, each its own chain with zones and a Mix (level, pan, mute, solo), 
 again by summing into whatever follows the split, or where the part plays. Notes reach each
 lane through its zones after the part's own (`intersectZones` composes them: transpose and
 velocity curve included), and every lane gets a copy of the sound. That covers layers, key,
-velocity and channel splits, and dry/wet parallel effects. A lane may hold another split.
+velocity and channel splits, and dry/wet parallel effects. A lane may hold another split,
+and a shared bus may split: sound sent to it enters every lane, at the lane's Mix.
 The Session compiles splits into ordinary graph routes and note edges, so nothing new runs
 on the audio thread. Splits are saved in the Performance, in the control protocol and the
 remote client.
@@ -432,7 +433,6 @@ Not yet:
   split and join plugins with a port per lane.
 - **Lane pan in the views:** it is set over the protocol.
 - **Nested splits in the views:** a split inside a lane shows as a gap there.
-- **Splits in buses:** a send enters a bus at one box.
 - **The Mixer.**
 
 ## Open questions

@@ -4844,7 +4844,7 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 4294967295,
-          "description": "A part wire joining from a split's lane: that split's ID, or 0. Its Mix is the lane's"
+          "description": "A part wire joining from a split's lane, or entering one in a bus: that split's ID, or 0. Its Mix is the lane's"
         },
         "lane": {
           "type": "integer",

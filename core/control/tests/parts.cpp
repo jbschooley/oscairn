@@ -365,10 +365,21 @@ namespace
             s.removeSplit(part, split); s.commit(); x.run(s);
             check(s.parts()[0].chain == std::vector<NodeId>{low} && s.parts()[0].splits.empty(), "the first lane's chain stays, the nested split goes");
             check(near(x.l[0], .25), "only the low layer plays");
+            // A bus that splits: a send enters each lane at its Mix; empty lanes go on to where the bus plays.
+            const auto room = s.addPart("Room", {PartInput::Kind::Bus});
+            const auto busSplit = s.addSplit(room, 0);
+            Lane wide; wide.level = .5; s.setLane(room, busSplit, 0, wide);
+            Lane narrow; narrow.level = .25; s.setLane(room, busSplit, 1, narrow);
+            s.setSend(part, room, 1); s.commit(); x.run(s);
+            check(near(x.l[0], .25 + .25 * .75), "a send into a split bus: the low layer dry plus both bus lanes: " + std::to_string(x.l[0]));
+            Lane gone; gone.mute = true; s.setLane(room, busSplit, 1, gone); s.commit(); x.run(s);
+            check(near(x.l[0], .25 + .25 * .5), "a muted bus lane silences its share of the send");
+            s.setPartOutput(part, room); s.commit(); x.run(s);
+            check(near(x.l[0], .25 * .5 + .25 * .5), "playing through the split bus too: " + std::to_string(x.l[0]));
+            bool joinRefused = false;
+            for(const auto& w : s.wires()) if(w.part == part && w.split == busSplit) { try { s.setMix(w.id, 1, 0, false, false); } catch(const std::invalid_argument&) { joinRefused = true; } break; }
+            check(joinRefused, "a wire into a bus lane takes its Mix from the lane");
             s.note(false, 60, 0); x.run(s);
-            refused = false; const auto room = s.addPart("Room", {PartInput::Kind::Bus});
-            try { s.addSplit(room, 0); } catch(const std::invalid_argument&) { refused = true; }
-            check(refused, "buses have no splits yet");
         }
         { // Zones in turn: the lane sees the part zone's transposed keys and shaped velocity.
             NoteZone a; a.lowKey = 36; a.highKey = 96; a.transpose = 12; a.curve = 2;

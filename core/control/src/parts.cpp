@@ -225,13 +225,41 @@ namespace oscairn
 
     // Where sound sent to a bus enters it: its first box, or, with an empty chain, wherever the
     // bus itself plays. Bus edits are refused if they would loop, so this ends.
-    std::pair<NodeId, uint32_t> Session::busEntry(uint32_t id)
+    // Where sound sent to a bus enters it: its first box that takes sound, or, through a split
+    // before that, the first such box in each lane (an empty lane continues after the split), at
+    // the lane's Mix. With no box to enter, wherever the bus itself plays. Bus edits are refused
+    // if they would loop, so this ends.
+    std::vector<Session::BusEntry> Session::busEntries(uint32_t id)
     {
         const auto layout = graph_.describe().audioLayout;
         const auto& bus = findPart(id);
-        for(const auto node : bus.chain) if(takesAudio(graph_, layout, node)) return {node, mainPort(graph_, layout, node, true)};
-        if(bus.bus) return busEntry(bus.bus);
-        return {graphOutput, bus.output};
+        std::function<std::vector<BusEntry>(const std::vector<NodeId>&)> reach = [&](const std::vector<NodeId>& rest) -> std::vector<BusEntry> {
+            for(size_t i = 0; i < rest.size(); ++i)
+            {
+                const auto entry = rest[i];
+                if(!isSplit(entry)) { if(takesAudio(graph_, layout, entry)) return {{entry, mainPort(graph_, layout, entry, true)}}; continue; }
+                const auto& split = *std::find_if(bus.splits.begin(), bus.splits.end(), [&](const Split& s) { return s.id == (entry & ~splitMark); });
+                const bool solo = std::any_of(split.lanes.begin(), split.lanes.end(), [](const Lane& l) { return l.solo; });
+                std::vector<BusEntry> out;
+                for(uint32_t k = 0; k < split.lanes.size(); ++k)
+                {
+                    const auto& lane = split.lanes[k];
+                    auto sequence = lane.chain;
+                    sequence.insert(sequence.end(), rest.begin() + std::ptrdiff_t(i + 1), rest.end());
+                    for(auto x : reach(sequence))
+                    {
+                        x.level *= lane.level; x.pan = std::clamp(x.pan + lane.pan, -1.0, 1.0);
+                        x.mute = x.mute || lane.mute || (solo && !lane.solo);
+                        if(!x.split) { x.split = split.id; x.lane = k; }
+                        out.push_back(x);
+                    }
+                }
+                return out;
+            }
+            if(bus.bus) return busEntries(bus.bus);
+            return {{graphOutput, bus.output}};
+        };
+        return reach(bus.chain);
     }
 
     // Rebuilds every part's own wires; each depends only on its own chain and the buses it plays
@@ -313,18 +341,22 @@ namespace oscairn
         };
         End input; input.audio = part.input.kind == PartInput::Kind::Audio; input.notes = part.input.kind == PartInput::Kind::Notes;
         input.port = part.input.port; input.zones = inputZones(part.input, hostStatus_.midiInputs);
+        // A wire into a bus's lane also takes that lane's Mix.
+        auto enter = [](Wire* w, const End& e, const BusEntry& d, double level, bool mute) {
+            w->level = level * e.level * d.level; w->mute = mute || e.mute || d.mute;
+            if(d.split) { w->pan = std::clamp(e.pan + d.pan, -1.0, 1.0); if(!e.split) { w->split = d.split; w->lane = d.lane; } }
+        };
+        const auto destinations = part.bus ? busEntries(part.bus) : std::vector<BusEntry>{{graphOutput, part.output}};
         for(auto e : walk(part.chain, {input}))
         {
             if(!e.audio) continue;
-            const auto [node, port] = part.bus ? busEntry(part.bus) : std::pair{graphOutput, part.output};
-            auto* w = audioWire(e, node, port);
-            w->level = part.level * e.level; w->mute = part.mute || e.mute; w->fader = true; // a lane's pan is already set
+            for(const auto& d : destinations) { auto* w = audioWire(e, d.node, d.port); w->fader = true; enter(w, e, d, part.level, part.mute); }
             for(const auto& send : part.sends)
-            {
-                const auto [to, toPort] = busEntry(send.bus);
-                auto* s = audioWire(e, to, toPort);
-                s->send = send.bus; s->level = send.level * part.level * e.level; s->mute = part.mute || e.mute; // post-fader
-            }
+                for(const auto& d : busEntries(send.bus))
+                {
+                    auto* s = audioWire(e, d.node, d.port);
+                    s->send = send.bus; enter(s, e, d, send.level * part.level, part.mute); // post-fader
+                }
         }
     }
 
@@ -749,8 +781,6 @@ namespace oscairn
     uint32_t Session::addSplit(uint32_t id, size_t index, ChainPlace place)
     {
         auto& part = findPart(id);
-        // shortcut: a bus's sends enter at one box, so buses have no splits; allow them when sends can enter several lanes.
-        if(part.input.kind == PartInput::Kind::Bus) throw std::invalid_argument("buses have no splits");
         if(index > chainAt(part, place).size()) throw std::invalid_argument("chain position out of range");
         uint32_t split = 1;
         for(const auto& s : part.splits) split = std::max(split, s.id + 1);
