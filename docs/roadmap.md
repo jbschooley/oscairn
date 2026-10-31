@@ -212,8 +212,10 @@ new core, from a UI that talks to it only through the control API.
      blocks, and the supervisor names the crash.
    - `worker-recovery` found no workers on Linux, which shortens process names to 15
      characters; it now matches the command line.
-   - `worker-host` compared output events' whole fixed-size buffers, unused bytes included,
-     which differ on Linux; it now compares each event's own bytes.
+   - `worker-host` compared output events byte for byte, alignment padding included (a note's
+     between key and velocity), which differs between processes on x86_64 Linux; it now
+     compares them field by field. Reproduced and confirmed in an x86_64 Ubuntu 24.04
+     container.
 
 Plugins and apps (sequencers, instruments, the UI) must stay separate components, each in
 its own folder with its own build target and depending only on Oscairn's public headers, so

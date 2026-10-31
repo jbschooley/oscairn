@@ -17,6 +17,34 @@ namespace
     int failures = 0;
     void check(bool ok, const std::string& what) { if(!ok) { std::fprintf(stderr, "FAIL: %s\n", what.c_str()); ++failures; } }
 
+    // Field by field: events carry alignment padding (a note's between key and velocity) that a
+    // plugin may leave uninitialised, which differs between processes.
+    bool sameEvent(const kick::clap::Event& x, const kick::clap::Event& y)
+    {
+        const auto *a = x.header(), *b = y.header();
+        if(a->size != b->size || a->time != b->time || a->space_id != b->space_id || a->type != b->type || a->flags != b->flags) return false;
+        if(a->space_id != CLAP_CORE_EVENT_SPACE_ID) return std::memcmp(a, b, a->size) == 0;
+        switch(a->type)
+        {
+        case CLAP_EVENT_NOTE_ON: case CLAP_EVENT_NOTE_OFF: case CLAP_EVENT_NOTE_CHOKE: case CLAP_EVENT_NOTE_END:
+        {
+            const auto *m = reinterpret_cast<const clap_event_note_t*>(a), *n = reinterpret_cast<const clap_event_note_t*>(b);
+            return m->note_id == n->note_id && m->port_index == n->port_index && m->channel == n->channel && m->key == n->key && m->velocity == n->velocity;
+        }
+        case CLAP_EVENT_MIDI:
+        {
+            const auto *m = reinterpret_cast<const clap_event_midi_t*>(a), *n = reinterpret_cast<const clap_event_midi_t*>(b);
+            return m->port_index == n->port_index && std::memcmp(m->data, n->data, 3) == 0;
+        }
+        case CLAP_EVENT_PARAM_VALUE: // the cookie is a pointer in each process
+        {
+            const auto *m = reinterpret_cast<const clap_event_param_value_t*>(a), *n = reinterpret_cast<const clap_event_param_value_t*>(b);
+            return m->param_id == n->param_id && m->note_id == n->note_id && m->port_index == n->port_index && m->channel == n->channel && m->key == n->key && m->value == n->value;
+        }
+        default: return std::memcmp(a, b, a->size) == 0;
+        }
+    }
+
     uint32_t channels(const std::vector<kick::clap::Port>& ports) { uint32_t n = 0; for(const auto& p : ports) n += p.channels; return n; }
 
     void compare(const std::string& worker, const std::string& path)
@@ -71,9 +99,7 @@ namespace
             for(const auto& c : a) for(float x : c) energy += double(x) * x;
             uint32_t ca = 0, cb = 0; const auto* ea = local->outputEvents(ca); const auto* eb = remote->outputEvents(cb);
             check(ca == cb, name + ": output event count, block " + std::to_string(block));
-            // An event's own bytes; the rest of its fixed-size buffer is unused and may differ.
-            for(uint32_t i = 0; i < std::min(ca, cb); ++i)
-                same = same && ea[i].header()->size == eb[i].header()->size && std::memcmp(ea[i].header(), eb[i].header(), ea[i].header()->size) == 0;
+            for(uint32_t i = 0; i < std::min(ca, cb); ++i) same = same && sameEvent(ea[i], eb[i]);
             events += ca;
             local->service(); remote->service();
         }
