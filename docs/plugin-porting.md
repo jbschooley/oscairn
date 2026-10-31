@@ -96,6 +96,8 @@ Everything else is handled for you:
     tab for each second level (`Operator 1/Envelope`); the rest of the path is a heading. So
     give a large page second levels of a dozen or so parameters each;
   - a search box finds parameters on any page by name or module, so keep names specific;
+  - an envelope's, LFO's or filter's parameters recognised by name (below) are linked into
+    one group of tiles, as a hint's group would;
   - an envelope is drawn as a curve you can drag when one module holds its parameters under
     one of these sets of names: `Attack`, `Decay`, `Sustain`, `Release` (optionally `Delay`
     and `Hold`); `Rate 1`–`4` with `Level 1`–`4` (DX7); or `Attack Time`, `Attack Level`,
@@ -128,7 +130,7 @@ pinned commit.
 | Native effect contexts (`effect-contexts.h`, [RFC 0007](rfcs/0007-effect-contexts.md)) | Many independent effect slots sharing one engine's memory, with tails reported. | Delay |
 | Parameter-target lanes (`param-target.h`, [RFC 0002](rfcs/0002-param-target.md)) | For sequencers and modulators: change other plugins' parameters at an exact sample in the same block (parameter locks). | Step Sequencer |
 | Sound assets (`assets.h`, [RFC 0009](rfcs/0009-sound-assets-and-dependencies.md)) | For samplers: the host resolves sample files, and Performances list their samples so they can be checked and moved between machines. | Sampler |
-| Editor hints (`ui.h`, `oscairn.ui/draft-1`, [RFC 0019](rfcs/0019-adaptive-ui.md)) | A hint per parameter: the control it wants (knob, slider, buttons, switch, list, or a range with its high parameter) and a priority, 1 first, which orders its tiles and will order the physical knobs. The host keeps a hint only where it fits (a switch on two values, a range whose high end exists). Every parameter stays reachable either way. Describing whole editors (a module grid, a sample map) comes later. | Basic Synth |
+| Editor hints (`ui.h`, `oscairn.ui/draft-2`, [RFC 0019](rfcs/0019-adaptive-ui.md)) | A hint per parameter: the control it wants (knob, slider, buttons, switch, list, or a range with its high parameter), a priority, 1 first, which orders its tiles and will order the physical knobs, and a group: parameters of one module in the same group are drawn joined, edge to edge, and kept together on narrow screens. The host keeps a hint only where it fits (a switch on two values, a range whose high end exists). Every parameter stays reachable either way. Describing whole editors (a module grid, a sample map) comes later. | Basic Synth |
 
 ## Testing
 

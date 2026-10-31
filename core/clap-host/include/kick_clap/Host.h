@@ -28,6 +28,7 @@ struct Parameter {
     // (enum oscairn_widget), its priority (0: none) and, for a range, its high parameter.
     uint32_t widget = 0, priority = 0;
     clap_id rangeHigh = CLAP_INVALID_ID;
+    uint32_t group = 0; // drawn joined with the module's other parameters of this group; 0: none
 };
 
 struct Port {

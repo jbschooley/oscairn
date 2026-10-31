@@ -60,7 +60,7 @@ int main(int argc, char** argv) {
         check(hinted.load(catalog.plugins[8], 48000, 128), "load the stepped fixture");
         auto hint = [&](clap_id id) { for (const auto& p : hinted.parameters()) if (p.id == id) return p; return Parameter{}; };
         check(hint(7).widget == OSCAIRN_WIDGET_RANGE && hint(7).rangeHigh == 99 && hint(7).priority == 1, "a range with its high parameter");
-        check(hint(8).widget == OSCAIRN_WIDGET_SWITCH && hint(8).priority == 2, "a switch on two values");
+        check(hint(8).widget == OSCAIRN_WIDGET_SWITCH && hint(8).priority == 2 && hint(8).group == 5 && hint(9).group == 5, "a switch on two values; a group kept");
         check(hint(9).widget == OSCAIRN_WIDGET_AUTO && hint(9).priority == 3, "a switch on five values is the host's choice; its priority stays");
         check(hint(99).widget == OSCAIRN_WIDGET_AUTO, "an unknown widget is the host's choice");
         hinted.unload();

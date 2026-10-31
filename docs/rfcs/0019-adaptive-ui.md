@@ -247,7 +247,7 @@ Since then: parameters with 2 to 4 values are rows of buttons (Mono | Poly), lis
 drawn for the type its value text names.
 
 **From the MODX's screens (2026-10-31), still to build:**
-- *Knobs and ranges where a plugin wants them:* done in `oscairn.ui/draft-1`
+- *Knobs and ranges where a plugin wants them:* done in `oscairn.ui/draft-2`
   (`oscairn-clap/ui.h`), a hint per parameter: knob, slider, buttons, switch, list or range
   (with its high parameter), and a priority. The host reads the hints with the parameters'
   info, keeps each only where it fits, carries them through workers and `params.list`, and
@@ -256,6 +256,14 @@ drawn for the type its value text names.
   that they cross a worker, `control-json-protocol` the protocol, and `desktop-shell` the
   Basic Synth's knobs and order. A range's two-sided slider is drawn but not yet checked by a
   test; no plugin gives a range yet.
+- *Linked tiles:* tiles that belong together (a hint's group, or an envelope's, LFO's or
+  filter's parameters recognised by name) are one run, in order (Attack, Decay, Sustain,
+  Release), drawn edge to edge in one card with a line between each. A run that does not fit
+  what is left of a row starts the next one (the tile before it widening to the row's end); a
+  run wider than the screen goes on in rows that touch, its last tile filling the row. The
+  grid has as many columns as the width allows, two to six. `desktop-shell` checks the Basic
+  Synth's linked LFO, and given the engines, that the analog filter envelope's stages stay
+  together at 1,180 and 560 pixels and that no controls overlap on any of their pages.
 - *Physical knobs following the screen* (step 6): a layout says how many assignable knobs a
   device has and on which edge of the screen; the page's selected row of tiles is bound to
   them in order, and a strip along that edge names what each knob does now, as the MODX's six

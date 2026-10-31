@@ -11,6 +11,10 @@ extern "C" {
  * plugin's window. A hint per parameter: the control it wants, and a priority, which decides
  * what a small screen shows first and the order physical knobs take parameters in.
  *
+ * Parameters that belong together (an envelope's four stages) share a group: a host draws
+ * them joined, edge to edge in their priority order, and keeps them together when the screen
+ * is too narrow for all of them in a row.
+ *
  * Hints only shape the editor; every parameter stays reachable whatever its hint. A host
  * that does not know this extension ignores it, and a parameter without a hint is drawn as
  * the host decides from its metadata (stepped values, ranges, module path).
@@ -18,7 +22,7 @@ extern "C" {
  * param_hint is main-thread; the host asks it when it reads parameter info (at load and
  * after a rescan of the parameters' info), so hints may change only with that info.
  */
-static const char OSCAIRN_EXT_UI[] = "oscairn.ui/draft-1";
+static const char OSCAIRN_EXT_UI[] = "oscairn.ui/draft-2";
 
 enum oscairn_widget
 {
@@ -37,6 +41,7 @@ typedef struct oscairn_param_hint
     uint32_t widget;    /* enum oscairn_widget; values a host does not know mean AUTO */
     uint32_t priority;  /* 1 is the most important; 0 is none, after every numbered one */
     clap_id range_high; /* OSCAIRN_WIDGET_RANGE: the range's high parameter; else CLAP_INVALID_ID */
+    uint32_t group;     /* parameters with the same nonzero group, in one module, are drawn joined */
 } oscairn_param_hint_t;
 
 typedef struct oscairn_plugin_ui

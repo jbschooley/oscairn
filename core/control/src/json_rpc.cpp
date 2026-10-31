@@ -788,7 +788,7 @@ namespace oscairn
                         ",\"minimum\":" + encode(v.minimum) + ",\"maximum\":" + encode(v.maximum) +
                         ",\"defaultValue\":" + encode(v.defaultValue) + ",\"stepped\":" + (v.stepped ? "true" : "false") +
                         ",\"flags\":" + std::to_string(v.flags) + ",\"module\":" + quote(v.module) +
-                        ",\"widget\":" + quote(widgetName(v.widget)) + ",\"priority\":" + std::to_string(v.priority) +
+                        ",\"widget\":" + quote(widgetName(v.widget)) + ",\"priority\":" + std::to_string(v.priority) + ",\"group\":" + std::to_string(v.group) +
                         (v.widget == OSCAIRN_WIDGET_RANGE ? ",\"rangeHigh\":" + std::to_string(v.rangeHigh) : std::string()) + '}' );
                 return "{\"node\":" + std::to_string(n) + ",\"parameters\":" + join(values) + '}';
             }

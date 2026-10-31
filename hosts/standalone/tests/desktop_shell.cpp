@@ -192,12 +192,22 @@ int main(int argc, char** argv)
                 standalone::ParameterGrid grid(engine, node, name);
                 holder.addAndMakeVisible(grid); grid.setBounds(holder.getLocalBounds().reduced(16));
                 check(grid.pages() > 0, "the plugin's parameters make at least one page: " + name);
+                // No two controls overlap (tiles, linked groups and wide panels all placed apart).
+                auto overlapping = [&] {
+                    std::vector<juce::Rectangle<int>> cells;
+                    std::function<void(juce::Component&)> gather = [&](juce::Component& c) { for(auto* child : c.getChildren()) { if(dynamic_cast<juce::Slider*>(child) || dynamic_cast<juce::ComboBox*>(child)) cells.push_back(child->getBoundsInParent()); gather(*child); } };
+                    gather(grid);
+                    for(size_t a = 0; a < cells.size(); ++a) for(size_t b = a + 1; b < cells.size(); ++b) if(cells[a].intersects(cells[b])) return true;
+                    return false;
+                };
                 if(name == "Basic Synth")
                 {
                     // Its oscairn.ui hints: the most played first, knobs, the oscillator as buttons.
                     grid.showPage(0);
                     const auto names = grid.namesShown();
                     check(names.size() == 8 && names[0] == "Brightness" && names[1] == "Level" && names[2] == "Oscillator" && names.back() == "Output bus", "tiles in the plugin's priority order");
+                    const auto rate = std::find(names.begin(), names.end(), "Pitch LFO rate");
+                    check(grid.linkedShown() == 1 && rate != names.end() && rate + 1 != names.end() && *(rate + 1) == "Pitch LFO depth", "the plugin's linked LFO tiles, together");
                     int knobs = 0;
                     std::function<void(juce::Component&)> count = [&](juce::Component& c) {
                         for(auto* child : c.getChildren()) { if(auto* s = dynamic_cast<juce::Slider*>(child); s && s->isRotary()) ++knobs; count(*child); }
@@ -208,7 +218,7 @@ int main(int argc, char** argv)
                 auto save = [&, name = name](const juce::String& suffix) {
                     for(int i = 0; i < 10; ++i) juce::MessageManager::getInstance()->runDispatchLoopUntil(10);
                     const auto image = holder.createComponentSnapshot(holder.getLocalBounds());
-                    check(image.getWidth() == 1180, "a parameter page renders");
+                    check(image.getWidth() == holder.getWidth(), "a parameter page renders");
                     if(argc < 5) return;
                     const juce::File out{juce::String(argv[4]) + "-params-" + juce::String(name).replaceCharacter(' ', '-').toLowerCase() + "-" + suffix + ".png"};
                     out.deleteFile(); juce::FileOutputStream stream(out); juce::PNGImageFormat().writeImageToStream(image, stream);
@@ -237,6 +247,7 @@ int main(int argc, char** argv)
                         {
                             if(grid.tabs()) grid.showTab(tab);
                             envelopes += grid.panelsShown();
+                            check(!overlapping(), name + ": no controls overlap on " + grid.pageName(page));
                             if(grid.panelsShown() && !saved) { save("envelope"); saved = true; }
                             if(grid.panelsShown() && (grid.pageName(page) == "Filter" || grid.pageName(page) == "Filter 1") && !savedFilter)
                             {
@@ -253,6 +264,22 @@ int main(int argc, char** argv)
                         }
                     }
                     check(envelopes >= 2, name + "'s envelopes and LFOs are drawn: " + std::to_string(envelopes));
+                }
+                // The analog engine's filter envelope: its stages linked in order, at any width.
+                if(name == "oscairn-analog")
+                {
+                    grid.showPage(0);
+                    auto names = grid.namesShown();
+                    const auto attack = std::find(names.begin(), names.end(), "Attack");
+                    check(grid.linkedShown() >= 1 && attack + 3 < names.end() && *(attack + 1) == "Decay" && *(attack + 2) == "Sustain" && *(attack + 3) == "Release",
+                          "the envelope's stages linked, in order");
+                    holder.setSize(560, 820); grid.setBounds(holder.getLocalBounds().reduced(16));
+                    save("narrow");
+                    names = grid.namesShown();
+                    const auto still = std::find(names.begin(), names.end(), "Attack");
+                    check(still + 3 < names.end() && *(still + 3) == "Release", "and still together on a narrow screen");
+                    check(!overlapping(), "no controls overlap on a narrow screen");
+                    holder.setSize(1180, 820); grid.setBounds(holder.getLocalBounds().reduced(16));
                 }
                 // Dragging the analog engine's filter envelope's attack point to the right lengthens
                 // its attack (the point starts where a zero attack leaves it: the curve's top left).

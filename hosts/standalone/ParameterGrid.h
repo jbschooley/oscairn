@@ -33,6 +33,11 @@ namespace oscairn::standalone
     /// A filter recognised from its parameters' names: Cutoff and Resonance, and its Type when it
     /// has one, whose value text gives the response (FilterResponse).
     struct FilterShape { int cutoff = -1, resonance = -1, type = -1; bool empty() const { return cutoff < 0 || resonance < 0; } };
+    // The parameters a recognised envelope, LFO or filter uses, in the order their tiles go when
+    // linked (Attack, Decay, Sustain, Release; a DX7's rates, then its levels).
+    std::vector<int> linkedOrder(const EnvelopeShape&);
+    std::vector<int> linkedOrder(const struct LfoShape&);
+    std::vector<int> linkedOrder(const FilterShape&);
     // shortcut: by name only, as envelopeOf.
     FilterShape filterOf(const std::vector<std::string>& names);
     // A filter type's name as a response: "LP 24 dB" or "LPF24D" a 4-pole low-pass; "Off" or "Thru" none.
@@ -81,6 +86,7 @@ namespace oscairn::standalone
             juce::Slider* range = nullptr;   // a two-sided range: this parameter its low end
             size_t high = 0;                 // and this one (an index into params_) its high
             double shownHigh = std::numeric_limits<double>::quiet_NaN();
+            bool linked = false; // drawn inside its group's card, a line to its right if one follows
             double shown = std::numeric_limits<double>::quiet_NaN();
         };
         struct Heading { juce::String text; juce::Rectangle<int> bounds; };
@@ -112,5 +118,10 @@ namespace oscairn::standalone
         std::vector<Tile> tiles_;
         std::vector<Heading> headings_;
         std::vector<juce::Rectangle<int>> panels_;       // wide tiles: envelopes
+        std::vector<juce::Rectangle<int>> links_;        // each row of linked tiles: one card
+        size_t linkedRuns_ = 0;
+    public:
+        size_t linkedShown() const { return linkedRuns_; } // groups of tiles drawn joined
+    private:
     };
 }

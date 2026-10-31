@@ -107,6 +107,8 @@ try:
     hints = {p['name']: (p['widget'], p['priority']) for p in meta['parameters']}
     assert hints['Brightness'] == ('knob', 1) and hints['Oscillator'] == ('buttons', 3) and hints['Output bus'] == ('list', 0), hints
     assert all('rangeHigh' not in p for p in meta['parameters'])
+    groups = {p['name']: p['group'] for p in meta['parameters']}
+    assert groups['Pitch LFO rate'] == groups['Pitch LFO depth'] == 1 and groups['Brightness'] == 0, groups
     assert rpc('params.text', {'node': 1, 'param': 3, 'value': 0.5})['result']['text'] == '50%'
     original = value(1)
     error(rpc('params.set', {'values': [{'node': 1, 'param': 1, 'value': 0.91}, {'node': 1, 'param': 999, 'value': 1}]}), -32002)

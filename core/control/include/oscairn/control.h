@@ -44,6 +44,7 @@ namespace oscairn
             // The plugin's oscairn.ui hint: enum oscairn_widget, a priority (0: none), and for a
             // range its high parameter.
             uint32_t widget = 0, priority = 0, rangeHigh = CLAP_INVALID_ID;
+            uint32_t group = 0; // drawn joined with the module's other parameters of this group
         };
         struct TransportState
         {

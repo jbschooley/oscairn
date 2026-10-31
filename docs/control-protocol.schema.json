@@ -155,6 +155,12 @@
           "maximum": 4294967295,
           "description": "1 is the most important; 0 is none"
         },
+        "group": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295,
+          "description": "Parameters of one module with the same nonzero group are drawn joined; 0 is none"
+        },
         "rangeHigh": {
           "type": "integer",
           "minimum": 0,
@@ -172,7 +178,8 @@
         "flags",
         "module",
         "widget",
-        "priority"
+        "priority",
+        "group"
       ],
       "additionalProperties": false
     },

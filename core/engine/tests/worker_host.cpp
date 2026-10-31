@@ -59,7 +59,7 @@ namespace
         for(size_t i = 0; i < local->parameters().size() && i < remote->parameters().size(); ++i)
         {
             const auto& a = local->parameters()[i]; const auto& b = remote->parameters()[i];
-            check(a.id == b.id && a.name == b.name && a.module == b.module && a.widget == b.widget && a.priority == b.priority && a.rangeHigh == b.rangeHigh,
+            check(a.id == b.id && a.name == b.name && a.module == b.module && a.widget == b.widget && a.priority == b.priority && a.rangeHigh == b.rangeHigh && a.group == b.group,
                   name + ": parameter " + a.name + " and its hints cross the worker");
         }
         check(channels(local->inputPorts()) == channels(remote->inputPorts()) && channels(local->outputPorts()) == channels(remote->outputPorts()), name + ": ports");

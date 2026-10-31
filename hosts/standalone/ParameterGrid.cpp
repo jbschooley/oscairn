@@ -153,6 +153,30 @@ namespace oscairn::standalone
         return r;
     }
 
+    std::vector<int> linkedOrder(const EnvelopeShape& e)
+    {
+        std::vector<int> order;
+        auto add = [&](int i) { if(i >= 0 && std::find(order.begin(), order.end(), i) == order.end()) order.push_back(i); };
+        const bool rates = !e.points.empty() && e.points.front().rate;
+        add(e.start);
+        if(rates) { for(const auto& p : e.points) add(p.time); for(const auto& p : e.points) add(p.level); }
+        else for(const auto& p : e.points) { add(p.time); add(p.level); }
+        if(rates) { order.erase(std::find(order.begin(), order.end(), e.start)); order.push_back(e.start); } // level 4 last, under rate 4
+        return order;
+    }
+    std::vector<int> linkedOrder(const LfoShape& l)
+    {
+        std::vector<int> order;
+        for(const int i : {l.wave, l.speed, l.delay, l.fade, l.phase}) if(i >= 0) order.push_back(i);
+        return order;
+    }
+    std::vector<int> linkedOrder(const FilterShape& f)
+    {
+        std::vector<int> order;
+        for(const int i : {f.type, f.cutoff, f.resonance}) if(i >= 0) order.push_back(i);
+        return order;
+    }
+
     /// A filter's response across the audio range: its cutoff (across) and resonance (the peak)
     /// for the type its value text names. A preview: its tiles edit it.
     class ParameterGrid::Filter : public juce::Component
@@ -415,7 +439,19 @@ namespace oscairn::standalone
         void paint(juce::Graphics& g) override
         {
             const int mode = std::max(1, desktopMode(*this));
-            for(const auto& t : grid_.tiles_) drawSection(g, t.bounds, ink(Ink::Surface));
+            // Linked tiles share a card per row, a line between neighbours.
+            for(const auto& l : grid_.links_) drawSection(g, l, ink(Ink::Surface));
+            for(const auto& t : grid_.tiles_)
+            {
+                if(!t.linked) { drawSection(g, t.bounds, ink(Ink::Surface)); continue; }
+                g.setColour(ink(Ink::Border).withAlpha(.6f));
+                for(const auto& l : grid_.links_)
+                {
+                    if(!l.contains(t.bounds)) continue;
+                    if(t.bounds.getRight() < l.getRight()) g.fillRect(t.bounds.getRight() - 1, t.bounds.getY() + 8, 1, t.bounds.getHeight() - 16); // to its right
+                    if(t.bounds.getY() > l.getY()) g.fillRect(t.bounds.getX() + 8, t.bounds.getY(), t.bounds.getWidth() - 16, 1);                  // above, in a wrapped group
+                }
+            }
             for(const auto& p : grid_.panels_) drawSection(g, p, ink(Ink::Surface));
             g.setColour(ink(Ink::Muted)); g.setFont(juce::FontOptions(textSize(TextRole::Small, mode), juce::Font::bold));
             for(const auto& h : grid_.headings_) g.drawText(h.text, h.bounds, juce::Justification::bottomLeft, true);
@@ -553,7 +589,7 @@ namespace oscairn::standalone
 
     void ParameterGrid::build()
     {
-        controls_.clear(); tiles_.clear(); headings_.clear(); panels_.clear();
+        controls_.clear(); tiles_.clear(); headings_.clear(); panels_.clear(); links_.clear(); linkedRuns_ = 0;
         if(pages_.empty()) return;
         const int mode = std::max(1, desktopMode(*this)), width = content_->getWidth();
         const int gap = sectionGap(6), columns = std::clamp(width / 210, 2, 6);
@@ -629,11 +665,73 @@ namespace oscairn::standalone
                     y += bounds.getHeight() + gap;
                 }
             }
-            for(size_t k = 0; k < members.size(); ++k)
+            // Runs: a linked group's tiles together (the plugin's groups, then a recognised
+            // envelope, LFO or filter), where its first tile would be; other tiles alone.
+            std::vector<std::vector<size_t>> runs;
             {
-                const auto column = int(k % size_t(columns));
-                if(k && !column) y += height + gap;
-                Tile tile{members[k], {column * (tileWidth + gap), y, tileWidth, height}};
+                std::vector<std::vector<size_t>> linked;
+                std::map<uint32_t, size_t> byGroup;
+                for(const auto i : members)
+                    if(const auto group = params_[i].group)
+                    {
+                        auto [at, added] = byGroup.try_emplace(group, linked.size());
+                        if(added) linked.push_back({});
+                        linked[at->second].push_back(i);
+                    }
+                std::vector<std::string> names;
+                for(const auto i : members) names.push_back(params_[i].name);
+                auto recognised = [&](const std::vector<int>& order) {
+                    std::vector<size_t> run;
+                    for(const int k : order) if(params_[members[size_t(k)]].group == 0) run.push_back(members[size_t(k)]);
+                    if(run.size() > 1) linked.push_back(run);
+                };
+                if(auto e = envelopeOf(names); !e.empty()) recognised(linkedOrder(e));
+                if(auto l = lfoOf(names); !l.empty()) recognised(linkedOrder(l));
+                if(auto f = filterOf(names); !f.empty()) recognised(linkedOrder(f));
+                std::vector<bool> done(params_.size());
+                for(const auto i : members)
+                {
+                    if(done[i]) continue;
+                    const auto run = std::find_if(linked.begin(), linked.end(), [&](const auto& r) { return std::find(r.begin(), r.end(), i) != r.end(); });
+                    std::vector<size_t> next;
+                    for(const auto j : run == linked.end() ? std::vector<size_t>{i} : *run) if(!done[j]) { next.push_back(j); done[j] = true; }
+                    if(!next.empty()) runs.push_back(next);
+                }
+            }
+            int column = 0;
+            std::vector<std::pair<size_t, juce::Rectangle<int>>> placed; // a tile's param and its cell
+            std::vector<bool> inLink; // per placed tile
+            for(const auto& run : runs)
+            {
+                const bool group = run.size() > 1;
+                // A group that does not fit what is left of the row starts the next one; the tile
+                // before it widens to the row's end, so the row has no hole.
+                if(column && (column == columns || (group && column + int(run.size()) > columns)))
+                {
+                    if(column < columns && !inLink.back()) placed.back().second.setRight(width);
+                    column = 0; y += height + gap;
+                }
+                juce::Rectangle<int> card;
+                for(size_t k = 0; k < run.size(); ++k)
+                {
+                    // A group wider than the screen goes on in the next row, its rows touching.
+                    if(column == columns) { column = 0; y += height + (group ? 0 : gap); }
+                    juce::Rectangle<int> cell(column * (tileWidth + gap), y, tileWidth, height);
+                    if(group)
+                    {
+                        if(k + 1 < run.size() && column + 1 < columns) cell.setWidth(tileWidth + gap); // touches the next
+                        if(k + 1 == run.size() && run.size() > size_t(columns)) { cell.setRight(width); column = columns - 1; } // a clean rectangle; nothing after it in the row
+                        card = card.isEmpty() ? cell : card.getUnion(cell);
+                    }
+                    placed.push_back({run[k], cell}); inLink.push_back(group);
+                    ++column;
+                }
+                if(group) { links_.push_back(card); ++linkedRuns_; }
+            }
+            for(const auto& [param, cell] : placed)
+            {
+                Tile tile{param, cell};
+                tile.linked = std::any_of(links_.begin(), links_.end(), [&](const juce::Rectangle<int>& l) { return l.contains(cell); });
                 const auto& p = params_[tile.param];
                 auto inner = tile.bounds.reduced(10, 8);
                 auto top = inner.removeFromTop(18);

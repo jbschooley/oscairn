@@ -408,7 +408,7 @@ struct Host::Impl {
         // is another parameter. Anything else is drawn as the host decides.
         if (ui)
             for (auto& item : items) {
-                oscairn_param_hint_t hint{OSCAIRN_WIDGET_AUTO, 0, CLAP_INVALID_ID};
+                oscairn_param_hint_t hint{OSCAIRN_WIDGET_AUTO, 0, CLAP_INVALID_ID, 0};
                 if (!ui->param_hint(plugin, item.info.id, &hint)) continue;
                 auto& p = item.info;
                 const bool stepped = (p.flags & CLAP_PARAM_IS_STEPPED) != 0;
@@ -420,6 +420,7 @@ struct Host::Impl {
                 p.widget = fits ? hint.widget : OSCAIRN_WIDGET_AUTO;
                 p.rangeHigh = p.widget == OSCAIRN_WIDGET_RANGE ? hint.range_high : CLAP_INVALID_ID;
                 p.priority = hint.priority;
+                p.group = hint.group;
             }
         std::sort(items.begin(), items.end(), [](const Item& a, const Item& b) { return a.info.id < b.info.id; });
         paramInfo.clear(); cookies.clear();
