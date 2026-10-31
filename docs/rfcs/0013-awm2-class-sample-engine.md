@@ -108,6 +108,34 @@ code**. A user who owns the ESP plugin or a MONTAGE M / MODX M brings their own 
 Imported content is identified by content hash and by the waveform number it came from.
 Converted Performances can then reference waveforms without embedding them.
 
+## IP rules
+
+These apply to this RFC and to every engine and effect RFC that refers to it (0014–0016).
+
+1. **Clean room.** Engines are written from public documentation (manuals, Data Lists) and
+   black-box measurements of rendered audio. No Yamaha code, binaries, firmware, tables or
+   anything derived from disassembling them enters Oscairn. Reverse-engineering notes are
+   kept outside this repository, and the people writing engine code don't work from them.
+2. **No Yamaha content.** No Yamaha samples, waveforms, Performances, presets or reference
+   renders in the repository or in packages. Fixtures and bundled sounds are generated, or
+   come from content whose licence allows commercial redistribution (public domain, CC0,
+   CC-BY or equivalent). No NC or ND licences.
+3. **Import, don't decode.** Oscairn imports standard formats (SFZ, WAV, FLAC) and reads
+   documented, unencrypted user files for interoperability. Anything that decodes Yamaha's
+   proprietary sample codec stays outside Oscairn and isn't distributed with it.
+4. **Measurement sources.** Reference renders come from legally obtained Yamaha software or
+   hardware, are used only to fit Oscairn's own tables and tests, and are never committed.
+   Models trained or captured from audio (for example amp captures) must not be trained on
+   Yamaha output.
+5. **Names.** Yamaha's names (AWM2, FM-X, AN-X, MONTAGE, MODX, Motion Control, Super Knob,
+   XA and others) may be used in design documents for reference, but not in product,
+   plugin, parameter or UI names. Compatibility statements describe facts ("imports MODX M
+   Performances"), and each is reviewed before release.
+6. **Patents.** Before any commercial release, counsel reviews each engine and effect
+   feature for freedom to operate. Patent analysis stays with counsel and is not stored in
+   this repository; contributors are not asked to search patents. Design changes that
+   result are recorded here as ordinary design decisions.
+
 ## Build order
 
 | Step | Deliverable | Gate |
