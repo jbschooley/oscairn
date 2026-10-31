@@ -136,6 +136,8 @@ public:
     bool setParameter(clap_id, double plainValue) noexcept;
     bool parameterGesture(clap_id, bool begin) noexcept;
     bool stateDirty() const noexcept;
+    // Counts parameter values the plugin reported while processing; any thread.
+    uint64_t parameterReports() const noexcept;
     uint32_t latency() const noexcept;
     Statistics statistics() const noexcept;
 

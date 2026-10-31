@@ -68,6 +68,7 @@ namespace oscairn
             uint32_t noteInputPorts() const noexcept override { return host.noteInputPorts(); }
             uint32_t noteOutputPorts() const noexcept override { return host.noteOutputPorts(); }
             double parameterValue(clap_id id) const noexcept override { return host.parameterValue(id); }
+            uint64_t parameterReports() const noexcept override { return host.parameterReports(); }
             std::string parameterText(clap_id id, double value) const override { return host.parameterText(id,value); }
             bool setParameter(clap_id id, double value) noexcept override { return host.setParameter(id,value); }
             bool parameterGesture(clap_id id, bool begin) noexcept override { return host.parameterGesture(id,begin); }
@@ -123,6 +124,16 @@ namespace oscairn
         if(ports.size()==1)return {ports.front().id};
         throw std::invalid_argument("No unambiguous main audio bus; specify port/channel routes");
     }
+    namespace
+    {
+        PlacementPolicy& policy()
+        {
+            static PlacementPolicy p=[]{PlacementPolicy initial;if(const char* w=std::getenv("OSCAIRN_PLUGIN_WORKER"))initial.worker=w;return initial;}();
+            return p;
+        }
+    }
+    void setPlacementPolicy(PlacementPolicy p) {policy()=std::move(p);}
+    const PlacementPolicy& placementPolicy() {return policy();}
     std::shared_ptr<PluginHost> loadPlugin(const std::string& path,const std::string& id,double rate,uint32_t frames,ProcessingMode mode,Lv2BufferLimits lv2Buffers)
     {
         (void)lv2Buffers; // LV2-only resource policy.
@@ -139,8 +150,10 @@ namespace oscairn
             throw std::runtime_error("LV2 support is disabled; build with -DOSCAIRN_LV2=ON");
 #endif
         }
-        if(const char* worker=std::getenv("OSCAIRN_PLUGIN_WORKER"); worker && *worker)
-            if(auto host=loadPluginInWorker(worker,path,id,rate,frames,mode))return host;
+        const auto& policy=placementPolicy();
+        const auto placement=policy.plugins.find(id);
+        if(!policy.worker.empty() && (placement==policy.plugins.end()?policy.standard:placement->second)==Placement::Worker)
+            return loadPluginInWorker(policy.worker,path,id,rate,frames,mode);
         const auto scan=kick::clap::inspect(path);
         const auto found=std::find_if(scan.plugins.begin(),scan.plugins.end(),[&](const auto& p){return id.empty() || p.id==id;});
         if(found==scan.plugins.end())

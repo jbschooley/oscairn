@@ -157,6 +157,7 @@ struct Host::Impl {
     uint32_t previousTransportFrames = 0;
     std::atomic_flag gate = ATOMIC_FLAG_INIT;
     std::atomic<bool> loaded{false}, failed{false}, dirty{false};
+    std::atomic<uint64_t> parameterReports{0};
     std::atomic<bool> restart{false}, callback{false}, wake{false}, flush{false}, panic{false};
     std::atomic<uint32_t> rescan{0}, latencyFrames{0};
     std::atomic<uint64_t> blocks{0}, dropped{0}, errors{0};
@@ -484,7 +485,7 @@ struct Host::Impl {
             const auto* p = reinterpret_cast<const clap_event_param_value_t*>(event);
             auto i = s.paramIndex(p->param_id);
             if (i < s.paramInfo.size() && std::isfinite(p->value)) {
-                if (s.paramValues[i].exchange(p->value) != p->value) s.dirty.store(true);
+                if (s.paramValues[i].exchange(p->value) != p->value) { s.dirty.store(true); s.parameterReports.fetch_add(1, std::memory_order_release); }
             }
         }
         Event copy; std::memcpy(copy.bytes.data(), event, event->size);
@@ -822,6 +823,7 @@ bool Host::parameterGesture(clap_id id, bool begin) noexcept {
     event.param_id = id; return enqueue(Event::from(event));
 }
 bool Host::stateDirty() const noexcept { return impl->dirty.load(); }
+uint64_t Host::parameterReports() const noexcept { return impl->parameterReports.load(std::memory_order_acquire); }
 uint32_t Host::latency() const noexcept { return impl->latencyFrames.load(); }
 Statistics Host::statistics() const noexcept { auto& s = *impl; return {s.blocks.load(), s.dropped.load(), s.errors.load(), s.lastUs.load(), s.maxUs.load(), s.deadlineMisses.load(), s.controlSilences.load(), s.idleBlocks.load()}; }
 bool Host::enqueue(const Event& e) noexcept {

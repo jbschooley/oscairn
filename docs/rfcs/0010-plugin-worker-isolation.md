@@ -170,9 +170,9 @@ Implemented 2026-10-30 in `core/plugin-host` (`Worker.*`, `WorkerHost.cpp`) and 
 - **Control path:** a socket carries initialisation, parameter changes, gestures, parameter
   text, state save and load, and `service`. The plugin is serviced only when the engine
   calls `service`, as in the engine; the worker refreshes parameter values every 10 ms.
-- **Stays in the engine:** plugins with native sound or effect contexts (Basic Synth,
-  Sampler, Delay), until step 5 moves contexts into workers. Presets, properties and asset
-  resolution are not forwarded yet.
+- **Stayed in the engine:** plugins with native sound or effect contexts (Basic Synth,
+  Sampler, Delay), until step 5 moved them into workers. Presets and properties are not
+  forwarded yet.
 - **Deadline:** see step 3.
 
 Verification: `worker-host` renders 300 blocks of each test plugin in the engine and in a
@@ -221,8 +221,7 @@ now serviced once when loaded, and prepared instances again before they are publ
 
 ## Step 4 status
 
-Implemented 2026-10-30 in `WorkerHost.cpp`, for plugins in workers, which so far excludes those
-with native contexts (Basic Synth, Sampler) until step 5:
+Implemented 2026-10-30 in `WorkerHost.cpp` (native engines followed in step 5):
 
 - **Restart:** the supervisor thread starts a new worker for the same plugin, off the audio and
   main threads. The engine keeps the shared block, so the new worker reuses it; the plugin must
@@ -251,6 +250,50 @@ others play on unchanged. A plugin that crashes on every block is given up after
 it is given up, with the normal instrument identical to playing alone and no overruns. On
 macOS: `worker-recovery` passes 200 of 200 runs, `worker-failures` 10 of 10, and both pass 15
 of 15 under AddressSanitizer and ThreadSanitizer. Not yet run on Linux or the device.
+
+## Step 5 status
+
+Implemented 2026-10-30 in `WorkerHost.cpp`, `Worker.cpp` and `plugin_host.cpp`:
+
+- **Native engines in workers:** every CLAP plugin can now run in a worker, Basic Synth,
+  Sampler and Delay included. A worker hosts one plugin and the effect contexts created from
+  it, which share its engine as in the engine (the "shared by engine" group). Each is a graph
+  node with its own shared block and audio thread in the worker, and every request names its
+  node. Destroying the originating node keeps its contexts' engine alive, as the extension
+  requires.
+- **Across the boundary:** sound contexts (prepare, select, discard, telemetry), effect
+  resources and tails, snapshots, asset dependencies, and sound assets: the plugin resolves
+  a file through the engine's asset store with a request back over the socket, answered
+  before the reply. Errors keep their kind (`std::invalid_argument` stays one).
+- **Recovery for native engines:** besides state, the record holds the sounds prepared and
+  discarded since and each channel's selection, or a snapshot saved when one is loaded. A
+  restarted worker re-creates the effect contexts from a fresh engine and replays the
+  record. The engine keeps its own sound IDs, mapped to the worker's, so IDs stay the same
+  across a restart; new ones are never reused. Sampler sounds re-resolve their files from
+  the supervisor thread, which the store's own lock allows.
+- **Parameter values** a plugin reports while processing (the sequencer's active pattern)
+  and values set from the engine are published with the block or the request, so they read
+  back at once as in the engine. `kick::clap::Host::parameterReports()` counts the reports,
+  so a block republishes values only when there are new ones.
+- **Placement policy:** `setPlacementPolicy` chooses the worker executable, the standard
+  placement (engine or worker) and overrides per plugin ID. It starts from
+  `OSCAIRN_PLUGIN_WORKER` as before; the desktop app does not set it, so plugins still run
+  in the engine there. LV2 plugins stay in the engine until step 7.
+- Not yet: grouping several third-party plugins into one worker (the default stays one per
+  worker, pending the target measurements), overrides per Sound rather than per plugin, and
+  one audio thread serving all of a worker's nodes instead of one thread per effect context.
+
+Verification: the graph, pressure, sound-context, sampler and effect-context tests, and the
+control JSON-RPC, native sounds and effects and Performance save/restore tests, run again
+with every plugin in a worker (`*-workers`); a run with a missing worker program fails each
+of them, so they do use workers. `worker-recovery` kills the workers of Basic Synth (two
+sounds on two channels), the Sampler (a sound from an asset library) and Delay (a root and a
+context): each comes back with the same sound IDs and plays exactly as a fresh reference, and
+a placement override starts a worker or not as set. On macOS all 75 tests pass, the worker
+tests 10 of 10 times; under AddressSanitizer and ThreadSanitizer the suites pass. With four
+worker tests in parallel under ThreadSanitizer, `prepared-instances-workers` fell short of its
+20 preparations in 5 s in 2 of 5 runs, on a machine at load 30; alone it passed 10 of 10. Not
+yet run on Linux or the device.
 
 ## Open questions
 

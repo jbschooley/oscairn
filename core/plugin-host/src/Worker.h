@@ -44,7 +44,18 @@ namespace oscairn::worker
     void wake(std::atomic<uint32_t>& word) noexcept;
     bool makeRealtime(double periodMicroseconds) noexcept;
 
-    enum class Op : uint8_t { Init = 1, Service, SetParameter, Gesture, ParameterText, SaveState, LoadState, Shutdown };
+    // Requests. Init and Shutdown concern the worker; every other request is followed by the
+    // index of the plugin node it addresses (a worker hosts one plugin and the effect contexts
+    // created from it).
+    enum class Op : uint8_t
+    {
+        Init = 1, Service, SetParameter, Gesture, ParameterText, SaveState, LoadState, Shutdown,
+        CreateEffectContext, DestroyNode, EffectResources, SoundContexts, PrepareSound, SelectSound,
+        DiscardSound, SaveSnapshot, LoadSnapshot, AssetDependencies
+    };
+    // First byte of every message from the worker: a reply, or a request to the engine made while
+    // the worker serves one (the plugin resolving a sound asset).
+    enum Reply : char { Failed = 0, Done = 1, ResolveAsset = 2, Invalid = 4 /* std::invalid_argument */ };
 
     // Length-prefixed messages over a stream socket.
     struct Writer
@@ -72,6 +83,6 @@ namespace oscairn::worker
     void sendDescriptor(int socket, int fd);
     int receiveDescriptor(int socket);
 
-    // The worker process: hosts one plugin, serving control requests on `socket`.
+    // The worker process: hosts one plugin and its effect contexts, serving control requests on `socket`.
     int run(int socket);
 }

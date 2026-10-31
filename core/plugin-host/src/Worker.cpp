@@ -135,14 +135,44 @@ namespace oscairn::worker
     {
         uint32_t channels(const std::vector<kick::clap::Port>& ports) { uint32_t n = 0; for(const auto& p : ports) n += p.channels; return n; }
 
-        void reply(int socket, const Writer& w) { send(socket, std::string(1, '\1') + w.data); }
-        void fail(int socket, const std::string& error) { send(socket, std::string(1, '\0') + error); }
+        void reply(int socket, const Writer& w) { send(socket, std::string(1, Done) + w.data); }
+        void fail(int socket, char kind, const std::string& error) { send(socket, std::string(1, kind) + error); }
 
         void putPorts(Writer& w, const std::vector<kick::clap::Port>& ports)
         {
             w.u32(uint32_t(ports.size()));
             for(const auto& p : ports) w.u32(p.id).str(p.name).u32(p.channels).u32(p.flags);
         }
+
+        // What the engine needs to know about a plugin node; WorkerHost reads it in this order.
+        void describe(Writer& w, const PluginHost& host)
+        {
+            const auto& d = host.descriptor();
+            w.str(d.path).str(d.id).str(d.name).str(d.vendor).str(d.version).str(d.description).u32(uint32_t(d.features.size()));
+            for(const auto& f : d.features) w.str(f);
+            const auto& params = host.parameters();
+            if(params.size() > maxParameters) throw std::runtime_error("Plugin has too many parameters for a worker");
+            w.u32(uint32_t(params.size()));
+            for(const auto& q : params) w.u32(q.id).str(q.name).str(q.module).f64(q.minimum).f64(q.maximum).f64(q.defaultValue).u32(q.flags);
+            putPorts(w, host.inputPorts()); putPorts(w, host.outputPorts());
+            w.u32(host.noteInputPorts()).u32(host.noteOutputPorts());
+            for(uint32_t i = 0; i < host.noteInputPorts(); ++i) w.u8(host.usesClapNotes(i));
+            w.u8(host.supportsState()).u32(host.soundContextCapacity()).u8(host.effectResources().has_value());
+        }
+
+        // The plugin's sound assets resolve through the engine's store: a request to the engine,
+        // answered before the worker's reply to the request it is serving.
+        struct EngineAssets final : kick::clap::AssetResolver
+        {
+            int socket = -1;
+            std::string resolve(const std::string& library, const std::string& path, std::string& sha256) override
+            {
+                send(socket, std::string(1, ResolveAsset) + Writer().str(library).str(path).str(sha256).data);
+                Reader r; r.data = receive(socket);
+                if(r.data.empty() || r.data[0] != Done) throw std::runtime_error(r.data.empty() ? "No answer from the engine" : r.data.substr(1));
+                r.at = 1; auto local = r.str(); sha256 = r.str(); return local;
+            }
+        };
 
         // The worker's audio thread: one plugin block per request.
         void audio(PluginHost& host, Shared& s, uint32_t blockFrames)
@@ -151,6 +181,9 @@ namespace oscairn::worker
             std::vector<float*> out(s.outputChannels);
             for(uint32_t c = 0; c < s.inputChannels; ++c) in[c] = s.input(c);
             for(uint32_t c = 0; c < s.outputChannels; ++c) out[c] = s.output(c);
+            std::vector<clap_id> ids(s.parameterCount);
+            for(uint32_t i = 0; i < s.parameterCount; ++i) ids[i] = host.parameters()[i].id;
+            uint64_t reported = host.parameterReports();
             makeRealtime(1e6 * blockFrames / s.sampleRate); // the block period, not the larger shared buffer
             uint32_t seen = s.done.load(std::memory_order_acquire); // a request may already be waiting
             for(;;)
@@ -163,6 +196,13 @@ namespace oscairn::worker
                 if(s.panic.exchange(0, std::memory_order_acq_rel)) host.panic();
                 const bool ok = host.process(in.data(), s.inputChannels, out.data(), s.outputChannels, s.frames,
                                              s.eventCount ? s.events : nullptr, s.eventCount, s.hasTransport ? &s.transport : nullptr);
+                // Values the plugin reported while processing are published with the block, so the
+                // engine reads them right after it, as from a plugin in the engine.
+                if(const auto reports = host.parameterReports(); reports != reported)
+                {
+                    reported = reports;
+                    for(uint32_t i = 0; i < s.parameterCount; ++i) s.parameterValues[i].store(host.parameterValue(ids[i]), std::memory_order_relaxed);
+                }
                 uint32_t count = 0; const auto* emitted = host.outputEvents(count);
                 const auto kept = std::min(count, maxOutputEvents);
                 std::copy_n(emitted, kept, s.outputs);
@@ -180,93 +220,144 @@ namespace oscairn::worker
 
     int run(int socket)
     {
-        unsetenv("OSCAIRN_PLUGIN_WORKER"); // the worker hosts the plugin itself
-        std::shared_ptr<PluginHost> host;
-        Shared* shared = nullptr; size_t sharedBytes = 0;
-        std::thread audioThread;
-        (void)sharedBytes;
-        auto publishParameters = [&] {
-            if(!shared) return;
-            const auto& params = host->parameters();
-            for(uint32_t i = 0; i < shared->parameterCount; ++i) shared->parameterValues[i].store(host->parameterValue(params[i].id), std::memory_order_relaxed);
+        setPlacementPolicy({}); // the worker hosts the plugin itself
+        struct Node
+        {
+            std::shared_ptr<PluginHost> host;
+            Shared* shared = nullptr; size_t bytes = 0;
+            std::thread audio;
+            void publish() const
+            {
+                if(!shared) return;
+                const auto& params = host->parameters();
+                for(uint32_t i = 0; i < shared->parameterCount; ++i) shared->parameterValues[i].store(host->parameterValue(params[i].id), std::memory_order_relaxed);
+            }
+            void stop()
+            {
+                if(audio.joinable())
+                {
+                    shared->stop.store(1, std::memory_order_release); shared->request.fetch_add(1, std::memory_order_release); wake(shared->request);
+                    audio.join();
+                }
+                if(shared) { munmap(shared, bytes); shared = nullptr; }
+            }
         };
-        auto stopAudio = [&] {
-            if(!audioThread.joinable()) return;
-            shared->stop.store(1, std::memory_order_release); shared->request.fetch_add(1, std::memory_order_release); wake(shared->request);
-            audioThread.join();
+        std::vector<std::unique_ptr<Node>> nodes; // by index; null once destroyed
+        EngineAssets assets; assets.socket = socket;
+        uint32_t frames = 0;
+        auto node = [&](uint32_t i) -> Node& { if(i >= nodes.size() || !nodes[i]) throw std::runtime_error("No such plugin node"); return *nodes[i]; };
+        // Replies with the node's index and description, then maps the shared block the engine
+        // sends for it, if any (a node kept only to create contexts from has none), and starts
+        // its audio thread.
+        auto attach = [&](std::shared_ptr<PluginHost> host) {
+            host->setAssets(&assets);
+            auto n = std::make_unique<Node>(); n->host = std::move(host);
+            Writer w; w.u32(uint32_t(nodes.size())); describe(w, *n->host); reply(socket, w);
+            Reader r; r.data = receive(socket);
+            if(r.u8())
+            {
+                const int fd = receiveDescriptor(socket);
+                struct stat info{};
+                if(fstat(fd, &info) != 0 || size_t(info.st_size) < Shared::bytes(channels(n->host->inputPorts()), channels(n->host->outputPorts()), frames))
+                    { close(fd); throw std::runtime_error("Shared memory is too small"); }
+                n->bytes = size_t(info.st_size);
+                void* memory = mmap(nullptr, n->bytes, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+                close(fd);
+                if(memory == MAP_FAILED) throw std::runtime_error("Cannot map shared memory");
+                n->shared = static_cast<Shared*>(memory);
+                n->publish();
+                n->audio = std::thread(audio, std::ref(*n->host), std::ref(*n->shared), frames);
+            }
+            nodes.push_back(std::move(n));
+            reply(socket, Writer{});
         };
+        auto stopAll = [&] { for(auto& n : nodes) if(n) n->stop(); nodes.clear(); };
         for(;;)
         {
             pollfd p{socket, POLLIN, 0};
             const int ready = poll(&p, 1, 10);
             // The plugin is serviced only when the engine asks, as in the engine; values are refreshed meanwhile.
-            if(ready == 0) { publishParameters(); continue; }
+            if(ready == 0) { for(const auto& n : nodes) if(n) n->publish(); continue; }
             if(ready < 0) { if(errno == EINTR) continue; break; }
             Reader r;
             try { r.data = receive(socket); } catch(const std::exception&) { break; }
             try
             {
                 const auto op = Op(r.u8());
+                if(op == Op::Init)
+                {
+                    if(!nodes.empty()) throw std::runtime_error("Plugin already loaded");
+                    const auto path = r.str(), id = r.str(); const double rate = r.f64(); frames = r.u32();
+                    attach(loadPlugin(path, id, rate, frames));
+                    continue;
+                }
+                if(op == Op::Shutdown) { stopAll(); reply(socket, Writer{}); return 0; }
+                const auto index = r.u32();
+                auto& n = node(index);
+                auto& host = *n.host;
                 Writer w;
                 switch(op)
                 {
-                case Op::Init:
-                {
-                    if(host) throw std::runtime_error("Plugin already loaded");
-                    const auto path = r.str(), id = r.str(); const double rate = r.f64(); const auto frames = r.u32();
-                    host = loadPlugin(path, id, rate, frames);
-                    const auto& d = host->descriptor();
-                    w.str(d.path).str(d.id).str(d.name).str(d.vendor).str(d.version).str(d.description).u32(uint32_t(d.features.size()));
-                    for(const auto& f : d.features) w.str(f);
-                    const auto& params = host->parameters();
-                    if(params.size() > maxParameters) throw std::runtime_error("Plugin has too many parameters for a worker");
-                    w.u32(uint32_t(params.size()));
-                    for(const auto& q : params) w.u32(q.id).str(q.name).str(q.module).f64(q.minimum).f64(q.maximum).f64(q.defaultValue).u32(q.flags);
-                    putPorts(w, host->inputPorts()); putPorts(w, host->outputPorts());
-                    w.u32(host->noteInputPorts()).u32(host->noteOutputPorts());
-                    for(uint32_t i = 0; i < host->noteInputPorts(); ++i) w.u8(host->usesClapNotes(i));
-                    w.u8(host->supportsState()).u32(host->soundContextCapacity()).u8(host->effectResources().has_value());
-                    reply(socket, w);
-                    // The engine answers with the shared block, sized from the ports above.
-                    const int fd = receiveDescriptor(socket);
-                    struct stat info{};
-                    if(fstat(fd, &info) != 0 || size_t(info.st_size) < Shared::bytes(channels(host->inputPorts()), channels(host->outputPorts()), frames))
-                        { close(fd); throw std::runtime_error("Shared memory is too small"); }
-                    sharedBytes = size_t(info.st_size);
-                    void* memory = mmap(nullptr, sharedBytes, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
-                    close(fd);
-                    if(memory == MAP_FAILED) throw std::runtime_error("Cannot map shared memory");
-                    shared = static_cast<Shared*>(memory);
-                    publishParameters();
-                    audioThread = std::thread(audio, std::ref(*host), std::ref(*shared), frames);
-                    reply(socket, Writer{});
-                    continue;
-                }
                 case Op::Service:
                 {
-                    host->service(); publishParameters();
+                    host.service(); n.publish();
                     kick::clap::Event e; std::vector<kick::clap::Event> events;
-                    while(events.size() < 4096 && host->popOutput(e)) events.push_back(e);
+                    while(events.size() < 4096 && host.popOutput(e)) events.push_back(e);
                     w.u32(uint32_t(events.size()));
                     for(const auto& x : events) w.bytes(x.bytes.data(), x.bytes.size());
                     break;
                 }
-                case Op::SetParameter: { const auto id = r.u32(); const auto v = r.f64(); w.u8(host->setParameter(id, v)); break; }
-                case Op::Gesture: { const auto id = r.u32(); const bool begin = r.u8(); w.u8(host->parameterGesture(id, begin)); break; }
-                case Op::ParameterText: { const auto id = r.u32(); w.str(host->parameterText(id, r.f64())); break; }
-                case Op::SaveState: host->saveState(r.str()); break;
-                case Op::LoadState: host->loadState(r.str()); publishParameters(); break;
-                case Op::Shutdown: stopAudio(); reply(socket, w); host.reset(); return 0;
+                // Published at once, so the engine reads the new value right after setting it, as in the engine.
+                case Op::SetParameter: { const auto id = r.u32(); const auto v = r.f64(); w.u8(host.setParameter(id, v)); n.publish(); break; }
+                case Op::Gesture: { const auto id = r.u32(); const bool begin = r.u8(); w.u8(host.parameterGesture(id, begin)); break; }
+                case Op::ParameterText: { const auto id = r.u32(); w.str(host.parameterText(id, r.f64())); break; }
+                case Op::SaveState: host.saveState(r.str()); break;
+                case Op::LoadState: host.loadState(r.str()); n.publish(); break;
+                case Op::SaveSnapshot: host.saveSnapshot(r.str()); break;
+                case Op::LoadSnapshot: host.loadSnapshot(r.str()); n.publish(); break;
+                case Op::CreateEffectContext: attach(host.createEffectContext()); continue;
+                case Op::DestroyNode: n.stop(); nodes[index].reset(); break;
+                case Op::EffectResources:
+                {
+                    const auto res = host.effectResources();
+                    w.u8(res.has_value());
+                    if(res) w.bytes(&*res, sizeof *res);
+                    break;
+                }
+                case Op::SoundContexts:
+                {
+                    const auto contexts = host.soundContexts();
+                    w.u32(uint32_t(contexts.size()));
+                    for(const auto& c : contexts) w.bytes(&c, sizeof c);
+                    break;
+                }
+                case Op::PrepareSound:
+                {
+                    const auto name = r.str();
+                    std::vector<oscairn_sound_parameter_t> values(r.u32());
+                    for(auto& v : values) { v.id = r.u32(); v.value = r.f64(); }
+                    const auto state = r.str(), preset = r.str(), sfz = r.str(), library = r.str(), directory = r.str();
+                    w.u32(host.prepareSound(name, values, state, preset, sfz, library, directory));
+                    n.publish();
+                    break;
+                }
+                case Op::SelectSound: { const auto id = r.u32(); const auto channel = int16_t(r.u32()); w.u8(host.selectSound(id, channel)); break; }
+                case Op::DiscardSound: { const auto id = r.u32(); const bool cut = r.u8(); w.u8(host.discardSound(id, cut)); break; }
+                case Op::AssetDependencies:
+                {
+                    const auto refs = host.assetDependencies();
+                    w.u32(uint32_t(refs.size()));
+                    for(const auto& a : refs) w.str(a.library).str(a.path).str(a.sha256);
+                    break;
+                }
                 default: throw std::runtime_error("Unknown worker request");
                 }
                 reply(socket, w);
             }
-            catch(const std::exception& e)
-            {
-                try { fail(socket, e.what()); } catch(const std::exception&) { break; }
-            }
+            catch(const std::invalid_argument& e) { try { fail(socket, Invalid, e.what()); } catch(const std::exception&) { break; } }
+            catch(const std::exception& e) { try { fail(socket, Failed, e.what()); } catch(const std::exception&) { break; } }
         }
-        if(shared) stopAudio();
+        stopAll();
         return 0;
     }
 }

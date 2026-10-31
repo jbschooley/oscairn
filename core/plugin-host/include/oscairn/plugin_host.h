@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #pragma once
 #include <kick_clap/Host.h>
+#include <map>
 #include <optional>
 #include <stdexcept>
 #include <variant>
@@ -76,6 +77,8 @@ namespace oscairn
         virtual void panic() noexcept = 0;
         virtual uint32_t noteOutputPorts() const noexcept = 0;
         virtual double parameterValue(clap_id id) const noexcept = 0;
+        // Changes when the plugin reports new parameter values while processing; audio thread.
+        virtual uint64_t parameterReports() const noexcept { return 0; }
         virtual std::string parameterText(clap_id id, double value) const = 0;
         virtual bool setParameter(clap_id id, double value) noexcept = 0;
         virtual bool parameterGesture(clap_id id, bool begin) noexcept = 0;
@@ -83,17 +86,28 @@ namespace oscairn
         virtual uint64_t outputEventDrops() const noexcept = 0;
         virtual const kick::clap::Event* outputEvents(uint32_t& count) const noexcept = 0;
         virtual kick::clap::Statistics statistics() const noexcept = 0;
-        // Why the plugin stopped for good (its worker crashed, hung or was too slow); empty
-        // while it plays. The node is silent from then on. Any thread.
+        // Why a plugin in a worker is not playing (its worker crashed, hung or was too slow, and
+        // is being restarted or was given up); empty while it plays. Any thread.
         virtual std::string failure() const { return {}; }
         virtual bool process(const float* const* inputs, uint32_t ni, float* const* outputs, uint32_t no, uint32_t frames, const kick::clap::Event* events, uint32_t count, const clap_event_transport_t* transport) noexcept = 0;
     };
     // CLAP module or LV2 bundle directory; pluginId is a CLAP ID or an LV2 URI.
     std::shared_ptr<PluginHost> loadPlugin(const std::string& path, const std::string& pluginId,
                                            double sampleRate, uint32_t maxFrames, ProcessingMode mode = ProcessingMode::Realtime, Lv2BufferLimits lv2Buffers = {});
-    // RFC 0010 step 2: a CLAP plugin hosted by the worker executable `program` in its own
-    // process. Returns null for plugins with native sound or effect contexts, which stay
-    // in the engine. loadPlugin uses it when OSCAIRN_PLUGIN_WORKER names the executable.
+    // RFC 0010: a CLAP plugin hosted by the worker executable `program` in its own process,
+    // with the effect contexts later created from it. loadPlugin uses it as the placement
+    // policy says.
+    // RFC 0010: where loadPlugin runs a CLAP plugin. Main thread. LV2 plugins stay in the engine.
+    enum class Placement { Engine, Worker };
+    struct PlacementPolicy
+    {
+        std::string worker; // the oscairn-plugin-worker executable; empty runs every plugin in the engine
+        Placement standard = Placement::Worker;
+        std::map<std::string, Placement> plugins; // overrides by plugin ID, as loadPlugin is given it
+    };
+    // Starts as OSCAIRN_PLUGIN_WORKER says: every plugin in the worker executable it names, or none.
+    void setPlacementPolicy(PlacementPolicy);
+    const PlacementPolicy& placementPolicy();
     std::shared_ptr<PluginHost> loadPluginInWorker(const std::string& program, const std::string& path, const std::string& pluginId,
                                                    double sampleRate, uint32_t maxFrames, ProcessingMode mode = ProcessingMode::Realtime);
 }

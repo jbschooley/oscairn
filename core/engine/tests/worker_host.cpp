@@ -24,7 +24,6 @@ namespace
         auto local = oscairn::loadPlugin(path, "", rate, frames, oscairn::ProcessingMode::Offline);
         auto remote = oscairn::loadPluginInWorker(worker, path, "", rate, frames, oscairn::ProcessingMode::Offline);
         const auto name = std::filesystem::path(path).filename().string();
-        if(!remote) { std::printf("%s: native contexts, stays in the engine\n", name.c_str()); return; }
         check(local->descriptor().id == remote->descriptor().id, name + ": descriptor");
         check(local->parameters().size() == remote->parameters().size(), name + ": parameters");
         check(channels(local->inputPorts()) == channels(remote->inputPorts()) && channels(local->outputPorts()) == channels(remote->outputPorts()), name + ": ports");

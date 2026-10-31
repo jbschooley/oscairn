@@ -180,8 +180,12 @@ new core, from a UI that talks to it only through the control API.
    Step 3, containing crashes, hangs and overruns to their own node, is implemented on macOS
    ([status](rfcs/0010-plugin-worker-isolation.md#step-3-status)), and step 4, restarting a
    failed plugin with its prepared sounds' state and parameters
-   ([status](rfcs/0010-plugin-worker-isolation.md#step-4-status)). Next is step 5: grouping and
-   native contexts in a worker, which brings Basic Synth and Sampler into workers.
+   ([status](rfcs/0010-plugin-worker-isolation.md#step-4-status)), and step 5, native engines
+   (Basic Synth, Sampler, Delay with its effect contexts) in workers with sound assets across
+   the boundary and a placement policy with per-plugin overrides
+   ([status](rfcs/0010-plugin-worker-isolation.md#step-5-status)). Steps 6 (memory and CPU
+   limits, sandboxing) and 7 (LV2 in workers) remain, as do native Linux and target
+   measurements and the choice to use workers by default in the app.
 7. **Sequencer evaluation — written, decisions pending:** [the comparison](sequencer-evaluation.md)
    of the KICK firmware's sequencer (with chillbeast's work), zynseq and hosted plugins
    recommends the KICK model and workflow with sample-accurate playback rewritten in an

@@ -225,11 +225,18 @@ set_tests_properties(worker-failures PROPERTIES TIMEOUT 60 RUN_SERIAL TRUE)
 add_executable(oscairn-worker-recovery-test engine/tests/worker_recovery.cpp)
 target_link_libraries(oscairn-worker-recovery-test PRIVATE oscairn_engine)
 add_test(NAME worker-recovery COMMAND oscairn-worker-recovery-test $<TARGET_FILE:oscairn-plugin-worker>
-    $<TARGET_FILE:kick-clap-fixture-note_crash> $<TARGET_FILE:kick-clap-fixture-process_crash>)
+    $<TARGET_FILE:kick-clap-fixture-note_crash> $<TARGET_FILE:kick-clap-fixture-process_crash>
+    $<TARGET_FILE:oscairn_basic_synth> $<TARGET_FILE:oscairn_sampler> $<TARGET_FILE:oscairn_delay>)
 set_tests_properties(worker-recovery PROPERTIES TIMEOUT 60 ENVIRONMENT OSCAIRN_WORKER_BUDGET_US=50000)
 
-# The existing graph tests again, with every CLAP plugin that has no native contexts in a worker.
+# The existing graph tests again, with every CLAP plugin in a worker: native sound and effect
+# contexts, sound assets and tails across the boundary included (RFC 0010 step 5).
 set(worker_tests
+    "graph|oscairn-graph-test|$<TARGET_FILE:oscairn_step_sequencer>|$<TARGET_FILE:oscairn_basic_synth>|$<TARGET_FILE:oscairn_delay>|$<TARGET_FILE:kick-clap-fixture-normal>"
+    "pressure|oscairn-pressure-test|$<TARGET_FILE:oscairn_basic_synth>"
+    "sound-contexts|oscairn-sound-contexts-test|$<TARGET_FILE:oscairn_basic_synth>"
+    "sampler|oscairn-sampler-test|$<TARGET_FILE:oscairn_sampler>"
+    "effect-contexts|oscairn-effect-contexts-test|$<TARGET_FILE:oscairn_delay>|$<TARGET_FILE:oscairn_basic_synth>"
     "chain-mono|oscairn-chain-mono-test|$<TARGET_FILE:kick-clap-fixture-normal>"
     "param-target|oscairn-param-target-test|$<TARGET_FILE:oscairn_step_sequencer>|$<TARGET_FILE:kick-clap-fixture-normal>"
     "audio-routing|oscairn-audio-routing-test|$<TARGET_FILE:oscairn-audio-fixture>"

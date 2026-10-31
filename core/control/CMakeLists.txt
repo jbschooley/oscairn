@@ -99,3 +99,19 @@ if(Python3_Interpreter_FOUND)
         $<TARGET_FILE:oscairn-json-rpc-test> $<TARGET_FILE:oscairn_basic_synth>)
     set_tests_properties(control-performance-format PROPERTIES TIMEOUT 30)
 endif()
+
+# Sessions, native sounds and effects and Performances again with every CLAP plugin in a worker (RFC 0010 step 5).
+set(control_worker_tests
+    "control-json-audio|oscairn-json-rpc-test|$<TARGET_FILE:oscairn_basic_synth>"
+    "control-performance|oscairn-performance-test|$<TARGET_FILE:oscairn_basic_synth>|$<TARGET_FILE:oscairn_delay>|$<TARGET_FILE:oscairn_step_sequencer>|$<TARGET_FILE:kick-clap-fixture-normal>")
+if(UNIX)
+    list(APPEND control_worker_tests
+        "control-native-sounds|oscairn-local-socket-test|$<TARGET_FILE:oscairn_basic_synth>|--sounds"
+        "control-native-effects|oscairn-local-socket-test|$<TARGET_FILE:oscairn_basic_synth>|--effects|$<TARGET_FILE:oscairn_delay>")
+endif()
+foreach(entry IN LISTS control_worker_tests)
+    string(REPLACE "|" ";" parts "${entry}")
+    list(POP_FRONT parts name)
+    add_test(NAME ${name}-workers COMMAND ${parts})
+    set_tests_properties(${name}-workers PROPERTIES TIMEOUT 120 ENVIRONMENT "OSCAIRN_PLUGIN_WORKER=$<TARGET_FILE:oscairn-plugin-worker>;OSCAIRN_WORKER_BUDGET_US=50000")
+endforeach()
