@@ -79,6 +79,11 @@ add_executable(oscairn-transport-tempo-test engine/tests/transport_tempo.cpp)
 target_link_libraries(oscairn-transport-tempo-test PRIVATE oscairn_engine)
 add_test(NAME transport-tempo COMMAND oscairn-transport-tempo-test)
 
+add_executable(oscairn-choke-fade-test engine/tests/choke_fade.cpp)
+target_link_libraries(oscairn-choke-fade-test PRIVATE oscairn_engine)
+target_include_directories(oscairn-choke-fade-test PRIVATE clap-host/tests)
+add_test(NAME choke-fade COMMAND oscairn-choke-fade-test $<TARGET_FILE:oscairn_basic_synth>)
+
 add_executable(oscairn-splitters-test engine/tests/splitters.cpp)
 target_link_libraries(oscairn-splitters-test PRIVATE oscairn_engine)
 add_test(NAME splitters COMMAND oscairn-splitters-test $<TARGET_FILE:oscairn_splitters>)

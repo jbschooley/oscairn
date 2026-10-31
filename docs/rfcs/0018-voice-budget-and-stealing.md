@@ -1,6 +1,6 @@
 # RFC 0018: Voice budget and stealing
 
-Status: proposed, 2026-10-31. Not implemented. When a Performance asks for more than the
+Status: proposed, 2026-10-31. Step 1's plugin side implemented (below). When a Performance asks for more than the
 processor can play, Oscairn gives up the least audible notes across every part, without
 clicks, rather than missing the audio deadline. The host does this with notes (option B),
 and plugins that opt in do it with their own voices (option C).
@@ -154,6 +154,19 @@ fade and choke. They are listed here so they are built once:
 - **Mono:** one note per part; a new note fades the old one.
 - **Legato:** a new note while one is held glides from it without re-triggering, which needs
   the plugin. CLAP has no legato flag, so the host forwards it and the plugin decides.
+
+## Step 1 status
+
+The plugin side, 2026-10-31: the SDK's sound-contexts helper fades a choked voice over 3 ms,
+then ends it (and its note), and applies `CLAP_NOTE_EXPRESSION_VOLUME` per voice; an
+instrument multiplies each voice's samples by `amplitude(voice, offset)`, and a voice that
+does not still ends when its fade would have. The Basic Synth does. `choke-fade` checks a
+choked note against the same note left alone: most of its level in the first millisecond,
+less than 60% in the second half of the fade, silence and `NOTE_END` after 3 ms, and per-note
+volume halving it; a cut, or a fade that ignored the ramp, fails it.
+
+Not yet: the host's own volume ramp before a choke, for third-party plugins that fade on
+neither; and stealing itself, starting with step 2's note limits.
 
 ## Build order and gates
 

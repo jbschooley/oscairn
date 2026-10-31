@@ -82,7 +82,9 @@ Everything else is handled for you:
 - **Chokes and per-note volume:** treat a host `NOTE_CHOKE` as a fast fade of 2–5 ms, not a
   cut, and honour `CLAP_NOTE_EXPRESSION_VOLUME`. The planned voice budget
   ([RFC 0018](rfcs/0018-voice-budget-and-stealing.md)) fades a stolen note with the volume
-  expression, then chokes it; without both, stolen notes click.
+  expression, then chokes it; without both, stolen notes click. An instrument built on the
+  SDK's `sound-contexts-plugin.hpp` gets both: it multiplies each voice's samples by
+  `amplitude(voice, offset)`, and a choked voice fades over 3 ms before it ends.
 - **Parameter metadata:** clear names, CLAP module paths for grouping, value text, and the
   stepped and read-only flags. The generated editors are built from them.
 

@@ -26,6 +26,7 @@
 #include <clap/clap.h>
 #include <oscairn-clap/sound-contexts.h>
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <cstring>
@@ -44,6 +45,8 @@ namespace oscairn::contexts
         int16_t  key = 0, channel = 0;
         double   velocity = 0.0;
         double   pressure = 0.0; // 0..1, from note expressions
+        double   gain = 1.0;     // CLAP's per-note volume expression, linear 0..4
+        uint32_t chokeLeft = 0, chokeLength = 0; // a choked voice fades out over chokeLength frames
         uint64_t started = 0;
     };
 
@@ -74,6 +77,18 @@ namespace oscairn::contexts
         std::array<Selection, selectionCapacity> selections{};
         std::atomic<uint32_t> selectionHead{0}, selectionTail{0};
         uint32_t nextContext = 1; // main thread, never reuse IDs
+        uint32_t chokeFrames = 144; // 3 ms at 48 kHz; setSampleRate keeps it 3 ms
+
+        // From activate: a choke fades a voice out over 3 ms instead of cutting it (RFC 0018).
+        void setSampleRate(double rate) { chokeFrames = rate > 0 ? std::max<uint32_t>(1, uint32_t(rate * .003 + .5)) : 144; }
+        // A voice's gain at `offset` frames into the segment being rendered: its volume expression,
+        // and its choke fade. Multiply each of its samples by it; a voice that ignores it still
+        // ends when its fade would have, but with a cut.
+        static double amplitude(const Voice& v, uint32_t offset)
+        {
+            if(!v.chokeLength) return v.gain;
+            return v.chokeLeft > offset ? v.gain * double(v.chokeLeft - offset) / double(v.chokeLength) : 0.0;
+        }
 
         Engine()
         {
@@ -133,7 +148,7 @@ namespace oscairn::contexts
             {
                 if(fifo) { if(!oldest || v.started < oldest->started) oldest = &v; continue; }
                 v.held = false;
-                if(choke) finishVoice(v);
+                if(choke) { if(!v.chokeLength) v.chokeLength = v.chokeLeft = chokeFrames; } // fades, then ends
                 else if(note.key < 0 || !sustainDown[v.channel]) derived().release(v);
             }
             if(oldest) { oldest->held = false; if(!sustainDown[oldest->channel]) derived().release(*oldest); }
@@ -142,8 +157,23 @@ namespace oscairn::contexts
         }
         void applyExpression(const clap_event_note_expression_t& e)
         {
-            if(e.expression_id != CLAP_NOTE_EXPRESSION_PRESSURE || e.port_index > 0) return;
-            for(auto& v : voices) if(matches(v, e.note_id, e.key, e.channel)) v.pressure = e.value < 0 ? 0 : e.value > 1 ? 1 : e.value;
+            if(e.port_index > 0) return;
+            if(e.expression_id == CLAP_NOTE_EXPRESSION_PRESSURE)
+                for(auto& v : voices) if(matches(v, e.note_id, e.key, e.channel)) v.pressure = e.value < 0 ? 0 : e.value > 1 ? 1 : e.value;
+            if(e.expression_id == CLAP_NOTE_EXPRESSION_VOLUME)
+                for(auto& v : voices) if(matches(v, e.note_id, e.key, e.channel)) v.gain = e.value < 0 ? 0 : e.value > 4 ? 4 : e.value;
+        }
+        // Renders a segment, then ends the choked voices whose fade it finished.
+        void renderSegment(const clap_process_t* process, uint32_t from, uint32_t to)
+        {
+            derived().render(process, from, to);
+            const uint32_t frames = to - from;
+            for(auto& v : voices)
+                if(v.active && v.chokeLength)
+                {
+                    v.chokeLeft = v.chokeLeft > frames ? v.chokeLeft - frames : 0;
+                    if(!v.chokeLeft) { const auto at = eventTime; eventTime = to ? to - 1 : 0; finishVoice(v); eventTime = at; }
+                }
         }
         void applyMidi(const clap_event_midi_t& e)
         {
@@ -210,7 +240,7 @@ namespace oscairn::contexts
                 const auto* header = process->in_events->get(process->in_events, e);
                 if(header->space_id != CLAP_CORE_EVENT_SPACE_ID) continue;
                 const uint32_t at = header->time < frames ? header->time : frames;
-                if(at > done) { s.render(process, done, at); done = at; }
+                if(at > done) { s.renderSegment(process, done, at); done = at; }
                 s.eventTime = at;
                 if(header->type == CLAP_EVENT_PARAM_VALUE || header->type == CLAP_EVENT_PARAM_MOD)
                     s.applyParam(header);
@@ -224,7 +254,7 @@ namespace oscairn::contexts
                 else if(header->type == CLAP_EVENT_NOTE_EXPRESSION)
                     s.applyExpression(*reinterpret_cast<const clap_event_note_expression_t*>(header));
             }
-            s.render(process, done, frames);
+            s.renderSegment(process, done, frames);
             return CLAP_PROCESS_CONTINUE;
         }
 

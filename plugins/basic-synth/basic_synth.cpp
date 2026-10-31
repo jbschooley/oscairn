@@ -228,7 +228,7 @@ namespace
                 v.low1 += g * ( oscillator - v.low1 );
                 v.low2 += g * ( v.low1 - v.low2 );
 
-                mix[v.context][v.outputBus] += v.low2 * v.level * v.velocity * 0.35;
+                mix[v.context][v.outputBus] += v.low2 * v.level * v.velocity * 0.35 * amplitude(v, i - from); // volume expression and choke fade
             }
             for(uint32_t bus=0;bus<std::min(9u,process->audio_outputs_count);++bus) {
                 double sum=0;for(size_t c=0;c<mix.size();++c)if(mix[c][bus]!=0)sum+=std::tanh(mix[c][bus]*levels[c]);
@@ -355,6 +355,7 @@ namespace
         s->plugin.activate         = []( const clap_plugin_t* p, double rate, uint32_t, uint32_t ) {
             auto& s              = self( p );
             s.sampleRate         = rate;
+            s.setSampleRate( rate );
             s.attackStep         = 1.0 / ( 0.002 * rate );
             s.decayCoefficient   = std::exp( -1.0 / ( 0.25 * rate ) );
             s.releaseCoefficient = std::exp( -1.0 / ( 0.12 * rate ) );
