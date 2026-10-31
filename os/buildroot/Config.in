@@ -1,2 +1,3 @@
 source "$BR2_EXTERNAL_OSCAIRN_PATH/package/oscairn/Config.in"
 source "$BR2_EXTERNAL_OSCAIRN_PATH/package/oscairn-juce/Config.in"
+source "$BR2_EXTERNAL_OSCAIRN_PATH/package/oscairn-sampler/Config.in"

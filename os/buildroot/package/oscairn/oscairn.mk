@@ -11,7 +11,11 @@ OSCAIRN_SITE_METHOD = local
 OSCAIRN_OVERRIDE_SRCDIR_RSYNC_EXCLUSIONS = --exclude '/build*' --exclude '/demo'
 OSCAIRN_LICENSE = AGPL-3.0-or-later
 OSCAIRN_LICENSE_FILES = LICENSE
-OSCAIRN_DEPENDENCIES = host-pkgconf libsndfile
+OSCAIRN_DEPENDENCIES = host-pkgconf libsndfile oscairn-sampler
+# The Sampler comes from its own package: nothing is downloaded while building.
+OSCAIRN_CONF_OPTS += \
+	-DFETCHCONTENT_SOURCE_DIR_OSCAIRN_SAMPLER=$(OSCAIRN_SAMPLER_SRCDIR) \
+	-DFETCHCONTENT_FULLY_DISCONNECTED=ON
 
 ifeq ($(BR2_PACKAGE_OSCAIRN_LV2),y)
 OSCAIRN_DEPENDENCIES += lilv
@@ -33,8 +37,7 @@ OSCAIRN_DEPENDENCIES += oscairn-juce alsa-lib freetype fontconfig \
 OSCAIRN_CONF_OPTS += \
 	-DOSCAIRN_STANDALONE=ON \
 	-DOSCAIRN_AUDIO_BUFFER_FRAMES=128 \
-	-DFETCHCONTENT_SOURCE_DIR_JUCE=$(OSCAIRN_JUCE_SRCDIR) \
-	-DFETCHCONTENT_FULLY_DISCONNECTED=ON
+	-DFETCHCONTENT_SOURCE_DIR_JUCE=$(OSCAIRN_JUCE_SRCDIR)
 endif
 
 # JUCE's modules compile as a few very large translation units, over a gigabyte of memory

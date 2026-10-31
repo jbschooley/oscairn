@@ -191,7 +191,9 @@ in the others.
    ([status](rfcs/0011-performance-ui-and-editors.md#undo-status); preset and state loads,
    and keyboard shortcuts, remain). Next: step 4's Routing view, then step 5's editors and
    plugin windows, and step 6's physical controls.
-2. **Native sample patches — first slice implemented, multisample pending:**
+2. **Native sample patches — first slice implemented, multisample pending:** the Sampler
+   lives in its own repository, [oscairn/sampler](https://github.com/oscairn/sampler), since
+   October 31, 2026 (like the FM and analog engines' forks), fetched at a pinned commit.
    [sample players/formats and the first slice](sample-players-and-formats.md), including
    a reproducible liquidsfz cache-sharing probe and [ESP observations](yamaha-esp-samples-research.md).
    The Oscairn Sampler plays one-region SFZ patches over preloaded WAV with shared PCM,

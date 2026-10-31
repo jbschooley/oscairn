@@ -10,7 +10,7 @@ lives and how it reaches each engine.
 
 Today Oscairn has no tuning. The host doesn't implement any tuning extension (nothing in
 `core/clap-host/src` mentions it), the Sampler computes pitch from 12-TET only
-(`plugins/sampler/sampler.cpp`), and the Performance format has no tuning field. Two engines on
+([`src/sampler.cpp`](https://github.com/oscairn/sampler/blob/main/src/sampler.cpp)), and the Performance format has no tuning field. Two engines on
 the way already have their own tuning: Dexed, which Octet forks ([RFC 0014](0014-fm-engine.md)),
 and Surge XT, which the analog engine forks ([RFC 0015](0015-analog-modelling-engine.md)). Both
 include an MTS-ESP client (`MTS_RegisterClient` in Dexed's `source/PluginProcessor.cpp` and

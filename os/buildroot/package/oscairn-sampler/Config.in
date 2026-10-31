@@ -1,0 +1,5 @@
+config BR2_PACKAGE_OSCAIRN_SAMPLER
+	bool
+	help
+	  The Oscairn Sampler source (github.com/oscairn/sampler), for
+	  building it with Oscairn. Nothing is installed by this package.

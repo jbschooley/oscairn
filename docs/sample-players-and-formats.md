@@ -37,7 +37,7 @@ vendored nor added to Oscairn's normal build by this change.
 
 ## Headless liquidsfz experiment
 
-The [probe](../tools/sampler-research/liquidsfz_probe.cpp) creates its own two-second mono
+The [probe](https://github.com/oscairn/sampler/blob/main/research/liquidsfz_probe.cpp) creates its own two-second mono
 48 kHz PCM WAV and two SFZ patches, one transposed seven semitones. It fully preloads the
 sample, plays the first patch, prepares a second Synth and later destroys it while the
 first note remains held. A third Synth supplies an independent first-patch reference.
@@ -55,17 +55,7 @@ not establish cross-process sharing, arbitrary SFZ correctness or real-time safe
 library paths. The existing allocation guard covers C++ allocation, not every C allocator,
 deallocation, lock or page fault.
 
-Reproduce from the Oscairn root, using an unused output directory:
-
-```sh
-git clone https://github.com/swesterfeld/liquidsfz.git /tmp/oscairn-liquidsfz
-git -C /tmp/oscairn-liquidsfz checkout 4cc901d18b316cd377276f7eb6b8c325329b9860
-c++ -std=c++17 -O2 -pthread -I /tmp/oscairn-liquidsfz/lib \
-  $(pkg-config --cflags sndfile) tools/sampler-research/liquidsfz_probe.cpp \
-  /tmp/oscairn-liquidsfz/lib/*.cc $(pkg-config --libs sndfile) \
-  -o /tmp/oscairn-liquidsfz-probe
-/tmp/oscairn-liquidsfz-probe /tmp/oscairn-liquidsfz-probe-assets
-```
+Reproduce with the commands in the Sampler repository's [research README](https://github.com/oscairn/sampler/blob/main/research/README.md).
 
 This deliberately compiles a research executable, not a supported production packaging
 configuration. The generated WAV/SFZ files remain in the chosen directory for inspection.
@@ -92,7 +82,7 @@ Checked at liquidsfz `4cc901d18b316cd377276f7eb6b8c325329b9860` for the
 
 ### Reference renders against liquidsfz
 
-[`liquidsfz_compare.cpp`](../tools/sampler-research/liquidsfz_compare.cpp) renders one
+[`liquidsfz_compare.cpp`](https://github.com/oscairn/sampler/blob/main/research/liquidsfz_compare.cpp) renders one
 second of a generated mono 48 kHz tone through liquidsfz and the Oscairn Sampler with the
 same one-region patches (2026-10-30, liquidsfz `4cc901d1`, macOS arm64):
 
@@ -112,15 +102,7 @@ that gain path and is unexplained. The release row was 16% before the Sampler ad
 liquidsfz's exponential release (`lib/envelope.hh`: −60 dB at the release time, then
 silence). Velocity follows the same squared curve in both.
 
-Reproduce with the liquidsfz checkout from the probe above, from the Oscairn root after
-building `oscairn_sampler`:
-
-```sh
-c++ -std=c++17 -O2 -pthread -I core/clap-host/third_party/clap/include -I core/clap-ext/include \
-  -I /tmp/oscairn-liquidsfz/lib $(pkg-config --cflags sndfile) tools/sampler-research/liquidsfz_compare.cpp \
-  /tmp/oscairn-liquidsfz/lib/*.cc $(pkg-config --libs sndfile) -o /tmp/oscairn-liquidsfz-compare
-/tmp/oscairn-liquidsfz-compare build/plugins/oscairn-sampler.clap /tmp/oscairn-liquidsfz-compare-out
-```
+Reproduce with the commands in the Sampler repository's [research README](https://github.com/oscairn/sampler/blob/main/research/README.md).
 
 This compares rendered numbers, not listening. It does not cover stereo samples,
 sample-rate conversion, sustain pedal or simultaneous voices.

@@ -9,7 +9,7 @@ for build commands and the contracts for a new plugin.
 | Basic Synth | [basic_synth.cpp](basic-synth/basic_synth.cpp) | Polyphonic instrument, sample-timed parameters/expression, native sound contexts, channel parts and per-voice output buses |
 | Step Sequencer | [step_sequencer.cpp](step-sequencer/step_sequencer.cpp) | Note-only source, transport timing, editable steps and parameter-lock lanes |
 | Delay | [delay.cpp](delay/delay.cpp) | Independent native effect contexts, parameter/state APIs, tails and tempo glide |
-| Sampler | [sampler.cpp](sampler/sampler.cpp) | One-region SFZ patches over preloaded WAV audio shared between sound contexts, with portable saved assets |
+| Sampler | [oscairn/sampler](https://github.com/oscairn/sampler), its own repository, fetched at a pinned commit | One-region SFZ patches over preloaded WAV audio shared between sound contexts, with portable saved assets |
 | Modular | [modular.cpp](modular/src/modular.cpp), [README](modular/README.md) | chillbeast's patchable grid synth (imported engine) wrapped as a CLAP instrument; links JUCE, built with `OSCAIRN_MODULAR` or the desktop |
 | Split / Join | [splitters.cpp](splitters/splitters.cpp) | The nodes at either end of a part's left/right, mid/side and band lanes (RFC 0011 step 3): two plugins in one bundle, fixed ports, the mode a parameter; Linkwitz-Riley crossovers whose bands sum flat |
 | Transpose / MIDI Delay | [midi_effect.cpp](midi-effects/midi_effect.cpp), [behavior](midi-effects/README.md) | Held-note mapping, pressure/sustain, bounded sample-timed event queues and portable state |
@@ -24,25 +24,10 @@ part of the MIT plugin SDK beside the extension headers.
 
 ## Sampler sounds
 
-The Sampler has no parameters: each prepared sound is an SFZ patch in the
-`oscairn-sfz-baseline-0` profile of [RFC 0008](../docs/rfcs/0008-sfz-native-samples-and-conversion.md#baseline-profile-oscairn-sfz-baseline-0)
-(one `<region>`; `sample`, key/velocity ranges, `pitch_keycenter`, `pitch_keytrack`,
-`transpose`, `tune`, `volume`, `ampeg_release`). Anything else is rejected with its line
-number. Samples are 16/24/32-bit PCM or 32-bit float WAV, mono or stereo, 8–192 kHz, at
-most 64 MiB decoded each and 256 MiB per instance. Contexts with identical audio share one
-decoded copy, identified by content rather than file name.
-
-Playback uses linear interpolation; the sample end finishes the voice (`no_loop`);
-release falls exponentially to −60 dB over `ampeg_release` and then stops, the curve liquidsfz uses. Velocity gain is squared (the
-SFZ `amp_veltrack=100` default). The overall level matches liquidsfz's defaults: MIDI
-volume 100 on a squared curve and centre panning at 1/√2, together −7.2 dB; CC7/CC10 changes
-are not implemented yet. Mono samples play on both outputs. Pressure is tracked
-per voice but not mapped to sound. The single stereo output is unsaturated.
-
-Samples are Performance dependencies, not saved with it (RFC 0009): the Sampler asks the host
-for every file through `oscairn.assets` and never searches the file system itself. Its
-`oscairn-sampler-2` snapshot stores, per sound, the library, the patch's folder there, a
-normalized SFZ and the sample's SHA-256, and `oscairn.asset-dependencies` lists them.
+The Sampler moved to [its own repository](https://github.com/oscairn/sampler) on 2026-10-31, with its history; what it plays
+and its limits are in its README. The build fetches it at the commit pinned in
+[CMakeLists.txt](CMakeLists.txt), and its tests stay here, in `core/engine/tests/sampler.cpp`,
+since they drive it through Oscairn's host.
 
 ## Basic Synth sounds
 
