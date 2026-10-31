@@ -188,6 +188,35 @@ same block, at the exact sample. Global locks precede notes; explicit per-note l
 follow same-sample notes after their destination IDs are assigned. See
 [RFC 0002](rfcs/0002-param-target.md). Built.
 
+### CLAP extensions: ours, upstream and drafts
+
+Oscairn does not fork CLAP. The vendored headers
+(`core/clap-host/third_party/clap`, CLAP 1.2) are unmodified. Everything Oscairn adds is a
+vendor extension with its own ID, in the MIT headers under
+[`core/clap-ext`](../core/clap-ext/include/oscairn-clap). A host that doesn't know one
+ignores it, and plugins keep building against standard CLAP. A fork would split plugin
+authors from the standard and gain nothing.
+
+| Extension | What it does | Plan |
+| --- | --- | --- |
+| `oscairn.param-target` event space and `oscairn.param-target-lanes/draft` ([RFC 0002](rfcs/0002-param-target.md)) | A plugin sends parameter changes on numbered lanes; the host routes them to other plugins' parameters in the same block | **Propose upstream.** CLAP has no way for one plugin to change another's parameters |
+| Voice budget, planned ([RFC 0018](rfcs/0018-voice-budget-and-stealing.md)) | Plugins report their sounding voices and cost, take a voice limit and steal their own voices | **Propose upstream** once built. `clap.voice-info` gives capacity, not use |
+| `oscairn.ui`, planned ([RFC 0019](rfcs/0019-adaptive-ui.md)) | Plugin editors described as data, drawn by each surface | **Propose upstream** once it works on more than one surface; use `clap.remote-controls` where that is enough |
+| `oscairn.sound-contexts/draft-4` ([RFC 0005](rfcs/0005-sound-contexts.md)) | Several prepared patches inside one instance, switched under held notes | Keep. Specific to Oscairn's sound switching |
+| `oscairn.effect-contexts/draft` ([RFC 0007](rfcs/0007-effect-contexts.md)) | Independent effect instances sharing one engine | Keep, for the same reason |
+| `oscairn.assets/draft-1` and `oscairn.asset-dependencies/draft-1` ([RFC 0009](rfcs/0009-sound-assets-and-dependencies.md)) | Shared libraries of files referenced by hash; plugins declare the files a sound needs | Keep. CLAP's `resource-directory` draft is per instance and copies files, so it stays an adapter only |
+
+CLAP drafts come before new extensions of our own:
+
+- `clap.tuning/2` for the Performance's tuning ([RFC 0017](rfcs/0017-host-tuning.md));
+- `clap.undo/4` (draft), to bring plugins' own edits into Oscairn's undo history;
+- `clap.mini-curve-display/3` (draft), for small envelope and filter curves in editors;
+- `clap.resource-directory/1` (draft), as RFC 0009's adapter.
+
+A proposal goes upstream after the extension has shipped in Oscairn and been used by more
+than one plugin, so it's proven before others are asked to adopt it. How CLAP takes
+proposals today is to be checked at the time (its repository is free-audio/clap).
+
 ## Sounds, performances and projects
 
 **Patch** (engine state) → **Sound** (event chain + engine + insert effects) →
