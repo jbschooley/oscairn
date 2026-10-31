@@ -79,6 +79,10 @@ Everything else is handled for you:
   desktop and the device all depend on it.
 - **CLAP notes,** not only MIDI: note IDs keep repeated notes on one key apart, per-note
   expression works, and `NOTE_END` tells the host when a voice and its tail have finished.
+- **Chokes and per-note volume:** treat a host `NOTE_CHOKE` as a fast fade of 2–5 ms, not a
+  cut, and honour `CLAP_NOTE_EXPRESSION_VOLUME`. The planned voice budget
+  ([RFC 0018](rfcs/0018-voice-budget-and-stealing.md)) fades a stolen note with the volume
+  expression, then chokes it; without both, stolen notes click.
 - **Parameter metadata:** clear names, CLAP module paths for grouping, value text, and the
   stepped and read-only flags. The generated editors are built from them.
 

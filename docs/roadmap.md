@@ -136,6 +136,10 @@ To do:
 - the KICK's real panel as a control surface. Pad mapping is in place: a per-Performance
   pad map (note, channel, velocity, pressure per pad, banks A–H, chromatic, drum and in-key
   fills) with the desktop's pad editor ([RFC 0011](rfcs/0011-performance-ui-and-editors.md#pads)).
+- a voice budget shared by every part, Kronos-style: when a Performance asks for more than the
+  processor can play, the least audible notes are faded and stolen across parts instead of
+  missing the deadline, with per-part note limits, reserves and priority; later, plugins
+  that opt in steal their own voices ([RFC 0018](rfcs/0018-voice-budget-and-stealing.md));
 - undo and redo for every graph, part, wire and Mix edit, which
   [RFC 0011](rfcs/0011-performance-ui-and-editors.md) promises for its views;
 - MIDI input curves and filters: implemented as note zones (key, velocity and channel ranges,

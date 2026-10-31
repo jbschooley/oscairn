@@ -23,3 +23,4 @@ Number them in order (`0002-...md`) and keep the status line up to date
 | [0015](0015-analog-modelling-engine.md) | An analog-modelling engine | proposed |
 | [0016](0016-effects-suite.md) | An effects suite covering the MODX M platform | proposed |
 | [0017](0017-host-tuning.md) | Host-level tuning | proposed |
+| [0018](0018-voice-budget-and-stealing.md) | Voice budget and stealing | proposed |
