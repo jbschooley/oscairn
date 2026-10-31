@@ -406,6 +406,34 @@ there is no gap. Values jump for now; smooth transitions are on the roadmap.
 Not yet: bypass in scenes (with the pedal view), the device's physical controls for these
 views, groups and undo.
 
+### Scenes, the full model (decided 2026-10-31)
+
+What a scene can hold, all of it by default:
+
+- **Enabled or disabled, per wire and per block:** every wire and every node in the
+  Performance can be switched on or off, and a scene records that for all of them. Switching a
+  part between two instruments, or a pedal on and off, is a scene enabling one block and
+  disabling another; held notes on the disabled block end, its tail rings out.
+- **Each part's mute and solo.**
+- **The mix:** each part's level and pan, each send's level, each wire's Mix row.
+- **Plugin parameters.**
+- **Control mappings:** which mappings are active, so a knob can drive the filter in the
+  verse and the delay in the chorus.
+
+What each scene saves is the user's choice: a scene has a scope, the kinds above it records,
+and a kind it does not record is left as it was when the scene is selected. The default scope
+is everything.
+
+For advanced users:
+
+- **Per plugin,** which parameters scenes save, and which they never touch (a sample's
+  tuning, an output level the user sets by ear). The default is every automatable parameter.
+- **Per mapping,** the scenes it is active in, so mappings can be laid out across scenes as a
+  table rather than captured one scene at a time.
+
+What exists today (above) is a subset: levels, mutes and the chosen scene parameters, and
+control values. The rest, and the scope, are to build; the Performance format records them.
+
 ## Step 3 status
 
 **Splits** implemented 2026-10-31 (the first slice of step 3). A part's chain may hold a

@@ -131,7 +131,7 @@ Open questions.
 | Every node: plugin identity, version, state, prepared contexts, asset references | Output port or bus; sends and their levels |
 | Wires with both ends inside the part, of both owners | Wires with one end outside the part |
 | Controls owned by the part (below) | Performance controls, including a Super Knob that drives the part's controls |
-| A suggested input: kind and zone, used only for **New part from sound** | Level, pan, mute, solo |
+| A suggested input: kind and zone, used only for **New part from sound** (decided) | Level, pan, mute, solo |
 | Name, tags, description, author, ID, revision, parent revision | Scenes, scene parameters, pads, tempo |
 | Libraries the nodes use (RFC 0009) | |
 
@@ -497,12 +497,12 @@ other requests do not wait the way `assets.register` does today.
 
 ## Open questions
 
-- **Scenes choosing Sounds.** Should a scene switch a part between prepared Sounds (a verse
-  pad, a chorus pad)? It fits seamless switching, but makes scenes hold chains.
+- **Scenes choosing Sounds.** Partly answered by the scene model (RFC 0011, "Scenes, the
+  full model"): a scene enables and disables blocks and wires, so a part holding two lanes
+  switches between them by scene. Whether a scene may also load a library Sound is open.
 - **Renaming `sounds.*`.** Those methods address contexts inside one plugin. Renaming them
   `contexts.*` would free the word; the development policy allows it, but it touches the
   protocol, the remote client and tests.
-- **A part's suggested input.** Should a Sound save a zone at all, or only the input kind?
 - **Saved chain snippets.** An effect chain without an instrument ("my vocal chain") is a
   part whose input is audio, so it is already a Sound. Whether a fragment to insert into the
   middle of a chain is needed is left until groups exist (RFC 0011 step 7).
@@ -510,7 +510,15 @@ other requests do not wait the way `assets.register` does today.
 - **Tag vocabulary and translation.** Which words, and whether display forms are localised
   while stored tags stay as written.
 - **Size limits on the device:** how many items the index must search quickly on the KICK's
-  processor. Not measured.
+  processor, and how it stays current. Options: rescan every folder at start (simplest,
+  slowest with thousands of items on an SD card); keep the index and recheck only files whose
+  times changed (fast start); and watch the folders for changes while running. The proposal
+  is the second, with a rescan on request, and targets of a picker that opens in 100 ms and
+  filters within 50 ms of a keystroke at 5,000 items. Not measured.
+- **Shared effects and loops.** An effect three parts send to is a bus, or a node outside
+  every part (RFC 0011's shared row), so no part's Sound holds it; a Performance does. Loops
+  are refused by the graph today; feedback needs the delayed return edge the architecture
+  plans, which a Sound would save like any other wire inside it.
 - **Sends on a new part.** Should **New part from sound** offer to send to an existing bus of
   the same name as the one the part was saved from? This RFC saves no sends at all.
 
