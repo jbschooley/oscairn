@@ -241,10 +241,13 @@ in the others.
    [plugins/modular](../plugins/modular/README.md) with its history, wrapped as a CLAP
    instrument with factory presets and bundled in the desktop app. The patch editor, the
    upstream sample-grid fix and native sound contexts remain.
-6. **Voice budget — planned:** stealing the least audible notes across parts, fading them
-   first, with per-part note limits, reserves and priority; later, plugins that opt in steal
-   their own voices ([RFC 0018](rfcs/0018-voice-budget-and-stealing.md)). Step 1 (fade and
-   choke, and the Basic Synth and Sampler handling both) comes first.
+6. **Voice budget — steps 1–2 started:** stealing the least audible notes across parts, fading
+   them first, with per-part note limits, reserves and priority; later, plugins that opt in
+   steal their own voices ([RFC 0018](rfcs/0018-voice-budget-and-stealing.md)). Done: a choke
+   fades a voice over 3 ms in the SDK helper (Basic Synth and Sampler), per-note volume, and
+   per-part note limits that steal released notes first and spare the bass and melody
+   ([step 2](rfcs/0018-voice-budget-and-stealing.md#step-2-status)). Next: the host's volume
+   ramp for other plugins, then step 3's shared budget.
 
 Also open:
 
