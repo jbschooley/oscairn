@@ -47,6 +47,8 @@ namespace oscairn::standalone
         std::vector<PluginChoice> plugins_;
         PartsState state_;
         std::vector<MidiEndpoint> endpoints_; // the host's MIDI inputs
+        std::vector<Control::SessionStatus::PluginFailure> failures_; // plugins that failed and are silent
+        bool failed(NodeId node) const { return std::any_of(failures_.begin(), failures_.end(), [&](const auto& f) { return f.node == node; }); }
         std::vector<Scene> scenes_;
         std::vector<SceneParameter> sceneParameters_;
         uint32_t scene_ = 0;

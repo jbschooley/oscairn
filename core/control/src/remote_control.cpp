@@ -118,7 +118,8 @@ namespace oscairn
             status.audioInputs=channels(field(v,"audioInputs"));status.audioOutputs=channels(field(v,"audioOutputs"));
             status.audioReady=boolean(field(v,"audioReady"));
             status.graphEventDrops=integer(field(v,"graphEventDrops"));status.midiEventDrops=integer(field(v,"midiEventDrops"));
-            status.deadlineMisses=integer(field(v,"deadlineMisses"));status.midiInputs.clear();
+            status.deadlineMisses=integer(field(v,"deadlineMisses"));status.midiInputs.clear();status.failures.clear();
+            for(auto f:array(field(v,"failures")))status.failures.push_back({static_cast<NodeId>(integer(field(f,"node"))),string(field(f,"name")),string(field(f,"reason"))});
             for(auto e:array(field(v,"midiInputs")))
                 status.midiInputs.push_back({MidiEndpoint::Kind(named(endpointKinds,string(field(e,"kind")))),uint8_t(integer(field(e,"source"))),string(field(e,"name")),static_cast<uint32_t>(integer(field(e,"port")))});
         }

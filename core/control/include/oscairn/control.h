@@ -45,6 +45,9 @@ namespace oscairn
             std::vector<DeviceChannel> audioInputs, audioOutputs; // logical order -> device channel
             bool audioReady=true;
             uint64_t graphEventDrops=0,midiEventDrops=0;
+            // Plugins that have failed and are silent: a worker that crashed, hung or was given up.
+            struct PluginFailure { NodeId node=0; std::string name, reason; bool operator==(const PluginFailure&) const = default; };
+            std::vector<PluginFailure> failures;
         };
         virtual SessionStatus sessionStatus() const = 0;
         struct GraphState

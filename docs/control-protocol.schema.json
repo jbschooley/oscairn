@@ -4482,6 +4482,32 @@
         "graphEventDrops": {
           "type": "integer",
           "minimum": 0
+        },
+        "failures": {
+          "type": "array",
+          "description": "Plugins that have failed and are silent: a worker that crashed, hung or was given up, with why",
+          "items": {
+            "type": "object",
+            "properties": {
+              "node": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 4294967295
+              },
+              "name": {
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "node",
+              "name",
+              "reason"
+            ],
+            "additionalProperties": false
+          }
         }
       },
       "required": [
@@ -4495,7 +4521,8 @@
         "midiEventDrops",
         "audioInputs",
         "audioOutputs",
-        "audioReady"
+        "audioReady",
+        "failures"
       ],
       "additionalProperties": false
     },

@@ -97,6 +97,11 @@ add_test(NAME control-parts COMMAND oscairn-parts-test
     $<TARGET_FILE:kick-clap-fixture-normal> $<TARGET_FILE:oscairn-audio-fixture> $<TARGET_FILE:oscairn_delay> $<TARGET_FILE:oscairn_splitters>)
 set_tests_properties(control-parts PROPERTIES TIMEOUT 60)
 
+add_executable(oscairn-plugin-failures-test tests/plugin_failures.cpp)
+target_link_libraries(oscairn-plugin-failures-test PRIVATE oscairn_control_json)
+add_test(NAME control-plugin-failures COMMAND oscairn-plugin-failures-test $<TARGET_FILE:oscairn-plugin-worker> $<TARGET_FILE:kick-clap-fixture-process_crash>)
+set_tests_properties(control-plugin-failures PROPERTIES TIMEOUT 60)
+
 add_executable(oscairn-undo-test tests/undo.cpp)
 target_include_directories(oscairn-undo-test PRIVATE ../clap-host/tests)
 target_link_libraries(oscairn-undo-test PRIVATE oscairn_control)

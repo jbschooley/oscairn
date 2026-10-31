@@ -241,6 +241,12 @@ Implemented 2026-10-30 in `WorkerHost.cpp` (native engines followed in step 5):
   no longer resets the whole node, so the other sounds' notes keep playing. A panic requested
   while a worker is down no longer reaches the new worker, where it would have dropped the
   first block's notes.
+- **A control request that times out** (30 s, such as a huge preset load) fails the worker
+  too: it is killed and restarted, since its late reply would otherwise be read as the next
+  request's (fixed 2026-10-31, from the audit; `worker-recovery` checks it).
+- **Failures are visible:** `session.status` lists each plugin that has failed and is silent,
+  with its reason, and the desktop's part views outline it in red and name it
+  (`control-plugin-failures`).
 - Not yet: state the plugin changes by itself (its own editor, internal edits) is not saved
   into the record between loads; only parameter values are. A debounced save after changes
   is the next refinement (see open questions).

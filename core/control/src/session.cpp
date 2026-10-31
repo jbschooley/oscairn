@@ -202,7 +202,12 @@ namespace oscairn
         result.graphEventDrops=graph_.eventDrops();
         if(result.sampleRate == 0) result.sampleRate = sampleRate_;
         if(result.bufferSize == 0) result.bufferSize = maxFrames_;
-        for(const auto& [node,name] : nodes_) result.deadlineMisses += graph_.host(node).statistics().deadlineMisses;
+        for(const auto& [node,name] : nodes_)
+        {
+            const auto& host = graph_.host(node);
+            result.deadlineMisses += host.statistics().deadlineMisses;
+            if(auto why = host.failure(); !why.empty()) result.failures.push_back({node, name, std::move(why)});
+        }
         return result;
     }
 

@@ -81,13 +81,17 @@ namespace oscairn::standalone
         try
         {
             graph_ = engine_.graph();
-            state_ = readParts(graph_); routing_ = readRouting(graph_); endpoints_ = engine_.status().midiInputs; scenes_ = graph_.scenes; sceneParameters_ = graph_.sceneParameters; scene_ = graph_.scene; macros_ = graph_.macros;
+            state_ = readParts(graph_); routing_ = readRouting(graph_);
+            const auto status = engine_.status(); endpoints_ = status.midiInputs; failures_ = status.failures; scenes_ = graph_.scenes; sceneParameters_ = graph_.sceneParameters; scene_ = graph_.scene; macros_ = graph_.macros;
         }
         catch(const std::exception&) { return; }
         if(page_ && page_ != controlsPage && page_ != mixerPage && page_ != routingPage && !part(page_)) { page_ = 0; shape_.clear(); }
         if(page_ == routingPage && routed_ && !routing_.find(routed_, routedPort_)) routed_ = 0;
         for(auto& p : state_.parts) if(p.notes && !p.devices.empty() && !resolveDevices(p.devices, endpoints_)) p.input = "No device: " + p.input;
-        message_.setText(text(engine_.editError()), juce::dontSendNotification);
+        // An edit that failed, or else a plugin that failed: outlined in red wherever it shows.
+        std::string message = engine_.editError();
+        if(message.empty() && !failures_.empty()) message = failures_.front().name + " is silent: " + failures_.front().reason;
+        message_.setText(text(message), juce::dontSendNotification);
         // Undo and redo name what they would do.
         const auto history = engine_.history();
         undo_.setEnabled(!history.undo.empty()); redo_.setEnabled(!history.redo.empty());
@@ -845,7 +849,7 @@ namespace oscairn::standalone
                 const bool chosen = b.node == routed_ && ((b.node != graphInput && b.node != graphOutput) || b.port == routedPort_);
                 g.setColour(chosen ? ink(Ink::Accent).withAlpha(.25f) : ink(Ink::Surface));
                 g.fillRoundedRectangle(b.bounds.toFloat(), themeData().radius);
-                g.setColour(chosen ? ink(Ink::Accent) : ink(Ink::Border));
+                g.setColour(chosen ? ink(Ink::Accent) : failed(b.node) ? ink(Ink::Danger) : ink(Ink::Border));
                 g.drawRoundedRectangle(b.bounds.toFloat(), themeData().radius, chosen ? 2.0f : 1.0f);
                 auto inner = b.bounds.reduced(8, 2);
                 g.setColour(ink(Ink::Text)); g.setFont(juce::FontOptions(13.0f * scale));
@@ -877,7 +881,7 @@ namespace oscairn::standalone
         auto chip = [&](juce::Rectangle<float> r, const PartBox& b, bool selected) {
             g.setColour(selected ? ink(Ink::Accent).withAlpha(.25f) : ink(Ink::Raised));
             g.fillRoundedRectangle(r, themeData().radius);
-            g.setColour(selected ? ink(Ink::Accent) : ink(Ink::Border));
+            g.setColour(selected ? ink(Ink::Accent) : !b.split && failed(b.node) ? ink(Ink::Danger) : ink(Ink::Border));
             g.drawRoundedRectangle(r, themeData().radius, selected ? 2.0f : 1.0f);
             auto inner = r.reduced(8, 4);
             g.setColour(roleColour(b.role));

@@ -67,6 +67,7 @@ namespace oscairn::standalone
             int step=-1;
             std::string audioDevice;
             std::vector<MidiEndpoint> midiInputs;
+            std::vector<Control::SessionStatus::PluginFailure> failures; // plugins that failed and are silent
         };
         Status status()const;
         const SoundPickerState& soundPicker() const { return soundPicker_; }
