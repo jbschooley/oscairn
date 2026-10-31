@@ -6,7 +6,7 @@ a device that does not exist yet and be tried with the same engine behind it. Bu
 
 | File | Layout |
 | --- | --- |
-| `desktop.json` | Desktop window that stretches to any shape: large screen, sound knobs, 16 pads, transport |
+| `desktop.json` | The desktop app's own window (the Desktop surface): toolbar, parts list, and tabs for the part, Mixer, Routing, Controls and Sequencer |
 | `kick.json` | The KICK's panel, with the geometry of chillbeast's KickEM simulator board (1024 x 600 screen); most buttons do nothing yet |
 | `kick-screen.json` | The KICK's screen alone, 1024 x 600: on the device, the hardware panel supplies the controls |
 | `ignite.json` | The Ignite's panel (BE 0716-AAF), from its front-panel photo, with its 1024 x 600 screen; the 16 step encoders edit each step's note, CUTOFF and VOLUME the synth; most buttons do nothing yet |
@@ -29,6 +29,10 @@ Others can be opened with View > Open Layout File... or `--layout path.json`.
 }
 ```
 
+- `surface` ([RFC 0019](../../../docs/rfcs/0019-adaptive-ui.md)): `panel` (the default), a
+  device's front panel drawn from `panels` and `controls`, or `desktop`, the desktop app's own
+  window with menus and tabs, which uses neither and may leave `controls` out. Its controls
+  follow the **View > Input** setting: Keyboard and mouse, Touch (larger targets) or Automatic.
 - `size`: design units. The window starts with one unit per pixel when it fits. `rect` is
   `[x, y, width, height]`.
 - `resize`: `scale` (the default: the window keeps the panel's proportions and the panel

@@ -298,7 +298,7 @@ controls; physical knobs, sliders, buttons, MIDI CC and sequencer lanes drive th
 Implemented 2026-10-31 (as `Macro` in `parts.h`): controls with parameter, part level, part
 mute and control targets, each with its range, curve and relative mode; loops refused;
 last-moved wins; scenes store control values; saved in the Performance; `controls.*` in the
-control protocol; a **Controls** page in the Parts view; and desktop layout knobs bound as
+control protocol; a **Controls** page in the Parts view; and panel layout knobs bound as
 `control:NAME`. `control-parts` checks a Super control driving an Assign control (with an
 exponential curve) that drives a gain and a reversed part level, a relative target, loops,
 scenes and saving. Not yet: flattening the tree for sample-accurate sequencer lanes,

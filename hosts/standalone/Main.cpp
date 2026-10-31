@@ -4,12 +4,16 @@
 // layouts (View menu, or --layout NAME|FILE.json). Every MIDI input plays it.
 //
 //   oscairn-standalone [--layout NAME|path.json] [--plugins DIR] [--in-process | --connect SOCKET]
-//                      [--fullscreen] [--play] [--snapshot out.png [--size WxH] [--play SECONDS]]
+//                      [--fullscreen] [--play] [--input-mode automatic|mouse|touch]
+//                      [--snapshot out.png [--size WxH] [--play SECONDS] [--view TAB]]
 //
 // --fullscreen fills the display with no title bar (for a device). --play starts the
-// sequencer at launch. --snapshot renders the panel to a PNG and quits: at its design size,
-// or as in a window of --size; with --play SECONDS, the sequencer plays for that long first.
+// sequencer at launch. --input-mode overrides the saved preference for this run. --snapshot
+// renders the window to a PNG and quits: at the layout's design size, or as in a window of
+// --size; with --play SECONDS, the sequencer plays for that long first; with --view, the
+// desktop shows that tab (Part, Mixer, Routing, Controls or Sequencer).
 
+#include "DesktopShell.h"
 #include "Engine.h"
 #include "Layout.h"
 #include "Panel.h"
@@ -71,11 +75,11 @@ namespace oscairn::standalone
     class Window : public juce::DocumentWindow, public juce::MenuBarModel
     {
     public:
-        Window( Engine& engine, std::vector<NamedLayout> layouts, const Layout& first, bool fullScreen,Theme& theme,const juce::File& plugins )
+        Window( Engine& engine, std::vector<NamedLayout> layouts, const Layout& first, bool fullScreen,Theme& theme,const juce::File& plugins, InputMode mode )
             : DocumentWindow( "Oscairn", juce::Colours::black, DocumentWindow::allButtons )
             , engine_( engine )
             , layouts_( std::move( layouts ) )
-            , fullScreen_( fullScreen ),theme_(theme),plugins_(plugins)
+            , fullScreen_( fullScreen ),theme_(theme),plugins_(plugins),inputMode_(mode)
         {
             setUsingNativeTitleBar( !fullScreen );
             if( fullScreen )
@@ -108,7 +112,11 @@ namespace oscairn::standalone
         void show( const Layout& layout )
         {
             pads_.reset();parts_.reset();
-            setContentOwned( new Panel( engine_, layout ), false );
+            layout_ = layout;
+            if( layout.surface == Layout::Surface::Desktop )
+                setContentOwned( new DesktopShell( engine_, scanner(), inputMode_ ), false );
+            else
+                setContentOwned( new Panel( engine_, layout ), false );
             setName( "Oscairn - " + juce::String( layout.name ) );
 
             // Start at the layout's design size (one design unit per pixel) if it fits,
@@ -152,6 +160,9 @@ namespace oscairn::standalone
             return false;
         }
 
+        const Layout& layout() const { return layout_; }
+        DesktopShell* shell() const { return dynamic_cast<DesktopShell*>( getContentComponent() ); }
+
         juce::StringArray getMenuBarNames() override { return { "Performance", "Edit", "View", "Plugins", "Appearance" }; }
 
         juce::PopupMenu getMenuForIndex( int index, const juce::String& ) override
@@ -163,15 +174,20 @@ namespace oscairn::standalone
                 menu.addItem(6001,h.redo.empty()?juce::String("Redo"):"Redo "+juce::String::fromUTF8(h.redo.c_str()),!h.redo.empty());return menu;}
             if(index==3){menu.addItem(2000,"Browse plugins and edit parameters...");return menu;}
             if(index==4){themeItems_=theme_.installed();for(size_t i=0;i<themeItems_.size();++i)menu.addItem(3000+int(i),themeItems_[i].second,true,themeItems_[i].first==themeData().id);menu.addSeparator();menu.addItem(4000,"Manage themes...");return menu;}
-            const auto*     current = dynamic_cast<Panel*>( getContentComponent() );
             for( size_t i = 0; i < layouts_.size(); ++i )
             {
                 const auto& l      = layouts_[i];
-                const auto  ticked = current && juce::String( current->layout().name ).equalsIgnoreCase( title( l ) );
+                const auto  ticked = juce::String( layout_.name ).equalsIgnoreCase( title( l ) );
                 menu.addItem( (int)i + 1, title( l ), true, ticked );
             }
             menu.addSeparator();
             menu.addItem( 1000, "Open Layout File..." );
+            // How the desktop is used: control sizes and spacing (RFC 0019).
+            menu.addSeparator();
+            juce::PopupMenu input;
+            for( auto mode : { InputMode::Automatic, InputMode::Mouse, InputMode::Touch } )
+                input.addItem( 7000 + int( mode ), inputModeName( mode ), true, mode == inputMode_ );
+            menu.addSubMenu( "Input", input, layout_.surface == Layout::Surface::Desktop );
             return menu;
         }
 
@@ -188,6 +204,7 @@ namespace oscairn::standalone
                         action.directory=fc.getResult().getFullPathName().toStdString();safe->engine_.soundAction(std::move(action));
                     });return;
             }
+            if(id>=7000 && id<=7002){inputMode_=InputMode(id-7000);writeInputMode(theme_.configuration(),inputMode_);if(auto* s=shell())s->setInputMode(inputMode_);return;}
             if(id==6000){engine_.edit([](Control& c){c.undo();});return;}
             if(id==6001){engine_.edit([](Control& c){c.redo();});return;}
             if(id==2000 || id==4000){showLibrary();return;}
@@ -215,10 +232,11 @@ namespace oscairn::standalone
             addAndMakeVisible( *pads_ );
             if( getContentComponent() ) pads_->setBounds( getContentComponent()->getBounds() );
         }
+        static std::string scanner() { return juce::File::getSpecialLocation( juce::File::currentExecutableFile ).getSiblingFile( "oscairn-plugin-scan" ).getFullPathName().toStdString(); }
         void showParts()
         {
-            const auto scanner = juce::File::getSpecialLocation( juce::File::currentExecutableFile ).getSiblingFile( "oscairn-plugin-scan" ).getFullPathName().toStdString();
-            parts_ = std::make_unique<PartsView>( engine_, scanner );
+            if( auto* s = shell() ) { s->showTab( DesktopShell::Tab::Part ); return; } // the desktop has them in its window
+            parts_ = std::make_unique<PartsView>( engine_, scanner() );
             parts_->onDone = [this] { juce::MessageManager::callAsync( [safe = juce::Component::SafePointer<Window>( this )] { if( safe ) safe->parts_.reset(); } ); };
             addAndMakeVisible( *parts_ );
             if( getContentComponent() ) parts_->setBounds( getContentComponent()->getBounds() );
@@ -257,6 +275,8 @@ namespace oscairn::standalone
         std::unique_ptr<PadEditor> pads_;
         std::unique_ptr<PartsView> parts_;
         std::vector<std::pair<juce::String,juce::String>> themeItems_;
+        InputMode inputMode_;
+        Layout layout_;
     };
 
     class Application : public juce::JUCEApplication
@@ -282,7 +302,7 @@ namespace oscairn::standalone
                 theme_=std::make_unique<Theme>();
                 host::AudioConfiguration audio;
                 bool audioOptions=false;
-                const juce::StringArray valued{"--plugins","--connect","--layout","--snapshot","--size"};
+                const juce::StringArray valued{"--plugins","--connect","--layout","--snapshot","--size","--view","--input-mode"};
                 for(int i=0;i<args.size();++i)
                 {
                     const auto name=args[i].toStdString();
@@ -323,7 +343,22 @@ namespace oscairn::standalone
                         throw std::runtime_error( "no layout named " + wanted.toStdString() + " and no such file" );
                     json = file.loadFileAsString();
                 }
-                window_ = std::make_unique<Window>( *engine_, std::move( layouts ), Layout::parse( json ), args.contains( "--fullscreen" ),*theme_,juce::File(dir.unquoted()) );
+                auto mode = readInputMode( theme_->configuration() );
+                if( const auto m = argument( args, "--input-mode" ); m.isNotEmpty() )
+                {
+                    if( m == "automatic" ) mode = InputMode::Automatic;
+                    else if( m == "mouse" ) mode = InputMode::Mouse;
+                    else if( m == "touch" ) mode = InputMode::Touch;
+                    else throw std::invalid_argument( "--input-mode must be automatic, mouse or touch" );
+                }
+                window_ = std::make_unique<Window>( *engine_, std::move( layouts ), Layout::parse( json ), args.contains( "--fullscreen" ),*theme_,juce::File(dir.unquoted()), mode );
+                if( const auto view = argument( args, "--view" ); view.isNotEmpty() )
+                {
+                    DesktopShell::Tab tab;
+                    if( !window_->shell() || !DesktopShell::tabNamed( view, tab ) )
+                        throw std::invalid_argument( "--view needs the desktop layout and one of Part, Mixer, Routing, Controls, Sequencer" );
+                    window_->shell()->showTab( tab );
+                }
                 if( args.contains( "--play" ) )
                     engine_->setPlaying( true );
 
@@ -369,13 +404,13 @@ namespace oscairn::standalone
     private:
         void writeSnapshot( const juce::File& file, int width, int height )
         {
-            auto* panel = dynamic_cast<Panel*>( window_->getContentComponent() );
-            const auto& l = panel->layout();
+            auto* content = window_->getContentComponent();
+            const auto& l = window_->layout();
             if( width > 0 && height > 0 )
-                panel->setSize( width, height );
+                content->setSize( width, height );
             else
-                panel->setSize( l.width, l.height ); // one design unit per pixel
-            const auto image = panel->createComponentSnapshot( panel->getLocalBounds(), true, 1.0f );
+                content->setSize( l.width, l.height ); // one design unit per pixel
+            const auto image = content->createComponentSnapshot( content->getLocalBounds(), true, 1.0f );
             file.deleteFile();
             juce::FileOutputStream out( file );
             if( !out.openedOk() || !juce::PNGImageFormat().writeImageToStream( image, out ) )

@@ -90,6 +90,13 @@ namespace oscairn::standalone
             else if( resize == "stretch" ) layout.resize = Resize::Stretch;
             else invalid( "\"resize\" must be fixed, scale or stretch" );
         }
+        if( root.hasProperty( "surface" ) )
+        {
+            const auto surface = root["surface"].toString();
+            if( surface == "panel" ) layout.surface = Surface::Panel;
+            else if( surface == "desktop" ) layout.surface = Surface::Desktop;
+            else invalid( "\"surface\" must be panel or desktop" );
+        }
 
         if( const auto* panels = root["panels"].getArray() )
             for( int i = 0; i < panels->size(); ++i )
@@ -100,10 +107,10 @@ namespace oscairn::standalone
             }
 
         const auto* controls = root["controls"].getArray();
-        if( !controls )
+        if( !controls && layout.surface == Surface::Panel )
             invalid( "\"controls\" must be a list" );
         bool screen = false;
-        for( int i = 0; i < controls->size(); ++i )
+        for( int i = 0; controls && i < controls->size(); ++i )
         {
             const auto&  c     = ( *controls )[i];
             const auto   where = "control " + juce::String( i ) + ( c["label"].isVoid() ? "" : " (" + c["label"].toString() + ")" );

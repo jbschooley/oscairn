@@ -627,6 +627,7 @@ namespace oscairn::standalone
                 if(b.id != id) updates.push_back(slider(labelled("Send to " + text(b.name)).removeFromLeft(320).reduced(2, 10), 0, 1, sendOf(id, b.id), setSend(id, b.id)).second);
         }
         updaters_ = std::move(updates); // refresh() runs them
+        if(embedded_) for(auto* c : std::initializer_list<juce::Component*>{&done_, &back_, &undo_, &redo_, &title_, &addPart_, &addBus_, &controlsButton_, &mixerButton_, &routingButton_}) c->setVisible(false);
     }
 
     std::string PartsView::describe(const MacroTarget& t) const

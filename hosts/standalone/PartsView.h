@@ -27,6 +27,11 @@ namespace oscairn::standalone
         void showPart(uint32_t id); // 0: the list
         void showLane(uint32_t split, int lane); // selects a split (lane -1) or one of its lanes on the part shown
         void showRouting(NodeId node, uint32_t port = 0); // Routing, with that node (0: none) selected
+        // Inside the desktop's window (RFC 0019): the window has the tabs, undo and the parts
+        // list, so this view leaves out its own.
+        void setEmbedded(bool embedded) { embedded_ = embedded; shape_.clear(); refresh(); }
+        uint32_t page() const { return page_; }
+        static constexpr uint32_t controlsPage = 0xFFFFFFFFu, mixerPage = 0xFFFFFFFEu, routingPage = 0xFFFFFFFDu;
 
     private:
         void timerCallback() override;
@@ -53,7 +58,7 @@ namespace oscairn::standalone
         std::vector<SceneParameter> sceneParameters_;
         uint32_t scene_ = 0;
         std::vector<Macro> macros_;
-        static constexpr uint32_t controlsPage = 0xFFFFFFFFu, mixerPage = 0xFFFFFFFEu, routingPage = 0xFFFFFFFDu;
+        bool embedded_ = false;
         std::string shape_; // what the controls were built for; rebuilt when it changes
         uint32_t page_ = 0; // 0: the list; otherwise the part shown
         NodeId selected_ = 0;

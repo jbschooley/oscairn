@@ -77,6 +77,15 @@ namespace oscairn::standalone
             Stretch
         };
         Resize               resize = Resize::Scale;
+        /// Which UI it is (RFC 0019). Panel: a device's front panel and screen, drawn from
+        /// `panels` and `controls`. Desktop: the desktop app's own window, with menus, panes and
+        /// tabs; its panels and controls are not used.
+        enum class Surface
+        {
+            Panel,
+            Desktop
+        };
+        Surface              surface = Surface::Panel;
         std::vector<Panel>   panels;
         std::vector<Control> controls;
 

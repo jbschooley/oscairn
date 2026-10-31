@@ -25,6 +25,7 @@ public:
     void apply(const juce::String& id);
     void install(const juce::File& source); // a theme folder or its theme.json
     juce::File directory() const {return root_.getChildFile("themes");}
+    juce::File configuration() const {return root_;} // the per-user Oscairn configuration folder
     const juce::String& error() const {return error_;}
     juce::Typeface::Ptr getTypefaceForFont(const juce::Font&) override;
     juce::Font getLabelFont(juce::Label&) override;

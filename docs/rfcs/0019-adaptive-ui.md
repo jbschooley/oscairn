@@ -1,6 +1,6 @@
 # RFC 0019: One UI across desktop, touch panel and small screens
 
-Status: proposed, 2026-10-31. Not implemented. Builds on the views and plugin editors of
+Status: proposed, 2026-10-31. Step 1 started (below). Builds on the views and plugin editors of
 [RFC 0011](0011-performance-ui-and-editors.md), the control API
 ([RFC 0003](0003-control-api.md)) and the layouts and themes of the
 [design language](../design-language.md).
@@ -193,6 +193,25 @@ load. If it fails, Panel's renderer changes, and the view models and description
 | 6. Front panels | User-placed controls bound to any parameter, saved with the Performance, on Desktop | A panel of controls for three plugins, built and played without the plugins' editors |
 
 Steps 1–3 come before RFC 0011's step 5, and cover its knob pages.
+
+## Step 1 status
+
+Started 2026-10-31. A layout names its surface (`"surface": "desktop"`), and the desktop
+layout is now the Desktop surface (`hosts/standalone/DesktopShell.cpp`):
+- a toolbar with play and stop, tempo, the scene and Store, the audio device and MIDI inputs,
+  and undo and redo;
+- the parts and buses down the left, each with what plays, its input, mute and solo marks and
+  its level;
+- tabs for the selected part, the Mixer, Routing, Controls and the Sequencer.
+
+The parts views are embedded as they are, so they are still sized for the device's screen. The
+input mode (View > Input: Automatic, Keyboard and mouse, Touch) is saved beside the theme
+selection, and for now changes the toolbar's, list's and tabs' sizes; Automatic means keyboard
+and mouse. `desktop-shell` builds a small Performance and renders every tab in both input
+modes (to PNGs when given a path). The device layouts are unchanged.
+
+Not yet: the views' state on view models of their own, the parts views drawn for each surface,
+and Panel renders in the same test.
 
 ## Open questions
 
