@@ -357,8 +357,11 @@ namespace oscairn::standalone
                 });
                 (*showDb)(); updates.push_back(showDb);
                 inner.removeFromBottom(4);
-                const auto meter = inner.removeFromRight(10);
-                auto [fader, update] = slider(inner.reduced(4, 0), 0, 1, levelOf(p.id), setLevel(p.id));
+                // The fader and its meters as a pair, centred, 18 pixels apart.
+                auto pair = inner.withSizeKeepingCentre(std::min(inner.getWidth(), 28 + 18 + 10), inner.getHeight());
+                auto faderArea = pair.removeFromLeft(28); pair.removeFromLeft(18);
+                const auto meter = pair.removeFromLeft(10);
+                auto [fader, update] = slider(faderArea, 0, 1, levelOf(p.id), setLevel(p.id));
                 fader->setSliderStyle(juce::Slider::LinearVertical);
                 fader->setSkewFactorFromMidPoint(.25); // -12 dB halfway up
                 fader->setTooltip("The part's level, before its sends");
@@ -896,7 +899,8 @@ namespace oscairn::standalone
             {
                 const auto* p = part(s.part);
                 g.setColour(p && (p->mute || p->silenced) ? ink(Ink::Surface).withAlpha(.5f) : ink(Ink::Surface));
-                g.fillRoundedRectangle(s.bounds.toFloat(), themeData().radius);
+                g.fillRoundedRectangle(s.bounds.toFloat(), themeData().radius + 2);
+                drawEdge(g, s.bounds.toFloat().reduced(.5f), themeData().radius + 2);
                 // A bar per channel of the part's sound (mono, stereo or more), side by side.
                 const auto it = peaks_.find(s.part);
                 const auto channels = it == peaks_.end() || it->second.empty() ? std::vector<double>{0.0} : it->second;

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #include "../Theme.h"
+#include <algorithm>
 #include <iostream>
 using namespace oscairn::standalone;
 void check(bool ok,const char* message){if(!ok)throw std::runtime_error(message);}
@@ -11,9 +12,15 @@ int main(int argc,char** argv){try{
     check(argc==3,"need built-in theme folder and example theme folder");
     const juce::File builtIn(argv[1]),example(argv[2]);const auto json=example.getChildFile("theme.json").loadFileAsString();
     const auto theme=ThemeData::parse(json);check(theme.id=="midnight" && theme.radius==8 && theme.font.regular=="fonts/Inter-Regular.ttf","valid theme parsed");
-    for(auto broken:{json.replace("\"midnight\"","\"../escape\""),json.replace("\"version\": 2","\"version\": 1"),json.replace("\"fontScale\": 1.0","\"fontScale\": 100"),
+    check(theme.style.buttons==ThemeStyle::Buttons::Pill && theme.style.tabs==ThemeStyle::Tabs::Segmented && theme.style.sliders==ThemeStyle::Sliders::Line,"its style parsed");
+    const auto classic=ThemeData::parse(json.replace("\"pill\"","\"rounded\"").replace("\"hairline\"","\"outlined\"").replace("\"soft\"","\"flat\"").replace("\"line\"","\"filled\"").replace("\"segmented\"","\"folder\"").replace("\"square\"","\"round\""));
+    check(classic.style.buttons==ThemeStyle::Buttons::Rounded && classic.style.edges==ThemeStyle::Edges::Outlined && classic.style.depth==ThemeStyle::Depth::Flat &&
+          classic.style.sliders==ThemeStyle::Sliders::Filled && classic.style.tabs==ThemeStyle::Tabs::Folder && classic.style.marks==ThemeStyle::Marks::Round,"every style choice parsed");
+    for(auto broken:{json.replace("\"midnight\"","\"../escape\""),json.replace("\"version\": 3","\"version\": 2"),json.replace("\"fontScale\": 1.0","\"fontScale\": 100"),
                      json.replace("#F0F5FC","#101724"),json.replace("#7CCEFF","red"),json.replace("\"radius\": 8","\"script\": \"evil\""),
-                     json.replace("\"license\": \"fonts/OFL.txt\"","\"licence\": \"fonts/OFL.txt\""),json.replace("\"regular\": \"fonts/Inter-Regular.ttf\",","")}){
+                     json.replace("\"license\": \"fonts/OFL.txt\"","\"licence\": \"fonts/OFL.txt\""),json.replace("\"regular\": \"fonts/Inter-Regular.ttf\",",""),
+                     json.replace("\"tabs\": \"segmented\"","\"tabs\": \"ribbon\""),json.replace("\"marks\": \"square\"","\"marks\": \"square\", \"shader\": \"x\""),
+                     json.replace("\"buttons\": \"pill\",","")}){
         bool rejected=false;try{ThemeData::parse(broken);}catch(const std::exception&){rejected=true;}check(rejected,"invalid or unreadable theme rejected");
     }
     juce::ScopedJuceInitialiser_GUI gui;
@@ -22,11 +29,11 @@ int main(int argc,char** argv){try{
         check(themeData().id=="oscairn-dark" && fresh.error().isEmpty(),"built-in default theme applied on first launch");
         check(face(fresh)=="Inter/Regular" && face(fresh,true)=="Inter/Bold","theme fonts used for regular and bold text");
         const auto list=fresh.installed();
-        check(list.size()==2 && list[0].first.startsWith("oscairn-") && list[1].first.startsWith("oscairn-"),"built-in themes listed from their folders");}
+        check(list.size()==3 && std::all_of(list.begin(),list.end(),[](const auto& t){return t.first.startsWith("oscairn-");}),"built-in themes listed from their folders");}
     {Theme installed(root,builtIn);installed.install(example.getChildFile("theme.json"));check(themeData().id=="midnight","install applies theme");
         const auto copy=installed.directory().getChildFile("midnight");
         check(copy.getChildFile("theme.json").loadFileAsString()==json && copy.getChildFile("fonts/Inter-Regular.ttf").hasIdenticalContentTo(example.getChildFile("fonts/Inter-Regular.ttf")),"install copies the theme and its fonts");
-        installed.install(example);check(installed.installed().size()==3,"reinstall is idempotent");
+        installed.install(example);check(installed.installed().size()==4,"reinstall is idempotent");
         check(face(installed)=="Inter/Regular","installed theme uses its own font");
         auto refused=[&](const juce::File& folder){bool r=false;try{installed.install(folder);}catch(const std::exception&){r=true;}return r && themeData().id=="midnight";};
         auto variant=[&](const juce::String& id,const juce::String& text){

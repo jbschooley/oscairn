@@ -1,5 +1,5 @@
 {
-  "version": 2,
+  "version": 3,
   "id": "oscairn-dark",
   "name": "Oscairn Dark",
   "font": {
@@ -10,14 +10,22 @@
   "fontScale": 1.0,
   "radius": 6,
   "colours": {
-    "background": "#15181D",
-    "surface": "#20252D",
-    "raised": "#2C333D",
-    "border": "#526070",
-    "text": "#EDF1F5",
-    "muted": "#A3AEBB",
-    "accent": "#FFA45B",
+    "background": "#111317",
+    "surface": "#1D2127",
+    "raised": "#2D333B",
+    "border": "#4A535E",
+    "text": "#F6F8FA",
+    "muted": "#B4BDC8",
+    "accent": "#FF9A45",
     "positive": "#5AD9A4",
-    "danger": "#FF8D87"
+    "danger": "#FF6B63"
+  },
+  "style": {
+    "buttons": "pill",
+    "edges": "hairline",
+    "depth": "soft",
+    "sliders": "line",
+    "tabs": "segmented",
+    "marks": "square"
   }
 }

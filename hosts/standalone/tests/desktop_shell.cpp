@@ -2,9 +2,9 @@
 //
 // The desktop window (RFC 0019's Desktop surface) against a real engine session over the
 // control socket, without an audio device: a small Performance (parts, a split, a bus, scenes,
-// a control), then every tab in both input modes renders, and the parts list selects a part.
-// With SNAPSHOTS, each render is written to SNAPSHOTS-<input>-<tab>.png.
-//   oscairn_desktop_shell_test PLUGIN_DIR SCANNER [SNAPSHOTS]
+// a control), then every tab renders in each built-in theme, and in Oscairn Dark in both input
+// modes. With SNAPSHOTS, each render is written to SNAPSHOTS-<theme>-<input>-<tab>.png.
+//   oscairn_desktop_shell_test PLUGIN_DIR SCANNER THEMES [SNAPSHOTS]
 #include "../DesktopShell.h"
 #include "oscairn/local_socket.h"
 #include "oscairn/session.h"
@@ -20,7 +20,7 @@ using namespace oscairn;
 
 int main(int argc, char** argv)
 {
-    if(argc < 3) return 2;
+    if(argc < 4) return 2;
     juce::ScopedJuceInitialiser_GUI gui;
     int failures = 0;
     auto check = [&](bool ok, const std::string& what) { if(!ok) { std::fprintf(stderr, "FAIL: %s\n", what.c_str()); ++failures; } };
@@ -49,7 +49,9 @@ int main(int argc, char** argv)
         });
         {
             standalone::Engine engine(dir.string(), socket.string());
-            standalone::Theme theme;
+            // The built-in themes, with a configuration folder of its own so no preference is touched.
+            const auto configuration = juce::File::createTempFile("oscairn-shell-config");
+            standalone::Theme theme(configuration, juce::File(argv[3]));
             juce::LookAndFeel::setDefaultLookAndFeel(&theme);
             const auto plugins = standalone::bundledPlugins(argv[1], argv[2]);
             auto plugin = [&](const char* name) { for(const auto& p : plugins) if(p.name == name) return p; throw std::runtime_error(std::string("missing ") + name); };
@@ -79,8 +81,12 @@ int main(int argc, char** argv)
             check(made.parts.size() == 4 && made.buses.size() == 1 && made.parts[0].sound == "Basic Synth" && made.buses[0].chain.size() == 1 && engine.editError().empty(),
                   "the Performance was made with its plugins: " + std::string(engine.editError()));
 
-            for(const auto mode : {standalone::InputMode::Mouse, standalone::InputMode::Touch})
+            const std::pair<const char*, standalone::InputMode> runs[] = {{"oscairn-dark", standalone::InputMode::Mouse}, {"oscairn-dark", standalone::InputMode::Touch},
+                                                                          {"oscairn-light", standalone::InputMode::Mouse}, {"oscairn-classic", standalone::InputMode::Mouse}};
+            for(const auto& [themeId, mode] : runs)
             {
+                theme.apply(themeId);
+                check(standalone::themeData().id == themeId, std::string("the theme applied: ") + themeId);
                 standalone::DesktopShell shell(engine, argv[2], mode);
                 shell.setSize(1440, 900);
                 for(int i = 0; i < 30; ++i) juce::MessageManager::getInstance()->runDispatchLoopUntil(10); // the shell's first ticks
@@ -96,8 +102,8 @@ int main(int argc, char** argv)
                     for(int i = 0; i < 30; ++i) juce::MessageManager::getInstance()->runDispatchLoopUntil(10); // its meters' first readings
                     const auto image = shell.createComponentSnapshot(shell.getLocalBounds());
                     check(image.getWidth() == 1440 && image.getHeight() == 900, std::string("renders ") + name);
-                    if(argc < 4) continue;
-                    const juce::File out{juce::String(argv[3]) + "-" + (mode == standalone::InputMode::Touch ? "touch" : "mouse") + "-" + juce::String(name).toLowerCase() + ".png"};
+                    if(argc < 5) continue;
+                    const juce::File out{juce::String(argv[4]) + "-" + juce::String(themeId).fromFirstOccurrenceOf("oscairn-", false, false) + "-" + (mode == standalone::InputMode::Touch ? "touch" : "mouse") + "-" + juce::String(name).toLowerCase() + ".png"};
                     out.deleteFile();
                     juce::FileOutputStream stream(out);
                     juce::PNGImageFormat().writeImageToStream(image, stream);
@@ -110,6 +116,7 @@ int main(int argc, char** argv)
             check(standalone::readInputMode(folder) == standalone::InputMode::Touch, "the saved preference reads back");
             folder.deleteRecursively();
             juce::LookAndFeel::setDefaultLookAndFeel(nullptr);
+            configuration.deleteRecursively();
         }
         running = false;
         control.join();

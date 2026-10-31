@@ -5,15 +5,30 @@ namespace oscairn::standalone {
 enum class Ink { Background, Surface, Raised, Border, Text, Muted, Accent, Positive, Danger, Count };
 // Font files a theme carries, as paths relative to its folder. Empty only for the emergency theme.
 struct ThemeFont { juce::String regular, bold, license; };
+// How controls are drawn (theme format 3): a fixed set of choices the host draws, never code.
+struct ThemeStyle {
+    enum class Buttons { Rounded, Pill } buttons=Buttons::Pill;          // the theme's radius, or fully round ends
+    enum class Edges { None, Hairline, Outlined } edges=Edges::Hairline;  // outlines on controls and cards
+    enum class Depth { Flat, Soft } depth=Depth::Soft;                    // a small shadow under buttons and thumbs
+    enum class Sliders { Filled, Line } sliders=Sliders::Line;            // an accent thumb, or a thin track with a light thumb
+    enum class Tabs { Folder, Segmented } tabs=Tabs::Segmented;
+    enum class Marks { Square, Round } marks=Marks::Square;                // mute and solo
+};
 struct ThemeData {
     juce::String id="oscairn-dark",name="Oscairn Dark";
     ThemeFont font;
     std::array<juce::Colour,9> colours{{juce::Colour(0xff15181d),juce::Colour(0xff20252d),juce::Colour(0xff2c333d),juce::Colour(0xff526070),juce::Colour(0xffedf1f5),juce::Colour(0xffa3aebb),juce::Colour(0xffffa45b),juce::Colour(0xff5ad9a4),juce::Colour(0xffff8d87)}};
     float fontScale=1,radius=6;
+    ThemeStyle style;
     static ThemeData parse(const juce::String&);
 };
 const ThemeData& themeData();
 juce::Colour ink(Ink);
+bool darkTheme();                                // a dark background, for choices colours alone can't make
+float fieldRadius(float height);                 // dropdowns, text boxes, value boxes
+float buttonRadius(float height);
+// An outline in the theme's edge style, or nothing; focus is drawn whatever the style.
+void drawEdge(juce::Graphics&,juce::Rectangle<float>,float radius,bool focus=false);
 // The desktop's type scale (RFC 0019): text sizes fixed by role, not by the box they sit in. A
 // component inside the desktop window has its input mode; 0 elsewhere (a device's panel).
 enum class TextRole { Small, Body, Button, Title };
@@ -41,6 +56,8 @@ public:
     void fillTextEditorBackground(juce::Graphics&,int,int,juce::TextEditor&) override;
     void drawLabel(juce::Graphics&,juce::Label&) override;
     void drawLinearSlider(juce::Graphics&,int,int,int,int,float,float,float,juce::Slider::SliderStyle,juce::Slider&) override;
+    int getSliderThumbRadius(juce::Slider&) override;
+    void drawTickBox(juce::Graphics&,juce::Component&,float,float,float,float,bool,bool,bool,bool) override;
     void drawTextEditorOutline(juce::Graphics&,int,int,juce::TextEditor&) override;
     void drawButtonBackground(juce::Graphics&,juce::Button&,const juce::Colour&,bool,bool) override;
     void drawRotarySlider(juce::Graphics&,int,int,int,int,float,float,float,juce::Slider&) override;

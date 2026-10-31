@@ -1,5 +1,5 @@
 {
-  "version": 2,
+  "version": 3,
   "id": "midnight",
   "name": "Midnight",
   "font": {
@@ -19,5 +19,13 @@
     "accent": "#7CCEFF",
     "positive": "#7DDEB2",
     "danger": "#FF9994"
+  },
+  "style": {
+    "buttons": "pill",
+    "edges": "hairline",
+    "depth": "soft",
+    "sliders": "line",
+    "tabs": "segmented",
+    "marks": "square"
   }
 }

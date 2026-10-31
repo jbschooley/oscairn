@@ -17,7 +17,9 @@ namespace oscairn::standalone
 
         void paintButton(juce::Graphics& g, bool hover, bool down) override
         {
-            getLookAndFeel().drawButtonBackground(g, *this, findColour(juce::TextButton::buttonColourId), hover, down);
+            // A transparent button colour draws the glyph alone, for icons inside another control.
+            if(const auto colour = findColour(juce::TextButton::buttonColourId); !colour.isTransparent()) getLookAndFeel().drawButtonBackground(g, *this, colour, hover, down);
+            else if(hover || down) { g.setColour(ink(Ink::Text).withAlpha(down ? .16f : .08f)); g.fillRoundedRectangle(getLocalBounds().toFloat(), 4); }
             const float side = std::min(float(getWidth()), float(getHeight())) * .5f;
             const auto box = getLocalBounds().toFloat().withSizeKeepingCentre(side, side);
             juce::Path p;
@@ -67,7 +69,9 @@ namespace oscairn::standalone
     {
         const float side = std::min(r.getWidth(), r.getHeight());
         r = r.withSizeKeepingCentre(side, side);
-        g.setColour((on ? ink(colour) : ink(Ink::Border).withAlpha(.5f)).withMultipliedAlpha(alpha)); g.fillRoundedRectangle(r, themeData().radius / 2);
+        // Square or round, by the theme's style.
+        const float corner = themeData().style.marks == ThemeStyle::Marks::Round ? side / 2 : std::min(6.f, side * .28f);
+        g.setColour((on ? ink(colour) : ink(Ink::Border).withAlpha(.5f)).withMultipliedAlpha(alpha)); g.fillRoundedRectangle(r, corner);
         g.setColour((on ? ink(Ink::Background) : ink(Ink::Muted)).withMultipliedAlpha(alpha));
         g.setFont(juce::FontOptions(side * .55f, juce::Font::bold));
         g.drawText(letter, r, juce::Justification::centred);
@@ -79,7 +83,7 @@ namespace oscairn::standalone
         void paintButton(juce::Graphics& g, bool hover, bool) override
         {
             drawMark(g, getLocalBounds().toFloat().reduced(1), letter_, getToggleState(), colour_, isEnabled() ? 1.f : .5f);
-            if(hover) { g.setColour(ink(Ink::Text).withAlpha(.08f)); g.fillRoundedRectangle(getLocalBounds().toFloat().reduced(1).withSizeKeepingCentre(std::min(getWidth(), getHeight()) - 2.f, std::min(getWidth(), getHeight()) - 2.f), themeData().radius / 2); }
+            if(hover) { const float side = std::min(getWidth(), getHeight()) - 2.f; g.setColour(ink(Ink::Text).withAlpha(.08f)); g.fillRoundedRectangle(getLocalBounds().toFloat().withSizeKeepingCentre(side, side), themeData().style.marks == ThemeStyle::Marks::Round ? side / 2 : std::min(6.f, side * .28f)); }
         }
     private:
         juce::String letter_;

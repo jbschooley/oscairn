@@ -138,6 +138,7 @@ namespace oscairn::standalone
         explicit TabStrip(DesktopShell& shell) : shell_(shell)
         {
             detach_.setTooltip("Open this view in its own window");
+            detach_.setColour(juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
             detach_.onClick = [this] { shell_.detach(shell_.tab_); };
             addAndMakeVisible(detach_);
         }
@@ -145,12 +146,24 @@ namespace oscairn::standalone
         {
             const int mode = modeNumber(shell_.mode_);
             const float radius = themeData().radius;
-            g.setColour(ink(Ink::Border).withAlpha(.6f)); g.fillRect(0, getHeight() - 1, getWidth(), 1);
+            const bool segmented = themeData().style.tabs == ThemeStyle::Tabs::Segmented;
+            if(segmented)
+            {
+                // A track holding the tabs, the selected one lifted out of it.
+                auto track = tabs_.front().getUnion(tabs_.back()).toFloat().expanded(3);
+                g.setColour(ink(Ink::Raised)); g.fillRoundedRectangle(track, radius + 4);
+            }
+            else { g.setColour(ink(Ink::Border).withAlpha(.6f)); g.fillRect(0, getHeight() - 1, getWidth(), 1); }
             for(size_t i = 0; i < tabs_.size(); ++i)
             {
                 const auto r = tabs_[i].toFloat();
                 const bool on = Tab(i) == shell_.tab_;
-                if(on)
+                if(on && segmented)
+                {
+                    if(themeData().style.depth == ThemeStyle::Depth::Soft) { g.setColour(juce::Colours::black.withAlpha(darkTheme() ? .35f : .12f)); g.fillRoundedRectangle(r.translated(0, 1), radius + 1); }
+                    g.setColour(darkTheme() ? ink(Ink::Raised).brighter(.25f) : ink(Ink::Surface)); g.fillRoundedRectangle(r, radius + 1);
+                }
+                else if(on)
                 {
                     // Rounded at the top, open at the bottom where it meets the view.
                     juce::Path p; p.addRoundedRectangle(r.getX(), r.getY(), r.getWidth(), r.getHeight() + radius, radius, radius, true, true, false, false);
@@ -168,7 +181,8 @@ namespace oscairn::standalone
         {
             const int mode = modeNumber(shell_.mode_);
             const juce::Font font(juce::FontOptions(textSize(TextRole::Button, mode), juce::Font::bold));
-            auto area = getLocalBounds().withTrimmedLeft(12);
+            const bool segmented = themeData().style.tabs == ThemeStyle::Tabs::Segmented;
+            auto area = segmented ? getLocalBounds().withTrimmedLeft(16).reduced(0, 4) : getLocalBounds().withTrimmedLeft(12);
             const int icon = getHeight() - 14;
             for(size_t i = 0; i < tabs_.size(); ++i)
             {
@@ -177,7 +191,8 @@ namespace oscairn::standalone
                 area.removeFromLeft(2);
             }
             const auto on = tabs_[size_t(shell_.tab_)];
-            detach_.setBounds(on.withTrimmedLeft(on.getWidth() - icon - 10).withSizeKeepingCentre(icon, icon).translated(-4, 1));
+            const int glyph = std::min(icon, on.getHeight() - 4);
+            detach_.setBounds(on.withTrimmedLeft(on.getWidth() - glyph - 10).withSizeKeepingCentre(glyph, glyph).translated(-4, segmented ? 0 : 1));
             repaint();
         }
         void mouseDown(const juce::MouseEvent& e) override

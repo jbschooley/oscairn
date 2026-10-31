@@ -74,7 +74,7 @@ target_sources(oscairn_desktop_shell_test PRIVATE tests/desktop_shell.cpp Deskto
 target_link_libraries(oscairn_desktop_shell_test PRIVATE oscairn_audio_host oscairn_host_process oscairn_control_socket juce::juce_audio_utils juce::juce_gui_extra juce::juce_recommended_config_flags)
 target_compile_definitions(oscairn_desktop_shell_test PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_MODAL_LOOPS_PERMITTED=1)
 add_dependencies(oscairn_desktop_shell_test oscairn_step_sequencer oscairn_basic_synth oscairn_delay oscairn_transpose oscairn_splitters oscairn-plugin-scan)
-add_test(NAME desktop-shell COMMAND oscairn_desktop_shell_test "$<TARGET_FILE_DIR:oscairn_step_sequencer>" $<TARGET_FILE:oscairn-plugin-scan>)
+add_test(NAME desktop-shell COMMAND oscairn_desktop_shell_test "$<TARGET_FILE_DIR:oscairn_step_sequencer>" $<TARGET_FILE:oscairn-plugin-scan> "${CMAKE_CURRENT_SOURCE_DIR}/themes")
 set_tests_properties(desktop-shell PROPERTIES TIMEOUT 60)
 add_test(NAME desktop-pad-editor COMMAND oscairn_pad_editor_test "$<TARGET_FILE_DIR:oscairn_step_sequencer>" $<TARGET_FILE:oscairn-plugin-scan>)
 set_tests_properties(desktop-pad-editor PROPERTIES TIMEOUT 60)
