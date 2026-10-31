@@ -359,5 +359,6 @@ void Session::loadPerformance(const std::string& directory) {
         tempo_.store(tempo);clockSource_.store(clock=="internal"?Transport::ClockSource::Internal:Transport::ClockSource::MidiClock);playing_.store(false);
         ++revision_;++sequence_;history_.swap(history);
     });
+    clearHistory(); // undo does not reach back into another Performance
 }
 }

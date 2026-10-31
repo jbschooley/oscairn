@@ -172,9 +172,8 @@ namespace oscairn
         uint32_t inputChannels() const noexcept { return inputChannels_; }
         uint32_t outputChannels() const noexcept { return outputChannels_; }
 
-    private:
-        void connectAudioBatch(const std::vector<AudioConnection>&);
-        uint32_t resolve( const AudioEndpoint&, bool source, uint32_t count ) const;
+        /// A node as the graph holds it. A copy keeps the plugin alive, with its state, so a
+        /// removed or replaced node can be restored under its ID (for undo).
         struct Node
         {
             std::shared_ptr<PluginHost> host;
@@ -182,6 +181,14 @@ namespace oscairn
             std::shared_ptr<std::atomic<float>> peak=std::make_shared<std::atomic<float>>(0.f); // see takePeak
             uint32_t                          audioInputs = 0, audioOutputs = 0; // channels
         };
+        Node node( NodeId id ) const { return nodes_.at( id ); }
+        /// Staged like add: puts a held node back under its ID, replacing (and retiring) any node
+        /// there now; the node's connections are the caller's to make again.
+        void restore( NodeId id, const Node& node );
+
+    private:
+        void connectAudioBatch(const std::vector<AudioConnection>&);
+        uint32_t resolve( const AudioEndpoint&, bool source, uint32_t count ) const;
         struct Plan;
         std::vector<std::shared_ptr<PluginHost>> removedHosts_; // control thread ownership until plan retirement
         std::atomic<uint64_t> eventDrops_{0};

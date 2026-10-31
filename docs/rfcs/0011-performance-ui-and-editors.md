@@ -458,6 +458,28 @@ Not yet:
 - **Nested splits in the views:** a split inside a lane shows as a gap there.
 - **Smooth crossover changes:** a new crossover frequency applies at the next block.
 
+## Undo status
+
+Implemented 2026-10-31 (`core/control/src/undo.cpp`). After each commit, and at each control
+tick when nothing is staged, the Session compares its model (parts, wires, scenes, controls,
+pads, parameter mappings, and its nodes, held) with the last recorded one; a difference is
+a step. So a view's action, which ends in one commit, is one step, and edits that need no
+commit (scenes, controls, pads) are steps too. Parameter values set through the control
+interface are steps of their own, and repeated changes to the same thing within 1.5 s merge.
+
+Undo applies only what a step changed, field by field, onto the model as it is now: undoing
+a rename keeps a level a scene set since. Steps hold the nodes they removed or replaced, so
+undoing a removal brings back the same plugin, with its state and prepared sounds, under its
+ID. Switching scenes, moving controls and devices coming and going are not edits. History is
+100 steps, and opening a Performance clears it. **Undo** and **Redo** are on the Parts views
+and in the desktop's **Edit** menu, named for what they would do. `control-undo` covers
+grouping, merging, removal with state, scenes and controls, pads, splits with their nodes and
+loading; the socket test and `desktop-pad-editor` cover the protocol and the engine.
+
+Not yet: keyboard shortcuts; undo of preset and state loads, which replace a plugin's
+whole state outside this model; and a plugin's own edits in its window, which reach the host
+as parameter changes it reports, not edits made here.
+
 ## Open questions
 
 - The extension for plugin roles (cutoff, attack and so on) and structured editor

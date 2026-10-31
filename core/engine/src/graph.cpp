@@ -189,6 +189,14 @@ namespace oscairn
         catch(...){nodes_.at(id)=old;audioRoutes_=routes;noteEdges_=notes;noteZones_=zones;throw;}
     }
 
+    void Graph::restore( NodeId id, const Node& node )
+    {
+        if(!id || id >= graphInput || !node.host) throw std::invalid_argument("invalid node to restore");
+        if(nodes_.count(id)) remove(id);
+        nodes_.emplace(id, node);
+        nextId_ = std::max(nextId_, id + 1);
+    }
+
     void Graph::remove( NodeId node )
     {
         if(auto it=nodes_.find(node);it!=nodes_.end())removedHosts_.push_back(it->second.host);

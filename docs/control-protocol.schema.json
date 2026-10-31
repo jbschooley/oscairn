@@ -3113,6 +3113,78 @@
               "$ref": "#/$defs/Id"
             },
             "method": {
+              "const": "edit.undo",
+              "description": "Undoes the last edit"
+            },
+            "params": {
+              "type": "object",
+              "maxProperties": 0
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
+              "const": "edit.redo",
+              "description": "Redoes the last edit undone"
+            },
+            "params": {
+              "type": "object",
+              "maxProperties": 0
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
+              "const": "edit.history",
+              "description": "What undo and redo would do"
+            },
+            "params": {
+              "type": "object",
+              "maxProperties": 0
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
               "const": "scenes.add"
             },
             "params": {
@@ -3639,6 +3711,9 @@
                 },
                 {
                   "$ref": "#/$defs/MetersResult"
+                },
+                {
+                  "$ref": "#/$defs/HistoryResult"
                 },
                 {
                   "$ref": "#/$defs/SplitResult"
@@ -5857,6 +5932,23 @@
       },
       "required": [
         "meters"
+      ],
+      "additionalProperties": false
+    },
+    "HistoryResult": {
+      "type": "object",
+      "description": "Labels for what undo and redo would do now; empty when there is nothing",
+      "properties": {
+        "undo": {
+          "type": "string"
+        },
+        "redo": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "undo",
+        "redo"
       ],
       "additionalProperties": false
     }

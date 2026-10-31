@@ -467,6 +467,13 @@ namespace oscairn
         auto reply=impl_->call("parts.addLane","{\"part\":"+std::to_string(part)+",\"split\":"+std::to_string(split)+'}');
         const auto lane=static_cast<uint32_t>(integer(field(field(reply.get(),"result"),"lane")));impl_->refresh();return lane;
     }
+    Control::History RemoteControl::history() const
+    {
+        auto reply=impl_->call("edit.history");auto r=field(reply.get(),"result");
+        return {string(field(r,"undo")),string(field(r,"redo"))};
+    }
+    bool RemoteControl::undo(){const bool any=!history().undo.empty();impl_->call("edit.undo");impl_->refresh();return any;}
+    bool RemoteControl::redo(){const bool any=!history().redo.empty();impl_->call("edit.redo");impl_->refresh();return any;}
     void RemoteControl::setPartSolo(uint32_t part,bool solo){impl_->call("parts.solo","{\"part\":"+std::to_string(part)+",\"solo\":"+(solo?"true":"false")+'}');impl_->refresh();}
     std::vector<PartMeter> RemoteControl::partMeters() const
     {

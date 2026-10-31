@@ -140,8 +140,9 @@ To do:
   processor can play, the least audible notes are faded and stolen across parts instead of
   missing the deadline, with per-part note limits, reserves and priority; later, plugins
   that opt in steal their own voices ([RFC 0018](rfcs/0018-voice-budget-and-stealing.md));
-- undo and redo for every graph, part, wire and Mix edit, which
-  [RFC 0011](rfcs/0011-performance-ui-and-editors.md) promises for its views;
+- undo and redo: implemented for parts, wires, splits, Mix settings, scenes, controls,
+  pads, nodes and parameter values ([status](rfcs/0011-performance-ui-and-editors.md#undo-status));
+  preset and state loads, and keyboard shortcuts, remain;
 - MIDI input curves and filters: implemented as note zones (key, velocity and channel ranges,
   transpose, velocity curve or fixed velocity) on part inputs and note wires
   ([RFC 0011](rfcs/0011-performance-ui-and-editors.md#step-1-status)); editors for them come
@@ -225,7 +226,7 @@ new core, from a UI that talks to it only through the control API.
    a Mix, joining after) in the model, protocol and Part page
    ([status](rfcs/0011-performance-ui-and-editors.md#step-3-status)), including left/right,
    mid/side and band splits through the bundled Split and Join plugins, and the Mixer
-   with part solo and meters. Next: undo, then step 4's Routing view.
+   with part solo and meters, and undo for every edit. Next: step 4's Routing view.
 9. **Modular instrument — playable:** chillbeast's engine is in
    [plugins/modular](../plugins/modular/README.md) with its history, wrapped as a CLAP
    instrument with factory presets and bundled in the desktop app. The patch editor, the

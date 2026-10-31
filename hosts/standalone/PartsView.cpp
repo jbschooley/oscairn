@@ -18,7 +18,9 @@ namespace oscairn::standalone
 
     PartsView::PartsView(Engine& engine, const std::string& scanner) : engine_(engine)
     {
-        for(auto* c : std::initializer_list<juce::Component*>{&title_, &message_, &done_, &addPart_, &addBus_, &back_, &removePart_, &name_, &controlsButton_, &mixerButton_, &addControl_}) addChildComponent(c);
+        for(auto* c : std::initializer_list<juce::Component*>{&title_, &message_, &done_, &addPart_, &addBus_, &back_, &removePart_, &name_, &controlsButton_, &mixerButton_, &addControl_, &undo_, &redo_}) addChildComponent(c);
+        undo_.onClick = [this] { edit([](Control& c) { c.undo(); }); };
+        redo_.onClick = [this] { edit([](Control& c) { c.redo(); }); };
         mixerButton_.setTooltip("Every part and bus side by side: level, mute, solo, sends and meters");
         mixerButton_.onClick = [this] { showPart(mixerPage); };
         controlsButton_.setTooltip("Controls: knobs that drive many parameters, each with its own range and curve, or other controls");
@@ -81,6 +83,11 @@ namespace oscairn::standalone
         if(page_ && page_ != controlsPage && page_ != mixerPage && !part(page_)) { page_ = 0; shape_.clear(); }
         for(auto& p : state_.parts) if(p.notes && !p.devices.empty() && !resolveDevices(p.devices, endpoints_)) p.input = "No device: " + p.input;
         message_.setText(text(engine_.editError()), juce::dontSendNotification);
+        // Undo and redo name what they would do.
+        const auto history = engine_.history();
+        undo_.setEnabled(!history.undo.empty()); redo_.setEnabled(!history.redo.empty());
+        undo_.setTooltip(history.undo.empty() ? juce::String("Nothing to undo") : "Undo " + text(history.undo));
+        redo_.setTooltip(history.redo.empty() ? juce::String("Nothing to redo") : "Redo " + text(history.redo));
         // Controls are rebuilt only when the structure changes, so a slider being dragged survives.
         std::string shape = std::to_string(page_) + "/" + std::to_string(selected_) + "/" + std::to_string(getWidth()) + "x" + std::to_string(getHeight());
         for(const auto* list : {&state_.parts, &state_.buses})
@@ -120,7 +127,9 @@ namespace oscairn::standalone
         title_.setVisible(list || controlsShown || mixerShown); done_.setVisible(true); message_.setVisible(true);
         title_.setText(controlsShown ? "Controls" : mixerShown ? "Mixer" : "Parts", juce::dontSendNotification);
         auto top = getLocalBounds().reduced(16, 8).removeFromTop(header - 8);
-        done_.setBounds(top.removeFromRight(100).reduced(2));
+        done_.setBounds(top.removeFromRight(80).reduced(2));
+        redo_.setBounds(top.removeFromRight(60).reduced(2)); undo_.setBounds(top.removeFromRight(60).reduced(2));
+        undo_.setVisible(true); redo_.setVisible(true);
         message_.setBounds(getLocalBounds().reduced(16).removeFromBottom(24));
 
         // A slider or toggle that follows the state unless it is being used.
@@ -158,24 +167,24 @@ namespace oscairn::standalone
 
         if(list)
         {
-            addBus_.setBounds(top.removeFromRight(120).reduced(2));
-            addPart_.setBounds(top.removeFromRight(120).reduced(2));
-            controlsButton_.setBounds(top.removeFromRight(100).reduced(2));
-            mixerButton_.setBounds(top.removeFromRight(90).reduced(2));
+            addBus_.setBounds(top.removeFromRight(96).reduced(2));
+            addPart_.setBounds(top.removeFromRight(100).reduced(2));
+            controlsButton_.setBounds(top.removeFromRight(86).reduced(2));
+            mixerButton_.setBounds(top.removeFromRight(70).reduced(2));
             title_.setBounds(top.removeFromLeft(90));
             // Scenes: tap one to switch to it; Store saves the parts' faders and the scene
             // parameters into the selected one.
-            const auto sceneWidth = std::min(110, std::max(56, (top.getWidth() - 200) / std::max(1, int(scenes_.size()))));
+            const auto sceneWidth = std::min(110, std::max(56, (top.getWidth() - 150) / std::max(1, int(scenes_.size()))));
             for(const auto& s : scenes_)
             {
                 auto* b = button(top.removeFromLeft(sceneWidth).reduced(2), text(s.name), [this, id = s.id] { edit([id](Control& c) { c.selectScene(id); }); });
                 b->setColour(juce::TextButton::buttonColourId, s.id == scene_ ? ink(Ink::Accent) : ink(Ink::Raised));
                 b->setTooltip("Switch to this scene");
             }
-            button(top.removeFromLeft(90).reduced(2), "+ Scene", [this] { const auto n = scenes_.size() + 1; edit([n](Control& c) { c.addScene("Scene " + std::to_string(n)); }); })
+            button(top.removeFromLeft(80).reduced(2), "+ Scene", [this] { const auto n = scenes_.size() + 1; edit([n](Control& c) { c.addScene("Scene " + std::to_string(n)); }); })
                 ->setTooltip("A new scene with the parts' levels and mutes, and the scene controls, as they are now");
             if(scene_)
-                button(top.removeFromLeft(80).reduced(2), "Store", [this] { const auto id = scene_; edit([id](Control& c) { c.storeScene(id); }); })
+                button(top.removeFromLeft(66).reduced(2), "Store", [this] { const auto id = scene_; edit([id](Control& c) { c.storeScene(id); }); })
                     ->setTooltip("Save the parts' levels and mutes, and the scene controls, into the selected scene");
             size_t row = 0;
             for(const auto* rows : {&state_.parts, &state_.buses})

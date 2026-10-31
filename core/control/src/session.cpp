@@ -14,6 +14,7 @@ namespace oscairn
             throw std::invalid_argument( "session needs a positive sample rate and block size" );
         graph_.setAssets( &assets_ );
         transport_.setPlaying( false );
+        baseline_ = std::make_shared<const Model>( model() );
     }
 
     NodeId Session::add( const std::string& name, const std::string& path, const std::string& pluginId )
@@ -101,13 +102,14 @@ namespace oscairn
         return graph_.host( node ).parameterText( param, value );
     }
 
-    bool Session::setParameter( NodeId node, uint32_t param, double value )
+    bool Session::applyParameter( NodeId node, uint32_t param, double value, double* applied )
     {
         const auto& p = findParameter( node, param );
         if( !std::isfinite( value ) || ( p.flags & CLAP_PARAM_IS_READONLY ) != 0 )
             throw std::invalid_argument( "parameter value must be finite and parameter writable" );
         value = std::clamp(value,p.minimum,p.maximum);
         if( p.flags & CLAP_PARAM_IS_STEPPED ) value = std::trunc(value);
+        if( applied ) *applied = value;
         return queue(node,param,ChangeKind::Value,value);
     }
 
@@ -242,6 +244,13 @@ namespace oscairn
         staged_ = false;
         ++revision_;
         publish(ChangeKind::Graph);
+        record(); // the edits up to a commit are one step
+    }
+
+    void Session::clearHistory()
+    {
+        undo_.clear(); redo_.clear(); mergeable_ = false;
+        baseline_ = std::make_shared<const Model>(model());
     }
 
     void Session::publish( ChangeKind kind, NodeId node, uint32_t param, double value, bool plugin )
@@ -285,6 +294,7 @@ namespace oscairn
     {
         graph_.service();
         meter();
+        if( !staged_ ) record(); // changes that need no commit (scenes, controls, pads) are steps too
         for( const auto& [node,name] : nodes_ )
         {
             auto& host = graph_.host(node);

@@ -42,6 +42,7 @@ namespace oscairn
         uint32_t split = 0, lane = 0; // part wires: the split lane this wire joins from, or enters in a bus (its Mix), if any
         bool fader = false;          // part wires: where the part plays, carrying its level and mute
         bool connected = true; // false: kept, though it no longer fits (after a plugin replacement)
+        bool operator==(const Wire&) const = default;
     };
 
     // RFC 0012 selectors. A MIDI input the host has: its source number (note_zone.h), name and
@@ -83,11 +84,12 @@ namespace oscairn
         uint32_t port = 0;                                         // graph input port, for audio
         std::vector<NoteZone> zones;                               // notes: the part's zones (splits, layers, curves)
         std::vector<DeviceRule> devices;                           // notes: which inputs play it; none: all
+        bool operator==(const PartInput&) const = default;
     };
     // The zones a part's input wire carries: its own, each hearing only its selected devices.
     std::vector<NoteZone> inputZones(const PartInput& input, const std::vector<MidiEndpoint>& endpoints);
 
-    struct Send { uint32_t bus = 0; double level = 1; }; // a copy of a part's sound into a shared bus
+    struct Send { uint32_t bus = 0; double level = 1; bool operator==(const Send&) const = default; }; // a copy of a part's sound into a shared bus
 
     // RFC 0011 step 3: a split divides a part's notes and sound into lanes, each its own chain,
     // which join again by summing into whatever follows. In a chain, the entry splitMark | id
@@ -100,6 +102,7 @@ namespace oscairn
         std::vector<NoteZone> zones;        // the notes this lane takes; none: all
         double level = 1, pan = 0;          // its row in the join's Mix
         bool mute = false, solo = false;    // solo silences the split's other lanes
+        bool operator==(const Lane&) const = default;
     };
     struct Split
     {
@@ -111,6 +114,7 @@ namespace oscairn
         enum class Kind { Copy, LeftRight, MidSide, Bands } kind = Kind::Copy;
         std::vector<Lane> lanes;
         NodeId splitter = 0, joiner = 0; // the Split and Join nodes, for the kinds that have them
+        bool operator==(const Split&) const = default;
     };
     inline constexpr std::array<const char*, 4> splitKinds{"copy", "leftRight", "midSide", "bands"};
     inline constexpr const char* splitPlugin = "org.oscairn.split";
@@ -137,6 +141,7 @@ namespace oscairn
         // While any part is soloed, only soloed parts, the parts that feed them and the buses
         // they feed are heard.
         bool solo = false;
+        bool operator==(const Part&) const = default;
     };
     struct PartMeter { uint32_t part = 0; double peak = 0; }; // after its fader, linear
 
@@ -158,6 +163,7 @@ namespace oscairn
         double base = 0;
         // What a control value does here, as a fraction of the target's range.
         double map(double value) const;
+        bool operator==(const MacroTarget&) const = default;
     };
     struct Macro { uint32_t id = 0; std::string name; double value = 0; std::vector<MacroTarget> targets; };
 
@@ -167,13 +173,14 @@ namespace oscairn
     struct SceneParameter { NodeId node = 0; uint32_t param = 0; bool operator==(const SceneParameter&) const = default; };
     struct Scene
     {
-        struct PartState { uint32_t part = 0; double level = 1; bool mute = false; };
-        struct Value { SceneParameter at; double value = 0; };
+        struct PartState { uint32_t part = 0; double level = 1; bool mute = false; bool operator==(const PartState&) const = default; };
+        struct Value { SceneParameter at; double value = 0; bool operator==(const Value&) const = default; };
         uint32_t id = 0;
         std::string name;
         std::vector<PartState> parts;
         std::vector<Value> values;
         std::vector<std::pair<uint32_t, double>> macros; // each control's value
+        bool operator==(const Scene&) const = default;
     };
 
     // What removing a node does with the user wires on it.

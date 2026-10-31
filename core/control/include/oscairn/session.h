@@ -6,6 +6,8 @@
 #include "oscairn/parts.h"
 
 #include <array>
+#include <chrono>
+#include <memory>
 #include <atomic>
 #include <map>
 #include <deque>
@@ -80,6 +82,12 @@ namespace oscairn
         void setPartLevel(uint32_t part, double level, bool mute) override;
         void setPartName(uint32_t part, const std::string& name) override;
         void setPartSolo(uint32_t part, bool solo) override;
+        History history() const override;
+        bool undo() override;
+        bool redo() override;
+        /// Forgets every step, as opening a Performance does; a host calls it once its startup
+        /// graph is built, so undo cannot take that apart.
+        void clearHistory();
         std::vector<PartMeter> partMeters() const override;
         const std::vector<Part>& parts() const { return parts_; }
         const std::vector<Wire>& wires() const { return wires_; }
@@ -120,7 +128,7 @@ namespace oscairn
         ParamInfo parameterInfo( NodeId node, uint32_t param ) const override;
         double parameter( NodeId node, uint32_t param ) const override;
         std::string parameterText( NodeId node, uint32_t param, double value ) const override;
-        bool setParameter( NodeId node, uint32_t param, double value ) override;
+        bool setParameter( NodeId node, uint32_t param, double value ) override; // an edit (undo.cpp)
         bool parameterGesture( NodeId node, uint32_t param, bool begin ) override;
 
         void setPlaying( bool playing ) override { playing_.store( playing ); }
@@ -176,6 +184,43 @@ namespace oscairn
         bool heard(const Part& part);            // not silenced by another part's solo
         void meter();                            // service(): updates meters_ from the graph's peaks
         std::map<uint32_t, double> meters_;
+
+        // Undo (undo.cpp). The model: what an edit can change, with the nodes it holds.
+        struct Model
+        {
+            std::vector<Part> parts;
+            std::vector<Wire> wires;
+            std::vector<Scene> scenes;
+            std::vector<SceneParameter> sceneParameters;
+            std::vector<Macro> macros;
+            PadMap pads;
+            std::vector<Graph::Mapping> mappings;
+            std::map<NodeId, std::pair<std::string, Graph::Node>> nodes;
+        };
+        struct Step
+        {
+            std::string label, key; // key: the one thing it changed, for merging; empty when several
+            std::chrono::steady_clock::time_point when;
+            std::shared_ptr<const Model> before, after; // a model step; otherwise a parameter step:
+            NodeId node = 0; uint32_t param = 0; double from = 0, to = 0;
+        };
+        // Changes made while one is alive are not edits (switching scenes, moving controls).
+        struct Quiet
+        {
+            Session& s;
+            explicit Quiet(Session& session);
+            ~Quiet();
+        };
+        Model model() const;
+        static std::pair<std::string, std::string> summarize(const Model& before, const Model& after);
+        void record();                                         // a step for what changed since the baseline
+        void push(Step step);                                  // merging it into the last when they change the same thing
+        void apply(const Model& from, const Model& to);        // the change from one to the other, onto now
+        bool applyParameter(NodeId node, uint32_t param, double value, double* applied = nullptr); // not an edit
+        std::vector<Step> undo_, redo_;
+        std::shared_ptr<const Model> baseline_;
+        int quiet_ = 0;
+        bool mergeable_ = false; // the last step may take in the next
         void dropSplitNodes(const Split& split); // removes them from the graph, with their wires
         bool feeds(uint32_t from, uint32_t to);
         Part& findBus(uint32_t id);

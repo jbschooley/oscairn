@@ -626,7 +626,7 @@ namespace oscairn
                 if(graph_.contains(t.node) && hasParameter(t.node, t.param))
                 {
                     const auto info = parameterInfo(t.node, t.param);
-                    setParameter(t.node, t.param, info.minimum + (info.maximum - info.minimum) * v);
+                    applyParameter(t.node, t.param, info.minimum + (info.maximum - info.minimum) * v);
                 }
                 break;
             case MacroTarget::Kind::PartLevel: for(auto& p : parts_) if(p.id == t.part) { p.level = v; faders = true; } break;
@@ -640,6 +640,7 @@ namespace oscairn
     {
         if(!std::isfinite(value)) throw std::invalid_argument("a control's value is 0..1");
         findMacro(id);
+        Quiet playing(*this); // moving a control is playing, not editing
         bool faders = false;
         driveMacro(id, value, faders);
         // shortcut: part faders recompile the graph plan on every move; fine at knob rates on the
@@ -679,6 +680,7 @@ namespace oscairn
     void Session::selectScene(uint32_t id)
     {
         const auto scene = findScene(id);
+        Quiet playing(*this); // switching scenes is playing, not editing
         // Controls first: the scene's own part faders and parameter values then have the last word.
         bool faders = false;
         for(const auto& [macro, value] : scene.macros) if(std::any_of(macros_.begin(), macros_.end(), [&](const Macro& m) { return m.id == macro; })) driveMacro(macro, value, faders);
@@ -689,7 +691,7 @@ namespace oscairn
         });
         commit();
         for(const auto& v : scene.values)
-            if(graph_.contains(v.at.node) && hasParameter(v.at.node, v.at.param)) setParameter(v.at.node, v.at.param, v.value);
+            if(graph_.contains(v.at.node) && hasParameter(v.at.node, v.at.param)) applyParameter(v.at.node, v.at.param, v.value);
         scene_ = id;
     }
 
@@ -731,6 +733,7 @@ namespace oscairn
         hostStatus_ = std::move(status);
         if(!moved || std::none_of(parts_.begin(), parts_.end(), [](const Part& p) { return !p.input.devices.empty(); })) return;
         const bool staged = staged_;
+        Quiet devices(*this); // devices coming and going are not edits
         try { editWires([&] { buildParts(); }); if(!staged) commit(); }
         catch(const std::exception& e) { std::fprintf(stderr, "oscairn: device selectors not re-resolved: %s\n", e.what()); }
     }
@@ -876,8 +879,8 @@ namespace oscairn
             buildParts();
         });
         // The nodes' modes (plugins/splitters): Split 0 left/right, 1 mid/side, 2 bands, with the band count; Join likewise, 2 a sum.
-        if(splitter) { setParameter(splitter, 1, kind == Split::Kind::LeftRight ? 0 : kind == Split::Kind::MidSide ? 1 : 2); setParameter(splitter, 2, 2); }
-        if(joiner) setParameter(joiner, 1, kind == Split::Kind::LeftRight ? 0 : 1);
+        if(splitter) { applyParameter(splitter, 1, kind == Split::Kind::LeftRight ? 0 : kind == Split::Kind::MidSide ? 1 : 2); applyParameter(splitter, 2, 2); }
+        if(joiner) applyParameter(joiner, 1, kind == Split::Kind::LeftRight ? 0 : 1);
         return split;
     }
 
@@ -906,7 +909,7 @@ namespace oscairn
         if(s.kind == Split::Kind::LeftRight || s.kind == Split::Kind::MidSide) throw std::invalid_argument("left/right and mid/side splits have two lanes");
         if(s.lanes.size() >= (s.kind == Split::Kind::Bands ? 4u : 16u)) throw std::invalid_argument(s.kind == Split::Kind::Bands ? "at most 4 bands" : "at most 16 lanes");
         editWires([&] { auto& lanes = splitOf(findPart(id), split).lanes; lane = uint32_t(lanes.size()); lanes.emplace_back(); buildParts(); });
-        if(s.kind == Split::Kind::Bands) setParameter(s.splitter, 2, double(lane + 1));
+        if(s.kind == Split::Kind::Bands) applyParameter(s.splitter, 2, double(lane + 1));
         return lane;
     }
 
@@ -929,7 +932,7 @@ namespace oscairn
             }
             buildParts();
         });
-        if(kind == Split::Kind::Bands) setParameter(splitter, 2, double(splitOf(findPart(id), split).lanes.size()));
+        if(kind == Split::Kind::Bands) applyParameter(splitter, 2, double(splitOf(findPart(id), split).lanes.size()));
     }
 
     void Session::setLane(uint32_t id, uint32_t split, uint32_t lane, const Lane& settings)

@@ -47,6 +47,7 @@ namespace oscairn::host
         session_->connectAudio( delay, graphOutput );
         // Brightness locks are opt-in: the demo must not overwrite every selected sound.
         session_->commit();
+        session_->clearHistory(); // undo starts from the startup instrument
 
         openMidiInputs();
         midiDevicesChanged_ = juce::MidiDeviceListConnection::make( [this] { midiDevicesDirty_ = true; } );

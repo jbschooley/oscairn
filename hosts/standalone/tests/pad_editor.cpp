@@ -138,6 +138,11 @@ int main(int argc, char** argv)
             check(engine.graph().parts[1].solo, "the lead soloed");
             view.showPart(0xFFFFFFFEu);
             save(view, "-mixer.png");
+            // Undo through the engine: the last edit was the solo.
+            check(engine.history().undo == "Lead solo", "the engine names the last edit: " + engine.history().undo);
+            engine.edit([](Control& c) { c.undo(); });
+            for(int i = 0; i < 500 && engine.graph().parts[1].solo; ++i) juce::MessageManager::getInstance()->runDispatchLoopUntil(10);
+            check(!engine.graph().parts[1].solo && engine.history().redo == "Lead solo", "undone through the engine");
             view.showPart(0xFFFFFFFFu);
             save(view, "-controls.png");
             juce::LookAndFeel::setDefaultLookAndFeel(nullptr);

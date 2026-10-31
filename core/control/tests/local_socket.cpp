@@ -465,6 +465,14 @@ void partsClient(const char* plugin,const char* delay)
         const auto& l=g.parts[0].splits[0].lanes[1];
         check(l.level==.5 && l.mute && l.zones.size()==1 && l.zones[0].highKey==59,"a lane's Mix and zones read back over the socket");
         check(std::any_of(g.wires.begin(),g.wires.end(),[&](const Wire& w){return w.split==sp && w.lane==1 && w.mute;}),"the lane's join wire carries its Mix");
+        // Undo over the socket. (The edits above are staged; committing makes them their own step.)
+        remote.commit();
+        const auto oldName=remote.graphState().parts[0].name;
+        remote.setPartName(part,"Renamed");remote.commit();
+        check(remote.history().undo=="Rename Renamed","the edit is named over the socket");
+        check(remote.undo() && remote.graphState().parts[0].name==oldName && remote.history().redo=="Rename Renamed","undone over the socket");
+        check(remote.redo() && remote.graphState().parts[0].name=="Renamed","redone over the socket");
+        remote.undo();
         remote.setPartSolo(part,true);
         check(remote.graphState().parts[0].solo,"a part soloed over the socket");
         const auto meters=remote.partMeters();

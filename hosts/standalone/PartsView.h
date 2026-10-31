@@ -58,7 +58,7 @@ namespace oscairn::standalone
         int chainHeight_ = 96;     // the Part page's chain row: taller for a split's lanes
 
         juce::Label title_, message_;
-        juce::TextButton done_{"Done"}, addPart_{"+ Add part"}, addBus_{"+ Add bus"}, back_{"‹ Parts"}, removePart_{"Remove part"}, controlsButton_{"Controls"}, mixerButton_{"Mixer"}, addControl_{"+ Control"};
+        juce::TextButton done_{"Done"}, addPart_{"+ Add part"}, addBus_{"+ Add bus"}, back_{"‹ Parts"}, removePart_{"Remove part"}, controlsButton_{"Controls"}, mixerButton_{"Mixer"}, addControl_{"+ Control"}, undo_{"Undo"}, redo_{"Redo"};
         juce::TextEditor name_;
         std::vector<std::unique_ptr<juce::Component>> controls_; // rebuilt per page and shape
         std::vector<std::shared_ptr<std::function<void()>>> updaters_; // set controls from the state

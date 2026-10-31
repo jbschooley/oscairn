@@ -137,6 +137,16 @@ namespace oscairn
         virtual void setPartLevel( uint32_t part, double level, bool mute ) = 0; // its fader, post-fader sends included
         virtual void setPartName( uint32_t part, const std::string& name ) = 0;
         virtual void setPartSolo( uint32_t part, bool solo ) = 0;
+        // Undo (RFC 0011): edits to parts, wires, splits, Mix settings, scenes, controls and pads,
+        // nodes added, removed or replaced, parameter mappings, and parameter values set through
+        // this interface. Playing, switching scenes, moving controls and choosing sounds are not
+        // edits. An edit is everything up to a commit, or one change that needs none; repeated
+        // changes to the same thing within a moment are one edit. The labels say what undo and
+        // redo would do; empty: nothing to undo or redo. Opening a Performance clears them.
+        struct History { std::string undo, redo; };
+        virtual History history() const = 0;
+        virtual bool undo() = 0; // false: nothing to undo
+        virtual bool redo() = 0;
         // Each part's and bus's recent peak after its fader, held and falling, for the Mixer.
         virtual std::vector<PartMeter> partMeters() const = 0;
         virtual uint32_t connectPorts( const Wire& wire ) = 0; // a user wire; returns its ID

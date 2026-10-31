@@ -137,6 +137,8 @@ request members.
 | `parts.level` | `part`, `level`, `mute`: its fader; sends are post-fader | `{"accepted":true}` |
 | `parts.name` | `part`, `name` | `{"accepted":true}` |
 | `parts.solo` | `part`, `solo`: while any part is soloed, only soloed parts, the parts feeding them and the buses they feed are heard | `{"accepted":true}` |
+| `edit.undo`, `edit.redo` | omitted or `{}`: undoes the last edit, or redoes the last undone | `undo`, `redo`: what each would now do (empty: nothing) |
+| `edit.history` | omitted or `{}` | `undo`, `redo` labels, as above |
 | `parts.meters` | omitted or `{}` | `meters`: each part's and bus's recent peak after its fader (linear), held and falling |
 | `wires.connect` | `kind`, `from`, `to`; for audio `fromPort`, `toPort`, optional `channels` pairs; optional `level`, `pan` | numeric `wire` |
 | `wires.disconnect` | `wire` | `{"accepted":true}` |
@@ -273,6 +275,15 @@ report the compiled per-channel routes.
   `wires.mix` refuses them. A bus may split too: a send or a part playing through it enters
   each lane of a copy split at the lane's Mix, and those wires carry the bus's `split` and
   `lane`; with the other kinds it enters the Split node.
+- **Undo** (`edit.*`): edits to parts, wires, splits, Mix settings, scenes, controls and pads,
+  nodes added, removed or replaced, parameter mappings, and parameter values set with
+  `params.set` can be undone and redone, up to 100 steps. Everything up to a `graph.commit`
+  is one step, as is a change that needs no commit; repeated changes to the same thing within
+  1.5 seconds (a fader drag, a knob turn) are one step. Undo changes only what the step
+  changed, so a scene switched since keeps its levels. A removed plugin is held by the
+  history and comes back with its state and prepared sounds. Playing is not an edit:
+  notes, transport, `scenes.select`, `controls.set`, sound selection and preparation.
+  Opening a Performance starts a new history.
 - **Devices** ([RFC 0012](rfcs/0012-sync-external-midi-and-multi-device.md#choosing-devices-selectors))
   choose which MIDI inputs play a part, whatever channel they send on. A part's input
   `devices` is a list of rules, `{"kind","port","pattern","match"}`; a note or message

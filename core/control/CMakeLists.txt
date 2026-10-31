@@ -1,4 +1,4 @@
-add_library(oscairn_control STATIC src/session.cpp src/performance.cpp src/parts.cpp src/pads.cpp)
+add_library(oscairn_control STATIC src/session.cpp src/performance.cpp src/parts.cpp src/pads.cpp src/undo.cpp)
 target_include_directories(oscairn_control SYSTEM PRIVATE third_party)
 target_include_directories(oscairn_control PUBLIC include)
 target_link_libraries(oscairn_control PUBLIC oscairn_engine)
@@ -96,6 +96,12 @@ target_link_libraries(oscairn-parts-test PRIVATE oscairn_control)
 add_test(NAME control-parts COMMAND oscairn-parts-test
     $<TARGET_FILE:kick-clap-fixture-normal> $<TARGET_FILE:oscairn-audio-fixture> $<TARGET_FILE:oscairn_delay> $<TARGET_FILE:oscairn_splitters>)
 set_tests_properties(control-parts PROPERTIES TIMEOUT 60)
+
+add_executable(oscairn-undo-test tests/undo.cpp)
+target_include_directories(oscairn-undo-test PRIVATE ../clap-host/tests)
+target_link_libraries(oscairn-undo-test PRIVATE oscairn_control)
+add_test(NAME control-undo COMMAND oscairn-undo-test $<TARGET_FILE:kick-clap-fixture-normal> $<TARGET_FILE:oscairn_splitters>)
+set_tests_properties(control-undo PROPERTIES TIMEOUT 60)
 
 add_executable(oscairn-pads-test tests/pads.cpp)
 target_include_directories(oscairn-pads-test PRIVATE ../clap-host/tests)
