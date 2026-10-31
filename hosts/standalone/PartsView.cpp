@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #include "PartsView.h"
 #include "Icons.h"
+#include "ParameterGrid.h"
 #include "Theme.h"
 
 namespace oscairn::standalone
@@ -75,6 +76,7 @@ namespace oscairn::standalone
 
     void PartsView::showPart(uint32_t id) { page_ = id; selected_ = 0; selectedSplit_ = 0; selectedLane_ = -1; shape_.clear(); refresh(); }
     void PartsView::showRouting(NodeId node, uint32_t port) { page_ = routingPage; selected_ = 0; routed_ = node; routedPort_ = port; shape_.clear(); refresh(); }
+    void PartsView::selectBox(NodeId node) { selected_ = node; selectedSplit_ = 0; selectedLane_ = -1; shape_.clear(); refresh(); }
     void PartsView::showLane(uint32_t split, int lane) { selected_ = 0; selectedSplit_ = split; selectedLane_ = lane; shape_.clear(); refresh(); }
 
     void PartsView::refresh()
@@ -136,6 +138,7 @@ namespace oscairn::standalone
     void PartsView::rebuild()
     {
         controls_.clear(); boxes_.clear(); splitAreas_.clear(); strips_.clear(); updaters_.clear(); tiles_.clear();
+        auto grid = std::move(grid_); // kept below if the same plugin is still selected, so its page survives
         const bool list = page_ == 0, controlsShown = page_ == controlsPage, mixerShown = page_ == mixerPage, routingShown = page_ == routingPage;
         for(auto* c : std::initializer_list<juce::Component*>{&addPart_, &addBus_, &controlsButton_, &mixerButton_, &routingButton_}) c->setVisible(list);
         for(auto* c : std::initializer_list<juce::Component*>{&removePart_, &name_}) c->setVisible(!list && !controlsShown && !mixerShown && !routingShown);
@@ -151,6 +154,8 @@ namespace oscairn::standalone
         done_.setBounds(top.removeFromRight(80).reduced(2));
         redo_.setBounds(top.removeFromRight(60).reduced(2)); undo_.setBounds(top.removeFromRight(60).reduced(2));
         undo_.setVisible(true); redo_.setVisible(true);
+        // Inside the desktop's window, which has its own tabs, undo and parts list.
+        if(embedded_) for(auto* c : std::initializer_list<juce::Component*>{&done_, &back_, &undo_, &redo_, &title_, &addPart_, &addBus_, &controlsButton_, &mixerButton_, &routingButton_}) c->setVisible(false);
         message_.setBounds(getLocalBounds().reduced(16).removeFromBottom(24));
 
         // A slider or toggle that follows the state unless it is being used.
@@ -518,6 +523,14 @@ namespace oscairn::standalone
                     controls->onClick = [this, node, controls] { sceneControlsMenu(node, *controls); };
                 }
                 panel.removeFromTop(8);
+                // On the desktop a selected plugin's parameters take the panel, as pages of tiles.
+                if(found && embedded_ && graph_.names.count(selected_))
+                {
+                    grid_ = grid && grid->node() == selected_ ? std::move(grid) : std::make_unique<ParameterGrid>(engine_, selected_, graph_.names.at(selected_));
+                    addAndMakeVisible(*grid_); grid_->setBounds(panel);
+                    updaters_ = std::move(updates);
+                    return;
+                }
             }
             const auto id = p->id;
             // On the desktop the settings are a grid of tiles, each its name above its control
@@ -686,7 +699,6 @@ namespace oscairn::standalone
                 if(b.id != id) updates.push_back(slider(labelled("Send to " + text(b.name)).removeFromLeft(320).reduced(2, 10), 0, 1, sendOf(id, b.id), setSend(id, b.id)).second);
         }
         updaters_ = std::move(updates); // refresh() runs them
-        if(embedded_) for(auto* c : std::initializer_list<juce::Component*>{&done_, &back_, &undo_, &redo_, &title_, &addPart_, &addBus_, &controlsButton_, &mixerButton_, &routingButton_}) c->setVisible(false);
     }
 
     std::string PartsView::describe(const MacroTarget& t) const

@@ -26,6 +26,7 @@ namespace oscairn::standalone
         void refresh(); // reads the engine's graph state
         void showPart(uint32_t id); // 0: the list
         void showLane(uint32_t split, int lane); // selects a split (lane -1) or one of its lanes on the part shown
+        void selectBox(NodeId node);             // selects a plugin on the part shown: its actions, and on the desktop its parameters
         void showRouting(NodeId node, uint32_t port = 0); // Routing, with that node (0: none) selected
         // Inside the desktop's window (RFC 0019): the window has the tabs, undo and the parts
         // list, so this view leaves out its own.
@@ -78,6 +79,7 @@ namespace oscairn::standalone
         struct Strip { uint32_t part; juce::Rectangle<int> bounds, meter; };
         std::vector<Strip> strips_;
         std::vector<juce::Rectangle<int>> tiles_; // the Part page's settings on the desktop, a tile each
+        std::unique_ptr<class ParameterGrid> grid_; // the selected plugin's parameters, on the desktop
         std::map<uint32_t, std::vector<double>> peaks_; // the parts' meters per channel, read at each tick while the Mixer shows
         // Routing: the graph as nodes in columns, the node selected, and whether part wires show.
         RoutingState routing_;

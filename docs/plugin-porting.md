@@ -51,7 +51,11 @@ Everything else is handled for you:
 ## Known limits
 
 - **The plugin's own window is not shown yet.** The host does not implement CLAP's GUI
-  extension; every plugin gets a generated editor of knob pages from its parameters. The
+  extension; every plugin gets a generated editor from its parameters. On the desktop it is
+  pages of tiles: a page per top-level CLAP module path, a heading per module below that, and
+  a tile per parameter. Every parameter that is not hidden is reachable there, so anything a
+  sound depends on must be a parameter (or a structured editor, below) to be editable
+  without the plugin's window. The
   plan ([RFC 0011](rfcs/0011-performance-ui-and-editors.md#plugin-editors)): the plugin's
   window on the desktop, and on the device editors Oscairn draws, from the parameters or
   from a description the plugin gives (below).
@@ -86,7 +90,13 @@ Everything else is handled for you:
   SDK's `sound-contexts-plugin.hpp` gets both: it multiplies each voice's samples by
   `amplitude(voice, offset)`, and a choked voice fades over 3 ms before it ends.
 - **Parameter metadata:** clear names, CLAP module paths for grouping, value text, and the
-  stepped and read-only flags. The generated editors are built from them.
+  stepped and read-only flags. The generated editors are built from them:
+  - the first level of the module path names the page (`Operator 1`, `LFO 2`); numbered pages
+    of one kind are kept together in number order; the rest of the path is a heading;
+  - list parameters in the order a player reads them (attack before decay), since tiles follow
+    the plugin's order within a page;
+  - a stepped parameter with 2 values is a switch, with up to 32 a list of their value texts,
+    otherwise a slider; a symmetric range with a default of 0 fills from the centre.
 
 ## Optional Oscairn extensions
 

@@ -4,8 +4,11 @@
 // control socket, without an audio device: a small Performance (parts, a split, a bus, scenes,
 // a control), then every tab renders in each built-in theme, and in Oscairn Dark in both input
 // modes. With SNAPSHOTS, each render is written to SNAPSHOTS-<theme>-<input>-<tab>.png.
-//   oscairn_desktop_shell_test PLUGIN_DIR SCANNER THEMES [SNAPSHOTS]
+// Then a plugin's parameter pages (RFC 0019's generated editor): the Basic Synth's, and any
+// PLUGIN.clap given after SNAPSHOTS, each written to SNAPSHOTS-params-<name>-<page>.png.
+//   oscairn_desktop_shell_test PLUGIN_DIR SCANNER THEMES [SNAPSHOTS [PLUGIN.clap...]]
 #include "../DesktopShell.h"
+#include "../ParameterGrid.h"
 #include "oscairn/local_socket.h"
 #include "oscairn/session.h"
 #include <juce_gui_extra/juce_gui_extra.h>
@@ -108,6 +111,50 @@ int main(int argc, char** argv)
                     out.deleteFile();
                     juce::FileOutputStream stream(out);
                     juce::PNGImageFormat().writeImageToStream(image, stream);
+                }
+            }
+            // Parameter pages, in Oscairn Dark with a mouse.
+            theme.apply("oscairn-dark");
+            {
+                // Selecting a plugin on the desktop's Part page shows its parameters there.
+                standalone::PartsView view(engine, argv[2]);
+                standalone::setDesktopMode(view, 1); view.setEmbedded(true); view.setSize(1180, 820);
+                NodeId synth = 0;
+                for(const auto& [id, n] : engine.graph().names) if(n == "Basic Synth") synth = id;
+                view.showPart(piano); view.selectBox(synth);
+                bool shown = false;
+                for(auto* c : view.getChildren()) shown |= dynamic_cast<standalone::ParameterGrid*>(c) && c->isVisible() && c->getHeight() > 100;
+                check(synth && shown, "a selected plugin's parameters show on the Part page");
+                view.selectBox(0);
+                shown = false;
+                for(auto* c : view.getChildren()) shown |= dynamic_cast<standalone::ParameterGrid*>(c) != nullptr;
+                check(!shown, "and go when nothing is selected");
+            }
+            std::vector<std::pair<std::string, std::string>> edited{{"Basic Synth", ""}};
+            for(int i = 5; i < argc; ++i) edited.push_back({juce::File(argv[i]).getFileNameWithoutExtension().toStdString(), argv[i]});
+            for(const auto& [name, path] : edited)
+            {
+                NodeId node = 0;
+                if(path.empty()) { for(const auto& [id, n] : engine.graph().names) if(n == name) node = id; }
+                else
+                {
+                    engine.edit([&, name = name, path = path](Control& c) { node = c.add(name, path); c.commit(); });
+                    for(int i = 0; i < 500 && !engine.graph().names.count(node); ++i) juce::MessageManager::getInstance()->runDispatchLoopUntil(10);
+                }
+                check(node && engine.graph().names.count(node), "the plugin to edit is in the graph: " + name);
+                juce::Component holder; standalone::setDesktopMode(holder, 1); holder.setSize(1180, 820);
+                standalone::ParameterGrid grid(engine, node, name);
+                holder.addAndMakeVisible(grid); grid.setBounds(holder.getLocalBounds().reduced(16));
+                check(grid.pages() > 0, "the plugin's parameters make at least one page: " + name);
+                for(size_t page = 0; page < std::min<size_t>(grid.pages(), 3); ++page)
+                {
+                    grid.showPage(page);
+                    for(int i = 0; i < 10; ++i) juce::MessageManager::getInstance()->runDispatchLoopUntil(10);
+                    const auto image = holder.createComponentSnapshot(holder.getLocalBounds());
+                    check(image.getWidth() == 1180, "a parameter page renders");
+                    if(argc < 5) continue;
+                    const juce::File out{juce::String(argv[4]) + "-params-" + juce::String(name).replaceCharacter(' ', '-').toLowerCase() + "-" + juce::String(int(page + 1)) + ".png"};
+                    out.deleteFile(); juce::FileOutputStream stream(out); juce::PNGImageFormat().writeImageToStream(image, stream);
                 }
             }
             // The preference: Automatic until one is saved, then what was saved.
