@@ -47,12 +47,36 @@ namespace oscairn::standalone
             row.notes = p.input.kind == PartInput::Kind::Notes; row.devices = p.input.devices;
             for(const auto& s : p.sends) row.sends[s.bus] = s.level;
             if(!p.input.zones.empty()) { const auto& z = p.input.zones.front(); row.lowKey = z.lowKey; row.highKey = z.highKey; row.transpose = z.transpose; }
-            for(const auto node : p.chain)
-                if(const auto* n = nodeInfo(g, node))
+            // Boxes in chain order; a split is a box holding its lanes' boxes.
+            std::function<std::vector<PartBox>(const std::vector<NodeId>&)> boxes = [&](const std::vector<NodeId>& chain) {
+                std::vector<PartBox> out;
+                for(const auto entry : chain)
                 {
-                    row.chain.push_back({node, g.names.count(node) ? g.names.at(node) : std::string(), n->plugin.name, roleOf(*n)});
-                    if(row.sound.empty() && row.chain.back().role == "Instrument") row.sound = row.chain.back().name;
+                    if(isSplit(entry))
+                    {
+                        const auto s = std::find_if(p.splits.begin(), p.splits.end(), [&](const Split& x) { return x.id == (entry & ~splitMark); });
+                        if(s == p.splits.end()) continue;
+                        PartBox box; box.split = s->id; box.role = "Split";
+                        for(const auto& l : s->lanes)
+                        {
+                            PartLane lane; lane.boxes = boxes(l.chain); lane.level = l.level; lane.mute = l.mute; lane.solo = l.solo;
+                            if(!l.zones.empty()) { lane.lowKey = l.zones.front().lowKey; lane.highKey = l.zones.front().highKey; }
+                            // A lane is named after its instrument, else its last box.
+                            const auto instrument = std::find_if(lane.boxes.begin(), lane.boxes.end(), [](const PartBox& x) { return x.role == "Instrument"; });
+                            box.name += (box.name.empty() ? "" : " | ") + (instrument != lane.boxes.end() ? instrument->name : lane.boxes.empty() ? std::string("Dry") : lane.boxes.back().name);
+                            box.lanes.push_back(std::move(lane));
+                        }
+                        out.push_back(std::move(box));
+                    }
+                    else if(const auto* n = nodeInfo(g, entry))
+                    {
+                        out.push_back({entry, g.names.count(entry) ? g.names.at(entry) : std::string(), n->plugin.name, roleOf(*n)});
+                        if(row.sound.empty() && out.back().role == "Instrument") row.sound = out.back().name;
+                    }
                 }
+                return out;
+            };
+            row.chain = boxes(p.chain);
             switch(p.input.kind)
             {
             case PartInput::Kind::Notes:
@@ -95,7 +119,17 @@ namespace oscairn::standalone
         return id;
     }
 
-    void insertPlugin(Control& c, uint32_t part, size_t index, const PluginChoice& plugin)
+    const PartBox* findBox(const std::vector<PartBox>& chain, NodeId node)
+    {
+        for(const auto& b : chain)
+        {
+            if(!b.split && b.node == node) return &b;
+            for(const auto& l : b.lanes) if(const auto* f = findBox(l.boxes, node)) return f;
+        }
+        return nullptr;
+    }
+
+    void insertPlugin(Control& c, uint32_t part, size_t index, const PluginChoice& plugin, ChainPlace place)
     {
         const auto names = c.graphState().names;
         std::string name;
@@ -105,9 +139,86 @@ namespace oscairn::standalone
             if(std::none_of(names.begin(), names.end(), [&](const auto& e) { return e.second == name; })) break;
         }
         const auto node = c.add(name, plugin.path, plugin.id);
-        try { c.insertIntoPart(part, index, node); }
+        try { c.insertIntoPart(part, index, node, place); }
         catch(...) { c.remove(node); throw; }
         c.commit();
+    }
+
+    uint32_t insertSplit(Control& c, uint32_t part, size_t index)
+    {
+        const auto split = c.addSplit(part, index);
+        c.commit();
+        return split;
+    }
+
+    namespace
+    {
+        const Part& partIn(const std::vector<Part>& parts, uint32_t part)
+        {
+            const auto found = std::find_if(parts.begin(), parts.end(), [&](const Part& p) { return p.id == part; });
+            if(found == parts.end()) throw std::invalid_argument("unknown part");
+            return *found;
+        }
+        const Split& splitIn(const Part& p, uint32_t split)
+        {
+            const auto found = std::find_if(p.splits.begin(), p.splits.end(), [&](const Split& s) { return s.id == split; });
+            if(found == p.splits.end()) throw std::invalid_argument("unknown split");
+            return *found;
+        }
+        // The nodes in a chain, those in its splits' lanes included.
+        void nodesIn(const Part& p, const std::vector<NodeId>& chain, std::vector<NodeId>& out)
+        {
+            for(const auto e : chain)
+                if(!isSplit(e)) out.push_back(e);
+                else for(const auto& l : splitIn(p, e & ~splitMark).lanes) nodesIn(p, l.chain, out);
+        }
+    }
+
+    void removeSplitKeepingFirst(Control& c, uint32_t part, uint32_t split)
+    {
+        const auto parts = c.graphState().parts;
+        const auto& p = partIn(parts, part);
+        const auto& s = splitIn(p, split);
+        std::vector<NodeId> leaving;
+        for(size_t i = 1; i < s.lanes.size(); ++i) nodesIn(p, s.lanes[i].chain, leaving);
+        c.removeSplit(part, split);
+        for(const auto n : leaving) c.remove(n, UserWires::Reconnect);
+        c.commit();
+    }
+
+    void removeLaneAndBoxes(Control& c, uint32_t part, uint32_t split, uint32_t lane)
+    {
+        const auto parts = c.graphState().parts;
+        const auto& p = partIn(parts, part);
+        const auto& s = splitIn(p, split);
+        if(lane >= s.lanes.size()) throw std::invalid_argument("unknown lane");
+        std::vector<NodeId> leaving;
+        nodesIn(p, s.lanes[lane].chain, leaving);
+        c.removeLane(part, split, lane);
+        for(const auto n : leaving) c.remove(n, UserWires::Reconnect);
+        c.commit();
+    }
+
+    void editLane(Control& c, uint32_t part, uint32_t split, uint32_t lane, const std::function<void(Lane&)>& change)
+    {
+        const auto parts = c.graphState().parts;
+        const auto& s = splitIn(partIn(parts, part), split);
+        if(lane >= s.lanes.size()) throw std::invalid_argument("unknown lane");
+        auto l = s.lanes[lane];
+        change(l);
+        c.setLane(part, split, lane, l);
+        c.commit();
+    }
+
+    void setLaneKeys(Control& c, uint32_t part, uint32_t split, uint32_t lane, int lowKey, int highKey)
+    {
+        editLane(c, part, split, lane, [&](Lane& l) {
+            NoteZone zone = l.zones.empty() ? NoteZone{} : l.zones.front();
+            zone.lowKey = uint8_t(std::clamp(lowKey, 0, 127)); zone.highKey = uint8_t(std::clamp(highKey, int(zone.lowKey), 127));
+            if(l.zones.empty()) { if(!(zone == NoteZone{})) l.zones.push_back(zone); }
+            else if(zone == NoteZone{} && l.zones.size() == 1) l.zones.clear();
+            else l.zones.front() = zone;
+        });
     }
 
     void removeBox(Control& c, uint32_t part, NodeId node)

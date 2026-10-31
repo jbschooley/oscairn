@@ -60,10 +60,22 @@ try:
                 jsonschema.validate({'jsonrpc':'2.0','id':1,'result':{key:True}}, protocol)
             # A live graph.get with a part and its wires (RFC 0011).
             part = rpc('parts.add', {'name': 'Check'})['result']['part']
-            rpc('parts.insert', {'part': part, 'index': 0, 'node': 'synth'})
+            split = rpc('parts.addSplit', {'part': part, 'index': 0})['result']['split']
+            rpc('parts.insert', {'part': part, 'index': 0, 'node': 'synth', 'split': split, 'lane': 1})
+            rpc('parts.lane', {'part': part, 'split': split, 'lane': 1, 'level': 0.5, 'zones': [{'keys': [60, 127]}]})
             graph = rpc('graph.get')['result']
             assert graph['parts'][0]['name'] == 'Check' and any(w['owner'] == 'part' for w in graph['wires'])
+            assert graph['parts'][0]['chain'] == [{'split': split}] and graph['parts'][0]['splits'][0]['lanes'][1]['level'] == 0.5
             jsonschema.validate({'jsonrpc':'2.0','id':1,'result':graph}, protocol)
+            for method, params in [('parts.addSplit', {'part': part, 'index': 0}), ('parts.lane', {'part': part, 'split': split, 'lane': 0, 'mute': True}),
+                                   ('parts.addLane', {'part': part, 'split': split}), ('parts.removeLane', {'part': part, 'split': split, 'lane': 0}),
+                                   ('parts.removeSplit', {'part': part, 'split': split})]:
+                jsonschema.validate({'jsonrpc':'2.0','id':1,'method':method,'params':params}, protocol)
+            jsonschema.validate({'jsonrpc':'2.0','id':1,'result':{'split':1}}, protocol)
+            # Saved with the split, the manifest matches the file schema.
+            rpc('graph.commit')
+            rpc('performance.save', {'directory': str(saved) + '-split'})
+            jsonschema.validate(json.loads((Path(str(saved) + '-split') / 'performance.json').read_text()), json.loads(schema.read_text()))
             rpc('parts.remove', {'part': part})
         # The folder remains usable after the saving engine exits and the folder moves.
         p.stdin.close()

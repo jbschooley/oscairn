@@ -221,7 +221,10 @@ new core, from a UI that talks to it only through the control API.
 8. **Performance UI model — step 1 implemented:** [RFC 0011](rfcs/0011-performance-ui-and-editors.md#step-1-status)
    wire ownership, parts, implicit Mixes and port-level routes with channel rules, saved in
    Performance format version 2, and in the control protocol; step 2's zones, shared buses
-   and the desktop's Parts and Part views, and scenes. Next: step 3's split and join nodes.
+   and the desktop's Parts and Part views, and scenes; step 3's splits (lanes with zones and
+   a Mix, joining after) in the model, protocol and Part page
+   ([status](rfcs/0011-performance-ui-and-editors.md#step-3-status)). Next: left/right,
+   mid/side and band splits, then the Mixer.
 9. **Modular instrument — playable:** chillbeast's engine is in
    [plugins/modular](../plugins/modular/README.md) with its history, wrapped as a CLAP
    instrument with factory presets and bundled in the desktop app. The patch editor, the

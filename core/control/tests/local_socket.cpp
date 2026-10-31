@@ -456,6 +456,17 @@ void partsClient(const char* plugin,const char* delay)
         const auto zoned=remote.graphState().parts[0].input.zones;
         check(zoned.size()==1 && zoned[0].highKey==59 && zoned[0].transpose==12,"a part's zone set and read back over the socket");
         check(remote.graphState().parts[0].input.devices==devices,"a part's device selector set and read back over the socket");
+        // Splits over the socket: a split at the end, a lane's Mix and zones, a third lane.
+        const auto sp=remote.addSplit(part,2);
+        Lane lane;lane.zones={split};lane.level=.5;lane.mute=true;remote.setLane(part,sp,1,lane);
+        check(remote.addLane(part,sp)==2,"a third lane");
+        g=remote.graphState();
+        check(g.parts[0].chain.size()==3 && g.parts[0].chain[2]==(splitMark|sp) && g.parts[0].splits.size()==1 && g.parts[0].splits[0].lanes.size()==3,"a split and its lanes read back over the socket");
+        const auto& l=g.parts[0].splits[0].lanes[1];
+        check(l.level==.5 && l.mute && l.zones.size()==1 && l.zones[0].highKey==59,"a lane's Mix and zones read back over the socket");
+        check(std::any_of(g.wires.begin(),g.wires.end(),[&](const Wire& w){return w.split==sp && w.lane==1 && w.mute;}),"the lane's join wire carries its Mix");
+        remote.removeSplit(part,sp);
+        check(remote.graphState().parts[0].chain==std::vector<NodeId>{synth,fx} && remote.graphState().parts[0].splits.empty(),"the split removed over the socket");
         bool refused=false;try{remote.insertIntoPart(99,0,synth);}catch(const std::exception&){refused=true;}
         check(refused,"an unknown part is refused over the socket");
         remote.movePartNode(part,1,0);remote.removeFromPart(part,fx);remote.disconnectWire(id);

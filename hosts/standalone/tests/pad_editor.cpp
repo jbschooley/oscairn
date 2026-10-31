@@ -102,6 +102,27 @@ int main(int argc, char** argv)
             save(view, "-parts.png");
             view.showPart(engine.graph().parts[1].id);
             save(view, "-part.png");
+            // A split on the bass part: a second layer an octave up, from C3, at 60%.
+            const auto bassId = engine.graph().parts[0].id;
+            uint32_t split = 0;
+            engine.edit([&](Control& c) {
+                split = standalone::insertSplit(c, bassId, 0);
+                const auto chain = c.graphState().parts[0].chain;
+                for(size_t i = 1; i < chain.size(); ++i) // the bass's boxes after the split move into its first lane
+                    if(!isSplit(chain[i])) { const auto node = chain[i]; c.removeFromPart(bassId, node); c.insertIntoPart(bassId, 0, node, {split, 0}); c.commit(); break; }
+                standalone::insertPlugin(c, bassId, 0, plugin("Basic Synth"), {split, 1});
+                standalone::setLaneKeys(c, bassId, split, 1, 48, 127);
+                standalone::editLane(c, bassId, split, 1, [](Lane& l) { l.level = .6; });
+            });
+            for(int i = 0; i < 500 && (engine.graph().parts[0].splits.empty() || engine.graph().parts[0].splits[0].lanes[1].level != .6); ++i) juce::MessageManager::getInstance()->runDispatchLoopUntil(10);
+            const auto bassSplit = engine.graph().parts[0].splits;
+            check(bassSplit.size() == 1 && bassSplit[0].lanes[0].chain.size() == 1 && bassSplit[0].lanes[1].chain.size() == 1 && engine.editError().empty(),
+                  "a split with two layers made through the views' edits: " + std::string(engine.editError()));
+            view.showPart(0);
+            save(view, "-parts-split.png");
+            view.showPart(bassId);
+            view.showLane(split, 1);
+            save(view, "-lane.png");
             view.showPart(0xFFFFFFFFu);
             save(view, "-controls.png");
             juce::LookAndFeel::setDefaultLookAndFeel(nullptr);

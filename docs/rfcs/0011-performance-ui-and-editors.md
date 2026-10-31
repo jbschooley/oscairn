@@ -404,6 +404,37 @@ there is no gap. Values jump for now; smooth transitions are on the roadmap.
 Not yet: bypass in scenes (with the pedal view), the device's physical controls for these
 views, groups and undo.
 
+## Step 3 status
+
+**Splits** implemented 2026-10-31 (the first slice of step 3). A part's chain may hold a
+split: lanes, each its own chain with zones and a Mix (level, pan, mute, solo), joining
+again by summing into whatever follows the split, or where the part plays. Notes reach each
+lane through its zones after the part's own (`intersectZones` composes them: transpose and
+velocity curve included), and every lane gets a copy of the sound. That covers layers, key,
+velocity and channel splits, and dry/wet parallel effects. A lane may hold another split.
+The Session compiles splits into ordinary graph routes and note edges, so nothing new runs
+on the audio thread. Splits are saved in the Performance, in the control protocol and the
+remote client.
+
+On the desktop's Part page, **+** offers "Split here"; a split shows its lanes stacked
+between a split pill and a join pill, each lane with its own **+**, its keys and its level.
+Tapping a pill offers Add lane and Remove split (the first lane's plugins stay); tapping a
+lane shows its keys, level, mute, solo and Remove lane.
+
+`control-parts` checks the gate: two zoned layers inside the part's zone joining into one
+effect, and a dry lane beside a wet one, render sample for sample as the same graphs wired
+by hand on the engine's `Graph`, also after saving and opening again. It also covers solo,
+mute, nesting and edits; `desktop-parts-model` covers the views' edits and
+`desktop-pad-editor` renders a split.
+
+Not yet:
+- **Kinds that divide the sound itself:** left/right, mid/side and bands. These need small
+  split and join plugins with a port per lane.
+- **Lane pan in the views:** it is set over the protocol.
+- **Nested splits in the views:** a split inside a lane shows as a gap there.
+- **Splits in buses:** a send enters a bus at one box.
+- **The Mixer.**
+
 ## Open questions
 
 - The extension for plugin roles (cutoff, attack and so on) and structured editor

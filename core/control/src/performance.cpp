@@ -117,13 +117,20 @@ void Session::savePerformance(const std::string& directory) {
         std::vector<std::string> pairs;for(const auto& [a,b]:w.channels)pairs.push_back("["+std::to_string(a)+","+std::to_string(b)+"]");
         wires.push_back(std::string("{\"kind\":")+(w.kind==WireKind::Audio?"\"audio\"":"\"notes\"")+",\"owner\":"+(w.owner==WireOwner::Part?"\"part\",\"part\":"+std::to_string(w.part):"\"user\"")
             +",\"from\":"+quote(keys.at(w.from))+",\"to\":"+quote(keys.at(w.to))+",\"fromPort\":"+std::to_string(w.fromPort)+",\"toPort\":"+std::to_string(w.toPort)
-            +",\"channels\":"+join(pairs)+",\"level\":"+numeric(w.level)+",\"pan\":"+numeric(w.pan)+",\"mute\":"+(w.mute?"true":"false")+",\"solo\":"+(w.solo?"true":"false")+",\"zones\":"+zonesText(w.zones)+",\"send\":"+std::to_string(w.send)+",\"fader\":"+(w.fader?"true":"false")+'}');
+            +",\"channels\":"+join(pairs)+",\"level\":"+numeric(w.level)+",\"pan\":"+numeric(w.pan)+",\"mute\":"+(w.mute?"true":"false")+",\"solo\":"+(w.solo?"true":"false")+",\"zones\":"+zonesText(w.zones)+",\"send\":"+std::to_string(w.send)+",\"split\":"+std::to_string(w.split)+",\"lane\":"+std::to_string(w.lane)+",\"fader\":"+(w.fader?"true":"false")+'}');
     }
+    // A chain's entries: node keys, and {"split":id} for a split.
+    auto chainText=[&](const std::vector<NodeId>& entries){std::vector<std::string> out;for(const auto n:entries)out.push_back(isSplit(n)?"{\"split\":"+std::to_string(n&~splitMark)+'}':quote(keys.at(n)));return join(out);};
     for(const auto& p:parts_){
-        std::vector<std::string> chain;for(const auto n:p.chain)chain.push_back(quote(keys.at(n)));
+        std::vector<std::string> splits;
+        for(const auto& sp:p.splits){
+            std::vector<std::string> lanes;
+            for(const auto& l:sp.lanes)lanes.push_back("{\"chain\":"+chainText(l.chain)+",\"zones\":"+zonesText(l.zones)+",\"level\":"+numeric(l.level)+",\"pan\":"+numeric(l.pan)+",\"mute\":"+(l.mute?"true":"false")+",\"solo\":"+(l.solo?"true":"false")+'}');
+            splits.push_back("{\"id\":"+std::to_string(sp.id)+",\"kind\":\"copy\",\"lanes\":"+join(lanes)+'}');
+        }
         const char* kind=p.input.kind==PartInput::Kind::Notes?"notes":p.input.kind==PartInput::Kind::Audio?"audio":p.input.kind==PartInput::Kind::Bus?"bus":"none";
         std::vector<std::string> sends;for(const auto& s:p.sends)sends.push_back("{\"bus\":"+std::to_string(s.bus)+",\"level\":"+numeric(s.level)+'}');
-        parts.push_back("{\"id\":"+std::to_string(p.id)+",\"name\":"+quote(p.name)+",\"input\":{\"kind\":\""+kind+"\",\"port\":"+std::to_string(p.input.port)+",\"zones\":"+zonesText(p.input.zones)+",\"devices\":"+devicesText(p.input.devices)+"},\"chain\":"+join(chain)+",\"output\":"+std::to_string(p.output)+",\"level\":"+numeric(p.level)+",\"mute\":"+(p.mute?"true":"false")+",\"bus\":"+std::to_string(p.bus)+",\"sends\":"+join(sends)+'}');
+        parts.push_back("{\"id\":"+std::to_string(p.id)+",\"name\":"+quote(p.name)+",\"input\":{\"kind\":\""+kind+"\",\"port\":"+std::to_string(p.input.port)+",\"zones\":"+zonesText(p.input.zones)+",\"devices\":"+devicesText(p.input.devices)+"},\"chain\":"+chainText(p.chain)+",\"splits\":"+join(splits)+",\"output\":"+std::to_string(p.output)+",\"level\":"+numeric(p.level)+",\"mute\":"+(p.mute?"true":"false")+",\"bus\":"+std::to_string(p.bus)+",\"sends\":"+join(sends)+'}');
     }
     for(const auto& m:graph.mappings)mappings.push_back("{\"from\":"+quote(keys.at(m.source))+",\"lane\":"+std::to_string(m.lane)+",\"to\":"+quote(keys.at(m.target))+",\"param\":"+std::to_string(m.param)+'}');
     // Scenes: each part's fader and each scene parameter's value; and the scene last selected.
@@ -212,12 +219,36 @@ void Session::loadPerformance(const std::string& directory) {
     {
         std::set<uint32_t> partIds;
         for(auto p:array(field(d,"parts"),256)){
-            fields(p,{"id","name","input","chain","output","bus","sends","level","mute"});Part part;part.id=integer(field(p,"id"));part.name=text(field(p,"name"));
+            fields(p,{"id","name","input","chain","splits","output","bus","sends","level","mute"});Part part;part.id=integer(field(p,"id"));part.name=text(field(p,"name"));
             if(!part.id || !partIds.insert(part.id).second)bad("invalid or duplicate part");
             const auto input=field(p,"input");fields(input,{"kind","port","zones","devices"});const auto kind=text(field(input,"kind"));
             part.input.kind=kind=="notes"?PartInput::Kind::Notes:kind=="audio"?PartInput::Kind::Audio:kind=="none"?PartInput::Kind::None:kind=="bus"?PartInput::Kind::Bus:(bad("invalid part input"),PartInput::Kind::None);
             part.input.port=integer(field(input,"port"));part.input.zones=zonesFrom(field(input,"zones"));part.input.devices=devicesFrom(field(input,"devices"));part.output=integer(field(p,"output"));
-            for(auto n:array(field(p,"chain"),256)){const auto id=node(n);if(id==graphInput || id==graphOutput || std::find(part.chain.begin(),part.chain.end(),id)!=part.chain.end())bad("invalid part chain");part.chain.push_back(id);}
+            // Chains hold node keys and split entries; every node and split appears once in the part, and each split is reached from the part's own chain.
+            std::set<NodeId> seen;
+            auto chain=[&](V list){std::vector<NodeId> out;for(auto n:array(list,256)){
+                NodeId id;
+                if(n->type==json_type_object){fields(n,{"split"});const auto s=integer(field(n,"split"));if(!s || s>=splitMark)bad("invalid split entry");id=splitMark|s;}
+                else{id=node(n);if(id==graphInput || id==graphOutput)bad("invalid part chain");}
+                if(!seen.insert(id).second)bad("a node or split appears twice in a part");out.push_back(id);}return out;};
+            part.chain=chain(field(p,"chain"));
+            for(auto sp:array(field(p,"splits"),256)){
+                fields(sp,{"id","kind","lanes"});Split split;split.id=integer(field(sp,"id"));if(!split.id || split.id>=splitMark)bad("invalid split");
+                if(text(field(sp,"kind"))!="copy")bad("invalid split kind");
+                for(auto l:array(field(sp,"lanes"),16)){
+                    fields(l,{"chain","zones","level","pan","mute","solo"});Lane lane;lane.chain=chain(field(l,"chain"));lane.zones=zonesFrom(field(l,"zones"));
+                    lane.level=number(field(l,"level"));lane.pan=number(field(l,"pan"));lane.mute=boolean(field(l,"mute"));lane.solo=boolean(field(l,"solo"));
+                    if(lane.level<0 || lane.pan<-1 || lane.pan>1)bad("invalid lane level or pan");split.lanes.push_back(std::move(lane));}
+                if(split.lanes.empty() || std::any_of(part.splits.begin(),part.splits.end(),[&](const Split& x){return x.id==split.id;}))bad("invalid or duplicate split");
+                part.splits.push_back(std::move(split));
+            }
+            if(part.input.kind==PartInput::Kind::Bus && !part.splits.empty())bad("buses have no splits");
+            std::set<uint32_t> reached;
+            std::function<void(const std::vector<NodeId>&)> reach=[&](const std::vector<NodeId>& c){for(const auto e:c)if(isSplit(e)){
+                const auto it=std::find_if(part.splits.begin(),part.splits.end(),[&](const Split& x){return x.id==(e&~splitMark);});
+                if(it==part.splits.end() || !reached.insert(it->id).second)bad("unknown or repeated split entry");for(const auto& l:it->lanes)reach(l.chain);}};
+            reach(part.chain);
+            if(reached.size()!=part.splits.size())bad("a split is not in the part's chain");
             part.bus=integer(field(p,"bus"));part.level=number(field(p,"level"));part.mute=boolean(field(p,"mute"));if(part.level<0)bad("invalid part level");
             for(auto s:array(field(p,"sends"),256)){fields(s,{"bus","level"});Send send{integer(field(s,"bus")),number(field(s,"level"))};if(send.level<0)bad("invalid send level");part.sends.push_back(send);}
             nextPart=std::max(nextPart,part.id+1);parts.push_back(std::move(part));
@@ -233,8 +264,8 @@ void Session::loadPerformance(const std::string& directory) {
         for(auto c:array(field(d,"wires"),Graph::maxAudioConnections)){
             Wire w;const auto kind=text(field(c,"kind")),owner=text(field(c,"owner"));
             if((kind!="audio" && kind!="notes") || (owner!="part" && owner!="user"))bad("invalid wire");
-            if(owner=="part")fields(c,{"kind","owner","part","from","to","fromPort","toPort","channels","level","pan","mute","solo","zones","send","fader"});
-            else fields(c,{"kind","owner","from","to","fromPort","toPort","channels","level","pan","mute","solo","zones","send","fader"});
+            if(owner=="part")fields(c,{"kind","owner","part","from","to","fromPort","toPort","channels","level","pan","mute","solo","zones","send","split","lane","fader"});
+            else fields(c,{"kind","owner","from","to","fromPort","toPort","channels","level","pan","mute","solo","zones","send","split","lane","fader"});
             w.kind=kind=="audio"?WireKind::Audio:WireKind::Notes;w.owner=owner=="part"?WireOwner::Part:WireOwner::User;
             if(owner=="part"){w.part=integer(field(c,"part"));if(!partIds.count(w.part))bad("wire of an unknown part");}
             w.from=node(field(c,"from"));w.to=node(field(c,"to"));w.fromPort=integer(field(c,"fromPort"));w.toPort=integer(field(c,"toPort"));
@@ -242,7 +273,7 @@ void Session::loadPerformance(const std::string& directory) {
             w.level=number(field(c,"level"));w.pan=number(field(c,"pan"));w.mute=boolean(field(c,"mute"));w.solo=boolean(field(c,"solo"));
             if(w.level<0 || w.pan<-1 || w.pan>1)bad("invalid wire level or pan");
             w.zones=zonesFrom(field(c,"zones"));if(w.kind==WireKind::Audio && !w.zones.empty())bad("audio wires have no zones");
-            w.send=integer(field(c,"send"));w.fader=boolean(field(c,"fader"));if(w.fader && w.owner!=WireOwner::Part)bad("only a part's wire carries its fader");if(w.send && (w.owner!=WireOwner::Part || !std::any_of(parts.begin(),parts.end(),[&](const Part& p){return p.id==w.send;})))bad("a send wire of an unknown bus");
+            w.send=integer(field(c,"send"));w.split=integer(field(c,"split"));w.lane=integer(field(c,"lane"));if(w.split && w.owner!=WireOwner::Part)bad("only a part's wire joins a lane");w.fader=boolean(field(c,"fader"));if(w.fader && w.owner!=WireOwner::Part)bad("only a part's wire carries its fader");if(w.send && (w.owner!=WireOwner::Part || !std::any_of(parts.begin(),parts.end(),[&](const Part& p){return p.id==w.send;})))bad("a send wire of an unknown bus");
             wires.push_back(std::move(w));
         }
     }
@@ -302,7 +333,10 @@ void Session::loadPerformance(const std::string& directory) {
     }
     // A part's input wires hear the devices its selector chooses here (RFC 0012); files keep selectors, not sources.
     for(auto& w:wires)if(w.owner==WireOwner::Part && w.kind==WireKind::Notes && w.from==graphInput)
-        for(const auto& p:parts)if(p.id==w.part)w.zones=inputZones(p.input,hostStatus_.midiInputs);
+        for(const auto& p:parts)if(p.id==w.part && !p.input.devices.empty()){
+            // The file's zones (a lane's included) with this machine's sources.
+            if(w.zones.empty())w.zones.emplace_back();
+            const auto mask=resolveDevices(p.input.devices,hostStatus_.midiInputs);for(auto& z:w.zones)z.sources=mask;}
     compileWires(*next,wires);
     std::set<std::pair<NodeId,uint32_t>> mappings;
     for(auto m:array(field(d,"mappings"),4096)){fields(m,{"from","lane","to","param"});const auto from=node(field(m,"from")),lane=integer(field(m,"lane"));if(!mappings.emplace(from,lane).second)bad("duplicate parameter mapping");next->mapParamTarget(from,lane,node(field(m,"to")),integer(field(m,"param")));}

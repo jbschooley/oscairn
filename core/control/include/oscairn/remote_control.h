@@ -44,9 +44,14 @@ namespace oscairn
         void disconnectNotes(NodeId from,NodeId to) override;
         uint32_t addPart(const std::string& name,PartInput input = {},std::optional<uint32_t> output = {}) override;
         void removePart(uint32_t part) override;
-        void insertIntoPart(uint32_t part,size_t index,NodeId node) override;
+        void insertIntoPart(uint32_t part,size_t index,NodeId node,ChainPlace place={}) override;
         void removeFromPart(uint32_t part,NodeId node) override;
-        void movePartNode(uint32_t part,size_t from,size_t to) override;
+        void movePartNode(uint32_t part,size_t from,size_t to,ChainPlace place={}) override;
+        uint32_t addSplit(uint32_t part,size_t index,ChainPlace place={}) override;
+        void removeSplit(uint32_t part,uint32_t split) override;
+        uint32_t addLane(uint32_t part,uint32_t split) override;
+        void removeLane(uint32_t part,uint32_t split,uint32_t lane) override;
+        void setLane(uint32_t part,uint32_t split,uint32_t lane,const Lane& settings) override;
         void setPartInput(uint32_t part,const PartInput& input) override;
         void setPartOutput(uint32_t part,uint32_t bus,std::optional<uint32_t> port = {}) override;
         void setSend(uint32_t part,uint32_t bus,std::optional<double> level) override;

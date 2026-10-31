@@ -118,9 +118,17 @@ namespace oscairn
         // RFC 0011 parts and wires (parts.h). Part edits change only their part's wires.
         virtual uint32_t addPart( const std::string& name, PartInput input = {}, std::optional<uint32_t> output = {} ) = 0;
         virtual void removePart( uint32_t part ) = 0;
-        virtual void insertIntoPart( uint32_t part, size_t index, NodeId node ) = 0;
-        virtual void removeFromPart( uint32_t part, NodeId node ) = 0;
-        virtual void movePartNode( uint32_t part, size_t from, size_t to ) = 0;
+        virtual void insertIntoPart( uint32_t part, size_t index, NodeId node, ChainPlace place = {} ) = 0;
+        virtual void removeFromPart( uint32_t part, NodeId node ) = 0; // wherever it is in the part
+        virtual void movePartNode( uint32_t part, size_t from, size_t to, ChainPlace place = {} ) = 0; // a node or split entry
+        // Splits (parts.h): a new one has two empty lanes. Removing one keeps its first lane's
+        // chain in its place; other lanes' nodes leave the part. Removing the last lane removes
+        // the split. setLane sets a lane's zones and Mix, not its chain.
+        virtual uint32_t addSplit( uint32_t part, size_t index, ChainPlace place = {} ) = 0;
+        virtual void removeSplit( uint32_t part, uint32_t split ) = 0;
+        virtual uint32_t addLane( uint32_t part, uint32_t split ) = 0; // its index
+        virtual void removeLane( uint32_t part, uint32_t split, uint32_t lane ) = 0;
+        virtual void setLane( uint32_t part, uint32_t split, uint32_t lane, const Lane& settings ) = 0;
         virtual void setPartInput( uint32_t part, const PartInput& input ) = 0;
         virtual void setPartOutput( uint32_t part, uint32_t bus, std::optional<uint32_t> port = {} ) = 0; // through a bus, or (bus 0) to a port
         virtual void setSend( uint32_t part, uint32_t bus, std::optional<double> level ) = 0;            // without a level, removes the send

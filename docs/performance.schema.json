@@ -414,6 +414,18 @@
           "maximum": 4294967295,
           "description": "For a part's send wire, the bus it sends to; otherwise 0"
         },
+        "split": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295,
+          "description": "A part wire joining from a split's lane: that split's ID, or 0. Its Mix is the lane's"
+        },
+        "lane": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295,
+          "description": "That lane's index"
+        },
         "fader": {
           "type": "boolean",
           "description": "A part's wire to where it plays, carrying its level and mute"
@@ -433,6 +445,8 @@
         "solo",
         "zones",
         "send",
+        "split",
+        "lane",
         "fader"
       ],
       "if": {
@@ -513,7 +527,14 @@
           "maxItems": 256,
           "uniqueItems": true,
           "items": {
-            "$ref": "#/$defs/NodeKey"
+            "$ref": "#/$defs/ChainEntry"
+          }
+        },
+        "splits": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "$ref": "#/$defs/Split"
           }
         },
         "output": {
@@ -564,6 +585,7 @@
         "name",
         "input",
         "chain",
+        "splits",
         "output",
         "bus",
         "sends",
@@ -961,6 +983,104 @@
         "port",
         "pattern",
         "match"
+      ],
+      "additionalProperties": false
+    },
+    "ChainEntry": {
+      "description": "A chain entry: a node key, or a split",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/NodeKey"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "split": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647
+            }
+          },
+          "required": [
+            "split"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "Lane": {
+      "type": "object",
+      "description": "A split's lane (RFC 0011 step 3): its own chain, the notes it takes, and its row in the join's Mix",
+      "properties": {
+        "chain": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "$ref": "#/$defs/ChainEntry"
+          }
+        },
+        "zones": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/Zone"
+          }
+        },
+        "level": {
+          "type": "number",
+          "minimum": 0
+        },
+        "pan": {
+          "type": "number",
+          "minimum": -1,
+          "maximum": 1
+        },
+        "mute": {
+          "type": "boolean"
+        },
+        "solo": {
+          "type": "boolean",
+          "description": "Silences the split's other lanes"
+        }
+      },
+      "required": [
+        "chain",
+        "zones",
+        "level",
+        "pan",
+        "mute",
+        "solo"
+      ],
+      "additionalProperties": false
+    },
+    "Split": {
+      "type": "object",
+      "description": "A split in a part's chain: the notes and sound divide into lanes that join again by summing into whatever follows",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647
+        },
+        "kind": {
+          "enum": [
+            "copy"
+          ],
+          "description": "copy: every lane gets the notes, through its zones, and a copy of the sound"
+        },
+        "lanes": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "items": {
+            "$ref": "#/$defs/Lane"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "lanes"
       ],
       "additionalProperties": false
     }

@@ -246,6 +246,141 @@ namespace
         check(near(y.l[0], 0), "a device that does not match there plays nothing");
     }
 
+    // RFC 0011 step 3: splits. Lanes built with part edits render exactly as the same graph wired
+    // by hand; lanes' zones, Mix, solo and nesting; edits; persistence.
+    void splits(const char* fixture, const char* delay, const fs::path& root)
+    {
+        { // Two zoned layers joining into one effect, inside the part's own zone.
+            Session s(48000, frames);
+            const auto low = s.add("low", fixture, "org.kick.test.synth"), high = s.add("high", fixture, "org.kick.test.synth"), fx = s.add("fx", delay);
+            s.setParameter(low, 7, .25); s.setParameter(high, 7, .5);
+            NoteZone keyboard; keyboard.lowKey = 36; keyboard.highKey = 96;
+            const auto keys = s.addPart("Keys", {PartInput::Kind::Notes, 0, {keyboard}});
+            const auto split = s.addSplit(keys, 0);
+            s.insertIntoPart(keys, 0, low, {split, 0}); s.insertIntoPart(keys, 0, high, {split, 1});
+            s.insertIntoPart(keys, 1, fx); // after the split: both lanes join into it
+            NoteZone below; below.highKey = 59; NoteZone above; above.lowKey = 60;
+            Lane a; a.zones = {below}; a.level = .5; s.setLane(keys, split, 0, a);
+            Lane b; b.zones = {above}; b.level = .8; s.setLane(keys, split, 1, b);
+            s.commit();
+
+            auto byHand = [&] {
+                auto g = std::make_unique<Graph>(48000, frames);
+                const auto gl = g->add(fixture, "org.kick.test.synth"), gh = g->add(fixture, "org.kick.test.synth"), gr = g->add(delay);
+                g->host(gl).setParameter(7, .25); g->host(gh).setParameter(7, .5);
+                NoteZone lowKeys = keyboard; lowKeys.highKey = 59; NoteZone highKeys = keyboard; highKeys.lowKey = 60;
+                g->connectNotes(graphInput, gl, {lowKeys}); g->connectNotes(graphInput, gh, {highKeys});
+                for(const auto [node, gain] : {std::pair{gl, .5}, std::pair{gh, .8}})
+                    for(uint32_t c = 0; c < 2; ++c) g->connectAudio({{node, 0, 0}, {gr, g->host(gr).mainAudioPorts(true).front(), c}, 1, gain});
+                g->connectAudio(gr, graphOutput); g->commit();
+                return g;
+            };
+            // Renders a session against a fresh hand-wired graph, with keys outside, below and above the split.
+            auto compare = [&](Session& x) {
+                auto g = byHand();
+                Audio a; std::array<float, frames> rl{}, rr{}; float* ref[2]{rl.data(), rr.data()};
+                bool same = true; double energy = 0;
+                for(int block = 0; block < 300; ++block)
+                {
+                    std::vector<kick::clap::Event> events;
+                    auto note = [&](bool on, int key) { x.note(on, key, 1); events.push_back(kick::clap::Event::note(on, key, 1)); };
+                    // The fixture sounds the same for one key or several, so the high key plays alone first.
+                    if(block == 1) note(true, 72);
+                    if(block == 10) { note(true, 30); note(true, 40); note(true, 100); }
+                    if(block == 30) { note(false, 30); note(false, 40); note(false, 72); note(false, 100); }
+                    a.run(x);
+                    g->process(ref, frames, nullptr, events.data(), uint32_t(events.size()));
+                    same = same && a.l == rl && a.r == rr;
+                    for(float v : a.l) energy += std::abs(v);
+                }
+                return same && energy > 0;
+            };
+            check(compare(s), "two zoned layers joining into an effect render exactly as wired by hand");
+
+            // Saved and opened again, it plays the same.
+            const auto saved = root / "splits";
+            s.savePerformance(saved.string());
+            Session t(48000, frames); t.loadPerformance(saved.string());
+            check(t.parts().size() == 1 && t.parts()[0].splits.size() == 1 && t.parts()[0].splits[0].lanes[1].level == .8 &&
+                  t.parts()[0].splits[0].lanes[0].chain.size() == 1 && t.parts()[0].chain.size() == 2 && isSplit(t.parts()[0].chain[0]), "the split round-trips");
+            check(compare(t), "the opened Performance also renders as wired by hand");
+        }
+        { // A dry lane and a wet lane after an instrument, joining where the part plays.
+            Session s(48000, frames);
+            const auto synth = s.add("synth", fixture, "org.kick.test.synth"), fx = s.add("fx", delay);
+            s.setParameter(synth, 7, .5);
+            const auto lead = s.addPart("Lead");
+            s.insertIntoPart(lead, 0, synth);
+            const auto split = s.addSplit(lead, 1);
+            s.insertIntoPart(lead, 0, fx, {split, 1});
+            Lane dry; dry.level = .5; s.setLane(lead, split, 0, dry);
+            Lane wet; wet.level = .25; s.setLane(lead, split, 1, wet);
+            s.commit();
+            Graph g(48000, frames);
+            const auto gs = g.add(fixture, "org.kick.test.synth"), gr = g.add(delay);
+            g.host(gs).setParameter(7, .5);
+            g.connectNotes(graphInput, gs);
+            for(uint32_t c = 0; c < 2; ++c)
+            {
+                g.connectAudio({{gs, 0, 0}, {graphOutput, 0, c}, 1, .5});
+                g.connectAudio({{gs, 0, 0}, {gr, g.host(gr).mainAudioPorts(true).front(), c}, 1, 1});
+            }
+            g.connectAudio({{gr, g.host(gr).mainAudioPorts(false).front(), 0}, {graphOutput, 0, 0}, 2, .25}); g.commit();
+            Audio x; std::array<float, frames> rl{}, rr{}; float* ref[2]{rl.data(), rr.data()};
+            bool same = true;
+            for(int block = 0; block < 200; ++block)
+            {
+                std::vector<kick::clap::Event> events;
+                if(block == 1) { s.note(true, 60, 1); events.push_back(kick::clap::Event::note(true, 60, 1)); }
+                if(block == 20) { s.note(false, 60, 0); events.push_back(kick::clap::Event::note(false, 60, 0)); }
+                x.run(s); g.process(ref, frames, nullptr, events.data(), uint32_t(events.size()));
+                same = same && x.l == rl && x.r == rr;
+            }
+            check(same, "dry and wet lanes render exactly as wired by hand");
+        }
+        { // Lane Mix, solo, nesting and edits, heard through the fixture's steady output.
+            Session s(48000, frames);
+            const auto low = s.add("low", fixture, "org.kick.test.synth"), high = s.add("high", fixture, "org.kick.test.synth");
+            s.setParameter(low, 7, .25); s.setParameter(high, 7, .5);
+            const auto part = s.addPart("Layers");
+            const auto split = s.addSplit(part, 0);
+            s.insertIntoPart(part, 0, low, {split, 0}); s.insertIntoPart(part, 0, high, {split, 1}); s.commit();
+            Audio x; x.run(s);
+            s.note(true, 60, 1); x.run(s); check(near(x.l[0], .75), "both layers: " + std::to_string(x.l[0]));
+            Lane solo; solo.solo = true; s.setLane(part, split, 1, solo); s.commit(); x.run(s);
+            check(near(x.l[0], .5), "the soloed lane alone: " + std::to_string(x.l[0]));
+            Lane muted; muted.mute = true; s.setLane(part, split, 1, muted); s.commit(); x.run(s);
+            check(near(x.l[0], .25), "the muted lane silent");
+            s.setLane(part, split, 1, {}); s.commit();
+            bool refused = false;
+            for(const auto& w : s.wires()) if(w.split == split && w.kind == WireKind::Audio) { try { s.setMix(w.id, 1, 0, false, false); } catch(const std::invalid_argument&) { refused = true; } break; }
+            check(refused, "a lane's wire takes its Mix from the lane");
+            // A split inside a lane: the high layer reaches Main twice, at half level each.
+            const auto inner = s.addSplit(part, 1, {split, 1});
+            Lane half; half.level = .5; s.setLane(part, inner, 0, half); s.setLane(part, inner, 1, half); s.commit(); x.run(s);
+            check(near(x.l[0], .75), "a nested split joins at its lanes' levels: " + std::to_string(x.l[0]));
+            s.removeLane(part, inner, 1); s.commit(); x.run(s);
+            check(near(x.l[0], .5), "one nested lane left at half level");
+            // Removing the outer split keeps its first lane's chain; the rest leave the part.
+            s.removeSplit(part, split); s.commit(); x.run(s);
+            check(s.parts()[0].chain == std::vector<NodeId>{low} && s.parts()[0].splits.empty(), "the first lane's chain stays, the nested split goes");
+            check(near(x.l[0], .25), "only the low layer plays");
+            s.note(false, 60, 0); x.run(s);
+            refused = false; const auto room = s.addPart("Room", {PartInput::Kind::Bus});
+            try { s.addSplit(room, 0); } catch(const std::invalid_argument&) { refused = true; }
+            check(refused, "buses have no splits yet");
+        }
+        { // Zones in turn: the lane sees the part zone's transposed keys and shaped velocity.
+            NoteZone a; a.lowKey = 36; a.highKey = 96; a.transpose = 12; a.curve = 2;
+            NoteZone b; b.lowKey = 60; b.lowVelocity = .25;
+            const auto z = intersectZones({a}, {b});
+            check(z.size() == 1 && z[0].lowKey == 48 && z[0].highKey == 96 && z[0].transpose == 12 && std::abs(z[0].lowVelocity - .5) < 1e-12 && z[0].curve == 2,
+                  "keys 48-96 reach 60 and up after +12; velocity .5 reaches .25 after the curve");
+            NoteZone c; c.highKey = 40;
+            check(intersectZones({a}, {c}).empty(), "no overlap: no zone");
+        }
+    }
+
     // RFC 0011 step 2's gate: a two-layer split and a shared reverb (a delay here) built with part
     // edits only render exactly as the same graph wired by hand on the engine's Graph.
     void buses(const char* fixture, const char* delay)
@@ -480,6 +615,7 @@ int main(int argc, char** argv)
         replacement(argv[2], argv[3]);
         zones(argv[1]);
         devices(argv[1], temp.path);
+        splits(argv[1], argv[3], temp.path);
         buses(argv[1], argv[3]);
         scenes(argv[1], temp.path);
         controls(argv[1], temp.path);

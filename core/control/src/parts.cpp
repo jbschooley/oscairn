@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <functional>
 #include <map>
 #include <optional>
 #include <regex>
@@ -131,6 +132,36 @@ namespace oscairn
         return zones;
     }
 
+    std::vector<NoteZone> intersectZones(const std::vector<NoteZone>& first, const std::vector<NoteZone>& then)
+    {
+        std::vector<NoteZone> out;
+        for(const auto& a : first)
+            for(const auto& b : then)
+            {
+                // b sees a's output: the key after a's transpose, the velocity after a's shaping.
+                NoteZone z = a;
+                z.lowKey = uint8_t(std::max<int>(a.lowKey, b.lowKey - a.transpose));
+                z.highKey = uint8_t(std::min<int>(a.highKey, b.highKey - a.transpose));
+                if(a.fixedVelocity > 0) { if(a.fixedVelocity < b.lowVelocity || a.fixedVelocity > b.highVelocity) continue; }
+                else
+                {
+                    z.lowVelocity = std::max(a.lowVelocity, std::pow(b.lowVelocity, 1 / a.curve));
+                    z.highVelocity = std::min(a.highVelocity, std::pow(b.highVelocity, 1 / a.curve));
+                }
+                z.channels = a.channels & b.channels;
+                z.sources = a.sources & b.sources;
+                const int transpose = a.transpose + b.transpose;
+                if(transpose < -127 || transpose > 127) continue;
+                z.transpose = int8_t(transpose);
+                if(b.fixedVelocity > 0) z.fixedVelocity = b.fixedVelocity;
+                else if(a.fixedVelocity > 0) z.fixedVelocity = std::pow(a.fixedVelocity, b.curve);
+                else z.curve = std::min(16.0, a.curve * b.curve); // the steepest one zone holds
+                if(a.highKey < b.lowKey - a.transpose || a.lowKey > b.highKey - a.transpose || z.lowKey > z.highKey || z.lowVelocity > z.highVelocity || !z.channels) continue;
+                if(z.valid()) out.push_back(z);
+            }
+        return out;
+    }
+
     // Compiles the wires into the graph's routes, changing only what differs, and marks each
     // wire connected or not.
     void Session::compileWires(Graph& g, std::vector<Wire>& wires)
@@ -207,9 +238,10 @@ namespace oscairn
     // into, so the order does not matter.
     void Session::buildParts() { for(const auto& p : parts_) buildPart(p); }
 
-    // Rebuilds one part's own wires: its input into the first box, box to box, the last box to
-    // its output or bus, and its sends. A rebuilt wire keeps the Mix settings of the one it
-    // replaces; a send's level is the send's.
+    // Rebuilds one part's own wires: its input into the first box, box to box, through each
+    // split's lanes and joining after them, the last boxes to its output or bus, and its sends.
+    // A rebuilt wire keeps the Mix settings of the one it replaces; a wire joining from a lane
+    // takes the lane's, and the part's fader and sends set theirs.
     void Session::buildPart(const Part& part)
     {
         const auto layout = graph_.describe().audioLayout;
@@ -221,31 +253,78 @@ namespace oscairn
                 if(p.kind == w.kind && p.from == w.from && p.to == w.to && p.fromPort == w.fromPort && p.toPort == w.toPort)
                     { w.level = p.level; w.pan = p.pan; w.mute = p.mute; w.solo = p.solo; break; }
             wires_.push_back(std::move(w));
+            return &wires_.back();
         };
-        auto audioWire = [&](NodeId from, uint32_t fromPort, NodeId to, uint32_t toPort) { Wire w; w.from = from; w.fromPort = fromPort; w.to = to; w.toPort = toPort; add(w); };
-        auto noteWire = [&](NodeId from, NodeId to) { Wire w; w.kind = WireKind::Notes; w.from = from; w.to = to; if(from == graphInput) w.zones = inputZones(part.input, hostStatus_.midiInputs); add(w); };
-        // The previous box, or the input; whether it sends audio and notes.
-        NodeId previousNode = graphInput;
-        bool audio = part.input.kind == PartInput::Kind::Audio, notes = part.input.kind == PartInput::Kind::Notes;
-        uint32_t audioPort = part.input.port;
-        for(const auto node : part.chain)
+        // Where the chain has got to: each box (or the input) whose sound and notes reach the next
+        // entry, with the zones its notes pass and, after a split, the Mix of the lane it ends.
+        struct End
         {
-            if(audio && takesAudio(graph_, layout, node)) audioWire(previousNode, audioPort, node, mainPort(graph_, layout, node, true));
-            if(notes && takesNotes(graph_, node)) noteWire(previousNode, node);
-            previousNode = node;
-            audio = sendsAudio(graph_, layout, node); notes = sendsNotes(graph_, node);
-            if(audio) audioPort = mainPort(graph_, layout, node, false);
-        }
-        if(!audio) return;
-        if(part.bus) { const auto [node, port] = busEntry(part.bus); audioWire(previousNode, audioPort, node, port); }
-        else audioWire(previousNode, audioPort, graphOutput, part.output);
-        wires_.back().level = part.level; wires_.back().mute = part.mute; wires_.back().fader = true;
-        for(const auto& send : part.sends)
+            NodeId node = graphInput;
+            bool audio = false, notes = false;
+            uint32_t port = 0;
+            std::vector<NoteZone> zones;
+            double level = 1, pan = 0;
+            bool mute = false;
+            uint32_t split = 0, lane = 0;
+        };
+        auto audioWire = [&](const End& e, NodeId to, uint32_t toPort) {
+            Wire w; w.from = e.node; w.fromPort = e.port; w.to = to; w.toPort = toPort;
+            auto* added = add(w);
+            if(e.split) { added->level = e.level; added->pan = e.pan; added->mute = e.mute; added->solo = false; added->split = e.split; added->lane = e.lane; }
+            return added;
+        };
+        auto into = [&](const std::vector<End>& ends, NodeId node) {
+            for(const auto& e : ends)
+            {
+                if(e.audio && takesAudio(graph_, layout, node)) audioWire(e, node, mainPort(graph_, layout, node, true));
+                if(e.notes && takesNotes(graph_, node)) { Wire w; w.kind = WireKind::Notes; w.from = e.node; w.to = node; w.zones = e.zones; add(w); }
+            }
+            End next; next.node = node; next.audio = sendsAudio(graph_, layout, node); next.notes = sendsNotes(graph_, node);
+            if(next.audio) next.port = mainPort(graph_, layout, node, false);
+            return std::vector<End>{next};
+        };
+        std::function<std::vector<End>(const std::vector<NodeId>&, std::vector<End>)> walk = [&](const std::vector<NodeId>& chain, std::vector<End> ends) {
+            for(const auto entry : chain)
+            {
+                if(!isSplit(entry)) { ends = into(ends, entry); continue; }
+                const auto& split = *std::find_if(part.splits.begin(), part.splits.end(), [&](const Split& s) { return s.id == (entry & ~splitMark); });
+                const bool solo = std::any_of(split.lanes.begin(), split.lanes.end(), [](const Lane& l) { return l.solo; });
+                std::vector<End> joined;
+                for(uint32_t i = 0; i < split.lanes.size(); ++i)
+                {
+                    const auto& lane = split.lanes[i];
+                    auto in = ends;
+                    for(auto& e : in) if(e.notes && !lane.zones.empty())
+                    {
+                        e.zones = e.zones.empty() ? lane.zones : intersectZones(e.zones, lane.zones);
+                        if(e.zones.empty()) e.notes = false; // no note gets through both
+                    }
+                    for(auto out : walk(lane.chain, in))
+                    {
+                        out.level *= lane.level; out.pan = std::clamp(out.pan + lane.pan, -1.0, 1.0);
+                        out.mute = out.mute || lane.mute || (solo && !lane.solo);
+                        if(!out.split) { out.split = split.id; out.lane = i; }
+                        joined.push_back(out);
+                    }
+                }
+                ends = std::move(joined);
+            }
+            return ends;
+        };
+        End input; input.audio = part.input.kind == PartInput::Kind::Audio; input.notes = part.input.kind == PartInput::Kind::Notes;
+        input.port = part.input.port; input.zones = inputZones(part.input, hostStatus_.midiInputs);
+        for(auto e : walk(part.chain, {input}))
         {
-            const auto [node, port] = busEntry(send.bus);
-            Wire w; w.from = previousNode; w.fromPort = audioPort; w.to = node; w.toPort = port; w.send = send.bus;
-            add(w);
-            wires_.back().level = send.level * part.level; wires_.back().mute = part.mute; // post-fader
+            if(!e.audio) continue;
+            const auto [node, port] = part.bus ? busEntry(part.bus) : std::pair{graphOutput, part.output};
+            auto* w = audioWire(e, node, port);
+            w->level = part.level * e.level; w->mute = part.mute || e.mute; w->fader = true; // a lane's pan is already set
+            for(const auto& send : part.sends)
+            {
+                const auto [to, toPort] = busEntry(send.bus);
+                auto* s = audioWire(e, to, toPort);
+                s->send = send.bus; s->level = send.level * part.level * e.level; s->mute = part.mute || e.mute; // post-fader
+            }
         }
     }
 
@@ -285,7 +364,7 @@ namespace oscairn
         const auto layout = graph_.describe().audioLayout;
         if(layout.outputs.empty()) throw std::invalid_argument("the graph has no audio outputs");
         checkInput(input);
-        Part part{nextPart_, name, input, {}, output.value_or(layout.outputs.front().id)};
+        Part part{nextPart_, name, input, {}, {}, output.value_or(layout.outputs.front().id)};
         if(!channelsOf(graph_, layout, graphOutput, part.output, true)) throw std::invalid_argument("no such graph output port");
         if(input.kind == PartInput::Kind::Audio && !channelsOf(graph_, layout, graphInput, input.port, false)) throw std::invalid_argument("no such graph input port");
         editWires([&] { parts_.push_back(part); buildParts(); });
@@ -595,31 +674,146 @@ namespace oscairn
         });
     }
 
-    void Session::insertIntoPart(uint32_t id, size_t index, NodeId node)
+    namespace
     {
-        if(!graph_.contains(node)) throw std::invalid_argument("unknown node");
+        Split& splitOf(Part& p, uint32_t id)
+        {
+            const auto it = std::find_if(p.splits.begin(), p.splits.end(), [&](const Split& s) { return s.id == id; });
+            if(it == p.splits.end()) throw std::invalid_argument("unknown split");
+            return *it;
+        }
+        std::vector<NodeId>& chainAt(Part& p, ChainPlace place)
+        {
+            if(!place.split) return p.chain;
+            auto& split = splitOf(p, place.split);
+            if(place.lane >= split.lanes.size()) throw std::invalid_argument("unknown lane");
+            return split.lanes[place.lane].chain;
+        }
+        // Every chain in the part: its own and each lane's.
+        template<class F> void eachChain(Part& p, F&& f) { f(p.chain); for(auto& s : p.splits) for(auto& l : s.lanes) f(l.chain); }
+        bool holds(Part& p, NodeId entry)
+        {
+            bool found = false;
+            eachChain(p, [&](std::vector<NodeId>& c) { found = found || std::find(c.begin(), c.end(), entry) != c.end(); });
+            return found;
+        }
+        // Forgets the splits in a chain that is leaving the part, and those inside them.
+        void forgetSplits(Part& p, const std::vector<NodeId>& chain)
+        {
+            for(const auto entry : chain)
+                if(isSplit(entry))
+                {
+                    const auto lanes = splitOf(p, entry & ~splitMark).lanes;
+                    for(const auto& l : lanes) forgetSplits(p, l.chain);
+                    std::erase_if(p.splits, [&](const Split& s) { return s.id == (entry & ~splitMark); });
+                }
+        }
+        void checkLane(const Lane& l)
+        {
+            if(!std::isfinite(l.level) || l.level < 0 || !std::isfinite(l.pan) || l.pan < -1 || l.pan > 1) throw std::invalid_argument("invalid lane level or pan");
+            if(l.zones.size() > NoteZones::capacity || std::any_of(l.zones.begin(), l.zones.end(), [](const NoteZone& z) { return !z.valid(); }))
+                throw std::invalid_argument("invalid or too many note zones");
+        }
+    }
+
+    void Session::insertIntoPart(uint32_t id, size_t index, NodeId node, ChainPlace place)
+    {
+        if(isSplit(node) || !graph_.contains(node)) throw std::invalid_argument("unknown node");
         auto& part = findPart(id);
-        if(index > part.chain.size()) throw std::invalid_argument("chain position out of range");
-        if(std::find(part.chain.begin(), part.chain.end(), node) != part.chain.end()) throw std::invalid_argument("the node is already in this part");
-        editWires([&] { auto& p = findPart(id); p.chain.insert(p.chain.begin() + std::ptrdiff_t(index), node); buildParts(); });
+        if(index > chainAt(part, place).size()) throw std::invalid_argument("chain position out of range");
+        if(holds(part, node)) throw std::invalid_argument("the node is already in this part");
+        editWires([&] { auto& c = chainAt(findPart(id), place); c.insert(c.begin() + std::ptrdiff_t(index), node); buildParts(); });
     }
 
     void Session::removeFromPart(uint32_t id, NodeId node)
     {
         auto& part = findPart(id);
-        if(std::find(part.chain.begin(), part.chain.end(), node) == part.chain.end()) throw std::invalid_argument("the node is not in this part");
-        editWires([&] { std::erase(findPart(id).chain, node); buildParts(); });
+        if(isSplit(node) || !holds(part, node)) throw std::invalid_argument("the node is not in this part");
+        editWires([&] { eachChain(findPart(id), [&](std::vector<NodeId>& c) { std::erase(c, node); }); buildParts(); });
     }
 
-    void Session::movePartNode(uint32_t id, size_t from, size_t to)
+    void Session::movePartNode(uint32_t id, size_t from, size_t to, ChainPlace place)
     {
         auto& part = findPart(id);
-        if(from >= part.chain.size() || to >= part.chain.size()) throw std::invalid_argument("chain position out of range");
+        const auto size = chainAt(part, place).size();
+        if(from >= size || to >= size) throw std::invalid_argument("chain position out of range");
+        editWires([&] {
+            auto& c = chainAt(findPart(id), place);
+            const auto entry = c[from];
+            c.erase(c.begin() + std::ptrdiff_t(from));
+            c.insert(c.begin() + std::ptrdiff_t(to), entry);
+            buildParts();
+        });
+    }
+
+    uint32_t Session::addSplit(uint32_t id, size_t index, ChainPlace place)
+    {
+        auto& part = findPart(id);
+        // shortcut: a bus's sends enter at one box, so buses have no splits; allow them when sends can enter several lanes.
+        if(part.input.kind == PartInput::Kind::Bus) throw std::invalid_argument("buses have no splits");
+        if(index > chainAt(part, place).size()) throw std::invalid_argument("chain position out of range");
+        uint32_t split = 1;
+        for(const auto& s : part.splits) split = std::max(split, s.id + 1);
+        if(split >= splitMark) throw std::invalid_argument("too many splits");
         editWires([&] {
             auto& p = findPart(id);
-            const auto node = p.chain[from];
-            p.chain.erase(p.chain.begin() + std::ptrdiff_t(from));
-            p.chain.insert(p.chain.begin() + std::ptrdiff_t(to), node);
+            auto& c = chainAt(p, place);
+            c.insert(c.begin() + std::ptrdiff_t(index), splitMark | split);
+            p.splits.push_back({split, Split::Kind::Copy, {Lane{}, Lane{}}});
+            buildParts();
+        });
+        return split;
+    }
+
+    void Session::removeSplit(uint32_t id, uint32_t split)
+    {
+        splitOf(findPart(id), split);
+        editWires([&] {
+            auto& p = findPart(id);
+            const auto lanes = splitOf(p, split).lanes;
+            for(size_t i = 1; i < lanes.size(); ++i) forgetSplits(p, lanes[i].chain);
+            std::erase_if(p.splits, [&](const Split& s) { return s.id == split; });
+            eachChain(p, [&](std::vector<NodeId>& c) {
+                if(const auto at = std::find(c.begin(), c.end(), splitMark | split); at != c.end())
+                    c.insert(c.erase(at), lanes[0].chain.begin(), lanes[0].chain.end());
+            });
+            buildParts();
+        });
+    }
+
+    uint32_t Session::addLane(uint32_t id, uint32_t split)
+    {
+        uint32_t lane = 0;
+        if(splitOf(findPart(id), split).lanes.size() >= 16) throw std::invalid_argument("at most 16 lanes");
+        editWires([&] { auto& lanes = splitOf(findPart(id), split).lanes; lane = uint32_t(lanes.size()); lanes.emplace_back(); buildParts(); });
+        return lane;
+    }
+
+    void Session::removeLane(uint32_t id, uint32_t split, uint32_t lane)
+    {
+        if(lane >= splitOf(findPart(id), split).lanes.size()) throw std::invalid_argument("unknown lane");
+        editWires([&] {
+            auto& p = findPart(id);
+            const auto chain = splitOf(p, split).lanes[lane].chain;
+            forgetSplits(p, chain);
+            auto& lanes = splitOf(p, split).lanes;
+            lanes.erase(lanes.begin() + std::ptrdiff_t(lane));
+            if(lanes.empty())
+            {
+                std::erase_if(p.splits, [&](const Split& s) { return s.id == split; });
+                eachChain(p, [&](std::vector<NodeId>& c) { std::erase(c, splitMark | split); });
+            }
+            buildParts();
+        });
+    }
+
+    void Session::setLane(uint32_t id, uint32_t split, uint32_t lane, const Lane& settings)
+    {
+        checkLane(settings);
+        if(lane >= splitOf(findPart(id), split).lanes.size()) throw std::invalid_argument("unknown lane");
+        editWires([&] {
+            auto& l = splitOf(findPart(id), split).lanes[lane];
+            l.zones = settings.zones; l.level = settings.level; l.pan = settings.pan; l.mute = settings.mute; l.solo = settings.solo;
             buildParts();
         });
     }
@@ -657,6 +851,7 @@ namespace oscairn
         if(!std::isfinite(level) || level < 0 || !std::isfinite(pan) || pan < -1 || pan > 1) throw std::invalid_argument("invalid level or pan");
         const auto it = std::find_if(wires_.begin(), wires_.end(), [&](const Wire& w) { return w.id == id; });
         if(it == wires_.end() || it->kind != WireKind::Audio) throw std::invalid_argument("unknown audio wire");
+        if(it->split) throw std::invalid_argument("this wire joins a split's lane: set the lane's Mix");
         editWires([&] {
             auto& w = *std::find_if(wires_.begin(), wires_.end(), [&](const Wire& x) { return x.id == id; });
             w.level = level; w.pan = pan; w.mute = mute; w.solo = solo;
@@ -745,7 +940,7 @@ namespace oscairn
             }
             std::erase_if(wires_, [&](const Wire& w) { return w.from == node || w.to == node; });
             dropNode(node);
-            for(auto& p : parts_) std::erase(p.chain, node);
+            for(auto& p : parts_) eachChain(p, [&](std::vector<NodeId>& c) { std::erase(c, node); });
             buildParts();
             std::erase_if(sceneParameters_, [&](const SceneParameter& at) { return at.node == node; });
             for(auto& m : macros_) std::erase_if(m.targets, [&](const MacroTarget& t) { return t.kind == MacroTarget::Kind::Parameter && t.node == node; });

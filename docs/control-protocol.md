@@ -123,9 +123,14 @@ request members.
 | `graph.commit` | omitted or `{}` | new `revision` |
 | `parts.add` | optional `name`, `input` (`{"kind":"notes"\|"audio"\|"none","port":N}`, default notes) and `output` port | numeric `part` |
 | `parts.remove` | `part` | `{"accepted":true}` |
-| `parts.insert` | `part`, `index`, `node` | `{"accepted":true}` |
-| `parts.removeNode` | `part`, `node` | `{"accepted":true}` |
-| `parts.move` | `part`, `from`, `to` (chain positions) | `{"accepted":true}` |
+| `parts.insert` | `part`, `index`, `node`; optional `split` and `lane` for a lane's chain | `{"accepted":true}` |
+| `parts.removeNode` | `part`, `node`, wherever it is in the part | `{"accepted":true}` |
+| `parts.move` | `part`, `from`, `to` (chain positions); optional `split` and `lane` | `{"accepted":true}` |
+| `parts.addSplit` | `part`, `index`; optional `split` and `lane` to split inside a lane | numeric `split` |
+| `parts.removeSplit` | `part`, `split`: its first lane's chain takes its place; other lanes' nodes leave the part | `{"accepted":true}` |
+| `parts.addLane` | `part`, `split` | numeric `lane` |
+| `parts.removeLane` | `part`, `split`, `lane`: its nodes leave the part; the last lane removes the split | `{"accepted":true}` |
+| `parts.lane` | `part`, `split`, `lane`; any of `zones`, `level`, `pan`, `mute`, `solo` (others keep their values) | `{"accepted":true}` |
 | `parts.input` | `part`, `input` (as for `parts.add`, with optional `zones` and `devices`) | `{"accepted":true}` |
 | `parts.output` | `part`, and `bus` (play through that bus) or optional `port` (a graph output) | `{"accepted":true}` |
 | `parts.send` | `part`, `bus`, optional `level` (without one, the send is removed) | `{"accepted":true}` |
@@ -248,6 +253,15 @@ report the compiled per-channel routes.
   zone accepts it, and each accepting zone plays its own copy, so two zones layer. Up to
   eight per wire; a part's input `zones` apply to its wire into the first node. Held notes
   keep their releases when zones change.
+- **Splits** ([RFC 0011 step 3](rfcs/0011-performance-ui-and-editors.md#step-3-status))
+  divide a part's notes and sound into lanes that join again. A part's `chain` lists node
+  IDs and `{"split":id}` entries; its `splits` give each split's `id`, `kind` (`copy`) and
+  `lanes`, each with its own `chain`, `zones`, `level`, `pan`, `mute` and `solo`. Every lane
+  gets the notes, through its zones (after the part's own), and a copy of the sound; the
+  lanes' ends sum into whatever follows the split, or where the part plays, at the lane's
+  level and pan. Solo silences the split's other lanes. A lane's chain may hold another
+  split. Wires joining from a lane carry its `split` and `lane`, and take their Mix from it:
+  `wires.mix` refuses them. Buses have no splits yet.
 - **Devices** ([RFC 0012](rfcs/0012-sync-external-midi-and-multi-device.md#choosing-devices-selectors))
   choose which MIDI inputs play a part, whatever channel they send on. A part's input
   `devices` is a list of rules, `{"kind","port","pattern","match"}`; a note or message

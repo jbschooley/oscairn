@@ -2052,6 +2052,17 @@
                 },
                 "node": {
                   "$ref": "#/$defs/Node"
+                },
+                "split": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 4294967295,
+                  "description": "With lane: a lane's chain instead of the part's own"
+                },
+                "lane": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 4294967295
                 }
               },
               "required": [
@@ -2136,12 +2147,268 @@
                   "type": "integer",
                   "minimum": 0,
                   "maximum": 4294967295
+                },
+                "split": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 4294967295,
+                  "description": "With lane: a lane's chain instead of the part's own"
+                },
+                "lane": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 4294967295
                 }
               },
               "required": [
                 "part",
                 "from",
                 "to"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "params"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
+              "const": "parts.addSplit"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "part": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 4294967295
+                },
+                "index": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 4294967295
+                },
+                "split": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 4294967295,
+                  "description": "With lane: a lane's chain instead of the part's own"
+                },
+                "lane": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 4294967295
+                }
+              },
+              "required": [
+                "part",
+                "index"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "params"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
+              "const": "parts.removeSplit"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "part": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 4294967295
+                },
+                "split": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 4294967295
+                }
+              },
+              "required": [
+                "part",
+                "split"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "params"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
+              "const": "parts.addLane"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "part": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 4294967295
+                },
+                "split": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 4294967295
+                }
+              },
+              "required": [
+                "part",
+                "split"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "params"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
+              "const": "parts.removeLane"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "part": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 4294967295
+                },
+                "split": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 4294967295
+                },
+                "lane": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 4294967295
+                }
+              },
+              "required": [
+                "part",
+                "split",
+                "lane"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "params"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
+              "const": "parts.lane"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "part": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 4294967295
+                },
+                "split": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 4294967295
+                },
+                "lane": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 4294967295
+                },
+                "zones": {
+                  "type": "array",
+                  "maxItems": 8,
+                  "items": {
+                    "$ref": "#/$defs/Zone"
+                  }
+                },
+                "level": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "pan": {
+                  "type": "number",
+                  "minimum": -1,
+                  "maximum": 1
+                },
+                "mute": {
+                  "type": "boolean"
+                },
+                "solo": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "part",
+                "split",
+                "lane"
               ],
               "additionalProperties": false
             }
@@ -3291,6 +3558,12 @@
                 },
                 {
                   "$ref": "#/$defs/PartResult"
+                },
+                {
+                  "$ref": "#/$defs/SplitResult"
+                },
+                {
+                  "$ref": "#/$defs/LaneResult"
                 },
                 {
                   "$ref": "#/$defs/WireResult"
@@ -4567,6 +4840,18 @@
           "maximum": 4294967295,
           "description": "For a part's send wire, the bus it sends to; otherwise 0"
         },
+        "split": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295,
+          "description": "A part wire joining from a split's lane: that split's ID, or 0. Its Mix is the lane's"
+        },
+        "lane": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295,
+          "description": "That lane's index"
+        },
         "fader": {
           "type": "boolean",
           "description": "A part's wire to where it plays, carrying its level and mute"
@@ -4588,6 +4873,8 @@
         "connected",
         "zones",
         "send",
+        "split",
+        "lane",
         "fader"
       ],
       "if": {
@@ -4666,9 +4953,13 @@
         "chain": {
           "type": "array",
           "items": {
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 4294967295
+            "$ref": "#/$defs/ChainEntry"
+          }
+        },
+        "splits": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Split"
           }
         },
         "output": {
@@ -4719,6 +5010,7 @@
         "name",
         "input",
         "chain",
+        "splits",
         "output",
         "bus",
         "sends",
@@ -5302,6 +5594,134 @@
         "name",
         "kind",
         "port"
+      ],
+      "additionalProperties": false
+    },
+    "ChainEntry": {
+      "description": "A chain entry: a node ID, or a split",
+      "oneOf": [
+        {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2147483647
+        },
+        {
+          "type": "object",
+          "properties": {
+            "split": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647
+            }
+          },
+          "required": [
+            "split"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "Lane": {
+      "type": "object",
+      "description": "A split's lane (RFC 0011 step 3): its own chain, the notes it takes, and its row in the join's Mix",
+      "properties": {
+        "chain": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "$ref": "#/$defs/ChainEntry"
+          }
+        },
+        "zones": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/Zone"
+          }
+        },
+        "level": {
+          "type": "number",
+          "minimum": 0
+        },
+        "pan": {
+          "type": "number",
+          "minimum": -1,
+          "maximum": 1
+        },
+        "mute": {
+          "type": "boolean"
+        },
+        "solo": {
+          "type": "boolean",
+          "description": "Silences the split's other lanes"
+        }
+      },
+      "required": [
+        "chain",
+        "zones",
+        "level",
+        "pan",
+        "mute",
+        "solo"
+      ],
+      "additionalProperties": false
+    },
+    "Split": {
+      "type": "object",
+      "description": "A split in a part's chain: the notes and sound divide into lanes that join again by summing into whatever follows",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647
+        },
+        "kind": {
+          "enum": [
+            "copy"
+          ],
+          "description": "copy: every lane gets the notes, through its zones, and a copy of the sound"
+        },
+        "lanes": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "items": {
+            "$ref": "#/$defs/Lane"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "lanes"
+      ],
+      "additionalProperties": false
+    },
+    "SplitResult": {
+      "type": "object",
+      "properties": {
+        "split": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        }
+      },
+      "required": [
+        "split"
+      ],
+      "additionalProperties": false
+    },
+    "LaneResult": {
+      "type": "object",
+      "properties": {
+        "lane": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        }
+      },
+      "required": [
+        "lane"
       ],
       "additionalProperties": false
     }

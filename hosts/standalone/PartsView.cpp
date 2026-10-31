@@ -31,7 +31,7 @@ namespace oscairn::standalone
         done_.onClick = [this] { if(onDone) onDone(); };
         addPart_.onClick = [this] { const auto n = state_.parts.size() + 1; edit([n](Control& c) { addPart(c, "Part " + std::to_string(n), false); }); };
         addBus_.onClick = [this] { const auto n = state_.buses.size(); edit([n](Control& c) { addPart(c, std::string("Bus ") + char('A' + n % 26), true); }); };
-        back_.onClick = [this] { page_ = 0; selected_ = 0; shape_.clear(); refresh(); };
+        back_.onClick = [this] { page_ = 0; selected_ = 0; selectedSplit_ = 0; selectedLane_ = -1; shape_.clear(); refresh(); };
         removePart_.onClick = [this] {
             const auto id = page_;
             edit([id](Control& c) { c.removePart(id); c.commit(); });
@@ -61,7 +61,8 @@ namespace oscairn::standalone
         return nullptr;
     }
 
-    void PartsView::showPart(uint32_t id) { page_ = id; selected_ = 0; shape_.clear(); refresh(); }
+    void PartsView::showPart(uint32_t id) { page_ = id; selected_ = 0; selectedSplit_ = 0; selectedLane_ = -1; shape_.clear(); refresh(); }
+    void PartsView::showLane(uint32_t split, int lane) { selected_ = 0; selectedSplit_ = split; selectedLane_ = lane; shape_.clear(); refresh(); }
 
     void PartsView::refresh()
     {
@@ -77,7 +78,17 @@ namespace oscairn::standalone
         // Controls are rebuilt only when the structure changes, so a slider being dragged survives.
         std::string shape = std::to_string(page_) + "/" + std::to_string(selected_) + "/" + std::to_string(getWidth()) + "x" + std::to_string(getHeight());
         for(const auto* list : {&state_.parts, &state_.buses})
-            for(const auto& p : *list) { shape += "|" + std::to_string(p.id) + ":" + p.name + ":" + std::to_string(p.through) + ":" + devicesName(p.devices); for(const auto& b : p.chain) shape += "," + std::to_string(b.node); }
+        {
+            std::function<void(const std::vector<PartBox>&)> boxes = [&](const std::vector<PartBox>& chain) {
+                for(const auto& b : chain)
+                {
+                    shape += "," + std::to_string(b.node) + "/" + std::to_string(b.split);
+                    for(const auto& l : b.lanes) { shape += "["; boxes(l.boxes); shape += "]"; }
+                }
+            };
+            for(const auto& p : *list) { shape += "|" + std::to_string(p.id) + ":" + p.name + ":" + std::to_string(p.through) + ":" + devicesName(p.devices); boxes(p.chain); }
+        }
+        shape += "|selected:" + std::to_string(selectedSplit_) + "/" + std::to_string(selectedLane_);
         shape += "|scenes:" + std::to_string(scene_);
         for(const auto& s : scenes_) shape += "," + std::to_string(s.id) + ":" + s.name;
         shape += "|controls";
@@ -95,7 +106,7 @@ namespace oscairn::standalone
 
     void PartsView::rebuild()
     {
-        controls_.clear(); boxes_.clear(); updaters_.clear();
+        controls_.clear(); boxes_.clear(); splitAreas_.clear(); updaters_.clear();
         const bool list = page_ == 0, controlsShown = page_ == controlsPage;
         for(auto* c : std::initializer_list<juce::Component*>{&addPart_, &addBus_, &controlsButton_}) c->setVisible(list);
         for(auto* c : std::initializer_list<juce::Component*>{&removePart_, &name_}) c->setVisible(!list && !controlsShown);
@@ -236,30 +247,64 @@ namespace oscairn::standalone
             removePart_.setBounds(top.removeFromRight(130).reduced(2));
             name_.setBounds(top.reduced(8, 4));
             if(!name_.hasKeyboardFocus(true)) name_.setText(text(p->name), juce::dontSendNotification);
-            // The chain: IN, each box with a + before it, a last +, OUT.
-            auto chain = getLocalBounds().reduced(16, 0).withTrimmedTop(header + 12).withHeight(96);
+            // The chain: IN, each box or split with a + before it, a last +, OUT. A split stacks its
+            // lanes between a split pill and a join pill, each lane with its boxes and a + at its end.
+            constexpr int laneHeight = 44, laneBox = 104;
+            size_t mostLanes = 0;
+            for(const auto& b : p->chain) mostLanes = std::max(mostLanes, b.lanes.size());
+            chainHeight_ = std::max(96, int(mostLanes) * laneHeight + 8);
+            auto chain = getLocalBounds().reduced(16, 0).withTrimmedTop(header + 12).withHeight(chainHeight_);
+            auto splitWidth = [&](const PartBox& b) { size_t most = 0; for(const auto& l : b.lanes) most = std::max(most, l.boxes.size()); return 24 + int(most) * laneBox + 42 + 104; }; // room for the lane's keys and level
             const int n = int(p->chain.size());
-            const int boxWidth = std::max(80, std::min(150, (chain.getWidth() - 2 * 110 - (n + 1) * 34) / std::max(1, n)));
+            int fixed = 2 * 110 + (n + 1) * 34, normal = 0;
+            for(const auto& b : p->chain) if(b.split) fixed += splitWidth(b); else ++normal;
+            const int boxWidth = std::max(80, std::min(150, (chain.getWidth() - fixed) / std::max(1, normal)));
             chain.removeFromLeft(110);
             for(int i = 0; i <= n; ++i)
             {
                 auto* plus = button(chain.removeFromLeft(34).withSizeKeepingCentre(30, 30), "+", {});
-                plus->setTooltip("Insert a plugin here");
+                plus->setTooltip("Insert a plugin or a split here");
                 plus->onClick = [this, i, plus] { insertMenu(size_t(i), *plus); };
-                if(i < n) boxes_.push_back({p->chain[size_t(i)].node, chain.removeFromLeft(boxWidth).reduced(3)});
+                if(i == n) break;
+                const auto& b = p->chain[size_t(i)];
+                if(!b.split) { boxes_.push_back({b.node, chain.removeFromLeft(boxWidth).reduced(3)}); continue; }
+                auto area = chain.removeFromLeft(splitWidth(b)).reduced(0, 4);
+                SplitArea s{b.split, area, area.removeFromLeft(12), area.removeFromRight(12), {}};
+                for(size_t k = 0; k < b.lanes.size(); ++k)
+                {
+                    auto row = area.removeFromTop(laneHeight).reduced(4, 2);
+                    s.lanes.push_back(row);
+                    auto inner = row.reduced(4, 2);
+                    // shortcut: a split inside a lane is shown as a gap; the views edit one level of splits, the protocol any.
+                    for(const auto& box : b.lanes[k].boxes) { auto r = inner.removeFromLeft(laneBox - 4).reduced(2, 0); if(!box.split) boxes_.push_back({box.node, r}); }
+                    auto* lanePlus = button(inner.removeFromLeft(34).withSizeKeepingCentre(28, 28), "+", {});
+                    lanePlus->setTooltip("Add a plugin to this lane");
+                    const auto at = b.lanes[k].boxes.size(); const ChainPlace place{b.split, uint32_t(k)};
+                    lanePlus->onClick = [this, at, place, lanePlus] { insertMenu(at, *lanePlus, place); };
+                }
+                splitAreas_.push_back(std::move(s));
             }
-            auto panel = getLocalBounds().reduced(16).withTrimmedTop(header + 12 + 96 + 12).withTrimmedBottom(28);
+            auto panel = getLocalBounds().reduced(16).withTrimmedTop(header + 12 + chainHeight_ + 12).withTrimmedBottom(28);
             // The selected box's actions.
             if(selected_)
             {
                 auto actions = panel.removeFromTop(40);
-                const auto at = std::find_if(p->chain.begin(), p->chain.end(), [&](const PartBox& b) { return b.node == selected_; });
-                if(at != p->chain.end())
+                // Where the box is: the part's own chain or a lane, and its position there.
+                std::optional<std::tuple<ChainPlace, size_t, size_t>> found;
+                for(size_t i = 0; i < p->chain.size(); ++i)
                 {
-                    const auto index = size_t(at - p->chain.begin());
+                    const auto& b = p->chain[i];
+                    if(!b.split && b.node == selected_) found = {ChainPlace{}, i, p->chain.size()};
+                    for(size_t k = 0; k < b.lanes.size(); ++k)
+                        for(size_t j = 0; j < b.lanes[k].boxes.size(); ++j)
+                            if(!b.lanes[k].boxes[j].split && b.lanes[k].boxes[j].node == selected_) found = {ChainPlace{b.split, uint32_t(k)}, j, b.lanes[k].boxes.size()};
+                }
+                if(found)
+                {
+                    const auto [place, index, size] = *found;
                     const auto id = p->id; const auto node = selected_;
-                    button(actions.removeFromLeft(110).reduced(2), "Move left", [this, id, index] { if(index) edit([id, index](Control& c) { c.movePartNode(id, index, index - 1); c.commit(); }); })->setEnabled(index > 0);
-                    button(actions.removeFromLeft(110).reduced(2), "Move right", [this, id, index] { edit([id, index](Control& c) { c.movePartNode(id, index, index + 1); c.commit(); }); })->setEnabled(index + 1 < p->chain.size());
+                    button(actions.removeFromLeft(110).reduced(2), "Move left", [this, id, index, place] { if(index) edit([id, index, place](Control& c) { c.movePartNode(id, index, index - 1, place); c.commit(); }); })->setEnabled(index > 0);
+                    button(actions.removeFromLeft(110).reduced(2), "Move right", [this, id, index, place] { edit([id, index, place](Control& c) { c.movePartNode(id, index, index + 1, place); c.commit(); }); })->setEnabled(index + 1 < size);
                     button(actions.removeFromLeft(110).reduced(2), "Remove", [this, id, node] { selected_ = 0; edit([id, node](Control& c) { removeBox(c, id, node); }); });
                     auto* controls = button(actions.removeFromLeft(150).reduced(2), "Scene controls...", {});
                     controls->setTooltip("Choose which of this plugin's parameters scenes set");
@@ -275,6 +320,56 @@ namespace oscairn::standalone
                 l->setBounds(r.removeFromLeft(130)); addAndMakeVisible(*l); controls_.push_back(std::move(l));
                 return r;
             };
+            // The selected split's actions, or the selected lane's keys and Mix.
+            const PartBox* split = nullptr;
+            for(const auto& b : p->chain) if(b.split && b.split == selectedSplit_) split = &b;
+            if(split && !selected_)
+            {
+                const auto sp = split->split;
+                auto actions = panel.removeFromTop(40);
+                if(selectedLane_ < 0 || size_t(selectedLane_) >= split->lanes.size())
+                {
+                    button(actions.removeFromLeft(110).reduced(2), "Add lane", [this, id, sp] { edit([id, sp](Control& c) { c.addLane(id, sp); c.commit(); }); })
+                        ->setTooltip("Another layer: tap its + to add an instrument or effects");
+                    button(actions.removeFromLeft(130).reduced(2), "Remove split", [this, id, sp] { selectedSplit_ = 0; edit([id, sp](Control& c) { removeSplitKeepingFirst(c, id, sp); }); })
+                        ->setTooltip("Keep the first lane's plugins in the chain; the other lanes' plugins are removed");
+                }
+                else
+                {
+                    const auto lane = uint32_t(selectedLane_);
+                    const auto& l = split->lanes[lane];
+                    button(actions.removeFromLeft(130).reduced(2), "Remove lane", [this, id, sp, lane] { selectedLane_ = -1; edit([id, sp, lane](Control& c) { removeLaneAndBoxes(c, id, sp, lane); }); })
+                        ->setTooltip("Remove this lane and its plugins");
+                    panel.removeFromTop(8);
+                    auto r = labelled("Lane keys");
+                    auto keyBox = [&](juce::Rectangle<int> at, bool high) {
+                        auto box = std::make_unique<juce::ComboBox>(high ? "Highest key" : "Lowest key");
+                        for(int k = 0; k < 128; ++k) box->addItem(text(noteName(k)), k + 1);
+                        box->setSelectedId((high ? l.highKey : l.lowKey) + 1, juce::dontSendNotification);
+                        const int other = high ? l.lowKey : l.highKey;
+                        box->onChange = [this, id, sp, lane, high, other, raw = box.get()] {
+                            const int key = raw->getSelectedId() - 1, low = high ? other : key, hi = high ? key : other;
+                            edit([id, sp, lane, low, hi](Control& c) { setLaneKeys(c, id, sp, lane, low, std::max(low, hi)); });
+                        };
+                        box->setBounds(at); addAndMakeVisible(*box); controls_.push_back(std::move(box));
+                    };
+                    keyBox(r.removeFromLeft(110).reduced(2), false);
+                    keyBox(r.removeFromLeft(110).reduced(2), true);
+                    button(r.removeFromLeft(100).reduced(2), "All keys", [this, id, sp, lane] { edit([id, sp, lane](Control& c) { setLaneKeys(c, id, sp, lane, 0, 127); }); });
+                    auto laneOf = [this, id, sp, lane]() -> const PartLane* {
+                        if(const auto* q = part(id)) for(const auto& b : q->chain) if(b.split == sp && lane < b.lanes.size()) return &b.lanes[lane];
+                        return nullptr;
+                    };
+                    auto mix = labelled("Lane level");
+                    updates.push_back(slider(mix.removeFromLeft(320).reduced(2, 10), 0, 1, [laneOf] { const auto* x = laneOf(); return x ? x->level : 1.0; },
+                                             [this, id, sp, lane](double v) { edit([id, sp, lane, v](Control& c) { editLane(c, id, sp, lane, [v](Lane& x) { x.level = v; }); }); }).second);
+                    toggle(mix.removeFromLeft(90).reduced(4, 6), "Mute", [laneOf] { const auto* x = laneOf(); return x && x->mute; },
+                           [this, id, sp, lane](bool m) { edit([id, sp, lane, m](Control& c) { editLane(c, id, sp, lane, [m](Lane& x) { x.mute = m; }); }); });
+                    toggle(mix.removeFromLeft(90).reduced(4, 6), "Solo", [laneOf] { const auto* x = laneOf(); return x && x->solo; },
+                           [this, id, sp, lane](bool o) { edit([id, sp, lane, o](Control& c) { editLane(c, id, sp, lane, [o](Lane& x) { x.solo = o; }); }); });
+                }
+                panel.removeFromTop(8);
+            }
             if(p->notes)
             {
                 // Which devices play it (RFC 0012), picked from a menu.
@@ -444,15 +539,29 @@ namespace oscairn::standalone
         });
     }
 
-    void PartsView::insertMenu(size_t index, juce::Component& at)
+    void PartsView::insertMenu(size_t index, juce::Component& at, ChainPlace place)
     {
+        constexpr int splitItem = 100000;
         juce::PopupMenu menu;
+        const auto* p = part(page_);
+        if(p && !p->bus && !place.split)
+        {
+            menu.addItem(splitItem, "Split here: lanes that join after");
+            menu.addSeparator();
+        }
         if(plugins_.empty()) menu.addItem(1, scan_.valid() ? "Finding plugins..." : "No plugins found", false);
         for(size_t i = 0; i < plugins_.size(); ++i) menu.addItem(int(i) + 1, text(plugins_[i].name));
-        menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&at), [safe = juce::Component::SafePointer<PartsView>(this), index](int chosen) {
-            if(!safe || chosen <= 0 || size_t(chosen) > safe->plugins_.size()) return;
-            const auto plugin = safe->plugins_[size_t(chosen) - 1]; const auto id = safe->page_;
-            safe->edit([id, index, plugin](Control& c) { insertPlugin(c, id, index, plugin); });
+        menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&at), [safe = juce::Component::SafePointer<PartsView>(this), index, place](int chosen) {
+            if(!safe) return;
+            const auto id = safe->page_;
+            if(chosen == splitItem)
+            {
+                safe->edit([id, index](Control& c) { insertSplit(c, id, index); });
+                return;
+            }
+            if(chosen <= 0 || size_t(chosen) > safe->plugins_.size()) return;
+            const auto plugin = safe->plugins_[size_t(chosen) - 1];
+            safe->edit([id, index, plugin, place](Control& c) { insertPlugin(c, id, index, plugin, place); });
         });
     }
 
@@ -539,7 +648,7 @@ namespace oscairn::standalone
         }
         const auto* p = part(page_);
         if(!p) return;
-        auto ends = getLocalBounds().reduced(16, 0).withTrimmedTop(header + 12).withHeight(96);
+        auto ends = getLocalBounds().reduced(16, 0).withTrimmedTop(header + 12).withHeight(chainHeight_);
         auto end = [&](juce::Rectangle<int> r, const juce::String& top, const juce::String& bottom) {
             g.setColour(ink(Ink::Surface)); g.fillRoundedRectangle(r.toFloat(), themeData().radius);
             auto inner = r.reduced(8, 10);
@@ -552,8 +661,39 @@ namespace oscairn::standalone
         juce::String out = p->through ? text(part(p->through) ? part(p->through)->name : "a bus") : juce::String("Main");
         for(const auto& [bus, level] : p->sends) if(const auto* b = part(bus)) out << "\nSend " << text(b->name) << " " << juce::String(juce::roundToInt(level * 100)) << "%";
         end(ends.removeFromRight(104), "OUT", out);
+        // Splits: their pills, and a row per lane (dimmed when it cannot be heard).
+        for(const auto& s : splitAreas_)
+        {
+            const PartBox* b = nullptr;
+            for(const auto& x : p->chain) if(x.split == s.split) b = &x;
+            if(!b) continue;
+            const bool splitSelected = s.split == selectedSplit_ && selectedLane_ < 0 && !selected_;
+            const bool solo = std::any_of(b->lanes.begin(), b->lanes.end(), [](const PartLane& l) { return l.solo; });
+            for(const auto* pill : {&s.splitPill, &s.joinPill})
+            {
+                g.setColour(splitSelected ? ink(Ink::Accent) : ink(Ink::Raised));
+                g.fillRoundedRectangle(pill->toFloat(), 5);
+            }
+            for(size_t k = 0; k < s.lanes.size() && k < b->lanes.size(); ++k)
+            {
+                const auto& l = b->lanes[k];
+                const bool laneSelected = s.split == selectedSplit_ && selectedLane_ == int(k) && !selected_;
+                const bool silent = l.mute || (solo && !l.solo);
+                g.setColour((laneSelected ? ink(Ink::Accent).withAlpha(.18f) : ink(Ink::Surface)).withMultipliedAlpha(silent ? .5f : 1.0f));
+                g.fillRoundedRectangle(s.lanes[k].toFloat(), themeData().radius);
+                g.setColour(ink(Ink::Border));
+                g.drawLine(float(s.splitPill.getRight()), float(s.lanes[k].getCentreY()), float(s.lanes[k].getX()), float(s.lanes[k].getCentreY()));
+                g.drawLine(float(s.lanes[k].getRight()), float(s.lanes[k].getCentreY()), float(s.joinPill.getX()), float(s.lanes[k].getCentreY()));
+                // Its keys and level, at the lane's right; "Dry" for a lane without plugins.
+                juce::String about = l.boxes.empty() ? juce::String("Dry · ") : juce::String();
+                if(l.lowKey != 0 || l.highKey != 127) about << text(noteName(l.lowKey)) << "–" << text(noteName(l.highKey)) << " · ";
+                about << juce::roundToInt(l.level * 100) << "%" << (l.mute ? " · muted" : l.solo ? " · solo" : "");
+                g.setColour(ink(Ink::Muted)); g.setFont(juce::FontOptions(11.0f * scale));
+                g.drawText(about, s.lanes[k].reduced(8, 2), juce::Justification::centredRight, true);
+            }
+        }
         for(const auto& box : boxes_)
-            for(const auto& b : p->chain) if(b.node == box.node) chip(box.bounds.toFloat(), b, b.node == selected_);
+            if(const auto* b = findBox(p->chain, box.node)) chip(box.bounds.toFloat(), *b, b->node == selected_);
         if(p->chain.empty())
         {
             g.setColour(ink(Ink::Muted)); g.setFont(juce::FontOptions(14.0f * scale));
@@ -574,6 +714,16 @@ namespace oscairn::standalone
             return;
         }
         for(const auto& box : boxes_)
-            if(box.bounds.contains(e.getPosition())) { selected_ = selected_ == box.node ? 0 : box.node; shape_.clear(); refresh(); return; }
+            if(box.bounds.contains(e.getPosition())) { selected_ = selected_ == box.node ? 0 : box.node; selectedSplit_ = 0; selectedLane_ = -1; shape_.clear(); refresh(); return; }
+        for(const auto& s : splitAreas_)
+        {
+            int lane = -2; // -1: the split itself
+            if(s.splitPill.contains(e.getPosition()) || s.joinPill.contains(e.getPosition())) lane = -1;
+            for(size_t k = 0; k < s.lanes.size(); ++k) if(s.lanes[k].contains(e.getPosition())) lane = int(k);
+            if(lane == -2) continue;
+            const bool again = !selected_ && selectedSplit_ == s.split && selectedLane_ == lane;
+            selected_ = 0; selectedSplit_ = again ? 0 : s.split; selectedLane_ = again ? -1 : lane;
+            shape_.clear(); refresh(); return;
+        }
     }
 }

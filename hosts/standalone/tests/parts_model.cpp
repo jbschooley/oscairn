@@ -74,6 +74,25 @@ int main(int argc, char** argv)
         check(toggled(devices, ruleFor(keylab)) == std::vector<DeviceRule>{{DeviceRule::Kind::BuiltIn}}, "picking it again removes it");
         check(toggled(devices, {DeviceRule::Kind::All}).empty() && devicesName(toggled({}, ruleFor(din))) == "Port 2", "Any device clears; a DIN port by number");
         check(devicesName({{DeviceRule::Kind::UsbNamed, DeviceRule::Match::Contains, 0, "key"}, {DeviceRule::Kind::Network}}) == "“key” + Network", "patterns and kinds named");
+
+        // Splits from the Part page: a layer added in a second lane, its keys and level, then
+        // removing the lane, and the split, take their plugins with them.
+        const auto layers = addPart(s, "Layers", false);
+        const auto split = insertSplit(s, layers, 0);
+        insertPlugin(s, layers, 0, synth, {split, 0}); insertPlugin(s, layers, 0, synth, {split, 1}); insertPlugin(s, layers, 1, delay, {split, 1});
+        setLaneKeys(s, layers, split, 1, 60, 127);
+        editLane(s, layers, split, 1, [](Lane& l) { l.level = .5; });
+        auto row = readParts(s.graphState()).parts.back();
+        check(row.chain.size() == 1 && row.chain[0].split == split && row.chain[0].lanes.size() == 2 && row.chain[0].lanes[1].boxes.size() == 2 &&
+              row.chain[0].lanes[1].lowKey == 60 && row.chain[0].lanes[1].level == .5 && row.chain[0].name == "Basic Synth 3 | Basic Synth 4", "the split as the views read it: " + row.chain[0].name);
+        check(findBox(row.chain, row.chain[0].lanes[1].boxes[0].node) != nullptr && row.sound == "Basic Synth 3", "boxes in lanes are found; the part's sound is its first instrument");
+        const auto nodes = s.graphState().topology.nodes.size();
+        removeLaneAndBoxes(s, layers, split, 1);
+        check(s.graphState().topology.nodes.size() == nodes - 2 && s.parts().back().splits[0].lanes.size() == 1, "removing a lane removes its plugins");
+        const auto kept = s.parts().back().splits[0].lanes[0].chain;
+        s.addLane(layers, split); insertPlugin(s, layers, 0, delay, {split, 1});
+        removeSplitKeepingFirst(s, layers, split);
+        check(s.parts().back().chain == kept && s.parts().back().splits.empty() && s.graphState().topology.nodes.size() == nodes - 2, "removing the split keeps its first lane's plugins in place");
     }
     catch(const std::exception& e) { std::fprintf(stderr, "FAIL: %s\n", e.what()); return 1; }
     if(!failures) std::puts("ok: a split and a shared delay built through the Parts views' model");

@@ -39,6 +39,7 @@ namespace oscairn
         bool mute = false, solo = false;
         std::vector<NoteZone> zones; // note wires: the zones notes must pass (note_zone.h); none passes all
         uint32_t send = 0;           // part wires: the bus this wire sends to, if it is a send
+        uint32_t split = 0, lane = 0; // part wires: the split lane this wire joins from (its Mix), if any
         bool fader = false;          // part wires: where the part plays, carrying its level and mute
         bool connected = true; // false: kept, though it no longer fits (after a plugin replacement)
     };
@@ -88,6 +89,31 @@ namespace oscairn
 
     struct Send { uint32_t bus = 0; double level = 1; }; // a copy of a part's sound into a shared bus
 
+    // RFC 0011 step 3: a split divides a part's notes and sound into lanes, each its own chain,
+    // which join again by summing into whatever follows. In a chain, the entry splitMark | id
+    // stands for the part's split with that ID; a lane's chain may hold another split.
+    constexpr NodeId splitMark = 0x80000000u;
+    constexpr bool isSplit(NodeId entry) { return (entry & splitMark) != 0; }
+    struct Lane
+    {
+        std::vector<NodeId> chain;
+        std::vector<NoteZone> zones;        // the notes this lane takes; none: all
+        double level = 1, pan = 0;          // its row in the join's Mix
+        bool mute = false, solo = false;    // solo silences the split's other lanes
+    };
+    struct Split
+    {
+        uint32_t id = 0;
+        // Copy: every lane gets the notes (through its zones) and a copy of the sound. Kinds that
+        // divide the sound itself (left/right, mid/side, bands) come with their split nodes.
+        enum class Kind { Copy } kind = Kind::Copy;
+        std::vector<Lane> lanes;
+    };
+    // Where a chain edit applies: the part's own chain (split 0), or one lane of a split.
+    struct ChainPlace { uint32_t split = 0; uint32_t lane = 0; };
+    // The two zone lists a note passes in turn, as one: each pair that lets some note through.
+    std::vector<NoteZone> intersectZones(const std::vector<NoteZone>& first, const std::vector<NoteZone>& then);
+
     // An input, the chain of nodes it reaches in order, and where it plays: a graph output port,
     // or through a shared bus. Sends copy its sound into buses as well.
     struct Part
@@ -95,7 +121,8 @@ namespace oscairn
         uint32_t id = 0;
         std::string name;
         PartInput input;
-        std::vector<NodeId> chain;
+        std::vector<NodeId> chain; // nodes and split entries, in order
+        std::vector<Split> splits;
         uint32_t output = 0; // graph output port ID, when it plays to no bus
         uint32_t bus = 0;    // the bus it plays through instead, or 0
         std::vector<Send> sends;
