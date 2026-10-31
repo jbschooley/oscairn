@@ -79,6 +79,8 @@ namespace oscairn
         void setSend(uint32_t part, uint32_t bus, std::optional<double> level) override;            // no level: remove the send
         void setPartLevel(uint32_t part, double level, bool mute) override;
         void setPartName(uint32_t part, const std::string& name) override;
+        void setPartSolo(uint32_t part, bool solo) override;
+        std::vector<PartMeter> partMeters() const override;
         const std::vector<Part>& parts() const { return parts_; }
         const std::vector<Wire>& wires() const { return wires_; }
         // A user wire between audio ports (channel rules or explicit pairs) or note endpoints.
@@ -171,6 +173,9 @@ namespace oscairn
         struct BusEntry { NodeId node = 0; uint32_t port = 0; double level = 1, pan = 0; bool mute = false; uint32_t split = 0, lane = 0; };
         std::vector<BusEntry> busEntries(uint32_t bus);
         bool splitNode(NodeId node) const;       // a split's Split or Join node
+        bool heard(const Part& part);            // not silenced by another part's solo
+        void meter();                            // service(): updates meters_ from the graph's peaks
+        std::map<uint32_t, double> meters_;
         void dropSplitNodes(const Split& split); // removes them from the graph, with their wires
         bool feeds(uint32_t from, uint32_t to);
         Part& findBus(uint32_t id);

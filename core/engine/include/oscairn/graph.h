@@ -148,6 +148,9 @@ namespace oscairn
         /// Service staged nodes and removed nodes still owned by an audio plan.
         void service();
         uint64_t eventDrops() const noexcept { return eventDrops_.load(std::memory_order_relaxed); }
+        /// Control thread: the largest absolute sample on any of a node's audio outputs since the
+        /// last call (for meters); 0 for an unknown node.
+        float takePeak( NodeId node ) noexcept;
 
         // Audio thread ------------------------------------------------------------
 
@@ -176,6 +179,7 @@ namespace oscairn
         {
             std::shared_ptr<PluginHost> host;
             std::shared_ptr<char> effectGroup=std::make_shared<char>();
+            std::shared_ptr<std::atomic<float>> peak=std::make_shared<std::atomic<float>>(0.f); // see takePeak
             uint32_t                          audioInputs = 0, audioOutputs = 0; // channels
         };
         struct Plan;

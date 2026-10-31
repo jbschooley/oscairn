@@ -441,11 +441,22 @@ the notes. The Part page's **+** offers each kind; a band split shows its crosso
 separate; `control-parts` checks a left/right split with a delay on one side renders exactly
 as wired by hand, also after saving and opening, and mid/side and band lanes.
 
+**The Mixer** followed: **Mixer** on the Parts view shows a strip per part and bus, with its
+sends, a fader (−12 dB halfway up), its level in dB, mute, solo and a meter. Parts gained
+solo: while any part is soloed, only soloed parts, the parts that feed them and the buses
+they feed are heard, so a soloed part keeps its reverb bus. The graph records each node's
+largest output sample; the Session turns these into each part's peak after its fader, held
+and falling by about 17 dB a second, and the Mixer reads them 20 times a second
+(`parts.meters`). A part with several lanes shows its loudest lane, not their sum.
+`control-parts` covers solo through sends and buses, the meters and persistence; the socket
+test and `desktop-pad-editor` the rest.
+
 Not yet:
+- **Mixer details:** pan per part, strips dimmed when another part's solo silences them,
+  and meters that sum a part's lanes.
 - **Lane pan in the views:** it is set over the protocol.
 - **Nested splits in the views:** a split inside a lane shows as a gap there.
 - **Smooth crossover changes:** a new crossover frequency applies at the next block.
-- **The Mixer.**
 
 ## Open questions
 

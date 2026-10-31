@@ -51,6 +51,8 @@ namespace oscairn
         void removeSplit(uint32_t part,uint32_t split) override;
         uint32_t addLane(uint32_t part,uint32_t split) override;
         void removeLane(uint32_t part,uint32_t split,uint32_t lane) override;
+        void setPartSolo(uint32_t part,bool solo) override;
+        std::vector<PartMeter> partMeters() const override;
         void setLane(uint32_t part,uint32_t split,uint32_t lane,const Lane& settings) override;
         void setPartInput(uint32_t part,const PartInput& input) override;
         void setPartOutput(uint32_t part,uint32_t bus,std::optional<uint32_t> port = {}) override;

@@ -175,7 +175,7 @@ namespace oscairn
                     part.splits.push_back(std::move(split));
                 }
                 part.bus=static_cast<uint32_t>(integer(field(p,"bus")));
-                part.level=number(field(p,"level"));part.mute=boolean(field(p,"mute"));
+                part.level=number(field(p,"level"));part.mute=boolean(field(p,"mute"));part.solo=boolean(field(p,"solo"));
                 for(auto s:array(field(p,"sends")))part.sends.push_back({static_cast<uint32_t>(integer(field(s,"bus"))),number(field(s,"level"))});
                 next.parts.push_back(std::move(part));
             }
@@ -466,6 +466,13 @@ namespace oscairn
     {
         auto reply=impl_->call("parts.addLane","{\"part\":"+std::to_string(part)+",\"split\":"+std::to_string(split)+'}');
         const auto lane=static_cast<uint32_t>(integer(field(field(reply.get(),"result"),"lane")));impl_->refresh();return lane;
+    }
+    void RemoteControl::setPartSolo(uint32_t part,bool solo){impl_->call("parts.solo","{\"part\":"+std::to_string(part)+",\"solo\":"+(solo?"true":"false")+'}');impl_->refresh();}
+    std::vector<PartMeter> RemoteControl::partMeters() const
+    {
+        auto reply=impl_->call("parts.meters");std::vector<PartMeter> out;
+        for(auto m:array(field(field(reply.get(),"result"),"meters")))out.push_back({static_cast<uint32_t>(integer(field(m,"part"))),number(field(m,"peak"))});
+        return out;
     }
     void RemoteControl::removeLane(uint32_t part,uint32_t split,uint32_t lane){impl_->call("parts.removeLane","{\"part\":"+std::to_string(part)+",\"split\":"+std::to_string(split)+",\"lane\":"+std::to_string(lane)+'}');impl_->refresh();}
     void RemoteControl::setLane(uint32_t part,uint32_t split,uint32_t lane,const Lane& l)

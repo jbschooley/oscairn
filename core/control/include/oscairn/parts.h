@@ -134,7 +134,11 @@ namespace oscairn
         std::vector<Send> sends;
         double level = 1;    // its fader: where it plays and its sends (post-fader)
         bool mute = false;   // silences where it plays and its sends
+        // While any part is soloed, only soloed parts, the parts that feed them and the buses
+        // they feed are heard.
+        bool solo = false;
     };
+    struct PartMeter { uint32_t part = 0; double peak = 0; }; // after its fader, linear
 
     // The control tree (RFC 0011): a control (a macro, Assign knob or Super Knob) is a value from
     // 0 to 1 that drives its targets, each with its own range and curve; a target may be another

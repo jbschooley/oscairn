@@ -224,7 +224,8 @@ new core, from a UI that talks to it only through the control API.
    and the desktop's Parts and Part views, and scenes; step 3's splits (lanes with zones and
    a Mix, joining after) in the model, protocol and Part page
    ([status](rfcs/0011-performance-ui-and-editors.md#step-3-status)), including left/right,
-   mid/side and band splits through the bundled Split and Join plugins. Next: the Mixer.
+   mid/side and band splits through the bundled Split and Join plugins, and the Mixer
+   with part solo and meters. Next: undo, then step 4's Routing view.
 9. **Modular instrument — playable:** chillbeast's engine is in
    [plugins/modular](../plugins/modular/README.md) with its history, wrapped as a CLAP
    instrument with factory presets and bundled in the desktop app. The patch editor, the

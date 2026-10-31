@@ -474,6 +474,41 @@ namespace
         check(refused, "bands keep at least two lanes");
     }
 
+    // The Mixer: solo keeps what a soloed part feeds and what feeds it; meters follow the faders.
+    void mixer(const char* fixture, const char* delay, const fs::path& root)
+    {
+        Session s(48000, frames);
+        const auto low = s.add("low", fixture, "org.kick.test.synth"), high = s.add("high", fixture, "org.kick.test.synth");
+        s.setParameter(low, 7, .25); s.setParameter(high, 7, .5);
+        const auto a = s.addPart("A"), b = s.addPart("B"), room = s.addPart("Room", {PartInput::Kind::Bus});
+        s.insertIntoPart(a, 0, low); s.insertIntoPart(b, 0, high);
+        const auto dry = s.add("dry", delay); s.setParameter(dry, 3, 0); // no echoes: the bus passes its input
+        s.insertIntoPart(room, 0, dry);
+        s.setSend(a, room, .5); s.commit();
+        auto meter = [&](uint32_t part) { for(const auto& m : s.partMeters()) if(m.part == part) return m.peak; return -1.0; };
+        Audio x; x.run(s);
+        s.note(true, 60, 1); x.run(s); x.run(s);
+        check(near(x.l[0], .25 + .5 + .125), "A, B and A's send: " + std::to_string(x.l[0]));
+        check(std::abs(meter(a) - .25) < 1e-6 && std::abs(meter(b) - .5) < 1e-6 && std::abs(meter(room) - .125) < 1e-6,
+              "meters show each part and bus after its fader: " + std::to_string(meter(a)) + " " + std::to_string(meter(b)) + " " + std::to_string(meter(room)));
+        s.setPartSolo(b, true); s.commit(); x.run(s);
+        check(near(x.l[0], .5), "B soloed: A and its send are silent: " + std::to_string(x.l[0]));
+        s.setPartSolo(b, false); s.setPartSolo(a, true); s.commit(); x.run(s);
+        check(near(x.l[0], .25 + .125), "A soloed: the bus it sends to stays, B is silent: " + std::to_string(x.l[0]));
+        s.setPartSolo(a, false); s.setPartSolo(room, true); s.commit(); x.run(s);
+        check(near(x.l[0], .25 + .125), "the bus soloed: the part feeding it stays: " + std::to_string(x.l[0]));
+        s.setPartSolo(room, false); s.setPartSolo(b, true); s.commit();
+        for(int i = 0; i < 700; ++i) x.run(s); // the held peak falls by 1% a tick
+        check(meter(a) < 1e-3 && std::abs(meter(b) - .5) < 1e-6, "a silenced part's meter falls to nothing: " + std::to_string(meter(a)));
+        s.setPartLevel(b, .5, false); s.commit();
+        for(int i = 0; i < 300; ++i) x.run(s);
+        check(std::abs(meter(b) - .25) < 1e-6, "the meter follows the fader: " + std::to_string(meter(b)));
+        const auto saved = root / "mixer";
+        s.note(false, 60, 0); x.run(s); s.savePerformance(saved.string());
+        Session t(48000, frames); t.loadPerformance(saved.string());
+        check(t.parts()[1].solo && !t.parts()[0].solo, "solo round-trips");
+    }
+
     // RFC 0011 step 2's gate: a two-layer split and a shared reverb (a delay here) built with part
     // edits only render exactly as the same graph wired by hand on the engine's Graph.
     void buses(const char* fixture, const char* delay)
@@ -710,6 +745,7 @@ int main(int argc, char** argv)
         devices(argv[1], temp.path);
         splits(argv[1], argv[3], temp.path);
         soundSplits(argv[3], argv[4], temp.path);
+        mixer(argv[1], argv[3], temp.path);
         buses(argv[1], argv[3]);
         scenes(argv[1], temp.path);
         controls(argv[1], temp.path);

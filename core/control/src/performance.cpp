@@ -131,7 +131,7 @@ void Session::savePerformance(const std::string& directory) {
         }
         const char* kind=p.input.kind==PartInput::Kind::Notes?"notes":p.input.kind==PartInput::Kind::Audio?"audio":p.input.kind==PartInput::Kind::Bus?"bus":"none";
         std::vector<std::string> sends;for(const auto& s:p.sends)sends.push_back("{\"bus\":"+std::to_string(s.bus)+",\"level\":"+numeric(s.level)+'}');
-        parts.push_back("{\"id\":"+std::to_string(p.id)+",\"name\":"+quote(p.name)+",\"input\":{\"kind\":\""+kind+"\",\"port\":"+std::to_string(p.input.port)+",\"zones\":"+zonesText(p.input.zones)+",\"devices\":"+devicesText(p.input.devices)+"},\"chain\":"+chainText(p.chain)+",\"splits\":"+join(splits)+",\"output\":"+std::to_string(p.output)+",\"level\":"+numeric(p.level)+",\"mute\":"+(p.mute?"true":"false")+",\"bus\":"+std::to_string(p.bus)+",\"sends\":"+join(sends)+'}');
+        parts.push_back("{\"id\":"+std::to_string(p.id)+",\"name\":"+quote(p.name)+",\"input\":{\"kind\":\""+kind+"\",\"port\":"+std::to_string(p.input.port)+",\"zones\":"+zonesText(p.input.zones)+",\"devices\":"+devicesText(p.input.devices)+"},\"chain\":"+chainText(p.chain)+",\"splits\":"+join(splits)+",\"output\":"+std::to_string(p.output)+",\"level\":"+numeric(p.level)+",\"mute\":"+(p.mute?"true":"false")+",\"solo\":"+(p.solo?"true":"false")+",\"bus\":"+std::to_string(p.bus)+",\"sends\":"+join(sends)+'}');
     }
     for(const auto& m:graph.mappings)mappings.push_back("{\"from\":"+quote(keys.at(m.source))+",\"lane\":"+std::to_string(m.lane)+",\"to\":"+quote(keys.at(m.target))+",\"param\":"+std::to_string(m.param)+'}');
     // Scenes: each part's fader and each scene parameter's value; and the scene last selected.
@@ -220,7 +220,7 @@ void Session::loadPerformance(const std::string& directory) {
     {
         std::set<uint32_t> partIds;
         for(auto p:array(field(d,"parts"),256)){
-            fields(p,{"id","name","input","chain","splits","output","bus","sends","level","mute"});Part part;part.id=integer(field(p,"id"));part.name=text(field(p,"name"));
+            fields(p,{"id","name","input","chain","splits","output","bus","sends","level","mute","solo"});Part part;part.id=integer(field(p,"id"));part.name=text(field(p,"name"));
             if(!part.id || !partIds.insert(part.id).second)bad("invalid or duplicate part");
             const auto input=field(p,"input");fields(input,{"kind","port","zones","devices"});const auto kind=text(field(input,"kind"));
             part.input.kind=kind=="notes"?PartInput::Kind::Notes:kind=="audio"?PartInput::Kind::Audio:kind=="none"?PartInput::Kind::None:kind=="bus"?PartInput::Kind::Bus:(bad("invalid part input"),PartInput::Kind::None);
@@ -257,7 +257,7 @@ void Session::loadPerformance(const std::string& directory) {
                 if(it==part.splits.end() || !reached.insert(it->id).second)bad("unknown or repeated split entry");for(const auto& l:it->lanes)reach(l.chain);}};
             reach(part.chain);
             if(reached.size()!=part.splits.size())bad("a split is not in the part's chain");
-            part.bus=integer(field(p,"bus"));part.level=number(field(p,"level"));part.mute=boolean(field(p,"mute"));if(part.level<0)bad("invalid part level");
+            part.bus=integer(field(p,"bus"));part.level=number(field(p,"level"));part.mute=boolean(field(p,"mute"));part.solo=boolean(field(p,"solo"));if(part.level<0)bad("invalid part level");
             for(auto s:array(field(p,"sends"),256)){fields(s,{"bus","level"});Send send{integer(field(s,"bus")),number(field(s,"level"))};if(send.level<0)bad("invalid send level");part.sends.push_back(send);}
             nextPart=std::max(nextPart,part.id+1);parts.push_back(std::move(part));
         }

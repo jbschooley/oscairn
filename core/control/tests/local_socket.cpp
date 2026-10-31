@@ -465,6 +465,11 @@ void partsClient(const char* plugin,const char* delay)
         const auto& l=g.parts[0].splits[0].lanes[1];
         check(l.level==.5 && l.mute && l.zones.size()==1 && l.zones[0].highKey==59,"a lane's Mix and zones read back over the socket");
         check(std::any_of(g.wires.begin(),g.wires.end(),[&](const Wire& w){return w.split==sp && w.lane==1 && w.mute;}),"the lane's join wire carries its Mix");
+        remote.setPartSolo(part,true);
+        check(remote.graphState().parts[0].solo,"a part soloed over the socket");
+        const auto meters=remote.partMeters();
+        check(meters.size()==1 && meters[0].part==part && meters[0].peak>=0,"the parts' meters over the socket");
+        remote.setPartSolo(part,false);
         remote.removeSplit(part,sp);
         check(remote.graphState().parts[0].chain==std::vector<NodeId>{synth,fx} && remote.graphState().parts[0].splits.empty(),"the split removed over the socket");
         bool refused=false;try{remote.insertIntoPart(99,0,synth);}catch(const std::exception&){refused=true;}

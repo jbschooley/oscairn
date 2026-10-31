@@ -18,7 +18,9 @@ namespace oscairn::standalone
 
     PartsView::PartsView(Engine& engine, const std::string& scanner) : engine_(engine)
     {
-        for(auto* c : std::initializer_list<juce::Component*>{&title_, &message_, &done_, &addPart_, &addBus_, &back_, &removePart_, &name_, &controlsButton_, &addControl_}) addChildComponent(c);
+        for(auto* c : std::initializer_list<juce::Component*>{&title_, &message_, &done_, &addPart_, &addBus_, &back_, &removePart_, &name_, &controlsButton_, &mixerButton_, &addControl_}) addChildComponent(c);
+        mixerButton_.setTooltip("Every part and bus side by side: level, mute, solo, sends and meters");
+        mixerButton_.onClick = [this] { showPart(mixerPage); };
         controlsButton_.setTooltip("Controls: knobs that drive many parameters, each with its own range and curve, or other controls");
         controlsButton_.onClick = [this] { showPart(controlsPage); };
         addControl_.onClick = [this] { const auto n = macros_.size() + 1; edit([n](Control& c) { c.addMacro("Control " + std::to_string(n)); }); };
@@ -52,6 +54,10 @@ namespace oscairn::standalone
     void PartsView::timerCallback()
     {
         if(scan_.valid() && scan_.wait_for(std::chrono::seconds(0)) == std::future_status::ready) plugins_ = scan_.get();
+        // The Mixer's meters move at 20 frames a second; the other pages refresh more slowly.
+        if(page_ == mixerPage) { peaks_.clear(); for(const auto& m : engine_.meters()) peaks_[m.part] = m.peak; }
+        const int interval = page_ == mixerPage ? 50 : 200;
+        if(getTimerInterval() != interval) startTimer(interval);
         refresh();
     }
 
@@ -72,7 +78,7 @@ namespace oscairn::standalone
             state_ = readParts(graph_); endpoints_ = engine_.status().midiInputs; scenes_ = graph_.scenes; sceneParameters_ = graph_.sceneParameters; scene_ = graph_.scene; macros_ = graph_.macros;
         }
         catch(const std::exception&) { return; }
-        if(page_ && page_ != controlsPage && !part(page_)) { page_ = 0; shape_.clear(); }
+        if(page_ && page_ != controlsPage && page_ != mixerPage && !part(page_)) { page_ = 0; shape_.clear(); }
         for(auto& p : state_.parts) if(p.notes && !p.devices.empty() && !resolveDevices(p.devices, endpoints_)) p.input = "No device: " + p.input;
         message_.setText(text(engine_.editError()), juce::dontSendNotification);
         // Controls are rebuilt only when the structure changes, so a slider being dragged survives.
@@ -106,13 +112,13 @@ namespace oscairn::standalone
 
     void PartsView::rebuild()
     {
-        controls_.clear(); boxes_.clear(); splitAreas_.clear(); updaters_.clear();
-        const bool list = page_ == 0, controlsShown = page_ == controlsPage;
-        for(auto* c : std::initializer_list<juce::Component*>{&addPart_, &addBus_, &controlsButton_}) c->setVisible(list);
-        for(auto* c : std::initializer_list<juce::Component*>{&removePart_, &name_}) c->setVisible(!list && !controlsShown);
+        controls_.clear(); boxes_.clear(); splitAreas_.clear(); strips_.clear(); updaters_.clear();
+        const bool list = page_ == 0, controlsShown = page_ == controlsPage, mixerShown = page_ == mixerPage;
+        for(auto* c : std::initializer_list<juce::Component*>{&addPart_, &addBus_, &controlsButton_, &mixerButton_}) c->setVisible(list);
+        for(auto* c : std::initializer_list<juce::Component*>{&removePart_, &name_}) c->setVisible(!list && !controlsShown && !mixerShown);
         back_.setVisible(!list); addControl_.setVisible(controlsShown);
-        title_.setVisible(list || controlsShown); done_.setVisible(true); message_.setVisible(true);
-        title_.setText(controlsShown ? "Controls" : "Parts", juce::dontSendNotification);
+        title_.setVisible(list || controlsShown || mixerShown); done_.setVisible(true); message_.setVisible(true);
+        title_.setText(controlsShown ? "Controls" : mixerShown ? "Mixer" : "Parts", juce::dontSendNotification);
         auto top = getLocalBounds().reduced(16, 8).removeFromTop(header - 8);
         done_.setBounds(top.removeFromRight(100).reduced(2));
         message_.setBounds(getLocalBounds().reduced(16).removeFromBottom(24));
@@ -155,6 +161,7 @@ namespace oscairn::standalone
             addBus_.setBounds(top.removeFromRight(120).reduced(2));
             addPart_.setBounds(top.removeFromRight(120).reduced(2));
             controlsButton_.setBounds(top.removeFromRight(100).reduced(2));
+            mixerButton_.setBounds(top.removeFromRight(90).reduced(2));
             title_.setBounds(top.removeFromLeft(90));
             // Scenes: tap one to switch to it; Store saves the parts' faders and the scene
             // parameters into the selected one.
@@ -185,6 +192,57 @@ namespace oscairn::standalone
                     toggle(right.removeFromRight(64).reduced(4, 14), "Mute", muteOf(p.id), setMute(p.id));
                     updates.push_back(slider(right.reduced(6, 18), 0, 1, levelOf(p.id), setLevel(p.id)).second);
                 }
+        }
+        else if(mixerShown)
+        {
+            back_.setBounds(top.removeFromLeft(110).reduced(2));
+            title_.setBounds(top.reduced(8, 0));
+            auto area = getLocalBounds().reduced(16).withTrimmedTop(header).withTrimmedBottom(28);
+            std::vector<const PartRow*> rows;
+            for(const auto* list : {&state_.parts, &state_.buses}) for(const auto& p : *list) rows.push_back(&p);
+            const int gap = 8, busGap = state_.buses.empty() ? 0 : 16, n = std::max(1, int(rows.size()));
+            const int width = std::clamp((area.getWidth() - busGap - gap * (n - 1)) / n, 72, 120);
+            auto soloOf = [this](uint32_t id) { return [this, id] { const auto* p = part(id); return p && p->solo; }; };
+            auto setSolo = [this](uint32_t id) { return [this, id](bool on) { edit([id, on](Control& c) { c.setPartSolo(id, on); c.commit(); }); }; };
+            for(size_t i = 0; i < rows.size(); ++i)
+            {
+                const auto& p = *rows[i];
+                if(p.bus && (i == 0 || !rows[i - 1]->bus)) area.removeFromLeft(busGap);
+                auto strip = area.removeFromLeft(width); area.removeFromLeft(gap);
+                auto inner = strip.reduced(6);
+                auto name = std::make_unique<juce::Label>(juce::String(), text(p.name));
+                name->setFont(juce::FontOptions(14.0f * themeData().fontScale, juce::Font::bold)); name->setJustificationType(juce::Justification::centred);
+                name->setBounds(inner.removeFromTop(24)); addAndMakeVisible(*name); controls_.push_back(std::move(name));
+                // A send to each bus, post-fader, like the Parts list's.
+                for(const auto& b : state_.buses)
+                {
+                    if(p.bus) break;
+                    auto r = inner.removeFromTop(36);
+                    auto l = std::make_unique<juce::Label>(juce::String(), juce::String::fromUTF8("→ ") + text(b.name));
+                    l->setFont(juce::FontOptions(11.0f * themeData().fontScale)); l->setBounds(r.removeFromTop(14)); addAndMakeVisible(*l); controls_.push_back(std::move(l));
+                    updates.push_back(slider(r, 0, 1, sendOf(p.id, b.id), setSend(p.id, b.id)).second);
+                }
+                auto buttons = inner.removeFromBottom(28);
+                toggle(buttons.removeFromLeft(buttons.getWidth() / 2), "M", muteOf(p.id), setMute(p.id));
+                toggle(buttons, "S", soloOf(p.id), setSolo(p.id));
+                // The fader's level in dB, under it.
+                auto db = std::make_unique<juce::Label>(); db->setJustificationType(juce::Justification::centred);
+                db->setFont(juce::FontOptions(12.0f * themeData().fontScale)); db->setBounds(inner.removeFromBottom(20)); addAndMakeVisible(*db);
+                auto* dbRaw = db.get(); controls_.push_back(std::move(db));
+                auto showDb = std::make_shared<std::function<void()>>([this, dbRaw, id = p.id] {
+                    const auto* q = part(id); const double level = q ? q->level : 0;
+                    dbRaw->setText(level > 0 ? juce::String(20 * std::log10(level), 1) + " dB" : juce::String::fromUTF8("−∞ dB"), juce::dontSendNotification);
+                });
+                (*showDb)(); updates.push_back(showDb);
+                inner.removeFromBottom(4);
+                const auto meter = inner.removeFromRight(10);
+                auto [fader, update] = slider(inner.reduced(4, 0), 0, 1, levelOf(p.id), setLevel(p.id));
+                fader->setSliderStyle(juce::Slider::LinearVertical);
+                fader->setSkewFactorFromMidPoint(.25); // -12 dB halfway up
+                fader->setTooltip("The part's level, before its sends");
+                updates.push_back(update);
+                strips_.push_back({p.id, strip, meter});
+            }
         }
         else if(controlsShown)
         {
@@ -595,6 +653,23 @@ namespace oscairn::standalone
     {
         g.fillAll(ink(Ink::Background));
         if(page_ == controlsPage) return;
+        if(page_ == mixerPage)
+        {
+            // Strips, and meters from -60 to +6 dB: green, yellow above -12, red above -3.
+            for(const auto& s : strips_)
+            {
+                const auto* p = part(s.part);
+                g.setColour(p && p->mute ? ink(Ink::Surface).withAlpha(.5f) : ink(Ink::Surface));
+                g.fillRoundedRectangle(s.bounds.toFloat(), themeData().radius);
+                g.setColour(ink(Ink::Raised)); g.fillRoundedRectangle(s.meter.toFloat(), 3);
+                const auto peak = peaks_.count(s.part) ? peaks_.at(s.part) : 0.0;
+                const double db = peak > 0 ? 20 * std::log10(peak) : -100;
+                const float fraction = float(std::clamp((db + 60) / 66, 0.0, 1.0));
+                g.setColour(db > -3 ? ink(Ink::Danger) : db > -12 ? juce::Colour(0xffe8c547) : juce::Colour(0xff5ac46a));
+                g.fillRoundedRectangle(s.meter.toFloat().withTrimmedTop(s.meter.getHeight() * (1 - fraction)), 3);
+            }
+            return;
+        }
         const auto scale = themeData().fontScale;
         auto chip = [&](juce::Rectangle<float> r, const PartBox& b, bool selected) {
             g.setColour(selected ? ink(Ink::Accent).withAlpha(.25f) : ink(Ink::Raised));
@@ -731,7 +806,7 @@ namespace oscairn::standalone
 
     void PartsView::mouseUp(const juce::MouseEvent& e)
     {
-        if(page_ == controlsPage) return;
+        if(page_ == controlsPage || page_ == mixerPage) return;
         if(page_ == 0)
         {
             for(size_t row = 0; row < state_.parts.size() + state_.buses.size(); ++row)

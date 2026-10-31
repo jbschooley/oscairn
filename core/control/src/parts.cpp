@@ -368,15 +368,16 @@ namespace oscairn
             if(d.split) { w->pan = std::clamp(e.pan + d.pan, -1.0, 1.0); if(!e.split) { w->split = d.split; w->lane = d.lane; } }
         };
         const auto destinations = part.bus ? busEntries(part.bus) : std::vector<BusEntry>{{graphOutput, part.output}};
+        const bool mute = part.mute || !heard(part);
         for(auto e : walk(part.chain, {input}))
         {
             if(!e.audio) continue;
-            for(const auto& d : destinations) { auto* w = audioWire(e, d.node, d.port); w->fader = true; enter(w, e, d, part.level, part.mute); }
+            for(const auto& d : destinations) { auto* w = audioWire(e, d.node, d.port); w->fader = true; enter(w, e, d, part.level, mute); }
             for(const auto& send : part.sends)
                 for(const auto& d : busEntries(send.bus))
                 {
                     auto* s = audioWire(e, d.node, d.port);
-                    s->send = send.bus; enter(s, e, d, send.level * part.level, part.mute); // post-fader
+                    s->send = send.bus; enter(s, e, d, send.level * part.level, mute); // post-fader
                 }
         }
     }
@@ -463,6 +464,40 @@ namespace oscairn
             else sends.push_back({bus, *level});
             buildParts();
         });
+    }
+
+    bool Session::heard(const Part& part)
+    {
+        if(std::none_of(parts_.begin(), parts_.end(), [](const Part& p) { return p.solo; })) return true;
+        return std::any_of(parts_.begin(), parts_.end(), [&](const Part& q) { return q.solo && (feeds(part.id, q.id) || feeds(q.id, part.id)); });
+    }
+
+    void Session::setPartSolo(uint32_t id, bool solo)
+    {
+        findPart(id);
+        editWires([&] { findPart(id).solo = solo; buildParts(); });
+    }
+
+    // Each part's peak is the largest of its boxes' peaks times the wire carrying them to where it
+    // plays; a muted wire shows nothing. The held value falls by about 17 dB a second at the
+    // desktop's 5 ms control tick.
+    // shortcut: lanes and pans are not summed, so a part with several lanes shows its loudest; measure the summed bus if that misleads.
+    void Session::meter()
+    {
+        std::map<NodeId, float> peaks;
+        for(const auto& w : wires_) if(w.fader && w.owner == WireOwner::Part && !peaks.count(w.from)) peaks[w.from] = graph_.takePeak(w.from);
+        std::map<uint32_t, double> now;
+        for(const auto& w : wires_) if(w.fader && w.owner == WireOwner::Part && !w.mute) now[w.part] = std::max(now[w.part], peaks[w.from] * w.level);
+        std::map<uint32_t, double> held;
+        for(const auto& p : parts_) held[p.id] = std::max(now[p.id], meters_.count(p.id) ? meters_[p.id] * .99 : 0.0);
+        meters_.swap(held);
+    }
+
+    std::vector<PartMeter> Session::partMeters() const
+    {
+        std::vector<PartMeter> out;
+        for(const auto& [part, peak] : meters_) out.push_back({part, peak});
+        return out;
     }
 
     void Session::setPartLevel(uint32_t id, double level, bool mute)

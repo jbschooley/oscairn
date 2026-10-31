@@ -136,6 +136,9 @@ namespace oscairn
         virtual void setSend( uint32_t part, uint32_t bus, std::optional<double> level ) = 0;            // without a level, removes the send
         virtual void setPartLevel( uint32_t part, double level, bool mute ) = 0; // its fader, post-fader sends included
         virtual void setPartName( uint32_t part, const std::string& name ) = 0;
+        virtual void setPartSolo( uint32_t part, bool solo ) = 0;
+        // Each part's and bus's recent peak after its fader, held and falling, for the Mixer.
+        virtual std::vector<PartMeter> partMeters() const = 0;
         virtual uint32_t connectPorts( const Wire& wire ) = 0; // a user wire; returns its ID
         virtual void disconnectWire( uint32_t wire ) = 0;
         virtual void setMix( uint32_t wire, double level, double pan, bool mute, bool solo ) = 0;

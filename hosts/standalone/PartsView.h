@@ -50,7 +50,7 @@ namespace oscairn::standalone
         std::vector<SceneParameter> sceneParameters_;
         uint32_t scene_ = 0;
         std::vector<Macro> macros_;
-        static constexpr uint32_t controlsPage = 0xFFFFFFFFu;
+        static constexpr uint32_t controlsPage = 0xFFFFFFFFu, mixerPage = 0xFFFFFFFEu;
         std::string shape_; // what the controls were built for; rebuilt when it changes
         uint32_t page_ = 0; // 0: the list; otherwise the part shown
         NodeId selected_ = 0;
@@ -58,7 +58,7 @@ namespace oscairn::standalone
         int chainHeight_ = 96;     // the Part page's chain row: taller for a split's lanes
 
         juce::Label title_, message_;
-        juce::TextButton done_{"Done"}, addPart_{"+ Add part"}, addBus_{"+ Add bus"}, back_{"‹ Parts"}, removePart_{"Remove part"}, controlsButton_{"Controls"}, addControl_{"+ Control"};
+        juce::TextButton done_{"Done"}, addPart_{"+ Add part"}, addBus_{"+ Add bus"}, back_{"‹ Parts"}, removePart_{"Remove part"}, controlsButton_{"Controls"}, mixerButton_{"Mixer"}, addControl_{"+ Control"};
         juce::TextEditor name_;
         std::vector<std::unique_ptr<juce::Component>> controls_; // rebuilt per page and shape
         std::vector<std::shared_ptr<std::function<void()>>> updaters_; // set controls from the state
@@ -66,5 +66,9 @@ namespace oscairn::standalone
         std::vector<Box> boxes_; // the Part page's chain boxes, for tapping
         struct SplitArea { uint32_t split; juce::Rectangle<int> bounds, splitPill, joinPill; std::vector<juce::Rectangle<int>> lanes; };
         std::vector<SplitArea> splitAreas_;
+        // The Mixer: a strip per part and bus, with its meter beside the fader.
+        struct Strip { uint32_t part; juce::Rectangle<int> bounds, meter; };
+        std::vector<Strip> strips_;
+        std::map<uint32_t, double> peaks_; // the parts' meters, read at each tick while the Mixer shows
     };
 }

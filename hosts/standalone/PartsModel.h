@@ -40,7 +40,7 @@ namespace oscairn::standalone
         int lowKey = 0, highKey = 127, transpose = 0; // the input's first zone, or all keys
         std::vector<PartBox> chain;
         double level = 1;
-        bool mute = false;
+        bool mute = false, solo = false;
         uint32_t through = 0;            // the bus it plays through, or 0 for Main
         std::map<uint32_t, double> sends; // bus -> level
     };

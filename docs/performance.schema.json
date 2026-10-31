@@ -578,6 +578,10 @@
         },
         "mute": {
           "type": "boolean"
+        },
+        "solo": {
+          "type": "boolean",
+          "description": "While any part is soloed, only soloed parts, the parts feeding them and the buses they feed are heard"
         }
       },
       "required": [
@@ -590,7 +594,8 @@
         "bus",
         "sends",
         "level",
-        "mute"
+        "mute",
+        "solo"
       ],
       "additionalProperties": false
     },

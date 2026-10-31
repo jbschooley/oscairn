@@ -25,6 +25,7 @@ namespace oscairn
         struct Step
         {
             std::shared_ptr<PluginHost> host; // keeps the plugin alive while any plan uses it
+            std::shared_ptr<std::atomic<float>> peak; // the node's, shared with every plan
             uint32_t                          audioInputs = 0, audioOutputs = 0;
             std::vector<AudioRoute>           audioSources;
             std::vector<uint32_t> silentInputs;
@@ -409,6 +410,7 @@ namespace oscairn
             const auto& node = nodes_.at( id );
             Plan::Step  step;
             step.host         = node.host;
+            step.peak         = node.peak;
             step.audioInputs  = node.audioInputs;
             step.audioOutputs = node.audioOutputs;
             stepOf[id]        = (int)plan->steps.size();
@@ -515,6 +517,12 @@ namespace oscairn
         return {};
     }
 
+    float Graph::takePeak( NodeId node ) noexcept
+    {
+        const auto it = nodes_.find( node );
+        return it == nodes_.end() ? 0.f : it->second.peak->exchange( 0.f, std::memory_order_relaxed );
+    }
+
     bool Graph::process( float* const* outputs, uint32_t frames, const clap_event_transport_t* transport,
                          const kick::clap::Event* events, uint32_t eventCount ) noexcept
     {
@@ -611,6 +619,12 @@ namespace oscairn
                 for(auto& source:step.noteSources)source.route->clear();
             }
             ok &= processed;
+            if(processed && step.peak)
+            {
+                float peak=0;
+                for(uint32_t c=0;c<step.audioOutputs;++c)for(uint32_t i=0;i<frames;++i)peak=std::max(peak,std::abs(step.out[c][i]));
+                for(float seen=step.peak->load(std::memory_order_relaxed);peak>seen && !step.peak->compare_exchange_weak(seen,peak,std::memory_order_relaxed););
+            }
             step.paramCount = 0;step.paramDrops=0;step.releaseCount=0;step.releaseOverflow=false;
             uint32_t endedCount=0;const auto* ended=step.host->outputEvents(endedCount);
             for(uint32_t i=0;i<endedCount;++i)for(auto& source:step.noteSources)source.route->ended(ended[i]);

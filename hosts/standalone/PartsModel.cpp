@@ -43,7 +43,7 @@ namespace oscairn::standalone
         {
             PartRow row;
             row.id = p.id; row.name = p.name; row.bus = p.input.kind == PartInput::Kind::Bus;
-            row.level = p.level; row.mute = p.mute; row.through = p.bus;
+            row.level = p.level; row.mute = p.mute; row.solo = p.solo; row.through = p.bus;
             row.notes = p.input.kind == PartInput::Kind::Notes; row.devices = p.input.devices;
             for(const auto& s : p.sends) row.sends[s.bus] = s.level;
             if(!p.input.zones.empty()) { const auto& z = p.input.zones.front(); row.lowKey = z.lowKey; row.highKey = z.highKey; row.transpose = z.transpose; }

@@ -284,6 +284,7 @@ namespace oscairn
     void Session::service()
     {
         graph_.service();
+        meter();
         for( const auto& [node,name] : nodes_ )
         {
             auto& host = graph_.host(node);

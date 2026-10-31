@@ -3052,6 +3052,67 @@
               "$ref": "#/$defs/Id"
             },
             "method": {
+              "const": "parts.solo"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "part": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 4294967295
+                },
+                "solo": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "part",
+                "solo"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "params"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
+              "const": "parts.meters"
+            },
+            "params": {
+              "type": "object",
+              "maxProperties": 0
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
               "const": "scenes.add"
             },
             "params": {
@@ -3575,6 +3636,9 @@
                 },
                 {
                   "$ref": "#/$defs/PartResult"
+                },
+                {
+                  "$ref": "#/$defs/MetersResult"
                 },
                 {
                   "$ref": "#/$defs/SplitResult"
@@ -5020,6 +5084,10 @@
         },
         "mute": {
           "type": "boolean"
+        },
+        "solo": {
+          "type": "boolean",
+          "description": "While any part is soloed, only soloed parts, the parts feeding them and the buses they feed are heard"
         }
       },
       "required": [
@@ -5032,7 +5100,8 @@
         "bus",
         "sends",
         "level",
-        "mute"
+        "mute",
+        "solo"
       ],
       "additionalProperties": false
     },
@@ -5756,6 +5825,38 @@
       },
       "required": [
         "lane"
+      ],
+      "additionalProperties": false
+    },
+    "MetersResult": {
+      "type": "object",
+      "description": "Each part's and bus's recent peak after its fader, linear, held and falling",
+      "properties": {
+        "meters": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "part": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 4294967295
+              },
+              "peak": {
+                "type": "number",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "part",
+              "peak"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "meters"
       ],
       "additionalProperties": false
     }

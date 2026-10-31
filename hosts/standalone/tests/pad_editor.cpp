@@ -132,6 +132,12 @@ int main(int argc, char** argv)
             view.showPart(leadId);
             view.showLane(bands, -1);
             save(view, "-bands.png");
+            // The Mixer: a strip per part and bus. (No audio runs here, so the meters are empty.)
+            engine.edit([&](Control& c) { c.setPartSolo(leadId, true); c.commit(); });
+            for(int i = 0; i < 500 && !engine.graph().parts[1].solo; ++i) juce::MessageManager::getInstance()->runDispatchLoopUntil(10);
+            check(engine.graph().parts[1].solo, "the lead soloed");
+            view.showPart(0xFFFFFFFEu);
+            save(view, "-mixer.png");
             view.showPart(0xFFFFFFFFu);
             save(view, "-controls.png");
             juce::LookAndFeel::setDefaultLookAndFeel(nullptr);
