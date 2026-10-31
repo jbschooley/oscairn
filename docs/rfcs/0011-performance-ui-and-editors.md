@@ -499,11 +499,12 @@ a rename keeps a level a scene set since. Steps hold the nodes they removed or r
 undoing a removal brings back the same plugin, with its state and prepared sounds, under its
 ID. Switching scenes, moving controls and devices coming and going are not edits. History is
 100 steps, and opening a Performance clears it. **Undo** and **Redo** are on the Parts views
-and in the desktop's **Edit** menu, named for what they would do. `control-undo` covers
+and in the desktop's **Edit** menu, named for what they would do, and on Cmd-Z and
+Cmd-Shift-Z (Ctrl elsewhere). `control-undo` covers
 grouping, merging, removal with state, scenes and controls, pads, splits with their nodes and
 loading; the socket test and `desktop-pad-editor` cover the protocol and the engine.
 
-Not yet: keyboard shortcuts; undo of preset and state loads, which replace a plugin's
+Not yet: undo of preset and state loads, which replace a plugin's
 whole state outside this model; and a plugin's own edits in its window, which reach the host
 as parameter changes it reports, not edits made here.
 

@@ -140,6 +140,18 @@ namespace oscairn::standalone
             if( parts_ && getContentComponent() ) parts_->setBounds( getContentComponent()->getBounds() );
         }
 
+        // Cmd-Z undoes and Cmd-Shift-Z redoes (Ctrl elsewhere), from any view: keys the views do
+        // not use reach the window. Not Ctrl-Y: the on-screen keyboard plays Y as a note.
+        bool keyPressed( const juce::KeyPress& key ) override
+        {
+            const auto mods = key.getModifiers();
+            const int code = key.getKeyCode();
+            if( !mods.isCommandDown() || mods.isAltDown() ) return false;
+            if( (code == 'Z' || code == 'z') && !mods.isShiftDown() ) { engine_.edit( []( Control& c ) { c.undo(); } ); return true; }
+            if( (code == 'Z' || code == 'z') && mods.isShiftDown() ) { engine_.edit( []( Control& c ) { c.redo(); } ); return true; }
+            return false;
+        }
+
         juce::StringArray getMenuBarNames() override { return { "Performance", "Edit", "View", "Plugins", "Appearance" }; }
 
         juce::PopupMenu getMenuForIndex( int index, const juce::String& ) override
