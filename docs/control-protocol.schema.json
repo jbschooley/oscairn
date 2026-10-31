@@ -140,6 +140,10 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 4294967295
+        },
+        "module": {
+          "type": "string",
+          "description": "The CLAP module path, levels separated by /; empty when the plugin gives none"
         }
       },
       "required": [
@@ -149,7 +153,8 @@
         "maximum",
         "defaultValue",
         "stepped",
-        "flags"
+        "flags",
+        "module"
       ],
       "additionalProperties": false
     },

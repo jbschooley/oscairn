@@ -327,36 +327,46 @@ namespace oscairn::standalone
                 auto name = std::make_unique<juce::Label>(juce::String(), text(p.name));
                 name->setFont(juce::FontOptions(14.0f * themeData().fontScale, juce::Font::bold)); name->setJustificationType(juce::Justification::centred);
                 name->setBounds(inner.removeFromTop(24)); addAndMakeVisible(*name); controls_.push_back(std::move(name));
-                // A send to each bus, post-fader, like the Parts list's.
-                for(const auto& b : state_.buses)
+                // Under the fader, top to bottom: its level, mute and solo, pan, then a send to each
+                // bus (post-fader). Laid out from the bottom up.
+                // Every strip keeps the send rows, so faders and buttons line up across them; a bus
+                // leaves its own empty.
+                std::vector<juce::Rectangle<int>> sendRows;
+                for(size_t k = 0; k < state_.buses.size(); ++k) sendRows.insert(sendRows.begin(), inner.removeFromBottom(36));
+                if(p.bus) sendRows.clear();
+                auto panRow = inner.removeFromBottom(36);
+                inner.removeFromBottom(6);
+                auto buttons = inner.removeFromBottom(28);
+                auto dbRow = inner.removeFromBottom(20);
+                inner.removeFromBottom(4);
+                auto small = [&](juce::Rectangle<int>& row, const juce::String& label) {
+                    auto l = std::make_unique<juce::Label>(juce::String(), label);
+                    l->setFont(juce::FontOptions(11.0f * themeData().fontScale)); l->setBounds(row.removeFromTop(14)); addAndMakeVisible(*l); controls_.push_back(std::move(l));
+                };
+                for(size_t k = 0; k < sendRows.size(); ++k)
                 {
-                    if(p.bus) break;
-                    auto r = inner.removeFromTop(36);
-                    auto l = std::make_unique<juce::Label>(juce::String(), juce::String::fromUTF8("→ ") + text(b.name));
-                    l->setFont(juce::FontOptions(11.0f * themeData().fontScale)); l->setBounds(r.removeFromTop(14)); addAndMakeVisible(*l); controls_.push_back(std::move(l));
-                    updates.push_back(slider(r, 0, 1, sendOf(p.id, b.id), setSend(p.id, b.id)).second);
+                    const auto& b = state_.buses[k];
+                    small(sendRows[k], juce::String::fromUTF8("→ ") + text(b.name));
+                    updates.push_back(slider(sendRows[k], 0, 1, sendOf(p.id, b.id), setSend(p.id, b.id)).second);
                 }
-                // Pan, above the fader; a double-click centres it.
-                auto panLabel = std::make_unique<juce::Label>(juce::String(), "Pan");
-                panLabel->setFont(juce::FontOptions(11.0f * themeData().fontScale)); panLabel->setBounds(inner.removeFromTop(14)); addAndMakeVisible(*panLabel); controls_.push_back(std::move(panLabel));
-                auto [pan, panUpdate] = slider(inner.removeFromTop(22).reduced(2, 2), -1, 1, [this, id = p.id] { const auto* q = part(id); return q ? q->pan : 0.0; },
+                // Pan; a double-click centres it.
+                small(panRow, "Pan");
+                auto [pan, panUpdate] = slider(panRow.reduced(2, 0), -1, 1, [this, id = p.id] { const auto* q = part(id); return q ? q->pan : 0.0; },
                                                [this, id = p.id](double v) { edit([id, v](Control& c) { c.setPartPan(id, v); c.commit(); }); });
                 pan->getProperties().set("bipolar", true);
                 pan->setDoubleClickReturnValue(true, 0); pan->setTooltip("Pan: where it plays, left to right; its sends keep their own");
                 updates.push_back(panUpdate);
-                auto buttons = inner.removeFromBottom(28);
                 toggle(buttons.removeFromLeft(buttons.getWidth() / 2), "M", muteOf(p.id), setMute(p.id));
                 toggle(buttons, "S", soloOf(p.id), setSolo(p.id));
-                // The fader's level in dB, under it.
+                // The fader's level in dB.
                 auto db = std::make_unique<juce::Label>(); db->setJustificationType(juce::Justification::centred);
-                db->setFont(juce::FontOptions(12.0f * themeData().fontScale)); db->setBounds(inner.removeFromBottom(20)); addAndMakeVisible(*db);
+                db->setFont(juce::FontOptions(12.0f * themeData().fontScale)); db->setBounds(dbRow); addAndMakeVisible(*db);
                 auto* dbRaw = db.get(); controls_.push_back(std::move(db));
                 auto showDb = std::make_shared<std::function<void()>>([this, dbRaw, id = p.id] {
                     const auto* q = part(id); const double level = q ? q->level : 0;
                     dbRaw->setText(level > 0 ? juce::String(20 * std::log10(level), 1) + " dB" : juce::String::fromUTF8("−∞ dB"), juce::dontSendNotification);
                 });
                 (*showDb)(); updates.push_back(showDb);
-                inner.removeFromBottom(4);
                 // The fader and its meters as a pair, centred, 18 pixels apart.
                 auto pair = inner.withSizeKeepingCentre(std::min(inner.getWidth(), 28 + 18 + 10), inner.getHeight());
                 auto faderArea = pair.removeFromLeft(28); pair.removeFromLeft(18);
@@ -454,12 +464,15 @@ namespace oscairn::standalone
             chain.removeFromLeft(110);
             for(int i = 0; i <= n; ++i)
             {
-                auto* plus = plusButton(chain.removeFromLeft(34).withSizeKeepingCentre(28, 28));
+                // Joined sections: one band, the boxes edge to edge and each + a column of its own.
+                const bool joined = themeData().style.sections == ThemeStyle::Sections::Joined;
+                auto* plus = plusButton(joined ? chain.removeFromLeft(34) : chain.removeFromLeft(34).withSizeKeepingCentre(28, 28));
+                if(joined) plus->setColour(juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
                 plus->setTooltip("Insert a plugin or a split here");
                 plus->onClick = [this, i, plus] { insertMenu(size_t(i), *plus); };
                 if(i == n) break;
                 const auto& b = p->chain[size_t(i)];
-                if(!b.split) { boxes_.push_back({b.node, chain.removeFromLeft(boxWidth).reduced(3)}); continue; }
+                if(!b.split) { boxes_.push_back({b.node, chain.removeFromLeft(boxWidth).reduced(joined ? 0 : 3)}); continue; }
                 auto area = chain.removeFromLeft(splitWidth(b)).reduced(0, 4);
                 SplitArea s{b.split, area, area.removeFromLeft(12), area.removeFromRight(12), {}};
                 for(size_t k = 0; k < b.lanes.size(); ++k)
@@ -1028,19 +1041,23 @@ namespace oscairn::standalone
         const auto* p = part(page_);
         if(!p) return;
         auto ends = getLocalBounds().reduced(16, 0).withTrimmedTop(header + 12).withHeight(chainHeight_);
+        // Joined sections: the chain is one band, its ends divided from the boxes by a line.
+        const bool joined = themeData().style.sections == ThemeStyle::Sections::Joined;
+        if(joined) drawSection(g, ends, ink(Ink::Surface));
         auto end = [&](juce::Rectangle<int> r, const juce::String& top, const juce::String& bottom) {
-            g.setColour(ink(Ink::Surface)); g.fillRoundedRectangle(r.toFloat(), themeData().radius);
+            if(joined) { g.setColour(ink(Ink::Border)); g.fillRect(r.getX() == ends.getX() ? r.getRight() : r.getX() - 1, r.getY(), 1, r.getHeight()); }
+            else { g.setColour(ink(Ink::Surface)); g.fillRoundedRectangle(r.toFloat(), themeData().radius); }
             auto inner = r.reduced(8, 10);
             g.setColour(ink(Ink::Muted)); g.setFont(juce::FontOptions(11.0f * scale, juce::Font::bold));
             g.drawText(top, inner.removeFromTop(16), juce::Justification::topLeft);
             g.setColour(ink(Ink::Text)); g.setFont(juce::FontOptions(13.0f * scale));
             g.drawFittedText(bottom, inner, juce::Justification::topLeft, 3);
         };
-        end(ends.removeFromLeft(104), "IN", text(p->input));
+        end(ends.removeFromLeft(joined ? 110 : 104), "IN", text(p->input)); // joined: the first + starts at 110
         juce::String out = p->through ? text(part(p->through) ? part(p->through)->name : "a bus") : juce::String("Main");
         for(const auto& [bus, level] : p->sends) if(const auto* b = part(bus)) out << "\nSend " << text(b->name) << " " << juce::String(juce::roundToInt(level * 100)) << "%";
         for(const auto& exit : p->exits) out << juce::String::fromUTF8("\n→ ") << text(exit);
-        end(ends.removeFromRight(104), "OUT", out);
+        end(ends.removeFromRight(joined ? 110 : 104), "OUT", out);
         // Splits: their pills, and a row per lane (dimmed when it cannot be heard).
         for(const auto& s : splitAreas_)
         {

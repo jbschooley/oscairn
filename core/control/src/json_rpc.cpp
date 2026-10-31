@@ -787,7 +787,7 @@ namespace oscairn
                     values.push_back( "{\"id\":" + std::to_string(v.id) + ",\"name\":" + quote(v.name) +
                         ",\"minimum\":" + encode(v.minimum) + ",\"maximum\":" + encode(v.maximum) +
                         ",\"defaultValue\":" + encode(v.defaultValue) + ",\"stepped\":" + (v.stepped ? "true" : "false") +
-                        ",\"flags\":" + std::to_string(v.flags) + '}' );
+                        ",\"flags\":" + std::to_string(v.flags) + ",\"module\":" + quote(v.module) + '}' );
                 return "{\"node\":" + std::to_string(n) + ",\"parameters\":" + join(values) + '}';
             }
             if( method == "params.get" || method == "params.set" )

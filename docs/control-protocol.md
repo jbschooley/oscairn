@@ -106,7 +106,7 @@ request members.
 | `properties.get` | `{"node":"sampler","uri":"…"}` | `{"value":null}` or a typed plugin-confirmed value |
 | `properties.request` | `{"node":"sampler","uri":"…"}` | `{"accepted":true}` when a readable property's refresh is queued |
 | `properties.set` | `{"node":"sampler","uri":"…","value":{"type":"path","value":"/samples/piano.wav"}}` | `{"accepted":true}` when a writable property's change is queued |
-| `params.list` | `{"node":"synth"}` | numeric `node`, array `parameters` of `id`, `name`, `minimum`, `maximum`, `defaultValue`, `stepped`, CLAP `flags` |
+| `params.list` | `{"node":"synth"}` | numeric `node`, array `parameters` of `id`, `name`, `minimum`, `maximum`, `defaultValue`, `stepped`, CLAP `flags` and `module`, its CLAP module path (`"Oscillator 1/Pitch"`, or empty), by which editors group it |
 | `params.get` | `{"values":[{"node":"synth","param":3}]}` | `{"values":[{"node":1,"param":3,"value":0.5}]}` |
 | `params.set` | `{"values":[{"node":"synth","param":3,"value":0.7}]}` | same shape as `params.get`, with accepted plain values |
 | `params.text` | `{"node":"synth","param":3,"value":0.5}` | `{"text":"50%"}` |

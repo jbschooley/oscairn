@@ -27,6 +27,7 @@ namespace oscairn
             double      minimum = 0, maximum = 1, defaultValue = 0;
             bool        stepped = false;
             uint32_t    flags = 0;
+            std::string module; // CLAP's module path ("Oscillator 1/Pitch"): where editors group it
         };
         struct TransportState
         {
