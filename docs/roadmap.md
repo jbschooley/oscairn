@@ -31,7 +31,8 @@ covers the core, so Oscairn has its own:
   ([RFC 0001](rfcs/0001-licence.md)).
 
 The control API uses JSON-RPC over a local socket ([RFC 0003](rfcs/0003-control-api.md)).
-The UI toolkit on devices is still to decide.
+The UI toolkit on devices is proposed in [RFC 0019](rfcs/0019-adaptive-ui.md#toolkit): JUCE for
+the desktop and touch panels, chosen later for small screens.
 
 ## Phase 2: headless core on the desktop (milestone met)
 
@@ -190,8 +191,11 @@ in the others.
    with part solo and meters, and undo for every edit
    ([status](rfcs/0011-performance-ui-and-editors.md#undo-status); preset and state loads
    remain), and step 4's Routing view on the desktop
-   ([status](rfcs/0011-performance-ui-and-editors.md#step-4-status)). Next: step 5's editors
-   and plugin windows, and step 6's physical controls.
+   ([status](rfcs/0011-performance-ui-and-editors.md#step-4-status)). Next: the adaptive UI
+   ([RFC 0019](rfcs/0019-adaptive-ui.md)): view models drawn for the desktop and the device
+   panel, a desktop shell like Gig Performer's with a keyboard-and-mouse or touch input mode,
+   and described plugin editors, which cover step 5's knob pages; then plugin windows and
+   step 6's physical controls.
 2. **Native sample patches — first slice implemented, multisample pending:** the Sampler
    lives in its own repository, [oscairn/sampler](https://github.com/oscairn/sampler), since
    October 31, 2026 (like the FM and analog engines' forks), fetched at a pinned commit.

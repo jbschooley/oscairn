@@ -223,7 +223,9 @@ and for plugins with no description.
    plugin gets knob pages. Windows from worker processes ([RFC 0010](0010-plugin-worker-isolation.md))
    are an open question there.
 
-The description format is a new Oscairn extension, defined in a later revision of this RFC.
+The description format is a new Oscairn extension, `oscairn.ui`, defined in
+[RFC 0019](0019-adaptive-ui.md#plugin-editor-descriptions) with how each surface (desktop,
+device panel, small screen) draws it.
 
 ## Physical controls
 
