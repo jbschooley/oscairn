@@ -52,7 +52,7 @@ namespace oscairn::worker
     {
         Init = 1, Service, SetParameter, Gesture, ParameterText, SaveState, LoadState, Shutdown,
         CreateEffectContext, DestroyNode, EffectResources, SoundContexts, PrepareSound, SelectSound,
-        DiscardSound, SaveSnapshot, LoadSnapshot, AssetDependencies
+        DiscardSound, SaveSnapshot, LoadSnapshot, AssetDependencies, Presets, LoadPreset
     };
     // First byte of every message from the worker: a reply, or a request to the engine made while
     // the worker serves one (the plugin resolving a sound asset).

@@ -7,6 +7,11 @@
 #include <clap/ext/thread-check.h>
 #include <clap/ext/timer-support.h>
 #include <clap/ext/latency.h>
+#include <clap/ext/preset-load.h>
+#include <clap/factory/preset-discovery.h>
+#include <filesystem>
+#include <fstream>
+#include <string>
 #include <atomic>
 #include <chrono>
 #include <cmath>
@@ -226,9 +231,68 @@ struct Plugin {
         if (!std::strcmp(id, CLAP_EXT_STATE)) return get(plugin).kind == 9 ? nullptr : &state;
         if (!std::strcmp(id, CLAP_EXT_LATENCY)) return &latency;
         if (!std::strcmp(id, CLAP_EXT_TIMER_SUPPORT)) return &timers;
+        // Presets: "quiet" and "bright" inside the plugin; a preset file holds its gain as text.
+        static const clap_plugin_preset_load_t presets{[](const clap_plugin_t* p, uint32_t kind, const char* location, const char* key) {
+            auto& s = get(p); s.main();
+            double value = -1;
+            if (kind == CLAP_PRESET_DISCOVERY_LOCATION_PLUGIN && key) value = !std::strcmp(key, "quiet") ? .25 : !std::strcmp(key, "bright") ? .75 : -1;
+            else if (kind == CLAP_PRESET_DISCOVERY_LOCATION_FILE && location) { std::ifstream file(location); file >> value; }
+            auto* host = static_cast<const clap_host_preset_load_t*>(s.host->get_extension(s.host, CLAP_EXT_PRESET_LOAD));
+            if (!(value >= 0 && value <= 1)) { if (host) host->on_error(s.host, kind, location, key, 0, "no such preset"); return false; }
+            s.gain = value;
+            if (host) host->loaded(s.host, kind, location, key);
+            return true;
+        }};
+        if (!std::strcmp(id, CLAP_EXT_PRESET_LOAD)) return &presets;
         return nullptr;
     }
 };
+// Preset discovery: two presets inside the plugin for the MIDI fixture (and one for another
+// plugin, which a host must not list for it), and *.kickpreset files in KICK_FIXTURE_PRESETS.
+const clap_preset_discovery_provider_descriptor_t presetProvider{CLAP_VERSION, "org.kick.test.presets", "Fixture presets", "Kick"};
+const clap_preset_discovery_provider_t* createPresetProvider(const clap_preset_discovery_indexer_t* indexer)
+{
+    static clap_preset_discovery_provider_t provider{};
+    provider.desc = &presetProvider;
+    provider.provider_data = const_cast<clap_preset_discovery_indexer_t*>(indexer);
+    provider.init = [](const clap_preset_discovery_provider_t* p) {
+        auto* index = static_cast<const clap_preset_discovery_indexer_t*>(p->provider_data);
+        const clap_preset_discovery_filetype_t type{"Fixture preset", nullptr, "kickpreset"};
+        if (!index->declare_filetype(index, &type)) return false;
+        const clap_preset_discovery_location_t factory{CLAP_PRESET_DISCOVERY_IS_FACTORY_CONTENT, "Factory", CLAP_PRESET_DISCOVERY_LOCATION_PLUGIN, nullptr};
+        if (!index->declare_location(index, &factory)) return false;
+        if (const char* folder = std::getenv("KICK_FIXTURE_PRESETS")) {
+            const clap_preset_discovery_location_t user{CLAP_PRESET_DISCOVERY_IS_USER_CONTENT, "User", CLAP_PRESET_DISCOVERY_LOCATION_FILE, folder};
+            if (!index->declare_location(index, &user)) return false;
+        }
+        return true;
+    };
+    provider.destroy = [](const clap_preset_discovery_provider_t*) {};
+    provider.get_metadata = [](const clap_preset_discovery_provider_t*, uint32_t kind, const char* location, const clap_preset_discovery_metadata_receiver_t* r) {
+        const clap_universal_plugin_id_t midi{"clap", "org.kick.test.midi"}, synth{"clap", "org.kick.test.synth"};
+        if (kind == CLAP_PRESET_DISCOVERY_LOCATION_PLUGIN) {
+            if (!r->begin_preset(r, "Quiet", "quiet")) return true;
+            r->add_plugin_id(r, &midi);
+            if (!r->begin_preset(r, "Bright", "bright")) return true;
+            r->add_plugin_id(r, &midi);
+            if (!r->begin_preset(r, "Synth only", "synth")) return true;
+            r->add_plugin_id(r, &synth);
+            return true;
+        }
+        if (!location) return false;
+        const auto name = std::filesystem::path(location).stem().string();
+        if (r->begin_preset(r, name.c_str(), nullptr)) r->add_plugin_id(r, &midi);
+        return true;
+    };
+    provider.get_extension = [](const clap_preset_discovery_provider_t*, const char*) -> const void* { return nullptr; };
+    return &provider;
+}
+const clap_preset_discovery_factory_t presetFactory{
+    [](const clap_preset_discovery_factory_t*) -> uint32_t { return 1; },
+    [](const clap_preset_discovery_factory_t*, uint32_t index) -> const clap_preset_discovery_provider_descriptor_t* { return index ? nullptr : &presetProvider; },
+    [](const clap_preset_discovery_factory_t*, const clap_preset_discovery_indexer_t* indexer, const char* id) -> const clap_preset_discovery_provider_t* {
+        return std::strcmp(id, presetProvider.id) ? nullptr : createPresetProvider(indexer);
+    }};
 const clap_plugin_factory_t factory{
     [](const clap_plugin_factory_t*) -> uint32_t { return 13; },
     [](const clap_plugin_factory_t*, uint32_t index) -> const clap_plugin_descriptor_t* { return index < 13 ? &descriptors[index] : nullptr; },
@@ -261,5 +325,9 @@ CLAP_EXPORT const clap_plugin_entry_t clap_entry{
         ++entryUsers; return true;
     },
     [] { --entryUsers; },
-    [](const char* id) -> const void* { return !std::strcmp(id, CLAP_PLUGIN_FACTORY_ID) ? &factory : nullptr; }};
+    [](const char* id) -> const void* {
+        if (!std::strcmp(id, CLAP_PLUGIN_FACTORY_ID)) return &factory;
+        if (!std::strcmp(id, CLAP_PRESET_DISCOVERY_FACTORY_ID)) return &presetFactory;
+        return nullptr;
+    }};
 }

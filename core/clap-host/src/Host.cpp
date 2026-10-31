@@ -12,8 +12,11 @@
 #include <clap/ext/posix-fd-support.h>
 #include <clap/ext/log.h>
 #include <clap/ext/event-registry.h>
+#include <clap/ext/preset-load.h>
+#include <clap/factory/preset-discovery.h>
 #include <oscairn-clap/param-target.h>
 #include <algorithm>
+#include <filesystem>
 #include <cstdio>
 #include <chrono>
 #include <cmath>
@@ -266,6 +269,11 @@ struct Host::Impl {
             return true;
         } catch (const std::exception& e) { return report(e.what()); }
     }
+    // CLAP preset-load: the plugin reports how loading went.
+    static void CLAP_ABI presetError(const clap_host_t* h, uint32_t, const char*, const char*, int32_t, const char* message) {
+        self(h).message = std::string("Preset not loaded") + (message ? std::string(": ") + message : std::string());
+    }
+    static void CLAP_ABI presetLoaded(const clap_host_t* h, uint32_t, const char*, const char*) { self(h).message.clear(); }
     static const void* CLAP_ABI extension(const clap_host_t*, const char* id) {
         static const clap_host_thread_check_t threads{isMain, isAudio};
         static const clap_host_params_t parameters{rescanParams, clearParams, requestFlush};
@@ -279,8 +287,10 @@ struct Host::Impl {
         static const clap_host_timer_support_t timer{registerTimer, unregisterTimer};
         static const clap_host_posix_fd_support_t descriptors{registerFd, modifyFd, unregisterFd};
         static const oscairn_host_assets_t assets{resolveAsset};
+        static const clap_host_preset_load_t presetLoad{presetError, presetLoaded};
         if (!id) return nullptr;
         if (!std::strcmp(id, OSCAIRN_EXT_ASSETS)) return &assets;
+        if (!std::strcmp(id, CLAP_EXT_PRESET_LOAD) || !std::strcmp(id, CLAP_EXT_PRESET_LOAD_COMPAT)) return &presetLoad;
         if (!std::strcmp(id, CLAP_EXT_THREAD_CHECK)) return &threads;
         if (!std::strcmp(id, CLAP_EXT_PARAMS)) return &parameters;
         if (!std::strcmp(id, CLAP_EXT_STATE)) return &state;
@@ -769,6 +779,109 @@ bool Host::loadState(const std::vector<uint8_t>& bytes) {
         s.activate(); s.dirty.store(false); s.failed.store(false); return true;
     } catch (...) { s.fail("Plugin state restoration failed"); return false; }
 }
+namespace {
+// What a preset provider declares while it initialises, and the presets it then reports.
+struct PresetIndex {
+    std::vector<std::string> extensions;
+    struct Location { uint32_t kind; std::string path; };
+    std::vector<Location> locations;
+    std::string pluginId;
+    std::vector<Preset>* out = nullptr;
+    uint32_t kind = 0; std::string location;
+    bool open = false, forUs = false, named = false; Preset current;
+    void finish() { if (open && (forUs || !named)) out->push_back(current); open = false; }
+};
+PresetIndex& index(const clap_preset_discovery_indexer_t* i) { return *static_cast<PresetIndex*>(i->indexer_data); }
+PresetIndex& index(const clap_preset_discovery_metadata_receiver_t* r) { return *static_cast<PresetIndex*>(r->receiver_data); }
+}
+
+std::vector<Preset> Host::presets() {
+    auto& s = *impl; std::vector<Preset> result;
+    if (!s.main() || !s.library || !s.library->entry) return result;
+    auto* factory = static_cast<const clap_preset_discovery_factory_t*>(s.library->entry->get_factory(CLAP_PRESET_DISCOVERY_FACTORY_ID));
+    if (!factory) factory = static_cast<const clap_preset_discovery_factory_t*>(s.library->entry->get_factory(CLAP_PRESET_DISCOVERY_FACTORY_ID_COMPAT));
+    if (!factory || !factory->count || !factory->get_descriptor || !factory->create) return result;
+    PresetIndex data; data.pluginId = s.info.id; data.out = &result;
+    clap_preset_discovery_indexer_t indexer{CLAP_VERSION, "Oscairn", "Oscairn", "https://github.com/jbschooley/oscairn", "1", &data,
+        [](const clap_preset_discovery_indexer_t* i, const clap_preset_discovery_filetype_t* type) {
+            if (type && type->file_extension) index(i).extensions.emplace_back(type->file_extension);
+            return true; },
+        [](const clap_preset_discovery_indexer_t* i, const clap_preset_discovery_location_t* l) {
+            if (!l || (l->kind == CLAP_PRESET_DISCOVERY_LOCATION_FILE && !l->location)) return false;
+            index(i).locations.push_back({l->kind, l->location ? l->location : ""}); return true; },
+        [](const clap_preset_discovery_indexer_t*, const clap_preset_discovery_soundpack_t*) { return true; },
+        [](const clap_preset_discovery_indexer_t*, const char*) -> const void* { return nullptr; }};
+    clap_preset_discovery_metadata_receiver_t receiver{&data,
+        [](const clap_preset_discovery_metadata_receiver_t*, int32_t, const char*) {},
+        [](const clap_preset_discovery_metadata_receiver_t* r, const char* name, const char* key) {
+            auto& d = index(r); d.finish();
+            d.open = true; d.forUs = d.named = false; d.current = {name ? name : "", d.kind, d.location, key ? key : ""};
+            return true; },
+        [](const clap_preset_discovery_metadata_receiver_t* r, const clap_universal_plugin_id_t* id) {
+            auto& d = index(r); d.named = true;
+            if (id && id->abi && id->id && !std::strcmp(id->abi, "clap") && d.pluginId == id->id) d.forUs = true; },
+        [](const clap_preset_discovery_metadata_receiver_t*, const char*) {},
+        [](const clap_preset_discovery_metadata_receiver_t*, uint32_t) {},
+        [](const clap_preset_discovery_metadata_receiver_t*, const char*) {},
+        [](const clap_preset_discovery_metadata_receiver_t*, const char*) {},
+        [](const clap_preset_discovery_metadata_receiver_t*, clap_timestamp, clap_timestamp) {},
+        [](const clap_preset_discovery_metadata_receiver_t*, const char*) {},
+        [](const clap_preset_discovery_metadata_receiver_t*, const char*, const char*) {}};
+    auto matches = [&](const std::filesystem::path& file) {
+        if (data.extensions.empty()) return true;
+        auto ext = file.extension().string(); if (!ext.empty()) ext.erase(0, 1);
+        return std::any_of(data.extensions.begin(), data.extensions.end(), [&](const std::string& e) { return e.empty() || e == ext; });
+    };
+    auto read = [&](const clap_preset_discovery_provider_t* provider, uint32_t kind, const std::string& location) {
+        data.kind = kind; data.location = location;
+        provider->get_metadata(provider, kind, kind == CLAP_PRESET_DISCOVERY_LOCATION_PLUGIN ? nullptr : location.c_str(), &receiver);
+        data.finish();
+    };
+    for (uint32_t p = 0; p < factory->count(factory); ++p) {
+        const auto* d = factory->get_descriptor(factory, p);
+        if (!d || !d->id) continue;
+        const auto* provider = factory->create(factory, &indexer, d->id);
+        if (!provider) continue;
+        try {
+            data.locations.clear(); data.extensions.clear();
+            if (provider->init && provider->init(provider) && provider->get_metadata)
+                for (const auto& location : data.locations) {
+                    if (location.kind == CLAP_PRESET_DISCOVERY_LOCATION_PLUGIN) { read(provider, location.kind, {}); continue; }
+                    std::error_code error;
+                    if (std::filesystem::is_regular_file(location.path, error)) { read(provider, location.kind, location.path); continue; }
+                    // A folder: its preset files, at most 10000 of them.
+                    size_t files = 0;
+                    for (auto it = std::filesystem::recursive_directory_iterator(location.path, std::filesystem::directory_options::skip_permission_denied, error);
+                         !error && it != std::filesystem::recursive_directory_iterator() && files < 10000; it.increment(error))
+                        if (it->is_regular_file(error) && matches(it->path())) { ++files; read(provider, location.kind, it->path().string()); }
+                }
+        } catch (...) {}
+        if (provider->destroy) provider->destroy(provider);
+    }
+    return result;
+}
+
+bool Host::loadPreset(const Preset& preset) {
+    auto& s = *impl;
+    if (!s.main() || !s.plugin) return false;
+    auto* load = static_cast<const clap_plugin_preset_load_t*>(s.plugin->get_extension(s.plugin, CLAP_EXT_PRESET_LOAD));
+    if (!load) load = static_cast<const clap_plugin_preset_load_t*>(s.plugin->get_extension(s.plugin, CLAP_EXT_PRESET_LOAD_COMPAT));
+    if (!load || !load->from_location) { s.message = "Plugin cannot load presets"; return false; }
+    Gate guard(s.gate);
+    try {
+        s.message.clear();
+        if (!load->from_location(s.plugin, preset.kind, preset.kind == CLAP_PRESET_DISCOVERY_LOCATION_PLUGIN ? nullptr : preset.location.c_str(),
+                                 preset.loadKey.empty() ? nullptr : preset.loadKey.c_str())) {
+            if (s.message.empty()) s.message = "Plugin did not load the preset";
+            return false;
+        }
+        // The preset changed the plugin's parameters: read them back.
+        if (s.params) for (size_t i = 0; i < s.paramInfo.size(); ++i) { double value; if (s.params->get_value(s.plugin, s.paramInfo[i].id, &value) && std::isfinite(value)) s.paramValues[i].store(value); }
+        s.dirty.store(true);
+        return true;
+    } catch (...) { s.fail("Plugin threw while loading a preset"); return false; }
+}
+
 void Host::setAssets(AssetResolver* assets) noexcept { impl->assets = assets; }
 bool Host::declaresAssets() const noexcept { return impl->assetDependencies; }
 std::vector<AssetReference> Host::assetDependencies() const {

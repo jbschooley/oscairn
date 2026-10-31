@@ -151,8 +151,9 @@ Native Delay now implements independent effect contexts; see [the contract below
 Ordinary instruments need no custom extension for the host pool. Today it supports
 instruments with note input, audio output, no audio input and no note/MIDI output. It has
 eight slots including protected Default slot 0. The pool preserves separate channel
-selections and can prepare defaults, a saved state directory, or an LV2 preset URI,
-then apply numeric parameter overrides. It never restores state over the outgoing sound.
+selections and can prepare defaults, a saved state directory, or a preset (an LV2 preset
+URI, or a CLAP preset the plugin lists through CLAP preset discovery and loads with
+preset-load), then apply numeric parameter overrides. It never restores state over the outgoing sound.
 Effects and event-producing instruments need other transition policies and are not pooled.
 
 Every processed pooled instance keeps rendering until explicitly discarded. There is no

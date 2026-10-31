@@ -7,6 +7,7 @@
 #include <sstream>
 #include <iomanip>
 #include <locale>
+#include <cctype>
 #include <cmath>
 #include <cstdlib>
 #include <stdexcept>
@@ -17,6 +18,35 @@ namespace oscairn
 #endif
     namespace
     {
+        // A CLAP preset as a URI: clap-preset:KIND:LOCATION#LOAD_KEY, the parts percent-encoded.
+        std::string encodePart(const std::string& s)
+        {
+            static const char* hex="0123456789ABCDEF";std::string out;
+            for(unsigned char c:s){if(c<0x20 || c=='%' || c==':' || c=='#' || c==0x7f){out+='%';out+=hex[c>>4];out+=hex[c&15];}else out+=char(c);}
+            return out;
+        }
+        std::string decodePart(const std::string& s)
+        {
+            std::string out;
+            for(size_t i=0;i<s.size();++i){
+                if(s[i]!='%'){out+=s[i];continue;}
+                if(i+2>=s.size() || !std::isxdigit(static_cast<unsigned char>(s[i+1])) || !std::isxdigit(static_cast<unsigned char>(s[i+2])))throw std::invalid_argument("Invalid preset URI");
+                out+=char(std::stoi(s.substr(i+1,2),nullptr,16));i+=2;
+            }
+            return out;
+        }
+        std::string presetUri(const kick::clap::Preset& p){return "clap-preset:"+std::to_string(p.kind)+":"+encodePart(p.location)+"#"+encodePart(p.loadKey);}
+        kick::clap::Preset presetFrom(const std::string& uri)
+        {
+            const std::string scheme="clap-preset:";
+            const auto colon=uri.find(':',scheme.size()),hash=uri.find('#');
+            if(uri.compare(0,scheme.size(),scheme)!=0 || colon==std::string::npos || hash==std::string::npos || hash<colon)throw std::invalid_argument("Not a CLAP preset URI");
+            kick::clap::Preset p;const auto kind=uri.substr(scheme.size(),colon-scheme.size());
+            if(kind!="0" && kind!="1")throw std::invalid_argument("Invalid preset location kind");
+            p.kind=uint32_t(kind[0]-'0');p.location=decodePart(uri.substr(colon+1,hash-colon-1));p.loadKey=decodePart(uri.substr(hash+1));
+            return p;
+        }
+
         class ClapHost final : public PluginHost
         {
         public:
@@ -35,6 +65,8 @@ namespace oscairn
             bool selectSound(uint32_t id,int16_t channel) override {return host.selectSound(id,channel);}
             bool discardSound(uint32_t id,bool) override {return host.discardSound(id);}
             bool supportsState() const noexcept override {return host.supportsState();}
+            std::vector<PresetInfo> presets() override {std::vector<PresetInfo> r;for(const auto& p:host.presets())r.push_back({presetUri(p),p.name});return r;}
+            void loadPreset(const std::string& uri) override {if(!host.loadPreset(presetFrom(uri)))throw std::runtime_error(host.error());}
             void setAssets(kick::clap::AssetResolver* assets) noexcept override {host.setAssets(assets);}
             std::vector<kick::clap::AssetReference> assetDependencies() const override {return host.assetDependencies();}
             void saveSnapshot(const std::string& directory) override {

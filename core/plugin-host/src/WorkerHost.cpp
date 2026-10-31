@@ -328,6 +328,20 @@ namespace oscairn
                 record(Op::SaveState);
             }
             void saveSnapshot(const std::string& directory) override { request(Op::SaveSnapshot, Writer().str(directory)); }
+            std::vector<PresetInfo> presets() override
+            {
+                Reader r = request(Op::Presets);
+                std::vector<PresetInfo> result(r.u32());
+                for(auto& p : result) { p.uri = r.str(); p.name = r.str(); }
+                return result;
+            }
+            // A preset changes the plugin's state, so the recovery record is saved again.
+            void loadPreset(const std::string& uri) override
+            {
+                std::lock_guard lock(controlFor());
+                process_->exchange(header(Op::LoadPreset).str(uri).data);
+                record(Op::SaveState);
+            }
             // Only on a host not yet playing, so the record can be saved at once.
             void loadSnapshot(const std::string& directory) override
             {

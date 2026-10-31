@@ -171,8 +171,8 @@ Implemented 2026-10-30 in `core/plugin-host` (`Worker.*`, `WorkerHost.cpp`) and 
   text, state save and load, and `service`. The plugin is serviced only when the engine
   calls `service`, as in the engine; the worker refreshes parameter values every 10 ms.
 - **Stayed in the engine:** plugins with native sound or effect contexts (Basic Synth,
-  Sampler, Delay), until step 5 moved them into workers. Presets and properties are not
-  forwarded yet.
+  Sampler, Delay), until step 5 moved them into workers. Presets are forwarded since
+  2026-10-31 (a preset load also refreshes the recovery record); properties are not yet.
 - **Deadline:** see step 3.
 
 Verification: `worker-host` renders 300 blocks of each test plugin in the engine and in a

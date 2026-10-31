@@ -327,7 +327,9 @@ namespace
             bool selected=false;for(int i=0;i<40 && !selected;++i)for(const auto& c:remote.sounds(node).contexts)if(c.id==id)selected=c.selectedChannels==65535;
             check(selected,"remote applied hosted selection");
             check(remote.supportsState(node),"remote state capability");
-            check(remote.presets(node).empty() && remote.properties(node).empty(),"remote empty CLAP metadata");
+            const auto presets=remote.presets(node);
+            check(presets.size()==1 && presets[0].name=="Synth only" && presets[0].uri.rfind("clap-preset:",0)==0 && remote.properties(node).empty(),
+                  "the synth fixture's one CLAP preset reaches the remote client, not the others' presets; no properties");
             const auto exported=directory.child("exported");remote.setParameter(node,7,.75);remote.saveState(node,exported);
             auto restored=loadPlugin(plugin,"org.kick.test.synth",48000,64);restored->loadState(exported);
             check(restored->parameterValue(7)==.75,"remote export includes pending parameter edit on selected instance");

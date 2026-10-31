@@ -87,6 +87,10 @@ add_executable(oscairn-midi-input-test engine/tests/midi_input.cpp)
 target_link_libraries(oscairn-midi-input-test PRIVATE oscairn_engine)
 add_test(NAME midi-input COMMAND oscairn-midi-input-test)
 
+add_executable(oscairn-clap-presets-test engine/tests/clap_presets.cpp)
+target_link_libraries(oscairn-clap-presets-test PRIVATE oscairn_engine)
+add_test(NAME clap-presets COMMAND oscairn-clap-presets-test $<TARGET_FILE:kick-clap-fixture-normal>)
+
 add_executable(oscairn-note-zones-test engine/tests/note_zones.cpp)
 target_link_libraries(oscairn-note-zones-test PRIVATE oscairn_engine)
 target_include_directories(oscairn-note-zones-test PRIVATE clap-host/tests)
@@ -243,6 +247,7 @@ set(worker_tests
     "sound-contexts|oscairn-sound-contexts-test|$<TARGET_FILE:oscairn_basic_synth>"
     "sampler|oscairn-sampler-test|$<TARGET_FILE:oscairn_sampler>"
     "effect-contexts|oscairn-effect-contexts-test|$<TARGET_FILE:oscairn_delay>|$<TARGET_FILE:oscairn_basic_synth>"
+    "clap-presets|oscairn-clap-presets-test|$<TARGET_FILE:kick-clap-fixture-normal>"
     "chain-mono|oscairn-chain-mono-test|$<TARGET_FILE:kick-clap-fixture-normal>"
     "param-target|oscairn-param-target-test|$<TARGET_FILE:oscairn_step_sequencer>|$<TARGET_FILE:kick-clap-fixture-normal>"
     "audio-routing|oscairn-audio-routing-test|$<TARGET_FILE:oscairn-audio-fixture>"

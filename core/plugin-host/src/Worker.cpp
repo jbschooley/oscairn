@@ -361,6 +361,14 @@ namespace oscairn::worker
                 }
                 case Op::SelectSound: { const auto id = r.u32(); const auto channel = int16_t(r.u32()); w.u8(host.selectSound(id, channel)); break; }
                 case Op::DiscardSound: { const auto id = r.u32(); const bool cut = r.u8(); w.u8(host.discardSound(id, cut)); break; }
+                case Op::Presets:
+                {
+                    const auto presets = host.presets();
+                    w.u32(uint32_t(presets.size()));
+                    for(const auto& p : presets) w.str(p.uri).str(p.name);
+                    break;
+                }
+                case Op::LoadPreset: host.loadPreset(r.str()); n.publish(); break;
                 case Op::AssetDependencies:
                 {
                     const auto refs = host.assetDependencies();

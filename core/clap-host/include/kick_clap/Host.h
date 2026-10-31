@@ -55,6 +55,10 @@ struct Event {
                       int channel = 0, int port = 0, int noteId = -1) noexcept;
 };
 
+// A preset a plugin's library lists for it through CLAP preset discovery: inside the plugin
+// (kind 1, CLAP_PRESET_DISCOVERY_LOCATION_PLUGIN) or in a file (kind 0, location its path).
+struct Preset { std::string name; uint32_t kind = 0; std::string location, loadKey; };
+
 // A sound asset reference (RFC 0009): library ID, library-relative path, SHA-256 hex or empty.
 struct AssetReference { std::string library, path, sha256; };
 // Resolves asset references for plugins through the oscairn.assets host extension. Main thread.
@@ -108,6 +112,11 @@ public:
     bool saveState(std::vector<uint8_t>& destination);
     bool loadState(const std::vector<uint8_t>& source);
     bool supportsState() const noexcept;
+    // Main thread. The presets this plugin's library offers for it (CLAP preset discovery):
+    // those inside the plugin, and preset files of the declared types in the declared folders.
+    std::vector<Preset> presets();
+    // Main thread. Loads a preset (CLAP preset-load), never during process(); false with error().
+    bool loadPreset(const Preset&);
     bool supportsSoundSnapshot() const noexcept;
     // Main thread. Where plugins resolve sound assets; null rejects every resolution.
     void setAssets(AssetResolver*) noexcept;

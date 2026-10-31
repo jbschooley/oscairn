@@ -14,6 +14,9 @@ otherwise.
 
 A plugin that fails one of these is refused with the message shown.
 
+Presets are tested with a fixture plugin (`clap-presets`); no third-party plugin has been
+tried yet.
+
 | Requirement | Refused with |
 | --- | --- |
 | A `clap_entry` with a plugin factory | "No CLAP plugin factory" |
@@ -37,7 +40,13 @@ Everything else is handled for you:
 - **Blocks:** any length up to the maximum, with events at their sample offsets; at most 512
   events from the graph per block.
 - **Host extensions:** thread-check, timer support, POSIX file descriptors, tail, log,
-  latency, event registry, params, state, audio ports and note ports.
+  latency, event registry, params, state, audio ports, note ports and preset-load.
+- **Presets:** a plugin's library that offers CLAP preset discovery has its presets listed in
+  Oscairn's sound lists: presets inside the plugin, and preset files of its declared types in
+  its declared folders (at most 10,000 per folder), each only for the plugins it names. One
+  is loaded with the plugin's preset-load extension, never during `process`, and can be
+  prepared as an instant-switch sound. Plugins that only offer presets in their own window
+  have none listed.
 
 ## Known limits
 
@@ -46,22 +55,19 @@ Everything else is handled for you:
   plan ([RFC 0011](rfcs/0011-performance-ui-and-editors.md#plugin-editors)): the plugin's
   window on the desktop, and on the device editors Oscairn draws, from the parameters or
   from a description the plugin gives (below).
-- **CLAP presets are not listed.** The host does not implement CLAP's preset-discovery and
-  preset-load extensions, so a CLAP plugin's factory presets do not appear in Oscairn's
-  sound lists. Its own state still saves and restores with the Performance. LV2 presets
-  are listed.
 - **Without the state extension**, a Performance stores only parameter values, for plugins
   with up to 2,048 writable parameters. Implement state if the sound depends on anything
   else.
 - **Worker processes** ([RFC 0010](rfcs/0010-plugin-worker-isolation.md)) are optional and
-  not yet used by the desktop app. In a worker, presets and properties are not forwarded,
+  not yet used by the desktop app. In a worker, LV2 patch properties are not forwarded,
   a block that runs longer than half the block's time is silenced, and a plugin that keeps
   missing is restarted with its last loaded state and current parameter values.
 - **Instant sound switching** for plugins without native sound contexts uses a whole extra
   instance per prepared sound (up to eight), and only for instruments: note input, audio
   output, no audio input, no note output.
 - **Not implemented:** remote controls, voice info, note names, audio-ports configurations,
-  render mode and preset discovery. (From the host's source; not exercised with a plugin.)
+  render mode, and watching preset folders for changes (they are read when listed). (From
+  the host's source; not exercised with a plugin.)
 
 ## Recommended: behaving well
 
