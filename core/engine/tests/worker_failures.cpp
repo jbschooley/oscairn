@@ -85,8 +85,9 @@ namespace
         const auto reason = expected ? graph.host(b).failure() : std::string();
         const auto name = std::string(std::strrchr(failing, '/') ? std::strrchr(failing, '/') + 1 : failing);
         // Without real time (sanitizers, CI's virtual machines) the healthy instrument may itself miss
-        // blocks; its sound must then match only if it met every deadline.
-        const auto misses = graph.host(a).statistics().deadlineMisses;
+        // blocks; its sound must then match only if it, and the copy playing alone (also in a
+        // worker), met every deadline.
+        const auto misses = graph.host(a).statistics().deadlineMisses + alone.host(r).statistics().deadlineMisses;
         if(timing || !misses) check(same, name + ": the other instrument sounds exactly as when playing alone");
         check(energy > 0, name + ": the other instrument made sound");
         if(expected) check(reason.find(expected) != std::string::npos && reason.find("not restarted") != std::string::npos,
