@@ -82,6 +82,12 @@ int main(int argc, char** argv)
                 standalone::setSendLevel(c, bass, room, .5); standalone::setSendLevel(c, lead, room, .3);
                 c.setPartLevel(lead, .8, false); c.commit();
                 c.addScene("Verse"); c.setPartLevel(bass, .5, true); c.commit(); c.addScene("Chorus");
+                const auto assign = c.addMacro("Assign 1"), super = c.addMacro("Super Knob");
+                MacroTarget level; level.kind = MacroTarget::Kind::PartLevel; level.part = lead; level.start = 1; level.end = .2;
+                MacroTarget send; send.kind = MacroTarget::Kind::PartMute; send.part = bass;
+                c.setMacroTargets(assign, {level, send});
+                MacroTarget child; child.kind = MacroTarget::Kind::Macro; child.macro = assign; child.curve = MacroTarget::Curve::SCurve;
+                c.setMacroTargets(super, {child}); c.setMacro(super, .3);
             });
             // The engine replays edits deferred behind its startup job from its timer.
             for(int i = 0; i < 500 && engine.graph().parts.size() < 3; ++i) juce::MessageManager::getInstance()->runDispatchLoopUntil(10);
@@ -92,6 +98,8 @@ int main(int argc, char** argv)
             save(view, "-parts.png");
             view.showPart(engine.graph().parts[1].id);
             save(view, "-part.png");
+            view.showPart(0xFFFFFFFFu);
+            save(view, "-controls.png");
             juce::LookAndFeel::setDefaultLookAndFeel(nullptr);
         }
         running = false;

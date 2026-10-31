@@ -145,6 +145,13 @@
       "minimum": 0,
       "maximum": 4294967295,
       "description": "The scene last selected or stored, or 0"
+    },
+    "controls": {
+      "type": "array",
+      "maxItems": 4096,
+      "items": {
+        "$ref": "#/$defs/Control"
+      }
     }
   },
   "required": [
@@ -160,7 +167,8 @@
     "pads",
     "scenes",
     "sceneParameters",
-    "scene"
+    "scene",
+    "controls"
   ],
   "additionalProperties": false,
   "$defs": {
@@ -753,13 +761,37 @@
             ],
             "additionalProperties": false
           }
+        },
+        "controls": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "control": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 4294967295
+              },
+              "value": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              }
+            },
+            "required": [
+              "control",
+              "value"
+            ],
+            "additionalProperties": false
+          }
         }
       },
       "required": [
         "id",
         "name",
         "parts",
-        "values"
+        "values",
+        "controls"
       ],
       "additionalProperties": false
     },
@@ -778,6 +810,105 @@
       "required": [
         "node",
         "param"
+      ],
+      "additionalProperties": false
+    },
+    "ControlTarget": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "enum": [
+            "parameter",
+            "partLevel",
+            "partMute",
+            "control"
+          ]
+        },
+        "node": {
+          "$ref": "#/$defs/NodeKey"
+        },
+        "param": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "part": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "control": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "start": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "end": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "curve": {
+          "enum": [
+            "linear",
+            "exponential",
+            "logarithmic",
+            "s-curve"
+          ]
+        },
+        "relative": {
+          "type": "boolean"
+        },
+        "base": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      },
+      "required": [
+        "kind",
+        "start",
+        "end",
+        "curve",
+        "relative",
+        "base"
+      ],
+      "additionalProperties": false
+    },
+    "Control": {
+      "description": "A control of the control tree (RFC 0011): a value from 0 to 1 driving its targets, each with its own range and curve.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4294967295
+        },
+        "name": {
+          "type": "string"
+        },
+        "value": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "targets": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "$ref": "#/$defs/ControlTarget"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "value",
+        "targets"
       ],
       "additionalProperties": false
     }

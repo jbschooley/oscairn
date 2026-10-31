@@ -2961,6 +2961,242 @@
             "params"
           ],
           "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
+              "const": "controls.add"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                }
+              },
+              "required": [],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
+              "const": "controls.remove"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "control": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 4294967295
+                }
+              },
+              "required": [
+                "control"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "params"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
+              "const": "controls.name"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "control": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 4294967295
+                },
+                "name": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "control",
+                "name"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "params"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
+              "const": "controls.targets"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "control": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 4294967295
+                },
+                "targets": {
+                  "type": "array",
+                  "maxItems": 256,
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "enum": [
+                          "parameter",
+                          "partLevel",
+                          "partMute",
+                          "control"
+                        ]
+                      },
+                      "node": {
+                        "$ref": "#/$defs/Node"
+                      },
+                      "param": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 4294967295
+                      },
+                      "part": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 4294967295
+                      },
+                      "control": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 4294967295
+                      },
+                      "start": {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 1
+                      },
+                      "end": {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 1
+                      },
+                      "curve": {
+                        "enum": [
+                          "linear",
+                          "exponential",
+                          "logarithmic",
+                          "s-curve"
+                        ]
+                      },
+                      "relative": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "kind"
+                    ],
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "required": [
+                "control",
+                "targets"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "params"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
+              "const": "controls.set"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "control": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 4294967295
+                },
+                "value": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                }
+              },
+              "required": [
+                "control",
+                "value"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "params"
+          ],
+          "additionalProperties": true
         }
       ]
     },
@@ -3048,6 +3284,9 @@
                 },
                 {
                   "$ref": "#/$defs/SceneResult"
+                },
+                {
+                  "$ref": "#/$defs/ControlResult"
                 }
               ]
             }
@@ -3406,6 +3645,12 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 4294967295
+        },
+        "controls": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ControlReply"
+          }
         }
       },
       "required": [
@@ -3422,7 +3667,8 @@
         "wires",
         "scenes",
         "sceneParameters",
-        "scene"
+        "scene",
+        "controls"
       ],
       "additionalProperties": false
     },
@@ -4676,13 +4922,37 @@
             ],
             "additionalProperties": false
           }
+        },
+        "controls": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "control": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 4294967295
+              },
+              "value": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              }
+            },
+            "required": [
+              "control",
+              "value"
+            ],
+            "additionalProperties": false
+          }
         }
       },
       "required": [
         "id",
         "name",
         "parts",
-        "values"
+        "values",
+        "controls"
       ],
       "additionalProperties": false
     },
@@ -4717,6 +4987,221 @@
       },
       "required": [
         "scene"
+      ],
+      "additionalProperties": false
+    },
+    "ControlTarget": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "enum": [
+            "parameter",
+            "partLevel",
+            "partMute",
+            "control"
+          ]
+        },
+        "node": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "param": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "part": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "control": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "start": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "end": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "curve": {
+          "enum": [
+            "linear",
+            "exponential",
+            "logarithmic",
+            "s-curve"
+          ]
+        },
+        "relative": {
+          "type": "boolean"
+        },
+        "base": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "additionalProperties": false
+    },
+    "Control": {
+      "description": "A control of the control tree (RFC 0011): a value from 0 to 1 driving its targets, each with its own range and curve.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4294967295
+        },
+        "name": {
+          "type": "string"
+        },
+        "value": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "targets": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "$ref": "#/$defs/ControlTarget"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "value",
+        "targets"
+      ],
+      "additionalProperties": false
+    },
+    "ControlTargetReply": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "enum": [
+            "parameter",
+            "partLevel",
+            "partMute",
+            "control"
+          ]
+        },
+        "node": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "param": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "part": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "control": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "start": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "end": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "curve": {
+          "enum": [
+            "linear",
+            "exponential",
+            "logarithmic",
+            "s-curve"
+          ]
+        },
+        "relative": {
+          "type": "boolean"
+        },
+        "base": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      },
+      "required": [
+        "kind",
+        "node",
+        "param",
+        "part",
+        "control",
+        "start",
+        "end",
+        "curve",
+        "relative",
+        "base"
+      ],
+      "additionalProperties": false
+    },
+    "ControlReply": {
+      "description": "A control of the control tree (RFC 0011): a value from 0 to 1 driving its targets, each with its own range and curve.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4294967295
+        },
+        "name": {
+          "type": "string"
+        },
+        "value": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "targets": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "$ref": "#/$defs/ControlTargetReply"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "value",
+        "targets"
+      ],
+      "additionalProperties": false
+    },
+    "ControlResult": {
+      "type": "object",
+      "properties": {
+        "control": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        }
+      },
+      "required": [
+        "control"
       ],
       "additionalProperties": false
     }

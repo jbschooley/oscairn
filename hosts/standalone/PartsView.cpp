@@ -18,7 +18,10 @@ namespace oscairn::standalone
 
     PartsView::PartsView(Engine& engine, const std::string& scanner) : engine_(engine)
     {
-        for(auto* c : std::initializer_list<juce::Component*>{&title_, &message_, &done_, &addPart_, &addBus_, &back_, &removePart_, &name_}) addChildComponent(c);
+        for(auto* c : std::initializer_list<juce::Component*>{&title_, &message_, &done_, &addPart_, &addBus_, &back_, &removePart_, &name_, &controlsButton_, &addControl_}) addChildComponent(c);
+        controlsButton_.setTooltip("Controls: knobs that drive many parameters, each with its own range and curve, or other controls");
+        controlsButton_.onClick = [this] { showPart(controlsPage); };
+        addControl_.onClick = [this] { const auto n = macros_.size() + 1; edit([n](Control& c) { c.addMacro("Control " + std::to_string(n)); }); };
         title_.setFont(juce::FontOptions(22.0f * themeData().fontScale, juce::Font::bold));
         back_.setButtonText(juce::String::fromUTF8("‹ Parts"));
         name_.setFont(juce::FontOptions(18.0f * themeData().fontScale, juce::Font::bold));
@@ -64,11 +67,11 @@ namespace oscairn::standalone
     {
         try
         {
-            const auto graph = engine_.graph();
-            state_ = readParts(graph); scenes_ = graph.scenes; sceneParameters_ = graph.sceneParameters; scene_ = graph.scene;
+            graph_ = engine_.graph();
+            state_ = readParts(graph_); scenes_ = graph_.scenes; sceneParameters_ = graph_.sceneParameters; scene_ = graph_.scene; macros_ = graph_.macros;
         }
         catch(const std::exception&) { return; }
-        if(page_ && !part(page_)) { page_ = 0; shape_.clear(); }
+        if(page_ && page_ != controlsPage && !part(page_)) { page_ = 0; shape_.clear(); }
         message_.setText(text(engine_.editError()), juce::dontSendNotification);
         // Controls are rebuilt only when the structure changes, so a slider being dragged survives.
         std::string shape = std::to_string(page_) + "/" + std::to_string(selected_) + "/" + std::to_string(getWidth()) + "x" + std::to_string(getHeight());
@@ -76,6 +79,8 @@ namespace oscairn::standalone
             for(const auto& p : *list) { shape += "|" + std::to_string(p.id) + ":" + p.name + ":" + std::to_string(p.through); for(const auto& b : p.chain) shape += "," + std::to_string(b.node); }
         shape += "|scenes:" + std::to_string(scene_);
         for(const auto& s : scenes_) shape += "," + std::to_string(s.id) + ":" + s.name;
+        shape += "|controls";
+        for(const auto& m : macros_) { shape += "," + std::to_string(m.id) + ":" + m.name + ":" + std::to_string(m.targets.size()); for(const auto& t : m.targets) shape += ":" + describe(t) + std::to_string(int(t.curve)) + std::to_string(t.relative); }
         if(shape != shape_) { shape_ = shape; rebuild(); }
         for(const auto& update : updaters_) (*update)();
         repaint();
@@ -90,11 +95,12 @@ namespace oscairn::standalone
     void PartsView::rebuild()
     {
         controls_.clear(); boxes_.clear(); updaters_.clear();
-        const bool list = page_ == 0;
-        for(auto* c : std::initializer_list<juce::Component*>{&addPart_, &addBus_}) c->setVisible(list);
-        for(auto* c : std::initializer_list<juce::Component*>{&back_, &removePart_, &name_}) c->setVisible(!list);
-        title_.setVisible(list); done_.setVisible(true); message_.setVisible(true);
-        title_.setText("Parts", juce::dontSendNotification);
+        const bool list = page_ == 0, controlsShown = page_ == controlsPage;
+        for(auto* c : std::initializer_list<juce::Component*>{&addPart_, &addBus_, &controlsButton_}) c->setVisible(list);
+        for(auto* c : std::initializer_list<juce::Component*>{&removePart_, &name_}) c->setVisible(!list && !controlsShown);
+        back_.setVisible(!list); addControl_.setVisible(controlsShown);
+        title_.setVisible(list || controlsShown); done_.setVisible(true); message_.setVisible(true);
+        title_.setText(controlsShown ? "Controls" : "Parts", juce::dontSendNotification);
         auto top = getLocalBounds().reduced(16, 8).removeFromTop(header - 8);
         done_.setBounds(top.removeFromRight(100).reduced(2));
         message_.setBounds(getLocalBounds().reduced(16).removeFromBottom(24));
@@ -136,6 +142,7 @@ namespace oscairn::standalone
         {
             addBus_.setBounds(top.removeFromRight(120).reduced(2));
             addPart_.setBounds(top.removeFromRight(120).reduced(2));
+            controlsButton_.setBounds(top.removeFromRight(100).reduced(2));
             title_.setBounds(top.removeFromLeft(90));
             // Scenes: tap one to switch to it; Store saves the parts' faders and the scene
             // parameters into the selected one.
@@ -166,6 +173,61 @@ namespace oscairn::standalone
                     toggle(right.removeFromRight(64).reduced(4, 14), "Mute", muteOf(p.id), setMute(p.id));
                     updates.push_back(slider(right.reduced(6, 18), 0, 1, levelOf(p.id), setLevel(p.id)).second);
                 }
+        }
+        else if(controlsShown)
+        {
+            back_.setBounds(top.removeFromLeft(110).reduced(2));
+            addControl_.setBounds(top.removeFromRight(120).reduced(2));
+            title_.setBounds(top.reduced(8, 0));
+            auto area = getLocalBounds().reduced(16).withTrimmedTop(header).withTrimmedBottom(28);
+            if(macros_.empty())
+            {
+                auto l = std::make_unique<juce::Label>(juce::String(), "No controls yet. A control is a knob that drives any number of parameters, part levels or other controls, each with its own range and curve. Bind a panel knob to it with control:NAME.");
+                l->setJustificationType(juce::Justification::centred); l->setBounds(area.withHeight(80)); addAndMakeVisible(*l); controls_.push_back(std::move(l));
+            }
+            for(const auto& m : macros_)
+            {
+                const auto id = m.id;
+                auto row = area.removeFromTop(40);
+                auto name = std::make_unique<juce::Label>(juce::String(), text(m.name));
+                name->setFont(juce::FontOptions(16.0f * themeData().fontScale, juce::Font::bold));
+                name->setEditable(false, true);
+                name->onTextChange = [this, id, raw = name.get()] { const auto n = raw->getText().toStdString(); edit([id, n](Control& c) { c.setMacroName(id, n); }); };
+                name->setTooltip("Double-click to rename");
+                name->setBounds(row.removeFromLeft(170)); addAndMakeVisible(*name); controls_.push_back(std::move(name));
+                button(row.removeFromRight(90).reduced(2), "Remove", [this, id] { edit([id](Control& c) { c.removeMacro(id); }); });
+                auto* add = button(row.removeFromRight(110).reduced(2), "+ Target", {});
+                add->onClick = [this, id, add] { targetMenu(id, *add); };
+                updates.push_back(slider(row.reduced(4, 10), 0, 1, [this, id] { for(const auto& x : macros_) if(x.id == id) return x.value; return 0.0; },
+                                         [this, id](double v) { edit([id, v](Control& c) { c.setMacro(id, v); }); }).second);
+                for(size_t i = 0; i < m.targets.size(); ++i)
+                {
+                    const auto& t = m.targets[i];
+                    auto r = area.removeFromTop(34).withTrimmedLeft(24);
+                    auto l = std::make_unique<juce::Label>(juce::String(), text(describe(t)));
+                    l->setBounds(r.removeFromLeft(220)); addAndMakeVisible(*l); controls_.push_back(std::move(l));
+                    button(r.removeFromRight(80).reduced(2), "Remove", [this, id, i] { setTargets(id, [i](auto& ts) { ts.erase(ts.begin() + std::ptrdiff_t(i)); }); });
+                    auto relative = std::make_unique<juce::ToggleButton>("Relative");
+                    relative->setToggleState(t.relative, juce::dontSendNotification);
+                    relative->setTooltip("Move the value around where it was, instead of setting it");
+                    relative->onClick = [this, id, i, raw = relative.get()] { const bool on = raw->getToggleState(); setTargets(id, [i, on](auto& ts) { ts[i].relative = on; }); };
+                    relative->setBounds(r.removeFromRight(100)); addAndMakeVisible(*relative); controls_.push_back(std::move(relative));
+                    auto curve = std::make_unique<juce::ComboBox>("Curve");
+                    for(const auto& [n, c] : {std::pair{"Linear", 1}, {"Exponential", 2}, {"Logarithmic", 3}, {"S-curve", 4}}) curve->addItem(n, c);
+                    curve->setSelectedId(int(t.curve) + 1, juce::dontSendNotification);
+                    curve->onChange = [this, id, i, raw = curve.get()] { const auto c = MacroTarget::Curve(raw->getSelectedId() - 1); setTargets(id, [i, c](auto& ts) { ts[i].curve = c; }); };
+                    curve->setBounds(r.removeFromRight(130).reduced(2)); addAndMakeVisible(*curve); controls_.push_back(std::move(curve));
+                    const int half = r.getWidth() / 2;
+                    auto rangeEnd = [this, id, i](bool end) {
+                        return [this, id, i, end] { for(const auto& x : macros_) if(x.id == id && i < x.targets.size()) return end ? x.targets[i].end : x.targets[i].start; return 0.0; };
+                    };
+                    auto setEnd = [this, id, i](bool end) { return [this, id, i, end](double v) { setTargets(id, [i, end, v](auto& ts) { (end ? ts[i].end : ts[i].start) = v; }); }; };
+                    auto [from, u1] = slider(r.removeFromLeft(half).reduced(4, 8), 0, 1, rangeEnd(false), setEnd(false)); from->setTooltip("Where the target is when the control is at 0");
+                    auto [to, u2] = slider(r.reduced(4, 8), 0, 1, rangeEnd(true), setEnd(true)); to->setTooltip("Where the target is when the control is at 100% (lower than the start reverses it)");
+                    updates.push_back(u1); updates.push_back(u2);
+                }
+                area.removeFromTop(10);
+            }
         }
         else if(const auto* p = part(page_))
         {
@@ -259,6 +321,73 @@ namespace oscairn::standalone
         updaters_ = std::move(updates); // refresh() runs them
     }
 
+    std::string PartsView::describe(const MacroTarget& t) const
+    {
+        switch(t.kind)
+        {
+        case MacroTarget::Kind::PartLevel: case MacroTarget::Kind::PartMute:
+            for(const auto* list : {&state_.parts, &state_.buses}) for(const auto& p : *list) if(p.id == t.part) return p.name + (t.kind == MacroTarget::Kind::PartLevel ? " level" : " mute");
+            return "a part";
+        case MacroTarget::Kind::Macro:
+            for(const auto& m : macros_) if(m.id == t.macro) return "→ " + m.name;
+            return "a control";
+        case MacroTarget::Kind::Parameter:
+        {
+            std::string node = graph_.names.count(t.node) ? graph_.names.at(t.node) : "a node", param = std::to_string(t.param);
+            try { for(const auto& p : engine_.parameters(t.node)) if(p.id == t.param) param = p.name; } catch(const std::exception&) {}
+            return node + " · " + param;
+        }
+        }
+        return {};
+    }
+
+    void PartsView::setTargets(uint32_t macro, std::function<void(std::vector<MacroTarget>&)> change)
+    {
+        for(const auto& m : macros_)
+            if(m.id == macro)
+            {
+                auto targets = m.targets;
+                change(targets);
+                edit([macro, targets](Control& c) { c.setMacroTargets(macro, targets); });
+                return;
+            }
+    }
+
+    // What a control can drive: a part's level or mute, another control, or any node's parameter.
+    void PartsView::targetMenu(uint32_t macro, juce::Component& at)
+    {
+        std::vector<MacroTarget> choices;
+        juce::PopupMenu menu, levels, mutes, others, parameters;
+        auto add = [&](juce::PopupMenu& to, const std::string& label, MacroTarget t) { choices.push_back(t); to.addItem(int(choices.size()), text(label)); };
+        for(const auto* list : {&state_.parts, &state_.buses})
+            for(const auto& p : *list)
+            {
+                MacroTarget level; level.kind = MacroTarget::Kind::PartLevel; level.part = p.id; add(levels, p.name, level);
+                MacroTarget mute; mute.kind = MacroTarget::Kind::PartMute; mute.part = p.id; add(mutes, p.name, mute);
+            }
+        for(const auto& m : macros_) if(m.id != macro) { MacroTarget t; t.kind = MacroTarget::Kind::Macro; t.macro = m.id; add(others, m.name, t); }
+        for(const auto& n : graph_.topology.nodes)
+        {
+            juce::PopupMenu node;
+            try
+            {
+                for(const auto& p : engine_.parameters(n.id))
+                    if(!(p.flags & CLAP_PARAM_IS_READONLY)) { MacroTarget t; t.node = n.id; t.param = p.id; add(node, p.name, t); }
+            }
+            catch(const std::exception&) {}
+            parameters.addSubMenu(text(graph_.names.count(n.id) ? graph_.names.at(n.id) : std::to_string(n.id)), node);
+        }
+        menu.addSubMenu("Plugin parameter", parameters);
+        menu.addSubMenu("Part level", levels);
+        menu.addSubMenu("Part mute", mutes);
+        menu.addSubMenu("Another control", others);
+        menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&at), [safe = juce::Component::SafePointer<PartsView>(this), macro, choices](int chosen) {
+            if(!safe || chosen <= 0 || size_t(chosen) > choices.size()) return;
+            const auto t = choices[size_t(chosen) - 1];
+            safe->setTargets(macro, [t](auto& ts) { ts.push_back(t); });
+        });
+    }
+
     // The node's parameters, ticked where scenes control them; choosing one toggles it.
     void PartsView::sceneControlsMenu(NodeId node, juce::Component& at)
     {
@@ -296,6 +425,7 @@ namespace oscairn::standalone
     void PartsView::paint(juce::Graphics& g)
     {
         g.fillAll(ink(Ink::Background));
+        if(page_ == controlsPage) return;
         const auto scale = themeData().fontScale;
         auto chip = [&](juce::Rectangle<float> r, const PartBox& b, bool selected) {
             g.setColour(selected ? ink(Ink::Accent).withAlpha(.25f) : ink(Ink::Raised));
@@ -401,6 +531,7 @@ namespace oscairn::standalone
 
     void PartsView::mouseUp(const juce::MouseEvent& e)
     {
+        if(page_ == controlsPage) return;
         if(page_ == 0)
         {
             for(size_t row = 0; row < state_.parts.size() + state_.buses.size(); ++row)

@@ -3,6 +3,7 @@
 #include "../../plugins/step-sequencer/Parameters.h"
 #include "../audio/AudioEngine.h"
 #include "EngineProcess.h"
+#include <algorithm>
 #include <bit>
 #include <cmath>
 #include <cstdio>
@@ -93,6 +94,15 @@ namespace oscairn::standalone
     {
         if(index<0 || index>=int(PadMap::pads))return;
         command([this,index,pressure]{control_->padPressure(uint32_t(index),juce::jlimit(0.0f,1.0f,pressure));});
+    }
+    bool Engine::hasControl(const std::string& name) const
+    {return std::any_of(macros_.begin(),macros_.end(),[&](const Macro& m){return m.name==name;});}
+    double Engine::controlValue(const std::string& name) const
+    {for(const auto& m:macros_)if(m.name==name)return m.value;return 0;}
+    void Engine::setControl(const std::string& name,double value)
+    {
+        for(auto& m:macros_)if(m.name==name)m.value=value; // shown at once
+        edit([name,value](Control& c){for(const auto& m:c.graphState().macros)if(m.name==name){c.setMacro(m.id,value);return;}});
     }
     void Engine::edit(std::function<void(Control&)> change)
     {
@@ -203,6 +213,7 @@ namespace oscairn::standalone
     }
     void Engine::timerCallback()
     {
+        try{if(connected())macros_=control_->graphState().macros;}catch(const std::exception&){}
         if(soundJob_.valid())
         {
             if(soundJob_.wait_for(std::chrono::seconds(0))!=std::future_status::ready)return;

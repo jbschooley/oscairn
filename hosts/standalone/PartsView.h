@@ -33,6 +33,10 @@ namespace oscairn::standalone
         juce::Rectangle<int> rowBounds(size_t row) const;
         void insertMenu(size_t index, juce::Component& at);
         void sceneControlsMenu(NodeId node, juce::Component& at);
+        void targetMenu(uint32_t macro, juce::Component& at);
+        std::string describe(const MacroTarget&) const;
+        void setTargets(uint32_t macro, std::function<void(std::vector<MacroTarget>&)> change);
+        Control::GraphState graph_;
         template<class F> void edit(F&& change) { engine_.edit(std::forward<F>(change)); }
 
         Engine& engine_;
@@ -42,12 +46,14 @@ namespace oscairn::standalone
         std::vector<Scene> scenes_;
         std::vector<SceneParameter> sceneParameters_;
         uint32_t scene_ = 0;
+        std::vector<Macro> macros_;
+        static constexpr uint32_t controlsPage = 0xFFFFFFFFu;
         std::string shape_; // what the controls were built for; rebuilt when it changes
         uint32_t page_ = 0; // 0: the list; otherwise the part shown
         NodeId selected_ = 0;
 
         juce::Label title_, message_;
-        juce::TextButton done_{"Done"}, addPart_{"+ Add part"}, addBus_{"+ Add bus"}, back_{"‹ Parts"}, removePart_{"Remove part"};
+        juce::TextButton done_{"Done"}, addPart_{"+ Add part"}, addBus_{"+ Add bus"}, back_{"‹ Parts"}, removePart_{"Remove part"}, controlsButton_{"Controls"}, addControl_{"+ Control"};
         juce::TextEditor name_;
         std::vector<std::unique_ptr<juce::Component>> controls_; // rebuilt per page and shape
         std::vector<std::shared_ptr<std::function<void()>>> updaters_; // set controls from the state

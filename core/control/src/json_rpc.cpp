@@ -224,6 +224,47 @@ namespace oscairn
             if( !map.valid() ) invalid("Invalid pad map");
             return map;
         }
+        const char* kindName( MacroTarget::Kind k ) { return k == MacroTarget::Kind::Parameter ? "parameter" : k == MacroTarget::Kind::PartLevel ? "partLevel" : k == MacroTarget::Kind::PartMute ? "partMute" : "control"; }
+        const char* curveName( MacroTarget::Curve c ) { return c == MacroTarget::Curve::Linear ? "linear" : c == MacroTarget::Curve::Exponential ? "exponential" : c == MacroTarget::Curve::Logarithmic ? "logarithmic" : "s-curve"; }
+        std::string macrosJson( const std::vector<Macro>& macros )
+        {
+            std::vector<std::string> out;
+            for( const auto& m : macros )
+            {
+                std::vector<std::string> targets;
+                for( const auto& t : m.targets )
+                    targets.push_back(std::string("{\"kind\":\"") + kindName(t.kind) + "\",\"node\":" + std::to_string(t.node) + ",\"param\":" + std::to_string(t.param) +
+                        ",\"part\":" + std::to_string(t.part) + ",\"control\":" + std::to_string(t.macro) + ",\"start\":" + encode(t.start) + ",\"end\":" + encode(t.end) +
+                        ",\"curve\":\"" + curveName(t.curve) + "\",\"relative\":" + (t.relative ? "true" : "false") + ",\"base\":" + encode(t.base) + '}');
+                out.push_back("{\"id\":" + std::to_string(m.id) + ",\"name\":" + quote(m.name) + ",\"value\":" + encode(m.value) + ",\"targets\":" + join(targets) + '}');
+            }
+            return join(out);
+        }
+        std::vector<MacroTarget> targetsFrom( Control& c, Value list )
+        {
+            if( !list || list->type != json_type_array ) invalid("targets is an array");
+            std::vector<MacroTarget> targets;
+            for( auto* e = static_cast<const json_array_s*>(list->payload)->start; e; e = e->next )
+            {
+                fields(e->value,{"kind","node","param","part","control","start","end","curve","relative","base"});
+                MacroTarget t;
+                const auto kind = string(member(e->value,"kind"));
+                t.kind = kind == "parameter" ? MacroTarget::Kind::Parameter : kind == "partLevel" ? MacroTarget::Kind::PartLevel : kind == "partMute" ? MacroTarget::Kind::PartMute : kind == "control" ? MacroTarget::Kind::Macro : (invalid("kind is parameter, partLevel, partMute or control"), MacroTarget::Kind::Parameter);
+                if( t.kind == MacroTarget::Kind::Parameter ) { t.node = node(c,member(e->value,"node")); t.param = integer(member(e->value,"param")); }
+                if( t.kind == MacroTarget::Kind::PartLevel || t.kind == MacroTarget::Kind::PartMute ) t.part = integer(member(e->value,"part"));
+                if( t.kind == MacroTarget::Kind::Macro ) t.macro = integer(member(e->value,"control"));
+                if( member(e->value,"start") ) t.start = number(member(e->value,"start"));
+                if( member(e->value,"end") ) t.end = number(member(e->value,"end"));
+                if( const auto curve = member(e->value,"curve") )
+                {
+                    const auto name = string(curve);
+                    t.curve = name == "linear" ? MacroTarget::Curve::Linear : name == "exponential" ? MacroTarget::Curve::Exponential : name == "logarithmic" ? MacroTarget::Curve::Logarithmic : name == "s-curve" ? MacroTarget::Curve::SCurve : (invalid("curve is linear, exponential, logarithmic or s-curve"), MacroTarget::Curve::Linear);
+                }
+                if( member(e->value,"relative") ) t.relative = boolean(member(e->value,"relative"));
+                targets.push_back(t);
+            }
+            return targets;
+        }
         std::string scenesJson( const Control::GraphState& g )
         {
             std::vector<std::string> scenes, parameters;
@@ -232,10 +273,12 @@ namespace oscairn
                 std::vector<std::string> parts, values;
                 for( const auto& p : s.parts ) parts.push_back("{\"part\":" + std::to_string(p.part) + ",\"level\":" + encode(p.level) + ",\"mute\":" + (p.mute ? "true" : "false") + '}');
                 for( const auto& v : s.values ) values.push_back("{\"node\":" + std::to_string(v.at.node) + ",\"param\":" + std::to_string(v.at.param) + ",\"value\":" + encode(v.value) + '}');
-                scenes.push_back("{\"id\":" + std::to_string(s.id) + ",\"name\":" + quote(s.name) + ",\"parts\":" + join(parts) + ",\"values\":" + join(values) + '}');
+                std::vector<std::string> macros;
+                for( const auto& [m, v] : s.macros ) macros.push_back("{\"control\":" + std::to_string(m) + ",\"value\":" + encode(v) + '}');
+                scenes.push_back("{\"id\":" + std::to_string(s.id) + ",\"name\":" + quote(s.name) + ",\"parts\":" + join(parts) + ",\"values\":" + join(values) + ",\"controls\":" + join(macros) + '}');
             }
             for( const auto& at : g.sceneParameters ) parameters.push_back("{\"node\":" + std::to_string(at.node) + ",\"param\":" + std::to_string(at.param) + '}');
-            return ",\"scenes\":" + join(scenes) + ",\"sceneParameters\":" + join(parameters) + ",\"scene\":" + std::to_string(g.scene);
+            return ",\"scenes\":" + join(scenes) + ",\"sceneParameters\":" + join(parameters) + ",\"scene\":" + std::to_string(g.scene) + ",\"controls\":" + macrosJson(g.macros);
         }
         std::string wireJson( const Wire& w )
         {
@@ -262,7 +305,7 @@ namespace oscairn
             if( method == "session.hello" )
             {
                 fields(p, {});
-                return R"({"protocolVersion":1,"server":"oscairn","capabilities":["performance.save","performance.load","state.info","state.save","presets.list","properties.list","properties.get","properties.set","properties.request","sounds.get","sounds.prepare","sounds.select","sounds.discard","assets.register","assets.import","assets.libraries","session.status","params.list","params.get","params.set","params.text","params.gesture","graph.audio-routing","graph.get","graph.add","effects.create","effects.resources","graph.remove","graph.replace","graph.connect","graph.disconnect","graph.map","graph.unmap","graph.commit","parts.add","parts.remove","parts.insert","parts.removeNode","parts.move","parts.input","parts.output","parts.send","parts.level","parts.name","wires.connect","wires.disconnect","wires.mix","wires.zones","scenes.add","scenes.store","scenes.select","scenes.remove","scenes.name","scenes.parameters","subscribe","unsubscribe","transport.get","transport.set","notes.send","pads.get","pads.set","pads.play","pads.pressure"],"limits":{"messageBytes":65536,"depth":32,"batch":64,"parameterChanges":128}})";
+                return R"({"protocolVersion":1,"server":"oscairn","capabilities":["performance.save","performance.load","state.info","state.save","presets.list","properties.list","properties.get","properties.set","properties.request","sounds.get","sounds.prepare","sounds.select","sounds.discard","assets.register","assets.import","assets.libraries","session.status","params.list","params.get","params.set","params.text","params.gesture","graph.audio-routing","graph.get","graph.add","effects.create","effects.resources","graph.remove","graph.replace","graph.connect","graph.disconnect","graph.map","graph.unmap","graph.commit","parts.add","parts.remove","parts.insert","parts.removeNode","parts.move","parts.input","parts.output","parts.send","parts.level","parts.name","wires.connect","wires.disconnect","wires.mix","wires.zones","scenes.add","scenes.store","scenes.select","scenes.remove","scenes.name","scenes.parameters","controls.add","controls.remove","controls.name","controls.targets","controls.set","subscribe","unsubscribe","transport.get","transport.set","notes.send","pads.get","pads.set","pads.play","pads.pressure"],"limits":{"messageBytes":65536,"depth":32,"batch":64,"parameterChanges":128}})";
             }
             if( method == "subscribe" || method == "unsubscribe" )
             {
@@ -454,6 +497,18 @@ namespace oscairn
                 }
                 c.remove(node(c,member(p,"node")),choice);
                 return R"({"accepted":true})";
+            }
+            if( method.substr(0,9) == "controls." )
+            {
+                try
+                {
+                    if( method == "controls.add" ) { fields(p,{"name"}); return "{\"control\":" + std::to_string(c.addMacro(member(p,"name") ? std::string(string(member(p,"name"))) : std::string())) + '}'; }
+                    if( method == "controls.remove" ) { fields(p,{"control"}); c.removeMacro(integer(member(p,"control"))); return R"({"accepted":true})"; }
+                    if( method == "controls.name" ) { fields(p,{"control","name"}); c.setMacroName(integer(member(p,"control")),std::string(string(member(p,"name")))); return R"({"accepted":true})"; }
+                    if( method == "controls.targets" ) { fields(p,{"control","targets"}); c.setMacroTargets(integer(member(p,"control")),targetsFrom(c,member(p,"targets"))); return R"({"accepted":true})"; }
+                    if( method == "controls.set" ) { fields(p,{"control","value"}); const auto v = number(member(p,"value")); if( v < 0 || v > 1 ) invalid("value is 0..1"); c.setMacro(integer(member(p,"control")),v); return R"({"accepted":true})"; }
+                }
+                catch( const std::invalid_argument& e ) { throw Failure{-32003,e.what()}; }
             }
             if( method.substr(0,7) == "scenes." )
             {

@@ -268,10 +268,45 @@ change at once; "set all" copies a pad's channel, velocity and pressure to its b
 Implemented 2026-10-31 (`pads.h`, the `pads.*` control methods and the desktop's **Pads...**
 editor); a "learn" mode that takes a note from the keyboard is still to do.
 
+### The control tree
+
+Every assignable control is a **control**: a named value from 0 to 1 saved in the
+Performance. A sound's Assign 1–8, a MODX-style Super Knob, a macro and a group knob are all
+controls; physical knobs, sliders, buttons, MIDI CC and sequencer lanes drive them.
+
+- A control has **targets**. A target is a destination (a node's parameter, or a part's
+  level or mute) or **another control**, which makes a tree: a Super Knob drives Assign
+  1–8, which drive whatever each is set to.
+- Each target has its own **start** and **end** (end below start reverses it, like the
+  MODX's negative ratio) and **curve**: linear, exponential, logarithmic or S-shaped. A
+  target is **absolute** (it sets the value) or **relative** (it moves the value around
+  the value it had when the control was last stored, the MODX's bipolar setting).
+- Controls form a tree without loops: an assignment that would loop is refused.
+- When two controls drive the same one (a Super Knob and Assign 3's own knob both move
+  Assign 3), the control moved last sets it, as on the MODX.
+- Moving a control sets its targets through the ordinary parameter path, as sample-timed
+  events. For sequencer lanes that must morph many parameters at an exact sample, the tree
+  is flattened when the graph is committed into each lane's final targets with their
+  combined ranges and curves (a later step).
+- Scenes store control values as they store part faders.
+- Any physical control on any device can be bound to any control, so a controller without
+  a Super Knob gets one by binding a knob to the top of a tree. Pickup, relative encoders
+  and feedback stay with the controller-mapping service.
+
+Implemented 2026-10-31 (as `Macro` in `parts.h`): controls with parameter, part level, part
+mute and control targets, each with its range, curve and relative mode; loops refused;
+last-moved wins; scenes store control values; saved in the Performance; `controls.*` in the
+control protocol; a **Controls** page in the Parts view; and desktop layout knobs bound as
+`control:NAME`. `control-parts` checks a Super control driving an Assign control (with an
+exponential curve) that drives a gain and a reversed part level, a relative target, loops,
+scenes and saving. Not yet: flattening the tree for sample-accurate sequencer lanes,
+default Assign controls from each sound, MIDI CC learn, and part faders as direct gain
+updates rather than a new graph plan per move.
+
 ### Overrides
 
 Any physical control can be assigned to anything in the performance: a parameter of any
-node, a group or macro knob, a mix level, a send, a bypass, a scene, or the transport. Ways
+node, a control (above), a mix level, a send, a bypass, a scene, or the transport. Ways
 to assign:
 
 - **learn:** move the control, then touch the target on screen;

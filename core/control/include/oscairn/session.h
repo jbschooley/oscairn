@@ -88,6 +88,11 @@ namespace oscairn
         void removeScene(uint32_t scene) override;
         void setSceneName(uint32_t scene, const std::string& name) override;
         void setSceneParameters(const std::vector<SceneParameter>& parameters) override;
+        uint32_t addMacro(const std::string& name) override;
+        void removeMacro(uint32_t macro) override;
+        void setMacroName(uint32_t macro, const std::string& name) override;
+        void setMacroTargets(uint32_t macro, const std::vector<MacroTarget>& targets) override;
+        void setMacro(uint32_t macro, double value) override;
         void remove(NodeId node, UserWires userWires) override;
         void mapParameter( NodeId from, uint32_t lane, NodeId to, uint32_t param ) override { graph_.mapParamTarget( from, lane, to, param ); staged_ = true; }
         void unmapParameter( NodeId from, uint32_t lane ) override { graph_.unmapParamTarget( from, lane ); staged_ = true; }
@@ -157,6 +162,9 @@ namespace oscairn
         bool feeds(uint32_t from, uint32_t to);
         Part& findBus(uint32_t id);
         Scene& findScene(uint32_t id);
+        Macro& findMacro(uint32_t id);
+        double currentFraction(const MacroTarget& target) const;
+        void driveMacro(uint32_t id, double value, bool& faders); // sets it and its targets
         void capture(Scene& scene) const;
         Part& findPart(uint32_t id);
         void removePairs(const AudioConnection& c);
@@ -181,6 +189,8 @@ namespace oscairn
         std::vector<Scene> scenes_;
         std::vector<SceneParameter> sceneParameters_;
         uint32_t scene_ = 0, nextScene_ = 1;
+        std::vector<Macro> macros_;
+        uint32_t nextMacro_ = 1;
         bool staged_ = false;
         uint64_t revision_ = 0, sequence_ = 0;
         using Address = std::pair<NodeId,uint32_t>;

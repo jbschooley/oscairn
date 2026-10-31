@@ -60,6 +60,42 @@ Two setups need more:
 - **CV.** Voltage and gate outputs follow the device's calibration (pitch per octave, offset,
   range), stored as a device setting, not in the Performance.
 
+## Choosing devices: selectors
+
+On a MODX, playing a part from an external controller means giving the part its own MIDI
+channel and setting the controller to send on it; a controller that cannot change channel,
+or sends on all, cannot play one part while the built-in keys play another. Gig
+Performer's MIDI In blocks choose a device, but naming one device breaks when the
+controller changes. Oscairn chooses devices by **selector**, separate from channels.
+
+A selector is a list of rules; an event or device matching any of them is selected:
+
+| Rule | Matches |
+| --- | --- |
+| Built in | the device's own keys, pads and panel |
+| All external | every MIDI input or output but the built-in ones |
+| All | everything |
+| Port *n* | a numbered DIN or TRS port on the device (the Ignite has several) |
+| All USB | every USB MIDI device |
+| USB named | a USB device whose name equals a text, contains it, or matches a regular expression; a list of these |
+| Network | a named network MIDI session |
+
+- **Inputs:** a part's input says which devices it hears, and optionally which channels.
+  Parts no longer have to differ by channel: an external controller on channel 1 can play
+  part 3 while the built-in keys, also on channel 1, play part 1. Notes keep the channel
+  the part's instrument expects.
+- **Outputs:** an external destination (above) sends to the devices its selector matches:
+  all outputs, port 1, 2 or 5, all USB, or USB devices by name, pattern or list.
+- **The Performance stores selectors, not devices.** The running device keeps a table of
+  its endpoints (built in, port number, USB name, network session) and resolves each
+  selector when the Performance opens and whenever a device is connected or removed, so
+  swapping one controller for another that matches needs no edits.
+- A selector that matches nothing leaves its part silent and badged "no device"; nothing
+  else changes.
+- **Learn:** press a key on a controller and the part's selector becomes that device by
+  name; it can then be widened to a pattern.
+- Device profiles (below) attach to the devices a selector matches.
+
 ## Transport and clock
 
 One transport per device; sync sources and destinations are chosen per port.

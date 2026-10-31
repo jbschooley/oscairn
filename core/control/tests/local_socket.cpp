@@ -446,6 +446,10 @@ void partsClient(const char* plugin,const char* delay)
         remote.selectScene(verse);
         check(remote.graphState().scene==verse && remote.graphState().scenes.size()==2 && remote.graphState().parts[0].level==1 && !remote.graphState().parts[0].mute,"scenes over the socket: the verse restores the part's fader");
         remote.removeScene(chorus);remote.removeScene(verse);
+        const auto knob=remote.addMacro("Super");MacroTarget level;level.kind=MacroTarget::Kind::PartLevel;level.part=part;level.start=1;level.end=0;level.curve=MacroTarget::Curve::SCurve;
+        remote.setMacroTargets(knob,{level});remote.setMacro(knob,.25);
+        check(remote.graphState().macros.size()==1 && remote.graphState().macros[0].targets[0].curve==MacroTarget::Curve::SCurve && std::abs(remote.graphState().parts[0].level-(1-.25*.25*(3-2*.25)))<1e-9,"a control over the socket drives the part's level along its curve");
+        remote.removeMacro(knob);
         NoteZone split;split.highKey=59;split.transpose=12;
         remote.setPartInput(part,{PartInput::Kind::Notes,0,{split}});
         const auto zoned=remote.graphState().parts[0].input.zones;

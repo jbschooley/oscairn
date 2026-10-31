@@ -43,7 +43,8 @@ Others can be opened with View > Open Layout File... or `--layout path.json`.
 - `controls`, by `type`:
   - `screen`: the display (at most one). It is drawn for a 1024 x 600 screen and scales.
   - `knob`: `bind` is `node:param` (nodes `sequencer`, `synth`, `delay`; a CLAP parameter
-    id) or `tempo`.
+    id), `tempo`, or `control:NAME`: a control of the Performance's control tree by name
+    (RFC 0011), driving everything it is set up to, such as a Super Knob.
     `"mode": "endless"` draws an endless encoder (a ring of LEDs showing the value) instead of a
     pot with end stops (`absolute`, the default).
   - `button`: `bind` is `play`, `stop`, `play-stop` or `sync` (follow MIDI clock).

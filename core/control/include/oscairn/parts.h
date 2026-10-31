@@ -67,6 +67,27 @@ namespace oscairn
         bool mute = false;   // silences where it plays and its sends
     };
 
+    // The control tree (RFC 0011): a control (a macro, Assign knob or Super Knob) is a value from
+    // 0 to 1 that drives its targets, each with its own range and curve; a target may be another
+    // control. Physical knobs, MIDI CC and scenes set controls.
+    struct MacroTarget
+    {
+        enum class Kind { Parameter, PartLevel, PartMute, Macro } kind = Kind::Parameter;
+        enum class Curve { Linear, Exponential, Logarithmic, SCurve } curve = Curve::Linear;
+        NodeId node = 0; uint32_t param = 0; // Parameter
+        uint32_t part = 0;                   // PartLevel, PartMute
+        uint32_t macro = 0;                  // Macro
+        // The range the control's 0..1 covers, as fractions of the target's range; end below
+        // start reverses it. Relative targets move around `base` (the value when assigned) by
+        // half the range either way instead.
+        double start = 0, end = 1;
+        bool relative = false;
+        double base = 0;
+        // What a control value does here, as a fraction of the target's range.
+        double map(double value) const;
+    };
+    struct Macro { uint32_t id = 0; std::string name; double value = 0; std::vector<MacroTarget> targets; };
+
     // A scene: a state of the Performance for a section of a song. It records every part's level
     // and mute, and a value for each scene parameter (the plugin parameters scenes control).
     // Selecting one applies them without rebuilding anything, so held notes and tails go on.
@@ -79,6 +100,7 @@ namespace oscairn
         std::string name;
         std::vector<PartState> parts;
         std::vector<Value> values;
+        std::vector<std::pair<uint32_t, double>> macros; // each control's value
     };
 
     // What removing a node does with the user wires on it.

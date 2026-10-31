@@ -52,6 +52,7 @@ Required top-level fields:
 | `parts` | ID, name, input (`notes` with its zones, `audio` with a graph input port, `none`, or `bus` for a shared bus), the chain of node keys, the graph output port or the `bus` it plays through, and its `sends` to buses with their levels |
 | `mappings` | Source node/lane to destination node/parameter |
 | `scenes`, `sceneParameters`, `scene` | Each scene's part faders and scene-parameter values, which parameters scenes set, and the scene last selected |
+| `controls` | The control tree: each control's name, value and targets (kind, node key and parameter, part or control; start, end, curve, relative and base) |
 | `pads` | The pad map: the selected bank and eight banks of 16 pads, each with its note, MIDI channel (-1 follows the player), velocity (0 as played) and pressure mode |
 
 `node-1` etc. are document-local keys, not runtime node IDs. `input` and `output` name

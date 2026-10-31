@@ -113,10 +113,23 @@ void Session::savePerformance(const std::string& directory) {
             std::vector<std::string> parts,values;
             for(const auto& p:s.parts)parts.push_back("{\"part\":"+std::to_string(p.part)+",\"level\":"+numeric(p.level)+",\"mute\":"+(p.mute?"true":"false")+'}');
             for(const auto& v:s.values)values.push_back("{\"node\":"+quote(keys.at(v.at.node))+",\"param\":"+std::to_string(v.at.param)+",\"value\":"+numeric(v.value)+'}');
-            scenes.push_back("{\"id\":"+std::to_string(s.id)+",\"name\":"+quote(s.name)+",\"parts\":"+join(parts)+",\"values\":"+join(values)+'}');
+            std::vector<std::string> controls;for(const auto& [m,v]:s.macros)controls.push_back("{\"control\":"+std::to_string(m)+",\"value\":"+numeric(v)+'}');
+            scenes.push_back("{\"id\":"+std::to_string(s.id)+",\"name\":"+quote(s.name)+",\"parts\":"+join(parts)+",\"values\":"+join(values)+",\"controls\":"+join(controls)+'}');
         }
         for(const auto& at:sceneParameters_)parameters.push_back("{\"node\":"+quote(keys.at(at.node))+",\"param\":"+std::to_string(at.param)+'}');
-        scenesText=",\"scenes\":"+join(scenes)+",\"sceneParameters\":"+join(parameters)+",\"scene\":"+std::to_string(scene_);
+        // The control tree: each control's value and targets, parameters by node key.
+        std::vector<std::string> controls;
+        for(const auto& m:macros_){
+            std::vector<std::string> targets;
+            for(const auto& t:m.targets){
+                const char* kind=t.kind==MacroTarget::Kind::Parameter?"parameter":t.kind==MacroTarget::Kind::PartLevel?"partLevel":t.kind==MacroTarget::Kind::PartMute?"partMute":"control";
+                const char* curve=t.curve==MacroTarget::Curve::Linear?"linear":t.curve==MacroTarget::Curve::Exponential?"exponential":t.curve==MacroTarget::Curve::Logarithmic?"logarithmic":"s-curve";
+                std::string at=t.kind==MacroTarget::Kind::Parameter?",\"node\":"+quote(keys.at(t.node))+",\"param\":"+std::to_string(t.param):t.kind==MacroTarget::Kind::Macro?",\"control\":"+std::to_string(t.macro):",\"part\":"+std::to_string(t.part);
+                targets.push_back(std::string("{\"kind\":\"")+kind+"\""+at+",\"start\":"+numeric(t.start)+",\"end\":"+numeric(t.end)+",\"curve\":\""+curve+"\",\"relative\":"+(t.relative?"true":"false")+",\"base\":"+numeric(t.base)+'}');
+            }
+            controls.push_back("{\"id\":"+std::to_string(m.id)+",\"name\":"+quote(m.name)+",\"value\":"+numeric(m.value)+",\"targets\":"+join(targets)+'}');
+        }
+        scenesText=",\"scenes\":"+join(scenes)+",\"sceneParameters\":"+join(parameters)+",\"scene\":"+std::to_string(scene_)+",\"controls\":"+join(controls);
     }
     std::vector<std::string> named;
     for(const auto& l:assets_.libraries())if(libraries.count(l.id))named.push_back("{\"id\":"+quote(l.id)+",\"name\":"+quote(l.name)+",\"fingerprint\":"+quote(l.fingerprint)+'}');
@@ -129,7 +142,7 @@ void Session::savePerformance(const std::string& directory) {
 void Session::loadPerformance(const std::string& directory) {
     if(directory.empty() || directory.find('\0')!=std::string::npos)bad("invalid directory");
     const auto root=fs::canonical(directory);validateTree(root);const auto doc=document(root);V d=doc.get();
-    fields(d,{"format","version","libraries","transport","audioInputs","audioOutputs","nodes","wires","parts","mappings","pads","scenes","sceneParameters","scene"});
+    fields(d,{"format","version","libraries","transport","audioInputs","audioOutputs","nodes","wires","parts","mappings","pads","scenes","sceneParameters","scene","controls"});
     const auto pads=padsFrom(field(d,"pads"));
     if(text(field(d,"format"))!="oscairn.performance" || integer(field(d,"version"))!=2)bad("unsupported format version");
     const auto transport=field(d,"transport");fields(transport,{"tempo","clockSource"});const double tempo=number(field(transport,"tempo"));
@@ -221,17 +234,51 @@ void Session::loadPerformance(const std::string& directory) {
         for(auto at:array(field(d,"sceneParameters"),4096)){fields(at,{"node","param"});const auto p=parameterAt(at);if(std::find(sceneParameters.begin(),sceneParameters.end(),p)!=sceneParameters.end())bad("duplicate scene parameter");sceneParameters.push_back(p);}
         std::set<uint32_t> sceneIds;
         for(auto s:array(field(d,"scenes"),256)){
-            fields(s,{"id","name","parts","values"});Scene scene;scene.id=integer(field(s,"id"));scene.name=text(field(s,"name"));
+            fields(s,{"id","name","parts","values","controls"});Scene scene;scene.id=integer(field(s,"id"));scene.name=text(field(s,"name"));
             if(!scene.id || !sceneIds.insert(scene.id).second)bad("invalid or duplicate scene");
             for(auto p:array(field(s,"parts"),256)){fields(p,{"part","level","mute"});Scene::PartState st{integer(field(p,"part")),number(field(p,"level")),boolean(field(p,"mute"))};
                 if(st.level<0 || std::none_of(parts.begin(),parts.end(),[&](const Part& x){return x.id==st.part;}))bad("invalid scene part");scene.parts.push_back(st);}
             for(auto v:array(field(s,"values"),4096)){fields(v,{"node","param","value"});Scene::Value value{parameterAt(v),number(field(v,"value"))};
                 if(std::find(sceneParameters.begin(),sceneParameters.end(),value.at)==sceneParameters.end())bad("a scene value for a parameter scenes do not control");scene.values.push_back(value);}
+            for(auto c:array(field(s,"controls"),4096)){fields(c,{"control","value"});const auto v=number(field(c,"value"));if(v<0 || v>1)bad("invalid scene control value");scene.macros.push_back({integer(field(c,"control")),v});}
             nextScene=std::max(nextScene,scene.id+1);scenes.push_back(std::move(scene));
         }
         const auto selected=integer(field(d,"scene"));if(selected && !sceneIds.count(selected))bad("unknown selected scene");
     }
     const auto selectedScene=integer(field(d,"scene"));
+    std::vector<Macro> macros;uint32_t nextMacro=1;
+    {
+        std::set<uint32_t> macroIds;
+        const auto list=array(field(d,"controls"),4096);
+        for(auto m:list){const auto id=integer(field(m,"id"));if(!id || !macroIds.insert(id).second)bad("invalid or duplicate control");}
+        for(auto m:list){
+            fields(m,{"id","name","value","targets"});Macro macro;macro.id=integer(field(m,"id"));macro.name=text(field(m,"name"));macro.value=number(field(m,"value"));
+            if(macro.value<0 || macro.value>1)bad("invalid control value");
+            for(auto t:array(field(m,"targets"),256)){
+                MacroTarget target;const auto kind=text(field(t,"kind")),curve=text(field(t,"curve"));
+                if(kind=="parameter"){fields(t,{"kind","node","param","start","end","curve","relative","base"});target.kind=MacroTarget::Kind::Parameter;target.node=node(field(t,"node"));target.param=integer(field(t,"param"));
+                    if(target.node==graphInput || target.node==graphOutput)bad("invalid control target");const auto& all=next->host(target.node).parameters();
+                    if(std::none_of(all.begin(),all.end(),[&](const auto& p){return p.id==target.param;}))bad("unknown control target parameter");}
+                else if(kind=="partLevel" || kind=="partMute"){fields(t,{"kind","part","start","end","curve","relative","base"});target.kind=kind=="partLevel"?MacroTarget::Kind::PartLevel:MacroTarget::Kind::PartMute;target.part=integer(field(t,"part"));
+                    if(std::none_of(parts.begin(),parts.end(),[&](const Part& p){return p.id==target.part;}))bad("control target of an unknown part");}
+                else if(kind=="control"){fields(t,{"kind","control","start","end","curve","relative","base"});target.kind=MacroTarget::Kind::Macro;target.macro=integer(field(t,"control"));
+                    if(!macroIds.count(target.macro))bad("control target of an unknown control");}
+                else bad("invalid control target kind");
+                target.curve=curve=="linear"?MacroTarget::Curve::Linear:curve=="exponential"?MacroTarget::Curve::Exponential:curve=="logarithmic"?MacroTarget::Curve::Logarithmic:curve=="s-curve"?MacroTarget::Curve::SCurve:(bad("invalid curve"),MacroTarget::Curve::Linear);
+                target.start=number(field(t,"start"));target.end=number(field(t,"end"));target.relative=boolean(field(t,"relative"));target.base=number(field(t,"base"));
+                if(target.start<0 || target.start>1 || target.end<0 || target.end>1 || target.base<0 || target.base>1)bad("invalid control target range");
+                macro.targets.push_back(target);
+            }
+            nextMacro=std::max(nextMacro,macro.id+1);macros.push_back(std::move(macro));
+        }
+        // The controls must not loop.
+        std::function<bool(uint32_t,uint32_t,size_t)> reaches=[&](uint32_t from,uint32_t to,size_t depth){
+            if(depth>macros.size())return true;
+            for(const auto& m:macros)if(m.id==from)for(const auto& t:m.targets)if(t.kind==MacroTarget::Kind::Macro && (t.macro==to || reaches(t.macro,to,depth+1)))return true;
+            return false;};
+        for(const auto& m:macros)if(reaches(m.id,m.id,0))bad("controls loop");
+        for(const auto& s:scenes)for(const auto& [m,v]:s.macros)if(!macroIds.count(m))bad("a scene value for an unknown control");
+    }
     compileWires(*next,wires);
     std::set<std::pair<NodeId,uint32_t>> mappings;
     for(auto m:array(field(d,"mappings"),4096)){fields(m,{"from","lane","to","param"});const auto from=node(field(m,"from")),lane=integer(field(m,"lane"));if(!mappings.emplace(from,lane).second)bad("duplicate parameter mapping");next->mapParamTarget(from,lane,node(field(m,"to")),integer(field(m,"param")));}
@@ -242,7 +289,7 @@ void Session::loadPerformance(const std::string& directory) {
     if(history.size()==historyCapacity)history.pop_front();
     history.push_back({sequence_+1,ChangeKind::Resync,0,0,0,false});
     graph_.publishReplacement(*next,noteHead_.load(std::memory_order_acquire),[&]() noexcept {
-        nodes_.swap(names);observed_.swap(observed);parts_.swap(parts);wires_.swap(wires);nextPart_=nextPart;nextWire_=nextWire;padMap_=pads;heldPads_={};scenes_.swap(scenes);sceneParameters_.swap(sceneParameters);scene_=selectedScene;nextScene_=nextScene;pending_.clear();commandCount_=0;outputDrops_.clear();staged_=false;
+        nodes_.swap(names);observed_.swap(observed);parts_.swap(parts);wires_.swap(wires);nextPart_=nextPart;nextWire_=nextWire;padMap_=pads;heldPads_={};scenes_.swap(scenes);sceneParameters_.swap(sceneParameters);scene_=selectedScene;nextScene_=nextScene;macros_.swap(macros);nextMacro_=nextMacro;pending_.clear();commandCount_=0;outputDrops_.clear();staged_=false;
         tempo_.store(tempo);clockSource_.store(clock=="internal"?Transport::ClockSource::Internal:Transport::ClockSource::MidiClock);playing_.store(false);
         ++revision_;++sequence_;history_.swap(history);
     });

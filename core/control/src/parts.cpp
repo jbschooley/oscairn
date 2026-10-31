@@ -277,6 +277,140 @@ namespace oscairn
         editWires([&] { findPart(id).name = name; });
     }
 
+    double MacroTarget::map(double value) const
+    {
+        const double x = std::clamp(value, 0.0, 1.0);
+        double shaped = x;
+        switch(curve)
+        {
+        case Curve::Linear: break;
+        case Curve::Exponential: shaped = (std::exp(4 * x) - 1) / (std::exp(4.0) - 1); break;
+        case Curve::Logarithmic: shaped = std::log1p((std::exp(4.0) - 1) * x) / 4; break;
+        case Curve::SCurve: shaped = x * x * (3 - 2 * x); break;
+        }
+        if(relative) return std::clamp(base + (shaped - .5) * (end - start), 0.0, 1.0);
+        return std::clamp(start + (end - start) * shaped, 0.0, 1.0);
+    }
+
+    Macro& Session::findMacro(uint32_t id)
+    {
+        const auto it = std::find_if(macros_.begin(), macros_.end(), [&](const Macro& m) { return m.id == id; });
+        if(it == macros_.end()) throw std::invalid_argument("unknown control");
+        return *it;
+    }
+
+    // A target's present value as a fraction of its range: where a relative target moves from.
+    double Session::currentFraction(const MacroTarget& t) const
+    {
+        switch(t.kind)
+        {
+        case MacroTarget::Kind::Parameter:
+        {
+            const auto info = parameterInfo(t.node, t.param);
+            return info.maximum > info.minimum ? (parameter(t.node, t.param) - info.minimum) / (info.maximum - info.minimum) : 0;
+        }
+        case MacroTarget::Kind::PartLevel: for(const auto& p : parts_) if(p.id == t.part) return std::clamp(p.level, 0.0, 1.0); return 1;
+        case MacroTarget::Kind::PartMute: for(const auto& p : parts_) if(p.id == t.part) return p.mute ? 1 : 0; return 0;
+        case MacroTarget::Kind::Macro: for(const auto& m : macros_) if(m.id == t.macro) return m.value; return 0;
+        }
+        return 0;
+    }
+
+    uint32_t Session::addMacro(const std::string& name)
+    {
+        macros_.push_back({nextMacro_, name, 0, {}});
+        return nextMacro_++;
+    }
+
+    void Session::removeMacro(uint32_t id)
+    {
+        findMacro(id);
+        std::erase_if(macros_, [&](const Macro& m) { return m.id == id; });
+        for(auto& m : macros_) std::erase_if(m.targets, [&](const MacroTarget& t) { return t.kind == MacroTarget::Kind::Macro && t.macro == id; });
+        for(auto& s : scenes_) std::erase_if(s.macros, [&](const auto& v) { return v.first == id; });
+    }
+
+    void Session::setMacroName(uint32_t id, const std::string& name) { findMacro(id).name = name; }
+
+    void Session::setMacroTargets(uint32_t id, const std::vector<MacroTarget>& requested)
+    {
+        findMacro(id);
+        auto targets = requested;
+        if(targets.size() > 256) throw std::invalid_argument("at most 256 targets per control");
+        for(auto& t : targets)
+        {
+            if(!std::isfinite(t.start) || !std::isfinite(t.end) || t.start < 0 || t.start > 1 || t.end < 0 || t.end > 1) throw std::invalid_argument("a target's range is within 0..1");
+            switch(t.kind)
+            {
+            case MacroTarget::Kind::Parameter:
+                if(!graph_.contains(t.node) || !hasParameter(t.node, t.param) || (parameterInfo(t.node, t.param).flags & CLAP_PARAM_IS_READONLY)) throw std::invalid_argument("not a writable parameter");
+                break;
+            case MacroTarget::Kind::PartLevel: case MacroTarget::Kind::PartMute: findPart(t.part); break;
+            case MacroTarget::Kind::Macro:
+            {
+                findMacro(t.macro);
+                // No loops: the target must not lead back to this control.
+                std::vector<uint32_t> pending{t.macro}, seen;
+                while(!pending.empty())
+                {
+                    const auto m = pending.back(); pending.pop_back();
+                    if(m == id) throw std::invalid_argument("that would make the controls loop");
+                    if(std::find(seen.begin(), seen.end(), m) != seen.end()) continue;
+                    seen.push_back(m);
+                    for(const auto& next : findMacro(m).targets) if(next.kind == MacroTarget::Kind::Macro) pending.push_back(next.macro);
+                }
+                break;
+            }
+            }
+            // A relative target moves around its value when it became relative; one that already
+            // was keeps that base, so editing a control's other targets does not shift it.
+            if(t.relative)
+            {
+                const auto& before = findMacro(id).targets;
+                const auto same = std::find_if(before.begin(), before.end(), [&](const MacroTarget& o) {
+                    return o.relative && o.kind == t.kind && o.node == t.node && o.param == t.param && o.part == t.part && o.macro == t.macro; });
+                t.base = same != before.end() ? same->base : currentFraction(t);
+            }
+        }
+        findMacro(id).targets = std::move(targets);
+    }
+
+    // Sets a control and, through its targets, everything below it; part faders are rebuilt once.
+    void Session::driveMacro(uint32_t id, double value, bool& faders)
+    {
+        auto& macro = findMacro(id);
+        macro.value = std::clamp(value, 0.0, 1.0);
+        const auto targets = macro.targets; // `macro` may move as children are driven
+        for(const auto& t : targets)
+        {
+            const double v = t.map(macro.value);
+            switch(t.kind)
+            {
+            case MacroTarget::Kind::Parameter:
+                if(graph_.contains(t.node) && hasParameter(t.node, t.param))
+                {
+                    const auto info = parameterInfo(t.node, t.param);
+                    setParameter(t.node, t.param, info.minimum + (info.maximum - info.minimum) * v);
+                }
+                break;
+            case MacroTarget::Kind::PartLevel: for(auto& p : parts_) if(p.id == t.part) { p.level = v; faders = true; } break;
+            case MacroTarget::Kind::PartMute: for(auto& p : parts_) if(p.id == t.part) { p.mute = v >= .5; faders = true; } break;
+            case MacroTarget::Kind::Macro: driveMacro(t.macro, v, faders); break;
+            }
+        }
+    }
+
+    void Session::setMacro(uint32_t id, double value)
+    {
+        if(!std::isfinite(value)) throw std::invalid_argument("a control's value is 0..1");
+        findMacro(id);
+        bool faders = false;
+        driveMacro(id, value, faders);
+        // shortcut: part faders recompile the graph plan on every move; fine at knob rates on the
+        // desktop, make them direct gain updates before devices sweep them continuously.
+        if(faders) { editWires([&] { buildParts(); }); commit(); }
+    }
+
     Scene& Session::findScene(uint32_t id)
     {
         const auto it = std::find_if(scenes_.begin(), scenes_.end(), [&](const Scene& s) { return s.id == id; });
@@ -290,6 +424,8 @@ namespace oscairn
         scene.parts.clear(); scene.values.clear();
         for(const auto& p : parts_) scene.parts.push_back({p.id, p.level, p.mute});
         for(const auto& at : sceneParameters_) if(graph_.contains(at.node)) scene.values.push_back({at, parameter(at.node, at.param)});
+        scene.macros.clear();
+        for(const auto& m : macros_) scene.macros.push_back({m.id, m.value});
     }
 
     uint32_t Session::addScene(const std::string& name)
@@ -307,6 +443,9 @@ namespace oscairn
     void Session::selectScene(uint32_t id)
     {
         const auto scene = findScene(id);
+        // Controls first: the scene's own part faders and parameter values then have the last word.
+        bool faders = false;
+        for(const auto& [macro, value] : scene.macros) if(std::any_of(macros_.begin(), macros_.end(), [&](const Macro& m) { return m.id == macro; })) driveMacro(macro, value, faders);
         editWires([&] {
             for(const auto& state : scene.parts)
                 for(auto& p : parts_) if(p.id == state.part) { p.level = state.level; p.mute = state.mute; }
@@ -365,6 +504,7 @@ namespace oscairn
             std::erase_if(parts_, [&](const Part& p) { return p.id == id; });
             std::erase_if(wires_, [&](const Wire& w) { return w.owner == WireOwner::Part && w.part == id; });
             for(auto& scene : scenes_) std::erase_if(scene.parts, [&](const Scene::PartState& s) { return s.part == id; });
+            for(auto& m : macros_) std::erase_if(m.targets, [&](const MacroTarget& t) { return (t.kind == MacroTarget::Kind::PartLevel || t.kind == MacroTarget::Kind::PartMute) && t.part == id; });
             // Parts that played through a removed bus play to the main output; their sends to it end.
             const auto main = graph_.describe().audioLayout.outputs.front().id;
             for(auto& p : parts_)
@@ -529,6 +669,7 @@ namespace oscairn
             for(auto& p : parts_) std::erase(p.chain, node);
             buildParts();
             std::erase_if(sceneParameters_, [&](const SceneParameter& at) { return at.node == node; });
+            for(auto& m : macros_) std::erase_if(m.targets, [&](const MacroTarget& t) { return t.kind == MacroTarget::Kind::Parameter && t.node == node; });
             for(auto& scene : scenes_) std::erase_if(scene.values, [&](const Scene::Value& v) { return v.at.node == node; });
         });
     }

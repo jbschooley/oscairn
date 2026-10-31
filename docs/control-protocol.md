@@ -140,6 +140,10 @@ request members.
 | `scenes.select` | `scene`: applies them at once and commits staged graph edits | `{"accepted":true}` |
 | `scenes.remove`, `scenes.name` | `scene` (and `name`) | `{"accepted":true}` |
 | `scenes.parameters` | `parameters`: the `{node, param}` scenes control; one added takes its current value in every scene | `{"accepted":true}` |
+| `controls.add` | optional `name` | numeric `control` |
+| `controls.remove`, `controls.name` | `control` (and `name`) | `{"accepted":true}` |
+| `controls.targets` | `control`, `targets`: each `kind` (`parameter` with `node`, `param`; `partLevel` or `partMute` with `part`; `control` with `control`), optional `start`, `end` (0..1, end below start reverses), `curve` (`linear`, `exponential`, `logarithmic`, `s-curve`) and `relative` | `{"accepted":true}` |
+| `controls.set` | `control`, `value` (0..1): sets its targets, and theirs | `{"accepted":true}` |
 | `pads.get` | omitted or `{}` | the pad map: `bank` and eight `banks` of 16 pads, each `note`, `channel` (-1 follows the player), `velocity` (0 as played), `pressure` (`none`, `poly`, `channel`) |
 | `pads.set` | `map` (as `pads.get` returns it) | `{"accepted":true}` |
 | `pads.play` | `pad` (0..15, from the bottom-left), `on`, optional `velocity` and `channel` (the player's) | `{"accepted":true}` |
@@ -248,6 +252,12 @@ report the compiled per-channel routes.
   is a main port awaiting one, 4294967295 none.
 
 All of these stage edits like the other graph methods; `graph.commit` publishes them.
+
+**Controls** form RFC 0011's control tree: `graph.get` lists them (`controls`, each with
+its `value` and `targets`). A relative target moves its value around `base`, the value it
+had when it became relative, by half its range either way. Setting a control sets its
+targets as parameter events or part faders; a control target is set in turn. Assignments
+that would loop are refused. Scenes store control values (`controls` in each scene).
 
 **Scenes** are states of the Performance for sections of a song. `graph.get` lists them
 (`scenes`, each with its parts' `level` and `mute` and the scene parameters' `values`),

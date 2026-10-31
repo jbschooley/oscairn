@@ -48,6 +48,11 @@ namespace oscairn::standalone
         const std::string& editError() const {return editError_;}
         const std::string& pluginDir() const {return pluginDir_;}
         std::function<void()> openParts;
+        // Controls (RFC 0011's control tree) by name, for knobs bound as "control:NAME". The
+        // values are read once per timer tick.
+        bool hasControl(const std::string& name) const;
+        double controlValue(const std::string& name) const;
+        void setControl(const std::string& name,double value);
         void selectTrack(uint32_t track){sequenceTrack_=std::min(track,1u);}
         int trackChannel()const;
         bool connected()const{return failure_.empty();}
@@ -107,6 +112,7 @@ namespace oscairn::standalone
         std::array<uint16_t,128> padChannels_{};
         PadMap padMap_;
         std::string editError_, pluginDir_;
+        std::vector<Macro> macros_;
         void refreshPads();
         std::string socketPath_,failure_;
         uint32_t reconnectTicks_=0;

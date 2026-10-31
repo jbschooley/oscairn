@@ -281,6 +281,60 @@ namespace
         s.removeScene(chorus); check(s.graphState().scenes.size() == 1 && s.graphState().scene == 0, "removing the selected scene");
     }
 
+    // The control tree: a Super control drives an Assign control, which drives a gain and (reversed)
+    // a part's level; the Super also moves another gain around where it was. Values, loops,
+    // last-moved-wins, scenes and saving.
+    void controls(const char* fixture, const fs::path& root)
+    {
+        Session s(48000, frames);
+        const auto a = s.add("a", fixture, "org.kick.test.synth"), b = s.add("b", fixture, "org.kick.test.synth");
+        s.setParameter(a, 7, .5); s.setParameter(b, 7, .5);
+        const auto pa = s.addPart("A"), pb = s.addPart("B");
+        s.insertIntoPart(pa, 0, a); s.insertIntoPart(pb, 0, b); s.commit();
+        Audio x; x.run(s);
+        const auto assign = s.addMacro("Assign 1"), super = s.addMacro("Super");
+        MacroTarget gain; gain.node = a; gain.param = 7; gain.start = .2; gain.end = .8;
+        MacroTarget level; level.kind = MacroTarget::Kind::PartLevel; level.part = pb; level.start = 1; level.end = 0;
+        s.setMacroTargets(assign, {gain, level});
+        MacroTarget child; child.kind = MacroTarget::Kind::Macro; child.macro = assign; child.curve = MacroTarget::Curve::Exponential;
+        MacroTarget around; around.node = b; around.param = 7; around.relative = true; // base: b's gain now, .5
+        s.setMacroTargets(super, {child, around});
+        auto render = [&] { s.note(true, 60, 1); x.run(s); return x.l[0]; };
+        const double e = (std::exp(2.0) - 1) / (std::exp(4.0) - 1); // the exponential curve at .5
+        s.setMacro(super, .5);
+        double expected = (.2 + .6 * e) * 1 + .5 * (1 - e);
+        check(near(render(), expected), "Super at .5: A's gain " + std::to_string(.2 + .6 * e) + ", B at its gain .5 and level " + std::to_string(1 - e) + ": " + std::to_string(x.l[0]));
+        s.setMacro(super, 1);
+        check(near(render(), .8 + 1.0 * 0), "Super at 1: A's gain .8, B's level 0: " + std::to_string(x.l[0]));
+        s.setMacro(super, 0);
+        check(near(render(), .2 + 0.0 * 1), "Super at 0: A's gain .2, B's gain 0 around its base: " + std::to_string(x.l[0]));
+        check(s.graphState().macros[0].value == 0, "the Assign control follows the Super");
+        // The control moved last sets a shared target: Assign 1 moved by itself.
+        s.setMacro(assign, 1);
+        check(near(render(), .8), "Assign 1 moved directly: A .8, B's level 0: " + std::to_string(x.l[0]));
+        // No loops.
+        MacroTarget back; back.kind = MacroTarget::Kind::Macro; back.macro = super;
+        bool refused = false; try { s.setMacroTargets(assign, {back}); } catch(const std::invalid_argument&) { refused = true; }
+        check(refused, "a control may not drive the one above it");
+        refused = false; try { MacroTarget wide = gain; wide.end = 2; s.setMacroTargets(assign, {wide}); } catch(const std::invalid_argument&) { refused = true; }
+        check(refused, "a range beyond 0..1 is refused");
+        // Scenes store control values.
+        s.setMacro(super, .5); const auto verse = s.addScene("Verse");
+        s.setMacro(super, 1); s.selectScene(verse);
+        check(near(render(), expected) && s.graphState().macros[1].value == .5, "a scene restores the controls: " + std::to_string(x.l[0]));
+        // Saved with the Performance.
+        s.note(false, 60, 0); x.run(s);
+        s.savePerformance((root / "controls").string());
+        Session t(48000, frames);
+        t.loadPerformance((root / "controls").string());
+        const auto m = t.graphState().macros;
+        check(m.size() == 2 && m[1].name == "Super" && m[1].targets.size() == 2 && m[1].targets[0].curve == MacroTarget::Curve::Exponential && m[1].targets[1].relative && m[1].targets[1].base == .5 &&
+              m[0].targets[1].kind == MacroTarget::Kind::PartLevel && m[0].targets[1].start == 1, "controls round-trip with the Performance");
+        t.setMacro(m[1].id, 1); t.note(true, 60, 1); Audio y; y.run(t); y.run(t);
+        check(near(y.l[0], .8), "the loaded Super still drives the tree: " + std::to_string(y.l[0]));
+        s.removeMacro(assign); check(s.graphState().macros.size() == 1 && s.graphState().macros[0].targets.size() == 1, "removing a control drops it from the controls above it");
+    }
+
     // Parts, wires with owners and Mix settings, and flagged wires survive save and load, and play
     // the same; an earlier format version is refused.
     void persistence(const char* fixture, const char* audio, const char* delay, const fs::path& root)
@@ -356,6 +410,7 @@ int main(int argc, char** argv)
         zones(argv[1]);
         buses(argv[1], argv[3]);
         scenes(argv[1], temp.path);
+        controls(argv[1], temp.path);
         persistence(argv[1], argv[2], argv[3], temp.path);
     }
     catch(const std::exception& e) { forbidAllocation = false; std::fprintf(stderr, "FAIL: %s\n", e.what()); return 1; }

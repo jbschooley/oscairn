@@ -58,6 +58,7 @@ namespace oscairn
             std::vector<Scene> scenes;
             std::vector<SceneParameter> sceneParameters;
             uint32_t scene = 0; // the scene last selected or stored, or 0
+            std::vector<Macro> macros;
         };
         enum class ChangeKind { Value, GestureBegin, GestureEnd, Graph, Resync };
         struct Change
@@ -139,6 +140,15 @@ namespace oscairn
         virtual void setSceneName( uint32_t scene, const std::string& name ) = 0;
         // Which parameters scenes control. A parameter added takes its current value in every scene.
         virtual void setSceneParameters( const std::vector<SceneParameter>& parameters ) = 0;
+
+        // The control tree (parts.h). Setting a control's value sets its targets, and their
+        // targets in turn; an assignment that would loop is refused.
+        virtual uint32_t addMacro( const std::string& name ) = 0;
+        virtual void removeMacro( uint32_t macro ) = 0;
+        virtual void setMacroName( uint32_t macro, const std::string& name ) = 0;
+        // A target newly relative takes its current value as base; one already relative keeps its base.
+        virtual void setMacroTargets( uint32_t macro, const std::vector<MacroTarget>& targets ) = 0;
+        virtual void setMacro( uint32_t macro, double value ) = 0;
         virtual void remove( NodeId node, UserWires userWires ) = 0;
         virtual void mapParameter( NodeId from, uint32_t lane, NodeId to, uint32_t param ) = 0;
         virtual void unmapParameter( NodeId from, uint32_t lane ) = 0;

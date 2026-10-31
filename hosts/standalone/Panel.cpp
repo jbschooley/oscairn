@@ -55,6 +55,17 @@ namespace oscairn::standalone
                 refresh();
                 slider_.updateText();
             }
+            else if( c.bind.rfind( "control:", 0 ) == 0 )
+            {
+                // A control of the control tree, by name: it drives whatever it is set up to.
+                control_ = c.bind.substr( 8 );
+                slider_.setRange( 0.0, 1.0, 0.0 );
+                slider_.textFromValueFunction = []( double v ) { return juce::String( juce::roundToInt( v * 100 ) ) + "%"; };
+                slider_.onValueChange         = [this] { engine_.setControl( control_, slider_.getValue() ); };
+                if( label_.empty() ) label_ = control_;
+                refresh();
+                slider_.updateText();
+            }
             else if( splitParam( c.bind, node_, param_ ) )
             {
                 pluginId_=node_=="synth"?"org.oscairn.basic-synth":engine.pluginId(node_);
@@ -85,6 +96,11 @@ namespace oscairn::standalone
                 return;
             if( tempo_ )
                 slider_.setValue( engine_.status().tempo, juce::dontSendNotification );
+            else if( !control_.empty() )
+            {
+                slider_.setEnabled( engine_.hasControl( control_ ) );
+                slider_.setValue( engine_.controlValue( control_ ), juce::dontSendNotification );
+            }
             else if( !node_.empty() ) {
                 const bool available=engine_.hasParam(node_,param_) && engine_.pluginId(node_)==pluginId_;
                 slider_.setEnabled(available);
@@ -116,7 +132,7 @@ namespace oscairn::standalone
         int textHeight() const { return juce::jlimit( 18, 48, getHeight() / 7 ); }
 
         Engine&       engine_;
-        std::string   label_, node_, pluginId_;
+        std::string   label_, node_, pluginId_, control_;
         uint32_t      param_ = 0;
         bool          tempo_ = false, available_ = false;
         juce::Slider  slider_;
