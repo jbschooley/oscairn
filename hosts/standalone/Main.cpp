@@ -145,7 +145,7 @@ namespace oscairn::standalone
         {
             DocumentWindow::resized();
             if( pads_ && getContentComponent() ) pads_->setBounds( getContentComponent()->getBounds() );
-            if( parts_ && getContentComponent() ) parts_->setBounds( getContentComponent()->getBounds() );
+            if( parts_ && parts_->getParentComponent() == this && getContentComponent() ) parts_->setBounds( getContentComponent()->getBounds() ); // a panel places its own
         }
 
         // Cmd-Z undoes and Cmd-Shift-Z redoes (Ctrl elsewhere), from any view: keys the views do
@@ -256,7 +256,13 @@ namespace oscairn::standalone
             if( auto* s = shell() ) { s->showTab( DesktopShell::Tab::Part ); return; } // the desktop has them in its window
             parts_ = std::make_unique<PartsView>( engine_, scanner() );
             setDesktopMode( *parts_, 2 ); // a device's screen: the type scale and targets for touch
-            parts_->onDone = [this] { juce::MessageManager::callAsync( [safe = juce::Component::SafePointer<Window>( this )] { if( safe ) safe->parts_.reset(); } ); };
+            parts_->onDone = [this] { juce::MessageManager::callAsync( [safe = juce::Component::SafePointer<Window>( this )] {
+                if( !safe ) return;
+                if( auto* panel = dynamic_cast<Panel*>( safe->getContentComponent() ) ) panel->overlay( nullptr );
+                safe->parts_.reset();
+            } ); };
+            // Over the device's screen, so its knobs and buttons stay in reach, as on the hardware.
+            if( auto* panel = dynamic_cast<Panel*>( getContentComponent() ) ) { panel->overlay( parts_.get() ); return; }
             addAndMakeVisible( *parts_ );
             if( getContentComponent() ) parts_->setBounds( getContentComponent()->getBounds() );
         }

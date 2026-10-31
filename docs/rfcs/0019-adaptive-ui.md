@@ -264,10 +264,18 @@ drawn for the type its value text names.
   grid has as many columns as the width allows, two to six. `desktop-shell` checks the Basic
   Synth's linked LFO, and given the engines, that the analog filter envelope's stages stay
   together at 1,180 and 560 pixels and that no controls overlap on any of their pages.
-- *Physical knobs following the screen* (step 6): a layout says how many assignable knobs a
-  device has and on which edge of the screen; the page's selected row of tiles is bound to
-  them in order, and a strip along that edge names what each knob does now, as the MODX's six
-  knobs under its screen do. A device without such knobs shows no strip.
+- *Physical knobs following the screen* (step 6): done for parameter pages. A layout's knob
+  bound `row:N` plays the Nth parameter of the row selected on screen; the panel counts them
+  and works out the screen's edge they sit beyond. On a parameter page a tap on a tile selects
+  its row (the first row until then), an accent line marks it, and a strip along that edge
+  names each knob's parameter (and its value, when the strip runs down a side). A device
+  without such knobs shows no strip. On device layouts the Parts views now sit over the
+  screen, scaled with it, so the panel's knobs stay in reach. The KICK's P1 to P4 and the
+  concept keyboard's Mod 1 to 3 are row knobs. `desktop-shell` checks, on a panel with four
+  row knobs right of its screen, that the first row is theirs, that tapping a tile in the
+  next row moves them there, that turning P1 sets that row's first parameter, and that the
+  row and the knobs go with their page and panel. Not yet: rows on the Part page, Mixer and
+  Routing; defaults for the knobs when no page is open; endless encoders' relative turns.
 - *No fixed effect sends or EQ in the Mixer:* sends go to the Performance's own buses, and an
   EQ is a plugin put wherever it is needed (RFC 0016).
 

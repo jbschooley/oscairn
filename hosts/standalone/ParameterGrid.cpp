@@ -455,6 +455,10 @@ namespace oscairn::standalone
             for(const auto& p : grid_.panels_) drawSection(g, p, ink(Ink::Surface));
             g.setColour(ink(Ink::Muted)); g.setFont(juce::FontOptions(textSize(TextRole::Small, mode), juce::Font::bold));
             for(const auto& h : grid_.headings_) g.drawText(h.text, h.bounds, juce::Justification::bottomLeft, true);
+            // The row the device's knobs play: an accent line along its tiles' tops, over the cards.
+            if(grid_.engine_.rowKnobs() > 0)
+                for(const auto& t : grid_.tiles_)
+                    if(t.bounds.getY() == grid_.rowY_) { g.setColour(ink(Ink::Accent)); g.fillRect(t.bounds.getX() + 6, t.bounds.getY(), t.bounds.getWidth() - 12, 3); }
         }
     private:
         ParameterGrid& grid_;
@@ -499,10 +503,34 @@ namespace oscairn::standalone
         search_.onTextChange = [this] { tab_ = 0; viewport_.setViewPosition(0, 0); refresh(); };
         search_.onEscapeKey = [this] { search_.clear(); };
         if(params_.size() > tabbedAbove) addAndMakeVisible(search_);
+        content_->addMouseListener(this, true); // taps anywhere in a tile select its row
         startTimer(60);
     }
 
-    ParameterGrid::~ParameterGrid() { stopTimer(); }
+    ParameterGrid::~ParameterGrid() { stopTimer(); engine_.setRow({}); }
+
+    void ParameterGrid::mouseDown(const juce::MouseEvent& e)
+    {
+        const auto at = e.getEventRelativeTo(content_.get()).getPosition();
+        for(const auto& t : tiles_) if(t.bounds.contains(at)) { selectRow(t.bounds.getY()); return; }
+    }
+
+    void ParameterGrid::selectRow(int y)
+    {
+        rowY_ = y;
+        publishRow();
+        content_->repaint(); repaint(strip_);
+    }
+
+    void ParameterGrid::publishRow()
+    {
+        std::vector<const Tile*> row;
+        for(const auto& t : tiles_) if(t.bounds.getY() == rowY_) row.push_back(&t);
+        std::sort(row.begin(), row.end(), [](const Tile* a, const Tile* b) { return a->bounds.getX() < b->bounds.getX(); });
+        std::vector<Engine::RowParam> published;
+        for(const auto* t : row) published.push_back({name_, params_[t->param].id, params_[t->param].name});
+        engine_.setRow(std::move(published));
+    }
 
     void ParameterGrid::showPage(size_t page)
     {
@@ -533,6 +561,29 @@ namespace oscairn::standalone
     void ParameterGrid::paint(juce::Graphics& g)
     {
         g.fillAll(ink(Ink::Background));
+        if(!strip_.isEmpty())
+        {
+            // A cell per knob, in order: the parameter it plays and its value, or nothing.
+            const int knobs = engine_.rowKnobs(), mode = std::max(1, desktopMode(*this));
+            const bool vertical = engine_.rowEdge() == Engine::Edge::Left || engine_.rowEdge() == Engine::Edge::Right;
+            const auto& row = engine_.row();
+            auto area = strip_;
+            for(int i = 0; i < knobs; ++i)
+            {
+                const auto cell = vertical ? area.removeFromTop(strip_.getHeight() / knobs) : area.removeFromLeft(strip_.getWidth() / knobs);
+                drawSection(g, cell.reduced(1), size_t(i) < row.size() ? ink(Ink::Raised) : ink(Ink::Surface));
+                if(size_t(i) >= row.size()) continue;
+                auto text = cell.reduced(8, 2);
+                g.setColour(ink(Ink::Text)); g.setFont(juce::FontOptions(textSize(TextRole::Small, mode), juce::Font::bold));
+                if(vertical)
+                {
+                    g.drawText(juce::String::fromUTF8(row[size_t(i)].name.c_str()), text.removeFromTop(text.getHeight() / 2), juce::Justification::bottomLeft, true);
+                    g.setColour(ink(Ink::Muted)); g.setFont(juce::FontOptions(textSize(TextRole::Small, mode)));
+                    g.drawText(juce::String::fromUTF8(engine_.paramText(row[size_t(i)].node, row[size_t(i)].param, engine_.param(row[size_t(i)].node, row[size_t(i)].param)).c_str()), text, juce::Justification::topLeft, true);
+                }
+                else g.drawText(juce::String::fromUTF8(row[size_t(i)].name.c_str()), text, juce::Justification::centred, true);
+            }
+        }
         if(pages_.empty())
         {
             g.setColour(ink(Ink::Muted)); g.setFont(juce::FontOptions(textSize(TextRole::Body, std::max(1, desktopMode(*this)))));
@@ -580,6 +631,20 @@ namespace oscairn::standalone
                 auto& b = static_cast<PageButton&>(*tabButtons_[i]);
                 b.shown = i == tab_; b.repaint();
                 b.setBounds(strip.removeFromLeft(juce::GlyphArrangement::getStringWidthInt(font, b.getName()) + 28)); strip.removeFromLeft(2);
+            }
+        }
+        // The device's row knobs, named along the screen's edge nearest them.
+        strip_ = {};
+        if(const int knobs = engine_.rowKnobs(); knobs > 0)
+        {
+            using Edge = Engine::Edge;
+            const int across = mode == 2 ? 44 : 32, along = 140;
+            switch(engine_.rowEdge())
+            {
+            case Edge::Bottom: strip_ = area.removeFromBottom(across); break;
+            case Edge::Top: strip_ = area.removeFromTop(across); break;
+            case Edge::Left: strip_ = area.removeFromLeft(along); break;
+            case Edge::Right: strip_ = area.removeFromRight(along); break;
             }
         }
         viewport_.setBounds(area);
@@ -838,6 +903,9 @@ namespace oscairn::standalone
             y += height + gap + 6;
         }
         content_->setSize(width, std::max(y, 1));
+        // Keep the row selected if it is still there, else the first.
+        if(std::none_of(tiles_.begin(), tiles_.end(), [&](const Tile& t) { return t.bounds.getY() == rowY_; })) rowY_ = tiles_.empty() ? -1 : tiles_.front().bounds.getY();
+        publishRow();
         stale_ = !engine_.controlReady(); // the engine answers value texts only when it is free
         for(auto& t : tiles_) show(t, engine_.param(name_, params_[t.param].id));
         content_->repaint();
@@ -866,6 +934,7 @@ namespace oscairn::standalone
     {
         if(stale_ && engine_.controlReady()) { refresh(); return; }
         if(!panels_.empty()) content_->repaint(); // envelopes follow their parameters too
+        if(!strip_.isEmpty()) repaint(strip_);
         // Values change from automation, scenes, controls and other clients: follow them.
         for(auto& t : tiles_)
             if(const double v = engine_.param(name_, params_[t.param].id); v != t.shown || (t.range && engine_.param(name_, params_[t.high].id) != t.shownHigh)) show(t, v);

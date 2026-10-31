@@ -56,6 +56,16 @@ namespace oscairn::standalone
         double controlValue(const std::string& name) const;
         void setControl(const std::string& name,double value);
         void selectTrack(uint32_t track){sequenceTrack_=std::min(track,1u);}
+        // The row selected on screen (RFC 0019): the parameters a device's knobs bound "row:N"
+        // play, in order, and how many such knobs the device has and on which edge of its
+        // screen they sit (none on the desktop). Main thread.
+        struct RowParam { std::string node; uint32_t param = 0; std::string name; };
+        enum class Edge { Bottom, Top, Left, Right };
+        void setRow(std::vector<RowParam> row) { row_ = std::move(row); }
+        const std::vector<RowParam>& row() const { return row_; }
+        void setRowKnobs(int count, Edge edge) { rowKnobs_ = count; rowEdge_ = edge; }
+        int rowKnobs() const { return rowKnobs_; }
+        Edge rowEdge() const { return rowEdge_; }
         int trackChannel()const;
         bool connected()const{return failure_.empty();}
         bool canRestart()const{return recoveryAvailable_;}
@@ -112,6 +122,9 @@ namespace oscairn::standalone
         std::unique_ptr<RemoteControl> remote_;
         Control* control_=nullptr;
         uint32_t sequenceTrack_=0;
+        std::vector<RowParam> row_;
+        int rowKnobs_=0;
+        Edge rowEdge_=Edge::Bottom;
         std::array<uint16_t,128> padChannels_{};
         PadMap padMap_;
         std::string editError_, pluginDir_;

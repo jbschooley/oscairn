@@ -23,6 +23,9 @@ namespace oscairn::standalone
         ~Panel() override;
 
         const Layout& layout() const { return layout_; }
+        /// Puts a view over the screen (the Parts views), scaled with the panel like the screen,
+        /// so the panel's knobs and buttons stay in reach; null removes it.
+        void overlay( juce::Component* view );
 
         void paint( juce::Graphics& ) override;
         void resized() override;
@@ -36,6 +39,7 @@ namespace oscairn::standalone
         void timerCallback() override;
 
         Layout                 layout_;
+        juce::Component*       overlay_ = nullptr;
         Engine&                engine_;
         std::unique_ptr<Board> board_;
         juce::Label connectionNotice_;

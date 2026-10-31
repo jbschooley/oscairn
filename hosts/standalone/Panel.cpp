@@ -66,6 +66,17 @@ namespace oscairn::standalone
                 refresh();
                 slider_.updateText();
             }
+            else if( c.bind.rfind( "row:", 0 ) == 0 && std::atoi( c.bind.c_str() + 4 ) > 0 )
+            {
+                // The Nth parameter of the row selected on screen, whatever it is now.
+                row_ = std::atoi( c.bind.c_str() + 4 );
+                layoutLabel_ = label_;
+                slider_.textFromValueFunction = [this]( double v ) { return node_.empty() ? juce::String() : juce::String( engine_.paramText( node_, param_, v ) ); };
+                slider_.onValueChange         = [this] { if( !node_.empty() ) engine_.setParam( node_, param_, slider_.getValue() ); };
+                slider_.onDragStart           = [this] { if( !node_.empty() ) engine_.paramGesture( node_, param_, true ); };
+                slider_.onDragEnd             = [this] { if( !node_.empty() ) engine_.paramGesture( node_, param_, false ); };
+                refresh();
+            }
             else if( splitParam( c.bind, node_, param_ ) )
             {
                 pluginId_=node_=="synth"?"org.oscairn.basic-synth":engine.pluginId(node_);
@@ -94,6 +105,27 @@ namespace oscairn::standalone
         {
             if( slider_.isMouseButtonDown() )
                 return;
+            if( row_ )
+            {
+                // Follow the row: a new parameter takes its range and name; none disables it.
+                const auto& row = engine_.row();
+                const auto* bound = size_t( row_ ) <= row.size() ? &row[size_t( row_ - 1 )] : nullptr;
+                if( !bound ) { node_.clear(); slider_.setEnabled( false ); if( label_ != layoutLabel_ ) { label_ = layoutLabel_; repaint(); } return; }
+                if( bound->node != node_ || bound->param != param_ )
+                {
+                    node_ = bound->node; param_ = bound->param; label_ = bound->name; repaint();
+                    if( engine_.hasParam( node_, param_ ) )
+                    {
+                        const auto info = engine_.paramInfo( node_, param_ );
+                        slider_.setRange( info.minimum, info.maximum, info.stepped ? 1.0 : 0.0 );
+                        slider_.setDoubleClickReturnValue( true, info.defaultValue );
+                    }
+                }
+                const bool available = engine_.hasParam( node_, param_ );
+                slider_.setEnabled( available );
+                if( available ) { slider_.setValue( engine_.param( node_, param_ ), juce::dontSendNotification ); if( engine_.controlReady() ) slider_.updateText(); }
+                return;
+            }
             if( tempo_ )
                 slider_.setValue( engine_.status().tempo, juce::dontSendNotification );
             else if( !control_.empty() )
@@ -132,8 +164,9 @@ namespace oscairn::standalone
         int textHeight() const { return juce::jlimit( 18, 48, getHeight() / 7 ); }
 
         Engine&       engine_;
-        std::string   label_, node_, pluginId_, control_;
+        std::string   label_, node_, pluginId_, control_, layoutLabel_;
         uint32_t      param_ = 0;
+        int           row_ = 0; // bound "row:N": the Nth parameter of the row on screen
         bool          tempo_ = false, available_ = false;
         juce::Slider  slider_;
     };
@@ -310,8 +343,11 @@ namespace oscairn::standalone
             setSize( layout_.width + dx, layout_.height + dy );
             for( auto& [component, control] : placed_ )
                 component->setBounds( control->anchor.place( control->rect, dx, dy ) );
+            if( overlay_ ) overlay_->setBounds( screenBounds() );
             repaint();
         }
+        juce::Rectangle<int> screenBounds() const { return screen_ ? screen_->getBounds() : getLocalBounds(); }
+        juce::Component* overlay_ = nullptr; // a view over the screen
 
         void refresh()
         {
@@ -386,6 +422,16 @@ namespace oscairn::standalone
 
     Panel::Panel( Engine& engine, const Layout& layout ) : layout_( layout ),engine_(engine)
     {
+        // Knobs bound to the row on screen: how many, and the screen's edge they sit beyond,
+        // where the screen names what each plays.
+        int rowKnobs = 0; juce::Point<int> centre;
+        juce::Rectangle<int> screen;
+        for( const auto& c : layout_.controls ) if( c.type == Layout::Control::Type::Screen ) screen = c.rect;
+        for( const auto& c : layout_.controls )
+            if( c.type == Layout::Control::Type::Knob && c.bind.rfind( "row:", 0 ) == 0 ) { rowKnobs = std::max( rowKnobs, std::atoi( c.bind.c_str() + 4 ) ); centre = c.rect.getCentre(); }
+        using Edge = Engine::Edge;
+        const auto edge = centre.x >= screen.getRight() ? Edge::Right : centre.x < screen.getX() ? Edge::Left : centre.y < screen.getY() ? Edge::Top : Edge::Bottom;
+        engine_.setRowKnobs( screen.isEmpty() ? 0 : rowKnobs, edge );
         board_ = std::make_unique<Board>( engine, layout_ );
         addAndMakeVisible( *board_ );
         addChildComponent(connectionNotice_);addChildComponent(restartButton_);
@@ -394,7 +440,14 @@ namespace oscairn::standalone
         startTimerHz( 30 );
     }
 
-    Panel::~Panel() = default;
+    Panel::~Panel() { engine_.setRowKnobs( 0, Engine::Edge::Bottom ); }
+
+    void Panel::overlay( juce::Component* view )
+    {
+        if( overlay_ && overlay_ != view ) board_->removeChildComponent( overlay_ );
+        overlay_ = board_->overlay_ = view;
+        if( view ) { board_->addAndMakeVisible( view ); view->setBounds( board_->screenBounds() ); }
+    }
 
     void Panel::paint( juce::Graphics& g )
     {

@@ -70,9 +70,16 @@ namespace oscairn::standalone
 
         void paint(juce::Graphics&) override;
         void resized() override;
+        void mouseDown(const juce::MouseEvent&) override; // a tap on a tile selects its row
+        // The row the device's knobs play (RFC 0019): its tiles' parameters, left to right.
+        void selectRow(int y);
+        std::vector<std::string> rowShown() const { std::vector<std::string> n; for(const auto& r : engine_.row()) n.push_back(r.name); return n; }
 
     private:
         class Choices;
+        void publishRow();               // the selected row to the engine, for "row:N" knobs
+        juce::Rectangle<int> strip_;     // names what each of the device's row knobs plays
+        int rowY_ = -1;                  // the selected row's top, in the content
         struct Page { std::string name; std::vector<size_t> params; };
         struct Tile
         {

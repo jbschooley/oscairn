@@ -7,7 +7,7 @@ a device that does not exist yet and be tried with the same engine behind it. Bu
 | File | Layout |
 | --- | --- |
 | `desktop.json` | The desktop app's own window (the Desktop surface): toolbar, parts list, and tabs for the part, Mixer, Routing and Controls; apps such as the Groovebox open from the Apps menu |
-| `kick.json` | The KICK's panel, with the geometry of chillbeast's KickEM simulator board (1024 x 600 screen); most buttons do nothing yet |
+| `kick.json` | The KICK's panel, with the geometry of chillbeast's KickEM simulator board (1024 x 600 screen); P1 to P4 play the row selected on screen; most buttons do nothing yet |
 | `kick-screen.json` | The KICK's screen alone, 1024 x 600: on the device, the hardware panel supplies the controls |
 | `ignite.json` | The Ignite's panel (BE 0716-AAF), from its front-panel photo, with its 1024 x 600 screen; the 16 step encoders edit each step's note, CUTOFF and VOLUME the synth; most buttons do nothing yet |
 | `keys49.json` | A concept 49-key keyboard: screen, knobs, pads and keys |
@@ -49,6 +49,9 @@ Others can be opened with View > Open Layout File... or `--layout path.json`.
   - `knob`: `bind` is `node:param` (nodes `sequencer`, `synth`, `delay`; a CLAP parameter
     id), `tempo`, or `control:NAME`: a control of the Performance's control tree by name
     (RFC 0011), driving everything it is set up to, such as a Super Knob.
+    `row:N` plays the Nth parameter of the row selected on screen (RFC 0019): tap a tile in a
+    plugin's parameter pages and the knobs take that row, left to right, and the screen
+    names them along its edge nearest the knobs. With no row selected the knob is idle.
     `"mode": "endless"` draws an endless encoder (a ring of LEDs showing the value) instead of a
     pot with end stops (`absolute`, the default).
   - `button`: `bind` is `play`, `stop`, `play-stop` or `sync` (follow MIDI clock).

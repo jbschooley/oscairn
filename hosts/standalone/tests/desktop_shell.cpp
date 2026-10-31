@@ -8,6 +8,7 @@
 // PLUGIN.clap given after SNAPSHOTS, each written to SNAPSHOTS-params-<name>-<page>.png.
 //   oscairn_desktop_shell_test PLUGIN_DIR SCANNER THEMES [SNAPSHOTS [PLUGIN.clap...]]
 #include "../DesktopShell.h"
+#include "../Panel.h"
 #include "../ParameterGrid.h"
 #include "../ZoneEditor.h"
 #include "oscairn/local_socket.h"
@@ -323,6 +324,58 @@ int main(int argc, char** argv)
                 grid.search("");
                 check(grid.tilesShown() == pageTiles, "clearing the search shows the page again");
             }
+            // A device's knobs play the row selected on screen: a panel with four "row:N" knobs to
+            // the right of its screen, and the Basic Synth's page over that screen.
+            {
+                const auto layout = standalone::Layout::parse(R"({"name": "Row test", "size": [1400, 600], "controls": [
+                    {"type": "screen", "rect": [0, 0, 1024, 600]},
+                    {"type": "knob", "rect": [1100, 20, 120, 120], "label": "P1", "bind": "row:1"}, {"type": "knob", "rect": [1100, 160, 120, 120], "label": "P2", "bind": "row:2"},
+                    {"type": "knob", "rect": [1100, 300, 120, 120], "label": "P3", "bind": "row:3"}, {"type": "knob", "rect": [1100, 440, 120, 120], "label": "P4", "bind": "row:4"}]})");
+                standalone::Panel panel(engine, layout);
+                panel.setSize(1400, 600);
+                check(engine.rowKnobs() == 4 && engine.rowEdge() == standalone::Engine::Edge::Right, "the panel's row knobs, right of its screen");
+                NodeId synth = 0;
+                for(const auto& [id, n] : engine.graph().names) if(n == "Basic Synth") synth = id;
+                auto grid = std::make_unique<standalone::ParameterGrid>(engine, synth, "Basic Synth");
+                standalone::setDesktopMode(*grid, 2);
+                panel.overlay(grid.get());
+                for(int i = 0; i < 20; ++i) juce::MessageManager::getInstance()->runDispatchLoopUntil(10);
+                const auto first = grid->rowShown();
+                check(!first.empty() && first[0] == "Brightness", "the first row is the knobs' until another is chosen");
+                // Tap a tile in the next row.
+                juce::Component* tile = nullptr;
+                std::function<void(juce::Component&)> find = [&](juce::Component& c) { for(auto* child : c.getChildren()) { if(auto* s = dynamic_cast<juce::Slider*>(child); s && s->isRotary() && s->getY() > 100 && !tile) tile = s; find(*child); } };
+                find(*grid);
+                if(tile)
+                {
+                    auto mouse = juce::Desktop::getInstance().getMainMouseSource();
+                    const juce::Point<float> at(4, 4);
+                    grid->mouseDown(juce::MouseEvent(mouse, at, {}, 1, 0, 0, 0, 0, tile, tile, juce::Time::getCurrentTime(), at, juce::Time::getCurrentTime(), 1, false));
+                }
+                const auto second = grid->rowShown();
+                check(tile && !second.empty() && second != first, "tapping a tile in another row gives the knobs that row");
+                // P1 now plays that row's first parameter.
+                juce::Slider* p1 = nullptr;
+                std::function<void(juce::Component&)> knob = [&](juce::Component& c) { // the slider in P1's place on the panel
+                    for(auto* child : c.getChildren()) { if(auto* s = dynamic_cast<juce::Slider*>(child); s && !p1 && s->getParentComponent()->getBounds().getTopLeft() == juce::Point<int>(1100, 20)) p1 = s; knob(*child); }
+                };
+                knob(panel);
+                uint32_t played = 0; double range = 1;
+                for(const auto& p : engine.parameters(synth)) if(p.name == second[0]) { played = p.id; range = p.maximum - p.minimum; }
+                for(int i = 0; i < 10; ++i) juce::MessageManager::getInstance()->runDispatchLoopUntil(40); // the panel's knobs follow the row
+                check(p1 && p1->isEnabled() && played, "P1 follows the row");
+                if(p1 && played)
+                {
+                    const double target = p1->getMinimum() + range * .25;
+                    p1->setValue(target, juce::sendNotificationSync);
+                    for(int i = 0; i < 100 && std::abs(engine.param("Basic Synth", played) - target) > 1e-6; ++i) juce::MessageManager::getInstance()->runDispatchLoopUntil(10);
+                    check(std::abs(engine.param("Basic Synth", played) - target) < 1e-6, "turning P1 sets " + second[0]);
+                }
+                if(argc >= 5) { const juce::File out{juce::String(argv[4]) + "-row-knobs.png"}; out.deleteFile(); juce::FileOutputStream stream(out); juce::PNGImageFormat().writeImageToStream(panel.createComponentSnapshot(panel.getLocalBounds()), stream); }
+                panel.overlay(nullptr); grid.reset();
+                check(engine.row().empty(), "the row goes with its page");
+            }
+            check(engine.rowKnobs() == 0, "and the knobs with their panel");
             // The preference: Automatic until one is saved, then what was saved.
             const auto folder = juce::File::createTempFile("oscairn-input");
             check(standalone::readInputMode(folder) == standalone::InputMode::Automatic, "no saved preference reads as Automatic");

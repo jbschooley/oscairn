@@ -70,7 +70,7 @@ target_link_libraries(oscairn_pad_editor_test PRIVATE oscairn_audio_host oscairn
 target_compile_definitions(oscairn_pad_editor_test PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_MODAL_LOOPS_PERMITTED=1)
 add_dependencies(oscairn_pad_editor_test oscairn_step_sequencer oscairn_basic_synth oscairn_delay oscairn_splitters oscairn-plugin-scan)
 juce_add_console_app(oscairn_desktop_shell_test PRODUCT_NAME "Oscairn Desktop Shell Test")
-target_sources(oscairn_desktop_shell_test PRIVATE tests/desktop_shell.cpp DesktopShell.cpp ParameterGrid.cpp ZoneEditor.cpp Screen.cpp PartsView.cpp PartsModel.cpp Engine.cpp Theme.cpp SoundPickerModel.cpp)
+target_sources(oscairn_desktop_shell_test PRIVATE tests/desktop_shell.cpp DesktopShell.cpp ParameterGrid.cpp ZoneEditor.cpp Screen.cpp Panel.cpp Layout.cpp PadEditor.cpp PartsView.cpp PartsModel.cpp Engine.cpp Theme.cpp SoundPickerModel.cpp)
 target_link_libraries(oscairn_desktop_shell_test PRIVATE oscairn_audio_host oscairn_host_process oscairn_control_socket juce::juce_audio_utils juce::juce_gui_extra juce::juce_recommended_config_flags)
 target_compile_definitions(oscairn_desktop_shell_test PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_MODAL_LOOPS_PERMITTED=1)
 add_dependencies(oscairn_desktop_shell_test oscairn_step_sequencer oscairn_basic_synth oscairn_delay oscairn_transpose oscairn_splitters oscairn-plugin-scan)
