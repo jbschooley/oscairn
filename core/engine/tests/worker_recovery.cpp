@@ -131,7 +131,7 @@ namespace
         const auto state = directory / "slow-state", marker = directory / "slow-once";
         { auto raw = oscairn::loadPlugin(plugin, "org.kick.test.midi", rate, frames); raw->setParameter(gain, .6); raw->service(); raw->saveState(state.string()); }
         setenv("KICK_FIXTURE_SLOW_LOAD_ONCE", marker.c_str(), 1);
-        setenv("OSCAIRN_WORKER_REPLY_SECONDS", "1", 1);
+        setenv("OSCAIRN_WORKER_REPLY_SECONDS", "3", 1); // short of the 6 s load, with room for ordinary requests under sanitizers
         {
             auto host = oscairn::loadPlugin(plugin, "org.kick.test.midi", rate, frames);
             unsetenv("OSCAIRN_WORKER_REPLY_SECONDS"); // read when the worker was made; later ones use the default
@@ -143,7 +143,7 @@ namespace
             for(int i = 0; i < 500 && host->statistics().restarts == 0; ++i) std::this_thread::sleep_for(std::chrono::milliseconds(10));
             check(host->statistics().restarts == 1, "the worker is restarted: " + host->failure());
             // The slow worker is gone, so no late reply is waiting: each request gets its own.
-            std::this_thread::sleep_for(std::chrono::seconds(3));
+            std::this_thread::sleep_for(std::chrono::seconds(4)); // past when the slow load would have answered
             check(host->setParameter(gain, .3), "a parameter set after the restart");
             host->service();
             check(std::abs(host->parameterValue(gain) - .3) < 1e-9, "and read back: " + std::to_string(host->parameterValue(gain)));
