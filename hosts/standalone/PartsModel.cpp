@@ -15,6 +15,27 @@ namespace oscairn::standalone
             return nullptr;
         }
         std::string range(int low, int high) { return noteName(low) + "–" + noteName(high); }
+        // Which part (or bus) each node belongs to: in its chain or a lane, or a split's node.
+        std::map<NodeId, const Part*> owners(const Control::GraphState& g)
+        {
+            std::map<NodeId, const Part*> out;
+            for(const auto& p : g.parts)
+            {
+                for(const auto e : p.chain) if(!isSplit(e)) out[e] = &p;
+                for(const auto& s : p.splits)
+                {
+                    for(const auto& l : s.lanes) for(const auto e : l.chain) if(!isSplit(e)) out[e] = &p;
+                    if(s.splitter) out[s.splitter] = &p;
+                    if(s.joiner) out[s.joiner] = &p;
+                }
+            }
+            return out;
+        }
+        bool hasUserWires(const Control::GraphState& g, NodeId node)
+        {
+            return std::any_of(g.wires.begin(), g.wires.end(), [&](const Wire& w) { return w.owner == WireOwner::User && (w.from == node || w.to == node); });
+        }
+        std::string nameOf(const Control::GraphState& g, NodeId node) { return g.names.count(node) ? g.names.at(node) : std::string("a plugin"); }
     }
 
     std::string roleOf(const Graph::NodeInfo& n)
@@ -69,6 +90,7 @@ namespace oscairn::standalone
                             // A lane is named after its instrument, else its last box.
                             const auto instrument = std::find_if(lane.boxes.begin(), lane.boxes.end(), [](const PartBox& x) { return x.role == "Instrument"; });
                             box.name += (box.name.empty() ? "" : " | ") + (instrument != lane.boxes.end() ? instrument->name : !lane.boxes.empty() ? lane.boxes.back().name : lane.name.empty() ? std::string("Dry") : lane.name);
+                            for(const auto& x : lane.boxes) box.userWires = box.userWires || x.userWires; // a lane's badge shows on its split
                             box.lanes.push_back(std::move(lane));
                         }
                         out.push_back(std::move(box));
@@ -76,6 +98,7 @@ namespace oscairn::standalone
                     else if(const auto* n = nodeInfo(g, entry))
                     {
                         out.push_back({entry, g.names.count(entry) ? g.names.at(entry) : std::string(), n->plugin.name, roleOf(*n)});
+                        out.back().userWires = hasUserWires(g, entry);
                         if(row.sound.empty() && out.back().role == "Instrument") row.sound = out.back().name;
                     }
                 }
@@ -100,7 +123,92 @@ namespace oscairn::standalone
             }
             (row.bus ? state.buses : state.parts).push_back(std::move(row));
         }
+        // Nodes outside the parts that parts are wired into in Routing; several make a shared row.
+        const auto owner = owners(g);
+        std::map<NodeId, std::vector<uint32_t>> fed; // node outside the parts -> the parts feeding it
+        for(const auto& w : g.wires)
+        {
+            if(w.owner != WireOwner::User || w.kind != WireKind::Audio || owner.count(w.to) || w.to == graphOutput) continue;
+            const auto from = owner.find(w.from);
+            if(from == owner.end()) continue;
+            auto& parts = fed[w.to];
+            if(std::find(parts.begin(), parts.end(), from->second->id) == parts.end()) parts.push_back(from->second->id);
+        }
+        for(const auto& [node, parts] : fed)
+        {
+            if(parts.size() > 1)
+            {
+                SharedRow row{node, nameOf(g, node), {}};
+                for(const auto id : parts) for(const auto& p : g.parts) if(p.id == id) row.fedBy.push_back(p.name);
+                state.shared.push_back(std::move(row));
+            }
+            for(const auto id : parts)
+                for(auto* list : {&state.parts, &state.buses})
+                    for(auto& r : *list) if(r.id == id) r.exits.push_back(nameOf(g, node) + (parts.size() > 1 ? " (shared)" : ""));
+        }
         return state;
+    }
+
+    const RoutingNode* RoutingState::find(NodeId node, uint32_t port) const
+    {
+        for(const auto& n : nodes)
+            if(n.node == node && ((node != graphInput && node != graphOutput) || n.port == port)) return &n;
+        return nullptr;
+    }
+
+    RoutingState readRouting(const Control::GraphState& g)
+    {
+        RoutingState state;
+        state.wires = g.wires;
+        const auto owner = owners(g);
+        state.nodes.push_back({graphInput, notesPort, "Keys & MIDI", "Notes", 0});
+        for(const auto& p : g.topology.audioLayout.inputs) state.nodes.push_back({graphInput, p.id, p.name.empty() ? "Audio in" : p.name, "Audio", 0});
+        // Nodes in part order, then the rest.
+        std::vector<NodeId> order;
+        for(const auto& p : g.parts)
+        {
+            for(const auto& [node, part] : owner) if(part == &p) order.push_back(node);
+        }
+        for(const auto& n : g.topology.nodes) if(std::find(order.begin(), order.end(), n.id) == order.end()) order.push_back(n.id);
+        for(const auto id : order)
+        {
+            const auto* n = nodeInfo(g, id);
+            if(!n) continue;
+            RoutingNode r{id, 0, nameOf(g, id), roleOf(*n)};
+            const bool splitter = n->plugin.id == splitPlugin || n->plugin.id == joinPlugin;
+            r.column = (r.role == "Notes" || r.role == "Sequencer") ? 1 : (r.role == "Instrument" || r.role == "Generator") ? 2 : 3;
+            r.splitNode = splitter;
+            if(const auto o = owner.find(id); o != owner.end()) { r.part = o->second->id; r.partName = o->second->name; }
+            r.userWires = hasUserWires(g, id);
+            state.nodes.push_back(r);
+        }
+        for(const auto& p : g.topology.audioLayout.outputs) state.nodes.push_back({graphOutput, p.id, p.name.empty() ? "Output" : p.name, "Output", 4});
+        return state;
+    }
+
+    std::vector<RoutingInput> inputsOf(const Control::GraphState& g, NodeId node)
+    {
+        std::vector<RoutingInput> out;
+        auto add = [&](uint32_t port, const std::string& name, const Wire& w) {
+            auto at = std::find_if(out.begin(), out.end(), [&](const RoutingInput& i) { return i.port == port; });
+            if(at == out.end()) { out.push_back({port, name, {}}); at = out.end() - 1; }
+            std::string source = w.from == graphInput ? (w.kind == WireKind::Notes ? std::string("Keys & MIDI") : "Audio in") : nameOf(g, w.from);
+            if(w.owner == WireOwner::Part) for(const auto& p : g.parts) if(p.id == w.part) source += " (" + p.name + ")";
+            // A lane's or split's wire takes its Mix from the lane; the rest are edited here.
+            at->rows.push_back({w.id, source, w.level, w.pan, w.mute, w.solo, w.owner == WireOwner::User, w.split == 0});
+        };
+        std::vector<kick::clap::Port> ports;
+        if(node == graphOutput) ports = g.topology.audioLayout.outputs;
+        else if(const auto* n = nodeInfo(g, node)) ports = n->inputs;
+        for(const auto& w : g.wires)
+        {
+            if(w.to != node) continue;
+            if(w.kind == WireKind::Notes) { add(notesPort, "Notes", w); continue; }
+            std::string name = "Input " + std::to_string(w.toPort + 1);
+            for(const auto& p : ports) if(p.id == w.toPort) name = p.name.empty() ? name : p.name;
+            add(w.toPort, name, w);
+        }
+        return out;
     }
 
     std::vector<PluginChoice> bundledPlugins(const std::string& folder, const std::string& helper)
@@ -322,6 +430,31 @@ namespace oscairn::standalone
         auto input = found->input;
         input.devices = devices;
         c.setPartInput(part, input);
+        c.commit();
+    }
+
+    void connectNodes(Control& c, NodeId from, NodeId to, WireKind kind)
+    {
+        if(kind == WireKind::Audio) c.connectAudio(from, to); else c.connectNotes(from, to);
+        c.commit();
+    }
+
+    void disconnect(Control& c, uint32_t wire) { c.disconnectWire(wire); c.commit(); }
+
+    void setWireMix(Control& c, uint32_t wire, double level, double pan, bool mute, bool solo) { c.setMix(wire, level, pan, mute, solo); c.commit(); }
+
+    NodeId addLoose(Control& c, const PluginChoice& plugin)
+    {
+        const auto node = addNamed(c, plugin);
+        c.commit();
+        return node;
+    }
+
+    void removeLoose(Control& c, NodeId node)
+    {
+        const auto g = c.graphState();
+        if(owners(g).count(node)) throw std::invalid_argument("the plugin belongs to a part: remove it there");
+        c.remove(node, UserWires::Reconnect);
         c.commit();
     }
 

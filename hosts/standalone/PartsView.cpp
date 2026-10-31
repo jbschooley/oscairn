@@ -18,7 +18,10 @@ namespace oscairn::standalone
 
     PartsView::PartsView(Engine& engine, const std::string& scanner) : engine_(engine)
     {
-        for(auto* c : std::initializer_list<juce::Component*>{&title_, &message_, &done_, &addPart_, &addBus_, &back_, &removePart_, &name_, &controlsButton_, &mixerButton_, &addControl_, &undo_, &redo_}) addChildComponent(c);
+        for(auto* c : std::initializer_list<juce::Component*>{&title_, &message_, &done_, &addPart_, &addBus_, &back_, &removePart_, &name_, &controlsButton_, &mixerButton_, &routingButton_, &addControl_, &undo_, &redo_}) addChildComponent(c);
+        routingButton_.setTooltip("Every plugin and wire: draw wires the parts cannot, and set each source's level");
+        routingButton_.onClick = [this] { showRouting(0); };
+        addPart_.setButtonText("+ Part"); addBus_.setButtonText("+ Bus");
         undo_.onClick = [this] { edit([](Control& c) { c.undo(); }); };
         redo_.onClick = [this] { edit([](Control& c) { c.redo(); }); };
         mixerButton_.setTooltip("Every part and bus side by side: level, mute, solo, sends and meters");
@@ -70,6 +73,7 @@ namespace oscairn::standalone
     }
 
     void PartsView::showPart(uint32_t id) { page_ = id; selected_ = 0; selectedSplit_ = 0; selectedLane_ = -1; shape_.clear(); refresh(); }
+    void PartsView::showRouting(NodeId node, uint32_t port) { page_ = routingPage; selected_ = 0; routed_ = node; routedPort_ = port; shape_.clear(); refresh(); }
     void PartsView::showLane(uint32_t split, int lane) { selected_ = 0; selectedSplit_ = split; selectedLane_ = lane; shape_.clear(); refresh(); }
 
     void PartsView::refresh()
@@ -77,10 +81,11 @@ namespace oscairn::standalone
         try
         {
             graph_ = engine_.graph();
-            state_ = readParts(graph_); endpoints_ = engine_.status().midiInputs; scenes_ = graph_.scenes; sceneParameters_ = graph_.sceneParameters; scene_ = graph_.scene; macros_ = graph_.macros;
+            state_ = readParts(graph_); routing_ = readRouting(graph_); endpoints_ = engine_.status().midiInputs; scenes_ = graph_.scenes; sceneParameters_ = graph_.sceneParameters; scene_ = graph_.scene; macros_ = graph_.macros;
         }
         catch(const std::exception&) { return; }
-        if(page_ && page_ != controlsPage && page_ != mixerPage && !part(page_)) { page_ = 0; shape_.clear(); }
+        if(page_ && page_ != controlsPage && page_ != mixerPage && page_ != routingPage && !part(page_)) { page_ = 0; shape_.clear(); }
+        if(page_ == routingPage && routed_ && !routing_.find(routed_, routedPort_)) routed_ = 0;
         for(auto& p : state_.parts) if(p.notes && !p.devices.empty() && !resolveDevices(p.devices, endpoints_)) p.input = "No device: " + p.input;
         message_.setText(text(engine_.editError()), juce::dontSendNotification);
         // Undo and redo name what they would do.
@@ -102,6 +107,12 @@ namespace oscairn::standalone
             for(const auto& p : *list) { shape += "|" + std::to_string(p.id) + ":" + p.name + ":" + std::to_string(p.through) + ":" + devicesName(p.devices); boxes(p.chain); }
         }
         shape += "|selected:" + std::to_string(selectedSplit_) + "/" + std::to_string(selectedLane_);
+        if(page_ == routingPage)
+        {
+            shape += "|routing:" + std::to_string(routed_) + "/" + std::to_string(routedPort_) + "/" + std::to_string(partWires_);
+            for(const auto& n : routing_.nodes) shape += "," + std::to_string(n.node) + ":" + std::to_string(n.port) + ":" + n.name;
+            for(const auto& w : routing_.wires) shape += ";" + std::to_string(w.id) + ":" + std::to_string(w.from) + ">" + std::to_string(w.to);
+        }
         shape += "|scenes:" + std::to_string(scene_);
         for(const auto& s : scenes_) shape += "," + std::to_string(s.id) + ":" + s.name;
         shape += "|controls";
@@ -120,12 +131,13 @@ namespace oscairn::standalone
     void PartsView::rebuild()
     {
         controls_.clear(); boxes_.clear(); splitAreas_.clear(); strips_.clear(); updaters_.clear();
-        const bool list = page_ == 0, controlsShown = page_ == controlsPage, mixerShown = page_ == mixerPage;
-        for(auto* c : std::initializer_list<juce::Component*>{&addPart_, &addBus_, &controlsButton_, &mixerButton_}) c->setVisible(list);
-        for(auto* c : std::initializer_list<juce::Component*>{&removePart_, &name_}) c->setVisible(!list && !controlsShown && !mixerShown);
+        const bool list = page_ == 0, controlsShown = page_ == controlsPage, mixerShown = page_ == mixerPage, routingShown = page_ == routingPage;
+        for(auto* c : std::initializer_list<juce::Component*>{&addPart_, &addBus_, &controlsButton_, &mixerButton_, &routingButton_}) c->setVisible(list);
+        for(auto* c : std::initializer_list<juce::Component*>{&removePart_, &name_}) c->setVisible(!list && !controlsShown && !mixerShown && !routingShown);
         back_.setVisible(!list); addControl_.setVisible(controlsShown);
-        title_.setVisible(list || controlsShown || mixerShown); done_.setVisible(true); message_.setVisible(true);
-        title_.setText(controlsShown ? "Controls" : mixerShown ? "Mixer" : "Parts", juce::dontSendNotification);
+        title_.setVisible(list || controlsShown || mixerShown || routingShown); done_.setVisible(true); message_.setVisible(true);
+        title_.setText(controlsShown ? "Controls" : mixerShown ? "Mixer" : routingShown ? "Routing" : "Parts", juce::dontSendNotification);
+        routingBoxes_.clear();
         auto top = getLocalBounds().reduced(16, 8).removeFromTop(header - 8);
         done_.setBounds(top.removeFromRight(80).reduced(2));
         redo_.setBounds(top.removeFromRight(60).reduced(2)); undo_.setBounds(top.removeFromRight(60).reduced(2));
@@ -167,10 +179,11 @@ namespace oscairn::standalone
 
         if(list)
         {
-            addBus_.setBounds(top.removeFromRight(96).reduced(2));
-            addPart_.setBounds(top.removeFromRight(100).reduced(2));
-            controlsButton_.setBounds(top.removeFromRight(86).reduced(2));
-            mixerButton_.setBounds(top.removeFromRight(70).reduced(2));
+            addBus_.setBounds(top.removeFromRight(70).reduced(2));
+            addPart_.setBounds(top.removeFromRight(70).reduced(2));
+            routingButton_.setBounds(top.removeFromRight(76).reduced(2));
+            controlsButton_.setBounds(top.removeFromRight(84).reduced(2));
+            mixerButton_.setBounds(top.removeFromRight(66).reduced(2));
             title_.setBounds(top.removeFromLeft(90));
             // Scenes: tap one to switch to it; Store saves the parts' faders and the scene
             // parameters into the selected one.
@@ -201,6 +214,79 @@ namespace oscairn::standalone
                     toggle(right.removeFromRight(64).reduced(4, 14), "Mute", muteOf(p.id), setMute(p.id));
                     updates.push_back(slider(right.reduced(6, 18), 0, 1, levelOf(p.id), setLevel(p.id)).second);
                 }
+        }
+        else if(routingShown)
+        {
+            back_.setBounds(top.removeFromLeft(110).reduced(2));
+            title_.setBounds(top.removeFromLeft(110).reduced(8, 0));
+            auto* add = button(top.removeFromLeft(100).reduced(2), "+ Plugin", {});
+            add->setTooltip("A plugin outside the parts, to wire by hand");
+            add->onClick = [this, add] { addLooseMenu(*add); };
+            toggle(top.removeFromLeft(130).reduced(4, 8), "Part wires", [this] { return partWires_; }, [this](bool on) { partWires_ = on; shape_.clear(); refresh(); });
+            // Columns of nodes above; the selected node's wiring and Mix below.
+            auto area = getLocalBounds().reduced(16, 0).withTrimmedTop(header).withTrimmedBottom(28);
+            auto panel = area.removeFromBottom(190);
+            auto canvas = area.withTrimmedTop(22);
+            const int columnWidth = canvas.getWidth() / 5;
+            for(int column = 0; column < 5; ++column)
+            {
+                std::vector<const RoutingNode*> in;
+                for(const auto& n : routing_.nodes) if(n.column == column) in.push_back(&n);
+                const int height = std::clamp(in.empty() ? 40 : (canvas.getHeight() - 8) / int(in.size()), 22, 44);
+                auto col = canvas.withX(canvas.getX() + column * columnWidth).withWidth(columnWidth).reduced(14, 0);
+                for(const auto* n : in) routingBoxes_.push_back({n->node, n->port, col.removeFromTop(height).reduced(0, 3)});
+            }
+            const auto* chosen = routed_ || routedPort_ ? routing_.find(routed_, routedPort_) : nullptr;
+            if(!chosen)
+            {
+                auto l = std::make_unique<juce::Label>(juce::String(), "Tap a plugin to wire it, or to set the level of each source into it.");
+                l->setBounds(panel.removeFromTop(30)); addAndMakeVisible(*l); controls_.push_back(std::move(l));
+            }
+            else
+            {
+                const auto node = chosen->node;
+                auto head = panel.removeFromTop(36);
+                auto l = std::make_unique<juce::Label>(juce::String(), text(chosen->name) + (chosen->part ? juce::String::fromUTF8("  ·  ") + text(chosen->partName) : juce::String()));
+                l->setFont(juce::FontOptions(15.0f * themeData().fontScale, juce::Font::bold));
+                l->setBounds(head.removeFromLeft(240)); addAndMakeVisible(*l); controls_.push_back(std::move(l));
+                const Graph::NodeInfo* info = nullptr;
+                for(const auto& n : graph_.topology.nodes) if(n.id == node) info = &n;
+                const bool sendsAudio = node == graphInput ? chosen->port != notesPort : info && !info->outputs.empty();
+                const bool sendsNotes = node == graphInput ? chosen->port == notesPort : info && info->noteOutputs;
+                if(sendsAudio) { auto* b = button(head.removeFromLeft(150).reduced(2), "Connect audio to...", {}); b->onClick = [this, b] { connectMenu(WireKind::Audio, *b); }; }
+                if(sendsNotes) { auto* b = button(head.removeFromLeft(150).reduced(2), "Connect notes to...", {}); b->onClick = [this, b] { connectMenu(WireKind::Notes, *b); }; }
+                if(chosen->part)
+                    button(head.removeFromLeft(110).reduced(2), "Open part", [this, part = chosen->part] { showPart(part); });
+                else if(node != graphInput && node != graphOutput)
+                    button(head.removeFromLeft(90).reduced(2), "Remove", [this, node] { routed_ = 0; edit([node](Control& c) { removeLoose(c, node); }); })
+                        ->setTooltip("Remove this plugin; its sources are wired to its destinations");
+                // Each input with sources: a Mix row per source.
+                for(const auto& input : inputsOf(graph_, node == graphOutput ? graphOutput : node))
+                {
+                    if(node == graphOutput && input.port != chosen->port) continue;
+                    if(panel.getHeight() < 30) break;
+                    auto title = std::make_unique<juce::Label>(juce::String(), text(input.name) + (input.rows.size() > 1 ? juce::String::fromUTF8(" · mixed from ") + juce::String(int(input.rows.size())) + " sources" : juce::String()));
+                    title->setFont(juce::FontOptions(12.0f * themeData().fontScale, juce::Font::bold));
+                    title->setBounds(panel.removeFromTop(20)); addAndMakeVisible(*title); controls_.push_back(std::move(title));
+                    for(const auto& row : input.rows)
+                    {
+                        if(panel.getHeight() < 30) break;
+                        auto r = panel.removeFromTop(30);
+                        auto source = std::make_unique<juce::Label>(juce::String(), text(row.source) + (row.user ? juce::String() : juce::String::fromUTF8(" · part")));
+                        source->setBounds(r.removeFromLeft(240)); addAndMakeVisible(*source); controls_.push_back(std::move(source));
+                        if(input.port == notesPort) { if(row.user) button(r.removeFromLeft(100).reduced(2), "Disconnect", [this, wire = row.wire] { edit([wire](Control& c) { disconnect(c, wire); }); }); continue; }
+                        const auto wire = row.wire;
+                        auto rowOf = [this, node, wire]() -> MixRow { for(const auto& i : inputsOf(graph_, node)) for(const auto& x : i.rows) if(x.wire == wire) return x; return {}; };
+                        auto mix = [this, wire, rowOf](auto change) { return [this, wire, rowOf, change](auto value) { auto x = rowOf(); change(x, value); edit([wire, x](Control& c) { setWireMix(c, wire, x.level, x.pan, x.mute, x.solo); }); }; };
+                        auto [level, update] = slider(r.removeFromLeft(220).reduced(2, 8), 0, 1, [rowOf] { return rowOf().level; }, mix([](MixRow& x, double v) { x.level = v; }));
+                        level->setEnabled(row.editable); level->setTooltip(row.editable ? "This source's level into the input" : "Set in its lane");
+                        updates.push_back(update);
+                        toggle(r.removeFromLeft(56).reduced(2, 4), "M", [rowOf] { return rowOf().mute; }, mix([](MixRow& x, bool v) { x.mute = v; }));
+                        toggle(r.removeFromLeft(56).reduced(2, 4), "S", [rowOf] { return rowOf().solo; }, mix([](MixRow& x, bool v) { x.solo = v; }));
+                        if(row.user) button(r.removeFromLeft(100).reduced(2), "Disconnect", [this, wire] { edit([wire](Control& c) { disconnect(c, wire); }); });
+                    }
+                }
+            }
         }
         else if(mixerShown)
         {
@@ -373,6 +459,8 @@ namespace oscairn::standalone
                     button(actions.removeFromLeft(110).reduced(2), "Move left", [this, id, index, place] { if(index) edit([id, index, place](Control& c) { c.movePartNode(id, index, index - 1, place); c.commit(); }); })->setEnabled(index > 0);
                     button(actions.removeFromLeft(110).reduced(2), "Move right", [this, id, index, place] { edit([id, index, place](Control& c) { c.movePartNode(id, index, index + 1, place); c.commit(); }); })->setEnabled(index + 1 < size);
                     button(actions.removeFromLeft(110).reduced(2), "Remove", [this, id, node] { selected_ = 0; edit([id, node](Control& c) { removeBox(c, id, node); }); });
+                    button(actions.removeFromLeft(100).reduced(2), "Routing...", [this, node] { showRouting(node); })
+                        ->setTooltip("This plugin in Routing: wire it to plugins outside its part");
                     auto* controls = button(actions.removeFromLeft(150).reduced(2), "Scene controls...", {});
                     controls->setTooltip("Choose which of this plugin's parameters scenes set");
                     controls->onClick = [this, node, controls] { sceneControlsMenu(node, *controls); };
@@ -597,6 +685,45 @@ namespace oscairn::standalone
         });
     }
 
+    // Destinations for a wire from the selected node: every node that takes that kind, and the outputs.
+    void PartsView::connectMenu(WireKind kind, juce::Component& at)
+    {
+        const auto from = routed_;
+        std::vector<NodeId> choices;
+        juce::PopupMenu menu;
+        for(const auto& n : routing_.nodes)
+        {
+            if(n.node == from || n.node == graphInput) continue;
+            if(n.node == graphOutput) { if(kind != WireKind::Audio || std::find(choices.begin(), choices.end(), graphOutput) != choices.end()) continue; }
+            else
+            {
+                const Graph::NodeInfo* info = nullptr;
+                for(const auto& x : graph_.topology.nodes) if(x.id == n.node) info = &x;
+                if(!info || (kind == WireKind::Audio ? info->inputs.empty() : info->noteInputs == 0)) continue;
+            }
+            choices.push_back(n.node);
+            menu.addItem(int(choices.size()), text(n.node == graphOutput ? "Main output" : n.name) + (n.part ? juce::String::fromUTF8(" · ") + text(n.partName) : juce::String()));
+        }
+        if(choices.empty()) menu.addItem(-1, "Nothing takes this", false);
+        menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&at), [safe = juce::Component::SafePointer<PartsView>(this), from, kind, choices](int chosen) {
+            if(!safe || chosen <= 0 || size_t(chosen) > choices.size()) return;
+            const auto to = choices[size_t(chosen) - 1];
+            safe->edit([from, to, kind](Control& c) { connectNodes(c, from, to, kind); });
+        });
+    }
+
+    void PartsView::addLooseMenu(juce::Component& at)
+    {
+        juce::PopupMenu menu;
+        if(plugins_.empty()) menu.addItem(-1, scan_.valid() ? "Finding plugins..." : "No plugins found", false);
+        for(size_t i = 0; i < plugins_.size(); ++i) if(plugins_[i].id != splitPlugin && plugins_[i].id != joinPlugin) menu.addItem(int(i) + 1, text(plugins_[i].name));
+        menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&at), [safe = juce::Component::SafePointer<PartsView>(this)](int chosen) {
+            if(!safe || chosen <= 0 || size_t(chosen) > safe->plugins_.size()) return;
+            const auto plugin = safe->plugins_[size_t(chosen) - 1];
+            safe->edit([plugin](Control& c) { addLoose(c, plugin); });
+        });
+    }
+
     // Kinds of device, then each connected one by name; each item adds or removes its rule.
     void PartsView::devicesMenu(uint32_t id, juce::Component& at)
     {
@@ -662,6 +789,53 @@ namespace oscairn::standalone
     {
         g.fillAll(ink(Ink::Background));
         if(page_ == controlsPage) return;
+        if(page_ == routingPage)
+        {
+            const auto scale = themeData().fontScale;
+            auto titles = getLocalBounds().reduced(16, 0).withTrimmedTop(header).withHeight(20);
+            g.setColour(ink(Ink::Muted)); g.setFont(juce::FontOptions(11.0f * scale, juce::Font::bold));
+            const int columnWidth = titles.getWidth() / 5;
+            for(const auto* name : {"INPUTS", "NOTES", "INSTRUMENTS", "EFFECTS AND BUSES", "OUTPUTS"}) g.drawText(name, titles.removeFromLeft(columnWidth).reduced(14, 0), juce::Justification::centredLeft);
+            auto boxOf = [&](NodeId node, uint32_t port) -> const RoutingBox* {
+                for(const auto& b : routingBoxes_) if(b.node == node && ((node != graphInput && node != graphOutput) || b.port == port)) return &b;
+                return nullptr;
+            };
+            // Wires first, under the boxes: audio blue, notes violet; part wires faint, user wires
+            // bright, unconnected ones red.
+            for(const auto& w : routing_.wires)
+            {
+                if(w.owner == WireOwner::Part && !partWires_) continue;
+                const auto* a = boxOf(w.from, w.from == graphInput ? (w.kind == WireKind::Notes ? notesPort : w.fromPort) : 0);
+                const auto* b = boxOf(w.to, w.toPort);
+                if(!a || !b) continue;
+                const juce::Point<float> p0(float(a->bounds.getRight()), float(a->bounds.getCentreY())), p1(float(b->bounds.getX()), float(b->bounds.getCentreY()));
+                juce::Path path; path.startNewSubPath(p0);
+                const float bend = std::max(30.0f, (p1.x - p0.x) / 2);
+                path.cubicTo(p0.translated(bend, 0), p1.translated(-bend, 0), p1);
+                auto colour = !w.connected ? ink(Ink::Danger) : w.kind == WireKind::Notes ? juce::Colour(0xffc29cff) : juce::Colour(0xff8cc2ff);
+                if(w.owner == WireOwner::Part) colour = colour.withAlpha(.35f);
+                if(w.mute) colour = colour.withMultipliedAlpha(.4f);
+                g.setColour(colour);
+                g.strokePath(path, juce::PathStrokeType(w.owner == WireOwner::User ? 2.5f : 1.5f));
+            }
+            for(const auto& b : routingBoxes_)
+            {
+                const auto* n = routing_.find(b.node, b.port);
+                if(!n) continue;
+                const bool chosen = b.node == routed_ && ((b.node != graphInput && b.node != graphOutput) || b.port == routedPort_);
+                g.setColour(chosen ? ink(Ink::Accent).withAlpha(.25f) : ink(Ink::Surface));
+                g.fillRoundedRectangle(b.bounds.toFloat(), themeData().radius);
+                g.setColour(chosen ? ink(Ink::Accent) : ink(Ink::Border));
+                g.drawRoundedRectangle(b.bounds.toFloat(), themeData().radius, chosen ? 2.0f : 1.0f);
+                auto inner = b.bounds.reduced(8, 2);
+                g.setColour(ink(Ink::Text)); g.setFont(juce::FontOptions(13.0f * scale));
+                g.drawText(text(n->name), inner.removeFromTop(inner.getHeight() * 3 / 5), juce::Justification::bottomLeft, true);
+                g.setColour(ink(Ink::Muted)); g.setFont(juce::FontOptions(10.0f * scale));
+                g.drawText(n->part ? text(n->partName) : n->node == graphInput || n->node == graphOutput ? juce::String() : juce::String("no part"), inner, juce::Justification::topLeft, true);
+                if(n->userWires && n->part) { g.setColour(juce::Colour(0xffffa040)); g.fillEllipse(float(b.bounds.getRight() - 12), float(b.bounds.getY() + 5), 7, 7); }
+            }
+            return;
+        }
         if(page_ == mixerPage)
         {
             // Strips, and meters from -60 to +6 dB: green, yellow above -12, red above -3.
@@ -692,6 +866,8 @@ namespace oscairn::standalone
             g.setColour(ink(Ink::Text));
             g.setFont(juce::FontOptions(14.0f * scale));
             g.drawText(text(b.name), inner, juce::Justification::topLeft, true);
+            // Wired in Routing too: a badge (Routing... opens it there).
+            if(b.userWires) { g.setColour(juce::Colour(0xffffa040)); g.fillEllipse(r.getRight() - 12, r.getY() + 5, 7, 7); }
         };
         if(page_ == 0)
         {
@@ -754,6 +930,19 @@ namespace oscairn::standalone
                     }
                 }
             }
+            // Plugins several parts are wired into in Routing: buses in all but name.
+            for(const auto& shared : state_.shared)
+            {
+                auto r = rowBounds(row++);
+                g.setColour(ink(Ink::Surface).withAlpha(.7f)); g.fillRoundedRectangle(r.toFloat(), themeData().radius);
+                auto rr = r.reduced(28, 6);
+                g.setColour(ink(Ink::Text)); g.setFont(juce::FontOptions(16.0f * scale, juce::Font::bold));
+                g.drawText(juce::String::fromUTF8("Shared · ") + text(shared.name), rr.removeFromLeft(partWidth + fromWidth), juce::Justification::centredLeft, true);
+                std::string fed;
+                for(const auto& f : shared.fedBy) fed += (fed.empty() ? "" : ", ") + f;
+                g.setColour(ink(Ink::Muted)); g.setFont(juce::FontOptions(13.0f * scale));
+                g.drawText("Fed by " + text(fed) + juce::String::fromUTF8(" in Routing · tap to open it"), rr, juce::Justification::centredLeft, true);
+            }
             return;
         }
         const auto* p = part(page_);
@@ -770,6 +959,7 @@ namespace oscairn::standalone
         end(ends.removeFromLeft(104), "IN", text(p->input));
         juce::String out = p->through ? text(part(p->through) ? part(p->through)->name : "a bus") : juce::String("Main");
         for(const auto& [bus, level] : p->sends) if(const auto* b = part(bus)) out << "\nSend " << text(b->name) << " " << juce::String(juce::roundToInt(level * 100)) << "%";
+        for(const auto& exit : p->exits) out << juce::String::fromUTF8("\n→ ") << text(exit);
         end(ends.removeFromRight(104), "OUT", out);
         // Splits: their pills, and a row per lane (dimmed when it cannot be heard).
         for(const auto& s : splitAreas_)
@@ -816,11 +1006,27 @@ namespace oscairn::standalone
     void PartsView::mouseUp(const juce::MouseEvent& e)
     {
         if(page_ == controlsPage || page_ == mixerPage) return;
+        if(page_ == routingPage)
+        {
+            for(const auto& b : routingBoxes_)
+                if(b.bounds.contains(e.getPosition()))
+                {
+                    const bool again = routed_ == b.node && routedPort_ == b.port;
+                    routed_ = again ? 0 : b.node; routedPort_ = again ? 0 : b.port;
+                    if(!routed_) routedPort_ = 0;
+                    shape_.clear(); refresh(); return;
+                }
+            return;
+        }
         if(page_ == 0)
         {
-            for(size_t row = 0; row < state_.parts.size() + state_.buses.size(); ++row)
+            const size_t parts = state_.parts.size(), buses = state_.buses.size();
+            for(size_t row = 0; row < parts + buses + state_.shared.size(); ++row)
                 if(rowBounds(row).contains(e.getPosition()))
-                    return showPart(row < state_.parts.size() ? state_.parts[row].id : state_.buses[row - state_.parts.size()].id);
+                {
+                    if(row >= parts + buses) return showRouting(state_.shared[row - parts - buses].node);
+                    return showPart(row < parts ? state_.parts[row].id : state_.buses[row - parts].id);
+                }
             return;
         }
         for(const auto& box : boxes_)

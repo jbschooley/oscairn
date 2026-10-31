@@ -26,6 +26,7 @@ namespace oscairn::standalone
     {
         NodeId node = 0; std::string name, plugin, role;
         uint32_t split = 0;
+        bool userWires = false;           // a wire drawn in Routing touches it: a badge, and Routing...
         Split::Kind kind = Split::Kind::Copy;
         std::string splitter;             // its Split node's name, for its crossovers
         std::vector<PartLane> lanes;
@@ -43,8 +44,40 @@ namespace oscairn::standalone
         bool mute = false, solo = false;
         uint32_t through = 0;            // the bus it plays through, or 0 for Main
         std::map<uint32_t, double> sends; // bus -> level
+        std::vector<std::string> exits;  // "→ Hall (shared)": nodes outside it its boxes are wired to in Routing
     };
-    struct PartsState { std::vector<PartRow> parts, buses; };
+    // A node outside every part that several parts are wired into in Routing: a bus in all but
+    // name (RFC 0011), shown as a row under the buses.
+    struct SharedRow { NodeId node = 0; std::string name; std::vector<std::string> fedBy; };
+    struct PartsState { std::vector<PartRow> parts, buses; std::vector<SharedRow> shared; };
+
+    // The Routing view (RFC 0011 step 4): the real graph as nodes in columns, and its wires.
+    // Columns: 0 inputs (the keys and MIDI, each audio input), 1 note processing, 2 instruments,
+    // 3 effects and buses, 4 outputs. The graph's input and output appear once per port; `port`
+    // is notesPort for the keys and MIDI.
+    struct RoutingNode
+    {
+        NodeId node = 0;
+        uint32_t port = 0;
+        std::string name, role;
+        int column = 0;
+        uint32_t part = 0;     // the part or bus it belongs to; 0: none
+        std::string partName;
+        bool userWires = false, splitNode = false;
+    };
+    constexpr uint32_t notesPort = 0xFFFFFFFFu;
+    // One source into a node's input: a row of that input's implicit Mix.
+    struct MixRow { uint32_t wire = 0; std::string source; double level = 1, pan = 0; bool mute = false, solo = false, user = false, editable = true; };
+    struct RoutingInput { uint32_t port = 0; std::string name; std::vector<MixRow> rows; };
+    struct RoutingState
+    {
+        std::vector<RoutingNode> nodes;
+        std::vector<Wire> wires;
+        const RoutingNode* find(NodeId node, uint32_t port) const; // the ends by port, other nodes by node
+    };
+    RoutingState readRouting(const Control::GraphState&);
+    // A node's audio inputs that have sources, with a row per source (its Mix), and its notes.
+    std::vector<RoutingInput> inputsOf(const Control::GraphState&, NodeId node);
 
     PartsState readParts(const Control::GraphState&);
     // A node's role from its ports: Notes, Instrument, Effect, Sequencer, Generator or Analyzer.
@@ -71,4 +104,10 @@ namespace oscairn::standalone
     void setDevices(Control&, uint32_t part, const std::vector<DeviceRule>&);
     void setOutput(Control&, uint32_t part, uint32_t bus);                         // 0: Main
     void setSendLevel(Control&, uint32_t part, uint32_t bus, double level);        // 0 removes the send
+    // Routing's edits: user wires and nodes outside the parts.
+    void connectNodes(Control&, NodeId from, NodeId to, WireKind);                 // main port to main port
+    void disconnect(Control&, uint32_t wire);
+    void setWireMix(Control&, uint32_t wire, double level, double pan, bool mute, bool solo);
+    NodeId addLoose(Control&, const PluginChoice&);                                // a node in no part
+    void removeLoose(Control&, NodeId node);                                       // reconnecting its user wires
 }

@@ -105,6 +105,47 @@ int main(int argc, char** argv)
         check(s.graphState().topology.nodes.size() == before, "removing it removes its nodes");
         bool refused = false; try { insertSplit(s, layers, 0, Split::Kind::Bands, {}); } catch(const std::invalid_argument&) { refused = true; }
         check(refused && s.graphState().topology.nodes.size() == before, "without the Split plugin, nothing is added");
+
+        // Routing (RFC 0011 step 4): every node and wire appears; wiring a second source makes a
+        // Mix row for it, and a node several parts feed is a shared row in the Parts list.
+        const auto wide = insertSplit(s, layers, 0, Split::Kind::LeftRight, plugins);
+        auto g = s.graphState();
+        auto routing = readRouting(g);
+        bool everyNode = true;
+        for(const auto& n : g.topology.nodes)
+        {
+            const auto* r = routing.find(n.id, 0);
+            everyNode = everyNode && r && std::count_if(routing.nodes.begin(), routing.nodes.end(), [&](const RoutingNode& x) { return x.node == n.id; }) == 1;
+        }
+        check(everyNode && routing.wires.size() == g.wires.size(), "every node once, and every wire, in Routing");
+        const auto& sp = *std::find_if(g.parts.begin(), g.parts.end(), [&](const Part& p) { return p.id == layers; });
+        const auto* splitNode = routing.find(sp.splits[0].splitter, 0);
+        check(splitNode && splitNode->splitNode && splitNode->part == layers && splitNode->column == 3, "a split's node belongs to its part, among the effects");
+        const auto* keys = routing.find(graphInput, notesPort); const auto* main = routing.find(graphOutput, 0);
+        check(keys && keys->column == 0 && main && main->column == 4, "the keys on the left, Main on the right");
+        auto byName = [&](const std::string& name) { for(const auto& [id, n] : s.graphState().names) if(n == name) return id; throw std::runtime_error("no node " + name); };
+        const auto bassSynth = byName("Basic Synth"), leadSynth = byName("Basic Synth 2");
+        check(routing.find(bassSynth, 0)->column == 2 && routing.find(bassSynth, 0)->partName == "Bass", "an instrument in its part's column");
+        // Two parts wired by hand into a reverb outside the parts.
+        const auto hall = addLoose(s, delay);
+        connectNodes(s, bassSynth, hall, WireKind::Audio); connectNodes(s, leadSynth, hall, WireKind::Audio); connectNodes(s, hall, graphOutput, WireKind::Audio);
+        auto parts = readParts(s.graphState());
+        check(parts.shared.size() == 1 && parts.shared[0].node == hall && parts.shared[0].fedBy == std::vector<std::string>{"Bass", "Lead"}, "a node two parts feed is a shared row");
+        check(std::find(parts.parts[0].exits.begin(), parts.parts[0].exits.end(), s.graphState().names.at(hall) + " (shared)") != parts.parts[0].exits.end(), "the feeding part shows where it goes");
+        check(findBox(parts.parts[0].chain, bassSynth) && findBox(parts.parts[0].chain, bassSynth)->userWires, "and its box a badge");
+        auto inputs = inputsOf(s.graphState(), hall);
+        check(inputs.size() == 1 && inputs[0].rows.size() == 2 && inputs[0].rows[0].user && inputs[0].rows[1].user, "the reverb's input: a Mix row per source");
+        setWireMix(s, inputs[0].rows[1].wire, .5, -.5, true, false);
+        inputs = inputsOf(s.graphState(), hall);
+        check(inputs[0].rows[1].level == .5 && inputs[0].rows[1].pan == -.5 && inputs[0].rows[1].mute, "a Mix row set");
+        disconnect(s, inputs[0].rows[1].wire);
+        check(inputsOf(s.graphState(), hall)[0].rows.size() == 1 && readParts(s.graphState()).shared.empty(), "disconnected: one source, no longer shared");
+        refused = false; try { removeLoose(s, bassSynth); } catch(const std::invalid_argument&) { refused = true; }
+        check(refused, "a part's plugin is removed in its part, not in Routing");
+        const auto nodesBefore = s.graphState().topology.nodes.size();
+        removeLoose(s, hall);
+        check(s.graphState().topology.nodes.size() == nodesBefore - 1, "a plugin outside the parts removed in Routing");
+        removeSplitKeepingFirst(s, layers, wide);
     }
     catch(const std::exception& e) { std::fprintf(stderr, "FAIL: %s\n", e.what()); return 1; }
     if(!failures) std::puts("ok: a split and a shared delay built through the Parts views' model");

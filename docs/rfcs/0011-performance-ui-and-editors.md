@@ -458,6 +458,33 @@ Not yet:
 - **Nested splits in the views:** a split inside a lane shows as a gap there.
 - **Smooth crossover changes:** a new crossover frequency applies at the next block.
 
+## Step 4 status
+
+The **Routing** view implemented 2026-10-31 on the desktop (`PartsView`, `readRouting` and
+`inputsOf` in `PartsModel`), opened by **Routing** on the Parts view. It draws every node in
+its column (inputs, notes, instruments, effects and buses, outputs) with the part it belongs
+to, and every wire: audio and notes in their own colours, part wires faint and hidable, wires
+drawn here bright, unconnected ones red. Tapping a node offers **Connect audio to...** and
+**Connect notes to...** (user wires, main port to main port), **Remove** for a node outside the
+parts (its sources are wired to its destinations), or **Open part**, and lists each of its
+inputs with a row per source: that source's level, mute and solo in the input's implicit Mix,
+and **Disconnect** for a user wire. **+ Plugin** adds a node outside the parts.
+
+The part views show what Routing did: a box with user wires has a badge (a split's chip
+carries its lanes'), and **Routing...** for a selected box opens Routing there. A node outside
+the parts that several parts are wired into is a **Shared** row under the buses ("Shared ·
+Hall, fed by Bass, Lead"), and each feeding part's OUT lists "→ Hall (shared)".
+
+The gate, in `desktop-parts-model`: every node of a Performance with parts, a split and its
+nodes, a bus and sends appears once in Routing with its part and column, and every wire;
+wiring two parts' instruments into a reverb gives that reverb's input a Mix row per source and
+makes it a shared row, and disconnecting one undoes both. `desktop-pad-editor` renders the
+view.
+
+Not yet: drawing wires by dragging, choosing ports other than the main ones, editing a
+wire's channel pairs, naming a shared row, scrolling a Performance with more nodes than fit,
+and the device's version of the view.
+
 ## Undo status
 
 Implemented 2026-10-31 (`core/control/src/undo.cpp`). After each commit, and at each control

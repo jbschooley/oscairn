@@ -143,6 +143,20 @@ int main(int argc, char** argv)
             engine.edit([](Control& c) { c.undo(); });
             for(int i = 0; i < 500 && engine.graph().parts[1].solo; ++i) juce::MessageManager::getInstance()->runDispatchLoopUntil(10);
             check(!engine.graph().parts[1].solo && engine.history().redo == "Lead solo", "undone through the engine");
+            // Routing: a hall reverb outside the parts, wired from both parts' instruments by hand.
+            engine.edit([&](Control& c) {
+                const auto hall = standalone::addLoose(c, plugin("Delay"));
+                for(const auto& [id, name] : c.graphState().names)
+                    if(name == "Basic Synth" || name == "Basic Synth 2") standalone::connectNodes(c, id, hall, WireKind::Audio);
+                standalone::connectNodes(c, hall, graphOutput, WireKind::Audio);
+            });
+            for(int i = 0; i < 500 && standalone::readParts(engine.graph()).shared.empty(); ++i) juce::MessageManager::getInstance()->runDispatchLoopUntil(10);
+            const auto shared = standalone::readParts(engine.graph()).shared;
+            check(shared.size() == 1 && shared[0].fedBy.size() == 2 && engine.editError().empty(), "a shared reverb wired in Routing: " + std::string(engine.editError()));
+            view.showPart(0);
+            save(view, "-parts-shared.png");
+            if(!shared.empty()) view.showRouting(shared[0].node);
+            save(view, "-routing.png");
             view.showPart(0xFFFFFFFFu);
             save(view, "-controls.png");
             juce::LookAndFeel::setDefaultLookAndFeel(nullptr);

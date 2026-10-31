@@ -189,8 +189,9 @@ in the others.
    mid/side and band splits through the bundled Split and Join plugins, and the Mixer
    with part solo and meters, and undo for every edit
    ([status](rfcs/0011-performance-ui-and-editors.md#undo-status); preset and state loads,
-   and keyboard shortcuts, remain). Next: step 4's Routing view, then step 5's editors and
-   plugin windows, and step 6's physical controls.
+   and keyboard shortcuts, remain), and step 4's Routing view on the desktop
+   ([status](rfcs/0011-performance-ui-and-editors.md#step-4-status)). Next: step 5's editors
+   and plugin windows, and step 6's physical controls.
 2. **Native sample patches — first slice implemented, multisample pending:** the Sampler
    lives in its own repository, [oscairn/sampler](https://github.com/oscairn/sampler), since
    October 31, 2026 (like the FM and analog engines' forks), fetched at a pinned commit.
