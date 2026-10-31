@@ -84,8 +84,8 @@ Everything else is handled for you:
 
 ## Optional Oscairn extensions
 
-Headers are in `core/clap-ext/include/oscairn-clap/`. Each is optional; a plugin without
-them works as above.
+Headers are in `core/clap-ext/include/oscairn-clap/`, under the MIT licence, so plugins of
+any licence can include them. Each is optional; a plugin without them works as above.
 
 | Extension | What it gives | Example |
 | --- | --- | --- |

@@ -22,6 +22,11 @@ The Oscairn core, hosts, first-party plugins and tools are licensed under the
 Plugins loaded through a plugin API (CLAP, LV2, VST3) are separate works. They may use any
 licence, including proprietary ones. Code linked into the core is covered by the AGPL.
 
+The Oscairn CLAP extension headers (`core/clap-ext/include/oscairn-clap/`) are **MIT**
+licensed, as is CLAP itself (decided by Jacob, October 30, 2026). A plugin includes them to
+use Oscairn's extensions, so an AGPL licence there would have contradicted the boundary
+above. The rest of the core stays AGPL. They become part of the planned MIT plugin SDK.
+
 ## Copied code
 
 Code copied from other AGPL or compatible projects keeps its original copyright notices.

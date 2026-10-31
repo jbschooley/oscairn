@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: AGPL-3.0-or-later */
+/* SPDX-License-Identifier: MIT */
 #pragma once
 #include <clap/clap.h>
 #ifdef __cplusplus
