@@ -18,3 +18,4 @@ Number them in order (`0002-...md`) and keep the status line up to date
 | [0010](0010-plugin-worker-isolation.md) | Plugin worker isolation | proposed; next on the roadmap |
 | [0011](0011-performance-ui-and-editors.md) | Performance UI, routing views and plugin editors | proposed |
 | [0012](0012-sync-external-midi-and-multi-device.md) | Sync, external MIDI devices and multi-device setlists | proposed |
+| [0013](0013-awm2-class-sample-engine.md) | An AWM2-class sample engine | proposed |

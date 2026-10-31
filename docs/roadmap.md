@@ -175,6 +175,13 @@ new core, from a UI that talks to it only through the control API.
    Jacob listened on October 30, 2026. Next: multisample, FLAC and streaming for large
    pianos, reusing sfizz/liquidsfz parsing where it separates cleanly. Extend SFZ only for
    demonstrated gaps; SoundFont remains a separate engine candidate.
+   Target (decided by Jacob, October 30, 2026): the Sampler grows into an engine that can do
+   everything an AWM2 Part can ([RFC 0013](rfcs/0013-awm2-class-sample-engine.md), proposed).
+   It is a new engine specified from Yamaha's documentation and black-box measurements, with
+   no Yamaha code. Yamaha waveforms are imported from the user's own installation, never
+   included. Order: multisample (RFC 0008 step 3), the measurement harness and AEG tables,
+   elements and XA Control, filters and FEG, PEG and LFOs, Drum Parts, then full converter
+   coverage.
 5. **Sound assets as dependencies — steps 1–2 implemented:** asset store, registered
    folders, the `oscairn.assets` contract and Performance preflight
    ([RFC 0009](rfcs/0009-sound-assets-and-dependencies.md#implementation-status)).

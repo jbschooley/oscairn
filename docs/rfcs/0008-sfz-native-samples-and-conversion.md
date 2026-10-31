@@ -204,6 +204,8 @@ number. Loops, layers, articulations, filters, pan and preprocessing are step 3.
 
 Terms come from the MONTAGE M manuals and the [ESP observations](../yamaha-esp-samples-research.md).
 Units, curves and selection rules are **not** verified against exports or hardware.
+[RFC 0013](0013-awm2-class-sample-engine.md) makes full AWM2 capability the Sampler's target:
+"approximated" below is a step toward that, not the end state.
 
 | Yamaha concept | SFZ starting point | Disposition |
 | --- | --- | --- |
@@ -218,7 +220,7 @@ Units, curves and selection rules are **not** verified against exports or hardwa
 | Element insertion-effect connection | Performance graph, [RFC 0007](0007-effect-contexts.md) | Not a sampler opcode. |
 | Motion Sequencer, Super Knob, Scenes, arpeggios | Performance/control/event plugins | Not sampler opcodes. |
 | FM-X, AN-X Parts | Other engines | Not sampler opcodes. |
-| Factory-ROM or compressed waveforms | — | **Unavailable** unless audio is supplied by the user. |
+| Factory-ROM or compressed waveforms | — | **Unavailable** unless audio is supplied by the user; [RFC 0013](0013-awm2-class-sample-engine.md#yamaha-content-import-not-inclusion) defines that import. |
 
 ### Engine decision: native voice engine, reused SFZ parts
 
