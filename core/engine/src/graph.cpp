@@ -28,7 +28,7 @@ namespace oscairn
             uint32_t                          audioInputs = 0, audioOutputs = 0;
             std::vector<AudioRoute>           audioSources;
             std::vector<uint32_t> silentInputs;
-            struct NoteSource {int step;std::shared_ptr<NoteRoute> route;};
+            struct NoteSource {int step;std::shared_ptr<NoteRoute> route;NoteZones zones;};
             std::vector<NoteSource> noteSources;
             std::array<kick::clap::Event,kick::clap::Host::maxBlockEvents> releases;
             uint32_t releaseCount=0;
@@ -60,6 +60,7 @@ namespace oscairn
             const kick::clap::Event* event;
             NoteRoute* route=nullptr;
             bool afterNotes=false;
+            const NoteZones* zones=nullptr;
         };
 
         std::vector<Step>              steps;
@@ -156,7 +157,7 @@ namespace oscairn
         removedHosts_.reserve(removedHosts_.size()+nodes_.size());
         onPublish(); // caller supplies a nonthrowing metadata/transport commit
         for(const auto& [id,node]:nodes_)removedHosts_.push_back(node.host);
-        nodes_.swap(next.nodes_);audioRoutes_.swap(next.audioRoutes_);noteEdges_.swap(next.noteEdges_);paramTargets_.swap(next.paramTargets_);
+        nodes_.swap(next.nodes_);audioRoutes_.swap(next.audioRoutes_);noteEdges_.swap(next.noteEdges_);noteZones_.swap(next.noteZones_);paramTargets_.swap(next.paramTargets_);
         nextId_=next.nextId_;replacementSerial_=next.replacementSerial_;replacementNoteCutoff_=cutoff;
         delete pending_.exchange(plan.release(),std::memory_order_acq_rel);
     }
@@ -171,9 +172,10 @@ namespace oscairn
         if(!preset.empty())loaded->loadPreset(preset);
         next.host=preparedInstrument(std::move(loaded),sampleRate_,maxFrames_,mode_,lv2Buffers_);
         next.audioInputs=countChannels(next.host->inputPorts());next.audioOutputs=countChannels(next.host->outputPorts());
-        const auto routes=audioRoutes_;const auto notes=noteEdges_;
+        const auto routes=audioRoutes_;const auto notes=noteEdges_;const auto zones=noteZones_;
         std::erase_if(audioRoutes_,[&](const auto& e){return e.from.node==id || e.to.node==id;});
         std::erase_if(noteEdges_,[&](const auto& edge){return edge.first.first==id || edge.first.second==id;});
+        std::erase_if(noteZones_,[&](const auto& edge){return edge.first.first==id || edge.first.second==id;});
         nodes_.at(id)=std::move(next);
         try
         {
@@ -182,7 +184,7 @@ namespace oscairn
             removedHosts_.push_back(old.host);
             collect();delete pending_.exchange(plan.release(),std::memory_order_acq_rel);
         }
-        catch(...){nodes_.at(id)=old;audioRoutes_=routes;noteEdges_=notes;throw;}
+        catch(...){nodes_.at(id)=old;audioRoutes_=routes;noteEdges_=notes;noteZones_=zones;throw;}
     }
 
     void Graph::remove( NodeId node )
@@ -194,6 +196,7 @@ namespace oscairn
             it = ( it->first.first == node || it->second.first == node ) ? paramTargets_.erase( it ) : std::next( it );
         auto touches = [&]( const std::pair<NodeId, NodeId>& e ) { return e.first == node || e.second == node; };
         std::erase_if(noteEdges_,[&](const auto& edge){return touches(edge.first);});
+        std::erase_if(noteZones_,[&](const auto& edge){return touches(edge.first);});
     }
 
     void Graph::checkSource( NodeId from, bool audio ) const
@@ -299,12 +302,15 @@ namespace oscairn
         });
     }
 
-    void Graph::connectNotes( NodeId from, NodeId to )
+    void Graph::connectNotes( NodeId from, NodeId to, const std::vector<NoteZone>& zones )
     {
         checkSource( from, false );
         checkDestination( to, false );
+        if(zones.size()>NoteZones::capacity || !std::all_of(zones.begin(),zones.end(),[](const NoteZone& z){return z.valid();}))
+            throw std::invalid_argument("invalid or too many note zones");
         const auto key=std::make_pair(from,to);
         if(!noteEdges_.contains(key))noteEdges_.emplace(key,std::make_shared<NoteRoute>(host(to)));
+        if(zones.empty())noteZones_.erase(key);else noteZones_[key]=zones;
     }
 
     void Graph::disconnectAudio( NodeId from, NodeId to )
@@ -316,7 +322,7 @@ namespace oscairn
 
     void Graph::disconnectNotes( NodeId from, NodeId to )
     {
-        noteEdges_.erase({from,to});
+        noteEdges_.erase({from,to});noteZones_.erase({from,to});
     }
 
     void Graph::mapParamTarget( NodeId source, uint32_t lane, NodeId target, clap_id param )
@@ -353,6 +359,7 @@ namespace oscairn
                                     node.host->noteInputPorts(),node.host->noteOutputPorts()});
         result.audioRoutes=audioRoutes_;result.audioLayout=audioLayout_;
         for(const auto& [edge,state]:noteEdges_)result.notes.push_back(edge);
+        result.noteZones=noteZones_;
         for( const auto& [from,to] : paramTargets_ )
             result.mappings.push_back({from.first,from.second,to.first,to.second});
         return result;
@@ -422,7 +429,9 @@ namespace oscairn
             const auto [from,to]=edge;
             if( !nodes_.count( to ) || ( from != graphInput && !nodes_.count( from ) ) )
                 continue;
-            plan->steps[(size_t)stepOf[to]].noteSources.push_back({from == graphInput ? -1 : stepOf[from],state});
+            NoteZones zones;
+            if(const auto z=noteZones_.find(edge);z!=noteZones_.end()){zones.count=z->second.size();std::copy(z->second.begin(),z->second.end(),zones.zones.begin());}
+            plan->steps[(size_t)stepOf[to]].noteSources.push_back({from == graphInput ? -1 : stepOf[from],state,zones});
         }
 
         for( const auto& [from, to] : paramTargets_ )
@@ -572,7 +581,7 @@ namespace oscairn
                     {
                         ++totalEvents;
                         if(plan->keys.size()<kick::clap::Host::maxBlockEvents)
-                            plan->keys.push_back( { list[i].header()->time, order++, &list[i],connection.route.get() } );
+                            plan->keys.push_back( { list[i].header()->time, order++, &list[i],connection.route.get(),false,&connection.zones } );
                         else overflow=true;
                     }
             }
@@ -584,7 +593,7 @@ namespace oscairn
             uint32_t merged=0;
             auto emit=[&](const auto& e){if(merged==plan->merged.size())return false;plan->merged[merged++]=e;return true;};
             if(!overflow)for(const auto& key:plan->keys)
-                if(!(key.route && key.time<frames?key.route->route(*key.event,nextNoteId_,emit):emit(*key.event))){overflow=true;break;}
+                if(!(key.route && key.time<frames?key.route->route(*key.event,nextNoteId_,emit,key.zones):emit(*key.event))){overflow=true;break;}
             if(overflow)
             {
                 // A lost release must reset the destination in its own dialect.

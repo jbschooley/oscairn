@@ -142,6 +142,49 @@ namespace oscairn
                 ",\"cpuLoad\":" + encode(s.cpuLoad) + ",\"deadlineMisses\":" + std::to_string(s.deadlineMisses) + ",\"graphEventDrops\":" + std::to_string(s.graphEventDrops) + ",\"midiEventDrops\":" + std::to_string(s.midiEventDrops) + '}';
         }
         // RFC 0011 parts and wires, as graph.get reports them.
+        std::string zonesJson( const std::vector<NoteZone>& zones )
+        {
+            std::vector<std::string> out;
+            for( const auto& z : zones )
+                out.push_back("{\"keys\":[" + std::to_string(z.lowKey) + "," + std::to_string(z.highKey) + "],\"velocities\":[" + encode(z.lowVelocity) + "," + encode(z.highVelocity) +
+                    "],\"channels\":" + std::to_string(z.channels) + ",\"transpose\":" + std::to_string(z.transpose) + ",\"curve\":" + encode(z.curve) + ",\"fixedVelocity\":" + encode(z.fixedVelocity) + '}');
+            return join(out);
+        }
+        std::vector<NoteZone> zonesFrom( Value v )
+        {
+            if( !v || v->type != json_type_array ) invalid("zones is an array");
+            std::vector<NoteZone> zones;
+            for( auto* e = static_cast<const json_array_s*>(v->payload)->start; e; e = e->next )
+            {
+                if( zones.size() == NoteZones::capacity ) invalid("At most eight zones");
+                fields(e->value,{"keys","velocities","channels","transpose","curve","fixedVelocity"});
+                NoteZone z;
+                auto range = [&](Value r, auto&& read) {
+                    if( !r || r->type != json_type_array || static_cast<const json_array_s*>(r->payload)->length != 2 ) invalid("A range is [low, high]");
+                    const auto* first = static_cast<const json_array_s*>(r->payload)->start;
+                    return std::pair{read(first->value), read(first->next->value)};
+                };
+                if( const auto k = member(e->value,"keys") ) { const auto [lo,hi] = range(k,[](Value x){return integer(x,127);}); z.lowKey = uint8_t(lo); z.highKey = uint8_t(hi); }
+                if( const auto vel = member(e->value,"velocities") ) { const auto [lo,hi] = range(vel,[](Value x){return number(x);}); z.lowVelocity = lo; z.highVelocity = hi; }
+                if( member(e->value,"channels") ) z.channels = uint16_t(integer(member(e->value,"channels"),0xFFFF));
+                if( member(e->value,"transpose") ) { const auto t = number(member(e->value,"transpose")); if( t < -127 || t > 127 || t != std::floor(t) ) invalid("transpose is -127..127"); z.transpose = int8_t(t); }
+                if( member(e->value,"curve") ) z.curve = number(member(e->value,"curve"));
+                if( member(e->value,"fixedVelocity") ) z.fixedVelocity = number(member(e->value,"fixedVelocity"));
+                if( !z.valid() ) invalid("Invalid zone");
+                zones.push_back(z);
+            }
+            return zones;
+        }
+        PartInput inputFrom( Value in )
+        {
+            fields(in,{"kind","port","zones"});
+            PartInput input;
+            const auto kind = string(member(in,"kind"));
+            input.kind = kind == "notes" ? PartInput::Kind::Notes : kind == "audio" ? PartInput::Kind::Audio : kind == "none" ? PartInput::Kind::None : (invalid("input kind is notes, audio or none"), PartInput::Kind::None);
+            input.port = member(in,"port") ? integer(member(in,"port")) : 0;
+            if( member(in,"zones") ) input.zones = zonesFrom(member(in,"zones"));
+            return input;
+        }
         std::string wireJson( const Wire& w )
         {
             std::vector<std::string> pairs;
@@ -150,7 +193,7 @@ namespace oscairn
                 ",\"owner\":" + (w.owner == WireOwner::Part ? "\"part\",\"part\":" + std::to_string(w.part) : std::string("\"user\"")) +
                 ",\"from\":" + std::to_string(w.from) + ",\"to\":" + std::to_string(w.to) + ",\"fromPort\":" + std::to_string(w.fromPort) +
                 ",\"toPort\":" + std::to_string(w.toPort) + ",\"channels\":" + join(pairs) + ",\"level\":" + encode(w.level) + ",\"pan\":" + encode(w.pan) +
-                ",\"mute\":" + (w.mute ? "true" : "false") + ",\"solo\":" + (w.solo ? "true" : "false") + ",\"connected\":" + (w.connected ? "true" : "false") + '}';
+                ",\"mute\":" + (w.mute ? "true" : "false") + ",\"solo\":" + (w.solo ? "true" : "false") + ",\"zones\":" + zonesJson(w.zones) + ",\"connected\":" + (w.connected ? "true" : "false") + '}';
         }
         const char* inputKind( PartInput::Kind k ) { return k == PartInput::Kind::Notes ? "notes" : k == PartInput::Kind::Audio ? "audio" : "none"; }
         std::string partJson( const Part& p )
@@ -158,7 +201,7 @@ namespace oscairn
             std::vector<std::string> chain;
             for( const auto n : p.chain ) chain.push_back(std::to_string(n));
             return "{\"id\":" + std::to_string(p.id) + ",\"name\":" + quote(p.name) + ",\"input\":{\"kind\":\"" + inputKind(p.input.kind) +
-                "\",\"port\":" + std::to_string(p.input.port) + "},\"chain\":" + join(chain) + ",\"output\":" + std::to_string(p.output) + '}';
+                "\",\"port\":" + std::to_string(p.input.port) + ",\"zones\":" + zonesJson(p.input.zones) + "},\"chain\":" + join(chain) + ",\"output\":" + std::to_string(p.output) + '}';
         }
 
         std::string invoke( Control& c, JsonRpc& client, std::string_view method, Value p )
@@ -166,7 +209,7 @@ namespace oscairn
             if( method == "session.hello" )
             {
                 fields(p, {});
-                return R"({"protocolVersion":1,"server":"oscairn","capabilities":["performance.save","performance.load","state.info","state.save","presets.list","properties.list","properties.get","properties.set","properties.request","sounds.get","sounds.prepare","sounds.select","sounds.discard","assets.register","assets.import","assets.libraries","session.status","params.list","params.get","params.set","params.text","params.gesture","graph.audio-routing","graph.get","graph.add","effects.create","effects.resources","graph.remove","graph.replace","graph.connect","graph.disconnect","graph.map","graph.unmap","graph.commit","parts.add","parts.remove","parts.insert","parts.removeNode","parts.move","wires.connect","wires.disconnect","wires.mix","subscribe","unsubscribe","transport.get","transport.set","notes.send"],"limits":{"messageBytes":65536,"depth":32,"batch":64,"parameterChanges":128}})";
+                return R"({"protocolVersion":1,"server":"oscairn","capabilities":["performance.save","performance.load","state.info","state.save","presets.list","properties.list","properties.get","properties.set","properties.request","sounds.get","sounds.prepare","sounds.select","sounds.discard","assets.register","assets.import","assets.libraries","session.status","params.list","params.get","params.set","params.text","params.gesture","graph.audio-routing","graph.get","graph.add","effects.create","effects.resources","graph.remove","graph.replace","graph.connect","graph.disconnect","graph.map","graph.unmap","graph.commit","parts.add","parts.remove","parts.insert","parts.removeNode","parts.move","parts.input","wires.connect","wires.disconnect","wires.mix","wires.zones","subscribe","unsubscribe","transport.get","transport.set","notes.send"],"limits":{"messageBytes":65536,"depth":32,"batch":64,"parameterChanges":128}})";
             }
             if( method == "subscribe" || method == "unsubscribe" )
             {
@@ -347,24 +390,20 @@ namespace oscairn
                     {
                         fields(p,{"name","input","output"});
                         PartInput input;
-                        if( const auto in = member(p,"input") )
-                        {
-                            fields(in,{"kind","port"});
-                            const auto kind = string(member(in,"kind"));
-                            input.kind = kind == "notes" ? PartInput::Kind::Notes : kind == "audio" ? PartInput::Kind::Audio : kind == "none" ? PartInput::Kind::None : (invalid("input kind is notes, audio or none"), PartInput::Kind::None);
-                            input.port = member(in,"port") ? integer(member(in,"port")) : 0;
-                        }
+                        if( const auto in = member(p,"input") ) input = inputFrom(in);
                         const auto name = member(p,"name") ? std::string(string(member(p,"name"))) : std::string();
                         const auto output = member(p,"output") ? std::optional<uint32_t>(integer(member(p,"output"))) : std::nullopt;
                         return "{\"part\":" + std::to_string(c.addPart(name,input,output)) + '}';
                     }
+                    if( method == "parts.input" ) { fields(p,{"part","input"}); c.setPartInput(integer(member(p,"part")),inputFrom(member(p,"input"))); return R"({"accepted":true})"; }
+                    if( method == "wires.zones" ) { fields(p,{"wire","zones"}); c.setZones(integer(member(p,"wire")),zonesFrom(member(p,"zones"))); return R"({"accepted":true})"; }
                     if( method == "parts.remove" ) { fields(p,{"part"}); c.removePart(integer(member(p,"part"))); return R"({"accepted":true})"; }
                     if( method == "parts.insert" ) { fields(p,{"part","index","node"}); c.insertIntoPart(integer(member(p,"part")),integer(member(p,"index")),node(c,member(p,"node"))); return R"({"accepted":true})"; }
                     if( method == "parts.removeNode" ) { fields(p,{"part","node"}); c.removeFromPart(integer(member(p,"part")),node(c,member(p,"node"))); return R"({"accepted":true})"; }
                     if( method == "parts.move" ) { fields(p,{"part","from","to"}); c.movePartNode(integer(member(p,"part")),integer(member(p,"from")),integer(member(p,"to"))); return R"({"accepted":true})"; }
                     if( method == "wires.connect" )
                     {
-                        fields(p,{"kind","from","to","fromPort","toPort","channels","level","pan"});
+                        fields(p,{"kind","from","to","fromPort","toPort","channels","level","pan","zones"});
                         Wire w;
                         const auto kind = string(member(p,"kind"));
                         if( kind != "audio" && kind != "notes" ) invalid("Unknown wire kind");
@@ -383,6 +422,7 @@ namespace oscairn
                                 if( w.channels.size() > Graph::maxAudioChannels ) invalid("Too many channel pairs");
                             }
                         }
+                        if( member(p,"zones") ) { if( w.kind != WireKind::Notes ) invalid("Only note wires have zones"); w.zones = zonesFrom(member(p,"zones")); }
                         if( member(p,"level") ) w.level = number(member(p,"level"));
                         if( member(p,"pan") ) w.pan = number(member(p,"pan"));
                         return "{\"wire\":" + std::to_string(c.connectPorts(w)) + '}';

@@ -87,6 +87,11 @@ add_executable(oscairn-midi-input-test engine/tests/midi_input.cpp)
 target_link_libraries(oscairn-midi-input-test PRIVATE oscairn_engine)
 add_test(NAME midi-input COMMAND oscairn-midi-input-test)
 
+add_executable(oscairn-note-zones-test engine/tests/note_zones.cpp)
+target_link_libraries(oscairn-note-zones-test PRIVATE oscairn_engine)
+target_include_directories(oscairn-note-zones-test PRIVATE clap-host/tests)
+add_test(NAME note-zones COMMAND oscairn-note-zones-test $<TARGET_FILE:oscairn_transpose>)
+
 add_executable(oscairn-pressure-test engine/tests/pressure.cpp)
 target_link_libraries(oscairn-pressure-test PRIVATE oscairn_engine)
 add_test(NAME pressure COMMAND oscairn-pressure-test $<TARGET_FILE:oscairn_basic_synth>)

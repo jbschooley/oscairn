@@ -143,13 +143,37 @@ namespace
         check(near(y.l[0], .25) && near(y.r[0], .75), "the input plays straight to Main");
     }
 
+    // Two parts split the keyboard by zone; moving the split while notes are held strands none.
+    void zones(const char* fixture)
+    {
+        Session s(48000, frames);
+        const auto low = s.add("low", fixture, "org.kick.test.synth"), high = s.add("high", fixture, "org.kick.test.synth");
+        s.setParameter(low, 7, .25); s.setParameter(high, 7, .5);
+        NoteZone below; below.highKey = 59;
+        NoteZone above; above.lowKey = 60;
+        const auto bass = s.addPart("Bass", {PartInput::Kind::Notes, 0, {below}}), lead = s.addPart("Lead", {PartInput::Kind::Notes, 0, {above}});
+        s.insertIntoPart(bass, 0, low); s.insertIntoPart(lead, 0, high); s.commit();
+        Audio x; x.run(s);
+        s.note(true, 40, 1); x.run(s); check(near(x.l[0], .25), "a low key plays only the bass part: " + std::to_string(x.l[0]));
+        s.note(true, 80, 1); x.run(s); check(near(x.l[0], .75), "a high key adds the lead part");
+        s.note(false, 40, 0); x.run(s); check(near(x.l[0], .5), "releasing the low key leaves the lead");
+        above.lowKey = 30; s.setPartInput(lead, {PartInput::Kind::Notes, 0, {above}}); s.commit();
+        s.note(false, 80, 0); x.run(s); check(near(x.l[0], 0), "the lead's held note is released after its zone moved");
+        s.note(true, 40, 1); x.run(s); check(near(x.l[0], .75), "the moved split: 40 now plays both parts");
+        s.note(false, 40, 0); x.run(s); check(near(x.l[0], 0), "and releases both");
+        bool refused = false; NoteZone bad; bad.curve = 0;
+        try { s.setPartInput(lead, {PartInput::Kind::Notes, 0, {bad}}); } catch(const std::invalid_argument&) { refused = true; }
+        check(refused, "an invalid zone is refused");
+    }
+
     // Parts, wires with owners and Mix settings, and flagged wires survive save and load, and play
     // the same; an earlier format version is refused.
     void persistence(const char* fixture, const char* audio, const char* delay, const fs::path& root)
     {
         Session s(48000, frames, {}, stereoIn);
         const auto synth = s.add("synth", fixture, "org.kick.test.synth"), a = s.add("a", audio, "org.oscairn.test.audio-ports"), fx = s.add("fx", delay);
-        const auto keys = s.addPart("Keys");
+        NoteZone upper; upper.lowKey = 48; upper.transpose = -12; upper.curve = 1.5;
+        const auto keys = s.addPart("Keys", {PartInput::Kind::Notes, 0, {upper}});
         s.insertIntoPart(keys, 0, synth); s.insertIntoPart(keys, 1, fx);
         const auto guitar = s.addPart("Guitar", {PartInput::Kind::Audio, 0});
         s.insertIntoPart(guitar, 0, a);
@@ -167,17 +191,19 @@ namespace
             std::vector<std::string> out;
             const auto names = x.graphState().names;
             auto name = [&](NodeId n) { return n == graphInput ? std::string("input") : n == graphOutput ? std::string("output") : names.at(n); };
-            for(const auto& p : x.parts()) { std::string chain; for(auto n : p.chain) chain += name(n) + ","; out.push_back("part " + std::to_string(p.id) + " " + p.name + " " + chain + " " + std::to_string(int(p.input.kind)) + " " + std::to_string(p.output)); }
+            auto zones = [](const std::vector<NoteZone>& list) { std::string z; for(const auto& n : list) z += std::to_string(n.lowKey) + "-" + std::to_string(n.highKey) + "/" + std::to_string(n.transpose) + "/" + std::to_string(n.curve) + ";"; return z; };
+            for(const auto& p : x.parts()) { std::string chain; for(auto n : p.chain) chain += name(n) + ","; out.push_back("part " + std::to_string(p.id) + " " + p.name + " " + chain + " " + std::to_string(int(p.input.kind)) + " " + zones(p.input.zones) + " " + std::to_string(p.output)); }
             for(const auto& w : x.wires())
             {
                 std::string pairs; for(const auto& [f, g] : w.channels) pairs += std::to_string(f) + ">" + std::to_string(g) + ",";
                 out.push_back("wire " + std::to_string(int(w.kind)) + " " + std::to_string(int(w.owner)) + " " + std::to_string(w.part) + " " + name(w.from) + ":" + std::to_string(w.fromPort) + " " + name(w.to) + ":" + std::to_string(w.toPort)
-                              + " " + pairs + " " + std::to_string(w.level) + " " + std::to_string(w.pan) + " " + std::to_string(w.mute) + std::to_string(w.solo) + std::to_string(w.connected));
+                              + " " + pairs + " " + zones(w.zones) + " " + std::to_string(w.level) + " " + std::to_string(w.pan) + " " + std::to_string(w.mute) + std::to_string(w.solo) + std::to_string(w.connected));
             }
             std::sort(out.begin(), out.end());
             return out;
         };
         check(describe(t) == describe(s), "parts and wires round-trip");
+        check(!t.parts().empty() && t.parts()[0].input.zones.size() == 1 && t.parts()[0].input.zones[0].transpose == -12, "the part's zone round-trips");
         Audio x, y; x.inL.fill(.3f); x.inR.fill(.1f); y.inL = x.inL; y.inR = x.inR;
         s.note(true, 60, 1); t.note(true, 60, 1);
         bool same = true; double energy = 0;
@@ -210,6 +236,7 @@ int main(int argc, char** argv)
         ownership(argv[1], argv[3]);
         channels(argv[2]);
         replacement(argv[2], argv[3]);
+        zones(argv[1]);
         persistence(argv[1], argv[2], argv[3], temp.path);
     }
     catch(const std::exception& e) { forbidAllocation = false; std::fprintf(stderr, "FAIL: %s\n", e.what()); return 1; }

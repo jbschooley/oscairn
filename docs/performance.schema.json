@@ -293,7 +293,7 @@
       "additionalProperties": false
     },
     "Wire": {
-      "description": "A wire between two nodes (RFC 0011). Audio wires join ports by stable port ID; 4294967294 marks a main port a plugin replacement could not map, 4294967295 a port it could not map at all. Empty channels apply the channel rules.",
+      "description": "A wire between two nodes (RFC 0011). Audio wires join ports by stable port ID; 4294967294 marks a main port a plugin replacement could not map, 4294967295 a port it could not map at all. Empty channels apply the channel rules. Note wires may carry zones; audio wires have none.",
       "type": "object",
       "properties": {
         "kind": {
@@ -365,6 +365,13 @@
         },
         "solo": {
           "type": "boolean"
+        },
+        "zones": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/Zone"
+          }
         }
       },
       "required": [
@@ -378,7 +385,8 @@
         "level",
         "pan",
         "mute",
-        "solo"
+        "solo",
+        "zones"
       ],
       "if": {
         "properties": {
@@ -427,11 +435,19 @@
               "type": "integer",
               "minimum": 0,
               "maximum": 4294967295
+            },
+            "zones": {
+              "type": "array",
+              "maxItems": 8,
+              "items": {
+                "$ref": "#/$defs/Zone"
+              }
             }
           },
           "required": [
             "kind",
-            "port"
+            "port",
+            "zones"
           ],
           "additionalProperties": false
         },
@@ -457,6 +473,75 @@
         "output"
       ],
       "additionalProperties": false
+    },
+    "Zone": {
+      "description": "A note zone (RFC 0011): notes in its key, velocity and MIDI channel ranges pass, transposed and with velocity out = in^curve, or a fixed velocity above 0.",
+      "type": "object",
+      "properties": {
+        "keys": {
+          "type": "array",
+          "prefixItems": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 127
+            },
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 127
+            }
+          ],
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "velocities": {
+          "type": "array",
+          "prefixItems": [
+            {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            }
+          ],
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "channels": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "transpose": {
+          "type": "integer",
+          "minimum": -127,
+          "maximum": 127
+        },
+        "curve": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 16
+        },
+        "fixedVelocity": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "keys",
+        "velocities",
+        "channels",
+        "transpose",
+        "curve",
+        "fixedVelocity"
+      ]
     }
   }
 }

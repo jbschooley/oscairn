@@ -116,9 +116,11 @@ namespace oscairn
         virtual void insertIntoPart( uint32_t part, size_t index, NodeId node ) = 0;
         virtual void removeFromPart( uint32_t part, NodeId node ) = 0;
         virtual void movePartNode( uint32_t part, size_t from, size_t to ) = 0;
+        virtual void setPartInput( uint32_t part, const PartInput& input ) = 0;
         virtual uint32_t connectPorts( const Wire& wire ) = 0; // a user wire; returns its ID
         virtual void disconnectWire( uint32_t wire ) = 0;
         virtual void setMix( uint32_t wire, double level, double pan, bool mute, bool solo ) = 0;
+        virtual void setZones( uint32_t wire, const std::vector<NoteZone>& zones ) = 0; // a note wire's zones
         virtual void remove( NodeId node, UserWires userWires ) = 0;
         virtual void mapParameter( NodeId from, uint32_t lane, NodeId to, uint32_t param ) = 0;
         virtual void unmapParameter( NodeId from, uint32_t lane ) = 0;

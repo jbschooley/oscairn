@@ -138,12 +138,23 @@ namespace oscairn
                     {to,static_cast<uint32_t>(integer(field(c,"toPort"))),static_cast<uint32_t>(integer(field(c,"toChannel")))},
                     static_cast<uint32_t>(integer(field(c,"channels"))),number(field(c,"gain"))});
             }
+            auto zones=[](V list){
+                std::vector<NoteZone> result;
+                for(auto z:array(list)){
+                    NoteZone zone;const auto keys=array(field(z,"keys")),velocities=array(field(z,"velocities"));
+                    if(keys.size()!=2 || velocities.size()!=2)throw std::runtime_error("Invalid zone range");
+                    zone.lowKey=uint8_t(integer(keys[0]));zone.highKey=uint8_t(integer(keys[1]));zone.lowVelocity=number(velocities[0]);zone.highVelocity=number(velocities[1]);
+                    zone.channels=uint16_t(integer(field(z,"channels")));zone.transpose=int8_t(number(field(z,"transpose")));
+                    zone.curve=number(field(z,"curve"));zone.fixedVelocity=number(field(z,"fixedVelocity"));result.push_back(zone);
+                }
+                return result;
+            };
             for(auto p:array(field(root,"parts")))
             {
                 Part part;part.id=static_cast<uint32_t>(integer(field(p,"id")));part.name=string(field(p,"name"));
                 auto input=field(p,"input");const auto kind=string(field(input,"kind"));
                 part.input.kind=kind=="notes"?PartInput::Kind::Notes:kind=="audio"?PartInput::Kind::Audio:PartInput::Kind::None;
-                part.input.port=static_cast<uint32_t>(integer(field(input,"port")));part.output=static_cast<uint32_t>(integer(field(p,"output")));
+                part.input.port=static_cast<uint32_t>(integer(field(input,"port")));part.input.zones=zones(field(input,"zones"));part.output=static_cast<uint32_t>(integer(field(p,"output")));
                 for(auto n:array(field(p,"chain")))part.chain.push_back(static_cast<NodeId>(integer(n)));
                 next.parts.push_back(std::move(part));
             }
@@ -157,7 +168,7 @@ namespace oscairn
                 wire.fromPort=static_cast<uint32_t>(integer(field(w,"fromPort")));wire.toPort=static_cast<uint32_t>(integer(field(w,"toPort")));
                 for(auto pair:array(field(w,"channels"))){const auto ends=array(pair);if(ends.size()!=2)throw std::runtime_error("Invalid wire channel pair");wire.channels.push_back({static_cast<uint32_t>(integer(ends[0])),static_cast<uint32_t>(integer(ends[1]))});}
                 wire.level=number(field(w,"level"));wire.pan=number(field(w,"pan"));
-                wire.mute=boolean(field(w,"mute"));wire.solo=boolean(field(w,"solo"));wire.connected=boolean(field(w,"connected"));
+                wire.mute=boolean(field(w,"mute"));wire.solo=boolean(field(w,"solo"));wire.zones=zones(field(w,"zones"));wire.connected=boolean(field(w,"connected"));
                 next.wires.push_back(std::move(wire));
             }
             for(auto m:array(field(root,"mappings")))next.topology.mappings.push_back({static_cast<NodeId>(integer(field(m,"from"))),static_cast<uint32_t>(integer(field(m,"lane"))),static_cast<NodeId>(integer(field(m,"to"))),static_cast<uint32_t>(integer(field(m,"param")))});
@@ -302,12 +313,27 @@ namespace oscairn
     {impl_->call("graph.replace","{\"node\":"+std::to_string(n)+",\"path\":"+quote(path)+",\"pluginId\":"+quote(plugin)+",\"preset\":"+quote(preset)+'}',30000);impl_->refresh();}
     void RemoteControl::remove(NodeId n){remove(n,UserWires::Remove);}
     void RemoteControl::remove(NodeId n,UserWires w){impl_->call("graph.remove","{\"node\":"+std::to_string(n)+",\"userWires\":"+(w==UserWires::Reconnect?"\"reconnect\"":"\"remove\"")+'}');impl_->refresh();}
+    namespace
+    {
+        std::string zonesText(const std::vector<NoteZone>& zones)
+        {
+            std::string out="[";
+            for(const auto& z:zones){if(out.size()>1)out+=',';out+="{\"keys\":["+std::to_string(z.lowKey)+","+std::to_string(z.highKey)+"],\"velocities\":["+encode(z.lowVelocity)+","+encode(z.highVelocity)+"],\"channels\":"+std::to_string(z.channels)+",\"transpose\":"+std::to_string(z.transpose)+",\"curve\":"+encode(z.curve)+",\"fixedVelocity\":"+encode(z.fixedVelocity)+'}';}
+            return out+']';
+        }
+        std::string inputText(const PartInput& input)
+        {
+            const char* kind=input.kind==PartInput::Kind::Notes?"notes":input.kind==PartInput::Kind::Audio?"audio":"none";
+            return "{\"kind\":\""+std::string(kind)+"\",\"port\":"+std::to_string(input.port)+",\"zones\":"+zonesText(input.zones)+'}';
+        }
+    }
     uint32_t RemoteControl::addPart(const std::string& name,PartInput input,std::optional<uint32_t> output)
     {
-        const char* kind=input.kind==PartInput::Kind::Notes?"notes":input.kind==PartInput::Kind::Audio?"audio":"none";
-        auto reply=impl_->call("parts.add","{\"name\":"+quote(name)+",\"input\":{\"kind\":\""+kind+"\",\"port\":"+std::to_string(input.port)+'}'+(output?",\"output\":"+std::to_string(*output):std::string{})+'}');
+        auto reply=impl_->call("parts.add","{\"name\":"+quote(name)+",\"input\":"+inputText(input)+(output?",\"output\":"+std::to_string(*output):std::string{})+'}');
         const auto id=static_cast<uint32_t>(integer(field(field(reply.get(),"result"),"part")));impl_->refresh();return id;
     }
+    void RemoteControl::setPartInput(uint32_t part,const PartInput& input){impl_->call("parts.input","{\"part\":"+std::to_string(part)+",\"input\":"+inputText(input)+'}');impl_->refresh();}
+    void RemoteControl::setZones(uint32_t wire,const std::vector<NoteZone>& zones){impl_->call("wires.zones","{\"wire\":"+std::to_string(wire)+",\"zones\":"+zonesText(zones)+'}');impl_->refresh();}
     void RemoteControl::removePart(uint32_t part){impl_->call("parts.remove","{\"part\":"+std::to_string(part)+'}');impl_->refresh();}
     void RemoteControl::insertIntoPart(uint32_t part,size_t index,NodeId node){impl_->call("parts.insert","{\"part\":"+std::to_string(part)+",\"index\":"+std::to_string(index)+",\"node\":"+std::to_string(node)+'}');impl_->refresh();}
     void RemoteControl::removeFromPart(uint32_t part,NodeId node){impl_->call("parts.removeNode","{\"part\":"+std::to_string(part)+",\"node\":"+std::to_string(node)+'}');impl_->refresh();}
@@ -320,6 +346,7 @@ namespace oscairn
             params+=",\"fromPort\":"+std::to_string(w.fromPort)+",\"toPort\":"+std::to_string(w.toPort);
             if(!w.channels.empty()){params+=",\"channels\":[";for(size_t i=0;i<w.channels.size();++i)params+=(i?",[":"[")+std::to_string(w.channels[i].first)+","+std::to_string(w.channels[i].second)+"]";params+="]";}
         }
+        if(!w.zones.empty())params+=",\"zones\":"+zonesText(w.zones);
         params+=",\"level\":"+encode(w.level)+",\"pan\":"+encode(w.pan)+'}';
         auto reply=impl_->call("wires.connect",params);
         const auto id=static_cast<uint32_t>(integer(field(field(reply.get(),"result"),"wire")));impl_->refresh();return id;

@@ -126,9 +126,11 @@ request members.
 | `parts.insert` | `part`, `index`, `node` | `{"accepted":true}` |
 | `parts.removeNode` | `part`, `node` | `{"accepted":true}` |
 | `parts.move` | `part`, `from`, `to` (chain positions) | `{"accepted":true}` |
+| `parts.input` | `part`, `input` (as for `parts.add`, with optional `zones`) | `{"accepted":true}` |
 | `wires.connect` | `kind`, `from`, `to`; for audio `fromPort`, `toPort`, optional `channels` pairs; optional `level`, `pan` | numeric `wire` |
 | `wires.disconnect` | `wire` | `{"accepted":true}` |
 | `wires.mix` | `wire`, `level`, `pan`, `mute`, `solo` | `{"accepted":true}` |
+| `wires.zones` | `wire` (a note wire), `zones` | `{"accepted":true}` |
 | `notes.send` | `on` (boolean), `key` (0..127), optional `velocity` (0..1), optional `channel` (0..15) | `{"accepted":true}` |
 
 `graph.add` accepts a CLAP module or, in an LV2-enabled engine, a `.lv2` bundle directory.
@@ -215,6 +217,14 @@ report the compiled per-channel routes.
   The part methods rebuild only that part's own wires: input into the first node, node to
   node along main ports and notes, last node to the output. User wires are never changed
   by them.
+- **Zones** decide which notes a note wire passes and how they change: each is
+  `{"keys":[low,high],"velocities":[low,high],"channels":mask,"transpose":n,"curve":x,"fixedVelocity":v}`
+  (velocities 0..1; the channel mask has a bit per MIDI channel; velocity out = in^curve,
+  or `fixedVelocity` above 0). Every field is optional in requests, defaulting to all keys,
+  velocities and channels, no transpose, curve 1 and no fixed velocity. A note passes if any
+  zone accepts it, and each accepting zone plays its own copy, so two zones layer. Up to
+  eight per wire; a part's input `zones` apply to its wire into the first node. Held notes
+  keep their releases when zones change.
 - A wire a plugin replacement could not map stays with `connected: false`; port 4294967294
   is a main port awaiting one, 4294967295 none.
 

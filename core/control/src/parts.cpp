@@ -75,7 +75,9 @@ namespace oscairn
         const auto layout = g.describe().audioLayout;
         using Key = std::tuple<NodeId, uint32_t, uint32_t, NodeId, uint32_t, uint32_t>;
         std::map<Key, double> audio;
-        std::set<std::pair<NodeId, NodeId>> notes;
+        // Note connections and their zones: none when any wire on the connection passes every note.
+        std::map<std::pair<NodeId, NodeId>, std::vector<NoteZone>> notes;
+        std::set<std::pair<NodeId, NodeId>> passAll;
         // Each input's implicit Mix: a soloed source silences the unsoloed ones.
         std::set<std::pair<NodeId, uint32_t>> soloed;
         for(const auto& w : wires) if(w.kind == WireKind::Audio && w.solo) soloed.insert({w.to, w.toPort});
@@ -84,7 +86,11 @@ namespace oscairn
             if(w.kind == WireKind::Notes)
             {
                 w.connected = sendsNotes(g, w.from) && takesNotes(g, w.to);
-                if(w.connected) notes.insert({w.from, w.to});
+                if(!w.connected) continue;
+                auto& zones = notes[{w.from, w.to}];
+                if(w.zones.empty()) passAll.insert({w.from, w.to});
+                else if(zones.size() + w.zones.size() > NoteZones::capacity) w.connected = false; // over the connection's zones
+                else zones.insert(zones.end(), w.zones.begin(), w.zones.end());
                 continue;
             }
             const bool silent = w.mute || (soloed.count({w.to, w.toPort}) && !w.solo);
@@ -102,8 +108,14 @@ namespace oscairn
         };
         for(const auto& [k, gain] : existing) if(!audio.count(k)) g.disconnectAudio(connection(k, gain));
         for(const auto& [k, gain] : audio) if(auto e = existing.find(k); e == existing.end() || e->second != gain) g.connectAudio(connection(k, gain));
+        for(auto& [e, zones] : notes) if(passAll.count(e)) zones.clear();
         for(const auto& e : present.notes) if(!notes.count(e)) g.disconnectNotes(e.first, e.second);
-        for(const auto& e : notes) if(std::find(present.notes.begin(), present.notes.end(), e) == present.notes.end()) g.connectNotes(e.first, e.second);
+        for(const auto& [e, zones] : notes)
+        {
+            const bool exists = std::find(present.notes.begin(), present.notes.end(), e) != present.notes.end();
+            const auto had = present.noteZones.find(e);
+            if(!exists || (had == present.noteZones.end() ? !zones.empty() : had->second != zones)) g.connectNotes(e.first, e.second, zones);
+        }
     }
 
     void Session::syncWires() { compileWires(graph_, wires_); staged_ = true; }
@@ -132,7 +144,7 @@ namespace oscairn
             wires_.push_back(std::move(w));
         };
         auto audioWire = [&](NodeId from, uint32_t fromPort, NodeId to, uint32_t toPort) { Wire w; w.from = from; w.fromPort = fromPort; w.to = to; w.toPort = toPort; add(w); };
-        auto noteWire = [&](NodeId from, NodeId to) { Wire w; w.kind = WireKind::Notes; w.from = from; w.to = to; add(w); };
+        auto noteWire = [&](NodeId from, NodeId to) { Wire w; w.kind = WireKind::Notes; w.from = from; w.to = to; if(from == graphInput) w.zones = part.input.zones; add(w); };
         // The previous box, or the input; whether it sends audio and notes.
         NodeId previousNode = graphInput;
         bool audio = part.input.kind == PartInput::Kind::Audio, notes = part.input.kind == PartInput::Kind::Notes;
@@ -148,6 +160,15 @@ namespace oscairn
         if(audio) audioWire(previousNode, audioPort, graphOutput, part.output);
     }
 
+    namespace
+    {
+        void checkZones(const std::vector<NoteZone>& zones)
+        {
+            if(zones.size() > NoteZones::capacity || std::any_of(zones.begin(), zones.end(), [](const NoteZone& z) { return !z.valid(); }))
+                throw std::invalid_argument("invalid or too many note zones");
+        }
+    }
+
     Part& Session::findPart(uint32_t id)
     {
         const auto it = std::find_if(parts_.begin(), parts_.end(), [&](const Part& p) { return p.id == id; });
@@ -159,11 +180,29 @@ namespace oscairn
     {
         const auto layout = graph_.describe().audioLayout;
         if(layout.outputs.empty()) throw std::invalid_argument("the graph has no audio outputs");
+        checkZones(input.zones);
         Part part{nextPart_, name, input, {}, output.value_or(layout.outputs.front().id)};
         if(!channelsOf(graph_, layout, graphOutput, part.output, true)) throw std::invalid_argument("no such graph output port");
         if(input.kind == PartInput::Kind::Audio && !channelsOf(graph_, layout, graphInput, input.port, false)) throw std::invalid_argument("no such graph input port");
         editWires([&] { parts_.push_back(part); buildPart(parts_.back()); });
         return nextPart_++;
+    }
+
+    void Session::setPartInput(uint32_t id, const PartInput& input)
+    {
+        findPart(id);
+        checkZones(input.zones);
+        const auto layout = graph_.describe().audioLayout;
+        if(input.kind == PartInput::Kind::Audio && !channelsOf(graph_, layout, graphInput, input.port, false)) throw std::invalid_argument("no such graph input port");
+        editWires([&] { auto& p = findPart(id); p.input = input; buildPart(p); });
+    }
+
+    void Session::setZones(uint32_t id, const std::vector<NoteZone>& zones)
+    {
+        checkZones(zones);
+        const auto it = std::find_if(wires_.begin(), wires_.end(), [&](const Wire& w) { return w.id == id; });
+        if(it == wires_.end() || it->kind != WireKind::Notes) throw std::invalid_argument("unknown note wire");
+        editWires([&] { std::find_if(wires_.begin(), wires_.end(), [&](const Wire& w) { return w.id == id; })->zones = zones; });
     }
 
     void Session::removePart(uint32_t id)
@@ -210,6 +249,8 @@ namespace oscairn
         const auto layout = graph_.describe().audioLayout;
         wire.owner = WireOwner::User; wire.part = 0; wire.id = nextWire_;
         if(!std::isfinite(wire.level) || wire.level < 0 || !std::isfinite(wire.pan) || wire.pan < -1 || wire.pan > 1) throw std::invalid_argument("invalid level or pan");
+        checkZones(wire.zones);
+        if(wire.kind == WireKind::Audio && !wire.zones.empty()) throw std::invalid_argument("audio wires have no note zones");
         if(wire.kind == WireKind::Notes)
         {
             if(!sendsNotes(graph_, wire.from)) throw std::invalid_argument("the source has no note outputs");

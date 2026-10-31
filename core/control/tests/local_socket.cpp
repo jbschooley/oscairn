@@ -435,6 +435,10 @@ void partsClient(const char* plugin,const char* delay)
         for(const auto& x:remote.graphState().wires)if(x.id==id)
             found=x.owner==WireOwner::User && x.channels==w.channels && x.level==.5 && x.pan==.25 && x.mute && !x.solo && x.connected;
         check(found,"a user wire with explicit channels and its Mix settings read back");
+        NoteZone split;split.highKey=59;split.transpose=12;
+        remote.setPartInput(part,{PartInput::Kind::Notes,0,{split}});
+        const auto zoned=remote.graphState().parts[0].input.zones;
+        check(zoned.size()==1 && zoned[0].highKey==59 && zoned[0].transpose==12,"a part's zone set and read back over the socket");
         bool refused=false;try{remote.insertIntoPart(99,0,synth);}catch(const std::exception&){refused=true;}
         check(refused,"an unknown part is refused over the socket");
         remote.movePartNode(part,1,0);remote.removeFromPart(part,fx);remote.disconnectWire(id);

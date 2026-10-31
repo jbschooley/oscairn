@@ -27,6 +27,23 @@ uint32_t integer(V v,uint32_t max=UINT32_MAX){const auto n=number(v);if(n<0 || n
 std::string quote(std::string_view s){if(s.size()>4096 || s.find('\0')!=std::string_view::npos)bad("invalid string");return detail::quote(s);}
 std::string numeric(double value){if(!std::isfinite(value))bad("nonfinite value");char buffer[64];const auto result=std::to_chars(buffer,buffer+sizeof(buffer),value);if(result.ec!=std::errc{})bad("number encoding failed");return {buffer,result.ptr};}
 std::string join(const std::vector<std::string>& values){std::string out="[";for(const auto& v:values){if(out.size()>1)out+=',';out+=v;}return out+']';}
+// RFC 0011 note zones, as the control protocol writes them.
+std::string zonesText(const std::vector<NoteZone>& zones){
+    std::vector<std::string> out;
+    for(const auto& z:zones)out.push_back("{\"keys\":["+std::to_string(z.lowKey)+","+std::to_string(z.highKey)+"],\"velocities\":["+numeric(z.lowVelocity)+","+numeric(z.highVelocity)+"],\"channels\":"+std::to_string(z.channels)+",\"transpose\":"+std::to_string(z.transpose)+",\"curve\":"+numeric(z.curve)+",\"fixedVelocity\":"+numeric(z.fixedVelocity)+'}');
+    return join(out);
+}
+std::vector<NoteZone> zonesFrom(V v){
+    std::vector<NoteZone> zones;
+    for(auto z:array(v,NoteZones::capacity)){
+        fields(z,{"keys","velocities","channels","transpose","curve","fixedVelocity"});NoteZone zone;
+        const auto keys=array(field(z,"keys"),2),velocities=array(field(z,"velocities"),2);if(keys.size()!=2 || velocities.size()!=2)bad("invalid zone range");
+        zone.lowKey=uint8_t(integer(keys[0],127));zone.highKey=uint8_t(integer(keys[1],127));zone.lowVelocity=number(velocities[0]);zone.highVelocity=number(velocities[1]);
+        zone.channels=uint16_t(integer(field(z,"channels"),0xFFFF));const auto t=number(field(z,"transpose"));if(t<-127 || t>127 || t!=std::floor(t))bad("invalid zone transpose");zone.transpose=int8_t(t);
+        zone.curve=number(field(z,"curve"));zone.fixedVelocity=number(field(z,"fixedVelocity"));if(!zone.valid())bad("invalid zone");zones.push_back(zone);
+    }
+    return zones;
+}
 bool lv2Path(const std::string& path){auto p=fs::path(path).lexically_normal();if(p.filename().empty())p=p.parent_path();return p.extension()==".lv2";}
 std::string ports(const std::vector<kick::clap::Port>& list){std::vector<std::string> out;for(const auto& p:list)out.push_back("{\"id\":"+std::to_string(p.id)+",\"channels\":"+std::to_string(p.channels)+",\"flags\":"+std::to_string(p.flags)+'}');return join(out);}
 void checkPorts(V list,const std::vector<kick::clap::Port>& expected){const auto entries=array(list,Graph::maxAudioChannels);if(entries.size()!=expected.size())bad("audio port layout changed");for(size_t i=0;i<entries.size();++i){fields(entries[i],{"id","channels","flags"});if(integer(field(entries[i],"id"))!=expected[i].id || integer(field(entries[i],"channels"))!=expected[i].channels || integer(field(entries[i],"flags"))!=expected[i].flags)bad("audio port layout changed");}}
@@ -56,12 +73,12 @@ void Session::savePerformance(const std::string& directory) {
         std::vector<std::string> pairs;for(const auto& [a,b]:w.channels)pairs.push_back("["+std::to_string(a)+","+std::to_string(b)+"]");
         wires.push_back(std::string("{\"kind\":")+(w.kind==WireKind::Audio?"\"audio\"":"\"notes\"")+",\"owner\":"+(w.owner==WireOwner::Part?"\"part\",\"part\":"+std::to_string(w.part):"\"user\"")
             +",\"from\":"+quote(keys.at(w.from))+",\"to\":"+quote(keys.at(w.to))+",\"fromPort\":"+std::to_string(w.fromPort)+",\"toPort\":"+std::to_string(w.toPort)
-            +",\"channels\":"+join(pairs)+",\"level\":"+numeric(w.level)+",\"pan\":"+numeric(w.pan)+",\"mute\":"+(w.mute?"true":"false")+",\"solo\":"+(w.solo?"true":"false")+'}');
+            +",\"channels\":"+join(pairs)+",\"level\":"+numeric(w.level)+",\"pan\":"+numeric(w.pan)+",\"mute\":"+(w.mute?"true":"false")+",\"solo\":"+(w.solo?"true":"false")+",\"zones\":"+zonesText(w.zones)+'}');
     }
     for(const auto& p:parts_){
         std::vector<std::string> chain;for(const auto n:p.chain)chain.push_back(quote(keys.at(n)));
         const char* kind=p.input.kind==PartInput::Kind::Notes?"notes":p.input.kind==PartInput::Kind::Audio?"audio":"none";
-        parts.push_back("{\"id\":"+std::to_string(p.id)+",\"name\":"+quote(p.name)+",\"input\":{\"kind\":\""+kind+"\",\"port\":"+std::to_string(p.input.port)+"},\"chain\":"+join(chain)+",\"output\":"+std::to_string(p.output)+'}');
+        parts.push_back("{\"id\":"+std::to_string(p.id)+",\"name\":"+quote(p.name)+",\"input\":{\"kind\":\""+kind+"\",\"port\":"+std::to_string(p.input.port)+",\"zones\":"+zonesText(p.input.zones)+"},\"chain\":"+join(chain)+",\"output\":"+std::to_string(p.output)+'}');
     }
     for(const auto& m:graph.mappings)mappings.push_back("{\"from\":"+quote(keys.at(m.source))+",\"lane\":"+std::to_string(m.lane)+",\"to\":"+quote(keys.at(m.target))+",\"param\":"+std::to_string(m.param)+'}');
     std::vector<std::string> named;
@@ -125,23 +142,24 @@ void Session::loadPerformance(const std::string& directory) {
         for(auto p:array(field(d,"parts"),256)){
             fields(p,{"id","name","input","chain","output"});Part part;part.id=integer(field(p,"id"));part.name=text(field(p,"name"));
             if(!part.id || !partIds.insert(part.id).second)bad("invalid or duplicate part");
-            const auto input=field(p,"input");fields(input,{"kind","port"});const auto kind=text(field(input,"kind"));
+            const auto input=field(p,"input");fields(input,{"kind","port","zones"});const auto kind=text(field(input,"kind"));
             part.input.kind=kind=="notes"?PartInput::Kind::Notes:kind=="audio"?PartInput::Kind::Audio:kind=="none"?PartInput::Kind::None:(bad("invalid part input"),PartInput::Kind::None);
-            part.input.port=integer(field(input,"port"));part.output=integer(field(p,"output"));
+            part.input.port=integer(field(input,"port"));part.input.zones=zonesFrom(field(input,"zones"));part.output=integer(field(p,"output"));
             for(auto n:array(field(p,"chain"),256)){const auto id=node(n);if(id==graphInput || id==graphOutput || std::find(part.chain.begin(),part.chain.end(),id)!=part.chain.end())bad("invalid part chain");part.chain.push_back(id);}
             nextPart=std::max(nextPart,part.id+1);parts.push_back(std::move(part));
         }
         for(auto c:array(field(d,"wires"),Graph::maxAudioConnections)){
             Wire w;const auto kind=text(field(c,"kind")),owner=text(field(c,"owner"));
             if((kind!="audio" && kind!="notes") || (owner!="part" && owner!="user"))bad("invalid wire");
-            if(owner=="part")fields(c,{"kind","owner","part","from","to","fromPort","toPort","channels","level","pan","mute","solo"});
-            else fields(c,{"kind","owner","from","to","fromPort","toPort","channels","level","pan","mute","solo"});
+            if(owner=="part")fields(c,{"kind","owner","part","from","to","fromPort","toPort","channels","level","pan","mute","solo","zones"});
+            else fields(c,{"kind","owner","from","to","fromPort","toPort","channels","level","pan","mute","solo","zones"});
             w.kind=kind=="audio"?WireKind::Audio:WireKind::Notes;w.owner=owner=="part"?WireOwner::Part:WireOwner::User;
             if(owner=="part"){w.part=integer(field(c,"part"));if(!partIds.count(w.part))bad("wire of an unknown part");}
             w.from=node(field(c,"from"));w.to=node(field(c,"to"));w.fromPort=integer(field(c,"fromPort"));w.toPort=integer(field(c,"toPort"));
             for(auto pair:array(field(c,"channels"),Graph::maxAudioChannels)){const auto ends=array(pair,2);if(ends.size()!=2)bad("invalid channel pair");w.channels.push_back({integer(ends[0],Graph::maxAudioChannels-1),integer(ends[1],Graph::maxAudioChannels-1)});}
             w.level=number(field(c,"level"));w.pan=number(field(c,"pan"));w.mute=boolean(field(c,"mute"));w.solo=boolean(field(c,"solo"));
             if(w.level<0 || w.pan<-1 || w.pan>1)bad("invalid wire level or pan");
+            w.zones=zonesFrom(field(c,"zones"));if(w.kind==WireKind::Audio && !w.zones.empty())bad("audio wires have no zones");
             wires.push_back(std::move(w));
         }
     }

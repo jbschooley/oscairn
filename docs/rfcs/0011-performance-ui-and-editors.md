@@ -317,8 +317,14 @@ Parts and wires are in the control protocol (`parts.*`, `wires.*`, `graph.get`, 
 client), tested end to end over the local socket (`control-remote-parts`) and against the
 protocol schema with a live `graph.get`.
 
-Not yet: zones (key and velocity ranges) on note inputs, shared buses and sends as parts
-of the model, groups and undo.
+**Zones** followed (step 2's model): note wires and part inputs carry up to eight zones,
+each a key, velocity and MIDI channel range with a transpose and a velocity curve or fixed
+velocity. The graph applies them where it routes notes; each accepting zone plays its own
+copy (layers), and held notes keep their releases when zones change. Tested in
+`note-zones` (split, layer, MIDI and CLAP notes, velocity, channels, editing while held),
+`control-parts` (a two-part keyboard split moved while notes are held) and over the socket.
+
+Not yet: shared buses and sends as parts of the model, groups and undo.
 
 ## Open questions
 

@@ -136,8 +136,10 @@ To do:
 - the KICK's real panel as a control surface.
 - undo and redo for every graph, part, wire and Mix edit, which
   [RFC 0011](rfcs/0011-performance-ui-and-editors.md) promises for its views;
-- MIDI input curves and filters with the part zones (RFC 0011 step 2): velocity curves,
-  transpose, and key and velocity ranges, as Gig Performer's MIDI In blocks offer.
+- MIDI input curves and filters: implemented as note zones (key, velocity and channel ranges,
+  transpose, velocity curve or fixed velocity) on part inputs and note wires
+  ([RFC 0011](rfcs/0011-performance-ui-and-editors.md#step-1-status)); editors for them come
+  with the Parts views.
 - shared controller mappings with knob/slider pickup, direct position access,
   relative-encoder tracking and explicit feedback/ownership rules; plugins may opt
   into physical observations, accepted changes or both

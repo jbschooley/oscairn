@@ -2,6 +2,7 @@
 #pragma once
 
 #include "oscairn/plugin_host.h"
+#include "oscairn/note_zone.h"
 
 #include <array>
 #include <atomic>
@@ -96,7 +97,9 @@ namespace oscairn
         /// Disconnect removes the selected pairs regardless of gain.
         void connectAudio( const AudioConnection& connection );
         void disconnectAudio( const AudioConnection& connection );
-        void connectNotes( NodeId from, NodeId to );
+        /// With zones (at most NoteZones::capacity), only the notes a zone accepts pass, changed
+        /// as it says; reconnecting replaces the zones and keeps held notes' releases.
+        void connectNotes( NodeId from, NodeId to, const std::vector<NoteZone>& zones = {} );
         void disconnectAudio( NodeId from, NodeId to );
         void disconnectNotes( NodeId from, NodeId to );
 
@@ -128,6 +131,7 @@ namespace oscairn
         {
             std::vector<NodeInfo> nodes;
             std::vector<std::pair<NodeId,NodeId>> notes;
+            std::map<std::pair<NodeId,NodeId>,std::vector<NoteZone>> noteZones; // connections with zones
             std::vector<Mapping> mappings;
             std::vector<AudioConnection> audioRoutes;
             AudioLayout audioLayout;
@@ -208,6 +212,7 @@ namespace oscairn
 
         std::map<NodeId, Node>                nodes_;
         std::map<std::pair<NodeId, NodeId>,std::shared_ptr<NoteRoute>> noteEdges_;
+        std::map<std::pair<NodeId, NodeId>,std::vector<NoteZone>> noteZones_;
         // shortcut: after 2^31 notes recreate the graph; add safe ID recycling for longer lifetimes.
         uint32_t nextNoteId_=0; // audio thread; IDs are never reused within this graph
         std::map<std::pair<NodeId, uint32_t>, std::pair<NodeId, clap_id>> paramTargets_; // (source, lane) -> (target, param)

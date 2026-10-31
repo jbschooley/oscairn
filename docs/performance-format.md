@@ -48,8 +48,8 @@ Required top-level fields:
 | `transport` | Tempo and `internal` or `midi` clock source |
 | `audioInputs`, `audioOutputs` | Required logical graph ports: ID, channels, flags |
 | `nodes` | Local key, display name, plugin identity/version, path hint, shared engine key, expected audio/note ports |
-| `wires` | Audio and note wires: owner (`part`, with its part ID, or `user`), source and destination node and audio port, explicit channel pairs or none (the channel rules), and the source's level, pan, mute and solo in the destination's Mix |
-| `parts` | ID, name, input (`notes`, `audio` with a graph input port, or `none`), the chain of node keys and the graph output port |
+| `wires` | Audio and note wires: owner (`part`, with its part ID, or `user`), source and destination node and audio port, explicit channel pairs or none (the channel rules), the source's level, pan, mute and solo in the destination's Mix, and a note wire's zones |
+| `parts` | ID, name, input (`notes` with its zones, `audio` with a graph input port, or `none`), the chain of node keys and the graph output port |
 | `mappings` | Source node/lane to destination node/parameter |
 
 `node-1` etc. are document-local keys, not runtime node IDs. `input` and `output` name

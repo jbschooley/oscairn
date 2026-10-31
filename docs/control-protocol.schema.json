@@ -1951,6 +1951,13 @@
                       "type": "integer",
                       "minimum": 0,
                       "maximum": 4294967295
+                    },
+                    "zones": {
+                      "type": "array",
+                      "maxItems": 8,
+                      "items": {
+                        "$ref": "#/$defs/Zone"
+                      }
                     }
                   },
                   "required": [
@@ -2203,6 +2210,13 @@
                   "type": "number",
                   "minimum": -1,
                   "maximum": 1
+                },
+                "zones": {
+                  "type": "array",
+                  "maxItems": 8,
+                  "items": {
+                    "$ref": "#/$defs/Zone"
+                  }
                 }
               },
               "required": [
@@ -2296,6 +2310,111 @@
                 "pan",
                 "mute",
                 "solo"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "params"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
+              "const": "parts.input"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "part": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 4294967295
+                },
+                "input": {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "enum": [
+                        "notes",
+                        "audio",
+                        "none"
+                      ]
+                    },
+                    "port": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 4294967295
+                    },
+                    "zones": {
+                      "type": "array",
+                      "maxItems": 8,
+                      "items": {
+                        "$ref": "#/$defs/Zone"
+                      }
+                    }
+                  },
+                  "required": [
+                    "kind"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "part",
+                "input"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "params"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
+              "const": "wires.zones"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "wire": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 4294967295
+                },
+                "zones": {
+                  "type": "array",
+                  "maxItems": 8,
+                  "items": {
+                    "$ref": "#/$defs/Zone"
+                  }
+                }
+              },
+              "required": [
+                "wire",
+                "zones"
               ],
               "additionalProperties": false
             }
@@ -3610,6 +3729,13 @@
         },
         "connected": {
           "type": "boolean"
+        },
+        "zones": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/Zone"
+          }
         }
       },
       "required": [
@@ -3625,7 +3751,8 @@
         "pan",
         "mute",
         "solo",
-        "connected"
+        "connected",
+        "zones"
       ],
       "if": {
         "properties": {
@@ -3674,11 +3801,19 @@
               "type": "integer",
               "minimum": 0,
               "maximum": 4294967295
+            },
+            "zones": {
+              "type": "array",
+              "maxItems": 8,
+              "items": {
+                "$ref": "#/$defs/Zone"
+              }
             }
           },
           "required": [
             "kind",
-            "port"
+            "port",
+            "zones"
           ],
           "additionalProperties": false
         },
@@ -3731,6 +3866,67 @@
       "required": [
         "wire"
       ],
+      "additionalProperties": false
+    },
+    "Zone": {
+      "description": "A note zone (RFC 0011): notes in its key, velocity and MIDI channel ranges pass, transposed and with velocity out = in^curve, or a fixed velocity above 0.",
+      "type": "object",
+      "properties": {
+        "keys": {
+          "type": "array",
+          "prefixItems": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 127
+            },
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 127
+            }
+          ],
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "velocities": {
+          "type": "array",
+          "prefixItems": [
+            {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            }
+          ],
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "channels": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "transpose": {
+          "type": "integer",
+          "minimum": -127,
+          "maximum": 127
+        },
+        "curve": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 16
+        },
+        "fixedVelocity": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      },
       "additionalProperties": false
     }
   }

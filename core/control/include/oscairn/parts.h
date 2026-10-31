@@ -36,6 +36,7 @@ namespace oscairn
         // destination.
         double level = 1, pan = 0;
         bool mute = false, solo = false;
+        std::vector<NoteZone> zones; // note wires: the zones notes must pass (note_zone.h); none passes all
         bool connected = true; // false: kept, though it no longer fits (after a plugin replacement)
     };
 
@@ -43,6 +44,7 @@ namespace oscairn
     {
         enum class Kind { Notes, Audio, None } kind = Kind::Notes; // None: the chain generates (a sequencer)
         uint32_t port = 0;                                         // graph input port, for audio
+        std::vector<NoteZone> zones;                               // notes: the part's zones (splits, layers, curves)
     };
 
     // An input, the chain of nodes it reaches in order, and the graph output port it plays to.

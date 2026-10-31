@@ -47,9 +47,11 @@ namespace oscairn
         void insertIntoPart(uint32_t part,size_t index,NodeId node) override;
         void removeFromPart(uint32_t part,NodeId node) override;
         void movePartNode(uint32_t part,size_t from,size_t to) override;
+        void setPartInput(uint32_t part,const PartInput& input) override;
         uint32_t connectPorts(const Wire& wire) override;
         void disconnectWire(uint32_t wire) override;
         void setMix(uint32_t wire,double level,double pan,bool mute,bool solo) override;
+        void setZones(uint32_t wire,const std::vector<NoteZone>& zones) override;
         void remove(NodeId node,UserWires userWires) override;
         void mapParameter(NodeId from,uint32_t lane,NodeId to,uint32_t param) override;
         void unmapParameter(NodeId from,uint32_t lane) override;
