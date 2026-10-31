@@ -136,6 +136,7 @@ request members.
 | `parts.send` | `part`, `bus`, optional `level` (without one, the send is removed) | `{"accepted":true}` |
 | `parts.level` | `part`, `level`, `mute`: its fader; sends are post-fader | `{"accepted":true}` |
 | `parts.name` | `part`, `name` | `{"accepted":true}` |
+| `parts.pan` | `part`, `pan` (-1 left .. 1 right): where it plays; its sends keep their own | `{"accepted":true}` |
 | `parts.solo` | `part`, `solo`: while any part is soloed, only soloed parts, the parts feeding them and the buses they feed are heard | `{"accepted":true}` |
 | `edit.undo`, `edit.redo` | omitted or `{}`: undoes the last edit, or redoes the last undone | `undo`, `redo`: what each would now do (empty: nothing) |
 | `edit.history` | omitted or `{}` | `undo`, `redo` labels, as above |

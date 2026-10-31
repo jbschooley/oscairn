@@ -491,8 +491,16 @@ namespace
         check(near(x.l[0], .25 + .5 + .125), "A, B and A's send: " + std::to_string(x.l[0]));
         check(std::abs(meter(a) - .25) < 1e-6 && std::abs(meter(b) - .5) < 1e-6 && std::abs(meter(room) - .125) < 1e-6,
               "meters show each part and bus after its fader: " + std::to_string(meter(a)) + " " + std::to_string(meter(b)) + " " + std::to_string(meter(room)));
+        // Pan: A hard left takes it out of the right channel; its send keeps its own image.
+        s.setPartPan(a, -1); s.commit(); x.run(s);
+        check(near(x.l[0], .875) && near(x.r[0], .5 + .125), "A panned left: " + std::to_string(x.l[0]) + " " + std::to_string(x.r[0]));
+        check(s.history().undo == "A pan", "the pan is an edit: " + s.history().undo);
+        s.setPartPan(a, 0); s.commit();
+        bool refusedPan = false; try { s.setPartPan(a, 2); } catch(const std::invalid_argument&) { refusedPan = true; }
+        check(refusedPan, "pan beyond -1..1 is refused");
+        s.setPartPan(b, .25); s.commit();
         s.setPartSolo(b, true); s.commit(); x.run(s);
-        check(near(x.l[0], .5), "B soloed: A and its send are silent: " + std::to_string(x.l[0]));
+        check(near(x.l[0], .5 * .75), "B soloed: A and its send are silent: " + std::to_string(x.l[0]));
         s.setPartSolo(b, false); s.setPartSolo(a, true); s.commit(); x.run(s);
         check(near(x.l[0], .25 + .125), "A soloed: the bus it sends to stays, B is silent: " + std::to_string(x.l[0]));
         s.setPartSolo(a, false); s.setPartSolo(room, true); s.commit(); x.run(s);
@@ -506,7 +514,7 @@ namespace
         const auto saved = root / "mixer";
         s.note(false, 60, 0); x.run(s); s.savePerformance(saved.string());
         Session t(48000, frames); t.loadPerformance(saved.string());
-        check(t.parts()[1].solo && !t.parts()[0].solo, "solo round-trips");
+        check(t.parts()[1].solo && !t.parts()[0].solo && t.parts()[1].pan == .25, "solo and pan round-trip");
     }
 
     // RFC 0011 step 2's gate: a two-layer split and a shared reverb (a delay here) built with part

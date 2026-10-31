@@ -137,6 +137,7 @@ namespace oscairn
         virtual void setPartLevel( uint32_t part, double level, bool mute ) = 0; // its fader, post-fader sends included
         virtual void setPartName( uint32_t part, const std::string& name ) = 0;
         virtual void setPartSolo( uint32_t part, bool solo ) = 0;
+        virtual void setPartPan( uint32_t part, double pan ) = 0; // -1 left .. 1 right
         // Undo (RFC 0011): edits to parts, wires, splits, Mix settings, scenes, controls and pads,
         // nodes added, removed or replaced, parameter mappings, and parameter values set through
         // this interface. Playing, switching scenes, moving controls and choosing sounds are not

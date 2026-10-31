@@ -64,7 +64,7 @@ namespace oscairn::standalone
         {
             PartRow row;
             row.id = p.id; row.name = p.name; row.bus = p.input.kind == PartInput::Kind::Bus;
-            row.level = p.level; row.mute = p.mute; row.solo = p.solo; row.through = p.bus;
+            row.level = p.level; row.pan = p.pan; row.mute = p.mute; row.solo = p.solo; row.through = p.bus;
             row.notes = p.input.kind == PartInput::Kind::Notes; row.devices = p.input.devices;
             for(const auto& s : p.sends) row.sends[s.bus] = s.level;
             if(!p.input.zones.empty()) { const auto& z = p.input.zones.front(); row.lowKey = z.lowKey; row.highKey = z.highKey; row.transpose = z.transpose; }
@@ -82,7 +82,7 @@ namespace oscairn::standalone
                         for(size_t k = 0; k < s->lanes.size(); ++k)
                         {
                             const auto& l = s->lanes[k];
-                            PartLane lane; lane.boxes = boxes(l.chain); lane.level = l.level; lane.mute = l.mute; lane.solo = l.solo;
+                            PartLane lane; lane.boxes = boxes(l.chain); lane.level = l.level; lane.pan = l.pan; lane.mute = l.mute; lane.solo = l.solo;
                             if(s->kind == Split::Kind::LeftRight) lane.name = k ? "Right" : "Left";
                             else if(s->kind == Split::Kind::MidSide) lane.name = k ? "Side" : "Mid";
                             else if(s->kind == Split::Kind::Bands) lane.name = "Band " + std::to_string(k + 1);

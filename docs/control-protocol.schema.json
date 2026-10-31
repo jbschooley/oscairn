@@ -3090,6 +3090,46 @@
               "$ref": "#/$defs/Id"
             },
             "method": {
+              "const": "parts.pan"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "part": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 4294967295
+                },
+                "pan": {
+                  "type": "number",
+                  "minimum": -1,
+                  "maximum": 1
+                }
+              },
+              "required": [
+                "part",
+                "pan"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "params"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
               "const": "parts.meters"
             },
             "params": {
@@ -5157,6 +5197,12 @@
           "minimum": 0,
           "description": "Its fader; sends are post-fader"
         },
+        "pan": {
+          "type": "number",
+          "minimum": -1,
+          "maximum": 1,
+          "description": "Where it plays, -1 left to 1 right; its sends keep their own"
+        },
         "mute": {
           "type": "boolean"
         },
@@ -5175,6 +5221,7 @@
         "bus",
         "sends",
         "level",
+        "pan",
         "mute",
         "solo"
       ],

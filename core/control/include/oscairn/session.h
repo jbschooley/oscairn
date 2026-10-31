@@ -82,6 +82,7 @@ namespace oscairn
         void setPartLevel(uint32_t part, double level, bool mute) override;
         void setPartName(uint32_t part, const std::string& name) override;
         void setPartSolo(uint32_t part, bool solo) override;
+        void setPartPan(uint32_t part, double pan) override;
         History history() const override;
         bool undo() override;
         bool redo() override;

@@ -317,6 +317,13 @@ namespace oscairn::standalone
                     l->setFont(juce::FontOptions(11.0f * themeData().fontScale)); l->setBounds(r.removeFromTop(14)); addAndMakeVisible(*l); controls_.push_back(std::move(l));
                     updates.push_back(slider(r, 0, 1, sendOf(p.id, b.id), setSend(p.id, b.id)).second);
                 }
+                // Pan, above the fader; a double-click centres it.
+                auto panLabel = std::make_unique<juce::Label>(juce::String(), "Pan");
+                panLabel->setFont(juce::FontOptions(11.0f * themeData().fontScale)); panLabel->setBounds(inner.removeFromTop(14)); addAndMakeVisible(*panLabel); controls_.push_back(std::move(panLabel));
+                auto [pan, panUpdate] = slider(inner.removeFromTop(22).reduced(2, 2), -1, 1, [this, id = p.id] { const auto* q = part(id); return q ? q->pan : 0.0; },
+                                               [this, id = p.id](double v) { edit([id, v](Control& c) { c.setPartPan(id, v); c.commit(); }); });
+                pan->setDoubleClickReturnValue(true, 0); pan->setTooltip("Pan: where it plays, left to right; its sends keep their own");
+                updates.push_back(panUpdate);
                 auto buttons = inner.removeFromBottom(28);
                 toggle(buttons.removeFromLeft(buttons.getWidth() / 2), "M", muteOf(p.id), setMute(p.id));
                 toggle(buttons, "S", soloOf(p.id), setSolo(p.id));
@@ -538,6 +545,11 @@ namespace oscairn::standalone
                            [this, id, sp, lane](bool m) { edit([id, sp, lane, m](Control& c) { editLane(c, id, sp, lane, [m](Lane& x) { x.mute = m; }); }); });
                     toggle(mix.removeFromLeft(90).reduced(4, 6), "Solo", [laneOf] { const auto* x = laneOf(); return x && x->solo; },
                            [this, id, sp, lane](bool o) { edit([id, sp, lane, o](Control& c) { editLane(c, id, sp, lane, [o](Lane& x) { x.solo = o; }); }); });
+                    auto panRow = labelled("Lane pan");
+                    auto [lanePan, lanePanUpdate] = slider(panRow.removeFromLeft(320).reduced(2, 10), -1, 1, [laneOf] { const auto* x = laneOf(); return x ? x->pan : 0.0; },
+                                                           [this, id, sp, lane](double v) { edit([id, sp, lane, v](Control& c) { editLane(c, id, sp, lane, [v](Lane& x) { x.pan = v; }); }); });
+                    lanePan->setDoubleClickReturnValue(true, 0);
+                    updates.push_back(lanePanUpdate);
                 }
                 panel.removeFromTop(8);
                 // A selected split or lane has the panel to itself; tapping it again shows the part's settings.

@@ -18,7 +18,7 @@ namespace oscairn::standalone
         std::string name; // Left, Right, Mid, Side or Band n for the kinds that divide the sound
         std::vector<PartBox> boxes;
         int lowKey = 0, highKey = 127;
-        double level = 1;
+        double level = 1, pan = 0;
         bool mute = false, solo = false;
     };
     // A box in a chain: a node, or (split nonzero) a split with its lanes, named after them.
@@ -40,7 +40,7 @@ namespace oscairn::standalone
         std::vector<DeviceRule> devices; // which inputs (RFC 0012); none: any
         int lowKey = 0, highKey = 127, transpose = 0; // the input's first zone, or all keys
         std::vector<PartBox> chain;
-        double level = 1;
+        double level = 1, pan = 0;
         bool mute = false, solo = false;
         uint32_t through = 0;            // the bus it plays through, or 0 for Main
         std::map<uint32_t, double> sends; // bus -> level

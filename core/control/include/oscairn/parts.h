@@ -137,6 +137,7 @@ namespace oscairn
         uint32_t bus = 0;    // the bus it plays through instead, or 0
         std::vector<Send> sends;
         double level = 1;    // its fader: where it plays and its sends (post-fader)
+        double pan = 0;      // where it plays, -1 left to 1 right; its sends keep their own
         bool mute = false;   // silences where it plays and its sends
         // While any part is soloed, only soloed parts, the parts that feed them and the buses
         // they feed are heard.

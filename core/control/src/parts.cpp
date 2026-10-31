@@ -372,7 +372,11 @@ namespace oscairn
         for(auto e : walk(part.chain, {input}))
         {
             if(!e.audio) continue;
-            for(const auto& d : destinations) { auto* w = audioWire(e, d.node, d.port); w->fader = true; enter(w, e, d, part.level, mute); }
+            for(const auto& d : destinations)
+            {
+                auto* w = audioWire(e, d.node, d.port); w->fader = true; enter(w, e, d, part.level, mute);
+                w->pan = std::clamp(part.pan + e.pan + d.pan, -1.0, 1.0); // the part's pan, with its lane's and the bus lane's
+            }
             for(const auto& send : part.sends)
                 for(const auto& d : busEntries(send.bus))
                 {
@@ -470,6 +474,13 @@ namespace oscairn
     {
         if(std::none_of(parts_.begin(), parts_.end(), [](const Part& p) { return p.solo; })) return true;
         return std::any_of(parts_.begin(), parts_.end(), [&](const Part& q) { return q.solo && (feeds(part.id, q.id) || feeds(q.id, part.id)); });
+    }
+
+    void Session::setPartPan(uint32_t id, double pan)
+    {
+        findPart(id);
+        if(!std::isfinite(pan) || pan < -1 || pan > 1) throw std::invalid_argument("pan is -1..1");
+        editWires([&] { findPart(id).pan = pan; buildParts(); });
     }
 
     void Session::setPartSolo(uint32_t id, bool solo)
@@ -988,7 +999,7 @@ namespace oscairn
             {
                 auto& p = findPart(w.part);
                 if(w.send) { for(auto& s : p.sends) if(s.bus == w.send) s.level = p.level > 0 ? level / p.level : level; }
-                else { p.level = level; p.mute = mute; }
+                else { p.level = level; p.mute = mute; if(!w.split) p.pan = pan; }
                 buildParts();
             }
         });

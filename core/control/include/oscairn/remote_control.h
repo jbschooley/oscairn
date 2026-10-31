@@ -52,6 +52,7 @@ namespace oscairn
         uint32_t addLane(uint32_t part,uint32_t split) override;
         void removeLane(uint32_t part,uint32_t split,uint32_t lane) override;
         void setPartSolo(uint32_t part,bool solo) override;
+        void setPartPan(uint32_t part,double pan) override;
         History history() const override;
         bool undo() override;
         bool redo() override;

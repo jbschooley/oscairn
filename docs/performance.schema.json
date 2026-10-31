@@ -576,6 +576,12 @@
           "minimum": 0,
           "description": "Its fader; sends are post-fader"
         },
+        "pan": {
+          "type": "number",
+          "minimum": -1,
+          "maximum": 1,
+          "description": "Where it plays, -1 left to 1 right; its sends keep their own"
+        },
         "mute": {
           "type": "boolean"
         },
@@ -594,6 +600,7 @@
         "bus",
         "sends",
         "level",
+        "pan",
         "mute",
         "solo"
       ],
