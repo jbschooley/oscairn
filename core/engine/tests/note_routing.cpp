@@ -34,6 +34,27 @@ int main(int argc,char** argv){try{
         check(route.retire(emit,[](size_t,int){return uint8_t{91};}),"route retirement emits releases and remaining pedal");
         check(reinterpret_cast<const clap_event_midi_t*>(delivered[count-1].header())->data[2]==91,"retirement restores remaining route pedal value");
     }
+    {
+        // A note limit of two (RFC 0018 step 2): a third note chokes the oldest released note
+        // before any held one, then the oldest held; a stolen note's release goes nowhere.
+        NoteRoute route(graph.host(synth));uint32_t nextId=1;
+        NoteZones zones;zones.count=1;zones.zones[0].maxNotes=2;
+        std::array<Event,16> delivered;size_t count=0;
+        auto emit=[&](const Event& e){if(count==delivered.size())return false;delivered[count++]=e;return true;};
+        auto ignoreEnd=[](const NoteRoute::Note&,uint32_t){};
+        auto chokes=[&](size_t from){std::vector<int> keys;for(size_t i=from;i<count;++i)if(delivered[i].header()->type==CLAP_EVENT_NOTE_CHOKE)keys.push_back(reinterpret_cast<const clap_event_note_t*>(delivered[i].header())->key);return keys;};
+        route.route(Event::note(true,60,1),nextId,emit,ignoreEnd,&zones);route.route(Event::note(true,62,1),nextId,emit,ignoreEnd,&zones);
+        route.route(Event::note(false,62,0),nextId,emit,ignoreEnd,&zones); // the newer note released, still sounding until the synth ends it
+        check(chokes(0).empty(),"two notes fit");
+        size_t mark=count;route.route(Event::note(true,64,1),nextId,emit,ignoreEnd,&zones);
+        check(chokes(mark)==std::vector<int>{62},"the third note chokes the released note, though the held one is older");
+        mark=count;route.route(Event::note(true,65,1),nextId,emit,ignoreEnd,&zones);
+        check(chokes(mark)==std::vector<int>{60},"then the oldest held note");
+        mark=count;route.route(Event::note(false,60,0),nextId,emit,ignoreEnd,&zones);
+        check(count==mark,"a stolen note's release goes nowhere");
+        zones.zones[0].maxNotes=0;mark=count;route.route(Event::note(true,67,1),nextId,emit,ignoreEnd,&zones);
+        check(chokes(mark).empty(),"no limit, no chokes");
+    }
     graph.connectNotes(a,synth);graph.connectNotes(b,synth);graph.connectNotes(graphInput,synth);
     graph.connectAudio(synth,graphOutput);graph.commit();
     std::array<float,512> left{},right{};float* out[]{left.data(),right.data()};

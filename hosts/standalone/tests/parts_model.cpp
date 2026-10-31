@@ -64,6 +64,9 @@ int main(int argc, char** argv)
         setOutput(s, lead, room); check(readParts(s.graphState()).parts[1].through == room, "the lead plays through the room");
         setSendLevel(s, bass, room, 0); check(readParts(s.graphState()).parts[0].sends.empty(), "a send at 0 is removed");
         check(roleOf({0, {}, {}, {}, 0, 1}) == "Sequencer", "a node with only note outputs is a sequencer");
+        setMaxNotes(s, lead, 8);
+        check(s.parts()[1].input.maxNotes == 8 && readParts(s.graphState()).parts[1].maxNotes == 8, "a part's note limit set from the Part page");
+        setMaxNotes(s, lead, 0);
         // Solo: the other parts read as silenced, which dims them in the Parts list and Mixer.
         s.setPartSolo(lead, true); s.commit();
         auto soloed = readParts(s.graphState());

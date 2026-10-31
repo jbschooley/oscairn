@@ -209,13 +209,14 @@ namespace oscairn
         }
         PartInput inputFrom( Value in )
         {
-            fields(in,{"kind","port","zones","devices"});
+            fields(in,{"kind","port","zones","devices","maxNotes"});
             PartInput input;
             const auto kind = string(member(in,"kind"));
             input.kind = kind == "notes" ? PartInput::Kind::Notes : kind == "audio" ? PartInput::Kind::Audio : kind == "none" ? PartInput::Kind::None : kind == "bus" ? PartInput::Kind::Bus : (invalid("input kind is notes, audio, none or bus"), PartInput::Kind::None);
             input.port = member(in,"port") ? integer(member(in,"port")) : 0;
             if( member(in,"zones") ) input.zones = zonesFrom(member(in,"zones"));
             if( member(in,"devices") ) input.devices = devicesFrom(member(in,"devices"));
+            if( member(in,"maxNotes") ) input.maxNotes = uint16_t(integer(member(in,"maxNotes"),128));
             return input;
         }
         const char* pressureName( PadAssignment::Pressure p ) { return p == PadAssignment::Pressure::Poly ? "poly" : p == PadAssignment::Pressure::Channel ? "channel" : "none"; }
@@ -356,7 +357,7 @@ namespace oscairn
         {
             const auto chain = chainJson(p.chain);
             return "{\"id\":" + std::to_string(p.id) + ",\"name\":" + quote(p.name) + ",\"input\":{\"kind\":\"" + inputKind(p.input.kind) +
-                "\",\"port\":" + std::to_string(p.input.port) + ",\"zones\":" + zonesJson(p.input.zones) + ",\"devices\":" + devicesJson(p.input.devices) + "},\"chain\":" + chain + ",\"splits\":" + splitsJson(p.splits) + ",\"output\":" + std::to_string(p.output) +
+                "\",\"port\":" + std::to_string(p.input.port) + ",\"zones\":" + zonesJson(p.input.zones) + ",\"devices\":" + devicesJson(p.input.devices) + ",\"maxNotes\":" + std::to_string(p.input.maxNotes) + "},\"chain\":" + chain + ",\"splits\":" + splitsJson(p.splits) + ",\"output\":" + std::to_string(p.output) +
                 ",\"level\":" + encode(p.level) + ",\"pan\":" + encode(p.pan) + ",\"mute\":" + (p.mute ? "true" : "false") + ",\"solo\":" + (p.solo ? "true" : "false") + ",\"bus\":" + std::to_string(p.bus) + ",\"sends\":" + [&]{ std::vector<std::string> v; for( const auto& s : p.sends ) v.push_back("{\"bus\":" + std::to_string(s.bus) + ",\"level\":" + encode(s.level) + '}'); return join(v); }() + '}';
         }
 

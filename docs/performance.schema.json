@@ -512,13 +512,20 @@
                 "$ref": "#/$defs/DeviceRule"
               },
               "description": "Which MIDI inputs play the part (RFC 0012); none: all"
+            },
+            "maxNotes": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 128,
+              "description": "Notes at once (RFC 0018); past it, the oldest released note is choked, then the oldest held one. 0: no limit"
             }
           },
           "required": [
             "kind",
             "port",
             "zones",
-            "devices"
+            "devices",
+            "maxNotes"
           ],
           "additionalProperties": false
         },

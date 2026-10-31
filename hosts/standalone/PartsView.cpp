@@ -575,6 +575,15 @@ namespace oscairn::standalone
                 auto* pick = button(from.removeFromLeft(340).reduced(2), text(devicesName(p->devices)), {});
                 pick->setTooltip("Which keyboards and controllers play this part, whatever channel they send on");
                 pick->onClick = [this, id, pick] { devicesMenu(id, *pick); };
+                // Notes at once: past it, the part's oldest released note fades out, then its oldest held one.
+                auto limitRow = labelled("Notes at once");
+                auto limit = std::make_unique<juce::ComboBox>("Notes at once");
+                limit->addItem("Any", 1);
+                for(const int n : {1, 2, 3, 4, 5, 6, 7, 8, 10, 12, 16, 24, 32, 64}) limit->addItem(juce::String(n), n + 1);
+                limit->setSelectedId(p->maxNotes + 1, juce::dontSendNotification);
+                limit->setTooltip("How many notes the part plays at once; a note past it fades out the oldest released note, then the oldest held one (CLAP instruments)");
+                limit->onChange = [this, id, raw = limit.get()] { const int n = raw->getSelectedId() - 1; edit([id, n](Control& c) { setMaxNotes(c, id, n); }); };
+                limit->setBounds(limitRow.removeFromLeft(160).reduced(2)); addAndMakeVisible(*limit); controls_.push_back(std::move(limit));
                 // The zone: lowest and highest key, and a transpose.
                 auto r = labelled("Keys");
                 auto keyBox = [&](juce::Rectangle<int> at, bool high) {

@@ -456,6 +456,8 @@ void partsClient(const char* plugin,const char* delay)
         const auto zoned=remote.graphState().parts[0].input.zones;
         check(zoned.size()==1 && zoned[0].highKey==59 && zoned[0].transpose==12,"a part's zone set and read back over the socket");
         check(remote.graphState().parts[0].input.devices==devices,"a part's device selector set and read back over the socket");
+        {PartInput limited=remote.graphState().parts[0].input;limited.maxNotes=6;remote.setPartInput(part,limited);}
+        check(remote.graphState().parts[0].input.maxNotes==6,"a part's note limit set and read back over the socket");
         // Splits over the socket: a split at the end, a lane's Mix and zones, a third lane.
         const auto sp=remote.addSplit(part,2);
         Lane lane;lane.zones={split};lane.level=.5;lane.mute=true;remote.setLane(part,sp,1,lane);

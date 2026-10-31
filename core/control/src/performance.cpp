@@ -131,7 +131,7 @@ void Session::savePerformance(const std::string& directory) {
         }
         const char* kind=p.input.kind==PartInput::Kind::Notes?"notes":p.input.kind==PartInput::Kind::Audio?"audio":p.input.kind==PartInput::Kind::Bus?"bus":"none";
         std::vector<std::string> sends;for(const auto& s:p.sends)sends.push_back("{\"bus\":"+std::to_string(s.bus)+",\"level\":"+numeric(s.level)+'}');
-        parts.push_back("{\"id\":"+std::to_string(p.id)+",\"name\":"+quote(p.name)+",\"input\":{\"kind\":\""+kind+"\",\"port\":"+std::to_string(p.input.port)+",\"zones\":"+zonesText(p.input.zones)+",\"devices\":"+devicesText(p.input.devices)+"},\"chain\":"+chainText(p.chain)+",\"splits\":"+join(splits)+",\"output\":"+std::to_string(p.output)+",\"level\":"+numeric(p.level)+",\"pan\":"+numeric(p.pan)+",\"mute\":"+(p.mute?"true":"false")+",\"solo\":"+(p.solo?"true":"false")+",\"bus\":"+std::to_string(p.bus)+",\"sends\":"+join(sends)+'}');
+        parts.push_back("{\"id\":"+std::to_string(p.id)+",\"name\":"+quote(p.name)+",\"input\":{\"kind\":\""+kind+"\",\"port\":"+std::to_string(p.input.port)+",\"zones\":"+zonesText(p.input.zones)+",\"devices\":"+devicesText(p.input.devices)+",\"maxNotes\":"+std::to_string(p.input.maxNotes)+"},\"chain\":"+chainText(p.chain)+",\"splits\":"+join(splits)+",\"output\":"+std::to_string(p.output)+",\"level\":"+numeric(p.level)+",\"pan\":"+numeric(p.pan)+",\"mute\":"+(p.mute?"true":"false")+",\"solo\":"+(p.solo?"true":"false")+",\"bus\":"+std::to_string(p.bus)+",\"sends\":"+join(sends)+'}');
     }
     for(const auto& m:graph.mappings)mappings.push_back("{\"from\":"+quote(keys.at(m.source))+",\"lane\":"+std::to_string(m.lane)+",\"to\":"+quote(keys.at(m.target))+",\"param\":"+std::to_string(m.param)+'}');
     // Scenes: each part's fader and each scene parameter's value; and the scene last selected.
@@ -223,9 +223,9 @@ void Session::loadPerformance(const std::string& directory) {
         for(auto p:array(field(d,"parts"),256)){
             fields(p,{"id","name","input","chain","splits","output","bus","sends","level","pan","mute","solo"});Part part;part.id=integer(field(p,"id"));part.name=text(field(p,"name"));
             if(!part.id || !partIds.insert(part.id).second)bad("invalid or duplicate part");
-            const auto input=field(p,"input");fields(input,{"kind","port","zones","devices"});const auto kind=text(field(input,"kind"));
+            const auto input=field(p,"input");fields(input,{"kind","port","zones","devices","maxNotes"});const auto kind=text(field(input,"kind"));
             part.input.kind=kind=="notes"?PartInput::Kind::Notes:kind=="audio"?PartInput::Kind::Audio:kind=="none"?PartInput::Kind::None:kind=="bus"?PartInput::Kind::Bus:(bad("invalid part input"),PartInput::Kind::None);
-            part.input.port=integer(field(input,"port"));part.input.zones=zonesFrom(field(input,"zones"));part.input.devices=devicesFrom(field(input,"devices"));part.output=integer(field(p,"output"));
+            part.input.port=integer(field(input,"port"));part.input.zones=zonesFrom(field(input,"zones"));part.input.devices=devicesFrom(field(input,"devices"));part.input.maxNotes=uint16_t(integer(field(input,"maxNotes"),128));part.output=integer(field(p,"output"));
             // Chains hold node keys and split entries; every node and split appears once in the part, and each split is reached from the part's own chain.
             std::set<NodeId> seen;
             auto chain=[&](V list){std::vector<NodeId> out;for(auto n:array(list,256)){
@@ -342,10 +342,10 @@ void Session::loadPerformance(const std::string& directory) {
     }
     // A part's input wires hear the devices its selector chooses here (RFC 0012); files keep selectors, not sources.
     for(auto& w:wires)if(w.owner==WireOwner::Part && w.kind==WireKind::Notes && w.from==graphInput)
-        for(const auto& p:parts)if(p.id==w.part && !p.input.devices.empty()){
-            // The file's zones (a lane's included) with this machine's sources.
+        for(const auto& p:parts)if(p.id==w.part && (!p.input.devices.empty() || p.input.maxNotes)){
+            // The file's zones (a lane's included) with this machine's sources and the part's note limit.
             if(w.zones.empty())w.zones.emplace_back();
-            const auto mask=resolveDevices(p.input.devices,hostStatus_.midiInputs);for(auto& z:w.zones)z.sources=mask;}
+            const auto mask=resolveDevices(p.input.devices,hostStatus_.midiInputs);for(auto& z:w.zones){z.sources=mask;z.maxNotes=p.input.maxNotes;}}
     compileWires(*next,wires);
     std::set<std::pair<NodeId,uint32_t>> mappings;
     for(auto m:array(field(d,"mappings"),4096)){fields(m,{"from","lane","to","param"});const auto from=node(field(m,"from")),lane=integer(field(m,"lane"));if(!mappings.emplace(from,lane).second)bad("duplicate parameter mapping");next->mapParamTarget(from,lane,node(field(m,"to")),integer(field(m,"param")));}

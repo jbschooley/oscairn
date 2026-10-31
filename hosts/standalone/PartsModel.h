@@ -38,6 +38,7 @@ namespace oscairn::standalone
         std::string name, sound, input; // sound: the first instrument's plugin; input: "Any device · C3–C8"
         bool bus = false, notes = false; // notes: it plays from MIDI inputs and the panel
         std::vector<DeviceRule> devices; // which inputs (RFC 0012); none: any
+        int maxNotes = 0;                // notes at once (RFC 0018); 0: no limit
         int lowKey = 0, highKey = 127, transpose = 0; // the input's first zone, or all keys
         std::vector<PartBox> chain;
         double level = 1, pan = 0;
@@ -103,6 +104,7 @@ namespace oscairn::standalone
     DeviceRule ruleFor(const MidiEndpoint&);      // that device by name, or its port number
     std::vector<DeviceRule> toggled(std::vector<DeviceRule>, const DeviceRule&); // All clears the list
     void setDevices(Control&, uint32_t part, const std::vector<DeviceRule>&);
+    void setMaxNotes(Control&, uint32_t part, int maxNotes); // 0: no limit
     void setOutput(Control&, uint32_t part, uint32_t bus);                         // 0: Main
     void setSendLevel(Control&, uint32_t part, uint32_t bus, double level);        // 0 removes the send
     // Routing's edits: user wires and nodes outside the parts.

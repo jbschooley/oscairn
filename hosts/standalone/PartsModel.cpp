@@ -67,7 +67,7 @@ namespace oscairn::standalone
             row.level = p.level; row.pan = p.pan; row.mute = p.mute; row.solo = p.solo; row.through = p.bus;
             // Its own mute, or someone else's solo: the wires where it plays are muted either way.
             row.silenced = !p.mute && std::any_of(g.wires.begin(), g.wires.end(), [&](const Wire& w) { return w.owner == WireOwner::Part && w.part == p.id && w.fader && w.mute; });
-            row.notes = p.input.kind == PartInput::Kind::Notes; row.devices = p.input.devices;
+            row.notes = p.input.kind == PartInput::Kind::Notes; row.devices = p.input.devices; row.maxNotes = p.input.maxNotes;
             for(const auto& s : p.sends) row.sends[s.bus] = s.level;
             if(!p.input.zones.empty()) { const auto& z = p.input.zones.front(); row.lowKey = z.lowKey; row.highKey = z.highKey; row.transpose = z.transpose; }
             // Boxes in chain order; a split is a box holding its lanes' boxes.
@@ -457,6 +457,17 @@ namespace oscairn::standalone
         const auto g = c.graphState();
         if(owners(g).count(node)) throw std::invalid_argument("the plugin belongs to a part: remove it there");
         c.remove(node, UserWires::Reconnect);
+        c.commit();
+    }
+
+    void setMaxNotes(Control& c, uint32_t part, int maxNotes)
+    {
+        const auto parts = c.graphState().parts;
+        const auto found = std::find_if(parts.begin(), parts.end(), [&](const Part& p) { return p.id == part; });
+        if(found == parts.end()) throw std::invalid_argument("unknown part");
+        auto input = found->input;
+        input.maxNotes = uint16_t(std::clamp(maxNotes, 0, 128));
+        c.setPartInput(part, input);
         c.commit();
     }
 

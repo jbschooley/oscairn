@@ -131,7 +131,7 @@ request members.
 | `parts.addLane` | `part`, `split` | numeric `lane` |
 | `parts.removeLane` | `part`, `split`, `lane`: its nodes leave the part; the last lane removes the split | `{"accepted":true}` |
 | `parts.lane` | `part`, `split`, `lane`; any of `zones`, `level`, `pan`, `mute`, `solo` (others keep their values) | `{"accepted":true}` |
-| `parts.input` | `part`, `input` (as for `parts.add`, with optional `zones` and `devices`) | `{"accepted":true}` |
+| `parts.input` | `part`, `input` (as for `parts.add`, with optional `zones`, `devices` and `maxNotes`, notes at once from 0 (no limit) to 128) | `{"accepted":true}` |
 | `parts.output` | `part`, and `bus` (play through that bus) or optional `port` (a graph output) | `{"accepted":true}` |
 | `parts.send` | `part`, `bus`, optional `level` (without one, the send is removed) | `{"accepted":true}` |
 | `parts.level` | `part`, `level`, `mute`: its fader; sends are post-fader | `{"accepted":true}` |

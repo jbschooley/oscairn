@@ -1,6 +1,7 @@
 # RFC 0018: Voice budget and stealing
 
-Status: proposed, 2026-10-31. Step 1's plugin side implemented (below). When a Performance asks for more than the
+Status: proposed, 2026-10-31. Step 1's plugin side and step 2's note limits implemented
+(below). When a Performance asks for more than the
 processor can play, Oscairn gives up the least audible notes across every part, without
 clicks, rather than missing the audio deadline. The host does this with notes (option B),
 and plugins that opt in do it with their own voices (option C).
@@ -167,7 +168,22 @@ less than 60% in the second half of the fade, silence and `NOTE_END` after 3 ms,
 volume halving it; a cut, or a fade that ignored the ramp, fails it.
 
 Not yet: the host's own volume ramp before a choke, for third-party plugins that fade on
-neither; and stealing itself, starting with step 2's note limits.
+neither.
+
+## Step 2 status
+
+Note limits, 2026-10-31: a part's input has `maxNotes` (0 to 128, 0 for none), saved, in the
+protocol and on the Part page as **Notes at once**. It rides on the part's input wires as a
+zone setting, and the note router enforces it where the notes enter the instrument: before
+a note past the limit, it chokes the oldest released note still sounding, else the oldest
+held one. A stolen note stops counting at once, is not released again, and frees its slot
+when the plugin ends it. Only where the plugin takes CLAP notes; a MIDI-only plugin is not
+limited, since MIDI cannot choke one note. With lanes, each lane's instrument has the limit.
+`note-routing` checks the order (released first, though older notes are held), the stolen
+note's release going nowhere, and no limit; `control-parts` the Session and saving it.
+
+Not yet: protecting the highest and lowest held keys, reserves and priority (with step 3's
+shared budget), and one count across a part's lanes.
 
 ## Build order and gates
 

@@ -125,10 +125,10 @@ namespace oscairn
     std::vector<NoteZone> inputZones(const PartInput& input, const std::vector<MidiEndpoint>& endpoints)
     {
         auto zones = input.zones;
-        if(input.devices.empty()) return zones;
-        if(zones.empty()) zones.emplace_back(); // a zone passing every note, to carry the devices
+        if(input.devices.empty() && !input.maxNotes) return zones;
+        if(zones.empty()) zones.emplace_back(); // a zone passing every note, to carry the devices and limit
         const auto mask = resolveDevices(input.devices, endpoints);
-        for(auto& z : zones) z.sources = mask;
+        for(auto& z : zones) { z.sources = mask; z.maxNotes = input.maxNotes; }
         return zones;
     }
 
@@ -407,6 +407,7 @@ namespace oscairn
             checkZones(input.zones);
             if(input.devices.size() > 16 || std::any_of(input.devices.begin(), input.devices.end(), [](const DeviceRule& r) { return !r.valid(); }))
                 throw std::invalid_argument("invalid or too many device rules");
+            if(input.maxNotes > 128) throw std::invalid_argument("a part plays at most 128 notes at once");
         }
     }
 

@@ -522,6 +522,28 @@ namespace
         check(t.parts()[1].solo && !t.parts()[0].solo && t.parts()[1].pan == .25, "solo and pan round-trip");
     }
 
+    // RFC 0018 step 2: a part's note limit reaches its input wire, also after saving and opening.
+    void noteLimits(const char* fixture, const fs::path& root)
+    {
+        Session s(48000, frames);
+        const auto synth = s.add("synth", fixture, "org.kick.test.synth");
+        const auto keys = s.addPart("Keys");
+        s.insertIntoPart(keys, 0, synth);
+        PartInput limited; limited.maxNotes = 4;
+        s.setPartInput(keys, limited); s.commit();
+        auto zones = wire(s, graphInput, synth, WireKind::Notes).zones;
+        check(zones.size() == 1 && zones[0].maxNotes == 4 && zones[0] .lowKey == 0 && zones[0].highKey == 127, "the limit rides on a zone passing every note");
+        bool refused = false; PartInput tooMany; tooMany.maxNotes = 129;
+        try { s.setPartInput(keys, tooMany); } catch(const std::invalid_argument&) { refused = true; }
+        check(refused, "more than 128 notes at once is refused");
+        const auto saved = root / "limits";
+        s.savePerformance(saved.string());
+        Session t(48000, frames); t.loadPerformance(saved.string());
+        check(t.parts()[0].input.maxNotes == 4 && wire(t, graphInput, t.parts()[0].chain[0], WireKind::Notes).zones.at(0).maxNotes == 4, "the limit round-trips onto the wire");
+        s.setPartInput(keys, {}); s.commit();
+        check(wire(s, graphInput, synth, WireKind::Notes).zones.empty(), "no limit: no zone needed");
+    }
+
     // RFC 0011 step 2's gate: a two-layer split and a shared reverb (a delay here) built with part
     // edits only render exactly as the same graph wired by hand on the engine's Graph.
     void buses(const char* fixture, const char* delay)
@@ -778,6 +800,7 @@ int main(int argc, char** argv)
         splits(argv[1], argv[3], temp.path);
         soundSplits(argv[3], argv[4], temp.path);
         mixer(argv[1], argv[3], temp.path);
+        noteLimits(argv[1], temp.path);
         buses(argv[1], argv[3]);
         scenes(argv[1], temp.path);
         controls(argv[1], temp.path);

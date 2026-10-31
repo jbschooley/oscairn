@@ -16,7 +16,8 @@ struct NoteRoute
     // address: the note as its source sent it, which releases and expressions match; key: the
     // key it plays here, after its zone's transpose; zone: which zone let it through, or -1;
     // source: where it entered the graph, so another device's release of the same key leaves it.
-    struct Note { clap_event_note_t address{}; int32_t id=-1; bool used=false,held=false,midi=false; int16_t key=-1; int8_t zone=-1; uint8_t source=untaggedSource; };
+    // stolen: choked to keep within the connection's note limit, waiting for the plugin to end it.
+    struct Note { clap_event_note_t address{}; int32_t id=-1; bool used=false,held=false,midi=false,stolen=false; int16_t key=-1; int8_t zone=-1; uint8_t source=untaggedSource; };
     std::array<Note,kick::clap::Host::maxBlockEvents> notes{};
     std::array<std::array<uint8_t,16>,16> pedal{};
     std::array<bool,16> clap{};
@@ -94,10 +95,27 @@ struct NoteRoute
         {
             const auto n=*reinterpret_cast<const clap_event_note_t*>(h);
             if(n.port_index>=16 || static_cast<uint32_t>(n.port_index)>=ports)return emit(e);
+            // A note limit: before a note past it, the oldest released note goes, else the oldest
+            // held one. Only where the plugin takes CLAP notes: MIDI cannot choke one note.
+            const uint16_t limit=zones && zones->count && clap[n.port_index]?zones->zones[0].maxNotes:0;
+            auto makeRoom=[&]()->bool {
+                if(!limit)return true;
+                for(;;) {
+                    Note* victim=nullptr;size_t playing=0;
+                    for(auto& slot:notes)if(slot.used && !slot.stolen) {
+                        ++playing;
+                        if(!victim || (victim->held && !slot.held) || (victim->held==slot.held && slot.id<victim->id))victim=&slot;
+                    }
+                    if(playing<limit || !victim)return true;
+                    victim->stolen=true;victim->held=false;
+                    if(!emit(release(*victim,h->time,true)))return false;
+                }
+            };
             auto play=[&](int8_t zone,int16_t key,double velocity) {
+                if(!makeRoom())return false;
                 for(auto& slot:notes)if(!slot.used) {
                     if(nextId>INT32_MAX)return false;
-                    slot={n,static_cast<int32_t>(nextId++),true,true,midi,key,zone,source};
+                    slot={n,static_cast<int32_t>(nextId++),true,true,midi,false,key,zone,source};
                     auto copy=n;copy.key=key;copy.velocity=velocity;copy.note_id=clap[n.port_index]?slot.id:-1;return emit(Event::from(copy));
                 }
                 return false;
@@ -117,7 +135,7 @@ struct NoteRoute
             if(midi)for(auto& slot:notes)if(slot.held && slot.midi && from(slot,source) && matches(slot,-1,n.port_index,n.channel,n.key))
                 if(auto& o=oldest[size_t(slot.zone+1)];!o || slot.id<o->id)o=&slot;
             bool ok=true;
-            for(auto& slot:notes)if(from(slot,source) && matches(slot,n.note_id,n.port_index,n.channel,n.key) && (!midi || &slot==oldest[size_t(slot.zone+1)])) {
+            for(auto& slot:notes)if(!slot.stolen && from(slot,source) && matches(slot,n.note_id,n.port_index,n.channel,n.key) && (!midi || &slot==oldest[size_t(slot.zone+1)])) {
                 slot.held=false;
                 const bool sustained=pedal[slot.address.port_index][slot.address.channel]>=64;
                 auto output=release(slot,h->time,choke);

@@ -84,9 +84,11 @@ namespace oscairn
         uint32_t port = 0;                                         // graph input port, for audio
         std::vector<NoteZone> zones;                               // notes: the part's zones (splits, layers, curves)
         std::vector<DeviceRule> devices;                           // notes: which inputs play it; none: all
+        uint16_t maxNotes = 0;                                     // notes at once (RFC 0018), 0..128; 0: no limit
         bool operator==(const PartInput&) const = default;
     };
-    // The zones a part's input wire carries: its own, each hearing only its selected devices.
+    // The zones a part's input wire carries: its own, each hearing only its selected devices,
+    // with its note limit.
     std::vector<NoteZone> inputZones(const PartInput& input, const std::vector<MidiEndpoint>& endpoints);
 
     struct Send { uint32_t bus = 0; double level = 1; bool operator==(const Send&) const = default; }; // a copy of a part's sound into a shared bus
