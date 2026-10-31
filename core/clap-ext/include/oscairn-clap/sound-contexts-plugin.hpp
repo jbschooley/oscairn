@@ -45,7 +45,7 @@ namespace oscairn::contexts
         int16_t  key = 0, channel = 0;
         double   velocity = 0.0;
         double   pressure = 0.0; // 0..1, from note expressions
-        double   gain = 1.0;     // CLAP's per-note volume expression, linear 0..4
+        double   volume = 1.0;   // CLAP's per-note volume expression, linear 0..4
         uint32_t chokeLeft = 0, chokeLength = 0; // a choked voice fades out over chokeLength frames
         uint64_t started = 0;
     };
@@ -86,8 +86,8 @@ namespace oscairn::contexts
         // ends when its fade would have, but with a cut.
         static double amplitude(const Voice& v, uint32_t offset)
         {
-            if(!v.chokeLength) return v.gain;
-            return v.chokeLeft > offset ? v.gain * double(v.chokeLeft - offset) / double(v.chokeLength) : 0.0;
+            if(!v.chokeLength) return v.volume;
+            return v.chokeLeft > offset ? v.volume * double(v.chokeLeft - offset) / double(v.chokeLength) : 0.0;
         }
 
         Engine()
@@ -161,7 +161,7 @@ namespace oscairn::contexts
             if(e.expression_id == CLAP_NOTE_EXPRESSION_PRESSURE)
                 for(auto& v : voices) if(matches(v, e.note_id, e.key, e.channel)) v.pressure = e.value < 0 ? 0 : e.value > 1 ? 1 : e.value;
             if(e.expression_id == CLAP_NOTE_EXPRESSION_VOLUME)
-                for(auto& v : voices) if(matches(v, e.note_id, e.key, e.channel)) v.gain = e.value < 0 ? 0 : e.value > 4 ? 4 : e.value;
+                for(auto& v : voices) if(matches(v, e.note_id, e.key, e.channel)) v.volume = e.value < 0 ? 0 : e.value > 4 ? 4 : e.value;
         }
         // Renders a segment, then ends the choked voices whose fade it finished.
         void renderSegment(const clap_process_t* process, uint32_t from, uint32_t to)
