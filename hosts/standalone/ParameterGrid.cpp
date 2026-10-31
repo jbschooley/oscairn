@@ -59,6 +59,154 @@ namespace oscairn::standalone
         }
     }
 
+    EnvelopeShape envelopeOf(const std::vector<std::string>& names)
+    {
+        auto find = [&](const char* name) {
+            for(size_t i = 0; i < names.size(); ++i) if(juce::String(names[i]).equalsIgnoreCase(name)) return int(i);
+            return -1;
+        };
+        auto either = [&](std::initializer_list<const char*> options) { for(const auto* o : options) if(const int i = find(o); i >= 0) return i; return -1; };
+        EnvelopeShape e;
+        // DX7: four rates and four levels; it starts from level 4 and holds at level 3.
+        const int r1 = find("Rate 1"), r2 = find("Rate 2"), r3 = find("Rate 3"), r4 = find("Rate 4");
+        const int l1 = find("Level 1"), l2 = find("Level 2"), l3 = find("Level 3"), l4 = find("Level 4");
+        if(std::min({r1, r2, r3, r4, l1, l2, l3, l4}) >= 0)
+        {
+            e.start = l4;
+            e.points = {{r1, l1, 0, true}, {r2, l2, 0, true}, {r3, l3, 0, true, true}, {r4, l4, 0, true}};
+            return e;
+        }
+        // FM-X: a time and a level for each stage, from a hold (or initial) level.
+        const int attackTime = find("Attack Time"), releaseTime = find("Release Time");
+        if(attackTime >= 0 && releaseTime >= 0)
+        {
+            e.start = either({"Release (Hold) Level", "Hold Level", "Initial Level"});
+            if(const int hold = find("Hold Time"); hold >= 0) e.points.push_back({hold, e.start});
+            e.points.push_back({attackTime, find("Attack Level"), 1});
+            for(const auto& [t, l] : {std::pair{"Decay 1 Time", "Decay 1 Level"}, std::pair{"Decay 2 Time", "Decay 2 Level"}, std::pair{"Decay Time", "Decay Level"}})
+                if(const int time = find(t); time >= 0) e.points.push_back({time, find(l), e.points.back().fixed});
+            e.points.back().sustain = true;
+            e.points.push_back({releaseTime, either({"Release Level", "Release (Hold) Level"}), 0});
+            if(e.points.back().level < 0 && e.start >= 0) e.points.back().level = e.start;
+            return e;
+        }
+        // ADSR, with an optional delay and hold: from silence to full, down to the sustain level.
+        const int attack = find("Attack"), decay = find("Decay"), sustain = find("Sustain"), release = find("Release");
+        if(attack >= 0 && release >= 0 && (decay >= 0 || sustain >= 0))
+        {
+            if(const int delay = find("Delay"); delay >= 0) e.points.push_back({delay, -1, 0});
+            e.points.push_back({attack, -1, 1});
+            if(const int hold = find("Hold"); hold >= 0) e.points.push_back({hold, -1, 1});
+            if(decay >= 0) e.points.push_back({decay, sustain, sustain >= 0 ? 0.0 : 1.0});
+            if(decay < 0 && sustain >= 0) e.points.back().level = sustain;
+            e.points.back().sustain = true;
+            e.points.push_back({release, -1, 0});
+        }
+        return e;
+    }
+
+    /// An envelope's curve, drawn from its parameters; drag a point to change the time (across)
+    /// and the level (up and down) it is reached at. The parameters keep their own tiles.
+    class ParameterGrid::Envelope : public juce::Component
+    {
+    public:
+        // shape's indices are into `params`, the grid's parameter indices of its group.
+        Envelope(ParameterGrid& grid, EnvelopeShape shape, std::vector<size_t> params) : grid_(grid), shape_(std::move(shape)), params_(std::move(params)) {}
+        void paint(juce::Graphics& g) override
+        {
+            layout();
+            const int mode = std::max(1, desktopMode(*this));
+            g.setColour(ink(Ink::Muted)); g.setFont(juce::FontOptions(textSize(TextRole::Small, mode), juce::Font::bold));
+            g.drawText("Envelope", getLocalBounds().reduced(10, 8).removeFromTop(16), juce::Justification::topLeft);
+            // A faint baseline and top, the shape filled under its line, and a handle per point.
+            g.setColour(ink(Ink::Border).withAlpha(.35f));
+            g.drawHorizontalLine(area_.getBottom(), area_.getX(), area_.getRight());
+            g.drawHorizontalLine(area_.getY(), area_.getX(), area_.getRight());
+            juce::Path line; line.startNewSubPath(start_);
+            for(const auto& h : handles_) { line.lineTo(h.at); if(h.holdTo > 0) line.lineTo(h.holdTo, h.at.y); }
+            juce::Path fill(line); fill.lineTo(line.getCurrentPosition().x, float(area_.getBottom())); fill.lineTo(start_.x, float(area_.getBottom())); fill.closeSubPath();
+            g.setColour(ink(Ink::Accent).withAlpha(.14f)); g.fillPath(fill);
+            g.setColour(ink(Ink::Accent)); g.strokePath(line, juce::PathStrokeType(2.f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+            for(size_t i = 0; i < handles_.size(); ++i)
+            {
+                const float r = int(i) == dragging_ ? 6.f : 4.5f;
+                g.setColour(juce::Colours::white); g.fillEllipse(juce::Rectangle<float>(r * 2, r * 2).withCentre(handles_[i].at));
+                g.setColour(ink(Ink::Accent)); g.drawEllipse(juce::Rectangle<float>(r * 2, r * 2).withCentre(handles_[i].at), 1.5f);
+            }
+        }
+        void mouseDown(const juce::MouseEvent& e) override
+        {
+            layout(); dragging_ = -1;
+            float best = 14;
+            for(size_t i = 0; i < handles_.size(); ++i) if(const float d = handles_[i].at.getDistanceFrom(e.position); d < best) { best = d; dragging_ = int(i); }
+            if(dragging_ < 0) return;
+            for(const int p : touched(dragging_)) grid_.engine_.paramGesture(grid_.name_, grid_.params_[params_[size_t(p)]].id, true);
+            repaint();
+        }
+        void mouseDrag(const juce::MouseEvent& e) override
+        {
+            if(dragging_ < 0) return;
+            const auto& point = shape_.points[size_t(dragging_)];
+            const auto& h = handles_[size_t(dragging_)];
+            if(point.time >= 0)
+            {
+                const double across = std::clamp((e.position.x - h.from) / segment_, 0.f, 1.f);
+                grid_.setNormal(params_[size_t(point.time)], point.rate ? 1 - across : across);
+            }
+            if(point.level >= 0) grid_.setNormal(params_[size_t(point.level)], std::clamp((area_.getBottom() - e.position.y) / area_.getHeight(), 0.f, 1.f));
+            repaint();
+        }
+        void mouseUp(const juce::MouseEvent&) override
+        {
+            if(dragging_ >= 0) for(const int p : touched(dragging_)) grid_.engine_.paramGesture(grid_.name_, grid_.params_[params_[size_t(p)]].id, false);
+            dragging_ = -1; repaint();
+        }
+    private:
+        struct Handle { juce::Point<float> at; float from = 0, holdTo = 0; }; // from: where its segment starts; holdTo: the sustain's end
+        std::vector<int> touched(int i) const { std::vector<int> p; const auto& pt = shape_.points[size_t(i)]; if(pt.time >= 0) p.push_back(pt.time); if(pt.level >= 0) p.push_back(pt.level); return p; }
+        float level(int param, double fixed) const { const double v = param >= 0 ? grid_.normal(params_[size_t(param)]) : fixed; return area_.getBottom() - float(v) * area_.getHeight(); }
+        void layout()
+        {
+            // Each timed segment has the same room, scaled by its time; the sustain a fixed width.
+            area_ = getLocalBounds().toFloat().reduced(14, 10).withTrimmedTop(18);
+            const float hold = area_.getWidth() * .14f;
+            segment_ = (area_.getWidth() - hold) / float(std::max<size_t>(1, shape_.points.size()));
+            start_ = {area_.getX(), level(shape_.start, shape_.fixedStart)};
+            handles_.clear();
+            float x = start_.x;
+            for(const auto& p : shape_.points)
+            {
+                const double t = p.time >= 0 ? grid_.normal(params_[size_t(p.time)]) : 0;
+                Handle h; h.from = x;
+                x += float(p.rate ? 1 - t : t) * segment_;
+                h.at = {x, level(p.level, p.fixed)};
+                if(p.sustain) { x += hold; h.holdTo = x; }
+                handles_.push_back(h);
+            }
+        }
+        ParameterGrid& grid_;
+        EnvelopeShape shape_;
+        std::vector<size_t> params_;
+        juce::Rectangle<float> area_;
+        juce::Point<float> start_;
+        float segment_ = 1;
+        std::vector<Handle> handles_;
+        int dragging_ = -1;
+    };
+
+    double ParameterGrid::normal(size_t param) const
+    {
+        const auto& p = params_[param];
+        return p.maximum > p.minimum ? std::clamp((engine_.param(name_, p.id) - p.minimum) / (p.maximum - p.minimum), 0.0, 1.0) : 0.0;
+    }
+    void ParameterGrid::setNormal(size_t param, double value)
+    {
+        const auto& p = params_[param];
+        double v = p.minimum + value * (p.maximum - p.minimum);
+        if(p.stepped) v = std::round(v);
+        engine_.setParam(name_, p.id, v);
+    }
+
     /// The scrolling area: the tiles' backgrounds and the headings, under their controls.
     class ParameterGrid::Content : public juce::Component
     {
@@ -68,6 +216,7 @@ namespace oscairn::standalone
         {
             const int mode = std::max(1, desktopMode(*this));
             for(const auto& t : grid_.tiles_) drawSection(g, t.bounds, ink(Ink::Surface));
+            for(const auto& p : grid_.panels_) drawSection(g, p, ink(Ink::Surface));
             g.setColour(ink(Ink::Muted)); g.setFont(juce::FontOptions(textSize(TextRole::Small, mode), juce::Font::bold));
             for(const auto& h : grid_.headings_) g.drawText(h.text, h.bounds, juce::Justification::bottomLeft, true);
         }
@@ -204,7 +353,7 @@ namespace oscairn::standalone
 
     void ParameterGrid::build()
     {
-        controls_.clear(); tiles_.clear(); headings_.clear();
+        controls_.clear(); tiles_.clear(); headings_.clear(); panels_.clear();
         if(pages_.empty()) return;
         const int mode = std::max(1, desktopMode(*this)), width = content_->getWidth();
         const int gap = sectionGap(6), columns = std::clamp(width / 210, 2, 6);
@@ -235,6 +384,19 @@ namespace oscairn::standalone
         for(const auto& [heading, members] : groups)
         {
             if(!heading.empty()) { headings_.push_back({text(heading).replace("/", juce::String::fromUTF8(" › ")), {0, y, width, 28}}); y += 30; }
+            // An envelope among them: its curve first, across the row.
+            {
+                std::vector<std::string> names;
+                for(const auto i : members) names.push_back(params_[i].name);
+                if(auto shape = envelopeOf(names); !shape.empty())
+                {
+                    const juce::Rectangle<int> bounds(0, y, width, mode == 2 ? 180 : 150);
+                    auto view = std::make_unique<Envelope>(*this, std::move(shape), members);
+                    view->setBounds(bounds); content_->addAndMakeVisible(*view); controls_.push_back(std::move(view));
+                    panels_.push_back(bounds);
+                    y += bounds.getHeight() + gap;
+                }
+            }
             for(size_t k = 0; k < members.size(); ++k)
             {
                 const auto column = int(k % size_t(columns));
@@ -311,6 +473,7 @@ namespace oscairn::standalone
     void ParameterGrid::timerCallback()
     {
         if(stale_ && engine_.controlReady()) { refresh(); return; }
+        if(!panels_.empty()) content_->repaint(); // envelopes follow their parameters too
         // Values change from automation, scenes, controls and other clients: follow them.
         for(auto& t : tiles_)
             if(const double v = engine_.param(name_, params_[t.param].id); v != t.shown) show(t, v);

@@ -226,7 +226,9 @@ pages of tiles (`ParameterGrid`), built from their CLAP module paths, which `par
 carries. `desktop-shell` renders the Basic Synth's pages, and those of any plugin given on its
 command line (the FM and analog engines were checked: 595 and 294 parameters). A page of more
 than 24 parameters gets a tab per second-level module, and a search box finds parameters on
-any page by name or module.
+any page by name or module. Step 5's envelope widget is drawn where a module's parameters
+are named like an ADSR, a DX7 envelope or an FM-X one, until plugins can describe theirs;
+dragging a point sets its time and level.
 
 Not yet: the views' state on view models of their own, the parts views redrawn for the
 desktop (they are the device's, with the desktop's text), and Panel renders in the same test.

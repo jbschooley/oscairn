@@ -7,6 +7,20 @@
 
 namespace oscairn::standalone
 {
+    /// An envelope recognised from its parameters' names: the level it starts at, then its
+    /// breakpoints in order, each reached after a time (or a rate, faster when higher) at a level.
+    /// Indices are positions in the names given; -1 is none, with a fixed level instead. The
+    /// sustain point holds until release.
+    struct EnvelopeShape
+    {
+        struct Point { int time = -1, level = -1; double fixed = 0; bool rate = false, sustain = false; };
+        int start = -1; double fixedStart = 0;
+        std::vector<Point> points;
+        bool empty() const { return points.empty(); }
+    };
+    // shortcut: recognised by name only (ADSR; DX7 rates and levels; FM-X times and levels), case-insensitive; replace with the plugins' own descriptions once oscairn.ui exists (RFC 0019).
+    EnvelopeShape envelopeOf(const std::vector<std::string>& names);
+
     /// Every parameter of one plugin, as pages of tiles (RFC 0019's generated editor): a page per
     /// top-level CLAP module path; on a page of more than 24, tabs for the second level; a heading
     /// per module below that; and a tile per parameter with
@@ -24,6 +38,7 @@ namespace oscairn::standalone
         void showTab(size_t tab);
         size_t tabs() const { return tabNames_.size(); }
         size_t tilesShown() const { return tiles_.size(); }
+        size_t envelopesShown() const { return panels_.size(); }
         // Any page's parameters whose name or module has the text; empty: the page again.
         void search(const juce::String& text) { search_.setText(text, false); search_.onTextChange(); }
 
@@ -44,6 +59,9 @@ namespace oscairn::standalone
         };
         struct Heading { juce::String text; juce::Rectangle<int> bounds; };
         class Content;
+        class Envelope;
+        double normal(size_t param) const;               // its value, 0 to 1 over its range
+        void setNormal(size_t param, double value);      // from 0 to 1, rounded when stepped
         void timerCallback() override;
         std::vector<std::string> tabsFor(size_t page) const; // second-level modules, when a page needs them
         void refresh();                 // tabs, layout and tiles for the page, tab and search shown
@@ -65,5 +83,6 @@ namespace oscairn::standalone
         std::vector<std::unique_ptr<juce::Component>> controls_;
         std::vector<Tile> tiles_;
         std::vector<Heading> headings_;
+        std::vector<juce::Rectangle<int>> panels_;       // wide tiles: envelopes
     };
 }

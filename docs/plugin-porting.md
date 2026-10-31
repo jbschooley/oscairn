@@ -96,6 +96,11 @@ Everything else is handled for you:
     tab for each second level (`Operator 1/Envelope`); the rest of the path is a heading. So
     give a large page second levels of a dozen or so parameters each;
   - a search box finds parameters on any page by name or module, so keep names specific;
+  - an envelope is drawn as a curve you can drag when one module holds its parameters under
+    one of these sets of names: `Attack`, `Decay`, `Sustain`, `Release` (optionally `Delay`
+    and `Hold`); `Rate 1`–`4` with `Level 1`–`4` (DX7); or `Attack Time`, `Attack Level`,
+    `Decay 1 Time` and so on with `Release Time` (FM-X). A stopgap until plugins can describe
+    their editors;
   - list parameters in the order a player reads them (attack before decay), since tiles follow
     the plugin's order within a page;
   - a stepped parameter with 2 values is a switch, with up to 32 a list of their value texts,

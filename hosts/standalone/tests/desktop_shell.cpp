@@ -113,6 +113,19 @@ int main(int argc, char** argv)
                     juce::PNGImageFormat().writeImageToStream(image, stream);
                 }
             }
+            // Envelopes recognised from their parameters' names.
+            {
+                const auto adsr = standalone::envelopeOf({"Attack Shape", "Attack", "Decay", "Sustain", "Release"});
+                check(adsr.points.size() == 3 && adsr.points[0].time == 1 && adsr.points[1].level == 3 && adsr.points[1].sustain && adsr.points[2].time == 4,
+                      "an ADSR: attack to full, decay to the sustain level, release");
+                const auto dx7 = standalone::envelopeOf({"Rate 1", "Rate 2", "Rate 3", "Rate 4", "Level 1", "Level 2", "Level 3", "Level 4"});
+                check(dx7.start == 7 && dx7.points.size() == 4 && dx7.points[0].rate && dx7.points[2].sustain && dx7.points[3].level == 7,
+                      "a DX7 envelope: rates and levels, from level 4 and holding at level 3");
+                const auto fmx = standalone::envelopeOf({"Attack Level", "Decay 1 Level", "Decay 2 Level", "Release (Hold) Level", "Attack Time", "Decay 1 Time", "Decay 2 Time", "Release Time", "Hold Time"});
+                check(fmx.start == 3 && fmx.points.size() == 5 && fmx.points[0].time == 8 && fmx.points[3].sustain && fmx.points[4].level == 3,
+                      "an FM-X envelope: from its hold level, through each stage, back to it");
+                check(standalone::envelopeOf({"Cutoff", "Resonance", "Release Shape"}).empty(), "no envelope where there is none");
+            }
             // Parameter pages, in Oscairn Dark with a mouse.
             theme.apply("oscairn-dark");
             {
@@ -166,6 +179,52 @@ int main(int argc, char** argv)
                     for(size_t tab = 0; tab < grid.tabs(); ++tab) { grid.showTab(tab); total += grid.tilesShown(); }
                     check(first > 0 && total > first, "a tabbed page splits its parameters between its tabs");
                     if(!tabbed) { grid.showTab(0); save("tabs"); tabbed = true; }
+                }
+                // The analog and FM engines' envelopes show as curves where their pages have them.
+                if(name == "oscairn-analog" || name == "oscairn-fm")
+                {
+                    size_t envelopes = 0; bool saved = false;
+                    for(size_t page = 0; page < grid.pages(); ++page)
+                    {
+                        grid.showPage(page);
+                        for(size_t tab = 0; tab < std::max<size_t>(1, grid.tabs()); ++tab)
+                        {
+                            if(grid.tabs()) grid.showTab(tab);
+                            envelopes += grid.envelopesShown();
+                            if(grid.envelopesShown() && !saved) { save("envelope"); saved = true; }
+                        }
+                    }
+                    check(envelopes >= 2, name + "'s envelopes are drawn: " + std::to_string(envelopes));
+                }
+                // Dragging the analog engine's filter envelope's attack point to the right lengthens
+                // its attack (the point starts where a zero attack leaves it: the curve's top left).
+                if(name == "oscairn-analog")
+                {
+                    grid.showPage(0);
+                    juce::Component* curve = nullptr;
+                    std::function<void(juce::Component&)> find = [&](juce::Component& c) {
+                        for(auto* child : c.getChildren())
+                        {
+                            if(!dynamic_cast<juce::Label*>(child) && !dynamic_cast<juce::Slider*>(child) && !dynamic_cast<juce::ComboBox*>(child) &&
+                               !dynamic_cast<juce::Button*>(child) && !dynamic_cast<juce::TextEditor*>(child) && child->getHeight() == 150) curve = child;
+                            find(*child);
+                        }
+                    };
+                    find(grid);
+                    uint32_t attack = 0; double before = 0;
+                    for(const auto& p : engine.parameters(node)) if(p.module == "Filter Envelope" && p.name == "Attack") { attack = p.id; before = engine.param(name, p.id); }
+                    check(curve && attack, "the filter envelope's curve and its attack");
+                    if(curve && attack)
+                    {
+                        auto mouse = juce::Desktop::getInstance().getMainMouseSource();
+                        const juce::Point<float> from(14, 28), to(214, 28);
+                        auto event = [&](juce::Point<float> at, bool dragged) {
+                            return juce::MouseEvent(mouse, at, juce::ModifierKeys::leftButtonModifier, 1, 0, 0, 0, 0, curve, curve, juce::Time::getCurrentTime(), from, juce::Time::getCurrentTime(), 1, dragged);
+                        };
+                        curve->mouseDown(event(from, false)); curve->mouseDrag(event(to, true)); curve->mouseUp(event(to, true));
+                        for(int i = 0; i < 100 && engine.param(name, attack) == before; ++i) juce::MessageManager::getInstance()->runDispatchLoopUntil(10);
+                        check(engine.param(name, attack) > before, "dragging the attack point lengthens the attack");
+                    }
                 }
                 // A search finds parameters on every page; clearing it returns to the page.
                 grid.showPage(0);
