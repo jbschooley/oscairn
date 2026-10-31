@@ -144,25 +144,27 @@ namespace oscairn
                 return exchange(Writer().u8(uint8_t(Op::Init)).str(path).str(id).f64(rate).u32(frames).data);
             }
 
-            // A request or reply lost on the socket (a timeout, a broken connection): the replies no
-            // longer match the requests, so the worker is failed and the supervisor restarts it.
-            // Under control; the supervisor reaps the process.
-            [[noreturn]] void lost(const std::exception& e)
+            // A reply that did not come in time: the worker is alive, and its late reply would be
+            // read as the next request's, so it is failed and killed, and the supervisor reaps and
+            // restarts it. A closed connection is a worker dying, which the supervisor sees and
+            // names. Under control.
+            [[noreturn]] void lost(const WorkerTimeout& e)
             {
-                { std::lock_guard lock(failureMutex); reason = std::string("Plugin worker stopped answering: ") + e.what(); failureText = reason; }
+                const std::string why = std::string("Plugin worker stopped answering: ") + e.what();
+                { std::lock_guard lock(failureMutex); reason = why; failureText = why; }
                 failed.store(true);
                 if(pid > 0) kill(pid, SIGKILL);
-                throw std::runtime_error(std::string("Plugin worker stopped answering: ") + e.what());
+                throw std::runtime_error(why);
             }
 
             // One request and its reply, answering the worker's asset requests in between. Under control.
             Reader exchange(const std::string& message)
             {
-                try { send(socket, message); } catch(const std::exception& e) { lost(e); }
+                send(socket, message);
                 for(;;)
                 {
                     std::string reply;
-                    try { reply = receive(socket); } catch(const std::exception& e) { lost(e); }
+                    try { reply = receive(socket); } catch(const WorkerTimeout& e) { lost(e); }
                     if(reply.empty() || reply[0] != ResolveAsset) return expect(std::move(reply));
                     Reader r; r.data = std::move(reply); r.at = 1;
                     const auto library = r.str(), file = r.str(); auto sha256 = r.str();
@@ -176,7 +178,7 @@ namespace oscairn
                         answer = std::string(1, Done) + Writer().str(local).str(sha256).data;
                     }
                     catch(const std::exception& e) { answer = std::string(1, Failed) + e.what(); }
-                    try { send(socket, answer); } catch(const std::exception& e) { lost(e); }
+                    send(socket, answer);
                 }
             }
             static Reader expect(std::string reply)

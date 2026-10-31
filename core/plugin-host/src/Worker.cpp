@@ -89,7 +89,8 @@ namespace oscairn::worker
             {
                 const auto n = ::recv(socket, data, size, 0);
                 if(n < 0 && errno == EINTR) continue;
-                if(n <= 0) throw std::runtime_error(n == 0 ? "Plugin worker connection closed" : "Plugin worker did not answer in time");
+                if(n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) throw WorkerTimeout();
+                if(n <= 0) throw std::runtime_error(n == 0 ? "Plugin worker connection closed" : "Plugin worker connection lost");
                 data += n; size -= size_t(n);
             }
         }

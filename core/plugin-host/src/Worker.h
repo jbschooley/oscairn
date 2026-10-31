@@ -80,7 +80,9 @@ namespace oscairn::worker
     };
     // Throw on a closed or failed socket; receive enforces maxBytes.
     void send(int socket, const std::string& message);
-    std::string receive(int socket, size_t maxBytes = 64u << 20);
+    // A reply that did not come within the socket's timeout: the worker is alive but late.
+    struct WorkerTimeout : std::runtime_error { WorkerTimeout() : std::runtime_error("Plugin worker did not answer in time") {} };
+    std::string receive(int socket, size_t maxBytes = 64u << 20); // throws WorkerTimeout, or runtime_error when the connection is gone
     void sendDescriptor(int socket, int fd);
     int receiveDescriptor(int socket);
 
