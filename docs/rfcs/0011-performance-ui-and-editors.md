@@ -497,7 +497,9 @@ Undo applies only what a step changed, field by field, onto the model as it is n
 a rename keeps a level a scene set since. Steps hold the nodes they removed or replaced, so
 undoing a removal brings back the same plugin, with its state and prepared sounds, under its
 ID. Switching scenes, moving controls and devices coming and going are not edits. History is
-100 steps, and opening a Performance clears it. **Undo** and **Redo** are on the Parts views
+100 steps, and opening a Performance clears it. Each removed or replaced plugin it holds stays
+in memory (a sampler's samples, a worker process), so it keeps at most eight of them, dropping
+the oldest steps past that (from the 2026-10-31 audit). **Undo** and **Redo** are on the Parts views
 and in the desktop's **Edit** menu, named for what they would do, and on Cmd-Z and
 Cmd-Shift-Z (Ctrl elsewhere). `control-undo` covers
 grouping, merging, removal with state, scenes and controls, pads, splits with their nodes and

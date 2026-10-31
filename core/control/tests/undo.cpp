@@ -132,6 +132,17 @@ int main(int argc, char** argv)
         s.redo(); x.run(s);
         check(s.parts()[0].splits.size() == 1 && s.hasNode(sp) && s.parameter(sp, 1) == 1, "redone with its mode");
 
+        // Trying plugins one after another: the history keeps at most eight removed ones alive,
+        // dropping the oldest steps (the 2026-10-31 audit: a sampler each, for a hundred steps).
+        {
+            Session t(48000, frames);
+            for(int i = 0; i < 12; ++i) { const auto n = t.add("try" + std::to_string(i), fixture, "org.kick.test.synth"); t.commit(); t.remove(n); t.commit(); }
+            int undos = 0, restored = 0;
+            while(t.undo()) { ++undos; restored = int(t.graphState().topology.nodes.size()); }
+            check(undos <= 2 * 8 + 1 && undos >= 2 * 8 - 1, "the history holds about eight removed plugins: " + std::to_string(undos) + " steps");
+            check(restored <= 1, "and undoes them in order back to where it can: " + std::to_string(restored));
+        }
+
         // Opening a Performance starts a new history.
         state_files::TemporaryDirectory temp;
         s.savePerformance((temp.path / "p").string());

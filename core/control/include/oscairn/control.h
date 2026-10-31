@@ -146,7 +146,8 @@ namespace oscairn
         // this interface. Playing, switching scenes, moving controls and choosing sounds are not
         // edits. An edit is everything up to a commit, or one change that needs none; repeated
         // changes to the same thing within a moment are one edit. The labels say what undo and
-        // redo would do; empty: nothing to undo or redo. Opening a Performance clears them.
+        // redo would do; empty: nothing to undo or redo. Opening a Performance clears them. The
+        // history keeps at most 8 removed or replaced plugins alive; older steps go.
         struct History { std::string undo, redo; };
         virtual History history() const = 0;
         virtual bool undo() = 0; // false: nothing to undo

@@ -18,6 +18,9 @@ namespace oscairn
     namespace
     {
         constexpr size_t historyDepth = 100;
+        // Plugins no longer in the graph that the history may keep alive for undo: each can be
+        // large (a sampler's samples, a worker process). Past this, the oldest steps go.
+        constexpr size_t maxHeldPlugins = 8;
         constexpr auto mergeWindow = std::chrono::milliseconds(1500);
 
         // A part's wires are rebuilt from the part, with new IDs; they are known by where they go.
@@ -132,6 +135,17 @@ namespace oscairn
         if(undo_.size() > historyDepth) undo_.erase(undo_.begin()); // its held nodes go with it
         redo_.clear();
         mergeable_ = true;
+        // Every step before a removal still holds the removed plugin, so count the plugins the
+        // whole history holds that the graph no longer has, and drop the oldest steps past the limit.
+        auto held = [&] {
+            std::set<const PluginHost*> live, gone;
+            for(const auto& [id, name] : nodes_) live.insert(&graph_.host(id));
+            for(const auto& s : undo_)
+                for(const auto* m : {s.before.get(), s.after.get()})
+                    if(m) for(const auto& [id, n] : m->nodes) if(!live.count(n.second.host.get())) gone.insert(n.second.host.get());
+            return gone.size();
+        };
+        while(undo_.size() > 1 && held() > maxHeldPlugins) undo_.erase(undo_.begin());
     }
 
     bool Session::setParameter(NodeId node, uint32_t param, double value)
