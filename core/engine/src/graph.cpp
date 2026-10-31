@@ -319,7 +319,7 @@ namespace oscairn
         if(zones.size()>NoteZones::capacity || !std::all_of(zones.begin(),zones.end(),[](const NoteZone& z){return z.valid();}))
             throw std::invalid_argument("invalid or too many note zones");
         const auto key=std::make_pair(from,to);
-        if(!noteEdges_.contains(key))noteEdges_.emplace(key,std::make_shared<NoteRoute>(host(to)));
+        if(!noteEdges_.contains(key))noteEdges_.emplace(key,std::make_shared<NoteRoute>(host(to),uint32_t(sampleRate_*.005))); // RFC 0018's 5 ms steal fade
         if(zones.empty())noteZones_.erase(key);else noteZones_[key]=zones;
     }
 
@@ -610,8 +610,13 @@ namespace oscairn
             } );
             uint32_t merged=0;
             auto emit=[&](const auto& e){if(merged==plan->merged.size())return false;plan->merged[merged++]=e;return true;};
+            // Stolen notes' fade steps go in among the events, at their times.
+            auto fades=[&](uint32_t until){bool ok=true;for(auto& source:step.noteSources)ok=source.route->fade(until,emit) && ok;return ok;};
             if(!overflow)for(const auto& key:plan->keys)
-                if(!(key.route && key.time<frames?key.route->route(*key.event,nextNoteId_,emit,key.zones,key.source):emit(*key.event))){overflow=true;break;}
+                if(!fades(std::min(key.time,frames)) ||
+                   !(key.route && key.time<frames?key.route->route(*key.event,nextNoteId_,emit,key.zones,key.source):emit(*key.event))){overflow=true;break;}
+            if(!overflow && !fades(frames))overflow=true;
+            for(auto& source:step.noteSources)source.route->advance(frames);
             if(overflow)
             {
                 // A lost release must reset the destination in its own dialect.

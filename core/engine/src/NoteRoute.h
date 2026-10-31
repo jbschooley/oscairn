@@ -17,14 +17,19 @@ struct NoteRoute
     // address: the note as its source sent it, which releases and expressions match; key: the
     // key it plays here, after its zone's transpose; zone: which zone let it through, or -1;
     // source: where it entered the graph, so another device's release of the same key leaves it.
-    // stolen: choked to keep within the connection's note limit, waiting for the plugin to end it.
-    struct Note { clap_event_note_t address{}; int32_t id=-1; bool used=false,held=false,midi=false,stolen=false; int16_t key=-1; int8_t zone=-1; uint8_t source=untaggedSource; };
+    // stolen: given up to keep within the connection's note limit, fading then choked, waiting for
+    // the plugin to end it. volume: its last volume expression; fadeAt: when its next fade step
+    // is due in this block, or -1; faded: the steps sent.
+    struct Note { clap_event_note_t address{}; int32_t id=-1; bool used=false,held=false,midi=false,stolen=false; int16_t key=-1; int8_t zone=-1; uint8_t source=untaggedSource;
+        double volume=1; int32_t fadeAt=-1; uint8_t faded=0; };
+    static constexpr uint8_t fadeSteps=8;
     std::array<Note,kick::clap::Host::maxBlockEvents> notes{};
     std::array<std::array<uint8_t,16>,16> pedal{};
     std::array<bool,16> clap{};
     uint32_t ports=0;
-    explicit NoteRoute(const PluginHost& host):ports(host.noteInputPorts()) {for(uint32_t p=0;p<clap.size();++p)clap[p]=host.usesClapNotes(p);}
-    void clear() noexcept {for(auto& n:notes)n.used=false;for(auto& p:pedal)p.fill(0);}
+    uint32_t fadeFrames=0,fading=0; // a stolen note's fade, 0 to choke at once; notes fading
+    explicit NoteRoute(const PluginHost& host,uint32_t fadeFrames=0):ports(host.noteInputPorts()),fadeFrames(fadeFrames) {for(uint32_t p=0;p<clap.size();++p)clap[p]=host.usesClapNotes(p);}
+    void clear() noexcept {for(auto& n:notes)n.used=false;for(auto& p:pedal)p.fill(0);fading=0;}
     // Whether an event from `source` may release or shape a note: untagged events reach every note.
     static bool from(const Note& n,uint8_t source) noexcept {return source==untaggedSource || n.source==source;}
     static bool matches(const Note& n,int32_t id,int16_t port,int16_t channel,int16_t key) noexcept
@@ -43,6 +48,29 @@ struct NoteRoute
             (end.port_index<0 || n.address.port_index==end.port_index) &&
             (end.channel<0 || n.address.channel==end.channel) && (end.key<0 || n.key==end.key))n.used=false;
     }
+    // A stolen note fades (RFC 0018): its volume expression falls in steps over fadeFrames, for
+    // plugins that do not fade a choke themselves, then it is choked. Sends the steps due before
+    // `until`, in time order across notes.
+    template<class Emit> bool fade(uint32_t until,Emit&& emit) noexcept
+    {
+        bool ok=true;
+        while(fading) {
+            Note* next=nullptr;fading=0;
+            for(auto& n:notes)if(n.used && n.fadeAt>=0){++fading;if(!next || n.fadeAt<next->fadeAt)next=&n;}
+            if(!next || uint32_t(next->fadeAt)>=until)break;
+            const auto at=uint32_t(next->fadeAt);
+            if(next->faded==fadeSteps){next->fadeAt=-1;ok=emit(release(*next,at,true)) && ok;continue;}
+            clap_event_note_expression_t v{};v.header={sizeof(v),at,CLAP_CORE_EVENT_SPACE_ID,CLAP_EVENT_NOTE_EXPRESSION,0};
+            v.expression_id=CLAP_NOTE_EXPRESSION_VOLUME;v.note_id=next->id;v.port_index=next->address.port_index;
+            v.channel=next->address.channel;v.key=next->key;v.value=next->volume*(fadeSteps-1-next->faded)/fadeSteps;
+            ++next->faded;next->fadeAt+=int32_t(fadeFrames/fadeSteps);
+            ok=emit(Event::from(v)) && ok;
+        }
+        return ok;
+    }
+    // A block of `frames` done: fades carry on from the next block's start.
+    void advance(uint32_t frames) noexcept
+    {if(fading)for(auto& n:notes)if(n.used && n.fadeAt>=0)n.fadeAt=std::max(0,n.fadeAt-int32_t(frames));}
     template<class Emit,class RemainingPedal> bool retire(Emit&& emit,RemainingPedal&& remainingPedal) noexcept
     {
         bool ok=true;
@@ -98,7 +126,8 @@ struct NoteRoute
             if(n.port_index>=16 || static_cast<uint32_t>(n.port_index)>=ports)return emit(e);
             // A note limit: before a note past it, the oldest released note goes, else the oldest
             // held one, sparing the highest and lowest held keys (melody and bass) while another
-            // can go. Only where the plugin takes CLAP notes: MIDI cannot choke one note.
+            // can go; it fades, then is choked. Only where the plugin takes CLAP notes: MIDI cannot
+            // choke one note.
             const uint16_t limit=zones && zones->count && clap[n.port_index]?zones->zones[0].maxNotes:0;
             auto makeRoom=[&]()->bool {
                 if(!limit)return true;
@@ -113,7 +142,8 @@ struct NoteRoute
                     }
                     if(playing<limit || !victim)return true;
                     victim->stolen=true;victim->held=false;
-                    if(!emit(release(*victim,h->time,true)))return false;
+                    if(fadeFrames){victim->fadeAt=int32_t(h->time);++fading;}
+                    else if(!emit(release(*victim,h->time,true)))return false;
                 }
             };
             auto play=[&](int8_t zone,int16_t key,double velocity) {
@@ -153,7 +183,10 @@ struct NoteRoute
         if(h->type==CLAP_EVENT_NOTE_EXPRESSION && h->size==sizeof(clap_event_note_expression_t))
         {
             const auto expression=*reinterpret_cast<const clap_event_note_expression_t*>(h);bool ok=true;
-            for(const auto& slot:notes)if(from(slot,source) && matches(slot,expression.note_id,expression.port_index,expression.channel,expression.key)) {
+            const bool volume=expression.expression_id==CLAP_NOTE_EXPRESSION_VOLUME;
+            for(auto& slot:notes)if(from(slot,source) && matches(slot,expression.note_id,expression.port_index,expression.channel,expression.key)) {
+                if(volume && slot.stolen)continue; // its fade owns its volume
+                if(volume)slot.volume=expression.value;
                 auto copy=expression;copy.note_id=clap[slot.address.port_index]?slot.id:-1;
                 copy.port_index=slot.address.port_index;copy.channel=slot.address.channel;copy.key=slot.key;
                 ok=emit(Event::from(copy)) && ok;

@@ -1,7 +1,6 @@
 # RFC 0018: Voice budget and stealing
 
-Status: proposed, 2026-10-31. Step 1's plugin side and step 2's note limits implemented
-(below). When a Performance asks for more than the
+Status: proposed, 2026-10-31. Step 1 and step 2's note limits implemented (below). When a Performance asks for more than the
 processor can play, Oscairn gives up the least audible notes across every part, without
 clicks, rather than missing the audio deadline. The host does this with notes (option B),
 and plugins that opt in do it with their own voices (option C).
@@ -167,16 +166,21 @@ choked note against the same note left alone: most of its level in the first mil
 less than 60% in the second half of the fade, silence and `NOTE_END` after 3 ms, and per-note
 volume halving it; a cut, or a fade that ignored the ramp, fails it.
 
-Not yet: the host's own volume ramp before a choke, for third-party plugins that fade on
-neither.
+The host side, 2026-10-31: when a note limit steals a note, the note router lowers its
+`CLAP_NOTE_EXPRESSION_VOLUME` from the last value sent to it to silence in eight steps over
+5 ms, at their sample times and across blocks, then chokes it. The new note plays at once, so
+the part sounds one note over its limit during the fade. The stolen note's own volume
+expressions stop reaching it. `note-routing` checks the steps, their times and the choke at
+the end of the fade, and through the graph in 64-frame blocks that the old note sounds
+through its fade and then stops.
 
 ## Step 2 status
 
 Note limits, 2026-10-31: a part's input has `maxNotes` (0 to 128, 0 for none), saved, in the
 protocol and on the Part page as **Notes at once**. It rides on the part's input wires as a
 zone setting, and the note router enforces it where the notes enter the instrument: before
-a note past the limit, it chokes the oldest released note still sounding, else the oldest
-held one, sparing the highest and lowest held keys (melody and bass) while another can go. A stolen note stops counting at once, is not released again, and frees its slot
+a note past the limit, it fades out and chokes the oldest released note still sounding, else
+the oldest held one, sparing the highest and lowest held keys (melody and bass) while another can go. A stolen note stops counting at once, is not released again, and frees its slot
 when the plugin ends it. Only where the plugin takes CLAP notes; a MIDI-only plugin is not
 limited, since MIDI cannot choke one note. With lanes, each lane's instrument has the limit.
 `note-routing` checks the order (released first, though older notes are held; the bass and

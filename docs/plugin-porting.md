@@ -80,9 +80,9 @@ Everything else is handled for you:
 - **CLAP notes,** not only MIDI: note IDs keep repeated notes on one key apart, per-note
   expression works, and `NOTE_END` tells the host when a voice and its tail have finished.
 - **Chokes and per-note volume:** treat a host `NOTE_CHOKE` as a fast fade of 2–5 ms, not a
-  cut, and honour `CLAP_NOTE_EXPRESSION_VOLUME`. The planned voice budget
-  ([RFC 0018](rfcs/0018-voice-budget-and-stealing.md)) fades a stolen note with the volume
-  expression, then chokes it; without both, stolen notes click. An instrument built on the
+  cut, and honour `CLAP_NOTE_EXPRESSION_VOLUME`. When a part's note limit steals a note, the
+  host lowers its volume expression to silence over 5 ms in eight steps, then chokes it
+  ([RFC 0018](rfcs/0018-voice-budget-and-stealing.md)); a plugin that does neither clicks. An instrument built on the
   SDK's `sound-contexts-plugin.hpp` gets both: it multiplies each voice's samples by
   `amplitude(voice, offset)`, and a choked voice fades over 3 ms before it ends.
 - **Parameter metadata:** clear names, CLAP module paths for grouping, value text, and the

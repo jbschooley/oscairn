@@ -4,8 +4,10 @@
 #include "../../../hosts/audio/MidiBlock.h"
 #include "AllocationGuard.h"
 #include <array>
+#include <cmath>
 #include <iostream>
 #include <span>
+#include <vector>
 using namespace oscairn;
 using kick::clap::Event;
 static void check(bool ok,const char* why){if(!ok)throw std::runtime_error(why);}
@@ -61,6 +63,37 @@ int main(int argc,char** argv){try{
         mark=count;spare.route(Event::note(true,64,1),nextId,emit,ignoreEnd,&three);
         check(chokes(mark)==std::vector<int>{60},"the oldest held note goes unless it is the bass or the melody");
     }
+    {
+        // The steal fade (RFC 0018): the stolen note's volume falls in steps from where it was
+        // set, across blocks, then it is choked; its own volume expressions no longer reach it.
+        NoteRoute route(graph.host(synth),240);uint32_t nextId=1;
+        NoteZones one;one.count=1;one.zones[0].maxNotes=1;
+        std::vector<Event> delivered;
+        auto emit=[&](const Event& e){delivered.push_back(e);return true;};
+        auto ignoreEnd=[](const NoteRoute::Note&,uint32_t){};
+        auto expression=[](double value,uint32_t time){clap_event_note_expression_t v{};v.header={sizeof(v),time,CLAP_CORE_EVENT_SPACE_ID,CLAP_EVENT_NOTE_EXPRESSION,0};
+            v.expression_id=CLAP_NOTE_EXPRESSION_VOLUME;v.note_id=v.port_index=v.channel=-1;v.key=60;v.value=value;return Event::from(v);};
+        route.route(Event::note(true,60,1),nextId,emit,ignoreEnd,&one);route.route(expression(.5,0),nextId,emit,ignoreEnd,&one);
+        delivered.clear();
+        route.route(Event::note(true,62,1,100),nextId,emit,ignoreEnd,&one);
+        check(delivered.size()==1 && delivered[0].header()->type==CLAP_EVENT_NOTE_ON,"the new note plays at once; nothing is cut");
+        route.route(expression(1,110),nextId,emit,ignoreEnd,&one);
+        check(delivered.size()==1,"the stolen note's own volume no longer reaches it");
+        // Blocks of 128 frames: the fade starts at 100 and ends at 340, in the third block.
+        std::vector<std::pair<uint64_t,double>> steps;uint64_t chokedAt=0;
+        for(uint64_t block=0;block<4;++block) {
+            delivered.clear();check(route.fade(128,emit),"fade steps sent");route.advance(128);
+            for(const auto& e:delivered) {
+                const auto at=block*128+e.header()->time;
+                check(e.header()->time<128,"steps fall inside the block");
+                if(e.header()->type==CLAP_EVENT_NOTE_CHOKE){check(reinterpret_cast<const clap_event_note_t*>(e.header())->key==60,"the old note is choked");chokedAt=at;}
+                else {const auto& v=*reinterpret_cast<const clap_event_note_expression_t*>(e.header());check(v.key==60 && v.note_id==1,"steps address the old note");steps.push_back({at,v.value});}
+            }
+        }
+        check(steps.size()==NoteRoute::fadeSteps && steps.front().first==100 && std::abs(steps.front().second-.5*7/8)<1e-9 && steps.back().second==0,"eight steps down from its volume to silence");
+        for(size_t i=1;i<steps.size();++i)check(steps[i].first==steps[i-1].first+30 && steps[i].second<steps[i-1].second,"evenly spaced, falling");
+        check(chokedAt==340,"then choked when the fade ends");
+    }
     graph.connectNotes(a,synth);graph.connectNotes(b,synth);graph.connectNotes(graphInput,synth);
     graph.connectAudio(synth,graphOutput);graph.commit();
     std::array<float,512> left{},right{};float* out[]{left.data(),right.data()};
@@ -115,5 +148,18 @@ int main(int argc,char** argv){try{
         midi.disconnectNotes(source,target);midi.commit();
         check(midi.process(out,512,nullptr) && left[0]==0,"MIDI-only retirement uses channel all-sound-off even under another route's sustain");
     }
-    std::cout<<"ok: route ownership, retirement, sustain and physical MIDI overflow\n";
+    {
+        // Through the graph, in 64-frame blocks: a note limit of one keeps the old note through its
+        // 5 ms fade (240 frames), then chokes it.
+        Graph limited(48000,64);const auto s=limited.add(argv[1]);
+        NoteZone one;one.maxNotes=1;limited.connectNotes(graphInput,s,{one});limited.connectAudio(s,graphOutput);limited.commit();
+        auto block=[&](std::span<const Event> events={}){forbidAllocation=true;const bool ok=limited.process(out,64,nullptr,events.data(),events.size());forbidAllocation=false;check(ok,"allocation-free fading");};
+        auto playing=[&]{return limited.host(s).soundContexts().front().active_voices;};
+        const auto first=Event::note(true,60,1),second=Event::note(true,62,1);
+        block({&first,1});block({&second,1});block();block();
+        check(playing()==2,"the stolen note sounds through its fade");
+        for(int i=0;i<4;++i)block(); // the choke, then the synth's own 3 ms choke fade
+        check(playing()==1,"and is choked after it");
+    }
+    std::cout<<"ok: route ownership, retirement, sustain, physical MIDI overflow and the steal fade\n";
 }catch(const std::exception& e){forbidAllocation=false;std::cerr<<e.what()<<'\n';return 1;}}

@@ -27,7 +27,8 @@ namespace oscairn
         double fixedVelocity = 0;                 // above 0: every note plays at this velocity
         uint64_t sources = ~0ull;                 // one bit per source; none: no device plays it
         // Notes at once on the connection (RFC 0018 step 2), the first zone's for all of them; 0:
-        // no limit. A note past it chokes the oldest released note, else the oldest held one.
+        // no limit. A note past it fades out and chokes the oldest released note, else the oldest
+        // held one.
         uint16_t maxNotes = 0;
         bool operator==(const NoteZone&) const = default;
 
