@@ -5,6 +5,12 @@ plan for "an FM engine, starting from an existing open engine where licences all
 Dexed / MSFA)". Same rules as [RFC 0013](0013-awm2-class-sample-engine.md): a new engine
 written for Oscairn, with no Yamaha code or content.
 
+**Decided by Jacob, 2026-10-30: fork Dexed** (`oscairn/dexed` on GitHub) and extend it, instead of
+the approach recommended below. The fork stays GPL-3.0 and runs as a separate plugin
+across the CLAP boundary ([RFC 0001](0001-licence.md)). The extension plan, with a gap table
+against every Data List parameter, Oscairn integration work and milestones, is
+[on the fork's `oscairn` branch](https://github.com/oscairn/dexed/blob/oscairn/docs/oscairn-plan.md). The capability target and the IP rules below still apply.
+
 ## Outcome
 
 An Oscairn FM instrument that can do everything a MONTAGE M / MODX M FM-X Part can do, and
