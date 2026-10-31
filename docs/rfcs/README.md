@@ -22,3 +22,4 @@ Number them in order (`0002-...md`) and keep the status line up to date
 | [0014](0014-fm-engine.md) | An 8-operator FM engine | proposed |
 | [0015](0015-analog-modelling-engine.md) | An analog-modelling engine | proposed |
 | [0016](0016-effects-suite.md) | An effects suite covering the MODX M platform | proposed |
+| [0017](0017-host-tuning.md) | Host-level tuning | proposed |
