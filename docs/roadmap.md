@@ -418,9 +418,10 @@ drum module, a DJ unit, a Eurorack module, a DAW plugin). These are required of 
   ([RFC 0028](rfcs/0028-system-image-updates-boot-and-power.md#progress))
 - [ ] **item types and apps per product** ([RFC 0023](rfcs/0023-item-types.md#progress),
   [RFC 0022](rfcs/0022-apps-and-requests.md#progress))
-- [ ] **the system shell:** status and navigation bars, Home, Back and the running apps, a
-  launcher that is a replaceable app, and one flow language (levels, sheets, dialogs, menus,
-  toasts, banners) for every app and surface ([RFC 0030](rfcs/0030-system-shell-launcher-and-navigation.md#progress))
+- [ ] **the system shell:** one top bar (showing only what the product's buttons do not),
+  Home, Back and the running apps, a launcher that is a replaceable app with home cards for
+  instruments, recorders, DJ units and more, and one flow language (levels, sheets, dialogs,
+  menus, toasts, banners) for every app and surface ([RFC 0030](rfcs/0030-system-shell-launcher-and-navigation.md#progress))
 - [ ] **internationalization:** catalogs, installable translations, locale formatting, layouts
   for longer text and right-to-left scripts ([RFC 0029](rfcs/0029-internationalization.md#progress)).
   Until then, text and identifiers use American English throughout (format names included:
