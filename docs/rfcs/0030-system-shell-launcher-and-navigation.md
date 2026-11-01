@@ -12,10 +12,14 @@ and the web UI ([RFC 0026](0026-network-control-and-web-ui.md)).
 Checked when built and tested; the sections below say how.
 
 - [ ] 1. The shell: the top bar, Home, Back and the running apps, on the Panel surface in the desktop app
-      (built 2026-11-01: Home first in every window; on a panel, each app in a frame whose top bar
-      has its name and a Home icon unless a button is bound to `home`; layout buttons `home` and
-      `back`, Back going Home for now; the desktop's Performance app has Home in its toolbar.
-      Not yet: the rest of the top bar, the running apps)
+      (built 2026-11-01: Home first in every window. The top bar (`TopBar` in `Launcher.cpp`) on
+      Home and every app on a panel: Home, Back and the running apps unless the layout binds a
+      button to `home` or `back`, where the musician is, the open Performance and its scene (a
+      tap: Save, Save As New), the tempo and the engine's load, and All notes off (held half a
+      second; `notes.panic`) unless a button is bound to `panic`. Apps on a panel keep running
+      with their state; the switcher brings one forward or closes it. Back goes Home for now.
+      Not yet: apps putting their own actions in the bar, the clock, MIDI activity, quick
+      settings, banners)
 - [ ] 2. The launcher as an app answering `oscairn.home`, with home cards, and a fallback the shell draws itself
       (built: a launcher inside the app, `Launcher.cpp`, with the profile's apps as tiles and a
       line of state each; not yet an app of its own, no cards)

@@ -35,7 +35,10 @@ juce_add_binary_data(oscairn_standalone_icons HEADER_NAME IconData.h NAMESPACE I
     icons/piano.svg
     icons/library-big.svg
     icons/list-music.svg
-    icons/layout-grid.svg)
+    icons/layout-grid.svg
+    icons/octagon-x.svg
+    icons/ellipsis-vertical.svg
+    icons/layers.svg)
 
 target_sources(oscairn_standalone PRIVATE Main.cpp DesktopShell.cpp ParameterGrid.cpp ZoneEditor.cpp Engine.cpp Layout.cpp Panel.cpp Screen.cpp SoundPickerModel.cpp Theme.cpp PluginBrowser.cpp PadEditor.cpp PartsView.cpp PartsModel.cpp LibraryPane.cpp Setlist.cpp Profile.cpp Launcher.cpp)
 target_compile_definitions(oscairn_standalone PRIVATE

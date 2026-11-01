@@ -80,6 +80,7 @@ namespace oscairn::standalone
             std::string audioDevice;
             std::vector<MidiEndpoint> midiInputs;
             std::vector<Control::SessionStatus::PluginFailure> failures; // plugins that failed and are silent
+            double load=0; // the audio thread's share of each block's time, 0..1
         };
         Status status()const;
         const SoundPickerState& soundPicker() const { return soundPicker_; }

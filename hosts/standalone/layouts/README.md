@@ -55,8 +55,9 @@ Others can be opened with View > Open Layout File... or `--layout path.json`.
     `"mode": "endless"` draws an endless encoder (a ring of LEDs showing the value) instead of a
     pot with end stops (`absolute`, the default).
   - `button`: `bind` is `play`, `stop`, `play-stop`, `sync` (follow MIDI clock), `plugins`
-    (the plugin browser), or the shell's `home` and `back` ([RFC 0030](../../../docs/rfcs/0030-system-shell-launcher-and-navigation.md)).
-    A layout with a `home` button shows no Home icon in its apps' top bars.
+    (the plugin browser), or the shell's `home`, `back` and `panic` (all notes off)
+    ([RFC 0030](../../../docs/rfcs/0030-system-shell-launcher-and-navigation.md)). A layout with
+    one of those buttons shows no icon for it in the top bar.
   - `pads`: `rows` x `cols` pads, pad 1 at the bottom-left, row by row upwards; each plays
     what the Performance's pad map assigns it (**Pads...** on the screen edits it). With
     `"steps": true` they light with the sequencer's playhead.

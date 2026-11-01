@@ -43,7 +43,7 @@ namespace oscairn::standalone
     class IconButton : public juce::Button
     {
     public:
-        enum class Glyph { Plus, Undo, Redo, Detach, List, Pills, Home, Back };
+        enum class Glyph { Plus, Undo, Redo, Detach, List, Pills, Home, Back, Panic, More, Apps };
         IconButton(Glyph glyph, const juce::String& name) : juce::Button(name), glyph_(glyph) { setTitle(name); }
 
         void paintButton(juce::Graphics& g, bool hover, bool down) override
@@ -54,10 +54,10 @@ namespace oscairn::standalone
             if(on) { g.setColour(ink(Ink::Accent).withAlpha(.22f)); g.fillRoundedRectangle(getLocalBounds().toFloat(), buttonRadius(float(getHeight()))); }
             else if(const auto color = findColour(juce::TextButton::buttonColourId); !color.isTransparent()) getLookAndFeel().drawButtonBackground(g, *this, color, hover, down);
             else if(hover || down) { g.setColour(ink(Ink::Text).withAlpha(down ? .16f : .08f)); g.fillRoundedRectangle(getLocalBounds().toFloat(), 4); }
-            static const char* const names[] = {"plus", "undo-2", "redo-2", "square-arrow-out-up-right", "list", "tags", "house", "arrow-left"};
+            static const char* const names[] = {"plus", "undo-2", "redo-2", "square-arrow-out-up-right", "list", "tags", "house", "arrow-left", "octagon-x", "ellipsis-vertical", "layers"};
             const float side = std::min(float(getWidth()), float(getHeight())) * .6f;
             drawIcon(g, names[int(glyph_)], getLocalBounds().toFloat().withSizeKeepingCentre(side, side),
-                     (on ? ink(Ink::Accent) : ink(Ink::Text)).withMultipliedAlpha(isEnabled() ? 1.f : .35f));
+                     (on ? ink(Ink::Accent) : getProperties()["danger"] ? ink(Ink::Danger) : ink(Ink::Text)).withMultipliedAlpha(isEnabled() ? 1.f : .35f));
         }
 
     private:

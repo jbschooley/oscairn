@@ -147,6 +147,18 @@ int main(int argc, char** argv)
                     check(wait([&] { return opened == "Library"; }), "a tile opens its app");
                     snapshot(home, "launcher");
                 }
+                // The top bar (RFC 0030): only the buttons the shell gives it; past three actions, a menu.
+                {
+                    standalone::TopBar::Shell shell; shell.home = [] {}; shell.notesOff = [] {};
+                    standalone::TopBar bar(engine, "Library", shell);
+                    standalone::setDesktopMode(bar, 2); bar.setSize(1024, 48);
+                    int shown = 0; for(auto* c : bar.getChildren()) shown += c->isVisible() ? 1 : 0;
+                    check(shown == 2, "Home and All notes off only, where the shell has them: " + std::to_string(shown));
+                    bar.setActions({{"Open", [] {}, true}, {"Audition", [] {}}, {"Export", [] {}}, {"Delete", [] {}}});
+                    shown = 0; for(auto* c : bar.getChildren()) shown += c->isVisible() ? 1 : 0;
+                    check(shown == 2 + 3 + 1, "three actions and the menu for the fourth: " + std::to_string(shown));
+                    snapshot(bar, "top-bar");
+                }
                 engine.edit([](Control& c) {
                     c.setPerformanceInfo({"", "Verse Keys", "for the verse", {"keys", "live"}, "#3e63dd"});
                     c.savePerformanceToLibrary("");

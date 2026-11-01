@@ -68,7 +68,10 @@ authoritative.
   `piano.svg` `1faf752aab14fbc3ac73fd8e4c00b50139b6f2399c3572beb1eab842ec891a10`,
   `library-big.svg` `731e42d894afa7ae0fb3fa659152a7d4e9db9f2ec0a05472cd6aeeb1e1563c42`,
   `list-music.svg` `44294e91e13c683726ff88b8be763f08ad005d2dc37574b6f025d56339d8e85d`,
-  `layout-grid.svg` `9b4aaf142b53bb72cb0405a64486756ad96463555dd9d3ec5da4f7cef46b4345`.
+  `layout-grid.svg` `9b4aaf142b53bb72cb0405a64486756ad96463555dd9d3ec5da4f7cef46b4345`,
+  `octagon-x.svg` `0c4e88560562eae840120c3ec2465faa568a4b69dad62aadedd50927bb48edba`,
+  `ellipsis-vertical.svg` `04875f5341ff6fb2ad54cb5a5efcb76f530521e4b800be42c20bcaf955fee8b6`,
+  `layers.svg` `ac5db701628c809cb3176bfaff319e7ceac602be902c3e3d0a7693e3e9bf417b`.
 
 ## Sample decoding
 

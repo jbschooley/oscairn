@@ -274,7 +274,7 @@ namespace oscairn::standalone
     {
         const auto transport=control_->transportState();const auto host=control_->sessionStatus();
         return {connected() && transport.playing,transport.tempo,connected() && transport.playing?static_cast<int>(param("sequencer",sequencer::playhead(sequenceTrack_))):-1,
-                failure_.empty()?(host.audioReady?host.audioDevice:"Audio unavailable: "+host.audioDevice):"Disconnected: "+failure_,host.midiInputs,host.failures};
+                failure_.empty()?(host.audioReady?host.audioDevice:"Audio unavailable: "+host.audioDevice):"Disconnected: "+failure_,host.midiInputs,host.failures,host.cpuLoad};
     }
     void Engine::failed(const std::string& message)
     {

@@ -398,6 +398,7 @@ namespace oscairn::standalone
             // The shell's own (RFC 0030): Home and Back.
             else if(c.bind=="home")b->onClick=[this]{if(engine_.goHome)engine_.goHome();};
             else if(c.bind=="back")b->onClick=[this]{if(engine_.goBack)engine_.goBack();};
+            else if(c.bind=="panic")b->onClick=[this]{engine_.edit([](Control& control){control.allNotesOff();});};
             else if( c.bind == "play" )
                 b->onClick = [this] { engine_.setPlaying( true ); };
             else if( c.bind == "stop" )
