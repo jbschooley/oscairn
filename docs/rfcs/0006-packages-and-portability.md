@@ -378,8 +378,12 @@ Performances. Importing one never has to take all of it:
   or into the musician's own storage, as editable user data with new IDs
   ([RFC 0021](0021-sounds-performances-and-library.md#libraries)). Plugins, apps and sample
   libraries are installed content either way.
-- **Import more later.** Importing more of the same package adds to what is installed; it does
-  not duplicate shared dependencies or change items already imported.
+- **Import more later, or again.** Importing more of the same package adds to what is
+  installed; it does not duplicate shared dependencies or change items already imported.
+  Content imported into user storage records its origin and a content hash, so importing it
+  again skips copies still unchanged and adds a new copy only of those edited or deleted
+  since ([RFC 0021](0021-sounds-performances-and-library.md#libraries)). Samples and other
+  assets are stored once by their hash.
 - **Repair restores what went missing.** **Reinstall/Repair missing content** (below) puts
   back an installed package's files however they went, deleted in the library view or on
   the filesystem, and leaves the musician's own data alone. It restores only the parts that

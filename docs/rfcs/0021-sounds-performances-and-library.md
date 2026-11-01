@@ -39,7 +39,8 @@ Checked when built and tested; the sections below say how.
 - [ ] Libraries: items locked, Save As New from them, deleting items, uninstalling, and
       reinstalling to restore what is missing ([design](#libraries)); factory content as a
       preloaded library
-- [ ] Importing a library as a library or into your own storage, all of it or chosen items
+- [ ] Importing a library as a library or into your own storage, all of it or chosen items;
+      importing again skips copies still unchanged (by content hash)
 - [ ] Hidden tags and tag colors
 - [ ] Exporting a Performance with the Sounds its parts came from ([design](#exporting-a-performance));
       today an export drops where its parts came from
@@ -411,6 +412,12 @@ filed as one or the other.
     are the musician's own, to edit, save over and delete. Imported that way they get new IDs,
     as Save As New would, so installing the same library later as a library does not clash
     with them; Performances imported with them point at those copies.
+  - **Importing again adds no duplicates.** Each item imported into your own storage records
+    where it came from (the library and the item's ID there) and a hash of its contents as
+    imported: its document and its plugins' saved state. Importing the same library again
+    skips an item whose copy is still there with that hash. One that was edited since (its
+    hash differs) or deleted is imported again as a new copy; an edit is never overwritten.
+    Samples are already stored once by their hash (RFC 0009), however many items use them.
   - **all of it, or chosen items**: some Sounds, some Performances. An item brings what it
     needs (its plugins and samples), as RFC 0006's
     [choosing what to import](0006-packages-and-portability.md#choosing-what-to-import) says

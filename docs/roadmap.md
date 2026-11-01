@@ -289,7 +289,8 @@ in the others.
      uninstalled, and reinstalling puts back whatever is missing
      ([design](rfcs/0021-sounds-performances-and-library.md#libraries))
    - [ ] **importing:** as a locked library or into your own storage (editable, new IDs), and
-     all of it or chosen items; the same choice of parts for any package, such as only its
+     all of it or chosen items; importing again skips copies still unchanged, by content
+     hash; the same choice of parts for any package, such as only its
      plugin ([RFC 0006](rfcs/0006-packages-and-portability.md#choosing-what-to-import))
    - [ ] **exporting a Performance with its Sounds:** parts keep where they came from and the
      export brings those Sounds and their samples; today a folder export drops the link
