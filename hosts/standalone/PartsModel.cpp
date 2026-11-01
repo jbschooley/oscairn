@@ -172,6 +172,16 @@ namespace oscairn::standalone
         return w.mute ? WireState::Disabled : WireState::Enabled;
     }
 
+    uint32_t wireChannels(const Wire& w, const Graph::Description& topology)
+    {
+        if(w.kind != WireKind::Audio) return 1;
+        if(!w.channels.empty()) { std::set<uint32_t> from; for(const auto& c : w.channels) from.insert(c.first); return uint32_t(from.size()); }
+        const std::vector<kick::clap::Port>* ports = w.from == graphInput ? &topology.audioLayout.inputs : nullptr;
+        for(const auto& n : topology.nodes) if(n.id == w.from) ports = &n.outputs;
+        if(ports) for(const auto& p : *ports) if(p.id == w.fromPort) return std::max(1u, p.channels);
+        return 1;
+    }
+
     RoutingState readRouting(const Control::GraphState& g)
     {
         RoutingState state;

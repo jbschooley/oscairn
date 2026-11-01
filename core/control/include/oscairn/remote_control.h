@@ -69,6 +69,7 @@ namespace oscairn
         bool undo() override;
         bool redo() override;
         std::vector<PartMeter> partMeters() const override;
+        std::vector<WireMeter> wireMeters() const override;
         void setLane(uint32_t part,uint32_t split,uint32_t lane,const Lane& settings) override;
         void setPartInput(uint32_t part,const PartInput& input) override;
         void setPartOutput(uint32_t part,uint32_t bus,std::optional<uint32_t> port = {}) override;

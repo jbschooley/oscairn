@@ -552,6 +552,18 @@ namespace oscairn
         }
         return out;
     }
+
+    std::vector<WireMeter> RemoteControl::wireMeters() const
+    {
+        auto reply=impl_->call("wires.meters");std::vector<WireMeter> out;
+        for(auto m:array(field(field(reply.get(),"result"),"meters")))
+        {
+            WireMeter meter{static_cast<uint32_t>(integer(field(m,"wire"))),number(field(m,"peak")),{}};
+            for(auto v:array(field(m,"channels")))meter.channels.push_back(number(v));
+            out.push_back(std::move(meter));
+        }
+        return out;
+    }
     void RemoteControl::removeLane(uint32_t part,uint32_t split,uint32_t lane){impl_->call("parts.removeLane","{\"part\":"+std::to_string(part)+",\"split\":"+std::to_string(split)+",\"lane\":"+std::to_string(lane)+'}');impl_->refresh();}
     void RemoteControl::setLane(uint32_t part,uint32_t split,uint32_t lane,const Lane& l)
     {

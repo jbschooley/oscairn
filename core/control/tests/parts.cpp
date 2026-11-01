@@ -10,6 +10,7 @@
 #include <array>
 #include <cmath>
 #include <cstdio>
+#include <functional>
 #include <regex>
 #include <string>
 
@@ -503,6 +504,16 @@ namespace
             if(m.part == b) check(m.channels.size() == 1 && std::abs(m.channels[0] - .5) < 1e-6, "a mono part has one meter: " + std::to_string(m.channels.size()));
             if(m.part == room) check(m.channels.size() == 2 && std::abs(m.channels[0] - .125) < 1e-6 && std::abs(m.channels[1] - .125) < 1e-6, "a stereo bus has two: " + std::to_string(m.channels.size()));
         }
+        // A wire's meter: what it carries after its level, per channel its source sends.
+        const auto state = s.graphState();
+        auto wireMeter = [&](const std::function<bool(const Wire&)>& which) {
+            for(const auto& w : state.wires) if(which(w)) for(const auto& m : s.wireMeters()) if(m.wire == w.id) return m;
+            return WireMeter{0, -1, {}};
+        };
+        const auto send = wireMeter([&](const Wire& w) { return w.part == a && w.send == room; });
+        check(send.channels.size() == 1 && std::abs(send.peak - .125) < 1e-6, "A's send meters after its level: " + std::to_string(send.peak));
+        const auto fader = wireMeter([&](const Wire& w) { return w.part == room && w.fader; });
+        check(fader.channels.size() == 2 && std::abs(fader.peak - .125) < 1e-6, "the bus's fader wire meters both channels: " + std::to_string(fader.channels.size()));
         // Pan: A hard left takes it out of the right channel; its send keeps its own image.
         s.setPartPan(a, -1); s.commit(); x.run(s);
         check(near(x.l[0], .875) && near(x.r[0], .5 + .125), "A panned left: " + std::to_string(x.l[0]) + " " + std::to_string(x.r[0]));

@@ -106,6 +106,7 @@ namespace oscairn
         /// graph is built, so undo cannot take that apart.
         void clearHistory();
         std::vector<PartMeter> partMeters() const override;
+        std::vector<WireMeter> wireMeters() const override;
         const std::vector<Part>& parts() const { return parts_; }
         const std::vector<Wire>& wires() const { return wires_; }
         // A user wire between audio ports (channel rules or explicit pairs) or note endpoints.
@@ -199,8 +200,8 @@ namespace oscairn
         std::vector<BusEntry> busEntries(uint32_t bus);
         bool splitNode(NodeId node) const;       // a split's Split or Join node
         bool heard(const Part& part);            // not silenced by another part's solo
-        void meter();                            // service(): updates meters_ from the graph's peaks
-        std::map<uint32_t, std::vector<double>> meters_; // per channel
+        void meter();                            // service(): updates the meters from the graph's peaks
+        std::map<uint32_t, std::vector<double>> meters_, wireMeters_; // per part and per wire, per channel
 
         // Undo (undo.cpp). The model: what an edit can change, with the nodes it holds.
         struct Model

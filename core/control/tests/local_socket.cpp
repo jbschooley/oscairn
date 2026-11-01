@@ -479,6 +479,8 @@ void partsClient(const char* plugin,const char* delay)
         check(remote.graphState().parts[0].solo,"a part soloed over the socket");
         const auto meters=remote.partMeters();
         check(meters.size()==1 && meters[0].part==part && meters[0].peak>=0,"the parts' meters over the socket");
+        const auto wireMeters=remote.wireMeters();
+        check(!wireMeters.empty() && wireMeters[0].peak>=0,"the wires' meters over the socket");
         remote.setPartSolo(part,false);
         remote.removeSplit(part,sp);
         check(remote.graphState().parts[0].chain==std::vector<NodeId>{synth,fx} && remote.graphState().parts[0].splits.empty(),"the split removed over the socket");

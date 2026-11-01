@@ -367,7 +367,7 @@ namespace oscairn
             if( method == "session.hello" )
             {
                 fields(p, {});
-                return R"({"protocolVersion":1,"server":"oscairn","capabilities":["performance.save","performance.load","performance.info","performance.setInfo","library.query","library.favourite","library.rescan","library.save","library.load","parts.saveSound","parts.loadSound","parts.fromSound","performance.contents","performance.import","state.info","state.save","presets.list","properties.list","properties.get","properties.set","properties.request","sounds.get","sounds.prepare","sounds.select","sounds.discard","assets.register","assets.import","assets.libraries","session.status","params.list","params.get","params.set","params.text","params.gesture","graph.audio-routing","graph.get","graph.add","effects.create","effects.resources","graph.remove","graph.replace","graph.connect","graph.disconnect","graph.map","graph.unmap","graph.commit","parts.add","parts.remove","parts.insert","parts.removeNode","parts.move","parts.addSplit","parts.removeSplit","parts.addLane","parts.removeLane","parts.lane","parts.input","parts.output","parts.send","parts.level","parts.name","parts.solo","parts.pan","parts.meters","edit.undo","edit.redo","edit.history","wires.connect","wires.disconnect","wires.mix","wires.zones","scenes.add","scenes.store","scenes.select","scenes.remove","scenes.name","scenes.parameters","controls.add","controls.remove","controls.name","controls.targets","controls.set","subscribe","unsubscribe","transport.get","transport.set","notes.send","pads.get","pads.set","pads.play","pads.pressure"],"limits":{"messageBytes":65536,"depth":32,"batch":64,"parameterChanges":128}})";
+                return R"({"protocolVersion":1,"server":"oscairn","capabilities":["performance.save","performance.load","performance.info","performance.setInfo","library.query","library.favourite","library.rescan","library.save","library.load","parts.saveSound","parts.loadSound","parts.fromSound","performance.contents","performance.import","state.info","state.save","presets.list","properties.list","properties.get","properties.set","properties.request","sounds.get","sounds.prepare","sounds.select","sounds.discard","assets.register","assets.import","assets.libraries","session.status","params.list","params.get","params.set","params.text","params.gesture","graph.audio-routing","graph.get","graph.add","effects.create","effects.resources","graph.remove","graph.replace","graph.connect","graph.disconnect","graph.map","graph.unmap","graph.commit","parts.add","parts.remove","parts.insert","parts.removeNode","parts.move","parts.addSplit","parts.removeSplit","parts.addLane","parts.removeLane","parts.lane","parts.input","parts.output","parts.send","parts.level","parts.name","parts.solo","parts.pan","parts.meters","wires.meters","edit.undo","edit.redo","edit.history","wires.connect","wires.disconnect","wires.mix","wires.zones","scenes.add","scenes.store","scenes.select","scenes.remove","scenes.name","scenes.parameters","controls.add","controls.remove","controls.name","controls.targets","controls.set","subscribe","unsubscribe","transport.get","transport.set","notes.send","pads.get","pads.set","pads.play","pads.pressure"],"limits":{"messageBytes":65536,"depth":32,"batch":64,"parameterChanges":128}})";
             }
             if( method == "subscribe" || method == "unsubscribe" )
             {
@@ -714,15 +714,16 @@ namespace oscairn
                     if( method == "parts.level" ) { fields(p,{"part","level","mute"}); c.setPartLevel(integer(member(p,"part")),number(member(p,"level")),boolean(member(p,"mute"))); return R"({"accepted":true})"; }
                     if( method == "parts.pan" ) { fields(p,{"part","pan"}); c.setPartPan(integer(member(p,"part")),number(member(p,"pan"))); return R"({"accepted":true})"; }
                     if( method == "parts.solo" ) { fields(p,{"part","solo"}); c.setPartSolo(integer(member(p,"part")),boolean(member(p,"solo"))); return R"({"accepted":true})"; }
-                    if( method == "parts.meters" )
+                    if( method == "parts.meters" || method == "wires.meters" )
                     {
                         std::vector<std::string> meters;
-                        for( const auto& m : c.partMeters() )
-                        {
+                        auto add = [&](const char* key, uint32_t id, double peak, const std::vector<double>& values) {
                             std::vector<std::string> channels;
-                            for( const auto v : m.channels ) channels.push_back( encode( v ) );
-                            meters.push_back("{\"part\":" + std::to_string(m.part) + ",\"peak\":" + encode(m.peak) + ",\"channels\":" + join(channels) + '}');
-                        }
+                            for( const auto v : values ) channels.push_back( encode( v ) );
+                            meters.push_back("{\"" + std::string(key) + "\":" + std::to_string(id) + ",\"peak\":" + encode(peak) + ",\"channels\":" + join(channels) + '}');
+                        };
+                        if( method == "parts.meters" ) for( const auto& m : c.partMeters() ) add("part", m.part, m.peak, m.channels);
+                        else for( const auto& m : c.wireMeters() ) add("wire", m.wire, m.peak, m.channels);
                         return "{\"meters\":" + join(meters) + '}';
                     }
                     if( method == "parts.name" ) { fields(p,{"part","name"}); c.setPartName(integer(member(p,"part")),std::string(string(member(p,"name")))); return R"({"accepted":true})"; }

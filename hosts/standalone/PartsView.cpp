@@ -71,7 +71,9 @@ namespace oscairn::standalone
         if(scan_.valid() && scan_.wait_for(std::chrono::seconds(0)) == std::future_status::ready) plugins_ = scan_.get();
         // The Mixer's meters move at 20 frames a second; the other pages refresh more slowly.
         if(page_ == mixerPage) { peaks_.clear(); for(const auto& m : engine_.meters()) peaks_[m.part] = m.channels; }
-        const int interval = page_ == mixerPage ? 50 : 200;
+        const bool metering = page_ == routingPage && wireMeters_;
+        if(metering) { wirePeaks_.clear(); for(const auto& m : engine_.wireMeters()) wirePeaks_[m.wire] = m.peak; repaint(); }
+        const int interval = page_ == mixerPage || metering ? 50 : 200;
         if(getTimerInterval() != interval) startTimer(interval);
         refresh();
     }
@@ -266,6 +268,8 @@ namespace oscairn::standalone
                 collapsedParts_ = on; expandedParts_.clear();
                 if(const auto f = routingPreference(); f != juce::File()) { f.getParentDirectory().createDirectory(); f.replaceWithText(on ? "collapsed\n" : "expanded\n"); }
                 shape_.clear(); refresh(); });
+            toggle(top.removeFromLeft(110).reduced(4, 8), "Meters", [this] { return wireMeters_; }, [this](bool on) {
+                wireMeters_ = on; wirePeaks_.clear(); repaint(); });
             // The graph above, laid out by signal flow and fitted to the space; the chosen plugin's
             // or part's wiring below.
             auto area = getLocalBounds().reduced(16, 0).withTrimmedTop(header).withTrimmedBottom(28);
@@ -960,7 +964,9 @@ namespace oscairn::standalone
             }
             // Wires, under the boxes, in the theme's wire colours: enabled audio and note wires
             // (user wires thicker), disabled and draining ones dashed, and those that no longer fit
-            // their ports. With a plugin or part chosen, the rest are faint.
+            // their ports. An audio wire is a line per channel, side by side, and with Meters on
+            // takes its level's colour while it carries sound. With a plugin or part chosen, the
+            // rest are faint.
             const auto& colours = themeData().wires;
             for(const auto& p : layout_.paths)
             {
@@ -973,18 +979,33 @@ namespace oscairn::standalone
                     const float mid = (a.x + b.x) / 2;
                     path.cubicTo({mid, a.y}, {mid, b.y}, b);
                 }
+                const auto peak = wirePeaks_.find(w.id);
+                const bool sounding = wireMeters_ && w.kind == WireKind::Audio && w.connected && p.state == WireState::Enabled && peak != wirePeaks_.end() && peak->second >= .001; // -60 dB
                 auto colour = !w.connected ? colours.unconnected : p.state == WireState::Draining ? colours.draining : p.state == WireState::Disabled ? colours.disabled
-                            : w.kind == WireKind::Notes ? colours.notes : colours.audio;
-                colour = colour.withAlpha(focus && !touches(w) ? .15f : w.owner == WireOwner::User ? 1.f : .75f);
+                            : sounding ? levelColour(peak->second) : w.kind == WireKind::Notes ? colours.notes : colours.audio;
+                colour = colour.withAlpha(focus && !touches(w) ? .15f : w.owner == WireOwner::User || sounding ? 1.f : .75f);
                 g.setColour(colour);
-                const juce::PathStrokeType stroke((w.owner == WireOwner::User || p.state == WireState::Draining ? 2.5f : 1.75f) * std::max(.6f, routingScale_));
+                // The lines: nested strokes of the centre line filled even-odd, so every other band
+                // between them is empty. shortcut: eight lines at most, so a wider bus stays narrower than its port spacing.
+                const float width = (w.owner == WireOwner::User || p.state == WireState::Draining ? 2.5f : 1.75f) * std::max(.6f, routingScale_);
+                const auto lines = std::min(8u, wireChannels(w, graph_.topology));
+                const float line = lines > 1 ? width * .7f : width, gap = width * .5f;
+                const float across = lines * line + (lines - 1) * gap;
+                juce::Path wire; wire.setUsingNonZeroWinding(false);
+                float band = across;
+                for(uint32_t k = 0; k < 2 * lines - 1 && band > 0; band -= 2 * (k++ % 2 ? gap : line))
+                {
+                    juce::Path outline; juce::PathStrokeType(band, juce::PathStrokeType::curved, juce::PathStrokeType::butt).createStrokedPath(outline, path);
+                    wire.addPath(outline);
+                }
+                juce::Graphics::ScopedSaveState state(g);
                 if(w.connected && p.state != WireState::Enabled)
                 {
                     const float dashes[] = {6.f, 4.f};
-                    juce::Path dashed; stroke.createDashedStroke(dashed, path, dashes, 2);
-                    g.fillPath(dashed);
+                    juce::Path dashed; juce::PathStrokeType(across + 2).createDashedStroke(dashed, path, dashes, 2);
+                    g.reduceClipRegion(dashed);
                 }
-                else g.strokePath(path, stroke);
+                g.fillPath(wire);
             }
             // Plugins, collapsed parts and the graph's ends.
             for(const auto& b : layout_.boxes)

@@ -520,7 +520,11 @@ the same way; the choice is remembered (`routing-view.txt` beside the theme sele
 what they reach bright and dims the rest. It draws every node and every wire in the theme's wire colours (theme format 4): enabled audio and note wires,
 part wires fainter, wires drawn here bright; disabled ones (muted; off in a scene
 with the full scene model) and draining ones (seamless changes) dashed in their own colours;
-unconnected ones apart. A part's row in the parts lists takes a tint when muted (the mute's)
+unconnected ones apart. An audio wire is a line per channel its source sends (the source
+channels its pairs take), side by side like one wire split in two or more, up to eight. With
+**Meters** on, an audio wire carrying sound takes its level's colour, after its level and pan,
+in the Mixer meters' zones: green, yellow from -12 dB, red from -3 (`wires.meters`, held and
+falling like the part meters; both read the plugins' peaks once a tick). A part's row in the parts lists takes a tint when muted (the mute's)
 or draining (the accent's). Tapping a node offers **Connect audio to...** and
 **Connect notes to...** (user wires, main port to main port), **Remove** for a node outside the
 parts (its sources are wired to its destinations), or **Open part**, and lists each of its

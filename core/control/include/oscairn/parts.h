@@ -159,6 +159,9 @@ namespace oscairn
     // plugin's main audio output as wired to where it plays: one for mono, two for stereo, more
     // for surround), and the largest of them.
     struct PartMeter { uint32_t part = 0; double peak = 0; std::vector<double> channels; };
+    // An audio wire's meter, after its level and pan, linear: one value per channel its source's
+    // port sends, and the largest of them.
+    struct WireMeter { uint32_t wire = 0; double peak = 0; std::vector<double> channels; };
 
     // The control tree (RFC 0011): a control (a macro, Assign knob or Super Knob) is a value from
     // 0 to 1 that drives its targets, each with its own range and curve; a target may be another

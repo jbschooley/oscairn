@@ -86,6 +86,9 @@ namespace oscairn::standalone
     // A wire that no longer fits its plugin's ports (Wire::connected false) is drawn apart.
     enum class WireState { Enabled, Disabled, Draining };
     WireState wireState(const Wire&, const Graph::Description&);
+    // How many channels an audio wire carries: the source channels its pairs take, or else all its
+    // source port's (Routing draws a line each); 1 for a note wire or an unknown port.
+    uint32_t wireChannels(const Wire&, const Graph::Description&);
 
     // The Routing view's layout (layered by signal flow): each box one column after what feeds
     // it, inputs first and outputs last; a wire skipping columns keeps a slot in each it crosses;

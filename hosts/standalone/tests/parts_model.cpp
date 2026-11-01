@@ -239,9 +239,18 @@ int main(int argc, char** argv)
                   std::none_of(rows.begin(), rows.end(), [&](const PartRow& r) { return r.id != bass && r.draining; }), "its part is draining, the others not");
             auto muted = *input; muted.mute = true; g.topology.draining.clear();
             check(wireState(muted, g.topology) == WireState::Disabled, "a muted wire is disabled");
+            // A line per channel: the source port's, or the source channels its pairs take.
+            check(wireChannels(*input, g.topology) == 1, "a note wire is one line");
+            Wire audio; audio.from = graphInput; audio.fromPort = 7;
+            g.topology.audioLayout.inputs = {{7, "Quad in", 4, 0}};
+            check(wireChannels(audio, g.topology) == 4, "a wire from a four-channel port: " + std::to_string(wireChannels(audio, g.topology)));
+            audio.channels = {{0, 0}, {0, 1}};
+            check(wireChannels(audio, g.topology) == 1, "one source channel copied to two is one");
+            audio.channels = {{2, 0}, {3, 1}};
+            check(wireChannels(audio, g.topology) == 2, "two source channels are two");
         }
     }
     catch(const std::exception& e) { std::fprintf(stderr, "FAIL: %s\n", e.what()); return 1; }
-    if(!failures) std::puts("ok: a split and a shared delay built through the Parts views' model; wire and part states");
+    if(!failures) std::puts("ok: a split and a shared delay built through the Parts views' model; wire and part states, wire channels");
     return failures ? 1 : 0;
 }

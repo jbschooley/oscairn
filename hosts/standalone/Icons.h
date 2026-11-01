@@ -90,6 +90,10 @@ namespace oscairn::standalone
         Ink colour_;
     };
 
+    /// The meters' zone a level is in: green, yellow from -12 dB, red from -3.
+    inline const juce::Colour meterGreen{0xff5ac46a}, meterYellow{0xffe8c547};
+    inline juce::Colour levelColour(double peak) { return peak >= .708 ? ink(Ink::Danger) : peak >= .251 ? meterYellow : meterGreen; }
+
     /// A level meter from -60 to +6 dB in three zones: green, yellow from -12, red from -3. Each
     /// zone shows its colour as far as the level reaches. Vertical meters fill upwards.
     inline void drawMeter(juce::Graphics& g, juce::Rectangle<float> r, double peak, bool vertical)
@@ -102,7 +106,7 @@ namespace oscairn::standalone
         if(lit <= 0) return;
         juce::Graphics::ScopedSaveState state(g);
         juce::Path clip; clip.addRoundedRectangle(r, round); g.reduceClipRegion(clip);
-        const struct { float from, to; juce::Colour colour; } zones[] = {{0, at(-12), juce::Colour(0xff5ac46a)}, {at(-12), at(-3), juce::Colour(0xffe8c547)}, {at(-3), 1, ink(Ink::Danger)}};
+        const struct { float from, to; juce::Colour colour; } zones[] = {{0, at(-12), meterGreen}, {at(-12), at(-3), meterYellow}, {at(-3), 1, ink(Ink::Danger)}};
         for(const auto& z : zones)
         {
             const float from = z.from, to = std::min(z.to, lit);

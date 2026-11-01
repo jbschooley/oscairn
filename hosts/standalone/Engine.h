@@ -45,6 +45,7 @@ namespace oscairn::standalone
         Control::GraphState graph() const {return control_->graphState();}
         std::vector<Control::ParamInfo> parameters(NodeId node) const {return control_->parameters(node);}
         std::vector<PartMeter> meters() const {try{return control_->partMeters();}catch(const std::exception&){return {};}}
+        std::vector<WireMeter> wireMeters() const {try{return control_->wireMeters();}catch(const std::exception&){return {};}}
         Control::History history() const {try{return control_->history();}catch(const std::exception&){return {};}}
         void edit(std::function<void(Control&)> change);
         const std::string& editError() const {return editError_;}

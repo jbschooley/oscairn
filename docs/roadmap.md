@@ -197,7 +197,8 @@ in the others.
    - [x] undo for every edit ([status](rfcs/0011-performance-ui-and-editors.md#undo-status));
      preset and state loads remain
    - [x] step 4: the Routing view on the desktop, laid out by signal flow so no wire passes
-     under a box, with parts collapsed (expandable in place) and focus on what is chosen
+     under a box, with parts collapsed (expandable in place), focus on what is chosen, a line
+     per channel on audio wires and wire meters
      ([status](rfcs/0011-performance-ui-and-editors.md#step-4-status))
    - [ ] the adaptive UI ([RFC 0019](rfcs/0019-adaptive-ui.md#progress)): view models drawn
      for the desktop and the device panel (done), a desktop shell like Gig Performer's with a

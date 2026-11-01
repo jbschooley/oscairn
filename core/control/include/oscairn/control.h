@@ -214,6 +214,8 @@ namespace oscairn
         virtual bool redo() = 0;
         // Each part's and bus's recent peak after its fader, held and falling, for the Mixer.
         virtual std::vector<PartMeter> partMeters() const = 0;
+        // Each audio wire's recent peak after its level and pan, held and falling, for Routing.
+        virtual std::vector<WireMeter> wireMeters() const = 0;
         virtual uint32_t connectPorts( const Wire& wire ) = 0; // a user wire; returns its ID
         virtual void disconnectWire( uint32_t wire ) = 0;
         virtual void setMix( uint32_t wire, double level, double pan, bool mute, bool solo ) = 0;

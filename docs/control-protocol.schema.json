@@ -3650,6 +3650,29 @@
               "$ref": "#/$defs/Id"
             },
             "method": {
+              "const": "wires.meters"
+            },
+            "params": {
+              "type": "object",
+              "maxProperties": 0
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
               "const": "edit.undo",
               "description": "Undoes the last edit"
             },
@@ -4252,6 +4275,9 @@
                 },
                 {
                   "$ref": "#/$defs/MetersResult"
+                },
+                {
+                  "$ref": "#/$defs/WireMetersResult"
                 },
                 {
                   "$ref": "#/$defs/HistoryResult"
@@ -6563,6 +6589,48 @@
             },
             "required": [
               "part",
+              "peak",
+              "channels"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "meters"
+      ],
+      "additionalProperties": false
+    },
+    "WireMetersResult": {
+      "type": "object",
+      "description": "Each audio wire's recent peak after its level and pan, linear, held and falling, per channel and the largest",
+      "properties": {
+        "meters": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "wire": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 4294967295
+              },
+              "peak": {
+                "type": "number",
+                "minimum": 0
+              },
+              "channels": {
+                "type": "array",
+                "description": "One value per channel its source's port sends",
+                "maxItems": 16,
+                "items": {
+                  "type": "number",
+                  "minimum": 0
+                }
+              }
+            },
+            "required": [
+              "wire",
               "peak",
               "channels"
             ],
