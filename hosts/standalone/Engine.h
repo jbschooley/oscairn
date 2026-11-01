@@ -94,10 +94,13 @@ namespace oscairn::standalone
         std::optional<Control::PerformanceInfo> performanceInfo() const;
         std::optional<Control::PerformanceContents> performanceContents(const std::string& directory) const;
         // Libraries (RFC 0021): an archive's contents (empty error when read), the installed
-        // libraries, and deleting an item or uninstalling a library (the error, or empty).
+        // libraries, and deleting, editing or copying an item or uninstalling a library (the
+        // error, or empty; a copy's ID into copied).
         std::string archiveContents(const std::string& file, Control::Archive& out) const;
         std::vector<Control::InstalledLibrary> libraries() const;
         std::string deleteLibraryItem(const std::string& id);
+        std::string editLibraryItem(const std::string& id, const Control::PerformanceInfo& info);
+        std::string copyLibraryItem(const std::string& id, std::string& copied);
         std::string uninstallLibrary(const std::string& id);
         std::string pluginId(const std::string& node) const;
         void replacePlugin(const std::string& node,const std::string& path,const std::string& id,const std::string& preset={});

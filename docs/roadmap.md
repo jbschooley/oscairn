@@ -333,8 +333,9 @@ in the others.
      ([status](rfcs/0021-sounds-performances-and-library.md#seamless-switching)). Every change is
      seamless; nothing yet limits the memory two Performances take at once
    - [ ] the audition part
-   - [ ] tag editing and suggestions, plugin presets in the library, `LibraryModel`, and the
-     Library on the panel and compact screens (RFC 0021 steps 2–7)
+   - [ ] tag suggestions, plugin presets in the library, `LibraryModel`, and the Library on the
+     panel and compact screens (RFC 0021 steps 2–7; editing an item's info and tags, copying, a
+     source filter, the tag column, compact rows and the item menu are done)
    - [ ] actions over the control API, then choosing between apps (RFC 0022 steps 2–3, also
      in Phase 5)
 

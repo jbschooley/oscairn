@@ -182,6 +182,24 @@ int main(int argc, char** argv)
                 library.search("");
                 wait([&] { return library.items().size() == 3; });
                 snapshot(library, "library-tags");
+                // Compact rows, and the whole row tinted (Oscairn Block's rows), still told apart.
+                library.setCompact(true);
+                check(library.compact(), "compact rows");
+                snapshot(library, "library-compact");
+                theme.apply("oscairn-block"); library.repaint();
+                snapshot(library, "library-fill");
+                theme.apply("oscairn-dark");
+                library.setCompact(false);
+                // The user's own, by source; a copy is the user's own, under its own ID.
+                library.showSource("mine");
+                check(wait([&] { return library.items().size() == 3; }), "the user's own, by source");
+                library.showSource("nonesuch");
+                check(wait([&] { return library.items().size() == 3; }), "a source that is not installed shows everything");
+                const auto copied = library.copyItem(0);
+                check(!copied.empty() && wait([&] { return library.items().size() == 4; }), "a copy, as the user's own: " + library.message().toStdString());
+                check(engine.deleteLibraryItem(copied).empty(), "and deleted again");
+                library.refresh();
+                check(wait([&] { return library.items().size() == 3; }), "back to three");
                 engine.edit([](Control& c) { c.libraryTag("live", false, ""); c.libraryTag("pad", false, ""); });
                 library.refresh();
                 check(wait([&] { return listed("live"); }), "shown again");

@@ -221,6 +221,16 @@ namespace oscairn::standalone
         if(!connected()) return "The engine is not running.";
         try{control_->deleteLibraryItem(id);return {};}catch(const std::exception& e){return e.what();}
     }
+    std::string Engine::editLibraryItem(const std::string& id, const Control::PerformanceInfo& info)
+    {
+        if(!connected()) return "The engine is not running.";
+        try{control_->libraryEdit(id,info);return {};}catch(const std::exception& e){return e.what();}
+    }
+    std::string Engine::copyLibraryItem(const std::string& id, std::string& copied)
+    {
+        if(!connected()) return "The engine is not running.";
+        try{copied=control_->libraryCopy(id);return {};}catch(const std::exception& e){return e.what();}
+    }
     std::string Engine::uninstallLibrary(const std::string& id)
     {
         if(!connected()) return "The engine is not running.";
