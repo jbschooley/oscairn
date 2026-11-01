@@ -69,6 +69,8 @@ public:
     juce::Font getLabelFont(juce::Label&) override;
     juce::Font getTextButtonFont(juce::TextButton&,int) override;
     juce::Font getComboBoxFont(juce::ComboBox&) override;
+    void positionComboBoxText(juce::ComboBox&,juce::Label&) override;
+    void drawComboBoxTextWhenNothingSelected(juce::Graphics&,juce::ComboBox&,juce::Label&) override;
     void drawComboBox(juce::Graphics&,int,int,bool,int,int,int,int,juce::ComboBox&) override;
     void fillTextEditorBackground(juce::Graphics&,int,int,juce::TextEditor&) override;
     void drawLabel(juce::Graphics&,juce::Label&) override;

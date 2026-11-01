@@ -265,6 +265,20 @@ float textSize(TextRole role,int mode) {
 juce::Font Theme::getLabelFont(juce::Label& label){return desktopMode(label)?label.getFont():juce::Font(juce::FontOptions(juce::jlimit(12.f,28.f,label.getHeight()*.7f)*current.fontScale));}
 juce::Font Theme::getTextButtonFont(juce::TextButton& b,int height){const int mode=desktopMode(b);return juce::FontOptions(mode?textSize(TextRole::Button,mode):juce::jlimit(13.f,22.f,height*.36f)*current.fontScale);}
 juce::Font Theme::getComboBoxFont(juce::ComboBox& box){const int mode=desktopMode(box);return mode?juce::Font(juce::FontOptions(textSize(TextRole::Body,mode))):LookAndFeel_V4::getComboBoxFont(box);}
+// A dropdown's text starts clear of its rounded end, as a text box's does.
+void Theme::positionComboBoxText(juce::ComboBox& box,juce::Label& label) {
+    const int indent=std::max(8,juce::roundToInt(fieldRadius(float(box.getHeight()))*.8f));
+    label.setBorderSize({1,0,1,0});
+    label.setBounds(indent,1,std::max(0,box.getWidth()-indent-box.getHeight()),box.getHeight()-2);
+    label.setFont(getComboBoxFont(box));
+}
+// The text shown when nothing is chosen, where the label is: JUCE's own uses the label's local
+// bounds in the box's coordinates, which puts it at the box's very edge.
+void Theme::drawComboBoxTextWhenNothingSelected(juce::Graphics& g,juce::ComboBox& box,juce::Label& label) {
+    g.setColour(box.findColour(juce::ComboBox::textColourId).withMultipliedAlpha(.5f));
+    g.setFont(getComboBoxFont(box));
+    g.drawFittedText(box.getTextWhenNothingSelected(),label.getBorderSize().subtractedFrom(label.getBounds()),label.getJustificationType(),1,label.getMinimumHorizontalScale());
+}
 // Dropdowns and text boxes share the buttons' corners and outline.
 void Theme::drawComboBox(juce::Graphics& g,int width,int height,bool,int,int,int,int,juce::ComboBox& box) {
     const auto bounds=juce::Rectangle<float>(0,0,float(width),float(height)).reduced(1);const float radius=fieldRadius(bounds.getHeight());
@@ -278,6 +292,20 @@ void Theme::drawComboBox(juce::Graphics& g,int width,int height,bool,int,int,int
 int Theme::getSliderThumbRadius(juce::Slider& slider){return current.style.sliders!=ThemeStyle::Sliders::Filled?8:LookAndFeel_V4::getSliderThumbRadius(slider);}
 void Theme::drawLinearSlider(juce::Graphics& g,int x,int y,int width,int height,float position,float minimum,float maximum,juce::Slider::SliderStyle style,juce::Slider& slider) {
     const bool horizontal=style==juce::Slider::LinearHorizontal,line=current.style.sliders!=ThemeStyle::Sliders::Filled,bipolar=slider.getProperties()["bipolar"];
+    // A bar (a value field you drag, like the tempo): filled within the field's rounded shape.
+    if(style==juce::Slider::LinearBar || style==juce::Slider::LinearBarVertical) {
+        const auto field=juce::Rectangle<int>(0,0,slider.getWidth(),slider.getHeight()).toFloat().reduced(1);
+        const float radius=fieldRadius(field.getHeight()),alpha=slider.isEnabled()?1.f:.5f;
+        juce::Path shape;shape.addRoundedRectangle(field,radius);
+        g.setColour(slider.findColour(juce::Slider::backgroundColourId).withMultipliedAlpha(alpha));g.fillPath(shape);
+        {juce::Graphics::ScopedSaveState state(g);g.reduceClipRegion(shape);
+         g.setColour(slider.findColour(juce::Slider::trackColourId).withMultipliedAlpha(alpha));
+         if(style==juce::Slider::LinearBar)g.fillRect(juce::Rectangle<float>(field.getX(),field.getY(),juce::jmax(0.f,position-field.getX()),field.getHeight()));
+         else g.fillRect(juce::Rectangle<float>(field.getX(),position,field.getWidth(),juce::jmax(0.f,field.getBottom()-position)));}
+        drawEdge(g,field,radius,slider.hasKeyboardFocus(true));
+        juce::ignoreUnused(x,y,width,height,minimum,maximum);
+        return;
+    }
     if((!horizontal && style!=juce::Slider::LinearVertical) || (!line && !bipolar)){LookAndFeel_V4::drawLinearSlider(g,x,y,width,height,position,minimum,maximum,style,slider);return;}
     const auto area=juce::Rectangle<int>(x,y,width,height).toFloat();
     const float track=line?(current.style.sliders==ThemeStyle::Sliders::Cap?3.f:4.f):juce::jmin(6.f,(horizontal?area.getHeight():area.getWidth())*.25f);
