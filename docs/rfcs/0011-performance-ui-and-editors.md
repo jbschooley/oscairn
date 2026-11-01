@@ -20,7 +20,7 @@ Checked when built and tested; the sections below say how.
 - [ ] The full scene model (blocks and wires enabled per scene, what each scene saves),
       seamless on the engine's draining and retiring ([status](#scenes-status))
   - [x] plugins and wires switched off and on, seamlessly
-  - [ ] scenes record all of it, each with its scope
+  - [x] scenes record all of it, each with its scope
   - [ ] the desktop's controls for it
 
 ## Problem
@@ -414,9 +414,9 @@ mute; sends are post-fader. `desktop-parts-model` builds step 2's gate (a two-la
 a shared delay) with only the views' edits; `desktop-pad-editor` renders both views at
 1024 × 600 against a session over the control socket.
 
-**Scenes** followed: a scene records every part's level and mute and a value for each
-scene parameter (the plugin parameters chosen to follow scenes, from a box's **Scene
-controls...**). The Parts view's scene buttons switch scenes; **+ Scene** and **Store**
+**Scenes** followed: a scene first recorded every part's level and mute and a value for each
+scene parameter chosen from a box's **Scene controls...**; it now records the full model
+([status](#scenes-status)). The Parts view's scene buttons switch scenes; **+ Scene** and **Store**
 capture the current state. Switching changes route gains and sends parameter events, so held
 notes and tails go on; `control-parts` switches six times while a note is held and checks
 there is no gap. Values jump for now; smooth transitions are on the roadmap.
@@ -452,8 +452,7 @@ For advanced users:
 - **Per mapping,** the scenes it is active in, so mappings can be laid out across scenes as a
   table rather than captured one scene at a time.
 
-What exists today (above) is a subset: levels, mutes and the chosen scene parameters, and
-control values. The rest, and the scope, are to build; the Performance format records them.
+Built, with the scope, as the status below says; the desktop's controls for it are next.
 
 ### Scenes status
 
@@ -472,7 +471,27 @@ tint. `control-parts` checks a held note playing through the switch and released
 new note reaching only what is on, ringing out after three seconds of silence, undo, the
 bypassed effect, the off note wire and the round-trip.
 
-Not yet: scenes recording any of it (next), and the desktop's controls for it.
+**Scenes record all of it** implemented 2026-11-01. Storing a scene captures which plugins and
+wires are off, each part's mute and solo, the mix (each part's level, pan and sends, each split
+lane's Mix, each user wire's Mix row), every parameter scenes touch, and the controls' values.
+Scenes touch every automatable, writable parameter except those set aside (`setSceneUntouched`,
+`scenes.untouched`; a box's **Scene controls...** unticks them) and a split's own nodes, which
+follow its kind. Which control mappings are off in a scene is kept on each mapping
+(`MacroTarget::offIn`); the mappings off in the scene last selected that applies mappings are
+skipped. Each scene has a scope (`setSceneScope`, `scenes.scope`): selecting it applies only those
+kinds and leaves the rest as they are; the default is everything. Wires are named by what they
+join and their place in their part, as part wires are rebuilt under new IDs. Selecting sends only
+the parameter values that differ, past the pending commands' limit if need be (each parameter
+keeps at most one waiting value, so they never outnumber the parameters; a plugin takes what it
+can each tick). Removing a plugin, loading a Sound and importing a Performance carry all of it
+(an import's scenes keep what was here as it is now, and this Performance's scenes keep what
+arrives as it arrives). `control-parts` checks the scenes switching plugins with a held note
+ringing out, a mapping off in one scene and on in another, parameters set aside and taken back,
+a scope of mutes only, a scene applied past a full pending store, and the round-trip;
+`control-performance-format` checks scenes against both schemas.
+
+Not yet: the desktop's controls for it (switching plugins and wires off, a scene's scope, the
+mappings' scenes), smooth transitions, and per-mapping scenes laid out as a table.
 
 ## Step 3 status
 

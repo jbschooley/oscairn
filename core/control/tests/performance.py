@@ -66,7 +66,16 @@ try:
             split = rpc('parts.addSplit', {'part': part, 'index': 0})['result']['split']
             rpc('parts.insert', {'part': part, 'index': 0, 'node': 'synth', 'split': split, 'lane': 1})
             rpc('parts.lane', {'part': part, 'split': split, 'lane': 1, 'level': 0.5, 'zones': [{'keys': [60, 127]}]})
+            # A scene holding a plugin off, with its scope, and a mapping off in it (RFC 0011).
+            synth = next(n['id'] for n in rpc('graph.get')['result']['nodes'] if n['name'] == 'synth')
+            rpc('graph.enable', {'node': synth, 'enabled': False})
+            scene = rpc('scenes.add', {'name': 'Quiet'})['result']['scene']
+            rpc('scenes.scope', {'scene': scene, 'scope': ['enabled', 'mappings']})
+            control = rpc('controls.add', {'name': 'Knob'})['result']['control']
+            rpc('controls.targets', {'control': control, 'targets': [{'kind': 'parameter', 'node': synth, 'param': 1, 'offIn': [scene]}]})
+            rpc('graph.enable', {'node': synth, 'enabled': True})
             graph = rpc('graph.get')['result']
+            assert graph['scenes'][0]['off'] == [synth] and graph['scenes'][0]['scope'] == ['enabled', 'mappings'] and graph['controls'][0]['targets'][0]['offIn'] == [scene]
             assert graph['parts'][0]['name'] == 'Check' and any(w['owner'] == 'part' for w in graph['wires'])
             assert graph['parts'][0]['chain'] == [{'split': split}] and graph['parts'][0]['splits'][0]['lanes'][1]['level'] == 0.5
             jsonschema.validate({'jsonrpc':'2.0','id':1,'result':graph}, protocol)

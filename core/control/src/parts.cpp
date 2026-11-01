@@ -716,6 +716,7 @@ namespace oscairn
         const auto targets = macro.targets; // `macro` may move as children are driven
         for(const auto& t : targets)
         {
+            if(mappingScene_ && std::find(t.offIn.begin(), t.offIn.end(), mappingScene_) != t.offIn.end()) continue; // off in this scene
             const double v = t.map(macro.value);
             switch(t.kind)
             {
@@ -752,12 +753,35 @@ namespace oscairn
         return *it;
     }
 
-    // A scene records every part's fader and each scene parameter's value, pending edits included.
+    // Whether scenes touch a parameter: every automatable, writable one the user has not set aside,
+    // except a split's own nodes, which follow its kind and lanes.
+    bool Session::touched(NodeId node, const ParamInfo& p) const
+    {
+        return (p.flags & CLAP_PARAM_IS_AUTOMATABLE) && !(p.flags & CLAP_PARAM_IS_READONLY) && !splitNode(node) &&
+               std::find(untouched_.begin(), untouched_.end(), SceneParameter{node, p.id}) == untouched_.end();
+    }
+
+    // A scene records all of it as it is now, pending edits included.
     void Session::capture(Scene& scene) const
     {
-        scene.parts.clear(); scene.values.clear();
-        for(const auto& p : parts_) scene.parts.push_back({p.id, p.level, p.mute});
-        for(const auto& at : sceneParameters_) if(graph_.contains(at.node)) scene.values.push_back({at, parameter(at.node, at.param)});
+        scene.off.assign(disabled_.begin(), disabled_.end());
+        scene.offWires.clear(); scene.wires.clear();
+        for(const auto& w : wires_)
+        {
+            if(!w.enabled) scene.offWires.push_back(WireRef::of(w));
+            if(w.owner == WireOwner::User && w.kind == WireKind::Audio) scene.wires.push_back({WireRef::of(w), w.level, w.pan, w.mute, w.solo});
+        }
+        scene.parts.clear();
+        for(const auto& p : parts_)
+        {
+            Scene::PartState state{p.id, p.level, p.pan, p.mute, p.solo, p.sends, {}};
+            for(const auto& sp : p.splits)
+                for(uint32_t i = 0; i < sp.lanes.size(); ++i) state.lanes.push_back({sp.id, i, sp.lanes[i].level, sp.lanes[i].pan, sp.lanes[i].mute, sp.lanes[i].solo});
+            scene.parts.push_back(std::move(state));
+        }
+        scene.values.clear();
+        for(const auto& [node, name] : nodes_)
+            for(const auto& p : parameters(node)) if(touched(node, p)) scene.values.push_back({{node, p.id}, parameter(node, p.id)});
         scene.macros.clear();
         for(const auto& m : macros_) scene.macros.push_back({m.id, m.value});
     }
@@ -772,23 +796,55 @@ namespace oscairn
 
     void Session::storeScene(uint32_t id) { capture(findScene(id)); scene_ = id; }
 
-    // Faders change route gains in a new plan and parameters arrive as events at the next block,
-    // so nothing is rebuilt: held notes and tails go on. Staged graph edits are committed with it.
+    // The kinds in the scene's scope, each from what the scene holds; a part, lane, wire or plugin
+    // added since keeps what it has. Plugins and wires switched off ring out (compileWires); faders
+    // change route gains in a new plan and parameters arrive as events at the next block, so held
+    // notes and tails go on. Staged graph edits are committed with it.
     void Session::selectScene(uint32_t id)
     {
         const auto scene = findScene(id);
+        const auto has = [&](Scene::Kind kind) { return (scene.scope & kind) != 0; };
         Quiet playing(*this); // switching scenes is playing, not editing
-        // Controls first: the scene's own part faders and parameter values then have the last word.
+        if(has(Scene::Mappings)) mappingScene_ = id;
+        // Controls first: the scene's own faders and parameter values then have the last word.
         bool faders = false;
-        for(const auto& [macro, value] : scene.macros) if(std::any_of(macros_.begin(), macros_.end(), [&](const Macro& m) { return m.id == macro; })) driveMacro(macro, value, faders);
+        if(has(Scene::Parameters))
+            for(const auto& [macro, value] : scene.macros) if(std::any_of(macros_.begin(), macros_.end(), [&](const Macro& m) { return m.id == macro; })) driveMacro(macro, value, faders);
+        if(has(Scene::Enabled))
+            for(const auto& [node, name] : nodes_)
+            {
+                const bool on = std::find(scene.off.begin(), scene.off.end(), node) == scene.off.end();
+                if(on == (disabled_.count(node) != 0)) enable(node, on);
+            }
         editWires([&] {
             for(const auto& state : scene.parts)
-                for(auto& p : parts_) if(p.id == state.part) { p.level = state.level; p.mute = state.mute; }
+                for(auto& p : parts_)
+                {
+                    if(p.id != state.part) continue;
+                    if(has(Scene::Mutes)) { p.mute = state.mute; p.solo = state.solo; }
+                    if(!has(Scene::Mix)) continue;
+                    p.level = state.level; p.pan = state.pan;
+                    for(auto& send : p.sends) for(const auto& was : state.sends) if(was.bus == send.bus) send.level = was.level;
+                    for(auto& sp : p.splits)
+                        for(const auto& lane : state.lanes)
+                            if(lane.split == sp.id && lane.lane < sp.lanes.size())
+                            { auto& l = sp.lanes[lane.lane]; l.level = lane.level; l.pan = lane.pan; l.mute = lane.mute; l.solo = lane.solo; }
+                }
             buildParts();
+            for(auto& w : wires_)
+            {
+                const auto ref = WireRef::of(w);
+                if(has(Scene::Enabled)) w.enabled = std::find(scene.offWires.begin(), scene.offWires.end(), ref) == scene.offWires.end();
+                if(has(Scene::Mix) && w.owner == WireOwner::User)
+                    for(const auto& m : scene.wires) if(m.wire == ref) { w.level = m.level; w.pan = m.pan; w.mute = m.mute; w.solo = m.solo; }
+            }
         });
         commit();
-        for(const auto& v : scene.values)
-            if(graph_.contains(v.at.node) && hasParameter(v.at.node, v.at.param)) applyParameter(v.at.node, v.at.param, v.value);
+        // Only values that differ are sent, past the pending commands' limit if need be: a plugin
+        // takes what it can each tick and the rest follow at the next.
+        if(has(Scene::Parameters))
+            for(const auto& v : scene.values)
+                if(graph_.contains(v.at.node) && hasParameter(v.at.node, v.at.param) && parameter(v.at.node, v.at.param) != v.value) applyParameter(v.at.node, v.at.param, v.value, nullptr, false);
         scene_ = id;
     }
 
@@ -796,32 +852,37 @@ namespace oscairn
     {
         findScene(id);
         std::erase_if(scenes_, [&](const Scene& s) { return s.id == id; });
+        for(auto& m : macros_) for(auto& t : m.targets) std::erase(t.offIn, id);
         if(scene_ == id) scene_ = 0;
+        if(mappingScene_ == id) mappingScene_ = 0;
     }
 
     void Session::setSceneName(uint32_t id, const std::string& name) { findScene(id).name = name; }
 
-    void Session::setSceneParameters(const std::vector<SceneParameter>& parameters)
+    void Session::setSceneScope(uint32_t id, uint32_t scope)
     {
-        for(size_t i = 0; i < parameters.size(); ++i)
+        if(scope & ~uint32_t(Scene::Everything)) throw std::invalid_argument("unknown scene kind");
+        findScene(id).scope = scope;
+    }
+
+    void Session::setSceneUntouched(const std::vector<SceneParameter>& list)
+    {
+        for(size_t i = 0; i < list.size(); ++i)
         {
-            const auto& at = parameters[i];
-            if(!graph_.contains(at.node) || !hasParameter(at.node, at.param) || (parameterInfo(at.node, at.param).flags & CLAP_PARAM_IS_READONLY))
-                throw std::invalid_argument("not a writable parameter");
-            if(std::find(parameters.begin(), parameters.begin() + std::ptrdiff_t(i), at) != parameters.begin() + std::ptrdiff_t(i)) throw std::invalid_argument("a scene parameter listed twice");
+            const auto& at = list[i];
+            if(!graph_.contains(at.node) || !hasParameter(at.node, at.param)) throw std::invalid_argument("unknown parameter");
+            if(std::find(list.begin(), list.begin() + std::ptrdiff_t(i), at) != list.begin() + std::ptrdiff_t(i)) throw std::invalid_argument("a parameter listed twice");
         }
-        // Each scene keeps its values for parameters still listed; a new one takes its current value.
+        // Set aside: its values go from every scene. Taken back: it gets its current value in each.
+        untouched_ = list;
         for(auto& scene : scenes_)
         {
-            std::vector<Scene::Value> values;
-            for(const auto& at : parameters)
-            {
-                const auto had = std::find_if(scene.values.begin(), scene.values.end(), [&](const Scene::Value& v) { return v.at == at; });
-                values.push_back(had != scene.values.end() ? *had : Scene::Value{at, parameter(at.node, at.param)});
-            }
-            scene.values = std::move(values);
+            std::erase_if(scene.values, [&](const Scene::Value& v) { return std::find(untouched_.begin(), untouched_.end(), v.at) != untouched_.end(); });
+            for(const auto& [node, name] : nodes_)
+                for(const auto& p : parameters(node))
+                    if(touched(node, p) && std::none_of(scene.values.begin(), scene.values.end(), [&](const Scene::Value& v) { return v.at == SceneParameter{node, p.id}; }))
+                        scene.values.push_back({{node, p.id}, parameter(node, p.id)});
         }
-        sceneParameters_ = parameters;
     }
 
     void Session::setHostStatus(SessionStatus status)
@@ -1174,9 +1235,14 @@ namespace oscairn
             dropNode(node);
             for(auto& p : parts_) eachChain(p, [&](std::vector<NodeId>& c) { std::erase(c, node); });
             buildParts();
-            std::erase_if(sceneParameters_, [&](const SceneParameter& at) { return at.node == node; });
             for(auto& m : macros_) std::erase_if(m.targets, [&](const MacroTarget& t) { return t.kind == MacroTarget::Kind::Parameter && t.node == node; });
-            for(auto& scene : scenes_) std::erase_if(scene.values, [&](const Scene::Value& v) { return v.at.node == node; });
+            for(auto& scene : scenes_)
+            {
+                auto on = [&](const WireRef& r) { return r.from == node || r.to == node; };
+                std::erase_if(scene.values, [&](const Scene::Value& v) { return v.at.node == node; });
+                std::erase(scene.off, node);
+                std::erase_if(scene.offWires, on); std::erase_if(scene.wires, [&](const Scene::WireMix& m) { return on(m.wire); });
+            }
         });
     }
 

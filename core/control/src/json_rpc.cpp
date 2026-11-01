@@ -269,7 +269,8 @@ namespace oscairn
                 for( const auto& t : m.targets )
                     targets.push_back(std::string("{\"kind\":\"") + kindName(t.kind) + "\",\"node\":" + std::to_string(t.node) + ",\"param\":" + std::to_string(t.param) +
                         ",\"part\":" + std::to_string(t.part) + ",\"control\":" + std::to_string(t.macro) + ",\"start\":" + encode(t.start) + ",\"end\":" + encode(t.end) +
-                        ",\"curve\":\"" + curveName(t.curve) + "\",\"relative\":" + (t.relative ? "true" : "false") + ",\"base\":" + encode(t.base) + '}');
+                        ",\"curve\":\"" + curveName(t.curve) + "\",\"relative\":" + (t.relative ? "true" : "false") + ",\"base\":" + encode(t.base) + ",\"offIn\":" + [&] {
+                            std::vector<std::string> ids; for( const auto id : t.offIn ) ids.push_back(std::to_string(id)); return join(ids); }() + '}');
                 out.push_back("{\"id\":" + std::to_string(m.id) + ",\"part\":" + std::to_string(m.part) + ",\"name\":" + quote(m.name) + ",\"value\":" + encode(m.value) + ",\"targets\":" + join(targets) + '}');
             }
             return join(out);
@@ -280,7 +281,7 @@ namespace oscairn
             std::vector<MacroTarget> targets;
             for( auto* e = static_cast<const json_array_s*>(list->payload)->start; e; e = e->next )
             {
-                fields(e->value,{"kind","node","param","part","control","start","end","curve","relative","base"});
+                fields(e->value,{"kind","node","param","part","control","start","end","curve","relative","base","offIn"});
                 MacroTarget t;
                 const auto kind = string(member(e->value,"kind"));
                 t.kind = kind == "parameter" ? MacroTarget::Kind::Parameter : kind == "partLevel" ? MacroTarget::Kind::PartLevel : kind == "partMute" ? MacroTarget::Kind::PartMute : kind == "control" ? MacroTarget::Kind::Macro : (invalid("kind is parameter, partLevel, partMute or control"), MacroTarget::Kind::Parameter);
@@ -295,24 +296,48 @@ namespace oscairn
                     t.curve = name == "linear" ? MacroTarget::Curve::Linear : name == "exponential" ? MacroTarget::Curve::Exponential : name == "logarithmic" ? MacroTarget::Curve::Logarithmic : name == "s-curve" ? MacroTarget::Curve::SCurve : (invalid("curve is linear, exponential, logarithmic or s-curve"), MacroTarget::Curve::Linear);
                 }
                 if( member(e->value,"relative") ) t.relative = boolean(member(e->value,"relative"));
+                if( const auto off = member(e->value,"offIn") )
+                {
+                    if( off->type != json_type_array ) invalid("offIn is an array of scene IDs");
+                    for( auto* x = static_cast<const json_array_s*>(off->payload)->start; x; x = x->next ) { if( t.offIn.size() == 256 ) invalid("At most 256 scenes"); t.offIn.push_back(integer(x->value)); }
+                }
                 targets.push_back(t);
             }
             return targets;
         }
+        std::string wireRefJson( const WireRef& r )
+        {
+            return std::string("\"kind\":") + (r.kind == WireKind::Audio ? "\"audio\"" : "\"notes\"") + ",\"part\":" + std::to_string(r.part) + ",\"from\":" + std::to_string(r.from) +
+                ",\"to\":" + std::to_string(r.to) + ",\"fromPort\":" + std::to_string(r.fromPort) + ",\"toPort\":" + std::to_string(r.toPort) + ",\"send\":" + std::to_string(r.send) +
+                ",\"split\":" + std::to_string(r.split) + ",\"lane\":" + std::to_string(r.lane) + ",\"fader\":" + (r.fader ? "true" : "false");
+        }
         std::string scenesJson( const Control::GraphState& g )
         {
             std::vector<std::string> scenes, parameters;
+            auto flag = [](bool b) { return b ? "true" : "false"; };
             for( const auto& s : g.scenes )
             {
-                std::vector<std::string> parts, values;
-                for( const auto& p : s.parts ) parts.push_back("{\"part\":" + std::to_string(p.part) + ",\"level\":" + encode(p.level) + ",\"mute\":" + (p.mute ? "true" : "false") + '}');
+                std::vector<std::string> scope, off, offWires, parts, mixes, values, macros;
+                for( size_t k = 0; k < sceneKinds.size(); ++k ) if( s.scope & (1u << k) ) scope.push_back(quote(sceneKinds[k]));
+                for( const auto n : s.off ) off.push_back(std::to_string(n));
+                for( const auto& r : s.offWires ) offWires.push_back('{' + wireRefJson(r) + '}');
+                for( const auto& p : s.parts )
+                {
+                    std::vector<std::string> sends, lanes;
+                    for( const auto& x : p.sends ) sends.push_back("{\"bus\":" + std::to_string(x.bus) + ",\"level\":" + encode(x.level) + '}');
+                    for( const auto& l : p.lanes ) lanes.push_back("{\"split\":" + std::to_string(l.split) + ",\"lane\":" + std::to_string(l.lane) + ",\"level\":" + encode(l.level) +
+                        ",\"pan\":" + encode(l.pan) + ",\"mute\":" + flag(l.mute) + ",\"solo\":" + flag(l.solo) + '}');
+                    parts.push_back("{\"part\":" + std::to_string(p.part) + ",\"level\":" + encode(p.level) + ",\"pan\":" + encode(p.pan) + ",\"mute\":" + flag(p.mute) +
+                        ",\"solo\":" + flag(p.solo) + ",\"sends\":" + join(sends) + ",\"lanes\":" + join(lanes) + '}');
+                }
+                for( const auto& m : s.wires ) mixes.push_back('{' + wireRefJson(m.wire) + ",\"level\":" + encode(m.level) + ",\"pan\":" + encode(m.pan) + ",\"mute\":" + flag(m.mute) + ",\"solo\":" + flag(m.solo) + '}');
                 for( const auto& v : s.values ) values.push_back("{\"node\":" + std::to_string(v.at.node) + ",\"param\":" + std::to_string(v.at.param) + ",\"value\":" + encode(v.value) + '}');
-                std::vector<std::string> macros;
                 for( const auto& [m, v] : s.macros ) macros.push_back("{\"control\":" + std::to_string(m) + ",\"value\":" + encode(v) + '}');
-                scenes.push_back("{\"id\":" + std::to_string(s.id) + ",\"name\":" + quote(s.name) + ",\"parts\":" + join(parts) + ",\"values\":" + join(values) + ",\"controls\":" + join(macros) + '}');
+                scenes.push_back("{\"id\":" + std::to_string(s.id) + ",\"name\":" + quote(s.name) + ",\"scope\":" + join(scope) + ",\"off\":" + join(off) + ",\"offWires\":" + join(offWires) +
+                    ",\"parts\":" + join(parts) + ",\"wires\":" + join(mixes) + ",\"values\":" + join(values) + ",\"controls\":" + join(macros) + '}');
             }
-            for( const auto& at : g.sceneParameters ) parameters.push_back("{\"node\":" + std::to_string(at.node) + ",\"param\":" + std::to_string(at.param) + '}');
-            return ",\"scenes\":" + join(scenes) + ",\"sceneParameters\":" + join(parameters) + ",\"scene\":" + std::to_string(g.scene) + ",\"controls\":" + macrosJson(g.macros);
+            for( const auto& at : g.untouched ) parameters.push_back("{\"node\":" + std::to_string(at.node) + ",\"param\":" + std::to_string(at.param) + '}');
+            return ",\"scenes\":" + join(scenes) + ",\"sceneUntouched\":" + join(parameters) + ",\"scene\":" + std::to_string(g.scene) + ",\"controls\":" + macrosJson(g.macros);
         }
         std::string wireJson( const Wire& w )
         {
@@ -367,7 +392,7 @@ namespace oscairn
             if( method == "session.hello" )
             {
                 fields(p, {});
-                return R"({"protocolVersion":1,"server":"oscairn","capabilities":["performance.save","performance.load","performance.info","performance.setInfo","library.query","library.favourite","library.rescan","library.save","library.load","parts.saveSound","parts.loadSound","parts.fromSound","performance.contents","performance.import","state.info","state.save","presets.list","properties.list","properties.get","properties.set","properties.request","sounds.get","sounds.prepare","sounds.select","sounds.discard","assets.register","assets.import","assets.libraries","session.status","params.list","params.get","params.set","params.text","params.gesture","graph.audio-routing","graph.get","graph.add","effects.create","effects.resources","graph.remove","graph.replace","graph.connect","graph.disconnect","graph.map","graph.unmap","graph.commit","parts.add","parts.remove","parts.insert","parts.removeNode","parts.move","parts.addSplit","parts.removeSplit","parts.addLane","parts.removeLane","parts.lane","parts.input","parts.output","parts.send","parts.level","parts.name","parts.solo","parts.pan","parts.meters","wires.meters","edit.undo","edit.redo","edit.history","wires.connect","wires.disconnect","wires.enable","graph.enable","wires.mix","wires.zones","scenes.add","scenes.store","scenes.select","scenes.remove","scenes.name","scenes.parameters","controls.add","controls.remove","controls.name","controls.targets","controls.set","subscribe","unsubscribe","transport.get","transport.set","notes.send","pads.get","pads.set","pads.play","pads.pressure"],"limits":{"messageBytes":65536,"depth":32,"batch":64,"parameterChanges":128}})";
+                return R"({"protocolVersion":1,"server":"oscairn","capabilities":["performance.save","performance.load","performance.info","performance.setInfo","library.query","library.favourite","library.rescan","library.save","library.load","parts.saveSound","parts.loadSound","parts.fromSound","performance.contents","performance.import","state.info","state.save","presets.list","properties.list","properties.get","properties.set","properties.request","sounds.get","sounds.prepare","sounds.select","sounds.discard","assets.register","assets.import","assets.libraries","session.status","params.list","params.get","params.set","params.text","params.gesture","graph.audio-routing","graph.get","graph.add","effects.create","effects.resources","graph.remove","graph.replace","graph.connect","graph.disconnect","graph.map","graph.unmap","graph.commit","parts.add","parts.remove","parts.insert","parts.removeNode","parts.move","parts.addSplit","parts.removeSplit","parts.addLane","parts.removeLane","parts.lane","parts.input","parts.output","parts.send","parts.level","parts.name","parts.solo","parts.pan","parts.meters","wires.meters","edit.undo","edit.redo","edit.history","wires.connect","wires.disconnect","wires.enable","graph.enable","wires.mix","wires.zones","scenes.add","scenes.store","scenes.select","scenes.remove","scenes.name","scenes.scope","scenes.untouched","controls.add","controls.remove","controls.name","controls.targets","controls.set","subscribe","unsubscribe","transport.get","transport.set","notes.send","pads.get","pads.set","pads.play","pads.pressure"],"limits":{"messageBytes":65536,"depth":32,"batch":64,"parameterChanges":128}})";
             }
             if( method == "subscribe" || method == "unsubscribe" )
             {
@@ -661,7 +686,23 @@ namespace oscairn
                     if( method == "scenes.select" ) { fields(p,{"scene"}); c.selectScene(integer(member(p,"scene"))); return R"({"accepted":true})"; }
                     if( method == "scenes.remove" ) { fields(p,{"scene"}); c.removeScene(integer(member(p,"scene"))); return R"({"accepted":true})"; }
                     if( method == "scenes.name" ) { fields(p,{"scene","name"}); c.setSceneName(integer(member(p,"scene")),std::string(string(member(p,"name")))); return R"({"accepted":true})"; }
-                    if( method == "scenes.parameters" )
+                    if( method == "scenes.scope" )
+                    {
+                        fields(p,{"scene","scope"});
+                        const auto list = member(p,"scope");
+                        if( !list || list->type != json_type_array ) invalid("scope is an array of kinds");
+                        uint32_t scope = 0;
+                        for( auto* e = static_cast<const json_array_s*>(list->payload)->start; e; e = e->next )
+                        {
+                            const auto name = std::string(string(e->value));
+                            const auto at = std::find(sceneKinds.begin(), sceneKinds.end(), name);
+                            if( at == sceneKinds.end() ) invalid("a kind is enabled, mutes, mix, parameters or mappings");
+                            scope |= 1u << (at - sceneKinds.begin());
+                        }
+                        c.setSceneScope(integer(member(p,"scene")), scope);
+                        return R"({"accepted":true})";
+                    }
+                    if( method == "scenes.untouched" )
                     {
                         fields(p,{"parameters"});
                         const auto list = member(p,"parameters");
@@ -670,10 +711,10 @@ namespace oscairn
                         for( auto* e = static_cast<const json_array_s*>(list->payload)->start; e; e = e->next )
                         {
                             fields(e->value,{"node","param"});
-                            if( parameters.size() == 4096 ) invalid("At most 4096 scene parameters");
+                            if( parameters.size() == 65536 ) invalid("At most 65536 untouched parameters");
                             parameters.push_back({node(c,member(e->value,"node")),integer(member(e->value,"param"))});
                         }
-                        c.setSceneParameters(parameters);
+                        c.setSceneUntouched(parameters);
                         return R"({"accepted":true})";
                     }
                 }

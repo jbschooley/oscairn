@@ -103,7 +103,7 @@ namespace oscairn
         return graph_.host( node ).parameterText( param, value );
     }
 
-    bool Session::applyParameter( NodeId node, uint32_t param, double value, double* applied )
+    bool Session::applyParameter( NodeId node, uint32_t param, double value, double* applied, bool bounded )
     {
         const auto& p = findParameter( node, param );
         if( !std::isfinite( value ) || ( p.flags & CLAP_PARAM_IS_READONLY ) != 0 )
@@ -111,7 +111,7 @@ namespace oscairn
         value = std::clamp(value,p.minimum,p.maximum);
         if( p.flags & CLAP_PARAM_IS_STEPPED ) value = std::trunc(value);
         if( applied ) *applied = value;
-        return queue(node,param,ChangeKind::Value,value);
+        return queue(node,param,ChangeKind::Value,value,bounded);
     }
 
     void Session::setTempo( double bpm )
@@ -180,7 +180,7 @@ namespace oscairn
     {
         std::set<NodeId> ringing;
         std::set_difference(disabled_.begin(), disabled_.end(), rungOut_.begin(), rungOut_.end(), std::inserter(ringing, ringing.end()));
-        return {graph_.describe(),nodes_,revision_,staged_,parts_,wires_,scenes_,sceneParameters_,scene_,macros_,disabled_,ringing};
+        return {graph_.describe(),nodes_,revision_,staged_,parts_,wires_,scenes_,untouched_,scene_,macros_,disabled_,ringing};
     }
 
     void Session::saveState(NodeId node,const std::string& directory)
@@ -241,6 +241,7 @@ namespace oscairn
         graph_.remove(node);
         nodes_.erase(node);
         disabled_.erase(node); rungOut_.erase(node);
+        std::erase_if(untouched_, [&](const SceneParameter& at) { return at.node == node; });
         outputDrops_.erase(node);
         for( auto it = pending_.begin(); it != pending_.end(); )
             if( it->first.first == node ) { commandCount_ -= it->second.size(); it = pending_.erase(it); }
@@ -277,7 +278,7 @@ namespace oscairn
         return result;
     }
 
-    bool Session::queue( NodeId node, uint32_t param, ChangeKind kind, double value )
+    bool Session::queue( NodeId node, uint32_t param, ChangeKind kind, double value, bool bounded )
     {
         const Address address{node,param};
         auto it = pending_.find(address);
@@ -285,7 +286,7 @@ namespace oscairn
             it->second.back().value = value;
         else
         {
-            if( commandCount_ == commandCapacity ) return false;
+            if( bounded && commandCount_ >= commandCapacity ) return false;
             pending_[address].push_back({kind,value});
             ++commandCount_;
         }

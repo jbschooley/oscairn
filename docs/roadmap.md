@@ -206,8 +206,9 @@ in the others.
      step 5's knob pages (started)
    - [ ] plugin windows, then step 6's physical controls
    - [ ] the full scene model: blocks and wires enabled per scene, and what each scene saves
-     (plugins and wires switched off and on, seamlessly, done
-     ([status](rfcs/0011-performance-ui-and-editors.md#scenes-status)); scenes recording it next);
+     (plugins and wires switched off and on, seamlessly, and scenes recording all of it with a
+     scope, done ([status](rfcs/0011-performance-ui-and-editors.md#scenes-status)); the
+     desktop's controls for it next);
      seamless on the engine's draining and retiring (notes held on a disabled block play on
      until released, its tail rings out). Scene changes today set levels, mutes and values without
      rebuilding, so held notes and tails already carry on

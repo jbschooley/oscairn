@@ -95,7 +95,7 @@ namespace oscairn::standalone
         {
             graph_ = engine_.graph();
             state_ = readParts(graph_); routing_ = readRouting(graph_);
-            const auto status = engine_.status(); endpoints_ = status.midiInputs; failures_ = status.failures; scenes_ = graph_.scenes; sceneParameters_ = graph_.sceneParameters; scene_ = graph_.scene; macros_ = graph_.macros;
+            const auto status = engine_.status(); endpoints_ = status.midiInputs; failures_ = status.failures; scenes_ = graph_.scenes; untouched_ = graph_.untouched; scene_ = graph_.scene; macros_ = graph_.macros;
         }
         catch(const std::exception&) { return; }
         if(page_ && page_ != controlsPage && page_ != mixerPage && page_ != routingPage && !part(page_)) { page_ = 0; shape_.clear(); }
@@ -554,7 +554,7 @@ namespace oscairn::standalone
                     button(actions.removeFromLeft(100).reduced(2), "Routing...", [this, node] { showRouting(node); })
                         ->setTooltip("This plugin in Routing: wire it to plugins outside its part");
                     auto* controls = button(actions.removeFromLeft(150).reduced(2), "Scene controls...", {});
-                    controls->setTooltip("Choose which of this plugin's parameters scenes set");
+                    controls->setTooltip("Which of this plugin's parameters scenes set: all it lets be automated, but those you untick");
                     controls->onClick = [this, node, controls] { sceneControlsMenu(node, *controls); };
                 }
                 panel.removeFromTop(8);
@@ -790,7 +790,8 @@ namespace oscairn::standalone
         });
     }
 
-    // The node's parameters, ticked where scenes control them; choosing one toggles it.
+    // The node's parameters, ticked where scenes touch them (every automatable one but those set
+    // aside); choosing one sets it aside or takes it back.
     void PartsView::sceneControlsMenu(NodeId node, juce::Component& at)
     {
         std::vector<Control::ParamInfo> parameters;
@@ -799,16 +800,16 @@ namespace oscairn::standalone
         for(size_t i = 0; i < parameters.size(); ++i)
         {
             const SceneParameter here{node, parameters[i].id};
-            const bool on = std::find(sceneParameters_.begin(), sceneParameters_.end(), here) != sceneParameters_.end();
-            menu.addItem(int(i) + 1, text(parameters[i].name), !(parameters[i].flags & CLAP_PARAM_IS_READONLY), on);
+            const bool can = (parameters[i].flags & CLAP_PARAM_IS_AUTOMATABLE) && !(parameters[i].flags & CLAP_PARAM_IS_READONLY);
+            menu.addItem(int(i) + 1, text(parameters[i].name), can, can && std::find(untouched_.begin(), untouched_.end(), here) == untouched_.end());
         }
         if(parameters.empty()) menu.addItem(1, "No parameters", false);
         menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&at), [safe = juce::Component::SafePointer<PartsView>(this), node, parameters](int chosen) {
             if(!safe || chosen <= 0 || size_t(chosen) > parameters.size()) return;
-            auto list = safe->sceneParameters_;
+            auto list = safe->untouched_;
             const SceneParameter here{node, parameters[size_t(chosen) - 1].id};
             if(const auto it = std::find(list.begin(), list.end(), here); it != list.end()) list.erase(it); else list.push_back(here);
-            safe->edit([list](Control& c) { c.setSceneParameters(list); });
+            safe->edit([list](Control& c) { c.setSceneUntouched(list); });
         });
     }
 

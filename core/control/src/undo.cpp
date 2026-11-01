@@ -93,7 +93,7 @@ namespace oscairn
 
     Session::Model Session::model() const
     {
-        Model m{parts_, wires_, scenes_, sceneParameters_, macros_, padMap_, graph_.describe().mappings, {}, disabled_};
+        Model m{parts_, wires_, scenes_, untouched_, macros_, padMap_, graph_.describe().mappings, {}, disabled_};
         for(const auto& [id, name] : nodes_) m.nodes.emplace(id, std::pair{name, graph_.node(id)});
         return m;
     }
@@ -106,7 +106,7 @@ namespace oscairn
         if(!baseline_) { baseline_ = now; return; }
         const auto& b = *baseline_;
         const bool same = b.parts == now->parts && userWires(b.wires) == userWires(now->wires) && partWires(b.wires) == partWires(now->wires) &&
-                          b.scenes == now->scenes && b.sceneParameters == now->sceneParameters && sameMacros(b.macros, now->macros) &&
+                          b.scenes == now->scenes && b.untouched == now->untouched && sameMacros(b.macros, now->macros) &&
                           b.pads == now->pads && sameMappings(b.mappings, now->mappings) && sameNodes(b.nodes, now->nodes) && b.disabled == now->disabled;
         if(!same)
         {
@@ -312,7 +312,7 @@ namespace oscairn
             for(const auto& w : wires_) nextWire_ = std::max(nextWire_, w.id + 1);
 
             patch(scenes_, from.scenes, to.scenes, [](const Scene& s) { return s.id; });
-            if(from.sceneParameters != to.sceneParameters) sceneParameters_ = to.sceneParameters;
+            if(from.untouched != to.untouched) untouched_ = to.untouched;
             patch(macros_, from.macros, to.macros, [](const Macro& m) { return m.id; }, sameMacro,
                   [](Macro& n, const Macro*, const Macro& t) { const auto value = n.value; n = t; n.value = value; });
             if(!(from.pads == to.pads)) { padMap_ = to.pads; heldPads_ = {}; }
@@ -423,7 +423,7 @@ namespace oscairn
                 if(a.scenes.size() > b.scenes.size()) return {"Remove a scene", ""};
                 for(size_t i = 0; i < b.scenes.size(); ++i) if(!(a.scenes[i] == b.scenes[i])) return {"Scene " + b.scenes[i].name, ""};
             }
-            if(a.sceneParameters != b.sceneParameters) return {"Scene controls", ""};
+            if(a.untouched != b.untouched) return {"What scenes leave alone", ""};
             if(!sameMacros(a.macros, b.macros))
             {
                 if(a.macros.size() < b.macros.size()) return {"Add control " + b.macros.back().name, ""};

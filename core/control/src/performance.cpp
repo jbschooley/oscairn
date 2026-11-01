@@ -35,6 +35,18 @@ std::string zonesText(const std::vector<NoteZone>& zones){
     for(const auto& z:zones)out.push_back("{\"keys\":["+std::to_string(z.lowKey)+","+std::to_string(z.highKey)+"],\"velocities\":["+numeric(z.lowVelocity)+","+numeric(z.highVelocity)+"],\"channels\":"+std::to_string(z.channels)+",\"transpose\":"+std::to_string(z.transpose)+",\"curve\":"+numeric(z.curve)+",\"fixedVelocity\":"+numeric(z.fixedVelocity)+'}');
     return join(out);
 }
+// A scene's scope: the names of the kinds it applies (sceneKinds).
+uint32_t sceneScope(V v){
+    uint32_t scope=0;
+    for(auto k:array(v,sceneKinds.size())){const auto name=text(k);const auto at=std::find(sceneKinds.begin(),sceneKinds.end(),name);if(at==sceneKinds.end())bad("unknown scene kind "+name);scope|=1u<<(at-sceneKinds.begin());}
+    return scope;
+}
+// A wire as a scene names it, its ends through `node` (a key to a node).
+template<class Node> WireRef wireRef(V r,Node&& node){
+    const auto kind=text(field(r,"kind"));if(kind!="audio" && kind!="notes")bad("invalid scene wire kind");
+    return {kind=="audio"?WireKind::Audio:WireKind::Notes,integer(field(r,"part")),node(field(r,"from")),node(field(r,"to")),integer(field(r,"fromPort")),integer(field(r,"toPort")),
+            integer(field(r,"send")),integer(field(r,"split")),integer(field(r,"lane")),boolean(field(r,"fader"))};
+}
 std::vector<NoteZone> zonesFrom(V v){
     std::vector<NoteZone> zones;
     for(auto z:array(v,NoteZones::capacity)){
@@ -173,8 +185,9 @@ Control::PerformanceInfo Session::writeDocument(const std::string& directory,Per
             +",\"from\":"+(p.from.sound.empty()?std::string("null"):"{\"sound\":"+quote(p.from.sound)+",\"revision\":"+quote(p.from.revision)+",\"name\":"+quote(p.from.name)+",\"modified\":"+(p.from.modified?"true":"false")+'}')+'}');
     }
     for(const auto& m:graph.mappings)if(kept(m.source) && kept(m.target))mappings.push_back("{\"from\":"+quote(keys.at(m.source))+",\"lane\":"+std::to_string(m.lane)+",\"to\":"+quote(keys.at(m.target))+",\"param\":"+std::to_string(m.param)+'}');
-    // The control tree: each control's value and targets, parameters by node key.
+    // The control tree: each control's value and targets, parameters by node key. A Sound has no scenes to be off in.
     std::vector<std::string> controls;
+    auto offIn=[&](const MacroTarget& t){std::vector<std::string> ids;if(!sound)for(const auto id:t.offIn)ids.push_back(std::to_string(id));return join(ids);};
     for(const auto& m:macros_){
         if(sound && m.part!=sound->id)continue;
         std::vector<std::string> targets;
@@ -183,7 +196,7 @@ Control::PerformanceInfo Session::writeDocument(const std::string& directory,Per
             const char* kind=t.kind==MacroTarget::Kind::Parameter?"parameter":t.kind==MacroTarget::Kind::PartLevel?"partLevel":t.kind==MacroTarget::Kind::PartMute?"partMute":"control";
             const char* curve=t.curve==MacroTarget::Curve::Linear?"linear":t.curve==MacroTarget::Curve::Exponential?"exponential":t.curve==MacroTarget::Curve::Logarithmic?"logarithmic":"s-curve";
             std::string at=t.kind==MacroTarget::Kind::Parameter?",\"node\":"+quote(keys.at(t.node))+",\"param\":"+std::to_string(t.param):t.kind==MacroTarget::Kind::Macro?",\"control\":"+std::to_string(t.macro):",\"part\":"+std::to_string(t.part);
-            targets.push_back(std::string("{\"kind\":\"")+kind+"\""+at+",\"start\":"+numeric(t.start)+",\"end\":"+numeric(t.end)+",\"curve\":\""+curve+"\",\"relative\":"+(t.relative?"true":"false")+",\"base\":"+numeric(t.base)+'}');
+            targets.push_back(std::string("{\"kind\":\"")+kind+"\""+at+",\"start\":"+numeric(t.start)+",\"end\":"+numeric(t.end)+",\"curve\":\""+curve+"\",\"relative\":"+(t.relative?"true":"false")+",\"base\":"+numeric(t.base)+",\"offIn\":"+offIn(t)+'}');
         }
         controls.push_back("{\"id\":"+std::to_string(m.id)+",\"part\":"+std::to_string(m.part)+",\"name\":"+quote(m.name)+",\"value\":"+numeric(m.value)+",\"targets\":"+join(targets)+'}');
     }
@@ -201,17 +214,28 @@ Control::PerformanceInfo Session::writeDocument(const std::string& directory,Per
     std::string head,tail;
     if(sound){head="{\"format\":\"oscairn.sound\",\"version\":4,\"info\":";tail=",\"libraries\":"+join(named)+",\"nodes\":"+join(nodes)+",\"wires\":"+join(wires)+",\"part\":{\"chain\":"+chainText(sound->chain)+",\"splits\":"+splitsText(*sound)+"},\"mappings\":"+join(mappings)+",\"controls\":"+join(controls)+"}\n";}
     else{
-        // Scenes: each part's fader and each scene parameter's value; and the scene last selected.
+        // Scenes: all each holds (parts.h), its scope; the parameters scenes leave alone; and the scene last selected.
+        auto ref=[&](const WireRef& r){return "\"kind\":"+std::string(r.kind==WireKind::Audio?"\"audio\"":"\"notes\"")+",\"part\":"+std::to_string(r.part)+",\"from\":"+quote(keys.at(r.from))+",\"to\":"+quote(keys.at(r.to))
+            +",\"fromPort\":"+std::to_string(r.fromPort)+",\"toPort\":"+std::to_string(r.toPort)+",\"send\":"+std::to_string(r.send)+",\"split\":"+std::to_string(r.split)+",\"lane\":"+std::to_string(r.lane)+",\"fader\":"+(r.fader?"true":"false");};
+        auto here=[&](const WireRef& r){return keys.count(r.from) && keys.count(r.to);}; // a plugin removed since leaves its entries behind
         std::vector<std::string> scenes,parameters;
         for(const auto& s:scenes_){
-            std::vector<std::string> sp,values,sc;
-            for(const auto& p:s.parts)sp.push_back("{\"part\":"+std::to_string(p.part)+",\"level\":"+numeric(p.level)+",\"mute\":"+(p.mute?"true":"false")+'}');
-            for(const auto& v:s.values)values.push_back("{\"node\":"+quote(keys.at(v.at.node))+",\"param\":"+std::to_string(v.at.param)+",\"value\":"+numeric(v.value)+'}');
+            std::vector<std::string> scope,off,offWires,sp,mixes,values,sc;
+            for(size_t k=0;k<sceneKinds.size();++k)if(s.scope&(1u<<k))scope.push_back(quote(sceneKinds[k]));
+            for(const auto n:s.off)if(keys.count(n))off.push_back(quote(keys.at(n)));
+            for(const auto& r:s.offWires)if(here(r))offWires.push_back("{"+ref(r)+'}');
+            for(const auto& p:s.parts){
+                std::vector<std::string> sends,lanes;
+                for(const auto& x:p.sends)sends.push_back("{\"bus\":"+std::to_string(x.bus)+",\"level\":"+numeric(x.level)+'}');
+                for(const auto& l:p.lanes)lanes.push_back("{\"split\":"+std::to_string(l.split)+",\"lane\":"+std::to_string(l.lane)+",\"level\":"+numeric(l.level)+",\"pan\":"+numeric(l.pan)+",\"mute\":"+(l.mute?"true":"false")+",\"solo\":"+(l.solo?"true":"false")+'}');
+                sp.push_back("{\"part\":"+std::to_string(p.part)+",\"level\":"+numeric(p.level)+",\"pan\":"+numeric(p.pan)+",\"mute\":"+(p.mute?"true":"false")+",\"solo\":"+(p.solo?"true":"false")+",\"sends\":"+join(sends)+",\"lanes\":"+join(lanes)+'}');}
+            for(const auto& m:s.wires)if(here(m.wire))mixes.push_back("{"+ref(m.wire)+",\"level\":"+numeric(m.level)+",\"pan\":"+numeric(m.pan)+",\"mute\":"+(m.mute?"true":"false")+",\"solo\":"+(m.solo?"true":"false")+'}');
+            for(const auto& v:s.values)if(keys.count(v.at.node))values.push_back("{\"node\":"+quote(keys.at(v.at.node))+",\"param\":"+std::to_string(v.at.param)+",\"value\":"+numeric(v.value)+'}');
             for(const auto& [m,v]:s.macros)sc.push_back("{\"control\":"+std::to_string(m)+",\"value\":"+numeric(v)+'}');
-            scenes.push_back("{\"id\":"+std::to_string(s.id)+",\"name\":"+quote(s.name)+",\"parts\":"+join(sp)+",\"values\":"+join(values)+",\"controls\":"+join(sc)+'}');
+            scenes.push_back("{\"id\":"+std::to_string(s.id)+",\"name\":"+quote(s.name)+",\"scope\":"+join(scope)+",\"off\":"+join(off)+",\"offWires\":"+join(offWires)+",\"parts\":"+join(sp)+",\"wires\":"+join(mixes)+",\"values\":"+join(values)+",\"controls\":"+join(sc)+'}');
         }
-        for(const auto& at:sceneParameters_)parameters.push_back("{\"node\":"+quote(keys.at(at.node))+",\"param\":"+std::to_string(at.param)+'}');
-        head="{\"format\":\"oscairn.performance\",\"version\":4,\"info\":";tail=",\"libraries\":"+join(named)+",\"transport\":{\"tempo\":"+numeric(tempo_.load())+",\"clockSource\":"+quote(clockSource_.load()==Transport::ClockSource::Internal?"internal":"midi")+"},\"audioInputs\":"+ports(graph.audioLayout.inputs)+",\"audioOutputs\":"+ports(graph.audioLayout.outputs)+",\"nodes\":"+join(nodes)+",\"wires\":"+join(wires)+",\"parts\":"+join(parts)+",\"mappings\":"+join(mappings)+",\"pads\":"+padsText(padMap_)+",\"scenes\":"+join(scenes)+",\"sceneParameters\":"+join(parameters)+",\"scene\":"+std::to_string(scene_)+",\"controls\":"+join(controls)+"}\n";
+        for(const auto& at:untouched_)if(keys.count(at.node))parameters.push_back("{\"node\":"+quote(keys.at(at.node))+",\"param\":"+std::to_string(at.param)+'}');
+        head="{\"format\":\"oscairn.performance\",\"version\":4,\"info\":";tail=",\"libraries\":"+join(named)+",\"transport\":{\"tempo\":"+numeric(tempo_.load())+",\"clockSource\":"+quote(clockSource_.load()==Transport::ClockSource::Internal?"internal":"midi")+"},\"audioInputs\":"+ports(graph.audioLayout.inputs)+",\"audioOutputs\":"+ports(graph.audioLayout.outputs)+",\"nodes\":"+join(nodes)+",\"wires\":"+join(wires)+",\"parts\":"+join(parts)+",\"mappings\":"+join(mappings)+",\"pads\":"+padsText(padMap_)+",\"scenes\":"+join(scenes)+",\"sceneUntouched\":"+join(parameters)+",\"scene\":"+std::to_string(scene_)+",\"controls\":"+join(controls)+"}\n";
     }
     info.hash=contentHash(head+tail,bundle.temporary.path/"nodes");
     const auto out=head+infoText()+tail;
@@ -224,7 +248,7 @@ Control::PerformanceInfo Session::writeDocument(const std::string& directory,Per
 void Session::loadPerformance(const std::string& directory) {
     if(directory.empty() || directory.find('\0')!=std::string::npos)bad("invalid directory");
     const auto root=fs::canonical(directory);validateTree(root);const auto doc=document(root);V d=doc.get();
-    fields(d,{"format","version","info","libraries","transport","audioInputs","audioOutputs","nodes","wires","parts","mappings","pads","scenes","sceneParameters","scene","controls"});
+    fields(d,{"format","version","info","libraries","transport","audioInputs","audioOutputs","nodes","wires","parts","mappings","pads","scenes","sceneUntouched","scene","controls"});
     const auto pads=padsFrom(field(d,"pads"));
     if(text(field(d,"format"))!="oscairn.performance" || integer(field(d,"version"))!=4)bad("unsupported format version");
     fields(field(d,"info"),{"id","name","description","tags","color","revision","parent","hash"});const auto info=readInfo(root/"performance.json","oscairn.performance");
@@ -347,26 +371,40 @@ void Session::loadPerformance(const std::string& directory) {
         }
     }
     uint32_t nextWire=1;for(auto& w:wires)w.id=nextWire++;
-    std::vector<Scene> scenes;std::vector<SceneParameter> sceneParameters;uint32_t nextScene=1;
+    std::vector<Scene> scenes;std::vector<SceneParameter> untouched;uint32_t nextScene=1;std::set<uint32_t> sceneIds;
     {
         auto parameterAt=[&](V v){SceneParameter at{node(field(v,"node")),integer(field(v,"param"))};
-            if(at.node==graphInput || at.node==graphOutput || !next->host(at.node).parameters().size())bad("invalid scene parameter");
+            if(at.node==graphInput || at.node==graphOutput)bad("invalid scene parameter");
             const auto& all=next->host(at.node).parameters();if(std::none_of(all.begin(),all.end(),[&](const auto& p){return p.id==at.param;}))bad("unknown scene parameter");return at;};
-        for(auto at:array(field(d,"sceneParameters"),4096)){fields(at,{"node","param"});const auto p=parameterAt(at);if(std::find(sceneParameters.begin(),sceneParameters.end(),p)!=sceneParameters.end())bad("duplicate scene parameter");sceneParameters.push_back(p);}
-        std::set<uint32_t> sceneIds;
+        for(auto at:array(field(d,"sceneUntouched"),65536)){fields(at,{"node","param"});const auto p=parameterAt(at);if(std::find(untouched.begin(),untouched.end(),p)!=untouched.end())bad("duplicate untouched parameter");untouched.push_back(p);}
         for(auto s:array(field(d,"scenes"),256)){
-            fields(s,{"id","name","parts","values","controls"});Scene scene;scene.id=integer(field(s,"id"));scene.name=text(field(s,"name"));
+            fields(s,{"id","name","scope","off","offWires","parts","wires","values","controls"});Scene scene;scene.id=integer(field(s,"id"));scene.name=text(field(s,"name"));
             if(!scene.id || !sceneIds.insert(scene.id).second)bad("invalid or duplicate scene");
-            for(auto p:array(field(s,"parts"),256)){fields(p,{"part","level","mute"});Scene::PartState st{integer(field(p,"part")),number(field(p,"level")),boolean(field(p,"mute"))};
-                if(st.level<0 || std::none_of(parts.begin(),parts.end(),[&](const Part& x){return x.id==st.part;}))bad("invalid scene part");scene.parts.push_back(st);}
-            for(auto v:array(field(s,"values"),4096)){fields(v,{"node","param","value"});Scene::Value value{parameterAt(v),number(field(v,"value"))};
-                if(std::find(sceneParameters.begin(),sceneParameters.end(),value.at)==sceneParameters.end())bad("a scene value for a parameter scenes do not control");scene.values.push_back(value);}
+            scene.scope=sceneScope(field(s,"scope"));
+            for(auto n:array(field(s,"off"),256))scene.off.push_back(node(n));
+            for(auto r:array(field(s,"offWires"),Graph::maxAudioConnections)){fields(r,{"kind","part","from","to","fromPort","toPort","send","split","lane","fader"});scene.offWires.push_back(wireRef(r,node));}
+            for(auto p:array(field(s,"parts"),256)){
+                fields(p,{"part","level","pan","mute","solo","sends","lanes"});
+                Scene::PartState st{integer(field(p,"part")),number(field(p,"level")),number(field(p,"pan")),boolean(field(p,"mute")),boolean(field(p,"solo")),{},{}};
+                if(st.level<0 || st.pan<-1 || st.pan>1 || std::none_of(parts.begin(),parts.end(),[&](const Part& x){return x.id==st.part;}))bad("invalid scene part");
+                for(auto x:array(field(p,"sends"),256)){fields(x,{"bus","level"});st.sends.push_back({integer(field(x,"bus")),number(field(x,"level"))});if(st.sends.back().level<0)bad("invalid scene send");}
+                for(auto l:array(field(p,"lanes"),4096)){fields(l,{"split","lane","level","pan","mute","solo"});
+                    Scene::LaneState lane{integer(field(l,"split")),integer(field(l,"lane")),number(field(l,"level")),number(field(l,"pan")),boolean(field(l,"mute")),boolean(field(l,"solo"))};
+                    if(lane.level<0 || lane.pan<-1 || lane.pan>1)bad("invalid scene lane");st.lanes.push_back(lane);}
+                scene.parts.push_back(std::move(st));}
+            for(auto w:array(field(s,"wires"),Graph::maxAudioConnections)){
+                fields(w,{"kind","part","from","to","fromPort","toPort","send","split","lane","fader","level","pan","mute","solo"});
+                Scene::WireMix m{wireRef(w,node),number(field(w,"level")),number(field(w,"pan")),boolean(field(w,"mute")),boolean(field(w,"solo"))};
+                if(m.level<0 || m.pan<-1 || m.pan>1)bad("invalid scene wire");scene.wires.push_back(m);}
+            for(auto v:array(field(s,"values"),65536)){fields(v,{"node","param","value"});scene.values.push_back({parameterAt(v),number(field(v,"value"))});}
             for(auto c:array(field(s,"controls"),4096)){fields(c,{"control","value"});const auto v=number(field(c,"value"));if(v<0 || v>1)bad("invalid scene control value");scene.macros.push_back({integer(field(c,"control")),v});}
             nextScene=std::max(nextScene,scene.id+1);scenes.push_back(std::move(scene));
         }
         const auto selected=integer(field(d,"scene"));if(selected && !sceneIds.count(selected))bad("unknown selected scene");
     }
     const auto selectedScene=integer(field(d,"scene"));
+    uint32_t mappingScene=0; // the mappings off in the selected scene are off, when it sets them
+    for(const auto& s:scenes)if(s.id==selectedScene && (s.scope&Scene::Mappings))mappingScene=s.id;
     std::vector<Macro> macros;uint32_t nextMacro=1;
     {
         std::set<uint32_t> macroIds;
@@ -378,16 +416,17 @@ void Session::loadPerformance(const std::string& directory) {
             if(macro.value<0 || macro.value>1)bad("invalid control value");
             for(auto t:array(field(m,"targets"),256)){
                 MacroTarget target;const auto kind=text(field(t,"kind")),curve=text(field(t,"curve"));
-                if(kind=="parameter"){fields(t,{"kind","node","param","start","end","curve","relative","base"});target.kind=MacroTarget::Kind::Parameter;target.node=node(field(t,"node"));target.param=integer(field(t,"param"));
+                if(kind=="parameter"){fields(t,{"kind","node","param","start","end","curve","relative","base","offIn"});target.kind=MacroTarget::Kind::Parameter;target.node=node(field(t,"node"));target.param=integer(field(t,"param"));
                     if(target.node==graphInput || target.node==graphOutput)bad("invalid control target");const auto& all=next->host(target.node).parameters();
                     if(std::none_of(all.begin(),all.end(),[&](const auto& p){return p.id==target.param;}))bad("unknown control target parameter");}
-                else if(kind=="partLevel" || kind=="partMute"){fields(t,{"kind","part","start","end","curve","relative","base"});target.kind=kind=="partLevel"?MacroTarget::Kind::PartLevel:MacroTarget::Kind::PartMute;target.part=integer(field(t,"part"));
+                else if(kind=="partLevel" || kind=="partMute"){fields(t,{"kind","part","start","end","curve","relative","base","offIn"});target.kind=kind=="partLevel"?MacroTarget::Kind::PartLevel:MacroTarget::Kind::PartMute;target.part=integer(field(t,"part"));
                     if(std::none_of(parts.begin(),parts.end(),[&](const Part& p){return p.id==target.part;}))bad("control target of an unknown part");}
-                else if(kind=="control"){fields(t,{"kind","control","start","end","curve","relative","base"});target.kind=MacroTarget::Kind::Macro;target.macro=integer(field(t,"control"));
+                else if(kind=="control"){fields(t,{"kind","control","start","end","curve","relative","base","offIn"});target.kind=MacroTarget::Kind::Macro;target.macro=integer(field(t,"control"));
                     if(!macroIds.count(target.macro))bad("control target of an unknown control");}
                 else bad("invalid control target kind");
                 target.curve=curve=="linear"?MacroTarget::Curve::Linear:curve=="exponential"?MacroTarget::Curve::Exponential:curve=="logarithmic"?MacroTarget::Curve::Logarithmic:curve=="s-curve"?MacroTarget::Curve::SCurve:(bad("invalid curve"),MacroTarget::Curve::Linear);
                 target.start=number(field(t,"start"));target.end=number(field(t,"end"));target.relative=boolean(field(t,"relative"));target.base=number(field(t,"base"));
+                for(auto id:array(field(t,"offIn"),256)){target.offIn.push_back(integer(id));if(!sceneIds.count(target.offIn.back()))bad("a mapping off in an unknown scene");}
                 if(target.start<0 || target.start>1 || target.end<0 || target.end>1 || target.base<0 || target.base>1)bad("invalid control target range");
                 macro.targets.push_back(target);
             }
@@ -417,7 +456,7 @@ void Session::loadPerformance(const std::string& directory) {
     if(history.size()==historyCapacity)history.pop_front();
     history.push_back({sequence_+1,ChangeKind::Resync,0,0,0,false});
     graph_.publishReplacement(*next,noteHead_.load(std::memory_order_acquire),[&]() noexcept {
-        nodes_.swap(names);observed_.swap(observed);parts_.swap(parts);wires_.swap(wires);disabled_.swap(disabled);rungOut_.swap(rungOut);nextPart_=nextPart;nextWire_=nextWire;padMap_=pads;heldPads_={};scenes_.swap(scenes);sceneParameters_.swap(sceneParameters);scene_=selectedScene;nextScene_=nextScene;macros_.swap(macros);nextMacro_=nextMacro;pending_.clear();commandCount_=0;outputDrops_.clear();staged_=false;
+        nodes_.swap(names);observed_.swap(observed);parts_.swap(parts);wires_.swap(wires);disabled_.swap(disabled);rungOut_.swap(rungOut);nextPart_=nextPart;nextWire_=nextWire;padMap_=pads;heldPads_={};scenes_.swap(scenes);untouched_.swap(untouched);scene_=selectedScene;mappingScene_=mappingScene;nextScene_=nextScene;macros_.swap(macros);nextMacro_=nextMacro;pending_.clear();commandCount_=0;outputDrops_.clear();staged_=false;
         tempo_.store(tempo);clockSource_.store(clock=="internal"?Transport::ClockSource::Internal:Transport::ClockSource::MidiClock);playing_.store(false);
         ++revision_;++sequence_;history_.swap(history);
     });
@@ -559,10 +598,13 @@ std::vector<std::string> Session::loadSoundInto(uint32_t partId,const fs::path& 
         }catch(...){parts_.swap(partsBefore);wires_.swap(wiresBefore);syncWires();flagged.clear();throw;}
         for(const auto n:old)dropNode(n);
         for(const auto& m:mappings)graph_.mapParamTarget(m.source,m.lane,m.target,m.param);
-        // Scene values and scene parameters on the old nodes go.
-        for(auto& scene:scenes_)std::erase_if(scene.values,[&](const Scene::Value& v){return old.count(v.at.node)!=0;});
-        const auto parameters=std::erase_if(sceneParameters_,[&](const SceneParameter& at){return old.count(at.node)!=0;});
-        if(parameters)flagged.push_back(std::to_string(parameters)+" scene parameter"+(parameters==1?"":"s")+" on the old plugins removed");
+        // What scenes hold of the old nodes goes.
+        for(auto& scene:scenes_){
+            auto gone=[&](const WireRef& r){return old.count(r.from) || old.count(r.to);};
+            std::erase_if(scene.values,[&](const Scene::Value& v){return old.count(v.at.node)!=0;});
+            std::erase_if(scene.off,[&](NodeId n){return old.count(n)!=0;});
+            std::erase_if(scene.offWires,gone);std::erase_if(scene.wires,[&](const Scene::WireMix& m){return gone(m.wire);});}
+        std::erase_if(untouched_,[&](const SceneParameter& at){return old.count(at.node)!=0;});
         std::map<uint32_t,std::string> leaving;for(const auto& m:macros_)if(oldControls.count(m.id))leaving[m.id]=m.name;
         std::erase_if(macros_,[&](const Macro& m){return oldControls.count(m.id)!=0;});
         for(auto& m:macros_){
@@ -669,7 +711,7 @@ Control::Imported Session::importPerformance(const std::string& directory,const 
     record(); // an edit waiting for its step comes first: the import is a step of its own
     if(directory.empty() || directory.find('\0')!=std::string::npos)bad("invalid directory");
     const auto root=fs::canonical(directory);validateTree(root);const auto doc=document(root);V d=doc.get();
-    fields(d,{"format","version","info","libraries","transport","audioInputs","audioOutputs","nodes","wires","parts","mappings","pads","scenes","sceneParameters","scene","controls"});
+    fields(d,{"format","version","info","libraries","transport","audioInputs","audioOutputs","nodes","wires","parts","mappings","pads","scenes","sceneUntouched","scene","controls"});
     if(text(field(d,"format"))!="oscairn.performance" || integer(field(d,"version"))!=4)bad("unsupported format version");
     fields(field(d,"info"),{"id","name","description","tags","color","revision","parent","hash"});
     // The parts that come: those chosen, and the buses they play through or send to, and theirs.
@@ -701,8 +743,8 @@ Control::Imported Session::importPerformance(const std::string& directory,const 
     ids.emplace("input",graphInput);ids.emplace("output",graphOutput);
     Imported result;auto& notes=result.notes;
     std::vector<Part> parts;std::vector<Wire> users,mixes;std::vector<Graph::Mapping> mappings;std::vector<Macro> macros;
-    std::vector<SceneParameter> sceneParameters;std::vector<Scene> scenes;
-    std::map<uint32_t,uint32_t> partIds,controlIds;
+    std::vector<SceneParameter> untouched;std::vector<Scene> scenes;
+    std::map<uint32_t,uint32_t> partIds,controlIds,sceneIds; // the file's IDs to this Performance's
     try{
         auto has=[&](V v){return ids.count(text(v))!=0;};
         auto node=[&](V v){const auto key=text(v);const auto it=ids.find(key);if(it==ids.end())bad("unknown node reference "+key);return it->second;};
@@ -711,6 +753,13 @@ Control::Imported Session::importPerformance(const std::string& directory,const 
         auto onPort=[](const auto& list,uint32_t id){return std::any_of(list.begin(),list.end(),[&](const auto& x){return x.id==id;});};
         uint32_t nextId=nextPart_;
         for(auto p:partList)if(taking.count(integer(field(p,"id"))))partIds[integer(field(p,"id"))]=nextId++;
+        const auto sceneList=array(field(d,"scenes"),256);
+        {
+            std::set<uint32_t> inFile;for(auto s:sceneList)inFile.insert(integer(field(s,"id")));
+            for(const auto id:chosenScenes)if(!inFile.count(id))bad("no scene "+std::to_string(id)+" in that Performance");
+            uint32_t nextScene=nextScene_;
+            for(auto s:sceneList){const auto id=integer(field(s,"id"));if(whole || std::find(chosenScenes.begin(),chosenScenes.end(),id)!=chosenScenes.end())sceneIds[id]=nextScene++;}
+        }
         std::function<std::vector<NodeId>(V)> chain=[&](V list){std::vector<NodeId> out;for(auto n:array(list,256)){
             if(n->type==json_type_object){fields(n,{"split"});const auto x=integer(field(n,"split"));if(!x || x>=splitMark)bad("invalid split entry");out.push_back(splitMark|x);}
             else out.push_back(node(n));}return out;};
@@ -800,6 +849,7 @@ Control::Imported Session::importPerformance(const std::string& directory,const 
                 else bad("invalid control target kind");
                 target.curve=curve=="linear"?MacroTarget::Curve::Linear:curve=="exponential"?MacroTarget::Curve::Exponential:curve=="logarithmic"?MacroTarget::Curve::Logarithmic:curve=="s-curve"?MacroTarget::Curve::SCurve:(bad("invalid curve"),MacroTarget::Curve::Linear);
                 target.start=number(field(t,"start"));target.end=number(field(t,"end"));target.relative=boolean(field(t,"relative"));target.base=number(field(t,"base"));
+                for(auto id:array(field(t,"offIn"),256))if(const auto it=sceneIds.find(integer(id));it!=sceneIds.end())target.offIn.push_back(it->second);
                 macro.targets.push_back(target);
             }
             macros.push_back(std::move(macro));
@@ -807,20 +857,31 @@ Control::Imported Session::importPerformance(const std::string& directory,const 
         // Scenes: all with all of it, else those chosen, each under a name free here, holding
         // only what comes.
         {
-            const auto sceneList=array(field(d,"scenes"),256);
-            std::set<uint32_t> sceneIds;for(auto s:sceneList)sceneIds.insert(integer(field(s,"id")));
-            for(const auto id:chosenScenes)if(!sceneIds.count(id))bad("no scene "+std::to_string(id)+" in that Performance");
-            auto sceneComes=[&](V s){return whole || std::find(chosenScenes.begin(),chosenScenes.end(),integer(field(s,"id")))!=chosenScenes.end();};
-            const bool anyScene=std::any_of(sceneList.begin(),sceneList.end(),sceneComes);
-            if(anyScene)for(auto at:array(field(d,"sceneParameters"),4096)){fields(at,{"node","param"});if(!has(field(at,"node")))continue;SceneParameter x{node(field(at,"node")),integer(field(at,"param"))};parameterOf(x.node,x.param);sceneParameters.push_back(x);}
+            if(!sceneIds.empty())for(auto at:array(field(d,"sceneUntouched"),65536)){fields(at,{"node","param"});if(!has(field(at,"node")))continue;SceneParameter x{node(field(at,"node")),integer(field(at,"param"))};parameterOf(x.node,x.param);untouched.push_back(x);}
             auto takenScene=[&](const std::string& n){return std::any_of(scenes_.begin(),scenes_.end(),[&](const Scene& x){return x.name==n;}) || std::any_of(scenes.begin(),scenes.end(),[&](const Scene& x){return x.name==n;});};
+            // A wire whose ends and part come; its part numbered here.
+            auto ref=[&](V r)->std::optional<WireRef>{
+                if(!has(field(r,"from")) || !has(field(r,"to")))return std::nullopt;
+                auto x=wireRef(r,node);
+                if(x.part){const auto it=partIds.find(x.part);if(it==partIds.end())return std::nullopt;x.part=it->second;}
+                if(x.send){const auto it=partIds.find(x.send);if(it==partIds.end())return std::nullopt;x.send=it->second;}
+                return x;};
             for(auto s:sceneList){
-                if(!sceneComes(s))continue;
-                fields(s,{"id","name","parts","values","controls"});Scene scene;
+                const auto fileId=integer(field(s,"id"));if(!sceneIds.count(fileId))continue;
+                fields(s,{"id","name","scope","off","offWires","parts","wires","values","controls"});Scene scene;scene.id=sceneIds.at(fileId);
                 const auto name=text(field(s,"name"));scene.name=nextFree(name,takenScene);
                 if(scene.name!=name)notes.push_back("the scene "+name+" is "+scene.name+" here");
-                for(auto p:array(field(s,"parts"),256)){fields(p,{"part","level","mute"});const auto it=partIds.find(integer(field(p,"part")));if(it!=partIds.end())scene.parts.push_back({it->second,number(field(p,"level")),boolean(field(p,"mute"))});}
-                for(auto v:array(field(s,"values"),4096)){fields(v,{"node","param","value"});if(has(field(v,"node")))scene.values.push_back({{node(field(v,"node")),integer(field(v,"param"))},number(field(v,"value"))});}
+                scene.scope=sceneScope(field(s,"scope"));
+                for(auto n:array(field(s,"off"),256))if(has(n))scene.off.push_back(node(n));
+                for(auto r:array(field(s,"offWires"),Graph::maxAudioConnections))if(const auto x=ref(r))scene.offWires.push_back(*x);
+                for(auto p:array(field(s,"parts"),256)){
+                    const auto it=partIds.find(integer(field(p,"part")));if(it==partIds.end())continue;
+                    Scene::PartState st{it->second,number(field(p,"level")),number(field(p,"pan")),boolean(field(p,"mute")),boolean(field(p,"solo")),{},{}};
+                    for(auto x:array(field(p,"sends"),256))if(const auto bus=partIds.find(integer(field(x,"bus")));bus!=partIds.end())st.sends.push_back({bus->second,number(field(x,"level"))});
+                    for(auto l:array(field(p,"lanes"),4096))st.lanes.push_back({integer(field(l,"split")),integer(field(l,"lane")),number(field(l,"level")),number(field(l,"pan")),boolean(field(l,"mute")),boolean(field(l,"solo"))});
+                    scene.parts.push_back(std::move(st));}
+                for(auto w:array(field(s,"wires"),Graph::maxAudioConnections))if(const auto x=ref(w))scene.wires.push_back({*x,number(field(w,"level")),number(field(w,"pan")),boolean(field(w,"mute")),boolean(field(w,"solo"))});
+                for(auto v:array(field(s,"values"),65536)){fields(v,{"node","param","value"});if(has(field(v,"node")))scene.values.push_back({{node(field(v,"node")),integer(field(v,"param"))},number(field(v,"value"))});}
                 for(auto c:array(field(s,"controls"),4096)){fields(c,{"control","value"});const auto it=controlIds.find(integer(field(c,"control")));if(it!=controlIds.end())scene.macros.push_back({it->second,number(field(c,"value"))});}
                 scenes.push_back(std::move(scene));
             }
@@ -847,22 +908,27 @@ Control::Imported Session::importPerformance(const std::string& directory,const 
     for(const auto& p:parts){nextPart_=std::max(nextPart_,p.id+1);result.parts.push_back(p.id);}
     for(const auto& m:mappings)graph_.mapParamTarget(m.source,m.lane,m.target,m.param);
     for(const auto& m:macros)nextMacro_=std::max(nextMacro_,m.id+1);
-    // This Performance's scenes keep the arriving parts and scene parameters as they arrive.
-    for(auto& scene:scenes_){
-        for(const auto& p:parts)scene.parts.push_back({p.id,p.level,p.mute});
-        for(const auto& at:sceneParameters)scene.values.push_back({at,parameter(at.node,at.param)});
-        for(const auto& m:macros)scene.macros.push_back({m.id,m.value});
-    }
     macros_.insert(macros_.end(),macros.begin(),macros.end());
-    // Its scenes keep this Performance's parts, parameters and controls as they are now.
-    for(auto& scene:scenes){
-        scene.id=nextScene_++;
+    untouched_.insert(untouched_.end(),untouched.begin(),untouched.end());
+    // This Performance's scenes keep what arrives as it arrives; the arriving scenes keep what was
+    // here as it is now.
+    {
         Scene now;capture(now);
-        for(const auto& st:now.parts)if(std::none_of(scene.parts.begin(),scene.parts.end(),[&](const auto& x){return x.part==st.part;}))scene.parts.push_back(st);
-        for(const auto& v:now.values)if(std::none_of(scene.values.begin(),scene.values.end(),[&](const auto& x){return x.at==v.at;}))scene.values.push_back(v);
-        for(const auto& v:now.macros)if(std::none_of(scene.macros.begin(),scene.macros.end(),[&](const auto& x){return x.first==v.first;}))scene.macros.push_back(v);
+        const std::set<NodeId> arriving(added.begin(),added.end());
+        std::set<uint32_t> newParts,newControls;for(const auto& p:parts)newParts.insert(p.id);for(const auto& m:macros)newControls.insert(m.id);
+        auto comes=[&](const WireRef& r){return arriving.count(r.from) || arriving.count(r.to) || newParts.count(r.part);};
+        auto fill=[&](Scene& scene,bool takeArriving){
+            for(const auto n:now.off)if(arriving.count(n)==takeArriving)scene.off.push_back(n);
+            for(const auto& r:now.offWires)if(comes(r)==takeArriving)scene.offWires.push_back(r);
+            for(const auto& st:now.parts)if(newParts.count(st.part)==takeArriving && std::none_of(scene.parts.begin(),scene.parts.end(),[&](const auto& x){return x.part==st.part;}))scene.parts.push_back(st);
+            for(const auto& m:now.wires)if(comes(m.wire)==takeArriving && std::none_of(scene.wires.begin(),scene.wires.end(),[&](const auto& x){return x.wire==m.wire;}))scene.wires.push_back(m);
+            for(const auto& v:now.values)if(arriving.count(v.at.node)==takeArriving && std::none_of(scene.values.begin(),scene.values.end(),[&](const auto& x){return x.at==v.at;}))scene.values.push_back(v);
+            for(const auto& v:now.macros)if(newControls.count(v.first)==takeArriving && std::none_of(scene.macros.begin(),scene.macros.end(),[&](const auto& x){return x.first==v.first;}))scene.macros.push_back(v);
+        };
+        for(auto& scene:scenes_)fill(scene,true);
+        for(auto& scene:scenes)fill(scene,false);
     }
-    sceneParameters_.insert(sceneParameters_.end(),sceneParameters.begin(),sceneParameters.end());
+    for(const auto& s:scenes)nextScene_=std::max(nextScene_,s.id+1);
     scenes_.insert(scenes_.end(),scenes.begin(),scenes.end());
     commit(); // one step to undo
     return result;

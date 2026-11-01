@@ -77,7 +77,7 @@ namespace oscairn
             std::vector<Part> parts; // RFC 0011: the part views' model, staged with the graph
             std::vector<Wire> wires;
             std::vector<Scene> scenes;
-            std::vector<SceneParameter> sceneParameters;
+            std::vector<SceneParameter> untouched; // the parameters scenes never touch
             uint32_t scene = 0; // the scene last selected or stored, or 0
             std::vector<Macro> macros;
             std::set<NodeId> disabled; // plugins switched off (setNodeEnabled)
@@ -230,15 +230,17 @@ namespace oscairn
         virtual void setMix( uint32_t wire, double level, double pan, bool mute, bool solo ) = 0;
         virtual void setZones( uint32_t wire, const std::vector<NoteZone>& zones ) = 0; // a note wire's zones
 
-        // Scenes (parts.h). Adding or storing captures the current part levels and mutes and the
-        // scene parameters' values; selecting applies them at once and commits.
+        // Scenes (parts.h). Adding or storing captures all of it as it is now; selecting applies the
+        // kinds in the scene's scope at once and commits, plugins switched off ringing out.
         virtual uint32_t addScene( const std::string& name ) = 0;
         virtual void storeScene( uint32_t scene ) = 0;
         virtual void selectScene( uint32_t scene ) = 0;
         virtual void removeScene( uint32_t scene ) = 0;
         virtual void setSceneName( uint32_t scene, const std::string& name ) = 0;
-        // Which parameters scenes control. A parameter added takes its current value in every scene.
-        virtual void setSceneParameters( const std::vector<SceneParameter>& parameters ) = 0;
+        virtual void setSceneScope( uint32_t scene, uint32_t scope ) = 0; // Scene::Kind bits
+        // The plugin parameters scenes never touch (a sample's tuning, a level set by ear); scenes
+        // touch every other automatable one. One taken back gets its current value in every scene.
+        virtual void setSceneUntouched( const std::vector<SceneParameter>& parameters ) = 0;
 
         // The control tree (parts.h). Setting a control's value sets its targets, and their
         // targets in turn; an assignment that would loop is refused.

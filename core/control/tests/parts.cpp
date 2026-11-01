@@ -631,15 +631,15 @@ namespace
         const auto pa = s.addPart("A"), pb = s.addPart("B");
         s.insertIntoPart(pa, 0, a); s.insertIntoPart(pb, 0, b); s.commit();
         Audio x; x.run(s);
-        s.setSceneParameters({{b, 7}});
         const auto verse = s.addScene("Verse"); // A .25, B .5
         s.setPartLevel(pa, .5, false); s.setPartLevel(pb, 1, true); s.setParameter(b, 7, .75); s.commit(); x.run(s);
         const auto chorus = s.addScene("Chorus"); // A at half, B muted with gain .75
         check(s.graphState().scenes.size() == 2 && s.graphState().scene == chorus, "two scenes, the last stored selected");
+        check(s.graphState().scenes[0].scope == Scene::Everything, "a scene applies everything by default");
         s.note(true, 60, 1); x.run(s);
         check(near(x.l[0], .125), "chorus: A at half, B muted: " + std::to_string(x.l[0]));
         s.selectScene(verse); x.run(s);
-        check(near(x.l[0], .75), "verse: both at full, B's gain back to .5: " + std::to_string(x.l[0]));
+        check(near(x.l[0], .75), "verse: both at full, B's gain back to .5 (every automatable parameter): " + std::to_string(x.l[0]));
         // Switching back and forth while the note is held never goes silent.
         bool gap = false;
         for(int i = 0; i < 6; ++i) { s.selectScene(i % 2 ? verse : chorus); for(int k = 0; k < 3; ++k) { x.run(s); gap = gap || x.l[0] <= 0; } }
@@ -647,25 +647,75 @@ namespace
         s.selectScene(chorus); x.run(s);
         s.setPartLevel(pb, 1, false); s.commit(); x.run(s);
         check(near(x.l[0], .125 + .75), "B unmuted with the chorus gain: " + std::to_string(x.l[0]));
-        // Scene parameters: removing one drops its values; adding one takes the current value in every scene.
-        s.setSceneParameters({});
-        check(s.graphState().scenes[0].values.empty(), "values dropped with their parameter");
-        s.setSceneParameters({{a, 7}});
-        check(s.graphState().scenes[0].values.size() == 1 && s.graphState().scenes[1].values[0].value == .25, "a new scene parameter takes its current value in every scene");
-        bool refused = false; try { s.setSceneParameters({{a, 7}, {a, 7}}); } catch(const std::invalid_argument&) { refused = true; }
+        // A parameter set aside: no scene touches it; taken back, it gets its current value in every scene.
+        s.setSceneUntouched({{b, 7}});
+        s.selectScene(verse); x.run(s);
+        check(near(s.parameter(b, 7), .75) && near(x.l[0], .25 + .75), "B's gain left alone by the verse: " + std::to_string(x.l[0]));
+        s.setSceneUntouched({});
+        for(const auto& sc : s.graphState().scenes)
+            check(std::any_of(sc.values.begin(), sc.values.end(), [&](const Scene::Value& v) { return v.at == SceneParameter{b, 7} && near(v.value, .75); }), "taken back at its current value in " + sc.name);
+        bool refused = false; try { s.setSceneUntouched({{a, 7}, {a, 7}}); } catch(const std::invalid_argument&) { refused = true; }
         check(refused, "a parameter listed twice is refused");
+        // Scope: a chorus that only mutes leaves levels and parameters as they are.
+        s.selectScene(verse); s.setParameter(b, 7, .5); s.storeScene(verse);
+        s.setSceneScope(chorus, Scene::Mutes);
+        s.selectScene(chorus); x.run(s);
+        check(near(x.l[0], .25), "the chorus mutes B, A stays at full: " + std::to_string(x.l[0]));
+        refused = false; try { s.setSceneScope(chorus, 64); } catch(const std::invalid_argument&) { refused = true; }
+        check(refused, "an unknown kind is refused");
+        s.setSceneScope(chorus, Scene::Everything);
+        // A full pending store does not stop a scene: its values wait their turn.
+        s.setParameter(a, 7, .1); x.run(s); x.run(s); // a's gain away from the chorus's .25
+        size_t queued = 0;
+        while(s.parameterGesture(b, 7, queued % 2 == 0)) ++queued;
+        check(queued == Session::commandCapacity, "the pending store filled: " + std::to_string(queued));
+        s.selectScene(chorus);
+        for(int i = 0; i < 400; ++i) x.run(s);
+        check(near(s.parameter(a, 7), .25) && near(x.l[0], .125), "the chorus's values applied past a full store: " + std::to_string(s.parameter(a, 7)) + " " + std::to_string(x.l[0]));
         s.setSceneName(verse, "Intro"); check(s.graphState().scenes[0].name == "Intro", "renamed");
-        // Saved and loaded with the Performance.
         s.note(false, 60, 0); x.run(s);
-        s.savePerformance((root / "scenes").string());
-        Session t(48000, frames);
-        t.loadPerformance((root / "scenes").string());
-        const auto g = t.graphState();
-        check(g.scenes.size() == 2 && g.scenes[0].name == "Intro" && g.scenes[1].parts.size() == 2 && g.scenes[1].parts[1].mute && g.scene == chorus && g.sceneParameters.size() == 1,
-              "scenes round-trip with the Performance");
-        t.selectScene(verse); t.note(true, 60, 1); Audio y; y.run(t); y.run(t);
-        check(near(y.l[0], .25 + .75), "the loaded verse plays: " + std::to_string(y.l[0]));
         s.removeScene(chorus); check(s.graphState().scenes.size() == 1 && s.graphState().scene == 0, "removing the selected scene");
+    }
+
+    // Scenes switch plugins off and on, ringing out; mappings are off in the scenes they are off
+    // in; all of it is saved.
+    void sceneSwitching(const char* fixture, const fs::path& root)
+    {
+        Session s(48000, frames);
+        const auto a = s.add("a", fixture, "org.kick.test.synth"), b = s.add("b", fixture, "org.kick.test.synth");
+        s.setParameter(a, 7, .25); s.setParameter(b, 7, .5);
+        const auto pa = s.addPart("A"), pb = s.addPart("B");
+        s.insertIntoPart(pa, 0, a); s.insertIntoPart(pb, 0, b);
+        s.setNodeEnabled(b, false); s.commit();
+        const auto verse = s.addScene("Verse"); // a on, b off
+        s.setNodeEnabled(a, false); s.setNodeEnabled(b, true); s.commit();
+        const auto chorus = s.addScene("Chorus"); // a off, b on
+        const auto knob = s.addMacro("Knob");
+        MacroTarget t; t.node = a; t.param = 7; t.offIn = {chorus};
+        s.setMacroTargets(knob, {t});
+        Audio x;
+        s.selectScene(verse); s.note(true, 60, 1); x.run(s); x.run(s);
+        check(near(x.l[0], .25), "the verse plays a: " + std::to_string(x.l[0]));
+        s.selectScene(chorus); x.run(s);
+        check(near(x.l[0], .25) && s.graphState().ringing.count(a), "into the chorus, a's held note plays on: " + std::to_string(x.l[0]));
+        s.note(false, 60, 0); x.run(s); s.note(true, 62, 1); x.run(s); x.run(s);
+        check(near(x.l[0], .5), "a new note in the chorus plays b alone: " + std::to_string(x.l[0]));
+        s.setMacro(knob, 1);
+        check(near(s.parameter(a, 7), .25), "the knob's mapping is off in the chorus");
+        s.selectScene(verse); s.setMacro(knob, 1);
+        check(near(s.parameter(a, 7), 1), "and on in the verse");
+        s.note(false, 62, 0); x.run(s);
+        s.setSceneScope(chorus, Scene::Enabled | Scene::Mappings);
+        s.savePerformance((root / "scenes").string());
+        Session u(48000, frames);
+        u.loadPerformance((root / "scenes").string());
+        const auto g = u.graphState();
+        const auto& c = g.scenes[1];
+        check(g.scenes.size() == 2 && g.scenes[0].off.size() == 1 && c.off.size() == 1 && c.scope == (Scene::Enabled | Scene::Mappings) &&
+              g.macros.size() == 1 && g.macros[0].targets[0].offIn == std::vector<uint32_t>{chorus} && g.scene == verse,
+              "scenes round-trip with the Performance: what is off, the scope and the mappings' scenes");
+        u.selectScene(chorus); u.note(true, 60, 1); Audio y; y.run(u); y.run(u);
+        check(near(y.l[0], .5), "the loaded chorus plays b alone: " + std::to_string(y.l[0]));
     }
 
     // Switching plugins and wires off and on (RFC 0011's full scene model): an off plugin takes
@@ -886,6 +936,7 @@ int main(int argc, char** argv)
         noteLimits(argv[1], temp.path);
         buses(argv[1], argv[3]);
         scenes(argv[1], temp.path);
+        sceneSwitching(argv[1], temp.path);
         onOff(argv[1], temp.path);
         controls(argv[1], temp.path);
         persistence(argv[1], argv[2], argv[3], temp.path);

@@ -57,7 +57,7 @@ namespace oscairn::standalone
         std::vector<Control::SessionStatus::PluginFailure> failures_; // plugins that failed and are silent
         bool failed(NodeId node) const { return std::any_of(failures_.begin(), failures_.end(), [&](const auto& f) { return f.node == node; }); }
         std::vector<Scene> scenes_;
-        std::vector<SceneParameter> sceneParameters_;
+        std::vector<SceneParameter> untouched_; // parameters scenes leave alone
         uint32_t scene_ = 0;
         std::vector<Macro> macros_;
         bool embedded_ = false;

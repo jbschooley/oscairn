@@ -215,11 +215,12 @@ When a Sound is loaded into a part:
 
 ### Scenes
 
-A scene stores each part's level and mute, the values of the scene parameters, and control
-values. Loading a Sound into a part:
+A scene stores all of RFC 0011's full model: plugins and wires off, each part's mute, solo and
+mix, parameter values and control values. Loading a Sound into a part:
 
-- keeps the part's level and mute in every scene, because the part stays;
-- removes scene parameters on nodes that left, and says so;
+- keeps the part's mute and mix in every scene, because the part stays;
+- removes what scenes hold of the nodes that left (values, plugins and wires off, user wires'
+  Mix rows), and the parameters set aside on them;
 - keeps scene values for Performance controls, and for part controls that kept their name.
 
 Whether a scene may choose a different Sound for a part is an open question.
@@ -299,8 +300,8 @@ Built 2026-10-31 (`performance.import`, Performance > Import Performance). A Per
 import another, all of it or chosen parts and scenes, adding them to the open one in one step
 to undo. A partial import takes at least one part and, when the Performance has scenes, at
 least one scene: the scene says how what comes is set (today its parts' levels and mutes,
-its scene parameters' values and its controls; with RFC 0011's full scene model, which
-wires and blocks are enabled).
+all it holds of what comes: plugins and wires off, mutes, the mix, parameter values,
+controls; mappings come with the scenes they are off in).
 
 - **Chosen parts bring what they need:** their plugins with their state, the buses they play
   through or send to (and those buses' own), the wires and note-to-parameter mappings among

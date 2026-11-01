@@ -180,6 +180,7 @@ namespace oscairn
         double start = 0, end = 1;
         bool relative = false;
         double base = 0;
+        std::vector<uint32_t> offIn; // the scenes this mapping is off in (RFC 0011); on in every other
         // What a control value does here, as a fraction of the target's range.
         double map(double value) const;
         bool operator==(const MacroTarget&) const = default;
@@ -188,21 +189,51 @@ namespace oscairn
     // its plugins and its other controls, and go with it into a Sound.
     struct Macro { uint32_t id = 0; std::string name; double value = 0; std::vector<MacroTarget> targets; uint32_t part = 0; };
 
-    // A scene: a state of the Performance for a section of a song. It records every part's level
-    // and mute, and a value for each scene parameter (the plugin parameters scenes control).
-    // Selecting one applies them without rebuilding anything, so held notes and tails go on.
-    struct SceneParameter { NodeId node = 0; uint32_t param = 0; bool operator==(const SceneParameter&) const = default; };
+    // A scene: a state of the Performance for a section of a song (RFC 0011's full model). Storing
+    // one records all of it: which plugins and wires are off, each part's mute and solo, the mix
+    // (each part's level, pan and sends, each lane's Mix, each user wire's Mix row), every plugin
+    // parameter scenes touch with the controls' values, and, on the mappings themselves
+    // (MacroTarget::offIn), which are off in it. Selecting one applies the kinds in its scope and
+    // leaves the rest as they are; nothing is rebuilt that is playing, so held notes and tails go on.
+    struct SceneParameter { NodeId node = 0; uint32_t param = 0; bool operator==(const SceneParameter&) const = default; auto operator<=>(const SceneParameter&) const = default; };
+    // A wire by what it joins and, for a part's wire, its place in the part: part wires are rebuilt
+    // under new IDs as their part changes.
+    struct WireRef
+    {
+        WireKind kind = WireKind::Audio;
+        uint32_t part = 0; // 0: a user wire
+        NodeId from = 0, to = 0;
+        uint32_t fromPort = 0, toPort = 0, send = 0, split = 0, lane = 0;
+        bool fader = false;
+        static WireRef of(const Wire& w) { return {w.kind, w.owner == WireOwner::Part ? w.part : 0, w.from, w.to, w.fromPort, w.toPort, w.send, w.split, w.lane, w.fader}; }
+        bool operator==(const WireRef&) const = default;
+    };
     struct Scene
     {
-        struct PartState { uint32_t part = 0; double level = 1; bool mute = false; bool operator==(const PartState&) const = default; };
+        enum Kind : uint32_t { Enabled = 1, Mutes = 2, Mix = 4, Parameters = 8, Mappings = 16, Everything = 31 };
+        struct LaneState { uint32_t split = 0, lane = 0; double level = 1, pan = 0; bool mute = false, solo = false; bool operator==(const LaneState&) const = default; };
+        struct PartState
+        {
+            uint32_t part = 0;
+            double level = 1, pan = 0; bool mute = false, solo = false;
+            std::vector<Send> sends;
+            std::vector<LaneState> lanes;
+            bool operator==(const PartState&) const = default;
+        };
+        struct WireMix { WireRef wire; double level = 1, pan = 0; bool mute = false, solo = false; bool operator==(const WireMix&) const = default; };
         struct Value { SceneParameter at; double value = 0; bool operator==(const Value&) const = default; };
         uint32_t id = 0;
         std::string name;
-        std::vector<PartState> parts;
-        std::vector<Value> values;
-        std::vector<std::pair<uint32_t, double>> macros; // each control's value
+        uint32_t scope = Everything;     // the kinds selecting it applies
+        std::vector<NodeId> off;         // Enabled: the plugins off
+        std::vector<WireRef> offWires;   // Enabled: the wires off
+        std::vector<PartState> parts;    // Mutes (mute, solo) and Mix (the rest)
+        std::vector<WireMix> wires;      // Mix: user wires' Mix rows
+        std::vector<Value> values;       // Parameters
+        std::vector<std::pair<uint32_t, double>> macros; // Parameters: each control's value
         bool operator==(const Scene&) const = default;
     };
+    inline constexpr std::array<const char*, 5> sceneKinds{"enabled", "mutes", "mix", "parameters", "mappings"}; // the scope's names, bit by bit
 
     // What removing a node does with the user wires on it.
     enum class UserWires { Remove, Reconnect }; // Reconnect joins its user sources to its user destinations

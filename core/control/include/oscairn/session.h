@@ -122,7 +122,8 @@ namespace oscairn
         void selectScene(uint32_t scene) override;
         void removeScene(uint32_t scene) override;
         void setSceneName(uint32_t scene, const std::string& name) override;
-        void setSceneParameters(const std::vector<SceneParameter>& parameters) override;
+        void setSceneUntouched(const std::vector<SceneParameter>& parameters) override;
+        void setSceneScope(uint32_t scene, uint32_t scope) override;
         uint32_t addMacro(const std::string& name, uint32_t part = 0) override;
         void removeMacro(uint32_t macro) override;
         void setMacroName(uint32_t macro, const std::string& name) override;
@@ -214,7 +215,7 @@ namespace oscairn
             std::vector<Part> parts;
             std::vector<Wire> wires;
             std::vector<Scene> scenes;
-            std::vector<SceneParameter> sceneParameters;
+            std::vector<SceneParameter> untouched;
             std::vector<Macro> macros;
             PadMap pads;
             std::vector<Graph::Mapping> mappings;
@@ -243,7 +244,7 @@ namespace oscairn
         std::set<uint32_t> loading_;                           // parts a Sound is being loaded into: that step is no edit of it
         void push(Step step);                                  // merging it into the last when they change the same thing
         void apply(const Model& from, const Model& to);        // the change from one to the other, onto now
-        bool applyParameter(NodeId node, uint32_t param, double value, double* applied = nullptr); // not an edit
+        bool applyParameter(NodeId node, uint32_t param, double value, double* applied = nullptr, bool bounded = true); // not an edit; bounded: see queue
         std::vector<Step> undo_, redo_;
         std::shared_ptr<const Model> baseline_;
         int quiet_ = 0;
@@ -256,12 +257,15 @@ namespace oscairn
         double currentFraction(const MacroTarget& target) const;
         void driveMacro(uint32_t id, double value, bool& faders); // sets it and its targets
         void capture(Scene& scene) const;
+        bool touched(NodeId node, const ParamInfo& param) const; // a parameter scenes touch
         Part& findPart(uint32_t id);
         void removePairs(const AudioConnection& c);
         void remapPorts(NodeId node, const std::vector<kick::clap::Port>& oldInputs, const std::vector<kick::clap::Port>& oldOutputs,
                         const std::vector<uint32_t>& oldMainIn, const std::vector<uint32_t>& oldMainOut);
         const kick::clap::Parameter& findParameter( NodeId node, uint32_t param ) const;
-        bool queue( NodeId node, uint32_t param, ChangeKind kind, double value );
+        // bounded: refused once commandCapacity commands wait. A scene's values are not: each parameter
+        // keeps at most one waiting value, so they never outnumber the parameters.
+        bool queue( NodeId node, uint32_t param, ChangeKind kind, double value, bool bounded = true );
         void publish( ChangeKind kind, NodeId node = 0, uint32_t param = 0, double value = 0, bool plugin = false );
 
         double sampleRate_;
@@ -278,8 +282,9 @@ namespace oscairn
         std::set<NodeId> disabled_, rungOut_; // plugins switched off, and those of them done sounding
         uint32_t nextPart_ = 1, nextWire_ = 1;
         std::vector<Scene> scenes_;
-        std::vector<SceneParameter> sceneParameters_;
+        std::vector<SceneParameter> untouched_; // parameters scenes never touch
         uint32_t scene_ = 0, nextScene_ = 1;
+        uint32_t mappingScene_ = 0; // the scene last selected that set the mappings: those off in it are off
         std::vector<Macro> macros_;
         uint32_t nextMacro_ = 1;
         bool staged_ = false;

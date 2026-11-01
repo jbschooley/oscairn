@@ -192,12 +192,13 @@
         "$ref": "#/$defs/Scene"
       }
     },
-    "sceneParameters": {
+    "sceneUntouched": {
       "type": "array",
-      "maxItems": 4096,
+      "maxItems": 65536,
       "items": {
         "$ref": "#/$defs/SceneParameter"
-      }
+      },
+      "description": "The plugin parameters scenes never touch; they touch every other automatable one"
     },
     "scene": {
       "type": "integer",
@@ -226,7 +227,7 @@
     "mappings",
     "pads",
     "scenes",
-    "sceneParameters",
+    "sceneUntouched",
     "scene",
     "controls"
   ],
@@ -852,7 +853,7 @@
       "additionalProperties": false
     },
     "Scene": {
-      "description": "A scene: each part's fader and each scene parameter's value.",
+      "description": "A scene (RFC 0011's full model): all of it as stored; selecting it applies the kinds in its scope and leaves the rest as they are.",
       "type": "object",
       "properties": {
         "id": {
@@ -862,6 +863,37 @@
         },
         "name": {
           "type": "string"
+        },
+        "scope": {
+          "type": "array",
+          "uniqueItems": true,
+          "maxItems": 5,
+          "items": {
+            "enum": [
+              "enabled",
+              "mutes",
+              "mix",
+              "parameters",
+              "mappings"
+            ]
+          },
+          "description": "The kinds selecting it applies: plugins and wires on or off; parts' mute and solo; the mix (parts' level, pan and sends, lanes' and user wires' Mix rows); plugin parameters and controls' values; which control mappings are on (each target's offIn)"
+        },
+        "off": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "$ref": "#/$defs/NodeKey"
+          },
+          "description": "The plugins off"
+        },
+        "offWires": {
+          "type": "array",
+          "maxItems": 4096,
+          "items": {
+            "$ref": "#/$defs/WireRef"
+          },
+          "description": "The wires off"
         },
         "parts": {
           "type": "array",
@@ -878,21 +910,187 @@
                 "type": "number",
                 "minimum": 0
               },
+              "pan": {
+                "type": "number",
+                "minimum": -1,
+                "maximum": 1
+              },
               "mute": {
                 "type": "boolean"
+              },
+              "solo": {
+                "type": "boolean"
+              },
+              "sends": {
+                "type": "array",
+                "maxItems": 256,
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "bus": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 4294967295
+                    },
+                    "level": {
+                      "type": "number",
+                      "minimum": 0
+                    }
+                  },
+                  "required": [
+                    "bus",
+                    "level"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "lanes": {
+                "type": "array",
+                "maxItems": 4096,
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "split": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 4294967295
+                    },
+                    "lane": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 4294967295
+                    },
+                    "level": {
+                      "type": "number",
+                      "minimum": 0
+                    },
+                    "pan": {
+                      "type": "number",
+                      "minimum": -1,
+                      "maximum": 1
+                    },
+                    "mute": {
+                      "type": "boolean"
+                    },
+                    "solo": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "split",
+                    "lane",
+                    "level",
+                    "pan",
+                    "mute",
+                    "solo"
+                  ],
+                  "additionalProperties": false
+                }
               }
             },
             "required": [
               "part",
               "level",
-              "mute"
+              "pan",
+              "mute",
+              "solo",
+              "sends",
+              "lanes"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "wires": {
+          "type": "array",
+          "maxItems": 4096,
+          "description": "User wires' Mix rows",
+          "items": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "enum": [
+                  "audio",
+                  "notes"
+                ]
+              },
+              "part": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 4294967295,
+                "description": "The part whose wire it is; 0 for a user wire"
+              },
+              "from": {
+                "$ref": "#/$defs/EndpointKey"
+              },
+              "to": {
+                "$ref": "#/$defs/EndpointKey"
+              },
+              "fromPort": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 4294967295
+              },
+              "toPort": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 4294967295
+              },
+              "send": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 4294967295
+              },
+              "split": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 4294967295
+              },
+              "lane": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 4294967295
+              },
+              "fader": {
+                "type": "boolean"
+              },
+              "level": {
+                "type": "number",
+                "minimum": 0
+              },
+              "pan": {
+                "type": "number",
+                "minimum": -1,
+                "maximum": 1
+              },
+              "mute": {
+                "type": "boolean"
+              },
+              "solo": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "kind",
+              "part",
+              "from",
+              "to",
+              "fromPort",
+              "toPort",
+              "send",
+              "split",
+              "lane",
+              "fader",
+              "level",
+              "pan",
+              "mute",
+              "solo"
             ],
             "additionalProperties": false
           }
         },
         "values": {
           "type": "array",
-          "maxItems": 4096,
+          "maxItems": 65536,
           "items": {
             "type": "object",
             "properties": {
@@ -943,7 +1141,11 @@
       "required": [
         "id",
         "name",
+        "scope",
+        "off",
+        "offWires",
         "parts",
+        "wires",
         "values",
         "controls"
       ],
@@ -1021,6 +1223,16 @@
           "type": "number",
           "minimum": 0,
           "maximum": 1
+        },
+        "offIn": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 4294967295
+          },
+          "description": "The scenes this mapping is off in; empty in a Sound"
         }
       },
       "required": [
@@ -1029,7 +1241,8 @@
         "end",
         "curve",
         "relative",
-        "base"
+        "base",
+        "offIn"
       ],
       "additionalProperties": false
     },
@@ -1237,6 +1450,71 @@
         "splitter",
         "joiner",
         "lanes"
+      ],
+      "additionalProperties": false
+    },
+    "WireRef": {
+      "description": "A wire as a scene names it: by what it joins and, for a part's wire, its place in the part (part wires are rebuilt under new IDs)",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "enum": [
+            "audio",
+            "notes"
+          ]
+        },
+        "part": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295,
+          "description": "The part whose wire it is; 0 for a user wire"
+        },
+        "from": {
+          "$ref": "#/$defs/EndpointKey"
+        },
+        "to": {
+          "$ref": "#/$defs/EndpointKey"
+        },
+        "fromPort": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "toPort": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "send": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "split": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "lane": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "fader": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "kind",
+        "part",
+        "from",
+        "to",
+        "fromPort",
+        "toPort",
+        "send",
+        "split",
+        "lane",
+        "fader"
       ],
       "additionalProperties": false
     }

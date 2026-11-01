@@ -199,15 +199,29 @@ namespace oscairn
                 wire.split=static_cast<uint32_t>(integer(field(w,"split")));wire.lane=static_cast<uint32_t>(integer(field(w,"lane")));wire.fader=boolean(field(w,"fader"));wire.connected=boolean(field(w,"connected"));wire.enabled=boolean(field(w,"enabled"));
                 next.wires.push_back(std::move(wire));
             }
+            auto ref=[&](V r){const auto kind=string(field(r,"kind"));
+                return WireRef{kind=="audio"?WireKind::Audio:WireKind::Notes,static_cast<uint32_t>(integer(field(r,"part"))),static_cast<NodeId>(integer(field(r,"from"))),static_cast<NodeId>(integer(field(r,"to"))),
+                    static_cast<uint32_t>(integer(field(r,"fromPort"))),static_cast<uint32_t>(integer(field(r,"toPort"))),static_cast<uint32_t>(integer(field(r,"send"))),
+                    static_cast<uint32_t>(integer(field(r,"split"))),static_cast<uint32_t>(integer(field(r,"lane"))),boolean(field(r,"fader"))};};
             for(auto s:array(field(root,"scenes")))
             {
-                Scene scene;scene.id=static_cast<uint32_t>(integer(field(s,"id")));scene.name=string(field(s,"name"));
-                for(auto p:array(field(s,"parts")))scene.parts.push_back({static_cast<uint32_t>(integer(field(p,"part"))),number(field(p,"level")),boolean(field(p,"mute"))});
+                Scene scene;scene.id=static_cast<uint32_t>(integer(field(s,"id")));scene.name=string(field(s,"name"));scene.scope=0;
+                for(auto k:array(field(s,"scope"))){const auto name=std::string(string(k));const auto at=std::find(sceneKinds.begin(),sceneKinds.end(),name);if(at!=sceneKinds.end())scene.scope|=1u<<(at-sceneKinds.begin());}
+                for(auto n:array(field(s,"off")))scene.off.push_back(static_cast<NodeId>(integer(n)));
+                for(auto r:array(field(s,"offWires")))scene.offWires.push_back(ref(r));
+                for(auto p:array(field(s,"parts")))
+                {
+                    Scene::PartState st{static_cast<uint32_t>(integer(field(p,"part"))),number(field(p,"level")),number(field(p,"pan")),boolean(field(p,"mute")),boolean(field(p,"solo")),{},{}};
+                    for(auto x:array(field(p,"sends")))st.sends.push_back({static_cast<uint32_t>(integer(field(x,"bus"))),number(field(x,"level"))});
+                    for(auto l:array(field(p,"lanes")))st.lanes.push_back({static_cast<uint32_t>(integer(field(l,"split"))),static_cast<uint32_t>(integer(field(l,"lane"))),number(field(l,"level")),number(field(l,"pan")),boolean(field(l,"mute")),boolean(field(l,"solo"))});
+                    scene.parts.push_back(std::move(st));
+                }
+                for(auto w:array(field(s,"wires")))scene.wires.push_back({ref(w),number(field(w,"level")),number(field(w,"pan")),boolean(field(w,"mute")),boolean(field(w,"solo"))});
                 for(auto v:array(field(s,"values")))scene.values.push_back({{static_cast<NodeId>(integer(field(v,"node"))),static_cast<uint32_t>(integer(field(v,"param")))},number(field(v,"value"))});
                 for(auto m:array(field(s,"controls")))scene.macros.push_back({static_cast<uint32_t>(integer(field(m,"control"))),number(field(m,"value"))});
                 next.scenes.push_back(std::move(scene));
             }
-            for(auto at:array(field(root,"sceneParameters")))next.sceneParameters.push_back({static_cast<NodeId>(integer(field(at,"node"))),static_cast<uint32_t>(integer(field(at,"param")))});
+            for(auto at:array(field(root,"sceneUntouched")))next.untouched.push_back({static_cast<NodeId>(integer(field(at,"node"))),static_cast<uint32_t>(integer(field(at,"param")))});
             next.scene=static_cast<uint32_t>(integer(field(root,"scene")));
             for(auto m:array(field(root,"controls")))
             {
@@ -220,6 +234,7 @@ namespace oscairn
                     target.node=static_cast<NodeId>(integer(field(t,"node")));target.param=static_cast<uint32_t>(integer(field(t,"param")));
                     target.part=static_cast<uint32_t>(integer(field(t,"part")));target.macro=static_cast<uint32_t>(integer(field(t,"control")));
                     target.start=number(field(t,"start"));target.end=number(field(t,"end"));target.relative=boolean(field(t,"relative"));target.base=number(field(t,"base"));
+                    for(auto id:array(field(t,"offIn")))target.offIn.push_back(static_cast<uint32_t>(integer(id)));
                     macro.targets.push_back(target);
                 }
                 next.macros.push_back(std::move(macro));
@@ -493,11 +508,17 @@ namespace oscairn
     void RemoteControl::selectScene(uint32_t scene){impl_->call("scenes.select","{\"scene\":"+std::to_string(scene)+'}');impl_->refresh();}
     void RemoteControl::removeScene(uint32_t scene){impl_->call("scenes.remove","{\"scene\":"+std::to_string(scene)+'}');impl_->refresh();}
     void RemoteControl::setSceneName(uint32_t scene,const std::string& name){impl_->call("scenes.name","{\"scene\":"+std::to_string(scene)+",\"name\":"+quote(name)+'}');impl_->refresh();}
-    void RemoteControl::setSceneParameters(const std::vector<SceneParameter>& parameters)
+    void RemoteControl::setSceneUntouched(const std::vector<SceneParameter>& parameters)
     {
         std::string list="[";
         for(const auto& at:parameters){if(list.size()>1)list+=',';list+="{\"node\":"+std::to_string(at.node)+",\"param\":"+std::to_string(at.param)+'}';}
-        impl_->call("scenes.parameters","{\"parameters\":"+list+"]}");impl_->refresh();
+        impl_->call("scenes.untouched","{\"parameters\":"+list+"]}");impl_->refresh();
+    }
+    void RemoteControl::setSceneScope(uint32_t scene,uint32_t scope)
+    {
+        std::string list="[";
+        for(size_t k=0;k<sceneKinds.size();++k)if(scope&(1u<<k)){if(list.size()>1)list+=',';list+=quote(sceneKinds[k]);}
+        impl_->call("scenes.scope","{\"scene\":"+std::to_string(scene)+",\"scope\":"+list+"]}");impl_->refresh();
     }
     uint32_t RemoteControl::addMacro(const std::string& name, uint32_t part)
     {auto reply=impl_->call("controls.add","{\"name\":"+quote(name)+",\"part\":"+std::to_string(part)+'}');const auto id=static_cast<uint32_t>(integer(field(field(reply.get(),"result"),"control")));impl_->refresh();return id;}
@@ -511,7 +532,9 @@ namespace oscairn
             const char* kind=t.kind==MacroTarget::Kind::Parameter?"parameter":t.kind==MacroTarget::Kind::PartLevel?"partLevel":t.kind==MacroTarget::Kind::PartMute?"partMute":"control";
             const char* curve=t.curve==MacroTarget::Curve::Linear?"linear":t.curve==MacroTarget::Curve::Exponential?"exponential":t.curve==MacroTarget::Curve::Logarithmic?"logarithmic":"s-curve";
             list+=std::string("{\"kind\":\"")+kind+"\",\"node\":"+std::to_string(t.node)+",\"param\":"+std::to_string(t.param)+",\"part\":"+std::to_string(t.part)+",\"control\":"+std::to_string(t.macro)+
-                ",\"start\":"+encode(t.start)+",\"end\":"+encode(t.end)+",\"curve\":\""+curve+"\",\"relative\":"+(t.relative?"true":"false")+'}';
+                ",\"start\":"+encode(t.start)+",\"end\":"+encode(t.end)+",\"curve\":\""+curve+"\",\"relative\":"+(t.relative?"true":"false")+",\"offIn\":[";
+            for(size_t i=0;i<t.offIn.size();++i)list+=(i?",":"")+std::to_string(t.offIn[i]);
+            list+="]}";
         }
         impl_->call("controls.targets","{\"control\":"+std::to_string(macro)+",\"targets\":"+list+"]}");impl_->refresh();
     }
