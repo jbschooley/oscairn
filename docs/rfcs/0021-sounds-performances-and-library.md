@@ -310,7 +310,8 @@ import another, all of it or chosen parts, adding them to the open one in one st
   arrive; the arriving scenes keep the open Performance's as they are. Chosen parts bring no
   scenes: a scene describes a whole Performance.
 - Pads, tempo, transport and the imported info block stay with the open Performance.
-- It cuts what a graph rebuild cuts; the parts already playing are not replaced.
+- Whether notes held in the open Performance's parts carry on through an import is not
+  checked yet.
 
 ## Plugin presets
 
