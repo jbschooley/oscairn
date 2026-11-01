@@ -38,3 +38,4 @@ tests it, with a note on what remains of a step that is partly done. The
 | [0027](0027-reliability-levels.md) | Reliability levels and the guaranteed audio path | proposed |
 | [0028](0028-system-image-updates-boot-and-power.md) | The system image: updates, boot, storage and power | proposed |
 | [0029](0029-internationalization.md) | Internationalization | proposed |
+| [0030](0030-system-shell-launcher-and-navigation.md) | The system shell: launchers, system bars and how screens flow | proposed |
