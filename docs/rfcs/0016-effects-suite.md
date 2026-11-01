@@ -10,7 +10,7 @@ effects written for Oscairn or reused from open-source projects, with no Yamaha 
 Checked when built and tested; the sections below say how.
 
 - [ ] 1. Routing for converted effects: the converter's mapping onto parts, buses and wires;
-      node roles for device profiles; side-chain inputs on effect contexts
+      node roles for device profiles; a test of side-chain on effect contexts
 - [ ] 2. The most-used types
 - [ ] 3. The remaining categories
 - [ ] 4. Converter coverage
@@ -60,8 +60,11 @@ Two additions remain:
   can change; a device profile ([RFC 0024](0024-device-profiles.md)) maps its controls to roles,
   and a Performance without a node in that role shows nothing there. Saved with the node in the
   Performance format.
-- **Side-chain on effect contexts.** Plugins' own side-chain ports already work; effect contexts
-  sharing one engine ([RFC 0007](0007-effect-contexts.md)) need a second input per context.
+- **A test of side-chain on effect contexts.** Each context of an engine shared through
+  [RFC 0007](0007-effect-contexts.md) is a full CLAP interface the host loads like any plugin,
+  ports included, so a context can declare a side-chain input and take a wire to it. Nothing in
+  the host is missing, but no plugin with contexts has a side-chain yet (the Delay's contexts have
+  main ports only), so it is untested.
 
 ### Types
 
@@ -110,7 +113,7 @@ credited.
 
 | Step | Deliverable | Gate |
 | --- | --- | --- |
-| 1 | Routing for converted effects: the converter's mapping of each slot onto parts, buses and wires (above), node roles, side-chain inputs on RFC 0007 contexts | Converted factory Performances route as on the instrument, measured against ESP renders; a profile's buttons reach their roles |
+| 1 | Routing for converted effects: the converter's mapping of each slot onto parts, buses and wires (above), node roles, a side-chain test on RFC 0007 contexts | Converted factory Performances route as on the instrument, measured against ESP renders; a profile's buttons reach their roles |
 | 2 | The most-used types first: VCM EQ 501, compressors, reverbs, delays, chorus, rotary, amp simulator 1 | Measured against ESP renders; listening |
 | 3 | The remaining categories | Per-type measurements |
 | 4 | Converter coverage for every type and parameter | The factory set converts with no effect-parameter loss |
