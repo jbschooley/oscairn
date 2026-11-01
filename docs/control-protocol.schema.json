@@ -2210,6 +2210,77 @@
               "$ref": "#/$defs/Id"
             },
             "method": {
+              "const": "budget.set",
+              "description": "The device's budget: the share of the audio thread's time plugins may take, and memory in bytes"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "cpu": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 64
+                },
+                "memory": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              },
+              "required": [
+                "cpu"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "params"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
+              "const": "budget.estimate",
+              "description": "What the open Performance, or one in a folder, needs against the budget"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "directory": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                }
+              },
+              "required": [],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
               "const": "library.contents",
               "description": "What an archive holds, before installing it"
             },

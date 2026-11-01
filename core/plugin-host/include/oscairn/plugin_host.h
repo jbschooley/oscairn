@@ -93,7 +93,12 @@ namespace oscairn
         // Audio thread, after process(): the plugin said it makes no more sound until it gets
         // input (CLAP_PROCESS_SLEEP). False where a host cannot tell.
         virtual bool asleep() const noexcept { return false; }
+        // Control thread: the memory a plugin in its own worker holds (its share of the worker's
+        // resident memory); 0 where the host cannot tell (a plugin in the engine's process).
+        virtual uint64_t residentBytes() const { return 0; }
     };
+    // A process's resident memory in bytes (0: this one); 0 when it cannot be read.
+    uint64_t residentBytes(long pid = 0);
     // CLAP module or LV2 bundle directory; pluginId is a CLAP ID or an LV2 URI.
     std::shared_ptr<PluginHost> loadPlugin(const std::string& path, const std::string& pluginId,
                                            double sampleRate, uint32_t maxFrames, ProcessingMode mode = ProcessingMode::Realtime, Lv2BufferLimits lv2Buffers = {});

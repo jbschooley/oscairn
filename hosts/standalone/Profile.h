@@ -28,6 +28,11 @@ namespace oscairn::standalone
         std::vector<std::string> estimated;  // sections whose values are estimates, not measured on a unit
 
         bool offers(const std::string& app) const;
+        // The engine's budget (RFC 0025): one audio thread's time less the reliability level's
+        // margin (desktop 90%, instrument 75%, pass-through 60%), and 80% of its memory (none
+        // checked when the profile does not say).
+        double cpuBudget() const { return reliability == "pass-through" ? .6 : reliability == "instrument" ? .75 : .9; }
+        uint64_t memoryBudget() const { return uint64_t(compute.memory) * (1ull << 20) * 8 / 10; }
         // The screen the app draws on: the first; a headless profile has none and draws nothing.
         const Screen* screen() const { return screens.empty() ? nullptr : &screens.front(); }
 

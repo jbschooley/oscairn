@@ -288,6 +288,16 @@ namespace oscairn
     void RemoteControl::savePerformance(const std::string& directory) {
         impl_->call("performance.save","{\"directory\":"+quote(directory)+'}',30000);
     }
+    void RemoteControl::setBudget(const Budget& b) {
+        impl_->call("budget.set","{\"cpu\":"+encode(b.cpu)+",\"memory\":"+std::to_string(b.memory)+'}');
+    }
+    Control::Estimate RemoteControl::estimate(const std::string& directory) {
+        auto d=impl_->call("budget.estimate",directory.empty()?std::string("{}"):"{\"directory\":"+quote(directory)+'}',30000);auto r=field(d.get(),"result");
+        Estimate e;e.cpu=number(field(r,"cpu"));e.memory=uint64_t(integer(field(r,"memory")));e.fits=boolean(field(r,"fits"));e.seamless=boolean(field(r,"seamless"));
+        e.budget.cpu=number(field(field(r,"budget"),"cpu"));e.budget.memory=uint64_t(integer(field(field(r,"budget"),"memory")));
+        for(auto x:array(field(r,"plugins")))e.plugins.push_back({string(field(x,"name")),string(field(x,"plugin")),number(field(x,"cpu")),uint64_t(integer(field(x,"memory"))),boolean(field(x,"measured"))});
+        return e;
+    }
     void RemoteControl::exportPerformance(const std::string& file,bool editedSounds) {
         impl_->call("performance.export","{\"file\":"+quote(file)+",\"editedSounds\":"+(editedSounds?"true":"false")+'}',30000);
     }

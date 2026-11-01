@@ -18,12 +18,27 @@ namespace oscairn
         baseline_ = std::make_shared<const Model>( model() );
     }
 
+    Session::~Session() { if( budget_.cpu > 0 ) saveMeasurements(); }
+
+    // With a budget (RFC 0025), a plugin that would take the Performance past it is refused and
+    // unloaded again; what this process grew by while an in-process plugin loaded is its memory.
     NodeId Session::add( const std::string& name, const std::string& path, const std::string& pluginId )
     {
         if( !name.empty() && std::any_of(nodes_.begin(),nodes_.end(),[&](const auto& n){ return n.second == name; }) )
             throw std::invalid_argument( "duplicate node name: " + name );
+        const auto before = budget_.cpu > 0 ? residentBytes() : 0;
         const auto id = graph_.add( path, pluginId );
         nodes_.emplace( id, name );
+        if( budget_.cpu > 0 )
+        {
+            if( const auto after = residentBytes(); after > before ) loadedBytes_[id] = after - before;
+            if( const auto e = estimate(); !e.fits )
+            {
+                const auto plugin = graph_.host(id).descriptor().name;
+                dropNode(id);
+                throw std::invalid_argument( "adding " + (name.empty() ? plugin : name) + ": the Performance " + tooMuch(e) );
+            }
+        }
         for( const auto& p : graph_.host(id).parameters() ) observed_[{id,p.id}] = graph_.host(id).parameterValue(p.id);
         staged_ = true;
         return id;
@@ -251,7 +266,7 @@ namespace oscairn
     {
         graph_.remove(node);
         nodes_.erase(node);
-        disabled_.erase(node); rungOut_.erase(node);
+        disabled_.erase(node); rungOut_.erase(node); loadedBytes_.erase(node);
         std::erase_if(untouched_, [&](const SceneParameter& at) { return at.node == node; });
         outputDrops_.erase(node);
         for( auto it = pending_.begin(); it != pending_.end(); )
@@ -317,6 +332,7 @@ namespace oscairn
         graph_.service();
         ringOut();
         meter();
+        measure();
         if( !staged_ ) record(); // changes that need no commit (scenes, controls, pads) are steps too
         advanceScenes();
         for( const auto& [node,name] : nodes_ )
@@ -460,6 +476,7 @@ namespace oscairn
         const bool ok = graph_.process( inputs, ni, outputs, no, frames, &t, merged_.data(), (uint32_t)count, false, mergedSources_.data() );
         transport_.advance( frames );
         framesProcessed_.fetch_add( frames, std::memory_order_relaxed );
+        blockFrames_.store( frames, std::memory_order_relaxed );
         return ok;
     }
 }

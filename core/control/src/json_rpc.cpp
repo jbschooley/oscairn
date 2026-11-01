@@ -394,7 +394,7 @@ namespace oscairn
             if( method == "session.hello" )
             {
                 fields(p, {});
-                return R"({"protocolVersion":1,"server":"oscairn","capabilities":["performance.save","performance.load","performance.export","performance.info","performance.setInfo","library.query","library.favorite","library.tag","library.rescan","library.contents","library.install","library.libraries","library.uninstall","library.delete","library.save","library.load","parts.saveSound","parts.loadSound","parts.fromSound","performance.contents","performance.import","state.info","state.save","presets.list","properties.list","properties.get","properties.set","properties.request","sounds.get","sounds.prepare","sounds.select","sounds.discard","assets.register","assets.import","assets.libraries","session.status","params.list","params.get","params.set","params.text","params.gesture","graph.audio-routing","graph.get","graph.add","effects.create","effects.resources","graph.remove","graph.replace","graph.connect","graph.disconnect","graph.map","graph.unmap","graph.commit","parts.add","parts.remove","parts.insert","parts.removeNode","parts.move","parts.addSplit","parts.removeSplit","parts.addLane","parts.removeLane","parts.lane","parts.input","parts.output","parts.send","parts.level","parts.name","parts.solo","parts.pan","parts.meters","wires.meters","edit.undo","edit.redo","edit.history","wires.connect","wires.disconnect","wires.enable","graph.enable","wires.mix","wires.zones","scenes.add","scenes.store","scenes.select","scenes.remove","scenes.name","scenes.scope","scenes.transition","scenes.untouched","controls.add","controls.remove","controls.name","controls.targets","controls.set","subscribe","unsubscribe","transport.get","transport.set","notes.send","pads.get","pads.set","pads.play","pads.pressure"],"limits":{"messageBytes":65536,"depth":32,"batch":64,"parameterChanges":128}})";
+                return R"({"protocolVersion":1,"server":"oscairn","capabilities":["performance.save","performance.load","performance.export","budget.set","budget.estimate","performance.info","performance.setInfo","library.query","library.favorite","library.tag","library.rescan","library.contents","library.install","library.libraries","library.uninstall","library.delete","library.save","library.load","parts.saveSound","parts.loadSound","parts.fromSound","performance.contents","performance.import","state.info","state.save","presets.list","properties.list","properties.get","properties.set","properties.request","sounds.get","sounds.prepare","sounds.select","sounds.discard","assets.register","assets.import","assets.libraries","session.status","params.list","params.get","params.set","params.text","params.gesture","graph.audio-routing","graph.get","graph.add","effects.create","effects.resources","graph.remove","graph.replace","graph.connect","graph.disconnect","graph.map","graph.unmap","graph.commit","parts.add","parts.remove","parts.insert","parts.removeNode","parts.move","parts.addSplit","parts.removeSplit","parts.addLane","parts.removeLane","parts.lane","parts.input","parts.output","parts.send","parts.level","parts.name","parts.solo","parts.pan","parts.meters","wires.meters","edit.undo","edit.redo","edit.history","wires.connect","wires.disconnect","wires.enable","graph.enable","wires.mix","wires.zones","scenes.add","scenes.store","scenes.select","scenes.remove","scenes.name","scenes.scope","scenes.transition","scenes.untouched","controls.add","controls.remove","controls.name","controls.targets","controls.set","subscribe","unsubscribe","transport.get","transport.set","notes.send","pads.get","pads.set","pads.play","pads.pressure"],"limits":{"messageBytes":65536,"depth":32,"batch":64,"parameterChanges":128}})";
             }
             if( method == "subscribe" || method == "unsubscribe" )
             {
@@ -412,6 +412,22 @@ namespace oscairn
                 try{if(method=="performance.save")c.savePerformance(directory);else c.loadPerformance(directory);}
                 catch(const std::exception& e){throw Failure{-32005,e.what()};}
                 return method=="performance.save"?R"({"saved":true})":R"({"loaded":true})";
+            }
+            // Resource budgets (RFC 0025).
+            if(method=="budget.set") {
+                fields(p,{"cpu","memory"});
+                Control::Budget b;b.cpu=number(member(p,"cpu"));if(member(p,"memory"))b.memory=uint64_t(integer(member(p,"memory")));
+                try{c.setBudget(b);}catch(const std::invalid_argument& e){throw Failure{-32602,e.what()};}
+                return R"({"accepted":true})";
+            }
+            if(method=="budget.estimate") {
+                fields(p,{"directory"});
+                Control::Estimate e;
+                try{e=c.estimate(member(p,"directory")?std::string(string(member(p,"directory"))):std::string());}catch(const std::exception& x){throw Failure{-32005,x.what()};}
+                std::vector<std::string> plugins;
+                for(const auto& x:e.plugins)plugins.push_back("{\"name\":"+quote(x.name)+",\"plugin\":"+quote(x.plugin)+",\"cpu\":"+encode(x.cpu)+",\"memory\":"+std::to_string(x.memory)+",\"measured\":"+(x.measured?"true":"false")+'}');
+                return "{\"cpu\":"+encode(e.cpu)+",\"memory\":"+std::to_string(e.memory)+",\"fits\":"+(e.fits?"true":"false")+",\"seamless\":"+(e.seamless?"true":"false")+
+                    ",\"budget\":{\"cpu\":"+encode(e.budget.cpu)+",\"memory\":"+std::to_string(e.budget.memory)+"},\"plugins\":"+join(plugins)+'}';
             }
             if(method=="performance.export") {
                 fields(p,{"file","editedSounds"});

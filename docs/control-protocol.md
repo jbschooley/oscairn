@@ -783,6 +783,13 @@ fader or name in the Performance, nor wires to or from the rest of the graph.
   and how scenes and names are handled, is in
   [RFC 0021](rfcs/0021-sounds-performances-and-library.md#importing-a-performance). One step
   to undo; refused while graph edits are staged.
+- `budget.set` takes `{cpu}` and optional `memory`: the device's budget ([RFC 0025](rfcs/0025-resource-budgets.md)),
+  `cpu` the share of the audio thread's time the plugins may take (0 checks nothing), `memory` in
+  bytes (0 or absent: not checked). `budget.estimate` takes an optional `{directory}` (absent: the
+  open Performance) and returns `{cpu,memory,fits,seamless,budget,plugins}`, each plugin with
+  `name`, `plugin`, `cpu`, `memory` and `measured`. With a budget, opening a Performance over it,
+  or adding a plugin that would take the open one over it, fails saying what does not fit; one
+  that fits only alone opens as a cut, without the last ringing out.
 - `performance.save` and `library.save` both keep each part's `from`.
 - `performance.export` takes `{file}` and optional `editedSounds`, and returns
   `{"exported":true}`: one [archive](library-archive.md) holding the open Performance, every

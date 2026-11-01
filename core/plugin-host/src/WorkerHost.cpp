@@ -446,6 +446,18 @@ namespace oscairn
             bool usesClapNotes(uint32_t port) const noexcept override { return port < clapNotes_.size() && clapNotes_[port]; }
             // While down, a panic would reach the restarted worker and drop its first block's events.
             void panic() noexcept override { if(!process_->failed.load()) shared_->panic.store(1, std::memory_order_release); }
+            // Its share of the worker's resident memory. The process is restarted under `control`,
+            // which a long state load also holds; then the last reading stands.
+            uint64_t residentBytes() const override
+            {
+                std::unique_lock lock(process_->control, std::try_to_lock);
+                if(!lock || process_->pid <= 0) return resident_.load();
+                size_t sharing = 1;
+                { std::lock_guard nodes(process_->nodesMutex); sharing = std::max<size_t>(1, process_->nodes.size()); }
+                const auto bytes = oscairn::residentBytes(long(process_->pid)) / sharing;
+                resident_.store(bytes);
+                return bytes;
+            }
             // As the plugin said in its last block; a failed worker is silent, so asleep too.
             bool asleep() const noexcept override { return process_->failed.load() || shared_->asleep.load(std::memory_order_relaxed) != 0; }
             double parameterValue(clap_id id) const noexcept override
@@ -660,6 +672,7 @@ namespace oscairn
             }
 
             std::shared_ptr<Process> process_;
+            mutable std::atomic<uint64_t> resident_{0}; // the last reading of residentBytes
             bool root_;
             uint32_t node_ = 0; // the worker's index for this node; under control
             std::string description_;

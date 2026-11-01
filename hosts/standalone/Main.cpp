@@ -563,6 +563,7 @@ namespace oscairn::standalone
                 if(socket.isEmpty() && !args.contains("--in-process"))
                     helper=juce::File::getSpecialLocation(juce::File::currentExecutableFile).getSiblingFile("oscairn-engine").getFullPathName().toStdString();
                 engine_ = std::make_unique<Engine>( dir.unquoted().toStdString(), socket.unquoted().toStdString(), helper, audio );
+                engine_->edit( [budget = Control::Budget{ profile.cpuBudget(), profile.memoryBudget() }]( Control& c ) { c.setBudget( budget ); } );
 
                 auto layouts = builtInLayouts();
                 auto wanted  = argument( args, "--layout" );

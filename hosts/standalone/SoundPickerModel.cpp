@@ -94,9 +94,21 @@ namespace oscairn::standalone
     {
         if(action.kind == SoundAction::Refresh) return {};
         if(action.kind == SoundAction::SavePerformance){control.savePerformance(action.directory);return {};}
-        if(action.kind == SoundAction::LoadPerformance){control.loadPerformance(action.directory);return {};}
+        // A change that would not fit beside the outgoing Performance is a cut (RFC 0025); say so.
+        constexpr const char* cut = "Opened at once: it and the last Performance ringing out would not fit this device together.";
+        if(action.kind == SoundAction::LoadPerformance){
+            const bool seamless = control.estimate(action.directory).seamless;
+            control.loadPerformance(action.directory);
+            return seamless ? std::string() : cut;
+        }
         if(action.kind == SoundAction::SaveToLibrary){control.savePerformanceToLibrary(action.choice.name,action.asNew);return {};}
-        if(action.kind == SoundAction::LoadFromLibrary){control.loadPerformanceFromLibrary(action.libraryId);return {};}
+        if(action.kind == SoundAction::LoadFromLibrary){
+            Control::LibraryQuery all; all.limit = 1000; all.kind = "performance";
+            bool seamless = true;
+            for(const auto& item : control.libraryQuery(all).items) if(item.id == action.libraryId) seamless = control.estimate(item.path).seamless;
+            control.loadPerformanceFromLibrary(action.libraryId);
+            return seamless ? std::string() : cut;
+        }
         if(action.kind == SoundAction::SaveSound){control.savePartAsSound(action.part,action.choice.name,action.asNew);return {};}
         if(action.kind == SoundAction::LoadSound){control.loadSound(action.part,action.libraryId);return {};}
         if(action.kind == SoundAction::PartFromSound){control.partFromSound(action.libraryId);return {};}

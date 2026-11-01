@@ -32,12 +32,15 @@ namespace oscairn
         static constexpr size_t historyCapacity = 4096;
 
         Session( double sampleRate, uint32_t maxFrames, Lv2BufferLimits lv2Buffers = {}, AudioLayout audio = {} );
+        ~Session() override; // keeps this device's measurements (RFC 0025)
         Control& control() noexcept { return *this; }
         const Control& control() const noexcept { return *this; }
 
         // Edits are staged; a failed commit leaves the live plan unchanged and the
         // staging area available for correction. Empty names address nodes by ID only.
         void savePerformance(const std::string& directory) override;
+        void setBudget(const Budget& budget) override;
+        Estimate estimate(const std::string& directory = {}) override;
         void exportPerformance(const std::string& file, bool editedSounds = false) override;
         void loadPerformance(const std::string& directory) override;
         PerformanceInfo performanceInfo() const override {return info_;}
@@ -217,6 +220,23 @@ namespace oscairn
         bool splitNode(NodeId node) const;       // a split's Split or Join node
         bool heard(const Part& part);            // not silenced by another part's solo
         void meter();                            // service(): updates the meters from the graph's peaks
+        // Resource budgets (budget.cpp, RFC 0025): this device's measurements of each plugin build,
+        // kept in the data folder once a budget is set.
+        struct Measurement { double cpu = 0; uint64_t memory = 0; };
+        Budget budget_;
+        std::map<std::string, Measurement> measured_;          // by plugin ID and version
+        bool measurementsLoaded_ = false, measurementsChanged_ = false;
+        std::chrono::steady_clock::time_point measurementsSaved_{};
+        uint64_t measureTicks_ = 0;
+        std::map<NodeId, uint64_t> loadedBytes_;               // this process's growth as an in-process plugin loaded
+        std::atomic<uint32_t> blockFrames_{0};                 // the audio thread's last block
+        void measure();                                        // service()
+        void loadMeasurements();
+        void saveMeasurements();
+        std::string pluginKey(NodeId node) const;
+        Cost costOf(const std::string& key, const std::string& name, const std::string& plugin) const;
+        Estimate estimateOf(const std::vector<Cost>& plugins, const std::vector<Cost>& playing) const;
+        std::string tooMuch(const Estimate& e) const;          // what does not fit, for a refusal
         std::map<uint32_t, std::vector<double>> meters_, wireMeters_; // per part and per wire, per channel
 
         // Undo (undo.cpp). The model: what an edit can change, with the nodes it holds.

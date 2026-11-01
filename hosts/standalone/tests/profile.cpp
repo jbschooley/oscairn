@@ -41,6 +41,7 @@ int main()
         check(kick.name == "Behringer KICK" && kick.screen()->layout == "kick-screen" && kick.screen()->touch, "the KICK shows its screen layout, by touch");
         check(ignite.screen()->layout == "ignite" && ignite.cv.outputs > 0, "the Ignite shows its panel and has CV");
         check(!kick.estimated.empty() && qemu.estimated.empty(), "the KICK's values are estimates; QEMU's are its test setup");
+        check(kick.cpuBudget() == .75 && kick.memoryBudget() == 2048ull * 1024 * 1024 * 8 / 10, "an instrument's budget: 75% of the audio thread, 80% of its memory");
         const auto desktop = loadProfile("");
         check(desktop.id == "desktop" && desktop.compute.cores >= 1 && desktop.screen() && desktop.screen()->surface == "desktop" && desktop.screen()->layout == "desktop" &&
               desktop.reliability == "desktop" && desktop.offers("oscairn.setlist"), "the desktop's own profile, from the computer");

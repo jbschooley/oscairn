@@ -33,7 +33,7 @@ tests it, with a note on what remains of a step that is partly done. The
 | [0022](0022-apps-and-requests.md) | Apps that open each other | in progress |
 | [0023](0023-item-types.md) | Item types | proposed |
 | [0024](0024-device-profiles.md) | Device profiles | in progress: step 1 built |
-| [0025](0025-resource-budgets.md) | Resource budgets: knowing before loading whether it fits | proposed |
+| [0025](0025-resource-budgets.md) | Resource budgets: knowing before loading whether it fits | in progress: steps 2–4 built, step 1 partly |
 | [0026](0026-network-control-and-web-ui.md) | Network control and the web UI | proposed |
 | [0027](0027-reliability-levels.md) | Reliability levels and the guaranteed audio path | proposed |
 | [0028](0028-system-image-updates-boot-and-power.md) | The system image: updates, boot, storage and power | proposed |

@@ -10,6 +10,7 @@
 #include <array>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <functional>
 #include <regex>
 #include <string>
@@ -837,6 +838,57 @@ namespace
         check(s.graphState().macros[0].targets.empty(), "removing a scene removes morphs to it");
     }
 
+    // Resource budgets (RFC 0025): plugins measured while they play and kept for the next time;
+    // a plugin or a Performance over the budget refused, saying what does not fit; a change that
+    // fits alone but not beside what plays now becomes a cut.
+    void budgets(const char* fixture, const fs::path& root)
+    {
+        ::setenv("OSCAIRN_DATA_HOME", (root / "budget-home").c_str(), 1);
+        fs::create_directories(root / "budget-home");
+        {
+            Session s(48000, frames);
+            check(s.estimate().fits && s.estimate().budget.cpu == 0, "with no budget, everything fits");
+            s.setBudget({.9, 0});
+            const auto a = s.add("a", fixture, "org.kick.test.synth");
+            const auto part = s.addPart("A"); s.insertIntoPart(part, 0, a); s.commit();
+            auto e = s.estimate();
+            check(e.plugins.size() == 1 && !e.plugins[0].measured && near(e.cpu, .02), "a plugin not yet measured counts at the default: " + std::to_string(e.cpu));
+            Audio x; s.note(true, 60, 1);
+            for(int i = 0; i < 64; ++i) x.run(s);
+            e = s.estimate();
+            check(e.plugins[0].measured && e.plugins[0].plugin == "org.kick.test.synth", "measured while it plays");
+            s.note(false, 60, 0); x.run(s);
+            s.savePerformance((root / "budget-one").string());
+            // Over the budget: refused, unloaded again, saying what.
+            s.setBudget({1e-9, 0});
+            std::string why;
+            try { s.add("b", fixture, "org.kick.test.synth"); } catch(const std::invalid_argument& e) { why = e.what(); }
+            check(why.find("of the audio time") != std::string::npos && s.graphState().topology.nodes.size() == 1, "a plugin over the budget refused: " + why);
+            why.clear();
+            try { s.loadPerformance((root / "budget-one").string()); } catch(const std::exception& e) { why = e.what(); }
+            check(why.find("of the audio time") != std::string::npos, "a Performance over the budget refused: " + why);
+        }
+        check(fs::exists(root / "budget-home" / "measurements.json"), "measurements kept in the data folder");
+        {
+            Session t(48000, frames);
+            t.setBudget({.9, 0});
+            check(t.estimate((root / "budget-one").string()).plugins.at(0).measured, "and known to the next session before it loads");
+        }
+        // Seamless only when both fit: a fresh device, every plugin at the default (.02).
+        ::setenv("OSCAIRN_DATA_HOME", (root / "budget-fresh").c_str(), 1);
+        fs::create_directories(root / "budget-fresh");
+        Session u(48000, frames);
+        u.setBudget({.03, 0});
+        u.loadPerformance((root / "budget-one").string());
+        const auto e = u.estimate((root / "budget-one").string());
+        check(e.fits && !e.seamless, "it fits alone, not beside itself");
+        u.loadPerformance((root / "budget-one").string());
+        check(u.leaving() == 0, "so the change is a cut");
+        u.setBudget({.05, 0});
+        u.loadPerformance((root / "budget-one").string());
+        check(u.leaving() == 1, "with room for both, it rings out");
+    }
+
     // Switching plugins and wires off and on (RFC 0011's full scene model): an off plugin takes
     // no new notes but plays out the ones it holds, then stops; an off effect in a chain is
     // passed around; an off note wire takes no new notes; undo and saving keep it.
@@ -1059,6 +1111,7 @@ int main(int argc, char** argv)
         onOff(argv[1], temp.path);
         performanceChange(argv[1], temp.path);
         sceneTransitions(argv[1], temp.path);
+        budgets(argv[1], temp.path);
         controls(argv[1], temp.path);
         persistence(argv[1], argv[2], argv[3], temp.path);
     }

@@ -308,6 +308,8 @@ public:
     }
     // Asleep when every instance that ran this block said so (audio thread, after process).
     bool asleep() const noexcept override {return asleep_;}
+    // Its instances' shares of their workers' memory.
+    uint64_t residentBytes() const override {uint64_t n=0;for(const auto& s:desired_.instances)if(s)n+=s->host->residentBytes();return n;}
 };
 }
 std::shared_ptr<PluginHost> preparedInstrument(std::shared_ptr<PluginHost> h,double rate,uint32_t frames,ProcessingMode mode,Lv2BufferLimits limits) {

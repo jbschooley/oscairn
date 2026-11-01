@@ -16,7 +16,7 @@ Checked when built and tested; the sections below say how.
 - [ ] 2. The app reads its profile: surface, layouts, default mappings and app set follow from it
       (surface, layout and apps done; default mappings wait for RFC 0011's physical controls)
 - [ ] 3. The engine reads it: audio block size, budgets and reliability level follow from it
-      (block size done; budgets and reliability wait for RFC 0025 and RFC 0027)
+      (block size and the budget (RFC 0025) done; reliability waits for RFC 0027)
 - [ ] 4. Packages and Performances checked against it (with RFC 0006 and RFC 0025)
 - [ ] 5. A second product's profile (a desktop module or pedal) built from the same image
 

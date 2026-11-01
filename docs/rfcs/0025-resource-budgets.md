@@ -1,6 +1,7 @@
 # RFC 0025: Resource budgets: knowing before loading whether it fits
 
-Status: proposed, 2026-11-01. Required for every product Oscairn runs on. Builds on the
+Status: in progress, 2026-11-01: steps 2–4 built, step 1 partly ([status](#status)). Required for
+every product Oscairn runs on. Builds on the
 voice budget ([RFC 0018](0018-voice-budget-and-stealing.md)), device profiles
 ([RFC 0024](0024-device-profiles.md)), packages' resource estimates
 ([RFC 0006](0006-packages-and-portability.md#platform-builds-and-hardware)) and hardware
@@ -11,9 +12,11 @@ reservations ([RFC 0004](0004-hardware-services.md#select-and-reserve-before-act
 Checked when built and tested; the sections below say how.
 
 - [ ] 1. Measuring: each plugin's CPU per block (at rest and per voice) and memory, recorded on the device
-- [ ] 2. Estimating a Performance from those measurements and the device's budget
-- [ ] 3. Admission: loading, switching and editing check the estimate; refuse or warn with the reason
-- [ ] 4. Seamless changes counted: the outgoing Performance's plugins until they ring out
+      (built: one CPU figure per plugin build, its busiest recent blocks, and memory; not yet split at rest and per voice)
+- [x] 2. Estimating a Performance from those measurements and the device's budget
+- [x] 3. Admission: loading, switching and editing check the estimate; refuse or warn with the reason
+      (loading a Performance and adding a plugin are checked and refused with the reason; a warning instead of a refusal is not offered yet)
+- [x] 4. Seamless changes counted: the outgoing Performance's plugins until they ring out
 - [ ] 5. Estimates in packages and Sounds, checked at install and in the library
 
 ## Problem
@@ -34,10 +37,10 @@ not fit. Estimates come from measurements on the device, not from the plugin's w
 
 ## Measuring
 
-- **CPU:** the engine times each plugin's process call (today only the audio callback as a whole
-  is timed, for the CPU load in `session.status`; per-plugin timing is this RFC's first step).
-  Kept per plugin and build, on this device: the time per block at rest and the added time per
-  sounding voice, as a high percentile (not the mean), at the device's block size.
+- **CPU:** the plugin hosts already time each process call (CLAP and LV2, in the engine and in
+  workers: the last and the largest block's time). Kept per plugin and build, on this device: the
+  time per block at rest and the added time per sounding voice, as a high percentile (not the
+  mean), at the device's block size.
 - **Memory:** what a plugin instance holds after activation and after loading its state (samples
   included), from the worker process's accounting where it runs isolated (RFC 0010), else from
   the plugin's declaration.
@@ -70,6 +73,31 @@ memory. The budget keeps a margin (by reliability level, RFC 0027: more on `pass
   measurement is noted and its estimate raised.
 - **Library and packages:** a Sound or Performance shows whether it fits this device, from its
   plugins' estimates, before it is opened.
+
+## Status
+
+Built 2026-11-01 (`core/control/src/budget.cpp`; `setBudget`, `estimate`; `budget.set`,
+`budget.estimate`). The app sets the engine's budget from its device profile: one audio thread's
+time less the reliability level's margin (desktop 90%, instrument 75%, pass-through 60%) and 80%
+of the profile's memory. Until a budget is set nothing is measured or checked, so tests and tools
+never write the user's data folder.
+
+- **Measured:** at each service tick, every plugin's last block as a share of the block's time,
+  kept as a slowly falling high-water mark (about ten minutes' half-life) per plugin build (ID
+  and version), skipping its first 32 blocks; memory every second, a worker's share of its
+  process's resident memory or, in the engine's process, what the process grew by while the
+  plugin loaded. Kept in `measurements.json` in the data folder, saved every 30 seconds when
+  changed and when the session ends. One sample a tick can miss a rare spike between ticks.
+- **Estimated:** the open Performance, or one in a folder from its document's plugin identities;
+  a plugin never measured here counts at 2% of the audio time and 32 MiB, marked unmeasured.
+- **Admitted:** a Performance over the budget is refused, and so is a plugin that would take the
+  open one over it (it is unloaded again), each saying what is needed, what is allowed and the
+  three heaviest plugins. A Performance that fits alone but not beside the one playing (and any
+  still ringing out) opens as a cut; the desktop says so after opening it.
+
+`control-parts` checks a plugin measured while it plays and known to the next session, a plugin
+and a Performance refused, and a change that becomes a cut when both would not fit and rings out
+when they would. `desktop-profile` checks the profile's budget figures.
 
 ## Open questions
 

@@ -307,6 +307,10 @@ void Session::loadPerformance(const std::string& directory) {
     if(directory.empty() || directory.find('\0')!=std::string::npos)bad("invalid directory");
     const auto root=fs::canonical(directory);validateTree(root);const auto doc=document(root);V d=doc.get();
     fields(d,{"format","version","info","libraries","transport","audioInputs","audioOutputs","nodes","wires","parts","mappings","pads","scenes","sceneUntouched","scene","controls"});
+    // Over the budget it is refused, saying what does not fit (RFC 0025).
+    bool seamless=true;
+    if(budget_.cpu>0){const auto e=estimate(root.string());if(!e.fits)bad("this Performance "+tooMuch(e));seamless=e.seamless;
+        if(!seamless)std::fprintf(stderr,"oscairn: opened at once: with the last Performance ringing out it would not fit\n");}
     const auto pads=padsFrom(field(d,"pads"));
     if(text(field(d,"format"))!="oscairn.performance" || integer(field(d,"version"))!=4)bad("unsupported format version");
     fields(field(d,"info"),{"id","name","description","tags","color","revision","parent","hash","origin"});const auto info=readInfo(root/"performance.json","oscairn.performance");
@@ -510,7 +514,9 @@ void Session::loadPerformance(const std::string& directory) {
     // Seamless (RFC 0021): this Performance's plugins, and any still ringing out from the one
     // before, come along retiring: held notes play on until released and tails ring out, while
     // new notes go to the new Performance.
-    std::set<NodeId> leaving=leaving_;for(const auto& [id,name]:nodes_)leaving.insert(id);
+    // Unless the two together would not fit the budget (RFC 0025): then the change is a cut.
+    std::set<NodeId> leaving;
+    if(seamless){leaving=leaving_;for(const auto& [id,name]:nodes_)leaving.insert(id);}
     next->carryOver(graph_,leaving);
     compileWires(*next,wires,disabled,disabled,leaving);auto rungOut=disabled;
     std::set<std::pair<NodeId,uint32_t>> mappings;

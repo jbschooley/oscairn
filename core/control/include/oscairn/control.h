@@ -98,6 +98,18 @@ namespace oscairn
         // Control thread, engine-local paths. Performance save includes all prepared sounds
         // in a NEW folder; load validates before replacing the current graph.
         virtual void savePerformance(const std::string& directory) = 0;
+        // Resource budgets (RFC 0025). The device's limits, set by the app from its profile: `cpu`
+        // is the share of the audio thread's time (each block's duration) the plugins may take,
+        // after the reliability level's margin; `memory` in bytes (0: not checked). Until a budget
+        // is set nothing is checked and nothing is measured.
+        struct Budget { double cpu = 0; uint64_t memory = 0; };
+        virtual void setBudget(const Budget& budget) = 0;
+        // What a Performance needs: the open one (directory empty) or one in a folder, each plugin
+        // at its cost measured on this device or at a default (measured false). fits: within the
+        // budget; seamless: within it together with what plays now, so a change to it rings out.
+        struct Cost { std::string name, plugin; double cpu = 0; uint64_t memory = 0; bool measured = false; };
+        struct Estimate { double cpu = 0; uint64_t memory = 0; std::vector<Cost> plugins; Budget budget; bool fits = true, seamless = true; };
+        virtual Estimate estimate(const std::string& directory = {}) = 0;
         // An export (RFC 0021): one archive file (package.h) holding this Performance, every sample
         // its plugins use, and the library Sound of each part still that Sound; with editedSounds,
         // also the Sound of each part edited since, as it is in the library. Refuses a file that exists.

@@ -14,6 +14,8 @@ namespace oscairn
         ~RemoteControl() override;
         void service();
         void savePerformance(const std::string& directory) override;
+        void setBudget(const Budget& budget) override;
+        Estimate estimate(const std::string& directory = {}) override;
         void exportPerformance(const std::string& file, bool editedSounds = false) override;
         void loadPerformance(const std::string& directory) override;
         PerformanceInfo performanceInfo() const override;

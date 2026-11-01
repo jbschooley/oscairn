@@ -9,6 +9,11 @@
 #include <locale>
 #include <cctype>
 #include <cmath>
+#include <fstream>
+#include <unistd.h>
+#ifdef __APPLE__
+#include <libproc.h>
+#endif
 #include <cstdlib>
 #include <stdexcept>
 namespace oscairn
@@ -167,6 +172,21 @@ namespace oscairn
     }
     void setPlacementPolicy(PlacementPolicy p) {policy()=std::move(p);}
     const PlacementPolicy& placementPolicy() {return policy();}
+    uint64_t residentBytes(long pid)
+    {
+        if(pid == 0) pid = long(getpid());
+#ifdef __APPLE__
+        proc_taskinfo info{};
+        if(proc_pidinfo(int(pid), PROC_PIDTASKINFO, 0, &info, sizeof(info)) != int(sizeof(info))) return 0;
+        return info.pti_resident_size;
+#else
+        std::ifstream statm("/proc/" + std::to_string(pid) + "/statm");
+        uint64_t pages = 0, resident = 0;
+        if(!(statm >> pages >> resident)) return 0;
+        return resident * uint64_t(sysconf(_SC_PAGESIZE));
+#endif
+    }
+
     std::shared_ptr<PluginHost> loadPlugin(const std::string& path,const std::string& id,double rate,uint32_t frames,ProcessingMode mode,Lv2BufferLimits lv2Buffers)
     {
         (void)lv2Buffers; // LV2-only resource policy.
