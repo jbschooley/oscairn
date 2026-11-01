@@ -18,5 +18,5 @@ for p in PhaserII:Phaser ChorusI:Chorus; do
 done
 echo lv2 built
 cmake -S /ports/odin2 -B $out/odin2 -G Ninja -DCMAKE_BUILD_TYPE=Release > $out/odin2-configure.log 2>&1
-cmake --build $out/odin2 --target Odin2_CLAP > $out/odin2-build.log 2>&1
+cmake --build $out/odin2 --target Odin2_CLAP -j 2 > $out/odin2-build.log 2>&1
 echo odin2 built
