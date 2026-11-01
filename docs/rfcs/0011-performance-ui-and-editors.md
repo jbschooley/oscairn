@@ -288,7 +288,11 @@ touch strip...), its count and its **role**:
   Knob, scene and part buttons), which assignments leave alone.
 
 A device **layout** places the controls on its panel ([design language](../design-language.md)).
-The planned controller-mapping service owns pickup, relative encoders and bank state.
+The controller-mapping service owns pickup, relative encoders and bank state (below).
+
+An external MIDI controller's controls join the device's while it is connected, numbered on
+after them ([RFC 0024's controllers](0024-device-profiles.md#controllers)): its knobs play the
+banks, its faders part levels, its wheels pitch and modulation, exactly as a panel's would.
 
 ### Defaults, so nothing must be programd
 
@@ -296,16 +300,25 @@ Assignments resolve in layers. Each layer fills only what the layers above it le
 
 1. **Performance overrides** set by the musician (below).
 2. **The sound's own assignments**, saved with the sound by its author: Assign 1–8 and
-   named macros. They travel with the sound to another performance or device.
+   named macros, and controls assigned by identity (`wheel:2` to the filter, say) to its own
+   parameters and controls. They travel with the sound to another performance or device.
 3. **Fixed role banks**, filled from roles the plugin declares (cutoff, resonance, attack,
    release, effect mix). They are the same on every instrument. A role the plugin lacks
    shows as a blank control rather than something unrelated. Third-party plugins without
    declared roles get Assign banks from their first parameters until someone maps them.
 4. **Performance conventions:**
    - faders control part levels (in their part mode);
-   - buttons control part mute, or scenes;
+   - buttons control part mute, or scenes, as their group's `target` says;
    - knobs follow the selected part's banks;
-   - the mod wheel, pedals and aftertouch are sent to every part as standard controllers.
+   - the mod wheel, pedals and aftertouch are sent to every part as standard controllers,
+     as their group's `functions` say.
+
+**The mod wheel is the Sound's.** It is a `wheel` control like any other, sent to every part as
+CC 1, which each plugin turns into its own default (vibrato in Oscairn's SDK). A Sound can assign
+it to one of its own parameters or controls instead; then moving the wheel plays that target in
+that part, and the parts whose Sounds leave it unassigned still get the plugin's default. A
+Performance override for the wheel plays its target in place of every part's. The same holds for
+every control of a group with `functions` (pitch bend, pedals, the ribbon).
 5. **Effects bank:** the main control of each effect box in the selected part, in chain order.
 
 **Banks are as wide as the group playing them**, not a fixed four: a group of six knobs gets
@@ -316,6 +329,30 @@ through the banks (Assign 1–4, Assign 5–8, Filter, Amp EG, Effects on the KI
 rows shows each row's bank, the Nth row of a kind taking the Nth bank of that kind. Two banks
 side by side would only fit a group twice a bank's width, and every bank is as wide as its
 group, so a group shows one bank at a time.
+
+### The controller-mapping service
+
+What turns a moved control into a value at its target, the same for a panel and a controller
+([architecture](../architecture.md#physical-controls-takeover-and-direct-position-access-planned)):
+
+- **Finding the control:** a message from a controller's port is looked up by port, channel and
+  CC, note or pitch bend in its profile's groups; what it plays is the control's resolved target
+  now (the layers above, with each group's page, row or mode). A group with rows sending a number
+  per row moves to the row the message came from.
+- **Absolute knobs and faders pick up** (soft takeover): after the target changes (another
+  page, part or override), or its value is changed by something else (the screen, a scene, another
+  control), the control sends nothing until it reaches the target's value (within 1/127) or
+  crosses it, then follows. Pickup state is per control, never per parameter, and is not saved.
+- **Relative encoders** add each step, 1/127 of the target's range per step and the step's size
+  with acceleration, to the target's current value: no pickup is needed.
+- **Buttons:** a momentary button toggles a mute or selects a scene on each press; a latching
+  one sets the mute from its state, or selects a scene when it turns on.
+- **Passed through:** a control with a standard-controller function and nothing assigned does
+  nothing in the service: its message reaches every part on its own as that controller.
+
+Built first in the app, where the profiles and the groups are, applying values through the
+control API like the screen's knobs; moving it beside the engine's direct event path (RFC 0004)
+comes with the panel's hardware service.
 
 ### Pads
 

@@ -20,6 +20,10 @@ Checked when built and tested; the sections below say how.
       (block size and the budget (RFC 0025) done; reliability waits for RFC 0027)
 - [ ] 4. Packages and Performances checked against it (with RFC 0006 and RFC 0025)
 - [ ] 5. A second product's profile (a desktop module or pedal) built from the same image
+- [ ] 6. External MIDI controllers: [controller profiles](#controllers) matched by port name,
+      their controls joining the device's, each group's [default target](#default-targets)
+      (parsing, defaults, resolution, encodings and pickup built; the SMK37 Elite's MIDI
+      numbers wait for a reading with `oscairn-midi-monitor`)
 
 ## Problem
 
@@ -129,6 +133,24 @@ buttons, wheels, jog, touchstrip, pedal, expression, footswitches), `count`, wha
 | `assign` | Play banks ([RFC 0011](0011-performance-ui-and-editors.md#physical-controls)) | Knobs: `rows` (each `{name, bank}`, its row button picking it, `bank` one of `assign`, `filter`, `ampEG`, `eq`, `levels`, `effects`) or `paging` (`button` or `screen`), not both. Faders: `modes`, from `part`, `element` and `audio` |
 | `fixed` | A dedicated function each | `functions`, one name per control, when known |
 
+Every group can say what it does by default (below), so a stage keyboard needs no programming.
+
+#### Default targets
+
+| Kind | `role: assign` plays, when nothing is assigned | Field |
+| --- | --- | --- |
+| knobs, encoders | the banks (rows or pages, as above) | `target`: `banks` (the default) |
+| faders | part levels, parts then buses; their `modes` add element and audio levels | `target`: `partLevels` (the default) |
+| buttons | part mutes, or scenes (button N selects scene N) | `target`: `partMutes` (the default) or `scenes` |
+| wheels, touchstrip, pedal, expression, footswitches, jog | a standard controller each, sent to every part, so each part's plugin does its own thing with it (the mod wheel's vibrato) | `functions`, one per control: `pitchBend`, `modulation` (CC 1), `breath` (CC 2), `foot` (CC 4), `expression` (CC 11), `sustain` (CC 64), `portamento` (CC 65), `sostenuto` (CC 66), `soft` (CC 67) |
+
+`target` is only on assign groups and only with a value its kind allows. `functions` on an
+assign group names standard controllers only; a `fixed` group keeps free names (`volume`,
+`tempo`). A wheel that is `assign` can be reassigned, by the Performance or by the Sound
+([RFC 0011](0011-performance-ui-and-editors.md#physical-controls)); a `fixed` one cannot. A
+wheel group's pitch-bend wheel and mod wheel are best two groups of one (they speak different
+messages, below), pitch bend first, so the mod wheel is `wheel:2` on every keyboard.
+
 Banks are as wide as the group playing them. For example, the KICK's panel has four encoders,
 P1 to P4, that play the row selected on screen (`assign`, `paging: screen`); VOLUME, MASTER and
 REC GAIN knobs and the large TEMPO wheel (`fixed`); 16 pads (`notes`); 31 buttons and a touch
@@ -158,11 +180,83 @@ device and screen, `desktop` reliability, no physical controls unless a controll
 
 ## Controllers
 
-A connected controller (a keyboard, a pad controller, a DJ controller) has a profile of its own
-with `controls` and `midi` only, matched by its USB identity. Its controls join the device's for
-mappings while it is connected. This replaces per-controller special cases.
+An external controller (a USB MIDI keyboard, a pad controller, a DJ controller) has a profile in
+the same format, version 2, with three things a device profile does not have:
 
-## Step 1 status
+- **`midi.ports`:** the controller's MIDI input ports, each `{name, index, protocol}`. A port
+  matches an input whose name contains `name`, ignoring case (`"SMK37"` matches `SMK37 Elite`
+  on macOS and `SMK37 Elite MIDI 1` on Linux); `index` (from 1) picks the Nth matching input, in
+  the order the system lists them, for a device with several ports under one name (the MODX M's
+  port 1 and port 2). `protocol` is `midi` (the default), or `mackie` for a Mackie Control port,
+  which is declared but not read yet (the next step, below). Matching by name works on every OS
+  and through every MIDI driver; USB vendor and product IDs are not visible to JUCE's MIDI
+  inputs. A profile with `midi.ports` is a controller's: it holds `format`, `version`, `id`,
+  `name`, `controls`, `midi` (only `ports`) and `estimated`, and nothing about a platform,
+  screens or reliability.
+- **`midi` on each group:** how its controls talk MIDI: `port` (which of `midi.ports`, from 1;
+  the first by default, and a `midi` port), `channel` (1 to 16) and one of `cc` (a controller
+  number per control, 0 to 127), `notes` (a note number per control, for pads and note buttons)
+  or `pitchBend: true` (a group of one wheel). With `cc`, `encoding` says how the value is sent,
+  for the whole group or as a list, one per control:
+
+  | Encoding | Values | Step |
+  | --- | --- | --- |
+  | `absolute` (the default) | 0 to 127, the control's position | |
+  | `twosComplement` | 1 to 63 up, 127 down to 65 for −1 to −63 | 1 up, 127 down |
+  | `binaryOffset` | 64 plus the step: 65 up, 63 down | 65 up, 63 down |
+  | `signMagnitude` | bit 6 the sign: 1 to 63 up, 65 to 127 for −1 to −63 | 1 up, 65 down |
+
+  A step larger than one is the controller's acceleration and moves the value as far. Buttons
+  say how they send with `button`: `momentary` (the default: a value of 64 or more, or a note
+  on, is a press, and each press toggles a mute or selects a scene) or `latch` (the controller
+  keeps the state: 64 or more is on, less is off). An assign group of knobs with hardware `rows`
+  whose row switch changes the numbers it sends (the MODX M's [ASSIGN] button: knobs 1 to 4, or
+  5 to 8) lists a number per control per row, row after row; a message then also says which row
+  the group is on. Two controls of one controller never share a message; where the hardware
+  sends one number from two controls (the MODX M's FC2 and Super Knob), the profile gives it to
+  one and says so in the other's `sensing`. A keys group needs no `midi` (its notes go to the
+  parts, as every input's do, RFC 0012); a controller's group without `midi` is described but
+  does nothing yet.
+- **Device profiles refuse both:** a device's panel speaks its own protocol, not MIDI.
+
+While a matching port is connected, the controller's groups **join the device's**, after them,
+and are numbered on from them by identity: a KICK with an eight-knob controller has `knob:1`
+to `knob:4` on its panel and `knob:5` to `knob:12` on the controller. On the desktop, which has
+no controls, the controller's are the only ones, so its knobs are `knob:1` to `knob:8`: joining
+replaces nothing, and an empty panel needs no special case. Their defaults come from their
+groups like any device's: the knobs play the banks, the faders part levels, the wheels pass
+pitch bend and modulation to every part. Several controllers join in the order of their
+profiles' ids. RFC 0011's controller-mapping service decodes the encodings and does pickup.
+
+Built in: `smk37-elite`, the owner's Arturia-style SMK37 Elite (37 keys, 16 pads as eight by
+two, pitch and mod wheels, eight endless knobs, four faders). Its MIDI numbers and channels are
+guessed (from the defaults such keyboards often ship with: knobs on CC 74, 71, 76, 77, 93, 18, 19 and 16,
+faders on CC 73, 75, 79 and 72, pads on notes 36 to 51 on channel 10), as is the encoding of
+knobs 7 and 8, which send something relative (taken as `signMagnitude`) where knobs 1 to 6 send
+absolute values. `oscairn-midi-monitor` (in `tools/`) prints every message from every input and
+a table per control, to fill in the real numbers.
+
+The second built-in controller is `modx-m-usb`, a MODX M played over USB in DAW Remote's Plugin
+mode (the DAW type Cubase, Logic or Live), apart from `modx-m`, the profile for running on that
+hardware. From Yamaha's MODX M Data List and Supplementary Manual v3.00: port 1 carries the keys,
+pitch bend, the mod wheel (CC 1), aftertouch and every control as a 7-bit absolute CC on the
+instrument's MIDI channel (each number settable from 1 to 95): knobs 1 to 8 on CC 17 to 24, four
+knobs whose [ASSIGN] button picks 1 to 4 or 5 to 8 (`rows`, a number per control per row); sliders
+on CC 70 to 77; display knobs on CC 78 to 83; the Super Knob on CC 95; scene buttons on CC 25 to 31
+and 85; Assign 1, Assign 2 and MSEQ Trigger on CC 86, 87 and 89; portamento switch and time on CC 65
+and 5; FC1 on CC 11, FC2 on CC 95 (the Super Knob's), the footswitch on CC 88, sustain on CC 64 and
+the ribbon on CC 16. Port 2 is DAW Remote as Mackie Control (part select, mute and solo, transport,
+the jog dial and the cursors), declared `mackie`; ports 3 (a thru to the 5-pin jacks) and 4 (ESP)
+are not used. Estimated until a unit confirms them: the port names and order, the channel, whether
+knobs 1 to 8 are endless or pots (taken as absolute pots, as the Data List's 7-bit values suggest),
+whether the scene buttons latch, and whether the slider mode buttons change what Plugin mode sends.
+
+**Next: Mackie Control.** A `mackie` port is read by a parser of its own, mapping its fixed
+messages (channel strips' select, mute and solo, the transport, the jog wheel, the cursors) to
+part select, mute and solo, the transport and the screen's navigation, with no `midi` per group:
+Mackie Control fixes the messages.
+
+## Step 1 status## Step 1 status
 
 Built 2026-11-01 (`hosts/standalone/Profile.h`, [schema](../profile.schema.json)). Profiles are
 strict JSON, as themes are: unknown fields, wrong types and impossible values (more realtime
