@@ -91,6 +91,7 @@ namespace oscairn::standalone
         std::optional<Control::LibraryResult> library(const Control::LibraryQuery& query) const;
         std::optional<Control::LibraryItem> libraryItem(const std::string& id) const;
         std::optional<Control::PerformanceInfo> performanceInfo() const;
+        std::optional<std::vector<Control::PerformancePart>> performanceParts(const std::string& directory) const;
         std::string pluginId(const std::string& node) const;
         void replacePlugin(const std::string& node,const std::string& path,const std::string& id,const std::string& preset={});
         struct Editor { std::string name,id,path;std::vector<ParamInfo> parameters;std::vector<PresetInfo> presets; };

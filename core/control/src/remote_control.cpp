@@ -304,6 +304,19 @@ namespace oscairn
         auto d=impl_->call("parts.loadSound","{\"part\":"+std::to_string(part)+",\"id\":"+quote(id)+'}',30000);impl_->refresh();
         return strings(field(field(d.get(),"result"),"flagged"));
     }
+    std::vector<Control::PerformancePart> RemoteControl::performanceParts(const std::string& directory) {
+        auto d=impl_->call("performance.parts","{\"directory\":"+quote(directory)+'}',30000);std::vector<PerformancePart> out;
+        for(auto x:array(field(field(d.get(),"result"),"parts")))out.push_back({static_cast<uint32_t>(integer(field(x,"id"))),string(field(x,"name")),boolean(field(x,"bus"))});
+        return out;
+    }
+    Control::Imported RemoteControl::importPerformance(const std::string& directory,const std::vector<uint32_t>& parts) {
+        std::string list;for(const auto id:parts){if(!list.empty())list+=',';list+=std::to_string(id);}
+        auto d=impl_->call("performance.import","{\"directory\":"+quote(directory)+",\"parts\":["+list+"]}",30000);impl_->refresh();
+        auto r=field(d.get(),"result");Imported out;
+        for(auto x:array(field(r,"parts")))out.parts.push_back(static_cast<uint32_t>(integer(x)));
+        out.notes=strings(field(r,"notes"));
+        return out;
+    }
     uint32_t RemoteControl::partFromSound(const std::string& id) {
         auto d=impl_->call("parts.fromSound","{\"id\":"+quote(id)+'}',30000);impl_->refresh();
         return static_cast<uint32_t>(integer(field(field(d.get(),"result"),"part")));

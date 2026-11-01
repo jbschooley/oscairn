@@ -2240,6 +2240,80 @@
               "$ref": "#/$defs/Id"
             },
             "method": {
+              "const": "performance.parts"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "directory": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "directory"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "params"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
+              "const": "performance.import"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "directory": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "parts": {
+                  "type": "array",
+                  "maxItems": 256,
+                  "items": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                }
+              },
+              "required": [
+                "directory"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "params"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
               "const": "assets.register"
             },
             "params": {

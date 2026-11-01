@@ -110,10 +110,19 @@ with tempfile.TemporaryDirectory(prefix='oscairn-library-') as temporary:
         assert owners == sorted([part, added]) and tone not in [c['id'] for c in graph['controls']]
         rpc('parts.loadSound', {'part': part, 'id': pad}, True)
         rpc('library.query', {'kind': 'preset'}, True)
+        # Importing a Performance (RFC 0021): what it holds, then one chosen part.
+        exported = home / 'export.oscairn'
+        rpc('performance.save', {'directory': str(exported)})
+        held = rpc('performance.parts', {'directory': str(exported)})['parts']
+        assert [p['name'] for p in held] == [p['name'] for p in rpc('graph.get')['parts']] and not any(p['bus'] for p in held)
+        count = len(rpc('graph.get')['parts'])
+        imported = rpc('performance.import', {'directory': str(exported), 'parts': [held[0]['id']]})
+        assert len(imported['parts']) == 1 and len(rpc('graph.get')['parts']) == count + 1, imported
+        rpc('performance.import', {'directory': str(exported), 'parts': [9999]}, True)
         user = json.loads((home / 'library/user.json').read_text())
         assert user['favourites'] == [pad] and user['recent'][-2:] == [pad, copy]  # a gone item's stays, for if it returns
     finally:
         p.stdin.close()
         p.wait(timeout=10)
     assert p.returncode == 0
-print('ok: library info, save and load by ID, query, favourites, recents, rescan and Sounds')
+print('ok: library info, save and load by ID, query, favourites, recents, rescan, Sounds and importing')

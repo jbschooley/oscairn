@@ -300,9 +300,9 @@ in the others.
      option when it was edited; importing adds what the device lacks, by hash
      ([design](rfcs/0021-sounds-performances-and-library.md#exporting-a-performance))
    - [ ] hiding tags from the tag list, and tag colors
-   - [ ] **importing a Performance:** all of another Performance's parts, buses, their wires
-     and controls added to the open one, in one step
-     ([design](rfcs/0021-sounds-performances-and-library.md#importing-a-performance))
+   - [x] **importing a Performance:** all of it or chosen parts, each bringing its plugins,
+     buses, wiring and controls, in one step to undo; scenes come with all of it under free
+     names ([design](rfcs/0021-sounds-performances-and-library.md#importing-a-performance))
    - [ ] **seamless switching:** loading a Sound into a part keeps the notes already held and
      the outgoing chain's tails, with the incoming chain prepared off the audio thread, and
      says beforehand when it cannot

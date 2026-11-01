@@ -15,6 +15,8 @@
 #include <set>
 #include <span>
 
+struct json_value_s; // sheredom/json.h: the document readers' parsed values
+
 namespace oscairn
 {
     /// Device-independent graph session. Construct/configure/service/destroy on the
@@ -47,6 +49,8 @@ namespace oscairn
         SoundSaved savePartAsSound(uint32_t part,const std::string& name,bool asNew = false) override;
         std::vector<std::string> loadSound(uint32_t part,const std::string& id) override;
         uint32_t partFromSound(const std::string& id) override;
+        std::vector<PerformancePart> performanceParts(const std::string& directory) override;
+        Imported importPerformance(const std::string& directory, const std::vector<uint32_t>& parts = {}) override;
         bool supportsState(NodeId node) const override {return graph_.host(node).supportsState();}
         void saveState(NodeId node,const std::string& directory) override;
         std::vector<PresetInfo> presets(NodeId node) override {return graph_.host(node).presets();}
@@ -276,6 +280,7 @@ namespace oscairn
         Library& library() {if(!library_)library_=std::make_unique<Library>();return *library_;}
         PerformanceInfo writeDocument(const std::string& directory,PerformanceInfo info,const Part* sound,std::vector<std::string>* left);
         std::vector<std::string> loadSoundInto(uint32_t part,const std::filesystem::path& folder);
+        std::map<std::string,NodeId> addNodes(const ::json_value_s* nodes,const std::filesystem::path& root,std::vector<NodeId>& added,const std::set<std::string>* only); // only: these keys (and their engines); null: all
         std::set<NodeId> nodesOf(const Part& part) const;
         uint64_t revision_ = 0, sequence_ = 0;
         using Address = std::pair<NodeId,uint32_t>;

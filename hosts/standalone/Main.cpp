@@ -187,6 +187,7 @@ namespace oscairn::standalone
         {
             juce::PopupMenu menu;
             if(index==0){const bool free=engine_.connected() && !engine_.soundBusy();menu.addItem(5002,"Save",free);menu.addItem(5003,"Save As New...",free);
+                menu.addItem(5004,"Import Performance...",free && actions_.offered(pickPerformance));
                 // The color lists and setlists show it in; saved with the Performance.
                 if(const auto info=engine_.performanceInfo()){juce::PopupMenu colors;addColors(colors,info->color,5100,"None");menu.addSubMenu("Color",colors,free);}
                 menu.addSeparator();menu.addItem(5000,"Save to Folder...",free);menu.addItem(5001,"Open Folder...",free);return menu;}
@@ -244,6 +245,7 @@ namespace oscairn::standalone
             if(id==8001){showApp(libraryApp_,"Library",[this]{return new LibraryPane(engine_,actions_,LibraryPane::Mode::Play);},900,700);return;}
             if(id==8002){setlist();showApp(setlist_,"Setlist",nullptr,0,0);return;}
             if(id==5002 || id==5003){saveToLibrary(id==5003);return;}
+            if(id==5004){importPerformance();return;}
             if(id==8100){loadSound();return;}
             if(id==8101 || id==8102){saveSound(id==8102);return;}
             if(id==8104){updateSound();return;}
@@ -296,6 +298,55 @@ namespace oscairn::standalone
             picker_->onClose=[pane]{pane->onPicked({});};
             setDesktopMode(*pane,inputMode_==InputMode::Touch?2:1);
             picker_->setVisible(true);picker_->toFront(true);
+        }
+        // Another Performance's parts into this one (RFC 0021): the Library picks it, then its
+        // parts are listed, all ticked; the chosen ones come with what they need.
+        void importPerformance()
+        {
+            actions_.request(pickPerformance,{},[safe=juce::Component::SafePointer<Window>(this)](const std::string& id){
+                if(!safe || id.empty())return;
+                const auto item=safe->engine_.libraryItem(id);
+                if(!item || item->id.empty())return;
+                const auto parts=safe->engine_.performanceParts(item->path);
+                if(!parts)return;
+                struct Choose : juce::Component
+                {
+                    juce::OwnedArray<juce::ToggleButton> boxes;juce::TextButton import{"Import"},cancel{"Cancel"};
+                    std::vector<uint32_t> ids;
+                    Choose(const std::vector<Control::PerformancePart>& parts)
+                    {
+                        for(const auto& p:parts){auto* b=boxes.add(new juce::ToggleButton(juce::String::fromUTF8(p.name.c_str())+(p.bus?" (bus)":"")));b->setToggleState(true,juce::dontSendNotification);addAndMakeVisible(b);ids.push_back(p.id);}
+                        addAndMakeVisible(import);addAndMakeVisible(cancel);
+                        setSize(360,int(parts.size())*30+70);
+                    }
+                    void resized() override
+                    {
+                        auto area=getLocalBounds().reduced(16,12);
+                        for(auto* b:boxes)b->setBounds(area.removeFromTop(30));
+                        auto bar=area.removeFromBottom(30);
+                        import.setBounds(bar.removeFromRight(100));bar.removeFromRight(8);cancel.setBounds(bar.removeFromRight(100));
+                    }
+                    // Ticked parts by their IDs in the file; all ticked is all of it, scenes included.
+                    std::vector<uint32_t> chosen() const
+                    {
+                        std::vector<uint32_t> out;for(int i=0;i<boxes.size();++i)if(boxes[i]->getToggleState())out.push_back(ids[size_t(i)]);
+                        return out.size()==ids.size()?std::vector<uint32_t>{}:out;
+                    }
+                };
+                auto* content=new Choose(*parts);
+                juce::DialogWindow::LaunchOptions options;
+                options.dialogTitle="Import from "+juce::String::fromUTF8(item->name.c_str());
+                options.content.setOwned(content);options.componentToCentreAround=safe.getComponent();options.useNativeTitleBar=true;options.resizable=false;
+                auto* dialog=options.launchAsync();
+                content->cancel.onClick=[dialog]{dialog->exitModalState(0);};
+                content->import.onClick=[safe,dialog,content,path=item->path]{
+                    const auto chosen=content->chosen();
+                    const bool none=std::none_of(content->boxes.begin(),content->boxes.end(),[](auto* b){return b->getToggleState();});
+                    dialog->exitModalState(0);
+                    if(!safe || none)return;
+                    SoundAction import;import.kind=SoundAction::ImportPerformance;import.directory=path;import.parts=chosen;safe->engine_.soundAction(std::move(import));
+                };
+            });
         }
         // The library's newer revision of the Sound the selected part came from, in its place.
         void updateSound()

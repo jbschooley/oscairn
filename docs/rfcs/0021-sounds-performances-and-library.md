@@ -49,7 +49,7 @@ Checked when built and tested; the sections below say how.
       packages and `LibraryModel` remain
 - [ ] 3. Desktop pane: the Library app and Part menu done; the dockable pane, inspector,
       drag to part and keyboard remain
-- [ ] Importing a Performance ([design](#importing-a-performance))
+- [x] Importing a Performance, all of it or chosen parts with what they need ([design](#importing-a-performance))
 - [ ] 4. Plugin presets
 - [ ] 5. Audition and seamless loading
 - [ ] 6. Panel
@@ -293,27 +293,24 @@ The info block, the same in both:
 
 ### Importing a Performance
 
-Requested October 31, 2026: a Performance can import another, which adds all of its parts to
-the open one. It is several Sounds at once, with what joins them:
+Built 2026-10-31 (`performance.import`, Performance > Import Performance). A Performance can
+import another, all of it or chosen parts, adding them to the open one in one step to undo:
 
-- **Every part and bus** arrives as a new part with its seat: input and zones, device
-  selectors, output, fader, pan, mute and solo. A part that played to the imported
-  Performance's bus plays to the imported copy of that bus; sends between imported parts
-  follow them.
-- **User wires** with both ends among the imported nodes come along; none cross into the
-  open Performance's parts, since nothing joined them before.
-- **Controls:** part-owned controls come with their parts. The imported Performance's own
-  controls come too, with their targets on imported parts and plugins. A name already used
-  gets a number ("Super 2").
-- **Scenes:** the open Performance's scenes keep the imported parts at the levels and mutes
-  they arrive with; the imported scenes do not come. Whether they should merge by name
-  ("Verse" into "Verse") is an open question below.
-- **Provenance:** each imported part records the Performance it came from, as a part loaded
-  from a Sound records its Sound.
+- **Chosen parts bring what they need:** their plugins with their state, the buses they play
+  through or send to (and those buses' own), the wires and note-to-parameter mappings among
+  what comes, the controls they own, and the Performance's controls whose every target comes
+  too. Importing all of it brings everything, loose plugins included.
+- **Every part and bus** arrives as a new part with its seat (input and zones, device
+  selectors, output, fader, pan, mute, solo) and where it came from. An output or audio
+  input this device lacks becomes the first one, with a note.
+- **Names:** a scene, control or plugin whose name is taken gets the next number: "Verse"
+  becomes "Verse 2", "Scene 3" becomes "Scene 4". Each rename is reported.
+- **Scenes come with all of it,** added beside the open Performance's. The open
+  Performance's scenes keep the arriving parts, scene parameters and controls as they
+  arrive; the arriving scenes keep the open Performance's as they are. Chosen parts bring no
+  scenes: a scene describes a whole Performance.
 - Pads, tempo, transport and the imported info block stay with the open Performance.
-- **Undo:** one step. **Cutting:** importing adds parts and changes no existing one, so it
-  could leave every playing note alone; whether it does depends on the same chain
-  preparation as seamless switching.
+- It cuts what a graph rebuild cuts; the parts already playing are not replaced.
 
 ## Plugin presets
 
@@ -623,8 +620,6 @@ other requests do not wait the way `assets.register` does today.
 
 ## Open questions
 
-- **Importing scenes.** Whether importing a Performance merges its scenes into the open
-  one's by name ("Verse" into "Verse"), or leaves them behind as now proposed.
 
 - **Scenes choosing Sounds.** Partly answered by the scene model (RFC 0011, "Scenes, the
   full model"): a scene enables and disables blocks and wires, so a part holding two lanes

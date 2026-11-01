@@ -93,6 +93,17 @@ bool lv2Path(const std::string& path){auto p=fs::path(path).lexically_normal();i
 std::string ports(const std::vector<kick::clap::Port>& list){std::vector<std::string> out;for(const auto& p:list)out.push_back("{\"id\":"+std::to_string(p.id)+",\"channels\":"+std::to_string(p.channels)+",\"flags\":"+std::to_string(p.flags)+'}');return join(out);}
 void checkPorts(V list,const std::vector<kick::clap::Port>& expected){const auto entries=array(list,Graph::maxAudioChannels);if(entries.size()!=expected.size())bad("audio port layout changed");for(size_t i=0;i<entries.size();++i){fields(entries[i],{"id","channels","flags"});if(integer(field(entries[i],"id"))!=expected[i].id || integer(field(entries[i],"channels"))!=expected[i].channels || integer(field(entries[i],"flags"))!=expected[i].flags)bad("audio port layout changed");}}
 void validateTree(const fs::path& root){size_t files=0;uint64_t bytes=0;for(const auto& e:fs::recursive_directory_iterator(root)){if(++files>65536 || e.is_symlink() || (!e.is_directory() && !e.is_regular_file()))bad("invalid or oversized asset tree");if(e.is_regular_file()){const auto n=e.file_size();if(n>16ull*1024*1024*1024-bytes)bad("assets exceed 16 GiB");bytes+=n;}}}
+// The next free name in a name's pattern: "Verse" gives "Verse 2", "Scene 3" gives "Scene 4".
+std::string nextFree(const std::string& name,const std::function<bool(const std::string&)>& taken){
+    if(!taken(name))return name;
+    std::string base=name;int n=1;
+    const auto space=name.find_last_of(' ');
+    if(space!=std::string::npos && space+1<name.size() && std::all_of(name.begin()+std::ptrdiff_t(space)+1,name.end(),[](char c){return c>='0' && c<='9';}) && name.size()-space<=9)
+        {base=name.substr(0,space);n=std::stoi(name.substr(space+1));}
+    std::string next;
+    do next=base+" "+std::to_string(++n);while(taken(next));
+    return next;
+}
 std::unique_ptr<json_value_s,decltype(&std::free)> document(const fs::path& root){const auto bytes=state_files::read(root/"performance.json",4*1024*1024);const auto error=detail::jsonPreflight({reinterpret_cast<const char*>(bytes.data()),bytes.size()},32);if(!error.empty())bad(std::string(error));auto* doc=json_parse(bytes.data(),bytes.size());if(!doc)bad("invalid JSON");return {doc,&std::free};}
 }
 
@@ -412,34 +423,23 @@ void Session::loadPerformance(const std::string& directory) {
     clearHistory(); // undo does not reach back into another Performance
 }
 
-// A Sound into a part (RFC 0021): its nodes are added with their saved state, the part's old
-// nodes go with every wire, mapping, scene value and control target on them, and the part keeps
-// its seat (input, output, sends, fader). The part's own controls are replaced by the Sound's; a
-// Performance control that targeted one moves to the Sound's control of the same name. One undoable step; notes
-// playing in the part are cut. Returns what could not be kept.
-std::vector<std::string> Session::loadSoundInto(uint32_t partId,const fs::path& folder) {
-    if(staged_)bad("commit staged graph edits before loading a Sound");
-    findPart(partId);
-    const auto root=fs::canonical(folder);validateTree(root);
-    const auto bytes=state_files::read(root/"sound.json",4*1024*1024);
-    if(const auto error=detail::jsonPreflight({reinterpret_cast<const char*>(bytes.data()),bytes.size()},32);!error.empty())bad(std::string(error));
-    const std::unique_ptr<json_value_s,decltype(&std::free)> doc{json_parse(bytes.data(),bytes.size()),&std::free};
-    V d=doc.get();if(!d)bad("invalid JSON");
-    fields(d,{"format","version","info","libraries","nodes","wires","part","mappings","controls"});
-    if(text(field(d,"format"))!="oscairn.sound" || integer(field(d,"version"))!=3)bad("not a version 3 Sound");
-    fields(field(d,"info"),{"id","name","description","tags","color","revision","parent","hash"});
-    const auto info=readInfo(root/"sound.json","oscairn.sound");
-    // Every asset resolves before any plugin loads.
-    for(auto node:array(field(d,"nodes"),256))if(member(node,"assets"))for(auto a:array(field(node,"assets"),65536)){
+// Adds a document's plugins (all, or those keyed in `keep` and the engines they share), with
+// their saved state, roots before the effect contexts sharing their engines; names that are
+// taken get the next number. Every asset must resolve first. On failure nothing stays added.
+std::map<std::string,NodeId> Session::addNodes(const json_value_s* list,const fs::path& root,std::vector<NodeId>& added,const std::set<std::string>* only) {
+    const auto nodes=array(list,256);
+    std::set<std::string> keep;
+    if(only){keep=*only;for(auto node:nodes){const auto key=text(field(node,"key"));if(keep.count(key))keep.insert(text(field(node,"engine")));}}
+    auto wanted=[&](V node){return !only || keep.count(text(field(node,"key")))!=0;};
+    for(auto node:nodes)if(wanted(node) && member(node,"assets"))for(auto a:array(field(node,"assets"),65536)){
         fields(a,{"library","path","sha256"});
         assets::Ref ref{text(field(a,"library")),text(field(a,"path")),text(field(a,"sha256"))};
         try{assets_.resolve(ref);}catch(const std::exception& e){bad("missing sound asset: "+std::string(e.what()));}}
-    // The Sound's plugins, roots before the effect contexts that share their engines.
-    std::map<std::string,NodeId> ids;std::vector<NodeId> added;
-    auto unique=[&](std::string name){const auto base=name;for(int n=2;!name.empty() && std::any_of(nodes_.begin(),nodes_.end(),[&](const auto& x){return x.second==name;});++n)name=base+" "+std::to_string(n);return name;};
+    std::map<std::string,NodeId> ids;
+    auto unique=[&](const std::string& name){return name.empty()?name:nextFree(name,[&](const std::string& n){return std::any_of(nodes_.begin(),nodes_.end(),[&](const auto& x){return x.second==n;});});};
     try{
-        const auto nodes=array(field(d,"nodes"),256);
         for(bool siblings:{false,true})for(auto node:nodes){
+            if(!wanted(node))continue;
             fields(node,{"key","name","plugin","engine","inputs","outputs","noteInputs","noteOutputs","assets"});
             const auto key=text(field(node,"key")),engine=text(field(node,"engine"));if((key!=engine)!=siblings)continue;
             if(key.size()<6 || key.size()>12 || key.substr(0,5)!="node-" || ids.count(key))bad("invalid or duplicate node key");
@@ -457,7 +457,30 @@ std::vector<std::string> Session::loadSoundInto(uint32_t partId,const fs::path& 
             for(const auto& p:h.parameters())observed_[{runtime,p.id}]=h.parameterValue(p.id);
             ids.emplace(key,runtime);
         }
-    }catch(...){for(const auto n:added)dropNode(n);graph_.commit();staged_=false;throw;}
+    }catch(...){for(const auto n:added)dropNode(n);added.clear();graph_.commit();staged_=false;throw;}
+    return ids;
+}
+
+// A Sound into a part (RFC 0021): its nodes are added with their saved state, the part's old
+// nodes go with every wire, mapping, scene value and control target on them, and the part keeps
+// its seat (input, output, sends, fader). The part's own controls are replaced by the Sound's; a
+// Performance control that targeted one moves to the Sound's control of the same name. One undoable step; notes
+// playing in the part are cut. Returns what could not be kept.
+std::vector<std::string> Session::loadSoundInto(uint32_t partId,const fs::path& folder) {
+    if(staged_)bad("commit staged graph edits before loading a Sound");
+    record(); // an edit waiting for its step comes first
+    findPart(partId);
+    const auto root=fs::canonical(folder);validateTree(root);
+    const auto bytes=state_files::read(root/"sound.json",4*1024*1024);
+    if(const auto error=detail::jsonPreflight({reinterpret_cast<const char*>(bytes.data()),bytes.size()},32);!error.empty())bad(std::string(error));
+    const std::unique_ptr<json_value_s,decltype(&std::free)> doc{json_parse(bytes.data(),bytes.size()),&std::free};
+    V d=doc.get();if(!d)bad("invalid JSON");
+    fields(d,{"format","version","info","libraries","nodes","wires","part","mappings","controls"});
+    if(text(field(d,"format"))!="oscairn.sound" || integer(field(d,"version"))!=3)bad("not a version 3 Sound");
+    fields(field(d,"info"),{"id","name","description","tags","color","revision","parent","hash"});
+    const auto info=readInfo(root/"sound.json","oscairn.sound");
+    std::vector<NodeId> added;
+    auto ids=addNodes(field(d,"nodes"),root,added,nullptr);
     std::vector<std::string> flagged;
     try{
         auto node=[&](V v){const auto key=text(v);const auto it=ids.find(key);if(it==ids.end())bad("unknown node reference "+key);return it->second;};
@@ -618,6 +641,214 @@ uint32_t Session::partFromSound(const std::string& id) {
     const auto part=addPart(name,{},std::nullopt);commit();
     try{loadSound(part,id);}catch(...){removePart(part);commit();throw;}
     return part;
+}
+
+std::vector<Control::PerformancePart> Session::performanceParts(const std::string& directory) {
+    if(directory.empty() || directory.find('\0')!=std::string::npos)bad("invalid directory");
+    const auto doc=document(fs::canonical(directory));V d=doc.get();
+    if(text(field(d,"format"))!="oscairn.performance" || integer(field(d,"version"))!=3)bad("unsupported format version");
+    std::vector<PerformancePart> out;
+    for(auto p:array(field(d,"parts"),256))out.push_back({integer(field(p,"id")),text(field(p,"name")),text(field(field(p,"input"),"kind"))=="bus"});
+    return out;
+}
+
+// Another Performance, or chosen parts of it, into this one (RFC 0021). A chosen part brings
+// its plugins, the buses it plays through or sends to (and theirs), the wires and mappings
+// among them, the controls it owns, and the Performance's controls whose every target comes
+// too. All of it also brings its scenes, each added under a free name; this Performance's
+// scenes keep the arriving parts as they arrive. Pads, tempo and its info stay behind. One
+// step to undo; nothing playing is cut but what the graph's rebuild cuts.
+Control::Imported Session::importPerformance(const std::string& directory,const std::vector<uint32_t>& chosen) {
+    if(staged_)bad("commit staged graph edits before importing");
+    record(); // an edit waiting for its step comes first: the import is a step of its own
+    if(directory.empty() || directory.find('\0')!=std::string::npos)bad("invalid directory");
+    const auto root=fs::canonical(directory);validateTree(root);const auto doc=document(root);V d=doc.get();
+    fields(d,{"format","version","info","libraries","transport","audioInputs","audioOutputs","nodes","wires","parts","mappings","pads","scenes","sceneParameters","scene","controls"});
+    if(text(field(d,"format"))!="oscairn.performance" || integer(field(d,"version"))!=3)bad("unsupported format version");
+    fields(field(d,"info"),{"id","name","description","tags","color","revision","parent","hash"});
+    // The parts that come: those chosen, and the buses they play through or send to, and theirs.
+    const auto partList=array(field(d,"parts"),256);
+    std::map<uint32_t,V> byId;
+    for(auto p:partList){const auto id=integer(field(p,"id"));if(!id || !byId.emplace(id,p).second)bad("invalid or duplicate part");}
+    const bool whole=chosen.empty();
+    std::set<uint32_t> taking;
+    std::function<void(uint32_t)> take=[&](uint32_t id){
+        if(!byId.count(id))bad("no part "+std::to_string(id)+" in that Performance");
+        if(!taking.insert(id).second)return;
+        const auto p=byId.at(id);
+        if(const auto bus=integer(field(p,"bus")))take(bus);
+        for(auto s:array(field(p,"sends"),256))take(integer(field(s,"bus")));};
+    if(whole)for(const auto& [id,p]:byId)taking.insert(id);else for(const auto id:chosen)take(id);
+    std::set<std::string> keys;
+    auto keysIn=[&](V list){for(auto n:array(list,256))if(n->type==json_type_string)keys.insert(text(n));};
+    for(const auto id:taking){
+        const auto p=byId.at(id);keysIn(field(p,"chain"));
+        for(auto sp:array(field(p,"splits"),256)){
+            for(const char* k:{"splitter","joiner"})if(const auto v=field(sp,k);v->type==json_type_string)keys.insert(text(v));
+            for(auto l:array(field(sp,"lanes"),16))keysIn(field(l,"chain"));}}
+    std::vector<NodeId> added;
+    auto ids=addNodes(field(d,"nodes"),root,added,whole?nullptr:&keys);
+    ids.emplace("input",graphInput);ids.emplace("output",graphOutput);
+    Imported result;auto& notes=result.notes;
+    std::vector<Part> parts;std::vector<Wire> users,mixes;std::vector<Graph::Mapping> mappings;std::vector<Macro> macros;
+    std::vector<SceneParameter> sceneParameters;std::vector<Scene> scenes;
+    std::map<uint32_t,uint32_t> partIds,controlIds;
+    try{
+        auto has=[&](V v){return ids.count(text(v))!=0;};
+        auto node=[&](V v){const auto key=text(v);const auto it=ids.find(key);if(it==ids.end())bad("unknown node reference "+key);return it->second;};
+        auto parameterOf=[&](NodeId n,uint32_t param){const auto& all=graph_.host(n).parameters();if(std::none_of(all.begin(),all.end(),[&](const auto& q){return q.id==param;}))bad("unknown parameter "+std::to_string(param));};
+        const auto layout=graph_.describe().audioLayout;
+        auto onPort=[](const auto& list,uint32_t id){return std::any_of(list.begin(),list.end(),[&](const auto& x){return x.id==id;});};
+        uint32_t nextId=nextPart_;
+        for(auto p:partList)if(taking.count(integer(field(p,"id"))))partIds[integer(field(p,"id"))]=nextId++;
+        std::function<std::vector<NodeId>(V)> chain=[&](V list){std::vector<NodeId> out;for(auto n:array(list,256)){
+            if(n->type==json_type_object){fields(n,{"split"});const auto x=integer(field(n,"split"));if(!x || x>=splitMark)bad("invalid split entry");out.push_back(splitMark|x);}
+            else out.push_back(node(n));}return out;};
+        for(auto p:partList){
+            const auto fileId=integer(field(p,"id"));if(!taking.count(fileId))continue;
+            fields(p,{"id","name","input","chain","splits","output","bus","sends","level","pan","mute","solo","from"});
+            Part part;part.id=partIds.at(fileId);part.name=text(field(p,"name"));
+            const auto input=field(p,"input");fields(input,{"kind","port","zones","devices","maxNotes"});const auto kind=text(field(input,"kind"));
+            part.input.kind=kind=="notes"?PartInput::Kind::Notes:kind=="audio"?PartInput::Kind::Audio:kind=="none"?PartInput::Kind::None:kind=="bus"?PartInput::Kind::Bus:(bad("invalid part input"),PartInput::Kind::None);
+            part.input.port=integer(field(input,"port"));part.input.zones=zonesFrom(field(input,"zones"));part.input.devices=devicesFrom(field(input,"devices"));part.input.maxNotes=uint16_t(integer(field(input,"maxNotes"),128));
+            if(part.input.kind==PartInput::Kind::Audio && !onPort(layout.inputs,part.input.port)){
+                if(layout.inputs.empty())bad(part.name+" listens to an audio input this device does not have");
+                part.input.port=layout.inputs.front().id;notes.push_back(part.name+" listens to the first audio input: this device has no input "+std::to_string(integer(field(input,"port"))));}
+            part.output=integer(field(p,"output"));
+            if(!onPort(layout.outputs,part.output)){notes.push_back(part.name+" plays to the first output: this device has no output "+std::to_string(part.output));part.output=layout.outputs.front().id;}
+            part.chain=chain(field(p,"chain"));
+            for(auto x:array(field(p,"splits"),256)){
+                fields(x,{"id","kind","splitter","joiner","lanes"});Split split;split.id=integer(field(x,"id"));
+                split.kind=Split::Kind(named(splitKinds,text(field(x,"kind")),"invalid split kind"));
+                for(auto [name,at]:{std::pair{"splitter",&split.splitter},std::pair{"joiner",&split.joiner}}){const auto v=field(x,name);*at=v->type==json_type_null?0:node(v);}
+                for(auto l:array(field(x,"lanes"),16)){
+                    fields(l,{"chain","zones","level","pan","mute","solo"});Lane lane;lane.chain=chain(field(l,"chain"));lane.zones=zonesFrom(field(l,"zones"));
+                    lane.level=number(field(l,"level"));lane.pan=number(field(l,"pan"));lane.mute=boolean(field(l,"mute"));lane.solo=boolean(field(l,"solo"));
+                    if(lane.level<0 || lane.pan<-1 || lane.pan>1)bad("invalid lane level or pan");split.lanes.push_back(std::move(lane));}
+                part.splits.push_back(std::move(split));
+            }
+            if(const auto bus=integer(field(p,"bus")))part.bus=partIds.at(bus);
+            for(auto s:array(field(p,"sends"),256)){fields(s,{"bus","level"});Send send{partIds.at(integer(field(s,"bus"))),number(field(s,"level"))};if(send.level<0)bad("invalid send level");part.sends.push_back(send);}
+            part.level=number(field(p,"level"));part.pan=number(field(p,"pan"));part.mute=boolean(field(p,"mute"));part.solo=boolean(field(p,"solo"));
+            if(part.level<0 || part.pan<-1 || part.pan>1)bad("invalid part level or pan");
+            if(const auto from=field(p,"from");from->type!=json_type_null){
+                fields(from,{"sound","revision","name","modified"});
+                part.from={text(field(from,"sound")),text(field(from,"revision")),text(field(from,"name")),boolean(field(from,"modified"))};}
+            parts.push_back(std::move(part));
+        }
+        // Wires among what comes: user wires as they were, part wires for their Mix.
+        for(auto c:array(field(d,"wires"),Graph::maxAudioConnections)){
+            const auto owner=text(field(c,"owner"));
+            if(owner=="part" && !taking.count(integer(field(c,"part"))))continue;
+            if(!has(field(c,"from")) || !has(field(c,"to")))continue;
+            Wire w;w.kind=text(field(c,"kind"))=="audio"?WireKind::Audio:WireKind::Notes;w.owner=owner=="part"?WireOwner::Part:WireOwner::User;
+            w.from=node(field(c,"from"));w.to=node(field(c,"to"));w.fromPort=integer(field(c,"fromPort"));w.toPort=integer(field(c,"toPort"));
+            if(w.owner==WireOwner::User && (w.from==graphInput || w.from==graphOutput) && (w.to==graphInput || w.to==graphOutput))continue;
+            for(auto pair:array(field(c,"channels"),Graph::maxAudioChannels)){const auto ends=array(pair,2);if(ends.size()!=2)bad("invalid channel pair");w.channels.push_back({integer(ends[0],Graph::maxAudioChannels-1),integer(ends[1],Graph::maxAudioChannels-1)});}
+            w.level=number(field(c,"level"));w.pan=number(field(c,"pan"));w.mute=boolean(field(c,"mute"));w.solo=boolean(field(c,"solo"));
+            if(w.level<0 || w.pan<-1 || w.pan>1)bad("invalid wire level or pan");
+            w.zones=zonesFrom(field(c,"zones"));
+            (w.owner==WireOwner::User?users:mixes).push_back(std::move(w));
+        }
+        for(auto m:array(field(d,"mappings"),4096)){
+            fields(m,{"from","lane","to","param"});if(!has(field(m,"from")) || !has(field(m,"to")))continue;
+            Graph::Mapping x;x.source=node(field(m,"from"));x.lane=integer(field(m,"lane"));x.target=node(field(m,"to"));x.param=integer(field(m,"param"));parameterOf(x.target,x.param);mappings.push_back(x);}
+        // Controls: a part's with its part; the Performance's when every target comes too.
+        const auto controlList=array(field(d,"controls"),4096);
+        std::set<uint32_t> coming;
+        for(bool grew=true;grew;){
+            grew=false;
+            for(auto m:controlList){
+                const auto id=integer(field(m,"id"));if(coming.count(id))continue;
+                const auto owner=integer(field(m,"part"));
+                bool comes=whole || (owner && taking.count(owner));
+                if(!comes && !owner){
+                    comes=true;
+                    for(auto t:array(field(m,"targets"),256)){
+                        const auto kind=text(field(t,"kind"));
+                        if(kind=="parameter")comes=comes && has(field(t,"node"));
+                        else if(kind=="partLevel" || kind=="partMute")comes=comes && taking.count(integer(field(t,"part")));
+                        else comes=comes && coming.count(integer(field(t,"control")));}
+                }
+                if(comes){coming.insert(id);grew=true;}
+            }
+        }
+        uint32_t nextControl=nextMacro_;
+        for(auto m:controlList)if(coming.count(integer(field(m,"id"))))controlIds[integer(field(m,"id"))]=nextControl++;
+        auto takenName=[&](const std::string& n){return std::any_of(macros_.begin(),macros_.end(),[&](const Macro& x){return x.name==n;}) || std::any_of(macros.begin(),macros.end(),[&](const Macro& x){return x.name==n;});};
+        for(auto m:controlList){
+            fields(m,{"id","part","name","value","targets"});const auto fileId=integer(field(m,"id"));if(!coming.count(fileId))continue;
+            Macro macro;macro.id=controlIds.at(fileId);macro.value=number(field(m,"value"));if(macro.value<0 || macro.value>1)bad("invalid control value");
+            if(const auto owner=integer(field(m,"part")))macro.part=partIds.at(owner);
+            const auto name=text(field(m,"name"));macro.name=nextFree(name,takenName);
+            if(macro.name!=name)notes.push_back("the control "+name+" is "+macro.name+" here");
+            for(auto t:array(field(m,"targets"),256)){
+                MacroTarget target;const auto kind=text(field(t,"kind")),curve=text(field(t,"curve"));
+                if(kind=="parameter"){target.kind=MacroTarget::Kind::Parameter;target.node=node(field(t,"node"));target.param=integer(field(t,"param"));parameterOf(target.node,target.param);}
+                else if(kind=="partLevel" || kind=="partMute"){target.kind=kind=="partLevel"?MacroTarget::Kind::PartLevel:MacroTarget::Kind::PartMute;target.part=partIds.at(integer(field(t,"part")));}
+                else if(kind=="control"){target.kind=MacroTarget::Kind::Macro;target.macro=controlIds.at(integer(field(t,"control")));}
+                else bad("invalid control target kind");
+                target.curve=curve=="linear"?MacroTarget::Curve::Linear:curve=="exponential"?MacroTarget::Curve::Exponential:curve=="logarithmic"?MacroTarget::Curve::Logarithmic:curve=="s-curve"?MacroTarget::Curve::SCurve:(bad("invalid curve"),MacroTarget::Curve::Linear);
+                target.start=number(field(t,"start"));target.end=number(field(t,"end"));target.relative=boolean(field(t,"relative"));target.base=number(field(t,"base"));
+                macro.targets.push_back(target);
+            }
+            macros.push_back(std::move(macro));
+        }
+        // Scenes, with all of it: each under a name free here.
+        if(whole){
+            for(auto at:array(field(d,"sceneParameters"),4096)){fields(at,{"node","param"});SceneParameter x{node(field(at,"node")),integer(field(at,"param"))};parameterOf(x.node,x.param);sceneParameters.push_back(x);}
+            auto takenScene=[&](const std::string& n){return std::any_of(scenes_.begin(),scenes_.end(),[&](const Scene& x){return x.name==n;}) || std::any_of(scenes.begin(),scenes.end(),[&](const Scene& x){return x.name==n;});};
+            for(auto s:array(field(d,"scenes"),256)){
+                fields(s,{"id","name","parts","values","controls"});Scene scene;
+                const auto name=text(field(s,"name"));scene.name=nextFree(name,takenScene);
+                if(scene.name!=name)notes.push_back("the scene "+name+" is "+scene.name+" here");
+                for(auto p:array(field(s,"parts"),256)){fields(p,{"part","level","mute"});scene.parts.push_back({partIds.at(integer(field(p,"part"))),number(field(p,"level")),boolean(field(p,"mute"))});}
+                for(auto v:array(field(s,"values"),4096)){fields(v,{"node","param","value"});scene.values.push_back({{node(field(v,"node")),integer(field(v,"param"))},number(field(v,"value"))});}
+                for(auto c:array(field(s,"controls"),4096)){fields(c,{"control","value"});scene.macros.push_back({controlIds.at(integer(field(c,"control"))),number(field(c,"value"))});}
+                scenes.push_back(std::move(scene));
+            }
+        }
+    }catch(const std::out_of_range&){
+        for(const auto n:added)dropNode(n);graph_.commit();staged_=false;bad("a reference to something not in that Performance");
+    }catch(...){for(const auto n:added)dropNode(n);graph_.commit();staged_=false;throw;}
+    // Nothing has changed yet; now the parts and their wiring, rebuilt with every part.
+    {
+        auto partsBefore=parts_;auto wiresBefore=wires_;
+        try{
+            parts_.insert(parts_.end(),parts.begin(),parts.end());
+            for(auto w:users){w.id=nextWire_++;wires_.push_back(std::move(w));}
+            buildParts();
+            for(auto& w:wires_)if(w.owner==WireOwner::Part && std::any_of(parts.begin(),parts.end(),[&](const Part& p){return p.id==w.part;}))
+                for(const auto& m:mixes)if(m.kind==w.kind && m.from==w.from && m.to==w.to && m.fromPort==w.fromPort && m.toPort==w.toPort){w.level=m.level;w.pan=m.pan;w.mute=m.mute;w.solo=m.solo;break;}
+            syncWires();
+        }catch(...){
+            parts_.swap(partsBefore);wires_.swap(wiresBefore);syncWires();
+            for(const auto n:added){std::erase_if(wires_,[&](const Wire& w){return w.from==n || w.to==n;});dropNode(n);}
+            throw;
+        }
+    }
+    for(const auto& p:parts){nextPart_=std::max(nextPart_,p.id+1);result.parts.push_back(p.id);}
+    for(const auto& m:mappings)graph_.mapParamTarget(m.source,m.lane,m.target,m.param);
+    for(const auto& m:macros)nextMacro_=std::max(nextMacro_,m.id+1);
+    // This Performance's scenes keep the arriving parts and scene parameters as they arrive.
+    for(auto& scene:scenes_){
+        for(const auto& p:parts)scene.parts.push_back({p.id,p.level,p.mute});
+        for(const auto& at:sceneParameters)scene.values.push_back({at,parameter(at.node,at.param)});
+        for(const auto& m:macros)scene.macros.push_back({m.id,m.value});
+    }
+    macros_.insert(macros_.end(),macros.begin(),macros.end());
+    // Its scenes keep this Performance's parts, parameters and controls as they are now.
+    for(auto& scene:scenes){
+        scene.id=nextScene_++;
+        Scene now;capture(now);
+        for(const auto& st:now.parts)if(std::none_of(scene.parts.begin(),scene.parts.end(),[&](const auto& x){return x.part==st.part;}))scene.parts.push_back(st);
+        for(const auto& v:now.values)if(std::none_of(scene.values.begin(),scene.values.end(),[&](const auto& x){return x.at==v.at;}))scene.values.push_back(v);
+        for(const auto& v:now.macros)if(std::none_of(scene.macros.begin(),scene.macros.end(),[&](const auto& x){return x.first==v.first;}))scene.macros.push_back(v);
+    }
+    sceneParameters_.insert(sceneParameters_.end(),sceneParameters.begin(),sceneParameters.end());
+    scenes_.insert(scenes_.end(),scenes.begin(),scenes.end());
+    commit(); // one step to undo
+    return result;
 }
 
 void Session::setPerformanceInfo(const PerformanceInfo& info) {

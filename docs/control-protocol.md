@@ -743,6 +743,13 @@ fader or name in the Performance, nor wires to or from the rest of the graph.
   a graph change, so clients refresh); undoing a model step clears it again. Preset and state
   loads, which are not undoable steps yet, do not set it. Its seat (input, output, sends,
   fader) is not the Sound's and does not. `library.query` items carry their `revision` and content `hash` (as recorded at their last save).
+- `performance.parts` takes `{directory}` and returns `{parts}`: each part of that
+  Performance folder with its `id` there, `name` and `bus`. `performance.import` takes
+  `{directory}` and optional `parts` (IDs from `performance.parts`; all when absent) and
+  returns `{parts,notes}`: the new parts' IDs, and each rename or remapped port. What comes,
+  and how scenes and names are handled, is in
+  [RFC 0021](rfcs/0021-sounds-performances-and-library.md#importing-a-performance). One step
+  to undo; refused while graph edits are staged.
 - `performance.save` and `library.save` both keep each part's `from`. Planned: an export brings
   every asset and the Sounds of unedited parts, and optionally of edited ones
   ([RFC 0021](rfcs/0021-sounds-performances-and-library.md#exporting-a-performance)).
@@ -751,5 +758,6 @@ fader or name in the Performance, nor wires to or from the rest of the graph.
 
 The typed methods are `Control::performanceInfo`, `setPerformanceInfo`, `libraryQuery`,
 `libraryFavourite`, `libraryRescan`, `savePerformanceToLibrary`,
-`loadPerformanceFromLibrary`, `savePartAsSound`, `loadSound` and `partFromSound`. Errors use
+`loadPerformanceFromLibrary`, `savePartAsSound`, `loadSound`, `partFromSound`,
+`performanceParts` and `importPerformance`. Errors use
 `-32005`; malformed arguments `-32602`.

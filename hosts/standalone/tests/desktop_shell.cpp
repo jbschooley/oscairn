@@ -257,6 +257,18 @@ int main(int argc, char** argv)
                 check(wait([&] { return !engine.soundBusy() && engine.graph().parts.size() == partsBefore.size() + 1; }) && engine.graph().parts.back().name == "Grand", "and added as a new part");
                 library.showKind("performance");
                 check(wait([&] { return library.items().size() == 3; }), "back to the Performances");
+                // Importing one part of another Performance, through the app's action.
+                const auto bassSplit = std::find_if(library.items().begin(), library.items().end(), [](const auto& i) { return i.name == "Bass Split"; });
+                const auto held = engine.performanceParts(bassSplit->path);
+                check(held && !held->empty(), "the Performance's parts listed to choose from");
+                const auto partCount = engine.graph().parts.size();
+                const auto first = held && !held->empty() && !held->front().bus ? held->front() : Control::PerformancePart{};
+                standalone::SoundAction import; import.kind = standalone::SoundAction::ImportPerformance; import.directory = bassSplit->path; import.parts = {first.id};
+                engine.soundAction(std::move(import));
+                const bool arrived = wait([&] { return !engine.soundBusy() && engine.graph().parts.size() > partCount; });
+                const auto now = engine.graph().parts;
+                check(arrived && std::count_if(now.begin() + std::ptrdiff_t(partCount), now.end(), [&](const auto& p) { return p.name == first.name; }) == 1,
+                      "a chosen part imported, with what it needs: " + engine.soundMessage());
                 // A file that is not a setlist is refused.
                 const auto bad = folder.getChildFile("Bad.json");
                 bad.replaceWithText(R"({"format":"oscairn.setlist","version":2,"name":"x","entries":[]})");

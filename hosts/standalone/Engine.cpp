@@ -125,7 +125,7 @@ namespace oscairn::standalone
     void Engine::soundAction(SoundAction action)
     {
         if(soundBusy() || !connected())return;
-        if((action.kind==SoundAction::Prepare || action.kind==SoundAction::Replace || action.kind==SoundAction::SavePerformance || action.kind==SoundAction::LoadPerformance || action.kind==SoundAction::SaveToLibrary || action.kind==SoundAction::LoadFromLibrary || action.kind==SoundAction::SaveSound || action.kind==SoundAction::LoadSound || action.kind==SoundAction::PartFromSound) && !canPrepareSounds())
+        if((action.kind==SoundAction::Prepare || action.kind==SoundAction::Replace || action.kind==SoundAction::SavePerformance || action.kind==SoundAction::LoadPerformance || action.kind==SoundAction::SaveToLibrary || action.kind==SoundAction::LoadFromLibrary || action.kind==SoundAction::SaveSound || action.kind==SoundAction::LoadSound || action.kind==SoundAction::PartFromSound || action.kind==SoundAction::ImportPerformance) && !canPrepareSounds())
         {
             soundMessage_="Preparation requires the separate engine. Relaunch without --in-process.";
             return;
@@ -175,6 +175,7 @@ namespace oscairn::standalone
         if(result.error.empty() && loaded)soundMessage_="Performance opened. Press Play or play a note.";
         if(result.error.empty() && soundJobKind_==SoundAction::SaveSound)soundMessage_="Sound saved.";
         if(result.error.empty() && (soundJobKind_==SoundAction::LoadSound || soundJobKind_==SoundAction::PartFromSound)){textCache_.clear();soundMessage_="Sound loaded.";}
+        if(result.error.empty() && soundJobKind_==SoundAction::ImportPerformance){textCache_.clear();soundMessage_="Performance imported.";}
         if(result.disconnected)
         {
             pendingControls_.clear();
@@ -203,6 +204,11 @@ namespace oscairn::standalone
         if(!found)return {};
         for(const auto& item:found->items)if(item.id==id)return item;
         return Control::LibraryItem{}; // not in the library: an empty ID
+    }
+    std::optional<std::vector<Control::PerformancePart>> Engine::performanceParts(const std::string& directory) const
+    {
+        if(!connected() || !controlReady())return {};
+        try{return control_->performanceParts(directory);}catch(const std::exception& e){std::fprintf(stderr,"oscairn: performance parts: %s\n",e.what());return {};}
     }
     std::optional<Control::PerformanceInfo> Engine::performanceInfo() const
     {
