@@ -1087,11 +1087,7 @@ namespace oscairn::standalone
             };
             auto chevron = [&](juce::Rectangle<float> r, bool down) {
                 g.setColour(ink(Ink::Raised)); g.fillEllipse(r); g.setColour(ink(Ink::Border)); g.drawEllipse(r, 1);
-                const auto c = r.getCentre(); const float s = r.getWidth() * .14f;
-                juce::Path p;
-                if(down) { p.startNewSubPath(c.x - s * 1.4f, c.y - s * .6f); p.lineTo(c.x, c.y + s * .8f); p.lineTo(c.x + s * 1.4f, c.y - s * .6f); }
-                else { p.startNewSubPath(c.x - s * .6f, c.y - s * 1.4f); p.lineTo(c.x + s * .8f, c.y); p.lineTo(c.x - s * .6f, c.y + s * 1.4f); }
-                g.setColour(ink(Ink::Text)); g.strokePath(p, juce::PathStrokeType(2.f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+                drawIcon(g, down ? "chevron-down" : "chevron-right", r.reduced(r.getWidth() * .22f), ink(Ink::Text));
             };
             const float chevronSize = 30 * routingScale_;
             // Expanded parts' frames, under everything.

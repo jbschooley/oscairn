@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #include "Theme.h"
+#include "Icons.h"
 #include <cmath>
 #include <stdexcept>
 namespace oscairn::standalone {
@@ -269,10 +270,8 @@ void Theme::drawComboBox(juce::Graphics& g,int width,int height,bool,int,int,int
     const auto bounds=juce::Rectangle<float>(0,0,float(width),float(height)).reduced(1);const float radius=fieldRadius(bounds.getHeight());
     g.setColour(box.findColour(juce::ComboBox::backgroundColourId).withMultipliedAlpha(box.isEnabled()?1.f:.4f));g.fillRoundedRectangle(bounds,radius);
     drawEdge(g,bounds,radius,box.hasKeyboardFocus(true));
-    const auto arrow=juce::Rectangle<float>(float(width-height),0,float(height),float(height)).withSizeKeepingCentre(height*.3f,height*.15f);
-    juce::Path p;p.startNewSubPath(arrow.getX(),arrow.getY());p.lineTo(arrow.getCentreX(),arrow.getBottom());p.lineTo(arrow.getRight(),arrow.getY());
-    g.setColour(box.findColour(juce::ComboBox::arrowColourId).withMultipliedAlpha(box.isEnabled()?1.f:.4f));
-    g.strokePath(p,juce::PathStrokeType(1.6f,juce::PathStrokeType::curved,juce::PathStrokeType::rounded));
+    const auto arrow=juce::Rectangle<float>(float(width-height),0,float(height),float(height)).withSizeKeepingCentre(height*.42f,height*.42f);
+    drawIcon(g,"chevron-down",arrow,box.findColour(juce::ComboBox::arrowColourId).withMultipliedAlpha(box.isEnabled()?1.f:.4f));
 }
 // Linear sliders: the Line style draws a thin track and a light thumb; a slider centred on zero
 // (pan, transpose: the property "bipolar") fills from its center in either style.
@@ -307,8 +306,7 @@ void Theme::drawTickBox(juce::Graphics& g,juce::Component& c,float x,float y,flo
     const auto box=juce::Rectangle<float>(x,y,w,h).reduced(1);const float radius=std::min(4.f,box.getHeight()/4);
     g.setColour((ticked?ink(Ink::Accent):ink(Ink::Surface)).withMultipliedAlpha(enabled?1.f:.5f));g.fillRoundedRectangle(box,radius);
     if(!ticked){g.setColour(ink(Ink::Border).withAlpha(enabled?1.f:.5f));g.drawRoundedRectangle(box,radius,1.f);return;}
-    juce::Path tick;tick.startNewSubPath(box.getX()+box.getWidth()*.25f,box.getCentreY());tick.lineTo(box.getX()+box.getWidth()*.43f,box.getBottom()-box.getHeight()*.27f);tick.lineTo(box.getRight()-box.getWidth()*.22f,box.getY()+box.getHeight()*.28f);
-    g.setColour(ink(Ink::Accent).contrasting().withMultipliedAlpha(enabled?1.f:.5f));g.strokePath(tick,juce::PathStrokeType(std::max(1.5f,w*.12f),juce::PathStrokeType::curved,juce::PathStrokeType::rounded));
+    drawIcon(g,"check",box.reduced(box.getWidth()*.12f),ink(Ink::Accent).contrasting().withMultipliedAlpha(enabled?1.f:.5f));
     juce::ignoreUnused(c);
 }
 // A label with a background or outline (a slider's value box) gets the same corners.

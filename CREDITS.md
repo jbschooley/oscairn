@@ -45,6 +45,25 @@ authoritative.
   `Inter-Regular.ttf` `40d692fce188e4471e2b3cba937be967878f631ad3ebbbdcd587687c7ebe0c82`,
   `Inter-Bold.ttf` `288316099b1e0a47a4716d159098005eef7c0066921f34e3200393dbdb01947f`.
 
+## Interface icons
+
+- **Lucide** 0.460.0, by the Lucide Contributors, with portions by Cole Bemis as part of
+  Feather (MIT) ([lucide-icons/lucide](https://github.com/lucide-icons/lucide)), ISC license.
+  [hosts/standalone/icons](hosts/standalone/icons) carries these SVGs unmodified from the
+  `lucide-static@0.460.0` package's `icons/` (fetched from unpkg), with its license as
+  `LICENSE` (SHA-256 `1e7290b35280a048667bbf0ebabac1c7fd52a75300e8b2946ac165715997f2bc`).
+  The app recolors them as it draws them (`Icons.h`); the files are not changed. SHA-256:
+  `check.svg` `03c8e362a064c4a094016be85e63289825cf3ecbccb73714138df2b7df2d5026`,
+  `chevron-down.svg` `c1032432d9942c344c9f80008b3028458c07580c1f2895830782f6b720075f53`,
+  `chevron-right.svg` `856bf29117b586fa854be23f4c6cc9249557a1a5d7cadcbc466f9fdfd7dc699f`,
+  `list.svg` `5235475b1e4cb7eee653c946c3a81c224b751d6f1175bdfccf67f2a0fa29f03a`,
+  `plus.svg` `bf6084d1cb578acf5b8fa48831ecba8ae8f860957b9289ba81ab562f22604df6`,
+  `redo-2.svg` `512e9f81b19a3e739b240a413d61f798dbda02e788b5a81db2926543713ebbf7`,
+  `square-arrow-out-up-right.svg` `968a03c02ab9ffbb4e92de4c5d2e75c7140e8c63752a63258527e764ff214998`,
+  `star.svg` `ebc8483f1006df4cc16551ccbefc511e3cca2e17c7f3a727842e422fdac7a9b0`,
+  `tags.svg` `724af60488ee052f78f8b3a5622adb06e8c30abea41c9c48a718f808a7bcdc4a`,
+  `undo-2.svg` `63030cafa632c7cce406680b920d286696f136b3ea58218bdb21b6897a31eea9`.
+
 ## Sample decoding
 
 - **libsndfile:** Erik de Castro Lopo and the libsndfile contributors

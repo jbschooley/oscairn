@@ -74,6 +74,17 @@ emergency theme with fixed colors and the platform's default font keeps text vis
 change a musician's appearance preference. Theme package distribution/sync will use the
 future package system; it is not needed for local theme installation.
 
+## Icons
+
+Icons are [Lucide](https://lucide.dev)'s (ISC; see [CREDITS](../CREDITS.md#interface-icons)),
+kept as SVG files in `hosts/standalone/icons/` and built into the app. `drawIcon` in `Icons.h`
+draws one in a color within a box: each file is read once, drawn in black and recolored to the
+theme's ink, so an icon follows the theme like text does. `IconButton` is an icon on a button,
+with its name as the tooltip; a toggle that is on is tinted with the accent. Only plain paths,
+lines, circles and rectangles are used, which JUCE's SVG reader draws faithfully. To add one,
+copy the file unchanged from the same Lucide release, list it in the `oscairn_standalone_icons`
+target and record its hash in CREDITS. Themes do not carry icons (fonts and data only).
+
 ## Theme format, version 6
 
 A theme is a folder named after its ID, holding `theme.json` ([schema](theme.schema.json))

@@ -2,13 +2,44 @@
 #pragma once
 
 #include "Theme.h"
+#include "IconData.h"
+#include <map>
+#include <memory>
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
 namespace oscairn::standalone
 {
-    /// A button that draws a symbol rather than text, centred in its box, in the theme's text
-    /// color. Give it a tooltip: the symbol is its only label on screen.
+    /// An icon from the Lucide set (icons/, ISC license, by Lucide Contributors and, for
+    /// portions, Cole Bemis as part of Feather), drawn in a color within a box. Each is read once;
+    /// filled draws its shapes filled as well as outlined (a chosen star).
+    inline void drawIcon(juce::Graphics& g, const char* name, juce::Rectangle<float> box, juce::Colour color, bool filled = false)
+    {
+        static std::map<std::string, std::unique_ptr<juce::Drawable>> cache; // message thread only
+        const auto key = std::string(name) + (filled ? "+" : "");
+        auto& drawable = cache[key];
+        if(!drawable)
+        {
+            int size = 0;
+            const auto file = std::string(name) + ".svg";
+            for(int i = 0; i < IconData::namedResourceListSize; ++i)
+                if(file == IconData::getNamedResourceOriginalFilename(IconData::namedResourceList[i]))
+                    if(const auto* data = IconData::getNamedResource(IconData::namedResourceList[i], size))
+                    {
+                        // Drawn black, then recolored: the files use currentColor.
+                        auto text = juce::String::fromUTF8(data, size).replace("currentColor", "#000000");
+                        if(filled) text = text.replace("fill=\"none\"", "fill=\"#000000\"");
+                        drawable = juce::Drawable::createFromSVGString(text);
+                    }
+            if(!drawable) { jassertfalse; return; } // an icon the app does not carry
+        }
+        const auto copy = drawable->createCopy();
+        copy->replaceColour(juce::Colours::black, color);
+        copy->drawWithin(g, box, juce::RectanglePlacement::centred, 1.f);
+    }
+
+    /// A button that draws an icon rather than text, centered in its box, in the theme's text
+    /// color. Give it a tooltip: the icon is its only label on screen.
     class IconButton : public juce::Button
     {
     public:
@@ -17,68 +48,16 @@ namespace oscairn::standalone
 
         void paintButton(juce::Graphics& g, bool hover, bool down) override
         {
-            // A transparent button color draws the glyph alone, for icons inside another control;
+            // A transparent button color draws the icon alone, for icons inside another control;
             // a toggle that is on is tinted with the accent, as a chosen tab is.
             const bool on = getClickingTogglesState() && getToggleState();
             if(on) { g.setColour(ink(Ink::Accent).withAlpha(.22f)); g.fillRoundedRectangle(getLocalBounds().toFloat(), buttonRadius(float(getHeight()))); }
             else if(const auto color = findColour(juce::TextButton::buttonColourId); !color.isTransparent()) getLookAndFeel().drawButtonBackground(g, *this, color, hover, down);
             else if(hover || down) { g.setColour(ink(Ink::Text).withAlpha(down ? .16f : .08f)); g.fillRoundedRectangle(getLocalBounds().toFloat(), 4); }
-            const float side = std::min(float(getWidth()), float(getHeight())) * .5f;
-            const auto box = getLocalBounds().toFloat().withSizeKeepingCentre(side, side);
-            juce::Path p;
-            switch(glyph_)
-            {
-            case Glyph::Plus:
-                p.startNewSubPath(box.getCentreX(), box.getY()); p.lineTo(box.getCentreX(), box.getBottom());
-                p.startNewSubPath(box.getX(), box.getCentreY()); p.lineTo(box.getRight(), box.getCentreY());
-                break;
-            case Glyph::Undo: case Glyph::Redo:
-            {
-                // An arrow curving back over the top: left for undo, mirrored for redo.
-                const auto r = box.reduced(side * .05f);
-                p.startNewSubPath(r.getX() + r.getWidth() * .1f, r.getY() + r.getHeight() * .38f);
-                p.lineTo(r.getX() + r.getWidth() * .62f, r.getY() + r.getHeight() * .38f);
-                p.quadraticTo(r.getRight(), r.getY() + r.getHeight() * .38f, r.getRight(), r.getY() + r.getHeight() * .66f);
-                p.quadraticTo(r.getRight(), r.getBottom(), r.getX() + r.getWidth() * .55f, r.getBottom());
-                p.startNewSubPath(r.getX() + r.getWidth() * .34f, r.getY() + r.getHeight() * .12f);
-                p.lineTo(r.getX() + r.getWidth() * .1f, r.getY() + r.getHeight() * .38f);
-                p.lineTo(r.getX() + r.getWidth() * .34f, r.getY() + r.getHeight() * .64f);
-                if(glyph_ == Glyph::Redo) p.applyTransform(juce::AffineTransform::scale(-1, 1, box.getCentreX(), box.getCentreY()));
-                break;
-            }
-            case Glyph::Detach:
-                // A window with an arrow leaving it.
-                p.startNewSubPath(box.getX() + side * .45f, box.getY() + side * .1f);
-                p.lineTo(box.getX(), box.getY() + side * .1f); p.lineTo(box.getX(), box.getBottom());
-                p.lineTo(box.getRight() - side * .1f, box.getBottom()); p.lineTo(box.getRight() - side * .1f, box.getY() + side * .55f);
-                p.startNewSubPath(box.getX() + side * .45f, box.getY() + side * .55f); p.lineTo(box.getRight(), box.getY());
-                p.startNewSubPath(box.getRight() - side * .4f, box.getY()); p.lineTo(box.getRight(), box.getY()); p.lineTo(box.getRight(), box.getY() + side * .4f);
-                break;
-            case Glyph::List:
-                // Three rows, each a dot and a line.
-                for(int i = 0; i < 3; ++i)
-                {
-                    const float y = box.getY() + side * (.1f + .4f * float(i));
-                    p.addEllipse(box.getX(), y - side * .04f, side * .08f, side * .08f);
-                    p.startNewSubPath(box.getX() + side * .28f, y); p.lineTo(box.getRight(), y);
-                }
-                break;
-            case Glyph::Pills:
-            {
-                // Two pills, one above the other, as they wrap, filled: wider than the box, so each
-                // reads as a pill, with a clear gap between them.
-                const float w = side * 1.2f, h = side * .36f, x = box.getCentreX() - w / 2;
-                p.addRoundedRectangle(x, box.getY(), w, h, h / 2);
-                p.addRoundedRectangle(x, box.getBottom() - h, w * .62f, h, h / 2);
-                break;
-            }
-            }
-            // Centred by what is drawn, so an arrow sits in the middle of its box.
-            const auto drawn = p.getBounds();
-            p.applyTransform(juce::AffineTransform::translation(box.getCentreX() - drawn.getCentreX(), box.getCentreY() - drawn.getCentreY()));
-            g.setColour((on ? ink(Ink::Accent) : ink(Ink::Text)).withMultipliedAlpha(isEnabled() ? 1.f : .35f));
-            if(glyph_ == Glyph::Pills) g.fillPath(p); // outlines this small run together
-            else g.strokePath(p, juce::PathStrokeType(std::max(1.5f, side * .12f), juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+            static const char* const names[] = {"plus", "undo-2", "redo-2", "square-arrow-out-up-right", "list", "tags"};
+            const float side = std::min(float(getWidth()), float(getHeight())) * .6f;
+            drawIcon(g, names[int(glyph_)], getLocalBounds().toFloat().withSizeKeepingCentre(side, side),
+                     (on ? ink(Ink::Accent) : ink(Ink::Text)).withMultipliedAlpha(isEnabled() ? 1.f : .35f));
         }
 
     private:

@@ -18,10 +18,7 @@ namespace oscairn::standalone
         }
         void drawStar(juce::Graphics& g, juce::Rectangle<float> r, bool on)
         {
-            juce::Path star;
-            star.addStar(r.getCentre(), 5, r.getWidth() * .2f, r.getWidth() * .45f, 0);
-            g.setColour(on ? ink(Ink::Accent) : ink(Ink::Muted).withAlpha(.6f));
-            if(on) g.fillPath(star); else g.strokePath(star, juce::PathStrokeType(1.2f));
+            drawIcon(g, "star", r, on ? ink(Ink::Accent) : ink(Ink::Muted).withAlpha(.6f), on);
         }
         // Text placed by its glyphs, where the eye puts it: lowercase letters' middle (the
         // x-height's) on the box's, or, for text all in capitals, the capitals' middle; its ink

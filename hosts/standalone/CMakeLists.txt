@@ -18,6 +18,19 @@ juce_add_binary_data(oscairn_standalone_profiles HEADER_NAME ProfileData.h NAMES
     profiles/kick.json
     profiles/ignite.json)
 
+# Icons (Lucide, ISC: icons/LICENSE).
+juce_add_binary_data(oscairn_standalone_icons HEADER_NAME IconData.h NAMESPACE IconData SOURCES
+    icons/plus.svg
+    icons/undo-2.svg
+    icons/redo-2.svg
+    icons/square-arrow-out-up-right.svg
+    icons/list.svg
+    icons/tags.svg
+    icons/star.svg
+    icons/chevron-down.svg
+    icons/chevron-right.svg
+    icons/check.svg)
+
 target_sources(oscairn_standalone PRIVATE Main.cpp DesktopShell.cpp ParameterGrid.cpp ZoneEditor.cpp Engine.cpp Layout.cpp Panel.cpp Screen.cpp SoundPickerModel.cpp Theme.cpp PluginBrowser.cpp PadEditor.cpp PartsView.cpp PartsModel.cpp LibraryPane.cpp Setlist.cpp Profile.cpp)
 target_compile_definitions(oscairn_standalone PRIVATE
     JUCE_WEB_BROWSER=0
@@ -32,6 +45,7 @@ target_link_libraries(oscairn_standalone PRIVATE
     oscairn_control_socket
     oscairn_standalone_layouts
     oscairn_standalone_profiles
+    oscairn_standalone_icons
     juce::juce_audio_utils
     juce::juce_gui_extra
     juce::juce_recommended_config_flags
@@ -65,7 +79,7 @@ endif()
 
 juce_add_console_app(oscairn_theme_test PRODUCT_NAME "Oscairn Theme Test")
 target_sources(oscairn_theme_test PRIVATE tests/theme.cpp Theme.cpp)
-target_link_libraries(oscairn_theme_test PRIVATE juce::juce_gui_extra juce::juce_recommended_config_flags)
+target_link_libraries(oscairn_theme_test PRIVATE oscairn_standalone_icons juce::juce_gui_extra juce::juce_recommended_config_flags)
 target_compile_definitions(oscairn_theme_test PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
 add_test(NAME desktop-theme COMMAND oscairn_theme_test "${CMAKE_CURRENT_SOURCE_DIR}/themes" "${CMAKE_CURRENT_SOURCE_DIR}/theme-examples/midnight")
 
@@ -78,12 +92,12 @@ add_test(NAME desktop-profile COMMAND oscairn_profile_test)
 # The pad editor against a session served on a socket, without an audio device.
 juce_add_console_app(oscairn_pad_editor_test PRODUCT_NAME "Oscairn Pad Editor Test")
 target_sources(oscairn_pad_editor_test PRIVATE tests/pad_editor.cpp PadEditor.cpp PartsView.cpp ParameterGrid.cpp ZoneEditor.cpp PartsModel.cpp Engine.cpp Theme.cpp SoundPickerModel.cpp)
-target_link_libraries(oscairn_pad_editor_test PRIVATE oscairn_audio_host oscairn_host_process oscairn_control_socket juce::juce_audio_utils juce::juce_gui_extra juce::juce_recommended_config_flags)
+target_link_libraries(oscairn_pad_editor_test PRIVATE oscairn_standalone_icons oscairn_audio_host oscairn_host_process oscairn_control_socket juce::juce_audio_utils juce::juce_gui_extra juce::juce_recommended_config_flags)
 target_compile_definitions(oscairn_pad_editor_test PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_MODAL_LOOPS_PERMITTED=1)
 add_dependencies(oscairn_pad_editor_test oscairn_step_sequencer oscairn_basic_synth oscairn_delay oscairn_splitters oscairn-plugin-scan)
 juce_add_console_app(oscairn_desktop_shell_test PRODUCT_NAME "Oscairn Desktop Shell Test")
 target_sources(oscairn_desktop_shell_test PRIVATE tests/desktop_shell.cpp DesktopShell.cpp LibraryPane.cpp Setlist.cpp ParameterGrid.cpp ZoneEditor.cpp Screen.cpp Panel.cpp Layout.cpp PadEditor.cpp PartsView.cpp PartsModel.cpp Engine.cpp Theme.cpp SoundPickerModel.cpp)
-target_link_libraries(oscairn_desktop_shell_test PRIVATE oscairn_audio_host oscairn_host_process oscairn_control_socket juce::juce_audio_utils juce::juce_gui_extra juce::juce_recommended_config_flags)
+target_link_libraries(oscairn_desktop_shell_test PRIVATE oscairn_standalone_icons oscairn_audio_host oscairn_host_process oscairn_control_socket juce::juce_audio_utils juce::juce_gui_extra juce::juce_recommended_config_flags)
 target_compile_definitions(oscairn_desktop_shell_test PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_MODAL_LOOPS_PERMITTED=1)
 add_dependencies(oscairn_desktop_shell_test oscairn_step_sequencer oscairn_basic_synth oscairn_delay oscairn_transpose oscairn_splitters oscairn-plugin-scan)
 add_test(NAME desktop-shell COMMAND oscairn_desktop_shell_test "$<TARGET_FILE_DIR:oscairn_step_sequencer>" $<TARGET_FILE:oscairn-plugin-scan> "${CMAKE_CURRENT_SOURCE_DIR}/themes")
