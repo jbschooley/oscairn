@@ -1472,7 +1472,7 @@ std::vector<Control::InstalledPlugin> Session::installedPlugins() {
             }
             for(const auto& [name,plugins]:uses)if(plugins.count({p.format,p.id,p.version}))p.usedBy.push_back(name);
             const auto here=(entry.path()/platform()).string()+"/";
-            for(const auto& n:nodes_)if(graph_.host(n.first).descriptor().path.rfind(here,0)==0)p.open=true;
+            for(const auto& n:nodes_)if(graph_.host(n.first).descriptor().path.rfind(here,0)==0 && graph_.host(n.first).failure().empty())p.open=true; // a stand-in plays nothing
             out.push_back(std::move(p));
         }
     std::sort(out.begin(),out.end(),[](const auto& a,const auto& b){return std::tie(a.name,a.version)<std::tie(b.name,b.version);});
@@ -1486,7 +1486,7 @@ void Session::removePlugin(const std::string& format,const std::string& id,const
     if(p.id!=id || p.version!=version || p.format!=format)bad("that plugin is not installed");
     if(forPlatform.empty() || forPlatform==platform()){
         const auto here=(folder/platform()).string()+"/";
-        for(const auto& n:nodes_)if(graph_.host(n.first).descriptor().path.rfind(here,0)==0)
+        for(const auto& n:nodes_)if(graph_.host(n.first).descriptor().path.rfind(here,0)==0 && graph_.host(n.first).failure().empty())
             bad("the open Performance plays "+(p.name.empty()?id:p.name)+"; remove it from the Performance or open another first");
     }
     std::error_code e;

@@ -232,6 +232,27 @@ int main(int argc, char** argv)
             d.loadPerformanceFromLibrary(performance.id);
             check(d.sessionStatus().failures.empty(), "and plays again once it is installed again");
         }
+        // Device G: a broken build in the store, where the Performance last found it, opens as a
+        // stand-in, which plays nothing: the build can be removed.
+        {
+            device(temp.path / "g");
+            Session g(48000, 64);
+            g.installArchive(archive.string(), false);
+            const auto plugins = temp.path / "g" / "Plugins" / "clap";
+            const auto stored = fs::directory_iterator(plugins)->path() / platform() / fs::path(fixture).filename();
+            std::ofstream(stored, std::ios::binary | std::ios::trunc) << "not a plugin";
+            const auto performance = items(g, "performance").at(0);
+            const auto doc = fs::path(performance.path) / "performance.json";
+            auto text = read(doc);
+            for(auto at = text.find(fixture); at != std::string::npos; at = text.find(fixture, at + 1)) text.replace(at, std::strlen(fixture), stored.string());
+            std::ofstream(doc, std::ios::binary | std::ios::trunc) << text;
+            g.libraryRescan();
+            g.loadPerformanceFromLibrary(performance.id);
+            check(g.sessionStatus().failures.size() == 1 && !g.installedPlugins().at(0).open, "a stand-in for the store's broken build does not play it");
+            const auto plugin = g.installedPlugins().at(0);
+            g.removePlugin(plugin.format, plugin.id, plugin.version);
+            check(g.installedPlugins().empty(), "so it is removed");
+        }
     }
     catch(const std::exception& e) { std::fprintf(stderr, "FAIL: %s\n", e.what()); ++failures; }
     if(!failures) std::puts("ok: export, install as the user's own and as a library, reinstall, uninstall, chosen items and plugins from the store");
