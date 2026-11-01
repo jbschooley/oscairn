@@ -23,7 +23,7 @@ namespace oscairn::standalone
         more_.onClick = [this] {
             juce::PopupMenu menu;
             for(size_t i = 3; i < actions_.size(); ++i) menu.addItem(int(i) + 1, actions_[i].name);
-            menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&more_), [this](int chosen) { if(chosen > 0 && actions_[size_t(chosen - 1)].run) actions_[size_t(chosen - 1)].run(); });
+            menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&more_), [actions = actions_](int chosen) { if(chosen > 0 && actions[size_t(chosen - 1)].run) actions[size_t(chosen - 1)].run(); }); // as shown: the bar may change or go meanwhile
         };
         addChildComponent(more_);
         notesOff_.setTooltip("All notes off: hold for half a second");
