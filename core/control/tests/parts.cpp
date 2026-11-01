@@ -992,11 +992,16 @@ namespace
             check(e.plugins[0].measured && e.plugins[0].plugin == "org.kick.test.synth", "measured while it plays");
             s.note(false, 60, 0); x.run(s);
             s.savePerformance((root / "budget-one").string());
+            const auto lead = s.savePartAsSound(part, "Lead").id;
             // Over the budget: refused, unloaded again, saying what.
             s.setBudget({1e-9, 0});
             std::string why;
             try { s.add("b", fixture, "org.kick.test.synth"); } catch(const std::invalid_argument& e) { why = e.what(); }
             check(why.find("of the audio time") != std::string::npos && s.graphState().topology.nodes.size() == 1, "a plugin over the budget refused: " + why);
+            why.clear();
+            try { s.loadSound(part, lead); } catch(const std::invalid_argument& e) { why = e.what(); }
+            check(why.find("of the audio time") != std::string::npos && s.graphState().topology.nodes.size() == 1 && s.sessionStatus().failures.empty(),
+                  "a Sound over the budget refused, not opened with a stand-in: " + why);
             why.clear();
             try { s.loadPerformance((root / "budget-one").string()); } catch(const std::exception& e) { why = e.what(); }
             check(why.find("of the audio time") != std::string::npos, "a Performance over the budget refused: " + why);

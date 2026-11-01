@@ -208,7 +208,7 @@ NodeId resolvePlugin(V node,const fs::path& snapshot,const std::set<uint32_t>& r
     for(const auto& candidate:{fs::path(text(field(plugin,"pathHint"))),storedPlugin(format,id,saved)}){
         std::error_code e;if(candidate.empty() || !fs::exists(candidate,e))continue;
         try{const auto n=load(candidate.string(),id);const auto have=version(n);if(have==saved)return n;unload(n);reason="version "+have+" installed";}
-        catch(const std::exception& x){reason=x.what();}
+        catch(const std::runtime_error& x){reason=x.what();} // a load that failed; a refusal (the budget's) is not one
     }
     return adopt(standIn(node,snapshot,refs,reason));
 }
