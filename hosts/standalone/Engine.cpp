@@ -126,7 +126,7 @@ namespace oscairn::standalone
     {
         if(soundBusy() || !connected())return;
         if((action.kind==SoundAction::Prepare || action.kind==SoundAction::Replace || action.kind==SoundAction::SavePerformance || action.kind==SoundAction::LoadPerformance || action.kind==SoundAction::SaveToLibrary || action.kind==SoundAction::LoadFromLibrary || action.kind==SoundAction::SaveSound || action.kind==SoundAction::LoadSound || action.kind==SoundAction::PartFromSound || action.kind==SoundAction::ImportPerformance ||
-            action.kind==SoundAction::ExportPerformance || action.kind==SoundAction::InstallArchive) && !canPrepareSounds())
+            action.kind==SoundAction::ExportPerformance || action.kind==SoundAction::InstallArchive || action.kind==SoundAction::AuditionStart || action.kind==SoundAction::AuditionStop) && !canPrepareSounds())
         {
             soundMessage_="Preparation requires the separate engine. Relaunch without --in-process.";
             return;
@@ -170,7 +170,7 @@ namespace oscairn::standalone
             if(old==editors_.end() || old->second.id!=editor.id || old->second.path!=editor.path)textCache_.clear();
         }
         soundPicker_=std::move(result.state);editors_=std::move(result.editors);
-        const bool loaded=soundJobKind_==SoundAction::LoadPerformance || soundJobKind_==SoundAction::LoadFromLibrary;
+        const bool loaded=soundJobKind_==SoundAction::LoadPerformance || soundJobKind_==SoundAction::LoadFromLibrary || soundJobKind_==SoundAction::AuditionStart || soundJobKind_==SoundAction::AuditionStop;
         if(soundJobKind_==SoundAction::Replace || loaded)textCache_.clear();
         if(result.error.empty() && (soundJobKind_==SoundAction::SavePerformance || soundJobKind_==SoundAction::SaveToLibrary))soundMessage_="Performance saved.";
         if(result.error.empty() && loaded)soundMessage_="Performance opened. Press Play or play a note.";
@@ -240,6 +240,11 @@ namespace oscairn::standalone
     {
         if(!connected() || !controlReady())return {};
         try{return control_->performanceContents(directory);}catch(const std::exception& e){std::fprintf(stderr,"oscairn: performance contents: %s\n",e.what());return {};}
+    }
+    std::optional<Control::Audition> Engine::audition() const
+    {
+        if(!connected() || !controlReady()) return {};
+        try{return control_->audition();}catch(const std::exception&){return {};}
     }
     std::optional<Control::PerformanceInfo> Engine::performanceInfo() const
     {

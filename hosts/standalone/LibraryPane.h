@@ -21,6 +21,7 @@ namespace oscairn::standalone
         LibraryPane(Engine& engine, Actions& actions, Mode mode, const std::string& kind = "performance");
         ~LibraryPane() override;
         std::function<void(const std::string& id)> onPicked; // Pick mode; empty when canceled
+        std::function<uint32_t()> auditionPart;               // the part a Sound is auditioned in: the one shown; 0 for none
 
         void search(const juce::String& text);
         void toggleTag(const std::string& tag);
@@ -45,12 +46,19 @@ namespace oscairn::standalone
         void editItem(int row);                              // its name, description and tags, asked for
         std::string copyItem(int row);                       // into the user's own; the copy's ID, or empty
         void exportItem(int row);                            // to an archive file, chosen and asked about
+        // Audition (RFC 0021): the item at row tried in place, a Sound in auditionPart's; while
+        // one plays, choosing another row tries that one. Stop puts back what was there; keep
+        // makes it the change. Picking, canceling or closing stops it.
+        void startAudition(int row);
+        void stopAudition(bool keep = false);
+        const Control::Audition& auditioning() const { return auditioning_; }
         void tagMenu(const std::string& tag);                // hide it from the tag list, or color it
         std::string tagColor(const std::string& tag) const; // the user's color for it, or empty
         const juce::String& message() const { return message_; }
 
         void paint(juce::Graphics&) override;
         void resized() override;
+        bool keyPressed(const juce::KeyPress&) override; // Space starts or stops an audition
 
     private:
         // The left column: the library (everything, the user's own, each installed library), then
@@ -74,7 +82,7 @@ namespace oscairn::standalone
         void listBoxItemClicked(int row, const juce::MouseEvent&) override;
         void listBoxItemDoubleClicked(int row, const juce::MouseEvent&) override;
         void returnKeyPressed(int row) override { choose(row); }
-        void selectedRowsChanged(int) override { updateButtons(); }
+        void selectedRowsChanged(int row) override;
         void updateButtons();
         int mode() const { return std::max(1, desktopMode(*this)); }
         juce::Rectangle<int> starArea(int width, int height) const;
@@ -85,6 +93,7 @@ namespace oscairn::standalone
         Mode mode_;
         Control::LibraryQuery query_;
         Control::LibraryResult result_;
+        Control::Audition auditioning_;
         std::vector<Control::InstalledLibrary> installed_;
         std::vector<Side> side_;
         bool stale_ = true, awaiting_ = false, compact_ = false, pills_ = false;
@@ -94,7 +103,7 @@ namespace oscairn::standalone
         Sidebar sidebar_{*this};
         juce::Viewport sideView_;
         juce::ListBox list_{"Performances", this};
-        juce::TextButton send_{"Add to setlist"}, part_{"New part"}, cancel_{"Cancel"}, pick_{"Choose"}, options_{"Options..."}, libraries_{"Libraries..."};
+        juce::TextButton send_{"Add to setlist"}, part_{"New part"}, cancel_{"Cancel"}, pick_{"Choose"}, options_{"Options..."}, libraries_{"Libraries..."}, audition_{"Audition"}, keep_{"Keep"};
         std::unique_ptr<juce::FileChooser> chooser_;
         std::unique_ptr<juce::AlertWindow> editor_;
         juce::Label status_;

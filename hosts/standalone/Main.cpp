@@ -254,12 +254,12 @@ namespace oscairn::standalone
             }
             if(id>=7000 && id<=7002){inputMode_=InputMode(id-7000);writeInputMode(theme_.configuration(),inputMode_);if(auto* s=shell())s->setInputMode(inputMode_);return;}
             if(id==8000){showGroovebox();return;}
-            if(id==8001){showApp(libraryApp_,"Library",[this]{return new LibraryPane(engine_,actions_,LibraryPane::Mode::Play);},900,700);return;}
+            if(id==8001){showApp(libraryApp_,"Library",[this]{return libraryPane(LibraryPane::Mode::Play);},900,700);return;}
             if(id==8002){setlist();showApp(setlist_,"Setlist",nullptr,0,0);return;}
             if(id==5002 || id==5003){saveToLibrary(id==5003);return;}
             if(id==5004){importPerformance();return;}
             if(id==5005){exportPerformance();return;}
-            if(id==5006){showApp(libraryApp_,"Library",[this]{return new LibraryPane(engine_,actions_,LibraryPane::Mode::Play);},900,700);
+            if(id==5006){showApp(libraryApp_,"Library",[this]{return libraryPane(LibraryPane::Mode::Play);},900,700);
                 if(auto* pane=dynamic_cast<LibraryPane*>(libraryApp_->getContentComponent()))pane->install();return;}
             if(id==8100){loadSound();return;}
             if(id==8101 || id==8102){saveSound(id==8102);return;}
@@ -297,12 +297,19 @@ namespace oscairn::standalone
             if(!setlist_){setlist_=std::make_unique<AppWindow>("Setlist",new SetlistPane(engine_,actions_),700,760);setDesktopMode(*setlist_->getContentComponent(),inputMode_==InputMode::Touch?2:1);}
             return *static_cast<SetlistPane*>(setlist_->getContentComponent());
         }
+        // A Library pane auditioning Sounds in the part the Part view shows.
+        LibraryPane* libraryPane(LibraryPane::Mode mode,const std::string& kind="performance")
+        {
+            auto* pane=new LibraryPane(engine_,actions_,mode,kind);
+            pane->auditionPart=[this]{auto* s=shell();return s?s->selectedPart():0u;};
+            return pane;
+        }
         // The Library's pick, in a window over the asking app; a second pick cancels the first.
         void showPicker(Actions::Answer answer,const std::string& kind)
         {
             if(pickerAnswer_){auto old=std::move(pickerAnswer_);pickerAnswer_={};old({});}
             pickerAnswer_=std::move(answer);
-            auto* pane=new LibraryPane(engine_,actions_,LibraryPane::Mode::Pick,kind);
+            auto* pane=libraryPane(LibraryPane::Mode::Pick,kind);
             pane->onPicked=[this](const std::string& id){
                 auto pending=std::move(pickerAnswer_);pickerAnswer_={};
                 // The window goes after this click has finished with it.

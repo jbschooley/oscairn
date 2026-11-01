@@ -7,6 +7,7 @@ namespace oscairn::standalone
     namespace
     {
         juce::String text(const std::string& s) { return juce::String::fromUTF8(s.c_str()); }
+        const juce::String separator = juce::String::fromUTF8("  ·  "); // a const char* added to a String is not read as UTF-8
         constexpr int longPress = 500; // ms: a press this long opens the menu a right click does
         bool menuGesture(const juce::MouseEvent& e) { return e.mods.isPopupMenu() || (e.getLengthOfMousePress() >= longPress && !e.mouseWasDraggedSinceMouseDown()); }
         // Compact or not: the user's, beside the theme selection.
@@ -61,14 +62,19 @@ namespace oscairn::standalone
         sideView_.setViewedComponent(&sidebar_, false);
         sideView_.setScrollBarsShown(true, false);
         send_.onClick = [this] { send(list_.getSelectedRow()); };
-        cancel_.onClick = [this] { if(onPicked) onPicked({}); };
+        cancel_.onClick = [this] { stopAudition(); if(onPicked) onPicked({}); };
         pick_.onClick = [this] { choose(list_.getSelectedRow()); };
+        audition_.onClick = [this] { if(auditioning_.id.empty()) startAudition(list_.getSelectedRow()); else stopAudition(); };
+        audition_.setTooltip("Try it without keeping it: a Sound in the part shown, a Performance in place of the open one. Space does the same");
+        keep_.onClick = [this] { stopAudition(true); };
+        keep_.setTooltip("Keep what is being auditioned, as if it had been loaded");
         options_.onClick = [this] { itemMenu(list_.getSelectedRow()); };
         options_.setTooltip("Everything for the selected item: edit, color, copy, delete. A right click or a long press on a row does the same");
         libraries_.onClick = [this] { librariesMenu(); };
         libraries_.setTooltip("Install a library or an exported Performance, uninstall a library, or show a hidden tag");
         status_.setColour(juce::Label::textColourId, ink(Ink::Muted));
-        for(auto* c : std::initializer_list<juce::Component*>{&search_, &favorites_, &recent_, &compactButton_, &sideView_, &list_, &options_, &status_}) addAndMakeVisible(c);
+        for(auto* c : std::initializer_list<juce::Component*>{&search_, &favorites_, &recent_, &compactButton_, &sideView_, &list_, &options_, &audition_, &status_}) addAndMakeVisible(c);
+        addChildComponent(keep_);
         for(auto* c : std::initializer_list<juce::Component*>{&send_, &part_, &cancel_, &pick_, &performances_, &sounds_, &libraries_}) addChildComponent(c);
         performances_.setVisible(mode_ == Mode::Play); sounds_.setVisible(mode_ == Mode::Play); libraries_.setVisible(mode_ == Mode::Play);
         cancel_.setVisible(mode_ == Mode::Pick); pick_.setVisible(mode_ == Mode::Pick);
@@ -83,7 +89,7 @@ namespace oscairn::standalone
         startTimer(300);
     }
 
-    LibraryPane::~LibraryPane() { list_.setModel(nullptr); }
+    LibraryPane::~LibraryPane() { stopAudition(); list_.setModel(nullptr); }
 
     void LibraryPane::showKind(const std::string& kind)
     {
@@ -147,6 +153,9 @@ namespace oscairn::standalone
     {
         // Saving into the library happens on the engine's worker; look again once it is done.
         if(!engine_.controlReady()) { stale_ = true; return; }
+        // An audition ended elsewhere (a Performance opened keeps it): show that.
+        if(!auditioning_.id.empty() && !engine_.soundBusy())
+            if(const auto now = engine_.audition(); now && now->id != auditioning_.id) { auditioning_ = *now; updateButtons(); resized(); }
         if(!stale_) return;
         const auto found = engine_.library(query_);
         if(!found) return;
@@ -306,13 +315,63 @@ namespace oscairn::standalone
     {
         const bool any = list_.getSelectedRow() >= 0;
         send_.setEnabled(any); pick_.setEnabled(any); part_.setEnabled(any); options_.setEnabled(any);
+        const bool on = !auditioning_.id.empty();
+        audition_.setButtonText(on ? "Stop" : "Audition"); audition_.setToggleState(on, juce::dontSendNotification);
+        audition_.setEnabled(on || any);
+        keep_.setVisible(on && mode_ == Mode::Play);
+    }
+
+    void LibraryPane::selectedRowsChanged(int row)
+    {
+        updateButtons();
+        // Browsing while auditioning: each item chosen is tried in turn.
+        if(const auto* item = at(row); item && !auditioning_.id.empty() && item->id != auditioning_.id) startAudition(row);
+    }
+
+    void LibraryPane::startAudition(int row)
+    {
+        const auto* item = at(row);
+        if(!item) return;
+        // One engine job at a time: what is asked while another loads would be lost.
+        if(engine_.soundBusy()) { tell("Still loading; try again in a moment."); return; }
+        SoundAction start; start.kind = SoundAction::AuditionStart; start.libraryId = item->id;
+        if(item->kind == "sound")
+        {
+            start.part = auditionPart ? auditionPart() : 0;
+            if(!start.part) { tell("Show a part in the Part view to audition a Sound in it."); return; }
+        }
+        engine_.soundAction(std::move(start));
+        auditioning_ = {item->id, item->kind, item->kind == "sound" ? start.part : 0};
+        list_.selectRow(row); list_.repaint(); // its row, marked
+        tell("Auditioning " + text(item->name.empty() ? "Untitled" : item->name) + (item->kind == "sound" ? " in the part shown." : " in place of the open Performance."));
+        updateButtons(); resized();
+    }
+
+    void LibraryPane::stopAudition(bool keep)
+    {
+        if(auditioning_.id.empty()) return;
+        // shortcut: closing the pane while an audition still loads leaves it playing; queue the stop if that matters.
+        if(engine_.soundBusy()) { tell("Still loading; stop again in a moment."); return; }
+        SoundAction stop; stop.kind = SoundAction::AuditionStop; stop.asNew = keep;
+        engine_.soundAction(std::move(stop));
+        auditioning_ = {};
+        list_.repaint();
+        tell(keep ? "Kept." : "Put back as it was.");
+        updateButtons(); resized();
+    }
+
+    bool LibraryPane::keyPressed(const juce::KeyPress& key)
+    {
+        if(key != juce::KeyPress::spaceKey || search_.hasKeyboardFocus(true)) return false;
+        if(auditioning_.id.empty()) startAudition(list_.getSelectedRow()); else stopAudition();
+        return true;
     }
 
     void LibraryPane::choose(int row)
     {
         const auto* item = at(row);
         if(!item) return;
-        if(mode_ == Mode::Pick) { if(onPicked) onPicked(item->id); return; }
+        if(mode_ == Mode::Pick) { const auto id = item->id; stopAudition(); if(!auditioning_.id.empty()) return; if(onPicked) onPicked(id); return; }
         if(item->kind != "performance") return; // a Sound goes into a part: New part, or a part's Load Sound
         SoundAction open; open.kind = SoundAction::LoadFromLibrary; open.libraryId = item->id;
         engine_.soundAction(std::move(open));
@@ -344,8 +403,9 @@ namespace oscairn::standalone
         const auto name = text(item->name.empty() ? "Untitled" : item->name);
         juce::StringArray tags; for(const auto& t : item->tags) tags.add(text(t));
         // A locked library's item says so first: Save makes a new one.
-        auto detail = tags.joinIntoString("  ·  ") + (item->description.empty() ? "" : (tags.isEmpty() ? "" : "   ") + text(item->description));
-        if(!item->library.empty()) detail = "Locked" + (detail.isEmpty() ? juce::String() : "  ·  " + detail);
+        auto detail = tags.joinIntoString(separator) + (item->description.empty() ? "" : (tags.isEmpty() ? "" : "   ") + text(item->description));
+        if(!item->library.empty()) detail = "Locked" + (detail.isEmpty() ? juce::String() : separator + detail);
+        if(item->id == auditioning_.id) detail = "Auditioning" + (detail.isEmpty() ? juce::String() : separator + detail);
         const juce::Font bold(juce::FontOptions(body, juce::Font::bold));
         if(compact_)
         {
@@ -379,6 +439,7 @@ namespace oscairn::standalone
             refresh();
             return;
         }
+        if(!auditioning_.id.empty()) { if(item->id != auditioning_.id) startAudition(row); return; } // browsing while auditioning
         if(mode_ == Mode::Play) choose(row); // played from the list: one click opens it
     }
 
@@ -420,6 +481,8 @@ namespace oscairn::standalone
             bottom.removeFromRight(gap);
         }
         options_.setBounds(bottom.removeFromRight(touch ? 130 : 100)); bottom.removeFromRight(gap);
+        audition_.setBounds(bottom.removeFromRight(touch ? 130 : 100)); bottom.removeFromRight(gap);
+        if(keep_.isVisible()) { keep_.setBounds(bottom.removeFromRight(touch ? 100 : 80)); bottom.removeFromRight(gap); }
         status_.setFont(juce::FontOptions(textSize(TextRole::Small, mode())));
         status_.setBounds(bottom);
     }
@@ -440,6 +503,7 @@ namespace oscairn::standalone
             if(actions_.offered(sendPerformance)) menu.addItem(2, "Add to setlist");
         }
         else menu.addItem(3, "New part");
+        menu.addItem(9, auditioning_.id == item.id ? "Stop audition" : "Audition");
         menu.addItem(4, item.favorite ? "Remove from favorites" : "Add to favorites");
         menu.addSeparator();
         menu.addItem(5, "Edit name, description and tags...", own);
@@ -462,6 +526,7 @@ namespace oscairn::standalone
                 case 6: safe->copyItem(row); return;
                 case 7: safe->deleteItem(row); return;
                 case 8: safe->exportItem(row); return;
+                case 9: if(safe->auditioning_.id == item.id) safe->stopAudition(); else safe->startAudition(row); return;
                 default: break;
             }
             if(colorChosen(chosen, 100, color))

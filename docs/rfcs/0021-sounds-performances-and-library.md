@@ -62,7 +62,7 @@ Checked when built and tested; the sections below say how.
       sleep ([status](#seamless-switching)); loading a Sound cuts, by decision
 - [x] Seamless Performance changes: the outgoing Performance rings out beside the new one ([status](#seamless-switching))
 - [x] Audition of a Sound in a part and of a Performance in place of the open one, put back as
-      it was or kept ([status](#audition))
+      it was or kept, from the Library app ([status](#audition))
 - [ ] 5. Seamless loading into a part (part transitions on RFC 0007's chain preparation)
 - [ ] 6. Panel
 - [ ] 7. Compact test layout
@@ -543,9 +543,14 @@ Built 2026-11-01 (`core/control/src/audition.cpp`; `audition.start`, `audition.s
 (the model before the audition, holding the plugins), so putting it back is the undo
 machinery's own. Earlier designs used a hidden audition part beside the target; trying the
 item in the part's place gives the same sound with nothing hidden in the Performance.
+In the Library app, **Audition** (or Space, or the item's menu) tries the selected item, a
+Sound in the part the Part view shows; while it plays, choosing another row tries that one, the
+row says Auditioning, and the button reads **Stop**, with **Keep** beside it. Picking, canceling
+or closing the picker stops it.
+
 `control-parts` checks a Sound put back and kept (and its load undone), and a Performance
 whose held note plays on through the audition and back, put back and kept;
-`control-library` checks the methods.
+`control-library` checks the methods; `desktop-shell` auditions from the Library app and stops.
 
 Where audio goes when the device has a cue output is an open question.
 

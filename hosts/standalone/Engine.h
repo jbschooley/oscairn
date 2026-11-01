@@ -92,6 +92,7 @@ namespace oscairn::standalone
         std::optional<Control::LibraryResult> library(const Control::LibraryQuery& query) const;
         std::optional<Control::LibraryItem> libraryItem(const std::string& id) const;
         std::optional<Control::PerformanceInfo> performanceInfo() const;
+        std::optional<Control::Audition> audition() const; // nothing while the engine is busy
         std::optional<Control::PerformanceContents> performanceContents(const std::string& directory) const;
         // Libraries (RFC 0021): an archive's contents (empty error when read), the installed
         // libraries, and deleting, editing or copying an item or uninstalling a library (the

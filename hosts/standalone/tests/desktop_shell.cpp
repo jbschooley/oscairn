@@ -204,6 +204,17 @@ int main(int argc, char** argv)
                 check(engine.deleteLibraryItem(copied).empty(), "and deleted again");
                 library.refresh();
                 check(wait([&] { return library.items().size() == 3; }), "back to three");
+                // Audition: a Performance tried in place of the open one, then put back.
+                const auto openName = engine.performanceInfo()->name;
+                library.startAudition(1);
+                const auto tried = library.items()[1];
+                check(wait([&] { return !engine.soundBusy(); }) && engine.audition()->id == tried.id && engine.performanceInfo()->name == tried.name,
+                      "auditioning " + tried.name + ": " + engine.soundMessage());
+                library.repaint();
+                snapshot(library, "library-audition");
+                library.stopAudition();
+                check(wait([&] { return !engine.soundBusy(); }) && engine.audition()->id.empty() && engine.performanceInfo()->name == openName && library.auditioning().id.empty(),
+                      "put back: " + engine.soundMessage());
                 engine.edit([](Control& c) { c.libraryTag("live", false, ""); c.libraryTag("pad", false, ""); });
                 library.refresh();
                 check(wait([&] { return listed("live"); }), "shown again");
