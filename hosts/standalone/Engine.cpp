@@ -308,6 +308,12 @@ namespace oscairn::standalone
         if(!connected() || !controlReady())return {};
         try{return control_->performanceInfo();}catch(const std::exception&){return {};}
     }
+    const std::vector<AssignmentOverride>& Engine::assignments() const
+    {
+        if(connected() && controlReady())
+            try{assignments_=control_->assignments();}catch(const std::exception&){}
+        return assignments_;
+    }
     Engine::Status Engine::status()const
     {
         const auto transport=control_->transportState();const auto host=control_->sessionStatus();

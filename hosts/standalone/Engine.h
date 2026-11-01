@@ -61,9 +61,10 @@ namespace oscairn::standalone
         void setControl(const std::string& name,double value);
         const std::vector<Macro>& controls() const {return macros_;}
         void setControl(uint32_t id,double value);
-        // Physical controls (RFC 0011): the Performance's overrides, and the device's control
-        // moved last ("knob:2"), counted so each move shows, for learn.
-        std::vector<AssignmentOverride> assignments() const {try{return control_->assignments();}catch(const std::exception&){return {};}}
+        // Physical controls (RFC 0011): the Performance's overrides (the last read while the
+        // engine is busy), and the device's control moved last ("knob:2"), counted so each move
+        // shows, for learn.
+        const std::vector<AssignmentOverride>& assignments() const;
         void touched(const std::string& control){touched_=control;++touches_;}
         const std::string& lastTouched() const {return touched_;}
         uint32_t touches() const {return touches_;}
@@ -175,5 +176,6 @@ namespace oscairn::standalone
         uint32_t reconnectTicks_=0;
         bool recoveryAvailable_=false;
         mutable std::map<std::pair<std::string,uint32_t>,std::pair<uint64_t,std::string>> textCache_;
+        mutable std::vector<AssignmentOverride> assignments_;
     };
 }
