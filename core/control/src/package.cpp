@@ -170,7 +170,7 @@ namespace oscairn
                 if(st.m_uncomp_size > maxEntry || (total += st.m_uncomp_size) > maxTotal) bad("it is too large");
                 if(name == "library.json")
                 {
-                    if(st.m_uncomp_size > (4u << 20)) bad("the manifest is too large");
+                    if(st.m_uncomp_size > maxManifestBytes) bad("the manifest is too large");
                     manifest.resize(size_t(st.m_uncomp_size));
                     if(!mz_zip_reader_extract_to_mem(&z.zip, i, manifest.data(), manifest.size(), 0)) bad("the manifest cannot be read");
                     continue;

@@ -3,6 +3,7 @@
 #include "sheredom/json.h"
 #include "JsonInput.h"
 #include "oscairn/assets.h"
+#include "oscairn/package.h"
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
@@ -22,13 +23,13 @@ namespace oscairn
         using Doc = std::unique_ptr<json_value_s, decltype(&std::free)>;
         constexpr size_t maxFile = 4 * 1024 * 1024, maxTags = 32, maxTag = 64, maxRecent = 50;
 
-        std::string slurp(const fs::path& file)
+        std::string slurp(const fs::path& file, size_t limit = maxFile)
         {
             std::ifstream in(file, std::ios::binary);
             if(!in) throw std::runtime_error("cannot read " + file.string());
             std::ostringstream out; out << in.rdbuf();
             auto text = out.str();
-            if(text.size() > maxFile) throw std::runtime_error(file.string() + " is too large");
+            if(text.size() > limit) throw std::runtime_error(file.string() + " is too large");
             return text;
         }
         Doc parse(const std::string& text)
@@ -206,7 +207,7 @@ namespace oscairn
                 if(!entry.is_directory() || entry.path().filename().string().starts_with(".")) continue;
                 try
                 {
-                    const auto doc = parse(slurp(entry.path() / "library.json"));
+                    const auto doc = parse(slurp(entry.path() / "library.json", maxManifestBytes));
                     Control::InstalledLibrary l{str(detail::member(doc.get(), "id")), str(detail::member(doc.get(), "name")), 0};
                     if(l.id != entry.path().filename().string()) continue; // not where it was installed
                     installed_.push_back(l);

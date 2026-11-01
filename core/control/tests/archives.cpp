@@ -115,6 +115,16 @@ int main(int argc, char** argv)
             // As a library: locked, under its own IDs.
             const auto library = b.installArchive(archive.string(), true);
             check(library.added == 2 && b.libraries().size() == 1 && b.libraries()[0].items == 2, "installed as a library");
+            // An installed library's manifest past the old 4 MiB limit still reads (a converted
+            // MONTAGE M library's does): padded with JSON whitespace before its closing brace.
+            for(const auto& folder : fs::directory_iterator(temp.path / "b" / "Libraries"))
+            {
+                auto text = read(folder.path() / "library.json");
+                text.insert(text.rfind('}'), std::string((4u << 20) + 1, ' '));
+                std::ofstream(folder.path() / "library.json", std::ios::binary | std::ios::trunc) << text;
+            }
+            b.libraryRescan();
+            check(b.libraries().size() == 1 && b.libraries()[0].items == 2, "an installed library with a manifest over 4 MiB is listed");
             bool locked = false;
             for(const auto& i : items(b, "sound")) if(i.id == soundId) locked = !i.library.empty();
             check(locked, "its items keep their IDs, locked");

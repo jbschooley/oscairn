@@ -78,6 +78,11 @@ int main()
         check(read.plugins.size() == 1 && read.plugins[0].builds.size() == 1 && read.plugins[0].builds[0].sha256 == bundleDigest(root / "out" / build) &&
               fs::exists(root / "out" / build / "Contents/binary") && !fs::exists(root / "out" / build / ".DS_Store"), "a plugin build round-trips, without hidden files");
         check(read.files.size() == 4 && read.files.at("Assets/0123.wav") == assets::sha256("RIFF"), "every file is listed with its SHA-256");
+        // A manifest past the old 4 MiB limit, as a library of thousands of items has, is read; one
+        // past maxManifestBytes is refused. Padded with JSON whitespace before its closing brace.
+        auto padded = [&](size_t bytes) { auto m = manifest; m.insert(m.size() - 1, std::string(bytes - m.size(), ' ')); return m; };
+        craft(root / "Big.olib", {{"library.json", padded((4u << 20) + 1)}, {"Sounds/Bass.osound/sound.json", "{}"}});
+        check(readPackage(root / "Big.olib", root / "big-out").items.size() == 1, "a manifest just over 4 MiB is read");
         const auto manifestOnly = readPackage(root / "Pack.olib", {});
         check(manifestOnly.items.size() == 1 && manifestOnly.items[0].id == "s1", "the manifest alone, extracting nothing");
 
@@ -110,6 +115,7 @@ int main()
         refuse("another format", {{"library.json", R"({"format":"other","version":1,"id":"a","name":"b","kind":"library","items":[]})"}});
         // Patched after writing: an entry marked as a link, and one declaring a huge size.
         refuse("a link", {top, sound, {"Assets/link", "/etc/passwd"}}, {}, [](std::string& bytes) { patch(bytes, "Assets/link", 38, (0120777u << 16)); });
+        refuse("a manifest over the limit", {{"library.json", padded(size_t(maxManifestBytes) + 1)}, sound});
         refuse("an entry over 2 GiB", {top, sound, {"Assets/big.bin", "x"}}, {}, [](std::string& bytes) { patch(bytes, "Assets/big.bin", 24, 0xF0000000u); });
         // Files that are not what the manifest says.
         refuse("a file changed after it was hashed", {{"library.json", manifest}, {"Sounds/Bass.osound/sound.json", "{ }"}});
