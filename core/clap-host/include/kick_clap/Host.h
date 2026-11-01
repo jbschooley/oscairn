@@ -154,6 +154,9 @@ public:
     uint64_t parameterReports() const noexcept;
     uint32_t latency() const noexcept;
     Statistics statistics() const noexcept;
+    // Audio thread: the plugin's last process() asked to sleep (CLAP_PROCESS_SLEEP): it makes no
+    // sound until it gets input or events.
+    bool asleep() const noexcept;
 
     bool enqueue(const Event&) noexcept; // bounded multi-producer queue
     bool popOutput(Event&) noexcept; // main/control-thread consumer of parameter output

@@ -49,6 +49,7 @@ namespace oscairn
         SoundSaved savePartAsSound(uint32_t part,const std::string& name,bool asNew = false) override;
         std::vector<std::string> loadSound(uint32_t part,const std::string& id) override;
         uint32_t partFromSound(const std::string& id) override;
+        size_t retiringPlugins() const noexcept { return retiring_.size(); } // switched-away plugins still sounding out
         PerformanceContents performanceContents(const std::string& directory) override;
         Imported importPerformance(const std::string& directory, const std::vector<uint32_t>& parts = {}, const std::vector<uint32_t>& scenes = {}) override;
         bool supportsState(NodeId node) const override {return graph_.host(node).supportsState();}
@@ -234,6 +235,11 @@ namespace oscairn
         void markEdited(const Model& before);                  // parts from Sounds that the step since `before` changed
         void markEdited(NodeId node);                          // the part from a Sound holding this plugin, after a parameter step
         std::set<uint32_t> loading_;                           // parts a Sound is being loaded into: that step is no edit of it
+        // Plugins of chains switched away from, sounding out their held notes and tails (RFC 0021);
+        // service() removes each once idle. Not part of the Performance.
+        std::set<NodeId> retiring_;
+        void retireIdle();
+        void unretire(NodeId node);
         void push(Step step);                                  // merging it into the last when they change the same thing
         void apply(const Model& from, const Model& to);        // the change from one to the other, onto now
         bool applyParameter(NodeId node, uint32_t param, double value, double* applied = nullptr); // not an edit

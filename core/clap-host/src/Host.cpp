@@ -961,6 +961,7 @@ bool Host::parameterGesture(clap_id id, bool begin) noexcept {
 bool Host::stateDirty() const noexcept { return impl->dirty.load(); }
 uint64_t Host::parameterReports() const noexcept { return impl->parameterReports.load(std::memory_order_acquire); }
 uint32_t Host::latency() const noexcept { return impl->latencyFrames.load(); }
+bool Host::asleep() const noexcept { return impl->sleeping; }
 Statistics Host::statistics() const noexcept { auto& s = *impl; return {s.blocks.load(), s.dropped.load(), s.errors.load(), s.lastUs.load(), s.maxUs.load(), s.deadlineMisses.load(), s.controlSilences.load(), s.idleBlocks.load()}; }
 bool Host::enqueue(const Event& e) noexcept {
     auto& s = *impl;

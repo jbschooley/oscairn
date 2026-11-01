@@ -303,12 +303,11 @@ in the others.
    - [x] **importing a Performance:** all of it, or at least one chosen part and scene; parts
      bring their plugins, buses, wiring and controls, scenes come under free names, in one
      step to undo ([design](rfcs/0021-sounds-performances-and-library.md#importing-a-performance))
-   - [ ] **seamless switching:** loading a Sound into a part keeps the notes already held and
-     the outgoing chain's tails, with the incoming chain prepared off the audio thread, and
-     says beforehand when it cannot
-     ([RFC 0021 step 5](rfcs/0021-sounds-performances-and-library.md#seamless-switching), on
-     RFC 0007's chain preparation and retirement); then seamless Performance changes for
-     setlists
+   - [x] **seamless switching:** loading a Sound into a part keeps the notes already held and
+     the outgoing chain's tails; the old chain drains and is removed once idle
+     ([RFC 0021 step 5](rfcs/0021-sounds-performances-and-library.md#seamless-switching))
+   - [ ] telling before a load when it cannot be seamless (with a memory or voice budget), the
+     audition part, and seamless Performance changes for setlists
    - [ ] tag editing and suggestions, plugin presets in the library, `LibraryModel`, and the
      Library on the panel and compact screens (RFC 0021 steps 2–7)
    - [ ] actions over the control API, then choosing between apps (RFC 0022 steps 2–3, also

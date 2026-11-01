@@ -90,6 +90,9 @@ namespace oscairn
         // is being restarted or was given up); empty while it plays. Any thread.
         virtual std::string failure() const { return {}; }
         virtual bool process(const float* const* inputs, uint32_t ni, float* const* outputs, uint32_t no, uint32_t frames, const kick::clap::Event* events, uint32_t count, const clap_event_transport_t* transport) noexcept = 0;
+        // Audio thread, after process(): the plugin said it makes no more sound until it gets
+        // input (CLAP_PROCESS_SLEEP). False where a host cannot tell.
+        virtual bool asleep() const noexcept { return false; }
     };
     // CLAP module or LV2 bundle directory; pluginId is a CLAP ID or an LV2 URI.
     std::shared_ptr<PluginHost> loadPlugin(const std::string& path, const std::string& pluginId,

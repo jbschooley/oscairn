@@ -734,9 +734,11 @@ fader or name in the Performance, nor wires to or from the rest of the graph.
   old plugins go, with every wire, mapping, scene value and scene parameter on them. Its own
   controls are replaced by the Sound's; a Performance control that targeted one of them moves
   to the Sound's control of the same name, else that target is removed. It returns
-  `{"accepted":true,"flagged":[…]}`, describing each wire and control target removed. Notes
-  playing in the part are cut. It is one step to undo, and refused while graph edits are
-  staged. Loading it again when the library has a newer revision is Update from library.
+  `{"accepted":true,"flagged":[…]}`, describing each wire and control target removed. It is
+  seamless: notes held in the part keep playing the old chain, its tails ring out, and new
+  notes play the Sound; the old chain is removed once idle, unseen
+  ([RFC 0021](rfcs/0021-sounds-performances-and-library.md#seamless-switching)). It is one
+  step to undo, and refused while graph edits are staged. Loading it again when the library has a newer revision is Update from library.
 - Each part in `graph.get` has `from`: `{sound,revision,name,modified}` or `null`.
   `modified` turns true when an undoable step changes the part's chain, splits, plugins, the
   wires and mappings inside it or its own controls, or a parameter of one of its plugins (as

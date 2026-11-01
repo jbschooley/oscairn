@@ -93,8 +93,11 @@ namespace oscairn
 
     Session::Model Session::model() const
     {
+        // Chains sounding out after a switch are not part of the Performance (RFC 0021).
         Model m{parts_, wires_, scenes_, sceneParameters_, macros_, padMap_, graph_.describe().mappings, {}};
-        for(const auto& [id, name] : nodes_) m.nodes.emplace(id, std::pair{name, graph_.node(id)});
+        std::erase_if(m.wires, [](const Wire& w) { return w.retiring; });
+        std::erase_if(m.mappings, [&](const Graph::Mapping& x) { return retiring_.count(x.source) || retiring_.count(x.target); });
+        for(const auto& [id, name] : nodes_) if(!retiring_.count(id)) m.nodes.emplace(id, std::pair{name, graph_.node(id)});
         return m;
     }
 
@@ -261,6 +264,7 @@ namespace oscairn
             for(const auto& [id, n] : to.nodes) ids.insert(id);
             for(const auto id : ids)
             {
+                if(to.nodes.count(id) && retiring_.count(id)) unretire(id); // a chain switched away from, put back
                 const auto f = from.nodes.find(id), t = to.nodes.find(id);
                 if(f != from.nodes.end() && t != to.nodes.end() && f->second.first == t->second.first && f->second.second.host == t->second.second.host) continue;
                 if(t == to.nodes.end())

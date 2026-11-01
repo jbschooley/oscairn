@@ -29,7 +29,8 @@ namespace oscairn
             uint32_t                          audioInputs = 0, audioOutputs = 0;
             std::vector<AudioRoute>           audioSources;
             std::vector<uint32_t> silentInputs;
-            struct NoteSource {int step;std::shared_ptr<NoteRoute> route;NoteZones zones;};
+            struct NoteSource {int step;std::shared_ptr<NoteRoute> route;NoteZones zones;bool draining=false;};
+            bool retiring=false;std::shared_ptr<Graph::Activity> activity; // see Graph::setRetiring
             std::vector<NoteSource> noteSources;
             std::array<kick::clap::Event,kick::clap::Host::maxBlockEvents> releases;
             uint32_t releaseCount=0;
@@ -63,6 +64,7 @@ namespace oscairn
             bool afterNotes=false;
             const NoteZones* zones=nullptr;
             uint8_t source=untaggedSource;
+            bool draining=false;
         };
 
         std::vector<Step>              steps;
@@ -332,7 +334,29 @@ namespace oscairn
 
     void Graph::disconnectNotes( NodeId from, NodeId to )
     {
-        noteEdges_.erase({from,to});noteZones_.erase({from,to});
+        noteEdges_.erase({from,to});noteZones_.erase({from,to});draining_.erase({from,to});
+    }
+
+    void Graph::setDraining( NodeId from, NodeId to, bool draining )
+    {
+        if(draining)draining_.insert({from,to});else draining_.erase({from,to});
+    }
+
+    void Graph::setRetiring( NodeId node, bool retiring )
+    {
+        auto& n=nodes_.at(node);
+        if(retiring==n.retiring)return;
+        n.retiring=retiring;
+        // Counting starts afresh; the audio thread takes the flag with the next plan.
+        n.activity=std::make_shared<Activity>();
+        n.activity->sounding.store(UINT32_MAX,std::memory_order_relaxed); // not idle until it has been counted
+    }
+
+    bool Graph::idle( NodeId node, uint64_t quietFrames, uint64_t limitFrames ) const
+    {
+        const auto& a=*nodes_.at(node).activity;
+        if(a.sounding.load(std::memory_order_relaxed))return false;
+        return a.asleep.load(std::memory_order_relaxed) || a.quiet.load(std::memory_order_relaxed)>=quietFrames || a.free.load(std::memory_order_relaxed)>=limitFrames;
     }
 
     void Graph::mapParamTarget( NodeId source, uint32_t lane, NodeId target, clap_id param )
@@ -419,6 +443,8 @@ namespace oscairn
             Plan::Step  step;
             step.host         = node.host;
             step.peaks        = node.peaks;
+            step.retiring     = node.retiring;
+            step.activity     = node.activity;
             step.audioInputs  = node.audioInputs;
             step.audioOutputs = node.audioOutputs;
             stepOf[id]        = (int)plan->steps.size();
@@ -442,7 +468,7 @@ namespace oscairn
                 continue;
             NoteZones zones;
             if(const auto z=noteZones_.find(edge);z!=noteZones_.end()){zones.count=z->second.size();std::copy(z->second.begin(),z->second.end(),zones.zones.begin());}
-            plan->steps[(size_t)stepOf[to]].noteSources.push_back({from == graphInput ? -1 : stepOf[from],state,zones});
+            plan->steps[(size_t)stepOf[to]].noteSources.push_back({from == graphInput ? -1 : stepOf[from],state,zones,draining_.count(edge)!=0});
         }
 
         for( const auto& [from, to] : paramTargets_ )
@@ -601,7 +627,7 @@ namespace oscairn
                         ++totalEvents;
                         if(plan->keys.size()<kick::clap::Host::maxBlockEvents)
                             plan->keys.push_back( { list[i].header()->time, order++, &list[i],connection.route.get(),false,&connection.zones,
-                                                    source<0 && sources?sources[i]:untaggedSource } );
+                                                    source<0 && sources?sources[i]:untaggedSource,connection.draining } );
                         else overflow=true;
                     }
             }
@@ -616,7 +642,7 @@ namespace oscairn
             auto fades=[&](uint32_t until){bool ok=true;for(auto& source:step.noteSources)ok=source.route->fade(until,emit) && ok;return ok;};
             if(!overflow)for(const auto& key:plan->keys)
                 if(!fades(std::min(key.time,frames)) ||
-                   !(key.route && key.time<frames?key.route->route(*key.event,nextNoteId_,emit,key.zones,key.source):emit(*key.event))){overflow=true;break;}
+                   !(key.route && key.time<frames?key.route->route(*key.event,nextNoteId_,emit,key.zones,key.source,key.draining):emit(*key.event))){overflow=true;break;}
             if(!overflow && !fades(frames))overflow=true;
             for(auto& source:step.noteSources)source.route->advance(frames);
             if(overflow)
@@ -642,6 +668,17 @@ namespace oscairn
                     auto& held=(*step.peaks)[c];
                     for(float seen=held.load(std::memory_order_relaxed);peak>seen && !held.compare_exchange_weak(seen,peak,std::memory_order_relaxed););
                 }
+            if(processed && step.retiring && step.activity)
+            {
+                // A retiring node: its notes still sounding, and how long it has been silent.
+                uint32_t sounding=0;for(const auto& source:step.noteSources)sounding+=source.route->sounding();
+                float loudest=0;for(uint32_t c=0;c<step.audioOutputs;++c)for(uint32_t i=0;i<frames;++i)loudest=std::max(loudest,std::abs(step.out[c][i]));
+                auto& a=*step.activity;
+                a.sounding.store(sounding,std::memory_order_relaxed);
+                a.quiet.store(loudest<1e-5f?a.quiet.load(std::memory_order_relaxed)+frames:0,std::memory_order_relaxed);
+                a.free.store(sounding?0:a.free.load(std::memory_order_relaxed)+frames,std::memory_order_relaxed);
+                a.asleep.store(step.host->asleep(),std::memory_order_relaxed);
+            }
             step.paramCount = 0;step.paramDrops=0;step.releaseCount=0;step.releaseOverflow=false;
             uint32_t endedCount=0;const auto* ended=step.host->outputEvents(endedCount);
             for(uint32_t i=0;i<endedCount;++i)for(auto& source:step.noteSources)source.route->ended(ended[i]);

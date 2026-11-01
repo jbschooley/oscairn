@@ -8,6 +8,7 @@
 #include <atomic>
 #include <cstdint>
 #include <map>
+#include <set>
 #include <memory>
 #include <optional>
 #include <functional>
@@ -100,6 +101,16 @@ namespace oscairn
         /// With zones (at most NoteZones::capacity), only the notes a zone accepts pass, changed
         /// as it says; reconnecting replaces the zones and keeps held notes' releases.
         void connectNotes( NodeId from, NodeId to, const std::vector<NoteZone>& zones = {} );
+        /// A draining connection (seamless switching, RFC 0021) passes no new notes; releases,
+        /// expressions and the pedal still reach the notes it holds. Takes effect at commit().
+        void setDraining( NodeId from, NodeId to, bool draining );
+        /// A retiring node is being switched away from: the audio thread counts the notes still
+        /// sounding through its connections, how long its output has been silent (below -100 dB)
+        /// and whether the plugin said it is asleep. idle() says when it may go: no note sounding,
+        /// and asleep or silent for quietFrames; or no note for limitFrames, whatever it sounds
+        /// like. Takes effect at commit().
+        void setRetiring( NodeId node, bool retiring );
+        bool idle( NodeId node, uint64_t quietFrames, uint64_t limitFrames ) const;
         void disconnectAudio( NodeId from, NodeId to );
         void disconnectNotes( NodeId from, NodeId to );
 
@@ -177,9 +188,12 @@ namespace oscairn
 
         /// A node as the graph holds it. A copy keeps the plugin alive, with its state, so a
         /// removed or replaced node can be restored under its ID (for undo).
+        struct Activity { std::atomic<uint32_t> sounding{0}; std::atomic<uint64_t> quiet{0}, free{0}; std::atomic<bool> asleep{false}; }; // see setRetiring
         struct Node
         {
             std::shared_ptr<PluginHost> host;
+            bool retiring=false;
+            std::shared_ptr<Activity> activity=std::make_shared<Activity>();
             std::shared_ptr<char> effectGroup=std::make_shared<char>();
             std::shared_ptr<std::array<std::atomic<float>,meterChannels>> peaks=std::make_shared<std::array<std::atomic<float>,meterChannels>>(); // see takePeaks
             uint32_t                          audioInputs = 0, audioOutputs = 0; // channels
@@ -232,6 +246,7 @@ namespace oscairn
         std::map<NodeId, Node>                nodes_;
         std::map<std::pair<NodeId, NodeId>,std::shared_ptr<NoteRoute>> noteEdges_;
         std::map<std::pair<NodeId, NodeId>,std::vector<NoteZone>> noteZones_;
+        std::set<std::pair<NodeId, NodeId>> draining_;
         // shortcut: after 2^31 notes recreate the graph; add safe ID recycling for longer lifetimes.
         uint32_t nextNoteId_=0; // audio thread; IDs are never reused within this graph
         std::map<std::pair<NodeId, uint32_t>, std::pair<NodeId, clap_id>> paramTargets_; // (source, lane) -> (target, param)

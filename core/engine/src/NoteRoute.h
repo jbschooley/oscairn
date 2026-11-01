@@ -40,6 +40,9 @@ struct NoteRoute
         auto e=n.address;e.header.time=time;e.header.type=choke?CLAP_EVENT_NOTE_CHOKE:CLAP_EVENT_NOTE_OFF;
         e.key=n.key;e.note_id=clap[e.port_index]?n.id:-1;e.velocity=0;return Event::from(e);
     }
+    // Notes still sounding by the player's hand: keys down, or released under the sustain pedal.
+    uint32_t sounding() const noexcept
+    {uint32_t count=0;for(const auto& n:notes)if(n.used && (n.held || pedal[n.address.port_index&15][n.address.channel&15]>=64))++count;return count;}
     void ended(const Event& e) noexcept
     {
         if(e.header()->space_id!=CLAP_CORE_EVENT_SPACE_ID || e.header()->type!=CLAP_EVENT_NOTE_END || e.header()->size!=sizeof(clap_event_note_t))return;
@@ -86,11 +89,13 @@ struct NoteRoute
         }
         clear();return ok;
     }
-    template<class Emit> bool route(Event e,uint32_t& nextId,Emit&& emit,const NoteZones* zones=nullptr,uint8_t source=untaggedSource) noexcept
-    {return route(e,nextId,emit,[](const Note&,uint32_t){},zones,source);}
+    template<class Emit> bool route(Event e,uint32_t& nextId,Emit&& emit,const NoteZones* zones=nullptr,uint8_t source=untaggedSource,bool draining=false) noexcept
+    {return route(e,nextId,emit,[](const Note&,uint32_t){},zones,source,draining);}
     // zones, when given, decide which notes pass and how they change (note_zone.h); each zone
     // that accepts a note plays its own copy. source: where the event entered the graph.
-    template<class Emit,class End> bool route(Event e,uint32_t& nextId,Emit&& emit,End&& end,const NoteZones* zones=nullptr,uint8_t source=untaggedSource) noexcept
+    // draining: a connection being retired (RFC 0021's seamless switching) takes no new notes;
+    // releases, expressions and the pedal still reach the notes it holds.
+    template<class Emit,class End> bool route(Event e,uint32_t& nextId,Emit&& emit,End&& end,const NoteZones* zones=nullptr,uint8_t source=untaggedSource,bool draining=false) noexcept
     {
         if(!e.valid())return emit(e);
         const auto* h=e.header();
@@ -112,16 +117,17 @@ struct NoteRoute
             } else if(kind==0xb0 && (m.data[1]==120 || m.data[1]==123)) {
                 auto n=Event::note(false,-1,0,h->time,channel,m.port_index);
                 if(m.data[1]==120)reinterpret_cast<clap_event_header_t*>(n.bytes.data())->type=CLAP_EVENT_NOTE_CHOKE;
-                return route(n,nextId,emit,end,zones,source);
+                return route(n,nextId,emit,end,zones,source,draining);
             } else if(kind==0xa0 || kind==0xd0) {
                 Event pressure;
                 if(!midiToClap(m.data,kind==0xd0?2:3,h->time,pressure))return emit(e);
                 reinterpret_cast<clap_event_note_expression_t*>(pressure.bytes.data())->port_index=m.port_index;
-                return route(pressure,nextId,emit,end,zones,source);
+                return route(pressure,nextId,emit,end,zones,source,draining);
             } else return emit(e);
         }
         if(h->type==CLAP_EVENT_NOTE_ON && h->size==sizeof(clap_event_note_t))
         {
+            if(draining)return true;
             const auto n=*reinterpret_cast<const clap_event_note_t*>(h);
             if(n.port_index>=16 || static_cast<uint32_t>(n.port_index)>=ports)return emit(e);
             // A note limit: before a note past it, the oldest released note goes, else the oldest

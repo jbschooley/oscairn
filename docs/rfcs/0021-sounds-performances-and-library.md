@@ -51,7 +51,8 @@ Checked when built and tested; the sections below say how.
       drag to part and keyboard remain
 - [x] Importing a Performance, all of it or chosen parts (with what they need) and scenes ([design](#importing-a-performance))
 - [ ] 4. Plugin presets
-- [ ] 5. Audition and seamless loading
+- [x] 5. Seamless loading: held notes and tails of the outgoing chain carry on ([status](#seamless-switching))
+- [ ] 5. The audition part; telling before a load when it cannot be seamless
 - [ ] 6. Panel
 - [ ] 7. Compact test layout
 
@@ -316,8 +317,8 @@ wires and blocks are enabled).
   parameters and controls as they arrive; the arriving scenes keep the open Performance's as
   they are.
 - Pads, tempo, transport and the imported info block stay with the open Performance.
-- Whether notes held in the open Performance's parts carry on through an import is not
-  checked yet.
+- Notes held in the open Performance's parts carry on through an import
+  ([control-seamless](#seamless-switching)).
 
 ## Plugin presets
 
@@ -507,22 +508,32 @@ The architecture asks for this:
 > Scene and sound changes should keep held notes and effect tails rather than rebuild the
 > graph and cut audio. … The host reports when a transition cannot be seamless.
 
-**Load into part** becomes a part transition:
+Built 2026-10-31 for **Load into part**, **New part from sound** and **Update from library**:
 
-1. Prepare the incoming chain off the audio thread: new nodes for plugins not in the part,
-   prepared contexts (RFC 0005) or pooled instances where the same plugin is already
-   there, and prepared effect contexts or new effect nodes (RFC 0007).
-2. At an audio boundary, move the part's note input to the incoming chain. Notes already
-   held stay with the outgoing chain, with their note-offs, sustain and expression, as
-   RFC 0005's note ownership already does inside one plugin.
-3. Feed the outgoing chain silence once its notes end, until its effects report no tail,
-   then retire it.
+1. The incoming chain's plugins are added and their state loaded on the control thread, off
+   the audio thread, while the part plays on.
+2. In one commit the part's note input moves to the incoming chain: new notes play it. The
+   outgoing chain stays, out of sight: what leaves its plugins stays wired as before (to where
+   the part plays, its sends), and its note connections **drain**: they take no new note but
+   still carry the releases, expressions and pedal of the notes they hold (`Graph::setDraining`).
+   Sound from outside into it stops.
+3. Its plugins are **retiring** (`Graph::setRetiring`): the audio thread counts the notes still
+   sounding through each, how long its output has been below -100 dB, and whether the plugin
+   said it is asleep (`CLAP_PROCESS_SLEEP`). Each goes once no note sounds through it and it
+   is asleep or has been silent for three seconds (longer than a gap between echoes), or after
+   30 seconds without a note for a sound that never ends.
 
-This depends on the automatic chain preparation and retirement that RFC 0007 lists as
-planned. Until it exists, **Load into part** builds the new chain and replaces the old one in
-one commit, which cuts the part's held notes and tails. The picker says so before loading
-("Cuts held notes in Part 2"), using the *Seamless* facet's check. It never claims a seamless
-change it cannot make.
+The retiring chain is not part of the Performance: it is not shown, saved or in undo; undoing
+the switch puts it back (its notes and tails carry on) and removes the incoming chain at once.
+`control-seamless` holds a note into a synth and echo, switches the part's Sound mid-note,
+plays a new note on the incoming Sound and releases the held one, in uneven block sizes with
+no allocation on the audio thread: the output is the outgoing chain alone plus the incoming
+Sound alone, sample for sample. It also holds a note through importing a Performance, which
+goes on unchanged, and saves mid-switch, which holds only the incoming chain.
+
+Not yet: the audition part; telling before a load when it cannot be seamless (nothing makes
+it so today; a memory or voice budget will, RFC 0018 step 3); seamless **Load preset** beyond
+`sounds.prepare`; seamless Performance changes for setlists.
 
 **Load preset** on a node is seamless where `sounds.prepare` accepts it (native contexts and
 pooled instruments) and an interrupting state load otherwise, as today.

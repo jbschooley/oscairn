@@ -109,6 +109,12 @@ target_link_libraries(oscairn-import-test PRIVATE oscairn_control)
 add_test(NAME control-import COMMAND oscairn-import-test $<TARGET_FILE:kick-clap-fixture-normal> $<TARGET_FILE:oscairn_delay>)
 set_tests_properties(control-import PROPERTIES TIMEOUT 60)
 
+add_executable(oscairn-seamless-test tests/seamless.cpp)
+target_include_directories(oscairn-seamless-test PRIVATE ../clap-host/tests)
+target_link_libraries(oscairn-seamless-test PRIVATE oscairn_control)
+add_test(NAME control-seamless COMMAND oscairn-seamless-test $<TARGET_FILE:kick-clap-fixture-normal> $<TARGET_FILE:oscairn_delay>)
+set_tests_properties(control-seamless PROPERTIES TIMEOUT 60)
+
 add_executable(oscairn-plugin-failures-test tests/plugin_failures.cpp)
 target_link_libraries(oscairn-plugin-failures-test PRIVATE oscairn_control_json)
 add_test(NAME control-plugin-failures COMMAND oscairn-plugin-failures-test $<TARGET_FILE:oscairn-plugin-worker> $<TARGET_FILE:kick-clap-fixture-process_crash>)
