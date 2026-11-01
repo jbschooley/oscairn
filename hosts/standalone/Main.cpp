@@ -656,11 +656,13 @@ namespace oscairn::standalone
         // Play's Previous and Next, while the open Performance is the setlist's current entry.
         void followSetlist( PlayView& play )
         {
-            play.inSetlist = [this] {
-                if( !setlistPane_ || setlistPane_->current() < 0 ) return false;
+            // While the engine opens the next, which reads no Performance, the last answer holds.
+            play.inSetlist = [this, last = false]() mutable {
+                if( !setlistPane_ || setlistPane_->current() < 0 ) return last = false;
                 const auto& entries = setlistPane_->setlist().entries;
                 const auto info = engine_.performanceInfo();
-                return info && size_t( setlistPane_->current() ) < entries.size() && entries[size_t( setlistPane_->current() )].id == info->id;
+                if( !info ) return last;
+                return last = size_t( setlistPane_->current() ) < entries.size() && entries[size_t( setlistPane_->current() )].id == info->id;
             };
             play.step = [this]( int by ) { if( setlistPane_ ) setlistPane_->step( by ); };
         }
