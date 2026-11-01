@@ -42,7 +42,7 @@ nothing behind:
 - a path that is absolute, climbs out (`..`), names a drive (`:`), uses a backslash, is hidden
   (a component starting with `.`), has a control character, or is longer than 1024 bytes;
 - a link, or an entry twice;
-- more than 65536 entries, more than 8 GiB in all, an entry over 2 GiB or a manifest over
+- more than 1,048,576 entries, more than 8 GiB in all, an entry over 2 GiB or a manifest over
   64 MiB, as declared; and a
   file that extracts to another size than it declares;
 - a manifest that is not version 2, or names an item whose folder or document is not there, or

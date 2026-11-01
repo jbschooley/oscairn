@@ -163,6 +163,23 @@ int main(int argc, char** argv)
             bool refused = false; try { c.installArchive(archive.string(), false, {"nothing"}); } catch(const std::exception&) { refused = true; }
             check(refused, "an item the archive does not have is refused");
         }
+        // Device E: the library's index past the old 4 MiB limit is still used, as a library of
+        // thousands of items has: a name only the index holds comes back.
+        {
+            device(temp.path / "e");
+            Session e(48000, 64);
+            e.savePerformanceToLibrary("Indexed");
+            e.libraryRescan();
+            const auto index = temp.path / "e" / "library" / "index.json";
+            auto text = read(index);
+            const auto at = text.find("\"name\":\"Indexed\"");
+            check(at != std::string::npos, "the index holds the Performance");
+            text.replace(at, 16, "\"name\":\"From the index\"");
+            text.insert(text.rfind('}'), std::string((4u << 20) + 1, ' '));
+            std::ofstream(index, std::ios::binary | std::ios::trunc) << text;
+            e.libraryRescan();
+            check(items(e, "performance").at(0).name == "From the index", "an index over 4 MiB is used");
+        }
         // Device D: the plugin is not where the Performance last found it, so it opens from the store.
         {
             device(temp.path / "d");

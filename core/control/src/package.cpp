@@ -17,7 +17,7 @@ namespace oscairn
     {
         namespace fs = std::filesystem;
         using V = const json_value_s*;
-        constexpr size_t maxEntries = 65536, maxPath = 1024;
+        constexpr size_t maxEntries = 1u << 20, maxPath = 1024; // a library of thousands of items, each a few files
         constexpr uint64_t maxEntry = 2ull << 30, maxTotal = 8ull << 30;
         const std::set<std::string> tops{"Performances", "Sounds", "Assets", "Plugins"};
         bool hidden(const fs::path& relative) { for(const auto& part : relative) if(!part.empty() && part.string()[0] == '.') return true; return false; }

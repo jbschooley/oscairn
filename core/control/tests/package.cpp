@@ -83,6 +83,10 @@ int main()
         auto padded = [&](size_t bytes) { auto m = manifest; m.insert(m.size() - 1, std::string(bytes - m.size(), ' ')); return m; };
         craft(root / "Big.olib", {{"library.json", padded((4u << 20) + 1)}, {"Sounds/Bass.osound/sound.json", "{}"}});
         check(readPackage(root / "Big.olib", root / "big-out").items.size() == 1, "a manifest just over 4 MiB is read");
+        // More entries than the old limit of 65,536, as a library of thousands of items has.
+        craft(root / "Many.olib", {{"library.json", manifest}, {"Sounds/Bass.osound/sound.json", "{}"}}, [](mz_zip_archive& z) {
+            for(int i = 0; i < 70000; ++i) { const auto name = "Assets/" + std::to_string(i); mz_zip_writer_add_mem(&z, name.c_str(), "", 0, 0); } });
+        check(readPackage(root / "Many.olib", {}).items.size() == 1, "an archive of 70,000 entries is read");
         const auto manifestOnly = readPackage(root / "Pack.olib", {});
         check(manifestOnly.items.size() == 1 && manifestOnly.items[0].id == "s1", "the manifest alone, extracting nothing");
 

@@ -180,7 +180,7 @@ namespace oscairn
         std::map<std::string, std::pair<int64_t, Control::LibraryItem>> cached;
         try
         {
-            const auto doc = parse(slurp(cache_ / "index.json"));
+            const auto doc = parse(slurp(cache_ / "index.json", maxManifestBytes)); // one row per item, as a manifest
             if(V items = detail::member(doc.get(), "items"); items && items->type == json_type_array)
                 for(auto* e = static_cast<const json_array_s*>(items->payload)->start; e; e = e->next)
                 {
