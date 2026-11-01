@@ -1,0 +1,140 @@
+{
+  "date": "2026-11-01",
+  "host_commit": "bbf6b00202a2b51c64a394ee3105257d4385a160",
+  "sources": {
+    "odin2": "265e9e227581357efb87ed7217381f8a40c5e2bf",
+    "airwin2rack": "d013e1024141a93c2dd2dff88692cf6adb4d0573",
+    "tap-lv2": "cab6e0dfb2ce20e4ad34b067d1281ec0b193598a",
+    "caps-lv2": "5d52a0c6e8863c058c2aab2dea9f901a90d96eb9"
+  },
+  "platforms": {
+    "mac": {
+      "platform": "macOS-15.6.1-arm64-arm-64bit-Mach-O",
+      "plugins": [
+        {
+          "name": "Odin2",
+          "id": "com.thewavewarden.odin2",
+          "status": "passed",
+          "repeat_difference_rms": 0.0,
+          "edited_difference_rms": 0.077675,
+          "block_difference_rms": 0.0,
+          "released_tail_rms": 0.0,
+          "held_tail_rms": 0.1188173
+        },
+        {
+          "name": "AirwindowsConsolidated",
+          "id": "com.airwindows.consolidated",
+          "status": "passed",
+          "repeat_difference_rms": 0.0,
+          "edited_difference_rms": 0.0197603,
+          "block_difference_rms": 0.0
+        },
+        {
+          "name": "TAP-ChorusFlanger",
+          "id": "http://moddevices.com/plugins/tap/chorusflanger",
+          "status": "passed",
+          "repeat_difference_rms": 0.0,
+          "edited_difference_rms": 0.0791094,
+          "block_difference_rms": 0.0
+        },
+        {
+          "name": "TAP-Tremolo",
+          "id": "http://moddevices.com/plugins/tap/tremolo",
+          "status": "passed",
+          "repeat_difference_rms": 0.0,
+          "edited_difference_rms": 0.0273596,
+          "block_difference_rms": 0.0050421
+        },
+        {
+          "name": "TAP-RotarySpeaker",
+          "id": "http://moddevices.com/plugins/tap/rotspeak",
+          "status": "passed",
+          "repeat_difference_rms": 0.0,
+          "edited_difference_rms": 0.0805257,
+          "block_difference_rms": 0.0
+        },
+        {
+          "name": "TAP-Vibrato",
+          "id": "http://moddevices.com/plugins/tap/vibrato",
+          "status": "failed",
+          "repeat_difference_rms": 0.0,
+          "edited_difference_rms": 0.0,
+          "block_difference_rms": 0.0,
+          "error": "Parameter change not distinguishable from repeat variation"
+        },
+        {
+          "name": "TAP-Vibrato",
+          "id": "http://moddevices.com/plugins/tap/vibrato",
+          "status": "passed",
+          "repeat_difference_rms": 0.0,
+          "edited_difference_rms": 0.0803411,
+          "block_difference_rms": 0.0,
+          "note": "rerun editing Wetlevel: the first run edited Frequency, which does nothing at the default depth of 0"
+        }
+      ]
+    },
+    "linux": {
+      "platform": "Linux-6.10.14-linuxkit-aarch64-with-glibc2.41",
+      "plugins": [
+        {
+          "name": "Odin2",
+          "id": "com.thewavewarden.odin2",
+          "status": "passed",
+          "repeat_difference_rms": 0.0,
+          "edited_difference_rms": 0.077675,
+          "block_difference_rms": 0.0,
+          "released_tail_rms": 0.0,
+          "held_tail_rms": 0.1188173
+        },
+        {
+          "name": "TAP-ChorusFlanger",
+          "id": "http://moddevices.com/plugins/tap/chorusflanger",
+          "status": "passed",
+          "repeat_difference_rms": 0.0,
+          "edited_difference_rms": 0.0791094,
+          "block_difference_rms": 0.0
+        },
+        {
+          "name": "TAP-Tremolo",
+          "id": "http://moddevices.com/plugins/tap/tremolo",
+          "status": "passed",
+          "repeat_difference_rms": 0.0,
+          "edited_difference_rms": 0.0273596,
+          "block_difference_rms": 0.0050421
+        },
+        {
+          "name": "TAP-RotarySpeaker",
+          "id": "http://moddevices.com/plugins/tap/rotspeak",
+          "status": "passed",
+          "repeat_difference_rms": 0.0,
+          "edited_difference_rms": 0.0805249,
+          "block_difference_rms": 0.0
+        },
+        {
+          "name": "TAP-Vibrato",
+          "id": "http://moddevices.com/plugins/tap/vibrato",
+          "status": "passed",
+          "repeat_difference_rms": 0.0,
+          "edited_difference_rms": 0.0803411,
+          "block_difference_rms": 0.0
+        },
+        {
+          "name": "CAPS-PhaserII",
+          "id": "http://moddevices.com/plugins/caps/PhaserII",
+          "status": "passed",
+          "repeat_difference_rms": 0.0,
+          "edited_difference_rms": 0.0229682,
+          "block_difference_rms": 0.0022514
+        },
+        {
+          "name": "CAPS-ChorusI",
+          "id": "http://moddevices.com/plugins/caps/ChorusI",
+          "status": "passed",
+          "repeat_difference_rms": 0.0,
+          "edited_difference_rms": 0.0428196,
+          "block_difference_rms": 0.002219
+        }
+      ]
+    }
+  }
+}

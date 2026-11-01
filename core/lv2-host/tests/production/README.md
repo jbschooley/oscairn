@@ -159,3 +159,59 @@ The production runner also accepts `--prepared-probe build/core/oscairn-prepared
 For JX10, DX10 and EPiano this compares a two-sound held-note switch against the summed
 output of independently rendered reference instances, through both releases. CI runs
 these transitions on Linux and macOS in addition to the existing raw-host/chain checks.
+
+## Ported plugins (2026-11-01)
+
+Built from source and checked with Oscairn's normal host, no plugin code changed. Each ran
+the production battery (`run.py --case`: 44.1/48 kHz, 37/512-frame blocks, offline and
+realtime, a fresh-instance repeat and a parameter edit) and `oscairn-plugin-check` (played in
+a part, saved, opened again with every parameter as saved, exported, installed on a fresh
+device and opened from the plugin store). [Measurements](results-ports-2026-11-01.json).
+
+| Plugin | Format | macOS arm64 | Linux arm64 | Edit checked |
+| --- | --- | --- | --- | --- |
+| [Odin 2](https://github.com/TheWaveWarden/odin2) 2.4.1, synthesizer | CLAP | Pass, both checks | Pass, both checks | Filter1 Frequency |
+| [Airwindows Consolidated](https://github.com/baconpaul/airwin2rack) | CLAP | Pass: battery on Galactic (its default); plugin check on Chorus, Ensemble, Vibrato and Tremolo | Not built | The effect's first control |
+| [TAP](https://github.com/moddevices/tap-lv2) (MOD's) Chorus/Flanger, Tremolo, Rotary Speaker, Vibrato | LV2 | Pass, both checks | Pass, battery; Chorus/Flanger both | Depth; Depth; Horn Frequency; Wetlevel |
+| [CAPS](https://github.com/moddevices/caps-lv2) (MOD's) PhaserII, ChorusI | LV2 | Not built | Pass, both checks | Depth; Blend |
+
+LV2 plugins stop after the export: archives carry CLAP builds only so far, and the export says
+so. Every repeat was sample-identical. Block-size independence is not assumed: TAP Tremolo
+differs by 0.00504 RMS between 37- and 512-frame blocks, CAPS PhaserII by 0.00225 and ChorusI
+by 0.00222; the rest are identical. Odin 2's release tail falls to silence when notes end and
+rings on (0.119 RMS) when they are held.
+
+**Across platforms:** an Odin 2 Performance exported on the Mac with the Linux build added
+(`--add-build linux-arm64=...`) installed in the Linux container (`--install`), opened from the
+store's `linux-arm64` build and played at the same level as on the Mac (RMS 0.004416, the
+filter edit included).
+
+What the ports found, fixed in the host:
+
+- **Odin 2 aborted on load.** Plugins built on clap-helpers (clap-juce-extensions) set their
+  functions during `init`; the host checked them before `init`, refused the plugin and
+  destroyed it uninitialized, which clap-helpers terminates on. The host now checks them after.
+- **Airwindows Consolidated opened as a stand-in** once its state chose an effect with fewer
+  controls than the last: it reports garbage defaults (1.06e34) for the unused ones. A default
+  outside the range is now brought into it.
+- **The probe could not edit CLAP parameter IDs above 2^31** (`stoi`).
+
+Not fixed, and worth knowing:
+
+- Airwindows Consolidated chooses its effect in its own window or saved state, not with a
+  parameter, so without plugin windows (RFC 0011) an effect can only be chosen by a Sound or
+  Performance made elsewhere. The check sets it in the saved state (`--juce-state
+  currentProcessorName=Chorus`). Its renders differ between instances by about 1e-5 RMS,
+  likely its dither noise (not confirmed).
+- CAPS does not build with clang (a builtin used as a template argument in `dsp/v4f.h`), so it
+  has no macOS build here; on Linux it builds with GCC.
+- Odin 2's bundled JUCE 6.1.6 needs `MACOSX_DEPLOYMENT_TARGET=11.0` with the macOS 15 SDK.
+- Not tested: plugin windows, presets, MIDI expression, CPU on device hardware, listening.
+
+To repeat: clone the four repositories at the commits in the measurements into one folder.
+On the Mac, build Odin 2 (`MACOSX_DEPLOYMENT_TARGET=11.0 cmake ... --target Odin2_CLAP`),
+Airwindows (`-DBUILD_JUCE_PLUGIN=TRUE`, target `awcons-products`) and the TAP effects
+(`clang -O3 -fPIC -shared -I utils -I <lv2 headers> -o <bundle>/tap_<name>.so <name>/*.c -lm`, the
+`.ttl` files copied beside). For Linux, `ports-linux-build.sh` and `ports-linux-check.sh` run
+in a Debian 13 arm64 container with the folder at `/ports` and Oscairn at `/oscairn`, with
+JUCE's Linux dependencies installed.
