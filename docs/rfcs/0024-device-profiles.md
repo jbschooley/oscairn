@@ -88,7 +88,8 @@ An illustrative profile (the values are an example, not a real product's):
 
 - **`platform`:** what builds it needs (RFC 0006 selects packages by it).
 - **`compute`:** cores (and how many are reserved for audio), memory and storage: the budget's
-  ceiling (RFC 0025).
+  ceiling (RFC 0025). The memory classes proposed there would add the operating system's share
+  and a floor for Performances ([RFC 0025](0025-resource-budgets.md#admissions-arithmetic)).
 - **`audio`:** its interface, the sample rates and the block size it runs at, headphones (a cue
   bus).
 - **`controls`:** every physical control, in groups (below). Default control mappings and the

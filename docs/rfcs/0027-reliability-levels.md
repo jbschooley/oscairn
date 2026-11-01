@@ -60,7 +60,8 @@ makes using it rare. Switching to and from it is click-free (a short crossfade),
 ## Settings that follow from the level
 
 - The block size and cores from the profile; at `instrument` and above, memory locked and the
-  audio threads at real-time priority on reserved cores.
+  audio threads at real-time priority on reserved cores. How memory is locked, and the memory
+  margin per level, are proposed in [RFC 0025](0025-resource-budgets.md#locking).
 - Plugin worker isolation (RFC 0010) on for every plugin at `instrument` and above, so a plugin's
   crash silences the plugin, not the engine.
 - Logging and diagnostics off the audio path, always.

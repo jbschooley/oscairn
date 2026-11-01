@@ -97,6 +97,10 @@ algorithms, latency and required routing must be known during preparation. A dev
 have fixed hardware effect slots; exceeding them must be explicit. Do not change a
 musician's independent processing into a shared send to fit a budget.
 
+Reporting memory before preparing, per sample rate and block size, is proposed as a separate
+extension, `oscairn.memory`, in [RFC 0025](0025-resource-budgets.md#declarations). The
+`resources` call here stays as it is, for capacity and tails.
+
 ## Implemented contract and validation
 
 The draft extension [effect-contexts.h](../../core/clap-ext/include/oscairn-clap/effect-contexts.h)

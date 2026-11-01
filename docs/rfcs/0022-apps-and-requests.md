@@ -68,7 +68,9 @@ has to say *which*.
 
 - **An app's manifest** lists the actions it offers, with a name and an icon for menus. It is
   part of the app's package ([RFC 0006](0006-packages-and-portability.md)), read at install,
-  so the host knows the offers without starting the app.
+  so the host knows the offers without starting the app. It also declares the app's memory, a
+  reservation and a maximum, so that opening any app always works (proposed:
+  [RFC 0025](0025-resource-budgets.md#declarations)).
 - **The host** (the shell on the desktop, the system UI on a device) keeps the list, decides
   who answers, starts or brings forward that app, and passes the request and the answer back.
   Apps never call each other directly.

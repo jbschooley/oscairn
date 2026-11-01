@@ -253,6 +253,9 @@ A profile (RFC 0024) adds:
 - Whether apps in the background may keep updating their cards while another app is in front,
   and how often.
 - How many apps may run at once on a small device, and which one goes when memory is short.
+  Proposed in [RFC 0025](0025-resource-budgets.md#memory-reserved-committed-and-opportunistic):
+  every app has a reservation, so none has to go; the shell asks the engine to make room before
+  it opens an app.
 - Whether the web UI (RFC 0026) shows the device's launcher or its own.
 
 ## Ruled out

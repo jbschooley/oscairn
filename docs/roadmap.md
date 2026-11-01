@@ -429,7 +429,10 @@ drum module, a DJ unit, a Eurorack module, a DAW plugin). These are required of 
   admission for loading, editing and seamless changes ([RFC 0025](rfcs/0025-resource-budgets.md#progress)).
   Built: measuring, estimates, refusing a Performance or plugin over the budget, and a change
   that would not fit beside the last Performance becoming a cut; CPU at rest and per voice,
-  counting a part's note limit
+  counting a part's note limit. Proposed: memory as reserved (the OS, the engine, every app's
+  reservation), committed (what plays) and opportunistic (caches and entries prepared ahead,
+  evicted first), with plugins declaring memory before activating
+  ([design](rfcs/0025-resource-budgets.md#memory-reserved-committed-and-opportunistic))
 - [ ] **builds for every device's platform:** first-party plugins and apps on Linux ARM64 beside
   the desktop; packages without a build install as unavailable, saying so
   ([RFC 0006](rfcs/0006-packages-and-portability.md#platform-builds-and-hardware))
@@ -555,7 +558,8 @@ Each starts as an RFC:
   verification status. Add multiple-device preparation/readiness and revision-aware editing
   round trips without silently merging opaque states or overwriting rehearsed setlists.
 - [ ] **Keeping plugins loaded:** a memory budget, unloading the least recently used, setlist
-  preparation options and a setlist check; CPU, memory and storage meters.
+  preparation options and a setlist check; CPU, memory and storage meters. Loaded items beyond
+  the open Performance are opportunistic memory ([RFC 0025](rfcs/0025-resource-budgets.md#the-order-of-eviction)).
 - [ ] **Native plugins outside Oscairn:** first one engine as a direct CLAP/VST3 plugin on
   supported Windows/macOS/Linux targets and AU on macOS, with shared canonical state/assets
   and tested host/format behavior; evaluate existing wrappers. Then the whole Oscairn graph

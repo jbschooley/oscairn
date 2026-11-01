@@ -62,6 +62,11 @@ The path to first sound: kernel, the engine and its audio, the last Performance;
 rest load after. Plugins are prepared in the order the Performance needs them; worker processes
 (RFC 0010) start in parallel. Measured on each product, on every release.
 
+The image also sets up memory for the engine (proposed in
+[RFC 0025](0025-resource-budgets.md#linux)): a cgroup v2 subtree delegated to it, a locked-memory
+limit (`RLIMIT_MEMLOCK`) high enough for the engine and its workers, and their out-of-memory
+scores.
+
 ## Power loss
 
 Saving is already atomic (written beside, then renamed into place); the data partition's

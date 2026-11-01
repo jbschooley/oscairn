@@ -389,6 +389,12 @@ CPU time is reported, and `/proc/PID/limits` shows the 16 GiB address-space limi
 with the default limit; the `RLIMIT_AS` backstop itself is not exercised by a test. The timing
 checks fail there for the slow fixture, as in step 3.
 
+Proposed in [RFC 0025](0025-resource-budgets.md#memory-reserved-committed-and-opportunistic),
+not built: each worker's limit from its plugins' declared and measured memory instead of a flat
+4 GiB; on Linux a cgroup per worker with that limit as `memory.max`; locked memory at
+`instrument` and above; and an out-of-memory order where workers holding only prepared,
+opportunistic plugins go first.
+
 ## Workers in the desktop app
 
 Since 2026-11-01 the desktop app runs every CLAP plugin in a worker:
