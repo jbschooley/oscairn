@@ -259,7 +259,9 @@ in the others.
      worker in `session.status`; sandboxing not started)
      ([status](rfcs/0010-plugin-worker-isolation.md#step-6-status))
    - [ ] step 7: LV2 in workers
-   - [ ] measurements on native Linux and the target; workers by default in the app
+   - [ ] measurements on native Linux and the target; workers by default in the app (workers
+     by default done: [status](rfcs/0010-plugin-worker-isolation.md#workers-in-the-desktop-app),
+     `OSCAIRN_PLUGIN_WORKER=` turns them off)
    - [x] workers reporting CLAP sleep, so a seamless change can retire a plugin in a worker as
      soon as it is done, not after a silence window
 4. **Sequencers** ([the comparison](sequencer-evaluation.md) of the KICK firmware's sequencer

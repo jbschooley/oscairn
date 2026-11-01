@@ -2,9 +2,11 @@
 #include "../audio/AudioEngine.h"
 #include "oscairn/local_socket.h"
 #include "EngineProcess.h"
+#include "oscairn/plugin_host.h"
 #include <juce_events/juce_events.h>
 #include <chrono>
 #include <csignal>
+#include <cstdlib>
 #include <iostream>
 #include <stdexcept>
 
@@ -53,6 +55,17 @@ int main(int argc,char** argv)
     if(socket.empty()){std::cerr<<"--socket is required; its parent must be a private directory owned by this user\n";return 2;}
     std::signal(SIGINT,[](int){stopping=1;});std::signal(SIGTERM,[](int){stopping=1;});
     juce::ScopedJuceInitialiser_GUI initialize; // JUCE event loop initialization; no GUI modules linked
+    // RFC 0010: every plugin in a worker process, the worker found beside this program (in the app)
+    // or where it was built. OSCAIRN_PLUGIN_WORKER overrides it; set but empty, plugins run in the engine.
+    if(!std::getenv("OSCAIRN_PLUGIN_WORKER"))
+    {
+        auto worker=juce::File::getSpecialLocation(juce::File::currentExecutableFile).getSiblingFile("oscairn-plugin-worker");
+        if(!worker.existsAsFile())worker=juce::File(OSCAIRN_PLUGIN_WORKER_PATH);
+        auto policy=oscairn::placementPolicy();
+        if(worker.existsAsFile())policy.worker=worker.getFullPathName().toStdString();
+        else std::cerr<<"oscairn-engine: no plugin worker found; plugins run in the engine\n";
+        oscairn::setPlacementPolicy(policy);
+    }
     try
     {
         std::unique_ptr<oscairn::host::EngineLease> lease;

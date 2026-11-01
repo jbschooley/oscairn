@@ -17,7 +17,8 @@ Checked when built and tested; the sections below say how.
 - [x] 5. Policies: native engines in workers, placement and overrides ([status](#step-5-status))
 - [ ] 6. Memory and CPU limits, then sandboxing (limits built, sandboxing not started) ([status](#step-6-status))
 - [ ] 7. LV2 in workers
-- [ ] Measurements on native Linux and the target; workers by default in the app
+- [ ] Measurements on native Linux and the target; workers by default in the app (workers by
+      default done, [status](#workers-in-the-desktop-app); Linux measured only in a VM; target not measured)
 - [x] Workers report the plugin's CLAP sleep to the engine, so a seamless scene or Performance
       change ([RFC 0021](0021-sounds-performances-and-library.md#seamless-switching)) can
       retire a plugin in a worker as soon as it is done (the shared block's `asleep`, set after
@@ -301,8 +302,9 @@ Implemented 2026-10-30 in `WorkerHost.cpp`, `Worker.cpp` and `plugin_host.cpp`:
   so a block republishes values only when there are new ones.
 - **Placement policy:** `setPlacementPolicy` chooses the worker executable, the standard
   placement (engine or worker) and overrides per plugin ID. It starts from
-  `OSCAIRN_PLUGIN_WORKER` as before; the desktop app does not set it, so plugins still run
-  in the engine there. LV2 plugins stay in the engine until step 7.
+  `OSCAIRN_PLUGIN_WORKER` as before; the desktop app did not set it, so plugins still ran
+  in the engine there until [2026-11-01](#workers-in-the-desktop-app). LV2 plugins stay in
+  the engine until step 7.
 - Not yet: grouping several third-party plugins into one worker (the default stays one per
   worker, pending the target measurements), overrides per Sound rather than per plugin, and
   one audio thread serving all of a worker's nodes instead of one thread per effect context.
@@ -357,6 +359,28 @@ Linux arm64 (Docker Desktop's VM on the same Mac) it is stopped at 131 MB and gi
 CPU time is reported, and `/proc/PID/limits` shows the 16 GiB address-space limit of a worker
 with the default limit; the `RLIMIT_AS` backstop itself is not exercised by a test. The timing
 checks fail there for the slow fixture, as in step 3.
+
+## Workers in the desktop app
+
+Since 2026-11-01 the desktop app runs every CLAP plugin in a worker:
+
+- `oscairn-engine` sets the placement policy at start: the `oscairn-plugin-worker` beside it
+  (the app bundle and the Linux install put them together), else the one it was built with.
+  `OSCAIRN_PLUGIN_WORKER` overrides it, and set but empty (`OSCAIRN_PLUGIN_WORKER=`) runs
+  every plugin in the engine as before. Without a worker program it says so and runs plugins
+  in the engine. LV2 plugins stay in the engine (step 7).
+- One plugin per worker, first-party plugins included, with step 6's memory limit.
+
+Verification: the desktop tests that host a session (`desktop-shell`, `desktop-pad-editor`)
+now run with every plugin in a worker and pass; run with a missing worker program, the pad
+editor test aborts ("Cannot start plugin worker"), so they do use workers.
+`desktop-plugin-crash` builds a Performance through the desktop's engine connection: two
+parts playing the Basic Synth and one whose plugin aborts on every block. Once the crashing
+plugin is given up, the other parts' meters still move, its part's meter stays at zero, the
+engine's status names it ("Plugin worker crashed (signal 6); not restarted: …"), and the
+Parts view shows "Crashing is silent: …". On macOS the desktop suite passes, 96 of 96. Not
+verified: `oscairn-engine` itself finding the worker at start (the tests host the session
+in-process; running the engine opens an audio device).
 
 ## Open questions
 

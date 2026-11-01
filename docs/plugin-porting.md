@@ -62,8 +62,10 @@ Everything else is handled for you:
 - **Without the state extension**, a Performance stores only parameter values, for plugins
   with up to 2,048 writable parameters. Implement state if the sound depends on anything
   else.
-- **Worker processes** ([RFC 0010](rfcs/0010-plugin-worker-isolation.md)) are optional and
-  not yet used by the desktop app. In a worker, LV2 patch properties are not forwarded,
+- **Worker processes** ([RFC 0010](rfcs/0010-plugin-worker-isolation.md)): the desktop app
+  runs every CLAP plugin in its own worker process, so a crash, hang or overrun silences only
+  that plugin (`OSCAIRN_PLUGIN_WORKER=`, set but empty, runs plugins in the engine instead).
+  Test your plugin both ways. In a worker, LV2 patch properties are not forwarded,
   a block that runs longer than half the block's time is silenced, and a plugin that keeps
   missing is restarted with its last loaded state and current parameter values. A worker may
   use 4 GiB of memory (`OSCAIRN_WORKER_MEMORY_MB` changes it); past that it is stopped and
