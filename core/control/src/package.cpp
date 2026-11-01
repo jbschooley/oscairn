@@ -72,6 +72,12 @@ namespace oscairn
 #endif
     }
 
+    bool knownPlatform(const std::string& name)
+    {
+        static const std::set<std::string> platforms{"macos-arm64", "macos-x86_64", "linux-arm64", "linux-x86_64", "windows-x86_64"};
+        return platforms.count(name) != 0;
+    }
+
     std::string bundleDigest(const fs::path& build)
     {
         if(fs::is_regular_file(build)) return assets::sha256File(build);
@@ -218,8 +224,9 @@ namespace oscairn
                 {
                     Package::Build build{text(detail::member(b->value, "platform")), text(detail::member(b->value, "path")), text(detail::member(b->value, "sha256"))};
                     const bool there = names.count(build.path) || std::any_of(names.begin(), names.end(), [&](const std::string& n) { return n.rfind(build.path + "/", 0) == 0; });
-                    if(!safe(build.path) || build.path.rfind("Plugins/", 0) != 0 || !there || build.sha256.size() != 64 || build.platform.empty() || build.platform.size() > 64)
+                    if(!safe(build.path) || build.path.rfind("Plugins/", 0) != 0 || !there || build.sha256.size() != 64)
                         bad("a plugin build is not in the archive: " + build.path);
+                    if(!knownPlatform(build.platform)) bad("a plugin build for no known platform: " + build.platform);
                     plugin.builds.push_back(std::move(build));
                 }
                 p.plugins.push_back(std::move(plugin));

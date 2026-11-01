@@ -126,12 +126,14 @@ int main()
         refuse("a file the manifest does not list", {top, sound, {"Assets/extra.wav", "x"}});
         refuse("a file the manifest lists that is missing", {{"library.json", listing("\"Sounds/Bass.osound/sound.json\":\"" + assets::sha256("{}") + "\",\"Assets/gone.wav\":\"" + assets::sha256("x") + "\"")}, sound});
         const auto binary = "Plugins/clap/synth@1/" + platform() + "/Synth.clap/Contents/binary";
-        auto withBuild = [&](const std::string& digest) {
+        auto withBuild = [&](const std::string& digest, const std::string& forPlatform = platform()) {
             auto m = listing("\"Sounds/Bass.osound/sound.json\":\"" + assets::sha256("{}") + "\",\"" + binary + "\":\"" + assets::sha256("code") + "\"");
-            return m.replace(m.find("\"plugins\":[]"), 12, "\"plugins\":[{\"format\":\"clap\",\"id\":\"synth\",\"version\":\"1\",\"name\":\"Synth\",\"builds\":[{\"platform\":\"" + platform() + "\",\"path\":\"" + build + "\",\"sha256\":\"" + digest + "\"}]}]");
+            return m.replace(m.find("\"plugins\":[]"), 12, "\"plugins\":[{\"format\":\"clap\",\"id\":\"synth\",\"version\":\"1\",\"name\":\"Synth\",\"builds\":[{\"platform\":\"" + forPlatform + "\",\"path\":\"" + build + "\",\"sha256\":\"" + digest + "\"}]}]");
         };
         refuse("a plugin build whose digest is not its own", {{"library.json", withBuild(std::string(64, '0'))}, sound, {binary, "code"}});
         refuse("a plugin build that is not in the archive", {{"library.json", withBuild(bundleDigest(staged / build))}, sound});
+        // A build's platform names a folder in the plugin store: one that climbs out would replace what is there.
+        refuse("a plugin build for no known platform", {{"library.json", withBuild(bundleDigest(staged / build), "../../../Performances")}, sound, {binary, "code"}});
         check(!fs::exists(root / "escape.txt") && !fs::exists("/tmp/escape.txt"), "nothing escaped");
     }
     catch(const std::exception& e) { std::fprintf(stderr, "FAIL: %s\n", e.what()); ++failures; }

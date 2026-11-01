@@ -851,8 +851,8 @@ Libraries come as [archives](library-archive.md): a library, or an exported Perf
   their size on disk, the names of the library items that use it, and whether the open
   Performance plays this device's build from the store.
 - `plugins.remove` takes `{format,id,version}` and optional `platform` (absent or empty: every
-  build) and returns `{"accepted":true}`. It is refused while the open Performance plays the
-  build; items that use it open with a stand-in until it is installed again.
+  build) and returns `{"accepted":true}`. A `platform` is one of those `plugins.addBuild` takes.
+  It is refused while the open Performance plays the build; items that use it open with a stand-in until it is installed again.
 - `plugins.addBuild` takes `{format,id,version,platform,path}`: another platform's build (one
   of `linux-arm64`, `linux-x86_64`, `macos-arm64`, `macos-x86_64`, `windows-x86_64`, not this
   device's) from a file or bundle here, into the store so exports carry it, replacing that

@@ -1477,6 +1477,7 @@ std::vector<Control::InstalledPlugin> Session::installedPlugins() {
 }
 
 void Session::removePlugin(const std::string& format,const std::string& id,const std::string& version,const std::string& forPlatform) {
+    if(!forPlatform.empty() && !knownPlatform(forPlatform))bad("unknown platform "+forPlatform);
     const auto folder=storeFolder(format,id,version);
     const auto p=storedIdentity(folder);
     if(p.id!=id || p.version!=version || p.format!=format)bad("that plugin is not installed");
@@ -1487,7 +1488,7 @@ void Session::removePlugin(const std::string& format,const std::string& id,const
     }
     std::error_code e;
     if(!forPlatform.empty()){
-        if(!fs::is_directory(folder/forPlatform,e) || forPlatform.front()=='.')bad("that plugin has no "+forPlatform+" build installed");
+        if(!fs::is_directory(folder/forPlatform,e))bad("that plugin has no "+forPlatform+" build installed");
         fs::remove_all(folder/forPlatform);
         if(!storedBuilds(format,id,version).empty())return;
     }
@@ -1499,8 +1500,7 @@ void Session::removePlugin(const std::string& format,const std::string& id,const
 void Session::addPluginBuild(const std::string& format,const std::string& id,const std::string& version,const std::string& forPlatform,const std::string& path) {
     if(format!="clap")bad("only CLAP plugin builds can be added; LV2 plugins are installed on each device");
     if(id.empty() || id.size()>256 || version.size()>128)bad("invalid plugin ID or version");
-    static const std::set<std::string> platforms{"macos-arm64","macos-x86_64","linux-arm64","linux-x86_64","windows-x86_64"};
-    if(!platforms.count(forPlatform))bad("unknown platform "+forPlatform);
+    if(!knownPlatform(forPlatform))bad("unknown platform "+forPlatform);
     if(forPlatform==platform())bad("this device's build is the one it loads; add builds for other platforms");
     const fs::path build=path;std::error_code e;
     if(build.extension()!=".clap" || !fs::exists(build,e) || fs::is_symlink(build,e))bad("not a CLAP build: "+path);

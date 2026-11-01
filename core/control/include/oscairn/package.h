@@ -34,6 +34,9 @@ namespace oscairn
 
     // This build's platform: its operating system and CPU, such as "macos-arm64" or "linux-arm64".
     std::string platform();
+    // A platform plugin builds are kept for: linux-arm64, linux-x86_64, macos-arm64, macos-x86_64
+    // or windows-x86_64. It names a folder in the plugin store, so nothing else is accepted.
+    bool knownPlatform(const std::string& name);
     // A plugin build's digest: a file's SHA-256, or for a bundle (a folder), the SHA-256 of each
     // file's path and SHA-256 in path order. Hidden files (a component starting with '.') are not
     // part of a build and are left out, as archives leave them out.
@@ -53,7 +56,7 @@ namespace oscairn
     // more than 8 GiB in all, an entry over 2 GiB or a manifest over maxManifestBytes (as declared; each file extracted must be the
     // size it declares), a file whose SHA-256 is not the manifest's or that the manifest does not
     // list, a plugin build whose digest is not its own, and a manifest whose items or builds are
-    // not in the archive. On refusal `into` is removed. With `into` empty, nothing is extracted:
+    // not in the archive or not for a knownPlatform. On refusal `into` is removed. With `into` empty, nothing is extracted:
     // the same checks but the hashes, and the manifest.
     Package readPackage(const std::filesystem::path& archive, const std::filesystem::path& into);
 }

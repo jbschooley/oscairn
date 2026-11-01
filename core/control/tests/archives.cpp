@@ -202,6 +202,9 @@ int main(int argc, char** argv)
             check(refused && !d.installedPlugins().empty(), "removing a plugin the open Performance plays is refused");
             d.removePlugin(plugin.format, plugin.id, plugin.version, other);
             check(d.installedPlugins().at(0).platforms == std::vector<std::string>{platform()}, "one platform's build removed alone");
+            fs::create_directories(temp.path / "d" / "Victim");
+            bool climbed = false; try { d.removePlugin(plugin.format, plugin.id, plugin.version, platform() + "/../../../../Victim"); } catch(const std::exception&) { climbed = true; }
+            check(climbed && fs::is_directory(temp.path / "d" / "Victim"), "a platform that climbs out of the store is refused, removing nothing");
             d.remove(nodes[0].id); d.commit();
             d.removePlugin(plugin.format, plugin.id, plugin.version);
             check(d.installedPlugins().empty(), "removed once nothing open plays it");

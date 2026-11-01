@@ -46,7 +46,9 @@ nothing behind:
   64 MiB, as declared; and a
   file that extracts to another size than it declares;
 - a manifest that is not version 2, or names an item whose folder or document is not there, or
-  whose document's ID is not the one listed, or a plugin build not under `Plugins/` or not there;
+  whose document's ID is not the one listed, or a plugin build not under `Plugins/`, not there,
+  or for a platform other than `linux-arm64`, `linux-x86_64`, `macos-arm64`, `macos-x86_64` and
+  `windows-x86_64`;
 - a file whose SHA-256 is not the one `files` lists, a file `files` does not list or one it
   lists that is not there, and a plugin build whose digest is not its own.
 
