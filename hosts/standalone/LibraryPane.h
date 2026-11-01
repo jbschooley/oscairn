@@ -28,6 +28,11 @@ namespace oscairn::standalone
         void choose(int row);                   // Play: opens it; Pick: answers with it
         void send(int row);                     // to the app that takes Performances
         void newPart(int row);                  // a Sound, as a new part
+        // Libraries (RFC 0021): install an archive file, chosen and asked about; delete the item
+        // at row, asked first; the installed libraries, to install another or uninstall one.
+        void install();
+        void deleteItem(int row);
+        void librariesMenu();
         const juce::String& message() const { return message_; }
 
         void paint(juce::Graphics&) override;
@@ -51,13 +56,14 @@ namespace oscairn::standalone
         Mode mode_;
         Control::LibraryQuery query_;
         Control::LibraryResult result_;
-        bool stale_ = true;
+        bool stale_ = true, installing_ = false;
         juce::String message_;
         juce::TextEditor search_;
         juce::TextButton favourites_{"Favourites"}, recent_{"Recent"}, performances_{"Performances"}, sounds_{"Sounds"};
         juce::OwnedArray<juce::TextButton> tagButtons_;
         juce::ListBox list_{"Performances", this};
-        juce::TextButton send_{"Add to setlist"}, part_{"New part"}, cancel_{"Cancel"}, pick_{"Choose"};
+        juce::TextButton send_{"Add to setlist"}, part_{"New part"}, cancel_{"Cancel"}, pick_{"Choose"}, delete_{"Delete"}, libraries_{"Libraries..."};
+        std::unique_ptr<juce::FileChooser> chooser_;
         juce::Label status_;
     };
 }

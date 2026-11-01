@@ -41,7 +41,7 @@ Checked when built and tested; the sections below say how.
 - [ ] Factory content as a preloaded library (there is no factory content yet)
 - [x] Importing a library as a library or into your own storage, all of it or chosen items;
       importing again skips copies still unchanged (by content hash)
-- [ ] The desktop's Install, Export, Delete and Uninstall
+- [x] The desktop's Install, Export, Delete and Uninstall (Performance menu; the Library app)
 - [ ] Hidden tags and tag colors
 - [x] Exporting a Performance keeps its parts' references to their Sounds
 - [x] Exporting with every asset, the Sounds of unedited parts, and optionally those of edited
@@ -444,7 +444,10 @@ installing again restores only what is missing. Installed into the user's own st
 items get new IDs and an `origin` in their info (the archive's ID, the item's ID there, the
 copy's content hash), and installing again skips copies still as imported. All of it or chosen
 items; the samples go into the user's sample library by hash either way, so they stay when a
-library goes. `control-archives` checks export and install across three data folders;
+library goes. On the desktop: **Export Performance...** (asking whether edited parts' Sounds
+go too) and **Install Library...** (choosing locked or the user's own, and which items) in the
+Performance menu; **Delete** and **Libraries...** (install, uninstall) in the Library app, where
+a locked item says so. `control-archives` checks export and install across three data folders;
 `control-package` checks unsafe archives refused. Not yet: the factory library itself (there is
 no factory content yet), plugins in archives (RFC 0006), and a chosen Performance bringing the
 Sounds it needs when they are not chosen.

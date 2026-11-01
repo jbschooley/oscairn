@@ -93,6 +93,12 @@ namespace oscairn::standalone
         std::optional<Control::LibraryItem> libraryItem(const std::string& id) const;
         std::optional<Control::PerformanceInfo> performanceInfo() const;
         std::optional<Control::PerformanceContents> performanceContents(const std::string& directory) const;
+        // Libraries (RFC 0021): an archive's contents (empty error when read), the installed
+        // libraries, and deleting an item or uninstalling a library (the error, or empty).
+        std::string archiveContents(const std::string& file, Control::Archive& out) const;
+        std::vector<Control::InstalledLibrary> libraries() const;
+        std::string deleteLibraryItem(const std::string& id);
+        std::string uninstallLibrary(const std::string& id);
         std::string pluginId(const std::string& node) const;
         void replacePlugin(const std::string& node,const std::string& path,const std::string& id,const std::string& preset={});
         struct Editor { std::string name,id,path;std::vector<ParamInfo> parameters;std::vector<PresetInfo> presets; };
@@ -113,7 +119,7 @@ namespace oscairn::standalone
         void failed(const std::string& message);
         void refreshSounds(SoundAction action = {});
         void finishSounds();
-        struct SoundResult { std::map<std::string,Editor> editors;SoundPickerState state; std::string error; bool disconnected = false; };
+        struct SoundResult { std::map<std::string,Editor> editors;SoundPickerState state; std::string error, message; bool disconnected = false; };
         std::future<SoundResult> soundJob_;
         SoundAction::Kind soundJobKind_=SoundAction::Refresh;
         std::optional<SoundAction> pendingSound_;

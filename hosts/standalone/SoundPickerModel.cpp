@@ -90,22 +90,29 @@ namespace oscairn::standalone
         return choice;
     }
 
-    void applySoundAction(Control& control, const SoundAction& action)
+    std::string applySoundAction(Control& control, const SoundAction& action)
     {
-        if(action.kind == SoundAction::Refresh) return;
-        if(action.kind == SoundAction::SavePerformance){control.savePerformance(action.directory);return;}
-        if(action.kind == SoundAction::LoadPerformance){control.loadPerformance(action.directory);return;}
-        if(action.kind == SoundAction::SaveToLibrary){control.savePerformanceToLibrary(action.choice.name,action.asNew);return;}
-        if(action.kind == SoundAction::LoadFromLibrary){control.loadPerformanceFromLibrary(action.libraryId);return;}
-        if(action.kind == SoundAction::SaveSound){control.savePartAsSound(action.part,action.choice.name,action.asNew);return;}
-        if(action.kind == SoundAction::LoadSound){control.loadSound(action.part,action.libraryId);return;}
-        if(action.kind == SoundAction::PartFromSound){control.partFromSound(action.libraryId);return;}
-        if(action.kind == SoundAction::ImportPerformance){control.importPerformance(action.directory,action.parts,action.scenes);return;}
+        if(action.kind == SoundAction::Refresh) return {};
+        if(action.kind == SoundAction::SavePerformance){control.savePerformance(action.directory);return {};}
+        if(action.kind == SoundAction::LoadPerformance){control.loadPerformance(action.directory);return {};}
+        if(action.kind == SoundAction::SaveToLibrary){control.savePerformanceToLibrary(action.choice.name,action.asNew);return {};}
+        if(action.kind == SoundAction::LoadFromLibrary){control.loadPerformanceFromLibrary(action.libraryId);return {};}
+        if(action.kind == SoundAction::SaveSound){control.savePartAsSound(action.part,action.choice.name,action.asNew);return {};}
+        if(action.kind == SoundAction::LoadSound){control.loadSound(action.part,action.libraryId);return {};}
+        if(action.kind == SoundAction::PartFromSound){control.partFromSound(action.libraryId);return {};}
+        if(action.kind == SoundAction::ImportPerformance){control.importPerformance(action.directory,action.parts,action.scenes);return {};}
+        if(action.kind == SoundAction::ExportPerformance){control.exportPerformance(action.directory,action.asNew);return "Performance exported.";}
+        if(action.kind == SoundAction::InstallArchive){
+            const auto r=control.installArchive(action.directory,action.asNew,action.items);
+            std::string message="Installed "+std::to_string(r.added)+(r.skipped?", "+std::to_string(r.skipped)+" already here":"")+".";
+            for(const auto& n:r.notes)message+=" "+n+".";
+            return message;
+        }
         if(action.kind==SoundAction::Replace) {
             const auto graph=control.graphState();
             const auto found=std::find_if(graph.topology.nodes.begin(),graph.topology.nodes.end(),[&](const auto& n){return n.id==action.node && n.plugin.id==action.pluginId;});
             if(found==graph.topology.nodes.end())throw std::runtime_error("The loaded plugin changed. Choose again.");
-            control.replace(action.node,action.replacementPath,action.replacementId,action.choice.preset);return;
+            control.replace(action.node,action.replacementPath,action.replacementId,action.choice.preset);return {};
         }
         const auto current = readSoundPicker(control);
         if(current.node != action.node || current.pluginId != action.pluginId)
@@ -122,13 +129,13 @@ namespace oscairn::standalone
             }
             else control.unmapParameter(sequencer,action.track);
             control.commit();
-            return;
+            return {};
         }
         if(action.kind == SoundAction::Prepare)
         {
             const auto choice = action.importPath.empty() ? action.choice : importSound(control, action.importPath);
             control.prepareSound(current.node, choice.name, choice.parameters, {}, choice.preset, choice.sfz, choice.library, choice.directory);
-            return; // Preparation never changes the playing sound.
+            return {}; // Preparation never changes the playing sound.
         }
         const auto found = std::find_if(current.sounds.contexts.begin(), current.sounds.contexts.end(),
             [&](const auto& sound) { return sound.id == action.context; });
@@ -147,5 +154,6 @@ namespace oscairn::standalone
             if(!control.discardSound(current.node, action.context, action.cutTail))
                 throw std::runtime_error("Sound is still in use. Try again after its notes finish.");
         }
+        return {};
     }
 }

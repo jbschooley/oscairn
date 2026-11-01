@@ -271,6 +271,23 @@ int main(int argc, char** argv)
                 const auto now = engine.graph().parts;
                 check(arrived && std::count_if(now.begin() + std::ptrdiff_t(partCount), now.end(), [&](const auto& p) { return p.name == first.name; }) == 1,
                       "a chosen part imported, with what it needs: " + engine.soundMessage());
+                // Exported through the app's action, and installed back as a locked library.
+                const auto archive = folder.getChildFile("Exported.olib");
+                standalone::SoundAction out; out.kind = standalone::SoundAction::ExportPerformance; out.directory = archive.getFullPathName().toStdString();
+                engine.soundAction(std::move(out));
+                check(wait([&] { return !engine.soundBusy(); }) && archive.existsAsFile() && engine.soundMessage() == "Performance exported.", "exported: " + engine.soundMessage());
+                Control::Archive exported;
+                check(engine.archiveContents(archive.getFullPathName().toStdString(), exported).empty() && exported.kind == "performance", "its contents read back");
+                // Installed back as the user's own, the default for an export: a copy under a new ID.
+                const auto before = engine.library({})->total;
+                standalone::SoundAction in; in.kind = standalone::SoundAction::InstallArchive; in.directory = archive.getFullPathName().toStdString();
+                engine.soundAction(std::move(in));
+                const auto count = exported.items.size(); // the Performance, and the Sound its part still is
+                check(wait([&] { return !engine.soundBusy(); }) && engine.soundMessage() == "Installed " + std::to_string(count) + ".", "installed: " + engine.soundMessage());
+                check(count == 2 && engine.library({})->total == before + count, "copies of the Performance and its part's Sound, under new IDs");
+                library.showKind("performance"); library.refresh();
+                wait([&] { return library.items().size() == 4; });
+                snapshot(library, "library-installed");
                 // A file that is not a setlist is refused.
                 const auto bad = folder.getChildFile("Bad.json");
                 bad.replaceWithText(R"({"format":"oscairn.setlist","version":2,"name":"x","entries":[]})");

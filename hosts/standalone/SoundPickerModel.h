@@ -22,7 +22,8 @@ namespace oscairn::standalone
     };
     struct SoundAction
     {
-        enum Kind { Refresh, Prepare, Select, Discard, BrightnessLocks, Replace, SavePerformance, LoadPerformance, SaveToLibrary, LoadFromLibrary, SaveSound, LoadSound, PartFromSound, ImportPerformance } kind = Refresh;
+        enum Kind { Refresh, Prepare, Select, Discard, BrightnessLocks, Replace, SavePerformance, LoadPerformance, SaveToLibrary, LoadFromLibrary, SaveSound, LoadSound, PartFromSound, ImportPerformance,
+                    ExportPerformance, InstallArchive } kind = Refresh;
         NodeId node = 0;
         std::string pluginId;
         uint32_t context = 0, track = 0;
@@ -34,12 +35,15 @@ namespace oscairn::standalone
         std::string libraryId; // LoadFromLibrary, LoadSound, PartFromSound; SaveToLibrary and SaveSound save under choice.name
         uint32_t part = 0;     // SaveSound, LoadSound
         std::vector<uint32_t> parts, scenes; // ImportPerformance from directory: by its IDs; both none for all of it
-        bool asNew = false;    // SaveToLibrary, SaveSound: a new library item, not the next revision of the one it came from
+        bool asNew = false;    // SaveToLibrary, SaveSound: a new library item, not the next revision of the one it came from;
+                               // ExportPerformance: with edited parts' Sounds; InstallArchive: as a locked library
+        std::vector<std::string> items; // InstallArchive from directory (the archive file): these items; none for all
         std::string importPath; // Prepare from this .sfz or .wav instead of choice
     };
     SoundPickerState readSoundPicker(Control&);
     // A .sfz file as written (its folder registered as an asset library), or a one-region SFZ
     // patch with a 30 ms release for a .wav file copied into the user library; throws if unusable.
     SoundChoice importSound(Control&, const std::string& path);
-    void applySoundAction(Control&, const SoundAction&);
+    // Returns what to tell the user when it went well, if anything.
+    std::string applySoundAction(Control&, const SoundAction&);
 }

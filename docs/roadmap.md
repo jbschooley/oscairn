@@ -306,7 +306,9 @@ in the others.
      all of it or chosen items; importing again skips copies still unchanged, by content hash
    - [ ] the same choice of parts for any package, such as only its plugin
      ([RFC 0006](rfcs/0006-packages-and-portability.md#choosing-what-to-import))
-   - [ ] the desktop's Install, Export, Delete and Uninstall
+   - [x] the desktop's Install, Export, Delete and Uninstall: **Export Performance...** and
+     **Install Library...** in the Performance menu, **Delete** and **Libraries...** in the
+     Library app, locked items marked
    - [x] exporting a Performance keeps its parts' references to the Sounds they came from
    - [x] **exporting with its Sounds and assets:** every sample, waveform and other asset
      always travels; a part's Sound travels when the part is unedited since it, and as an

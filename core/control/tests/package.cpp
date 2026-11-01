@@ -67,6 +67,8 @@ int main()
         const auto read = readPackage(root / "Pack.olib", root / "out");
         check(read.id == "abc" && read.name == "Pack" && read.kind == "library" && read.items.size() == 1 && read.items[0].path == "Sounds/Bass.osound", "the manifest round-trips");
         check(fs::file_size(root / "out/Sounds/Bass.osound/nodes/node-1/state.bin") == 5000 && fs::exists(root / "out/Assets/0123.wav"), "its files round-trip");
+        const auto manifestOnly = readPackage(root / "Pack.olib", {});
+        check(manifestOnly.items.size() == 1 && manifestOnly.items[0].id == "s1", "the manifest alone, extracting nothing");
 
         // Refused, leaving nothing behind.
         int n = 0;

@@ -30,5 +30,6 @@ namespace oscairn
     // paths that climb out or are absolute, links, duplicates, more than 65536 entries, more than
     // 8 GiB in all or an entry over 2 GiB (as declared; each file extracted must be the size it
     // declares), and a manifest whose items are not in the archive. On refusal `into` is removed.
+    // With `into` empty, nothing is extracted: the same checks, and the manifest.
     Package readPackage(const std::filesystem::path& archive, const std::filesystem::path& into);
 }

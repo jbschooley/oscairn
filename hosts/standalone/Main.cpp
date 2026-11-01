@@ -188,6 +188,8 @@ namespace oscairn::standalone
             juce::PopupMenu menu;
             if(index==0){const bool free=engine_.connected() && !engine_.soundBusy();menu.addItem(5002,"Save",free);menu.addItem(5003,"Save As New...",free);
                 menu.addItem(5004,"Import Performance...",free && actions_.offered(pickPerformance));
+                menu.addItem(5005,"Export Performance...",free);
+                menu.addItem(5006,"Install Library...",free);
                 // The color lists and setlists show it in; saved with the Performance.
                 if(const auto info=engine_.performanceInfo()){juce::PopupMenu colors;addColors(colors,info->color,5100,"None");menu.addSubMenu("Color",colors,free);}
                 menu.addSeparator();menu.addItem(5000,"Save to Folder...",free);menu.addItem(5001,"Open Folder...",free);return menu;}
@@ -246,6 +248,9 @@ namespace oscairn::standalone
             if(id==8002){setlist();showApp(setlist_,"Setlist",nullptr,0,0);return;}
             if(id==5002 || id==5003){saveToLibrary(id==5003);return;}
             if(id==5004){importPerformance();return;}
+            if(id==5005){exportPerformance();return;}
+            if(id==5006){showApp(libraryApp_,"Library",[this]{return new LibraryPane(engine_,actions_,LibraryPane::Mode::Play);},900,700);
+                if(auto* pane=dynamic_cast<LibraryPane*>(libraryApp_->getContentComponent()))pane->install();return;}
             if(id==8100){loadSound();return;}
             if(id==8101 || id==8102){saveSound(id==8102);return;}
             if(id==8104){updateSound();return;}
@@ -357,6 +362,28 @@ namespace oscairn::standalone
                     SoundAction import;import.kind=SoundAction::ImportPerformance;import.directory=path;import.parts=parts;import.scenes=scenes;safe->engine_.soundAction(std::move(import));
                 };
             });
+        }
+        // The open Performance as one archive file to take to another device (RFC 0021): its
+        // samples and its unedited parts' Sounds always go; edited parts' Sounds when asked.
+        void exportPerformance()
+        {
+            const auto info=engine_.performanceInfo();
+            const auto name=info && !info->name.empty()?juce::String::fromUTF8(info->name.c_str()):juce::String("Performance");
+            chooser_=std::make_unique<juce::FileChooser>("Export the Performance",juce::File::getSpecialLocation(juce::File::userDocumentsDirectory).getChildFile(name+".olib"),"*.olib");
+            chooser_->launchAsync(juce::FileBrowserComponent::saveMode|juce::FileBrowserComponent::canSelectFiles|juce::FileBrowserComponent::warnAboutOverwriting,
+                [safe=juce::Component::SafePointer<Window>(this)](const juce::FileChooser& fc) {
+                    if(!safe || fc.getResult()==juce::File())return;
+                    auto file=fc.getResult();if(!file.hasFileExtension("olib"))file=file.withFileExtension("olib");
+                    if(file.existsAsFile() && !file.deleteFile()){juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,"Not exported","Cannot replace "+file.getFullPathName());return;}
+                    auto options=juce::MessageBoxOptions().withIconType(juce::MessageBoxIconType::QuestionIcon).withTitle("Export "+file.getFileNameWithoutExtension())
+                        .withMessage("Samples and the Sounds of parts unedited since they were loaded always go. The Sounds of edited parts can go too, as the library has them.")
+                        .withButton("Export").withButton("With edited parts' Sounds").withButton("Cancel").withAssociatedComponent(safe.getComponent());
+                    juce::AlertWindow::showAsync(options,[safe,path=file.getFullPathName().toStdString()](int chosen){
+                        if(!safe || chosen==0)return; // 1: Export, 2: with edited Sounds, 0: Cancel
+                        SoundAction out;out.kind=SoundAction::ExportPerformance;out.directory=path;out.asNew=chosen==2;
+                        safe->engine_.soundAction(std::move(out));
+                    });
+                });
         }
         // The library's newer revision of the Sound the selected part came from, in its place.
         void updateSound()

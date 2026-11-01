@@ -125,7 +125,8 @@ namespace oscairn::standalone
     void Engine::soundAction(SoundAction action)
     {
         if(soundBusy() || !connected())return;
-        if((action.kind==SoundAction::Prepare || action.kind==SoundAction::Replace || action.kind==SoundAction::SavePerformance || action.kind==SoundAction::LoadPerformance || action.kind==SoundAction::SaveToLibrary || action.kind==SoundAction::LoadFromLibrary || action.kind==SoundAction::SaveSound || action.kind==SoundAction::LoadSound || action.kind==SoundAction::PartFromSound || action.kind==SoundAction::ImportPerformance) && !canPrepareSounds())
+        if((action.kind==SoundAction::Prepare || action.kind==SoundAction::Replace || action.kind==SoundAction::SavePerformance || action.kind==SoundAction::LoadPerformance || action.kind==SoundAction::SaveToLibrary || action.kind==SoundAction::LoadFromLibrary || action.kind==SoundAction::SaveSound || action.kind==SoundAction::LoadSound || action.kind==SoundAction::PartFromSound || action.kind==SoundAction::ImportPerformance ||
+            action.kind==SoundAction::ExportPerformance || action.kind==SoundAction::InstallArchive) && !canPrepareSounds())
         {
             soundMessage_="Preparation requires the separate engine. Relaunch without --in-process.";
             return;
@@ -139,7 +140,7 @@ namespace oscairn::standalone
     {
         if(socketPath_.empty())
         {
-            try{applySoundAction(*control_,action);soundPicker_=readSoundPicker(*control_);editors_=readEditors(*control_);}
+            try{if(const auto m=applySoundAction(*control_,action);!m.empty())soundMessage_=m;soundPicker_=readSoundPicker(*control_);editors_=readEditors(*control_);}
             catch(const std::exception& e){soundMessage_=e.what();}
             return;
         }
@@ -151,7 +152,7 @@ namespace oscairn::standalone
             try
             {
                 client.connect(socket);RemoteControl control(client);
-                try{applySoundAction(control,request);}catch(const std::exception& e){result.error=e.what();}
+                try{result.message=applySoundAction(control,request);}catch(const std::exception& e){result.error=e.what();}
                 result.state=readSoundPicker(control);
                 result.editors=readEditors(control);
             }
@@ -163,7 +164,7 @@ namespace oscairn::standalone
     void Engine::finishSounds()
     {
         auto result=soundJob_.get();
-        if(!result.error.empty())soundMessage_=result.error;
+        if(!result.error.empty())soundMessage_=result.error;else if(!result.message.empty())soundMessage_=result.message;
         for(const auto& [name,editor]:result.editors) {
             const auto old=editors_.find(name);
             if(old==editors_.end() || old->second.id!=editor.id || old->second.path!=editor.path)textCache_.clear();
@@ -204,6 +205,26 @@ namespace oscairn::standalone
         if(!found)return {};
         for(const auto& item:found->items)if(item.id==id)return item;
         return Control::LibraryItem{}; // not in the library: an empty ID
+    }
+    std::string Engine::archiveContents(const std::string& file, Control::Archive& out) const
+    {
+        if(!connected()) return "The engine is not running.";
+        try{out=control_->archiveContents(file);return {};}catch(const std::exception& e){return e.what();}
+    }
+    std::vector<Control::InstalledLibrary> Engine::libraries() const
+    {
+        if(!connected()) return {};
+        try{return control_->libraries();}catch(const std::exception& e){std::fprintf(stderr,"oscairn: libraries: %s\n",e.what());return {};}
+    }
+    std::string Engine::deleteLibraryItem(const std::string& id)
+    {
+        if(!connected()) return "The engine is not running.";
+        try{control_->deleteLibraryItem(id);return {};}catch(const std::exception& e){return e.what();}
+    }
+    std::string Engine::uninstallLibrary(const std::string& id)
+    {
+        if(!connected()) return "The engine is not running.";
+        try{control_->uninstallLibrary(id);return {};}catch(const std::exception& e){return e.what();}
     }
     std::optional<Control::PerformanceContents> Engine::performanceContents(const std::string& directory) const
     {

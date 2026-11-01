@@ -54,5 +54,9 @@ nothing behind:
   when a library is uninstalled. A sample an item needs that is in neither the archive nor the
   device is reported.
 
+Two items with one ID are listed once, the user's own first: so a Performance exported and
+installed as a library on the device it came from shows the original, not the locked copy.
+Installed into the user's own storage (the default for an export) it is a new copy.
+
 Not yet: a Sound from a locked library exported as that library's item, and plugins in archives
 (RFC 0006).

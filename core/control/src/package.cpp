@@ -95,8 +95,9 @@ namespace oscairn
 
     Package readPackage(const fs::path& archive, const fs::path& into)
     {
-        if(fs::exists(into)) throw std::runtime_error(into.string() + " already exists");
-        fs::create_directories(into);
+        const bool extract = !into.empty();
+        if(extract && fs::exists(into)) throw std::runtime_error(into.string() + " already exists");
+        if(extract) fs::create_directories(into);
         try
         {
             Zip z(true);
@@ -118,7 +119,7 @@ namespace oscairn
                 if(name != "library.json" && !tops.count(top)) bad("an entry outside its folders: " + name);
                 if(((st.m_external_attr >> 16) & S_IFMT) == S_IFLNK) bad("a link: " + name);
                 if(!names.insert(name).second) bad("an entry twice: " + name);
-                if(directory) { fs::create_directories(into / name); continue; }
+                if(directory) { if(extract) fs::create_directories(into / name); continue; }
                 if(st.m_uncomp_size > maxEntry || (total += st.m_uncomp_size) > maxTotal) bad("it is too large");
                 if(name == "library.json")
                 {
@@ -127,6 +128,7 @@ namespace oscairn
                     if(!mz_zip_reader_extract_to_mem(&z.zip, i, manifest.data(), manifest.size(), 0)) bad("the manifest cannot be read");
                     continue;
                 }
+                if(!extract) continue;
                 const auto out = into / name;
                 fs::create_directories(out.parent_path());
                 if(!mz_zip_reader_extract_to_file(&z.zip, i, out.string().c_str(), 0)) bad("cannot extract " + name);
@@ -152,12 +154,12 @@ namespace oscairn
                 const bool sound = item.kind == "sound";
                 if((!sound && item.kind != "performance") || item.id.empty() || !ids.insert(item.id).second) bad("an item's kind or ID is wrong");
                 if(!safe(item.path) || item.path.substr(0, item.path.find('/')) != (sound ? "Sounds" : "Performances") || item.path.find('/', item.path.find('/') + 1) != std::string::npos ||
-                   !fs::is_regular_file(into / item.path / (sound ? "sound.json" : "performance.json")))
+                   !names.count(item.path + (sound ? "/sound.json" : "/performance.json")))
                     bad("an item is not in the archive: " + item.path);
                 p.items.push_back(std::move(item));
             }
             return p;
         }
-        catch(...) { std::error_code ignored; fs::remove_all(into, ignored); throw; }
+        catch(...) { std::error_code ignored; if(extract) fs::remove_all(into, ignored); throw; }
     }
 }

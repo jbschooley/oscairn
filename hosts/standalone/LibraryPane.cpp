@@ -36,10 +36,15 @@ namespace oscairn::standalone
         send_.onClick = [this] { send(list_.getSelectedRow()); };
         cancel_.onClick = [this] { if(onPicked) onPicked({}); };
         pick_.onClick = [this] { choose(list_.getSelectedRow()); };
+        delete_.onClick = [this] { deleteItem(list_.getSelectedRow()); };
+        delete_.setTooltip("Delete the selected item from the library. A locked library's comes back when the library is installed again");
+        libraries_.onClick = [this] { librariesMenu(); };
+        libraries_.setTooltip("Install a library or an exported Performance, or uninstall a library");
         status_.setColour(juce::Label::textColourId, ink(Ink::Muted));
         for(auto* c : std::initializer_list<juce::Component*>{&search_, &favourites_, &recent_, &list_, &status_}) addAndMakeVisible(c);
-        for(auto* c : std::initializer_list<juce::Component*>{&send_, &part_, &cancel_, &pick_, &performances_, &sounds_}) addChildComponent(c);
+        for(auto* c : std::initializer_list<juce::Component*>{&send_, &part_, &cancel_, &pick_, &performances_, &sounds_, &delete_, &libraries_}) addChildComponent(c);
         performances_.setVisible(mode_ == Mode::Play); sounds_.setVisible(mode_ == Mode::Play);
+        delete_.setVisible(mode_ == Mode::Play); libraries_.setVisible(mode_ == Mode::Play);
         cancel_.setVisible(mode_ == Mode::Pick); pick_.setVisible(mode_ == Mode::Pick);
         showKind(kind);
         startTimer(300);
@@ -91,6 +96,7 @@ namespace oscairn::standalone
         list_.deselectAllRows();
         for(size_t i = 0; i < result_.items.size(); ++i) if(result_.items[i].id == selected) list_.selectRow(int(i), true, true);
         const bool sound = query_.kind == "sound";
+        if(installing_) { installing_ = false; message_ = text(engine_.soundMessage()); status_.setText(message_, juce::dontSendNotification); } // what it added, or why not
         if(message_.isEmpty()) status_.setText(juce::String(result_.total) + (sound ? (result_.total == 1 ? " Sound" : " Sounds") : (result_.total == 1 ? " Performance" : " Performances")), juce::dontSendNotification);
         rebuildTags();
         updateButtons();
@@ -122,7 +128,7 @@ namespace oscairn::standalone
     void LibraryPane::updateButtons()
     {
         const bool any = list_.getSelectedRow() >= 0;
-        send_.setEnabled(any); pick_.setEnabled(any); part_.setEnabled(any);
+        send_.setEnabled(any); pick_.setEnabled(any); part_.setEnabled(any); delete_.setEnabled(any);
     }
 
     void LibraryPane::choose(int row)
@@ -166,7 +172,9 @@ namespace oscairn::standalone
         g.setColour(ink(Ink::Text)); g.setFont(juce::FontOptions(body, juce::Font::bold));
         g.drawText(text(item.name.empty() ? "Untitled" : item.name), top, juce::Justification::bottomLeft, true);
         juce::StringArray tags; for(const auto& t : item.tags) tags.add(text(t));
-        const auto detail = tags.joinIntoString("  ·  ") + (item.description.empty() ? "" : (tags.isEmpty() ? "" : "   ") + text(item.description));
+        // A locked library's item says so first: Save makes a new one.
+        auto detail = tags.joinIntoString("  ·  ") + (item.description.empty() ? "" : (tags.isEmpty() ? "" : "   ") + text(item.description));
+        if(!item.library.empty()) detail = "Locked" + (detail.isEmpty() ? juce::String() : "  ·  " + detail);
         g.setColour(ink(Ink::Muted)); g.setFont(juce::FontOptions(small));
         g.drawText(detail, area, juce::Justification::topLeft, true);
         drawStar(g, starArea(width, height).toFloat().reduced(float(height) * .28f), item.favourite);
@@ -224,9 +232,120 @@ namespace oscairn::standalone
         area.removeFromBottom(gap);
         list_.setBounds(area);
         if(mode_ == Mode::Pick) { pick_.setBounds(bottom.removeFromRight(110)); bottom.removeFromRight(gap); cancel_.setBounds(bottom.removeFromRight(110)); }
-        else if(send_.isVisible()) send_.setBounds(bottom.removeFromRight(touch ? 170 : 140));
-        else if(part_.isVisible()) part_.setBounds(bottom.removeFromRight(touch ? 150 : 120));
+        else
+        {
+            if(send_.isVisible()) send_.setBounds(bottom.removeFromRight(touch ? 170 : 140));
+            else if(part_.isVisible()) part_.setBounds(bottom.removeFromRight(touch ? 150 : 120));
+            bottom.removeFromRight(gap); delete_.setBounds(bottom.removeFromRight(touch ? 110 : 90));
+            bottom.removeFromRight(gap); libraries_.setBounds(bottom.removeFromRight(touch ? 140 : 110));
+            bottom.removeFromRight(gap);
+        }
         status_.setFont(juce::FontOptions(textSize(TextRole::Small, mode())));
         status_.setBounds(bottom);
+    }
+
+    void LibraryPane::deleteItem(int row)
+    {
+        if(row < 0 || size_t(row) >= result_.items.size()) return;
+        const auto item = result_.items[size_t(row)];
+        const auto name = text(item.name.empty() ? "Untitled" : item.name);
+        auto options = juce::MessageBoxOptions::makeOptionsOkCancel(juce::MessageBoxIconType::QuestionIcon, "Delete " + name + "?",
+            item.library.empty() ? juce::String("It is removed from your library. Performances that used it keep their parts.")
+                                 : juce::String("It is removed. Installing its library again brings it back."), "Delete", "Cancel", this);
+        juce::AlertWindow::showAsync(options, [safe = juce::Component::SafePointer<LibraryPane>(this), id = item.id, name](int chosen) {
+            if(!safe || chosen != 1) return;
+            const auto error = safe->engine_.deleteLibraryItem(id);
+            safe->refresh();
+            safe->message_ = error.empty() ? name + " deleted." : text(error);
+            safe->status_.setText(safe->message_, juce::dontSendNotification);
+        });
+    }
+
+    void LibraryPane::librariesMenu()
+    {
+        juce::PopupMenu menu;
+        menu.addItem(1, "Install from a file...");
+        const auto installed = engine_.libraries();
+        if(!installed.empty()) menu.addSeparator();
+        for(size_t i = 0; i < installed.size(); ++i)
+            menu.addItem(int(i) + 2, "Uninstall " + text(installed[i].name) + " (" + juce::String(int(installed[i].items)) + (installed[i].items == 1 ? " item)" : " items)"));
+        menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&libraries_), [safe = juce::Component::SafePointer<LibraryPane>(this), installed](int chosen) {
+            if(!safe || chosen <= 0) return;
+            if(chosen == 1) { safe->install(); return; }
+            const auto library = installed[size_t(chosen - 2)];
+            auto options = juce::MessageBoxOptions::makeOptionsOkCancel(juce::MessageBoxIconType::QuestionIcon, "Uninstall " + text(library.name) + "?",
+                "Its Sounds and Performances are removed. Your Performances keep their parts and samples, and your own copies stay.", "Uninstall", "Cancel", safe.getComponent());
+            juce::AlertWindow::showAsync(options, [safe, library](int ok) {
+                if(!safe || ok != 1) return;
+                const auto error = safe->engine_.uninstallLibrary(library.id);
+                safe->refresh();
+                safe->message_ = error.empty() ? text(library.name) + " uninstalled." : text(error);
+                safe->status_.setText(safe->message_, juce::dontSendNotification);
+            });
+        });
+    }
+
+    // An archive (a library, or an exported Performance): how to install it (locked, or as the
+    // user's own, the default for an exported Performance) and which items, all ticked.
+    void LibraryPane::install()
+    {
+        chooser_ = std::make_unique<juce::FileChooser>("Install a library or an exported Performance", juce::File::getSpecialLocation(juce::File::userDocumentsDirectory), "*.olib");
+        chooser_->launchAsync(juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles, [safe = juce::Component::SafePointer<LibraryPane>(this)](const juce::FileChooser& fc) {
+            if(!safe || fc.getResult() == juce::File()) return;
+            const auto file = fc.getResult().getFullPathName().toStdString();
+            Control::Archive archive;
+            if(const auto error = safe->engine_.archiveContents(file, archive); !error.empty())
+            {
+                juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon, "Not installed", text(error));
+                return;
+            }
+            struct Choose : juce::Component
+            {
+                juce::ToggleButton own{"Into my Sounds and Performances, to edit"}, locked{"As a locked library"};
+                juce::Label heading{{}, "Items"};
+                juce::OwnedArray<juce::ToggleButton> items;
+                std::vector<std::string> ids;
+                juce::TextButton go{"Install"}, cancel{"Cancel"};
+                explicit Choose(const Control::Archive& a)
+                {
+                    own.setRadioGroupId(1); locked.setRadioGroupId(1);
+                    (a.kind == "library" ? locked : own).setToggleState(true, juce::dontSendNotification);
+                    for(const auto& i : a.items)
+                    {
+                        auto* b = items.add(new juce::ToggleButton(text(i.name.empty() ? "Untitled" : i.name) + (i.kind == "sound" ? "  (Sound)" : "  (Performance)")));
+                        b->setToggleState(true, juce::dontSendNotification); addAndMakeVisible(b); ids.push_back(i.id);
+                    }
+                    for(auto* c : std::initializer_list<juce::Component*>{&own, &locked, &heading, &go, &cancel}) addAndMakeVisible(c);
+                    setSize(420, std::min(600, int(a.items.size()) * 30 + 180));
+                }
+                void resized() override
+                {
+                    auto area = getLocalBounds().reduced(16, 12);
+                    own.setBounds(area.removeFromTop(30)); locked.setBounds(area.removeFromTop(30));
+                    area.removeFromTop(6); heading.setBounds(area.removeFromTop(24));
+                    auto bar = area.removeFromBottom(30);
+                    go.setBounds(bar.removeFromRight(100)); bar.removeFromRight(8); cancel.setBounds(bar.removeFromRight(100));
+                    for(auto* b : items) b->setBounds(area.removeFromTop(30));
+                }
+            };
+            auto* content = new Choose(archive);
+            juce::DialogWindow::LaunchOptions options;
+            options.dialogTitle = "Install " + text(archive.name);
+            options.content.setOwned(content); options.componentToCentreAround = safe.getComponent(); options.useNativeTitleBar = true; options.resizable = false;
+            auto* dialog = options.launchAsync();
+            content->cancel.onClick = [dialog] { dialog->exitModalState(0); };
+            content->go.onClick = [safe, dialog, content, file] {
+                SoundAction install; install.kind = SoundAction::InstallArchive; install.directory = file; install.asNew = content->locked.getToggleState();
+                for(int i = 0; i < content->items.size(); ++i) if(content->items[i]->getToggleState()) install.items.push_back(content->ids[size_t(i)]);
+                if(install.items.empty()) { juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::InfoIcon, "Install", "Choose at least one item."); return; }
+                if(install.items.size() == content->ids.size()) install.items.clear(); // all of it
+                dialog->exitModalState(0);
+                if(!safe) return;
+                safe->engine_.soundAction(std::move(install));
+                safe->message_ = "Installing...";
+                safe->status_.setText(safe->message_, juce::dontSendNotification);
+                safe->stale_ = true; safe->installing_ = true;
+            };
+        });
     }
 }

@@ -1028,9 +1028,7 @@ std::string safeName(const std::string& id){std::string out;for(const char c:id)
 }
 
 Control::Archive Session::archiveContents(const std::string& file) {
-    const auto into=unpackFolder();
-    const auto p=readPackage(file,into);
-    std::error_code ignored;fs::remove_all(into,ignored);
+    const auto p=readPackage(file,{}); // the manifest only
     Archive out{p.id,p.name,p.kind,{}};
     for(const auto& i:p.items){LibraryItem item;item.kind=i.kind;item.id=i.id;item.name=i.name;out.items.push_back(item);}
     return out;
