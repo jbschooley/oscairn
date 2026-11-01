@@ -51,8 +51,9 @@ Checked when built and tested; the sections below say how.
       drag to part and keyboard remain
 - [x] Importing a Performance, all of it or chosen parts (with what they need) and scenes ([design](#importing-a-performance))
 - [ ] 4. Plugin presets
-- [x] 5. Seamless loading: held notes and tails of the outgoing chain carry on ([status](#seamless-switching))
-- [ ] 5. The audition part; telling before a load when it cannot be seamless
+- [x] Engine support for seamless changes: draining note connections, retiring nodes, plugin
+      sleep ([status](#seamless-switching)); loading a Sound cuts, by decision
+- [ ] 5. The audition part
 - [ ] 6. Panel
 - [ ] 7. Compact test layout
 
@@ -317,8 +318,7 @@ wires and blocks are enabled).
   parameters and controls as they arrive; the arriving scenes keep the open Performance's as
   they are.
 - Pads, tempo, transport and the imported info block stay with the open Performance.
-- Notes held in the open Performance's parts carry on through an import
-  ([control-seamless](#seamless-switching)).
+- Notes held in the open Performance's parts carry on through an import (`control-import`).
 
 ## Plugin presets
 
@@ -508,38 +508,25 @@ The architecture asks for this:
 > Scene and sound changes should keep held notes and effect tails rather than rebuild the
 > graph and cut audio. … The host reports when a transition cannot be seamless.
 
-Built 2026-10-31 for **Load into part**, **New part from sound** and **Update from library**:
+Decided 2026-10-31: seamless switching is for **scene and Performance changes**, which happen
+while playing. **Loading a Sound into a part** (Load into part, New part from sound, Update
+from library) is editing, and replaces the part's chain at once, cutting its notes and tails.
 
-1. The incoming chain's plugins are added and their state loaded on the control thread, off
-   the audio thread, while the part plays on.
-2. In one commit the part's note input moves to the incoming chain: new notes play it. The
-   outgoing chain stays, out of sight: what leaves its plugins stays wired as before (to where
-   the part plays, its sends), and its note connections **drain**: they take no new note but
-   still carry the releases, expressions and pedal of the notes they hold (`Graph::setDraining`).
-   Sound from outside into it stops.
-3. Its plugins are **retiring** (`Graph::setRetiring`): the audio thread counts the notes still
-   sounding through each, how long its output has been below -100 dB, and whether the plugin
-   said it is asleep (`CLAP_PROCESS_SLEEP`). Each goes once no note sounds through it and it
-   is asleep or has been silent for three seconds (longer than a gap between echoes), or after
-   30 seconds without a note for a sound that never ends.
+What the engine has for it, tested in `note-routing`:
 
-The retiring chain is not part of the Performance: it is not shown, saved or in undo; undoing
-the switch puts it back (its notes and tails carry on) and removes the incoming chain at once.
-`control-seamless` holds a note into a synth and echo, switches the part's Sound mid-note,
-plays a new note on the incoming Sound and releases the held one, in uneven block sizes with
-no allocation on the audio thread: the output is the outgoing chain alone plus the incoming
-Sound alone, sample for sample. It also holds a note through importing a Performance, which
-goes on unchanged, and saves mid-switch, which holds only the incoming chain.
+- **Draining note connections** (`Graph::setDraining`): a connection that takes no new note
+  while the notes it holds still get their releases, expressions and pedal.
+- **Retiring nodes** (`Graph::setRetiring`, `Graph::idle`): the audio thread counts the notes
+  still sounding through a node, how long its output has been below -100 dB, and whether the
+  plugin said it is asleep (`CLAP_PROCESS_SLEEP`, which hosts now report), so the control
+  thread knows when it may go.
 
-Not yet: the audition part; telling before a load when it cannot be seamless (nothing makes
-it so today; a memory or voice budget will, RFC 0018 step 3); seamless **Load preset** beyond
-`sounds.prepare`; seamless Performance changes for setlists.
+A scene that disables a block (RFC 0011's full scene model) and a Performance change in a
+setlist will use them: the outgoing blocks drain and ring out while new notes play what comes
+in. A note held while importing a Performance already plays on (`control-import`).
 
 **Load preset** on a node is seamless where `sounds.prepare` accepts it (native contexts and
 pooled instruments) and an interrupting state load otherwise, as today.
-
-**Open performance** cuts, as `performance.load` documents. Seamless Performance changes
-are setlist work, not this RFC.
 
 ### Desktop
 

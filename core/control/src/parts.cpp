@@ -171,7 +171,7 @@ namespace oscairn
         std::map<Key, double> audio;
         // Note connections and their zones: none when any wire on the connection passes every note.
         std::map<std::pair<NodeId, NodeId>, std::vector<NoteZone>> notes;
-        std::set<std::pair<NodeId, NodeId>> passAll, live; // live: a connection with a wire that is not retiring
+        std::set<std::pair<NodeId, NodeId>> passAll;
         // Each input's implicit Mix: a soloed source silences the unsoloed ones.
         std::set<std::pair<NodeId, uint32_t>> soloed;
         for(const auto& w : wires) if(w.kind == WireKind::Audio && w.solo) soloed.insert({w.to, w.toPort});
@@ -182,7 +182,6 @@ namespace oscairn
                 w.connected = sendsNotes(g, w.from) && takesNotes(g, w.to);
                 if(!w.connected) continue;
                 auto& zones = notes[{w.from, w.to}];
-                if(!w.retiring) live.insert({w.from, w.to});
                 if(w.zones.empty()) passAll.insert({w.from, w.to});
                 else if(zones.size() + w.zones.size() > NoteZones::capacity) w.connected = false; // over the connection's zones
                 else zones.insert(zones.end(), w.zones.begin(), w.zones.end());
@@ -210,7 +209,6 @@ namespace oscairn
             const bool exists = std::find(present.notes.begin(), present.notes.end(), e) != present.notes.end();
             const auto had = present.noteZones.find(e);
             if(!exists || (had == present.noteZones.end() ? !zones.empty() : had->second != zones)) g.connectNotes(e.first, e.second, zones);
-            g.setDraining(e.first, e.second, !live.count(e)); // only retiring wires on it: no new notes
         }
     }
 

@@ -161,5 +161,28 @@ int main(int argc,char** argv){try{
         for(int i=0;i<4;++i)block(); // the choke, then the synth's own 3 ms choke fade
         check(playing()==1,"and is choked after it");
     }
-    std::cout<<"ok: route ownership, retirement, sustain, physical MIDI overflow and the steal fade\n";
+    // Draining and retiring (for seamless scene and Performance changes): a draining connection
+    // takes no new note while the notes it holds still release, sustain included; a retiring
+    // node is idle once nothing sounds through it and it has been silent long enough.
+    {
+        Graph d(48000,512);
+        const auto s=d.add(argv[1]);d.connectNotes(graphInput,s);d.connectAudio(s,graphOutput);d.commit();
+        auto play=[&](std::span<const Event> events={}){
+            forbidAllocation=true;const bool ok=d.process(out,512,nullptr,events.data(),events.size());forbidAllocation=false;
+            check(ok,"allocation-free rendering while draining");
+        };
+        auto held=[&]{return d.host(s).soundContexts().front().active_voices;};
+        const auto other=Event::midi(0x90,64,127),pedalUp=Event::midi(0xb0,64,0);
+        play({&on,1});check(held()==1,"a note held before draining");
+        d.setDraining(graphInput,s,true);d.setRetiring(s,true);d.commit();play();
+        play({&other,1});check(held()==1,"a draining connection takes no new note");
+        check(!d.idle(s,0,UINT64_MAX),"a held note keeps a retiring node busy");
+        play({&down,1});play({&off,1});play();check(!d.idle(s,0,UINT64_MAX),"so does a note the pedal sustains");
+        play({&pedalUp,1});for(int i=0;i<120;++i)play();
+        check(held()==0,"the held note still released through the draining connection");
+        check(d.idle(s,512*4,UINT64_MAX),"then idle once silent");
+        check(!d.idle(s,uint64_t(48000)*60,UINT64_MAX),"but not before the silence asked for");
+        d.setDraining(graphInput,s,false);d.commit();play({&other,1});check(held()==1,"undrained, it takes notes again");
+    }
+    std::cout<<"ok: route ownership, retirement, sustain, physical MIDI overflow, the steal fade, draining and retiring\n";
 }catch(const std::exception& e){forbidAllocation=false;std::cerr<<e.what()<<'\n';return 1;}}

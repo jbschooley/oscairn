@@ -204,8 +204,8 @@ in the others.
      step 5's knob pages (started)
    - [ ] plugin windows, then step 6's physical controls
    - [ ] the full scene model: blocks and wires enabled per scene, and what each scene saves;
-     seamless like switching Sounds (notes held on a disabled block play on until released,
-     its tail rings out). Scene changes today set levels, mutes and values without
+     seamless on the engine's draining and retiring (notes held on a disabled block play on
+     until released, its tail rings out). Scene changes today set levels, mutes and values without
      rebuilding, so held notes and tails already carry on
      ([RFC 0011](rfcs/0011-performance-ui-and-editors.md))
 2. **Native sample patches** ([sample players and formats](sample-players-and-formats.md),
@@ -247,8 +247,8 @@ in the others.
    - [ ] step 6: memory and CPU limits, sandboxing
    - [ ] step 7: LV2 in workers
    - [ ] measurements on native Linux and the target; workers by default in the app
-   - [ ] workers reporting CLAP sleep, so seamless switching retires a plugin in a worker as
-     soon as it is done instead of after three seconds of silence
+   - [ ] workers reporting CLAP sleep, so a seamless change can retire a plugin in a worker as
+     soon as it is done, not after a silence window
 4. **Sequencers** ([the comparison](sequencer-evaluation.md) of the KICK firmware's sequencer
    with chillbeast's work, zynseq and hosted plugins)
    - [x] the evaluation, recommending the KICK model and workflow with sample-accurate
@@ -308,11 +308,13 @@ in the others.
    - [x] **importing a Performance:** all of it, or at least one chosen part and scene; parts
      bring their plugins, buses, wiring and controls, scenes come under free names, in one
      step to undo ([design](rfcs/0021-sounds-performances-and-library.md#importing-a-performance))
-   - [x] **seamless switching:** loading a Sound into a part keeps the notes already held and
-     the outgoing chain's tails; the old chain drains and is removed once idle
-     ([RFC 0021 step 5](rfcs/0021-sounds-performances-and-library.md#seamless-switching))
-   - [ ] telling before a load when it cannot be seamless (with a memory or voice budget), the
-     audition part, and seamless Performance changes for setlists
+   - [x] engine support for seamless changes: draining note connections (no new notes, held
+     ones still released) and retiring nodes (idle once silent or asleep), with plugins'
+     CLAP sleep reported ([RFC 0021](rfcs/0021-sounds-performances-and-library.md#seamless-switching)).
+     Loading a Sound into a part cuts, by decision: it is editing
+   - [ ] **seamless Performance changes** in setlists: the outgoing Performance's notes and tails
+     ring out while the next one plays, and a change that cannot be seamless says so first
+   - [ ] the audition part
    - [ ] tag editing and suggestions, plugin presets in the library, `LibraryModel`, and the
      Library on the panel and compact screens (RFC 0021 steps 2–7)
    - [ ] actions over the control API, then choosing between apps (RFC 0022 steps 2–3, also

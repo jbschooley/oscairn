@@ -127,7 +127,7 @@ Control::PerformanceInfo Session::writeDocument(const std::string& directory,Per
     service();if(!pending_.empty())bad("parameter edits are still pending; retry after processing");
     const auto graph=graph_.describe();if(graph.nodes.size()>256 || graph.notes.size()>4096 || graph.mappings.size()>4096)bad("graph exceeds Performance limits");
     const auto inside=sound?nodesOf(*sound):std::set<NodeId>{};
-    auto kept=[&](NodeId n){return !retiring_.count(n) && (!sound || inside.count(n));};
+    auto kept=[&](NodeId n){return !sound || inside.count(n);};
     state_files::Bundle bundle(directory);fs::create_directory(bundle.temporary.path/"nodes");
     std::map<NodeId,std::string> keys{{graphInput,"input"},{graphOutput,"output"}};
     {size_t i=0;for(const auto& n:graph.nodes)if(kept(n.id))keys[n.id]="node-"+std::to_string(++i);}
@@ -144,7 +144,6 @@ Control::PerformanceInfo Session::writeDocument(const std::string& directory,Per
     // RFC 0011: wires with their owners and Mix settings, and the parts; graph routes follow from them.
     if(wires_.size()>Graph::maxAudioConnections || parts_.size()>256)bad("wires or parts exceed Performance limits");
     for(const auto& w:wires_){
-        if(w.retiring)continue; // a chain sounding out after a switch is not part of the Performance
         if(sound){
             const bool from=inside.count(w.from),to=inside.count(w.to);
             if(!from && !to)continue;
@@ -416,7 +415,7 @@ void Session::loadPerformance(const std::string& directory) {
     if(history.size()==historyCapacity)history.pop_front();
     history.push_back({sequence_+1,ChangeKind::Resync,0,0,0,false});
     graph_.publishReplacement(*next,noteHead_.load(std::memory_order_acquire),[&]() noexcept {
-        nodes_.swap(names);observed_.swap(observed);retiring_.clear();parts_.swap(parts);wires_.swap(wires);nextPart_=nextPart;nextWire_=nextWire;padMap_=pads;heldPads_={};scenes_.swap(scenes);sceneParameters_.swap(sceneParameters);scene_=selectedScene;nextScene_=nextScene;macros_.swap(macros);nextMacro_=nextMacro;pending_.clear();commandCount_=0;outputDrops_.clear();staged_=false;
+        nodes_.swap(names);observed_.swap(observed);parts_.swap(parts);wires_.swap(wires);nextPart_=nextPart;nextWire_=nextWire;padMap_=pads;heldPads_={};scenes_.swap(scenes);sceneParameters_.swap(sceneParameters);scene_=selectedScene;nextScene_=nextScene;macros_.swap(macros);nextMacro_=nextMacro;pending_.clear();commandCount_=0;outputDrops_.clear();staged_=false;
         tempo_.store(tempo);clockSource_.store(clock=="internal"?Transport::ClockSource::Internal:Transport::ClockSource::MidiClock);playing_.store(false);
         ++revision_;++sequence_;history_.swap(history);
     });
@@ -547,15 +546,7 @@ std::vector<std::string> Session::loadSoundInto(uint32_t partId,const fs::path& 
         try{
             for(const auto& w:wires_)if(w.owner==WireOwner::User && (old.count(w.from)!=old.count(w.to)))
                 flagged.push_back("the wire from "+(nodes_.count(w.from)?nodes_.at(w.from):std::string("the input"))+" to "+(nodes_.count(w.to)?nodes_.at(w.to):std::string("the output"))+" was removed");
-            // Seamless switching: the old chain keeps what leaves it, and its note wires drain, so its
-            // held notes and tails sound out while new notes play the Sound; sound from outside
-            // into it stops. It goes when idle (retireIdle).
-            std::vector<Wire> outgoing;
-            for(const auto& w:wires_)if(old.count(w.from) || (w.kind==WireKind::Notes && old.count(w.to))){
-                Wire r=w;r.retiring=true;r.owner=WireOwner::User;r.part=0;r.send=0;r.split=0;r.lane=0;r.fader=false;r.id=nextWire_++;
-                outgoing.push_back(std::move(r));}
             std::erase_if(wires_,[&](const Wire& w){return old.count(w.from) || old.count(w.to);});
-            wires_.insert(wires_.end(),outgoing.begin(),outgoing.end());
             auto& p=findPart(partId);p.chain=sound.chain;p.splits=sound.splits;
             for(auto w:users){w.id=nextWire_++;wires_.push_back(std::move(w));}
             buildParts(); // a bus's senders now feed the new chain
@@ -563,7 +554,7 @@ std::vector<std::string> Session::loadSoundInto(uint32_t partId,const fs::path& 
                 for(const auto& m:mixes)if(m.kind==w.kind && m.from==w.from && m.to==w.to && m.fromPort==w.fromPort && m.toPort==w.toPort){w.level=m.level;w.pan=m.pan;w.mute=m.mute;w.solo=m.solo;break;}
             syncWires();
         }catch(...){parts_.swap(partsBefore);wires_.swap(wiresBefore);syncWires();flagged.clear();throw;}
-        for(const auto n:old){retiring_.insert(n);graph_.setRetiring(n,true);}
+        for(const auto n:old)dropNode(n);
         for(const auto& m:mappings)graph_.mapParamTarget(m.source,m.lane,m.target,m.param);
         // Scene values and scene parameters on the old nodes go.
         for(auto& scene:scenes_)std::erase_if(scene.values,[&](const Scene::Value& v){return old.count(v.at.node)!=0;});

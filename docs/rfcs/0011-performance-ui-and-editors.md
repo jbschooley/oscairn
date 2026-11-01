@@ -18,7 +18,7 @@ Checked when built and tested; the sections below say how.
 - [ ] 6. Physical controls: default layers, overrides, learn, banks
 - [ ] 7. Groups, pedal view, move, copy and share
 - [ ] The full scene model (blocks and wires enabled per scene, what each scene saves),
-      seamless on the draining used for switching Sounds
+      seamless on the engine's draining and retiring
 
 ## Problem
 
@@ -428,7 +428,7 @@ What a scene can hold, all of it by default:
 - **Enabled or disabled, per wire and per block:** every wire and every node in the
   Performance can be switched on or off, and a scene records that for all of them. Switching a
   part between two instruments, or a pedal on and off, is a scene enabling one block and
-  disabling another. It is seamless, as switching a part's Sound is
+  disabling another. It is seamless, on the engine's draining and retiring
   ([RFC 0021](0021-sounds-performances-and-library.md#seamless-switching)): a disabled block's
   note connections drain, so notes held on it play on until released, with their releases,
   expressions and pedal, and its tail rings out; new notes go to what the scene enables.

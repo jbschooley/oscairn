@@ -42,10 +42,6 @@ namespace oscairn
         uint32_t split = 0, lane = 0; // part wires: the split lane this wire joins from, or enters in a bus (its Mix), if any
         bool fader = false;          // part wires: where the part plays, carrying its level and mute
         bool connected = true; // false: kept, though it no longer fits (after a plugin replacement)
-        // A wire of a chain being switched away from (seamless switching, RFC 0021): it keeps the
-        // outgoing chain's held notes and tails sounding until the chain is idle, then goes with
-        // it. Note wires drain: no new notes. Not part of the Performance: not saved, shown or undone.
-        bool retiring = false;
         bool operator==(const Wire&) const = default;
     };
 

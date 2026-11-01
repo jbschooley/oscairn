@@ -5,7 +5,7 @@
 // plugins take the next free name, its sends follow its own bus, and the open Performance's
 // scenes keep the arriving parts; one step to undo. Chosen parts bring their buses, their
 // controls and the Performance's controls aimed only at them, and only the scenes chosen; a
-// partial import takes at least one part and one scene.
+// partial import takes at least one part and one scene. A note held through an import plays on.
 //   oscairn-import-test FIXTURE.clap DELAY.clap
 #include "oscairn/session.h"
 #include "AllocationGuard.h"
@@ -153,6 +153,31 @@ int main(int argc, char** argv)
         check(control(c, "Tone") && control(c, "Super") && !control(c, "Other") && c.graphState().scenes.size() == 1, "its controls and those aimed only at it; the scene chosen");
         bool refused = false; try { c.importPerformance(folder.string(), {99}, {listed.scenes[0].id}); } catch(const std::exception&) { refused = true; }
         check(refused && c.parts().size() == 2, "a part that is not there is refused, nothing changed");
+
+        // A note held while importing plays on as if nothing happened (the imported parts had no
+        // note-on, so its release does nothing there).
+        {
+            auto held = [&](bool importing) {
+                Session h(48000, frames);
+                const auto synth = h.add("Held", fixture, "org.kick.test.synth"), echo = h.add("Echo", delay);
+                const auto p = h.addPart("Held"); h.insertIntoPart(p, 0, synth); h.insertIntoPart(p, 1, echo); h.commit();
+                std::vector<float> out; std::array<float, frames> l{}, r{}; float* o[2]{l.data(), r.data()};
+                for(int block = 0; block < 300; ++block)
+                {
+                    if(block == 2) h.note(true, 60, 1);
+                    if(block == 10 && importing) h.importPerformance(folder.string());
+                    if(block == 40) h.note(false, 60, 0);
+                    h.service();
+                    forbidAllocation = true; const bool ok = h.process(nullptr, 0, o, 2, frames); forbidAllocation = false;
+                    check(ok, "render");
+                    out.insert(out.end(), l.begin(), l.end());
+                }
+                return out;
+            };
+            const auto plain = held(false), through = held(true);
+            double energy = 0; for(float v : plain) energy += std::abs(v);
+            check(energy > 0 && plain == through, "a note held through an import plays on unchanged");
+        }
 
         // Chosen parts and chosen scenes: Keys and only Verse, holding only what came.
         Session e(48000, frames);

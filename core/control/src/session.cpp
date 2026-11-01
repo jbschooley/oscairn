@@ -177,46 +177,7 @@ namespace oscairn
 
     Control::GraphState Session::graphState() const
     {
-        if(retiring_.empty()) return {graph_.describe(),nodes_,revision_,staged_,parts_,wires_,scenes_,sceneParameters_,scene_,macros_};
-        // Chains sounding out after a switch are not shown (RFC 0021).
-        auto topology = graph_.describe();
-        auto gone = [&](NodeId n) { return retiring_.count(n) != 0; };
-        std::erase_if(topology.nodes, [&](const auto& n) { return gone(n.id); });
-        std::erase_if(topology.notes, [&](const auto& e) { return gone(e.first) || gone(e.second); });
-        std::erase_if(topology.noteZones, [&](const auto& e) { return gone(e.first.first) || gone(e.first.second); });
-        std::erase_if(topology.mappings, [&](const auto& m) { return gone(m.source) || gone(m.target); });
-        std::erase_if(topology.audioRoutes, [&](const auto& r) { return gone(r.from.node) || gone(r.to.node); });
-        auto names = nodes_; std::erase_if(names, [&](const auto& n) { return gone(n.first); });
-        auto wires = wires_; std::erase_if(wires, [](const Wire& w) { return w.retiring; });
-        return {topology,names,revision_,staged_,parts_,wires,scenes_,sceneParameters_,scene_,macros_};
-    }
-
-    // Each retiring plugin goes once idle: no note sounding through it, and asleep (it said so) or
-    // three seconds of silence for plugins that never say, longer than a gap between echoes (the
-    // bundled Delay's longest is two); or 30 seconds without a note, for a sound that never ends.
-    // Not an edit.
-    void Session::retireIdle()
-    {
-        if(retiring_.empty() || staged_) return;
-        std::vector<NodeId> done;
-        for(const auto n : retiring_) if(graph_.idle(n, uint64_t(sampleRate_ * 3), uint64_t(sampleRate_ * 30))) done.push_back(n);
-        if(done.empty()) return;
-        for(const auto n : done)
-        {
-            std::erase_if(wires_, [&](const Wire& w) { return w.from == n || w.to == n; });
-            dropNode(n);
-            retiring_.erase(n);
-        }
-        compileWires(graph_, wires_);
-        graph_.commit();
-        ++revision_; publish(ChangeKind::Graph);
-    }
-
-    void Session::unretire(NodeId node)
-    {
-        retiring_.erase(node);
-        std::erase_if(wires_, [&](const Wire& w) { return w.retiring && (w.from == node || w.to == node); });
-        graph_.setRetiring(node, false);
+        return {graph_.describe(),nodes_,revision_,staged_,parts_,wires_,scenes_,sceneParameters_,scene_,macros_};
     }
 
     void Session::saveState(NodeId node,const std::string& directory)
@@ -337,7 +298,6 @@ namespace oscairn
     void Session::service()
     {
         graph_.service();
-        retireIdle();
         meter();
         if( !staged_ ) record(); // changes that need no commit (scenes, controls, pads) are steps too
         for( const auto& [node,name] : nodes_ )
