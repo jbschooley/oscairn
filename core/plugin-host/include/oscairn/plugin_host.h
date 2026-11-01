@@ -79,6 +79,8 @@ namespace oscairn
         virtual double parameterValue(clap_id id) const noexcept = 0;
         // Changes when the plugin reports new parameter values while processing; audio thread.
         virtual uint64_t parameterReports() const noexcept { return 0; }
+        // Changes when parameters() does (a rescan of their info); main thread. 0: never.
+        virtual uint64_t parameterRevision() const noexcept { return 0; }
         virtual std::string parameterText(clap_id id, double value) const = 0;
         virtual bool setParameter(clap_id id, double value) noexcept = 0;
         virtual bool parameterGesture(clap_id id, bool begin) noexcept = 0;

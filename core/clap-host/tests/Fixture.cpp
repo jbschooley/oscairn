@@ -55,6 +55,7 @@ struct Plugin {
     // Atomic: CLAP lets the main thread (state save, get_value) read these while
     // the audio thread writes them in process().
     std::atomic<double> gain{.5}, toggle{0}, mode{0};
+    double shownMode = 0; // main thread: the mode the parameters' info last described
     clap_id timerId = CLAP_INVALID_ID;
     uint32_t maxFrames = 0, tailFrames=0;
     clap_event_note_t tailNote{};
@@ -74,7 +75,9 @@ struct Plugin {
         };
         api.destroy = [](const clap_plugin_t* p) { auto& s = get(p); s.main(); if (s.active || s.processing) ++threadErrors; delete &s; };
         api.activate = [](const clap_plugin_t* p, double, uint32_t, uint32_t max) {
-            auto& s = get(p); s.main(); if (s.kind == 6) return false; s.active = true; s.maxFrames = max; return true;
+            auto& s = get(p); s.main(); if (s.kind == 6) return false;
+            if (s.kind == 8 && s.shownMode != 0) ++threadErrors; // its info rescan must not restart it
+            s.active = true; s.maxFrames = max; return true;
         };
         api.deactivate = [](const clap_plugin_t* p) { auto& s = get(p); s.main(); if (s.processing) ++threadErrors; s.active = false; };
         api.start_processing = [](const clap_plugin_t* p) { auto& s = get(p); s.audio(); if (!s.active) ++threadErrors; if (s.kind == 7) return false; s.processing = true; return true; };
@@ -84,6 +87,10 @@ struct Plugin {
         api.get_extension = extension;
         api.on_main_thread = [](const clap_plugin_t* p) {
             auto& s = get(p); s.main(); ++callbackCalls;
+            if (s.kind == 8 && s.shownMode != s.mode.load()) {
+                s.shownMode = s.mode.load();
+                if (auto* params = static_cast<const clap_host_params_t*>(s.host->get_extension(s.host, CLAP_EXT_PARAMS))) params->rescan(s.host, CLAP_PARAM_RESCAN_INFO);
+            }
             if (auto* params = static_cast<const clap_host_params_t*>(s.host->get_extension(s.host, CLAP_EXT_PARAMS))) params->request_flush(s.host);
         };
         // As plugins built on clap-helpers do: only init and destroy until init fills in the rest.
@@ -116,7 +123,7 @@ struct Plugin {
         if (e->type == CLAP_EVENT_PARAM_VALUE) {
             const auto* value = reinterpret_cast<const clap_event_param_value_t*>(e);
             if (value->param_id == 8) toggle = value->value;
-            if (value->param_id == 9) mode = value->value;
+            if (value->param_id == 9) { mode = value->value; if (kind == 8) host->request_callback(host); } // the toggle shows or hides with it
             if (value->param_id == 7) {
                 gain = value->value; if (value->cookie != this) ++threadErrors;
                 if (gain > .9) { host->request_restart(host); host->request_callback(host); }
@@ -190,6 +197,7 @@ struct Plugin {
                     *out = {}; out->id = index == 2 ? 8 : 9; out->cookie = &get(p);
                     std::strcpy(out->name, index == 2 ? "Toggle" : "Mode");
                     out->flags = CLAP_PARAM_IS_STEPPED | CLAP_PARAM_IS_AUTOMATABLE;
+                    if (index == 2 && get(p).shownMode >= 2) out->flags |= CLAP_PARAM_IS_HIDDEN; // modes 2 and up have no toggle
                     if (index == 3) out->flags |= CLAP_PARAM_IS_ENUM;
                     out->min_value = 0; out->max_value = index == 2 ? 1 : 4; return true;
                 }

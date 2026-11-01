@@ -408,25 +408,6 @@ struct Host::Impl {
                                       p.min_value, p.max_value, p.default_value, p.flags}, p.cookie, value});
             }
         }
-        // Hints from oscairn.ui, each kept only where it fits its parameter: a control for
-        // stepped values on a stepped parameter, a switch on two values, a range whose high end
-        // is another parameter. Anything else is drawn as the host decides.
-        if (ui)
-            for (auto& item : items) {
-                oscairn_param_hint_t hint{OSCAIRN_WIDGET_AUTO, 0, CLAP_INVALID_ID, 0};
-                if (!ui->param_hint(plugin, item.info.id, &hint)) continue;
-                auto& p = item.info;
-                const bool stepped = (p.flags & CLAP_PARAM_IS_STEPPED) != 0;
-                const auto values = stepped ? std::llround(p.maximum - p.minimum) + 1 : 0;
-                const bool high = std::any_of(items.begin(), items.end(), [&](const Item& o) { return o.info.id == hint.range_high && o.info.id != p.id; });
-                const bool fits = hint.widget == OSCAIRN_WIDGET_SLIDER || hint.widget == OSCAIRN_WIDGET_KNOB ||
-                                  ((hint.widget == OSCAIRN_WIDGET_BUTTONS || hint.widget == OSCAIRN_WIDGET_LIST) && stepped) ||
-                                  (hint.widget == OSCAIRN_WIDGET_SWITCH && values == 2) || (hint.widget == OSCAIRN_WIDGET_RANGE && high);
-                p.widget = fits ? hint.widget : OSCAIRN_WIDGET_AUTO;
-                p.rangeHigh = p.widget == OSCAIRN_WIDGET_RANGE ? hint.range_high : CLAP_INVALID_ID;
-                p.priority = hint.priority;
-                p.group = hint.group;
-            }
         std::sort(items.begin(), items.end(), [](const Item& a, const Item& b) { return a.info.id < b.info.id; });
         paramInfo.clear(); cookies.clear();
         paramValues = std::make_unique<std::atomic<double>[]>(items.size());
@@ -435,7 +416,52 @@ struct Host::Impl {
             paramInfo.push_back(std::move(items[i].info)); cookies.push_back(items[i].cookie);
             paramValues[i].store(items[i].value);
         }
+        applyHints(paramInfo);
         ++metadataVersion;
+    }
+    // Hints from oscairn.ui, each kept only where it fits its parameter: a control for stepped
+    // values on a stepped parameter, a switch on two values, a range whose high end is another
+    // parameter. Anything else is drawn as the host decides.
+    void applyHints(std::vector<Parameter>& list) {
+        if (!ui) return;
+        for (auto& p : list) {
+            oscairn_param_hint_t hint{OSCAIRN_WIDGET_AUTO, 0, CLAP_INVALID_ID, 0};
+            if (!ui->param_hint(plugin, p.id, &hint)) continue;
+            const bool stepped = (p.flags & CLAP_PARAM_IS_STEPPED) != 0;
+            const auto values = stepped ? std::llround(p.maximum - p.minimum) + 1 : 0;
+            const bool high = std::any_of(list.begin(), list.end(), [&](const Parameter& o) { return o.id == hint.range_high && o.id != p.id; });
+            const bool fits = hint.widget == OSCAIRN_WIDGET_SLIDER || hint.widget == OSCAIRN_WIDGET_KNOB ||
+                              ((hint.widget == OSCAIRN_WIDGET_BUTTONS || hint.widget == OSCAIRN_WIDGET_LIST) && stepped) ||
+                              (hint.widget == OSCAIRN_WIDGET_SWITCH && values == 2) || (hint.widget == OSCAIRN_WIDGET_RANGE && high);
+            p.widget = fits ? hint.widget : OSCAIRN_WIDGET_AUTO;
+            p.rangeHigh = p.widget == OSCAIRN_WIDGET_RANGE ? hint.range_high : CLAP_INVALID_ID;
+            p.priority = hint.priority;
+            p.group = hint.group;
+        }
+    }
+    // CLAP_PARAM_RESCAN_INFO: names, modules, the hidden and periodic flags and the editor hints,
+    // taken in place, without a restart (an effect's mode can show and hide its controls without
+    // a gap in its sound). False when more changed than that rescan may change.
+    bool readParameterInfo() {
+        if (!params || params->count(plugin) != paramInfo.size()) return false;
+        auto next = paramInfo;
+        constexpr uint32_t changeable = CLAP_PARAM_IS_HIDDEN | CLAP_PARAM_IS_PERIODIC;
+        for (uint32_t i = 0; i < next.size(); ++i) {
+            clap_param_info_t p{};
+            if (!params->get_info(plugin, i, &p)) return false;
+            const auto at = paramIndex(p.id);
+            if (at == next.size()) return false;
+            auto& info = next[at];
+            info.name.assign(p.name, strnlen(p.name, CLAP_NAME_SIZE));
+            info.module.assign(p.module, strnlen(p.module, CLAP_PATH_SIZE));
+            info.flags = (info.flags & ~changeable) | (p.flags & changeable);
+            info.widget = OSCAIRN_WIDGET_AUTO; info.priority = 0; info.rangeHigh = CLAP_INVALID_ID; info.group = 0;
+        }
+        applyHints(next);
+        Gate guard(gate);
+        paramInfo = std::move(next);
+        ++metadataVersion;
+        return true;
     }
     void readPorts() {
         std::vector<Port> nextInputs,nextOutputs;
@@ -718,7 +744,8 @@ void Host::service() {
         }
 #endif
         const auto flags = s.rescan.exchange(0);
-        if (s.restart.exchange(false) || (flags & (CLAP_PARAM_RESCAN_ALL | CLAP_PARAM_RESCAN_INFO))) {
+        const bool restart = s.restart.exchange(false);
+        if (restart || (flags & CLAP_PARAM_RESCAN_ALL) || ((flags & CLAP_PARAM_RESCAN_INFO) && !s.readParameterInfo())) {
             Gate guard(s.gate);
             s.deactivate(); s.activate();
         } else if (flags & CLAP_PARAM_RESCAN_VALUES) {

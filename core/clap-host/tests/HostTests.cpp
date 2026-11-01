@@ -63,6 +63,14 @@ int main(int argc, char** argv) {
         check(hint(8).widget == OSCAIRN_WIDGET_SWITCH && hint(8).priority == 2 && hint(8).group == 5 && hint(9).group == 5, "a switch on two values; a group kept");
         check(hint(9).widget == OSCAIRN_WIDGET_AUTO && hint(9).priority == 3, "a switch on five values is the host's choice; its priority stays");
         check(hint(99).widget == OSCAIRN_WIDGET_AUTO, "an unknown widget is the host's choice");
+        // A mode that hides a parameter: an info rescan, taken in place.
+        const auto revision = hinted.metadataRevision();
+        std::array<float, 64> l{}, r{}; float* out[]{l.data(), r.data()};
+        check(hinted.setParameter(9, 3) && render(hinted, out, 64, nullptr, 0), "choose the mode");
+        for (int i = 0; i < 4; ++i) { hinted.service(); std::this_thread::sleep_for(std::chrono::milliseconds(2)); }
+        check((hint(8).flags & CLAP_PARAM_IS_HIDDEN) && hint(8).group == 5 && hinted.metadataRevision() > revision && hinted.parameterValue(9) == 3,
+              "an info rescan hides the toggle and keeps its hint and the values");
+        check(render(hinted, out, 64, nullptr, 0), "and the plugin plays on");
         hinted.unload();
     }
     {

@@ -258,7 +258,7 @@ namespace oscairn
         for(auto it=pending_.begin();it!=pending_.end();)
             if(it->first.first==node){commandCount_-=it->second.size();it=pending_.erase(it);}else ++it;
         std::erase_if(observed_,[&](const auto& entry){return entry.first.first==node;});
-        outputDrops_.erase(node);++revision_;publish(ChangeKind::Graph);
+        outputDrops_.erase(node);parameterRevisions_.erase(node);++revision_;publish(ChangeKind::Graph);
     }
 
     // Removes a node from the graph and the Session's records of it; its wires are the caller's.
@@ -268,7 +268,7 @@ namespace oscairn
         nodes_.erase(node);
         disabled_.erase(node); rungOut_.erase(node); loadedBytes_.erase(node);
         std::erase_if(untouched_, [&](const SceneParameter& at) { return at.node == node; });
-        outputDrops_.erase(node);
+        outputDrops_.erase(node); parameterRevisions_.erase(node);
         for( auto it = pending_.begin(); it != pending_.end(); )
             if( it->first.first == node ) { commandCount_ -= it->second.size(); it = pending_.erase(it); }
             else ++it;
@@ -343,6 +343,12 @@ namespace oscairn
             {
                 outputDrops_[node] = host.outputEventDrops();
                 publish(ChangeKind::Resync,node,0,0,true);
+            }
+            // New parameter info (a mode showing other controls): clients read the graph again.
+            if( auto [seen,added] = parameterRevisions_.try_emplace(node,host.parameterRevision()); !added && seen->second != host.parameterRevision() )
+            {
+                seen->second = host.parameterRevision();
+                ++revision_; publish(ChangeKind::Graph);
             }
             kick::clap::Event event;
             // Bounded even if a plugin continuously emits on the audio thread.

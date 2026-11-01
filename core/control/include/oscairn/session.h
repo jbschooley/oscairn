@@ -419,6 +419,7 @@ namespace oscairn
         std::deque<Change> history_;
         std::map<Address,double> observed_;
         std::map<NodeId,uint64_t> outputDrops_;
+        std::map<NodeId,uint64_t> parameterRevisions_; // each plugin's parameter info as last seen
         Transport transport_; // audio thread after construction
         Transport::ClockSource following_ = Transport::ClockSource::Internal;
         std::atomic<bool> playing_{ false };

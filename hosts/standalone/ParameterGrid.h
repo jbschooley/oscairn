@@ -58,6 +58,7 @@ namespace oscairn::standalone
     std::vector<EditorPage> editorPages(const std::vector<Engine::ParamInfo>& params);
     // Parameters in the plugin's priority order (oscairn.ui): numbered first, then the rest in its order.
     void byPriority(const std::vector<Engine::ParamInfo>& params, std::vector<size_t>& indices);
+    bool sameParameters(const std::vector<Engine::ParamInfo>&, const std::vector<Engine::ParamInfo>&); // as an editor shows them
 
     /// Every parameter of one plugin, as pages of tiles (RFC 0019's generated editor), drawn with
     /// the controls and in the priority order the plugin's oscairn.ui hints ask for: a page per
@@ -122,6 +123,7 @@ namespace oscairn::standalone
         void setNormal(size_t param, double value);      // from 0 to 1, rounded when stepped
         void timerCallback() override;
         std::vector<std::string> tabsFor(size_t page) const; // second-level modules, when a page needs them
+        void load(std::vector<Engine::ParamInfo> params); // the parameters, their pages and the page list
         void refresh();                 // tabs, layout and tiles for the page, tab and search shown
         void build();                   // the tiles shown
         void show(Tile&, double value); // a value into a tile's control and text
@@ -133,6 +135,7 @@ namespace oscairn::standalone
         std::vector<EditorPage> pages_;
         size_t page_ = 0, tab_ = 0;
         bool stale_ = false; // built while the engine was busy: value texts were placeholders
+        unsigned ticks_ = 0;
         std::vector<std::string> tabNames_;
         std::vector<std::unique_ptr<juce::Button>> pageButtons_, tabButtons_;
         juce::Viewport pageList_; juce::Component pageHolder_; // the pages, scrolling when they do not fit

@@ -131,6 +131,15 @@ Everything else is handled for you:
     `Transpose` on page `Arp`, tab `Step 6`), pages in name order; give module paths to choose
     the pages and their order yourself. The host lists parameters in ID order, so number IDs
     in reading order where you can;
+  - a mode or algorithm (a reverb's Hall, Room and Plate) is best a stepped parameter with
+    its names as value texts: up to 4 values are buttons, more a list, and a hint can ask for
+    buttons up to 8. Put it first by priority. When a mode changes which controls matter, hide
+    the others (`CLAP_PARAM_IS_HIDDEN`) or change names or modules, and call
+    `clap_host_params.rescan(CLAP_PARAM_RESCAN_INFO)` from the main thread: the host takes the
+    new info in place, without deactivating the plugin, so the sound does not stop, and the
+    editors redraw their pages within half a second. Adding or removing parameters still needs
+    `CLAP_PARAM_RESCAN_ALL` and a restart. Not yet for a plugin in a worker process, whose
+    editors keep the info it had when loaded;
   - value texts are shown as written, except a bare number with more than three decimals,
     which is shortened (`0.0100000` shows as `0.01`), so write units and names where they help;
   - a search box finds parameters on any page by name or module, so keep names specific;

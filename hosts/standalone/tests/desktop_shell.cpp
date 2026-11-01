@@ -875,6 +875,30 @@ int main(int argc, char** argv)
                     }
                 }
             }
+            // A mode that changes the controls: the test fixture hides its Toggle in modes 2 and up
+            // and rescans its parameters' info; the Desktop's pages and Compact follow.
+            if(const char* fixture = std::getenv("OSCAIRN_TEST_FIXTURE"))
+            {
+                NodeId node = 0;
+                engine.edit([&](Control& c) { standalone::insertPlugin(c, standalone::addPart(c, "Modes", false), 0, {"KICK steps", fixture, "org.kick.test.stepped"}); });
+                auto find = [&] { for(const auto& [id, n] : engine.graph().names) if(n == "KICK steps") node = id; return node != 0; };
+                for(int i = 0; i < 500 && !find(); ++i) juce::MessageManager::getInstance()->runDispatchLoopUntil(10);
+                check(node != 0, "the fixture with modes is in the graph");
+                standalone::ParameterGrid grid(engine, node, "KICK steps");
+                grid.setSize(1180, 820);
+                standalone::CompactEditor compact(engine);
+                compact.edit(node, "KICK steps");
+                auto has = [](const std::vector<std::string>& names) { return std::find(names.begin(), names.end(), "Toggle") != names.end(); };
+                check(has(grid.namesShown()) && has(compact.encoderNames()), "the Toggle shows in mode 0");
+                auto mode = [&](double m, bool shown) {
+                    engine.setParam("KICK steps", 9, m);
+                    for(int i = 0; i < 300 && (has(grid.namesShown()) != shown || has(compact.encoderNames()) != shown); ++i) juce::MessageManager::getInstance()->runDispatchLoopUntil(10);
+                    return has(grid.namesShown()) == shown && has(compact.encoderNames()) == shown;
+                };
+                check(mode(3, false), "mode 3 hides the Toggle on the Desktop and on Compact");
+                check(mode(0, true), "and mode 0 shows it again");
+            }
+            else std::puts("skipped: a mode that changes the controls (set OSCAIRN_TEST_FIXTURE to the test fixture)");
             // The preference: Automatic until one is saved, then what was saved.
             const auto folder = juce::File::createTempFile("oscairn-input");
             check(standalone::readInputMode(folder) == standalone::InputMode::Automatic, "no saved preference reads as Automatic");

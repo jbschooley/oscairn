@@ -336,6 +336,17 @@ names' modules on a made-up plugin and, for each gate plugin, every page and tab
 Desktop (1,180 × 820) and on a Panel's screen (1,024 × 600) with no controls overlapping, and
 that a slider edits it (Odin 2: 26 pages; 87 of its pages' top parameters turned on Compact).
 
+**Pages that change with a mode (2026-11-01):** a plugin whose mode hides or renames
+controls calls CLAP's info rescan. The CLAP host now takes such a rescan in place (names,
+modules, the hidden and periodic flags, and the `oscairn.ui` hints), without deactivating the
+plugin, where it used to restart it; the session tells clients the graph changed when a
+plugin's parameter info does, so remote editors read it again; and the parameter pages and
+Compact compare the info twice a second and rebuild, keeping the page shown where it still
+exists. `kick-clap-host` checks that the test fixture's mode hides its Toggle by an info
+rescan without a restart, and `desktop-shell` that the Desktop's pages and Compact drop the
+Toggle in mode 3 and show it again in mode 0. Plugins in worker processes do not pass such
+rescans on yet.
+
 Not yet: the Mixer and Routing views' layout is still in `PartsView`, and the device's chain
 row, tabs and header are the older ones; Compact's real renderer waits for a device (by
 design).

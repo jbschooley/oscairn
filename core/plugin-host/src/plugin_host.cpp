@@ -106,6 +106,7 @@ namespace oscairn
             uint32_t noteOutputPorts() const noexcept override { return host.noteOutputPorts(); }
             double parameterValue(clap_id id) const noexcept override { return host.parameterValue(id); }
             uint64_t parameterReports() const noexcept override { return host.parameterReports(); }
+            uint64_t parameterRevision() const noexcept override { return host.metadataRevision(); }
             std::string parameterText(clap_id id, double value) const override { return host.parameterText(id,value); }
             bool setParameter(clap_id id, double value) noexcept override { return host.setParameter(id,value); }
             bool parameterGesture(clap_id id, bool begin) noexcept override { return host.parameterGesture(id,begin); }

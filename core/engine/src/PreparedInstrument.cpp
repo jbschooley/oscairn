@@ -201,6 +201,7 @@ public:
     void service() override {collect();for(const auto& s:desired_.instances)if(s)s->host->service();}
     const kick::clap::Descriptor& descriptor() const noexcept override {return base().descriptor();}
     const std::vector<Parameter>& parameters() const noexcept override {return base().parameters();}
+    uint64_t parameterRevision() const noexcept override {return base().parameterRevision();}
     const std::vector<Port>& inputPorts() const noexcept override {return base().inputPorts();}
     const std::vector<Port>& outputPorts() const noexcept override {return base().outputPorts();}
     std::vector<uint32_t> mainAudioPorts(bool input) const override {return base().mainAudioPorts(input);}

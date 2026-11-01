@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cctype>
 #include <map>
+#include <tuple>
 
 namespace oscairn::standalone
 {
@@ -537,18 +538,9 @@ namespace oscairn::standalone
 
     ParameterGrid::ParameterGrid(Engine& engine, NodeId node, std::string name) : engine_(engine), node_(node), name_(std::move(name)), content_(std::make_unique<Content>(*this))
     {
-        try { params_ = editorParameters(engine_.parameters(node_)); } catch(const std::exception&) {}
-        pages_ = editorPages(params_);
-        if(pages_.size() > 1)
-            for(size_t i = 0; i < pages_.size(); ++i)
-            {
-                auto b = std::make_unique<PageButton>(text(pages_[i].name), false);
-                b->onClick = [this, i] { showPage(i); };
-                pageHolder_.addAndMakeVisible(*b); pageButtons_.push_back(std::move(b));
-            }
         pageList_.setViewedComponent(&pageHolder_, false);
         pageList_.setScrollBarsShown(true, false);
-        if(!pageButtons_.empty()) addAndMakeVisible(pageList_);
+        addChildComponent(pageList_);
         viewport_.setViewedComponent(content_.get(), false);
         viewport_.setScrollBarsShown(true, false);
         addAndMakeVisible(viewport_);
@@ -557,9 +549,36 @@ namespace oscairn::standalone
         search_.setTooltip("Find a parameter on any page by its name or module");
         search_.onTextChange = [this] { tab_ = 0; viewport_.setViewPosition(0, 0); refresh(); };
         search_.onEscapeKey = [this] { search_.clear(); };
-        if(params_.size() > tabbedAbove) addAndMakeVisible(search_);
+        addChildComponent(search_);
+        try { load(editorParameters(engine_.parameters(node_))); } catch(const std::exception&) {}
         content_->addMouseListener(this, true); // taps anywhere in a tile select its row
         startTimer(60);
+    }
+
+    void ParameterGrid::load(std::vector<Engine::ParamInfo> params)
+    {
+        // The page shown stays where it still exists.
+        const auto shown = pageName(page_);
+        params_ = std::move(params);
+        pages_ = editorPages(params_);
+        page_ = 0;
+        for(size_t i = 0; i < pages_.size(); ++i) if(pages_[i].name == shown) page_ = i;
+        pageButtons_.clear();
+        if(pages_.size() > 1)
+            for(size_t i = 0; i < pages_.size(); ++i)
+            {
+                auto b = std::make_unique<PageButton>(text(pages_[i].name), false);
+                b->onClick = [this, i] { showPage(i); };
+                pageHolder_.addAndMakeVisible(*b); pageButtons_.push_back(std::move(b));
+            }
+        pageList_.setVisible(!pageButtons_.empty());
+        search_.setVisible(params_.size() > tabbedAbove);
+    }
+
+    bool sameParameters(const std::vector<Engine::ParamInfo>& a, const std::vector<Engine::ParamInfo>& b)
+    {
+        auto key = [](const Engine::ParamInfo& p) { return std::tie(p.id, p.name, p.minimum, p.maximum, p.defaultValue, p.stepped, p.flags, p.module, p.widget, p.priority, p.rangeHigh, p.group); };
+        return std::equal(a.begin(), a.end(), b.begin(), b.end(), [&](const auto& x, const auto& y) { return key(x) == key(y); });
     }
 
     ParameterGrid::~ParameterGrid() { stopTimer(); engine_.setRow({}); }
@@ -995,6 +1014,17 @@ namespace oscairn::standalone
     void ParameterGrid::timerCallback()
     {
         if(stale_ && engine_.controlReady()) { refresh(); return; }
+        // A mode can show other controls: the parameters' info is read again twice a second.
+        if(++ticks_ % 8 == 0)
+            try
+            {
+                if(auto now = editorParameters(engine_.parameters(node_)); !sameParameters(now, params_))
+                {
+                    if(tab_ >= tabNames_.size()) tab_ = 0;
+                    load(std::move(now)); refresh(); return;
+                }
+            }
+            catch(const std::exception&) {}
         if(!panels_.empty()) content_->repaint(); // envelopes follow their parameters too
         if(!strip_.isEmpty()) repaint(strip_);
         // Values change from automation, scenes, controls and other clients: follow them.

@@ -134,6 +134,21 @@ namespace oscairn::standalone
             const bool same = now.size() == plugins_.size() && std::equal(now.begin(), now.end(), plugins_.begin(), [](const Plugin& a, const Plugin& b) { return a.node == b.node && a.name == b.name; });
             if(!same) { plugins_ = std::move(now); chosen_ = std::min(chosen_, plugins_.empty() ? 0 : plugins_.size() - 1); }
         }
+        else if(++ticks_ % 5 == 0)
+            try
+            {
+                // A mode can show other controls: the same page again, or the pages when it is gone.
+                if(auto now = editorParameters(engine_.parameters(plugin_.node)); !sameParameters(now, params_))
+                {
+                    const auto shown = level_ == Level::Parameters ? pages_[page_].name : std::string();
+                    const auto first = first_;
+                    params_ = std::move(now); pages_ = editorPages(params_);
+                    level_ = Level::Pages; chosen_ = 0;
+                    for(size_t i = 0; i < pages_.size(); ++i) if(pages_[i].name == shown) { open(i); first_ = first < shown_.size() ? first : 0; }
+                    if(level_ == Level::Pages && pages_.size() == 1) open(0);
+                }
+            }
+            catch(const std::exception&) {}
         repaint(); // values follow the engine
     }
 
