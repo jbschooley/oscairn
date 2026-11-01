@@ -131,6 +131,7 @@ namespace oscairn
         Transport::ClockSource clockSource() const override;
         TransportState transportState() const override;
         bool note(bool on,int key,double velocity,int channel=0) override;
+        void allNotesOff() override;
         PadMap padMap() const override;
         void setPadMap(const PadMap& map) override;
         bool pad(uint32_t pad,bool on,double velocity,int channel=0) override;

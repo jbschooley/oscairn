@@ -165,6 +165,7 @@ request members.
 | `pads.play` | `pad` (0..15, from the bottom-left), `on`, optional `velocity` and `channel` (the player's) | `{"accepted":true}` |
 | `pads.pressure` | `pad`, `pressure` (0..1) | `{"accepted":true}` |
 | `notes.send` | `on` (boolean), `key` (0..127), optional `velocity` (0..1), optional `channel` (0..15) | `{"accepted":true}` |
+| `notes.panic` | `{}` | `{"accepted":true}`: all notes off. Every note played from the keys, MIDI inputs and `notes.send` is released at the next block |
 
 `graph.add` accepts a CLAP module or, in an LV2-enabled engine, a `.lv2` bundle directory.
 For LV2, `pluginId` is the plugin URI and is required when the bundle has multiple plugins.

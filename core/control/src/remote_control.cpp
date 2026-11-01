@@ -477,6 +477,7 @@ namespace oscairn
     }
     bool RemoteControl::parameterGesture(NodeId n,uint32_t p,bool begin)
     {try{impl_->call("params.gesture",'{'+address(n,p)+",\"begin\":"+(begin?"true":"false")+'}');return true;}catch(const RpcError& e){if(e.code==-32005)return false;throw;}}
+    void RemoteControl::allNotesOff() { impl_->call("notes.panic"); }
     bool RemoteControl::note(bool on,int key,double velocity,int channel)
     {try{impl_->call("notes.send",std::string("{\"on\":")+(on?"true":"false")+",\"key\":"+std::to_string(key)+",\"velocity\":"+encode(velocity)+",\"channel\":"+std::to_string(channel)+'}');return true;}catch(const RpcError& e){if(e.code==-32005)return false;throw;}}
     PadMap RemoteControl::padMap() const

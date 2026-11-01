@@ -346,6 +346,9 @@ namespace oscairn
         /// False means overflow; the session discards queued UI notes and broadcasts
         /// release on the next block. This may release other voices on shared destinations.
         virtual bool note( bool on, int key, double velocity, int channel = 0 ) = 0;
+        // All notes off (RFC 0030): every note played from the keys, MIDI inputs and the UI is
+        // released at the next block. Any thread; never waits.
+        virtual void allNotesOff() = 0;
 
         // Pads (pads.h): the Performance's pad map, and playing a pad through it. A pad press
         // plays its assigned note, on its channel or else `channel`; its release ends the note

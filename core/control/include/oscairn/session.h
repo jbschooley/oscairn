@@ -177,6 +177,7 @@ namespace oscairn
         Transport::ClockSource clockSource() const override { return clockSource_.load(); }
         TransportState transportState() const override;
         bool note( bool on, int key, double velocity, int channel = 0 ) override;
+        void allNotesOff() override { panic_.store( true, std::memory_order_release ); } // the queue overflow's emergency release
         PadMap padMap() const override { return padMap_; }
         void setPadMap( const PadMap& map ) override;
         bool pad( uint32_t pad, bool on, double velocity, int channel = 0 ) override;

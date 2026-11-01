@@ -749,6 +749,22 @@ namespace
         check(s.leaving() == 0, "A goes after three seconds of silence");
     }
 
+    // All notes off (RFC 0030): a held note stops at the next block, and the next note plays.
+    void allNotesOff(const char* fixture)
+    {
+        Session s(48000, frames);
+        const auto synth = s.add("synth", fixture, "org.kick.test.synth"); s.setParameter(synth, 7, .5);
+        const auto part = s.addPart("Part"); s.insertIntoPart(part, 0, synth); s.commit();
+        Audio x;
+        s.note(true, 60, 1); x.run(s); x.run(s);
+        check(near(x.l[0], .5), "a held note plays: " + std::to_string(x.l[0]));
+        s.allNotesOff(); x.run(s); x.run(s);
+        check(near(x.l[0], 0), "all notes off: silent: " + std::to_string(x.l[0]));
+        s.note(true, 62, 1); x.run(s); x.run(s);
+        check(near(x.l[0], .5), "and the next note plays: " + std::to_string(x.l[0]));
+        s.note(false, 62, 0); x.run(s);
+    }
+
     // Audition (RFC 0021): a Sound in a part's place and a Performance in this one's, each put
     // back as it was (the same plugins: a note held through it still sounds) or kept.
     void audition(const char* fixture, const fs::path& root)
@@ -1215,6 +1231,7 @@ int main(int argc, char** argv)
         onOff(argv[1], temp.path);
         performanceChange(argv[1], temp.path);
         audition(argv[1], temp.path);
+        allNotesOff(argv[1]);
         sceneTransitions(argv[1], temp.path);
         budgets(argv[1], temp.path);
         controls(argv[1], temp.path);
