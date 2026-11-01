@@ -175,7 +175,8 @@ namespace oscairn
         std::unique_ptr<Plan> plan(next.compile());
         removedHosts_.reserve(removedHosts_.size()+nodes_.size());
         onPublish(); // caller supplies a nonthrowing metadata/transport commit
-        for(const auto& [id,node]:nodes_)removedHosts_.push_back(node.host);
+        // A host carried over stays in use; listing it here too would keep it alive forever (collect() frees at one owner).
+        for(const auto& [id,node]:nodes_)if(const auto kept=next.nodes_.find(id);kept==next.nodes_.end() || kept->second.host!=node.host)removedHosts_.push_back(node.host);
         nodes_.swap(next.nodes_);audioRoutes_.swap(next.audioRoutes_);noteEdges_.swap(next.noteEdges_);noteZones_.swap(next.noteZones_);draining_.swap(next.draining_);paramTargets_.swap(next.paramTargets_);
         nextId_=next.nextId_;replacementSerial_=next.replacementSerial_;
         delete pending_.exchange(plan.release(),std::memory_order_acq_rel);
