@@ -17,13 +17,13 @@ Checked when built and tested; the sections below say how.
 - [ ] 5. Editors: knob pages for every plugin (started through [RFC 0019](0019-adaptive-ui.md)'s generated editors), the Modular grid
 - [ ] 6. Physical controls: default layers, overrides, learn, banks
 - [ ] 7. Groups, pedal view, move, copy and share
-- [ ] The full scene model (blocks and wires enabled per scene, what each scene saves),
+- [x] The full scene model (blocks and wires enabled per scene, what each scene saves),
       seamless on the engine's draining and retiring ([status](#scenes-status))
   - [x] plugins and wires switched off and on, seamlessly
   - [x] scenes record all of it, each with its scope
   - [x] the desktop's controls for it
   - [x] transitions: a glide per scene along a curve, launching on the beat or bar, and a control morphing between two scenes ([status](#scenes-status))
-  - [ ] the mappings' scenes laid out as one table
+  - [x] the mappings' scenes laid out as one table ([status](#scenes-status))
 
 ## Problem
 
@@ -519,7 +519,10 @@ control's **+ Target**. `control-parts` checks a linear glide halfway and at its
 fade in, a mute fading out, a fader stopping a glide, a launch waiting for the beat, a morph
 before and after halfway, and the round-trip; removing a scene removes morphs to it.
 
-Not yet: the mappings' scenes laid out as one table across all mappings.
+**The mappings by scene** implemented 2026-11-01: **By scene** on the Controls page shows every
+control's mappings as one table, a row per mapping and a column per scene, ticked where the
+mapping works (its `offIn`, the per-mapping table this RFC asks for advanced users). Checked by
+rendering, not by clicking through.
 
 
 ## Step 3 status

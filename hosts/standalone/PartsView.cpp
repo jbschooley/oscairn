@@ -450,62 +450,103 @@ namespace oscairn::standalone
         {
             back_.setBounds(top.removeFromLeft(110).reduced(2));
             addControl_.setBounds(top.removeFromRight(120).reduced(2));
+            // Every mapping against every scene, in one table.
+            if(!scenes_.empty())
+                toggle(top.removeFromRight(130).reduced(4, 8), "By scene", [this] { return byScene_; }, [this](bool on) { byScene_ = on; shape_.clear(); refresh(); });
             title_.setBounds(top.reduced(8, 0));
             auto area = getLocalBounds().reduced(16).withTrimmedTop(header).withTrimmedBottom(28);
-            if(macros_.empty())
+            if(byScene_ && !scenes_.empty() && !macros_.empty())
+            {
+                // A row per mapping (control and target), a column per scene: ticked where it works.
+                const int nameWidth = std::min(320, area.getWidth() / 3);
+                const int column = std::max(60, std::min(140, (area.getWidth() - nameWidth) / int(scenes_.size())));
+                auto heading = area.removeFromTop(30);
+                heading.removeFromLeft(nameWidth);
+                for(const auto& s : scenes_)
+                {
+                    auto l = std::make_unique<juce::Label>(juce::String(), text(s.name));
+                    l->setJustificationType(juce::Justification::centred); l->setFont(juce::FontOptions(13.0f * themeData().fontScale, juce::Font::bold));
+                    l->setBounds(heading.removeFromLeft(column)); addAndMakeVisible(*l); controls_.push_back(std::move(l));
+                }
+                for(const auto& m : macros_)
+                    for(size_t i = 0; i < m.targets.size(); ++i)
+                    {
+                        if(area.getHeight() < 30) break;
+                        auto r = area.removeFromTop(32);
+                        auto l = std::make_unique<juce::Label>(juce::String(), text(m.name + "  ·  " + describe(m.targets[i])));
+                        l->setBounds(r.removeFromLeft(nameWidth)); addAndMakeVisible(*l); controls_.push_back(std::move(l));
+                        for(const auto& s : scenes_)
+                        {
+                            const auto cell = r.removeFromLeft(column);
+                            toggle(cell.withSizeKeepingCentre(std::min(cell.getWidth(), 40), 24), {},
+                                   [this, id = m.id, i, scene = s.id] {
+                                       for(const auto& x : macros_) if(x.id == id && i < x.targets.size()) return std::find(x.targets[i].offIn.begin(), x.targets[i].offIn.end(), scene) == x.targets[i].offIn.end();
+                                       return true; },
+                                   [this, id = m.id, i, scene = s.id](bool on) {
+                                       setTargets(id, [i, scene, on](auto& ts) {
+                                           if(i >= ts.size()) return;
+                                           auto& off = ts[i].offIn;
+                                           std::erase(off, scene);
+                                           if(!on) off.push_back(scene);
+                                       }); });
+                        }
+                    }
+            }
+            else if(macros_.empty())
             {
                 auto l = std::make_unique<juce::Label>(juce::String(), "No controls yet. A control is a knob that drives any number of parameters, part levels or other controls, each with its own range and curve. Bind a panel knob to it with control:NAME.");
                 l->setJustificationType(juce::Justification::centred); l->setBounds(area.withHeight(80)); addAndMakeVisible(*l); controls_.push_back(std::move(l));
             }
-            for(const auto& m : macros_)
-            {
-                const auto id = m.id;
-                auto row = area.removeFromTop(40);
-                auto name = std::make_unique<juce::Label>(juce::String(), text(m.name));
-                name->setFont(juce::FontOptions(16.0f * themeData().fontScale, juce::Font::bold));
-                name->setEditable(false, true);
-                name->onTextChange = [this, id, raw = name.get()] { const auto n = raw->getText().toStdString(); edit([id, n](Control& c) { c.setMacroName(id, n); }); };
-                name->setTooltip("Double-click to rename");
-                name->setBounds(row.removeFromLeft(170)); addAndMakeVisible(*name); controls_.push_back(std::move(name));
-                button(row.removeFromRight(90).reduced(2), "Remove", [this, id] { edit([id](Control& c) { c.removeMacro(id); }); });
-                auto* add = button(row.removeFromRight(110).reduced(2), "+ Target", {});
-                add->onClick = [this, id, add] { targetMenu(id, *add); };
-                updates.push_back(slider(row.reduced(4, 10), 0, 1, [this, id] { for(const auto& x : macros_) if(x.id == id) return x.value; return 0.0; },
-                                         [this, id](double v) { edit([id, v](Control& c) { c.setMacro(id, v); }); }).second);
-                for(size_t i = 0; i < m.targets.size(); ++i)
+            if(!byScene_ || scenes_.empty())
+                for(const auto& m : macros_)
                 {
-                    const auto& t = m.targets[i];
-                    auto r = area.removeFromTop(34).withTrimmedLeft(24);
-                    auto l = std::make_unique<juce::Label>(juce::String(), text(describe(t)));
-                    l->setBounds(r.removeFromLeft(220)); addAndMakeVisible(*l); controls_.push_back(std::move(l));
-                    button(r.removeFromRight(80).reduced(2), "Remove", [this, id, i] { setTargets(id, [i](auto& ts) { ts.erase(ts.begin() + std::ptrdiff_t(i)); }); });
-                    if(!scenes_.empty())
+                    const auto id = m.id;
+                    auto row = area.removeFromTop(40);
+                    auto name = std::make_unique<juce::Label>(juce::String(), text(m.name));
+                    name->setFont(juce::FontOptions(16.0f * themeData().fontScale, juce::Font::bold));
+                    name->setEditable(false, true);
+                    name->onTextChange = [this, id, raw = name.get()] { const auto n = raw->getText().toStdString(); edit([id, n](Control& c) { c.setMacroName(id, n); }); };
+                    name->setTooltip("Double-click to rename");
+                    name->setBounds(row.removeFromLeft(170)); addAndMakeVisible(*name); controls_.push_back(std::move(name));
+                    button(row.removeFromRight(90).reduced(2), "Remove", [this, id] { edit([id](Control& c) { c.removeMacro(id); }); });
+                    auto* add = button(row.removeFromRight(110).reduced(2), "+ Target", {});
+                    add->onClick = [this, id, add] { targetMenu(id, *add); };
+                    updates.push_back(slider(row.reduced(4, 10), 0, 1, [this, id] { for(const auto& x : macros_) if(x.id == id) return x.value; return 0.0; },
+                                             [this, id](double v) { edit([id, v](Control& c) { c.setMacro(id, v); }); }).second);
+                    for(size_t i = 0; i < m.targets.size(); ++i)
                     {
-                        auto* in = button(r.removeFromRight(90).reduced(2), t.offIn.empty() ? "Scenes: all" : "Scenes...", {});
-                        in->setTooltip("The scenes this mapping works in");
-                        in->onClick = [this, id, i, in] { mappingScenesMenu(id, i, *in); };
+                        const auto& t = m.targets[i];
+                        auto r = area.removeFromTop(34).withTrimmedLeft(24);
+                        auto l = std::make_unique<juce::Label>(juce::String(), text(describe(t)));
+                        l->setBounds(r.removeFromLeft(220)); addAndMakeVisible(*l); controls_.push_back(std::move(l));
+                        button(r.removeFromRight(80).reduced(2), "Remove", [this, id, i] { setTargets(id, [i](auto& ts) { ts.erase(ts.begin() + std::ptrdiff_t(i)); }); });
+                        if(!scenes_.empty())
+                        {
+                            auto* in = button(r.removeFromRight(90).reduced(2), t.offIn.empty() ? "Scenes: all" : "Scenes...", {});
+                            in->setTooltip("The scenes this mapping works in");
+                            in->onClick = [this, id, i, in] { mappingScenesMenu(id, i, *in); };
+                        }
+                        auto relative = std::make_unique<juce::ToggleButton>("Relative");
+                        relative->setToggleState(t.relative, juce::dontSendNotification);
+                        relative->setTooltip("Move the value around where it was, instead of setting it");
+                        relative->onClick = [this, id, i, raw = relative.get()] { const bool on = raw->getToggleState(); setTargets(id, [i, on](auto& ts) { ts[i].relative = on; }); };
+                        relative->setBounds(r.removeFromRight(100)); addAndMakeVisible(*relative); controls_.push_back(std::move(relative));
+                        auto curve = std::make_unique<juce::ComboBox>("Curve");
+                        for(const auto& [n, c] : {std::pair{"Linear", 1}, {"Exponential", 2}, {"Logarithmic", 3}, {"S-curve", 4}}) curve->addItem(n, c);
+                        curve->setSelectedId(int(t.curve) + 1, juce::dontSendNotification);
+                        curve->onChange = [this, id, i, raw = curve.get()] { const auto c = MacroTarget::Curve(raw->getSelectedId() - 1); setTargets(id, [i, c](auto& ts) { ts[i].curve = c; }); };
+                        curve->setBounds(r.removeFromRight(130).reduced(2)); addAndMakeVisible(*curve); controls_.push_back(std::move(curve));
+                        const int half = r.getWidth() / 2;
+                        auto rangeEnd = [this, id, i](bool end) {
+                            return [this, id, i, end] { for(const auto& x : macros_) if(x.id == id && i < x.targets.size()) return end ? x.targets[i].end : x.targets[i].start; return 0.0; };
+                        };
+                        auto setEnd = [this, id, i](bool end) { return [this, id, i, end](double v) { setTargets(id, [i, end, v](auto& ts) { (end ? ts[i].end : ts[i].start) = v; }); }; };
+                        auto [from, u1] = slider(r.removeFromLeft(half).reduced(4, 8), 0, 1, rangeEnd(false), setEnd(false)); from->setTooltip("Where the target is when the control is at 0");
+                        auto [to, u2] = slider(r.reduced(4, 8), 0, 1, rangeEnd(true), setEnd(true)); to->setTooltip("Where the target is when the control is at 100% (lower than the start reverses it)");
+                        updates.push_back(u1); updates.push_back(u2);
                     }
-                    auto relative = std::make_unique<juce::ToggleButton>("Relative");
-                    relative->setToggleState(t.relative, juce::dontSendNotification);
-                    relative->setTooltip("Move the value around where it was, instead of setting it");
-                    relative->onClick = [this, id, i, raw = relative.get()] { const bool on = raw->getToggleState(); setTargets(id, [i, on](auto& ts) { ts[i].relative = on; }); };
-                    relative->setBounds(r.removeFromRight(100)); addAndMakeVisible(*relative); controls_.push_back(std::move(relative));
-                    auto curve = std::make_unique<juce::ComboBox>("Curve");
-                    for(const auto& [n, c] : {std::pair{"Linear", 1}, {"Exponential", 2}, {"Logarithmic", 3}, {"S-curve", 4}}) curve->addItem(n, c);
-                    curve->setSelectedId(int(t.curve) + 1, juce::dontSendNotification);
-                    curve->onChange = [this, id, i, raw = curve.get()] { const auto c = MacroTarget::Curve(raw->getSelectedId() - 1); setTargets(id, [i, c](auto& ts) { ts[i].curve = c; }); };
-                    curve->setBounds(r.removeFromRight(130).reduced(2)); addAndMakeVisible(*curve); controls_.push_back(std::move(curve));
-                    const int half = r.getWidth() / 2;
-                    auto rangeEnd = [this, id, i](bool end) {
-                        return [this, id, i, end] { for(const auto& x : macros_) if(x.id == id && i < x.targets.size()) return end ? x.targets[i].end : x.targets[i].start; return 0.0; };
-                    };
-                    auto setEnd = [this, id, i](bool end) { return [this, id, i, end](double v) { setTargets(id, [i, end, v](auto& ts) { (end ? ts[i].end : ts[i].start) = v; }); }; };
-                    auto [from, u1] = slider(r.removeFromLeft(half).reduced(4, 8), 0, 1, rangeEnd(false), setEnd(false)); from->setTooltip("Where the target is when the control is at 0");
-                    auto [to, u2] = slider(r.reduced(4, 8), 0, 1, rangeEnd(true), setEnd(true)); to->setTooltip("Where the target is when the control is at 100% (lower than the start reverses it)");
-                    updates.push_back(u1); updates.push_back(u2);
+                    area.removeFromTop(10);
                 }
-                area.removeFromTop(10);
-            }
         }
         else if(const auto* p = part(page_))
         {

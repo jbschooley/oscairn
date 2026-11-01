@@ -94,6 +94,7 @@ namespace oscairn::standalone
         NodeId routed_ = 0; uint32_t routedPort_ = 0, routedPart_ = 0;
         bool collapsedParts_ = true;
         std::set<uint32_t> expandedParts_;
+        bool byScene_ = false; // the Controls page as one table of mappings by scene
         bool wireMeters_ = false; std::map<uint32_t, double> wirePeaks_; // wires colored by level, read at each tick while on
         void connectMenu(WireKind kind, juce::Component& at);
         void addLooseMenu(juce::Component& at);
