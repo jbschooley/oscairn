@@ -35,4 +35,5 @@ namespace oscairn::standalone
     // The actions Oscairn's own apps offer.
     inline constexpr const char* pickPerformance = "oscairn.pick.performance"; // gives back a library ID
     inline constexpr const char* sendPerformance = "oscairn.send.performance"; // takes one; gives back what was done
+    inline constexpr const char* pickSound = "oscairn.pick.sound";             // gives back a library ID
 }

@@ -5,7 +5,9 @@ block (id, name, description, tags; no provenance or control owners yet), and a 
 Performances in the user's folder with the index as a cache, the user file (favourites and
 recents), query, rescan and save and load by ID (`library.*`, `performance.info`/`setInfo`,
 see [control-protocol.md](../control-protocol.md#library)). The desktop app has a Library
-app (search, tags, favourites, recent; a click opens a Performance) and a Setlist app
+app (Performances and Sounds; search, tags, favourites, recent; a click opens a
+Performance, New part adds a Sound), a Part menu (Load Sound into Part through the Library's
+pick, Save Part as Sound) and a Setlist app
 ([setlist-format.md](../setlist-format.md)), and Performance > Save and Save As New. Step
 1's Sound documents are built (`parts.saveSound`, `parts.loadSound`, `parts.fromSound`, and
 control owners), with these differences from the text below: a Sound holds a `part` object

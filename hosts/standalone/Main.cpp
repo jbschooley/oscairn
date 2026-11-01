@@ -108,7 +108,8 @@ namespace oscairn::standalone
             engine_.openPads=[this]{showPads();};
             engine_.openParts=[this]{showParts();};
             // What the built-in apps offer each other (RFC 0022): the Library picks, the Setlist takes.
-            actions_.offer(pickPerformance,"Library",[this](const std::string&,Actions::Answer answer){showPicker(std::move(answer));});
+            actions_.offer(pickPerformance,"Library",[this](const std::string&,Actions::Answer answer){showPicker(std::move(answer),"performance");});
+            actions_.offer(pickSound,"Library",[this](const std::string&,Actions::Answer answer){showPicker(std::move(answer),"sound");});
             actions_.offer(sendPerformance,"Setlist",[this](const std::string& id,Actions::Answer answer){answer(setlist().add(id).toStdString());});
             show( first );
             setVisible( true );
@@ -180,7 +181,7 @@ namespace oscairn::standalone
         const Layout& layout() const { return layout_; }
         DesktopShell* shell() const { return dynamic_cast<DesktopShell*>( getContentComponent() ); }
 
-        juce::StringArray getMenuBarNames() override { return { "Performance", "Edit", "View", "Plugins", "Appearance", "Apps" }; }
+        juce::StringArray getMenuBarNames() override { return { "Performance", "Edit", "View", "Plugins", "Appearance", "Apps", "Part" }; }
 
         juce::PopupMenu getMenuForIndex( int index, const juce::String& ) override
         {
@@ -194,6 +195,9 @@ namespace oscairn::standalone
                 menu.addItem(6001,h.redo.empty()?juce::String("Redo"):"Redo "+juce::String::fromUTF8(h.redo.c_str()),!h.redo.empty());return menu;}
             if(index==3){menu.addItem(2000,"Browse plugins and edit parameters...");return menu;}
             // Apps that play the sounds, each in its own window, apart from the sound editor.
+            // The selected part's Sound (RFC 0021): from the library, or saved to it.
+            if(index==6){const bool part=shell() && shell()->selectedPart() && engine_.connected() && !engine_.soundBusy();
+                menu.addItem(8100,"Load Sound into Part...",part && actions_.offered(pickSound));menu.addItem(8101,"Save Part as Sound...",part);return menu;}
             if(index==5){menu.addItem(8000,"Groovebox");menu.addItem(8001,"Library");menu.addItem(8002,"Setlist");return menu;}
             if(index==4){themeItems_=theme_.installed();for(size_t i=0;i<themeItems_.size();++i)menu.addItem(3000+int(i),themeItems_[i].second,true,themeItems_[i].first==themeData().id);menu.addSeparator();menu.addItem(4000,"Manage themes...");return menu;}
             for( size_t i = 0; i < layouts_.size(); ++i )
@@ -231,6 +235,8 @@ namespace oscairn::standalone
             if(id==8001){showApp(libraryApp_,"Library",[this]{return new LibraryPane(engine_,actions_,LibraryPane::Mode::Play);},900,700);return;}
             if(id==8002){setlist();showApp(setlist_,"Setlist",nullptr,0,0);return;}
             if(id==5002 || id==5003){saveToLibrary(id==5003);return;}
+            if(id==8100){loadSound();return;}
+            if(id==8101){saveSound();return;}
             if(std::string color;colorChosen(id,5100,color)){engine_.edit([color](Control& c){auto info=c.performanceInfo();info.color=color;c.setPerformanceInfo(info);});return;}
             if(id==6000){engine_.edit([](Control& c){c.undo();});return;}
             if(id==6001){engine_.edit([](Control& c){c.redo();});return;}
@@ -265,21 +271,45 @@ namespace oscairn::standalone
             return *static_cast<SetlistPane*>(setlist_->getContentComponent());
         }
         // The Library's pick, in a window over the asking app; a second pick cancels the first.
-        void showPicker(Actions::Answer answer)
+        void showPicker(Actions::Answer answer,const std::string& kind)
         {
             if(pickerAnswer_){auto old=std::move(pickerAnswer_);pickerAnswer_={};old({});}
             pickerAnswer_=std::move(answer);
-            auto* pane=new LibraryPane(engine_,actions_,LibraryPane::Mode::Pick);
+            auto* pane=new LibraryPane(engine_,actions_,LibraryPane::Mode::Pick,kind);
             pane->onPicked=[this](const std::string& id){
                 auto pending=std::move(pickerAnswer_);pickerAnswer_={};
                 // The window goes after this click has finished with it.
                 juce::MessageManager::callAsync([safe=juce::Component::SafePointer<Window>(this)]{if(safe && !safe->pickerAnswer_)safe->picker_.reset();});
                 if(pending)pending(id);
             };
-            picker_=std::make_unique<AppWindow>("Choose a Performance",pane,760,620);
+            picker_=std::make_unique<AppWindow>(kind=="sound"?"Choose a Sound":"Choose a Performance",pane,760,620);
             picker_->onClose=[pane]{pane->onPicked({});};
             setDesktopMode(*pane,inputMode_==InputMode::Touch?2:1);
             picker_->setVisible(true);picker_->toFront(true);
+        }
+        // The Library picks a Sound; it replaces the selected part's chain, keeping the part's seat.
+        void loadSound()
+        {
+            const auto part=shell()?shell()->selectedPart():0;
+            if(!part)return;
+            actions_.request(pickSound,{},[safe=juce::Component::SafePointer<Window>(this),part](const std::string& id){
+                if(!safe || id.empty())return;
+                SoundAction load;load.kind=SoundAction::LoadSound;load.part=part;load.libraryId=id;safe->engine_.soundAction(std::move(load));
+            });
+        }
+        void saveSound()
+        {
+            const auto part=shell()?shell()->selectedPart():0;
+            if(!part)return;
+            std::string name;for(const auto& p:engine_.graph().parts)if(p.id==part)name=p.name;
+            auto* w=new juce::AlertWindow("Save Part as Sound","The Sound's name:",juce::MessageBoxIconType::NoIcon,this);
+            w->addTextEditor("name",juce::String::fromUTF8(name.c_str()),"Name");
+            w->addButton("Save",1,juce::KeyPress(juce::KeyPress::returnKey));w->addButton("Cancel",0,juce::KeyPress(juce::KeyPress::escapeKey));
+            w->enterModalState(true,juce::ModalCallbackFunction::create([safe=juce::Component::SafePointer<Window>(this),w,part](int result){
+                if(!safe || result!=1)return;
+                SoundAction save;save.kind=SoundAction::SaveSound;save.part=part;save.choice.name=w->getTextEditorContents("name").trim().toStdString();
+                safe->engine_.soundAction(std::move(save));
+            }),true);
         }
         // Save writes over the open library Performance, asking for a name only when it has never
         // been saved there; Save As New always asks, and makes a new one.

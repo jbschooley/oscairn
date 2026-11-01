@@ -217,6 +217,33 @@ int main(int argc, char** argv)
                 snapshot(*setlist, "setlist-grid-page-2");
                 setlist->setDisplay({standalone::SetlistDisplay::Mode::Scroll, 3, 2});
                 snapshot(*setlist, "setlist-scroll");
+                // Sounds: a part saved to the library, listed apart, picked into another part, added as a new part.
+                check(wait([&] { return !engine.soundBusy(); }), "the engine is free for Sounds");
+                const auto partsBefore = engine.graph().parts;
+                check(partsBefore.size() >= 2, "parts to save from and load into");
+                engine.edit([&](Control& c) { c.savePartAsSound(partsBefore[0].id, "Grand"); });
+                check(engine.editError().empty(), "a part saved as a Sound: " + engine.editError());
+                library.showKind("sound");
+                check(wait([&] { return library.items().size() == 1; }) && library.items()[0].kind == "sound" && library.items()[0].name == "Grand", "the Library lists the Sound apart");
+                snapshot(library, "library-sounds");
+                actions.offer(standalone::pickSound, "Library", [&](const std::string&, standalone::Actions::Answer answer) {
+                    picker = std::make_unique<standalone::LibraryPane>(engine, actions, standalone::LibraryPane::Mode::Pick, "sound");
+                    picker->onPicked = std::move(answer);
+                    standalone::setDesktopMode(*picker, 1); picker->setSize(760, 620);
+                });
+                const auto into = partsBefore[1].id;
+                actions.request(standalone::pickSound, {}, [&](const std::string& id) {
+                    standalone::SoundAction load; load.kind = standalone::SoundAction::LoadSound; load.part = into; load.libraryId = id;
+                    engine.soundAction(std::move(load));
+                });
+                check(wait([&] { return picker->items().size() == 1; }), "the Sound picker lists only Sounds");
+                picker->choose(0);
+                auto named = [&](uint32_t id) { for(const auto& p : engine.graph().parts) if(p.id == id) return p.name; return std::string(); };
+                check(wait([&] { return !engine.soundBusy() && named(into) == "Grand"; }), "the picked Sound was loaded into the part: " + engine.soundMessage());
+                library.newPart(0);
+                check(wait([&] { return !engine.soundBusy() && engine.graph().parts.size() == partsBefore.size() + 1; }) && engine.graph().parts.back().name == "Grand", "and added as a new part");
+                library.showKind("performance");
+                check(wait([&] { return library.items().size() == 3; }), "back to the Performances");
                 // A file that is not a setlist is refused.
                 const auto bad = folder.getChildFile("Bad.json");
                 bad.replaceWithText(R"({"format":"oscairn.setlist","version":2,"name":"x","entries":[]})");

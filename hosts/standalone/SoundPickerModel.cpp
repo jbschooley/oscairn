@@ -97,6 +97,9 @@ namespace oscairn::standalone
         if(action.kind == SoundAction::LoadPerformance){control.loadPerformance(action.directory);return;}
         if(action.kind == SoundAction::SaveToLibrary){control.savePerformanceToLibrary(action.choice.name,action.asNew);return;}
         if(action.kind == SoundAction::LoadFromLibrary){control.loadPerformanceFromLibrary(action.libraryId);return;}
+        if(action.kind == SoundAction::SaveSound){control.savePartAsSound(action.part,action.choice.name);return;}
+        if(action.kind == SoundAction::LoadSound){control.loadSound(action.part,action.libraryId);return;}
+        if(action.kind == SoundAction::PartFromSound){control.partFromSound(action.libraryId);return;}
         if(action.kind==SoundAction::Replace) {
             const auto graph=control.graphState();
             const auto found=std::find_if(graph.topology.nodes.begin(),graph.topology.nodes.end(),[&](const auto& n){return n.id==action.node && n.plugin.id==action.pluginId;});

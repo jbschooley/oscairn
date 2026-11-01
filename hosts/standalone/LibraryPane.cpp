@@ -17,10 +17,15 @@ namespace oscairn::standalone
         }
     }
 
-    LibraryPane::LibraryPane(Engine& engine, Actions& actions, Mode mode) : engine_(engine), actions_(actions), mode_(mode)
+    LibraryPane::LibraryPane(Engine& engine, Actions& actions, Mode mode, const std::string& kind) : engine_(engine), actions_(actions), mode_(mode)
     {
+        query_.kind = kind;
+        for(auto* b : {&performances_, &sounds_}) { b->setClickingTogglesState(true); b->setRadioGroupId(1); }
+        performances_.setConnectedEdges(juce::Button::ConnectedOnRight); sounds_.setConnectedEdges(juce::Button::ConnectedOnLeft);
+        performances_.onClick = [this] { showKind("performance"); };
+        sounds_.onClick = [this] { showKind("sound"); };
+        part_.onClick = [this] { newPart(list_.getSelectedRow()); };
         search_.setJustification(juce::Justification::centredLeft); search_.setIndents(10, 0);
-        search_.setTextToShowWhenEmpty("Search names, tags and descriptions", ink(Ink::Muted));
         search_.onTextChange = [this] { query_.text = search_.getText().toStdString(); refresh(); };
         favourites_.setClickingTogglesState(true);
         favourites_.onClick = [this] { query_.favourites = favourites_.getToggleState(); refresh(); };
@@ -33,12 +38,34 @@ namespace oscairn::standalone
         pick_.onClick = [this] { choose(list_.getSelectedRow()); };
         status_.setColour(juce::Label::textColourId, ink(Ink::Muted));
         for(auto* c : std::initializer_list<juce::Component*>{&search_, &favourites_, &recent_, &list_, &status_}) addAndMakeVisible(c);
-        for(auto* c : std::initializer_list<juce::Component*>{&send_, &cancel_, &pick_}) addChildComponent(c);
-        send_.setVisible(mode_ == Mode::Play && actions_.offered(sendPerformance));
+        for(auto* c : std::initializer_list<juce::Component*>{&send_, &part_, &cancel_, &pick_, &performances_, &sounds_}) addChildComponent(c);
+        performances_.setVisible(mode_ == Mode::Play); sounds_.setVisible(mode_ == Mode::Play);
         cancel_.setVisible(mode_ == Mode::Pick); pick_.setVisible(mode_ == Mode::Pick);
+        showKind(kind);
+        startTimer(300);
+    }
+
+    void LibraryPane::showKind(const std::string& kind)
+    {
+        if(query_.kind != kind) query_.tags.clear();
+        query_.kind = kind;
+        const bool sound = kind == "sound";
+        performances_.setToggleState(!sound, juce::dontSendNotification); sounds_.setToggleState(sound, juce::dontSendNotification);
+        search_.setTextToShowWhenEmpty(sound ? "Search Sounds by name, tag or description" : "Search Performances by name, tag or description", ink(Ink::Muted));
+        send_.setVisible(mode_ == Mode::Play && !sound && actions_.offered(sendPerformance));
+        part_.setVisible(mode_ == Mode::Play && sound);
         updateButtons();
         refresh();
-        startTimer(300);
+        resized();
+    }
+
+    void LibraryPane::newPart(int row)
+    {
+        if(row < 0 || size_t(row) >= result_.items.size() || result_.items[size_t(row)].kind != "sound") return;
+        SoundAction add; add.kind = SoundAction::PartFromSound; add.libraryId = result_.items[size_t(row)].id;
+        engine_.soundAction(std::move(add));
+        message_ = "Adding " + text(result_.items[size_t(row)].name) + " as a new part";
+        status_.setText(message_, juce::dontSendNotification);
     }
 
     void LibraryPane::search(const juce::String& s) { search_.setText(s, juce::dontSendNotification); query_.text = s.toStdString(); refresh(); }
@@ -63,7 +90,8 @@ namespace oscairn::standalone
         list_.updateContent();
         list_.deselectAllRows();
         for(size_t i = 0; i < result_.items.size(); ++i) if(result_.items[i].id == selected) list_.selectRow(int(i), true, true);
-        if(message_.isEmpty()) status_.setText(juce::String(result_.total) + (result_.total == 1 ? " Performance" : " Performances"), juce::dontSendNotification);
+        const bool sound = query_.kind == "sound";
+        if(message_.isEmpty()) status_.setText(juce::String(result_.total) + (sound ? (result_.total == 1 ? " Sound" : " Sounds") : (result_.total == 1 ? " Performance" : " Performances")), juce::dontSendNotification);
         rebuildTags();
         updateButtons();
         repaint();
@@ -94,7 +122,7 @@ namespace oscairn::standalone
     void LibraryPane::updateButtons()
     {
         const bool any = list_.getSelectedRow() >= 0;
-        send_.setEnabled(any); pick_.setEnabled(any);
+        send_.setEnabled(any); pick_.setEnabled(any); part_.setEnabled(any);
     }
 
     void LibraryPane::choose(int row)
@@ -102,6 +130,7 @@ namespace oscairn::standalone
         if(row < 0 || size_t(row) >= result_.items.size()) return;
         const auto& item = result_.items[size_t(row)];
         if(mode_ == Mode::Pick) { if(onPicked) onPicked(item.id); return; }
+        if(item.kind != "performance") return; // a Sound goes into a part: New part, or a part's Load Sound
         SoundAction open; open.kind = SoundAction::LoadFromLibrary; open.libraryId = item.id;
         engine_.soundAction(std::move(open));
         message_ = "Opening " + text(item.name);
@@ -167,6 +196,11 @@ namespace oscairn::standalone
         list_.setRowHeight(touch ? 64 : 48);
         auto area = getLocalBounds().reduced(16, 12);
         auto bar = area.removeFromTop(control);
+        if(mode_ == Mode::Play)
+        {
+            performances_.setBounds(bar.removeFromLeft(touch ? 150 : 120));
+            sounds_.setBounds(bar.removeFromLeft(touch ? 110 : 90)); bar.removeFromLeft(gap);
+        }
         recent_.setBounds(bar.removeFromRight(touch ? 110 : 90)); bar.removeFromRight(gap);
         favourites_.setBounds(bar.removeFromRight(touch ? 130 : 110)); bar.removeFromRight(gap);
         search_.setBounds(bar);
@@ -191,6 +225,7 @@ namespace oscairn::standalone
         list_.setBounds(area);
         if(mode_ == Mode::Pick) { pick_.setBounds(bottom.removeFromRight(110)); bottom.removeFromRight(gap); cancel_.setBounds(bottom.removeFromRight(110)); }
         else if(send_.isVisible()) send_.setBounds(bottom.removeFromRight(touch ? 170 : 140));
+        else if(part_.isVisible()) part_.setBounds(bottom.removeFromRight(touch ? 150 : 120));
         status_.setFont(juce::FontOptions(textSize(TextRole::Small, mode())));
         status_.setBounds(bottom);
     }

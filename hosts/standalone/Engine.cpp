@@ -125,7 +125,7 @@ namespace oscairn::standalone
     void Engine::soundAction(SoundAction action)
     {
         if(soundBusy() || !connected())return;
-        if((action.kind==SoundAction::Prepare || action.kind==SoundAction::Replace || action.kind==SoundAction::SavePerformance || action.kind==SoundAction::LoadPerformance || action.kind==SoundAction::SaveToLibrary || action.kind==SoundAction::LoadFromLibrary) && !canPrepareSounds())
+        if((action.kind==SoundAction::Prepare || action.kind==SoundAction::Replace || action.kind==SoundAction::SavePerformance || action.kind==SoundAction::LoadPerformance || action.kind==SoundAction::SaveToLibrary || action.kind==SoundAction::LoadFromLibrary || action.kind==SoundAction::SaveSound || action.kind==SoundAction::LoadSound || action.kind==SoundAction::PartFromSound) && !canPrepareSounds())
         {
             soundMessage_="Preparation requires the separate engine. Relaunch without --in-process.";
             return;
@@ -173,6 +173,8 @@ namespace oscairn::standalone
         if(soundJobKind_==SoundAction::Replace || loaded)textCache_.clear();
         if(result.error.empty() && (soundJobKind_==SoundAction::SavePerformance || soundJobKind_==SoundAction::SaveToLibrary))soundMessage_="Performance saved.";
         if(result.error.empty() && loaded)soundMessage_="Performance opened. Press Play or play a note.";
+        if(result.error.empty() && soundJobKind_==SoundAction::SaveSound)soundMessage_="Sound saved.";
+        if(result.error.empty() && (soundJobKind_==SoundAction::LoadSound || soundJobKind_==SoundAction::PartFromSound)){textCache_.clear();soundMessage_="Sound loaded.";}
         if(result.disconnected)
         {
             pendingControls_.clear();

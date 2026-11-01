@@ -50,6 +50,7 @@ namespace oscairn::standalone
         void setInputMode(InputMode mode);
         InputMode inputMode() const { return mode_; }
         void showTab(Tab tab);
+        uint32_t selectedPart() const { return selected_; } // the part the Part tab shows
         void detach(Tab tab); // the tab's view in a window of its own, beside this one
         static bool tabNamed(const juce::String& name, Tab& tab);
 

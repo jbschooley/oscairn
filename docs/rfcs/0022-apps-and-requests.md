@@ -1,8 +1,9 @@
 # RFC 0022: Apps that open each other
 
 Status: in progress, 2026-10-31. Step 1 is built in the desktop app: the registry
-(`hosts/standalone/Apps.h`), the Library answering `oscairn.pick.performance` and the
-Setlist taking `oscairn.send.performance`, each flow checked by `desktop-shell`. One app
+(`hosts/standalone/Apps.h`), the Library answering `oscairn.pick.performance` and
+`oscairn.pick.sound` and the Setlist taking `oscairn.send.performance`, each flow checked by
+`desktop-shell`. One app
 per action for now (the first to offer it); manifests, the control API transport and the
 chooser are not built. Builds on the separation of apps from the sound
 engine ([architecture](../architecture.md#two-kinds-of-thing-plugins-and-the-ui)), the
