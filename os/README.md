@@ -69,8 +69,9 @@ everything and fills the cache, takes longer (not timed). The image builds from
 the working tree: committed files and new files git does not ignore.
 
 `os/build.sh test` boots the image (4 cores, 2 GB, a 1024 x 600 display) and passes when
-the session reports Oscairn running and two screenshots 3 seconds apart both show a
-picture and differ, which means the screen is drawn and the sequencer is playing.
+the session reports Oscairn running, the engine reports the audio device it opened, and a
+screenshot shows a picture (Home). Whether sound actually plays is what `os/build.sh record`
+checks.
 Results: `build-os/test` (console log and screenshots).
 
 To hear what the image plays, `os/build.sh record [SECONDS]` boots it with a virtio sound

@@ -21,6 +21,8 @@ while true; do
 	pid=$!
 	sleep 5
 	kill -0 "$pid" 2>/dev/null && say "Oscairn running (pid $pid)" && grep "^oscairn:" /var/log/oscairn.log | tail -n 1 > /dev/console
+	# The audio device the engine opened: the engine is its own process with its own log.
+	cat /tmp/oscairn-*/engine-*.sock.log 2>/dev/null | grep "audio output" | tail -n 1 > /dev/console
 	wait "$pid"
 	say "Oscairn exited ($?), restarting"
 	tail -n 5 /var/log/oscairn.log > /dev/console

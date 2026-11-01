@@ -5,8 +5,9 @@ Runs QEMU's generic ARM64 machine with a Cortex-A76, a 1024 x 600 virtio display
 kernel's dummy sound card. Passes when, within the time limit:
 - the session reports that Oscairn is running;
 - Oscairn has not exited;
-- two screenshots taken 3 s apart both show a picture and differ (the playhead moves,
-  so the audio callback is running).
+- the engine reports the audio device it opened;
+- the screen shows a picture (Home, RFC 0030; it starts there, so nothing has to move).
+Whether sound actually plays is what --record checks.
 Writes the console log and the screenshots to the output folder.
 
 With --record SECONDS, the image gets a virtio sound card instead of the dummy one, and
@@ -22,7 +23,7 @@ import subprocess
 import sys
 import time
 
-from PIL import Image, ImageChops
+from PIL import Image
 
 
 def monitor(sock_path, command):
@@ -108,14 +109,12 @@ def main():
             print(f"Oscairn running {elapsed:.0f} s after power-on")
             time.sleep(5)
             a = screenshot(sock, args.out, "screen-1")
-            time.sleep(3)
-            b = screenshot(sock, args.out, "screen-2")
             text = open(console, errors="replace").read()
             lit = a.convert("L").getextrema()[1] > 64
-            moved = ImageChops.difference(a, b).getbbox() is not None
+            audio = "audio output" in text
             exited = "Oscairn exited" in text
-            print(f"screen {a.size[0]}x{a.size[1]}, has content: {lit}, changes over 3 s: {moved}, Oscairn exited: {exited}")
-            result = 0 if lit and moved and not exited else 1
+            print(f"screen {a.size[0]}x{a.size[1]}, has content: {lit}, audio device opened: {audio}, Oscairn exited: {exited}")
+            result = 0 if lit and audio and not exited else 1
             print("PASS" if result == 0 else "FAIL")
             if args.record > 0:
                 time.sleep(args.record)
