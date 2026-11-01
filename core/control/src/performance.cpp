@@ -380,11 +380,12 @@ void Session::setPerformanceInfo(const PerformanceInfo& info) {
     const auto id=info_.id;info_=info;info_.id=id;
 }
 
-std::string Session::savePerformanceToLibrary(const std::string& name) {
+std::string Session::savePerformanceToLibrary(const std::string& name,bool asNew) {
     auto& l=library();
-    // An open library Performance is saved over itself; anything else gets a new folder.
-    const auto* item=info_.id.empty()?nullptr:l.find(info_.id);
+    // Save writes over the open library Performance; Save As New, or one not from the library, makes a new one.
+    if(asNew)info_.id.clear();
     if(!name.empty())info_.name=name;
+    const auto* item=info_.id.empty()?nullptr:l.find(info_.id);
     const auto folder=item?fs::path(item->path):l.newFolder(info_.name.empty()?"Performance":info_.name);
     fs::create_directories(folder.parent_path());
     if(!item)savePerformance(folder.string());

@@ -422,9 +422,9 @@ namespace oscairn
                 try{return "{\"items\":"+std::to_string(c.libraryRescan())+'}';}catch(const std::exception& e){throw Failure{-32005,e.what()};}
             }
             if(method=="library.save" || method=="library.load") {
-                if(method=="library.save")fields(p,{"name"});else fields(p,{"id"});
+                if(method=="library.save")fields(p,{"name","new"});else fields(p,{"id"});
                 try{
-                    if(method=="library.save")return "{\"id\":"+quote(c.savePerformanceToLibrary(member(p,"name")?std::string(string(member(p,"name"))):std::string()))+'}';
+                    if(method=="library.save")return "{\"id\":"+quote(c.savePerformanceToLibrary(member(p,"name")?std::string(string(member(p,"name"))):std::string(),member(p,"new")?boolean(member(p,"new")):false))+'}';
                     c.loadPerformanceFromLibrary(std::string(string(member(p,"id"))));return R"({"loaded":true})";
                 }catch(const std::exception& e){throw Failure{-32005,e.what()};}
             }

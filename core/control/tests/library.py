@@ -40,6 +40,19 @@ with tempfile.TemporaryDirectory(prefix='oscairn-library-') as temporary:
         assert (home / 'Performances/Warm Pad.oscairn/performance.json').is_file()
         # Saving again keeps the ID and the folder.
         assert rpc('library.save')['id'] == pad and len(list((home / 'Performances').iterdir())) == 1
+        # Save with a name renames it in place: the same ID and folder.
+        assert rpc('library.save', {'name': 'Warm Pad'})['id'] == pad
+        # Save As New is a copy with its own ID and folder.
+        copy = rpc('library.save', {'name': 'Warm Pad 2', 'new': True})['id']
+        assert copy != pad and rpc('library.query')['total'] == 2
+        assert (home / 'Performances/Warm Pad 2.oscairn/performance.json').is_file()
+        rpc('library.load', {'id': pad})
+        assert rpc('performance.info')['id'] == pad
+        manifest = home / 'Performances/Warm Pad 2.oscairn'
+        for f in sorted(manifest.rglob('*'), reverse=True):
+            f.unlink() if f.is_file() else f.rmdir()
+        manifest.rmdir()
+        assert rpc('library.rescan') == {'items': 1}
         # Info set but not saved is gone when the saved one is opened again.
         rpc('performance.setInfo', {'name': 'Bright Lead', 'description': '', 'tags': ['lead']})
         rpc('performance.load', {'directory': str(home / 'Performances/Warm Pad.oscairn')})
@@ -72,7 +85,7 @@ with tempfile.TemporaryDirectory(prefix='oscairn-library-') as temporary:
         rpc('library.load', {'id': pad})
         assert rpc('performance.info')['tags'] == ['pad', 'dark']
         user = json.loads((home / 'library/user.json').read_text())
-        assert user == {'favourites': [pad], 'recent': [pad]}
+        assert user == {'favourites': [pad], 'recent': [pad, copy]}  # a gone item's stays, for if it returns
     finally:
         p.stdin.close()
         p.wait(timeout=10)

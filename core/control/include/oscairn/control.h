@@ -110,7 +110,9 @@ namespace oscairn
         virtual LibraryResult libraryQuery(const LibraryQuery& query) = 0;
         virtual void libraryFavourite(const std::string& id, bool favourite) = 0;
         virtual uint32_t libraryRescan() = 0;                          // items found
-        virtual std::string savePerformanceToLibrary(const std::string& name) = 0; // its ID
+        // Save: over the open library Performance (renamed when name is given), else a new one.
+        // asNew: always a new one, with its own ID. Returns its ID.
+        virtual std::string savePerformanceToLibrary(const std::string& name, bool asNew = false) = 0;
         virtual void loadPerformanceFromLibrary(const std::string& id) = 0;
         // Per-node export saves the selected channel-0 instance of a hosted pool.
         virtual bool supportsState(NodeId node) const = 0;

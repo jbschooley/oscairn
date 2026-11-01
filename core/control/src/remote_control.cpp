@@ -292,8 +292,8 @@ namespace oscairn
     uint32_t RemoteControl::libraryRescan() {
         auto d=impl_->call("library.rescan","{}",30000);return static_cast<uint32_t>(integer(field(field(d.get(),"result"),"items")));
     }
-    std::string RemoteControl::savePerformanceToLibrary(const std::string& name) {
-        auto d=impl_->call("library.save","{\"name\":"+quote(name)+'}',30000);return string(field(field(d.get(),"result"),"id"));
+    std::string RemoteControl::savePerformanceToLibrary(const std::string& name,bool asNew) {
+        auto d=impl_->call("library.save","{\"name\":"+quote(name)+",\"new\":"+(asNew?"true":"false")+'}',30000);return string(field(field(d.get(),"result"),"id"));
     }
     void RemoteControl::loadPerformanceFromLibrary(const std::string& id) {
         impl_->call("library.load","{\"id\":"+quote(id)+'}',30000);impl_->refresh();

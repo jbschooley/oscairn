@@ -706,9 +706,11 @@ hidden folders, are skipped; of two files with one ID the first found is listed.
   with `recent`, most recent first; `tags` counts each tag over every match, and `total`
   counts matches before the limit.
 - `library.favourite` takes `{id,favourite}`; `library.rescan` (`{}`) returns `{"items":n}`.
-- `library.save` takes an optional `name` and returns `{"id":…}`. A Performance opened from
-  the library is saved over its folder (saved beside it, then swapped); any other gets a new
-  folder named after it. `library.load` takes `{id}`. Both mark the item recently used.
+- `library.save` takes an optional `name` and `new`, and returns `{"id":…}`. Save (`new`
+  false or absent) writes a Performance opened from the library over its folder (saved
+  beside it, then swapped), renamed when `name` is given; Save As New (`new: true`) gives it
+  a new ID. Either way, one not in the library goes to a new folder named after it.
+  `library.load` takes `{id}`. Both mark the item recently used.
 
 The typed methods are `Control::performanceInfo`, `setPerformanceInfo`, `libraryQuery`,
 `libraryFavourite`, `libraryRescan`, `savePerformanceToLibrary` and

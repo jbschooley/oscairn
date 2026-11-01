@@ -16,10 +16,12 @@
 #include "DesktopShell.h"
 #include "Engine.h"
 #include "Layout.h"
+#include "LibraryPane.h"
 #include "Panel.h"
 #include "PluginBrowser.h"
 #include "PadEditor.h"
 #include "PartsView.h"
+#include "Setlist.h"
 
 #include <BinaryData.h>
 #include <juce_gui_extra/juce_gui_extra.h>
@@ -63,6 +65,17 @@ namespace oscairn::standalone
         }
     }
 
+    /// An app in a window of its own, apart from the sound editor; closing it hides it.
+    class AppWindow final : public juce::DocumentWindow {
+    public:
+        AppWindow(const juce::String& name, juce::Component* content, int width, int height) : DocumentWindow("Oscairn - " + name, ink(Ink::Background), DocumentWindow::allButtons)
+        {
+            setUsingNativeTitleBar(true); setContentOwned(content, false); setResizable(true, false); centreWithSize(width, height);
+        }
+        std::function<void()> onClose;
+        void closeButtonPressed() override { if(onClose) onClose(); else setVisible(false); }
+    };
+
     class LibraryWindow final : public juce::DocumentWindow {
     public:
         LibraryWindow(Engine& engine,Theme& theme,const juce::File& plugins):DocumentWindow("Oscairn - Plugins and appearance",ink(Ink::Background),DocumentWindow::allButtons) {
@@ -93,6 +106,9 @@ namespace oscairn::standalone
             engine_.openBrowser=[this]{showLibrary();};
             engine_.openPads=[this]{showPads();};
             engine_.openParts=[this]{showParts();};
+            // What the built-in apps offer each other (RFC 0022): the Library picks, the Setlist takes.
+            actions_.offer(pickPerformance,"Library",[this](const std::string&,Actions::Answer answer){showPicker(std::move(answer));});
+            actions_.offer(sendPerformance,"Setlist",[this](const std::string& id,Actions::Answer answer){answer(setlist().add(id).toStdString());});
             show( first );
             setVisible( true );
         }
@@ -168,13 +184,13 @@ namespace oscairn::standalone
         juce::PopupMenu getMenuForIndex( int index, const juce::String& ) override
         {
             juce::PopupMenu menu;
-            if(index==0){menu.addItem(5000,"Save Performance As...",engine_.connected() && !engine_.soundBusy());menu.addItem(5001,"Open Performance...",engine_.connected() && !engine_.soundBusy());return menu;}
+            if(index==0){const bool free=engine_.connected() && !engine_.soundBusy();menu.addItem(5002,"Save",free);menu.addItem(5003,"Save As New...",free);menu.addSeparator();menu.addItem(5000,"Save to Folder...",free);menu.addItem(5001,"Open Folder...",free);return menu;}
             if(index==1){const auto h=engine_.history();
                 menu.addItem(6000,h.undo.empty()?juce::String("Undo"):"Undo "+juce::String::fromUTF8(h.undo.c_str()),!h.undo.empty());
                 menu.addItem(6001,h.redo.empty()?juce::String("Redo"):"Redo "+juce::String::fromUTF8(h.redo.c_str()),!h.redo.empty());return menu;}
             if(index==3){menu.addItem(2000,"Browse plugins and edit parameters...");return menu;}
             // Apps that play the sounds, each in its own window, apart from the sound editor.
-            if(index==5){menu.addItem(8000,"Groovebox");return menu;}
+            if(index==5){menu.addItem(8000,"Groovebox");menu.addItem(8001,"Library");menu.addItem(8002,"Setlist");return menu;}
             if(index==4){themeItems_=theme_.installed();for(size_t i=0;i<themeItems_.size();++i)menu.addItem(3000+int(i),themeItems_[i].second,true,themeItems_[i].first==themeData().id);menu.addSeparator();menu.addItem(4000,"Manage themes...");return menu;}
             for( size_t i = 0; i < layouts_.size(); ++i )
             {
@@ -208,6 +224,9 @@ namespace oscairn::standalone
             }
             if(id>=7000 && id<=7002){inputMode_=InputMode(id-7000);writeInputMode(theme_.configuration(),inputMode_);if(auto* s=shell())s->setInputMode(inputMode_);return;}
             if(id==8000){showGroovebox();return;}
+            if(id==8001){showApp(libraryApp_,"Library",[this]{return new LibraryPane(engine_,actions_,LibraryPane::Mode::Play);},900,700);return;}
+            if(id==8002){setlist();showApp(setlist_,"Setlist",nullptr,0,0);return;}
+            if(id==5002 || id==5003){saveToLibrary(id==5003);return;}
             if(id==6000){engine_.edit([](Control& c){c.undo();});return;}
             if(id==6001){engine_.edit([](Control& c){c.redo();});return;}
             if(id==2000 || id==4000){showLibrary();return;}
@@ -226,20 +245,52 @@ namespace oscairn::standalone
         }
 
     private:
-        void showGroovebox()
+        void showGroovebox(){showApp(groovebox_,"Groovebox",[this]{return new SequencerPane(engine_);},1100,760);}
+        // An app's window, made the first time; it keeps its state while hidden.
+        void showApp(std::unique_ptr<AppWindow>& window,const juce::String& name,std::function<juce::Component*()> make,int width,int height)
         {
-            struct AppWindow : juce::DocumentWindow
-            {
-                AppWindow(Engine& engine) : DocumentWindow("Oscairn - Groovebox", ink(Ink::Background), DocumentWindow::allButtons)
-                {
-                    setUsingNativeTitleBar(true); setContentOwned(new SequencerPane(engine), false);
-                    setResizable(true, false); centreWithSize(1100, 760); setVisible(true);
-                }
-                void closeButtonPressed() override { setVisible(false); }
+            if(!window)window=std::make_unique<AppWindow>(name,make(),width,height);
+            if(auto* content=window->getContentComponent())setDesktopMode(*content,inputMode_==InputMode::Touch?2:1);
+            window->setVisible(true);window->toFront(true);
+        }
+        // The Setlist app, made hidden when another app sends it a Performance before it was opened.
+        SetlistPane& setlist()
+        {
+            if(!setlist_){setlist_=std::make_unique<AppWindow>("Setlist",new SetlistPane(engine_,actions_),700,760);setDesktopMode(*setlist_->getContentComponent(),inputMode_==InputMode::Touch?2:1);}
+            return *static_cast<SetlistPane*>(setlist_->getContentComponent());
+        }
+        // The Library's pick, in a window over the asking app; a second pick cancels the first.
+        void showPicker(Actions::Answer answer)
+        {
+            if(pickerAnswer_){auto old=std::move(pickerAnswer_);pickerAnswer_={};old({});}
+            pickerAnswer_=std::move(answer);
+            auto* pane=new LibraryPane(engine_,actions_,LibraryPane::Mode::Pick);
+            pane->onPicked=[this](const std::string& id){
+                auto answer=std::move(pickerAnswer_);pickerAnswer_={};
+                // The window goes after this click has finished with it.
+                juce::MessageManager::callAsync([safe=juce::Component::SafePointer<Window>(this)]{if(safe && !safe->pickerAnswer_)safe->picker_.reset();});
+                if(answer)answer(id);
             };
-            if(!groovebox_) groovebox_ = std::make_unique<AppWindow>(engine_);
-            if(auto* content = groovebox_->getContentComponent()) setDesktopMode(*content, inputMode_ == InputMode::Touch ? 2 : 1);
-            groovebox_->setVisible(true); groovebox_->toFront(true);
+            picker_=std::make_unique<AppWindow>("Choose a Performance",pane,760,620);
+            picker_->onClose=[pane]{pane->onPicked({});};
+            setDesktopMode(*pane,inputMode_==InputMode::Touch?2:1);
+            picker_->setVisible(true);picker_->toFront(true);
+        }
+        // Save writes over the open library Performance, asking for a name only when it has never
+        // been saved there; Save As New always asks, and makes a new one.
+        void saveToLibrary(bool asNew)
+        {
+            const auto info=engine_.performanceInfo();
+            if(!info)return;
+            if(!asNew && !info->id.empty()){SoundAction save;save.kind=SoundAction::SaveToLibrary;engine_.soundAction(std::move(save));return;}
+            auto* w=new juce::AlertWindow(asNew?"Save As New":"Save","The Performance's name:",juce::MessageBoxIconType::NoIcon,this);
+            w->addTextEditor("name",juce::String::fromUTF8(info->name.c_str()),"Name");
+            w->addButton("Save",1,juce::KeyPress(juce::KeyPress::returnKey));w->addButton("Cancel",0,juce::KeyPress(juce::KeyPress::escapeKey));
+            w->enterModalState(true,juce::ModalCallbackFunction::create([safe=juce::Component::SafePointer<Window>(this),w,asNew](int result){
+                if(!safe || result!=1)return;
+                SoundAction save;save.kind=SoundAction::SaveToLibrary;save.asNew=asNew;save.choice.name=w->getTextEditorContents("name").trim().toStdString();
+                safe->engine_.soundAction(std::move(save));
+            }),true);
         }
         void showLibrary(){if(!library_)library_=std::make_unique<LibraryWindow>(engine_,theme_,plugins_);library_->setVisible(true);library_->toFront(true);}
         // The pad editor covers the panel, so it fits a device's single screen too.
@@ -297,7 +348,9 @@ namespace oscairn::standalone
         Theme& theme_;
         juce::File plugins_;
         std::unique_ptr<LibraryWindow> library_;
-        std::unique_ptr<juce::DocumentWindow> groovebox_;
+        Actions actions_;
+        std::unique_ptr<AppWindow> groovebox_, libraryApp_, setlist_, picker_;
+        Actions::Answer pickerAnswer_;
         std::unique_ptr<PadEditor> pads_;
         std::unique_ptr<PartsView> parts_;
         std::vector<std::pair<juce::String,juce::String>> themeItems_;

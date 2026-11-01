@@ -41,7 +41,7 @@ namespace oscairn
         LibraryResult libraryQuery(const LibraryQuery& query) override {return library().query(query);}
         void libraryFavourite(const std::string& id,bool favourite) override {library().setFavourite(id,favourite);}
         uint32_t libraryRescan() override {return library().rescan();}
-        std::string savePerformanceToLibrary(const std::string& name) override;
+        std::string savePerformanceToLibrary(const std::string& name, bool asNew = false) override;
         void loadPerformanceFromLibrary(const std::string& id) override;
         bool supportsState(NodeId node) const override {return graph_.host(node).supportsState();}
         void saveState(NodeId node,const std::string& directory) override;

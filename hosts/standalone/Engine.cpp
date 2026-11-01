@@ -125,7 +125,7 @@ namespace oscairn::standalone
     void Engine::soundAction(SoundAction action)
     {
         if(soundBusy() || !connected())return;
-        if((action.kind==SoundAction::Prepare || action.kind==SoundAction::Replace || action.kind==SoundAction::SavePerformance || action.kind==SoundAction::LoadPerformance) && !canPrepareSounds())
+        if((action.kind==SoundAction::Prepare || action.kind==SoundAction::Replace || action.kind==SoundAction::SavePerformance || action.kind==SoundAction::LoadPerformance || action.kind==SoundAction::SaveToLibrary || action.kind==SoundAction::LoadFromLibrary) && !canPrepareSounds())
         {
             soundMessage_="Preparation requires the separate engine. Relaunch without --in-process.";
             return;
@@ -169,9 +169,10 @@ namespace oscairn::standalone
             if(old==editors_.end() || old->second.id!=editor.id || old->second.path!=editor.path)textCache_.clear();
         }
         soundPicker_=std::move(result.state);editors_=std::move(result.editors);
-        if(soundJobKind_==SoundAction::Replace || soundJobKind_==SoundAction::LoadPerformance)textCache_.clear();
-        if(result.error.empty() && soundJobKind_==SoundAction::SavePerformance)soundMessage_="Performance saved.";
-        if(result.error.empty() && soundJobKind_==SoundAction::LoadPerformance)soundMessage_="Performance opened. Press Play or play a note.";
+        const bool loaded=soundJobKind_==SoundAction::LoadPerformance || soundJobKind_==SoundAction::LoadFromLibrary;
+        if(soundJobKind_==SoundAction::Replace || loaded)textCache_.clear();
+        if(result.error.empty() && (soundJobKind_==SoundAction::SavePerformance || soundJobKind_==SoundAction::SaveToLibrary))soundMessage_="Performance saved.";
+        if(result.error.empty() && loaded)soundMessage_="Performance opened. Press Play or play a note.";
         if(result.disconnected)
         {
             pendingControls_.clear();
@@ -179,13 +180,32 @@ namespace oscairn::standalone
             return;
         }
         // Replay deferred releases on failure; successful replacement discarded their voices.
-        if(soundJobKind_==SoundAction::LoadPerformance && result.error.empty()){pendingControls_.clear();padChannels_.fill(0);refreshPads();}
+        if(loaded && result.error.empty()){pendingControls_.clear();padChannels_.fill(0);refreshPads();}
         auto pending=std::move(pendingControls_);pendingControls_.clear();
         for(auto& action:pending)command(std::move(action));
         if(pendingSound_ && connected())
         {
             auto action=std::move(*pendingSound_);pendingSound_.reset();refreshSounds(std::move(action));
         }
+    }
+    std::optional<Control::LibraryResult> Engine::library(const Control::LibraryQuery& query) const
+    {
+        if(!connected() || !controlReady())return {};
+        try{return control_->libraryQuery(query);}catch(const std::exception& e){std::fprintf(stderr,"oscairn: library: %s\n",e.what());return {};}
+    }
+    std::optional<Control::LibraryItem> Engine::libraryItem(const std::string& id) const
+    {
+        // shortcut: looks among the first 1000 by name; give library.query an ID filter when libraries grow past that.
+        Control::LibraryQuery all;all.limit=1000;
+        const auto found=library(all);
+        if(!found)return {};
+        for(const auto& item:found->items)if(item.id==id)return item;
+        return Control::LibraryItem{}; // not in the library: an empty ID
+    }
+    std::optional<Control::PerformanceInfo> Engine::performanceInfo() const
+    {
+        if(!connected() || !controlReady())return {};
+        try{return control_->performanceInfo();}catch(const std::exception&){return {};}
     }
     Engine::Status Engine::status()const
     {

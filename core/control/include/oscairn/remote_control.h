@@ -20,7 +20,7 @@ namespace oscairn
         LibraryResult libraryQuery(const LibraryQuery& query) override;
         void libraryFavourite(const std::string& id, bool favourite) override;
         uint32_t libraryRescan() override;
-        std::string savePerformanceToLibrary(const std::string& name) override;
+        std::string savePerformanceToLibrary(const std::string& name, bool asNew = false) override;
         void loadPerformanceFromLibrary(const std::string& id) override;
         bool supportsState(NodeId node) const override;
         void saveState(NodeId node,const std::string& directory) override;

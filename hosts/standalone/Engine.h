@@ -87,6 +87,10 @@ namespace oscairn::standalone
         bool canPrepareSounds() const { return !socketPath_.empty(); }
         void soundAction(SoundAction action);
         std::function<void()> openBrowser;
+        // The library (RFC 0021); nothing while the engine is busy loading or saving, so ask again.
+        std::optional<Control::LibraryResult> library(const Control::LibraryQuery& query) const;
+        std::optional<Control::LibraryItem> libraryItem(const std::string& id) const;
+        std::optional<Control::PerformanceInfo> performanceInfo() const;
         std::string pluginId(const std::string& node) const;
         void replacePlugin(const std::string& node,const std::string& path,const std::string& id,const std::string& preset={});
         struct Editor { std::string name,id,path;std::vector<ParamInfo> parameters;std::vector<PresetInfo> presets; };
