@@ -764,9 +764,11 @@ int main(int argc, char** argv)
                 else std::puts("skipped: the Compact gate's third-party plugin (set OSCAIRN_THIRD_PARTY_CLAP to a .clap)");
                 for(size_t g = 1; g < gate.size(); ++g)
                 {
+                    const auto before = engine.graph().names;
                     engine.edit([&](Control& c) { standalone::insertPlugin(c, standalone::addPart(c, gate[g].name, false), 0, gate[g]); });
-                    for(int i = 0; i < 500 && std::none_of(engine.graph().names.begin(), engine.graph().names.end(), [&](const auto& n) { return n.second == gate[g].name; }); ++i)
-                        juce::MessageManager::getInstance()->runDispatchLoopUntil(10);
+                    for(int i = 0; i < 500 && engine.graph().names.size() == before.size(); ++i) juce::MessageManager::getInstance()->runDispatchLoopUntil(10);
+                    // Its name in the graph ("Odin2 2" when one is there already).
+                    for(const auto& [id, n] : engine.graph().names) if(!before.count(id)) gate[g].name = n;
                 }
                 const auto file = juce::File(argv[3]).getSiblingFile("layouts").getChildFile("compact.json");
                 standalone::Panel panel(engine, standalone::Layout::parse(file.loadFileAsString()));
