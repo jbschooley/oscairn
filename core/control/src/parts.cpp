@@ -645,6 +645,7 @@ namespace oscairn
         case MacroTarget::Kind::PartLevel: for(const auto& p : parts_) if(p.id == t.part) return std::clamp(p.level, 0.0, 1.0); return 1;
         case MacroTarget::Kind::PartMute: for(const auto& p : parts_) if(p.id == t.part) return p.mute ? 1 : 0; return 0;
         case MacroTarget::Kind::Macro: for(const auto& m : macros_) if(m.id == t.macro) return m.value; return 0;
+        case MacroTarget::Kind::Morph: return 0;
         }
         return 0;
     }
@@ -684,6 +685,10 @@ namespace oscairn
             case MacroTarget::Kind::PartLevel: case MacroTarget::Kind::PartMute:
                 if(owner) throw std::invalid_argument("a part's control targets only the part's plugins and controls");
                 findPart(t.part); break;
+            case MacroTarget::Kind::Morph:
+                if(owner) throw std::invalid_argument("a part's control targets only the part's plugins and controls");
+                if(t.sceneFrom == t.sceneTo) throw std::invalid_argument("a morph moves between two scenes");
+                findScene(t.sceneFrom); findScene(t.sceneTo); break;
             case MacroTarget::Kind::Macro:
             {
                 if(owner && findMacro(t.macro).part != owner) throw std::invalid_argument("a part's control targets only the part's own controls");
@@ -736,6 +741,7 @@ namespace oscairn
             case MacroTarget::Kind::PartLevel: for(auto& p : parts_) if(p.id == t.part) { p.level = v; faders = true; } break;
             case MacroTarget::Kind::PartMute: for(auto& p : parts_) if(p.id == t.part) { p.mute = v >= .5; faders = true; } break;
             case MacroTarget::Kind::Macro: driveMacro(t.macro, v, faders); break;
+            case MacroTarget::Kind::Morph: morphScenes(t.sceneFrom, t.sceneTo, v); break;
             }
         }
     }
@@ -806,16 +812,19 @@ namespace oscairn
     // added since keeps what it has. Plugins and wires switched off ring out (compileWires); faders
     // change route gains in a new plan and parameters arrive as events at the next block, so held
     // notes and tails go on. Staged graph edits are committed with it.
-    void Session::selectScene(uint32_t id)
+    void Session::applyScene(const Scene& scene, uint32_t scope)
     {
-        const auto scene = findScene(id);
-        const auto has = [&](Scene::Kind kind) { return (scene.scope & kind) != 0; };
-        Quiet playing(*this); // switching scenes is playing, not editing
-        if(has(Scene::Mappings)) mappingScene_ = id;
-        // Controls first: the scene's own faders and parameter values then have the last word.
+        const auto has = [&](Scene::Kind kind) { return (scope & kind) != 0; };
+        const bool was = applyingScene_; applyingScene_ = true; // a morph control it moves does not morph meanwhile
+        struct Restore { bool& flag; bool value; ~Restore() { flag = value; } } restore{applyingScene_, was};
+        // Controls first: the scene's own faders and parameter values then have the last word. A
+        // control that morphs between scenes keeps its place: it is the hand moving it.
         bool faders = false;
         if(has(Scene::Parameters))
-            for(const auto& [macro, value] : scene.macros) if(std::any_of(macros_.begin(), macros_.end(), [&](const Macro& m) { return m.id == macro; })) driveMacro(macro, value, faders);
+            for(const auto& [macro, value] : scene.macros)
+                if(const auto m = std::find_if(macros_.begin(), macros_.end(), [&](const Macro& x) { return x.id == macro; }); m != macros_.end() &&
+                   std::none_of(m->targets.begin(), m->targets.end(), [](const MacroTarget& t) { return t.kind == MacroTarget::Kind::Morph; }))
+                    driveMacro(macro, value, faders);
         if(has(Scene::Enabled))
             for(const auto& [node, name] : nodes_)
             {
@@ -851,19 +860,159 @@ namespace oscairn
         if(has(Scene::Parameters))
             for(const auto& v : scene.values)
                 if(graph_.contains(v.at.node) && hasParameter(v.at.node, v.at.param) && parameter(v.at.node, v.at.param) != v.value) applyParameter(v.at.node, v.at.param, v.value, nullptr, false);
-        scene_ = id;
+    }
+
+    // Selecting a scene: at once, or at the next beat or bar while the transport plays (it waits,
+    // and selecting another replaces it); then over its glide, or at once.
+    void Session::selectScene(uint32_t id)
+    {
+        const auto scene = findScene(id);
+        if(scene.launch != Scene::Launch::Now && statusPlaying_.load())
+        {
+            // shortcut: bars of 4 beats, the transport's only meter, checked at each service tick (about 5 ms); schedule at the sample when scenes must land exactly.
+            const double unit = scene.launch == Scene::Launch::Bar ? 4 : 1;
+            pendingScene_ = PendingScene{id, (std::floor(statusBeat_.load() / unit + 1e-9) + 1) * unit};
+            return;
+        }
+        pendingScene_.reset();
+        startScene(scene);
+    }
+
+    void Session::startScene(const Scene& scene)
+    {
+        Quiet playing(*this); // switching scenes is playing, not editing
+        transition_.reset();
+        if(scene.scope & Scene::Mappings) mappingScene_ = scene.id;
+        scene_ = scene.id;
+        if(!scene.glide) { applyScene(scene, scene.scope); return; }
+        Transition t;
+        capture(t.from);
+        t.to = scene; t.start = framesProcessed_.load();
+        t.frames = std::max<uint64_t>(1, uint64_t(scene.glide * sampleRate_ / 1000));
+        transition_ = std::move(t);
+        blendScenes(transition_->from, scene, 0, scene.curve, 0, scene.scope); // what cannot glide changes now
+        transition_->applied = faderLevels();
+    }
+
+    // Each service tick: a scene waiting for its beat, and a glide's next step. Both wait while
+    // graph edits are staged, rather than committing them.
+    void Session::advanceScenes()
+    {
+        if(staged_) return;
+        if(pendingScene_ && (!statusPlaying_.load() || statusBeat_.load() >= pendingScene_->at))
+        {
+            const auto id = pendingScene_->scene;
+            pendingScene_.reset();
+            if(std::any_of(scenes_.begin(), scenes_.end(), [&](const Scene& s) { return s.id == id; })) startScene(findScene(id));
+        }
+        if(!transition_) return;
+        auto& t = *transition_;
+        // A fader moved by hand since the last step: the glide stops where it is.
+        if(faderLevels() != t.applied) { transition_.reset(); return; }
+        const double at = double(framesProcessed_.load() - t.start) / double(t.frames);
+        Quiet playing(*this);
+        if(at >= 1) { applyScene(t.to, t.to.scope); transition_.reset(); return; }
+        blendScenes(t.from, t.to, at, t.to.curve, 0, t.to.scope);
+        t.applied = faderLevels();
+    }
+
+    std::vector<std::pair<double, bool>> Session::faderLevels() const
+    {
+        std::vector<std::pair<double, bool>> out;
+        for(const auto& p : parts_) out.push_back({p.level, p.mute});
+        return out;
+    }
+
+    // The state at t (0..1) between two scenes, for the kinds in scope. Levels, pans, sends, Mix
+    // rows, controls and smooth parameters move along the curve (equal power moves levels by their
+    // power); what cannot glide (plugins and wires on or off, solos, stepped parameters) is `to`'s
+    // from switchAt on. A part, lane or user wire muted on one side glides from or to silence,
+    // unmuted on the way.
+    void Session::blendScenes(const Scene& from, const Scene& to, double t, Scene::Curve curve, double switchAt, uint32_t scope)
+    {
+        if(t >= 1) { applyScene(to, scope); return; }
+        if(t <= 0 && switchAt > 0) { applyScene(from, scope); return; }
+        const double eased = curve == Scene::Curve::Ease ? t * t * (3 - 2 * t) : t;
+        const auto mix = [&](double a, double b) { return a + (b - a) * eased; };
+        const auto gain = [&](double a, double b) { return curve == Scene::Curve::EqualPower ? std::sqrt((1 - t) * a * a + t * b * b) : mix(a, b); };
+        const bool switched = t >= switchAt;
+        Scene mid = to;
+        if(!switched) { mid.off = from.off; mid.offWires = from.offWires; }
+        for(auto& p : mid.parts)
+        {
+            const auto f = std::find_if(from.parts.begin(), from.parts.end(), [&](const auto& x) { return x.part == p.part; });
+            if(f == from.parts.end()) continue;
+            p.level = gain(f->mute ? 0 : f->level, p.mute ? 0 : p.level);
+            p.mute = f->mute && p.mute;
+            if(!switched) p.solo = f->solo;
+            p.pan = mix(f->pan, p.pan);
+            for(auto& s : p.sends)
+                for(const auto& was : f->sends) if(was.bus == s.bus) s.level = gain(was.level, s.level);
+            for(auto& l : p.lanes)
+                for(const auto& was : f->lanes)
+                    if(was.split == l.split && was.lane == l.lane)
+                    {
+                        l.level = gain(was.mute ? 0 : was.level, l.mute ? 0 : l.level); l.mute = was.mute && l.mute;
+                        if(!switched) l.solo = was.solo;
+                        l.pan = mix(was.pan, l.pan);
+                    }
+        }
+        for(auto& w : mid.wires)
+            for(const auto& was : from.wires)
+                if(was.wire == w.wire)
+                {
+                    w.level = gain(was.mute ? 0 : was.level, w.mute ? 0 : w.level); w.mute = was.mute && w.mute;
+                    if(!switched) w.solo = was.solo;
+                    w.pan = mix(was.pan, w.pan);
+                }
+        for(auto& v : mid.values)
+            for(const auto& was : from.values)
+                if(was.at == v.at)
+                {
+                    const bool stepped = graph_.contains(v.at.node) && hasParameter(v.at.node, v.at.param) && (parameterInfo(v.at.node, v.at.param).flags & CLAP_PARAM_IS_STEPPED);
+                    v.value = stepped ? (switched ? v.value : was.value) : mix(was.value, v.value);
+                }
+        for(auto& [macro, value] : mid.macros)
+            for(const auto& [m, was] : from.macros) if(m == macro) value = mix(was, value);
+        applyScene(mid, scope);
+    }
+
+    // A control moving between two scenes by hand: the state at its value, what cannot glide
+    // switching halfway. Not while a scene is being applied (that control keeps its place).
+    void Session::morphScenes(uint32_t fromId, uint32_t toId, double t)
+    {
+        if(applyingScene_) return;
+        const auto f = std::find_if(scenes_.begin(), scenes_.end(), [&](const Scene& s) { return s.id == fromId; });
+        const auto g = std::find_if(scenes_.begin(), scenes_.end(), [&](const Scene& s) { return s.id == toId; });
+        if(f == scenes_.end() || g == scenes_.end()) return;
+        const auto from = *f, to = *g;
+        transition_.reset(); pendingScene_.reset();
+        if(to.scope & Scene::Mappings) mappingScene_ = t >= .5 ? to.id : from.id;
+        blendScenes(from, to, t, to.curve, .5, to.scope);
     }
 
     void Session::removeScene(uint32_t id)
     {
         findScene(id);
         std::erase_if(scenes_, [&](const Scene& s) { return s.id == id; });
-        for(auto& m : macros_) for(auto& t : m.targets) std::erase(t.offIn, id);
+        for(auto& m : macros_)
+        {
+            for(auto& t : m.targets) std::erase(t.offIn, id);
+            std::erase_if(m.targets, [&](const MacroTarget& t) { return t.kind == MacroTarget::Kind::Morph && (t.sceneFrom == id || t.sceneTo == id); });
+        }
+        if(pendingScene_ && pendingScene_->scene == id) pendingScene_.reset();
         if(scene_ == id) scene_ = 0;
         if(mappingScene_ == id) mappingScene_ = 0;
     }
 
     void Session::setSceneName(uint32_t id, const std::string& name) { findScene(id).name = name; }
+
+    void Session::setSceneTransition(uint32_t id, uint32_t glide, Scene::Curve curve, Scene::Launch launch)
+    {
+        if(glide > 60000) throw std::invalid_argument("a scene's glide is at most a minute");
+        auto& scene = findScene(id);
+        scene.glide = glide; scene.curve = curve; scene.launch = launch;
+    }
 
     void Session::setSceneScope(uint32_t id, uint32_t scope)
     {

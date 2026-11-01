@@ -136,7 +136,7 @@ namespace oscairn::standalone
         for(const auto n : graph_.disabled) shape += std::to_string(n) + ",";
         if(page_ == routingPage) for(const auto& w : graph_.wires) if(!w.enabled) shape += "w" + std::to_string(w.id) + ",";
         shape += "|scenes:" + std::to_string(scene_);
-        for(const auto& s : scenes_) shape += "," + std::to_string(s.id) + ":" + s.name + ":" + std::to_string(s.scope);
+        for(const auto& s : scenes_) shape += "," + std::to_string(s.id) + ":" + s.name + ":" + std::to_string(s.scope) + ":" + std::to_string(s.glide);
         shape += "|controls";
         for(const auto& m : macros_) { shape += "," + std::to_string(m.id) + ":" + m.name + ":" + std::to_string(m.targets.size()); for(const auto& t : m.targets) { shape += ":" + describe(t) + std::to_string(int(t.curve)) + std::to_string(t.relative); for(const auto s : t.offIn) shape += "/" + std::to_string(s); } }
         if(shape != shape_) { shape_ = shape; rebuild(); }
@@ -248,6 +248,9 @@ namespace oscairn::standalone
                 auto* scope = button(top.removeFromLeft(80).reduced(2), "Scope...", {});
                 scope->setTooltip("What switching to the selected scene changes; the rest stays as it is");
                 scope->onClick = [this, scope] { sceneScopeMenu(*scope); };
+                auto* transition = button(top.removeFromLeft(110).reduced(2), "Transition...", {});
+                transition->setTooltip("How switching to the selected scene moves there: how long it glides, along which curve, and whether it waits for the beat or bar");
+                transition->onClick = [this, transition] { sceneTransitionMenu(*transition); };
             }
             size_t row = 0;
             for(const auto* rows : {&state_.parts, &state_.buses})
@@ -765,6 +768,11 @@ namespace oscairn::standalone
             try { for(const auto& p : engine_.parameters(t.node)) if(p.id == t.param) param = p.name; } catch(const std::exception&) {}
             return node + " · " + param;
         }
+        case MacroTarget::Kind::Morph:
+        {
+            auto name = [&](uint32_t id) { for(const auto& s : scenes_) if(s.id == id) return s.name; return std::string("a scene"); };
+            return "Morph " + name(t.sceneFrom) + " → " + name(t.sceneTo);
+        }
         }
         return {};
     }
@@ -809,6 +817,15 @@ namespace oscairn::standalone
         menu.addSubMenu("Part level", levels);
         menu.addSubMenu("Part mute", mutes);
         menu.addSubMenu("Another control", others);
+        // A morph: from one scene (at 0) to another (at 1).
+        juce::PopupMenu morphs;
+        for(const auto& a : scenes_)
+        {
+            juce::PopupMenu to;
+            for(const auto& b : scenes_) if(b.id != a.id) { MacroTarget t; t.kind = MacroTarget::Kind::Morph; t.sceneFrom = a.id; t.sceneTo = b.id; add(to, b.name, t); }
+            morphs.addSubMenu(text(a.name) + juce::String::fromUTF8(" →"), to);
+        }
+        menu.addSubMenu("Morph between scenes", morphs, scenes_.size() >= 2);
         menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&at), [safe = juce::Component::SafePointer<PartsView>(this), macro, choices](int chosen) {
             if(!safe || chosen <= 0 || size_t(chosen) > choices.size()) return;
             const auto t = choices[size_t(chosen) - 1];
@@ -852,6 +869,32 @@ namespace oscairn::standalone
             if(!safe || chosen <= 0) return;
             const auto next = scope ^ (1u << (chosen - 1));
             safe->edit([id, next](Control& c) { c.setSceneScope(id, next); });
+        });
+    }
+
+    // The selected scene's transition: its glide time, curve and launch, each ticked.
+    void PartsView::sceneTransitionMenu(juce::Component& at)
+    {
+        const auto it = std::find_if(scenes_.begin(), scenes_.end(), [&](const Scene& s) { return s.id == scene_; });
+        if(it == scenes_.end()) return;
+        const auto scene = *it;
+        static constexpr std::array<uint32_t, 8> glides{0, 100, 250, 500, 1000, 2000, 4000, 8000};
+        juce::PopupMenu menu, curves, launches;
+        for(size_t i = 0; i < glides.size(); ++i)
+            menu.addItem(int(i) + 1, glides[i] == 0 ? juce::String("At once") : glides[i] < 1000 ? juce::String(int(glides[i])) + " ms" : juce::String(glides[i] / 1000.0, 0) + " s", true, scene.glide == glides[i]);
+        const std::array<const char*, 3> curveNames{"Linear", "Ease in and out", "Equal power (levels by power)"}, launchNames{"At once", "On the next beat", "On the next bar"};
+        for(size_t i = 0; i < curveNames.size(); ++i) curves.addItem(100 + int(i), curveNames[i], scene.glide > 0, size_t(scene.curve) == i);
+        for(size_t i = 0; i < launchNames.size(); ++i) launches.addItem(200 + int(i), launchNames[i], true, size_t(scene.launch) == i);
+        menu.addSeparator();
+        menu.addSubMenu("Curve", curves, scene.glide > 0);
+        menu.addSubMenu("While playing", launches);
+        menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&at), [safe = juce::Component::SafePointer<PartsView>(this), scene](int chosen) {
+            if(!safe || chosen <= 0) return;
+            auto glide = scene.glide; auto curve = scene.curve; auto launch = scene.launch;
+            if(chosen <= int(glides.size())) glide = glides[size_t(chosen - 1)];
+            else if(chosen >= 200) launch = Scene::Launch(chosen - 200);
+            else curve = Scene::Curve(chosen - 100);
+            safe->edit([id = scene.id, glide, curve, launch](Control& c) { c.setSceneTransition(id, glide, curve, launch); });
         });
     }
 

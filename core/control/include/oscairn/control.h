@@ -260,6 +260,8 @@ namespace oscairn
         virtual void removeScene( uint32_t scene ) = 0;
         virtual void setSceneName( uint32_t scene, const std::string& name ) = 0;
         virtual void setSceneScope( uint32_t scene, uint32_t scope ) = 0; // Scene::Kind bits
+        // How selecting it moves there (parts.h): glide in milliseconds (at most a minute), curve, launch.
+        virtual void setSceneTransition( uint32_t scene, uint32_t glide, Scene::Curve curve, Scene::Launch launch ) = 0;
         // The plugin parameters scenes never touch (a sample's tuning, a level set by ear); scenes
         // touch every other automatable one. One taken back gets its current value in every scene.
         virtual void setSceneUntouched( const std::vector<SceneParameter>& parameters ) = 0;

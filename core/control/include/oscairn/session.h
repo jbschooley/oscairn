@@ -130,6 +130,7 @@ namespace oscairn
         void setSceneName(uint32_t scene, const std::string& name) override;
         void setSceneUntouched(const std::vector<SceneParameter>& parameters) override;
         void setSceneScope(uint32_t scene, uint32_t scope) override;
+        void setSceneTransition(uint32_t scene, uint32_t glide, Scene::Curve curve, Scene::Launch launch) override;
         uint32_t addMacro(const std::string& name, uint32_t part = 0) override;
         void removeMacro(uint32_t macro) override;
         void setMacroName(uint32_t macro, const std::string& name) override;
@@ -265,6 +266,19 @@ namespace oscairn
         double currentFraction(const MacroTarget& target) const;
         void driveMacro(uint32_t id, double value, bool& faders); // sets it and its targets
         void capture(Scene& scene) const;
+        // Scenes moving (parts.cpp): applied at once, blended between two, a glide's steps and a morph.
+        void applyScene(const Scene& scene, uint32_t scope);
+        void blendScenes(const Scene& from, const Scene& to, double t, Scene::Curve curve, double switchAt, uint32_t scope);
+        void startScene(const Scene& scene);
+        void advanceScenes(); // service()
+        void morphScenes(uint32_t from, uint32_t to, double t);
+        std::vector<std::pair<double, bool>> faderLevels() const; // each part's level and mute, to notice a hand on a fader
+        struct Transition { Scene from, to; uint64_t start = 0, frames = 1; std::vector<std::pair<double, bool>> applied; };
+        std::optional<Transition> transition_;
+        struct PendingScene { uint32_t scene = 0; double at = 0; }; // waiting for beat `at`
+        std::optional<PendingScene> pendingScene_;
+        bool applyingScene_ = false;
+        std::atomic<uint64_t> framesProcessed_{0}; // the audio thread's count, for glides
         bool touched(NodeId node, const ParamInfo& param) const; // a parameter scenes touch
         Part& findPart(uint32_t id);
         void removePairs(const AudioConnection& c);

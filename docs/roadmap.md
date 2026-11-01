@@ -208,8 +208,9 @@ in the others.
    - [ ] the full scene model: blocks and wires enabled per scene, and what each scene saves
      (plugins and wires switched off and on, seamlessly, scenes recording all of it with a
      scope, and the desktop's controls for it, done
-     ([status](rfcs/0011-performance-ui-and-editors.md#scenes-status)); the mappings' scenes as
-     one table and smooth transitions remain);
+     ([status](rfcs/0011-performance-ui-and-editors.md#scenes-status)); transitions (a glide per
+     scene along a curve, launching on the beat or bar, a control morphing between scenes) done;
+     the mappings' scenes as one table remains);
      seamless on the engine's draining and retiring (notes held on a disabled block play on
      until released, its tail rings out). Scene changes today set levels, mutes and values without
      rebuilding, so held notes and tails already carry on
@@ -530,8 +531,8 @@ Each starts as an RFC:
     an app or plugin.
   - [ ] **Recorder:** an app on the engine's recording service ([RFC 0020](rfcs/0020-recording.md)).
   - [ ] **OSC** control in and out, alongside MIDI and the control protocol.
-  - [ ] **Smooth transitions:** parameter changes on a scene or variation change glide over a
-    set time instead of jumping.
+  - [x] **Smooth transitions:** parameter changes on a scene change glide over a set time
+    instead of jumping ([status](rfcs/0011-performance-ui-and-editors.md#scenes-status)).
   - [ ] **Scripting:** user scripts that react to events and drive the graph and controls,
     sandboxed like plugins; language and API to be decided in an RFC.
 - [ ] **Developer kit:** the MIT SDK and templates, the builder image, the `oscairn` tool,

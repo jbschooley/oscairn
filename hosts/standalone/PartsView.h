@@ -44,6 +44,7 @@ namespace oscairn::standalone
         void devicesMenu(uint32_t part, juce::Component& at);
         void sceneControlsMenu(NodeId node, juce::Component& at);
         void sceneScopeMenu(juce::Component& at);
+        void sceneTransitionMenu(juce::Component& at);
         void mappingScenesMenu(uint32_t macro, size_t target, juce::Component& at);
         void targetMenu(uint32_t macro, juce::Component& at);
         std::string describe(const MacroTarget&) const;

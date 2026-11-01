@@ -748,6 +748,95 @@ namespace
         check(s.leaving() == 0, "A goes after three seconds of silence");
     }
 
+    // Scene transitions: a glide over time along a curve, a part muted on the way fading to
+    // silence, a hand on a fader stopping the glide, a scene waiting for the next beat, and a
+    // control morphing between two scenes; all saved.
+    void sceneTransitions(const char* fixture, const fs::path& root)
+    {
+        Session s(48000, frames);
+        const auto a = s.add("a", fixture, "org.kick.test.synth"), b = s.add("b", fixture, "org.kick.test.synth");
+        s.setParameter(a, 7, .5); s.setParameter(b, 7, .5);
+        const auto pa = s.addPart("A"), pb = s.addPart("B");
+        s.insertIntoPart(pa, 0, a); s.insertIntoPart(pb, 0, b); s.setPartLevel(pb, 1, true); s.commit();
+        const auto verse = s.addScene("Verse");                                 // A at 1, B muted
+        s.setPartLevel(pa, .2, false); s.commit(); const auto low = s.addScene("Low");        // A at .2
+        s.setPartLevel(pa, 1, true); s.commit(); const auto quiet = s.addScene("Quiet");     // A muted
+        s.setPartLevel(pa, 1, false); s.setPartLevel(pb, 1, false); s.setNodeEnabled(a, false); s.commit();
+        const auto other = s.addScene("Other");                                 // A off, B on
+        Audio x;
+        auto run = [&](double seconds) { for(int i = 0; i < int(48000 * seconds / frames); ++i) x.run(s); };
+        const auto stepTime = double(frames) / 48000;
+        s.selectScene(verse); s.note(true, 60, 1); run(.01);
+        check(near(x.l[0], .5), "the verse: A alone at full: " + std::to_string(x.l[0]));
+
+        // A glide of 100 ms: halfway, halfway there; then exactly there.
+        s.setSceneTransition(low, 100, Scene::Curve::Linear, Scene::Launch::Now);
+        s.selectScene(low); run(.05);
+        // Each step reads the glide before its block, so it lags by up to a block or two of 64 frames.
+        check(std::abs(x.l[0] - .5 * .6) < .5 * .8 * 2.5 * stepTime / .1, "halfway through the glide: " + std::to_string(x.l[0]));
+        run(.06);
+        check(near(x.l[0], .1) && s.graphState().parts[0].level == .2, "the glide ends exactly on the scene: " + std::to_string(x.l[0]));
+
+        // Equal power: halfway from silence to full is at half the power, not half the level.
+        s.setSceneTransition(verse, 100, Scene::Curve::EqualPower, Scene::Launch::Now);
+        s.selectScene(quiet); run(.01); // at once: no glide on Quiet
+        check(near(x.l[0], 0), "Quiet mutes A at once: " + std::to_string(x.l[0]));
+        s.selectScene(verse); run(.05);
+        check(std::abs(x.l[0] - .5 * std::sqrt(.5)) < .02 && !s.graphState().parts[0].mute, "unmuted, A fades in by power: " + std::to_string(x.l[0]));
+        run(.06);
+        check(near(x.l[0], .5), "and arrives: " + std::to_string(x.l[0]));
+
+        // A part muted on the way fades to silence, then is muted at its scene's level.
+        s.setSceneTransition(quiet, 100, Scene::Curve::Linear, Scene::Launch::Now);
+        s.selectScene(quiet); run(.05);
+        check(std::abs(x.l[0] - .25) < .02, "fading out: " + std::to_string(x.l[0]));
+        run(.06);
+        check(near(x.l[0], 0) && s.graphState().parts[0].mute && s.graphState().parts[0].level == 1, "muted at the end, its level kept: " + std::to_string(x.l[0]));
+
+        // A hand on a fader stops the glide where it is.
+        s.setSceneTransition(verse, 1000, Scene::Curve::Linear, Scene::Launch::Now);
+        s.selectScene(verse); run(.05);
+        s.setPartLevel(pa, .7, false); s.commit(); run(.2);
+        check(near(x.l[0], .35), "the fader moved during the glide stays where it was put: " + std::to_string(x.l[0]));
+
+        // On the beat: while playing, the scene waits for the next beat (120 BPM: every half second).
+        s.setSceneTransition(low, 0, Scene::Curve::Linear, Scene::Launch::Beat);
+        s.setPlaying(true); run(.1);
+        const double before = s.transportState().beat;
+        s.selectScene(low); run(.02);
+        check(near(x.l[0], .35) && s.transportState().beat < std::floor(before) + 1, "it waits for the beat: " + std::to_string(x.l[0]));
+        run(.5);
+        check(near(x.l[0], .1) && s.graphState().scene == low, "and comes on it: " + std::to_string(x.l[0]));
+        s.setPlaying(false);
+
+        // A control morphing between two scenes: levels in between, A's plugin switching halfway.
+        const auto morph = s.addMacro("Morph");
+        MacroTarget t; t.kind = MacroTarget::Kind::Morph; t.sceneFrom = verse; t.sceneTo = other;
+        s.setMacroTargets(morph, {t});
+        s.setMacro(morph, 0); s.commit(); run(.01);
+        check(near(x.l[0], .5) && !s.graphState().disabled.count(a), "at 0: the verse");
+        s.setMacro(morph, .25); s.commit(); run(.01);
+        check(near(x.l[0], .5 + .5 * .25) && !s.graphState().disabled.count(a), "a quarter of the way: B fading in, A still on: " + std::to_string(x.l[0]));
+        s.setMacro(morph, .75); run(.01);
+        check(s.graphState().disabled.count(a) && s.graphState().macros[0].value == .75, "past halfway: A off, the control where it was put");
+        s.setMacro(morph, 1); run(.01);
+        bool same = false; try { MacroTarget bad = t; bad.sceneTo = verse; s.setMacroTargets(morph, {bad}); } catch(const std::invalid_argument&) { same = true; }
+        check(same, "a morph between a scene and itself is refused");
+        s.note(false, 60, 0); x.run(s);
+
+        // Saved and loaded.
+        s.savePerformance((root / "transitions").string());
+        Session u(48000, frames);
+        u.loadPerformance((root / "transitions").string());
+        const auto g = u.graphState();
+        const auto saved = std::find_if(g.scenes.begin(), g.scenes.end(), [&](const Scene& x) { return x.id == low; });
+        check(saved != g.scenes.end() && saved->launch == Scene::Launch::Beat && g.scenes[0].glide == 1000 && g.scenes[0].curve == Scene::Curve::Linear &&
+              g.macros.size() == 1 && g.macros[0].targets[0].kind == MacroTarget::Kind::Morph && g.macros[0].targets[0].sceneTo == other,
+              "transitions and the morph round-trip");
+        s.removeScene(other);
+        check(s.graphState().macros[0].targets.empty(), "removing a scene removes morphs to it");
+    }
+
     // Switching plugins and wires off and on (RFC 0011's full scene model): an off plugin takes
     // no new notes but plays out the ones it holds, then stops; an off effect in a chain is
     // passed around; an off note wire takes no new notes; undo and saving keep it.
@@ -969,6 +1058,7 @@ int main(int argc, char** argv)
         sceneSwitching(argv[1], temp.path);
         onOff(argv[1], temp.path);
         performanceChange(argv[1], temp.path);
+        sceneTransitions(argv[1], temp.path);
         controls(argv[1], temp.path);
         persistence(argv[1], argv[2], argv[3], temp.path);
     }

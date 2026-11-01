@@ -22,7 +22,8 @@ Checked when built and tested; the sections below say how.
   - [x] plugins and wires switched off and on, seamlessly
   - [x] scenes record all of it, each with its scope
   - [x] the desktop's controls for it
-  - [ ] the mappings' scenes laid out as one table; smooth transitions
+  - [x] transitions: a glide per scene along a curve, launching on the beat or bar, and a control morphing between two scenes ([status](#scenes-status))
+  - [ ] the mappings' scenes laid out as one table
 
 ## Problem
 
@@ -420,7 +421,7 @@ scene parameter chosen from a box's **Scene controls...**; it now records the fu
 ([status](#scenes-status)). The Parts view's scene buttons switch scenes; **+ Scene** and **Store**
 capture the current state. Switching changes route gains and sends parameter events, so held
 notes and tails go on; `control-parts` switches six times while a note is held and checks
-there is no gap. Values jump for now; smooth transitions are on the roadmap.
+there is no gap. Scenes now also glide, launch on the beat and morph ([status](#scenes-status)).
 
 Not yet: bypass in scenes (with the pedal view), the device's physical controls for these
 views, groups and undo.
@@ -500,7 +501,26 @@ control mappings). A control's target row has **Scenes...**, ticking the scenes 
 in. **Scene controls...** ticks the parameters scenes touch. `desktop-parts-model` checks an off
 plugin's box and Routing chip; the rest was checked by rendering, not by clicking through.
 
-Not yet: the mappings' scenes laid out as one table across all mappings, and smooth transitions.
+**Transitions** implemented 2026-11-01 (`setSceneTransition`, `scenes.transition`, the
+Performance's scenes' `glide`, `curve` and `launch`; a `morph` control target). Each scene has a
+glide (0 to 60 seconds), a curve (linear; ease in and out; equal power, which moves levels by
+their power so a crossfade does not dip) and a launch (at once, or at the next beat or bar while
+the transport plays, 4 beats to the bar, checked at the service tick). Selecting a scene with a
+glide captures where everything is and moves levels, pans, sends, lane and user-wire Mix rows,
+control values and smooth parameters along the curve in audio time, one step per service tick,
+ending exactly on the scene; what cannot glide (plugins and wires on or off, solos, stepped
+parameters) changes at the start; a part, lane or user wire muted on one side fades from or to
+silence and is muted at the end with its level kept. Moving a part's fader while it glides stops
+the glide there. A control with a `morph` target moves between two scenes by hand, what cannot
+glide switching halfway, and the control keeps the place it was moved to. A glide and a waiting
+scene both pause while graph edits are staged, rather than committing them. On the desktop:
+**Transition...** beside **Scope...** (glide, curve, launch), and **Morph between scenes** in a
+control's **+ Target**. `control-parts` checks a linear glide halfway and at its end, an equal-power
+fade in, a mute fading out, a fader stopping a glide, a launch waiting for the beat, a morph
+before and after halfway, and the round-trip; removing a scene removes morphs to it.
+
+Not yet: the mappings' scenes laid out as one table across all mappings.
+
 
 ## Step 3 status
 

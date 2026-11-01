@@ -169,11 +169,12 @@ namespace oscairn
     // control. Physical knobs, MIDI CC and scenes set controls.
     struct MacroTarget
     {
-        enum class Kind { Parameter, PartLevel, PartMute, Macro } kind = Kind::Parameter;
+        enum class Kind { Parameter, PartLevel, PartMute, Macro, Morph } kind = Kind::Parameter;
         enum class Curve { Linear, Exponential, Logarithmic, SCurve } curve = Curve::Linear;
         NodeId node = 0; uint32_t param = 0; // Parameter
         uint32_t part = 0;                   // PartLevel, PartMute
         uint32_t macro = 0;                  // Macro
+        uint32_t sceneFrom = 0, sceneTo = 0; // Morph: the scenes the control moves between, from at 0 to at 1
         // The range the control's 0..1 covers, as fractions of the target's range; end below
         // start reverses it. Relative targets move around `base` (the value when assigned) by
         // half the range either way instead.
@@ -211,6 +212,10 @@ namespace oscairn
     struct Scene
     {
         enum Kind : uint32_t { Enabled = 1, Mutes = 2, Mix = 4, Parameters = 8, Mappings = 16, Everything = 31 };
+        // How selecting it moves there: over `glide` milliseconds (0: at once) along `curve`, and
+        // when: at once, or at the next beat or bar while the transport plays.
+        enum class Curve { Linear, Ease, EqualPower };
+        enum class Launch { Now, Beat, Bar };
         struct LaneState { uint32_t split = 0, lane = 0; double level = 1, pan = 0; bool mute = false, solo = false; bool operator==(const LaneState&) const = default; };
         struct PartState
         {
@@ -225,6 +230,9 @@ namespace oscairn
         uint32_t id = 0;
         std::string name;
         uint32_t scope = Everything;     // the kinds selecting it applies
+        uint32_t glide = 0;              // milliseconds
+        Curve curve = Curve::Linear;
+        Launch launch = Launch::Now;
         std::vector<NodeId> off;         // Enabled: the plugins off
         std::vector<WireRef> offWires;   // Enabled: the wires off
         std::vector<PartState> parts;    // Mutes (mute, solo) and Mix (the rest)
@@ -234,6 +242,7 @@ namespace oscairn
         bool operator==(const Scene&) const = default;
     };
     inline constexpr std::array<const char*, 5> sceneKinds{"enabled", "mutes", "mix", "parameters", "mappings"}; // the scope's names, bit by bit
+    inline constexpr std::array<const char*, 3> sceneCurves{"linear", "ease", "equal-power"}, sceneLaunches{"now", "beat", "bar"};
 
     // What removing a node does with the user wires on it.
     enum class UserWires { Remove, Reconnect }; // Reconnect joins its user sources to its user destinations

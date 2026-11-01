@@ -153,10 +153,11 @@ request members.
 | `scenes.select` | `scene`: applies the kinds in its scope at once and commits staged graph edits; plugins switched off ring out | `{"accepted":true}` |
 | `scenes.remove`, `scenes.name` | `scene` (and `name`); removing one takes it from every mapping's `offIn` | `{"accepted":true}` |
 | `scenes.scope` | `scene`, `scope`: the kinds selecting it applies, of `enabled`, `mutes`, `mix`, `parameters`, `mappings`; the rest stay as they are | `{"accepted":true}` |
+| `scenes.transition` | `scene`, optional `glide` (milliseconds, at most 60000; 0 or absent: at once), `curve` (`linear`, `ease` or `equal-power`) and `launch` (`now`, `beat` or `bar`): how selecting it moves there (below) | `{"accepted":true}` |
 | `scenes.untouched` | `parameters`: the `{node, param}` scenes never touch (they touch every other automatable, writable parameter); one taken back gets its current value in every scene | `{"accepted":true}` |
 | `controls.add` | optional `name` and `part`, the part that owns it (RFC 0021; 0 or absent: the Performance). A part's control targets only its part's plugins and its other controls, and goes with it into a Sound and when it is removed | numeric `control` |
 | `controls.remove`, `controls.name` | `control` (and `name`) | `{"accepted":true}` |
-| `controls.targets` | `control`, `targets`: each `kind` (`parameter` with `node`, `param`; `partLevel` or `partMute` with `part`; `control` with `control`), optional `start`, `end` (0..1, end below start reverses), `curve` (`linear`, `exponential`, `logarithmic`, `s-curve`) `relative`, and `offIn` (the scenes it is off in) | `{"accepted":true}` |
+| `controls.targets` | `control`, `targets`: each `kind` (`parameter` with `node`, `param`; `partLevel` or `partMute` with `part`; `control` with `control`; `morph` with `from` and `to`, two scenes: the control moves between them, as below), optional `start`, `end` (0..1, end below start reverses), `curve` (`linear`, `exponential`, `logarithmic`, `s-curve`) `relative`, and `offIn` (the scenes it is off in) | `{"accepted":true}` |
 | `controls.set` | `control`, `value` (0..1): sets its targets, and theirs | `{"accepted":true}` |
 | `pads.get` | omitted or `{}` | the pad map: `bank` and eight `banks` of 16 pads, each `note`, `channel` (-1 follows the player), `velocity` (0 as played), `pressure` (`none`, `poly`, `channel`) |
 | `pads.set` | `map` (as `pads.get` returns it) | `{"accepted":true}` |
@@ -329,7 +330,17 @@ mappings off in the scene last selected that applies mappings are skipped. Kinds
 lanes' faders, sends and user wires' Mix rows), `parameters` (plugin parameters and controls'
 values), `mappings`. Selecting a scene switches plugins off seamlessly (held notes and tails
 ring out), changes route gains and sends only the parameter values that differ, so held notes
-and tails go on; values jump for now (smooth transitions are planned).
+and tails go on.
+
+Each scene also has a transition (`glide`, `curve`, `launch`). With a glide, levels, pans,
+sends, Mix rows, control values and smooth parameters move there over that many milliseconds
+along the curve (`ease` eases in and out; `equal-power` moves levels by their power, so a fade
+does not dip); what cannot glide (plugins and wires on or off, solos, stepped parameters)
+changes at the start; a part, lane or user wire muted on one side fades from or to silence.
+Moving a part's fader while it glides stops the glide there. With `launch` `beat` or `bar`,
+selecting it while the transport plays waits for the next beat or bar (4 beats), checked at the
+engine's service tick (about 5 ms). A control target of kind `morph` moves between two scenes by
+hand: the state at the control's value, what cannot glide switching at half way.
 
 ## Notifications
 

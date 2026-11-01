@@ -258,7 +258,7 @@ namespace oscairn
             if( !map.valid() ) invalid("Invalid pad map");
             return map;
         }
-        const char* kindName( MacroTarget::Kind k ) { return k == MacroTarget::Kind::Parameter ? "parameter" : k == MacroTarget::Kind::PartLevel ? "partLevel" : k == MacroTarget::Kind::PartMute ? "partMute" : "control"; }
+        const char* kindName( MacroTarget::Kind k ) { return k == MacroTarget::Kind::Parameter ? "parameter" : k == MacroTarget::Kind::PartLevel ? "partLevel" : k == MacroTarget::Kind::PartMute ? "partMute" : k == MacroTarget::Kind::Morph ? "morph" : "control"; }
         const char* curveName( MacroTarget::Curve c ) { return c == MacroTarget::Curve::Linear ? "linear" : c == MacroTarget::Curve::Exponential ? "exponential" : c == MacroTarget::Curve::Logarithmic ? "logarithmic" : "s-curve"; }
         std::string macrosJson( const std::vector<Macro>& macros )
         {
@@ -268,7 +268,7 @@ namespace oscairn
                 std::vector<std::string> targets;
                 for( const auto& t : m.targets )
                     targets.push_back(std::string("{\"kind\":\"") + kindName(t.kind) + "\",\"node\":" + std::to_string(t.node) + ",\"param\":" + std::to_string(t.param) +
-                        ",\"part\":" + std::to_string(t.part) + ",\"control\":" + std::to_string(t.macro) + ",\"start\":" + encode(t.start) + ",\"end\":" + encode(t.end) +
+                        ",\"part\":" + std::to_string(t.part) + ",\"control\":" + std::to_string(t.macro) + ",\"from\":" + std::to_string(t.sceneFrom) + ",\"to\":" + std::to_string(t.sceneTo) + ",\"start\":" + encode(t.start) + ",\"end\":" + encode(t.end) +
                         ",\"curve\":\"" + curveName(t.curve) + "\",\"relative\":" + (t.relative ? "true" : "false") + ",\"base\":" + encode(t.base) + ",\"offIn\":" + [&] {
                             std::vector<std::string> ids; for( const auto id : t.offIn ) ids.push_back(std::to_string(id)); return join(ids); }() + '}');
                 out.push_back("{\"id\":" + std::to_string(m.id) + ",\"part\":" + std::to_string(m.part) + ",\"name\":" + quote(m.name) + ",\"value\":" + encode(m.value) + ",\"targets\":" + join(targets) + '}');
@@ -281,13 +281,14 @@ namespace oscairn
             std::vector<MacroTarget> targets;
             for( auto* e = static_cast<const json_array_s*>(list->payload)->start; e; e = e->next )
             {
-                fields(e->value,{"kind","node","param","part","control","start","end","curve","relative","base","offIn"});
+                fields(e->value,{"kind","node","param","part","control","from","to","start","end","curve","relative","base","offIn"});
                 MacroTarget t;
                 const auto kind = string(member(e->value,"kind"));
-                t.kind = kind == "parameter" ? MacroTarget::Kind::Parameter : kind == "partLevel" ? MacroTarget::Kind::PartLevel : kind == "partMute" ? MacroTarget::Kind::PartMute : kind == "control" ? MacroTarget::Kind::Macro : (invalid("kind is parameter, partLevel, partMute or control"), MacroTarget::Kind::Parameter);
+                t.kind = kind == "parameter" ? MacroTarget::Kind::Parameter : kind == "partLevel" ? MacroTarget::Kind::PartLevel : kind == "partMute" ? MacroTarget::Kind::PartMute : kind == "control" ? MacroTarget::Kind::Macro : kind == "morph" ? MacroTarget::Kind::Morph : (invalid("kind is parameter, partLevel, partMute, control or morph"), MacroTarget::Kind::Parameter);
                 if( t.kind == MacroTarget::Kind::Parameter ) { t.node = node(c,member(e->value,"node")); t.param = integer(member(e->value,"param")); }
                 if( t.kind == MacroTarget::Kind::PartLevel || t.kind == MacroTarget::Kind::PartMute ) t.part = integer(member(e->value,"part"));
                 if( t.kind == MacroTarget::Kind::Macro ) t.macro = integer(member(e->value,"control"));
+                if( t.kind == MacroTarget::Kind::Morph ) { t.sceneFrom = integer(member(e->value,"from")); t.sceneTo = integer(member(e->value,"to")); }
                 if( member(e->value,"start") ) t.start = number(member(e->value,"start"));
                 if( member(e->value,"end") ) t.end = number(member(e->value,"end"));
                 if( const auto curve = member(e->value,"curve") )
@@ -333,7 +334,8 @@ namespace oscairn
                 for( const auto& m : s.wires ) mixes.push_back('{' + wireRefJson(m.wire) + ",\"level\":" + encode(m.level) + ",\"pan\":" + encode(m.pan) + ",\"mute\":" + flag(m.mute) + ",\"solo\":" + flag(m.solo) + '}');
                 for( const auto& v : s.values ) values.push_back("{\"node\":" + std::to_string(v.at.node) + ",\"param\":" + std::to_string(v.at.param) + ",\"value\":" + encode(v.value) + '}');
                 for( const auto& [m, v] : s.macros ) macros.push_back("{\"control\":" + std::to_string(m) + ",\"value\":" + encode(v) + '}');
-                scenes.push_back("{\"id\":" + std::to_string(s.id) + ",\"name\":" + quote(s.name) + ",\"scope\":" + join(scope) + ",\"off\":" + join(off) + ",\"offWires\":" + join(offWires) +
+                scenes.push_back("{\"id\":" + std::to_string(s.id) + ",\"name\":" + quote(s.name) + ",\"scope\":" + join(scope) +
+                    ",\"glide\":" + std::to_string(s.glide) + ",\"curve\":" + quote(sceneCurves[size_t(s.curve)]) + ",\"launch\":" + quote(sceneLaunches[size_t(s.launch)]) + ",\"off\":" + join(off) + ",\"offWires\":" + join(offWires) +
                     ",\"parts\":" + join(parts) + ",\"wires\":" + join(mixes) + ",\"values\":" + join(values) + ",\"controls\":" + join(macros) + '}');
             }
             for( const auto& at : g.untouched ) parameters.push_back("{\"node\":" + std::to_string(at.node) + ",\"param\":" + std::to_string(at.param) + '}');
@@ -392,7 +394,7 @@ namespace oscairn
             if( method == "session.hello" )
             {
                 fields(p, {});
-                return R"({"protocolVersion":1,"server":"oscairn","capabilities":["performance.save","performance.load","performance.export","performance.info","performance.setInfo","library.query","library.favorite","library.rescan","library.contents","library.install","library.libraries","library.uninstall","library.delete","library.save","library.load","parts.saveSound","parts.loadSound","parts.fromSound","performance.contents","performance.import","state.info","state.save","presets.list","properties.list","properties.get","properties.set","properties.request","sounds.get","sounds.prepare","sounds.select","sounds.discard","assets.register","assets.import","assets.libraries","session.status","params.list","params.get","params.set","params.text","params.gesture","graph.audio-routing","graph.get","graph.add","effects.create","effects.resources","graph.remove","graph.replace","graph.connect","graph.disconnect","graph.map","graph.unmap","graph.commit","parts.add","parts.remove","parts.insert","parts.removeNode","parts.move","parts.addSplit","parts.removeSplit","parts.addLane","parts.removeLane","parts.lane","parts.input","parts.output","parts.send","parts.level","parts.name","parts.solo","parts.pan","parts.meters","wires.meters","edit.undo","edit.redo","edit.history","wires.connect","wires.disconnect","wires.enable","graph.enable","wires.mix","wires.zones","scenes.add","scenes.store","scenes.select","scenes.remove","scenes.name","scenes.scope","scenes.untouched","controls.add","controls.remove","controls.name","controls.targets","controls.set","subscribe","unsubscribe","transport.get","transport.set","notes.send","pads.get","pads.set","pads.play","pads.pressure"],"limits":{"messageBytes":65536,"depth":32,"batch":64,"parameterChanges":128}})";
+                return R"({"protocolVersion":1,"server":"oscairn","capabilities":["performance.save","performance.load","performance.export","performance.info","performance.setInfo","library.query","library.favorite","library.rescan","library.contents","library.install","library.libraries","library.uninstall","library.delete","library.save","library.load","parts.saveSound","parts.loadSound","parts.fromSound","performance.contents","performance.import","state.info","state.save","presets.list","properties.list","properties.get","properties.set","properties.request","sounds.get","sounds.prepare","sounds.select","sounds.discard","assets.register","assets.import","assets.libraries","session.status","params.list","params.get","params.set","params.text","params.gesture","graph.audio-routing","graph.get","graph.add","effects.create","effects.resources","graph.remove","graph.replace","graph.connect","graph.disconnect","graph.map","graph.unmap","graph.commit","parts.add","parts.remove","parts.insert","parts.removeNode","parts.move","parts.addSplit","parts.removeSplit","parts.addLane","parts.removeLane","parts.lane","parts.input","parts.output","parts.send","parts.level","parts.name","parts.solo","parts.pan","parts.meters","wires.meters","edit.undo","edit.redo","edit.history","wires.connect","wires.disconnect","wires.enable","graph.enable","wires.mix","wires.zones","scenes.add","scenes.store","scenes.select","scenes.remove","scenes.name","scenes.scope","scenes.transition","scenes.untouched","controls.add","controls.remove","controls.name","controls.targets","controls.set","subscribe","unsubscribe","transport.get","transport.set","notes.send","pads.get","pads.set","pads.play","pads.pressure"],"limits":{"messageBytes":65536,"depth":32,"batch":64,"parameterChanges":128}})";
             }
             if( method == "subscribe" || method == "unsubscribe" )
             {
@@ -737,6 +739,21 @@ namespace oscairn
                             scope |= 1u << (at - sceneKinds.begin());
                         }
                         c.setSceneScope(integer(member(p,"scene")), scope);
+                        return R"({"accepted":true})";
+                    }
+                    if( method == "scenes.transition" )
+                    {
+                        fields(p,{"scene","glide","curve","launch"});
+                        auto pick = [&](const char* key, const auto& names) {
+                            const auto v = member(p,key);
+                            if( !v ) return size_t(0);
+                            const auto name = std::string(string(v));
+                            const auto at = std::find(names.begin(), names.end(), name);
+                            if( at == names.end() ) invalid("curve is linear, ease or equal-power; launch is now, beat or bar");
+                            return size_t(at - names.begin());
+                        };
+                        const auto glide = member(p,"glide") ? integer(member(p,"glide")) : 0;
+                        c.setSceneTransition(integer(member(p,"scene")), glide, Scene::Curve(pick("curve", sceneCurves)), Scene::Launch(pick("launch", sceneLaunches)));
                         return R"({"accepted":true})";
                     }
                     if( method == "scenes.untouched" )

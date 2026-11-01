@@ -206,6 +206,10 @@ namespace oscairn
             for(auto s:array(field(root,"scenes")))
             {
                 Scene scene;scene.id=static_cast<uint32_t>(integer(field(s,"id")));scene.name=string(field(s,"name"));scene.scope=0;
+                scene.glide=static_cast<uint32_t>(integer(field(s,"glide")));
+                auto index=[](const auto& names,const std::string& name){const auto at=std::find(names.begin(),names.end(),name);return at==names.end()?0:int(at-names.begin());};
+                scene.curve=Scene::Curve(index(sceneCurves,std::string(string(field(s,"curve")))));
+                scene.launch=Scene::Launch(index(sceneLaunches,std::string(string(field(s,"launch")))));
                 for(auto k:array(field(s,"scope"))){const auto name=std::string(string(k));const auto at=std::find(sceneKinds.begin(),sceneKinds.end(),name);if(at!=sceneKinds.end())scene.scope|=1u<<(at-sceneKinds.begin());}
                 for(auto n:array(field(s,"off")))scene.off.push_back(static_cast<NodeId>(integer(n)));
                 for(auto r:array(field(s,"offWires")))scene.offWires.push_back(ref(r));
@@ -229,12 +233,13 @@ namespace oscairn
                 for(auto t:array(field(m,"targets")))
                 {
                     MacroTarget target;const auto kind=string(field(t,"kind")),curve=string(field(t,"curve"));
-                    target.kind=kind=="parameter"?MacroTarget::Kind::Parameter:kind=="partLevel"?MacroTarget::Kind::PartLevel:kind=="partMute"?MacroTarget::Kind::PartMute:MacroTarget::Kind::Macro;
+                    target.kind=kind=="parameter"?MacroTarget::Kind::Parameter:kind=="partLevel"?MacroTarget::Kind::PartLevel:kind=="partMute"?MacroTarget::Kind::PartMute:kind=="morph"?MacroTarget::Kind::Morph:MacroTarget::Kind::Macro;
                     target.curve=curve=="exponential"?MacroTarget::Curve::Exponential:curve=="logarithmic"?MacroTarget::Curve::Logarithmic:curve=="s-curve"?MacroTarget::Curve::SCurve:MacroTarget::Curve::Linear;
                     target.node=static_cast<NodeId>(integer(field(t,"node")));target.param=static_cast<uint32_t>(integer(field(t,"param")));
                     target.part=static_cast<uint32_t>(integer(field(t,"part")));target.macro=static_cast<uint32_t>(integer(field(t,"control")));
                     target.start=number(field(t,"start"));target.end=number(field(t,"end"));target.relative=boolean(field(t,"relative"));target.base=number(field(t,"base"));
                     for(auto id:array(field(t,"offIn")))target.offIn.push_back(static_cast<uint32_t>(integer(id)));
+                    target.sceneFrom=static_cast<uint32_t>(integer(field(t,"from")));target.sceneTo=static_cast<uint32_t>(integer(field(t,"to")));
                     macro.targets.push_back(target);
                 }
                 next.macros.push_back(std::move(macro));
@@ -534,6 +539,10 @@ namespace oscairn
         for(const auto& at:parameters){if(list.size()>1)list+=',';list+="{\"node\":"+std::to_string(at.node)+",\"param\":"+std::to_string(at.param)+'}';}
         impl_->call("scenes.untouched","{\"parameters\":"+list+"]}");impl_->refresh();
     }
+    void RemoteControl::setSceneTransition(uint32_t scene,uint32_t glide,Scene::Curve curve,Scene::Launch launch)
+    {
+        impl_->call("scenes.transition","{\"scene\":"+std::to_string(scene)+",\"glide\":"+std::to_string(glide)+",\"curve\":"+quote(sceneCurves[size_t(curve)])+",\"launch\":"+quote(sceneLaunches[size_t(launch)])+'}');impl_->refresh();
+    }
     void RemoteControl::setSceneScope(uint32_t scene,uint32_t scope)
     {
         std::string list="[";
@@ -549,9 +558,9 @@ namespace oscairn
         std::string list="[";
         for(const auto& t:targets){
             if(list.size()>1)list+=',';
-            const char* kind=t.kind==MacroTarget::Kind::Parameter?"parameter":t.kind==MacroTarget::Kind::PartLevel?"partLevel":t.kind==MacroTarget::Kind::PartMute?"partMute":"control";
+            const char* kind=t.kind==MacroTarget::Kind::Parameter?"parameter":t.kind==MacroTarget::Kind::PartLevel?"partLevel":t.kind==MacroTarget::Kind::PartMute?"partMute":t.kind==MacroTarget::Kind::Morph?"morph":"control";
             const char* curve=t.curve==MacroTarget::Curve::Linear?"linear":t.curve==MacroTarget::Curve::Exponential?"exponential":t.curve==MacroTarget::Curve::Logarithmic?"logarithmic":"s-curve";
-            list+=std::string("{\"kind\":\"")+kind+"\",\"node\":"+std::to_string(t.node)+",\"param\":"+std::to_string(t.param)+",\"part\":"+std::to_string(t.part)+",\"control\":"+std::to_string(t.macro)+
+            list+=std::string("{\"kind\":\"")+kind+"\",\"node\":"+std::to_string(t.node)+",\"param\":"+std::to_string(t.param)+",\"part\":"+std::to_string(t.part)+",\"control\":"+std::to_string(t.macro)+",\"from\":"+std::to_string(t.sceneFrom)+",\"to\":"+std::to_string(t.sceneTo)+
                 ",\"start\":"+encode(t.start)+",\"end\":"+encode(t.end)+",\"curve\":\""+curve+"\",\"relative\":"+(t.relative?"true":"false")+",\"offIn\":[";
             for(size_t i=0;i<t.offIn.size();++i)list+=(i?",":"")+std::to_string(t.offIn[i]);
             list+="]}";

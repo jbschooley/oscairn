@@ -95,6 +95,7 @@ namespace oscairn
         void setSceneName(uint32_t scene,const std::string& name) override;
         void setSceneUntouched(const std::vector<SceneParameter>& parameters) override;
         void setSceneScope(uint32_t scene, uint32_t scope) override;
+        void setSceneTransition(uint32_t scene, uint32_t glide, Scene::Curve curve, Scene::Launch launch) override;
         uint32_t addMacro(const std::string& name, uint32_t part = 0) override;
         void removeMacro(uint32_t macro) override;
         void setMacroName(uint32_t macro,const std::string& name) override;

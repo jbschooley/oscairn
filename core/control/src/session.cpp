@@ -318,6 +318,7 @@ namespace oscairn
         ringOut();
         meter();
         if( !staged_ ) record(); // changes that need no commit (scenes, controls, pads) are steps too
+        advanceScenes();
         for( const auto& [node,name] : nodes_ )
         {
             auto& host = graph_.host(node);
@@ -458,6 +459,7 @@ namespace oscairn
         statusBeat_.store( (double)t.song_pos_beats / (double)CLAP_BEATTIME_FACTOR );
         const bool ok = graph_.process( inputs, ni, outputs, no, frames, &t, merged_.data(), (uint32_t)count, false, mergedSources_.data() );
         transport_.advance( frames );
+        framesProcessed_.fetch_add( frames, std::memory_order_relaxed );
         return ok;
     }
 }

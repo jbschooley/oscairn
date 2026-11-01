@@ -1170,6 +1170,28 @@
             ],
             "additionalProperties": false
           }
+        },
+        "glide": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 60000,
+          "description": "Milliseconds the scene takes to arrive when selected; 0: at once"
+        },
+        "curve": {
+          "enum": [
+            "linear",
+            "ease",
+            "equal-power"
+          ],
+          "description": "How it glides; equal-power moves levels by their power"
+        },
+        "launch": {
+          "enum": [
+            "now",
+            "beat",
+            "bar"
+          ],
+          "description": "When selecting it takes effect while the transport plays"
         }
       },
       "required": [
@@ -1181,7 +1203,10 @@
         "parts",
         "wires",
         "values",
-        "controls"
+        "controls",
+        "glide",
+        "curve",
+        "launch"
       ],
       "additionalProperties": false
     },
@@ -1211,7 +1236,8 @@
             "parameter",
             "partLevel",
             "partMute",
-            "control"
+            "control",
+            "morph"
           ]
         },
         "node": {
@@ -1267,6 +1293,18 @@
             "maximum": 4294967295
           },
           "description": "The scenes this mapping is off in; empty in a Sound"
+        },
+        "from": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4294967295,
+          "description": "morph: the scene at 0"
+        },
+        "to": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4294967295,
+          "description": "morph: the scene at 1"
         }
       },
       "required": [
