@@ -182,14 +182,14 @@ int main(int argc, char** argv)
         check(latest != listed.items.end() && latest->revision == latestSave.revision && latest->hash == info.hash, "the library has the newer revision, with its hash");
         s.loadSound(part, saved.id);
         check(s.parts()[0].from.revision == latestSave.revision, "Update from library loads it");
-        // Kept with the Performance in the library; an export to a folder detaches it.
+        // Kept with the Performance, in the library or exported to a folder.
         const auto kept = t.savePerformanceToLibrary("With Sources");
         Session u(48000, frames); u.loadPerformanceFromLibrary(kept);
         check(u.parts()[0].from == t.parts()[0].from && !u.parts()[0].from.sound.empty(), "where a part came from is saved with a library Performance");
         const auto exported = std::filesystem::path(home.path) / "exported.oscairn";
         t.savePerformance(exported.string());
         Session v(48000, frames); v.loadPerformance(exported.string());
-        check(v.parts()[0].from.sound.empty() && v.parts()[0].splits.size() == 1 && !t.parts()[0].from.sound.empty(), "an exported Performance's parts stand alone; the open one keeps its sources");
+        check(v.parts()[0].from == t.parts()[0].from && v.parts()[0].splits.size() == 1, "an exported Performance keeps its parts' references");
         // Its Sound deleted from the library, the Performance still opens and plays as it was.
         std::filesystem::remove_all(std::filesystem::path(home.path) / "Sounds/Split Keys 2.osound");
         u.libraryRescan();

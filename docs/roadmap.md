@@ -294,8 +294,9 @@ in the others.
      all of it or chosen items; importing again skips copies still unchanged, by content
      hash; the same choice of parts for any package, such as only its
      plugin ([RFC 0006](rfcs/0006-packages-and-portability.md#choosing-what-to-import))
-   - [ ] **exporting a Performance with its Sounds:** parts keep where they came from and the
-     export brings those Sounds and their samples; today a folder export drops the link
+   - [x] exporting a Performance keeps its parts' references to the Sounds they came from
+   - [ ] **exporting with its Sounds, as an option:** the referenced Sounds and their samples
+     travel with it, and importing adds those the device lacks
      ([design](rfcs/0021-sounds-performances-and-library.md#exporting-a-performance))
    - [ ] hiding tags from the tag list, and tag colors
    - [ ] **importing a Performance:** all of another Performance's parts, buses, their wires

@@ -96,9 +96,7 @@ void validateTree(const fs::path& root){size_t files=0;uint64_t bytes=0;for(cons
 std::unique_ptr<json_value_s,decltype(&std::free)> document(const fs::path& root){const auto bytes=state_files::read(root/"performance.json",4*1024*1024);const auto error=detail::jsonPreflight({reinterpret_cast<const char*>(bytes.data()),bytes.size()},32);if(!error.empty())bad(std::string(error));auto* doc=json_parse(bytes.data(),bytes.size());if(!doc)bad("invalid JSON");return {doc,&std::free};}
 }
 
-// A folder outside the library is an export: its parts are detached from the library Sounds
-// they came from, so the copy stands alone wherever it goes (RFC 0021).
-void Session::savePerformance(const std::string& directory) {info_=writeDocument(directory,info_,nullptr,nullptr,true);}
+void Session::savePerformance(const std::string& directory) {info_=writeDocument(directory,info_,nullptr,nullptr);}
 
 // The nodes a part holds: its chains' and lanes' boxes, and its splits' Split and Join nodes.
 std::set<NodeId> Session::nodesOf(const Part& p) const {
@@ -113,7 +111,7 @@ std::set<NodeId> Session::nodesOf(const Part& p) const {
 // performance.json, or with `sound` set, that part's sound.json (RFC 0021): its nodes, the wires
 // with both ends among them, its chain and splits without its seat, and the controls it owns.
 // Wires that cross the part's edge are not saved; their descriptions go to `left`.
-Control::PerformanceInfo Session::writeDocument(const std::string& directory,PerformanceInfo info,const Part* sound,std::vector<std::string>* left,bool detach) {
+Control::PerformanceInfo Session::writeDocument(const std::string& directory,PerformanceInfo info,const Part* sound,std::vector<std::string>* left) {
     if(staged_)bad("commit staged graph edits before saving");
     service();if(!pending_.empty())bad("parameter edits are still pending; retry after processing");
     const auto graph=graph_.describe();if(graph.nodes.size()>256 || graph.notes.size()>4096 || graph.mappings.size()>4096)bad("graph exceeds Performance limits");
@@ -161,7 +159,7 @@ Control::PerformanceInfo Session::writeDocument(const std::string& directory,Per
         const char* kind=p.input.kind==PartInput::Kind::Notes?"notes":p.input.kind==PartInput::Kind::Audio?"audio":p.input.kind==PartInput::Kind::Bus?"bus":"none";
         std::vector<std::string> sends;for(const auto& s:p.sends)sends.push_back("{\"bus\":"+std::to_string(s.bus)+",\"level\":"+numeric(s.level)+'}');
         parts.push_back("{\"id\":"+std::to_string(p.id)+",\"name\":"+quote(p.name)+",\"input\":{\"kind\":\""+kind+"\",\"port\":"+std::to_string(p.input.port)+",\"zones\":"+zonesText(p.input.zones)+",\"devices\":"+devicesText(p.input.devices)+",\"maxNotes\":"+std::to_string(p.input.maxNotes)+"},\"chain\":"+chainText(p.chain)+",\"splits\":"+splitsText(p)+",\"output\":"+std::to_string(p.output)+",\"level\":"+numeric(p.level)+",\"pan\":"+numeric(p.pan)+",\"mute\":"+(p.mute?"true":"false")+",\"solo\":"+(p.solo?"true":"false")+",\"bus\":"+std::to_string(p.bus)+",\"sends\":"+join(sends)
-            +",\"from\":"+(p.from.sound.empty() || detach?std::string("null"):"{\"sound\":"+quote(p.from.sound)+",\"revision\":"+quote(p.from.revision)+",\"name\":"+quote(p.from.name)+",\"modified\":"+(p.from.modified?"true":"false")+'}')+'}');
+            +",\"from\":"+(p.from.sound.empty()?std::string("null"):"{\"sound\":"+quote(p.from.sound)+",\"revision\":"+quote(p.from.revision)+",\"name\":"+quote(p.from.name)+",\"modified\":"+(p.from.modified?"true":"false")+'}')+'}');
     }
     for(const auto& m:graph.mappings)if(kept(m.source) && kept(m.target))mappings.push_back("{\"from\":"+quote(keys.at(m.source))+",\"lane\":"+std::to_string(m.lane)+",\"to\":"+quote(keys.at(m.target))+",\"param\":"+std::to_string(m.param)+'}');
     // The control tree: each control's value and targets, parameters by node key.
@@ -637,12 +635,12 @@ std::string Session::savePerformanceToLibrary(const std::string& name,bool asNew
     const auto* item=info_.id.empty()?nullptr:l.find(info_.id);
     const auto folder=item?fs::path(item->path):l.newFolder(info_.name.empty()?"Performance":info_.name,"performance");
     fs::create_directories(folder.parent_path());
-    if(!item)info_=writeDocument(folder.string(),info_,nullptr,nullptr,false);
+    if(!item)info_=writeDocument(folder.string(),info_,nullptr,nullptr);
     else{
         // Saving refuses an existing folder, so save beside it and swap; the old one goes only once the new is in place.
         const auto fresh=folder.parent_path()/("."+folder.filename().string()+".new"),old=folder.parent_path()/("."+folder.filename().string()+".old");
         fs::remove_all(fresh);fs::remove_all(old);
-        info_=writeDocument(fresh.string(),info_,nullptr,nullptr,false);
+        info_=writeDocument(fresh.string(),info_,nullptr,nullptr);
         fs::rename(folder,old);fs::rename(fresh,folder);fs::remove_all(old);
     }
     l.rescan();l.used(info_.id);

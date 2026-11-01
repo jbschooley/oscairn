@@ -14,8 +14,7 @@ control owners, and provenance: `from`, revisions, Save and Save As New, Update 
 library), with these differences from the text below: a Sound holds a `part` object rather
 than one entry in `parts`; a crossing wire is removed and flagged on load rather than kept
 unconnected; `modified` is set by edits as they happen rather than by comparing with the
-library, so preset and state loads do not set it yet; a Performance saved to a folder is an
-export and drops `from`; there is no author or suggested input yet, so a new part from a
+library, so preset and state loads do not set it yet; there is no author or suggested input yet, so a new part from a
 Sound listens to every key; and
 `parts.loadSound` applies at once, returning what it removed, with no `confirm` round. Not
 yet: editing tags, tag suggestions, packages, `LibraryModel` and the step 3 pane with its
@@ -34,7 +33,7 @@ Checked when built and tested; the sections below say how.
 - [x] 1. Sound documents: save a part, load into a part or a new part, control owners
 - [x] 1. Provenance: each part records the Sound and revision it came from and whether it was
       edited since; revisions with parents for Sounds and Performances; Save and Save As New
-      for Sounds; Update from library; exports detach; a deleted Sound breaks nothing
+      for Sounds; Update from library; a deleted Sound breaks nothing
 - [x] Content hashes for Sounds and Performances, in the info block and the index
 - [ ] Authors in the info block, and `modified` set by preset and state loads
 - [ ] Libraries: items locked, Save As New from them, deleting items, uninstalling, and
@@ -43,8 +42,8 @@ Checked when built and tested; the sections below say how.
 - [ ] Importing a library as a library or into your own storage, all of it or chosen items;
       importing again skips copies still unchanged (by content hash)
 - [ ] Hidden tags and tag colors
-- [ ] Exporting a Performance with the Sounds its parts came from ([design](#exporting-a-performance));
-      today an export drops where its parts came from
+- [x] Exporting a Performance keeps its parts' references to their Sounds
+- [ ] Exporting with the referenced Sounds included, as an option ([design](#exporting-a-performance))
 - [ ] 2. Library index and tags: index, user file and Sounds done; tag editing, suggestions,
       packages and `LibraryModel` remain
 - [ ] 3. Desktop pane: the Library app and Part menu done; the dockable pane, inspector,
@@ -429,14 +428,21 @@ filed as one or the other.
 
 ### Exporting a Performance
 
-**Planned; today a Performance saved to a folder drops where its parts came from.** An
-exported Performance keeps where each part came from and brings those Sounds with it, with
-their samples, so on another device the parts still link to their Sounds: importing the
-Performance adds the Sounds that device does not have. A Sound from a locked library comes
-as part of that library's items, locked, with its library's name and ID; whether a library's
-licence allows sending its Sounds this way is RFC 0006's redistribution check, and where it
-does not, the Performance still opens (its parts are copies) and those parts lose their
-link.
+An exported Performance carries its parts complete, as copies, whatever they came from: many
+are edited from their Sounds or made from scratch and have no Sound saved apart, and they need
+none. Each part also keeps where it came from, if it came from a Sound, as a reference
+(`from`).
+
+- **Including the Sounds is optional.** The export may also bring the Sounds its parts'
+  references name, with their samples. Importing the Performance then adds those the device
+  does not have (one whose content hash is already there is not added again), so the parts
+  link to them. Without them, the parts play the same; their references point at Sounds the
+  device may not have, and Save and Update from library treat those as missing.
+- A Sound from a locked library comes as that library's item, locked, with its library's name
+  and ID.
+
+Today a Performance saved to a folder keeps its parts' references; bringing the Sounds along
+is not built yet.
 
 ### Filtering
 
