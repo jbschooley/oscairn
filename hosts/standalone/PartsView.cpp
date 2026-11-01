@@ -46,6 +46,9 @@ namespace oscairn::standalone
         name_.setTooltip("The part's name");
         message_.setColour(juce::Label::textColourId, ink(Ink::Danger));
         done_.onClick = [this] { if(onDone) onDone(); };
+        save_.onClick = [this] { if(onSave) onSave(); };
+        save_.setTooltip("Save the Performance to the library");
+        addChildComponent(save_);
         addPart_.onClick = [this] { const auto n = state_.parts.size() + 1; edit([n](Control& c) { addPart(c, "Part " + std::to_string(n), false); }); };
         addBus_.onClick = [this] { const auto n = state_.buses.size(); edit([n](Control& c) { addPart(c, std::string("Bus ") + char('A' + n % 26), true); }); };
         back_.onClick = [this] { page_ = 0; selected_ = 0; selectedSplit_ = 0; selectedLane_ = -1; shape_.clear(); refresh(); };
@@ -75,6 +78,12 @@ namespace oscairn::standalone
         if(metering) { wirePeaks_.clear(); for(const auto& m : engine_.wireMeters()) wirePeaks_[m.wire] = m.peak; repaint(); }
         const int interval = page_ == mixerPage || metering ? 50 : 200;
         if(getTimerInterval() != interval) startTimer(interval);
+        // The open Performance's name, for the parts list's title.
+        if(const auto info = engine_.performanceInfo(); info && juce::String::fromUTF8(info->name.c_str()) != performance_)
+        {
+            performance_ = juce::String::fromUTF8(info->name.c_str());
+            if(page_ == 0) title_.setText(performance_.isEmpty() ? juce::String("Parts") : performance_, juce::dontSendNotification);
+        }
         refresh();
     }
 
@@ -159,7 +168,7 @@ namespace oscairn::standalone
         for(auto* c : std::initializer_list<juce::Component*>{&removePart_, &name_}) c->setVisible(!list && !controlsShown && !mixerShown && !routingShown);
         back_.setVisible(!list); addControl_.setVisible(controlsShown);
         title_.setVisible(list || controlsShown || mixerShown || routingShown); done_.setVisible(true); message_.setVisible(true);
-        title_.setText(controlsShown ? "Controls" : mixerShown ? "Mixer" : routingShown ? "Routing" : "Parts", juce::dontSendNotification);
+        title_.setText(controlsShown ? "Controls" : mixerShown ? "Mixer" : routingShown ? "Routing" : performance_.isEmpty() ? juce::String("Parts") : performance_, juce::dontSendNotification);
         auto top = getLocalBounds().reduced(16, 8).removeFromTop(header - 8);
         // On the desktop with a mouse, rows are tighter and text follows the type scale (RFC 0019).
         const int mode = desktopMode(*this), lineHeight = mode == 1 ? 34 : 40;
@@ -167,6 +176,8 @@ namespace oscairn::standalone
         done_.setBounds(top.removeFromRight(80).reduced(2));
         redo_.setBounds(top.removeFromRight(60).reduced(2)); undo_.setBounds(top.removeFromRight(60).reduced(2));
         undo_.setVisible(true); redo_.setVisible(true);
+        save_.setVisible(onSave != nullptr && !embedded_);
+        if(save_.isVisible()) save_.setBounds(top.removeFromRight(70).reduced(2));
         // Inside the desktop's window, which has its own tabs, undo and parts list.
         if(embedded_) for(auto* c : std::initializer_list<juce::Component*>{&done_, &back_, &undo_, &redo_, &title_, &addPart_, &addBus_, &controlsButton_, &mixerButton_, &routingButton_}) c->setVisible(false);
         message_.setBounds(getLocalBounds().reduced(16).removeFromBottom(24));

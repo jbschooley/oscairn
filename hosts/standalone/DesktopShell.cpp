@@ -229,6 +229,10 @@ namespace oscairn::standalone
         setDesktopMode(*this, modeNumber(mode));
         undo_.setTooltip("Undo"); redo_.setTooltip("Redo");
         home_.setTooltip("Home: the apps");
+        save_.setTooltip("Save the Performance to the library");
+        save_.onClick = [this] { if(onSave) onSave(); };
+        performance_.setTooltip("The open Performance");
+        addChildComponent(save_); addAndMakeVisible(performance_);
         home_.onClick = [this] { if(onHome) juce::MessageManager::callAsync(onHome); }; // going Home replaces this view
         addChildComponent(home_);
         undo_.onClick = [this] { engine_.edit([](Control& c) { c.undo(); }); };
@@ -365,6 +369,8 @@ namespace oscairn::standalone
         }
         const auto status = engine_.status();
         if(!tempo_.isMouseButtonDown()) tempo_.setValue(status.tempo, juce::dontSendNotification);
+        if(const auto info = engine_.performanceInfo())
+            if(const auto name = info->name.empty() ? juce::String("Untitled") : text(info->name); name != performance_.getText()) { performance_.setText(name, juce::dontSendNotification); resized(); }
         juce::String inputs;
         for(const auto& m : status.midiInputs) if(m.kind != MidiEndpoint::Kind::BuiltIn) inputs << (inputs.isEmpty() ? "" : ", ") << text(m.name);
         status_.setText((status.audioDevice.empty() ? juce::String("No audio") : text(status.audioDevice)) + juce::String::fromUTF8("  ·  ") + (inputs.isEmpty() ? juce::String("No MIDI inputs") : inputs), juce::dontSendNotification);
@@ -395,6 +401,11 @@ namespace oscairn::standalone
         auto bar = area.removeFromTop(m.control + 2 * m.gap).reduced(m.gap * 2, m.gap);
         home_.setVisible(onHome != nullptr);
         if(onHome) { home_.setBounds(bar.removeFromLeft(m.control)); bar.removeFromLeft(m.gap * 2); }
+        // The open Performance, and Save.
+        performance_.setFont(juce::FontOptions(textSize(TextRole::Body, mode), juce::Font::bold));
+        performance_.setBounds(bar.removeFromLeft(std::min(220, juce::GlyphArrangement::getStringWidthInt(performance_.getFont(), performance_.getText()) + 12)));
+        save_.setVisible(onSave != nullptr);
+        if(onSave) { save_.setBounds(bar.removeFromLeft(touchSized(mode_) ? 90 : 70)); bar.removeFromLeft(m.gap * 3); }
         auto labeled = [&](juce::Label& label, juce::Component& c, int width) {
             label.setBounds(bar.removeFromLeft(juce::GlyphArrangement::getStringWidthInt(label.getFont(), label.getText()) + 10));
             c.setBounds(bar.removeFromLeft(width));

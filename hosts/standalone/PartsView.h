@@ -20,6 +20,7 @@ namespace oscairn::standalone
         explicit PartsView(Engine& engine, const std::string& scanner);
         ~PartsView() override;
         std::function<void()> onDone;
+        std::function<void()> onSave; // Save the Performance; shown when set
 
         void paint(juce::Graphics&) override;
         void resized() override;
@@ -71,7 +72,8 @@ namespace oscairn::standalone
         int chainHeight_ = 96;     // the Part page's chain row: taller for a split's lanes
 
         juce::Label title_, message_;
-        juce::TextButton done_{"Done"}, addPart_{"+ Add part"}, addBus_{"+ Add bus"}, back_{"‹ Parts"}, removePart_{"Remove part"}, controlsButton_{"Controls"}, mixerButton_{"Mixer"}, routingButton_{"Routing"}, addControl_{"+ Control"}, undo_{"Undo"}, redo_{"Redo"};
+        juce::TextButton done_{"Done"}, addPart_{"+ Add part"}, addBus_{"+ Add bus"}, back_{"‹ Parts"}, removePart_{"Remove part"}, controlsButton_{"Controls"}, mixerButton_{"Mixer"}, routingButton_{"Routing"}, addControl_{"+ Control"}, undo_{"Undo"}, redo_{"Redo"}, save_{"Save"};
+        juce::String performance_; // the open Performance's name, the parts list's title
         juce::TextEditor name_;
         std::vector<std::unique_ptr<juce::Component>> controls_; // rebuilt per page and shape
         std::vector<std::shared_ptr<std::function<void()>>> updaters_; // set controls from the state

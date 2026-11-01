@@ -213,6 +213,7 @@ namespace oscairn::standalone
             if( panel() ) { showParts(); return; }
             auto* shell = new DesktopShell( engine_, scanner(), inputMode_ );
             shell->onHome = [this] { showHome(); };
+            shell->onSave = [this] { saveToLibrary( false ); };
             setContentOwned( shell, false );
         }
         DesktopShell* shell() const { return dynamic_cast<DesktopShell*>( getContentComponent() ); }
@@ -556,6 +557,7 @@ namespace oscairn::standalone
             if( !panel() && !shell() ) openPerformance(); // from Home: the Performance app has them
             if( auto* s = shell() ) { s->showTab( DesktopShell::Tab::Part ); return; } // the desktop has them in its window
             parts_ = std::make_unique<PartsView>( engine_, scanner() );
+            parts_->onSave = [this] { saveToLibrary( false ); };
             setDesktopMode( *parts_, 2 ); // a device's screen: the type scale and targets for touch
             parts_->onDone = [this] { juce::MessageManager::callAsync( [safe = juce::Component::SafePointer<Window>( this )] {
                 if( !safe ) return;

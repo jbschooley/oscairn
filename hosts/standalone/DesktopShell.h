@@ -48,6 +48,7 @@ namespace oscairn::standalone
         ~DesktopShell() override;
 
         std::function<void()> onHome; // Home (RFC 0030): shown when set
+        std::function<void()> onSave; // Save the Performance: shown when set
         void setInputMode(InputMode mode);
         InputMode inputMode() const { return mode_; }
         void showTab(Tab tab);
@@ -81,6 +82,8 @@ namespace oscairn::standalone
 
         // The toolbar.
         IconButton undo_{IconButton::Glyph::Undo, "Undo"}, redo_{IconButton::Glyph::Redo, "Redo"}, home_{IconButton::Glyph::Home, "Home"};
+        juce::Label performance_;              // the open Performance's name
+        juce::TextButton save_{"Save"};
         juce::Slider tempo_{juce::Slider::LinearBar, juce::Slider::TextBoxLeft};
         juce::Label tempoLabel_{{}, "Tempo"}, sceneLabel_{{}, "Scene"};
         juce::ComboBox sceneBox_;
