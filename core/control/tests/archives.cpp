@@ -226,6 +226,9 @@ int main(int argc, char** argv)
             d.remove(nodes[0].id); d.commit();
             d.removePlugin(plugin.format, plugin.id, plugin.version);
             check(d.installedPlugins().empty(), "removed once nothing open plays it");
+            const auto cutShort = temp.path / "d" / "Plugins" / "clap" / ".synth@1.removing";
+            fs::create_directories(cutShort / "bundle");
+            check(d.installedPlugins().empty() && !fs::exists(cutShort), "a removal cut short is cleared away");
             d.loadPerformanceFromLibrary(performance.id);
             check(d.sessionStatus().failures.size() == 1, "what used it opens with a stand-in");
             d.installArchive(archive.string(), false);

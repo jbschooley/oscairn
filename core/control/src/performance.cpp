@@ -1462,7 +1462,9 @@ std::vector<Control::InstalledPlugin> Session::installedPlugins() {
     std::error_code e;
     for(const auto* format:{"clap","lv2"})
         if(fs::is_directory(dataHome()/"Plugins"/format,e))for(const auto& entry:fs::directory_iterator(dataHome()/"Plugins"/format,e)){
-            if(!entry.is_directory() || entry.path().filename().string().front()=='.')continue;
+            const auto leaf=entry.path().filename().string();
+            if(entry.is_directory() && leaf.front()=='.' && leaf.size()>9 && leaf.compare(leaf.size()-9,9,".removing")==0){std::error_code ignored;fs::remove_all(entry.path(),ignored);} // a removal cut short
+            if(!entry.is_directory() || leaf.front()=='.')continue;
             auto p=storedIdentity(entry.path());
             if(p.id.empty() || p.format!=format || storeFolder(p.format,p.id,p.version)!=entry.path())continue;
             for(const auto& [forPlatform,build]:storedBuilds(p.format,p.id,p.version)){
