@@ -97,6 +97,7 @@ namespace oscairn
         out.id = str(detail::member(info, "id")); out.name = str(detail::member(info, "name"));
         out.description = str(detail::member(info, "description")); out.tags = strings(detail::member(info, "tags"));
         out.color = str(detail::member(info, "color"));
+        out.revision = str(detail::member(info, "revision")); out.parent = str(detail::member(info, "parent"));
         if(out.id.empty() || out.id.size() > 64 || !validColor(out.color) || out.name.size() > 256 || out.description.size() > 4096 || out.tags.size() > maxTags ||
            std::any_of(out.tags.begin(), out.tags.end(), [](const std::string& t) { return t.empty() || t.size() > maxTag; }))
             throw std::runtime_error("invalid info");
@@ -124,7 +125,7 @@ namespace oscairn
                     Control::LibraryItem item;
                     item.path = str(detail::member(e->value, "path")); item.id = str(detail::member(e->value, "id")); item.kind = str(detail::member(e->value, "kind"));
                     item.name = str(detail::member(e->value, "name")); item.description = str(detail::member(e->value, "description"));
-                    item.tags = strings(detail::member(e->value, "tags")); item.color = str(detail::member(e->value, "color"));
+                    item.tags = strings(detail::member(e->value, "tags")); item.color = str(detail::member(e->value, "color")); item.revision = str(detail::member(e->value, "revision"));
                     const auto modified = std::stoll(str(detail::member(e->value, "modified")));
                     cached[item.path] = {modified, item};
                 }
@@ -149,14 +150,14 @@ namespace oscairn
                     try
                     {
                         const auto info = readInfo(manifest, std::string("oscairn.") + kind);
-                        item.kind = kind; item.id = info.id; item.name = info.name; item.description = info.description; item.tags = info.tags; item.color = info.color; item.path = path;
+                        item.kind = kind; item.id = info.id; item.name = info.name; item.description = info.description; item.tags = info.tags; item.color = info.color; item.revision = info.revision; item.path = path;
                     }
                     catch(const std::exception&) { continue; } // not one the library can show; it stays on disk
                 }
                 if(std::any_of(items_.begin(), items_.end(), [&](const auto& i) { return i.id == item.id; })) continue; // a copied folder: the first wins
                 items_.push_back(item);
                 index += std::string(index.empty() ? "" : ",") + "{\"path\":" + detail::quote(item.path) + ",\"kind\":" + detail::quote(item.kind) + ",\"modified\":" + detail::quote(std::to_string(modified)) +
-                         ",\"id\":" + detail::quote(item.id) + ",\"name\":" + detail::quote(item.name) + ",\"description\":" + detail::quote(item.description) + ",\"tags\":" + list(item.tags) + ",\"color\":" + detail::quote(item.color) + '}';
+                         ",\"id\":" + detail::quote(item.id) + ",\"name\":" + detail::quote(item.name) + ",\"description\":" + detail::quote(item.description) + ",\"tags\":" + list(item.tags) + ",\"color\":" + detail::quote(item.color) + ",\"revision\":" + detail::quote(item.revision) + '}';
             }
         try { writeAtomically(cache_ / "index.json", "{\"items\":[" + index + "]}\n"); } catch(const std::exception&) {} // a cache: reading works without it
         // Favourites and recents of items that went stay in the user file, for when they return.

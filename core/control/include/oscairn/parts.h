@@ -128,6 +128,14 @@ namespace oscairn
 
     // An input, the chain of nodes it reaches in order, and where it plays: a graph output port,
     // or through a shared bus. Sends copy its sound into buses as well.
+    // Where a part came from (RFC 0021): the library Sound and the revision loaded into it, its
+    // name then, and whether the part has been edited since. Empty when it came from none.
+    struct PartSource
+    {
+        std::string sound, revision, name;
+        bool modified = false;
+        bool operator==(const PartSource&) const = default;
+    };
     struct Part
     {
         uint32_t id = 0;
@@ -144,6 +152,7 @@ namespace oscairn
         // While any part is soloed, only soloed parts, the parts that feed them and the buses
         // they feed are heard.
         bool solo = false;
+        PartSource from;
         bool operator==(const Part&) const = default;
     };
     // A part's meter, after its fader and pan, linear: one value per channel of its sound (its last

@@ -94,7 +94,13 @@ try:
             assert sounds[i]['name'] == f'Patch {i}' and sounds[i]['selectedChannels'] == 1 << i
         again = root / 'again'
         rpc('performance.save', {'directory': str(again)})
-        assert json.loads((again / 'performance.json').read_text()) == manifest
+        resaved = json.loads((again / 'performance.json').read_text())
+        assert resaved['info']['parent'] == manifest['info']['revision'] != resaved['info']['revision']
+        def without_revision(m):
+            m = copy.deepcopy(m)
+            del m['info']['revision'], m['info']['parent']
+            return m
+        assert without_revision(resaved) == without_revision(manifest)
         before = (again / 'performance.json').read_bytes()
         rpc('performance.save', {'directory': str(again)}, True)
         assert (again / 'performance.json').read_bytes() == before

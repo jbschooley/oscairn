@@ -358,7 +358,8 @@ namespace oscairn
             const auto chain = chainJson(p.chain);
             return "{\"id\":" + std::to_string(p.id) + ",\"name\":" + quote(p.name) + ",\"input\":{\"kind\":\"" + inputKind(p.input.kind) +
                 "\",\"port\":" + std::to_string(p.input.port) + ",\"zones\":" + zonesJson(p.input.zones) + ",\"devices\":" + devicesJson(p.input.devices) + ",\"maxNotes\":" + std::to_string(p.input.maxNotes) + "},\"chain\":" + chain + ",\"splits\":" + splitsJson(p.splits) + ",\"output\":" + std::to_string(p.output) +
-                ",\"level\":" + encode(p.level) + ",\"pan\":" + encode(p.pan) + ",\"mute\":" + (p.mute ? "true" : "false") + ",\"solo\":" + (p.solo ? "true" : "false") + ",\"bus\":" + std::to_string(p.bus) + ",\"sends\":" + [&]{ std::vector<std::string> v; for( const auto& s : p.sends ) v.push_back("{\"bus\":" + std::to_string(s.bus) + ",\"level\":" + encode(s.level) + '}'); return join(v); }() + '}';
+                ",\"level\":" + encode(p.level) + ",\"pan\":" + encode(p.pan) + ",\"mute\":" + (p.mute ? "true" : "false") + ",\"solo\":" + (p.solo ? "true" : "false") + ",\"bus\":" + std::to_string(p.bus) + ",\"sends\":" + [&]{ std::vector<std::string> v; for( const auto& s : p.sends ) v.push_back("{\"bus\":" + std::to_string(s.bus) + ",\"level\":" + encode(s.level) + '}'); return join(v); }()
+                + ",\"from\":" + (p.from.sound.empty() ? std::string("null") : "{\"sound\":" + quote(p.from.sound) + ",\"revision\":" + quote(p.from.revision) + ",\"name\":" + quote(p.from.name) + ",\"modified\":" + (p.from.modified ? "true" : "false") + '}') + '}';
         }
 
         std::string invoke( Control& c, JsonRpc& client, std::string_view method, Value p )
@@ -410,7 +411,7 @@ namespace oscairn
                 try{r=c.libraryQuery(q);}catch(const std::exception& e){throw Failure{-32005,e.what()};}
                 std::vector<std::string> items,counts;
                 for(const auto& i:r.items){std::vector<std::string> t;for(const auto& x:i.tags)t.push_back(quote(x));
-                    items.push_back("{\"id\":"+quote(i.id)+",\"kind\":"+quote(i.kind)+",\"name\":"+quote(i.name)+",\"description\":"+quote(i.description)+",\"path\":"+quote(i.path)+",\"tags\":"+join(t)+",\"favourite\":"+(i.favourite?"true":"false")+",\"recent\":"+std::to_string(i.recent)+",\"color\":"+quote(i.color)+'}');}
+                    items.push_back("{\"id\":"+quote(i.id)+",\"kind\":"+quote(i.kind)+",\"name\":"+quote(i.name)+",\"description\":"+quote(i.description)+",\"path\":"+quote(i.path)+",\"tags\":"+join(t)+",\"favourite\":"+(i.favourite?"true":"false")+",\"recent\":"+std::to_string(i.recent)+",\"color\":"+quote(i.color)+",\"revision\":"+quote(i.revision)+'}');}
                 for(const auto& [tag,n]:r.tags)counts.push_back("{\"tag\":"+quote(tag)+",\"count\":"+std::to_string(n)+'}');
                 return "{\"items\":"+join(items)+",\"tags\":"+join(counts)+",\"total\":"+std::to_string(r.total)+'}';
             }
@@ -424,10 +425,10 @@ namespace oscairn
                 try{return "{\"items\":"+std::to_string(c.libraryRescan())+'}';}catch(const std::exception& e){throw Failure{-32005,e.what()};}
             }
             if(method=="parts.saveSound") {
-                fields(p,{"part","name"});Control::SoundSaved saved;
-                try{saved=c.savePartAsSound(integer(member(p,"part")),member(p,"name")?std::string(string(member(p,"name"))):std::string());}catch(const std::exception& e){throw Failure{-32005,e.what()};}
+                fields(p,{"part","name","new"});Control::SoundSaved saved;
+                try{saved=c.savePartAsSound(integer(member(p,"part")),member(p,"name")?std::string(string(member(p,"name"))):std::string(),member(p,"new")?boolean(member(p,"new")):false);}catch(const std::exception& e){throw Failure{-32005,e.what()};}
                 std::vector<std::string> left;for(const auto& l:saved.left)left.push_back(quote(l));
-                return "{\"id\":"+quote(saved.id)+",\"left\":"+join(left)+'}';
+                return "{\"id\":"+quote(saved.id)+",\"revision\":"+quote(saved.revision)+",\"left\":"+join(left)+'}';
             }
             if(method=="parts.loadSound") {
                 fields(p,{"part","id"});std::vector<std::string> flagged;

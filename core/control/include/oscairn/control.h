@@ -100,12 +100,13 @@ namespace oscairn
         // The Performance's own details (format 3's info block, RFC 0021): saved with it, read
         // by the library. The ID is made on the first save and kept.
         // color: "#rrggbb", or empty for none; how lists and setlists show it.
-        struct PerformanceInfo { std::string id, name, description; std::vector<std::string> tags; std::string color; };
+        // revision: this save's, made at each save; parent: the one it was saved over.
+        struct PerformanceInfo { std::string id, name, description; std::vector<std::string> tags; std::string color, revision, parent; };
         virtual PerformanceInfo performanceInfo() const = 0;
         virtual void setPerformanceInfo(const PerformanceInfo& info) = 0; // the ID is kept as it is
         // The library (RFC 0021): the device's Performances, by tags, text, favourites and
         // recent use. Performances save into it by name; loading by ID marks one used.
-        struct LibraryItem { std::string id, kind = "performance", name, description, path; std::vector<std::string> tags; bool favourite = false; uint32_t recent = 0; std::string color; };
+        struct LibraryItem { std::string id, kind = "performance", name, description, path; std::vector<std::string> tags; bool favourite = false; uint32_t recent = 0; std::string color, revision; };
         // kind: "performance" or "sound"; empty for both.
         struct LibraryQuery { std::string text; std::vector<std::string> tags; bool favourites = false, recent = false; uint32_t limit = 200; std::string kind; };
         struct LibraryResult { std::vector<LibraryItem> items; std::vector<std::pair<std::string, uint32_t>> tags; uint32_t total = 0; };
@@ -117,9 +118,11 @@ namespace oscairn
         virtual std::string savePerformanceToLibrary(const std::string& name, bool asNew = false) = 0;
         virtual void loadPerformanceFromLibrary(const std::string& id) = 0;
         // Sounds (RFC 0021): a part saved to the library, without its seat. Wires that cross the
-        // part's edge are not saved and are listed in `left`.
-        struct SoundSaved { std::string id; std::vector<std::string> left; };
-        virtual SoundSaved savePartAsSound(uint32_t part, const std::string& name) = 0;
+        // part's edge are not saved and are listed in `left`. Save writes a new revision of the
+        // Sound the part came from (renamed when name is given); asNew, or a part from no Sound,
+        // makes a new Sound. Either way the part then comes from what was saved.
+        struct SoundSaved { std::string id, revision; std::vector<std::string> left; };
+        virtual SoundSaved savePartAsSound(uint32_t part, const std::string& name, bool asNew = false) = 0;
         // Replaces the part's chain with the Sound's, keeping its seat; one step to undo. Returns
         // what could not be kept (wires and control targets on the old plugins).
         virtual std::vector<std::string> loadSound(uint32_t part, const std::string& id) = 0;

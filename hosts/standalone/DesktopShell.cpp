@@ -97,7 +97,7 @@ namespace oscairn::standalone
                 };
                 rows_.back().solo = mark("S", p.solo, Ink::Accent); rows_.back().mute = mark("M", p.mute, Ink::Danger);
                 g.setColour(ink(Ink::Text).withAlpha(alpha)); g.setFont(juce::FontOptions(body, juce::Font::bold));
-                g.drawText(text(p.name), top, juce::Justification::centredLeft, true);
+                g.drawText(text(p.name) + (p.edited ? " *" : ""), top, juce::Justification::centredLeft, true); // *: changed since its Sound
                 const auto detail = p.bus ? (p.chain.empty() ? std::string("Empty bus") : p.chain.front().plugin) : (p.sound.empty() ? std::string("No instrument") : p.sound) + (p.input.empty() ? "" : " · " + p.input);
                 g.setColour(ink(Ink::Muted).withAlpha(alpha)); g.setFont(juce::FontOptions(small));
                 g.drawText(text(detail), r.removeFromTop(int(small) + 2), juce::Justification::centredLeft, true);

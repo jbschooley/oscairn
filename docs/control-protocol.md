@@ -721,9 +721,14 @@ its chain, splits and lanes, its plugins with their state, the wires with both e
 note-to-parameter mappings inside it, and the controls it owns. Not its input, output, sends,
 fader or name in the Performance, nor wires to or from the rest of the graph.
 
-- `parts.saveSound` takes `{part}` and an optional `name` (the part's when absent) and
-  returns `{id,left}`: the new Sound's library ID, and a description of each user wire that
-  crosses the part's edge and was not saved. Each save is a new Sound in a new folder.
+- `parts.saveSound` takes `{part}` and optional `name` and `new`, and returns
+  `{id,revision,left}`: the Sound's library ID, the revision written, and a description of
+  each user wire that crosses the part's edge and was not saved. Save (`new` false or absent)
+  writes the next revision of the Sound the part came from, over its folder, renamed when
+  `name` is given; Save As New (`new: true`), or a part from no Sound or one no longer in the
+  library, makes a new Sound in a new folder, named `name` or after the part. The part then
+  comes from what was saved, unedited. Saving is not an edit and is refused while graph edits
+  are staged.
 - `parts.loadSound` takes `{part,id}`: the part's chain is replaced with the Sound's, and the
   part takes the Sound's name. The part keeps its input, output, sends, fader and solo. Its
   old plugins go, with every wire, mapping, scene value and scene parameter on them. Its own
@@ -731,7 +736,15 @@ fader or name in the Performance, nor wires to or from the rest of the graph.
   to the Sound's control of the same name, else that target is removed. It returns
   `{"accepted":true,"flagged":[…]}`, describing each wire and control target removed. Notes
   playing in the part are cut. It is one step to undo, and refused while graph edits are
-  staged.
+  staged. Loading it again when the library has a newer revision is Update from library.
+- Each part in `graph.get` has `from`: `{sound,revision,name,modified}` or `null`.
+  `modified` turns true when an undoable step changes the part's chain, splits, plugins, the
+  wires and mappings inside it or its own controls, or a parameter of one of its plugins (as
+  a graph change, so clients refresh); undoing a model step clears it again. Preset and state
+  loads, which are not undoable steps yet, do not set it. Its seat (input, output, sends,
+  fader) is not the Sound's and does not. `library.query` items carry their `revision`.
+- `performance.save` to a folder is an export: parts are written without `from`. Performances
+  saved with `library.save` keep it.
 - `parts.fromSound` takes `{id}` and returns `{part}`: a new part listening to every key,
   playing to the first output, with the Sound loaded.
 

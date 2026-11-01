@@ -44,7 +44,7 @@ namespace oscairn
         uint32_t libraryRescan() override {return library().rescan();}
         std::string savePerformanceToLibrary(const std::string& name, bool asNew = false) override;
         void loadPerformanceFromLibrary(const std::string& id) override;
-        SoundSaved savePartAsSound(uint32_t part,const std::string& name) override;
+        SoundSaved savePartAsSound(uint32_t part,const std::string& name,bool asNew = false) override;
         std::vector<std::string> loadSound(uint32_t part,const std::string& id) override;
         uint32_t partFromSound(const std::string& id) override;
         bool supportsState(NodeId node) const override {return graph_.host(node).supportsState();}
@@ -227,6 +227,9 @@ namespace oscairn
         Model model() const;
         static std::pair<std::string, std::string> summarize(const Model& before, const Model& after);
         void record();                                         // a step for what changed since the baseline
+        void markEdited(const Model& before);                  // parts from Sounds that the step since `before` changed
+        void markEdited(NodeId node);                          // the part from a Sound holding this plugin, after a parameter step
+        std::set<uint32_t> loading_;                           // parts a Sound is being loaded into: that step is no edit of it
         void push(Step step);                                  // merging it into the last when they change the same thing
         void apply(const Model& from, const Model& to);        // the change from one to the other, onto now
         bool applyParameter(NodeId node, uint32_t param, double value, double* applied = nullptr); // not an edit
@@ -271,7 +274,8 @@ namespace oscairn
         PerformanceInfo info_; // the open Performance's; its ID is made at its first save
         std::unique_ptr<Library> library_; // made at first use, so a session without the library never reads the user's folders
         Library& library() {if(!library_)library_=std::make_unique<Library>();return *library_;}
-        PerformanceInfo writeDocument(const std::string& directory,PerformanceInfo info,const Part* sound,std::vector<std::string>* left);
+        // detach: write parts without where they came from (an export).
+        PerformanceInfo writeDocument(const std::string& directory,PerformanceInfo info,const Part* sound,std::vector<std::string>* left,bool detach = false);
         std::vector<std::string> loadSoundInto(uint32_t part,const std::filesystem::path& folder);
         std::set<NodeId> nodesOf(const Part& part) const;
         uint64_t revision_ = 0, sequence_ = 0;

@@ -240,6 +240,19 @@ int main(int argc, char** argv)
                 picker->choose(0);
                 auto named = [&](uint32_t id) { for(const auto& p : engine.graph().parts) if(p.id == id) return p.name; return std::string(); };
                 check(wait([&] { return !engine.soundBusy() && named(into) == "Grand"; }), "the picked Sound was loaded into the part: " + engine.soundMessage());
+                // Where it came from, the edited mark, and Save as the Sound's next revision.
+                auto source = [&](uint32_t id) { for(const auto& p : engine.graph().parts) if(p.id == id) return p.from; return PartSource{}; };
+                const auto grand = source(into);
+                check(grand.name == "Grand" && !grand.sound.empty() && !grand.modified, "the part comes from the Sound");
+                NodeId plugin = 0;
+                for(const auto& p : engine.graph().parts) if(p.id == into) for(const auto n : p.chain) if(!plugin && !(n & splitMark)) plugin = n;
+                engine.edit([&](Control& c) { const auto params = c.parameters(plugin); c.setParameter(plugin, params.front().id, params.front().defaultValue > .5 ? .1 : .9); });
+                auto edited = [&] { for(const auto& r : standalone::readParts(engine.graph()).parts) if(r.id == into) return r.edited; return false; };
+                check(wait([&] { return edited(); }), "an edit marks the part as changed since its Sound");
+                standalone::SoundAction save; save.kind = standalone::SoundAction::SaveSound; save.part = into;
+                engine.soundAction(std::move(save));
+                check(wait([&] { return !engine.soundBusy() && !edited(); }) && source(into).sound == grand.sound && source(into).revision != grand.revision,
+                      "Save writes the Sound's next revision and clears the mark: " + engine.soundMessage());
                 library.newPart(0);
                 check(wait([&] { return !engine.soundBusy() && engine.graph().parts.size() == partsBefore.size() + 1; }) && engine.graph().parts.back().name == "Grand", "and added as a new part");
                 library.showKind("performance");

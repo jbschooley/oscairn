@@ -100,6 +100,12 @@ with tempfile.TemporaryDirectory(prefix='oscairn-library-') as temporary:
         assert loaded == {'accepted': True, 'flagged': ['the wire from the input to synth was removed', 'the wire from synth to the output was removed']}, loaded
         graph = rpc('graph.get')
         assert [p['name'] for p in graph['parts'] if p['id'] in (part, added)] == ['Lead Sound', 'Lead Sound']
+        source = next(p for p in graph['parts'] if p['id'] == part)['from']
+        assert source == {'sound': sound['id'], 'revision': sound['revision'], 'name': 'Lead Sound', 'modified': False}, source
+        rpc('graph.commit')
+        forked = rpc('parts.saveSound', {'part': part, 'name': 'Lead Fork', 'new': True})
+        assert forked['id'] != sound['id']
+        assert next(p for p in rpc('graph.get')['parts'] if p['id'] == part)['from']['sound'] == forked['id']
         owners = sorted(c['part'] for c in graph['controls'] if c['name'] == 'Tone')
         assert owners == sorted([part, added]) and tone not in [c['id'] for c in graph['controls']]
         rpc('parts.loadSound', {'part': part, 'id': pad}, True)

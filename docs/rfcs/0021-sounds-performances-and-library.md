@@ -9,11 +9,14 @@ app (Performances and Sounds; search, tags, favourites, recent; a click opens a
 Performance, New part adds a Sound), a Part menu (Load Sound into Part through the Library's
 pick, Save Part as Sound) and a Setlist app
 ([setlist-format.md](../setlist-format.md)), and Performance > Save and Save As New. Step
-1's Sound documents are built (`parts.saveSound`, `parts.loadSound`, `parts.fromSound`, and
-control owners), with these differences from the text below: a Sound holds a `part` object
-rather than one entry in `parts`; a crossing wire is removed and flagged on load rather than
-kept unconnected; there is no provenance (`from`), revision, author or suggested input yet,
-so every save is a new Sound and a new part from a Sound listens to every key; and
+1's Sound documents are built (`parts.saveSound`, `parts.loadSound`, `parts.fromSound`,
+control owners, and provenance: `from`, revisions, Save and Save As New, Update from
+library), with these differences from the text below: a Sound holds a `part` object rather
+than one entry in `parts`; a crossing wire is removed and flagged on load rather than kept
+unconnected; `modified` is set by edits as they happen rather than by comparing with the
+library, so preset and state loads do not set it yet; a Performance saved to a folder is an
+export and drops `from`; there is no author or suggested input yet, so a new part from a
+Sound listens to every key; and
 `parts.loadSound` applies at once, returning what it removed, with no `confirm` round. Not
 yet: editing tags, tag suggestions, packages, `LibraryModel` and the step 3 pane with its
 inspector and drag to part. Builds on parts, splits, buses, wire ownership,
@@ -29,7 +32,10 @@ Checked when built and tested; the sections below say how.
 - [x] Performance format 3 with the info block (name, description, tags, color)
 - [x] The library of Performances: cache, favourites, recents, query, Save and Save As New
 - [x] 1. Sound documents: save a part, load into a part or a new part, control owners
-- [ ] 1. Provenance: where a part came from, revisions, Update from library
+- [x] 1. Provenance: each part records the Sound and revision it came from and whether it was
+      edited since; revisions with parents for Sounds and Performances; Save and Save As New
+      for Sounds; Update from library; exports detach; a deleted Sound breaks nothing
+- [ ] Authors in the info block, and `modified` set by preset and state loads
 - [ ] 2. Library index and tags: index, user file and Sounds done; tag editing, suggestions,
       packages and `LibraryModel` remain
 - [ ] 3. Desktop pane: the Library app and Part menu done; the dockable pane, inspector,

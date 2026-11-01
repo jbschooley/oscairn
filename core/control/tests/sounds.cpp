@@ -128,6 +128,58 @@ int main(int argc, char** argv)
         t.redo();
         check(t.parts()[0].name == "Split Keys" && t.parts()[0].splits.size() == 1, "and redo the Sound");
 
+        // Where the part came from: the Sound and revision loaded, unedited.
+        check(t.parts()[0].from == PartSource{saved.id, saved.revision, "Split Keys", false} && !saved.revision.empty(), "the part records the Sound and revision it came from");
+        t.setPartLevel(seat, .6, false); t.commit();
+        check(!t.parts()[0].from.modified, "its fader is its seat, not its Sound: still unedited");
+        t.setParameter(t.nodeId("Low"), 7, .3);
+        check(t.parts()[0].from.modified, "a parameter of its plugins edits it");
+        // Save: the next revision of the same Sound, and the part comes from that now.
+        const auto again = t.savePartAsSound(seat, "");
+        check(again.id == saved.id && again.revision != saved.revision && t.parts()[0].from == PartSource{saved.id, again.revision, "Split Keys", false},
+              "Save writes the Sound's next revision");
+        check(again.left.empty() && t.history().undo != "Part Split Keys", "saving is not an edit");
+        const auto next = std::filesystem::path(home.path) / "Sounds/Split Keys.osound/sound.json";
+        const auto reread = state_files::read(next, 1 << 22);
+        const std::string nextJson(reread.begin(), reread.end());
+        check(nextJson.find("\"revision\":\"" + again.revision + "\",\"parent\":\"" + saved.revision + "\"") != std::string::npos, "its parent is the revision the part came from");
+        // An edit to its chain marks it within its step, so undoing it unmarks it.
+        Lane quieter = t.parts()[0].splits[0].lanes[0]; quieter.level = .3;
+        t.setLane(seat, t.parts()[0].splits[0].id, 0, quieter); t.commit();
+        check(t.parts()[0].from.modified, "a lane's level edits it");
+        t.undo();
+        check(!t.parts()[0].from.modified && t.parts()[0].splits[0].lanes[0].level == .5, "undoing the edit unmarks it");
+        // Save As New: another Sound; the part comes from that one.
+        const auto copy = t.savePartAsSound(seat, "Split Keys 2", true);
+        check(copy.id != saved.id && t.parts()[0].from.sound == copy.id && t.parts()[0].from.name == "Split Keys 2", "Save As New makes another Sound");
+        t.loadSound(seat, copy.id);
+        check(t.parts()[0].from == PartSource{copy.id, copy.revision, "Split Keys 2", false}, "loading the revision it already came from is no edit");
+        // The first session's part came from the first revision; the library now has a newer one.
+        check(s.parts()[0].from.sound == saved.id && s.parts()[0].from.revision == saved.revision, "the part saved first comes from what it saved");
+        Control::LibraryQuery all; all.kind = "sound";
+        s.libraryRescan(); // two sessions here, so two libraries in memory; a device has one
+        const auto listed = s.libraryQuery(all);
+        const auto latest = std::find_if(listed.items.begin(), listed.items.end(), [&](const auto& i) { return i.id == saved.id; });
+        check(latest != listed.items.end() && latest->revision == again.revision, "the library has the newer revision");
+        s.loadSound(part, saved.id);
+        check(s.parts()[0].from.revision == again.revision, "Update from library loads it");
+        // Kept with the Performance in the library; an export to a folder detaches it.
+        const auto kept = t.savePerformanceToLibrary("With Sources");
+        Session u(48000, frames); u.loadPerformanceFromLibrary(kept);
+        check(u.parts()[0].from == t.parts()[0].from && !u.parts()[0].from.sound.empty(), "where a part came from is saved with a library Performance");
+        const auto exported = std::filesystem::path(home.path) / "exported.oscairn";
+        t.savePerformance(exported.string());
+        Session v(48000, frames); v.loadPerformance(exported.string());
+        check(v.parts()[0].from.sound.empty() && v.parts()[0].splits.size() == 1 && !t.parts()[0].from.sound.empty(), "an exported Performance's parts stand alone; the open one keeps its sources");
+        // Its Sound deleted from the library, the Performance still opens and plays as it was.
+        std::filesystem::remove_all(std::filesystem::path(home.path) / "Sounds/Split Keys 2.osound");
+        u.libraryRescan();
+        Session w(48000, frames); w.loadPerformanceFromLibrary(kept);
+        check(w.parts()[0].from.sound == copy.id && w.parts()[0].splits.size() == 1, "a Performance whose Sound was deleted opens, its part a copy as before");
+        check(same(u, w), "and sounds the same");
+        const auto resaved = w.savePartAsSound(w.parts()[0].id, "");
+        check(resaved.id != copy.id && w.parts()[0].from.sound == resaved.id, "Save with its Sound gone makes a new one");
+
         // A new part from it, playing to Main.
         const auto added = t.partFromSound(saved.id);
         check(t.parts().size() == 2 && t.parts()[1].id == added && t.parts()[1].chain.size() == 2, "a new part from the Sound");
@@ -138,7 +190,10 @@ int main(int argc, char** argv)
         const auto sounds = s.libraryQuery(q);
         q.kind = "performance";
         const auto performances = s.libraryQuery(q);
-        check(sounds.total == 1 && sounds.items[0].kind == "sound" && performances.total == 1 && performances.items[0].name == "Gig", "Sounds and Performances listed apart");
+        auto kinds = [](const Control::LibraryResult& r, const std::string& kind) { return std::all_of(r.items.begin(), r.items.end(), [&](const auto& i) { return i.kind == kind; }); };
+        auto named = [](const Control::LibraryResult& r, const std::string& name) { return std::any_of(r.items.begin(), r.items.end(), [&](const auto& i) { return i.name == name; }); };
+        check(sounds.total == 2 && kinds(sounds, "sound") && performances.total == 2 && kinds(performances, "performance") && named(performances, "Gig") && named(performances, "With Sources"),
+              "Sounds and Performances listed apart");
         bool refused = false; try { t.loadSound(seat, performances.items[0].id); } catch(const std::exception&) { refused = true; }
         check(refused, "a Performance is not loaded as a Sound");
     }

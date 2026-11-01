@@ -45,12 +45,13 @@ Required top-level fields:
 | Field | Meaning |
 | --- | --- |
 | `format`, `version` | Exactly `oscairn.performance` and integer `3` |
-| `info` | What the library shows ([RFC 0021](rfcs/0021-sounds-performances-and-library.md)): `id` (made at the first save, kept by every later one), `name` (the folder's name when none is set), `description`, up to 32 free `tags` and `color` (`#rrggbb`, or empty for none) |
+| `info` | What the library shows ([RFC 0021](rfcs/0021-sounds-performances-and-library.md)): `id` (made at the first save, kept by every later one), `name` (the folder's name when none is set), `description`, up to 32 free `tags`, `color` (`#rrggbb`, or empty for none), and `revision` (made at every save) and `parent` (the revision it was saved over; empty for the first) |
 | `transport` | Tempo and `internal` or `midi` clock source |
 | `audioInputs`, `audioOutputs` | Required logical graph ports: ID, channels, flags |
 | `nodes` | Local key, display name, plugin identity/version, path hint, shared engine key, expected audio/note ports |
 | `wires` | Audio and note wires: owner (`part`, with its part ID, or `user`), source and destination node and audio port, explicit channel pairs or none (the channel rules), the source's level, pan, mute and solo in the destination's Mix, and a note wire's zones |
 | `parts` | ID, name, input (`notes` with its zones, device rules (selectors, resolved against the devices of the machine that opens it) and `maxNotes`, `audio` with a graph input port, `none`, or `bus` for a shared bus), the chain of node keys and `{"split":id}` entries, its `splits` (kind, the keys of its Split and Join nodes or null, and each lane with its chain, zones, level, pan, mute and solo), the graph output port or the `bus` it plays through, its `sends` to buses with their levels, and its `level`, `pan`, `mute` and `solo` |
+| `parts[].from` | Where the part came from (RFC 0021): `{sound, revision, name, modified}`, the library Sound and revision loaded into it, its name then, and whether the part has been edited since; `null` when none. Kept in Performances saved to the library; written as `null` when a Performance is saved to a folder (an export), so the copy stands alone |
 | `mappings` | Source node/lane to destination node/parameter |
 | `scenes`, `sceneParameters`, `scene` | Each scene's part faders and scene-parameter values, which parameters scenes set, and the scene last selected |
 | `controls` | The control tree: each control's `part` (the part that owns it, or 0 for the Performance), name, value and targets (kind, node key and parameter, part or control; start, end, curve, relative and base) |
@@ -129,7 +130,9 @@ and limits as a Performance, with `format` `oscairn.sound` and version 3:
 | `controls` | The controls the part owns, as in a Performance |
 
 No `transport`, ports, scenes, pads or other parts. A Sound is loaded into a part of the open
-Performance (`parts.loadSound`), never opened on its own. There is no schema file for Sounds
+Performance (`parts.loadSound`), never opened on its own. A Performance never reads the Sounds
+its parts came from: each part is a full copy, so deleting a Sound from the library changes
+no Performance, and only Save and Update from library look for it. There is no schema file for Sounds
 yet; the reader checks every field.
 
 ## Publication and failure behavior

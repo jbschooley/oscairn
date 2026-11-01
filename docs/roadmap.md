@@ -279,10 +279,12 @@ in the others.
    - [x] the desktop's Library app, Setlist app (list, scrolling list and grid; per-entry
      colors) and Part menu
    - [x] RFC 0022 step 1: actions between the built-in apps
-   - [ ] **where a Sound came from:** each part records the Sound and revision it was loaded
-     from, so **Save** updates that Sound, **Save As New** makes another, the part shows when
-     it differs from the library's, and **Update from library** offers a newer revision;
-     Sounds gain revisions and authors
+   - [x] **where a Sound came from:** each part records the Sound and revision it was loaded
+     from; **Save** writes that Sound's next revision, **Save As New** makes another, the
+     parts list marks a part edited since (`*`), and **Update from library** loads a newer
+     revision (Part menu); Performances exported to a folder detach their parts, and a Sound
+     deleted from the library breaks no Performance
+   - [ ] authors in the info block; preset and state loads marking a part edited
    - [ ] **importing a Performance:** all of another Performance's parts, buses, their wires
      and controls added to the open one, in one step
      ([design](rfcs/0021-sounds-performances-and-library.md#importing-a-performance))

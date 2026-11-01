@@ -10,6 +10,7 @@
 #include <array>
 #include <cmath>
 #include <cstdio>
+#include <regex>
 #include <string>
 
 using namespace oscairn;
@@ -755,11 +756,16 @@ namespace
         bool same = true; double energy = 0;
         for(int i = 0; i < 20; ++i) { x.run(s, 2); y.run(t, 2); same = same && x.l == y.l && x.r == y.r; for(float v : x.l) energy += std::abs(v); }
         check(same && energy > 0, "the loaded Performance plays the same");
-        // Saving it again gives the same manifest.
+        // Saving it again gives the same manifest, as the next revision of the one opened.
         const auto again = root / "again";
         t.savePerformance(again.string());
         const auto first = state_files::read(saved / "performance.json", 1 << 22), second = state_files::read(again / "performance.json", 1 << 22);
-        check(first == second, "saving the loaded Performance gives the same manifest");
+        const std::string opened(first.begin(), first.end()), resaved(second.begin(), second.end());
+        const std::regex revisions(R"re(,"revision":"([0-9a-f]*)","parent":"([0-9a-f]*)")re");
+        std::smatch ro, rr;
+        const bool found = std::regex_search(opened, ro, revisions) && std::regex_search(resaved, rr, revisions);
+        check(found && rr[2] == ro[1] && rr[1] != ro[1], "the save is the next revision of the one opened");
+        check(std::regex_replace(opened, revisions, "") == std::regex_replace(resaved, revisions, ""), "saving the loaded Performance gives the same manifest");
 
         // A file listing one node in two parts is refused, the session untouched.
         {

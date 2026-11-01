@@ -48,6 +48,7 @@ namespace oscairn::standalone
         uint32_t through = 0;            // the bus it plays through, or 0 for Main
         std::map<uint32_t, double> sends; // bus -> level
         std::vector<std::string> exits;  // "→ Hall (shared)": nodes outside it its boxes are wired to in Routing
+        bool edited = false;             // loaded from a library Sound and changed since (RFC 0021)
     };
     // A node outside every part that several parts are wired into in Routing: a bus in all but
     // name (RFC 0011), shown as a row under the buses.

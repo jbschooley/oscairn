@@ -96,7 +96,9 @@ void validateTree(const fs::path& root){size_t files=0;uint64_t bytes=0;for(cons
 std::unique_ptr<json_value_s,decltype(&std::free)> document(const fs::path& root){const auto bytes=state_files::read(root/"performance.json",4*1024*1024);const auto error=detail::jsonPreflight({reinterpret_cast<const char*>(bytes.data()),bytes.size()},32);if(!error.empty())bad(std::string(error));auto* doc=json_parse(bytes.data(),bytes.size());if(!doc)bad("invalid JSON");return {doc,&std::free};}
 }
 
-void Session::savePerformance(const std::string& directory) {info_=writeDocument(directory,info_,nullptr,nullptr);}
+// A folder outside the library is an export: its parts are detached from the library Sounds
+// they came from, so the copy stands alone wherever it goes (RFC 0021).
+void Session::savePerformance(const std::string& directory) {info_=writeDocument(directory,info_,nullptr,nullptr,true);}
 
 // The nodes a part holds: its chains' and lanes' boxes, and its splits' Split and Join nodes.
 std::set<NodeId> Session::nodesOf(const Part& p) const {
@@ -111,7 +113,7 @@ std::set<NodeId> Session::nodesOf(const Part& p) const {
 // performance.json, or with `sound` set, that part's sound.json (RFC 0021): its nodes, the wires
 // with both ends among them, its chain and splits without its seat, and the controls it owns.
 // Wires that cross the part's edge are not saved; their descriptions go to `left`.
-Control::PerformanceInfo Session::writeDocument(const std::string& directory,PerformanceInfo info,const Part* sound,std::vector<std::string>* left) {
+Control::PerformanceInfo Session::writeDocument(const std::string& directory,PerformanceInfo info,const Part* sound,std::vector<std::string>* left,bool detach) {
     if(staged_)bad("commit staged graph edits before saving");
     service();if(!pending_.empty())bad("parameter edits are still pending; retry after processing");
     const auto graph=graph_.describe();if(graph.nodes.size()>256 || graph.notes.size()>4096 || graph.mappings.size()>4096)bad("graph exceeds Performance limits");
@@ -158,7 +160,8 @@ Control::PerformanceInfo Session::writeDocument(const std::string& directory,Per
     if(!sound)for(const auto& p:parts_){
         const char* kind=p.input.kind==PartInput::Kind::Notes?"notes":p.input.kind==PartInput::Kind::Audio?"audio":p.input.kind==PartInput::Kind::Bus?"bus":"none";
         std::vector<std::string> sends;for(const auto& s:p.sends)sends.push_back("{\"bus\":"+std::to_string(s.bus)+",\"level\":"+numeric(s.level)+'}');
-        parts.push_back("{\"id\":"+std::to_string(p.id)+",\"name\":"+quote(p.name)+",\"input\":{\"kind\":\""+kind+"\",\"port\":"+std::to_string(p.input.port)+",\"zones\":"+zonesText(p.input.zones)+",\"devices\":"+devicesText(p.input.devices)+",\"maxNotes\":"+std::to_string(p.input.maxNotes)+"},\"chain\":"+chainText(p.chain)+",\"splits\":"+splitsText(p)+",\"output\":"+std::to_string(p.output)+",\"level\":"+numeric(p.level)+",\"pan\":"+numeric(p.pan)+",\"mute\":"+(p.mute?"true":"false")+",\"solo\":"+(p.solo?"true":"false")+",\"bus\":"+std::to_string(p.bus)+",\"sends\":"+join(sends)+'}');
+        parts.push_back("{\"id\":"+std::to_string(p.id)+",\"name\":"+quote(p.name)+",\"input\":{\"kind\":\""+kind+"\",\"port\":"+std::to_string(p.input.port)+",\"zones\":"+zonesText(p.input.zones)+",\"devices\":"+devicesText(p.input.devices)+",\"maxNotes\":"+std::to_string(p.input.maxNotes)+"},\"chain\":"+chainText(p.chain)+",\"splits\":"+splitsText(p)+",\"output\":"+std::to_string(p.output)+",\"level\":"+numeric(p.level)+",\"pan\":"+numeric(p.pan)+",\"mute\":"+(p.mute?"true":"false")+",\"solo\":"+(p.solo?"true":"false")+",\"bus\":"+std::to_string(p.bus)+",\"sends\":"+join(sends)
+            +",\"from\":"+(p.from.sound.empty() || detach?std::string("null"):"{\"sound\":"+quote(p.from.sound)+",\"revision\":"+quote(p.from.revision)+",\"name\":"+quote(p.from.name)+",\"modified\":"+(p.from.modified?"true":"false")+'}')+'}');
     }
     for(const auto& m:graph.mappings)if(kept(m.source) && kept(m.target))mappings.push_back("{\"from\":"+quote(keys.at(m.source))+",\"lane\":"+std::to_string(m.lane)+",\"to\":"+quote(keys.at(m.target))+",\"param\":"+std::to_string(m.param)+'}');
     // The control tree: each control's value and targets, parameters by node key.
@@ -178,10 +181,13 @@ Control::PerformanceInfo Session::writeDocument(const std::string& directory,Per
     std::vector<std::string> named;
     for(const auto& l:assets_.libraries())if(libraries.count(l.id))named.push_back("{\"id\":"+quote(l.id)+",\"name\":"+quote(l.name)+",\"fingerprint\":"+quote(l.fingerprint)+'}');
     // RFC 0021: the library's info; the ID is made at the first save and kept by every later one.
-    if(info.id.empty()){std::random_device random;constexpr char hex[]="0123456789abcdef";for(int i=0;i<16;++i)info.id+=hex[random()&15];}
+    auto fresh=[]{std::random_device random;constexpr char hex[]="0123456789abcdef";std::string id;for(int i=0;i<16;++i)id+=hex[random()&15];return id;};
+    if(info.id.empty())info.id=fresh();
+    // A new revision at every save, its parent the one it was saved over.
+    info.parent=info.revision;info.revision=fresh();
     if(info.name.empty())info.name=fs::path(directory).stem().string();
     std::vector<std::string> tags;for(const auto& t:info.tags)tags.push_back(quote(t));
-    const auto infoText="{\"id\":"+quote(info.id)+",\"name\":"+quote(info.name)+",\"description\":"+quote(info.description)+",\"tags\":"+join(tags)+",\"color\":"+quote(info.color)+'}';
+    const auto infoText="{\"id\":"+quote(info.id)+",\"name\":"+quote(info.name)+",\"description\":"+quote(info.description)+",\"tags\":"+join(tags)+",\"color\":"+quote(info.color)+",\"revision\":"+quote(info.revision)+",\"parent\":"+quote(info.parent)+'}';
     std::string out;
     if(sound)out="{\"format\":\"oscairn.sound\",\"version\":3,\"info\":"+infoText+",\"libraries\":"+join(named)+",\"nodes\":"+join(nodes)+",\"wires\":"+join(wires)+",\"part\":{\"chain\":"+chainText(sound->chain)+",\"splits\":"+splitsText(*sound)+"},\"mappings\":"+join(mappings)+",\"controls\":"+join(controls)+"}\n";
     else{
@@ -209,7 +215,7 @@ void Session::loadPerformance(const std::string& directory) {
     fields(d,{"format","version","info","libraries","transport","audioInputs","audioOutputs","nodes","wires","parts","mappings","pads","scenes","sceneParameters","scene","controls"});
     const auto pads=padsFrom(field(d,"pads"));
     if(text(field(d,"format"))!="oscairn.performance" || integer(field(d,"version"))!=3)bad("unsupported format version");
-    fields(field(d,"info"),{"id","name","description","tags","color"});const auto info=readInfo(root/"performance.json","oscairn.performance");
+    fields(field(d,"info"),{"id","name","description","tags","color","revision","parent"});const auto info=readInfo(root/"performance.json","oscairn.performance");
     const auto transport=field(d,"transport");fields(transport,{"tempo","clockSource"});const double tempo=number(field(transport,"tempo"));
     const auto clock=text(field(transport,"clockSource"));if(tempo<1 || tempo>1000 || (clock!="internal" && clock!="midi"))bad("invalid transport");
     const auto layout=graph_.describe().audioLayout;checkPorts(field(d,"audioInputs"),layout.inputs);checkPorts(field(d,"audioOutputs"),layout.outputs);
@@ -257,7 +263,11 @@ void Session::loadPerformance(const std::string& directory) {
         std::set<uint32_t> partIds;
         std::set<NodeId> partNodes; // a node belongs to one part
         for(auto p:array(field(d,"parts"),256)){
-            fields(p,{"id","name","input","chain","splits","output","bus","sends","level","pan","mute","solo"});Part part;part.id=integer(field(p,"id"));part.name=text(field(p,"name"));
+            fields(p,{"id","name","input","chain","splits","output","bus","sends","level","pan","mute","solo","from"});Part part;part.id=integer(field(p,"id"));part.name=text(field(p,"name"));
+            if(const auto from=field(p,"from");from->type!=json_type_null){
+                fields(from,{"sound","revision","name","modified"});
+                part.from={text(field(from,"sound")),text(field(from,"revision")),text(field(from,"name")),boolean(field(from,"modified"))};
+                if(part.from.sound.empty())bad("a part's source names no Sound");}
             if(!part.id || !partIds.insert(part.id).second)bad("invalid or duplicate part");
             const auto input=field(p,"input");fields(input,{"kind","port","zones","devices","maxNotes"});const auto kind=text(field(input,"kind"));
             part.input.kind=kind=="notes"?PartInput::Kind::Notes:kind=="audio"?PartInput::Kind::Audio:kind=="none"?PartInput::Kind::None:kind=="bus"?PartInput::Kind::Bus:(bad("invalid part input"),PartInput::Kind::None);
@@ -416,7 +426,7 @@ std::vector<std::string> Session::loadSoundInto(uint32_t partId,const fs::path& 
     V d=doc.get();if(!d)bad("invalid JSON");
     fields(d,{"format","version","info","libraries","nodes","wires","part","mappings","controls"});
     if(text(field(d,"format"))!="oscairn.sound" || integer(field(d,"version"))!=3)bad("not a version 3 Sound");
-    fields(field(d,"info"),{"id","name","description","tags","color"});
+    fields(field(d,"info"),{"id","name","description","tags","color","revision","parent"});
     const auto info=readInfo(root/"sound.json","oscairn.sound");
     // Every asset resolves before any plugin loads.
     for(auto node:array(field(d,"nodes"),256))if(member(node,"assets"))for(auto a:array(field(node,"assets"),65536)){
@@ -541,26 +551,51 @@ std::vector<std::string> Session::loadSoundInto(uint32_t partId,const fs::path& 
             id=same==arriving.end()?0:same->id;}
         for(auto& scene:scenes_)std::erase_if(scene.macros,[](const auto& v){return v.first==0;});
         macros_.insert(macros_.end(),arriving.begin(),arriving.end());
-        findPart(partId).name=info.name;
+        auto& loaded=findPart(partId);loaded.name=info.name;
+        loaded.from={info.id,info.revision,info.name,false};
     }catch(...){
         // Everything that can fail comes before the old part changes: take the additions back.
         for(const auto n:added)if(graph_.contains(n)){std::erase_if(wires_,[&](const Wire& w){return w.from==n || w.to==n;});dropNode(n);}
         throw;
     }
-    commit(); // one step to undo
+    loading_.insert(partId);
+    try{commit();}catch(...){loading_.erase(partId);throw;} // one step to undo
+    loading_.erase(partId);
     return flagged;
 }
 
-Control::SoundSaved Session::savePartAsSound(uint32_t partId,const std::string& name) {
+Control::SoundSaved Session::savePartAsSound(uint32_t partId,const std::string& name,bool asNew) {
     auto& l=library();
     const auto& part=findPart(partId);
-    PerformanceInfo info;info.name=name.empty()?part.name:name;
-    if(info.name.size()>256 || info.name.find('\0')!=std::string::npos)bad("invalid Sound name");
+    if(name.size()>256 || name.find('\0')!=std::string::npos)bad("invalid Sound name");
+    // Save writes over the Sound the part came from, as its next revision; Save As New, or a
+    // part from no Sound (or one no longer in the library), makes a new one.
+    const auto* item=asNew || part.from.sound.empty()?nullptr:l.find(part.from.sound);
+    if(item && item->kind!="sound")item=nullptr;
+    PerformanceInfo info;
+    if(item){info=readInfo(fs::path(item->path)/"sound.json","oscairn.sound");info.revision=part.from.revision;}
+    if(!name.empty())info.name=name;
+    if(info.name.empty())info.name=part.name;
     SoundSaved saved;
-    const auto folder=l.newFolder(info.name,"sound");
-    fs::create_directories(folder.parent_path());
-    saved.id=writeDocument(folder.string(),info,&part,&saved.left).id;
+    PerformanceInfo written;
+    if(!item){
+        const auto folder=l.newFolder(info.name,"sound");
+        fs::create_directories(folder.parent_path());
+        written=writeDocument(folder.string(),info,&part,&saved.left);
+    }else{
+        const fs::path folder=item->path;
+        const auto fresh=folder.parent_path()/("."+folder.filename().string()+".new"),old=folder.parent_path()/("."+folder.filename().string()+".old");
+        fs::remove_all(fresh);fs::remove_all(old);
+        written=writeDocument(fresh.string(),info,&part,&saved.left);
+        fs::rename(folder,old);fs::rename(fresh,folder);fs::remove_all(old);
+    }
     l.rescan();
+    saved.id=written.id;saved.revision=written.revision;
+    {
+        Quiet quiet(*this); // where the part came from changes, but saving is not an edit
+        findPart(partId).from={written.id,written.revision,written.name,false};
+    }
+    ++revision_;publish(ChangeKind::Graph); // clients see where the part comes from now
     return saved;
 }
 
@@ -588,23 +623,23 @@ void Session::setPerformanceInfo(const PerformanceInfo& info) {
     if(info.name.size()>256 || info.description.size()>4096 || info.tags.size()>32 ||
        std::any_of(info.tags.begin(),info.tags.end(),[](const std::string& t){return t.empty() || t.size()>64 || t.find('\0')!=std::string::npos;}) ||
        info.name.find('\0')!=std::string::npos || info.description.find('\0')!=std::string::npos || !validColor(info.color))bad("invalid info");
-    const auto id=info_.id;info_=info;info_.id=id;
+    const auto id=info_.id,revision=info_.revision,parent=info_.parent;info_=info;info_.id=id;info_.revision=revision;info_.parent=parent;
 }
 
 std::string Session::savePerformanceToLibrary(const std::string& name,bool asNew) {
     auto& l=library();
     // Save writes over the open library Performance; Save As New, or one not from the library, makes a new one.
-    if(asNew)info_.id.clear();
+    if(asNew){info_.id.clear();info_.revision.clear();}
     if(!name.empty())info_.name=name;
     const auto* item=info_.id.empty()?nullptr:l.find(info_.id);
     const auto folder=item?fs::path(item->path):l.newFolder(info_.name.empty()?"Performance":info_.name,"performance");
     fs::create_directories(folder.parent_path());
-    if(!item)savePerformance(folder.string());
+    if(!item)info_=writeDocument(folder.string(),info_,nullptr,nullptr,false);
     else{
         // Saving refuses an existing folder, so save beside it and swap; the old one goes only once the new is in place.
         const auto fresh=folder.parent_path()/("."+folder.filename().string()+".new"),old=folder.parent_path()/("."+folder.filename().string()+".old");
         fs::remove_all(fresh);fs::remove_all(old);
-        savePerformance(fresh.string());
+        info_=writeDocument(fresh.string(),info_,nullptr,nullptr,false);
         fs::rename(folder,old);fs::rename(fresh,folder);fs::remove_all(old);
     }
     l.rescan();l.used(info_.id);

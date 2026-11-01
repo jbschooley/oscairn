@@ -197,7 +197,16 @@ namespace oscairn::standalone
             // Apps that play the sounds, each in its own window, apart from the sound editor.
             // The selected part's Sound (RFC 0021): from the library, or saved to it.
             if(index==6){const bool part=shell() && shell()->selectedPart() && engine_.connected() && !engine_.soundBusy();
-                menu.addItem(8100,"Load Sound into Part...",part && actions_.offered(pickSound));menu.addItem(8101,"Save Part as Sound...",part);return menu;}
+                // Update when the library has a newer revision of the Sound the part came from.
+                PartSource from;if(part)for(const auto& p:engine_.graph().parts)if(p.id==shell()->selectedPart())from=p.from;
+                bool newer=false;
+                if(part && !from.sound.empty())if(const auto item=engine_.libraryItem(from.sound))newer=!item->id.empty() && item->revision!=from.revision;
+                menu.addItem(8100,"Load Sound into Part...",part && actions_.offered(pickSound));
+                menu.addItem(8104,"Update from Library",newer);
+                menu.addSeparator();
+                menu.addItem(8101,from.sound.empty()?juce::String("Save Sound..."):"Save Sound",part);
+                menu.addItem(8102,"Save Sound As New...",part);
+                return menu;}
             if(index==5){menu.addItem(8000,"Groovebox");menu.addItem(8001,"Library");menu.addItem(8002,"Setlist");return menu;}
             if(index==4){themeItems_=theme_.installed();for(size_t i=0;i<themeItems_.size();++i)menu.addItem(3000+int(i),themeItems_[i].second,true,themeItems_[i].first==themeData().id);menu.addSeparator();menu.addItem(4000,"Manage themes...");return menu;}
             for( size_t i = 0; i < layouts_.size(); ++i )
@@ -236,7 +245,8 @@ namespace oscairn::standalone
             if(id==8002){setlist();showApp(setlist_,"Setlist",nullptr,0,0);return;}
             if(id==5002 || id==5003){saveToLibrary(id==5003);return;}
             if(id==8100){loadSound();return;}
-            if(id==8101){saveSound();return;}
+            if(id==8101 || id==8102){saveSound(id==8102);return;}
+            if(id==8104){updateSound();return;}
             if(std::string color;colorChosen(id,5100,color)){engine_.edit([color](Control& c){auto info=c.performanceInfo();info.color=color;c.setPerformanceInfo(info);});return;}
             if(id==6000){engine_.edit([](Control& c){c.undo();});return;}
             if(id==6001){engine_.edit([](Control& c){c.redo();});return;}
@@ -287,6 +297,13 @@ namespace oscairn::standalone
             setDesktopMode(*pane,inputMode_==InputMode::Touch?2:1);
             picker_->setVisible(true);picker_->toFront(true);
         }
+        // The library's newer revision of the Sound the selected part came from, in its place.
+        void updateSound()
+        {
+            const auto part=shell()?shell()->selectedPart():0;
+            for(const auto& p:engine_.graph().parts)if(p.id==part && !p.from.sound.empty()){
+                SoundAction load;load.kind=SoundAction::LoadSound;load.part=part;load.libraryId=p.from.sound;engine_.soundAction(std::move(load));}
+        }
         // The Library picks a Sound; it replaces the selected part's chain, keeping the part's seat.
         void loadSound()
         {
@@ -297,17 +314,20 @@ namespace oscairn::standalone
                 SoundAction load;load.kind=SoundAction::LoadSound;load.part=part;load.libraryId=id;safe->engine_.soundAction(std::move(load));
             });
         }
-        void saveSound()
+        // Save writes the next revision of the Sound the part came from, asking for a name only
+        // when it came from none; Save As New always asks, and makes another Sound.
+        void saveSound(bool asNew)
         {
             const auto part=shell()?shell()->selectedPart():0;
             if(!part)return;
-            std::string name;for(const auto& p:engine_.graph().parts)if(p.id==part)name=p.name;
-            auto* w=new juce::AlertWindow("Save Part as Sound","The Sound's name:",juce::MessageBoxIconType::NoIcon,this);
+            std::string name;PartSource from;for(const auto& p:engine_.graph().parts)if(p.id==part){name=p.name;from=p.from;}
+            if(!asNew && !from.sound.empty()){SoundAction save;save.kind=SoundAction::SaveSound;save.part=part;engine_.soundAction(std::move(save));return;}
+            auto* w=new juce::AlertWindow(asNew?"Save Sound As New":"Save Sound","The Sound's name:",juce::MessageBoxIconType::NoIcon,this);
             w->addTextEditor("name",juce::String::fromUTF8(name.c_str()),"Name");
             w->addButton("Save",1,juce::KeyPress(juce::KeyPress::returnKey));w->addButton("Cancel",0,juce::KeyPress(juce::KeyPress::escapeKey));
-            w->enterModalState(true,juce::ModalCallbackFunction::create([safe=juce::Component::SafePointer<Window>(this),w,part](int result){
+            w->enterModalState(true,juce::ModalCallbackFunction::create([safe=juce::Component::SafePointer<Window>(this),w,part,asNew](int result){
                 if(!safe || result!=1)return;
-                SoundAction save;save.kind=SoundAction::SaveSound;save.part=part;save.choice.name=w->getTextEditorContents("name").trim().toStdString();
+                SoundAction save;save.kind=SoundAction::SaveSound;save.part=part;save.asNew=asNew;save.choice.name=w->getTextEditorContents("name").trim().toStdString();
                 safe->engine_.soundAction(std::move(save));
             }),true);
         }

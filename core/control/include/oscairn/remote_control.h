@@ -22,7 +22,7 @@ namespace oscairn
         uint32_t libraryRescan() override;
         std::string savePerformanceToLibrary(const std::string& name, bool asNew = false) override;
         void loadPerformanceFromLibrary(const std::string& id) override;
-        SoundSaved savePartAsSound(uint32_t part, const std::string& name) override;
+        SoundSaved savePartAsSound(uint32_t part, const std::string& name, bool asNew = false) override;
         std::vector<std::string> loadSound(uint32_t part, const std::string& id) override;
         uint32_t partFromSound(const std::string& id) override;
         bool supportsState(NodeId node) const override;

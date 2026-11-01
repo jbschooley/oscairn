@@ -178,6 +178,7 @@ namespace oscairn
                 part.bus=static_cast<uint32_t>(integer(field(p,"bus")));
                 part.level=number(field(p,"level"));part.mute=boolean(field(p,"mute"));part.solo=boolean(field(p,"solo"));part.pan=number(field(p,"pan"));
                 for(auto s:array(field(p,"sends")))part.sends.push_back({static_cast<uint32_t>(integer(field(s,"bus"))),number(field(s,"level"))});
+                if(const auto from=field(p,"from");from->type!=json_type_null)part.from={string(field(from,"sound")),string(field(from,"revision")),string(field(from,"name")),boolean(field(from,"modified"))};
                 next.parts.push_back(std::move(part));
             }
             for(auto w:array(field(root,"wires")))
@@ -280,7 +281,7 @@ namespace oscairn
     Control::LibraryResult RemoteControl::libraryQuery(const LibraryQuery& q) {
         auto d=impl_->call("library.query","{\"text\":"+quote(q.text)+",\"tags\":"+quoted(q.tags)+",\"favourites\":"+(q.favourites?"true":"false")+",\"recent\":"+(q.recent?"true":"false")+",\"limit\":"+std::to_string(q.limit)+(q.kind.empty()?std::string():",\"kind\":"+quote(q.kind))+'}');
         auto r=field(d.get(),"result");LibraryResult result;
-        for(auto i:array(field(r,"items")))result.items.push_back({string(field(i,"id")),string(field(i,"kind")),string(field(i,"name")),string(field(i,"description")),string(field(i,"path")),strings(field(i,"tags")),boolean(field(i,"favourite")),static_cast<uint32_t>(integer(field(i,"recent"))),string(field(i,"color"))});
+        for(auto i:array(field(r,"items")))result.items.push_back({string(field(i,"id")),string(field(i,"kind")),string(field(i,"name")),string(field(i,"description")),string(field(i,"path")),strings(field(i,"tags")),boolean(field(i,"favourite")),static_cast<uint32_t>(integer(field(i,"recent"))),string(field(i,"color")),string(field(i,"revision"))});
         for(auto t:array(field(r,"tags")))result.tags.emplace_back(string(field(t,"tag")),static_cast<uint32_t>(integer(field(t,"count"))));
         result.total=static_cast<uint32_t>(integer(field(r,"total")));
         return result;
@@ -295,9 +296,9 @@ namespace oscairn
     std::string RemoteControl::savePerformanceToLibrary(const std::string& name,bool asNew) {
         auto d=impl_->call("library.save","{\"name\":"+quote(name)+",\"new\":"+(asNew?"true":"false")+'}',30000);return string(field(field(d.get(),"result"),"id"));
     }
-    Control::SoundSaved RemoteControl::savePartAsSound(uint32_t part,const std::string& name) {
-        auto d=impl_->call("parts.saveSound","{\"part\":"+std::to_string(part)+",\"name\":"+quote(name)+'}',30000);auto r=field(d.get(),"result");
-        return {string(field(r,"id")),strings(field(r,"left"))};
+    Control::SoundSaved RemoteControl::savePartAsSound(uint32_t part,const std::string& name,bool asNew) {
+        auto d=impl_->call("parts.saveSound","{\"part\":"+std::to_string(part)+",\"name\":"+quote(name)+",\"new\":"+(asNew?"true":"false")+'}',30000);auto r=field(d.get(),"result");impl_->refresh();
+        return {string(field(r,"id")),string(field(r,"revision")),strings(field(r,"left"))};
     }
     std::vector<std::string> RemoteControl::loadSound(uint32_t part,const std::string& id) {
         auto d=impl_->call("parts.loadSound","{\"part\":"+std::to_string(part)+",\"id\":"+quote(id)+'}',30000);impl_->refresh();

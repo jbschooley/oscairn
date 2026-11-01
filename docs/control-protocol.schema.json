@@ -2141,6 +2141,9 @@
                 },
                 "name": {
                   "type": "string"
+                },
+                "new": {
+                  "type": "boolean"
                 }
               },
               "required": [
@@ -5659,6 +5662,39 @@
         "solo": {
           "type": "boolean",
           "description": "While any part is soloed, only soloed parts, the parts feeding them and the buses they feed are heard"
+        },
+        "from": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "sound": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "revision": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "modified": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "sound",
+                "revision",
+                "name",
+                "modified"
+              ],
+              "additionalProperties": false
+            }
+          ],
+          "description": "The library Sound and revision the part was loaded from (RFC 0021), and whether it has been edited since; null when none"
         }
       },
       "required": [
@@ -5673,7 +5709,8 @@
         "level",
         "pan",
         "mute",
-        "solo"
+        "solo",
+        "from"
       ],
       "additionalProperties": false
     },

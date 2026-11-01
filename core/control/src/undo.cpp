@@ -101,6 +101,7 @@ namespace oscairn
     void Session::record()
     {
         if(quiet_) return;
+        if(baseline_) markEdited(*baseline_);
         auto now = std::make_shared<const Model>(model());
         if(!baseline_) { baseline_ = now; return; }
         const auto& b = *baseline_;
@@ -163,8 +164,60 @@ namespace oscairn
             step.key = "param:" + std::to_string(node) + ":" + std::to_string(param);
             step.node = node; step.param = param; step.from = before; step.to = applied;
             push(std::move(step));
+            markEdited(node);
         }
         return ok;
+    }
+
+    // RFC 0021: a part loaded from a Sound shows when it has been edited since. A step that
+    // changes its chain, splits, plugins, the wires and mappings inside it or its own controls
+    // marks it, within that step, so undoing the edit unmarks it; the step that loaded the Sound
+    // (its source changed) does not. Its seat (input, output, sends, fader) is not the Sound's.
+    void Session::markEdited(const Model& b)
+    {
+        for(auto& p : parts_)
+        {
+            if(p.from.sound.empty() || p.from.modified || loading_.count(p.id)) continue;
+            const auto bp = std::find_if(b.parts.begin(), b.parts.end(), [&](const Part& x) { return x.id == p.id; });
+            if(bp == b.parts.end() || !(bp->from == p.from)) continue;
+            const auto nodes = nodesOf(p);
+            bool changed = bp->chain != p.chain || !(bp->splits == p.splits) || nodesOf(*bp) != nodes;
+            for(const auto n : nodes)
+            {
+                const auto was = b.nodes.find(n);
+                changed = changed || was == b.nodes.end() || was->second.second.host != graph_.node(n).host;
+            }
+            auto inside = [&](const std::vector<Wire>& wires) {
+                std::vector<Wire> out;
+                for(auto w : wires) if(nodes.count(w.from) && nodes.count(w.to)) { w.id = 0; out.push_back(w); }
+                return out;
+            };
+            auto own = [&](const std::vector<Macro>& macros) { std::vector<Macro> out; for(const auto& m : macros) if(m.part == p.id) out.push_back(m); return out; };
+            auto mapped = [&](const std::vector<Graph::Mapping>& all) {
+                std::vector<std::tuple<NodeId, uint32_t, NodeId, uint32_t>> out;
+                for(const auto& m : all) if(nodes.count(m.source)) out.emplace_back(m.source, m.lane, m.target, m.param);
+                return out;
+            };
+            changed = changed || inside(b.wires) != inside(wires_) || !sameMacros(own(b.macros), own(macros_)) || mapped(b.mappings) != mapped(graph_.describe().mappings);
+            if(changed) p.from.modified = true;
+        }
+    }
+
+    void Session::markEdited(NodeId node)
+    {
+        for(auto& p : parts_)
+        {
+            if(p.from.sound.empty() || p.from.modified || !nodesOf(p).count(node)) continue;
+            p.from.modified = true;
+            // Not a change of its own: the baseline takes it too, so no extra step follows.
+            if(baseline_)
+            {
+                auto b = *baseline_;
+                for(auto& x : b.parts) if(x.id == p.id) x.from.modified = true;
+                baseline_ = std::make_shared<const Model>(std::move(b));
+            }
+            ++revision_; publish(ChangeKind::Graph); // clients see the part marked
+        }
     }
 
     Control::History Session::history() const
@@ -236,6 +289,7 @@ namespace oscairn
                       field(n.name, f->name, t.name); field(n.input, f->input, t.input); field(n.chain, f->chain, t.chain);
                       field(n.splits, f->splits, t.splits); field(n.output, f->output, t.output); field(n.bus, f->bus, t.bus);
                       field(n.sends, f->sends, t.sends); field(n.level, f->level, t.level); field(n.pan, f->pan, t.pan); field(n.mute, f->mute, t.mute); field(n.solo, f->solo, t.solo);
+                      field(n.from, f->from, t.from);
                   });
             // User wires by ID; a part's own wires are rebuilt from it, keeping a changed Mix.
             auto user = userWires(wires_);
