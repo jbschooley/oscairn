@@ -37,3 +37,12 @@ instrument (relicensed from AGPL to MIT by Jacob, October 31, 2026).
 ## Copied code
 
 Code copied from other AGPL or compatible projects keeps its original copyright notices.
+
+## Open question: products other makers build
+
+Oscairn may run on products other companies make ([RFC 0024](0024-device-profiles.md)). Under
+the AGPL they must publish their changes to the core, hosts and first-party plugins, and their
+own plugins and apps may use any license across the plugin boundary above. Whether that is the
+intended arrangement for such makers, or whether a commercial license alongside the AGPL, or a
+clearer boundary between the core and their own apps, is wanted, is to be decided before anyone
+builds a product on Oscairn.

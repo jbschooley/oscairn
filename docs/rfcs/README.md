@@ -32,3 +32,9 @@ tests it, with a note on what remains of a step that is partly done. The
 | [0021](0021-sounds-performances-and-library.md) | Sounds, Performances and the library | in progress |
 | [0022](0022-apps-and-requests.md) | Apps that open each other | in progress |
 | [0023](0023-item-types.md) | Item types | proposed |
+| [0024](0024-device-profiles.md) | Device profiles | proposed |
+| [0025](0025-resource-budgets.md) | Resource budgets: knowing before loading whether it fits | proposed |
+| [0026](0026-network-control-and-web-ui.md) | Network control and the web UI | proposed |
+| [0027](0027-reliability-levels.md) | Reliability levels and the guaranteed audio path | proposed |
+| [0028](0028-system-image-updates-boot-and-power.md) | The system image: updates, boot, storage and power | proposed |
+| [0029](0029-internationalization.md) | Internationalization | proposed |

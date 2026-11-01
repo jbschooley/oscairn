@@ -74,6 +74,11 @@ the desktop feels like a device and the pedal can't show it at all.
 | Plugin editor | Description, generated pages, or the plugin's own window | Description or generated pages | The description's top-priority parameters, as a list |
 | Built by | The desktop app | The desktop app full screen, on the device's Linux image | A renderer to be chosen |
 
+A fourth surface, the **web UI** served by a device to a phone, tablet or laptop, draws the same
+view models ([RFC 0026](0026-network-control-and-web-ui.md)); it is the only screen of a
+headless product. Which surface a product uses, and its layouts, follow from its device profile
+([RFC 0024](0024-device-profiles.md)); text comes from catalogs ([RFC 0029](0029-internationalization.md)).
+
 ### Desktop
 
 Gig Performer is the model for how it feels. Not a device screen in a window, but:

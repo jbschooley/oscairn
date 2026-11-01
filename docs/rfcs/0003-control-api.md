@@ -117,6 +117,10 @@ methods, not graph edits.
 
 ### Remote access
 
+Now designed in [RFC 0026](0026-network-control-and-web-ui.md): the same API over WebSocket and
+TLS to paired clients, with permissions by namespace, discovery and a web UI. The note below was
+the starting point.
+
 Off by default, and not part of version 1. Syncing libraries between a device and the
 desktop app or DAW plugin needs a network or USB-network connection, but not the whole
 control API: a narrow sync service (exchange library indexes, transfer missing files by

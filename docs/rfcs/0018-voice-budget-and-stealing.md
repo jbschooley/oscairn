@@ -208,6 +208,13 @@ lanes.
 | 3. Shared budget | Cost per note from measurement, stealing across parts at note-on, soft and hard limits, counts on the Parts list | A Performance that misses deadlines without the budget plays a stress chart on the device with no deadline misses, and only quiet or released notes stolen |
 | 4. Extension | `oscairn.voice-budget` header, host support, the native instruments implementing it | A layered AWM2-class sound under pressure drops quiet elements before whole notes |
 
+## Before loading
+
+Stealing handles too many notes once playing. Whether a Performance fits at all, before it
+loads (its plugins' cost at rest and at their note limits, and during a seamless change both
+Performances), is admission, in [RFC 0025](0025-resource-budgets.md), which counts this RFC's
+budget among the rest.
+
 ## Open questions
 
 - The soft and hard limits, and the fade time, on the real device.

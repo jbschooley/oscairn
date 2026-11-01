@@ -369,10 +369,6 @@ Also open:
 - [ ] recording as an engine service: any graph input, output, part or bus and the notes
   played, to WAV/RF64 off the audio thread, with retroactive capture
   ([RFC 0020](rfcs/0020-recording.md), proposed)
-- [ ] internationalization (i18n): every user-facing string through a translation catalog,
-  translations installable like themes, locale-aware number, time and note-name formatting,
-  and layouts that fit longer text and right-to-left scripts. Until then, text and
-  identifiers use American English throughout (format names included: `colors`, `favorites`)
 
 Plugins and apps (sequencers, instruments, the UI) must stay separate components, each in
 its own folder with its own build target and depending only on Oscairn's public headers, so
@@ -390,6 +386,36 @@ Package-manager comparison comes at the package milestone, before permanent dist
 format commitments: evaluate libmamba/Nix and libsolv as a narrower fallback using the
 [defined prototype](rfcs/0006-packages-and-portability.md#implementation-candidates-and-decision-timing).
 No package-manager dependency or prototype is required for the next desktop step.
+
+## Requirements for every product
+
+Oscairn is meant to run on more than one kind of product: the Behringer KICK and the Ignite
+first, then others (a tabletop module, a groovebox, a pedal or multi-effects, a rack unit, a
+drum module, a DJ unit, a Eurorack module, a DAW plugin). These are required of all of them:
+
+- [ ] **device profiles:** one manifest per product that the image, engine, UI, mappings,
+  packages and admission read instead of flags ([RFC 0024](rfcs/0024-device-profiles.md#progress))
+- [ ] **knowing before loading whether it fits:** CPU and memory measured on the device, and
+  admission for loading, editing and seamless changes ([RFC 0025](rfcs/0025-resource-budgets.md#progress))
+- [ ] **builds for every device's platform:** first-party plugins and apps on Linux ARM64 beside
+  the desktop; packages without a build install as unavailable, saying so
+  ([RFC 0006](rfcs/0006-packages-and-portability.md#platform-builds-and-hardware))
+- [ ] **network control and the web UI:** the control API over TLS to paired clients, with
+  permissions, discovery, several clients and a web UI served by the device
+  ([RFC 0026](rfcs/0026-network-control-and-web-ui.md#progress))
+- [ ] **reliability levels:** desktop, instrument and pass-through, with a watchdog and, for
+  pedals and mixers, audio passing through an engine failure ([RFC 0027](rfcs/0027-reliability-levels.md#progress))
+- [ ] **the system image:** read-only A/B system with signed updates and fallback, factory reset,
+  boot to each product's target, safe power loss, power management
+  ([RFC 0028](rfcs/0028-system-image-updates-boot-and-power.md#progress))
+- [ ] **item types and apps per product** ([RFC 0023](rfcs/0023-item-types.md#progress),
+  [RFC 0022](rfcs/0022-apps-and-requests.md#progress))
+- [ ] **internationalization:** catalogs, installable translations, locale formatting, layouts
+  for longer text and right-to-left scripts ([RFC 0029](rfcs/0029-internationalization.md#progress)).
+  Until then, text and identifiers use American English throughout (format names included:
+  `colors`, `favorites`)
+- [ ] the licensing arrangement for products other makers build
+  ([RFC 0001](rfcs/0001-license.md#open-question-products-other-makers-build))
 
 ## Phase 4: hardware (started)
 

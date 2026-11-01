@@ -556,7 +556,9 @@ plays on until released, pedal included; nothing else reaches them, and new note
 Performance. They are hidden from it (`graph.get`, saving, undo, node IDs) and each goes once
 idle, as a scene's: asleep or three seconds of silence, or 30 seconds without a note. Notes
 queued at the moment of the change are no longer dropped, so a release reaches the old plugins.
-Changing again while one still rings carries those too. `control-parts` checks a held note
+Changing again while one still rings carries those too. A change that would not fit with both
+Performances in memory and CPU is offered as a cut instead, saying so first: admission, in
+[RFC 0025](0025-resource-budgets.md) (not built yet). `control-parts` checks a held note
 through the change, an edit to the new Performance leaving the old one ringing, a new note
 reaching only the new one and the old one going; `control-performance` checks a held note
 through the change and, once it has rung out, output identical to a fresh load.

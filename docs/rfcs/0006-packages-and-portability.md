@@ -270,6 +270,9 @@ an update deliberately outside an ongoing performance. Offline USB transfer rema
 
 ### Capability profile catalog
 
+What a profile holds, and every part of Oscairn that reads it, is in
+[RFC 0024](0024-device-profiles.md); this section is where profiles are kept and published.
+
 Maintain a versioned, declarative instrument-profile catalog in Git, with reviewed changes,
 schema validation and test evidence. Publish authenticated immutable catalog snapshots for
 clients; devices need neither Git nor an account, and can import/cache snapshots offline.
@@ -544,6 +547,13 @@ usable. Carry stable identities/state provenance now, without making that workfl
 on a catalog, a full package resolver or all the future multi-device features.
 
 ## Platform builds and hardware
+
+Required (decided 2026-11-01): every first-party plugin and app ships a build for every
+supported device profile's platform ([RFC 0024](0024-device-profiles.md)): Linux ARM64 for the
+KICK, the Ignite and the other devices, beside macOS and Linux desktop builds. A package with no
+build for a device's platform installs on it only as unavailable, saying so, and the library
+marks what uses it; a third party's x86-only plugin does not quietly fail on a device. Resource
+estimates feed admission ([RFC 0025](0025-resource-budgets.md)).
 
 A code artifact declares OS, CPU architecture and required instruction set, runtime/ABI
 profile and minimum supported versions, plugin format, required host features, and relevant

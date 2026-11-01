@@ -182,6 +182,11 @@ Sound data; Sounds save musical requirements and explicit quality choices.
 
 ### Realtime execution and failure
 
+How hard each product tries, and what happens when the engine itself fails (a watchdog, and
+audio passing through on pedals and mixers), is set by its reliability level
+([RFC 0027](0027-reliability-levels.md)); what a product's hardware is, by its device profile
+([RFC 0024](0024-device-profiles.md)).
+
 Preallocate buffers and use bounded queues. No firmware loading, device discovery,
 allocation or unbounded driver/IPC waits occur in the audio callback. A hardware backend
 must state whether results are available in the current processing interval or require a
