@@ -11,6 +11,18 @@ across the CLAP boundary ([RFC 0001](0001-licence.md)). The extension plan, with
 against every Data List parameter, Oscairn integration work and milestones, is
 [on the fork's `oscairn` branch](https://github.com/oscairn/dexed/blob/oscairn/docs/oscairn-plan.md). The capability target and the IP rules below still apply.
 
+## Progress
+
+Checked when built and tested; the sections below say how.
+
+- [ ] 1. Operator core, 88 algorithms, native sound contexts
+- [ ] 2. 8 operators, fixed frequency, FM-X EG and scaling
+- [ ] 3. Spectral forms
+- [ ] 4. Shared filter, FEG, PEG, LFOs
+- [ ] 5. Macro controls, mono, portamento; converter coverage
+
+The engine is developed in its fork (`oscairn-fm`); its own repository tracks work in progress.
+
 ## Outcome
 
 An Oscairn FM instrument that can do everything a MONTAGE M / MODX M FM-X Part can do, and

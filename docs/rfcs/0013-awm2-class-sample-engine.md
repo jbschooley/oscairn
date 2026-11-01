@@ -4,6 +4,18 @@ Status: proposed, 2026-10-30. Not implemented. Extends the Oscairn Sampler and t
 profile of [RFC 0008](0008-sfz-native-samples-and-conversion.md). Factory and user Yamaha
 waveforms reach it only through import, as described [below](#yamaha-content-import-not-inclusion).
 
+## Progress
+
+Checked when built and tested; the sections below say how.
+
+- [ ] 1. RFC 0008 step 3: multisample
+- [ ] 2. Measurement harness and the first fitted tables
+- [ ] 3. Element model and XA Control
+- [ ] 4. Filters and FEG
+- [ ] 5. PEG, LFOs, pan modes and the rest
+- [ ] 6. Drum Parts and element outputs
+- [ ] 7. Converter coverage
+
 ## Problem
 
 RFC 0008 builds the Sampler up from one SFZ region and extends SFZ "only for demonstrated

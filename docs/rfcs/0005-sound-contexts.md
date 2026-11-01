@@ -9,6 +9,16 @@ cover the next asset milestone. Performance persistence is implemented in the
 [versioned folder format](../performance-format.md). The desktop sound picker is implemented; native effect contexts
 and per-sound audio are specified separately in [RFC 0007](0007-effect-contexts.md).
 
+## Progress
+
+Checked when built and tested; the sections below say how.
+
+- [x] The `oscairn.sound-contexts` contract, implemented by the Basic Synth with typed, JSON and remote controls
+- [x] A host-owned instance pool for ordinary CLAP and LV2 instruments
+- [x] The Sampler preparing SFZ patches
+- [x] Prepared sounds saved in Performances; the desktop sound picker
+- [ ] Automatic effect-chain transitions (with [RFC 0007](0007-effect-contexts.md))
+
 ## Contract
 
 `oscairn.sound-contexts/draft-4` separates preparation from selecting the sound for new

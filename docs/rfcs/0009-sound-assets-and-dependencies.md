@@ -4,6 +4,15 @@ Status: steps 1–2 implemented 2026-10-30 (see [Implementation status](#impleme
 steps 3–4 planned. This is the concrete asset contract that [RFC 0006](0006-packages-and-portability.md)
 leaves as "the planned host asset API" and "assets must be declared by the plugin".
 
+## Progress
+
+Checked when built and tested; the sections below say how.
+
+- [x] 1. Store index, library manifest, registered folders, `resolve` and `import` ([status](#implementation-status))
+- [x] 2. `oscairn.assets` and `oscairn.asset-dependencies`, used by the Sampler; preflight with a missing-asset report
+- [ ] 3. LV2 path mapping onto the store; `create` for user-library files
+- [ ] 4. Libraries as RFC 0006 packages, with redistribution checks and garbage collection
+
 ## Outcome
 
 A sound depends on plugins, as today, and also on **files those plugins read**: samples,

@@ -5,6 +5,15 @@ processor can play, Oscairn gives up the least audible notes across every part, 
 clicks, rather than missing the audio deadline. The host does this with notes (option B),
 and plugins that opt in do it with their own voices (option C).
 
+## Progress
+
+Checked when built and tested; the sections below say how.
+
+- [x] 1. Fade and choke ([status](#step-1-status))
+- [ ] 2. Part limits: note limits done ([status](#step-2-status)); reserve and priority remain
+- [ ] 3. Shared budget
+- [ ] 4. The `oscairn.voice-budget` extension
+
 ## Problem
 
 A synth with a fixed voice pool steals its own voices when the pool is full: it prefers a

@@ -4,6 +4,17 @@ Status: proposed. This is the packaging and transfer contract to build toward, n
 implemented installer or project format. It refines [Portable sounds](../architecture.md#portable-sounds)
 and [Packages](../architecture.md#packages-sound-packs-libraries-and-plugins).
 
+## Progress
+
+Checked when built and tested; the sections below say how.
+
+- [ ] 1. Format-qualified IDs, package references and provenance in persisted identities; profiles, manifest and lock schemas
+- [ ] 2. First vertical slice: managed CLAP packages, locks, offline export and import, unavailable-node preservation
+- [ ] 3. Cross-platform proof
+- [ ] 4. LV2, existing installs, VST3 and AU with their adapters
+- [ ] 5. DAW delivery proof
+- [ ] 6. Catalogs, multi-device preparation and distribution polish
+
 ## Outcome
 
 A musician exports a Performance or Setlist, imports it once on another Oscairn system,

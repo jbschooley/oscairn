@@ -6,6 +6,15 @@ Typed/JSON/remote control, state, resource telemetry and reference-graph tests a
 Performance persistence is implemented in the [versioned JSON format](../performance-format.md).
 Automatic Sound-to-chain management remains planned.
 
+## Progress
+
+Checked when built and tested; the sections below say how.
+
+- [x] Delay contexts sharing one engine; Basic Synth sound buses
+- [x] Typed, JSON and remote controls, state, resource telemetry and reference-graph tests
+- [x] Saved in Performances
+- [ ] Automatic Sound-to-chain management (preparation and retirement)
+
 ## Musician-facing behavior
 
 A Sound can have several insert effects. Different Sounds can use the same effect type

@@ -11,6 +11,17 @@ across the CLAP boundary ([RFC 0001](0001-licence.md)). The extension plan, with
 against every Data List parameter, Oscairn integration work and milestones, is
 [on the fork's `oscairn` branch](https://github.com/oscairn/surge/blob/oscairn/doc/oscairn-plan.md). The capability target and the IP rules below still apply.
 
+## Progress
+
+Checked when built and tested; the sections below say how.
+
+- [ ] 1. Oscillators, filters, amp, envelopes and LFOs; native sound contexts
+- [ ] 2. Wave shaper, saturators, folder, routing
+- [ ] 3. Unison, reset, drift and ageing; pitch EG and LFOs
+- [ ] 4. Converter coverage
+
+The engine is developed in its fork (`oscairn-analog`); its own repository tracks work in progress.
+
 ## Outcome
 
 An Oscairn virtual-analog instrument that can do everything a MONTAGE M / MODX M AN-X Part

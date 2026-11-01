@@ -6,6 +6,17 @@ publishes it to plugins through CLAP's draft tuning extension and as the MTS-ESP
 as "one tuning for every instrument in a Performance". This RFC decides where that tuning
 lives and how it reaches each engine.
 
+## Progress
+
+Checked when built and tested; the sections below say how.
+
+- [ ] 1. Performance tunings; Scala and .kbm parsing; built-in scales
+- [ ] 2. Host `clap.tuning` in the engine and workers; the Sampler reads it
+- [ ] 3. MTS-ESP master on the desktop
+- [ ] 4. Octet and the analog engine read `clap.tuning`
+- [ ] 5. Device libMTS
+- [ ] 6. Opt-in note-expression tuning
+
 ## Problem
 
 Today Oscairn has no tuning. The host doesn't implement any tuning extension (nothing in

@@ -5,6 +5,17 @@ extend it where necessary. The [step 1 decision](#step-1-decision-baseline-profi
 is recorded; step 2 is implemented as the Oscairn Sampler with the baseline profile (see
 [Step 2 status](#step-2-status)). Extension syntax is not defined.
 
+## Progress
+
+Checked when built and tested; the sections below say how.
+
+- [x] 1. Profile and engine decision ([decision](#step-1-decision-baseline-profile-and-engine))
+- [x] 2. Native WAV/SFZ slice: the Oscairn Sampler ([status](#step-2-status))
+- [ ] 3. Multisample baseline and ordinary-SFZ conversion
+- [ ] 4. Demonstrated Oscairn extensions
+- [ ] 5. MODX M migration
+- [ ] 6. Yamaha write-back
+
 ## Outcome and boundary
 
 Musicians can build sample-based sounds in Oscairn, reuse SFZ libraries, share samples

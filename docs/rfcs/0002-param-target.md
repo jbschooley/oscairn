@@ -2,6 +2,15 @@
 
 **Status:** draft, implemented
 
+## Progress
+
+Checked when built and tested; the sections below say how.
+
+- [x] The host offers `clap.event-registry` and accepts validated param-target events
+- [x] Mappings in the graph, converted to the target's parameter events in the same block
+- [x] Lock lanes in the step sequencer; Basic Synth parameters to lock
+- [x] `oscairn-render --map`
+
 ## Problem
 
 A sequencer's per-step parameter locks, and automation lanes in general, need to change

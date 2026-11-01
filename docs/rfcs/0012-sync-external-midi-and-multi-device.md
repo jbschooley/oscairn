@@ -1,7 +1,7 @@
 # RFC 0012: Sync, external MIDI devices and multi-device setlists
 
-Status: proposed, 2026-10-30. Input device selectors implemented (below); the rest not
-implemented. Covers two related needs:
+Status: proposed, 2026-10-30. Input device selectors implemented (below); the build steps
+not started (see [Progress](#progress)). Covers two related needs:
 - the Ignite's role as a sequencer for external MIDI and CV instruments;
 - several Oscairn devices (and other gear) following one performance.
 
@@ -9,6 +9,19 @@ Builds on the graph's event routing ([architecture](../architecture.md#event-sou
 timestamped hardware I/O ([RFC 0004](0004-hardware-services.md#one-event-timeline-explicit-device-clocks)),
 prepared sounds ([RFC 0005](0005-sound-contexts.md)) and the Parts views
 ([RFC 0011](0011-performance-ui-and-editors.md)).
+
+## Progress
+
+Checked when built and tested; the sections below say how.
+
+- [x] Input device selectors on parts ([selectors](#choosing-devices-selectors))
+- [ ] 1. MIDI out
+- [ ] 2. Clock out
+- [ ] 3. Link
+- [ ] 4. External instruments
+- [ ] 5. Setlist cues
+- [ ] 6. Network ensemble
+- [ ] 7. CV and MMC
 
 ## Problem
 

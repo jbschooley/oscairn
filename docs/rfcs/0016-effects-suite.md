@@ -4,6 +4,15 @@ Status: proposed, 2026-10-30. Not implemented. Builds on [RFC 0007](0007-effect-
 effect contexts and the bus and send model. Same rules as [RFC 0013](0013-awm2-class-sample-engine.md):
 effects written for Oscairn or reused from open-source projects, with no Yamaha code.
 
+## Progress
+
+Checked when built and tested; the sections below say how.
+
+- [ ] 1. Slot model
+- [ ] 2. The most-used types
+- [ ] 3. The remaining categories
+- [ ] 4. Converter coverage
+
 ## Outcome
 
 Oscairn ships effects that cover every effect type and effect slot a MONTAGE M / MODX M

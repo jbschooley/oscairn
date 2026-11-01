@@ -9,6 +9,16 @@ and parts ([RFC 0011](0011-performance-ui-and-editors.md)), the event timeline o
 ([RFC 0009](0009-sound-assets-and-dependencies.md)) and the surfaces of
 [RFC 0019](0019-adaptive-ui.md).
 
+## Progress
+
+Checked when built and tested; the sections below say how.
+
+- [ ] 1. Capture core
+- [ ] 2. Parts and notes
+- [ ] 3. Retroactive capture and sync
+- [ ] 4. Control API and UI
+- [ ] 5. Inputs and multitrack
+
 ## Problem
 
 Oscairn cannot record anything. Three uses need it:

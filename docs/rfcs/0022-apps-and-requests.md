@@ -11,6 +11,14 @@ control API ([RFC 0003](0003-control-api.md)), the library
 ([RFC 0021](0021-sounds-performances-and-library.md)) and setlists
 ([RFC 0012](0012-sync-external-midi-and-multi-device.md)).
 
+## Progress
+
+Checked when built and tested; the sections below say how.
+
+- [x] 1. In-process actions: the registry; Library picks (Performances and Sounds), Setlist takes Performances
+- [ ] 2. Over the control API, with manifests
+- [ ] 3. Choice and defaults
+
 ## Problem
 
 Apps are separate components: the Groovebox, a Setlist app, the Library, the sound editor.

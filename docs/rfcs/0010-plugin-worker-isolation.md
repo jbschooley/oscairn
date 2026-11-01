@@ -1,11 +1,23 @@
 # RFC 0010: Plugin worker isolation
 
-Status: proposed, 2026-10-30. Step 1 measured on macOS only ([results](#step-1-measurements));
-steps 2 and 3 implemented on macOS ([step 2](#step-2-status), [step 3](#step-3-status)); steps 4–7
-not started. Moved ahead of Phase 4 hardware work and further
+Status: in progress, 2026-10-31. Steps 1–5 implemented, measured and tested on macOS; steps 6
+and 7 not started (see [Progress](#progress)). Moved ahead of Phase 4 hardware work and further
 third-party plugin features ([roadmap](../roadmap.md#next-build-and-test-order)); it makes
 concrete the [engine recovery](../architecture.md#engine-recovery) and sandboxed-worker
 isolation the architecture already describes.
+
+## Progress
+
+Checked when built and tested; the sections below say how.
+
+- [x] 1. Measure the hand-off (macOS only; native Linux and the target remain) ([results](#step-1-measurements))
+- [x] 2. One isolated plugin ([status](#step-2-status))
+- [x] 3. Contain failure, on macOS ([status](#step-3-status))
+- [x] 4. Recover ([status](#step-4-status))
+- [x] 5. Policies: native engines in workers, placement and overrides ([status](#step-5-status))
+- [ ] 6. Memory and CPU limits, then sandboxing
+- [ ] 7. LV2 in workers
+- [ ] Measurements on native Linux and the target; workers by default in the app
 
 ## Problem
 

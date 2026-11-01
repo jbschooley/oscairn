@@ -2,6 +2,11 @@
 
 **Status:** accepted
 
+## Progress
+
+- [x] AGPL-3.0-or-later adopted for the core, hosts, first-party plugins and tools, with
+      plugin loading as the licence boundary
+
 ## Decision
 
 The Oscairn core, hosts, first-party plugins and tools are licensed under the

@@ -1,9 +1,23 @@
 # RFC 0019: One UI across desktop, touch panel and small screens
 
-Status: proposed, 2026-10-31. Step 1 started (below). Builds on the views and plugin editors of
+Status: in progress, 2026-10-31. Step 1 done; steps 2, 3 and 5 started (see [Progress](#progress)). Builds on the views and plugin editors of
 [RFC 0011](0011-performance-ui-and-editors.md), the control API
 ([RFC 0003](0003-control-api.md)) and the layouts and themes of the
 [design language](../design-language.md).
+
+## Progress
+
+Checked when built and tested; the sections below say how.
+
+- [x] 1. Surfaces and view models ([status](#step-1-status))
+- [ ] 2. Desktop shell: menu bar, toolbar, parts list, tabs and detached windows done; dockable
+      panes with a saved arrangement, the inspector and shortcuts remain
+- [ ] 3. Generated editors: parameter pages from module paths, `oscairn.ui` draft hints, panel
+      row knobs done; the Compact layout and its gate remain
+- [ ] 4. Plugin windows
+- [ ] 5. Rich widgets: envelope, LFO preview, key and velocity map done; waveform, step lane
+      and the Modular grid remain
+- [ ] 6. Front panels
 
 ## Problem
 

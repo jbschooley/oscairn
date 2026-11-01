@@ -22,6 +22,24 @@ scenes and controls ([RFC 0011](0011-performance-ui-and-editors.md)), prepared s
 ([RFC 0009](0009-sound-assets-and-dependencies.md)), packages ([RFC 0006](0006-packages-and-portability.md))
 and the three surfaces ([RFC 0019](0019-adaptive-ui.md)).
 
+## Progress
+
+Checked when built and tested; the sections below say how.
+
+- [x] Performance format 3 with the info block (name, description, tags, color)
+- [x] The library of Performances: cache, favourites, recents, query, Save and Save As New
+- [x] 1. Sound documents: save a part, load into a part or a new part, control owners
+- [ ] 1. Provenance: where a part came from, revisions, Update from library
+- [ ] 2. Library index and tags: index, user file and Sounds done; tag editing, suggestions,
+      packages and `LibraryModel` remain
+- [ ] 3. Desktop pane: the Library app and Part menu done; the dockable pane, inspector,
+      drag to part and keyboard remain
+- [ ] Importing a Performance ([design](#importing-a-performance))
+- [ ] 4. Plugin presets
+- [ ] 5. Audition and seamless loading
+- [ ] 6. Panel
+- [ ] 7. Compact test layout
+
 ## Problem
 
 We planned a Performance as a collection of Sounds. The architecture says so:

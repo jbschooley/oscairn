@@ -2,7 +2,10 @@
 
 Each design decision gets a short document: what was decided, why, and what it rules out.
 Number them in order (`0002-...md`) and keep the status line up to date
-(proposed, accepted, replaced).
+(proposed, in progress, accepted, replaced). Each RFC has a **Progress** checklist after its
+status: one box per build step or deliverable, checked in the same change that builds and
+tests it, with a note on what remains of a step that is partly done. The
+[roadmap](../roadmap.md) keeps the same boxes at a coarser grain.
 
 | RFC | Title | Status |
 | --- | --- | --- |
@@ -15,16 +18,16 @@ Number them in order (`0002-...md`) and keep the status line up to date
 | [0007](0007-effect-contexts.md) | Independent effects on shared native engines | implemented Delay/bus foundation; automatic chain management planned |
 | [0008](0008-sfz-native-samples-and-conversion.md) | SFZ-based native samples and Yamaha conversion | one-region Sampler implemented; multisample, extensions and converters planned |
 | [0009](0009-sound-assets-and-dependencies.md) | Sound assets and dependencies | steps 1–2 implemented; LV2 mapping and packages planned |
-| [0010](0010-plugin-worker-isolation.md) | Plugin worker isolation | proposed; next on the roadmap |
-| [0011](0011-performance-ui-and-editors.md) | Performance UI, routing views and plugin editors | proposed |
-| [0012](0012-sync-external-midi-and-multi-device.md) | Sync, external MIDI devices and multi-device setlists | proposed |
+| [0010](0010-plugin-worker-isolation.md) | Plugin worker isolation | in progress: steps 1–5 implemented on macOS |
+| [0011](0011-performance-ui-and-editors.md) | Performance UI, routing views and plugin editors | in progress: steps 1–4 and undo implemented |
+| [0012](0012-sync-external-midi-and-multi-device.md) | Sync, external MIDI devices and multi-device setlists | proposed; input device selectors implemented |
 | [0013](0013-awm2-class-sample-engine.md) | An AWM2-class sample engine | proposed |
 | [0014](0014-fm-engine.md) | An 8-operator FM engine | proposed |
 | [0015](0015-analog-modelling-engine.md) | An analog-modelling engine | proposed |
 | [0016](0016-effects-suite.md) | An effects suite covering the MODX M platform | proposed |
 | [0017](0017-host-tuning.md) | Host-level tuning | proposed |
-| [0018](0018-voice-budget-and-stealing.md) | Voice budget and stealing | proposed |
-| [0019](0019-adaptive-ui.md) | One UI across desktop, touch panel and small screens | proposed |
+| [0018](0018-voice-budget-and-stealing.md) | Voice budget and stealing | in progress: step 1 and part note limits implemented |
+| [0019](0019-adaptive-ui.md) | One UI across desktop, touch panel and small screens | in progress: step 1 done, steps 2, 3 and 5 started |
 | [0020](0020-recording.md) | Recording | proposed |
 | [0021](0021-sounds-performances-and-library.md) | Sounds, Performances and the library | in progress |
 | [0022](0022-apps-and-requests.md) | Apps that open each other | in progress |

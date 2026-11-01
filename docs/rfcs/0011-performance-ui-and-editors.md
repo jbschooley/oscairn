@@ -1,9 +1,23 @@
 # RFC 0011: Performance UI, routing views and plugin editors
 
-Status: proposed, 2026-10-30. Not implemented. Builds on the graph, note routes and parameter
+Status: in progress, 2026-10-31. Steps 1–4 and undo implemented (see [Progress](#progress)). Builds on the graph, note routes and parameter
 lanes that exist today ([architecture](../architecture.md#live-note-routes)), the planned
 controller-mapping service ([physical controls](../architecture.md#physical-controls-takeover-and-direct-position-access-planned))
 and the theme contract ([design language](../design-language.md)).
+
+## Progress
+
+Checked when built and tested; the sections below say how.
+
+- [x] 1. Model: wire and part ownership, implicit Mixes, port routes, saved and in the protocol ([status](#step-1-status))
+- [x] 2. Parts and Part views: parts list, chain, zones, scenes, shared buses
+- [x] 3. Split, join, buses, the Mixer ([status](#step-3-status))
+- [x] 4. Routing view on the desktop ([status](#step-4-status))
+- [x] Undo for every edit ([status](#undo-status)); preset and state loads remain
+- [ ] 5. Editors: knob pages for every plugin (started through [RFC 0019](0019-adaptive-ui.md)'s generated editors), the Modular grid
+- [ ] 6. Physical controls: default layers, overrides, learn, banks
+- [ ] 7. Groups, pedal view, move, copy and share
+- [ ] The full scene model (blocks and wires enabled per scene, what each scene saves)
 
 ## Problem
 

@@ -2,6 +2,18 @@
 
 **Status:** partially implemented; local JSON-RPC transport, remote control and explicit engine/UI separation available
 
+## Progress
+
+Checked when built and tested; the sections below say how.
+
+- [x] 1. `core/control`: `Control` and the session, without JUCE, tested through JSON
+- [x] 2. The socket server and client library, tested over a real socket
+- [x] 3. `oscairn-engine`
+- [x] 4. The desktop app on `Control` only, starting the engine as its helper; `--in-process` and `--connect`
+- [ ] 5. The OS image running engine and UI as separate services, with a UI-kill test (the image
+      boots into Oscairn in QEMU; separate services and the test are not done)
+- [ ] 6. The OSC bridge
+
 ## Current implementation
 
 `core/control` provides `Session` and the initial C++ `Control` interface. The desktop
