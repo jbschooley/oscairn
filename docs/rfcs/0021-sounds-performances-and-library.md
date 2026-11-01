@@ -36,8 +36,10 @@ Checked when built and tested; the sections below say how.
       edited since; revisions with parents for Sounds and Performances; Save and Save As New
       for Sounds; Update from library; exports detach; a deleted Sound breaks nothing
 - [ ] Authors in the info block, and `modified` set by preset and state loads
-- [ ] Libraries: imported as a whole, items locked, Save As New from them, removal
-      ([design](#libraries)); factory content as a preloaded library, restored by reinstalling
+- [ ] Libraries: items locked, Save As New from them, deleting items, uninstalling, and
+      reinstalling to restore what is missing ([design](#libraries)); factory content as a
+      preloaded library
+- [ ] Importing a library as a library or into your own storage, all of it or chosen items
 - [ ] Hidden tags and tag colors
 - [ ] Exporting a Performance with the Sounds its parts came from ([design](#exporting-a-performance));
       today an export drops where its parts came from
@@ -397,12 +399,22 @@ filed as one or the other.
   library item or its samples: **Save** on a part from a locked Sound is **Save As New**,
   which makes the musician's own Sound (with a new ID) and points the part at it. Its tags
   are the ones it came with; hiding and colors still apply.
-- **Removing a library** removes its items from the list. Performances keep working: their
-  parts are copies.
-- **Restoring factory content is reinstalling its library.** Because nothing in a library is
-  ever changed, a reinstall puts back what was removed and touches nothing the musician
-  made: their edits were Save As copies, outside the library. Restoring twice changes
-  nothing.
+- **Deleting and uninstalling.** Items of a library can be deleted, from the library view or
+  by deleting their files, and a whole library can be uninstalled, the factory library
+  included. Performances keep working: their parts are copies.
+- **Reinstalling restores it.** Reinstalling a library puts back whatever of it is missing,
+  however it went, and touches nothing the musician made: their edits were Save As copies,
+  outside the library. Reinstalling twice changes nothing. Restoring factory content is
+  reinstalling the factory library.
+- **Choosing how and what to import.** Importing a library asks:
+  - **as a library**, locked, or **into your own Sounds and Performances**, where its items
+    are the musician's own, to edit, save over and delete. Imported that way they get new IDs,
+    as Save As New would, so installing the same library later as a library does not clash
+    with them; Performances imported with them point at those copies.
+  - **all of it, or chosen items**: some Sounds, some Performances. An item brings what it
+    needs (its plugins and samples), as RFC 0006's
+    [choosing what to import](0006-packages-and-portability.md#choosing-what-to-import) says
+    for any package.
 - **Imported, not linked:** a library is installed into the library folders (RFC 0006's
   package store when it exists), so it plays without the medium it came from.
 - CLAP preset features become tags as above.

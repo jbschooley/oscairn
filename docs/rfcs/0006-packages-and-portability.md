@@ -14,6 +14,8 @@ Checked when built and tested; the sections below say how.
 - [ ] 4. LV2, existing installs, VST3 and AU with their adapters
 - [ ] 5. DAW delivery proof
 - [ ] 6. Catalogs, multi-device preparation and distribution polish
+- [ ] Choosing what to import: chosen items with their dependencies, content as a locked
+      library or into user storage ([design](#choosing-what-to-import))
 
 ## Outcome
 
@@ -362,6 +364,26 @@ not universal built-ins. Permit their inclusion when available and permitted; ot
 report the gap. Do not categorically omit source-device built-ins that the destination lacks.
 The baseline profile promises defined plugin/state capabilities on its supported targets,
 not unlimited polyphony or arbitrary graph size.
+
+## Choosing what to import
+
+A package may hold several kinds of thing: plugins, apps, sample libraries, Sounds and
+Performances. Importing one never has to take all of it:
+
+- **Choose the parts.** The import plan lists what the package holds, and the musician picks:
+  everything, or chosen items (just its plugin, or a few of its Sounds). Each chosen item
+  brings its required dependency closure (a Sound its plugins and samples), and nothing that
+  only unchosen items need. Choosing a plugin alone adds no Sounds or Performances.
+- **Choose how content arrives.** Sounds and Performances arrive either as a locked library
+  or into the musician's own storage, as editable user data with new IDs
+  ([RFC 0021](0021-sounds-performances-and-library.md#libraries)). Plugins, apps and sample
+  libraries are installed content either way.
+- **Import more later.** Importing more of the same package adds to what is installed; it does
+  not duplicate shared dependencies or change items already imported.
+- **Repair restores what went missing.** **Reinstall/Repair missing content** (below) puts
+  back an installed package's files however they went, deleted in the library view or on
+  the filesystem, and leaves the musician's own data alone. It restores only the parts that
+  were chosen.
 
 ## Self-contained packages without duplicating everything
 
