@@ -87,6 +87,12 @@ int main()
         craft(root / "Many.olib", {{"library.json", manifest}, {"Sounds/Bass.osound/sound.json", "{}"}}, [](mz_zip_archive& z) {
             for(int i = 0; i < 70000; ++i) { const auto name = "Assets/" + std::to_string(i); mz_zip_writer_add_mem(&z, name.c_str(), "", 0, 0); } });
         check(readPackage(root / "Many.olib", {}).items.size() == 1, "an archive of 70,000 entries is read");
+        // Names past 64 MiB in all, long ones well under the entry limit, are refused before they pile up.
+        craft(root / "Long.olib", {{"library.json", manifest}, {"Sounds/Bass.osound/sound.json", "{}"}}, [](mz_zip_archive& z) {
+            const auto folder = "Assets/" + std::string(250, 'a') + "/"; // miniz reads names up to 511 bytes
+            for(int i = 0; i < 135000; ++i) { auto name = std::to_string(i); name = folder + name + std::string(242 - name.size(), 'b'); mz_zip_writer_add_mem(&z, name.c_str(), "", 0, 0); } });
+        check(refused(root / "Long.olib", {}, "64 MiB of names"), "64 MiB of names is refused");
+        fs::remove(root / "Long.olib");
         const auto manifestOnly = readPackage(root / "Pack.olib", {});
         check(manifestOnly.items.size() == 1 && manifestOnly.items[0].id == "s1", "the manifest alone, extracting nothing");
 

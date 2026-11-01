@@ -52,8 +52,8 @@ namespace oscairn
 
     // Extracts an archive into `into`, a folder that must not exist yet, and returns its manifest.
     // Untrusted input: refuses entries outside library.json, Performances/, Sounds/, Assets/ and
-    // Plugins/, paths that climb out or are absolute, links, duplicates, more than 1,048,576 entries,
-    // more than 8 GiB in all, an entry over 2 GiB or a manifest over maxManifestBytes (as declared; each file extracted must be the
+    // Plugins/, paths that climb out or are absolute, links, duplicates, more than 1,048,576 entries
+    // or 64 MiB of names, more than 8 GiB in all, an entry over 2 GiB or a manifest over maxManifestBytes (as declared; each file extracted must be the
     // size it declares), a file whose SHA-256 is not the manifest's or that the manifest does not
     // list, a plugin build whose digest is not its own, and a manifest whose items or builds are
     // not in the archive or not for a knownPlatform. On refusal `into` is removed. With `into` empty, nothing is extracted:

@@ -18,7 +18,7 @@ namespace oscairn
         namespace fs = std::filesystem;
         using V = const json_value_s*;
         constexpr size_t maxEntries = 1u << 20, maxPath = 1024; // a library of thousands of items, each a few files
-        constexpr uint64_t maxEntry = 2ull << 30, maxTotal = 8ull << 30;
+        constexpr uint64_t maxEntry = 2ull << 30, maxTotal = 8ull << 30, maxNameBytes = 64ull << 20;
         const std::set<std::string> tops{"Performances", "Sounds", "Assets", "Plugins"};
         bool hidden(const fs::path& relative) { for(const auto& part : relative) if(!part.empty() && part.string()[0] == '.') return true; return false; }
 
@@ -158,7 +158,7 @@ namespace oscairn
             const auto count = mz_zip_reader_get_num_files(&z.zip);
             if(count > maxEntries) bad("it holds too many files");
             std::set<std::string> names;
-            uint64_t total = 0;
+            uint64_t total = 0, nameBytes = 0;
             std::string manifest;
             for(mz_uint i = 0; i < count; ++i)
             {
@@ -171,6 +171,7 @@ namespace oscairn
                 const auto top = name.substr(0, name.find('/'));
                 if(name != "library.json" && !tops.count(top)) bad("an entry outside its folders: " + name);
                 if(((st.m_external_attr >> 16) & S_IFMT) == S_IFLNK) bad("a link: " + name);
+                if((nameBytes += name.size()) > maxNameBytes) bad("its names are too long");
                 if(!names.insert(name).second) bad("an entry twice: " + name);
                 if(directory) { if(extract) fs::create_directories(into / name); continue; }
                 if(st.m_uncomp_size > maxEntry || (total += st.m_uncomp_size) > maxTotal) bad("it is too large");
@@ -223,7 +224,8 @@ namespace oscairn
                 for(auto* b = static_cast<const json_array_s*>(builds->payload)->start; b; b = b->next)
                 {
                     Package::Build build{text(detail::member(b->value, "platform")), text(detail::member(b->value, "path")), text(detail::member(b->value, "sha256"))};
-                    const bool there = names.count(build.path) || std::any_of(names.begin(), names.end(), [&](const std::string& n) { return n.rfind(build.path + "/", 0) == 0; });
+                    const auto inside = names.lower_bound(build.path + "/");
+                    const bool there = names.count(build.path) || (inside != names.end() && inside->rfind(build.path + "/", 0) == 0);
                     if(!safe(build.path) || build.path.rfind("Plugins/", 0) != 0 || !there || build.sha256.size() != 64)
                         bad("a plugin build is not in the archive: " + build.path);
                     if(!knownPlatform(build.platform)) bad("a plugin build for no known platform: " + build.platform);
