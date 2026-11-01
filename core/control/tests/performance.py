@@ -128,8 +128,6 @@ try:
         changed(lambda m: m['info'].pop('color'))
         changed(lambda m: m.update(unknown=True))
         changed(lambda m: m['nodes'][0].update(key='../escape'))
-        changed(lambda m: m['nodes'][0]['plugin'].update(version='incompatible'))
-        changed(lambda m: m['nodes'][0]['plugin'].update(id='missing'))
         changed(lambda m: m['nodes'][0]['outputs'][0].update(channels=1))
         changed(lambda m: m['wires'].append({**m['wires'][0], 'owner': 'part', 'part': 99}))
         changed(lambda m: m['wires'][0].update(kind='cv'))
@@ -147,6 +145,18 @@ try:
             (bad / 'performance.json').write_text(text)
             rpc('performance.load', {'directory': str(bad)}, True)
             assert rpc('graph.get')['result'] == live
+        # A plugin not here, or of another version, opens as a stand-in that says so (RFC 0006).
+        for i, change in enumerate([lambda m: m['nodes'][0]['plugin'].update(version='incompatible'), lambda m: m['nodes'][0]['plugin'].update(id='missing')]):
+            stand = root / f'stand-in-{i}'
+            shutil.copytree(moved, stand)
+            manifest = json.loads((moved / 'performance.json').read_text())
+            change(manifest)
+            (stand / 'performance.json').write_text(json.dumps(manifest, separators=(',', ':')))
+            rpc('performance.load', {'directory': str(stand)})
+            failures = rpc('session.status')['result']['failures']
+            assert len(failures) == 1 and 'not here' in failures[0]['reason'], failures
+        rpc('performance.load', {'directory': str(moved)})
+        live = rpc('graph.get')['result']
         bad = root / 'bad-state'
         shutil.copytree(moved, bad)
         (bad / 'nodes/node-1/state/state.clap').write_text('oscairn-synth-1\n1 "invalid" NaN')

@@ -363,7 +363,9 @@ namespace oscairn
         Library& library() {if(!library_)library_=std::make_unique<Library>();return *library_;}
         PerformanceInfo writeDocument(const std::string& directory,PerformanceInfo info,const Part* sound,std::vector<std::string>* left);
         std::vector<std::string> loadSoundInto(uint32_t part,const std::filesystem::path& folder);
-        std::map<std::string,NodeId> addNodes(const ::json_value_s* nodes,const std::filesystem::path& root,std::vector<NodeId>& added,const std::set<std::string>* only); // only: these keys (and their engines); null: all
+        // A document's nodes (a Performance's or a Sound's), each its saved plugin or, not here, its stand-in.
+        std::map<std::string,NodeId> addNodes(const ::json_value_s* document,const std::filesystem::path& root,std::vector<NodeId>& added,const std::set<std::string>* only); // only: these keys (and their engines); null: all
+        NodeId adopt(const std::string& name, std::shared_ptr<PluginHost> host); // a stand-in (RFC 0006), with no budget check
         std::set<NodeId> nodesOf(const Part& part) const;
         static std::vector<assets::Ref> assetsOf(const std::filesystem::path& manifest);
         void exportArchive(const std::string& file, const std::string& kind, const std::function<std::vector<PartSource>(const std::filesystem::path&, Package&)>& write, bool editedSounds);

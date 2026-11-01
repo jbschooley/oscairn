@@ -81,6 +81,8 @@ namespace oscairn
         void replace(NodeId node,const std::string& path,const std::string& pluginId,const std::string& preset,const std::function<void()>& rewire);
         void   remove( NodeId node );
         NodeId addEffectContext(NodeId source);
+        /// A host already made, such as a plugin's stand-in when it is not here (RFC 0006).
+        NodeId add( std::shared_ptr<PluginHost> host );
         NodeId effectSource(NodeId node) const;
         std::unique_ptr<Graph> prepareReplacement() const;
         /// Seamless Performance changes (RFC 0021), on a prepared replacement: `current`'s nodes

@@ -10,6 +10,8 @@ Checked when built and tested; the sections below say how.
 
 - [ ] 1. Format-qualified IDs, package references and provenance in persisted identities; profiles, manifest and lock schemas
 - [ ] 2. First vertical slice: managed CLAP packages, locks, offline export and import, unavailable-node preservation
+      (built 2026-11-01: unavailable-node preservation, a stand-in keeping the plugin's place and
+      saved state, `control-parts`; the plugin store's lookup by format, ID and version)
 - [ ] 3. Cross-platform proof
 - [ ] 4. LV2, existing installs, VST3 and AU with their adapters
 - [ ] 5. DAW delivery proof

@@ -1,7 +1,7 @@
 add_subdirectory(clap-host)
 
 find_package(Threads REQUIRED)
-add_library(oscairn_plugin_host STATIC plugin-host/src/plugin_host.cpp plugin-host/src/discovery.cpp plugin-host/src/assets.cpp
+add_library(oscairn_plugin_host STATIC plugin-host/src/plugin_host.cpp plugin-host/src/unavailable_plugin.cpp plugin-host/src/discovery.cpp plugin-host/src/assets.cpp
     plugin-host/src/Worker.cpp plugin-host/src/WorkerHost.cpp)
 target_include_directories(oscairn_plugin_host PUBLIC plugin-host/include)
 target_link_libraries(oscairn_plugin_host PUBLIC kick_clap_host PRIVATE Threads::Threads)

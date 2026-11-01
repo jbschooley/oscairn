@@ -124,6 +124,7 @@ namespace oscairn
         const bool memoryNow = ++measureTicks_ % 200 == 0;
         auto sample = [&](NodeId node) {
             const auto& host = graph_.host(node);
+            if(!host.failure().empty()) return; // a failed plugin, or a stand-in for one not here, costs nothing to learn from
             const auto st = host.statistics();
             if(st.blocks < 32) return;
             auto& m = measured_[pluginKey(node)];

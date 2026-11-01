@@ -70,12 +70,15 @@ could not map (a main port awaiting one, or none); such a wire is kept and loads
 unconnected.
 
 Plugin identity is `(format, id)`, plus the observed version as state provenance.
-`pathHint` currently locates an installed binary/bundle and is verified against that
-identity/version. It is **not** a package ID or portability guarantee. Version mismatches
-fail explicitly; there are no silent upgrades or untested state conversions. The format
-has no package manifest, dependency lockfile, binary payload, resolver, archive reader or
-cross-format conversion. Those can wrap/reference this Performance data later without
-inventing a second save format.
+`pathHint` locates an installed binary/bundle and is verified against that identity and
+version; the plugin store (`OSCAIRN_DATA_HOME/Plugins/<format>/<id>@<version>/`, RFC 0006) is
+tried next. It is **not** a package ID or portability guarantee. There are no silent upgrades
+or untested state conversions: a plugin that is not here, or only in another version, or that
+fails to load, opens as a **stand-in** in its place (RFC 0006's unavailable-node preservation).
+The stand-in keeps the saved identity, ports and the parameters the snapshot and the document
+name, so parts, wires, scenes and controls keep it; it plays silence, is reported among the
+session's `failures` saying why, and writes its saved state back byte for byte on save, so
+installing the plugin later restores it. A document that is malformed is still refused.
 
 ## Snapshot rules
 

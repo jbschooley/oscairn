@@ -87,9 +87,12 @@ static void native(const char* synth,const char* delay,const char* seq,const fs:
     check(std::all_of(reset.l.begin(),reset.l.end(),[](float x){return x==0;}),"held notes/tails are not resurrected");
     auto rejects=[&](const fs::path& path){const auto revision=a.graphState().revision;bool failed=false;try{a.loadPerformance(path.string());}catch(const std::exception&){failed=true;}
         check(failed && a.graphState().revision==revision,"invalid restore changed current graph");};
-    for(int which=0;which<5;++which){const auto bad=root/("bad"+std::to_string(which));fs::copy(file,bad,fs::copy_options::recursive);
+    // A plugin not here is no longer a reason to refuse it (RFC 0006): it opens with a stand-in.
+    {const auto gone=root/"gone";fs::copy(file,gone,fs::copy_options::recursive);replaceText(gone/"performance.json",synth,"/missing/plugin.clap");
+        Session s(48000,127);s.loadPerformance(gone.string());
+        check(s.sessionStatus().failures.size()==1 && s.sessionStatus().failures[0].reason.find("not here")!=std::string::npos,"a missing plugin opens as a stand-in, reported");}
+    for(int which=0;which<5;++which){if(which==1)continue;const auto bad=root/("bad"+std::to_string(which));fs::copy(file,bad,fs::copy_options::recursive);
         if(which==0)replaceText(bad/"performance.json","\"version\":4","\"version\":999");
-        if(which==1)replaceText(bad/"performance.json",synth,"/missing/plugin.clap");
         if(which==2)fs::remove(bad/"nodes/node-1/state/state.clap");
         if(which==3)replaceText(bad/"performance.json","\"engine\":\"node-1\"","\"engine\":\"node-4\"");
         if(which==4)fs::create_symlink(file/"performance.json",bad/"link");

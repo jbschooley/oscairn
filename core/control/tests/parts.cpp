@@ -749,6 +749,48 @@ namespace
         check(s.leaving() == 0, "A goes after three seconds of silence");
     }
 
+    // A plugin that is not here (RFC 0006): the Performance opens, the plugin silent in its place
+    // saying why, its state kept byte for byte through a save, and back once it is installed.
+    void unavailable(const char* fixture, const fs::path& root)
+    {
+        {
+            Session p(48000, frames);
+            const auto synth = p.add("synth", fixture, "org.kick.test.synth"); p.setParameter(synth, 7, .5);
+            const auto part = p.addPart("Part"); p.insertIntoPart(part, 0, synth); p.commit();
+            const auto bright = p.addMacro("Bright", 0); p.setMacroTargets(bright, {MacroTarget{.kind = MacroTarget::Kind::Parameter, .node = synth, .param = 7}}); p.commit();
+            p.savePerformance((root / "gone").string());
+        }
+        auto read = [](const fs::path& f) { std::ifstream in(f, std::ios::binary); return std::string((std::istreambuf_iterator<char>(in)), {}); };
+        const auto doc = root / "gone" / "performance.json";
+        const auto original = read(doc);
+        auto moved = original; const auto at = moved.find(std::string(fixture)); check(at != std::string::npos, "the saved path hint");
+        moved.replace(at, std::string(fixture).size(), "/nowhere/missing.clap");
+        std::ofstream(doc, std::ios::binary | std::ios::trunc) << moved;
+        Session s(48000, frames);
+        s.loadPerformance((root / "gone").string());
+        const auto status = s.sessionStatus();
+        check(status.failures.size() == 1 && status.failures[0].reason.find("not here") != std::string::npos, "the plugin not here is reported: " + (status.failures.empty() ? std::string("none") : status.failures[0].reason));
+        check(s.graphState().parts.size() == 1 && s.graphState().parts[0].chain.size() == 1 && s.graphState().macros.size() == 1 && s.graphState().macros[0].targets.size() == 1, "its part, chain and control kept");
+        Audio x; s.note(true, 60, 1); x.run(s); x.run(s);
+        check(near(x.l[0], 0), "silent in its place");
+        s.note(false, 60, 0); x.run(s);
+        s.savePerformance((root / "gone-again").string());
+        const auto node = [&](const fs::path& folder) { return read(folder / "nodes" / "node-1" / "snapshot"); };
+        check(node(root / "gone-again") == node(root / "gone") && read(root / "gone-again" / "performance.json").find("org.kick.test.synth") != std::string::npos,
+              "saved again with its identity and its state as they were");
+        // Installed again (its path back): it plays, with the saved state.
+        auto back = read(root / "gone-again" / "performance.json");
+        const auto hint = back.find("/nowhere/missing.clap"); check(hint != std::string::npos, "the missing path saved");
+        back.replace(hint, std::string("/nowhere/missing.clap").size(), fixture);
+        std::ofstream(root / "gone-again" / "performance.json", std::ios::binary | std::ios::trunc) << back;
+        Session t(48000, frames);
+        t.loadPerformance((root / "gone-again").string());
+        check(t.sessionStatus().failures.empty(), "back, nothing missing");
+        Audio y; t.note(true, 60, 1); y.run(t); y.run(t);
+        check(near(y.l[0], .5), "and playing with its saved state: " + std::to_string(y.l[0]));
+        t.note(false, 60, 0); y.run(t);
+    }
+
     // All notes off (RFC 0030): a held note stops at the next block, and the next note plays.
     void allNotesOff(const char* fixture)
     {
@@ -1232,6 +1274,7 @@ int main(int argc, char** argv)
         performanceChange(argv[1], temp.path);
         audition(argv[1], temp.path);
         allNotesOff(argv[1]);
+        unavailable(argv[1], temp.path);
         sceneTransitions(argv[1], temp.path);
         budgets(argv[1], temp.path);
         controls(argv[1], temp.path);

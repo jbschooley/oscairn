@@ -135,6 +135,15 @@ namespace oscairn
         return id;
     }
 
+    NodeId Graph::add( std::shared_ptr<PluginHost> host )
+    {
+        if(nextId_>=graphInput)throw std::overflow_error("Graph node IDs exhausted");
+        if(!host)throw std::invalid_argument("no plugin host");
+        Node node;node.host=std::move(host);
+        node.audioInputs=countChannels(node.host->inputPorts());node.audioOutputs=countChannels(node.host->outputPorts());
+        const NodeId id=nextId_++;nodes_.emplace(id,std::move(node));return id;
+    }
+
     NodeId Graph::addEffectContext(NodeId source)
     {
         if(nextId_>=graphInput)throw std::overflow_error("Graph node IDs exhausted");

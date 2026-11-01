@@ -4,6 +4,7 @@
 #include "sheredom/json.h"
 #include "JsonInput.h"
 #include "oscairn/package.h"
+#include "oscairn/unavailable_plugin.h"
 #include <algorithm>
 #include <charconv>
 #include <cmath>
@@ -109,6 +110,57 @@ PadMap padsFrom(V v){
     return map;
 }
 bool lv2Path(const std::string& path){auto p=fs::path(path).lexically_normal();if(p.filename().empty())p=p.parent_path();return p.extension()==".lv2";}
+// Each node's parameters the document names (mappings, controls, scenes), by node key: what a
+// stand-in for a plugin that is not here must answer to.
+std::map<std::string,std::set<uint32_t>> parameterRefs(V d){
+    std::map<std::string,std::set<uint32_t>> refs;
+    auto each=[&](V list,const char* node,const char* param){if(list && list->type==json_type_array)for(auto e=static_cast<const json_array_s*>(list->payload)->start;e;e=e->next)
+        if(const V n=member(e->value,node),p=member(e->value,param);n && p && n->type==json_type_string && p->type==json_type_number)refs[text(n)].insert(uint32_t(std::strtoul(static_cast<const json_number_s*>(p->payload)->number,nullptr,10)));};
+    each(member(d,"mappings"),"to","param");
+    each(member(d,"sceneUntouched"),"node","param");
+    if(const V scenes=member(d,"scenes");scenes && scenes->type==json_type_array)for(auto s=static_cast<const json_array_s*>(scenes->payload)->start;s;s=s->next)each(member(s->value,"values"),"node","param");
+    if(const V controls=member(d,"controls");controls && controls->type==json_type_array)for(auto c=static_cast<const json_array_s*>(controls->payload)->start;c;c=c->next)each(member(c->value,"targets"),"node","param");
+    return refs;
+}
+// The plugin store (RFC 0006): installed plugin builds by format, ID and version, apart from
+// any one Performance; empty when that build is not there.
+fs::path storedPlugin(const std::string& format,const std::string& id,const std::string& version){
+    std::string safe;for(const char c:id+"@"+version)safe+=(std::isalnum(static_cast<unsigned char>(c)) || c=='.' || c=='-' || c=='@' || c=='_')?c:'_';
+    const auto folder=dataHome()/"Plugins"/format/safe;std::error_code e;
+    if(fs::is_directory(folder,e))for(const auto& entry:fs::directory_iterator(folder,e))if(entry.path().extension()==(format=="lv2"?".lv2":".clap"))return entry.path();
+    return {};
+}
+// A plugin that is not here stands in its place (RFC 0006), with the saved identity, ports and
+// the parameters its snapshot and the document name, keeping its saved state.
+std::shared_ptr<PluginHost> standIn(V node,const fs::path& snapshot,const std::set<uint32_t>& refs,const std::string& reason){
+    const V plugin=field(node,"plugin");
+    UnavailablePlugin p;
+    p.descriptor.path=text(field(plugin,"pathHint"));p.descriptor.id=text(field(plugin,"id"));p.descriptor.version=text(field(plugin,"version"));
+    p.descriptor.name=text(field(node,"name"));
+    auto ports=[](V list){std::vector<kick::clap::Port> out;for(auto e:array(list,Graph::maxAudioChannels))out.push_back({uint32_t(integer(field(e,"id"))),{},uint32_t(integer(field(e,"channels"))),uint32_t(integer(field(e,"flags")))});return out;};
+    p.inputs=ports(field(node,"inputs"));p.outputs=ports(field(node,"outputs"));
+    p.noteInputs=uint32_t(integer(field(node,"noteInputs"),16));p.noteOutputs=uint32_t(integer(field(node,"noteOutputs"),16));
+    std::set<uint32_t> ids=refs;
+    try{const auto bytes=state_files::read(snapshot/"snapshot",2*1024*1024);std::istringstream in(std::string(bytes.begin(),bytes.end()));in.imbue(std::locale::classic());
+        std::string kind;unsigned v;uint32_t id;double value;if(in>>kind>>v && kind=="parameters")while(in>>id>>value)ids.insert(id);}catch(const std::exception&){}
+    for(const auto id:ids){kick::clap::Parameter q;q.id=id;q.name="Parameter "+std::to_string(id);q.minimum=-1e9;q.maximum=1e9;p.parameters.push_back(q);}
+    p.reason=p.descriptor.id+" "+p.descriptor.version+" is not here ("+reason+"); its place and saved state are kept";
+    return unavailablePlugin(std::move(p));
+}
+// A saved node's plugin: the build at its saved path, else the store's, of the saved version;
+// else its stand-in. load adds a build, version reads it, unload removes a mismatched one.
+template<class Load,class Unload,class Version,class Adopt>
+NodeId resolvePlugin(V node,const fs::path& snapshot,const std::set<uint32_t>& refs,Load load,Unload unload,Version version,Adopt adopt){
+    const V plugin=field(node,"plugin");
+    const auto format=text(field(plugin,"format")),id=text(field(plugin,"id")),saved=text(field(plugin,"version"));
+    std::string reason="not installed";
+    for(const auto& candidate:{fs::path(text(field(plugin,"pathHint"))),storedPlugin(format,id,saved)}){
+        std::error_code e;if(candidate.empty() || !fs::exists(candidate,e))continue;
+        try{const auto n=load(candidate.string(),id);const auto have=version(n);if(have==saved)return n;unload(n);reason="version "+have+" installed";}
+        catch(const std::exception& x){reason=x.what();}
+    }
+    return adopt(standIn(node,snapshot,refs,reason));
+}
 std::string ports(const std::vector<kick::clap::Port>& list){std::vector<std::string> out;for(const auto& p:list)out.push_back("{\"id\":"+std::to_string(p.id)+",\"channels\":"+std::to_string(p.channels)+",\"flags\":"+std::to_string(p.flags)+'}');return join(out);}
 void checkPorts(V list,const std::vector<kick::clap::Port>& expected){const auto entries=array(list,Graph::maxAudioChannels);if(entries.size()!=expected.size())bad("audio port layout changed");for(size_t i=0;i<entries.size();++i){fields(entries[i],{"id","channels","flags"});if(integer(field(entries[i],"id"))!=expected[i].id || integer(field(entries[i],"channels"))!=expected[i].channels || integer(field(entries[i],"flags"))!=expected[i].flags)bad("audio port layout changed");}}
 void validateTree(const fs::path& root){size_t files=0;uint64_t bytes=0;for(const auto& e:fs::recursive_directory_iterator(root)){if(++files>65536 || e.is_symlink() || (!e.is_directory() && !e.is_regular_file()))bad("invalid or oversized asset tree");if(e.is_regular_file()){const auto n=e.file_size();if(n>16ull*1024*1024*1024-bytes)bad("assets exceed 16 GiB");bytes+=n;}}}
@@ -372,6 +424,7 @@ void Session::loadPerformance(const std::string& directory) {
     for(auto node:nodes){fields(node,{"key","name","plugin","engine","inputs","outputs","noteInputs","noteOutputs","assets","enabled"});const auto key=text(field(node,"key"));
         if(key.size()<6 || key.size()>12 || key.substr(0,5)!="node-" || !std::all_of(key.begin()+5,key.end(),[](char c){return c>='0' && c<='9';}) || !definitions.emplace(key,node).second)bad("invalid or duplicate node key");
         const auto name=text(field(node,"name"));if(!name.empty() && !usedNames.insert(name).second)bad("duplicate node name");}
+    auto refs=parameterRefs(d);
     // Roots first; siblings can refer forward to a root, never to an arbitrary chain.
     for(bool siblings:{false,true})for(auto node:nodes){const auto key=text(field(node,"key")),engine=text(field(node,"engine"));if((key!=engine)!=siblings)continue;
         const auto plugin=field(node,"plugin");fields(plugin,{"format","id","version","pathHint"});const auto format=text(field(plugin,"format")),id=text(field(plugin,"id")),path=text(field(plugin,"pathHint"));
@@ -380,9 +433,12 @@ void Session::loadPerformance(const std::string& directory) {
         try {
             NodeId runtime;
             if(siblings){if(!definitions.contains(engine) || text(field(definitions.at(engine),"engine"))!=engine || !ids.contains(engine))bad("missing shared engine root");
-                const auto& source=next->host(ids.at(engine)).descriptor();if(source.id!=id || source.path!=path)bad("incompatible shared engine identity");runtime=next->addEffectContext(ids.at(engine));}
-            else runtime=next->add(path,id);
-            auto& h=next->host(runtime);if(h.descriptor().version!=text(field(plugin,"version")))bad("saved plugin version does not match the loaded plugin");
+                const auto& source=next->host(ids.at(engine)).descriptor();if(source.id!=id || source.path!=path)bad("incompatible shared engine identity");
+                try{runtime=next->addEffectContext(ids.at(engine));}
+                catch(const std::exception& e){runtime=next->add(standIn(node,root/"nodes"/key,refs[key],std::string("its shared engine is not here: ")+e.what()));}}
+            else runtime=resolvePlugin(node,root/"nodes"/key,refs[key],[&](const std::string& p,const std::string& i){return next->add(p,i);},[&](NodeId n){next->remove(n);},
+                                       [&](NodeId n){return next->host(n).descriptor().version;},[&](std::shared_ptr<PluginHost> h){return next->add(std::move(h));});
+            auto& h=next->host(runtime);
             h.loadSnapshot((root/"nodes"/key).string());
             checkPorts(field(node,"inputs"),h.inputPorts());checkPorts(field(node,"outputs"),h.outputPorts());
             if(integer(field(node,"noteInputs"),16)!=h.noteInputPorts() || integer(field(node,"noteOutputs"),16)!=h.noteOutputPorts())bad("note port layout changed");
@@ -572,8 +628,17 @@ void Session::loadPerformance(const std::string& directory) {
 // Adds a document's plugins (all, or those keyed in `keep` and the engines they share), with
 // their saved state, roots before the effect contexts sharing their engines; names that are
 // taken get the next number. Every asset must resolve first. On failure nothing stays added.
-std::map<std::string,NodeId> Session::addNodes(const json_value_s* list,const fs::path& root,std::vector<NodeId>& added,const std::set<std::string>* only) {
-    const auto nodes=array(list,256);
+NodeId Session::adopt(const std::string& name,std::shared_ptr<PluginHost> host) {
+    const auto id=graph_.add(std::move(host));
+    nodes_.emplace(id,name);
+    for(const auto& p:graph_.host(id).parameters())observed_[{id,p.id}]=graph_.host(id).parameterValue(p.id);
+    staged_=true;
+    return id;
+}
+
+std::map<std::string,NodeId> Session::addNodes(const json_value_s* document,const fs::path& root,std::vector<NodeId>& added,const std::set<std::string>* only) {
+    const auto nodes=array(field(document,"nodes"),256);
+    auto refs=parameterRefs(document);
     std::set<std::string> keep;
     if(only){keep=*only;for(auto node:nodes){const auto key=text(field(node,"key"));if(keep.count(key))keep.insert(text(field(node,"engine")));}}
     auto wanted=[&](V node){return !only || keep.count(text(field(node,"key")))!=0;};
@@ -590,13 +655,17 @@ std::map<std::string,NodeId> Session::addNodes(const json_value_s* list,const fs
             const auto key=text(field(node,"key")),engine=text(field(node,"engine"));if((key!=engine)!=siblings)continue;
             if(key.size()<6 || key.size()>12 || key.substr(0,5)!="node-" || ids.count(key))bad("invalid or duplicate node key");
             const auto plugin=field(node,"plugin");fields(plugin,{"format","id","version","pathHint"});
-            const auto id=text(field(plugin,"id")),path=text(field(plugin,"pathHint")),name=text(field(node,"name"));
+            const auto id=text(field(plugin,"id")),name=text(field(node,"name"));
             NodeId runtime;
-            if(siblings){if(!ids.count(engine))bad("missing shared engine root");runtime=addEffectContext(unique(name),ids.at(engine));}
-            else runtime=add(unique(name),path,id);
+            const auto snapshot=root/"nodes"/key;
+            if(siblings){if(!ids.count(engine))bad("missing shared engine root");
+                try{runtime=addEffectContext(unique(name),ids.at(engine));}
+                catch(const std::exception& e){runtime=adopt(unique(name),standIn(node,snapshot,refs[key],std::string("its shared engine is not here: ")+e.what()));}}
+            else runtime=resolvePlugin(node,snapshot,refs[key],[&](const std::string& p,const std::string& i){return add(unique(name),p,i);},[&](NodeId n){dropNode(n);},
+                                       [&](NodeId n){return graph_.host(n).descriptor().version;},[&](std::shared_ptr<PluginHost> h){return adopt(unique(name),std::move(h));});
             added.push_back(runtime);
             auto& h=graph_.host(runtime);
-            if(h.descriptor().id!=id || h.descriptor().version!=text(field(plugin,"version")))bad("saved plugin version does not match the loaded plugin: "+name);
+            if(h.descriptor().id!=id)bad("saved plugin does not match the loaded plugin: "+name);
             h.loadSnapshot((root/"nodes"/key).string());
             checkPorts(field(node,"inputs"),h.inputPorts());checkPorts(field(node,"outputs"),h.outputPorts());
             if(integer(field(node,"noteInputs"),16)!=h.noteInputPorts() || integer(field(node,"noteOutputs"),16)!=h.noteOutputPorts())bad("note port layout changed: "+name);
@@ -627,7 +696,7 @@ std::vector<std::string> Session::loadSoundInto(uint32_t partId,const fs::path& 
     fields(field(d,"info"),{"id","name","description","tags","color","revision","parent","hash","origin"});
     const auto info=readInfo(root/"sound.json","oscairn.sound");
     std::vector<NodeId> added;
-    auto ids=addNodes(field(d,"nodes"),root,added,nullptr);
+    auto ids=addNodes(d,root,added,nullptr);
     std::vector<std::string> flagged;
     try{
         auto node=[&](V v){const auto key=text(v);const auto it=ids.find(key);if(it==ids.end())bad("unknown node reference "+key);return it->second;};
@@ -844,7 +913,7 @@ Control::Imported Session::importPerformance(const std::string& directory,const 
             for(const char* k:{"splitter","joiner"})if(const auto v=field(sp,k);v->type==json_type_string)keys.insert(text(v));
             for(auto l:array(field(sp,"lanes"),16))keysIn(field(l,"chain"));}}
     std::vector<NodeId> added;
-    auto ids=addNodes(field(d,"nodes"),root,added,whole?nullptr:&keys);
+    auto ids=addNodes(d,root,added,whole?nullptr:&keys);
     ids.emplace("input",graphInput);ids.emplace("output",graphOutput);
     Imported result;auto& notes=result.notes;
     std::vector<Part> parts;std::vector<Wire> users,mixes;std::vector<Graph::Mapping> mappings;std::vector<Macro> macros;
