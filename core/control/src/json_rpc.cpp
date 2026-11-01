@@ -141,7 +141,8 @@ namespace oscairn
             return "{\"audioReady\":"+std::string(s.audioReady?"true":"false")+",\"audioInputs\":"+channels(s.audioInputs)+",\"audioOutputs\":"+channels(s.audioOutputs)+",\"audioDevice\":" + quote(s.audioDevice) + ",\"midiInputs\":" + join(midi) +
                 ",\"sampleRate\":" + encode(s.sampleRate) + ",\"bufferSize\":" + std::to_string(s.bufferSize) +
                 ",\"cpuLoad\":" + encode(s.cpuLoad) + ",\"deadlineMisses\":" + std::to_string(s.deadlineMisses) + ",\"graphEventDrops\":" + std::to_string(s.graphEventDrops) + ",\"midiEventDrops\":" + std::to_string(s.midiEventDrops) +
-                ",\"failures\":" + [&]{ std::vector<std::string> f; for(const auto& x : s.failures) f.push_back("{\"node\":" + std::to_string(x.node) + ",\"name\":" + quote(x.name) + ",\"reason\":" + quote(x.reason) + '}'); return join(f); }() + '}';
+                ",\"failures\":" + [&]{ std::vector<std::string> f; for(const auto& x : s.failures) f.push_back("{\"node\":" + std::to_string(x.node) + ",\"name\":" + quote(x.name) + ",\"reason\":" + quote(x.reason) + '}'); return join(f); }() +
+                ",\"workers\":" + [&]{ std::vector<std::string> w; for(const auto& x : s.workers) w.push_back("{\"node\":" + std::to_string(x.node) + ",\"name\":" + quote(x.name) + ",\"cpu\":" + encode(x.cpu) + ",\"memory\":" + std::to_string(x.memory) + '}'); return join(w); }() + '}';
         }
         // RFC 0011 parts and wires, as graph.get reports them.
         std::string zonesJson( const std::vector<NoteZone>& zones )

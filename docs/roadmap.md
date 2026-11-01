@@ -255,7 +255,9 @@ in the others.
    - [x] step 5: native engines (Basic Synth, Sampler, Delay with its effect contexts) in
      workers, with sound assets across the boundary and a placement policy with per-plugin
      overrides ([status](rfcs/0010-plugin-worker-isolation.md#step-5-status))
-   - [ ] step 6: memory and CPU limits, sandboxing
+   - [ ] step 6: memory and CPU limits, sandboxing (limits done, with CPU time and memory per
+     worker in `session.status`; sandboxing not started)
+     ([status](rfcs/0010-plugin-worker-isolation.md#step-6-status))
    - [ ] step 7: LV2 in workers
    - [ ] measurements on native Linux and the target; workers by default in the app
    - [x] workers reporting CLAP sleep, so a seamless change can retire a plugin in a worker as

@@ -6123,6 +6123,38 @@
             ],
             "additionalProperties": false
           }
+        },
+        "workers": {
+          "type": "array",
+          "description": "Plugins in their own worker processes: the CPU time used in seconds, restarts included, and memory in bytes (physical footprint on macOS, resident on Linux)",
+          "items": {
+            "type": "object",
+            "properties": {
+              "node": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 4294967295
+              },
+              "name": {
+                "type": "string"
+              },
+              "cpu": {
+                "type": "number",
+                "minimum": 0
+              },
+              "memory": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "node",
+              "name",
+              "cpu",
+              "memory"
+            ],
+            "additionalProperties": false
+          }
         }
       },
       "required": [
@@ -6137,7 +6169,8 @@
         "audioInputs",
         "audioOutputs",
         "audioReady",
-        "failures"
+        "failures",
+        "workers"
       ],
       "additionalProperties": false
     },

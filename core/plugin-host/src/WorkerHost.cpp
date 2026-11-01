@@ -25,6 +25,12 @@
 #include <thread>
 #include <unistd.h>
 #include <unordered_map>
+#ifdef __APPLE__
+#include <libproc.h>
+#include <mach/mach_time.h>
+#else
+#include <ctime>
+#endif
 
 extern char** environ;
 
@@ -43,6 +49,27 @@ namespace oscairn
             return ports;
         }
 
+        // A worker's memory (macOS: its physical footprint, compressed pages included; Linux: resident)
+        // and CPU time in seconds; zero memory when it cannot be read.
+        struct Usage { uint64_t memory = 0; double cpu = 0; };
+        Usage usage(pid_t pid)
+        {
+            Usage u;
+#ifdef __APPLE__
+            rusage_info_current ri{};
+            if(proc_pid_rusage(pid, RUSAGE_INFO_CURRENT, reinterpret_cast<rusage_info_t*>(&ri)) != 0) return u;
+            mach_timebase_info_data_t base; mach_timebase_info(&base); // the times are in Mach ticks on Apple silicon
+            u.memory = ri.ri_phys_footprint;
+            u.cpu = double(ri.ri_user_time + ri.ri_system_time) * base.numer / base.denom * 1e-9;
+#else
+            u.memory = residentBytes(long(pid));
+            // Nanoseconds; /proc's clock ticks are too coarse for a light plugin.
+            clockid_t clock; timespec t{};
+            if(clock_getcpuclockid(pid, &clock) == 0 && clock_gettime(clock, &t) == 0) u.cpu = double(t.tv_sec) + t.tv_nsec * 1e-9;
+#endif
+            return u;
+        }
+
         class WorkerHost;
 
         // One worker process and what its nodes share: the control socket, the supervisor, the
@@ -55,6 +82,10 @@ namespace oscairn
             std::chrono::nanoseconds budget{}, hangLimit{};
             long replySeconds = 30; // how long a control request may take (a big preset load)
             uint32_t missLimit = UINT32_MAX;
+            uint64_t memoryLimit = 0; // bytes; 0: none
+            // The supervisor's latest reading of the worker, and the CPU time of the workers it replaced.
+            std::atomic<uint64_t> memory{0};
+            std::atomic<double> cpu{0}, cpuBefore{0};
             std::mutex control;
             int socket = -1; pid_t pid = 0; bool reaped = true;
             std::string root; // the root plugin's description, which a restarted worker must repeat
@@ -75,8 +106,8 @@ namespace oscairn
             std::condition_variable wakeSupervisor;
             static inline std::atomic<uint32_t> counter{0};
 
-            Process(std::string program_, std::string path_, std::string id_, double rate_, uint32_t frames_, ProcessingMode mode)
-                : program(std::move(program_)), path(std::move(path_)), id(std::move(id_)), rate(rate_), frames(frames_)
+            Process(std::string program_, std::string path_, std::string id_, double rate_, uint32_t frames_, ProcessingMode mode, uint64_t memoryLimit_)
+                : program(std::move(program_)), path(std::move(path_)), id(std::move(id_)), rate(rate_), frames(frames_), memoryLimit(memoryLimit_)
             {
                 // Read here, on the creating thread: OSCAIRN_WORKER_REPLY_SECONDS shortens it for tests.
                 if(const char* s = std::getenv("OSCAIRN_WORKER_REPLY_SECONDS")) replySeconds = std::max(1L, std::atol(s));
@@ -134,7 +165,8 @@ namespace oscairn
                 socket = pair[0];
                 posix_spawn_file_actions_t actions; posix_spawn_file_actions_init(&actions);
                 posix_spawn_file_actions_adddup2(&actions, pair[1], 3);
-                std::string fd = "3"; char* argv[]{program.data(), fd.data(), nullptr};
+                // The memory limit also goes to the worker, which on Linux makes it a hard limit too.
+                std::string fd = "3", limit = std::to_string(memoryLimit); char* argv[]{program.data(), fd.data(), limit.data(), nullptr};
                 const int spawned = posix_spawn(&pid, program.c_str(), &actions, nullptr, argv, environ);
                 posix_spawn_file_actions_destroy(&actions);
                 close(pair[1]);
@@ -446,17 +478,22 @@ namespace oscairn
             bool usesClapNotes(uint32_t port) const noexcept override { return port < clapNotes_.size() && clapNotes_[port]; }
             // While down, a panic would reach the restarted worker and drop its first block's events.
             void panic() noexcept override { if(!process_->failed.load()) shared_->panic.store(1, std::memory_order_release); }
-            // Its share of the worker's resident memory. The process is restarted under `control`,
-            // which a long state load also holds; then the last reading stands.
-            uint64_t residentBytes() const override
+            // Its share of the CPU time of this worker and those it replaced, as the supervisor last read it.
+            double cpuSeconds() const override
             {
-                std::unique_lock lock(process_->control, std::try_to_lock);
-                if(!lock || process_->pid <= 0) return resident_.load();
                 size_t sharing = 1;
                 { std::lock_guard nodes(process_->nodesMutex); sharing = std::max<size_t>(1, process_->nodes.size()); }
-                const auto bytes = oscairn::residentBytes(long(process_->pid)) / sharing;
-                resident_.store(bytes);
-                return bytes;
+                return (process_->cpuBefore.load() + process_->cpu.load()) / double(sharing);
+            }
+            // Its share of the worker's memory as the supervisor last read it, the measure its limit applies to.
+            uint64_t residentBytes() const override
+            {
+                const auto bytes = process_->memory.load();
+                if(!bytes) return resident_.load(); // restarting: the last reading stands
+                size_t sharing = 1;
+                { std::lock_guard nodes(process_->nodesMutex); sharing = std::max<size_t>(1, process_->nodes.size()); }
+                resident_.store(bytes / sharing);
+                return bytes / sharing;
             }
             // As the plugin said in its last block; a failed worker is silent, so asleep too.
             bool asleep() const noexcept override { return process_->failed.load() || shared_->asleep.load(std::memory_order_relaxed) != 0; }
@@ -707,8 +744,8 @@ namespace oscairn
             size_t next_ = 0;
         };
 
-        // Watches the worker: a crash, a block left unanswered past the hang limit, or too many
-        // missed blocks in a row stop it and silence its nodes until it is restarted.
+        // Watches the worker: a crash, a block left unanswered past the hang limit, too many missed
+        // blocks in a row, or memory over its limit stop it and silence its nodes until it is restarted.
         void Process::supervise()
         {
             std::unique_lock lock(superviseMutex);
@@ -724,6 +761,15 @@ namespace oscairn
                     fail(WIFSIGNALED(status) ? "Plugin worker crashed (signal " + std::to_string(WTERMSIG(status)) + ")"
                                              : "Plugin worker exited (status " + std::to_string(WEXITSTATUS(status)) + ")");
                     continue;
+                }
+                if(const auto u = usage(pid); u.memory)
+                {
+                    memory.store(u.memory); cpu.store(u.cpu);
+                    if(memoryLimit && u.memory > memoryLimit)
+                    {
+                        fail("Plugin used too much memory: " + std::to_string(u.memory >> 20) + " MB, over its limit of " + std::to_string(memoryLimit >> 20) + " MB");
+                        continue;
+                    }
                 }
                 const auto now = std::chrono::steady_clock::now().time_since_epoch().count();
                 std::string why;
@@ -755,6 +801,7 @@ namespace oscairn
                 // A worker failed by a lost reply was killed but not yet reaped.
                 if(pid > 0 && !reaped) { kill(pid, SIGKILL); int status = 0; waitpid(pid, &status, 0); reaped = true; }
                 if(socket >= 0) { close(socket); socket = -1; }
+                cpuBefore.store(cpuBefore.load() + cpu.exchange(0)); memory.store(0);
                 Reader r = start();
                 const auto rootNode = std::find_if(list.begin(), list.end(), [](auto* n) { return n->isRoot(); });
                 if(rootNode != list.end()) (*rootNode)->reconnect(r);
@@ -784,9 +831,9 @@ namespace oscairn
     }
 
     std::shared_ptr<PluginHost> loadPluginInWorker(const std::string& program, const std::string& path, const std::string& id,
-                                                   double sampleRate, uint32_t maxFrames, ProcessingMode mode)
+                                                   double sampleRate, uint32_t maxFrames, ProcessingMode mode, uint64_t memoryLimit)
     {
-        auto process = std::make_shared<Process>(program, path, id, sampleRate, maxFrames, mode);
+        auto process = std::make_shared<Process>(program, path, id, sampleRate, maxFrames, mode, memoryLimit);
         std::shared_ptr<PluginHost> host;
         {
             std::lock_guard lock(process->control);

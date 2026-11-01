@@ -66,6 +66,9 @@ namespace oscairn
             // Plugins that have failed and are silent: a worker that crashed, hung or was given up.
             struct PluginFailure { NodeId node=0; std::string name, reason; bool operator==(const PluginFailure&) const = default; };
             std::vector<PluginFailure> failures;
+            // Plugins in their own workers (RFC 0010): CPU time used in seconds, restarts included, and memory in bytes.
+            struct WorkerUsage { NodeId node=0; std::string name; double cpu=0; uint64_t memory=0; bool operator==(const WorkerUsage&) const = default; };
+            std::vector<WorkerUsage> workers;
         };
         virtual SessionStatus sessionStatus() const = 0;
         struct GraphState

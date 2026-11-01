@@ -239,7 +239,8 @@ endif()
 add_executable(oscairn-worker-failures-test engine/tests/worker_failures.cpp)
 target_link_libraries(oscairn-worker-failures-test PRIVATE oscairn_engine)
 add_test(NAME worker-failures COMMAND oscairn-worker-failures-test $<TARGET_FILE:oscairn-plugin-worker> $<TARGET_FILE:kick-clap-fixture-normal>
-    $<TARGET_FILE:kick-clap-fixture-process_crash> $<TARGET_FILE:kick-clap-fixture-process_hang> $<TARGET_FILE:kick-clap-fixture-slow> ${worker_timing})
+    $<TARGET_FILE:kick-clap-fixture-process_crash> $<TARGET_FILE:kick-clap-fixture-process_hang> $<TARGET_FILE:kick-clap-fixture-slow>
+    $<TARGET_FILE:kick-clap-fixture-leak> ${worker_timing})
 set_tests_properties(worker-failures PROPERTIES TIMEOUT 60 RUN_SERIAL TRUE)
 add_executable(oscairn-worker-recovery-test engine/tests/worker_recovery.cpp)
 target_link_libraries(oscairn-worker-recovery-test PRIVATE oscairn_engine)

@@ -65,7 +65,9 @@ Everything else is handled for you:
 - **Worker processes** ([RFC 0010](rfcs/0010-plugin-worker-isolation.md)) are optional and
   not yet used by the desktop app. In a worker, LV2 patch properties are not forwarded,
   a block that runs longer than half the block's time is silenced, and a plugin that keeps
-  missing is restarted with its last loaded state and current parameter values.
+  missing is restarted with its last loaded state and current parameter values. A worker may
+  use 4 GiB of memory (`OSCAIRN_WORKER_MEMORY_MB` changes it); past that it is stopped and
+  restarted the same way.
 - **Instant sound switching** for plugins without native sound contexts uses a whole extra
   instance per prepared sound (up to eight), and only for instruments: note input, audio
   output, no audio input, no note output.

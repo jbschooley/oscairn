@@ -129,7 +129,7 @@ set_tests_properties(control-import PROPERTIES TIMEOUT 60)
 
 add_executable(oscairn-plugin-failures-test tests/plugin_failures.cpp)
 target_link_libraries(oscairn-plugin-failures-test PRIVATE oscairn_control_json)
-add_test(NAME control-plugin-failures COMMAND oscairn-plugin-failures-test $<TARGET_FILE:oscairn-plugin-worker> $<TARGET_FILE:kick-clap-fixture-process_crash>)
+add_test(NAME control-plugin-failures COMMAND oscairn-plugin-failures-test $<TARGET_FILE:oscairn-plugin-worker> $<TARGET_FILE:kick-clap-fixture-process_crash> $<TARGET_FILE:kick-clap-fixture-normal>)
 set_tests_properties(control-plugin-failures PROPERTIES TIMEOUT 60)
 
 add_executable(oscairn-undo-test tests/undo.cpp)

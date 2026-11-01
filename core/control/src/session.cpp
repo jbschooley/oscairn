@@ -236,6 +236,7 @@ namespace oscairn
             const auto& host = graph_.host(node);
             result.deadlineMisses += host.statistics().deadlineMisses;
             if(auto why = host.failure(); !why.empty()) result.failures.push_back({node, name, std::move(why)});
+            if(const auto cpu = host.cpuSeconds(); cpu > 0) result.workers.push_back({node, name, cpu, host.residentBytes()});
         }
         return result;
     }

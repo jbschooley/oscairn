@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
-// RFC 0010 steps 3-4: a plugin in a worker that crashes, hangs or is too slow stops only its own
-// node, is restarted, and is given up after repeated failures. A normal instrument plays next to
+// RFC 0010 steps 3-4 and 6: a plugin in a worker that crashes, hangs, is too slow or exceeds its
+// memory limit (128 MB here) stops only its own node, is restarted, and is given up after repeated
+// failures. A normal instrument plays next to
 // it in the same graph, paced in real time; its sound must be identical to the same instrument
 // playing alone, every block must finish within the block's time, and the failure must be
-// detected and named.
-//   oscairn-worker-failures-test WORKER NORMAL.clap CRASH.clap HANG.clap SLOW.clap [--no-timing]
+// detected and named. The healthy instrument's worker reports the CPU time it used.
+//   oscairn-worker-failures-test WORKER NORMAL.clap CRASH.clap HANG.clap SLOW.clap LEAK.clap [--no-timing]
 // --no-timing skips the overrun check, and the identity check when the normal instrument missed blocks.
 #include <oscairn/graph.h>
 #include <chrono>
@@ -93,16 +94,20 @@ namespace
         if(expected) check(reason.find(expected) != std::string::npos && reason.find("not restarted") != std::string::npos,
                            name + ": failure reported as \"" + expected + "\" and given up, got \"" + reason + "\"");
         if(timing) check(overruns == 0, name + ": " + std::to_string(overruns) + " blocks took longer than the block's time");
-        std::printf("%s: %u blocks, worst %.0f us of %.0f us, overruns %u, other instrument's missed blocks %llu, failure: %s\n",
-                    name.c_str(), block, worst * 1e6, period * 1e6, overruns, (unsigned long long)misses, reason.c_str());
+        // The supervisor reads CPU time every 10 ms; a second of playing has been read many times.
+        const double cpu = graph.host(a).cpuSeconds();
+        check(cpu > 0 && cpu < 10, name + ": the other instrument's worker reports its CPU time: " + std::to_string(cpu) + " s");
+        std::printf("%s: %u blocks, worst %.0f us of %.0f us, overruns %u, other instrument's missed blocks %llu, its CPU time %.3f s, failure: %s\n",
+                    name.c_str(), block, worst * 1e6, period * 1e6, overruns, (unsigned long long)misses, cpu, reason.c_str());
     }
 }
 
 int main(int argc, char** argv)
 {
-    if(argc < 6) { std::fprintf(stderr, "usage: %s WORKER NORMAL CRASH HANG SLOW [--no-timing]\n", argv[0]); return 2; }
-    const bool timing = !(argc > 6 && std::strcmp(argv[6], "--no-timing") == 0);
+    if(argc < 7) { std::fprintf(stderr, "usage: %s WORKER NORMAL CRASH HANG SLOW LEAK [--no-timing]\n", argv[0]); return 2; }
+    const bool timing = !(argc > 7 && std::strcmp(argv[7], "--no-timing") == 0);
     setenv("OSCAIRN_PLUGIN_WORKER", argv[1], 1);
+    setenv("OSCAIRN_WORKER_MEMORY_MB", "128", 1);
     makeRealtime(1e6 * 128 / 48000);
     try
     {
@@ -110,6 +115,7 @@ int main(int argc, char** argv)
         run(argv[2], argv[3], "crashed", timing);
         run(argv[2], argv[4], "hung", timing);
         run(argv[2], argv[5], "too slow", timing);
+        run(argv[2], argv[6], "too much memory", timing);
     }
     catch(const std::exception& e) { std::fprintf(stderr, "FAIL: %s\n", e.what()); return 1; }
     return failures ? 1 : 0;

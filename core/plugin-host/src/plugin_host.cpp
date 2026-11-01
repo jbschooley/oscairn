@@ -167,7 +167,10 @@ namespace oscairn
     {
         PlacementPolicy& policy()
         {
-            static PlacementPolicy p=[]{PlacementPolicy initial;if(const char* w=std::getenv("OSCAIRN_PLUGIN_WORKER"))initial.worker=w;return initial;}();
+            static PlacementPolicy p=[]{
+                PlacementPolicy initial;if(const char* w=std::getenv("OSCAIRN_PLUGIN_WORKER"))initial.worker=w;
+                if(const char* mb=std::getenv("OSCAIRN_WORKER_MEMORY_MB"))initial.memoryLimit=std::strtoull(mb,nullptr,10)<<20;
+                return initial;}();
             return p;
         }
     }
@@ -207,7 +210,7 @@ namespace oscairn
         const auto& policy=placementPolicy();
         const auto placement=policy.plugins.find(id);
         if(!policy.worker.empty() && (placement==policy.plugins.end()?policy.standard:placement->second)==Placement::Worker)
-            return loadPluginInWorker(policy.worker,path,id,rate,frames,mode);
+            return loadPluginInWorker(policy.worker,path,id,rate,frames,mode,policy.memoryLimit);
         const auto scan=kick::clap::inspect(path);
         const auto found=std::find_if(scan.plugins.begin(),scan.plugins.end(),[&](const auto& p){return id.empty() || p.id==id;});
         if(found==scan.plugins.end())

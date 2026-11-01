@@ -1,7 +1,7 @@
 # RFC 0010: Plugin worker isolation
 
-Status: in progress, 2026-10-31. Steps 1–5 implemented, measured and tested on macOS; steps 6
-and 7 not started (see [Progress](#progress)). Moved ahead of Phase 4 hardware work and further
+Status: in progress, 2026-11-01. Steps 1–5 implemented, measured and tested on macOS; step 6's
+limits built, its sandboxing and step 7 not started (see [Progress](#progress)). Moved ahead of Phase 4 hardware work and further
 third-party plugin features ([roadmap](../roadmap.md#next-build-and-test-order)); it makes
 concrete the [engine recovery](../architecture.md#engine-recovery) and sandboxed-worker
 isolation the architecture already describes.
@@ -15,7 +15,7 @@ Checked when built and tested; the sections below say how.
 - [x] 3. Contain failure, on macOS ([status](#step-3-status))
 - [x] 4. Recover ([status](#step-4-status))
 - [x] 5. Policies: native engines in workers, placement and overrides ([status](#step-5-status))
-- [ ] 6. Memory and CPU limits, then sandboxing
+- [ ] 6. Memory and CPU limits, then sandboxing (limits built, sandboxing not started) ([status](#step-6-status))
 - [ ] 7. LV2 in workers
 - [ ] Measurements on native Linux and the target; workers by default in the app
 - [x] Workers report the plugin's CLAP sleep to the engine, so a seamless scene or Performance
@@ -318,6 +318,45 @@ tests 10 of 10 times; under AddressSanitizer and ThreadSanitizer the suites pass
 worker tests in parallel under ThreadSanitizer, `prepared-instances-workers` fell short of its
 20 preparations in 5 s in 2 of 5 runs, on a machine at load 30; alone it passed 10 of 10. Not
 yet run on Linux or the device.
+
+## Step 6 status
+
+Limits implemented 2026-11-01 in `WorkerHost.cpp` and `worker_main.cpp`; sandboxing not started:
+
+- **Memory limit:** `PlacementPolicy::memoryLimit`, 4 GiB per worker by default,
+  `OSCAIRN_WORKER_MEMORY_MB` to change it (0: none). The supervisor reads the worker's memory
+  every 10 ms, its physical footprint on macOS (compressed pages included) and resident memory
+  on Linux, and a worker over the limit is failed like a crash: "Plugin used too much memory:
+  132 MB, over its limit of 128 MB", killed, restarted with its recovery record, and given up
+  after 3 restarts a minute. Between checks a plugin can overshoot by what it allocates in
+  10 ms.
+- **What the kernel enforces:** on Linux the worker also sets `RLIMIT_AS` to four times the
+  limit, a backstop for allocations faster than the supervisor (address space runs well above
+  resident memory: a worker in the `effect-contexts-workers` test reserves 1.1 GB with 6 MB
+  resident).
+  An allocation it refuses usually ends the plugin, which is then reported as a crash. Not
+  under sanitizers, which reserve huge address ranges. On macOS nothing is enforceable by the
+  kernel for an unprivileged process: `setrlimit(RLIMIT_AS)` and `RLIMIT_DATA` are refused with
+  `EINVAL` below the address space a process already has (over 200 GB on Apple silicon, the
+  shared cache included), and larger values are not limits. The supervisor's limit is the only
+  one there.
+- **CPU accounting:** the supervisor reads each worker's CPU time on the same 10 ms tick
+  (`proc_pid_rusage` on macOS, converted from Mach ticks; the process CPU clock on Linux,
+  whose `/proc` ticks are too coarse for a light plugin), kept across restarts.
+  `PluginHost::cpuSeconds()` and `residentBytes()` give a node its share, and `session.status`
+  lists each plugin in a worker as `workers` (`node`, `name`, `cpu` seconds, `memory` bytes),
+  next to `failures`. There is no CPU limit beyond step 3's deadline rule: a plugin's own
+  background threads may use any amount of CPU.
+
+Verification: `worker-failures` now also plays a plugin that leaks 1 MiB per block (the
+`leak` fixture) next to the normal instrument, with a 128 MB limit, and checks that the healthy
+worker reports CPU time; `control-plugin-failures` checks `workers` in the status, through
+the protocol too. On macOS (M3 Max) the leaking plugin is stopped at 132 MB, restarted 3 times
+and given up, with the other instrument identical to playing alone and no overruns. In
+Linux arm64 (Docker Desktop's VM on the same Mac) it is stopped at 131 MB and given up, the
+CPU time is reported, and `/proc/PID/limits` shows the 16 GiB address-space limit of a worker
+with the default limit; the `RLIMIT_AS` backstop itself is not exercised by a test. The timing
+checks fail there for the slow fixture, as in step 3.
 
 ## Open questions
 

@@ -96,8 +96,12 @@ namespace oscairn
         // input (CLAP_PROCESS_SLEEP). False where a host cannot tell.
         virtual bool asleep() const noexcept { return false; }
         // Control thread: the memory a plugin in its own worker holds (its share of the worker's
-        // resident memory); 0 where the host cannot tell (a plugin in the engine's process).
+        // physical footprint on macOS, resident memory on Linux); 0 where the host cannot tell (a
+        // plugin in the engine's process).
         virtual uint64_t residentBytes() const { return 0; }
+        // Control thread: the CPU time, in seconds, a plugin in its own worker has used (its share of
+        // the worker's, restarts included); 0 for a plugin in the engine's process.
+        virtual double cpuSeconds() const { return 0; }
     };
     // A process's resident memory in bytes (0: this one); 0 when it cannot be read.
     uint64_t residentBytes(long pid = 0);
@@ -114,10 +118,14 @@ namespace oscairn
         std::string worker; // the oscairn-plugin-worker executable; empty runs every plugin in the engine
         Placement standard = Placement::Worker;
         std::map<std::string, Placement> plugins; // overrides by plugin ID, as loadPlugin is given it
+        // The memory a worker may use before it is stopped, in bytes (0: no limit): its physical
+        // footprint on macOS, resident memory on Linux, as its supervisor reads them.
+        uint64_t memoryLimit = uint64_t(4) << 30;
     };
-    // Starts as OSCAIRN_PLUGIN_WORKER says: every plugin in the worker executable it names, or none.
+    // Starts as OSCAIRN_PLUGIN_WORKER says: every plugin in the worker executable it names, or none;
+    // OSCAIRN_WORKER_MEMORY_MB sets the memory limit.
     void setPlacementPolicy(PlacementPolicy);
     const PlacementPolicy& placementPolicy();
     std::shared_ptr<PluginHost> loadPluginInWorker(const std::string& program, const std::string& path, const std::string& pluginId,
-                                                   double sampleRate, uint32_t maxFrames, ProcessingMode mode = ProcessingMode::Realtime);
+                                                   double sampleRate, uint32_t maxFrames, ProcessingMode mode = ProcessingMode::Realtime, uint64_t memoryLimit = 0);
 }

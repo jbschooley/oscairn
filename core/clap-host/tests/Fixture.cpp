@@ -140,6 +140,9 @@ struct Plugin {
 #ifdef FIXTURE_process_hang
         std::this_thread::sleep_for(std::chrono::seconds(20));
 #endif
+#ifdef FIXTURE_leak
+        { auto* memory = new char[size_t(1) << 20]; std::memset(memory, 1, size_t(1) << 20); static volatile char* keep; keep = memory; } // 1 MiB a block, never freed
+#endif
         auto& s = get(p); s.audio(); ++processCalls;
         if (blockProcess.exchange(false)) { enteredProcess=true; while (!releaseProcess.load()) std::this_thread::yield(); }
         if (!s.active || !s.processing || !b->frames_count || b->frames_count > s.maxFrames) ++threadErrors;
