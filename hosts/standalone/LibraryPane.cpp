@@ -22,6 +22,16 @@ namespace oscairn::standalone
             g.setColour(on ? ink(Ink::Accent) : ink(Ink::Muted).withAlpha(.6f));
             if(on) g.fillPath(star); else g.strokePath(star, juce::PathStrokeType(1.2f));
         }
+        // Text centered on its capital letters, so it sits in the middle of a row or pill whatever
+        // the font's ascent and descent.
+        void drawCentered(juce::Graphics& g, const juce::String& s, juce::Rectangle<int> r, const juce::Font& font, juce::Justification h = juce::Justification::left)
+        {
+            juce::GlyphArrangement caps; caps.addLineOfText(font, "H", 0, 0);
+            const float capHeight = -caps.getBoundingBox(0, 1, true).getY();
+            const float baseline = r.toFloat().getCentreY() + capHeight / 2;
+            g.setFont(font);
+            g.drawText(s, juce::Rectangle<float>(float(r.getX()), baseline - font.getAscent(), float(r.getWidth()), font.getHeight()), h.getOnlyHorizontalFlags() | juce::Justification::top, true);
+        }
         juce::String tagText(const std::vector<std::string>& tags)
         {
             juce::StringArray out; for(const auto& t : tags) out.add(text(t));
@@ -45,12 +55,11 @@ namespace oscairn::standalone
         compactButton_.setClickingTogglesState(true);
         compactButton_.setTooltip("One line a row, to see more at once");
         compactButton_.onClick = [this] { setCompact(compactButton_.getToggleState()); };
-        for(auto* l : {&list_, &sidebar_})
-        {
-            l->setColour(juce::ListBox::backgroundColourId, ink(Ink::Surface));
-            l->setOutlineThickness(0);
-            l->setRowSelectedOnMouseDown(false); // clicks come on release, so a long press can open the menu
-        }
+        list_.setColour(juce::ListBox::backgroundColourId, ink(Ink::Surface));
+        list_.setOutlineThickness(0);
+        list_.setRowSelectedOnMouseDown(false); // clicks come on release, so a long press can open the menu
+        sideView_.setViewedComponent(&sidebar_, false);
+        sideView_.setScrollBarsShown(true, false);
         send_.onClick = [this] { send(list_.getSelectedRow()); };
         cancel_.onClick = [this] { if(onPicked) onPicked({}); };
         pick_.onClick = [this] { choose(list_.getSelectedRow()); };
@@ -59,17 +68,22 @@ namespace oscairn::standalone
         libraries_.onClick = [this] { librariesMenu(); };
         libraries_.setTooltip("Install a library or an exported Performance, uninstall a library, or show a hidden tag");
         status_.setColour(juce::Label::textColourId, ink(Ink::Muted));
-        for(auto* c : std::initializer_list<juce::Component*>{&search_, &favorites_, &recent_, &compactButton_, &sidebar_, &list_, &options_, &status_}) addAndMakeVisible(c);
+        for(auto* c : std::initializer_list<juce::Component*>{&search_, &favorites_, &recent_, &compactButton_, &sideView_, &list_, &options_, &status_}) addAndMakeVisible(c);
         for(auto* c : std::initializer_list<juce::Component*>{&send_, &part_, &cancel_, &pick_, &performances_, &sounds_, &libraries_}) addChildComponent(c);
         performances_.setVisible(mode_ == Mode::Play); sounds_.setVisible(mode_ == Mode::Play); libraries_.setVisible(mode_ == Mode::Play);
         cancel_.setVisible(mode_ == Mode::Pick); pick_.setVisible(mode_ == Mode::Pick);
-        if(const auto f = viewPreference(); f.existsAsFile()) compact_ = f.loadFileAsString().trim() == "compact";
+        if(const auto f = viewPreference(); f.existsAsFile())
+        {
+            const auto words = juce::StringArray::fromTokens(f.loadFileAsString(), false);
+            compact_ = words.contains("compact"); pills_ = words.contains("pills");
+        }
         compactButton_.setToggleState(compact_, juce::dontSendNotification);
+        sidebar_.pills.setToggleState(pills_, juce::dontSendNotification);
         showKind(kind);
         startTimer(300);
     }
 
-    LibraryPane::~LibraryPane() { list_.setModel(nullptr); sidebar_.setModel(nullptr); }
+    LibraryPane::~LibraryPane() { list_.setModel(nullptr); }
 
     void LibraryPane::showKind(const std::string& kind)
     {
@@ -91,9 +105,22 @@ namespace oscairn::standalone
     {
         compact_ = compact;
         compactButton_.setToggleState(compact, juce::dontSendNotification);
-        if(const auto f = viewPreference(); f != juce::File()) f.replaceWithText(compact ? "compact" : "comfortable");
+        savePreference();
         resized();
         list_.repaint();
+    }
+
+    void LibraryPane::setPills(bool pills)
+    {
+        pills_ = pills;
+        sidebar_.pills.setToggleState(pills, juce::dontSendNotification);
+        savePreference();
+        rebuildSide();
+    }
+
+    void LibraryPane::savePreference() const
+    {
+        if(const auto f = viewPreference(); f != juce::File()) f.replaceWithText(juce::String(compact_ ? "compact" : "comfortable") + (pills_ ? " pills" : " list"));
     }
 
     void LibraryPane::tell(const juce::String& s) { message_ = s; status_.setText(s, juce::dontSendNotification); }
@@ -137,7 +164,7 @@ namespace oscairn::standalone
         list_.deselectAllRows();
         for(size_t i = 0; i < result_.items.size(); ++i) if(result_.items[i].id == selected) list_.selectRow(int(i), true, true);
         const bool sound = query_.kind == "sound";
-        if(installing_) { installing_ = false; tell(text(engine_.soundMessage())); } // what it added, or why not
+        if(awaiting_) { awaiting_ = false; tell(text(engine_.soundMessage())); } // what an install or export did, or why not
         if(message_.isEmpty()) status_.setText(juce::String(result_.total) + (sound ? (result_.total == 1 ? " Sound" : " Sounds") : (result_.total == 1 ? " Performance" : " Performances")), juce::dontSendNotification);
         rebuildSide();
         updateButtons();
@@ -147,7 +174,7 @@ namespace oscairn::standalone
     void LibraryPane::rebuildSide()
     {
         side_.clear();
-        side_.push_back({Side::Heading, {}, "Show"});
+        side_.push_back({Side::Heading, {}, "Library"});
         side_.push_back({Side::Source, {}, "Everything"});
         side_.push_back({Side::Source, "mine", "My own"});
         for(const auto& l : installed_) side_.push_back({Side::Source, l.id, text(l.name), l.items});
@@ -159,49 +186,120 @@ namespace oscairn::standalone
         });
         if(!counts.empty()) side_.push_back({Side::Heading, {}, "Tags"});
         for(const auto& [tag, count] : counts) side_.push_back({Side::Tag, tag, text(tag), count});
-        sidebar_.updateContent();
+        const int width = sideView_.getMaximumVisibleWidth();
+        sidebar_.setSize(width, std::max(sidebar_.layout(width), sideView_.getHeight()));
         sidebar_.repaint();
     }
 
-    void LibraryPane::Sidebar::paintListBoxItem(int row, juce::Graphics& g, int width, int height, bool)
+    LibraryPane::Sidebar::Sidebar(LibraryPane& p) : pane(p)
     {
-        if(row < 0 || size_t(row) >= pane.side_.size()) return;
-        const auto& s = pane.side_[size_t(row)];
-        const int m = pane.mode();
-        auto area = juce::Rectangle<int>(0, 0, width, height).reduced(12, 0);
-        if(s.kind == Side::Heading)
-        {
-            g.setColour(ink(Ink::Muted)); g.setFont(juce::FontOptions(textSize(TextRole::Small, m), juce::Font::bold));
-            g.drawText(s.label.toUpperCase(), area, juce::Justification::bottomLeft, true);
-            return;
-        }
-        const bool on = s.kind == Side::Source ? pane.query_.source == s.value : std::count(pane.query_.tags.begin(), pane.query_.tags.end(), s.value) != 0;
-        if(on) { g.setColour(ink(Ink::Accent).withAlpha(.18f)); g.fillRect(0, 0, width, height); g.setColour(ink(Ink::Accent)); g.fillRect(0, 0, 3, height); }
-        if(s.kind == Side::Tag)
-        {
-            // The color the user gave it, as a dot.
-            const auto color = colorOf(pane.tagColor(s.value));
-            const float d = std::min(10.f, height * .3f);
-            if(!color.isTransparent()) { g.setColour(color); g.fillEllipse(float(area.getX()), (height - d) / 2, d, d); }
-            area.removeFromLeft(int(d) + 8);
-        }
-        const float body = textSize(TextRole::Body, m);
-        if(s.count || s.kind == Side::Tag)
-        {
-            g.setColour(ink(Ink::Muted)); g.setFont(juce::FontOptions(textSize(TextRole::Small, m)));
-            g.drawText(juce::String(s.count), area.removeFromRight(int(body * 2.5f)), juce::Justification::centredRight);
-        }
-        g.setColour(on ? ink(Ink::Accent) : ink(Ink::Text)); g.setFont(juce::FontOptions(body, on ? juce::Font::bold : juce::Font::plain));
-        g.drawText(s.label, area, juce::Justification::centredLeft, true);
+        pills.setClickingTogglesState(true);
+        pills.setTooltip("Show the libraries and tags as pills, to see more at once, or as a list");
+        pills.onClick = [this] { pane.setPills(pills.getToggleState()); };
+        addAndMakeVisible(pills);
     }
 
-    void LibraryPane::Sidebar::listBoxItemClicked(int row, const juce::MouseEvent& e)
+    int LibraryPane::Sidebar::layout(int width)
     {
-        if(row < 0 || size_t(row) >= pane.side_.size()) return;
-        const auto s = pane.side_[size_t(row)];
-        pane.sidebar_.deselectAllRows();
-        if(s.kind == Side::Source) pane.showSource(s.value);
-        else if(s.kind == Side::Tag) { if(menuGesture(e)) pane.tagMenu(s.value); else pane.toggleTag(s.value); }
+        const int m = pane.mode();
+        const bool touch = m == 2;
+        const int gap = touch ? 10 : 8, pad = gap + 2;
+        const float body = textSize(TextRole::Body, m), small = textSize(TextRole::Small, m);
+        const int row = std::max(touch ? 44 : 0, int(body) + 4 + 2 * (gap - 2)), pill = std::max(touch ? 40 : 0, int(body) + 4 + gap);
+        // Measured in the theme's typeface, the one it is drawn in.
+        const juce::Font font{juce::FontOptions(body).withTypeface(juce::LookAndFeel::getDefaultLookAndFeel().getTypefaceForFont(juce::Font(juce::FontOptions(body))))};
+        auto area = juce::Rectangle<int>(0, 0, width, 100000).reduced(gap, 0);
+        bool first = true;
+        juce::Rectangle<int> flow; // the pills' current line
+        for(auto& s : pane.side_)
+        {
+            if(s.kind == Side::Heading)
+            {
+                // Room above each heading, and below it before the first entry.
+                if(!flow.isEmpty()) area.removeFromTop(gap);
+                flow = {};
+                area.removeFromTop(first ? gap : gap * 2);
+                s.bounds = area.removeFromTop(int(small) + 2);
+                if(first) { const int w = touch ? 76 : 58; pills.setBounds(s.bounds.withLeft(s.bounds.getRight() - w).withSizeKeepingCentre(w, int(small) + 10)); }
+                area.removeFromTop(gap);
+                first = false;
+                continue;
+            }
+            if(!pane.pills_) { s.bounds = area.removeFromTop(row); area.removeFromTop(2); continue; }
+            // Pills flow in lines, each as wide as its name (and a tag's color dot).
+            const int dot = s.kind == Side::Tag && !colorOf(pane.tagColor(s.value)).isTransparent() ? 14 : 0;
+            const int w = std::min(area.getWidth(), int(std::ceil(juce::GlyphArrangement::getStringWidth(font, s.label))) + 2 + 2 * pad + dot); // rounded up, or the text is shortened
+            if(flow.isEmpty() || flow.getWidth() < w) { if(!flow.isEmpty()) area.removeFromTop(gap / 2); flow = area.removeFromTop(pill); }
+            s.bounds = flow.removeFromLeft(w);
+            flow.removeFromLeft(gap / 2);
+        }
+        if(!flow.isEmpty() || pane.pills_) area.removeFromTop(gap);
+        return area.getY() + gap;
+    }
+
+    void LibraryPane::Sidebar::paint(juce::Graphics& g)
+    {
+        g.fillAll(ink(Ink::Surface));
+        const int m = pane.mode();
+        const int gap = m == 2 ? 10 : 8;
+        const float body = textSize(TextRole::Body, m), small = textSize(TextRole::Small, m);
+        for(const auto& s : pane.side_)
+        {
+            auto r = s.bounds;
+            if(s.kind == Side::Heading)
+            {
+                g.setColour(ink(Ink::Muted));
+                drawCentered(g, s.label.toUpperCase(), r.withTrimmedLeft(4), juce::Font(juce::FontOptions(small, juce::Font::bold)));
+                continue;
+            }
+            const bool on = s.kind == Side::Source ? pane.query_.source == s.value : std::count(pane.query_.tags.begin(), pane.query_.tags.end(), s.value) != 0;
+            const auto color = s.kind == Side::Tag ? colorOf(pane.tagColor(s.value)) : juce::Colours::transparentBlack;
+            if(pane.pills_)
+            {
+                const float radius = buttonRadius(float(r.getHeight()));
+                g.setColour(on ? ink(Ink::Accent).withAlpha(.22f) : ink(Ink::Raised));
+                g.fillRoundedRectangle(r.toFloat(), radius);
+                if(on) { g.setColour(ink(Ink::Accent)); g.drawRoundedRectangle(r.toFloat().reduced(.5f), radius, 1.f); }
+                else drawEdge(g, r.toFloat().reduced(.5f), radius);
+                r = r.reduced(gap + 2, 0);
+            }
+            else
+            {
+                // The chosen entry: an inset highlight with the accent at its edge.
+                if(on)
+                {
+                    g.setColour(ink(Ink::Accent).withAlpha(.18f)); g.fillRoundedRectangle(r.toFloat(), std::min(6.f, themeData().radius));
+                    g.setColour(ink(Ink::Accent)); g.fillRoundedRectangle(r.toFloat().withWidth(3), 1.5f);
+                }
+                r = r.reduced(gap + 4, 0);
+                if(s.count || s.kind == Side::Tag)
+                {
+                    g.setColour(ink(Ink::Muted));
+                    drawCentered(g, juce::String(s.count), r.removeFromRight(int(body * 2.5f)), juce::Font(juce::FontOptions(small)), juce::Justification::right);
+                }
+            }
+            if(!color.isTransparent())
+            {
+                const float d = std::min(10.f, r.getHeight() * .3f);
+                g.setColour(color); g.fillEllipse(float(r.getX()), r.toFloat().getCentreY() - d / 2, d, d);
+            }
+            if(!color.isTransparent() || (s.kind == Side::Tag && !pane.pills_)) r.removeFromLeft(14); // tags line up whether or not they have a color
+            g.setColour(on ? ink(Ink::Accent) : ink(Ink::Text));
+            drawCentered(g, s.label, r, juce::Font(juce::FontOptions(body, on && !pane.pills_ ? juce::Font::bold : juce::Font::plain)));
+        }
+    }
+
+    void LibraryPane::Sidebar::mouseUp(const juce::MouseEvent& e)
+    {
+        if(e.mouseWasDraggedSinceMouseDown()) return;
+        for(const auto& s : pane.side_)
+        {
+            if(!s.bounds.contains(e.getPosition())) continue;
+            const auto value = s.value;
+            if(s.kind == Side::Source) pane.showSource(value);
+            else if(s.kind == Side::Tag) { if(menuGesture(e)) pane.tagMenu(value); else pane.toggleTag(value); }
+            return;
+        }
     }
 
     void LibraryPane::updateButtons()
@@ -293,7 +391,6 @@ namespace oscairn::standalone
         const bool touch = mode() == 2;
         const int control = touch ? 44 : 30, gap = touch ? 10 : 8;
         list_.setRowHeight(compact_ ? (touch ? 44 : 28) : (touch ? 64 : 48));
-        sidebar_.setRowHeight(touch ? 40 : 26);
         auto area = getLocalBounds().reduced(16, 12);
         auto bar = area.removeFromTop(control);
         if(mode_ == Mode::Play)
@@ -310,7 +407,8 @@ namespace oscairn::standalone
         auto bottom = area.removeFromBottom(control);
         area.removeFromBottom(gap);
         // Sources and tags in a column on the left; narrow windows give it a third.
-        sidebar_.setBounds(area.removeFromLeft(std::min(touch ? 240 : 200, area.getWidth() / 3)));
+        sideView_.setBounds(area.removeFromLeft(std::min(touch ? 240 : 200, area.getWidth() / 3)));
+        rebuildSide();
         area.removeFromLeft(gap);
         list_.setBounds(area);
         if(mode_ == Mode::Pick) { pick_.setBounds(bottom.removeFromRight(110)); bottom.removeFromRight(gap); cancel_.setBounds(bottom.removeFromRight(110)); bottom.removeFromRight(gap); }
@@ -348,6 +446,7 @@ namespace oscairn::standalone
         addColors(colors, item.color, 100, "None");
         menu.addSubMenu("Color", colors, own);
         menu.addItem(6, own ? "Duplicate" : "Copy into my own, to edit");
+        menu.addItem(8, "Export...");
         menu.addSeparator();
         menu.addItem(7, "Delete...");
         menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(list_.getComponentForRowNumber(row)), [safe = juce::Component::SafePointer<LibraryPane>(this), item, row](int chosen) {
@@ -362,6 +461,7 @@ namespace oscairn::standalone
                 case 5: safe->editItem(row); return;
                 case 6: safe->copyItem(row); return;
                 case 7: safe->deleteItem(row); return;
+                case 8: safe->exportItem(row); return;
                 default: break;
             }
             if(colorChosen(chosen, 100, color))
@@ -410,6 +510,34 @@ namespace oscairn::standalone
         refresh();
         tell(error.empty() ? (own ? name + " duplicated." : name + " copied into your own, to edit.") : text(error));
         return copied;
+    }
+
+    // An archive to take to another device: samples always go; a Performance's unedited parts'
+    // Sounds too, and its edited parts' when asked.
+    void LibraryPane::exportItem(int row)
+    {
+        const auto* found = at(row);
+        if(!found) return;
+        const auto item = *found;
+        const auto name = text(item.name.empty() ? "Untitled" : item.name);
+        chooser_ = std::make_unique<juce::FileChooser>("Export " + name, juce::File::getSpecialLocation(juce::File::userDocumentsDirectory).getChildFile(name + ".olib"), "*.olib");
+        chooser_->launchAsync(juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles | juce::FileBrowserComponent::warnAboutOverwriting,
+            [safe = juce::Component::SafePointer<LibraryPane>(this), item](const juce::FileChooser& fc) {
+                if(!safe || fc.getResult() == juce::File()) return;
+                auto file = fc.getResult(); if(!file.hasFileExtension("olib")) file = file.withFileExtension("olib");
+                if(file.existsAsFile() && !file.deleteFile()) { safe->tell("Cannot replace " + file.getFullPathName()); return; }
+                auto start = [safe, id = item.id, path = file.getFullPathName().toStdString()](bool editedSounds) {
+                    if(!safe) return;
+                    SoundAction out; out.kind = SoundAction::ExportPerformance; out.libraryId = id; out.directory = path; out.asNew = editedSounds;
+                    safe->engine_.soundAction(std::move(out));
+                    safe->tell("Exporting..."); safe->stale_ = true; safe->awaiting_ = true;
+                };
+                if(item.kind != "performance") { start(false); return; }
+                auto options = juce::MessageBoxOptions().withIconType(juce::MessageBoxIconType::QuestionIcon).withTitle("Export " + file.getFileNameWithoutExtension())
+                    .withMessage("Samples and the Sounds of parts unedited since they were loaded always go. The Sounds of edited parts can go too, as the library has them.")
+                    .withButton("Export").withButton("With edited parts' Sounds").withButton("Cancel").withAssociatedComponent(safe.getComponent());
+                juce::AlertWindow::showAsync(options, [start](int chosen) { if(chosen != 0) start(chosen == 2); }); // 1: Export, 2: with edited Sounds, 0: Cancel
+            });
     }
 
     void LibraryPane::deleteItem(int row)
@@ -522,7 +650,7 @@ namespace oscairn::standalone
                 if(!safe) return;
                 safe->engine_.soundAction(std::move(install));
                 safe->tell("Installing...");
-                safe->stale_ = true; safe->installing_ = true;
+                safe->stale_ = true; safe->awaiting_ = true;
             };
         });
     }

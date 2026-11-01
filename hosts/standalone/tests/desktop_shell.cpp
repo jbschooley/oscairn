@@ -190,6 +190,10 @@ int main(int argc, char** argv)
                 snapshot(library, "library-fill");
                 theme.apply("oscairn-dark");
                 library.setCompact(false);
+                library.setPills(true);
+                check(library.pills(), "the libraries and tags as pills");
+                snapshot(library, "library-pills");
+                library.setPills(false);
                 // The user's own, by source; a copy is the user's own, under its own ID.
                 library.showSource("mine");
                 check(wait([&] { return library.items().size() == 3; }), "the user's own, by source");
@@ -319,6 +323,22 @@ int main(int argc, char** argv)
                 library.showKind("performance"); library.refresh();
                 wait([&] { return library.items().size() == 4; });
                 snapshot(library, "library-installed");
+                // A library item exported without opening it, as the Library's Export does.
+                const auto itemArchive = folder.getChildFile("Saved.olib");
+                standalone::SoundAction item; item.kind = standalone::SoundAction::ExportPerformance; item.libraryId = library.items()[0].id; item.directory = itemArchive.getFullPathName().toStdString();
+                engine.soundAction(std::move(item));
+                check(wait([&] { return !engine.soundBusy(); }) && itemArchive.existsAsFile() && engine.soundMessage() == "Exported.", "a library item exported: " + engine.soundMessage());
+                // And as a locked library: listed under Library, its items shown by choosing it. Its
+                // Performance keeps the ID of the user's own it was exported from, so that one is
+                // listed in its place: the library shows none.
+                standalone::SoundAction locked; locked.kind = standalone::SoundAction::InstallArchive; locked.directory = archive.getFullPathName().toStdString(); locked.asNew = true;
+                engine.soundAction(std::move(locked));
+                check(wait([&] { return !engine.soundBusy(); }) && engine.libraries().size() == 1, "installed as a library: " + engine.soundMessage());
+                library.showSource(engine.libraries()[0].id);
+                check(wait([&] { return library.message().isEmpty() && library.items().empty(); }), "only the library's own items, by choosing it");
+                snapshot(library, "library-locked");
+                library.showSource("");
+                wait([&] { return library.items().size() == 5; });
                 // A file that is not a setlist is refused.
                 const auto bad = folder.getChildFile("Bad.json");
                 bad.replaceWithText(R"({"format":"oscairn.setlist","version":2,"name":"x","entries":[]})");

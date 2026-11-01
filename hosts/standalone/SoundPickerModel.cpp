@@ -113,6 +113,7 @@ namespace oscairn::standalone
         if(action.kind == SoundAction::LoadSound){control.loadSound(action.part,action.libraryId);return {};}
         if(action.kind == SoundAction::PartFromSound){control.partFromSound(action.libraryId);return {};}
         if(action.kind == SoundAction::ImportPerformance){control.importPerformance(action.directory,action.parts,action.scenes);return {};}
+        if(action.kind == SoundAction::ExportPerformance && !action.libraryId.empty()){control.exportLibraryItem(action.libraryId,action.directory,action.asNew);return "Exported.";}
         if(action.kind == SoundAction::ExportPerformance){control.exportPerformance(action.directory,action.asNew);return "Performance exported.";}
         if(action.kind == SoundAction::InstallArchive){
             const auto r=control.installArchive(action.directory,action.asNew,action.items);

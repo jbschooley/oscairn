@@ -32,7 +32,7 @@ namespace oscairn::standalone
         bool enableLocks = false;
         SoundChoice choice;
         std::string replacementPath,replacementId,directory;
-        std::string libraryId; // LoadFromLibrary, LoadSound, PartFromSound; SaveToLibrary and SaveSound save under choice.name
+        std::string libraryId; // LoadFromLibrary, LoadSound, PartFromSound, ExportPerformance (that library item, not the open one); SaveToLibrary and SaveSound save under choice.name
         uint32_t part = 0;     // SaveSound, LoadSound
         std::vector<uint32_t> parts, scenes; // ImportPerformance from directory: by its IDs; both none for all of it
         bool asNew = false;    // SaveToLibrary, SaveSound: a new library item, not the next revision of the one it came from;

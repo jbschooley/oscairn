@@ -45,8 +45,10 @@ Checked when built and tested; the sections below say how.
 - [x] Hidden tags and tag colors (`library.tag`; right-click a tag in the Library app)
 - [x] Editing an item's name, description, tags and color, copying an item into your own, and
       showing only your own or one library's (`library.edit`, `library.copy`, `source`)
-- [x] The Library app's left column (where items are from, then the tags), compact rows, and every
-      item's actions on one menu: a right click, a long press, or Options
+- [x] The Library app's left column (the library: everything, your own, each installed library;
+      then the tags), as rows or pills, compact rows, and every item's actions on one menu (a right
+      click, a long press, or Options), exporting an item without opening it among them
+      (`library.export`)
 - [x] Exporting a Performance keeps its parts' references to their Sounds
 - [x] Exporting with every asset, the Sounds of unedited parts, and optionally those of edited
       parts ([design](#exporting-a-performance))

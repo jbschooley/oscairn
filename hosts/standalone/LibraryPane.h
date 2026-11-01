@@ -28,6 +28,8 @@ namespace oscairn::standalone
         void showSource(const std::string& source); // "mine", an installed library's ID, or empty for all
         void setCompact(bool compact);              // one line a row, to see more; kept for the next time
         bool compact() const { return compact_; }
+        void setPills(bool pills);                  // the left column's libraries and tags as pills, not rows; kept too
+        bool pills() const { return pills_; }
         void refresh() { stale_ = true; message_.clear(); timerCallback(); } // query again now, or once the engine is free
         const std::vector<Control::LibraryItem>& items() const { return result_.items; }
         const std::vector<std::pair<std::string, uint32_t>>& tags() const { return result_.tags; }
@@ -42,6 +44,7 @@ namespace oscairn::standalone
         void itemMenu(int row);                              // everything that can be done with it
         void editItem(int row);                              // its name, description and tags, asked for
         std::string copyItem(int row);                       // into the user's own; the copy's ID, or empty
+        void exportItem(int row);                            // to an archive file, chosen and asked about
         void tagMenu(const std::string& tag);                // hide it from the tag list, or color it
         std::string tagColor(const std::string& tag) const; // the user's color for it, or empty
         const juce::String& message() const { return message_; }
@@ -50,19 +53,22 @@ namespace oscairn::standalone
         void resized() override;
 
     private:
-        // The left column: where items are from, then the tags.
-        struct Side { enum Kind { Heading, Source, Tag } kind; std::string value; juce::String label; uint32_t count = 0; };
-        struct Sidebar : juce::ListBoxModel
+        // The left column: the library (everything, the user's own, each installed library), then
+        // the tags, as rows or as pills that wrap.
+        struct Side { enum Kind { Heading, Source, Tag } kind; std::string value; juce::String label; uint32_t count = 0; juce::Rectangle<int> bounds{}; };
+        struct Sidebar : juce::Component
         {
-            explicit Sidebar(LibraryPane& p) : pane(p) {}
+            explicit Sidebar(LibraryPane& p);
             LibraryPane& pane;
-            int getNumRows() override { return int(pane.side_.size()); }
-            void paintListBoxItem(int row, juce::Graphics&, int width, int height, bool selected) override;
-            void listBoxItemClicked(int row, const juce::MouseEvent&) override;
+            juce::TextButton pills{"Pills"};
+            int layout(int width); // places every entry; returns the height they take
+            void paint(juce::Graphics&) override;
+            void mouseUp(const juce::MouseEvent&) override;
         };
         void timerCallback() override;
         void rebuildSide();
         void tell(const juce::String& text);
+        void savePreference() const;
         int getNumRows() override { return int(result_.items.size()); }
         void paintListBoxItem(int row, juce::Graphics&, int width, int height, bool selected) override;
         void listBoxItemClicked(int row, const juce::MouseEvent&) override;
@@ -81,12 +87,12 @@ namespace oscairn::standalone
         Control::LibraryResult result_;
         std::vector<Control::InstalledLibrary> installed_;
         std::vector<Side> side_;
-        bool stale_ = true, installing_ = false, compact_ = false;
+        bool stale_ = true, awaiting_ = false, compact_ = false, pills_ = false;
         juce::String message_;
         juce::TextEditor search_;
         juce::TextButton favorites_{"Favorites"}, recent_{"Recent"}, performances_{"Performances"}, sounds_{"Sounds"}, compactButton_{"Compact"};
-        Sidebar sidebarModel_{*this};
-        juce::ListBox sidebar_{"Show", &sidebarModel_};
+        Sidebar sidebar_{*this};
+        juce::Viewport sideView_;
         juce::ListBox list_{"Performances", this};
         juce::TextButton send_{"Add to setlist"}, part_{"New part"}, cancel_{"Cancel"}, pick_{"Choose"}, options_{"Options..."}, libraries_{"Libraries..."};
         std::unique_ptr<juce::FileChooser> chooser_;
