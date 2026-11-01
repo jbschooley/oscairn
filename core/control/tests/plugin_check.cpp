@@ -5,6 +5,10 @@
 // device and opened from the plugin store (CLAP: archives do not carry LV2 yet, so an LV2 plugin
 // stops after the export). Opt-in, for plugins not in this repository:
 //   oscairn-plugin-check PLUGIN ID synth|effect [--param ID=VALUE] [--juce-state NAME=VALUE]
+//                        [--add-build PLATFORM=PATH] [--keep-archive FILE]
+//   oscairn-plugin-check --install FILE synth|effect
+// --add-build adds another platform's build before the export; --keep-archive keeps the export,
+// for --install on that platform: installed fresh there, it must open from the store and play.
 // --juce-state sets an attribute in a JUCE plugin's saved state (its binary XML), as choosing a
 // program in its window would; Airwindows Consolidated picks its effect this way
 // (currentProcessorName=Chorus). Prints one line per check and the renders' levels.
@@ -94,20 +98,62 @@ namespace
     }
 }
 
+// Device B: the archive installed fresh, the plugin found in the store. The pathHint is made
+// to miss (plugin, when it is here) so the store is what opens it. Returns its render.
+std::vector<float> installAndOpen(const fs::path& archive, const fs::path& home, const std::string& plugin, bool synth, const std::vector<double>* savedValues)
+{
+    device(home);
+    Session b(rate, block, {}, stereoIn);
+    const auto installed = b.installArchive(archive.string(), false);
+    check(installed.notes.empty(), "installs with nothing to report");
+    Control::LibraryQuery q; q.kind = "performance";
+    const auto item = b.libraryQuery(q).items.at(0);
+    if(!plugin.empty())
+    {
+        const auto doc = fs::path(item.path) / "performance.json";
+        auto text = read(doc);
+        for(auto at = text.find(plugin); at != std::string::npos; at = text.find(plugin)) text.replace(at, plugin.size(), "/nowhere/plugin.clap");
+        write(doc, text);
+        b.libraryRescan();
+    }
+    b.loadPerformanceFromLibrary(item.id);
+    const auto node = b.graphState().topology.nodes.at(0);
+    check(b.sessionStatus().failures.empty() && node.plugin.path.rfind((home / "Plugins").string(), 0) == 0, "opens from the plugin store: " + node.plugin.path);
+    if(savedValues) check(values(b, node.id) == *savedValues, "every parameter as saved");
+    const auto there = render(b, synth);
+    check(finite(there) && rms(there) > 1e-6, "plays there: rms " + std::to_string(rms(there)));
+    const auto store = b.installedPlugins();
+    check(store.size() == 1 && store[0].open && store[0].usedBy.size() == 1, "the store says the open Performance plays it");
+    std::string platforms;
+    for(const auto& s : store.empty() ? std::vector<std::string>{} : store[0].platforms) platforms += " " + s;
+    std::printf("builds in the store:%s\n", platforms.c_str());
+    return there;
+}
+
 int main(int argc, char** argv)
 {
-    if(argc < 4) { std::fprintf(stderr, "usage: %s PLUGIN ID synth|effect [--param ID=VALUE] [--juce-state NAME=VALUE]\n", argv[0]); return 2; }
+    if(argc == 4 && std::string(argv[1]) == "--install")
+    {
+        try { state_files::TemporaryDirectory temp; installAndOpen(fs::absolute(argv[2]), temp.path / "b", {}, std::string(argv[3]) == "synth", nullptr); }
+        catch(const std::exception& e) { check(false, e.what()); }
+        std::printf("%s\n", failures ? "FAILED" : "PASSED");
+        return failures ? 1 : 0;
+    }
+    if(argc < 4) { std::fprintf(stderr, "usage: %s PLUGIN ID synth|effect [--param ID=VALUE] [--juce-state NAME=VALUE] [--add-build PLATFORM=PATH] [--keep-archive FILE]\n       %s --install FILE synth|effect\n", argv[0], argv[0]); return 2; }
     const std::string plugin = fs::absolute(argv[1]).string(), id = argv[2];
     const bool synth = std::string(argv[3]) == "synth", lv2 = fs::path(plugin).extension() == ".lv2";
     std::vector<std::pair<uint32_t, double>> params;
-    std::vector<std::pair<std::string, std::string>> juce;
+    std::vector<std::pair<std::string, std::string>> juce, builds;
+    fs::path keep;
     for(int i = 4; i + 1 < argc; i += 2)
     {
         const std::string option = argv[i], value = argv[i + 1];
+        if(option == "--keep-archive") { keep = fs::absolute(value); continue; }
         const auto eq = value.find('=');
         if(eq == std::string::npos) { std::fprintf(stderr, "%s needs NAME=VALUE\n", option.c_str()); return 2; }
         if(option == "--param") params.push_back({uint32_t(std::stoul(value.substr(0, eq))), std::stod(value.substr(eq + 1))});
         else if(option == "--juce-state") juce.push_back({value.substr(0, eq), value.substr(eq + 1)});
+        else if(option == "--add-build") builds.push_back({value.substr(0, eq), fs::absolute(value.substr(eq + 1)).string()});
         else { std::fprintf(stderr, "unknown option %s\n", option.c_str()); return 2; }
     }
     try
@@ -168,6 +214,7 @@ int main(int argc, char** argv)
             const auto again = render(a, synth);
             check(values(a, a.graphState().topology.nodes.at(0).id) == savedValues, "opened again, every parameter as saved");
             std::printf("reopened render differs by rms %g (0: identical)\n", difference(saved, again));
+            for(const auto& [platform, path] : builds) a.addPluginBuild("clap", id, a.graphState().topology.nodes.at(0).plugin.version, platform, path);
             const auto notes = a.exportPerformance(archive.string());
             if(lv2)
             {
@@ -177,31 +224,11 @@ int main(int argc, char** argv)
             }
             check(notes.empty(), "exported with nothing left out");
             const auto packed = readPackage(archive, {});
-            check(packed.plugins.size() == 1 && !packed.plugins[0].builds.empty(), "the archive carries the plugin's build");
+            check(packed.plugins.size() == 1 && packed.plugins[0].builds.size() == 1 + builds.size(), "the archive carries the plugin's builds: " + std::to_string(packed.plugins[0].builds.size()));
+            if(!keep.empty()) fs::copy_file(archive, keep, fs::copy_options::overwrite_existing);
         }
-        // Device B: installed fresh, the plugin found in the store.
-        {
-            device(temp.path / "b");
-            Session b(rate, block, {}, stereoIn);
-            const auto installed = b.installArchive(archive.string(), false);
-            check(installed.notes.empty(), "installs with nothing to report");
-            Control::LibraryQuery q; q.kind = "performance";
-            const auto item = b.libraryQuery(q).items.at(0);
-            const auto doc = fs::path(item.path) / "performance.json";
-            auto text = read(doc);
-            for(auto at = text.find(plugin); at != std::string::npos; at = text.find(plugin)) text.replace(at, plugin.size(), "/nowhere/plugin.clap");
-            write(doc, text);
-            b.libraryRescan();
-            b.loadPerformanceFromLibrary(item.id);
-            const auto node = b.graphState().topology.nodes.at(0);
-            check(b.sessionStatus().failures.empty() && node.plugin.path.rfind((temp.path / "b" / "Plugins").string(), 0) == 0, "opens from the plugin store: " + node.plugin.path);
-            check(values(b, node.id) == savedValues, "every parameter as saved");
-            const auto there = render(b, synth);
-            check(finite(there) && rms(there) > 1e-6, "plays there: rms " + std::to_string(rms(there)));
-            std::printf("render there differs by rms %g (0: identical)\n", difference(saved, there));
-            const auto store = b.installedPlugins();
-            check(store.size() == 1 && store[0].open && store[0].usedBy.size() == 1, "the store says the open Performance plays it");
-        }
+        const auto there = installAndOpen(archive, temp.path / "b", plugin, synth, &savedValues);
+        std::printf("render there differs by rms %g (0: identical)\n", difference(saved, there));
     }
     catch(const std::exception& e) { check(false, e.what()); }
     std::printf("%s\n", failures ? "FAILED" : "PASSED");

@@ -176,7 +176,10 @@ writing tests:
 - `oscairn-plugin-check PLUGIN ID synth|effect [--param ID=VALUE]`: the path a musician's sound
   takes. The plugin plays in a part, is saved to the library and opened again with every
   parameter as saved, is exported in an archive with its build, and is installed on a fresh
-  device, where it opens from the plugin store and plays the same. See
+  device, where it opens from the plugin store and plays the same. With
+  `--add-build linux-arm64=PATH --keep-archive FILE`, the archive also carries another
+  platform's build; `oscairn-plugin-check --install FILE synth|effect` on that platform installs
+  it and checks it opens from the store and plays. See
 [Test before publishing a plugin](developer-guide.md#test-before-publishing-a-plugin).
 
 ## Licenses
