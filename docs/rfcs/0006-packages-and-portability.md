@@ -22,6 +22,8 @@ Checked when built and tested; the sections below say how.
 - [ ] 4. LV2, existing installs, VST3 and AU with their adapters
 - [ ] 5. DAW delivery proof
 - [ ] 6. Catalogs, multi-device preparation and distribution polish
+- [ ] Signatures: publisher-signed plugin builds, signed archives, the trust store and install
+      policy ([design](#signatures))
 - [ ] Choosing what to import: chosen items with their dependencies, content as a locked
       library or into user storage ([design](#choosing-what-to-import))
 
@@ -102,6 +104,67 @@ Made 2026-11-01, for the first slice:
   version already there is kept and reported, never replaced by an install.
 - **Removal** is refused while the open Performance plays the build. What uses it is shown
   first; it then opens with a stand-in, keeping its state, until the plugin is back.
+
+## Signatures
+
+Proposed 2026-11-01. Hashes prove an archive is whole and as it was made; signatures add who
+made it. They answer two different questions, so there are two kinds:
+
+- **Who built this plugin?** Plugin code is what can harm a device, and its author is the only
+  one who can vouch for it. A **build signature** is the plugin publisher's signature over the
+  build's identity and digest: `oscairn-build-1\0` + format, ID, version, platform and digest,
+  each NUL-terminated. It sits in the archive manifest beside the build (`builds[].signatures`)
+  and in the store beside the build, and it travels unchanged: a friend re-exporting a
+  Performance carries the vendor's signature without being able to make one. The same build
+  re-signed by its vendor later (a new key) gets another entry; nothing in the bundle changes.
+- **Who put this archive together?** A sound designer's library, a manufacturer's factory
+  set, or your own export. The **archive signature** is over the manifest's exact bytes, which
+  already list every file's SHA-256 and every build's digest, so one signature covers it all:
+  `oscairn-archive-1\0` + manifest, in a `library.sig` entry (`{key, signature}`). An archive
+  with a signature that does not verify is refused like a hash mismatch.
+
+**Algorithm:** Ed25519, small keys and signatures, fast to check on the device, deterministic,
+and no clock needed. Implementation: [Monocypher](https://monocypher.org) (BSD-2 or CC0, one C
+file, already the shape of the vendored miniz), not a TLS stack. A key is named by the first
+16 hex digits of its SHA-256, shown to people as its fingerprint.
+
+**Trust store:** `trust.json` in the data folder, each key with a name, what it is trusted
+for (`plugins`, `content`, or both) and where it came from. A product ships its manufacturer's
+key and the Oscairn project's; system updates ([RFC 0028](0028-system-image-updates-boot-and-power.md))
+replace those entries and add revocations, so an offline device learns them with its next
+image. The user adds a key by installing a signed archive and saying yes to its fingerprint,
+or by pairing devices.
+
+**Your own devices:** each Oscairn install makes a key on first use and signs its exports with
+it. Pairing a desktop with an instrument (RFC 0012) trusts each other's keys for content, so
+moving your own Performances between your own machines is signed and silent. It is not trust
+for plugin code: a plugin from your desktop is still judged by its build signature.
+
+**Install policy**, per device profile (RFC 0024):
+
+| What the archive brings | Desktop default | A product may require |
+| --- | --- | --- |
+| Sounds, Performances, samples (data) | Install; an unknown or missing archive signature is shown, not blocking | Same |
+| A plugin build signed by a trusted publisher | Install | Install |
+| A plugin build unsigned, or by an unknown key | Ask, listing each plugin and that it runs code from an unknown source; the answer can trust the key | Refuse, keeping the items with stand-ins |
+| A revoked key, or a build digest on the revocation list | Refuse that build, with stand-ins | Refuse |
+
+A build already in the store is judged again when its key is revoked: it stays on disk but
+does not load, and what used it opens with a stand-in saying why.
+
+**No expiry:** instruments may have no clock (a MODX keeps none), so validity never depends on
+the date. Keys are retired by revocation and replaced by a new key signed by the old one, which
+the trust store follows.
+
+**What it does not do:** a signature says who, not that the code is safe. Plugins still run in
+the engine or in worker processes (RFC 0010), and a trusted publisher's bug is still a bug.
+Platform signatures are separate and kept: a macOS bundle's own code signature is copied byte
+for byte, never rewritten, and Windows Authenticode the same. System images have their own
+signing (RFC 0028).
+
+**Order:** the trust store and Ed25519 checks; archive signatures with your own device's key;
+build signatures, including a tool for plugin authors to sign their builds (`oscairn-sign`),
+and the install policy table; revocation through system updates; pairing.
 
 ## Project manifest, lockfile and shared store
 
