@@ -15,13 +15,25 @@ Until now musicians have had two choices.
 
 Oscairn sets out to solve both. How, and how much of it is built today:
 
-- **One engine, many sounds.** An engine with Oscairn's sound contexts holds up to eight
-  prepared sounds in one instance. Each MIDI channel picks one, and switching to another
-  reloads nothing and keeps held notes playing ([RFC 0005](docs/rfcs/0005-sound-contexts.md)).
+- **One engine, many sounds.** An engine with Oscairn's sound contexts holds several prepared
+  sounds in one instance. Each MIDI channel picks one, and switching to another reloads
+  nothing and keeps held notes playing ([RFC 0005](docs/rfcs/0005-sound-contexts.md)).
   Effects can share one engine the same way ([RFC 0007](docs/rfcs/0007-effect-contexts.md)).
-  Today only Oscairn's own Basic Synth, Sampler and Delay do this. A third-party plugin
-  without it still switches instantly, but through a spare instance per prepared sound (up to
-  eight, instruments only), each with its own memory.
+  Sound contexts are a CLAP extension (`oscairn.sound-contexts`, a draft whose
+  [header](core/clap-ext/include/oscairn-clap/sound-contexts.h) any plugin can implement), so
+  third-party instruments can be built to do it too; today only Oscairn's own Basic Synth,
+  Sampler and Delay do. A third-party plugin without it still switches instantly, through a
+  spare instance per prepared sound, each with its own memory.
+
+  How many sounds one instance holds is the plugin's to say: the Basic Synth and the Sampler
+  have eight slots (one is the default sound), fixed so that switching and playing never
+  allocate memory on the audio thread; the pool for other plugins also has eight. This limit
+  is per instance, not per Performance: each part has its own instance today, so a Performance
+  of ten parts is ten instances, and a setlist's next Performance brings its own while the last
+  one rings out and goes. A ninth sound prepared on one instance is refused, saying the
+  capacity is full; nothing is taken from a sound that is playing. Spreading sounds across a
+  second instance on its own, and parts sharing one engine, are not built yet; automatic
+  preparation and retirement of sounds is planned with [RFC 0007](docs/rfcs/0007-effect-contexts.md).
 - **Seamless Performance changes.** Opening another Performance, from a setlist or the
   library, lets the outgoing one's held notes and tails ring out while new notes play the new
   one. Scene changes do the same
