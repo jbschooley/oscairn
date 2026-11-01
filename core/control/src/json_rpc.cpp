@@ -394,7 +394,7 @@ namespace oscairn
             if( method == "session.hello" )
             {
                 fields(p, {});
-                return R"({"protocolVersion":1,"server":"oscairn","capabilities":["performance.save","performance.load","performance.export","budget.set","budget.estimate","performance.info","performance.setInfo","library.query","library.favorite","library.tag","library.rescan","library.contents","library.install","library.libraries","library.uninstall","library.delete","library.save","library.load","parts.saveSound","parts.loadSound","parts.fromSound","performance.contents","performance.import","state.info","state.save","presets.list","properties.list","properties.get","properties.set","properties.request","sounds.get","sounds.prepare","sounds.select","sounds.discard","assets.register","assets.import","assets.libraries","session.status","params.list","params.get","params.set","params.text","params.gesture","graph.audio-routing","graph.get","graph.add","effects.create","effects.resources","graph.remove","graph.replace","graph.connect","graph.disconnect","graph.map","graph.unmap","graph.commit","parts.add","parts.remove","parts.insert","parts.removeNode","parts.move","parts.addSplit","parts.removeSplit","parts.addLane","parts.removeLane","parts.lane","parts.input","parts.output","parts.send","parts.level","parts.name","parts.solo","parts.pan","parts.meters","wires.meters","edit.undo","edit.redo","edit.history","wires.connect","wires.disconnect","wires.enable","graph.enable","wires.mix","wires.zones","scenes.add","scenes.store","scenes.select","scenes.remove","scenes.name","scenes.scope","scenes.transition","scenes.untouched","controls.add","controls.remove","controls.name","controls.targets","controls.set","subscribe","unsubscribe","transport.get","transport.set","notes.send","pads.get","pads.set","pads.play","pads.pressure"],"limits":{"messageBytes":65536,"depth":32,"batch":64,"parameterChanges":128}})";
+                return R"({"protocolVersion":1,"server":"oscairn","capabilities":["performance.save","performance.load","performance.export","budget.set","budget.estimate","performance.info","performance.setInfo","library.query","library.favorite","library.tag","library.edit","library.copy","library.rescan","library.contents","library.install","library.libraries","library.uninstall","library.delete","library.save","library.load","parts.saveSound","parts.loadSound","parts.fromSound","performance.contents","performance.import","state.info","state.save","presets.list","properties.list","properties.get","properties.set","properties.request","sounds.get","sounds.prepare","sounds.select","sounds.discard","assets.register","assets.import","assets.libraries","session.status","params.list","params.get","params.set","params.text","params.gesture","graph.audio-routing","graph.get","graph.add","effects.create","effects.resources","graph.remove","graph.replace","graph.connect","graph.disconnect","graph.map","graph.unmap","graph.commit","parts.add","parts.remove","parts.insert","parts.removeNode","parts.move","parts.addSplit","parts.removeSplit","parts.addLane","parts.removeLane","parts.lane","parts.input","parts.output","parts.send","parts.level","parts.name","parts.solo","parts.pan","parts.meters","wires.meters","edit.undo","edit.redo","edit.history","wires.connect","wires.disconnect","wires.enable","graph.enable","wires.mix","wires.zones","scenes.add","scenes.store","scenes.select","scenes.remove","scenes.name","scenes.scope","scenes.transition","scenes.untouched","controls.add","controls.remove","controls.name","controls.targets","controls.set","subscribe","unsubscribe","transport.get","transport.set","notes.send","pads.get","pads.set","pads.play","pads.pressure"],"limits":{"messageBytes":65536,"depth":32,"batch":64,"parameterChanges":128}})";
             }
             if( method == "subscribe" || method == "unsubscribe" )
             {
@@ -449,7 +449,8 @@ namespace oscairn
                 return "{\"id\":"+quote(i.id)+",\"name\":"+quote(i.name)+",\"description\":"+quote(i.description)+",\"tags\":"+tags(i.tags)+",\"color\":"+quote(i.color)+'}';
             }
             if(method=="library.query") {
-                fields(p,{"text","tags","favorites","recent","limit","kind"});Control::LibraryQuery q;
+                fields(p,{"text","tags","favorites","recent","limit","kind","source"});Control::LibraryQuery q;
+                if(member(p,"source")){q.source=std::string(string(member(p,"source")));if(q.source.empty())invalid("Empty library source");}
                 if(member(p,"kind")){q.kind=std::string(string(member(p,"kind")));if(q.kind!="performance" && q.kind!="sound")invalid("Unknown library kind");}
                 if(member(p,"text"))q.text=std::string(string(member(p,"text")));
                 if(member(p,"tags"))for(auto t:array(member(p,"tags"),32,0))q.tags.push_back(std::string(string(t)));
@@ -504,6 +505,18 @@ namespace oscairn
                 catch(const std::invalid_argument& e){throw Failure{-32602,e.what()};}
                 catch(const std::exception& e){throw Failure{-32005,e.what()};}
                 return R"({"accepted":true})";
+            }
+            if(method=="library.edit") {
+                fields(p,{"id","name","description","tags","color"});Control::PerformanceInfo info;
+                info.name=std::string(string(member(p,"name")));info.description=std::string(string(member(p,"description")));
+                for(auto t:array(member(p,"tags"),32,0))info.tags.push_back(std::string(string(t)));
+                if(member(p,"color"))info.color=std::string(string(member(p,"color")));
+                try{c.libraryEdit(std::string(string(member(p,"id"))),info);}catch(const std::exception& e){throw Failure{-32005,e.what()};}
+                return R"({"accepted":true})";
+            }
+            if(method=="library.copy") {
+                fields(p,{"id"});
+                try{return "{\"id\":"+quote(c.libraryCopy(std::string(string(member(p,"id")))))+'}';}catch(const std::exception& e){throw Failure{-32005,e.what()};}
             }
             if(method=="library.favorite") {
                 fields(p,{"id","favorite"});

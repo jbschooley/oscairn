@@ -730,7 +730,7 @@ is listed.
   absent; the ID is kept) and returns the same. These are not undoable edits.
 - `library.query` takes optional `text` (case-insensitive, over name, description and tags),
   `tags` (all must match), `favorites`, `recent`, `kind` (`performance` or `sound`; both when
-  absent) and `limit` (1–1000, default 200). It returns `{items,tags,total}`: items with `id`,
+  absent), `source` (`mine` for the user's own items, or an installed library's ID) and `limit` (1–1000, default 200). It returns `{items,tags,total}`: items with `id`,
   `kind`, `name`, `description`, `path`, `tags`, `favorite`, `recent` (1 is the most recent,
   0 none) and `color`, sorted by name or, with `recent`, most recent first; `tags` counts each
   tag over every match but those the user hid, and `total` counts matches before the limit;
@@ -739,6 +739,12 @@ is listed.
   none) and sets both: a hidden tag leaves the tag list but still matches a search and a chosen
   tag filter. These are the user's, in `library/user.json` beside favorites, never in an item.
 - `library.favorite` takes `{id,favorite}`; `library.rescan` (`{}`) returns `{"items":n}`.
+- `library.edit` takes `{id,name,description,tags}` and an optional `color`, as
+  `performance.setInfo` does, and writes them into the item's file; a locked library's items
+  refuse. If the open Performance is that item, its info changes too.
+- `library.copy` takes `{id}` and returns `{"id":…}`: a new item of the user's own with the same
+  contents under a new ID, named "<name> copy" when copying one of theirs. A locked library's
+  item keeps its name, and its copy records where it came from, as installing it would.
 - `library.save` takes an optional `name` and `new`, and returns `{"id":…}`. Save (`new`
   false or absent) writes a Performance opened from the library over its folder (saved
   beside it, then swapped), renamed when `name` is given; Save As New (`new: true`) gives it

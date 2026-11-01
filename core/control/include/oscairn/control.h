@@ -130,8 +130,9 @@ namespace oscairn
         // recent use. Performances save into it by name; loading by ID marks one used.
         // library: the installed library it is in (its ID), locked; empty for the user's own.
         struct LibraryItem { std::string id, kind = "performance", name, description, path; std::vector<std::string> tags; bool favorite = false; uint32_t recent = 0; std::string color, revision, hash, library; Origin origin; };
-        // kind: "performance" or "sound"; empty for both.
-        struct LibraryQuery { std::string text; std::vector<std::string> tags; bool favorites = false, recent = false; uint32_t limit = 200; std::string kind; };
+        // kind: "performance" or "sound"; empty for both. source: "mine" for the user's own items, an
+        // installed library's ID for its items, empty for all.
+        struct LibraryQuery { std::string text; std::vector<std::string> tags; bool favorites = false, recent = false; uint32_t limit = 200; std::string kind, source; };
         // tags: each tag over every match with its count, but those the user hid from the tag list;
         // tagColors: the colors the user gave tags; hiddenTags: every tag the user hid.
         struct LibraryResult { std::vector<LibraryItem> items; std::vector<std::pair<std::string, uint32_t>> tags; uint32_t total = 0;
@@ -142,6 +143,11 @@ namespace oscairn
         // finds it) and its color ("#rrggbb", or empty for none). The user's, not any item's.
         virtual void libraryTag(const std::string& tag, bool hidden, const std::string& color) = 0;
         virtual uint32_t libraryRescan() = 0;                          // items found
+        // An item's name, description, tags and color, written into its file (the rest of info is
+        // ignored); a locked library's items refuse. Copy: a new item of the user's own with the
+        // same contents and a new ID ("<name> copy" for one of theirs); returns its ID.
+        virtual void libraryEdit(const std::string& id, const PerformanceInfo& info) = 0;
+        virtual std::string libraryCopy(const std::string& id) = 0;
         // Save: over the open library Performance (renamed when name is given), else a new one.
         // asNew: always a new one, with its own ID. Returns its ID.
         virtual std::string savePerformanceToLibrary(const std::string& name, bool asNew = false) = 0;

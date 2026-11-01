@@ -43,10 +43,12 @@ Checked when built and tested; the sections below say how.
       importing again skips copies still unchanged (by content hash)
 - [x] The desktop's Install, Export, Delete and Uninstall (Performance menu; the Library app)
 - [x] Hidden tags and tag colors (`library.tag`; right-click a tag in the Library app)
+- [x] Editing an item's name, description, tags and color, copying an item into your own, and
+      showing only your own or one library's (`library.edit`, `library.copy`, `source`)
 - [x] Exporting a Performance keeps its parts' references to their Sounds
 - [x] Exporting with every asset, the Sounds of unedited parts, and optionally those of edited
       parts ([design](#exporting-a-performance))
-- [ ] 2. Library index and tags: index, user file and Sounds done; tag editing, suggestions,
+- [ ] 2. Library index and tags: index, user file, Sounds and tag editing done; suggestions,
       packages and `LibraryModel` remain
 - [ ] 3. Desktop pane: the Library app and Part menu done; the dockable pane, inspector,
       drag to part and keyboard remain

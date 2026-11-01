@@ -1012,10 +1012,17 @@ Control::Imported Session::importPerformance(const std::string& directory,const 
     return result;
 }
 
-void Session::setPerformanceInfo(const PerformanceInfo& info) {
+namespace {
+// A name, description, tags and color the library can hold.
+void checkInfo(const Control::PerformanceInfo& info) {
     if(info.name.size()>256 || info.description.size()>4096 || info.tags.size()>32 ||
        std::any_of(info.tags.begin(),info.tags.end(),[](const std::string& t){return t.empty() || t.size()>64 || t.find('\0')!=std::string::npos;}) ||
        info.name.find('\0')!=std::string::npos || info.description.find('\0')!=std::string::npos || !validColor(info.color))bad("invalid info");
+}
+}
+
+void Session::setPerformanceInfo(const PerformanceInfo& info) {
+    checkInfo(info);
     const auto id=info_.id,revision=info_.revision,parent=info_.parent;const auto origin=info_.origin;info_=info;info_.id=id;info_.revision=revision;info_.parent=parent;info_.origin=origin;
 }
 
@@ -1131,6 +1138,43 @@ void Session::deleteLibraryItem(const std::string& id) {
     if(!item)bad("no such library item");
     fs::remove_all(item->path);
     l.rescan();
+}
+
+void Session::libraryEdit(const std::string& id,const PerformanceInfo& edit) {
+    auto& l=library();
+    const auto* item=l.find(id);
+    if(!item)bad("no such library item");
+    if(!item->library.empty())bad("a locked library's items cannot be edited; copy it into your own first");
+    const auto doc=fs::path(item->path)/(item->kind=="sound"?"sound.json":"performance.json");
+    auto info=readInfo(doc,"oscairn."+item->kind);
+    checkInfo(edit);
+    info.name=edit.name;info.description=edit.description;info.tags=edit.tags;info.color=edit.color;
+    writeInfo(doc,info);
+    // The open Performance, if it is this one, so saving it keeps the edit.
+    if(info_.id==id){info_.name=info.name;info_.description=info.description;info_.tags=info.tags;info_.color=info.color;}
+    l.rescan();
+}
+
+std::string Session::libraryCopy(const std::string& id) {
+    auto& l=library();
+    const auto* item=l.find(id);
+    if(!item)bad("no such library item");
+    const auto from=*item;
+    const bool locked=!from.library.empty();
+    const auto name=locked?from.name:(from.name.empty()?"Untitled":from.name)+" copy";
+    const auto to=l.newFolder(name,from.kind);
+    fs::create_directories(to.parent_path());
+    fs::copy(from.path,to,fs::copy_options::recursive);
+    try{
+        const auto doc=to/(from.kind=="sound"?"sound.json":"performance.json");
+        auto info=readInfo(doc,"oscairn."+from.kind);
+        info.id=freshId();info.name=name;info.parent.clear();info.revision=freshId();
+        info.hash=contentHash(doc);
+        if(locked)info.origin={from.library,from.id,info.hash}; // as installing it as the user's own would
+        writeInfo(doc,info);
+        l.rescan();
+        return info.id;
+    }catch(...){std::error_code ignored;fs::remove_all(to,ignored);throw;}
 }
 
 void Session::loadPerformanceFromLibrary(const std::string& id) {

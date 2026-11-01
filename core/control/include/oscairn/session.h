@@ -56,6 +56,8 @@ namespace oscairn
         std::vector<InstalledLibrary> libraries() override;
         void uninstallLibrary(const std::string& library) override;
         void deleteLibraryItem(const std::string& item) override;
+        void libraryEdit(const std::string& id, const PerformanceInfo& info) override;
+        std::string libraryCopy(const std::string& id) override;
         SoundSaved savePartAsSound(uint32_t part,const std::string& name,bool asNew = false) override;
         std::vector<std::string> loadSound(uint32_t part,const std::string& id) override;
         uint32_t partFromSound(const std::string& id) override;

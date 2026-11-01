@@ -92,6 +92,19 @@ int main(int argc, char** argv)
             b.deleteLibraryItem(soundId);
             const auto restored = b.installArchive(archive.string(), true);
             check(restored.added == 1 && restored.skipped == 1, "installing again restores only what was deleted");
+            bool refusedEdit = false; try { b.libraryEdit(soundId, {.name = "Mine"}); } catch(const std::exception&) { refusedEdit = true; }
+            check(refusedEdit, "a locked item's info is not edited");
+            const auto lockedId = b.libraries()[0].id;
+            Control::LibraryQuery inLibrary; inLibrary.source = lockedId;
+            check(b.libraryQuery(inLibrary).total == 2, "a library's items by source");
+            const auto own = b.libraryCopy(soundId);
+            auto find = [&](const std::string& id) { for(const auto& i : items(b, "sound")) if(i.id == id) return i; throw std::runtime_error("not in the library: " + id); };
+            const auto ownItem = find(own);
+            check(ownItem.library.empty() && ownItem.name == "Bass" && ownItem.origin.library == lockedId && ownItem.origin.item == soundId && ownItem.origin.hash == ownItem.hash,
+                  "a locked item's copy is the user's own, under its name, recording where it came from");
+            b.libraryEdit(own, {.name = "Mine", .tags = {"bass"}});
+            check(find(own).name == "Mine", "and is edited");
+            b.deleteLibraryItem(own);
             b.uninstallLibrary(b.libraries()[0].id);
             check(b.libraries().empty() && items(b, "performance").size() == 2 && items(b, "sound").size() == 2, "uninstalled: its items go, the user's stay");
             copy = sample; check(!assets::Store(temp.path / "b" / "assets").resolve(copy).empty(), "and so does the sample");

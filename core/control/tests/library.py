@@ -90,7 +90,7 @@ with tempfile.TemporaryDirectory(prefix='oscairn-library-') as temporary:
         manifest = home / 'Performances/Warm Pad.oscairn/performance.json'
         value = json.loads(manifest.read_text())
         value['info']['tags'] = ['pad', 'dark']
-        manifest.write_text(json.dumps(value))
+        manifest.write_text(json.dumps(value, separators=(',', ':')))  # as Oscairn writes it
         (home / 'Performances/Broken.oscairn').mkdir()
         (home / 'Performances/Broken.oscairn/performance.json').write_text('{')
         assert rpc('library.rescan') == {'items': 1}
@@ -98,6 +98,18 @@ with tempfile.TemporaryDirectory(prefix='oscairn-library-') as temporary:
         assert json.loads((home / 'library/index.json').read_text())['items'][0]['tags'] == ['pad', 'dark']
         rpc('library.load', {'id': pad})
         assert rpc('performance.info')['tags'] == ['pad', 'dark']
+        # An item's info edited in its file (and the open Performance's, being that item); a copy of
+        # the user's own; the user's own items by source.
+        rpc('library.edit', {'id': pad, 'name': 'Warm Pad', 'description': 'edited', 'tags': ['pad', 'dark'], 'color': '#e8a33d'})
+        assert json.loads(manifest.read_text())['info']['description'] == 'edited' and rpc('performance.info')['description'] == 'edited'
+        duplicate = rpc('library.copy', {'id': pad})['id']
+        twin = next(i for i in rpc('library.query')['items'] if i['id'] == duplicate)
+        assert twin['name'] == 'Warm Pad copy' and twin['library'] == '' and twin['tags'] == ['pad', 'dark'] and twin['color'] == '#e8a33d'
+        assert rpc('library.query', {'source': 'mine'})['total'] == 2 and rpc('library.query', {'source': 'nonesuch'})['total'] == 0
+        rpc('library.delete', {'id': duplicate})
+        rpc('library.edit', {'id': 'missing', 'name': '', 'description': '', 'tags': []}, True)
+        rpc('library.edit', {'id': pad, 'name': '', 'description': '', 'tags': ['']}, True)
+        rpc('library.copy', {'id': 'missing'}, True)
         # A part saved as a Sound (RFC 0021), listed apart, loaded into a part and as a new part.
         part = rpc('parts.add', {'name': 'Lead'})['part']
         rpc('parts.insert', {'part': part, 'index': 0, 'node': 'synth'})
