@@ -41,10 +41,16 @@ namespace oscairn::host
         const auto seq   = session_->add( "sequencer", pluginDir + "/oscairn-step-sequencer.clap" );
         const auto synth = session_->add( "synth", pluginDir + "/oscairn-basic-synth.clap" );
         const auto delay = session_->add( "delay", pluginDir + "/oscairn-delay.clap" );
+        // The startup Performance, in parts like any other: a Synth part the keys play (the
+        // Basic Synth into the Delay), and a Groovebox part whose step sequencer plays the same
+        // synth. The nodes keep the names the Groovebox and the panel layouts bind to.
+        const auto synthPart = session_->addPart( "Synth" );
+        session_->insertIntoPart( synthPart, 0, synth );
+        session_->insertIntoPart( synthPart, 1, delay );
+        PartInput generates; generates.kind = PartInput::Kind::None;
+        const auto groovebox = session_->addPart( "Groovebox", generates );
+        session_->insertIntoPart( groovebox, 0, seq );
         session_->connectNotes( seq, synth );
-        session_->connectNotes( graphInput, synth );
-        session_->connectAudio( synth, delay );
-        session_->connectAudio( delay, graphOutput );
         // Brightness locks are opt-in: the demo must not overwrite every selected sound.
         session_->commit();
         session_->clearHistory(); // undo starts from the startup instrument

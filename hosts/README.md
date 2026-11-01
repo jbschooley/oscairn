@@ -5,7 +5,9 @@ Programs built on the core: a file renderer, a live audio/MIDI engine and a desk
 - `render/`: `oscairn-render`, the headless file renderer used in CI.
 - `audio/`: shared JUCE 9 audio/MIDI adapter. It opens the default audio output and all
   MIDI inputs, converts arrival timestamps, and services the JUCE-free core `Session`.
-  The demo graph is the sequencer and pads playing the basic synth through the delay.
+  The startup Performance has two parts: Synth (the keys play the Basic Synth into the
+  Delay) and Groovebox (the step sequencer, also playing that synth). Its nodes are named
+  `sequencer`, `synth` and `delay`, which the Groovebox and the panel layouts bind to.
   MIDI notes, polyphonic/channel pressure, sustain (CC64), emergency releases (CC120/123)
   and optional MIDI clock enter here.
 - `engine/`: `oscairn-engine`, a console process that owns that audio/MIDI adapter and a
