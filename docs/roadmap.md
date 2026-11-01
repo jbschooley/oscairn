@@ -183,7 +183,7 @@ in the others.
 
 1. **Performance UI — steps 1–3 and undo implemented:** [RFC 0011](rfcs/0011-performance-ui-and-editors.md#step-1-status)
    wire ownership, parts, implicit Mixes and port-level routes with channel rules, saved in
-   Performance format version 2, and in the control protocol; step 2's zones, shared buses
+   the Performance format (now version 3), and in the control protocol; step 2's zones, shared buses
    and the desktop's Parts and Part views, and scenes; step 3's splits (lanes with zones and
    a Mix, joining after) in the model, protocol and Part page
    ([status](rfcs/0011-performance-ui-and-editors.md#step-3-status)), including left/right,
@@ -253,6 +253,31 @@ in the others.
    released notes first and spare the bass and melody
    ([step 2](rfcs/0018-voice-budget-and-stealing.md#step-2-status)). Next: step 3's shared
    budget.
+7. **Sounds, Performances and the library — started:** [RFC 0021](rfcs/0021-sounds-performances-and-library.md)
+   and apps that ask each other for them ([RFC 0022](rfcs/0022-apps-and-requests.md)). Done:
+   Performance format 3 with an info block (name, description, tags, color); the library of
+   Performances and Sounds with its cache, favourites and recents; Save and Save As New;
+   Sounds (a part saved without its seat, loaded into a part as one undoable step, or as a
+   new part), with controls owned by parts; the desktop's Library app, Setlist app (list,
+   scrolling list and grid; per-entry colors) and Part menu; RFC 0022 step 1, actions between
+   the built-in apps. Next, in order:
+   - **where a Sound came from:** each part records the Sound and revision it was loaded
+     from, so **Save** updates that Sound, **Save As New** makes another, the part shows when
+     it differs from the library's, and **Update from library** offers a newer revision;
+     Sounds gain revisions and authors (RFC 0021's provenance);
+   - **importing a Performance:** adding all of another Performance's parts, buses, their
+     wires and controls to the open one, in one step
+     ([design](rfcs/0021-sounds-performances-and-library.md#importing-a-performance));
+   - **seamless switching:** loading a Sound into a part keeps the notes already held and the
+     outgoing chain's tails, with the incoming chain prepared off the audio thread, and says
+     beforehand when it cannot
+     ([RFC 0021 step 5](rfcs/0021-sounds-performances-and-library.md#seamless-switching), on
+     RFC 0007's chain preparation and retirement); then seamless Performance changes for
+     setlists;
+   - user tags and the tag vocabulary, plugin presets in the library, `LibraryModel`, and
+     the Library on the panel and compact screens (RFC 0021 steps 2–7);
+   - actions over the control API, then choosing between apps (RFC 0022 steps 2–3, also
+     listed in Phase 5).
 
 Also open:
 

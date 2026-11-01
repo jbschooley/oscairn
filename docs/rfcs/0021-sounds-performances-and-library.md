@@ -256,6 +256,30 @@ The info block, the same in both:
 | `tags` | Up to 32 tags (below) |
 | `description`, `author` | Optional text |
 
+### Importing a Performance
+
+Requested October 31, 2026: a Performance can import another, which adds all of its parts to
+the open one. It is several Sounds at once, with what joins them:
+
+- **Every part and bus** arrives as a new part with its seat: input and zones, device
+  selectors, output, fader, pan, mute and solo. A part that played to the imported
+  Performance's bus plays to the imported copy of that bus; sends between imported parts
+  follow them.
+- **User wires** with both ends among the imported nodes come along; none cross into the
+  open Performance's parts, since nothing joined them before.
+- **Controls:** part-owned controls come with their parts. The imported Performance's own
+  controls come too, with their targets on imported parts and plugins. A name already used
+  gets a number ("Super 2").
+- **Scenes:** the open Performance's scenes keep the imported parts at the levels and mutes
+  they arrive with; the imported scenes do not come. Whether they should merge by name
+  ("Verse" into "Verse") is an open question below.
+- **Provenance:** each imported part records the Performance it came from, as a part loaded
+  from a Sound records its Sound.
+- Pads, tempo, transport and the imported info block stay with the open Performance.
+- **Undo:** one step. **Cutting:** importing adds parts and changes no existing one, so it
+  could leave every playing note alone; whether it does depends on the same chain
+  preparation as seamless switching.
+
 ## Plugin presets
 
 The host already reads presets two ways:
@@ -512,6 +536,9 @@ other requests do not wait the way `assets.register` does today.
 3 lands; its prepare, select and discard logic becomes the preset and transition path.
 
 ## Open questions
+
+- **Importing scenes.** Whether importing a Performance merges its scenes into the open
+  one's by name ("Verse" into "Verse"), or leaves them behind as now proposed.
 
 - **Scenes choosing Sounds.** Partly answered by the scene model (RFC 0011, "Scenes, the
   full model"): a scene enables and disables blocks and wires, so a part holding two lanes
