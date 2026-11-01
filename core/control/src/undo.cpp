@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // Undo and redo (RFC 0011). The Session keeps a baseline: its model (parts, wires, scenes,
-// controls, pads, parameter mappings, and its nodes, held) as it was after the last edit. At each
+// controls, pads, physical control overrides, parameter mappings, and its nodes, held) as it was after the last edit. At each
 // commit, and at each control tick when nothing is staged, a model that differs becomes a step
 // with both. Undoing applies only what the step changed onto the model as it is now, so changes
 // that are not edits (a scene switch since) stay. A removed or replaced node is held by the
@@ -93,7 +93,7 @@ namespace oscairn
 
     Session::Model Session::model() const
     {
-        Model m{parts_, wires_, scenes_, untouched_, macros_, padMap_, graph_.describe().mappings, {}, disabled_};
+        Model m{parts_, wires_, scenes_, untouched_, macros_, padMap_, assignments_, graph_.describe().mappings, {}, disabled_};
         for(const auto& [id, name] : nodes_) m.nodes.emplace(id, std::pair{name, graph_.node(id)});
         return m;
     }
@@ -107,7 +107,7 @@ namespace oscairn
         const auto& b = *baseline_;
         const bool same = b.parts == now->parts && userWires(b.wires) == userWires(now->wires) && partWires(b.wires) == partWires(now->wires) &&
                           b.scenes == now->scenes && b.untouched == now->untouched && sameMacros(b.macros, now->macros) &&
-                          b.pads == now->pads && sameMappings(b.mappings, now->mappings) && sameNodes(b.nodes, now->nodes) && b.disabled == now->disabled;
+                          b.pads == now->pads && b.assignments == now->assignments && sameMappings(b.mappings, now->mappings) && sameNodes(b.nodes, now->nodes) && b.disabled == now->disabled;
         if(!same)
         {
             Step step;
@@ -316,6 +316,7 @@ namespace oscairn
             patch(macros_, from.macros, to.macros, [](const Macro& m) { return m.id; }, sameMacro,
                   [](Macro& n, const Macro*, const Macro& t) { const auto value = n.value; n = t; n.value = value; });
             if(!(from.pads == to.pads)) { padMap_ = to.pads; heldPads_ = {}; }
+            if(from.assignments != to.assignments) assignments_ = to.assignments;
             if(!sameMappings(from.mappings, to.mappings))
             {
                 for(const auto& m : graph_.describe().mappings) graph_.unmapParamTarget(m.source, m.lane);
@@ -432,6 +433,7 @@ namespace oscairn
                     if(!sameMacro(a.macros[i], b.macros[i])) return {"Control " + b.macros[i].name, "macro:" + std::to_string(b.macros[i].id)};
             }
             if(!(a.pads == b.pads)) return {"Pads", "pads"};
+            if(a.assignments != b.assignments) return {"Physical controls", ""};
             return {"Parameter mapping", ""};
         }
     }

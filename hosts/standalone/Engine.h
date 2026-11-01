@@ -59,6 +59,12 @@ namespace oscairn::standalone
         void setControl(const std::string& name,double value);
         const std::vector<Macro>& controls() const {return macros_;}
         void setControl(uint32_t id,double value);
+        // Physical controls (RFC 0011): the Performance's overrides, and the device's control
+        // moved last ("knob:2"), counted so each move shows, for learn.
+        std::vector<AssignmentOverride> assignments() const {try{return control_->assignments();}catch(const std::exception&){return {};}}
+        void touched(const std::string& control){touched_=control;++touches_;}
+        const std::string& lastTouched() const {return touched_;}
+        uint32_t touches() const {return touches_;}
         void selectTrack(uint32_t track){sequenceTrack_=std::min(track,1u);}
         // The row selected on screen (RFC 0019): the parameters a device's knobs bound "row:N"
         // play, in order, and how many such knobs the device has and on which edge of its
@@ -149,6 +155,8 @@ namespace oscairn::standalone
         Control* control_=nullptr;
         uint32_t sequenceTrack_=0;
         std::vector<RowParam> row_;
+        std::string touched_;
+        uint32_t touches_=0;
         int rowKnobs_=0;
         Edge rowEdge_=Edge::Bottom;
         std::array<uint16_t,128> padChannels_{};

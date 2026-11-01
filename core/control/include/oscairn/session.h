@@ -185,6 +185,8 @@ namespace oscairn
         void setPadMap( const PadMap& map ) override;
         bool pad( uint32_t pad, bool on, double velocity, int channel = 0 ) override;
         bool padPressure( uint32_t pad, double pressure ) override;
+        std::vector<AssignmentOverride> assignments() const override;
+        void assign( const std::string& control, const Assignment& target ) override;
 
         struct MidiClockEvent
         {
@@ -264,6 +266,7 @@ namespace oscairn
             std::vector<SceneParameter> untouched;
             std::vector<Macro> macros;
             PadMap pads;
+            std::vector<AssignmentOverride> assignments;
             std::vector<Graph::Mapping> mappings;
             std::map<NodeId, std::pair<std::string, Graph::Node>> nodes;
             std::set<NodeId> disabled;
@@ -359,6 +362,7 @@ namespace oscairn
         uint32_t scene_ = 0, nextScene_ = 1;
         uint32_t mappingScene_ = 0; // the scene last selected that set the mappings: those off in it are off
         std::vector<Macro> macros_;
+        std::vector<AssignmentOverride> assignments_; // physical controls' overrides (physical_controls.cpp)
         uint32_t nextMacro_ = 1;
         bool staged_ = false;
         PerformanceInfo info_; // the open Performance's; its ID is made at its first save

@@ -169,13 +169,28 @@ int main(int argc, char** argv)
                     app.attach(frame.bar(), [] {});
                     auto& play = app.play();
                     check(play.isVisible() && !app.editing(), "the Performance app opens in Play");
-                    auto names = [&] { std::string out; for(const auto& m : play.knobControls()) out += m.name + ","; return out; };
+                    auto names = [&] { std::string out; for(const auto& s : play.knobSlots()) if(!s.label.empty()) out += s.label + ","; return out; };
+                    auto settle = [&] { for(int i = 0; i < 30; ++i) juce::MessageManager::getInstance()->runDispatchLoopUntil(10); };
                     check(names() == "Brightness,Swell,", "the knobs follow the Performance's controls: " + names());
                     play.select(piano); play.showPartControls(true);
-                    check(play.showsPartControls() && names() == "Drive,", "switched, the selected part's own: " + names());
-                    play.showPartControls(false);
-                    for(int i = 0; i < 30; ++i) juce::MessageManager::getInstance()->runDispatchLoopUntil(10); // its meters' first readings
+                    check(play.showsPartControls() && names() == "Drive," && play.knobSlots()[0].bank == "Assign 1\xE2\x80\x93" "4", "switched, the selected part's banks: its own controls first: " + names());
+                    play.select(bass); play.showPartControls(true);
+                    check(play.knobSlots()[0].target.kind == Assignment::Kind::Parameter && play.knobSlots()[0].layer == AssignmentLayer::Role && play.knobSlots()[0].label.rfind("Basic Synth", 0) == 0,
+                          "a part with no controls: its instrument's first parameters, past its Transpose: " + play.knobSlots()[0].label);
+                    play.showPartControls(false); play.select(piano);
+                    // Learn, on a device with knobs: move one, then touch a target.
+                    engine.setRowKnobs(4, standalone::Engine::Edge::Right);
+                    const auto verse = engine.graph().scenes.front().id;
+                    play.learn(true); engine.touched("knob:3"); settle();
+                    snapshot(frame, "play-learn");
+                    Assignment scene; scene.kind = Assignment::Kind::Scene; scene.id = verse;
+                    play.learnTarget(scene); settle();
+                    check(!play.learning() && engine.assignments().size() == 1 && engine.assignments()[0].control == "knob:3", "learn assigns the knob moved to what is touched");
+                    check(wait([&] { return names() == "Brightness,Swell,Verse,"; }) && play.knobSlots()[2].layer == AssignmentLayer::Override, "and the knob plays it: " + names());
+                    settle();
                     snapshot(frame, "play-panel");
+                    engine.setRowKnobs(0, standalone::Engine::Edge::Bottom);
+                    engine.edit([](Control& c) { c.assign("knob:3", {}); });
                     app.edit(true);
                     check(app.editing() && !play.isVisible(), "Edit shows the parts views");
                     app.edit(false);

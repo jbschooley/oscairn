@@ -494,6 +494,20 @@ namespace oscairn
     void RemoteControl::allNotesOff() { impl_->call("notes.panic"); }
     bool RemoteControl::note(bool on,int key,double velocity,int channel)
     {try{impl_->call("notes.send",std::string("{\"on\":")+(on?"true":"false")+",\"key\":"+std::to_string(key)+",\"velocity\":"+encode(velocity)+",\"channel\":"+std::to_string(channel)+'}');return true;}catch(const RpcError& e){if(e.code==-32005)return false;throw;}}
+    std::vector<AssignmentOverride> RemoteControl::assignments() const
+    {
+        auto doc=impl_->call("assignments.get");std::vector<AssignmentOverride> out;
+        for(auto a:array(field(field(doc.get(),"result"),"assignments"))){
+            AssignmentOverride o;o.control=string(field(a,"control"));const auto kind=string(field(a,"kind"));
+            for(size_t k=0;k<assignmentKinds.size();++k)if(kind==assignmentKinds[k])o.target.kind=Assignment::Kind(k);
+            o.target.node=static_cast<NodeId>(integer(field(a,"node")));o.target.param=static_cast<uint32_t>(integer(field(a,"param")));o.target.id=static_cast<uint32_t>(integer(field(a,"id")));
+            out.push_back(std::move(o));}
+        return out;
+    }
+    void RemoteControl::assign(const std::string& control,const Assignment& t)
+    {
+        impl_->call("assignments.set","{\"control\":"+quote(control)+",\"kind\":\""+assignmentKinds[size_t(t.kind)]+"\",\"node\":"+std::to_string(t.node)+",\"param\":"+std::to_string(t.param)+",\"id\":"+std::to_string(t.id)+'}');impl_->refresh();
+    }
     PadMap RemoteControl::padMap() const
     {
         auto doc=impl_->call("pads.get");auto root=field(doc.get(),"result");PadMap map;

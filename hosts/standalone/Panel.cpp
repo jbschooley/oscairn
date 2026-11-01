@@ -72,7 +72,9 @@ namespace oscairn::standalone
                 row_ = std::atoi( c.bind.c_str() + 4 );
                 layoutLabel_ = label_;
                 slider_.textFromValueFunction = [this]( double v ) { return rowControl_ ? juce::String( juce::roundToInt( v * 100 ) ) + "%" : node_.empty() ? juce::String() : juce::String( engine_.paramText( node_, param_, v ) ); };
-                slider_.onValueChange         = [this] { if( rowControl_ ) engine_.setControl( rowControl_, slider_.getValue() ); else if( !node_.empty() ) engine_.setParam( node_, param_, slider_.getValue() ); };
+                slider_.onValueChange         = [this] {
+                    engine_.touched( "knob:" + std::to_string( row_ ) ); // for learn (RFC 0011)
+                    if( rowControl_ ) engine_.setControl( rowControl_, slider_.getValue() ); else if( !node_.empty() ) engine_.setParam( node_, param_, slider_.getValue() ); };
                 slider_.onDragStart           = [this] { if( !node_.empty() ) engine_.paramGesture( node_, param_, true ); };
                 slider_.onDragEnd             = [this] { if( !node_.empty() ) engine_.paramGesture( node_, param_, false ); };
                 refresh();

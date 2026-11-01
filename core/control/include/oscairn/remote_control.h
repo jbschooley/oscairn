@@ -139,6 +139,8 @@ namespace oscairn
         void setPadMap(const PadMap& map) override;
         bool pad(uint32_t pad,bool on,double velocity,int channel=0) override;
         bool padPressure(uint32_t pad,double pressure) override;
+        std::vector<AssignmentOverride> assignments() const override;
+        void assign(const std::string& control,const Assignment& target) override;
     private:
         struct Impl;
         std::unique_ptr<Impl> impl_;

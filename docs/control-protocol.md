@@ -164,6 +164,8 @@ request members.
 | `pads.set` | `map` (as `pads.get` returns it) | `{"accepted":true}` |
 | `pads.play` | `pad` (0..15, from the bottom-left), `on`, optional `velocity` and `channel` (the player's) | `{"accepted":true}` |
 | `pads.pressure` | `pad`, `pressure` (0..1) | `{"accepted":true}` |
+| `assignments.get` | omitted or `{}` | `{"assignments":[...]}`: the Performance's physical-control overrides ([RFC 0011](rfcs/0011-performance-ui-and-editors.md#physical-controls)), each `control` (`knob:N`, `slider:N` or `button:N`), `kind` (`parameter`, `control`, `partLevel`, `partMute`, `scene`), `node` and `param` for a parameter, `id` (the control, part or scene) otherwise |
+| `assignments.set` | `control`, `kind` (as above, or `none` to remove its override), `node` and `param`, or `id` | `{"accepted":true}`; an unknown control or target is refused (-32003). An edit: undone with `edit.undo`, saved with the Performance |
 | `notes.send` | `on` (boolean), `key` (0..127), optional `velocity` (0..1), optional `channel` (0..15) | `{"accepted":true}` |
 | `notes.panic` | `{}` | `{"accepted":true}`: all notes off. Every note played from the keys, MIDI inputs and `notes.send` is released at the next block |
 
@@ -704,7 +706,7 @@ intentionally combines them before the effects. Allocate different buses for dif
 
 `performance.save` and `performance.load` take `{"directory":"/path/to/performance"}`;
 returns are `{"saved":true}` and `{"loaded":true}`. Both are advertised by `session.hello`.
-Files use the [Performance version 5 format/schema](performance-format.md). Saving refuses
+Files use the [Performance version 6 format/schema](performance-format.md). Saving refuses
 existing directories and staged graph edits. Loading validates a complete replacement;
 a load failure leaves the playing graph intact. Successful publication emits a graph resync,
 invalidates old node/context references, and starts stopped at beat zero on adoption. The

@@ -370,5 +370,10 @@ namespace oscairn
         virtual void setPadMap( const PadMap& map ) = 0;
         virtual bool pad( uint32_t pad, bool on, double velocity, int channel = 0 ) = 0;
         virtual bool padPressure( uint32_t pad, double pressure ) = 0; // 0..1, as the pad's assignment sends it
+
+        // Physical controls (RFC 0011, physical_controls.h): the Performance's overrides, by
+        // the control's logical identity. Assigning Kind::None removes one; saved with it.
+        virtual std::vector<AssignmentOverride> assignments() const = 0;
+        virtual void assign( const std::string& control, const Assignment& target ) = 0;
     };
 }

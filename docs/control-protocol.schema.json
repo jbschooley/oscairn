@@ -4170,6 +4170,89 @@
               "$ref": "#/$defs/Id"
             },
             "method": {
+              "const": "assignments.get"
+            },
+            "params": {
+              "type": "object",
+              "properties": {},
+              "required": [],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
+              "const": "assignments.set"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "control": {
+                  "type": "string",
+                  "pattern": "^(knob|slider|button):[1-9][0-9]{0,2}$"
+                },
+                "kind": {
+                  "enum": [
+                    "none",
+                    "parameter",
+                    "control",
+                    "partLevel",
+                    "partMute",
+                    "scene"
+                  ]
+                },
+                "node": {
+                  "type": [
+                    "integer",
+                    "string"
+                  ]
+                },
+                "param": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "id": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              },
+              "required": [
+                "control",
+                "kind"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "params"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
               "const": "pads.get"
             },
             "params": {

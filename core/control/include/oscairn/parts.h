@@ -190,6 +190,20 @@ namespace oscairn
     // its plugins and its other controls, and go with it into a Sound.
     struct Macro { uint32_t id = 0; std::string name; double value = 0; std::vector<MacroTarget> targets; uint32_t part = 0; };
 
+    // Physical controls (RFC 0011): what a knob, slider or button is assigned to. Defaults come in
+    // layers (physical_controls.h); a Performance override sets one by the control's logical
+    // identity in a device layout, "knob:1", "slider:3" or "button:12", and is saved with it.
+    struct Assignment
+    {
+        enum class Kind { None, Parameter, Control, PartLevel, PartMute, Scene } kind = Kind::None;
+        NodeId node = 0; uint32_t param = 0; // Parameter
+        uint32_t id = 0;                     // Control, PartLevel, PartMute, Scene: the control, part or scene
+        bool operator==(const Assignment&) const = default;
+    };
+    inline constexpr std::array<const char*, 6> assignmentKinds{"none", "parameter", "control", "partLevel", "partMute", "scene"};
+    struct AssignmentOverride { std::string control; Assignment target; bool operator==(const AssignmentOverride&) const = default; };
+    bool validPhysicalControl(const std::string& control); // knob, slider or button, then a colon and 1 to 999
+
     // A scene: a state of the Performance for a section of a song (RFC 0011's full model). Storing
     // one records all of it: which plugins and wires are off, each part's mute and solo, the mix
     // (each part's level, pan and sends, each lane's Mix, each user wire's Mix row), every plugin

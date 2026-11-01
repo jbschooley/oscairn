@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Oscairn Performance version 5",
+  "title": "Oscairn Performance version 6",
   "description": "performance.json inside a Performance folder. See performance-format.md for binary state, asset limits, plugin validation and transactional loading. Runtime node/context IDs and live voices are not persisted. Wires and parts (RFC 0011) define the graph's audio routes and note connections.",
   "type": "object",
   "properties": {
@@ -8,7 +8,7 @@
       "const": "oscairn.performance"
     },
     "version": {
-      "const": 5
+      "const": 6
     },
     "info": {
       "type": "object",
@@ -247,6 +247,69 @@
         "$ref": "#/$defs/Control"
       }
     },
+    "assignments": {
+      "type": "array",
+      "maxItems": 4096,
+      "description": "Physical controls' overrides (RFC 0011), by the control's logical identity in a device layout; each control at most once",
+      "items": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "control": {
+                "$ref": "#/$defs/PhysicalControl"
+              },
+              "kind": {
+                "const": "parameter"
+              },
+              "node": {
+                "$ref": "#/$defs/NodeKey"
+              },
+              "param": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 4294967295
+              }
+            },
+            "required": [
+              "control",
+              "kind",
+              "node",
+              "param"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "control": {
+                "$ref": "#/$defs/PhysicalControl"
+              },
+              "kind": {
+                "enum": [
+                  "control",
+                  "partLevel",
+                  "partMute",
+                  "scene"
+                ]
+              },
+              "id": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 4294967295,
+                "description": "The control, part or scene"
+              }
+            },
+            "required": [
+              "control",
+              "kind",
+              "id"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      }
+    },
     "lock": {
       "type": "object",
       "description": "The plugin builds it was saved with (RFC 0006): for each plugin and platform, the build's digest, so an archive or a device can tell it has exactly that build",
@@ -314,10 +377,15 @@
     "sceneUntouched",
     "scene",
     "controls",
+    "assignments",
     "lock"
   ],
   "additionalProperties": false,
   "$defs": {
+    "PhysicalControl": {
+      "type": "string",
+      "pattern": "^(knob|slider|button):[1-9][0-9]{0,2}$"
+    },
     "NodeKey": {
       "type": "string",
       "pattern": "^node-[0-9]{1,7}$"

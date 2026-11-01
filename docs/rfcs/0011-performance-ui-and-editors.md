@@ -15,7 +15,7 @@ Checked when built and tested; the sections below say how.
 - [x] 4. Routing view on the desktop ([status](#step-4-status))
 - [x] Undo for every edit ([status](#undo-status)); preset and state loads remain
 - [ ] 5. Editors: knob pages for every plugin (started through [RFC 0019](0019-adaptive-ui.md)'s generated editors), the Modular grid
-- [ ] 6. Physical controls: default layers, overrides, learn, banks
+- [ ] 6. Physical controls: default layers, overrides, learn, banks (layers, banks, overrides saved and learn on a panel's knobs done; [status](#step-6-status))
 - [ ] 7. Groups, pedal view, move, copy and share
 - [x] Play: the Performance app's view for the stage ([design](#play-the-performance-apps-first-view), [status](#play-status))
 - [x] The full scene model (blocks and wires enabled per scene, what each scene saves),
@@ -661,6 +661,46 @@ loading; the socket test and `desktop-pad-editor` cover the protocol and the eng
 Not yet: undo of preset and state loads, which replace a plugin's
 whole state outside this model; and a plugin's own edits in its window, which reach the host
 as parameter changes it reports, not edits made here.
+
+## Step 6 status
+
+Started 2026-11-01 (`core/control/include/oscairn/physical_controls.h`,
+`src/physical_controls.cpp`). Assignments resolve in the layers above, each filling only what
+the ones above left empty:
+
+1. **Overrides**, saved in the Performance (format version 6, `assignments`) by the control's
+   logical identity (`knob:N`, `slider:N`, `button:N`), each to a parameter, a control, a part's
+   level or mute, or a scene. An override whose target is gone falls through to the defaults
+   and is left out at save. Assigning is an edit, undone like any other.
+2. **The sound's own assignments**: the selected part's controls, as Assign banks.
+3. **Role banks** (Filter: cutoff, resonance, filter envelope, key tracking; Amp EG: attack,
+   decay, sustain, release) from declared roles, a missing role left blank; with no roles and no
+   controls, Assign banks from the part's instrument's first parameters in `oscairn.ui`
+   priority order.
+4. **Conventions**: sliders play part levels and buttons part mutes (parts, then buses); with no
+   part selected the knobs follow the Performance's own controls.
+5. **The effects bank**: each effect's main control (its `mix` role, else its first parameter
+   by priority) in chain order.
+
+Banks come in fours; `resolveControls` pages them on a four-knob device and shows two at once
+on an eight-knob one. `assignments.get` and `assignments.set` carry overrides over the control
+protocol. Play's knob row shows the resolved bank (its name, or Override, on each knob) and a
+device's `row:N` knobs play it. **Learn** (a top bar action on a device with knobs): move a
+knob, then touch a strip (its level), its M (its mute), a scene or a knob (its target);
+Default removes the override.
+
+`control-physical-controls` checks each layer, roles in their places, paging, overrides on
+knobs, sliders and buttons, refusals, falling through, undo and redo, and saving and loading
+(with an override to a removed plugin left out). `desktop-shell` checks Play's knobs through
+the layers (a part's own controls, its instrument's first parameters past a Transpose) and
+learn assigning a moved knob to a scene; its snapshots were looked at.
+
+Not yet: plugins cannot declare roles (an `oscairn.ui` addition, so the role banks are only
+reached through the API's role function today); sliders and buttons have no panel controls
+bound to them, so their conventions and overrides are resolved but not yet played; device
+profiles' control counts are not read into the resolution (Play uses the panel's row knobs);
+targets for sends, bypass and the transport; overrides in a Performance import; MIDI CC
+learn; reporting overrides a device could not apply.
 
 ## Play status
 

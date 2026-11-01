@@ -32,8 +32,8 @@ namespace oscairn::standalone
         }
     }
 
-    /// A knob of the row: the control's name, what it drives and its value beside a rotary in
-    /// the theme's style; blank where the bank has no control.
+    /// A knob of the row: what it plays (from the physical controls' layers) and its value
+    /// beside a rotary in the theme's style, with its bank; blank where the bank has none.
     class PlayView::Knob : public juce::Component
     {
     public:
@@ -42,47 +42,56 @@ namespace oscairn::standalone
             slider_.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
             slider_.setTextBoxStyle(juce::Slider::NoTextBox, true, 0, 0);
             slider_.setRange(0, 1);
-            slider_.onValueChange = [this] { const auto id = id_; const double v = slider_.getValue(); if(id) view_.engine_.setControl(id, v); repaint(); };
+            slider_.onValueChange = [this] { view_.play(slot_.target, slider_.getValue()); repaint(); };
+            slider_.onDragStart = [this] { view_.gesture(slot_.target, true); };
+            slider_.onDragEnd = [this] { view_.gesture(slot_.target, false); };
             addChildComponent(slider_);
         }
-        void set(const Macro* control, const std::string& detail)
+        const ResolvedControl& slot() const { return slot_; }
+        void set(const ResolvedControl& slot)
         {
-            id_ = control ? control->id : 0;
-            name_ = control ? text(control->name) : juce::String();
-            detail_ = text(detail);
-            slider_.setVisible(control != nullptr);
-            if(control && !slider_.isMouseButtonDown()) slider_.setValue(control->value, juce::dontSendNotification);
+            if(!(slot.target == slot_.target))
+            {
+                const auto [low, high] = view_.rangeOf(slot.target);
+                slider_.setRange(low, high);
+            }
+            slot_ = slot;
+            const bool any = slot.target.kind != Assignment::Kind::None;
+            slider_.setVisible(any);
+            slider_.setEnabled(slot.target.kind != Assignment::Kind::Scene);
+            if(any && !slider_.isMouseButtonDown()) slider_.setValue(view_.valueOf(slot.target), juce::dontSendNotification);
             repaint();
         }
         void paint(juce::Graphics& g) override
         {
             drawSection(g, getLocalBounds(), ink(Ink::Surface));
+            if(view_.learning_ && view_.learnFrom_.isNotEmpty()) drawEdge(g, getLocalBounds().toFloat().reduced(1), themeData().radius + 2, true); // a target to touch
             const int m = view_.mode();
             auto r = getLocalBounds().reduced(12, 8).withTrimmedLeft(slider_.getRight() - 2);
             const juce::Font small{juce::FontOptions(textSize(TextRole::Small, m))}, body{juce::FontOptions(textSize(TextRole::Body, m), juce::Font::bold)};
             const int line = int(textSize(TextRole::Body, m)) + 6;
-            if(!id_)
+            if(slot_.target.kind == Assignment::Kind::None)
             {
                 g.setColour(ink(Ink::Muted)); drawInked(g, "No control", r, small);
                 return;
             }
             auto block = r.withSizeKeepingCentre(r.getWidth(), line * 3);
-            // The physical knob it follows on a device, as its panel numbers them.
-            if(view_.engine_.rowKnobs() > 0) { g.setColour(ink(Ink::Accent)); drawInked(g, juce::String(index_ + 1), block.removeFromTop(line), small.boldened()); }
-            else block.translate(0, line / 2);
-            g.setColour(ink(Ink::Text)); drawInked(g, name_, block.removeFromTop(line), body);
-            g.setColour(ink(Ink::Muted)); drawInked(g, detail_ + juce::String::fromUTF8(" · ") + juce::String(juce::roundToInt(slider_.getValue() * 100)) + "%", block.removeFromTop(line), small);
+            // Its bank, or Override, after the physical knob it follows on a device.
+            const auto where = slot_.layer == AssignmentLayer::Override ? juce::String("Override") : text(slot_.bank);
+            g.setColour(ink(Ink::Accent)); drawInked(g, view_.engine_.rowKnobs() > 0 ? juce::String(index_ + 1) + juce::String::fromUTF8(" · ") + where : where, block.removeFromTop(line), small.boldened());
+            g.setColour(ink(Ink::Text)); drawInked(g, text(slot_.label), block.removeFromTop(line), body);
+            g.setColour(ink(Ink::Muted)); drawInked(g, view_.describe(slot_.target, slider_.getValue()), block.removeFromTop(line), small);
         }
         void resized() override
         {
             const int side = getHeight() - 16;
             slider_.setBounds(10, 8, side, side);
         }
+        void mouseUp(const juce::MouseEvent& e) override { if(!e.mouseWasDraggedSinceMouseDown()) view_.learnTarget(slot_.target); }
     private:
         PlayView& view_;
         int index_;
-        uint32_t id_ = 0;
-        juce::String name_, detail_;
+        ResolvedControl slot_;
         juce::Slider slider_;
     };
 
@@ -99,7 +108,9 @@ namespace oscairn::standalone
             fader_.setSkewFactorFromMidPoint(.25); // -12 dB halfway up, as the Mixer's
             fader_.setTooltip("The part's level, before its sends");
             fader_.onValueChange = [this] { const auto id = part_; const double v = fader_.getValue(); const bool m = mute_.getToggleState(); view_.engine_.edit([id, v, m](Control& c) { c.setPartLevel(id, v, m); c.commit(); }); };
-            mute_.onClick = [this] { const auto id = part_; const double v = fader_.getValue(); const bool m = mute_.getToggleState(); view_.engine_.edit([id, v, m](Control& c) { c.setPartLevel(id, v, m); c.commit(); }); };
+            mute_.onClick = [this] {
+                if(view_.learning_ && view_.learnFrom_.isNotEmpty()) { mute_.setToggleState(!mute_.getToggleState(), juce::dontSendNotification); Assignment t; t.kind = Assignment::Kind::PartMute; t.id = part_; view_.learnTarget(t); return; }
+                const auto id = part_; const double v = fader_.getValue(); const bool m = mute_.getToggleState(); view_.engine_.edit([id, v, m](Control& c) { c.setPartLevel(id, v, m); c.commit(); }); };
             solo_.onClick = [this] { const auto id = part_; const bool s = solo_.getToggleState(); view_.engine_.edit([id, s](Control& c) { c.setPartSolo(id, s); c.commit(); }); };
             for(auto* c : std::initializer_list<juce::Component*>{&fader_, &mute_, &solo_}) addAndMakeVisible(c);
         }
@@ -148,7 +159,9 @@ namespace oscairn::standalone
         }
         void mouseUp(const juce::MouseEvent& e) override
         {
-            if(!e.mouseWasDraggedSinceMouseDown() && e.y < detailArea().getBottom() + 4) view_.select(view_.selected_ == part_ ? 0 : part_);
+            if(e.mouseWasDraggedSinceMouseDown() || e.y >= detailArea().getBottom() + 4) return;
+            if(view_.learning_ && view_.learnFrom_.isNotEmpty()) { Assignment t; t.kind = Assignment::Kind::PartLevel; t.id = part_; view_.learnTarget(t); return; }
+            view_.select(view_.selected_ == part_ ? 0 : part_);
         }
     private:
         juce::Rectangle<int> inner() const { return getLocalBounds().reduced(10, 10); }
@@ -176,7 +189,10 @@ namespace oscairn::standalone
         partControlsButton_.onClick = [this] { showPartControls(true); };
         pageButton_.setTooltip("The next bank of controls");
         pageButton_.onClick = [this] { ++page_; shape_.clear(); refresh(); };
-        for(auto* c : std::initializer_list<juce::Component*>{&previous_, &next_, &performanceControls_, &partControlsButton_, &pageButton_}) addChildComponent(c);
+        learnDefault_.setTooltip("Back to what the knob plays by default");
+        learnDefault_.onClick = [this] { learned({}); };
+        learnDone_.onClick = [this] { learn(false); };
+        for(auto* c : std::initializer_list<juce::Component*>{&previous_, &next_, &performanceControls_, &partControlsButton_, &pageButton_, &learnDefault_, &learnDone_}) addChildComponent(c);
         viewport_.setViewedComponent(&stripRow_, false);
         viewport_.setScrollBarsShown(false, true);
         addAndMakeVisible(viewport_);
@@ -194,6 +210,11 @@ namespace oscairn::standalone
     void PlayView::timerCallback()
     {
         if(!isVisible()) return; // Edit's views are showing
+        if(learning_ && engine_.touches() != touches_)
+        {
+            touches_ = engine_.touches(); learnFrom_ = text(engine_.lastTouched());
+            learnDefault_.setVisible(true); for(auto& k : knobs_) k->repaint(); repaint();
+        }
         meters_.clear();
         for(const auto& m : engine_.meters()) meters_[m.part] = m.channels;
         for(auto& s : strips_) s->repaint();
@@ -206,29 +227,26 @@ namespace oscairn::standalone
         state_ = readParts(graph_);
         const auto* part = [&]() -> const PartRow* { for(const auto* list : {&state_.parts, &state_.buses}) for(const auto& p : *list) if(p.id == selected_) return &p; return nullptr; }();
         if(selected_ && !part) { selected_ = 0; partControls_ = false; }
-        // The knobs' controls: the Performance's, or the selected part's own.
+        // The knobs: the Performance's controls, or the selected part's banks, through the
+        // physical controls' layers (overrides first).
         const uint32_t owner = partControls_ && selected_ ? selected_ : 0;
-        knobControls_.clear();
-        for(const auto& m : graph_.macros) if(m.part == owner) knobControls_.push_back(m);
-        const int banks = std::max(1, (int(knobControls_.size()) + knobs() - 1) / knobs());
+        source_ = assignmentSource(graph_, engine_.assignments(), [this](NodeId node) { return parametersOf(node); });
+        const int banks = int(knobPages(source_, uint32_t(knobs()), owner));
         page_ %= banks;
+        knobSlots_ = resolveControls(source_, {uint32_t(knobs()), 0, 0}, owner, uint32_t(page_));
+        pageButton_.setVisible(banks > 1);
         // Rebuilt when what shows changes, so a fader being moved survives the rest.
-        std::string shape = std::to_string(getWidth()) + "x" + std::to_string(getHeight()) + "/" + std::to_string(owner) + "/" + std::to_string(page_) + "/" + std::to_string(selected_);
+        std::string shape = std::to_string(getWidth()) + "x" + std::to_string(getHeight()) + "/" + std::to_string(owner) + "/" + std::to_string(banks) + "/" + std::to_string(selected_);
         for(const auto* list : {&state_.parts, &state_.buses}) for(const auto& p : *list) shape += "," + std::to_string(p.id);
         if(shape != shape_) { shape_ = shape; rebuild(); }
         for(auto& s : strips_) for(const auto* list : {&state_.parts, &state_.buses}) for(const auto& p : *list) if(p.id == s->part()) s->set(p);
-        for(size_t i = 0; i < knobs_.size(); ++i)
-        {
-            const size_t at = size_t(page_ * knobs()) + i;
-            knobs_[i]->set(at < knobControls_.size() ? &knobControls_[at] : nullptr, at < knobControls_.size() ? targetsOf(knobControls_[at], graph_, state_) : std::string());
-        }
+        for(size_t i = 0; i < knobs_.size() && i < knobSlots_.size(); ++i) knobs_[i]->set(knobSlots_[i]);
         const bool setlist = inSetlist && inSetlist();
         if(setlist != previous_.isVisible()) { previous_.setVisible(setlist); next_.setVisible(setlist); resized(); }
         if(part) partControlsButton_.setButtonText(text(part->name));
         performanceControls_.setToggleState(!owner, juce::dontSendNotification);
         partControlsButton_.setToggleState(owner != 0, juce::dontSendNotification);
         pageButton_.setButtonText("Bank " + juce::String(page_ + 1) + "/" + juce::String(banks));
-        pageButton_.setVisible(banks > 1);
         publishRow();
         repaint();
     }
@@ -238,13 +256,106 @@ namespace oscairn::standalone
     {
         if(!isShowing() || engine_.rowKnobs() <= 0) return;
         std::vector<Engine::RowParam> row;
-        for(int i = 0; i < knobs(); ++i)
+        for(const auto& slot : knobSlots_)
         {
-            const size_t at = size_t(page_ * knobs() + i);
-            if(at >= knobControls_.size()) break;
-            row.push_back({{}, 0, knobControls_[at].name, knobControls_[at].id});
+            const auto& t = slot.target;
+            // shortcut: a device's knob plays a parameter or a control; levels, mutes and scenes on a knob show here only.
+            if(t.kind == Assignment::Kind::Parameter) row.push_back({nodeName(t.node), t.param, slot.label, 0});
+            else if(t.kind == Assignment::Kind::Control) row.push_back({{}, 0, slot.label, t.id});
+            else row.push_back({});
         }
         engine_.setRow(std::move(row));
+    }
+
+    std::vector<Control::ParamInfo> PlayView::parametersOf(NodeId node)
+    {
+        // Read once per plugin: a node replaced by another plugin is read again.
+        std::string plugin;
+        for(const auto& n : graph_.topology.nodes) if(n.id == node) plugin = n.plugin.id;
+        auto& cached = parameters_[node];
+        if(cached.first != plugin || plugin.empty()) { try { cached = {plugin, engine_.parameters(node)}; } catch(const std::exception&) { cached = {plugin, {}}; } }
+        return cached.second;
+    }
+
+    std::string PlayView::nodeName(NodeId node) const
+    {
+        const auto it = graph_.names.find(node);
+        return it == graph_.names.end() ? std::string() : it->second;
+    }
+
+    const PartRow* PlayView::partRow(uint32_t id) const
+    {
+        for(const auto* list : {&state_.parts, &state_.buses}) for(const auto& p : *list) if(p.id == id) return &p;
+        return nullptr;
+    }
+
+    std::pair<double, double> PlayView::rangeOf(const Assignment& t) const
+    {
+        if(t.kind == Assignment::Kind::Parameter && engine_.hasParam(nodeName(t.node), t.param)) { const auto info = engine_.paramInfo(nodeName(t.node), t.param); return {info.minimum, info.maximum}; }
+        return {0.0, 1.0};
+    }
+
+    double PlayView::valueOf(const Assignment& t) const
+    {
+        switch(t.kind)
+        {
+        case Assignment::Kind::Parameter: return engine_.hasParam(nodeName(t.node), t.param) ? engine_.param(nodeName(t.node), t.param) : 0.0;
+        case Assignment::Kind::Control: for(const auto& m : graph_.macros) if(m.id == t.id) return m.value; return 0.0;
+        case Assignment::Kind::PartLevel: if(const auto* p = partRow(t.id)) return p->level; return 0.0;
+        case Assignment::Kind::PartMute: if(const auto* p = partRow(t.id)) return p->mute ? 1.0 : 0.0; return 0.0;
+        case Assignment::Kind::Scene: return graph_.scene == t.id ? 1.0 : 0.0;
+        case Assignment::Kind::None: break;
+        }
+        return 0.0;
+    }
+
+    void PlayView::play(const Assignment& t, double v)
+    {
+        switch(t.kind)
+        {
+        case Assignment::Kind::Parameter: engine_.setParam(nodeName(t.node), t.param, v); break;
+        case Assignment::Kind::Control: engine_.setControl(t.id, v); break;
+        case Assignment::Kind::PartLevel: { const auto* p = partRow(t.id); const bool m = p && p->mute; const auto id = t.id; engine_.edit([id, v, m](Control& c) { c.setPartLevel(id, v, m); c.commit(); }); break; }
+        case Assignment::Kind::PartMute: { const auto* p = partRow(t.id); const double level = p ? p->level : 1; const auto id = t.id; const bool m = v >= .5; engine_.edit([id, level, m](Control& c) { c.setPartLevel(id, level, m); c.commit(); }); break; }
+        case Assignment::Kind::Scene: case Assignment::Kind::None: break;
+        }
+    }
+
+    void PlayView::gesture(const Assignment& t, bool begin)
+    {
+        if(t.kind == Assignment::Kind::Parameter) engine_.paramGesture(nodeName(t.node), t.param, begin);
+    }
+
+    juce::String PlayView::describe(const Assignment& t, double v) const
+    {
+        switch(t.kind)
+        {
+        case Assignment::Kind::Parameter: return text(engine_.paramText(nodeName(t.node), t.param, v));
+        case Assignment::Kind::Control: for(const auto& m : graph_.macros) if(m.id == t.id) return text(targetsOf(m, graph_, state_)) + juce::String::fromUTF8(" · ") + juce::String(juce::roundToInt(v * 100)) + "%"; return {};
+        case Assignment::Kind::PartLevel: return v > 0 ? juce::String(20 * std::log10(v), 1) + " dB" : juce::String::fromUTF8("−∞ dB");
+        case Assignment::Kind::PartMute: return v >= .5 ? "Muted" : "On";
+        case Assignment::Kind::Scene: return graph_.scene == t.id ? "Playing" : "Scene";
+        case Assignment::Kind::None: break;
+        }
+        return {};
+    }
+
+    void PlayView::learn(bool on)
+    {
+        learning_ = on; learnFrom_.clear(); touches_ = engine_.touches();
+        learnDone_.setVisible(on); learnDefault_.setVisible(false);
+        resized(); repaint();
+        for(auto& k : knobs_) k->repaint();
+    }
+
+    void PlayView::learnTarget(const Assignment& t) { if(learning_ && learnFrom_.isNotEmpty() && t.kind != Assignment::Kind::None) learned(t); }
+
+    void PlayView::learned(const Assignment& t)
+    {
+        const auto control = learnFrom_.toStdString();
+        if(control.empty()) return;
+        engine_.edit([control, t](Control& c) { c.assign(control, t); });
+        learn(false);
     }
 
     void PlayView::rebuild()
@@ -290,6 +401,16 @@ namespace oscairn::standalone
         const int n = std::max(1, int(knobs_.size())), w = (knobs.getWidth() - gap * (n - 1)) / n;
         for(auto& k : knobs_) { k->setBounds(knobs.removeFromLeft(w)); knobs.removeFromLeft(gap); }
         area.removeFromTop(touch ? 12 : 10);
+        // Learning: what to do next, over the strips.
+        banner_ = {};
+        if(learning_)
+        {
+            banner_ = area.removeFromTop(touch ? 48 : 40);
+            auto buttons = banner_.reduced(6);
+            learnDone_.setBounds(buttons.removeFromRight(touch ? 90 : 76)); buttons.removeFromRight(6);
+            learnDefault_.setBounds(buttons.removeFromRight(touch ? 100 : 86));
+            area.removeFromTop(touch ? 10 : 8);
+        }
         // The strips: at least six across; more scroll sideways.
         viewport_.setBounds(area);
         const int count = std::max(1, int(strips_.size())), minWidth = touch ? 150 : 130;
@@ -320,6 +441,14 @@ namespace oscairn::standalone
             g.setColour(on ? ink(Ink::Accent) : filled ? ink(Ink::Text) : ink(Ink::Muted));
             drawInked(g, label, r.reduced(8, 0), filled ? name : small, juce::Justification::horizontallyCentred);
         }
+        if(!banner_.isEmpty())
+        {
+            g.setColour(ink(Ink::Accent).withAlpha(.16f)); g.fillRoundedRectangle(banner_.toFloat(), themeData().radius + 2);
+            const auto knob = learnFrom_.replaceCharacter(':', ' ').replaceSection(0, 1, learnFrom_.substring(0, 1).toUpperCase());
+            g.setColour(ink(Ink::Text));
+            drawInked(g, learnFrom_.isEmpty() ? juce::String("Learn: move a knob on the panel") : knob + ": touch what it should play: a strip, its M, a scene or a knob",
+                      banner_.reduced(14, 0).withRight(learnDefault_.getX() - 8), juce::Font(juce::FontOptions(textSize(TextRole::Body, m))));
+        }
         if(strips_.empty())
         {
             g.setColour(ink(Ink::Muted));
@@ -334,7 +463,8 @@ namespace oscairn::standalone
         {
             if(!scenes_[i].contains(e.getPosition())) continue;
             // shortcut: the first eight scenes only; page them when a Performance needs more.
-            if(i < graph_.scenes.size()) { const auto id = graph_.scenes[i].id; engine_.edit([id](Control& c) { c.selectScene(id); }); }
+            if(i < graph_.scenes.size() && learning_ && learnFrom_.isNotEmpty()) { Assignment t; t.kind = Assignment::Kind::Scene; t.id = graph_.scenes[i].id; learnTarget(t); }
+            else if(i < graph_.scenes.size()) { const auto id = graph_.scenes[i].id; engine_.edit([id](Control& c) { c.selectScene(id); }); }
             else if(i == graph_.scenes.size()) { const auto n = graph_.scenes.size() + 1; engine_.edit([n](Control& c) { c.addScene("Scene " + std::to_string(n)); }); }
             return;
         }
@@ -364,6 +494,7 @@ namespace oscairn::standalone
         const bool editing = parts_.isVisible();
         list.push_back({editing ? "Play" : "Edit", [safe = juce::Component::SafePointer<PerformanceApp>(this), editing] { if(safe) safe->edit(!editing); }, !editing});
         if(save_) list.push_back({"Save", save_});
+        if(!editing && play_.canLearn()) list.push_back({"Learn", [safe = juce::Component::SafePointer<PerformanceApp>(this)] { if(safe) safe->play_.learn(!safe->play_.learning()); }});
         bar_->setActions(std::move(list));
     }
 

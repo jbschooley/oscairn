@@ -394,7 +394,7 @@ namespace oscairn
             if( method == "session.hello" )
             {
                 fields(p, {});
-                return R"({"protocolVersion":1,"server":"oscairn","capabilities":["performance.save","performance.load","performance.export","budget.set","budget.estimate","performance.info","performance.setInfo","library.query","library.favorite","library.tag","library.edit","library.copy","library.export","audition.start","audition.stop","audition.get","library.rescan","library.contents","library.install","library.libraries","library.uninstall","library.delete","library.save","library.load","parts.saveSound","parts.loadSound","parts.fromSound","performance.contents","performance.import","state.info","state.save","presets.list","properties.list","properties.get","properties.set","properties.request","sounds.get","sounds.prepare","sounds.select","sounds.discard","assets.register","assets.import","assets.libraries","session.status","engine.attach","engine.release","params.list","params.get","params.set","params.text","params.gesture","graph.audio-routing","graph.get","graph.add","effects.create","effects.resources","graph.remove","graph.replace","graph.connect","graph.disconnect","graph.map","graph.unmap","graph.commit","parts.add","parts.remove","parts.insert","parts.removeNode","parts.move","parts.addSplit","parts.removeSplit","parts.addLane","parts.removeLane","parts.lane","parts.input","parts.output","parts.send","parts.level","parts.name","parts.solo","parts.pan","parts.meters","wires.meters","edit.undo","edit.redo","edit.history","wires.connect","wires.disconnect","wires.enable","graph.enable","wires.mix","wires.zones","scenes.add","scenes.store","scenes.select","scenes.remove","scenes.name","scenes.scope","scenes.transition","scenes.untouched","controls.add","controls.remove","controls.name","controls.targets","controls.set","subscribe","unsubscribe","transport.get","transport.set","notes.send","notes.panic","pads.get","pads.set","pads.play","pads.pressure"],"limits":{"messageBytes":65536,"depth":32,"batch":64,"parameterChanges":128}})";
+                return R"({"protocolVersion":1,"server":"oscairn","capabilities":["performance.save","performance.load","performance.export","budget.set","budget.estimate","performance.info","performance.setInfo","library.query","library.favorite","library.tag","library.edit","library.copy","library.export","audition.start","audition.stop","audition.get","library.rescan","library.contents","library.install","library.libraries","library.uninstall","library.delete","library.save","library.load","parts.saveSound","parts.loadSound","parts.fromSound","performance.contents","performance.import","state.info","state.save","presets.list","properties.list","properties.get","properties.set","properties.request","sounds.get","sounds.prepare","sounds.select","sounds.discard","assets.register","assets.import","assets.libraries","session.status","engine.attach","engine.release","params.list","params.get","params.set","params.text","params.gesture","graph.audio-routing","graph.get","graph.add","effects.create","effects.resources","graph.remove","graph.replace","graph.connect","graph.disconnect","graph.map","graph.unmap","graph.commit","parts.add","parts.remove","parts.insert","parts.removeNode","parts.move","parts.addSplit","parts.removeSplit","parts.addLane","parts.removeLane","parts.lane","parts.input","parts.output","parts.send","parts.level","parts.name","parts.solo","parts.pan","parts.meters","wires.meters","edit.undo","edit.redo","edit.history","wires.connect","wires.disconnect","wires.enable","graph.enable","wires.mix","wires.zones","scenes.add","scenes.store","scenes.select","scenes.remove","scenes.name","scenes.scope","scenes.transition","scenes.untouched","controls.add","controls.remove","controls.name","controls.targets","controls.set","subscribe","unsubscribe","transport.get","transport.set","notes.send","notes.panic","pads.get","pads.set","pads.play","pads.pressure","assignments.get","assignments.set"],"limits":{"messageBytes":65536,"depth":32,"batch":64,"parameterChanges":128}})";
             }
             if( method == "engine.attach" || method == "engine.release" )
             {
@@ -806,6 +806,30 @@ namespace oscairn
                     if( method == "controls.set" ) { fields(p,{"control","value"}); const auto v = number(member(p,"value")); if( v < 0 || v > 1 ) invalid("value is 0..1"); c.setMacro(integer(member(p,"control")),v); return R"({"accepted":true})"; }
                 }
                 catch( const std::invalid_argument& e ) { throw Failure{-32003,e.what()}; }
+            }
+            // Physical controls' overrides (RFC 0011), by the control's logical identity.
+            if( method == "assignments.get" )
+            {
+                fields(p,{});
+                std::vector<std::string> out;
+                for( const auto& o : c.assignments() )
+                    out.push_back("{\"control\":" + quote(o.control) + ",\"kind\":\"" + assignmentKinds[size_t(o.target.kind)] + "\",\"node\":" + std::to_string(o.target.node) +
+                                  ",\"param\":" + std::to_string(o.target.param) + ",\"id\":" + std::to_string(o.target.id) + '}');
+                return "{\"assignments\":" + join(out) + '}';
+            }
+            if( method == "assignments.set" )
+            {
+                fields(p,{"control","kind","node","param","id"});
+                Assignment t;
+                const auto kind = string(member(p,"kind"));
+                const auto at = std::find_if(assignmentKinds.begin(), assignmentKinds.end(), [&](const char* k) { return kind == k; });
+                if( at == assignmentKinds.end() ) invalid("kind is none, parameter, control, partLevel, partMute or scene");
+                t.kind = Assignment::Kind(at - assignmentKinds.begin());
+                if( t.kind == Assignment::Kind::Parameter ) { t.node = node(c,member(p,"node")); t.param = integer(member(p,"param")); }
+                else if( t.kind != Assignment::Kind::None ) t.id = integer(member(p,"id"));
+                try { c.assign(std::string(string(member(p,"control"))),t); }
+                catch( const std::invalid_argument& e ) { throw Failure{-32003,e.what()}; }
+                return R"({"accepted":true})";
             }
             if( method.substr(0,7) == "scenes." )
             {

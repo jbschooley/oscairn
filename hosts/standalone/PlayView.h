@@ -5,6 +5,7 @@
 #include "Launcher.h"
 #include "PartsModel.h"
 #include "PartsView.h"
+#include "oscairn/physical_controls.h"
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
@@ -27,9 +28,15 @@ namespace oscairn::standalone
         void select(uint32_t part);           // a part or bus; 0 none
         void showPartControls(bool part);     // the knobs follow the selected part's controls, or the Performance's
         bool showsPartControls() const { return partControls_ && selected_; }
-        // The controls the knobs show, in order, a bank of `knobs()` at a time.
-        const std::vector<Macro>& knobControls() const { return knobControls_; }
+        // What the knobs play on the page shown, resolved through the physical controls' layers.
+        const std::vector<ResolvedControl>& knobSlots() const { return knobSlots_; }
         int knobs() const;
+        // Learn (RFC 0011): move a device's knob, then touch what it should play: a strip (its
+        // level, or its M for its mute), a scene, or a knob's target. Default removes its override.
+        void learn(bool on);
+        bool learning() const { return learning_; }
+        bool canLearn() const { return engine_.rowKnobs() > 0; } // a device with knobs
+        void learnTarget(const Assignment&); // touched while learning, after a knob moved
 
         void paint(juce::Graphics&) override;
         void resized() override;
@@ -43,14 +50,30 @@ namespace oscairn::standalone
         void rebuild();
         void publishRow();
         int mode() const { return std::max(1, desktopMode(*this)); }
+        std::vector<Control::ParamInfo> parametersOf(NodeId node);
+        std::string nodeName(NodeId node) const;
+        const PartRow* partRow(uint32_t id) const;
+        // A knob's target: its range, value, what moving it does, and its value as text.
+        std::pair<double, double> rangeOf(const Assignment&) const;
+        double valueOf(const Assignment&) const;
+        void play(const Assignment&, double value);
+        void gesture(const Assignment&, bool begin);
+        juce::String describe(const Assignment&, double value) const;
+        void learned(const Assignment&); // the knob moved to learn, to that (None: its default)
 
         Engine& engine_;
         Control::GraphState graph_;
         PartsState state_;
         std::map<uint32_t, std::vector<double>> meters_;
-        std::vector<Macro> knobControls_;
+        AssignmentSource source_;
+        std::vector<ResolvedControl> knobSlots_;
+        std::map<NodeId, std::pair<std::string, std::vector<Control::ParamInfo>>> parameters_; // by node: its plugin's ID and parameters
         uint32_t selected_ = 0;
-        bool partControls_ = false;
+        bool partControls_ = false, learning_ = false;
+        juce::String learnFrom_; // the knob moved while learning
+        uint32_t touches_ = 0;
+        juce::TextButton learnDefault_{"Default"}, learnDone_{"Done"};
+        juce::Rectangle<int> banner_;
         int page_ = 0, ticks_ = 0;
         std::string shape_;
         juce::TextButton previous_{"Previous"}, next_{"Next"}, performanceControls_{"Performance"}, partControlsButton_, pageButton_;

@@ -1,4 +1,4 @@
-add_library(oscairn_control STATIC src/session.cpp src/performance.cpp src/parts.cpp src/pads.cpp src/undo.cpp src/library.cpp src/package.cpp src/budget.cpp src/audition.cpp third_party/miniz/miniz.c)
+add_library(oscairn_control STATIC src/session.cpp src/performance.cpp src/parts.cpp src/pads.cpp src/physical_controls.cpp src/undo.cpp src/library.cpp src/package.cpp src/budget.cpp src/audition.cpp third_party/miniz/miniz.c)
 set_source_files_properties(third_party/miniz/miniz.c PROPERTIES COMPILE_OPTIONS "-w") # vendored, unmodified
 target_include_directories(oscairn_control SYSTEM PRIVATE third_party)
 target_include_directories(oscairn_control PUBLIC include)
@@ -109,6 +109,11 @@ target_link_libraries(oscairn-parts-test PRIVATE oscairn_control)
 add_test(NAME control-parts COMMAND oscairn-parts-test
     $<TARGET_FILE:kick-clap-fixture-normal> $<TARGET_FILE:oscairn-audio-fixture> $<TARGET_FILE:oscairn_delay> $<TARGET_FILE:oscairn_splitters>)
 set_tests_properties(control-parts PROPERTIES TIMEOUT 60)
+
+add_executable(oscairn-physical-controls-test tests/physical_controls.cpp)
+target_link_libraries(oscairn-physical-controls-test PRIVATE oscairn_control)
+add_test(NAME control-physical-controls COMMAND oscairn-physical-controls-test $<TARGET_FILE:kick-clap-fixture-normal> $<TARGET_FILE:oscairn_delay>)
+set_tests_properties(control-physical-controls PROPERTIES TIMEOUT 60)
 
 add_executable(oscairn-sounds-test tests/sounds.cpp)
 target_include_directories(oscairn-sounds-test PRIVATE ../clap-host/tests)
