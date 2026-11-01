@@ -137,7 +137,8 @@ the profile's `apps` are the Apps menu; its `audio.block` is the block the audio
 for, passed to the managed engine as `--buffer-frames` (16 to 8192; given on the command line it
 wins). `desktop-profile` checks the built-in profiles, the desktop's, nine refusals and the block
 option; launching the app with `--profile kick` was checked by its snapshot (the KICK's screen at
-1024 x 600). The QEMU image with the new arguments has not been rebuilt or booted yet.
+1024 x 600). The QEMU image, rebuilt with `--profile qemu-aarch64`, boots and passes its boot
+test (`os/build.sh test`: Oscairn running, the screen drawn and changing).
 
 ## Open questions
 
