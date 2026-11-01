@@ -282,12 +282,15 @@ in the others.
    - [x] **where a Sound came from:** each part records the Sound and revision it was loaded
      from; **Save** writes that Sound's next revision, **Save As New** makes another, the
      parts list marks a part edited since (`*`), and **Update from library** loads a newer
-     revision (Part menu); Performances exported to a folder detach their parts, and a Sound
-     deleted from the library breaks no Performance
+     revision (Part menu); a Sound deleted from the library breaks no Performance
    - [ ] authors in the info block; preset and state loads marking a part edited
-   - [ ] restoring preloaded Sounds and Performances: only missing ones come back (by ID),
-     edited and untouched ones are left alone, and Restore original replaces one item
-     ([design](rfcs/0021-sounds-performances-and-library.md#preloaded-content-and-packages))
+   - [ ] **libraries:** importing a sound pack or exported library as a whole, its Sounds and
+     samples locked (Save As New makes your own copy); factory content as a preloaded library,
+     restored by reinstalling it ([design](rfcs/0021-sounds-performances-and-library.md#libraries))
+   - [ ] **exporting a Performance with its Sounds:** parts keep where they came from and the
+     export brings those Sounds and their samples; today a folder export drops the link
+     ([design](rfcs/0021-sounds-performances-and-library.md#exporting-a-performance))
+   - [ ] hiding tags from the tag list, and tag colors
    - [ ] **importing a Performance:** all of another Performance's parts, buses, their wires
      and controls added to the open one, in one step
      ([design](rfcs/0021-sounds-performances-and-library.md#importing-a-performance))

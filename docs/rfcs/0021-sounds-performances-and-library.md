@@ -36,8 +36,11 @@ Checked when built and tested; the sections below say how.
       edited since; revisions with parents for Sounds and Performances; Save and Save As New
       for Sounds; Update from library; exports detach; a deleted Sound breaks nothing
 - [ ] Authors in the info block, and `modified` set by preset and state loads
-- [ ] Restoring preloaded content: missing items back by ID, nothing else touched; Restore
-      original for one item ([design](#preloaded-content-and-packages))
+- [ ] Libraries: imported as a whole, items locked, Save As New from them, removal
+      ([design](#libraries)); factory content as a preloaded library, restored by reinstalling
+- [ ] Hidden tags and tag colors
+- [ ] Exporting a Performance with the Sounds its parts came from ([design](#exporting-a-performance));
+      today an export drops where its parts came from
 - [ ] 2. Library index and tags: index, user file and Sounds done; tag editing, suggestions,
       packages and `LibraryModel` remain
 - [ ] 3. Desktop pane: the Library app and Part menu done; the dockable pane, inspector,
@@ -100,9 +103,11 @@ Performance folders. Nothing has a name beyond its folder, a tag, an ID or a rev
 - **Tags instead of a category tree.** Any number of free tags, all alike: there are no
   factory tags and user tags, only tags. Facets the host works out itself (engine, kind,
   seamless) sit beside them, never stored as tags. Filters combine with AND.
-- **No factory and user content.** Factory Sounds and Performances are ordinary library items
-  that happen to be preloaded, and may differ between devices. They are edited, retagged,
-  saved over and deleted like anything the musician made.
+- **Your own Sounds, and libraries.** Sounds and Performances you save are yours to edit,
+  save over and delete. A **library** (a sound pack, or a device's factory content) is
+  imported as a whole and locked: its items load and play like any other, and **Save As**
+  makes your own copy, but they are never saved over, and neither are their samples.
+  Factory content is a library preloaded on the device; devices may come with different ones.
 - **One library view model, drawn three ways:** a pane beside the parts on the Desktop, a
   full-screen tab with the knobs on the Panel, and a short list on Compact.
 - **Loading a Sound into a part is seamless when it can be,** and says so before it
@@ -371,28 +376,47 @@ filed as one or the other.
 - **In the file,** in the info block. The file is the truth: "Files first, index second."
 - **In the index,** as a copy for searching. The index is a cache, rebuilt by scanning, like
   the asset store's `index/` files. Deleting it loses nothing.
-- **Changing an item's tags changes its file**, preloaded or not. There is no overlay.
+- **Changing an item's tags changes its file.** A locked library's items keep the tags they
+  came with.
+- **What the tag list shows is yours:** you can hide tags you do not want in the tag list and
+  give a tag a color, used on its chip and in lists. These are settings in the user file, not
+  changes to any item, so they work the same on locked items. A hidden tag still matches a
+  search typed in full.
 - **Favourites and recently used** are the user's, per device, in the same user file.
   Favourites sync; recents do not. They never go in an item's file, so a favourite does not
   change a Sound's revision.
 
-### Preloaded content and packages
+### Libraries
 
-- **Preloaded content is ordinary content.** A device's factory Sounds and Performances are
-  files in the library folders like the musician's own, put there when the device is made or
-  first started. Devices may come with different ones. Nothing marks them as factory: they are
-  listed, searched, edited, saved over, retagged and deleted the same way.
-- **Packages** that carry Sounds or Performances add them to the library as ordinary items,
-  with the tags they come with. Removing the package does not take back items that were
-  added; parts that came from them keep their copies and where they came from.
+- **A library is a set of Sounds and Performances, with the samples they use, imported as a
+  whole:** a sound pack, a library exported from another device, or a device's factory
+  content, preloaded. It has a name and keeps its items' fixed IDs, so the same library has
+  the same IDs on every device.
+- **Its items are locked.** They are listed, searched, auditioned and loaded like any other,
+  and a part loaded from one records where it came from as usual. Nothing saves over a
+  library item or its samples: **Save** on a part from a locked Sound is **Save As New**,
+  which makes the musician's own Sound (with a new ID) and points the part at it. Its tags
+  are the ones it came with; hiding and colors still apply.
+- **Removing a library** removes its items from the list. Performances keep working: their
+  parts are copies.
+- **Restoring factory content is reinstalling its library.** Because nothing in a library is
+  ever changed, a reinstall puts back what was removed and touches nothing the musician
+  made: their edits were Save As copies, outside the library. Restoring twice changes
+  nothing.
+- **Imported, not linked:** a library is installed into the library folders (RFC 0006's
+  package store when it exists), so it plays without the medium it came from.
 - CLAP preset features become tags as above.
-- **Restoring preloaded content puts back only what is missing.** Preloaded items ship with
-  fixed library IDs, the same on every device and every restore. Restore adds each one whose
-  ID is not in the library, so Sounds a part came from link up again. An item that is there
-  is never touched, edited or not: no copies, no kept versions, and a second restore changes
-  nothing. To get the original of an edited item back, delete it and restore, or choose
-  **Restore original** on that one item, which replaces it after asking. Performances are not
-  affected either way: they keep their own copies of their parts.
+
+### Exporting a Performance
+
+**Planned; today a Performance saved to a folder drops where its parts came from.** An
+exported Performance keeps where each part came from and brings those Sounds with it, with
+their samples, so on another device the parts still link to their Sounds: importing the
+Performance adds the Sounds that device does not have. A Sound from a locked library comes
+as part of that library's items, locked, with its library's name and ID; whether a library's
+licence allows sending its Sounds this way is RFC 0006's redistribution check, and where it
+does not, the Performance still opens (its parts are copies) and those parts lose their
+link.
 
 ### Filtering
 
@@ -516,10 +540,10 @@ Not built now (RFC 0019). The view model must allow:
 | --- | --- | --- |
 | A Sound | `Sounds/<name>.osound/` in the user's library folder: `sound.json` and `nodes/` | User file |
 | A Performance | `Performances/<name>.oscairn/`, as today, version 3 | User file |
-| Preloaded and package items | `Sounds/` and `Performances/`, like any other | Ordinary library items |
+| Libraries (packs, factory content) | Their own folder per library under the library folders, locked | Imported content |
 | Plugin presets | Where the plugin keeps them | The plugin's |
 | Index of all of the above | Under `OSCAIRN_DATA_HOME/library/` | Cache, rebuilt by scanning |
-| Favourites, recents | One user file under `OSCAIRN_DATA_HOME/library/` | User data |
+| Favourites, recents, hidden tags, tag colors | One user file under `OSCAIRN_DATA_HOME/library/` | User data |
 | Samples a Sound uses | Asset libraries (RFC 0009), referenced, never copied | Assets |
 
 The folder names are a convention, as `.oscairn` is today: the reader recognises the
@@ -605,6 +629,8 @@ other requests do not wait the way `assets.register` does today.
 - **The index as the source of truth.** It is a cache; files and the user file are the truth.
 - **Favourites in item files.** They would change revisions, and are one musician's, not the
   item's.
-- **Factory and user content kept apart:** read-only factory items, user tag overlays, a
-  Source facet, a host vocabulary. Preloaded content is ordinary content, and tags are tags.
+- **Tags of different kinds:** user tag overlays on top of an item's tags, a fixed host
+  vocabulary. Tags are tags; what the list shows is the musician's setting.
+- **Editable factory content restored by merging:** restoring around the musician's edits
+  needed per-item revisions and copies. Factory content is a locked library instead.
 - **Silent cuts.** Loading never cuts held notes without saying so first.

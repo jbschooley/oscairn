@@ -930,9 +930,9 @@ defaults.
 - **Manufacturers' built-ins are ordinary packages**, pre-installed in the read-only system
   area of their devices. Installed on another device, where a build for it exists and its
   licence allows, they work the same way. The Sounds and Performances a device comes
-  with are different: they are preloaded into the library as ordinary items, edited, retagged
-  and deleted like the musician's own, with no factory-or-user distinction, and may differ
-  between devices ([RFC 0021](rfcs/0021-sounds-performances-and-library.md#preloaded-content-and-packages)).
+  with are a library preloaded on it, locked like any imported library: they load and play,
+  Save As makes the musician's own copy, and restoring them is reinstalling the library
+  ([RFC 0021](rfcs/0021-sounds-performances-and-library.md#libraries)).
 - **Packs resolve dependencies by target.** A manifest records IDs, compatible ranges and
   the required baseline; a lock pins concrete releases. An offline export includes missing
   permitted packages, including manufacturer extras when the destination lacks them. It
