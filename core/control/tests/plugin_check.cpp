@@ -2,7 +2,7 @@
 //
 // A third-party plugin through the whole path a musician's sound takes (RFC 0006): played in a
 // part, saved to the library and opened again, exported with its build, installed on a fresh
-// device and opened from the plugin store (CLAP: archives do not carry LV2 yet, so an LV2 plugin
+// device and opened from the plugin store (CLAP: archives do not carry LV2, installed on each device, so an LV2 plugin
 // stops after the export). Opt-in, for plugins not in this repository:
 //   oscairn-plugin-check PLUGIN ID synth|effect [--param ID=VALUE] [--juce-state NAME=VALUE]
 //                        [--add-build PLATFORM=PATH] [--keep-archive FILE]

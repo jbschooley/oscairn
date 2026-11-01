@@ -90,7 +90,14 @@ Made 2026-11-01, for the first slice:
   `Plugins/<format>/<id>@<version>/<platform>/`, listed in the manifest with each build's digest.
 - **Any CLAP plugin goes in,** the build the exporting device has, not only plugins marked as
   managed packages. Whether a plugin may be redistributed is the musician's call, as when
-  copying its files by hand. LV2 waits for its bundle and state-asset rules (step 4).
+  copying its files by hand.
+- **LV2 plugins are not carried in archives.** Many need shared libraries outside their bundles
+  (Guitarix needs glib, others fftw) or presets in other bundles, so a carried bundle could not be
+  trusted to run on the other device. They are installed on each device as they are today; an
+  export says which were left out, and a Performance that uses one opens it with a stand-in where
+  it is not installed. Decided 2026-11-01. A self-contained LV2 bundle could be carried later, with
+  its version read from `lv2:minorVersion`/`lv2:microVersion` (LV2 nodes save no version now) and
+  a check of its binaries' libraries; not planned.
 - **Hashes now, signatures later.** Every file in an archive has its SHA-256 in the manifest,
   and each plugin build its digest, checked on extraction: an archive is whole and as it was
   made. Who made it is not proven until signatures.
@@ -107,7 +114,7 @@ Made 2026-11-01, for the first slice:
 
 ## Signatures
 
-Proposed 2026-11-01. Hashes prove an archive is whole and as it was made; signatures add who
+Accepted 2026-11-01, not built. Hashes prove an archive is whole and as it was made; signatures add who
 made it. They answer two different questions, so there are two kinds:
 
 - **Who built this plugin?** Plugin code is what can harm a device, and its author is the only
@@ -906,7 +913,8 @@ those workers exist.
    undeclared desktop libraries. Restore every saved part/scene; compare renders with
    explicit tolerances, event behavior and resource measurements. Do not promise bit-identical
    floating-point DSP across CPUs without evidence.
-4. **Broaden integrations:** LV2 packaging/state assets, existing-install discovery and
+4. **Broaden integrations:** LV2 state assets (LV2 builds stay out of archives, as decided
+   above), existing-install discovery and
    audited third-party manifests; VST3 and AU only alongside their host adapters. Add one
    verified cross-format migration and a negative AU-only case before advertising it.
 5. **DAW delivery proof:** one native engine as direct CLAP/VST3/AU where supported,

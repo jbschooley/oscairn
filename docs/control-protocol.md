@@ -804,7 +804,7 @@ fader or name in the Performance, nor wires to or from the rest of the graph.
   `{"exported":true,"notes":[...]}`: one [archive](library-archive.md) holding the open
   Performance, every sample its plugins use, every build there is of each CLAP plugin they use,
   and the library Sound of each part still that Sound (with `editedSounds`, also each edited
-  part's). `notes` says what was left out: an LV2 plugin, or one not on this device. It refuses
+  part's). `notes` says what was left out: an LV2 plugin (installed on each device, never carried), or one not on this device. It refuses
   a file that exists.
 - `audition.start` takes `{id}` and, for a Sound, the `part` to try it in; `audition.stop` takes
   an optional `keep`; both return `{"accepted":true}`. `audition.get` (`{}`) returns `{id,kind,part}`

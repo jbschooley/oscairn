@@ -29,7 +29,8 @@ part unedited since it was loaded or saved, and the library holding that revisio
 plugins list goes in once, by its hash. Each plugin they use goes in with every build there is:
 this device's from its `pathHint` while that build still has the document's locked digest, else
 from the plugin store, and the store's builds for other platforms (installed from archives, or
-added with `plugins.addBuild`). Only CLAP plugins go in so far; an LV2 plugin, or one not on this device, is left out, and
+added with `plugins.addBuild`). Only CLAP plugins go in: LV2 plugins are installed on each device (many need libraries
+outside their bundles), so an LV2 plugin, like one not on this device, is left out, and
 the export says which.
 
 ## Reading one
@@ -83,5 +84,5 @@ Two items with one ID are listed once, the user's own first: so a Performance ex
 installed as a library on the device it came from shows the original, not the locked copy.
 Installed into the user's own storage (the default for an export) it is a new copy.
 
-Not yet: a Sound from a locked library exported as that library's item, LV2 plugins, signatures,
+Not yet: a Sound from a locked library exported as that library's item, signatures,
 and grouped cleanup of plugins nothing uses (RFC 0006).

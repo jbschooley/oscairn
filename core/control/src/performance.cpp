@@ -318,9 +318,9 @@ std::vector<std::string> Session::exportArchive(const std::string& file,const st
             for(auto node:array(field(doc.get(),"nodes"),256)){
                 const V plugin=field(node,"plugin");
                 const auto format=text(field(plugin,"format")),id=text(field(plugin,"id")),version=text(field(plugin,"version"));
-                const auto name=id+" "+version;
+                const auto name=version.empty()?id:id+" "+version; // LV2 plugins have no version yet
                 if(!bundled.insert(format+" "+name).second)continue;
-                if(format!="clap"){if(said.insert(name).second)notes.push_back(name+" was left out: only CLAP plugins go in archives so far");continue;}
+                if(format!="clap"){if(said.insert(name).second)notes.push_back(name+" was left out: LV2 plugins are installed on each device, not carried in archives");continue;}
                 // The saved path only while it still holds the build the document locked, else the store's.
                 std::string locked;
                 for(const auto& l:readLock(doc.get()))if(l.format==format && l.id==id && l.version==version && l.platform==platform())locked=l.sha256;
@@ -1424,7 +1424,7 @@ void Session::removePlugin(const std::string& format,const std::string& id,const
 }
 
 void Session::addPluginBuild(const std::string& format,const std::string& id,const std::string& version,const std::string& forPlatform,const std::string& path) {
-    if(format!="clap")bad("only CLAP plugin builds can be added so far");
+    if(format!="clap")bad("only CLAP plugin builds can be added; LV2 plugins are installed on each device");
     if(id.empty() || id.size()>256 || version.size()>128)bad("invalid plugin ID or version");
     static const std::set<std::string> platforms{"macos-arm64","macos-x86_64","linux-arm64","linux-x86_64","windows-x86_64"};
     if(!platforms.count(forPlatform))bad("unknown platform "+forPlatform);

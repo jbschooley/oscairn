@@ -175,8 +175,8 @@ device and opened from the plugin store). [Measurements](results-ports-2026-11-0
 | [TAP](https://github.com/moddevices/tap-lv2) (MOD's) Chorus/Flanger, Tremolo, Rotary Speaker, Vibrato | LV2 | Pass, both checks | Pass, battery; Chorus/Flanger both | Depth; Depth; Horn Frequency; Wetlevel |
 | [CAPS](https://github.com/moddevices/caps-lv2) (MOD's) PhaserII, ChorusI | LV2 | Not built | Pass, both checks | Depth; Blend |
 
-LV2 plugins stop after the export: archives carry CLAP builds only so far, and the export says
-so. Every repeat was sample-identical. Block-size independence is not assumed: TAP Tremolo
+LV2 plugins stop after the export: archives carry CLAP builds only (LV2 plugins are installed
+on each device, RFC 0006), and the export says so. Every repeat was sample-identical. Block-size independence is not assumed: TAP Tremolo
 differs by 0.00504 RMS between 37- and 512-frame blocks, CAPS PhaserII by 0.00225 and ChorusI
 by 0.00222; the rest are identical. Odin 2's release tail falls to silence when notes end and
 rings on (0.119 RMS) when they are held.
