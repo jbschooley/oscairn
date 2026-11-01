@@ -80,9 +80,14 @@ static void native(const char* synth,const char* delay,const char* seq,const fs:
     for(uint32_t i=0;i<sequencer::parameterCount;++i){const auto id=sequencer::parameterId(i);
         check(a.parameter(a.nodeId("sequencer"),id)==b.parameter(b.nodeId("sequencer"),id),"all track/pattern parameters restored");
     }
-    check(a.effectResources(a.nodeId("delay"))->prepared==2 && a.parameter(a.nodeId("long-echo"),2)==.7,"shared effect engine and independent state");
+    // Its Delay contexts went into the engine already playing (RFC 0021), beside the old ones ringing out;
+    // saved meanwhile, the engine is named by the new ones.
+    check(a.effectResources(a.nodeId("delay"))->prepared==4 && a.parameter(a.nodeId("long-echo"),2)==.7,"shared effect engine reused and independent state");
+    a.savePerformance((root/"ringing").string());
+    {Session ringing(48000,127);ringing.loadPerformance((root/"ringing").string());check(ringing.effectResources(ringing.nodeId("long-echo"))->prepared==2,"saved while ringing out, still sharing");}
     // The live-configured reference must finish its parameter glides before comparison.
     for(int i=0;i<1000+48000*31/127;++i){reset.run(a);reset.run(b);} // and the old Performance's plugins ring out (30 s at most)
+    a.service();reset.run(a);reset.run(b);a.service();check(!a.leaving() && a.effectResources(a.nodeId("delay"))->prepared==2,"the old contexts gone, the engine kept");
     compare(a,b);
     // A save made with voices/tails running restores patches, not that transient audio.
     original.note(true,55,1);reset.run(original);original.savePerformance((root/"held").string());
@@ -103,6 +108,9 @@ static void native(const char* synth,const char* delay,const char* seq,const fs:
     }
     // Byte-identical continuing playback proves rejection didn't reset the live graph.
     compare(a,b);
+    // An engine without room for the whole group spills: the group gets an instance of its own.
+    {Session full(48000,127);const auto e=full.add("engine",delay);for(int i=0;i<14;++i)full.addEffectContext("context "+std::to_string(i),e);full.commit();
+        full.loadPerformance(file.string());check(full.effectResources(full.nodeId("delay"))->prepared==2,"a full engine spills to a new instance");}
     // Saved over after it was prepared: the cue reads it again.
     const auto resaved=root/"resaved";fs::copy(file,resaved,fs::copy_options::recursive);check(a.preparePerformance(resaved.string()),"prepared again");
     std::this_thread::sleep_for(std::chrono::milliseconds(10));replaceText(resaved/"performance.json","\"tempo\":137","\"tempo\":90");
@@ -118,8 +126,8 @@ static void native(const char* synth,const char* delay,const char* seq,const fs:
     check(pending.parameter(pending.nodeId("synth"),1)==.37 && pending.sounds(pending.nodeId("synth")).contexts.back().selectedChannels==65535,"queued selection and edit persisted");
     // Saving after the original effect interface was removed still preserves sharing.
     original.disconnectAudio(original.nodeId("delay"),graphOutput);original.remove(original.nodeId("delay"));original.commit();reset.run(original);original.service();
-    original.savePerformance((root/"orphan").string());pending.loadPerformance((root/"orphan").string());reset.run(pending);
-    check(pending.effectResources(pending.nodeId("long-echo"))->prepared==1,"surviving effect can become saved engine root");
+    original.savePerformance((root/"orphan").string());Session orphan(48000,127);orphan.loadPerformance((root/"orphan").string());reset.run(orphan);
+    check(orphan.effectResources(orphan.nodeId("long-echo"))->prepared==1,"surviving effect can become saved engine root");
     // Concurrent preparation/publication and saves never allocate in Session::process.
     std::atomic<bool> stop{false};std::atomic<unsigned> rendered{0};std::thread audio([&]{Audio out;while(!stop.load()){forbidAllocation=true;const bool ok=a.process(out.out,127);forbidAllocation=false;if(ok)++rendered;}});
     try {for(int i=0;i<12;++i){a.loadPerformance(file.string());a.service();a.savePerformance((root/("live"+std::to_string(i))).string());}}

@@ -666,6 +666,16 @@ keeps audio that several sounds use once), the Delay several effects
 Slice 1 is built first: it needs no contract change and makes the cross-graph sharing that
 slices 2 and 3 also need. Slices 2 and 3 are not built.
 
+Slice 1 built 2026-11-01, for every Performance opened or prepared (`Graph::addEffectContext`
+from another graph; `Session::read`). Admission still counts the next Performance's plugins at
+full cost. `control-performance` checks the Delay contexts of a Performance opened over itself
+going into the playing engine (four contexts on it while the old two ring out, two once they
+have gone), a save made meanwhile naming the engine by the new contexts and reopening shared,
+output identical to a fresh load once the old ones have gone, and an engine with too few free
+contexts spilling the group to a new instance. The saving is the engine instance: for the Delay
+little memory in the engine's process (RFC 0007 measured 24 bytes between two contexts and two
+engines), more when plugins run in workers, where each instance is a process.
+
 **Load preset** on a node is seamless where `sounds.prepare` accepts it (native contexts and
 pooled instruments) and an interrupting state load otherwise, as today.
 

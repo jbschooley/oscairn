@@ -83,7 +83,10 @@ namespace oscairn
         NodeId addEffectContext(NodeId source);
         /// A host already made, such as a plugin's stand-in when it is not here (RFC 0006).
         NodeId add( std::shared_ptr<PluginHost> host );
-        NodeId effectSource(NodeId node) const;
+        /// A context of another graph's engine (a replacement taking over a playing engine, RFC 0021).
+        NodeId addEffectContext(const Graph& graph, NodeId source);
+        /// The first node sharing this one's engine, not counting `except`.
+        NodeId effectSource(NodeId node, const std::set<NodeId>& except = {}) const;
         std::unique_ptr<Graph> prepareReplacement() const;
         /// Seamless Performance changes (RFC 0021), on a prepared replacement: `current`'s nodes
         /// `ids` come along under their IDs, retiring. The sound they send to the outputs and to

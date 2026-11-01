@@ -373,14 +373,14 @@ Control::PerformanceInfo Session::writeDocument(const std::string& directory,Per
     std::vector<std::string> nodes,wires,parts,mappings;std::set<std::string> libraries;
     std::vector<LockEntry> lock; // RFC 0006: each plugin build it uses, by its digest, per platform
     for(const auto& n:graph.nodes){if(!kept(n.id))continue;const auto& key=keys.at(n.id);auto& h=graph_.host(n.id);
-        if(!keys.count(graph_.effectSource(n.id)))bad(nodes_.at(n.id)+" shares its engine with a plugin outside the part");
+        if(!keys.count(graph_.effectSource(n.id,leaving_)))bad(nodes_.at(n.id)+" shares its engine with a plugin outside the part");
         // Sound assets are dependencies (RFC 0009): record references, never the files.
         std::vector<std::string> assets;
         for(const auto& a:h.assetDependencies()){libraries.insert(a.library);assets.push_back("{\"library\":"+quote(a.library)+",\"path\":"+quote(a.path)+",\"sha256\":"+quote(a.sha256)+'}');}
         try{h.saveSnapshot((bundle.temporary.path/"nodes"/key).string());}catch(const std::exception& e){bad("cannot save "+nodes_.at(n.id)+" ("+n.plugin.id+"): "+e.what());}
         const bool lv2=lv2Path(n.plugin.path);
         lockPlugin(lock,lv2?"lv2":"clap",n.plugin.id,n.plugin.version,n.plugin.path,!h.failure().empty());
-        nodes.push_back("{\"key\":"+quote(key)+",\"name\":"+quote(nodes_.at(n.id))+",\"plugin\":{\"format\":"+quote(lv2?"lv2":"clap")+",\"id\":"+quote(n.plugin.id)+",\"version\":"+quote(n.plugin.version)+",\"pathHint\":"+quote(n.plugin.path)+"},\"engine\":"+quote(keys.at(graph_.effectSource(n.id)))+",\"inputs\":"+ports(n.inputs)+",\"outputs\":"+ports(n.outputs)+",\"noteInputs\":"+std::to_string(n.noteInputs)+",\"noteOutputs\":"+std::to_string(n.noteOutputs)+",\"assets\":"+join(assets)+",\"enabled\":"+(disabled_.count(n.id)?"false":"true")+'}');
+        nodes.push_back("{\"key\":"+quote(key)+",\"name\":"+quote(nodes_.at(n.id))+",\"plugin\":{\"format\":"+quote(lv2?"lv2":"clap")+",\"id\":"+quote(n.plugin.id)+",\"version\":"+quote(n.plugin.version)+",\"pathHint\":"+quote(n.plugin.path)+"},\"engine\":"+quote(keys.at(graph_.effectSource(n.id,leaving_)))+",\"inputs\":"+ports(n.inputs)+",\"outputs\":"+ports(n.outputs)+",\"noteInputs\":"+std::to_string(n.noteInputs)+",\"noteOutputs\":"+std::to_string(n.noteOutputs)+",\"assets\":"+join(assets)+",\"enabled\":"+(disabled_.count(n.id)?"false":"true")+'}');
     }
     // RFC 0011: wires with their owners and Mix settings, and the parts; graph routes follow from them.
     if(wires_.size()>Graph::maxAudioConnections || parts_.size()>256)bad("wires or parts exceed Performance limits");
@@ -556,6 +556,15 @@ std::unique_ptr<Session::Prepared> Session::read(const fs::path& root) {
     for(auto node:nodes){fields(node,{"key","name","plugin","engine","inputs","outputs","noteInputs","noteOutputs","assets","enabled"});const auto key=text(field(node,"key"));
         if(key.size()<6 || key.size()>12 || key.substr(0,5)!="node-" || !std::all_of(key.begin()+5,key.end(),[](char c){return c>='0' && c<='9';}) || !definitions.emplace(key,node).second)bad("invalid or duplicate node key");
         const auto name=text(field(node,"name"));if(!name.empty() && !usedNames.insert(name).second)bad("duplicate node name");}
+    // RFC 0021: the nodes sharing one engine become contexts of an engine of that plugin playing
+    // now, when it has room for all of them, instead of loading another instance.
+    std::map<std::string,uint32_t> group;for(auto node:nodes)++group[text(field(node,"engine"))];
+    std::map<NodeId,uint32_t> claimed; // contexts taken per playing engine
+    auto playing=[&](const std::string& id,const std::string& path,const std::string& version,uint32_t count)->std::optional<NodeId>{
+        for(const auto& [n,name]:nodes_){const auto& h=graph_.host(n);const auto& p=h.descriptor();if(p.id!=id || p.path!=path || p.version!=version)continue;
+            const auto r=h.effectResources();auto& taken=claimed[graph_.effectSource(n)];
+            if(r && r->capacity>=r->prepared+taken+count){taken+=count;return n;}}
+        return std::nullopt;};
     auto refs=parameterRefs(d);
     // Roots first; siblings can refer forward to a root, never to an arbitrary chain.
     for(bool siblings:{false,true})for(auto node:nodes){const auto key=text(field(node,"key")),engine=text(field(node,"engine"));if((key!=engine)!=siblings)continue;
@@ -568,6 +577,7 @@ std::unique_ptr<Session::Prepared> Session::read(const fs::path& root) {
                 const auto& source=next->host(ids.at(engine)).descriptor();if(source.id!=id || source.path!=path)bad("incompatible shared engine identity");
                 try{runtime=next->addEffectContext(ids.at(engine));}
                 catch(const std::exception& e){runtime=next->add(standIn(node,root/"nodes"/key,refs[key],std::string("its shared engine is not here: ")+e.what()));}}
+            else if(const auto engine=playing(id,path,text(field(plugin,"version")),group[key]))runtime=next->addEffectContext(graph_,*engine);
             else runtime=resolvePlugin(node,root/"nodes"/key,refs[key],[&](const std::string& p,const std::string& i){return next->add(p,i);},[&](NodeId n){next->remove(n);},
                                        [&](NodeId n){return next->host(n).descriptor().version;},[&](std::shared_ptr<PluginHost> h){return next->add(std::move(h));});
             auto& h=next->host(runtime);

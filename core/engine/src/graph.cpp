@@ -144,17 +144,19 @@ namespace oscairn
         const NodeId id=nextId_++;nodes_.emplace(id,std::move(node));return id;
     }
 
-    NodeId Graph::addEffectContext(NodeId source)
+    NodeId Graph::addEffectContext(NodeId source) { return addEffectContext(*this, source); }
+    NodeId Graph::addEffectContext(const Graph& graph,NodeId source)
     {
         if(nextId_>=graphInput)throw std::overflow_error("Graph node IDs exhausted");
-        Node node;node.host=host(source).createEffectContext();node.effectGroup=nodes_.at(source).effectGroup;
+        const auto& from=graph.nodes_.at(source);
+        Node node;node.host=from.host->createEffectContext();node.effectGroup=from.effectGroup;
         node.audioInputs=countChannels(node.host->inputPorts());node.audioOutputs=countChannels(node.host->outputPorts());
         const NodeId id=nextId_++;nodes_.emplace(id,std::move(node));return id;
     }
 
-    NodeId Graph::effectSource(NodeId id) const {
+    NodeId Graph::effectSource(NodeId id,const std::set<NodeId>& except) const {
         const auto& group=nodes_.at(id).effectGroup;
-        for(const auto& [other,node]:nodes_)if(node.effectGroup==group)return other;
+        for(const auto& [other,node]:nodes_)if(node.effectGroup==group && !except.count(other))return other;
         return id;
     }
     std::unique_ptr<Graph> Graph::prepareReplacement() const {

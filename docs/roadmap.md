@@ -357,7 +357,9 @@ Also open:
   sharing one engine (each part has its own instance today), so a Performance or setlist uses
   as few instances as its sounds need. The goal: as little memory as possible, with switching
   as instant as possible, above all from one setlist entry to the next ([RFC 0005](rfcs/0005-sound-contexts.md),
-  [RFC 0007](rfcs/0007-effect-contexts.md))
+  [RFC 0007](rfcs/0007-effect-contexts.md)). Designed in three slices
+  ([RFC 0021](rfcs/0021-sounds-performances-and-library.md#fewer-instances-reusing-what-is-loaded));
+  built: the next Performance's effects as contexts of a playing engine, spilling when it is full
 - [ ] automatic Sound/effect-chain preparation and retirement, and asset-bearing native
   patches (Setlist and library persistence are done: item 7)
 - [ ] stable format/plugin identities and state provenance in persistent library data,
