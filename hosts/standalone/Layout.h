@@ -79,11 +79,14 @@ namespace oscairn::standalone
         Resize               resize = Resize::Scale;
         /// Which UI it is (RFC 0019). Panel: a device's front panel and screen, drawn from
         /// `panels` and `controls`. Desktop: the desktop app's own window, with menus, panes and
-        /// tabs; its panels and controls are not used.
+        /// tabs; its panels and controls are not used. Compact: a small screen with encoders, drawn
+        /// like a panel, its screen showing plugin editors as lists (the test layout for RFC 0019's
+        /// small screens).
         enum class Surface
         {
             Panel,
-            Desktop
+            Desktop,
+            Compact
         };
         Surface              surface = Surface::Panel;
         std::vector<Panel>   panels;

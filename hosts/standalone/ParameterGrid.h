@@ -44,6 +44,15 @@ namespace oscairn::standalone
     struct FilterResponse { enum class Kind { None, LowPass, HighPass, BandPass, Notch, Unknown } kind = Kind::LowPass; int poles = 2; };
     FilterResponse filterNamed(const juce::String& text);
 
+    /// A plugin's generated editor description (RFC 0019), which every surface draws: a page per
+    /// top-level CLAP module path ("Main" for parameters without one), in the plugin's order except
+    /// that numbered pages of one kind sit together in number order (Operator 1 to 8). `params`
+    /// are indices into the parameters given.
+    struct EditorPage { std::string name; std::vector<size_t> params; };
+    std::vector<EditorPage> editorPages(const std::vector<Engine::ParamInfo>& params);
+    // Parameters in the plugin's priority order (oscairn.ui): numbered first, then the rest in its order.
+    void byPriority(const std::vector<Engine::ParamInfo>& params, std::vector<size_t>& indices);
+
     /// Every parameter of one plugin, as pages of tiles (RFC 0019's generated editor), drawn with
     /// the controls and in the priority order the plugin's oscairn.ui hints ask for: a page per
     /// top-level CLAP module path; on a page of more than 24, tabs for the second level; a heading
@@ -83,7 +92,6 @@ namespace oscairn::standalone
         bool inLine(const juce::Rectangle<int>& tile) const { return (columns() ? tile.getX() : tile.getY()) == line_; }
         juce::Rectangle<int> strip_;     // names what each of the device's row knobs plays
         int line_ = -1;                  // the selected row's top, or column's left, in the content
-        struct Page { std::string name; std::vector<size_t> params; };
         struct Tile
         {
             size_t param;
@@ -116,7 +124,7 @@ namespace oscairn::standalone
         NodeId node_;
         std::string name_;
         std::vector<Engine::ParamInfo> params_;
-        std::vector<Page> pages_;
+        std::vector<EditorPage> pages_;
         size_t page_ = 0, tab_ = 0;
         bool stale_ = false; // built while the engine was busy: value texts were placeholders
         std::vector<std::string> tabNames_;

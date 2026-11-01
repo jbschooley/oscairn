@@ -206,7 +206,8 @@ namespace oscairn::standalone
             {
                 // The running apps keep their state behind it (RFC 0030).
                 if( !launcher_ ) { launcher_ = std::make_unique<Launcher>( engine_, launcherApps(), barShell() ); setDesktopMode( *launcher_, 2 ); }
-                p->overlay( launcher_.get() );
+                // A compact screen's own lists are its Home, until a device has its system screens.
+                p->overlay( p->layout().surface == Layout::Surface::Compact ? nullptr : launcher_.get() );
                 switcher_.reset();
                 return;
             }

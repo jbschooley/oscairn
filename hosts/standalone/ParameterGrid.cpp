@@ -384,6 +384,39 @@ namespace oscairn::standalone
         int dragging_ = -1;
     };
 
+    std::vector<EditorPage> editorPages(const std::vector<Engine::ParamInfo>& params)
+    {
+        // A page per top-level module, in the order the plugin lists them.
+        std::vector<EditorPage> pages;
+        std::map<std::string, size_t> index;
+        for(size_t i = 0; i < params.size(); ++i)
+        {
+            const auto& m = params[i].module;
+            const auto top = m.empty() ? std::string("Main") : m.substr(0, m.find('/'));
+            auto [at, added] = index.try_emplace(top, pages.size());
+            if(added) pages.push_back({top, {}});
+            pages[at->second].params.push_back(i);
+        }
+        // The plugin's order, except that numbered pages of one kind sit together in number
+        // order (Operator 1 to 8), where the first of them came.
+        std::map<std::string, size_t> family;
+        for(size_t i = 0; i < pages.size(); ++i) family.try_emplace(numbered(pages[i].name).first, i);
+        std::stable_sort(pages.begin(), pages.end(), [&](const EditorPage& a, const EditorPage& b) {
+            const auto x = numbered(a.name), y = numbered(b.name);
+            const auto fx = family.at(x.first), fy = family.at(y.first);
+            return fx != fy ? fx < fy : x.second < y.second;
+        });
+        return pages;
+    }
+
+    void byPriority(const std::vector<Engine::ParamInfo>& params, std::vector<size_t>& indices)
+    {
+        std::stable_sort(indices.begin(), indices.end(), [&](size_t a, size_t b) {
+            const auto pa = params[a].priority ? params[a].priority : UINT32_MAX, pb = params[b].priority ? params[b].priority : UINT32_MAX;
+            return pa < pb;
+        });
+    }
+
     double ParameterGrid::normal(size_t param) const
     {
         const auto& p = params_[param];
@@ -474,25 +507,7 @@ namespace oscairn::standalone
     {
         try { params_ = engine_.parameters(node_); } catch(const std::exception&) {}
         std::erase_if(params_, [](const Engine::ParamInfo& p) { return (p.flags & CLAP_PARAM_IS_HIDDEN) != 0; });
-        // A page per top-level module, in the order the plugin lists them.
-        std::map<std::string, size_t> index;
-        for(size_t i = 0; i < params_.size(); ++i)
-        {
-            const auto& m = params_[i].module;
-            const auto top = m.empty() ? std::string("Main") : m.substr(0, m.find('/'));
-            auto [at, added] = index.try_emplace(top, pages_.size());
-            if(added) pages_.push_back({top, {}});
-            pages_[at->second].params.push_back(i);
-        }
-        // The plugin's order, except that numbered pages of one kind sit together in number
-        // order (Operator 1 to 8), where the first of them came.
-        std::map<std::string, size_t> family;
-        for(size_t i = 0; i < pages_.size(); ++i) family.try_emplace(numbered(pages_[i].name).first, i);
-        std::stable_sort(pages_.begin(), pages_.end(), [&](const Page& a, const Page& b) {
-            const auto x = numbered(a.name), y = numbered(b.name);
-            const auto fx = family.at(x.first), fy = family.at(y.first);
-            return fx != fy ? fx < fy : x.second < y.second;
-        });
+        pages_ = editorPages(params_);
         if(pages_.size() > 1)
             for(size_t i = 0; i < pages_.size(); ++i)
             {
@@ -694,10 +709,7 @@ namespace oscairn::standalone
         for(auto& [heading, members] : groups)
         {
             std::erase_if(members, [&](size_t i) { return std::any_of(params_.begin(), params_.end(), [&](const Engine::ParamInfo& q) { return q.widget == OSCAIRN_WIDGET_RANGE && q.rangeHigh == params_[i].id && &q != &params_[i]; }); });
-            std::stable_sort(members.begin(), members.end(), [&](size_t a, size_t b) {
-                const auto pa = params_[a].priority ? params_[a].priority : UINT32_MAX, pb = params_[b].priority ? params_[b].priority : UINT32_MAX;
-                return pa < pb;
-            });
+            byPriority(params_, members);
         }
         std::erase_if(groups, [](const auto& g) { return g.second.empty(); });
         // Knobs want room: a page that has any gets taller tiles.

@@ -13,7 +13,8 @@ Checked when built and tested; the sections below say how.
 - [ ] 2. Desktop shell: menu bar, toolbar, parts list, tabs and detached windows done; dockable
       panes with a saved arrangement, the inspector and shortcuts remain
 - [ ] 3. Generated editors: parameter pages from module paths, `oscairn.ui` draft hints, panel
-      row knobs done; the Compact layout and its gate remain
+      row knobs and the Compact test layout done; the gate's Desktop and Panel checks with a
+      third-party plugin remain
 - [ ] 4. Plugin windows
 - [ ] 5. Rich widgets: envelope, LFO preview, key and velocity map done; waveform, step lane
       and the Modular grid remain
@@ -145,7 +146,8 @@ Not built now. To keep it possible:
   are small, and are written for that device when it exists, from the same view models.
 
 A test layout in the desktop app at 320 × 240 with four encoders, showing a plugin's
-description as Compact would, is the check that this holds (step 3).
+description as Compact would, is the check that this holds (step 3). It is built: View >
+Layout > Compact (`layouts/compact.json`), see [Step 1 status](#step-1-status).
 
 ## Plugin editor descriptions
 
@@ -302,8 +304,29 @@ drawn for the type its value text names.
 - *No fixed effect sends or EQ in the Mixer:* sends go to the Performance's own buses, and an
   EQ is a plugin put wherever it is needed (RFC 0016).
 
+**The Compact test layout (2026-11-01):** a layout's `"surface": "compact"` draws its panel
+as a device's, with its screen showing `CompactEditor` instead of the device screen: the
+Performance's plugins as a list, then a plugin's pages, then a page's parameters by priority,
+four at a time, as a column above each of four encoders (its name, its value as the plugin
+writes it, and a bar). Knobs bound `encoder:N` are those encoders: in a list, turning chooses
+and pressing encoder 4 opens; on a page each turns its parameter (a value per detent when
+stepped, else a hundredth of the range) and pressing encoder 4 shows the next four; pressing
+encoder 1 goes back. It draws the same description as Desktop and Panel: the pages and
+priority order come from one function (`editorPages`, `byPriority`) that `ParameterGrid` uses
+too. `desktop-shell` runs step 3's Compact gate on `layouts/compact.json`, with the encoders
+alone: for the Basic Synth, the Sampler and, where `OSCAIRN_THIRD_PARTY_CLAP` names one (the
+build sets it to Odin 2 beside the checkout when it is there; the test says when it skips),
+a third-party plugin, it chooses the plugin from the list, checks that every page's encoders
+hold its top four parameters, turns each and sees the value change, and pages on with encoder
+4. Checked with Odin 2 (258 parameters, one page). The Sampler has no parameters yet (it is
+edited through its sounds and the Part page's zones), so its part of the gate shows it as
+having none. Loading Odin 2 needed a host fix: the CLAP host checked the plugin's functions
+before `init`, which plugins built on clap-helpers only fill in during `init`, and then
+destroyed it uninitialized, which aborts them.
+
 Not yet: the Mixer and Routing views' layout is still in `PartsView`, and the device's chain
-row, tabs and header are the older ones; Compact has no renderer (by design, RFC step 3).
+row, tabs and header are the older ones; Compact's real renderer waits for a device (by
+design).
 
 ## Open questions
 

@@ -18,6 +18,8 @@
 #include "../PlayView.h"
 #include "../ParameterGrid.h"
 #include "../ZoneEditor.h"
+#include "../CompactEditor.h"
+#include "oscairn/discovery.h"
 #include "oscairn/local_socket.h"
 #include "oscairn/session.h"
 #include <juce_gui_extra/juce_gui_extra.h>
@@ -42,11 +44,11 @@ int main(int argc, char** argv)
     const auto data = juce::File::createTempFile("oscairn-shell-data");
     ::setenv("OSCAIRN_DATA_HOME", data.getFullPathName().toRawUTF8(), 1);
     {
-        Session session(48000, 128);
+        auto session = std::make_unique<Session>(48000, 128);
         Control::SessionStatus status; status.midiInputs = {{MidiEndpoint::Kind::Usb, 3, "KeyLab 61"}};
-        session.setHostStatus(status);
-        LocalServer server(session);
-        server.listen(socket.string());
+        session->setHostStatus(status);
+        auto server = std::make_unique<LocalServer>(*session);
+        server->listen(socket.string());
         std::atomic<bool> running = true, play = false;
         // Audio rendered on the same thread, so the meters move: once the Performance is made, a
         // chord held from the keys.
@@ -55,12 +57,14 @@ int main(int argc, char** argv)
             bool held = false;
             while(running)
             {
-                server.poll(uint64_t(std::chrono::steady_clock::now().time_since_epoch().count()));
-                session.service();
-                if(play && !held) { for(const int key : {36, 60, 64, 67, 79}) session.note(true, key, .8); held = true; }
-                session.process(nullptr, 0, out, 2, 128);
+                server->poll(uint64_t(std::chrono::steady_clock::now().time_since_epoch().count()));
+                session->service();
+                if(play && !held) { for(const int key : {36, 60, 64, 67, 79}) session->note(true, key, .8); held = true; }
+                session->process(nullptr, 0, out, 2, 128);
                 std::this_thread::sleep_for(std::chrono::milliseconds(1));
             }
+            // Its plugins are destroyed on the thread that made them, as JUCE's CLAP plugins require.
+            server.reset(); session.reset();
         });
         {
             standalone::Engine engine(dir.string(), socket.string());
@@ -729,6 +733,97 @@ int main(int argc, char** argv)
                 standalone::setDesktopMode(grid, 2); grid.setSize(1024, 600);
                 const auto row = grid.rowShown();
                 check(row.size() >= 3 && row[0] == "Brightness" && row[1] == "Level" && row[2] == "Oscillator", "the first row, left to right");
+            }
+            // RFC 0019 step 3's gate on the Compact test layout (layouts/compact.json, 320 × 240 and
+            // four encoders): the Basic Synth, the Sampler and a third-party plugin, each chosen
+            // from the plugin list and every page's top parameters turned, with the encoders alone.
+            {
+                std::vector<standalone::PluginChoice> gate{plugin("Basic Synth"), plugin("Sampler")};
+                if(const char* third = std::getenv("OSCAIRN_THIRD_PARTY_CLAP"); third && std::filesystem::exists(third))
+                {
+                    const auto found = scanPlugins({std::filesystem::path(third).parent_path()}, argv[2]).plugins; // its folder: a bundle is a folder itself
+                    check(!found.empty(), std::string("the third-party plugin scans: ") + third);
+                    if(!found.empty()) gate.push_back({found[0].name, found[0].path, found[0].id});
+                }
+                else std::puts("skipped: the Compact gate's third-party plugin (set OSCAIRN_THIRD_PARTY_CLAP to a .clap)");
+                for(size_t g = 1; g < gate.size(); ++g)
+                {
+                    engine.edit([&](Control& c) { standalone::insertPlugin(c, standalone::addPart(c, gate[g].name, false), 0, gate[g]); });
+                    for(int i = 0; i < 500 && std::none_of(engine.graph().names.begin(), engine.graph().names.end(), [&](const auto& n) { return n.second == gate[g].name; }); ++i)
+                        juce::MessageManager::getInstance()->runDispatchLoopUntil(10);
+                }
+                const auto file = juce::File(argv[3]).getSiblingFile("layouts").getChildFile("compact.json");
+                standalone::Panel panel(engine, standalone::Layout::parse(file.loadFileAsString()));
+                panel.setSize(400, 380);
+                standalone::CompactEditor* compact = nullptr;
+                std::vector<juce::Slider*> encoders;
+                std::function<void(juce::Component&)> find = [&](juce::Component& c) {
+                    for(auto* child : c.getChildren()) { if(auto* e = dynamic_cast<standalone::CompactEditor*>(child)) compact = e; if(auto* s = dynamic_cast<juce::Slider*>(child)) encoders.push_back(s); find(*child); }
+                };
+                find(panel);
+                std::sort(encoders.begin(), encoders.end(), [](juce::Slider* a, juce::Slider* b) { return a->getParentComponent()->getX() < b->getParentComponent()->getX(); });
+                check(compact && encoders.size() == 4, "the compact layout: a screen and four encoders");
+                // The encoders as a hand works them: a detent is a step of the knob, a click a press.
+                auto turn = [&](int e, int steps) { auto* s = encoders[size_t(e)]; s->setValue(std::fmod(s->getValue() + steps + 64, 64.0), juce::sendNotificationSync); };
+                auto press = [&](int e) { auto* s = encoders[size_t(e)]; s->onDragStart(); s->onDragEnd(); };
+                auto snapshot = [&](const juce::String& name) {
+                    if(argc < 5) return;
+                    const juce::File out{juce::String(argv[4]) + "-compact-" + name.replaceCharacter(' ', '-').toLowerCase() + ".png"};
+                    out.deleteFile(); juce::FileOutputStream stream(out); juce::PNGImageFormat().writeImageToStream(panel.createComponentSnapshot(panel.getLocalBounds()), stream);
+                };
+                using Level = standalone::CompactEditor::Level;
+                for(size_t g = 0; compact && encoders.size() == 4 && g < gate.size(); ++g)
+                {
+                    const auto& name = gate[g].name;
+                    for(int i = 0; i < 3 && compact->level() != Level::Plugins; ++i) press(0);
+                    for(int i = 0; i < 20; ++i) juce::MessageManager::getInstance()->runDispatchLoopUntil(10); // the list follows the graph
+                    const auto list = compact->listShown();
+                    const auto at = std::find(list.begin(), list.end(), name);
+                    check(at != list.end(), "the compact plugin list has " + name);
+                    if(at == list.end()) continue;
+                    turn(0, -int(list.size())); turn(0, int(at - list.begin()));
+                    check(compact->chosen() == size_t(at - list.begin()), "turning encoder 1 chooses " + name);
+                    if(g == 0) snapshot("plugins");
+                    press(3);
+                    // The same description as Desktop and Panel: its pages, each one's parameters by priority.
+                    NodeId node = 0;
+                    for(const auto& [id, n] : engine.graph().names) if(n == name) node = id;
+                    auto params = engine.parameters(node);
+                    std::erase_if(params, [](const standalone::Engine::ParamInfo& p) { return (p.flags & CLAP_PARAM_IS_HIDDEN) != 0; });
+                    const auto pages = standalone::editorPages(params);
+                    // A plugin with no parameters (the Sampler, so far) says so.
+                    check(pages.empty() ? compact->level() == Level::Pages && compact->listShown().empty() : compact->level() == (pages.size() > 1 ? Level::Pages : Level::Parameters),
+                          name + ": its pages, or its one page's parameters");
+                    size_t turned = 0;
+                    for(size_t page = 0; page < pages.size(); ++page)
+                    {
+                        if(pages.size() > 1) { turn(0, -int(pages.size())); turn(0, int(page)); press(3); }
+                        auto top = pages[page].params;
+                        standalone::byPriority(params, top);
+                        std::vector<std::string> expected;
+                        for(size_t k = 0; k < std::min<size_t>(4, top.size()); ++k) expected.push_back(params[top[k]].name);
+                        check(compact->level() == Level::Parameters && compact->encoderNames() == expected, name + ": the encoders have " + pages[page].name + "'s top parameters");
+                        if(page == 0) snapshot(name + "-page");
+                        for(int e = 0; e < int(expected.size()); ++e)
+                        {
+                            const auto& p = params[top[size_t(e)]];
+                            if(p.flags & CLAP_PARAM_IS_READONLY) continue;
+                            const double before = engine.param(name, p.id);
+                            const int steps = before > (p.minimum + p.maximum) / 2 ? -3 : 3;
+                            turn(e, steps);
+                            for(int i = 0; i < 100 && engine.param(name, p.id) == before; ++i) juce::MessageManager::getInstance()->runDispatchLoopUntil(10);
+                            check(engine.param(name, p.id) != before, name + ": encoder " + std::to_string(e + 1) + " turns " + p.name);
+                            turned += engine.param(name, p.id) != before;
+                        }
+                        if(top.size() > 4)
+                        {
+                            press(3);
+                            check(compact->encoderNames().front() == params[top[4]].name, name + ": pressing encoder 4 shows the next four");
+                        }
+                        if(pages.size() > 1) press(0);
+                    }
+                    std::printf("compact: %s, %zu pages, %zu parameters turned\n", name.c_str(), pages.size(), turned);
+                }
             }
             // The preference: Automatic until one is saved, then what was saved.
             const auto folder = juce::File::createTempFile("oscairn-input");

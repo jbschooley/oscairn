@@ -127,6 +127,10 @@ Everything else is handled for you:
     tab for each second level (`Operator 1/Envelope`); the rest of the path is a heading. So
     give a large page second levels of a dozen or so parameters each;
   - a search box finds parameters on any page by name or module, so keep names specific;
+  - a small screen with a few encoders (RFC 0019's Compact surface, tried with the Compact
+    layout) lists the same pages, then a page's parameters four at a time in priority order,
+    so a page's first four by priority (or in your order, without hints) are what a pedal-sized
+    device reaches first;
   - an envelope's, LFO's or filter's parameters recognized by name (below) are linked into
     one group of tiles, as a hint's group would;
   - an envelope is drawn as a curve you can drag when one module holds its parameters under

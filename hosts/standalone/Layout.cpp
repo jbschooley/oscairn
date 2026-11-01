@@ -95,7 +95,8 @@ namespace oscairn::standalone
             const auto surface = root["surface"].toString();
             if( surface == "panel" ) layout.surface = Surface::Panel;
             else if( surface == "desktop" ) layout.surface = Surface::Desktop;
-            else invalid( "\"surface\" must be panel or desktop" );
+            else if( surface == "compact" ) layout.surface = Surface::Compact;
+            else invalid( "\"surface\" must be panel, desktop or compact" );
         }
 
         if( const auto* panels = root["panels"].getArray() )
@@ -107,7 +108,7 @@ namespace oscairn::standalone
             }
 
         const auto* controls = root["controls"].getArray();
-        if( !controls && layout.surface == Surface::Panel )
+        if( !controls && layout.surface != Surface::Desktop )
             invalid( "\"controls\" must be a list" );
         bool screen = false;
         for( int i = 0; controls && i < controls->size(); ++i )

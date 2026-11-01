@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #include "Panel.h"
+#include "CompactEditor.h"
 #include "Theme.h"
 
 #include <stdexcept>
@@ -28,11 +29,13 @@ namespace oscairn::standalone
         }
     }
 
-    /// A rotary knob bound to a parameter or the tempo.
+    /// A rotary knob bound to a parameter or the tempo, or a compact layout's encoder.
     class Panel::Knob : public juce::Component
     {
     public:
-        Knob( Engine& engine, const Layout::Control& c ) : engine_( engine ), label_( c.label )
+        /// encoder: a compact layout's encoders' turns (in detents) and presses (steps 0) go there.
+        using Encoder = std::function<void( int encoder, int steps )>;
+        Knob( Engine& engine, const Layout::Control& c, Encoder encoder = {} ) : engine_( engine ), label_( c.label )
         {
             slider_.setSliderStyle( juce::Slider::RotaryHorizontalVerticalDrag );
             slider_.setTextBoxStyle( juce::Slider::TextBoxBelow, true, 80, 18 );
@@ -65,6 +68,25 @@ namespace oscairn::standalone
                 if( label_.empty() ) label_ = control_;
                 refresh();
                 slider_.updateText();
+            }
+            else if( c.bind.rfind( "encoder:", 0 ) == 0 && std::atoi( c.bind.c_str() + 8 ) > 0 )
+            {
+                // Turns and presses for the compact screen: a detent per step of an endless range;
+                // a click that turns nothing is a press.
+                if( !encoder )
+                    throw std::runtime_error( "layout: knob \"" + c.label + "\" is an encoder, which only a compact layout has" );
+                const int index = std::atoi( c.bind.c_str() + 8 ) - 1;
+                slider_.setRange( 0.0, 63.0, 1.0 );
+                slider_.setRotaryParameters( slider_.getRotaryParameters().startAngleRadians, slider_.getRotaryParameters().endAngleRadians, false );
+                slider_.setTextBoxStyle( juce::Slider::NoTextBox, true, 0, 0 );
+                slider_.onDragStart   = [this] { turned_ = false; };
+                slider_.onValueChange = [this, index, encoder] {
+                    int steps = int( slider_.getValue() ) - last_;
+                    if( steps > 32 ) steps -= 64; else if( steps < -32 ) steps += 64; // across the wrap
+                    last_ = int( slider_.getValue() ); turned_ = true;
+                    if( steps ) encoder( index, steps );
+                };
+                slider_.onDragEnd = [this, index, encoder] { if( !turned_ ) encoder( index, 0 ); };
             }
             else if( c.bind.rfind( "row:", 0 ) == 0 && std::atoi( c.bind.c_str() + 4 ) > 0 )
             {
@@ -181,7 +203,8 @@ namespace oscairn::standalone
         uint32_t      param_ = 0;
         int           row_ = 0; // bound "row:N": the Nth parameter of the row on screen
         uint32_t      rowControl_ = 0; // or, there, a control of the tree
-        bool          tempo_ = false, available_ = false;
+        bool          tempo_ = false, available_ = false, turned_ = false;
+        int           last_ = 0; // an encoder's position, for the detents turned since
         juce::Slider  slider_;
     };
 
@@ -315,6 +338,13 @@ namespace oscairn::standalone
                 {
                 case Type::Screen:
                 {
+                    if( layout.surface == Layout::Surface::Compact )
+                    {
+                        auto compact = std::make_unique<CompactEditor>( engine );
+                        compact_     = compact.get();
+                        component    = std::move( compact );
+                        break;
+                    }
                     auto screen = std::make_unique<Screen>( engine );
                     screen_     = screen.get();
                     component   = std::move( screen );
@@ -322,7 +352,10 @@ namespace oscairn::standalone
                 }
                 case Type::Knob:
                 {
-                    auto knob = std::make_unique<Knob>( engine, c );
+                    Knob::Encoder encoder;
+                    if( layout.surface == Layout::Surface::Compact )
+                        encoder = [this]( int e, int steps ) { if( compact_ ) { if( steps ) compact_->turn( e, steps ); else compact_->press( e ); } };
+                    auto knob = std::make_unique<Knob>( engine, c, encoder );
                     knobs_.push_back( knob.get() );
                     component = std::move( knob );
                     break;
@@ -360,7 +393,7 @@ namespace oscairn::standalone
             if( overlay_ ) overlay_->setBounds( screenBounds() );
             repaint();
         }
-        juce::Rectangle<int> screenBounds() const { return screen_ ? screen_->getBounds() : getLocalBounds(); }
+        juce::Rectangle<int> screenBounds() const { return screen_ ? screen_->getBounds() : compact_ ? compact_->getBounds() : getLocalBounds(); }
         juce::Component* overlay_ = nullptr; // a view over the screen
 
         void refresh()
@@ -434,6 +467,7 @@ namespace oscairn::standalone
         std::vector<std::pair<juce::Component*, const Layout::Control*>> placed_;
         int                                           dx_ = 0, dy_ = 0;
         Screen*                                       screen_ = nullptr;
+        CompactEditor*                                compact_ = nullptr;
         std::vector<Knob*>                            knobs_;
         std::vector<Pads*>                            pads_;
         std::vector<std::pair<juce::TextButton*, std::string>> toggles_;

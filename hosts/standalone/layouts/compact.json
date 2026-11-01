@@ -1,0 +1,12 @@
+{
+  "name": "Compact",
+  "surface": "compact",
+  "size": [400, 380],
+  "controls": [
+    {"type": "screen", "rect": [40, 24, 320, 240]},
+    {"type": "knob", "rect": [40, 280, 80, 84], "label": "1", "bind": "encoder:1", "mode": "endless"},
+    {"type": "knob", "rect": [120, 280, 80, 84], "label": "2", "bind": "encoder:2", "mode": "endless"},
+    {"type": "knob", "rect": [200, 280, 80, 84], "label": "3", "bind": "encoder:3", "mode": "endless"},
+    {"type": "knob", "rect": [280, 280, 80, 84], "label": "4", "bind": "encoder:4", "mode": "endless"}
+  ]
+}
