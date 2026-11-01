@@ -146,16 +146,20 @@ namespace oscairn::worker
             for(const auto& p : ports) w.u32(p.id).str(p.name).u32(p.channels).u32(p.flags);
         }
 
+        void putParameters(Writer& w, const std::vector<kick::clap::Parameter>& params)
+        {
+            if(params.size() > maxParameters) throw std::runtime_error("Plugin has too many parameters for a worker");
+            w.u32(uint32_t(params.size()));
+            for(const auto& q : params) w.u32(q.id).str(q.name).str(q.module).f64(q.minimum).f64(q.maximum).f64(q.defaultValue).u32(q.flags).u32(q.widget).u32(q.priority).u32(q.rangeHigh).u32(q.group);
+        }
+
         // What the engine needs to know about a plugin node; WorkerHost reads it in this order.
         void describe(Writer& w, const PluginHost& host)
         {
             const auto& d = host.descriptor();
             w.str(d.path).str(d.id).str(d.name).str(d.vendor).str(d.version).str(d.description).u32(uint32_t(d.features.size()));
             for(const auto& f : d.features) w.str(f);
-            const auto& params = host.parameters();
-            if(params.size() > maxParameters) throw std::runtime_error("Plugin has too many parameters for a worker");
-            w.u32(uint32_t(params.size()));
-            for(const auto& q : params) w.u32(q.id).str(q.name).str(q.module).f64(q.minimum).f64(q.maximum).f64(q.defaultValue).u32(q.flags).u32(q.widget).u32(q.priority).u32(q.rangeHigh).u32(q.group);
+            putParameters(w, host.parameters());
             putPorts(w, host.inputPorts()); putPorts(w, host.outputPorts());
             w.u32(host.noteInputPorts()).u32(host.noteOutputPorts());
             for(uint32_t i = 0; i < host.noteInputPorts(); ++i) w.u8(host.usesClapNotes(i));
@@ -241,6 +245,7 @@ namespace oscairn::worker
             std::shared_ptr<PluginHost> host;
             Shared* shared = nullptr; size_t bytes = 0;
             std::thread audio;
+            uint64_t revision = 0; // the parameter info the engine has
             void publish() const
             {
                 if(!shared) return;
@@ -272,6 +277,7 @@ namespace oscairn::worker
             host->setAssets(&assets);
             auto n = std::make_unique<Node>(); n->host = std::move(host);
             Writer w; w.u32(uint32_t(nodes.size())); describe(w, *n->host); reply(socket, w);
+            n->revision = n->host->parameterRevision();
             Reader r; r.data = receive(socket);
             if(r.u8())
             {
@@ -325,6 +331,10 @@ namespace oscairn::worker
                     while(events.size() < 4096 && host.popOutput(e)) events.push_back(e);
                     w.u32(uint32_t(events.size()));
                     for(const auto& x : events) w.bytes(x.bytes.data(), x.bytes.size());
+                    // An info rescan, which the plugin's host takes in service: the new info follows.
+                    const auto revision = host.parameterRevision();
+                    w.u8(revision != n.revision);
+                    if(revision != n.revision) { putParameters(w, host.parameters()); n.revision = revision; }
                     break;
                 }
                 // Published at once, so the engine reads the new value right after setting it, as in the engine.

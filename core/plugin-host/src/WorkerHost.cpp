@@ -70,6 +70,13 @@ namespace oscairn
             return u;
         }
 
+        std::vector<kick::clap::Parameter> readParameters(Reader& r)
+        {
+            std::vector<kick::clap::Parameter> parameters(r.u32());
+            for(auto& p : parameters) { p.id = r.u32(); p.name = r.str(); p.module = r.str(); p.minimum = r.f64(); p.maximum = r.f64(); p.defaultValue = r.f64(); p.flags = r.u32(); p.widget = r.u32(); p.priority = r.u32(); p.rangeHigh = r.u32(); p.group = r.u32(); }
+            return parameters;
+        }
+
         class WorkerHost;
 
         // One worker process and what its nodes share: the control socket, the supervisor, the
@@ -247,8 +254,7 @@ namespace oscairn
                 descriptor_.path = r.str(); descriptor_.id = r.str(); descriptor_.name = r.str(); descriptor_.vendor = r.str();
                 descriptor_.version = r.str(); descriptor_.description = r.str();
                 for(auto n = r.u32(); n--;) descriptor_.features.push_back(r.str());
-                parameters_.resize(r.u32());
-                for(auto& p : parameters_) { p.id = r.u32(); p.name = r.str(); p.module = r.str(); p.minimum = r.f64(); p.maximum = r.f64(); p.defaultValue = r.f64(); p.flags = r.u32(); p.widget = r.u32(); p.priority = r.u32(); p.rangeHigh = r.u32(); p.group = r.u32(); }
+                parameters_ = readParameters(r);
                 for(uint32_t i = 0; i < parameters_.size(); ++i) index_[parameters_[i].id] = i;
                 inputs_ = readPorts(r); outputs_ = readPorts(r);
                 noteInputs_ = r.u32(); noteOutputs_ = r.u32();
@@ -369,7 +375,21 @@ namespace oscairn
                 try { r = request(Op::Service); } catch(const std::exception&) { return; }
                 pending_.clear(); next_ = 0;
                 for(auto n = r.u32(); n--;) { kick::clap::Event e; r.bytes(e.bytes.data(), e.bytes.size()); pending_.push_back(e); }
+                if(!r.u8()) return;
+                // An info rescan (names, flags, hints) keeps the parameters and their order, which the
+                // shared block's values and index_ rely on. Under control: a restart reads the flags.
+                // shortcut: other changes are ignored until the plugin is loaded again; a restarted worker's own info shows only after its next rescan.
+                try
+                {
+                    auto fresh = readParameters(r);
+                    std::lock_guard lock(controlFor());
+                    if(!std::equal(fresh.begin(), fresh.end(), parameters_.begin(), parameters_.end(), [](const auto& a, const auto& b) { return a.id == b.id; })) return;
+                    parameters_ = std::move(fresh);
+                    revision_.fetch_add(1, std::memory_order_relaxed);
+                }
+                catch(const std::exception&) {}
             }
+            uint64_t parameterRevision() const noexcept override { return revision_.load(std::memory_order_relaxed); }
             bool supportsState() const noexcept override { return state_; }
             void saveState(const std::string& directory) override { request(Op::SaveState, Writer().str(directory)); }
             void loadState(const std::string& directory) override
@@ -733,6 +753,7 @@ namespace oscairn
             std::array<uint32_t, 16> selected_ = [] { std::array<uint32_t, 16> a; a.fill(UINT32_MAX); return a; }();
             uint32_t nextId_ = 1;
             std::vector<double> values_;
+            std::atomic<uint64_t> revision_{0}; // moves with each info rescan the worker forwards
             // Audio thread, and what the supervisor reads of it.
             std::atomic<uint32_t> requested_{0};
             std::atomic<int64_t> requestedAt_{0};

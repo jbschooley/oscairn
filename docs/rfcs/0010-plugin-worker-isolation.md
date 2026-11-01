@@ -399,6 +399,14 @@ Since 2026-11-01 the desktop app runs every CLAP plugin in a worker:
   every plugin in the engine as before. Without a worker program it says so and runs plugins
   in the engine. LV2 plugins stay in the engine (step 7).
 - One plugin per worker, first-party plugins included, with step 6's memory limit.
+- A parameter info rescan (`CLAP_PARAM_RESCAN_INFO`: names, flags, editor hints), which the
+  plugin's host takes in place in the worker, reaches the engine with the next `service`
+  reply; the engine's side replaces its parameter info, under the control lock, and moves
+  `parameterRevision()`, so the Session publishes a graph change and the editors read it
+  again. A rescan that changes the parameters themselves is ignored until the plugin is
+  loaded again, and a restarted worker's own info shows only after its next rescan.
+  `worker-host` checks it with the stepped fixture (mode 3 hides its Toggle), and fails
+  without the forwarding.
 
 Verification: the desktop tests that host a session (`desktop-shell`, `desktop-pad-editor`)
 now run with every plugin in a worker and pass; run with a missing worker program, the pad

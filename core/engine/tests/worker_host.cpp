@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // RFC 0010 step 2: a plugin in a worker process renders exactly what it renders in the
-// engine, with the same metadata, parameters, output events and state.
+// engine, with the same metadata, parameters, output events and state; a parameter info rescan
+// in the worker reaches the engine.
 //   oscairn-worker-host-test WORKER PLUGIN.clap [PLUGIN.clap...]
 #include <oscairn/plugin_host.h>
 #include <cmath>
@@ -141,10 +142,26 @@ void sleeping(const std::string& worker, const std::string& fixture)
     check(remote->process(nullptr, 0, out, 2, frames, &on, 1, nullptr) && !remote->asleep(), "a note wakes it");
 }
 
+// The stepped fixture's mode 3 hides its Toggle with an info rescan, which the plugin's host takes
+// in place; through the worker the engine's side sees the new info and a new revision.
+void rescan(const std::string& worker, const std::string& fixture)
+{
+    constexpr uint32_t frames = 64;
+    auto remote = oscairn::loadPluginInWorker(worker, fixture, "org.kick.test.stepped", 48000, frames, oscairn::ProcessingMode::Offline);
+    auto toggle = [&] { for(const auto& p : remote->parameters()) if(p.id == 8) return p; return kick::clap::Parameter{}; };
+    const auto revision = remote->parameterRevision();
+    check(toggle().id == 8 && !(toggle().flags & CLAP_PARAM_IS_HIDDEN), "the Toggle shows at first");
+    std::vector<float> l(frames), r(frames); float* out[]{l.data(), r.data()};
+    check(remote->setParameter(9, 3) && remote->process(nullptr, 0, out, 2, frames, nullptr, 0, nullptr), "choose mode 3");
+    for(int i = 0; i < 50 && remote->parameterRevision() == revision; ++i) { remote->service(); usleep(2000); }
+    check(remote->parameterRevision() != revision && (toggle().flags & CLAP_PARAM_IS_HIDDEN) && toggle().group == 5 && remote->parameterValue(9) == 3,
+          "the rescan in the worker hides the Toggle on the engine's side, with a new revision");
+}
+
 int main(int argc, char** argv)
 {
     if(argc < 3) { std::fprintf(stderr, "usage: %s WORKER PLUGIN...\n", argv[0]); return 2; }
-    try { sleeping(argv[1], argv[2]); for(int i = 2; i < argc; ++i) compare(argv[1], argv[i]); }
+    try { sleeping(argv[1], argv[2]); rescan(argv[1], argv[2]); for(int i = 2; i < argc; ++i) compare(argv[1], argv[i]); }
     catch(const std::exception& e) { std::fprintf(stderr, "FAIL: %s\n", e.what()); return 1; }
     return failures ? 1 : 0;
 }

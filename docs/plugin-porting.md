@@ -142,8 +142,8 @@ Everything else is handled for you:
     `clap_host_params.rescan(CLAP_PARAM_RESCAN_INFO)` from the main thread: the host takes the
     new info in place, without deactivating the plugin, so the sound does not stop, and the
     editors redraw their pages within half a second. Adding or removing parameters still needs
-    `CLAP_PARAM_RESCAN_ALL` and a restart. Not yet for a plugin in a worker process, whose
-    editors keep the info it had when loaded;
+    `CLAP_PARAM_RESCAN_ALL` and a restart. A plugin in a worker process gets the same: the
+    worker forwards the new info with its next service;
   - value texts are shown as written, except a bare number with more than three decimals,
     which is shortened (`0.0100000` shows as `0.01`), so write units and names where they help;
   - a search box finds parameters on any page by name or module, so keep names specific;
