@@ -235,7 +235,7 @@ in the others.
    - [ ] the other MODX M engines on the same rules: an 8-operator FM engine starting from
      MSFA ([RFC 0014](rfcs/0014-fm-engine.md)), an analog-modeling engine
      ([RFC 0015](rfcs/0015-analog-modeling-engine.md)) and effects covering every MODX M
-     effect type and slot ([RFC 0016](rfcs/0016-effects-suite.md)), all proposed
+     effect type, its slots mapped onto ordinary parts and buses ([RFC 0016](rfcs/0016-effects-suite.md)), all proposed
 3. **Plugin worker isolation** ([RFC 0010](rfcs/0010-plugin-worker-isolation.md#progress)):
    plugins in supervised worker processes, so a crash, hang or overrun silences only its own
    node and the plugin recovers. Moved here from Phase 5 on October 30, 2026, ahead of Phase 4

@@ -1,6 +1,7 @@
 # RFC 0016: An effects suite covering the MODX M platform
 
-Status: proposed, 2026-10-30. Not implemented. Builds on [RFC 0007](0007-effect-contexts.md)
+Status: proposed, 2026-10-30; revised 2026-11-01 (no slot model: Yamaha's slots map onto
+ordinary routing). Not implemented. Builds on [RFC 0007](0007-effect-contexts.md)
 effect contexts and the bus and send model. Same rules as [RFC 0013](0013-awm2-class-sample-engine.md):
 effects written for Oscairn or reused from open-source projects, with no Yamaha code.
 
@@ -8,32 +9,59 @@ effects written for Oscairn or reused from open-source projects, with no Yamaha 
 
 Checked when built and tested; the sections below say how.
 
-- [ ] 1. Slot model
+- [ ] 1. Routing for converted effects: the converter's mapping onto parts, buses and wires;
+      node roles for device profiles; side-chain inputs on effect contexts
 - [ ] 2. The most-used types
 - [ ] 3. The remaining categories
 - [ ] 4. Converter coverage
 
 ## Outcome
 
-Oscairn ships effects that cover every effect type and effect slot a MONTAGE M / MODX M
-Performance can use, so a converted Performance keeps its effects. Each Yamaha type maps to
+Oscairn ships effects that cover every effect type a MONTAGE M / MODX M Performance can use,
+in every place it can use them, so a converted Performance keeps its effects. Each Yamaha type maps to
 an Oscairn effect with equivalent parameters, measured against ESP renders, as RFC 0013
 describes. This RFC does not make each type a separate plugin. Several types can be modes of
 one effect (for example one reverb with Hall, Room, Plate and Stage algorithms).
 
 ## Target
 
-### Slots
+### Where the effects go
 
-From the Data List and the MONTAGE M manual:
-- Per Part: Insertion A and B, a 3-band and a 2-band Part EQ, and the element and drum-key routing to A
-  or B.
+The MONTAGE M and MODX M have fixed effect slots (from the Data List and the manual):
+- Per Part: Insertion A and B, a 3-band and a 2-band Part EQ, and the element and drum-key
+  routing to A or B.
 - Per Performance: Reverb and Variation sends, Master Effect, 5-band Master EQ, the A/D-input
   insertion, and the VCM Rotary slot.
 - Side-chain or modulator input for the marked types.
 
-Each slot is an effect context on a bus, which RFC 0007 already provides. Side-chain needs a
-second input per context.
+Oscairn has no slot model. Each slot is a place in the ordinary graph
+([RFC 0011](0011-performance-ui-and-editors.md)'s parts, chains, shared buses and wires), so a
+converted Performance is a normal Performance the musician can rearrange:
+
+| Yamaha slot | In Oscairn |
+| --- | --- |
+| Insertion A, Insertion B, Part EQ | Plugins in the part's chain, in Yamaha's order (A and B in series or parallel as the Part sets them; parallel is a split) |
+| Element and drum-key routing to A or B | The sample engine's two outputs per context ([RFC 0013](0013-awm2-class-sample-engine.md)) wired to the two insertion chains |
+| Reverb and Variation sends | Two shared buses, each a Mix node and its chain; the Part's send levels are its sends, Variation-to-Reverb a send from one bus to the other |
+| Master Effect, Master EQ | A bus every part plays through, its chain the master effect then the EQ |
+| A/D-input insertion | A part with an audio input and its chain |
+| VCM Rotary slot | A plugin in the chain where the Performance has it |
+| Side-chain or modulator input | A wire into the plugin's side-chain port (RFC 0011 keeps it when the plugin is replaced) |
+
+An effect is an ordinary CLAP plugin; nothing in it knows which slot it fills. A new part gets no
+fixed EQ or sends: a part template can add them, and the Mixer shows the Performance's own buses
+(RFC 0019).
+
+Two additions remain:
+
+- **Node roles.** A hardware panel's buttons and pages name an effect ("edit Insertion A",
+  "Master EQ"). A node may carry an optional role (`insertion-a`, `insertion-b`, `part-eq`,
+  `reverb`, `variation`, `master-effect`, `master-eq`), which the converter sets and the musician
+  can change; a device profile ([RFC 0024](0024-device-profiles.md)) maps its controls to roles,
+  and a Performance without a node in that role shows nothing there. Saved with the node in the
+  Performance format.
+- **Side-chain on effect contexts.** Plugins' own side-chain ports already work; effect contexts
+  sharing one engine ([RFC 0007](0007-effect-contexts.md)) need a second input per context.
 
 ### Types
 
@@ -82,7 +110,7 @@ credited.
 
 | Step | Deliverable | Gate |
 | --- | --- | --- |
-| 1 | Slot model: Part insertions A/B, Part EQ, Reverb and Variation sends, Master Effect and EQ, side-chain inputs on RFC 0007 contexts | Routing tests; converted Performances keep their structure |
+| 1 | Routing for converted effects: the converter's mapping of each slot onto parts, buses and wires (above), node roles, side-chain inputs on RFC 0007 contexts | Converted factory Performances route as on the instrument, measured against ESP renders; a profile's buttons reach their roles |
 | 2 | The most-used types first: VCM EQ 501, compressors, reverbs, delays, chorus, rotary, amp simulator 1 | Measured against ESP renders; listening |
 | 3 | The remaining categories | Per-type measurements |
 | 4 | Converter coverage for every type and parameter | The factory set converts with no effect-parameter loss |
