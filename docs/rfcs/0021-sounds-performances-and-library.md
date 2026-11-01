@@ -43,7 +43,8 @@ Checked when built and tested; the sections below say how.
       importing again skips copies still unchanged (by content hash)
 - [ ] Hidden tags and tag colors
 - [x] Exporting a Performance keeps its parts' references to their Sounds
-- [ ] Exporting with the referenced Sounds included, as an option ([design](#exporting-a-performance))
+- [ ] Exporting with every asset, the Sounds of unedited parts, and optionally those of edited
+      parts ([design](#exporting-a-performance))
 - [ ] 2. Library index and tags: index, user file and Sounds done; tag editing, suggestions,
       packages and `LibraryModel` remain
 - [ ] 3. Desktop pane: the Library app and Part menu done; the dockable pane, inspector,
@@ -433,16 +434,24 @@ are edited from their Sounds or made from scratch and have no Sound saved apart,
 none. Each part also keeps where it came from, if it came from a Sound, as a reference
 (`from`).
 
-- **Including the Sounds is optional.** The export may also bring the Sounds its parts'
-  references name, with their samples. Importing the Performance then adds those the device
-  does not have (one whose content hash is already there is not added again), so the parts
-  link to them. Without them, the parts play the same; their references point at Sounds the
-  device may not have, and Save and Update from library treat those as missing.
+- **Samples and other assets always go.** Every sample, waveform and other asset the
+  Performance's plugins use is in the export, so it plays on a device that has none of them.
+  The device stores each once by its hash (RFC 0009), skipping those it already has.
+- **A part's Sound goes with it when the part is still that Sound:** unedited since it was
+  loaded or saved, with the content hash the library has for that revision. It costs no
+  more than the part itself and keeps the link working on the other device.
+- **A part edited since its Sound** may also bring that Sound, as an option, off by
+  default: the Performance has the edited part, and the Sound is the earlier version.
+- Importing the Performance adds the Sounds it brings that the device does not have; one
+  whose content hash is already there is not added again. A part whose Sound did not come,
+  and is not on the device, plays the same; Save and Update from library treat its Sound
+  as missing.
 - A Sound from a locked library comes as that library's item, locked, with its library's name
   and ID.
 
-Today a Performance saved to a folder keeps its parts' references; bringing the Sounds along
-is not built yet.
+Today a Performance saved to a folder keeps its parts' references; the export that brings
+Sounds and assets along is not built yet (the folder references samples in their libraries,
+as RFC 0009 has it for saved Performances).
 
 ### Filtering
 

@@ -295,8 +295,9 @@ in the others.
      hash; the same choice of parts for any package, such as only its
      plugin ([RFC 0006](rfcs/0006-packages-and-portability.md#choosing-what-to-import))
    - [x] exporting a Performance keeps its parts' references to the Sounds they came from
-   - [ ] **exporting with its Sounds, as an option:** the referenced Sounds and their samples
-     travel with it, and importing adds those the device lacks
+   - [ ] **exporting with its Sounds and assets:** every sample, waveform and other asset
+     always travels; a part's Sound travels when the part is unedited since it, and as an
+     option when it was edited; importing adds what the device lacks, by hash
      ([design](rfcs/0021-sounds-performances-and-library.md#exporting-a-performance))
    - [ ] hiding tags from the tag list, and tag colors
    - [ ] **importing a Performance:** all of another Performance's parts, buses, their wires
