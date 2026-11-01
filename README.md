@@ -252,7 +252,7 @@ The design the code is built towards; parts of it are not built yet. In full:
 - **Event sources.** Keyboards, pads, MIDI, sequencers and the DAW are all event sources that
   feed the same graph. Live playing, groovebox sequencing and DAW use are one model.
 - **Plugins do the timing-critical work.** Engines, effects, sequencers and arpeggiators are
-  plugins (CLAP preferred; LV2 and VST3 hosted too). They also run in a DAW.
+  plugins (CLAP preferred; LV2 hosted too; VST3 planned). They also run in a DAW.
 - **One UI, separate from the audio.** The UI talks to the core through a control API and
   never runs on the audio thread.
 - **The core is a library.** It does not assume it owns the audio device or the process, so the
