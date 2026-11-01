@@ -14,8 +14,9 @@ struct AudioConfiguration
     std::string inputDevice,outputDevice;
     std::vector<uint32_t> inputs,outputs{0,1}; // logical order -> physical channel (zero based)
     bool explicitOutputs=false;
+    uint32_t bufferFrames=0; // the block the device is asked for (a device profile's, RFC 0024); 0: the build's default
     static bool isOption(std::string_view name)
-    {return name=="--audio-inputs" || name=="--audio-outputs" || name=="--input-device" || name=="--output-device";}
+    {return name=="--audio-inputs" || name=="--audio-outputs" || name=="--input-device" || name=="--output-device" || name=="--buffer-frames";}
     void setOption(std::string_view name,const std::string& value)
     {
         if(value.empty() || value.find('\0')!=std::string::npos)throw std::invalid_argument("Empty or invalid audio option");
@@ -23,6 +24,11 @@ struct AudioConfiguration
         else if(name=="--audio-outputs"){outputs=parseChannels(value);explicitOutputs=true;}
         else if(name=="--input-device")inputDevice=value;
         else if(name=="--output-device")outputDevice=value;
+        else if(name=="--buffer-frames")
+        {
+            const auto parsed=std::from_chars(value.data(),value.data()+value.size(),bufferFrames);
+            if(parsed.ec!=std::errc{} || parsed.ptr!=value.data()+value.size() || bufferFrames<16 || bufferFrames>8192)throw std::invalid_argument("--buffer-frames is 16 to 8192");
+        }
         else throw std::invalid_argument("Unknown audio option");
     }
     void validate() const
@@ -45,6 +51,7 @@ struct AudioConfiguration
         if(!outputDevice.empty()){args.push_back("--output-device");args.push_back(outputDevice);}
         if(!inputs.empty()){args.push_back("--audio-inputs");args.push_back(list(inputs));}
         if(explicitOutputs){args.push_back("--audio-outputs");args.push_back(list(outputs));}
+        if(bufferFrames){args.push_back("--buffer-frames");args.push_back(std::to_string(bufferFrames));}
         return args;
     }
     static std::vector<uint32_t> parseChannels(std::string_view text)

@@ -21,7 +21,8 @@ Cortex-A76/A55). It tests the toolchain, packaging and startup, not board-specif
 - The session (`board/common/session-juce-x11`): at boot, `/etc/init.d/S95oscairn` starts
   `/usr/libexec/oscairn-session`, which starts an X server and then Oscairn full screen,
   and restarts Oscairn if it exits. Its arguments are in `/etc/default/oscairn`
-  (`--layout kick-screen --fullscreen --play`). Logs: `/var/log/oscairn.log` and
+  (`--profile qemu-aarch64 --play`: the image's [device profile](../docs/rfcs/0024-device-profiles.md),
+  which fills the screen with the KICK's screen layout and asks for 128-frame audio blocks). Logs: `/var/log/oscairn.log` and
   `/var/log/oscairn-xorg.log`.
 - Sound through ALSA. The QEMU image uses the kernel's dummy sound card, which plays
   silently. Audio requests a 128-frame buffer, through the

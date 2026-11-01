@@ -394,7 +394,9 @@ first, then others (a tabletop module, a groovebox, a pedal or multi-effects, a 
 drum module, a DJ unit, a Eurorack module, a DAW plugin). These are required of all of them:
 
 - [ ] **device profiles:** one manifest per product that the image, engine, UI, mappings,
-  packages and admission read instead of flags ([RFC 0024](rfcs/0024-device-profiles.md#progress))
+  packages and admission read instead of flags ([RFC 0024](rfcs/0024-device-profiles.md#progress)).
+  Built: the schema, the desktop's, QEMU, KICK and Ignite profiles (the last two estimated),
+  `--profile`, and the app's surface, layout, apps and audio block following it
 - [ ] **knowing before loading whether it fits:** CPU and memory measured on the device, and
   admission for loading, editing and seamless changes ([RFC 0025](rfcs/0025-resource-budgets.md#progress))
 - [ ] **builds for every device's platform:** first-party plugins and apps on Linux ARM64 beside

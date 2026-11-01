@@ -12,8 +12,13 @@ juce_add_binary_data(oscairn_standalone_layouts SOURCES
     layouts/kick-screen.json
     layouts/ignite.json
     layouts/keys49.json)
+# Device profiles (RFC 0024), apart from the layouts: some share their names.
+juce_add_binary_data(oscairn_standalone_profiles HEADER_NAME ProfileData.h NAMESPACE ProfileData SOURCES
+    profiles/qemu-aarch64.json
+    profiles/kick.json
+    profiles/ignite.json)
 
-target_sources(oscairn_standalone PRIVATE Main.cpp DesktopShell.cpp ParameterGrid.cpp ZoneEditor.cpp Engine.cpp Layout.cpp Panel.cpp Screen.cpp SoundPickerModel.cpp Theme.cpp PluginBrowser.cpp PadEditor.cpp PartsView.cpp PartsModel.cpp LibraryPane.cpp Setlist.cpp)
+target_sources(oscairn_standalone PRIVATE Main.cpp DesktopShell.cpp ParameterGrid.cpp ZoneEditor.cpp Engine.cpp Layout.cpp Panel.cpp Screen.cpp SoundPickerModel.cpp Theme.cpp PluginBrowser.cpp PadEditor.cpp PartsView.cpp PartsModel.cpp LibraryPane.cpp Setlist.cpp Profile.cpp)
 target_compile_definitions(oscairn_standalone PRIVATE
     JUCE_WEB_BROWSER=0
     JUCE_USE_CURL=0
@@ -26,6 +31,7 @@ target_link_libraries(oscairn_standalone PRIVATE
     oscairn_host_process
     oscairn_control_socket
     oscairn_standalone_layouts
+    oscairn_standalone_profiles
     juce::juce_audio_utils
     juce::juce_gui_extra
     juce::juce_recommended_config_flags
@@ -62,6 +68,12 @@ target_sources(oscairn_theme_test PRIVATE tests/theme.cpp Theme.cpp)
 target_link_libraries(oscairn_theme_test PRIVATE juce::juce_gui_extra juce::juce_recommended_config_flags)
 target_compile_definitions(oscairn_theme_test PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
 add_test(NAME desktop-theme COMMAND oscairn_theme_test "${CMAKE_CURRENT_SOURCE_DIR}/themes" "${CMAKE_CURRENT_SOURCE_DIR}/theme-examples/midnight")
+
+juce_add_console_app(oscairn_profile_test PRODUCT_NAME "Oscairn Profile Test")
+target_sources(oscairn_profile_test PRIVATE tests/profile.cpp Profile.cpp)
+target_link_libraries(oscairn_profile_test PRIVATE oscairn_standalone_profiles juce::juce_gui_extra juce::juce_recommended_config_flags)
+target_compile_definitions(oscairn_profile_test PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
+add_test(NAME desktop-profile COMMAND oscairn_profile_test)
 
 # The pad editor against a session served on a socket, without an audio device.
 juce_add_console_app(oscairn_pad_editor_test PRODUCT_NAME "Oscairn Pad Editor Test")

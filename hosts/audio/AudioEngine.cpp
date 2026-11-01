@@ -14,8 +14,8 @@ namespace oscairn::host
     AudioEngine::AudioEngine( const std::string& pluginDir, AudioConfiguration audio ) : channelMap_(std::move(audio),maxFrames)
     {
         juce::AudioDeviceManager::AudioDeviceSetup preferred;
-        preferred.bufferSize = OSCAIRN_AUDIO_BUFFER_FRAMES;
         const auto& config=channelMap_.configuration();
+        preferred.bufferSize = config.bufferFrames ? int(config.bufferFrames) : OSCAIRN_AUDIO_BUFFER_FRAMES;
         const auto inputs=ChannelMap::required(config.inputs),outputs=ChannelMap::required(config.outputs);
         preferred.inputDeviceName=config.inputDevice;preferred.outputDeviceName=config.outputDevice;
         preferred.useDefaultInputChannels=false;preferred.useDefaultOutputChannels=false;

@@ -1,0 +1,21 @@
+{
+  "format": "oscairn.profile",
+  "version": 1,
+  "id": "ignite",
+  "name": "Ignite (BE 0716-AAF)",
+  "platform": { "os": "linux", "cpu": "arm64", "runtime": "oscairn-buildroot-2026.08", "board": "imx8mm" },
+  "compute": { "cores": 4, "realtimeCores": 1, "memory": 2048, "storage": 16384 },
+  "audio": { "inputs": 2, "outputs": 2, "rates": [48000], "block": 128, "headphones": true },
+  "controls": [
+    { "kind": "pads", "count": 16 },
+    { "kind": "encoders", "count": 27 },
+    { "kind": "buttons", "count": 26 }
+  ],
+  "screens": [ { "width": 1024, "height": 600, "touch": true, "surface": "panel", "layout": "ignite" } ],
+  "midi": { "din": 4, "usbDevice": true, "usbHost": true },
+  "cv": { "outputs": 4 },
+  "network": { "wifi": true },
+  "reliability": "instrument",
+  "apps": ["oscairn.groovebox", "oscairn.library", "oscairn.setlist"],
+  "estimated": ["platform", "compute", "audio", "controls", "midi", "cv", "network"]
+}

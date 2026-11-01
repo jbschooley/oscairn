@@ -102,7 +102,10 @@ log reports the actual size and notes any difference. Sample rate still uses the
 device/backend default. At 48 kHz, 128 frames span about 2.67 ms, excluding other
 device/driver latency.
 
-Configure another startup request with `-DOSCAIRN_AUDIO_BUFFER_FRAMES=256`, or use `0`
+A device profile ([RFC 0024](../docs/rfcs/0024-device-profiles.md)) names the block its
+device asks for (`audio.block`), and `--buffer-frames N` (16 to 8192) overrides it for a run;
+both reach the managed helper as its `--buffer-frames`. Without either, the build's request
+applies: configure another with `-DOSCAIRN_AUDIO_BUFFER_FRAMES=256`, or use `0`
 for the backend/device default. The setting applies to both the managed audio helper
 and in-process mode. It takes effect when a newly built engine starts; reconnecting a
 UI to an already-running engine preserves that engine's existing settings. The actual
@@ -113,21 +116,28 @@ Device callbacks larger than 512 are split into smaller processing calls; callba
 below 512 stay smaller. Splitting does not reduce the device's buffering latency.
 At 48 kHz, 512 frames span about 10.7 ms, excluding other device/driver latency.
 
-Neither a running UI nor the control API currently changes audio device settings. The CMake
-setting above chooses the startup request; a runtime settings UI and persistence remain
-follow-up work. The graph currently stays at its startup
+Neither a running UI nor the control API currently changes audio device settings. The
+profile, `--buffer-frames` or the CMake setting above chooses the startup request; a runtime
+settings UI and persistence remain follow-up work. The graph currently stays at its startup
 sample rate; a later device rate change deliberately silences playback until restart.
 
 Buildroot Linux on hardware uses this same engine through ALSA. Its package explicitly
-sets `OSCAIRN_AUDIO_BUFFER_FRAMES=128`, matching the desktop's request. A board
-profile can override this build option to request a different supported size at startup;
-it should be chosen using measurements on the actual codec/driver under load.
+sets `OSCAIRN_AUDIO_BUFFER_FRAMES=128`, matching the desktop's request, and the image's
+device profile asks for its own block (128 in the built-in profiles); it should be chosen
+using measurements on the actual codec/driver under load.
 The QEMU dummy sound card cannot establish real-hardware latency or reliable settings.
 
 The offline renderer is independent: it defaults to 512 frames at 48 kHz and accepts
 `--block` and `--rate`. LV2 Atom buffer capacities are a separate message-memory policy.
 
 ### Launching
+
+`--profile NAME|FILE` names the device the app runs on ([RFC 0024](../docs/rfcs/0024-device-profiles.md)):
+`qemu-aarch64`, `kick` or `ignite` (built in, in `standalone/profiles/`), or a profile file
+([schema](../docs/profile.schema.json)). Without it the app makes a profile of the computer.
+A panel profile fills the display with no title or menu bar and shows its screen's layout; its
+`apps` decide the Apps menu; its block is the audio request. `--layout` still overrides the
+layout for a run (on the desktop, `--profile kick` shows the KICK's screen, full screen).
 
 `-DOSCAIRN_STANDALONE=ON` builds both the desktop and helper. To build only the live
 engine, use `-DOSCAIRN_ENGINE=ON`. Both options default to OFF. JUCE is downloaded for

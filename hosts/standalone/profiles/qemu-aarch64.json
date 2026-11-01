@@ -1,0 +1,13 @@
+{
+  "format": "oscairn.profile",
+  "version": 1,
+  "id": "qemu-aarch64",
+  "name": "QEMU ARM64 image",
+  "platform": { "os": "linux", "cpu": "arm64", "runtime": "oscairn-buildroot-2026.08", "board": "qemu-virt" },
+  "compute": { "cores": 4, "realtimeCores": 1, "memory": 2048 },
+  "audio": { "inputs": 0, "outputs": 2, "rates": [44100, 48000], "block": 128 },
+  "screens": [ { "width": 1024, "height": 600, "touch": false, "surface": "panel", "layout": "kick-screen" } ],
+  "network": { "ethernet": true },
+  "reliability": "instrument",
+  "apps": ["oscairn.groovebox", "oscairn.library", "oscairn.setlist"]
+}

@@ -1,0 +1,286 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Oscairn device profile version 1",
+  "description": "One product Oscairn runs on (RFC 0024): read by the app and the engine instead of flags. Values in sections listed in estimated are estimates, not measured on a unit.",
+  "type": "object",
+  "properties": {
+    "format": {
+      "const": "oscairn.profile"
+    },
+    "version": {
+      "const": 1
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9.-]+$",
+      "maxLength": 256
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "platform": {
+      "type": "object",
+      "properties": {
+        "os": {
+          "type": "string"
+        },
+        "cpu": {
+          "type": "string"
+        },
+        "runtime": {
+          "type": "string"
+        },
+        "board": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "os",
+        "cpu"
+      ],
+      "additionalProperties": false
+    },
+    "compute": {
+      "type": "object",
+      "description": "memory and storage in MiB",
+      "properties": {
+        "cores": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1024
+        },
+        "realtimeCores": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1024
+        },
+        "memory": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 16777216
+        },
+        "storage": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1073741824
+        }
+      },
+      "additionalProperties": false
+    },
+    "audio": {
+      "type": "object",
+      "properties": {
+        "inputs": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 256
+        },
+        "outputs": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 256
+        },
+        "rates": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 8000,
+            "maximum": 384000
+          }
+        },
+        "block": {
+          "description": "Frames the audio device is asked for; 0 or absent: the build's default",
+          "anyOf": [
+            {
+              "const": 0
+            },
+            {
+              "type": "integer",
+              "minimum": 16,
+              "maximum": 8192
+            }
+          ]
+        },
+        "headphones": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "controls": {
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "enum": [
+              "keys",
+              "pads",
+              "encoders",
+              "knobs",
+              "faders",
+              "buttons",
+              "pedal",
+              "footswitches",
+              "expression",
+              "jog",
+              "touchstrip",
+              "wheels"
+            ]
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1024
+          },
+          "sensing": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "count"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "screens": {
+      "type": "array",
+      "maxItems": 8,
+      "items": {
+        "type": "object",
+        "properties": {
+          "width": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 16384
+          },
+          "height": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 16384
+          },
+          "touch": {
+            "type": "boolean"
+          },
+          "surface": {
+            "enum": [
+              "desktop",
+              "panel",
+              "compact"
+            ]
+          },
+          "layout": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "width",
+          "height",
+          "surface",
+          "layout"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "midi": {
+      "type": "object",
+      "properties": {
+        "din": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 64
+        },
+        "usbDevice": {
+          "type": "boolean"
+        },
+        "usbHost": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "cv": {
+      "type": "object",
+      "properties": {
+        "inputs": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 256
+        },
+        "outputs": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 256
+        }
+      },
+      "additionalProperties": false
+    },
+    "network": {
+      "type": "object",
+      "properties": {
+        "ethernet": {
+          "type": "boolean"
+        },
+        "wifi": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "power": {
+      "type": "object",
+      "properties": {
+        "battery": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "reliability": {
+      "enum": [
+        "desktop",
+        "instrument",
+        "pass-through"
+      ],
+      "description": "RFC 0027's level"
+    },
+    "apps": {
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 128
+      }
+    },
+    "estimated": {
+      "type": "array",
+      "items": {
+        "enum": [
+          "platform",
+          "compute",
+          "audio",
+          "controls",
+          "screens",
+          "midi",
+          "cv",
+          "network",
+          "power"
+        ]
+      }
+    }
+  },
+  "required": [
+    "format",
+    "version",
+    "id",
+    "name",
+    "reliability"
+  ],
+  "additionalProperties": false
+}

@@ -1,6 +1,7 @@
 # RFC 0024: Device profiles
 
-Status: proposed, 2026-11-01. Required for every product Oscairn runs on. Builds on the
+Status: in progress, 2026-11-01: step 1 built, steps 2 and 3 started ([status](#step-1-status)).
+Required for every product Oscairn runs on. Builds on the
 capability profile catalog of [RFC 0006](0006-packages-and-portability.md#capability-profile-catalog),
 hardware services ([RFC 0004](0004-hardware-services.md)) and the surfaces of
 [RFC 0019](0019-adaptive-ui.md); feeds resource budgets ([RFC 0025](0025-resource-budgets.md)),
@@ -11,9 +12,11 @@ reliability levels ([RFC 0027](0027-reliability-levels.md)) and the system image
 
 Checked when built and tested; the sections below say how.
 
-- [ ] 1. The profile schema, and profiles for the desktop, the QEMU image, the Behringer KICK and the Ignite
+- [x] 1. The profile schema, and profiles for the desktop, the QEMU image, the Behringer KICK and the Ignite ([status](#step-1-status))
 - [ ] 2. The app reads its profile: surface, layouts, default mappings and app set follow from it
+      (surface, layout and apps done; default mappings wait for RFC 0011's physical controls)
 - [ ] 3. The engine reads it: audio block size, budgets and reliability level follow from it
+      (block size done; budgets and reliability wait for RFC 0025 and RFC 0027)
 - [ ] 4. Packages and Performances checked against it (with RFC 0006 and RFC 0025)
 - [ ] 5. A second product's profile (a desktop module or pedal) built from the same image
 
@@ -115,6 +118,26 @@ device and screen, `desktop` reliability, no physical controls unless a controll
 A connected controller (a keyboard, a pad controller, a DJ controller) has a profile of its own
 with `controls` and `midi` only, matched by its USB identity. Its controls join the device's for
 mappings while it is connected. This replaces per-controller special cases.
+
+## Step 1 status
+
+Built 2026-11-01 (`hosts/standalone/Profile.h`, [schema](../profile.schema.json)). Profiles are
+strict JSON, as themes are: unknown fields, wrong types and impossible values (more realtime
+cores than cores, a block under 16 frames, an unknown surface or reliability) refuse them. Built
+in: `qemu-aarch64` (its values are the QEMU test machine's), `kick` and `ignite` (best guesses,
+every guessed section listed in `estimated`: the board is taken as the i.MX8M Mini named in the
+OS notes, the controls are counted from their panel layouts, the rest is assumed until a unit is
+measured). The desktop app makes `desktop` from the computer: its cores, memory and main display,
+desktop reliability, every app.
+
+The app takes `--profile NAME|FILE` (the image's `/etc/default/oscairn` passes `qemu-aarch64`,
+replacing `--layout kick-screen --fullscreen`, now gone). A panel or compact surface fills the
+screen with no title or menu bar; the screen's layout is shown unless `--layout` says otherwise;
+the profile's `apps` are the Apps menu; its `audio.block` is the block the audio device is asked
+for, passed to the managed engine as `--buffer-frames` (16 to 8192; given on the command line it
+wins). `desktop-profile` checks the built-in profiles, the desktop's, nine refusals and the block
+option; launching the app with `--profile kick` was checked by its snapshot (the KICK's screen at
+1024 x 600). The QEMU image with the new arguments has not been rebuilt or booted yet.
 
 ## Open questions
 

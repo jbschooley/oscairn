@@ -3,12 +3,14 @@
 // Oscairn standalone: the demo instrument in a desktop window, with a choice of panel
 // layouts (View menu, or --layout NAME|FILE.json). Every MIDI input plays it.
 //
-//   oscairn-standalone [--layout NAME|path.json] [--plugins DIR] [--in-process | --connect SOCKET]
-//                      [--fullscreen] [--play] [--input-mode automatic|mouse|touch]
+//   oscairn-standalone [--profile NAME|path.json] [--layout NAME|path.json] [--plugins DIR]
+//                      [--in-process | --connect SOCKET] [--play] [--input-mode automatic|mouse|touch]
 //                      [--snapshot out.png [--size WxH] [--play SECONDS] [--view TAB]]
 //
-// --fullscreen fills the display with no title bar (for a device). --play starts the
-// sequencer at launch. --input-mode overrides the saved preference for this run. --snapshot
+// --profile names the device it runs on (RFC 0024): a built-in profile (qemu-aarch64, kick,
+// ignite) or a file; without it, the computer's own. A panel profile fills the display with no
+// title bar, shows its layout and asks the audio device for its block size; --layout and the
+// audio options override it for a run. --play starts the sequencer at launch. --input-mode overrides the saved preference for this run. --snapshot
 // renders the window to a PNG and quits: at the layout's design size, or as in a window of
 // --size; with --play SECONDS, the sequencer plays for that long first; with --view, the
 // desktop shows that tab (Part, Mixer, Routing or Controls).
@@ -18,6 +20,7 @@
 #include "Layout.h"
 #include "LibraryPane.h"
 #include "Panel.h"
+#include "Profile.h"
 #include "PluginBrowser.h"
 #include "PadEditor.h"
 #include "PartsView.h"
@@ -89,12 +92,14 @@ namespace oscairn::standalone
     class Window : public juce::DocumentWindow, public juce::MenuBarModel
     {
     public:
-        Window( Engine& engine, std::vector<NamedLayout> layouts, const Layout& first, bool fullScreen,Theme& theme,const juce::File& plugins, InputMode mode )
+        Window( Engine& engine, std::vector<NamedLayout> layouts, const Layout& first, Profile profile,Theme& theme,const juce::File& plugins, InputMode mode )
             : DocumentWindow( "Oscairn", juce::Colours::black, DocumentWindow::allButtons )
             , engine_( engine )
             , layouts_( std::move( layouts ) )
-            , fullScreen_( fullScreen ),theme_(theme),plugins_(plugins),inputMode_(mode)
+            , profile_( std::move( profile ) )
+            , fullScreen_( profile_.screen() && profile_.screen()->surface != "desktop" ),theme_(theme),plugins_(plugins),inputMode_(mode)
         {
+            const bool fullScreen = fullScreen_; // a device's screen: no title bar, no menu bar
             setUsingNativeTitleBar( !fullScreen );
             if( fullScreen )
                 setTitleBarHeight( 0 );
@@ -210,7 +215,12 @@ namespace oscairn::standalone
                 menu.addItem(8101,from.sound.empty()?juce::String("Save Sound..."):"Save Sound",part);
                 menu.addItem(8102,"Save Sound As New...",part);
                 return menu;}
-            if(index==5){menu.addItem(8000,"Groovebox");menu.addItem(8001,"Library");menu.addItem(8002,"Setlist");return menu;}
+            // The apps this device has (its profile's).
+            if(index==5){
+                if(profile_.offers("oscairn.groovebox"))menu.addItem(8000,"Groovebox");
+                if(profile_.offers("oscairn.library"))menu.addItem(8001,"Library");
+                if(profile_.offers("oscairn.setlist"))menu.addItem(8002,"Setlist");
+                return menu;}
             if(index==4){themeItems_=theme_.installed();for(size_t i=0;i<themeItems_.size();++i)menu.addItem(3000+int(i),themeItems_[i].second,true,themeItems_[i].first==themeData().id);menu.addSeparator();menu.addItem(4000,"Manage themes...");return menu;}
             for( size_t i = 0; i < layouts_.size(); ++i )
             {
@@ -487,6 +497,7 @@ namespace oscairn::standalone
         Engine&                            engine_;
         std::vector<NamedLayout>           layouts_;
         std::unique_ptr<juce::FileChooser> chooser_;
+        Profile                            profile_;
         bool                               fullScreen_;
         Theme& theme_;
         juce::File plugins_;
@@ -524,7 +535,7 @@ namespace oscairn::standalone
                 theme_=std::make_unique<Theme>();
                 host::AudioConfiguration audio;
                 bool audioOptions=false;
-                const juce::StringArray valued{"--plugins","--connect","--layout","--snapshot","--size","--view","--input-mode"};
+                const juce::StringArray valued{"--plugins","--connect","--profile","--layout","--snapshot","--size","--view","--input-mode"};
                 for(int i=0;i<args.size();++i)
                 {
                     const auto name=args[i].toStdString();
@@ -535,8 +546,11 @@ namespace oscairn::standalone
                         if(host::AudioConfiguration::isOption(name)){audio.setOption(name,value);audioOptions=true;}
                     }
                     else if(name=="--play") {if(i+1<args.size() && !args[i+1].startsWith("--"))++i;}
-                    else if(name!="--fullscreen" && name!="--in-process")throw std::invalid_argument("Unknown argument: "+name);
+                    else if(name!="--in-process")throw std::invalid_argument("Unknown argument: "+name);
                 }
+                // The device this runs on (RFC 0024): its block size for a new engine, unless given.
+                const auto profile=loadProfile(argument(args,"--profile").unquoted().toStdString());
+                if(!args.contains("--connect") && !args.contains("--buffer-frames") && profile.audio.block>0)audio.bufferFrames=uint32_t(profile.audio.block);
                 audio.validate();
                 const auto socket = argument(args, "--connect");
                 if(audioOptions && args.contains("--connect"))
@@ -553,7 +567,7 @@ namespace oscairn::standalone
                 auto layouts = builtInLayouts();
                 auto wanted  = argument( args, "--layout" );
                 if( wanted.isEmpty() )
-                    wanted = "desktop";
+                    wanted = profile.screen() ? juce::String( profile.screen()->layout ) : juce::String( "desktop" );
                 juce::String json;
                 for( const auto& l : layouts )
                     if( l.name == wanted )
@@ -573,7 +587,7 @@ namespace oscairn::standalone
                     else if( m == "touch" ) mode = InputMode::Touch;
                     else throw std::invalid_argument( "--input-mode must be automatic, mouse or touch" );
                 }
-                window_ = std::make_unique<Window>( *engine_, std::move( layouts ), Layout::parse( json ), args.contains( "--fullscreen" ),*theme_,juce::File(dir.unquoted()), mode );
+                window_ = std::make_unique<Window>( *engine_, std::move( layouts ), Layout::parse( json ), profile,*theme_,juce::File(dir.unquoted()), mode );
                 if( const auto view = argument( args, "--view" ); view.isNotEmpty() )
                 {
                     DesktopShell::Tab tab;
