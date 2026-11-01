@@ -43,6 +43,8 @@ namespace oscairn::standalone
         void insertMenu(size_t index, juce::Component& at, ChainPlace place = {});
         void devicesMenu(uint32_t part, juce::Component& at);
         void sceneControlsMenu(NodeId node, juce::Component& at);
+        void sceneScopeMenu(juce::Component& at);
+        void mappingScenesMenu(uint32_t macro, size_t target, juce::Component& at);
         void targetMenu(uint32_t macro, juce::Component& at);
         std::string describe(const MacroTarget&) const;
         void setTargets(uint32_t macro, std::function<void(std::vector<MacroTarget>&)> change);

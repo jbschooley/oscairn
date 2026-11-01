@@ -132,10 +132,13 @@ namespace oscairn::standalone
             for(const auto& n : routing_.nodes) shape += "," + std::to_string(n.node) + ":" + std::to_string(n.port) + ":" + n.name;
             for(const auto& w : routing_.wires) shape += ";" + std::to_string(w.id) + ":" + std::to_string(w.from) + ">" + std::to_string(w.to);
         }
+        shape += "|off:";
+        for(const auto n : graph_.disabled) shape += std::to_string(n) + ",";
+        if(page_ == routingPage) for(const auto& w : graph_.wires) if(!w.enabled) shape += "w" + std::to_string(w.id) + ",";
         shape += "|scenes:" + std::to_string(scene_);
-        for(const auto& s : scenes_) shape += "," + std::to_string(s.id) + ":" + s.name;
+        for(const auto& s : scenes_) shape += "," + std::to_string(s.id) + ":" + s.name + ":" + std::to_string(s.scope);
         shape += "|controls";
-        for(const auto& m : macros_) { shape += "," + std::to_string(m.id) + ":" + m.name + ":" + std::to_string(m.targets.size()); for(const auto& t : m.targets) shape += ":" + describe(t) + std::to_string(int(t.curve)) + std::to_string(t.relative); }
+        for(const auto& m : macros_) { shape += "," + std::to_string(m.id) + ":" + m.name + ":" + std::to_string(m.targets.size()); for(const auto& t : m.targets) { shape += ":" + describe(t) + std::to_string(int(t.curve)) + std::to_string(t.relative); for(const auto s : t.offIn) shape += "/" + std::to_string(s); } }
         if(shape != shape_) { shape_ = shape; rebuild(); }
         for(const auto& update : updaters_) (*update)();
         repaint();
@@ -237,10 +240,15 @@ namespace oscairn::standalone
                 b->setTooltip("Switch to this scene");
             }
             button(top.removeFromLeft(80).reduced(2), "+ Scene", [this] { const auto n = scenes_.size() + 1; edit([n](Control& c) { c.addScene("Scene " + std::to_string(n)); }); })
-                ->setTooltip("A new scene with the parts' levels and mutes, and the scene controls, as they are now");
+                ->setTooltip("A new scene with everything as it is now: plugins and wires on or off, mutes, the mix, parameters and controls");
             if(scene_)
+            {
                 button(top.removeFromLeft(66).reduced(2), "Store", [this] { const auto id = scene_; edit([id](Control& c) { c.storeScene(id); }); })
-                    ->setTooltip("Save the parts' levels and mutes, and the scene controls, into the selected scene");
+                    ->setTooltip("Save everything as it is now into the selected scene");
+                auto* scope = button(top.removeFromLeft(80).reduced(2), "Scope...", {});
+                scope->setTooltip("What switching to the selected scene changes; the rest stays as it is");
+                scope->onClick = [this, scope] { sceneScopeMenu(*scope); };
+            }
             size_t row = 0;
             for(const auto* rows : {&state_.parts, &state_.buses})
                 for(const auto& p : *rows)
@@ -313,6 +321,12 @@ namespace oscairn::standalone
                 const bool sendsNotes = node == graphInput ? chosen->port == notesPort : info && info->noteOutputs;
                 if(sendsAudio) { auto* b = button(head.removeFromLeft(150).reduced(2), "Connect audio to...", {}); b->onClick = [this, b] { connectMenu(WireKind::Audio, *b); }; }
                 if(sendsNotes) { auto* b = button(head.removeFromLeft(150).reduced(2), "Connect notes to...", {}); b->onClick = [this, b] { connectMenu(WireKind::Notes, *b); }; }
+                if(node != graphInput && node != graphOutput)
+                {
+                    const bool off = graph_.disabled.count(node) != 0;
+                    button(head.removeFromLeft(90).reduced(2), off ? "Turn on" : "Turn off", [this, node, off] { edit([node, off](Control& c) { c.setNodeEnabled(node, off); c.commit(); }); })
+                        ->setTooltip(off ? "Switch this plugin on again" : "Switch this plugin off: its held notes and tail ring out");
+                }
                 if(chosen->part)
                     button(head.removeFromLeft(110).reduced(2), "Open part", [this, part = chosen->part] { showPart(part); });
                 else if(node != graphInput && node != graphOutput)
@@ -332,6 +346,9 @@ namespace oscairn::standalone
                         auto r = panel.removeFromTop(30);
                         auto source = std::make_unique<juce::Label>(juce::String(), text(row.source) + (row.user ? juce::String() : juce::String::fromUTF8(" · part")));
                         source->setBounds(r.removeFromLeft(240)); addAndMakeVisible(*source); controls_.push_back(std::move(source));
+                        // The wire on or off (a scene stores which).
+                        toggle(r.removeFromLeft(64).reduced(2, 4), "On", [this, wire = row.wire] { for(const auto& w : graph_.wires) if(w.id == wire) return w.enabled; return true; },
+                               [this, wire = row.wire](bool on) { edit([wire, on](Control& c) { c.setWireEnabled(wire, on); c.commit(); }); });
                         if(input.port == notesPort) { if(row.user) button(r.removeFromLeft(100).reduced(2), "Disconnect", [this, wire = row.wire] { edit([wire](Control& c) { disconnect(c, wire); }); }); continue; }
                         const auto wire = row.wire;
                         auto rowOf = [this, node, wire]() -> MixRow { for(const auto& i : inputsOf(graph_, node)) for(const auto& x : i.rows) if(x.wire == wire) return x; return {}; };
@@ -459,6 +476,12 @@ namespace oscairn::standalone
                     auto l = std::make_unique<juce::Label>(juce::String(), text(describe(t)));
                     l->setBounds(r.removeFromLeft(220)); addAndMakeVisible(*l); controls_.push_back(std::move(l));
                     button(r.removeFromRight(80).reduced(2), "Remove", [this, id, i] { setTargets(id, [i](auto& ts) { ts.erase(ts.begin() + std::ptrdiff_t(i)); }); });
+                    if(!scenes_.empty())
+                    {
+                        auto* in = button(r.removeFromRight(90).reduced(2), t.offIn.empty() ? "Scenes: all" : "Scenes...", {});
+                        in->setTooltip("The scenes this mapping works in");
+                        in->onClick = [this, id, i, in] { mappingScenesMenu(id, i, *in); };
+                    }
                     auto relative = std::make_unique<juce::ToggleButton>("Relative");
                     relative->setToggleState(t.relative, juce::dontSendNotification);
                     relative->setTooltip("Move the value around where it was, instead of setting it");
@@ -553,6 +576,9 @@ namespace oscairn::standalone
                     button(actions.removeFromLeft(110).reduced(2), "Remove", [this, id, node] { selected_ = 0; edit([id, node](Control& c) { removeBox(c, id, node); }); });
                     button(actions.removeFromLeft(100).reduced(2), "Routing...", [this, node] { showRouting(node); })
                         ->setTooltip("This plugin in Routing: wire it to plugins outside its part");
+                    const bool off = graph_.disabled.count(node) != 0;
+                    button(actions.removeFromLeft(90).reduced(2), off ? "Turn on" : "Turn off", [this, node, off] { edit([node, off](Control& c) { c.setNodeEnabled(node, off); c.commit(); }); })
+                        ->setTooltip(off ? "Switch this plugin on again" : "Switch this plugin off: what reaches it passes around it, and its held notes and tail ring out. Store it in a scene to switch it there");
                     auto* controls = button(actions.removeFromLeft(150).reduced(2), "Scene controls...", {});
                     controls->setTooltip("Which of this plugin's parameters scenes set: all it lets be automated, but those you untick");
                     controls->onClick = [this, node, controls] { sceneControlsMenu(node, *controls); };
@@ -813,6 +839,40 @@ namespace oscairn::standalone
         });
     }
 
+    // The selected scene's scope: the kinds switching to it changes, each ticked.
+    void PartsView::sceneScopeMenu(juce::Component& at)
+    {
+        const auto it = std::find_if(scenes_.begin(), scenes_.end(), [&](const Scene& s) { return s.id == scene_; });
+        if(it == scenes_.end()) return;
+        const auto scope = it->scope;
+        const std::array<const char*, sceneKinds.size()> names{"Plugins and wires on or off", "Mutes and solos", "Levels, pans and sends", "Parameters and controls", "Control mappings"};
+        juce::PopupMenu menu;
+        for(size_t k = 0; k < names.size(); ++k) menu.addItem(int(k) + 1, names[k], true, (scope & (1u << k)) != 0);
+        menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&at), [safe = juce::Component::SafePointer<PartsView>(this), id = scene_, scope](int chosen) {
+            if(!safe || chosen <= 0) return;
+            const auto next = scope ^ (1u << (chosen - 1));
+            safe->edit([id, next](Control& c) { c.setSceneScope(id, next); });
+        });
+    }
+
+    // The scenes a control's mapping works in, each ticked; choosing one switches it there.
+    void PartsView::mappingScenesMenu(uint32_t macro, size_t target, juce::Component& at)
+    {
+        const auto m = std::find_if(macros_.begin(), macros_.end(), [&](const Macro& x) { return x.id == macro; });
+        if(m == macros_.end() || target >= m->targets.size()) return;
+        const auto offIn = m->targets[target].offIn;
+        juce::PopupMenu menu;
+        for(const auto& s : scenes_) menu.addItem(int(s.id), text(s.name), true, std::find(offIn.begin(), offIn.end(), s.id) == offIn.end());
+        menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&at), [safe = juce::Component::SafePointer<PartsView>(this), macro, target](int chosen) {
+            if(!safe || chosen <= 0) return;
+            safe->setTargets(macro, [target, scene = uint32_t(chosen)](auto& ts) {
+                if(target >= ts.size()) return;
+                auto& off = ts[target].offIn;
+                if(const auto it = std::find(off.begin(), off.end(), scene); it != off.end()) off.erase(it); else off.push_back(scene);
+            });
+        });
+    }
+
     // Destinations for a wire from the selected node: every node that takes that kind, and the outputs.
     void PartsView::connectMenu(WireKind kind, juce::Component& at)
     {
@@ -1045,6 +1105,8 @@ namespace oscairn::standalone
                 }
                 const auto* n = routing_.find(b.node, b.port);
                 const bool chosenNode = b.node == routed_ && ((b.node != graphInput && b.node != graphOutput) || b.port == routedPort_);
+                const bool off = graph_.disabled.count(b.node) != 0;
+                if(off) g.beginTransparencyLayer(.55f);
                 g.setColour((chosenNode ? ink(Ink::Accent).withAlpha(.25f) : ink(Ink::Surface)).withMultipliedAlpha(alpha));
                 g.fillRoundedRectangle(r, themeData().radius);
                 g.setColour((chosenNode ? ink(Ink::Accent) : failed(b.node) ? ink(Ink::Danger) : ink(Ink::Border)).withMultipliedAlpha(alpha));
@@ -1053,8 +1115,9 @@ namespace oscairn::standalone
                 g.setColour(ink(Ink::Text).withMultipliedAlpha(alpha)); g.setFont(juce::FontOptions(13.0f * scale * routingScale_));
                 g.drawText(text(b.name), inner.removeFromTop(inner.getHeight() * 3 / 5), juce::Justification::bottomLeft, true);
                 g.setColour(ink(Ink::Muted).withMultipliedAlpha(alpha)); g.setFont(juce::FontOptions(10.0f * scale * routingScale_));
-                g.drawText(text(b.detail), inner, juce::Justification::topLeft, true);
+                g.drawText(off ? (b.detail.empty() ? juce::String("off") : text(b.detail) + juce::String::fromUTF8(" · off")) : text(b.detail), inner, juce::Justification::topLeft, true);
                 if(n && n->userWires && n->part) { g.setColour(juce::Colour(0xffffa040)); g.fillEllipse(r.getRight() - 12, r.getY() + 5, 7, 7); }
+                if(off) g.endTransparencyLayer();
             }
             return;
         }
@@ -1076,6 +1139,8 @@ namespace oscairn::standalone
         }
         const auto scale = themeData().fontScale;
         auto chip = [&](juce::Rectangle<float> r, const PartBox& b, bool selected) {
+            // Switched off: faint, and marked so.
+            if(b.off) g.beginTransparencyLayer(.5f);
             g.setColour(selected ? ink(Ink::Accent).withAlpha(.25f) : ink(Ink::Raised));
             g.fillRoundedRectangle(r, themeData().radius);
             g.setColour(selected ? ink(Ink::Accent) : !b.split && failed(b.node) ? ink(Ink::Danger) : ink(Ink::Border));
@@ -1083,12 +1148,13 @@ namespace oscairn::standalone
             auto inner = r.reduced(8, 4);
             g.setColour(roleColour(b.role));
             g.setFont(juce::FontOptions(10.0f * scale, juce::Font::bold));
-            g.drawText(text(b.role).toUpperCase(), inner.removeFromTop(inner.getHeight() * .45f), juce::Justification::bottomLeft);
+            g.drawText(text(b.role).toUpperCase() + (b.off ? juce::String::fromUTF8(" · OFF") : juce::String()), inner.removeFromTop(inner.getHeight() * .45f), juce::Justification::bottomLeft);
             g.setColour(ink(Ink::Text));
             g.setFont(juce::FontOptions(14.0f * scale));
             g.drawText(text(b.name), inner, juce::Justification::topLeft, true);
             // Wired in Routing too: a badge (Routing... opens it there).
             if(b.userWires) { g.setColour(juce::Colour(0xffffa040)); g.fillEllipse(r.getRight() - 12, r.getY() + 5, 7, 7); }
+            if(b.off) g.endTransparencyLayer();
         };
         if(page_ == 0)
         {

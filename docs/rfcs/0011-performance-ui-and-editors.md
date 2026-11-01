@@ -21,7 +21,8 @@ Checked when built and tested; the sections below say how.
       seamless on the engine's draining and retiring ([status](#scenes-status))
   - [x] plugins and wires switched off and on, seamlessly
   - [x] scenes record all of it, each with its scope
-  - [ ] the desktop's controls for it
+  - [x] the desktop's controls for it
+  - [ ] the mappings' scenes laid out as one table; smooth transitions
 
 ## Problem
 
@@ -490,8 +491,16 @@ ringing out, a mapping off in one scene and on in another, parameters set aside 
 a scope of mutes only, a scene applied past a full pending store, and the round-trip;
 `control-performance-format` checks scenes against both schemas.
 
-Not yet: the desktop's controls for it (switching plugins and wires off, a scene's scope, the
-mappings' scenes), smooth transitions, and per-mapping scenes laid out as a table.
+**The desktop's controls** implemented 2026-11-01. A box's panel in the Part view and a plugin's
+in Routing have **Turn off** / **Turn on**; an off box is drawn faint and marked OFF, and a
+collapsed part's chip says "off". Each source row of an input in Routing has **On**, switching
+that wire. **Scope...** beside **Store** ticks the kinds switching to the selected scene changes
+(plugins and wires on or off; mutes and solos; levels, pans and sends; parameters and controls;
+control mappings). A control's target row has **Scenes...**, ticking the scenes the mapping works
+in. **Scene controls...** ticks the parameters scenes touch. `desktop-parts-model` checks an off
+plugin's box and Routing chip; the rest was checked by rendering, not by clicking through.
+
+Not yet: the mappings' scenes laid out as one table across all mappings, and smooth transitions.
 
 ## Step 3 status
 

@@ -28,6 +28,7 @@ namespace oscairn::standalone
         NodeId node = 0; std::string name, plugin, role;
         uint32_t split = 0;
         bool userWires = false;           // a wire drawn in Routing touches it: a badge, and Routing...
+        bool off = false;                 // switched off (in a scene): drawn faint, marked OFF
         Split::Kind kind = Split::Kind::Copy;
         std::string splitter;             // its Split node's name, for its crossovers
         std::vector<PartLane> lanes;
@@ -104,6 +105,7 @@ namespace oscairn::standalone
         struct Box
         {
             enum class Kind { Node, Part, Frame } kind = Kind::Node;
+        bool off = false; // a plugin switched off
             NodeId node = 0; uint32_t port = 0; // a node, or a graph input or output port
             uint32_t part = 0;                  // a part's box or frame, or the part a node is in
             std::string name, detail;

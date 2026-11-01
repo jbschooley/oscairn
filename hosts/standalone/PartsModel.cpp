@@ -109,6 +109,7 @@ namespace oscairn::standalone
                     {
                         out.push_back({entry, g.names.count(entry) ? g.names.at(entry) : std::string(), n->plugin.name, roleOf(*n)});
                         out.back().userWires = hasUserWires(g, entry);
+                        out.back().off = g.disabled.count(entry) != 0;
                         if(row.sound.empty() && out.back().role == "Instrument") row.sound = out.back().name;
                     }
                 }
@@ -477,7 +478,7 @@ namespace oscairn::standalone
                 for(const auto* list : {&rows.parts, &rows.buses}) for(const auto& r : *list) if(r.id == top.part)
                 {
                     box.name = r.name; box.detail = r.bus ? "bus" : "";
-                    for(const auto& c : r.chain) box.chips.push_back(c.split ? c.name + " · " + std::to_string(c.lanes.size()) + " lanes" : c.name);
+                    for(const auto& c : r.chain) box.chips.push_back(c.split ? c.name + " · " + std::to_string(c.lanes.size()) + " lanes" : c.off ? c.name + " · off" : c.name);
                 }
             }
             else

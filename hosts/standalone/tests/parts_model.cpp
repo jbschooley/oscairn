@@ -239,6 +239,13 @@ int main(int argc, char** argv)
                   std::none_of(rows.begin(), rows.end(), [&](const PartRow& r) { return r.id != bass && r.draining; }), "its part is draining, the others not");
             g.ringing.clear();
             check(wireState(*input, g) == WireState::Disabled, "disabled once its plugin has rung out");
+            const auto offRows = readParts(g).parts;
+            const auto bassRow = std::find_if(offRows.begin(), offRows.end(), [&](const PartRow& r) { return r.id == bass; });
+            const auto* box = bassRow == offRows.end() ? nullptr : findBox(bassRow->chain, input->to);
+            check(box && box->off, "its box is marked off");
+            const auto routed = layoutRouting(g, true, {});
+            check(std::any_of(routed.boxes.begin(), routed.boxes.end(), [](const RoutingLayout::Box& b) {
+                      return std::any_of(b.chips.begin(), b.chips.end(), [](const std::string& c) { return c.ends_with(" · off"); }); }), "and its chip in Routing");
             g.disabled.clear();
             auto off = *input; off.enabled = false;
             check(wireState(off, g) == WireState::Disabled, "a wire switched off is disabled");
