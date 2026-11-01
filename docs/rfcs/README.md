@@ -31,3 +31,4 @@ tests it, with a note on what remains of a step that is partly done. The
 | [0020](0020-recording.md) | Recording | proposed |
 | [0021](0021-sounds-performances-and-library.md) | Sounds, Performances and the library | in progress |
 | [0022](0022-apps-and-requests.md) | Apps that open each other | in progress |
+| [0023](0023-item-types.md) | Item types | proposed |

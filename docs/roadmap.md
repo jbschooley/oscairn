@@ -315,6 +315,10 @@ in the others.
      option when it was edited; importing adds what the device lacks, by hash
      ([design](rfcs/0021-sounds-performances-and-library.md#exporting-a-performance))
    - [ ] hiding tags from the tag list, and tag colors
+   - [ ] **item types** ([RFC 0023](rfcs/0023-item-types.md#progress), proposed): kinds of
+     item declared by manifests (managed, stored by content, or indexed in place), so the
+     library, archives and pickers work for any type, and packages can add types such as a DJ
+     deck's tracks and crates
    - [x] **importing a Performance:** all of it, or at least one chosen part and scene; parts
      bring their plugins, buses, wiring and controls, scenes come under free names, in one
      step to undo ([design](rfcs/0021-sounds-performances-and-library.md#importing-a-performance))
