@@ -299,52 +299,62 @@ namespace oscairn::standalone
             setDesktopMode(*pane,inputMode_==InputMode::Touch?2:1);
             picker_->setVisible(true);picker_->toFront(true);
         }
-        // Another Performance's parts into this one (RFC 0021): the Library picks it, then its
-        // parts are listed, all ticked; the chosen ones come with what they need.
+        // Another Performance's parts and scenes into this one (RFC 0021): the Library picks it,
+        // then its parts and scenes are listed, all ticked; the chosen ones come, parts with what
+        // they need. Everything ticked is all of it.
         void importPerformance()
         {
             actions_.request(pickPerformance,{},[safe=juce::Component::SafePointer<Window>(this)](const std::string& id){
                 if(!safe || id.empty())return;
                 const auto item=safe->engine_.libraryItem(id);
                 if(!item || item->id.empty())return;
-                const auto parts=safe->engine_.performanceParts(item->path);
-                if(!parts)return;
+                const auto held=safe->engine_.performanceContents(item->path);
+                if(!held)return;
                 struct Choose : juce::Component
                 {
-                    juce::OwnedArray<juce::ToggleButton> boxes;juce::TextButton import{"Import"},cancel{"Cancel"};
-                    std::vector<uint32_t> ids;
-                    Choose(const std::vector<Control::PerformancePart>& parts)
+                    juce::OwnedArray<juce::ToggleButton> parts,scenes;juce::Label partsHeading{{},"Parts"},scenesHeading{{},"Scenes"};
+                    juce::TextButton import{"Import"},cancel{"Cancel"};
+                    std::vector<uint32_t> partIds,sceneIds;
+                    explicit Choose(const Control::PerformanceContents& held)
                     {
-                        for(const auto& p:parts){auto* b=boxes.add(new juce::ToggleButton(juce::String::fromUTF8(p.name.c_str())+(p.bus?" (bus)":"")));b->setToggleState(true,juce::dontSendNotification);addAndMakeVisible(b);ids.push_back(p.id);}
-                        addAndMakeVisible(import);addAndMakeVisible(cancel);
-                        setSize(360,int(parts.size())*30+70);
+                        for(const auto& p:held.parts){auto* b=parts.add(new juce::ToggleButton(juce::String::fromUTF8(p.name.c_str())+(p.bus?" (bus)":"")));b->setToggleState(true,juce::dontSendNotification);addAndMakeVisible(b);partIds.push_back(p.id);}
+                        for(const auto& s:held.scenes){auto* b=scenes.add(new juce::ToggleButton(juce::String::fromUTF8(s.name.c_str())));b->setToggleState(true,juce::dontSendNotification);addAndMakeVisible(b);sceneIds.push_back(s.id);}
+                        for(auto* c:std::initializer_list<juce::Component*>{&partsHeading,&import,&cancel})addAndMakeVisible(c);
+                        if(!held.scenes.empty())addAndMakeVisible(scenesHeading);
+                        setSize(360,int(held.parts.size()+held.scenes.size())*30+(held.scenes.empty()?100:130));
                     }
                     void resized() override
                     {
                         auto area=getLocalBounds().reduced(16,12);
-                        for(auto* b:boxes)b->setBounds(area.removeFromTop(30));
+                        partsHeading.setBounds(area.removeFromTop(26));
+                        for(auto* b:parts)b->setBounds(area.removeFromTop(30));
+                        if(!scenes.isEmpty()){area.removeFromTop(4);scenesHeading.setBounds(area.removeFromTop(26));}
+                        for(auto* b:scenes)b->setBounds(area.removeFromTop(30));
                         auto bar=area.removeFromBottom(30);
                         import.setBounds(bar.removeFromRight(100));bar.removeFromRight(8);cancel.setBounds(bar.removeFromRight(100));
                     }
-                    // Ticked parts by their IDs in the file; all ticked is all of it, scenes included.
-                    std::vector<uint32_t> chosen() const
+                    static std::vector<uint32_t> ticked(const juce::OwnedArray<juce::ToggleButton>& boxes,const std::vector<uint32_t>& ids)
                     {
                         std::vector<uint32_t> out;for(int i=0;i<boxes.size();++i)if(boxes[i]->getToggleState())out.push_back(ids[size_t(i)]);
-                        return out.size()==ids.size()?std::vector<uint32_t>{}:out;
+                        return out;
                     }
                 };
-                auto* content=new Choose(*parts);
+                auto* content=new Choose(*held);
                 juce::DialogWindow::LaunchOptions options;
                 options.dialogTitle="Import from "+juce::String::fromUTF8(item->name.c_str());
                 options.content.setOwned(content);options.componentToCentreAround=safe.getComponent();options.useNativeTitleBar=true;options.resizable=false;
                 auto* dialog=options.launchAsync();
                 content->cancel.onClick=[dialog]{dialog->exitModalState(0);};
                 content->import.onClick=[safe,dialog,content,path=item->path]{
-                    const auto chosen=content->chosen();
-                    const bool none=std::none_of(content->boxes.begin(),content->boxes.end(),[](auto* b){return b->getToggleState();});
+                    auto parts=Choose::ticked(content->parts,content->partIds),scenes=Choose::ticked(content->scenes,content->sceneIds);
+                    const bool all=parts.size()==content->partIds.size() && scenes.size()==content->sceneIds.size();
+                    // A partial import takes a part and, when there are any, a scene.
+                    if(!all && (parts.empty() || (scenes.empty() && !content->sceneIds.empty()))){
+                        juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::InfoIcon,"Import","Choose at least one part, and one scene: the scene sets how the parts come.");return;}
                     dialog->exitModalState(0);
-                    if(!safe || none)return;
-                    SoundAction import;import.kind=SoundAction::ImportPerformance;import.directory=path;import.parts=chosen;safe->engine_.soundAction(std::move(import));
+                    if(!safe)return;
+                    if(all){parts.clear();scenes.clear();} // all of it, loose plugins included
+                    SoundAction import;import.kind=SoundAction::ImportPerformance;import.directory=path;import.parts=parts;import.scenes=scenes;safe->engine_.soundAction(std::move(import));
                 };
             });
         }

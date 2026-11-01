@@ -304,14 +304,15 @@ namespace oscairn
         auto d=impl_->call("parts.loadSound","{\"part\":"+std::to_string(part)+",\"id\":"+quote(id)+'}',30000);impl_->refresh();
         return strings(field(field(d.get(),"result"),"flagged"));
     }
-    std::vector<Control::PerformancePart> RemoteControl::performanceParts(const std::string& directory) {
-        auto d=impl_->call("performance.parts","{\"directory\":"+quote(directory)+'}',30000);std::vector<PerformancePart> out;
-        for(auto x:array(field(field(d.get(),"result"),"parts")))out.push_back({static_cast<uint32_t>(integer(field(x,"id"))),string(field(x,"name")),boolean(field(x,"bus"))});
+    Control::PerformanceContents RemoteControl::performanceContents(const std::string& directory) {
+        auto d=impl_->call("performance.contents","{\"directory\":"+quote(directory)+'}',30000);auto r=field(d.get(),"result");PerformanceContents out;
+        for(auto x:array(field(r,"parts")))out.parts.push_back({static_cast<uint32_t>(integer(field(x,"id"))),string(field(x,"name")),boolean(field(x,"bus"))});
+        for(auto x:array(field(r,"scenes")))out.scenes.push_back({static_cast<uint32_t>(integer(field(x,"id"))),string(field(x,"name"))});
         return out;
     }
-    Control::Imported RemoteControl::importPerformance(const std::string& directory,const std::vector<uint32_t>& parts) {
-        std::string list;for(const auto id:parts){if(!list.empty())list+=',';list+=std::to_string(id);}
-        auto d=impl_->call("performance.import","{\"directory\":"+quote(directory)+",\"parts\":["+list+"]}",30000);impl_->refresh();
+    Control::Imported RemoteControl::importPerformance(const std::string& directory,const std::vector<uint32_t>& parts,const std::vector<uint32_t>& scenes) {
+        auto list=[](const std::vector<uint32_t>& ids){std::string out;for(const auto id:ids){if(!out.empty())out+=',';out+=std::to_string(id);}return out;};
+        auto d=impl_->call("performance.import","{\"directory\":"+quote(directory)+",\"parts\":["+list(parts)+"],\"scenes\":["+list(scenes)+"]}",30000);impl_->refresh();
         auto r=field(d.get(),"result");Imported out;
         for(auto x:array(field(r,"parts")))out.parts.push_back(static_cast<uint32_t>(integer(x)));
         out.notes=strings(field(r,"notes"));

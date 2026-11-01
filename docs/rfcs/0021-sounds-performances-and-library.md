@@ -49,7 +49,7 @@ Checked when built and tested; the sections below say how.
       packages and `LibraryModel` remain
 - [ ] 3. Desktop pane: the Library app and Part menu done; the dockable pane, inspector,
       drag to part and keyboard remain
-- [x] Importing a Performance, all of it or chosen parts with what they need ([design](#importing-a-performance))
+- [x] Importing a Performance, all of it or chosen parts (with what they need) and scenes ([design](#importing-a-performance))
 - [ ] 4. Plugin presets
 - [ ] 5. Audition and seamless loading
 - [ ] 6. Panel
@@ -294,21 +294,27 @@ The info block, the same in both:
 ### Importing a Performance
 
 Built 2026-10-31 (`performance.import`, Performance > Import Performance). A Performance can
-import another, all of it or chosen parts, adding them to the open one in one step to undo:
+import another, all of it or chosen parts and scenes, adding them to the open one in one step
+to undo. A partial import takes at least one part and, when the Performance has scenes, at
+least one scene: the scene says how what comes is set (today its parts' levels and mutes,
+its scene parameters' values and its controls; with RFC 0011's full scene model, which
+wires and blocks are enabled).
 
 - **Chosen parts bring what they need:** their plugins with their state, the buses they play
   through or send to (and those buses' own), the wires and note-to-parameter mappings among
   what comes, the controls they own, and the Performance's controls whose every target comes
-  too. Importing all of it brings everything, loose plugins included.
+  too. Plugins no chosen part uses stay behind. Importing all of it brings everything, loose
+  plugins included.
 - **Every part and bus** arrives as a new part with its seat (input and zones, device
   selectors, output, fader, pan, mute, solo) and where it came from. An output or audio
   input this device lacks becomes the first one, with a note.
 - **Names:** a scene, control or plugin whose name is taken gets the next number: "Verse"
   becomes "Verse 2", "Scene 3" becomes "Scene 4". Each rename is reported.
-- **Scenes come with all of it,** added beside the open Performance's. The open
-  Performance's scenes keep the arriving parts, scene parameters and controls as they
-  arrive; the arriving scenes keep the open Performance's as they are. Chosen parts bring no
-  scenes: a scene describes a whole Performance.
+- **Scenes:** all of them with all of it, else those chosen, added beside the open
+  Performance's. A chosen scene holds only what comes: its states for imported parts,
+  plugins and controls. The open Performance's scenes keep the arriving parts, scene
+  parameters and controls as they arrive; the arriving scenes keep the open Performance's as
+  they are.
 - Pads, tempo, transport and the imported info block stay with the open Performance.
 - Whether notes held in the open Performance's parts carry on through an import is not
   checked yet.

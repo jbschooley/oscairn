@@ -113,7 +113,9 @@ with tempfile.TemporaryDirectory(prefix='oscairn-library-') as temporary:
         # Importing a Performance (RFC 0021): what it holds, then one chosen part.
         exported = home / 'export.oscairn'
         rpc('performance.save', {'directory': str(exported)})
-        held = rpc('performance.parts', {'directory': str(exported)})['parts']
+        contents = rpc('performance.contents', {'directory': str(exported)})
+        held = contents['parts']
+        assert contents['scenes'] == []
         assert [p['name'] for p in held] == [p['name'] for p in rpc('graph.get')['parts']] and not any(p['bus'] for p in held)
         count = len(rpc('graph.get')['parts'])
         imported = rpc('performance.import', {'directory': str(exported), 'parts': [held[0]['id']]})

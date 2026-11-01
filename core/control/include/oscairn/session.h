@@ -49,8 +49,8 @@ namespace oscairn
         SoundSaved savePartAsSound(uint32_t part,const std::string& name,bool asNew = false) override;
         std::vector<std::string> loadSound(uint32_t part,const std::string& id) override;
         uint32_t partFromSound(const std::string& id) override;
-        std::vector<PerformancePart> performanceParts(const std::string& directory) override;
-        Imported importPerformance(const std::string& directory, const std::vector<uint32_t>& parts = {}) override;
+        PerformanceContents performanceContents(const std::string& directory) override;
+        Imported importPerformance(const std::string& directory, const std::vector<uint32_t>& parts = {}, const std::vector<uint32_t>& scenes = {}) override;
         bool supportsState(NodeId node) const override {return graph_.host(node).supportsState();}
         void saveState(NodeId node,const std::string& directory) override;
         std::vector<PresetInfo> presets(NodeId node) override {return graph_.host(node).presets();}

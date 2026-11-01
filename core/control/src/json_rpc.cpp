@@ -367,7 +367,7 @@ namespace oscairn
             if( method == "session.hello" )
             {
                 fields(p, {});
-                return R"({"protocolVersion":1,"server":"oscairn","capabilities":["performance.save","performance.load","performance.info","performance.setInfo","library.query","library.favourite","library.rescan","library.save","library.load","parts.saveSound","parts.loadSound","parts.fromSound","performance.parts","performance.import","state.info","state.save","presets.list","properties.list","properties.get","properties.set","properties.request","sounds.get","sounds.prepare","sounds.select","sounds.discard","assets.register","assets.import","assets.libraries","session.status","params.list","params.get","params.set","params.text","params.gesture","graph.audio-routing","graph.get","graph.add","effects.create","effects.resources","graph.remove","graph.replace","graph.connect","graph.disconnect","graph.map","graph.unmap","graph.commit","parts.add","parts.remove","parts.insert","parts.removeNode","parts.move","parts.addSplit","parts.removeSplit","parts.addLane","parts.removeLane","parts.lane","parts.input","parts.output","parts.send","parts.level","parts.name","parts.solo","parts.pan","parts.meters","edit.undo","edit.redo","edit.history","wires.connect","wires.disconnect","wires.mix","wires.zones","scenes.add","scenes.store","scenes.select","scenes.remove","scenes.name","scenes.parameters","controls.add","controls.remove","controls.name","controls.targets","controls.set","subscribe","unsubscribe","transport.get","transport.set","notes.send","pads.get","pads.set","pads.play","pads.pressure"],"limits":{"messageBytes":65536,"depth":32,"batch":64,"parameterChanges":128}})";
+                return R"({"protocolVersion":1,"server":"oscairn","capabilities":["performance.save","performance.load","performance.info","performance.setInfo","library.query","library.favourite","library.rescan","library.save","library.load","parts.saveSound","parts.loadSound","parts.fromSound","performance.contents","performance.import","state.info","state.save","presets.list","properties.list","properties.get","properties.set","properties.request","sounds.get","sounds.prepare","sounds.select","sounds.discard","assets.register","assets.import","assets.libraries","session.status","params.list","params.get","params.set","params.text","params.gesture","graph.audio-routing","graph.get","graph.add","effects.create","effects.resources","graph.remove","graph.replace","graph.connect","graph.disconnect","graph.map","graph.unmap","graph.commit","parts.add","parts.remove","parts.insert","parts.removeNode","parts.move","parts.addSplit","parts.removeSplit","parts.addLane","parts.removeLane","parts.lane","parts.input","parts.output","parts.send","parts.level","parts.name","parts.solo","parts.pan","parts.meters","edit.undo","edit.redo","edit.history","wires.connect","wires.disconnect","wires.mix","wires.zones","scenes.add","scenes.store","scenes.select","scenes.remove","scenes.name","scenes.parameters","controls.add","controls.remove","controls.name","controls.targets","controls.set","subscribe","unsubscribe","transport.get","transport.set","notes.send","pads.get","pads.set","pads.play","pads.pressure"],"limits":{"messageBytes":65536,"depth":32,"batch":64,"parameterChanges":128}})";
             }
             if( method == "subscribe" || method == "unsubscribe" )
             {
@@ -435,17 +435,20 @@ namespace oscairn
                 try{for(const auto& f:c.loadSound(integer(member(p,"part")),std::string(string(member(p,"id")))))flagged.push_back(quote(f));}catch(const std::exception& e){throw Failure{-32005,e.what()};}
                 return "{\"accepted\":true,\"flagged\":"+join(flagged)+'}';
             }
-            if(method=="performance.parts") {
-                fields(p,{"directory"});std::vector<std::string> out;
-                try{for(const auto& x:c.performanceParts(std::string(string(member(p,"directory")))))out.push_back("{\"id\":"+std::to_string(x.id)+",\"name\":"+quote(x.name)+",\"bus\":"+(x.bus?"true":"false")+'}');}
+            if(method=="performance.contents") {
+                fields(p,{"directory"});std::vector<std::string> parts,scenes;
+                try{const auto held=c.performanceContents(std::string(string(member(p,"directory"))));
+                    for(const auto& x:held.parts)parts.push_back("{\"id\":"+std::to_string(x.id)+",\"name\":"+quote(x.name)+",\"bus\":"+(x.bus?"true":"false")+'}');
+                    for(const auto& x:held.scenes)scenes.push_back("{\"id\":"+std::to_string(x.id)+",\"name\":"+quote(x.name)+'}');}
                 catch(const std::exception& e){throw Failure{-32005,e.what()};}
-                return "{\"parts\":"+join(out)+'}';
+                return "{\"parts\":"+join(parts)+",\"scenes\":"+join(scenes)+'}';
             }
             if(method=="performance.import") {
-                fields(p,{"directory","parts"});std::vector<uint32_t> chosen;
+                fields(p,{"directory","parts","scenes"});std::vector<uint32_t> chosen,scenes;
                 if(member(p,"parts"))for(auto x:array(member(p,"parts"),256,0))chosen.push_back(integer(x));
+                if(member(p,"scenes"))for(auto x:array(member(p,"scenes"),256,0))scenes.push_back(integer(x));
                 Control::Imported r;
-                try{r=c.importPerformance(std::string(string(member(p,"directory"))),chosen);}catch(const std::exception& e){throw Failure{-32005,e.what()};}
+                try{r=c.importPerformance(std::string(string(member(p,"directory"))),chosen,scenes);}catch(const std::exception& e){throw Failure{-32005,e.what()};}
                 std::vector<std::string> parts,notes;for(const auto id:r.parts)parts.push_back(std::to_string(id));for(const auto& n:r.notes)notes.push_back(quote(n));
                 return "{\"parts\":"+join(parts)+",\"notes\":"+join(notes)+'}';
             }

@@ -2240,7 +2240,7 @@
               "$ref": "#/$defs/Id"
             },
             "method": {
-              "const": "performance.parts"
+              "const": "performance.contents"
             },
             "params": {
               "type": "object",
@@ -2283,6 +2283,14 @@
                   "minLength": 1
                 },
                 "parts": {
+                  "type": "array",
+                  "maxItems": 256,
+                  "items": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                },
+                "scenes": {
                   "type": "array",
                   "maxItems": 256,
                   "items": {

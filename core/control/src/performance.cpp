@@ -643,22 +643,25 @@ uint32_t Session::partFromSound(const std::string& id) {
     return part;
 }
 
-std::vector<Control::PerformancePart> Session::performanceParts(const std::string& directory) {
+Control::PerformanceContents Session::performanceContents(const std::string& directory) {
     if(directory.empty() || directory.find('\0')!=std::string::npos)bad("invalid directory");
     const auto doc=document(fs::canonical(directory));V d=doc.get();
     if(text(field(d,"format"))!="oscairn.performance" || integer(field(d,"version"))!=3)bad("unsupported format version");
-    std::vector<PerformancePart> out;
-    for(auto p:array(field(d,"parts"),256))out.push_back({integer(field(p,"id")),text(field(p,"name")),text(field(field(p,"input"),"kind"))=="bus"});
+    PerformanceContents out;
+    for(auto p:array(field(d,"parts"),256))out.parts.push_back({integer(field(p,"id")),text(field(p,"name")),text(field(field(p,"input"),"kind"))=="bus"});
+    for(auto s:array(field(d,"scenes"),256))out.scenes.push_back({integer(field(s,"id")),text(field(s,"name"))});
     return out;
 }
 
-// Another Performance, or chosen parts of it, into this one (RFC 0021). A chosen part brings
-// its plugins, the buses it plays through or sends to (and theirs), the wires and mappings
-// among them, the controls it owns, and the Performance's controls whose every target comes
-// too. All of it also brings its scenes, each added under a free name; this Performance's
-// scenes keep the arriving parts as they arrive. Pads, tempo and its info stay behind. One
+// Another Performance, or chosen parts and scenes of it, into this one (RFC 0021). A chosen part
+// brings its plugins, the buses it plays through or sends to (and theirs), the wires and
+// mappings among them, the controls it owns, and the Performance's controls whose every
+// target comes too; plugins no chosen part uses stay behind. A partial import takes at least
+// one part and, when there are any, one scene; a chosen scene comes under a free name, with
+// what it holds for what comes. All of it brings every scene. This Performance's scenes keep the arriving parts as
+// they arrive. Pads, tempo and its info stay behind. One
 // step to undo; nothing playing is cut but what the graph's rebuild cuts.
-Control::Imported Session::importPerformance(const std::string& directory,const std::vector<uint32_t>& chosen) {
+Control::Imported Session::importPerformance(const std::string& directory,const std::vector<uint32_t>& chosen,const std::vector<uint32_t>& chosenScenes) {
     if(staged_)bad("commit staged graph edits before importing");
     record(); // an edit waiting for its step comes first: the import is a step of its own
     if(directory.empty() || directory.find('\0')!=std::string::npos)bad("invalid directory");
@@ -670,7 +673,11 @@ Control::Imported Session::importPerformance(const std::string& directory,const 
     const auto partList=array(field(d,"parts"),256);
     std::map<uint32_t,V> byId;
     for(auto p:partList){const auto id=integer(field(p,"id"));if(!id || !byId.emplace(id,p).second)bad("invalid or duplicate part");}
-    const bool whole=chosen.empty();
+    const bool whole=chosen.empty() && chosenScenes.empty();
+    // A partial import takes at least one part, and one scene when it has any: the scene says
+    // how what comes is set (RFC 0021).
+    if(!whole && chosen.empty())bad("choose at least one part to import");
+    if(!whole && chosenScenes.empty() && !array(field(d,"scenes"),256).empty())bad("choose at least one scene to import");
     std::set<uint32_t> taking;
     std::function<void(uint32_t)> take=[&](uint32_t id){
         if(!byId.count(id))bad("no part "+std::to_string(id)+" in that Performance");
@@ -794,17 +801,24 @@ Control::Imported Session::importPerformance(const std::string& directory,const 
             }
             macros.push_back(std::move(macro));
         }
-        // Scenes, with all of it: each under a name free here.
-        if(whole){
-            for(auto at:array(field(d,"sceneParameters"),4096)){fields(at,{"node","param"});SceneParameter x{node(field(at,"node")),integer(field(at,"param"))};parameterOf(x.node,x.param);sceneParameters.push_back(x);}
+        // Scenes: all with all of it, else those chosen, each under a name free here, holding
+        // only what comes.
+        {
+            const auto sceneList=array(field(d,"scenes"),256);
+            std::set<uint32_t> sceneIds;for(auto s:sceneList)sceneIds.insert(integer(field(s,"id")));
+            for(const auto id:chosenScenes)if(!sceneIds.count(id))bad("no scene "+std::to_string(id)+" in that Performance");
+            auto sceneComes=[&](V s){return whole || std::find(chosenScenes.begin(),chosenScenes.end(),integer(field(s,"id")))!=chosenScenes.end();};
+            const bool anyScene=std::any_of(sceneList.begin(),sceneList.end(),sceneComes);
+            if(anyScene)for(auto at:array(field(d,"sceneParameters"),4096)){fields(at,{"node","param"});if(!has(field(at,"node")))continue;SceneParameter x{node(field(at,"node")),integer(field(at,"param"))};parameterOf(x.node,x.param);sceneParameters.push_back(x);}
             auto takenScene=[&](const std::string& n){return std::any_of(scenes_.begin(),scenes_.end(),[&](const Scene& x){return x.name==n;}) || std::any_of(scenes.begin(),scenes.end(),[&](const Scene& x){return x.name==n;});};
-            for(auto s:array(field(d,"scenes"),256)){
+            for(auto s:sceneList){
+                if(!sceneComes(s))continue;
                 fields(s,{"id","name","parts","values","controls"});Scene scene;
                 const auto name=text(field(s,"name"));scene.name=nextFree(name,takenScene);
                 if(scene.name!=name)notes.push_back("the scene "+name+" is "+scene.name+" here");
-                for(auto p:array(field(s,"parts"),256)){fields(p,{"part","level","mute"});scene.parts.push_back({partIds.at(integer(field(p,"part"))),number(field(p,"level")),boolean(field(p,"mute"))});}
-                for(auto v:array(field(s,"values"),4096)){fields(v,{"node","param","value"});scene.values.push_back({{node(field(v,"node")),integer(field(v,"param"))},number(field(v,"value"))});}
-                for(auto c:array(field(s,"controls"),4096)){fields(c,{"control","value"});scene.macros.push_back({controlIds.at(integer(field(c,"control"))),number(field(c,"value"))});}
+                for(auto p:array(field(s,"parts"),256)){fields(p,{"part","level","mute"});const auto it=partIds.find(integer(field(p,"part")));if(it!=partIds.end())scene.parts.push_back({it->second,number(field(p,"level")),boolean(field(p,"mute"))});}
+                for(auto v:array(field(s,"values"),4096)){fields(v,{"node","param","value"});if(has(field(v,"node")))scene.values.push_back({{node(field(v,"node")),integer(field(v,"param"))},number(field(v,"value"))});}
+                for(auto c:array(field(s,"controls"),4096)){fields(c,{"control","value"});const auto it=controlIds.find(integer(field(c,"control")));if(it!=controlIds.end())scene.macros.push_back({it->second,number(field(c,"value"))});}
                 scenes.push_back(std::move(scene));
             }
         }

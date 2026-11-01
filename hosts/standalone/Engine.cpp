@@ -205,10 +205,10 @@ namespace oscairn::standalone
         for(const auto& item:found->items)if(item.id==id)return item;
         return Control::LibraryItem{}; // not in the library: an empty ID
     }
-    std::optional<std::vector<Control::PerformancePart>> Engine::performanceParts(const std::string& directory) const
+    std::optional<Control::PerformanceContents> Engine::performanceContents(const std::string& directory) const
     {
         if(!connected() || !controlReady())return {};
-        try{return control_->performanceParts(directory);}catch(const std::exception& e){std::fprintf(stderr,"oscairn: performance parts: %s\n",e.what());return {};}
+        try{return control_->performanceContents(directory);}catch(const std::exception& e){std::fprintf(stderr,"oscairn: performance contents: %s\n",e.what());return {};}
     }
     std::optional<Control::PerformanceInfo> Engine::performanceInfo() const
     {

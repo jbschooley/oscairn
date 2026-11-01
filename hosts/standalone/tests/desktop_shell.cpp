@@ -259,11 +259,13 @@ int main(int argc, char** argv)
                 check(wait([&] { return library.items().size() == 3; }), "back to the Performances");
                 // Importing one part of another Performance, through the app's action.
                 const auto bassSplit = std::find_if(library.items().begin(), library.items().end(), [](const auto& i) { return i.name == "Bass Split"; });
-                const auto held = engine.performanceParts(bassSplit->path);
+                const auto contents = engine.performanceContents(bassSplit->path);
+                const auto held = contents ? std::optional<std::vector<Control::PerformancePart>>(contents->parts) : std::nullopt;
                 check(held && !held->empty(), "the Performance's parts listed to choose from");
                 const auto partCount = engine.graph().parts.size();
                 const auto first = held && !held->empty() && !held->front().bus ? held->front() : Control::PerformancePart{};
                 standalone::SoundAction import; import.kind = standalone::SoundAction::ImportPerformance; import.directory = bassSplit->path; import.parts = {first.id};
+                if(contents && !contents->scenes.empty()) import.scenes = {contents->scenes.front().id}; // a partial import takes a scene too
                 engine.soundAction(std::move(import));
                 const bool arrived = wait([&] { return !engine.soundBusy() && engine.graph().parts.size() > partCount; });
                 const auto now = engine.graph().parts;

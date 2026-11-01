@@ -128,14 +128,17 @@ namespace oscairn
         // what could not be kept (wires and control targets on the old plugins).
         virtual std::vector<std::string> loadSound(uint32_t part, const std::string& id) = 0;
         virtual uint32_t partFromSound(const std::string& id) = 0; // a new part, playing to Main
-        // Importing a Performance (RFC 0021): all of it, or chosen parts, added to the open one in
-        // one step. performanceParts lists what a Performance folder holds, by its own IDs.
+        // Importing a Performance (RFC 0021): all of it, or chosen parts and scenes, added to the
+        // open one in one step. performanceContents lists what a Performance folder holds, by
+        // its own IDs.
         struct PerformancePart { uint32_t id = 0; std::string name; bool bus = false; };
-        virtual std::vector<PerformancePart> performanceParts(const std::string& directory) = 0;
-        // parts: IDs in that file; none for all of it. Returns the new parts' IDs, and notes on
-        // what changed on the way (renamed scenes and controls, outputs this graph lacks).
+        struct PerformanceScene { uint32_t id = 0; std::string name; };
+        struct PerformanceContents { std::vector<PerformancePart> parts; std::vector<PerformanceScene> scenes; };
+        virtual PerformanceContents performanceContents(const std::string& directory) = 0;
+        // parts, scenes: IDs in that file; both empty for all of it. Returns the new parts' IDs,
+        // and notes on what changed on the way (renamed scenes and controls, missing ports).
         struct Imported { std::vector<uint32_t> parts; std::vector<std::string> notes; };
-        virtual Imported importPerformance(const std::string& directory, const std::vector<uint32_t>& parts = {}) = 0;
+        virtual Imported importPerformance(const std::string& directory, const std::vector<uint32_t>& parts = {}, const std::vector<uint32_t>& scenes = {}) = 0;
         // Per-node export saves the selected channel-0 instance of a hosted pool.
         virtual bool supportsState(NodeId node) const = 0;
         virtual void saveState(NodeId node,const std::string& directory) = 0;

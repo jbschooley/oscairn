@@ -33,7 +33,7 @@ namespace oscairn::standalone
         std::string replacementPath,replacementId,directory;
         std::string libraryId; // LoadFromLibrary, LoadSound, PartFromSound; SaveToLibrary and SaveSound save under choice.name
         uint32_t part = 0;     // SaveSound, LoadSound
-        std::vector<uint32_t> parts; // ImportPerformance from directory: its parts by its IDs; none for all
+        std::vector<uint32_t> parts, scenes; // ImportPerformance from directory: by its IDs; both none for all of it
         bool asNew = false;    // SaveToLibrary, SaveSound: a new library item, not the next revision of the one it came from
         std::string importPath; // Prepare from this .sfz or .wav instead of choice
     };

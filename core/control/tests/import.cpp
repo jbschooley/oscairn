@@ -4,7 +4,8 @@
 // Performance opened on its own; into a Performance whose names it shares, scenes, controls and
 // plugins take the next free name, its sends follow its own bus, and the open Performance's
 // scenes keep the arriving parts; one step to undo. Chosen parts bring their buses, their
-// controls and the Performance's controls aimed only at them, and no scenes.
+// controls and the Performance's controls aimed only at them, and only the scenes chosen; a
+// partial import takes at least one part and one scene.
 //   oscairn-import-test FIXTURE.clap DELAY.clap
 #include "oscairn/session.h"
 #include "AllocationGuard.h"
@@ -98,8 +99,9 @@ int main(int argc, char** argv)
 
         // What it holds, to choose from.
         Session probe(48000, frames);
-        const auto listed = probe.performanceParts(folder.string());
-        check(listed.size() == 3 && listed[0].name == "Keys" && listed[1].bus && !listed[2].bus, "its parts listed, the bus marked");
+        const auto listed = probe.performanceContents(folder.string());
+        check(listed.parts.size() == 3 && listed.parts[0].name == "Keys" && listed.parts[1].bus && !listed.parts[2].bus, "its parts listed, the bus marked");
+        check(listed.scenes.size() == 2 && listed.scenes[0].name == "Verse", "and its scenes");
 
         // All of it into an empty Performance sounds as the Performance itself.
         {
@@ -136,14 +138,30 @@ int main(int argc, char** argv)
         b.undo();
         check(b.parts().size() == before && b.graphState().scenes.size() == 2 && b.graphState().macros.size() == 1, "one step to undo");
 
-        // Just Keys: its bus comes, and the controls aimed only at it; not Lead, Other or scenes.
+        // A partial import takes at least one part and one scene.
+        Session none(48000, frames);
+        bool refusedPart = false, refusedScene = false;
+        try { none.importPerformance(folder.string(), {}, {listed.scenes[0].id}); } catch(const std::exception&) { refusedPart = true; }
+        try { none.importPerformance(folder.string(), {keys}); } catch(const std::exception&) { refusedScene = true; }
+        check(refusedPart && refusedScene && none.parts().empty(), "a partial import without a part or a scene is refused");
+
+        // Just Keys with Verse: its bus comes, and the controls aimed only at it; not Lead or Other.
         Session c(48000, frames);
-        const auto only = c.importPerformance(folder.string(), {keys});
+        const auto only = c.importPerformance(folder.string(), {keys}, {listed.scenes[0].id});
         const auto cp = c.parts();
         check(only.parts.size() == 2 && partNamed(cp, "Keys") && partNamed(cp, "Hall") && !partNamed(cp, "Lead"), "a chosen part brings the bus it sends to");
-        check(control(c, "Tone") && control(c, "Super") && !control(c, "Other") && c.graphState().scenes.empty(), "its controls and those aimed only at it; no scenes");
-        bool refused = false; try { c.importPerformance(folder.string(), {99}); } catch(const std::exception&) { refused = true; }
+        check(control(c, "Tone") && control(c, "Super") && !control(c, "Other") && c.graphState().scenes.size() == 1, "its controls and those aimed only at it; the scene chosen");
+        bool refused = false; try { c.importPerformance(folder.string(), {99}, {listed.scenes[0].id}); } catch(const std::exception&) { refused = true; }
         check(refused && c.parts().size() == 2, "a part that is not there is refused, nothing changed");
+
+        // Chosen parts and chosen scenes: Keys and only Verse, holding only what came.
+        Session e(48000, frames);
+        e.importPerformance(folder.string(), {keys}, {listed.scenes[0].id});
+        const auto es = e.graphState().scenes;
+        const auto ep = e.parts();
+        check(es.size() == 1 && es[0].name == "Verse" && es[0].parts.size() == 2 && ep.size() == 2, "a chosen scene comes, holding the parts that came");
+        refused = false; try { e.importPerformance(folder.string(), {keys}, {99}); } catch(const std::exception&) { refused = true; }
+        check(refused && e.parts().size() == 2, "a scene that is not there is refused");
     }
     catch(const std::exception& e) { forbidAllocation = false; std::fprintf(stderr, "FAIL: %s\n", e.what()); return 1; }
     if(!failures) std::puts("ok: importing a Performance, whole and in parts");
