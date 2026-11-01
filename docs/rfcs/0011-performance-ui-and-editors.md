@@ -17,6 +17,7 @@ Checked when built and tested; the sections below say how.
 - [ ] 5. Editors: knob pages for every plugin (started through [RFC 0019](0019-adaptive-ui.md)'s generated editors), the Modular grid
 - [ ] 6. Physical controls: default layers, overrides, learn, banks
 - [ ] 7. Groups, pedal view, move, copy and share
+- [ ] Play: the Performance app's view for the stage ([design](#play-the-performance-apps-first-view))
 - [x] The full scene model (blocks and wires enabled per scene, what each scene saves),
       seamless on the engine's draining and retiring ([status](#scenes-status))
   - [x] plugins and wires switched off and on, seamlessly
@@ -68,6 +69,23 @@ second, larger surface for the same work.
 | **Plugin editor** | Knob pages, or a structured editor the plugin describes, or the plugin's own window (desktop) | |
 
 Mockups of these views at the device's 1024 × 600 size were reviewed on 2026-10-30.
+
+### Play, the Performance app's first view
+
+The Performance app (RFC 0030's tile) opens in **Play**, for the stage; **Edit**, the app's main
+action, goes to the views above. Decided by Jacob on 2026-11-01 from the
+[mockup](https://claude.ai/artifact/VVoBQGnVFYqEjvbGSPmXCN):
+
+- **Scenes** along the top, one tap each (and the panel's pads, where the profile has them).
+- **Previous and Next** stay when the Performance came from a setlist, besides the Setlist app
+  and the product's buttons.
+- **A row of knobs** following the Performance's controls (Super Knobs and the others), the
+  first ones on the panel's knobs; a switch moves the row to the selected part's own controls
+  when a part is selected.
+- **A strip per part and bus**: level, a meter per channel, mute and solo; muted parts dimmed.
+- **The theme's style** for the strips and knobs, as the Mixer uses it (sections, edges,
+  sliders and marks), not a look of their own.
+- One touch for everything; nothing behind a menu, a long press or a dialog.
 
 ## The model behind the views
 
