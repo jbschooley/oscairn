@@ -4,6 +4,7 @@
 // input; summed bands are flat; one band keeps its frequencies and rejects the others.
 //   oscairn-splitters-test SPLITTERS.clap
 #include "oscairn/graph.h"
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstdio>
