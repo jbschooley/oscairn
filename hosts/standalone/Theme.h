@@ -14,11 +14,17 @@ struct ThemeStyle {
     enum class Tabs { Folder, Segmented } tabs=Tabs::Segmented;
     enum class Marks { Square, Round } marks=Marks::Square;                // mute and solo
     enum class Sections { Separate, Joined } sections=Sections::Separate; // gaps between cards, or edge to edge with a line
+    enum class Rows { Left, Right, Dot, Fill } rows=Rows::Left;           // where an item's color goes in a list row (theme format 6)
 };
 int sectionGap(int separate);                    // the gap between sections: `separate`, or 0 when they join
 // A section (a card, a tile, a mixer strip): rounded with its edge when sections are separate;
 // square when they join, its edge on the shared pixel so neighbors draw one line between them.
 void drawSection(juce::Graphics&, juce::Rectangle<int>, juce::Colour fill);
+// A list row's background, alternate rows lighter, and its item's color (transparent for none) as
+// the theme places it: a mark at the left or right end, a dot, or the whole row tinted, as much
+// as primary text still reads on it, with a line between rows so neighbors of one color stay apart.
+// Selection and other highlights are drawn over it.
+void drawListRow(juce::Graphics&, juce::Rectangle<int> row, int index, juce::Colour color);
 // Wires in the routing views (theme format 4): enabled audio and note wires, disabled ones,
 // draining ones (seamless changes, RFC 0021) and ones that no longer fit their plugin's ports.
 struct ThemeWires {

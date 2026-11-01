@@ -17,11 +17,12 @@ int main(int argc,char** argv){try{
     check(classic.style.buttons==ThemeStyle::Buttons::Rounded && classic.style.edges==ThemeStyle::Edges::Outlined && classic.style.depth==ThemeStyle::Depth::Flat &&
           classic.style.sliders==ThemeStyle::Sliders::Filled && classic.style.tabs==ThemeStyle::Tabs::Folder && classic.style.marks==ThemeStyle::Marks::Round && classic.style.sections==ThemeStyle::Sections::Joined,"every style choice parsed");
     check(ThemeData::parse(json.replace("\"line\"","\"cap\"")).style.sliders==ThemeStyle::Sliders::Cap,"slider caps parsed");
-    for(auto broken:{json.replace("\"midnight\"","\"../escape\""),json.replace("\"version\": 5","\"version\": 4"),json.replace("\"fontScale\": 1.0","\"fontScale\": 100"),
+    check(theme.style.rows==ThemeStyle::Rows::Dot && ThemeData::parse(json.replace("\"dot\"","\"fill\"")).style.rows==ThemeStyle::Rows::Fill,"row color placement parsed");
+    for(auto broken:{json.replace("\"midnight\"","\"../escape\""),json.replace("\"version\": 6","\"version\": 5"),json.replace("\"fontScale\": 1.0","\"fontScale\": 100"),
                      json.replace("#F0F5FC","#101724"),json.replace("#7CCEFF","red"),json.replace("\"radius\": 8","\"script\": \"evil\""),
                      json.replace("\"license\": \"fonts/OFL.txt\"","\"licenses\": \"fonts/OFL.txt\""),json.replace("\"regular\": \"fonts/Inter-Regular.ttf\",",""),
                      json.replace("\"tabs\": \"segmented\"","\"tabs\": \"ribbon\""),json.replace("\"marks\": \"square\"","\"marks\": \"square\", \"shader\": \"x\""),
-                     json.replace("\"buttons\": \"pill\",","")}){
+                     json.replace("\"buttons\": \"pill\",",""),json.replace("\"rows\": \"dot\"","\"rows\": \"stripe\"")}){
         bool rejected=false;try{ThemeData::parse(broken);}catch(const std::exception&){rejected=true;}check(rejected,"invalid or unreadable theme rejected");
     }
     juce::ScopedJuceInitialiser_GUI gui;

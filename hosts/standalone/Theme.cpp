@@ -62,6 +62,32 @@ void drawSection(juce::Graphics& g,juce::Rectangle<int> r,juce::Colour fill) {
     }
     const float radius=current.radius+2;g.setColour(fill);g.fillRoundedRectangle(r.toFloat(),radius);drawEdge(g,r.toFloat().reduced(.5f),radius);
 }
+namespace {
+double luminance(juce::Colour c){auto linear=[](double v){return v<=.04045?v/12.92:std::pow((v+.055)/1.055,2.4);};return .2126*linear(c.getFloatRed())+.7152*linear(c.getFloatGreen())+.0722*linear(c.getFloatBlue());}
+double contrast(juce::Colour x,juce::Colour y){const auto a=luminance(x),b=luminance(y);return (std::max(a,b)+.05)/(std::min(a,b)+.05);}
+}
+void drawListRow(juce::Graphics& g,juce::Rectangle<int> r,int index,juce::Colour color) {
+    const auto base=index%2?ink(Ink::Surface).interpolatedWith(ink(Ink::Raised),.35f):ink(Ink::Surface);
+    const bool marked=!color.isTransparent();
+    if(current.style.rows==ThemeStyle::Rows::Fill && marked) {
+        float amount=index%2?.3f:.42f;
+        while(amount>.05f && contrast(ink(Ink::Text),base.interpolatedWith(color,amount))<4.5)amount-=.05f;
+        g.setColour(base.interpolatedWith(color,amount));g.fillRect(r);
+        g.setColour(ink(Ink::Background));g.fillRect(r.getX(),r.getBottom()-1,r.getWidth(),1);
+        return;
+    }
+    g.setColour(base);g.fillRect(r);
+    if(current.style.rows==ThemeStyle::Rows::Fill){g.setColour(ink(Ink::Background));g.fillRect(r.getX(),r.getBottom()-1,r.getWidth(),1);}
+    if(!marked)return;
+    const float h=float(r.getHeight()),y=float(r.getY());
+    g.setColour(color);
+    switch(current.style.rows) {
+        case ThemeStyle::Rows::Left:g.fillRoundedRectangle(juce::Rectangle<float>(float(r.getX())+10,y+h*.22f,6,h*.56f),3);break;
+        case ThemeStyle::Rows::Right:g.fillRoundedRectangle(juce::Rectangle<float>(float(r.getRight())-10,y+h*.22f,6,h*.56f),3);break;
+        case ThemeStyle::Rows::Dot:{const float d=std::min(12.f,h*.3f);g.fillEllipse(float(r.getX())+13-d/2,y+(h-d)/2,d,d);break;}
+        case ThemeStyle::Rows::Fill:break;
+    }
+}
 bool darkTheme(){return ink(Ink::Background).getPerceivedBrightness()<.5f;}
 float buttonRadius(float height){return current.style.buttons==ThemeStyle::Buttons::Pill?height/2:current.radius;}
 // Pill themes round single-line fields like their buttons; a taller field (several lines) keeps the radius plus 3.
@@ -76,7 +102,7 @@ ThemeData ThemeData::parse(const juce::String& json) {
     juce::var value;require(juce::JSON::parse(json,value).wasOk(),"Invalid theme JSON");
     const auto* object=value.getDynamicObject();require(object,"Theme must be an object");
     fields(*object,{"version","id","name","font","fontScale","radius","colors","style","wires"});
-    require(value["version"].isInt() && int(value["version"])==5,"Unsupported theme version");
+    require(value["version"].isInt() && int(value["version"])==6,"Unsupported theme version");
     ThemeData t;t.id=value["id"].toString();t.name=value["name"].toString();
     require(value["id"].isString() && validId(t.id),"Theme ID must contain lowercase letters, digits or hyphens");
     require(value["name"].isString() && t.name.isNotEmpty() && t.name.length()<=80,"Theme needs a short name");
@@ -99,7 +125,7 @@ ThemeData ThemeData::parse(const juce::String& json) {
     fields(*wires,{"audio","notes","disabled","draining","unconnected"});
     t.wires={hex(wires->getProperty("audio")),hex(wires->getProperty("notes")),hex(wires->getProperty("disabled")),hex(wires->getProperty("draining")),hex(wires->getProperty("unconnected"))};
     const auto* style=value["style"].getDynamicObject();require(style,"Theme needs a style");
-    fields(*style,{"buttons","edges","depth","sliders","tabs","marks","sections"});
+    fields(*style,{"buttons","edges","depth","sliders","tabs","marks","sections","rows"});
     auto choice=[&](const char* key,const juce::StringArray& options){const auto v=style->getProperty(key);const int i=options.indexOf(v.toString());require(v.isString() && i>=0,"Theme style choice is not one of its options");return i;};
     t.style.buttons=ThemeStyle::Buttons(choice("buttons",{"rounded","pill"}));
     t.style.edges=ThemeStyle::Edges(choice("edges",{"none","hairline","outlined"}));
@@ -108,11 +134,9 @@ ThemeData ThemeData::parse(const juce::String& json) {
     t.style.tabs=ThemeStyle::Tabs(choice("tabs",{"folder","segmented"}));
     t.style.marks=ThemeStyle::Marks(choice("marks",{"square","round"}));
     t.style.sections=ThemeStyle::Sections(choice("sections",{"separate","joined"}));
-    auto luminance=[](juce::Colour c){auto linear=[](double v){return v<=.04045?v/12.92:std::pow((v+.055)/1.055,2.4);};return .2126*linear(c.getFloatRed())+.7152*linear(c.getFloatGreen())+.0722*linear(c.getFloatBlue());};
-    for(auto background:{Ink::Background,Ink::Surface,Ink::Raised}) {
-        const auto a=luminance(t.colors[static_cast<size_t>(Ink::Text)]),b=luminance(t.colors[static_cast<size_t>(background)]);
-        require((std::max(a,b)+.05)/(std::min(a,b)+.05)>=4.5,"Theme text contrast must be at least 4.5:1");
-    }
+    t.style.rows=ThemeStyle::Rows(choice("rows",{"left","right","dot","fill"}));
+    for(auto background:{Ink::Background,Ink::Surface,Ink::Raised})
+        require(contrast(t.colors[static_cast<size_t>(Ink::Text)],t.colors[static_cast<size_t>(background)])>=4.5,"Theme text contrast must be at least 4.5:1");
     return t;
 }
 Theme::Theme(juce::File root,juce::File builtIn) {

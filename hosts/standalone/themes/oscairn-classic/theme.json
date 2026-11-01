@@ -1,5 +1,5 @@
 {
-  "version": 5,
+  "version": 6,
   "id": "oscairn-classic",
   "name": "Oscairn Classic",
   "font": {
@@ -27,7 +27,8 @@
     "sliders": "filled",
     "tabs": "folder",
     "marks": "square",
-    "sections": "separate"
+    "sections": "separate",
+    "rows": "left"
   },
   "wires": {
     "audio": "#8CC2FF",

@@ -306,10 +306,9 @@ namespace oscairn::standalone
         if(row < 0 || row >= int(setlist_.entries.size())) return;
         const auto& entry = setlist_.entries[size_t(row)];
         const bool playing = row == current_;
-        g.setColour(playing ? ink(Ink::Accent).withAlpha(.22f) : selected ? ink(Ink::Raised) : (row % 2 ? ink(Ink::Raised).withAlpha(.35f) : ink(Ink::Surface)));
-        g.fillRect(0, 0, width, height);
+        drawListRow(g, {0, 0, width, height}, row, colorAt(row));
+        if(playing || selected) { g.setColour(playing ? ink(Ink::Accent).withAlpha(.22f) : ink(Ink::Raised).withAlpha(.6f)); g.fillRect(0, 0, width, height); }
         if(playing) { g.setColour(ink(Ink::Accent)); g.fillRect(0, 0, 4, height); }
-        if(const auto color = colorAt(row); !color.isTransparent()) { g.setColour(color); g.fillRoundedRectangle(juce::Rectangle<float>(10, height * .25f, 6, height * .5f), 3); }
         const float body = textSize(TextRole::Body, mode()), title = textSize(TextRole::Title, mode());
         auto area = juce::Rectangle<int>(0, 0, width, height).reduced(24, 0);
         g.setColour(playing ? ink(Ink::Accent) : ink(Ink::Muted)); g.setFont(juce::FontOptions(body, juce::Font::bold));

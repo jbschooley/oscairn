@@ -74,7 +74,7 @@ emergency theme with fixed colors and the platform's default font keeps text vis
 change a musician's appearance preference. Theme package distribution/sync will use the
 future package system; it is not needed for local theme installation.
 
-## Theme format, version 5
+## Theme format, version 6
 
 A theme is a folder named after its ID, holding `theme.json` ([schema](theme.schema.json))
 and the files it names. See the complete Midnight example. Themes contain data and fonts
@@ -83,14 +83,14 @@ fonts, so text never depends on what a device has installed.
 
 | Field | Contract |
 | --- | --- |
-| `version` | Integer `5` |
+| `version` | Integer `6` |
 | `id` | 1–64 lowercase letters, digits or hyphens; the folder's name; built-in IDs are reserved |
 | `name` | Display name, 1–80 characters |
 | `font` | `regular` and optional `bold` font files (`.ttf`/`.otf`, ≤ 4 MiB each) and the fonts' `license` text (≤ 64 KiB), as relative paths inside the folder |
 | `fontScale` | Optional number, 0.8–1.4; default 1 |
 | `radius` | Optional number, 0–16; default 6 |
 | `colors` | All nine semantic colors below, opaque `#RRGGBB` |
-| `style` | How controls are drawn: one choice for each of the seven below |
+| `style` | How controls are drawn: one choice for each of the eight below |
 | `wires` | The routing views' wire colors, opaque `#RRGGBB`: `audio` and `notes` for enabled wires, `disabled` (muted, or off in a scene), `draining` (taking no new notes while held ones ring out, in a seamless change) and `unconnected` (no longer fits its plugin's ports). Disabled and draining wires are drawn dashed |
 
 | Style | Choices | Draws |
@@ -102,6 +102,7 @@ fonts, so text never depends on what a device has installed.
 | `tabs` | `folder`, `segmented` | Tabs joined to the view below, or a track with the selected tab lifted out |
 | `marks` | `square`, `round` | Mute and solo as squares (rounded up to the theme's radius) or circles |
 | `sections` | `separate`, `joined` | Cards, tiles and mixer strips with gaps between them, or edge to edge with one line between each and square corners, which uses small screens best |
+| `rows` | `left`, `right`, `dot`, `fill` | Where an item's color goes in a list row (the Library, setlists): a short bar at the left or right end, a dot at the left, or the whole row tinted. A tinted row is tinted only as far as primary text keeps 4.5:1 contrast on it, alternate rows less, with a line between rows so neighbors of one color stay apart |
 
 Choices, not code: the host draws every combination, so styles can be mixed (a soft style with
 round marks). Which control is used (a pan knob or a slider) is the surface's, not the theme's.
@@ -123,8 +124,9 @@ out-of-range metrics, paths leaving the folder, linked files, missing licenses a
 that are not TrueType/OpenType fonts are rejected before installation. Only the files a
 theme names are copied. Fonts are parsed in the UI process by the platform's font engine,
 which is not hardened against malicious files: install themes only from trusted sources.
-Earlier theme versions are no longer read; rename `colours` to `colors` (version 5 uses American
-spelling throughout), add `wires` if missing, and set `version` to 5 (initial development). Primary text must have at least 4.5:1 contrast
+Earlier theme versions are no longer read; rename `colours` to `colors` (American spelling
+throughout), add `wires` if missing, add `style.rows` (`left` draws rows as version 5 did), and
+set `version` to 6 (initial development). Primary text must have at least 4.5:1 contrast
 against background, surface and raised colors. Authors should also check secondary text,
 small labels, keyboard focus and selected controls in every supported layout.
 Themes deliberately exclude image/knob assets and custom layout code; richer plugin

@@ -4,7 +4,7 @@
   "type": "object",
   "properties": {
     "version": {
-      "const": 5
+      "const": 6
     },
     "id": {
       "type": "string",
@@ -153,6 +153,14 @@
             "separate",
             "joined"
           ]
+        },
+        "rows": {
+          "enum": [
+            "left",
+            "right",
+            "dot",
+            "fill"
+          ]
         }
       },
       "required": [
@@ -162,7 +170,8 @@
         "sliders",
         "tabs",
         "marks",
-        "sections"
+        "sections",
+        "rows"
       ],
       "additionalProperties": false
     },

@@ -1,5 +1,5 @@
 {
-  "version": 5,
+  "version": 6,
   "id": "midnight",
   "name": "Midnight",
   "font": {
@@ -27,7 +27,8 @@
     "sliders": "line",
     "tabs": "segmented",
     "marks": "square",
-    "sections": "separate"
+    "sections": "separate",
+    "rows": "dot"
   },
   "wires": {
     "audio": "#7CCEFF",
