@@ -100,7 +100,7 @@ namespace oscairn::standalone
         const std::string& soundMessage() const { return soundMessage_; }
         bool controlReady() const { return !soundJob_.valid(); }
         // Preparing the next Performance ahead is not busy: anything asked meanwhile waits for it, or replaces it while it waits.
-        bool soundBusy() const { return (pendingSound_ && pendingSound_->kind!=SoundAction::PrepareFromLibrary) || (soundJob_.valid() && soundJobKind_!=SoundAction::Refresh && soundJobKind_!=SoundAction::PrepareFromLibrary); }
+        bool soundBusy() const { return std::any_of(pendingSounds_.begin(),pendingSounds_.end(),[](const SoundAction& a){return a.kind!=SoundAction::PrepareFromLibrary;}) || (soundJob_.valid() && soundJobKind_!=SoundAction::Refresh && soundJobKind_!=SoundAction::PrepareFromLibrary); }
         bool canPrepareSounds() const { return !socketPath_.empty(); }
         void soundAction(SoundAction action);
         std::function<void()> openBrowser;
@@ -148,7 +148,7 @@ namespace oscairn::standalone
         struct SoundResult { std::map<std::string,Editor> editors;SoundPickerState state; std::string error, message; bool disconnected = false; };
         std::future<SoundResult> soundJob_;
         SoundAction::Kind soundJobKind_=SoundAction::Refresh;
-        std::optional<SoundAction> pendingSound_;
+        std::deque<SoundAction> pendingSounds_; // after the job running, in order
         SoundPickerState soundPicker_;
         std::map<std::string,Editor> editors_;
         std::string soundMessage_;

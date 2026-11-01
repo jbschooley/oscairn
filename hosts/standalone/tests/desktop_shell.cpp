@@ -331,13 +331,26 @@ int main(int argc, char** argv)
                 check(setlist->setlist().entries.size() == 2 && library.message() == "Added to Friday", "the send was taken: " + library.message().toStdString());
                 const auto saved = standalone::readSetlist(standalone::setlistFile(folder, "Friday"));
                 check(saved.name == "Friday" && saved.entries.size() == 2 && saved.entries[1].name == "Verse Keys", "the setlist was saved");
-                // Played in order: each opens its Performance.
+                // Played in order: each opens its Performance, here while a refresh is running, as
+                // the engine starts one every half second.
+                engine.soundAction({});
                 setlist->go(0);
                 check(wait([&] { return !engine.soundBusy() && engine.performanceInfo() && engine.performanceInfo()->name == "Bass Split"; }), "the first entry opened");
                 // The next is prepared meanwhile (RFC 0021); done, it said nothing over the opening.
                 check(wait([&] { return engine.controlReady(); }) && engine.soundMessage() == "Performance opened. Press Play or play a note.", "the next prepared: " + engine.soundMessage());
+                // Prepared, it opens as it was read then: its file renamed since, with its time kept, opens unchanged.
+                juce::File second;
+                for(const auto& item : library.items()) if(item.id == setlist->setlist().entries[1].id) second = juce::File(item.path).getChildFile("performance.json");
+                const auto original = second.loadFileAsString();
+                const auto written = std::filesystem::last_write_time(second.getFullPathName().toStdString());
+                second.replaceWithText(original.replace("Verse Keys", "Changed Keys"));
+                std::filesystem::last_write_time(second.getFullPathName().toStdString(), written);
                 setlist->step(1);
-                check(setlist->current() == 1 && wait([&] { return !engine.soundBusy() && engine.performanceInfo() && engine.performanceInfo()->name == "Verse Keys"; }), "Next opened the second");
+                std::string opened;
+                check(setlist->current() == 1 && wait([&] { if(const auto info = engine.performanceInfo(); info && !engine.soundBusy()) opened = info->name; return opened != "" && opened != "Bass Split"; }) && opened == "Verse Keys",
+                      "Next opened the second, prepared ahead: " + opened);
+                second.replaceWithText(original);
+                std::filesystem::last_write_time(second.getFullPathName().toStdString(), written);
                 // Its own color for an entry, over the Performance's.
                 check(setlist->colorAt(0) == juce::Colour(0xff46a758), "an entry shows its Performance's color");
                 setlist->setColor(0, "#e5484d");

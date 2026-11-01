@@ -46,7 +46,7 @@ namespace oscairn::standalone
     }
     Engine::~Engine()
     {
-        stopTimer();pendingSound_.reset();if(soundJob_.valid()){soundJob_.wait();finishSounds();}
+        stopTimer();pendingSounds_.clear();if(soundJob_.valid()){soundJob_.wait();finishSounds();}
         // Quitting normally lets the managed engine stop once no other window keeps it; a crash
         // never gets here, so the engine plays on for the UI to come back to.
         if(process_ && client_)
@@ -165,7 +165,7 @@ namespace oscairn::standalone
     }
     void Engine::soundAction(SoundAction action)
     {
-        if(!connected() || (soundBusy() && (action.kind!=SoundAction::PrepareFromLibrary || pendingSound_)))return; // a preparation ahead waits its turn
+        if(!connected() || (soundBusy() && action.kind!=SoundAction::PrepareFromLibrary))return; // a preparation ahead waits its turn
         if((action.kind==SoundAction::Prepare || action.kind==SoundAction::PrepareFromLibrary || action.kind==SoundAction::Replace || action.kind==SoundAction::SavePerformance || action.kind==SoundAction::LoadPerformance || action.kind==SoundAction::SaveToLibrary || action.kind==SoundAction::LoadFromLibrary || action.kind==SoundAction::SaveSound || action.kind==SoundAction::LoadSound || action.kind==SoundAction::PartFromSound || action.kind==SoundAction::ImportPerformance ||
             action.kind==SoundAction::ExportPerformance || action.kind==SoundAction::InstallArchive || action.kind==SoundAction::AuditionStart || action.kind==SoundAction::AuditionStop) && !canPrepareSounds())
         {
@@ -173,7 +173,12 @@ namespace oscairn::standalone
             return;
         }
         soundMessage_.clear();
-        if(soundJob_.valid()){pendingSound_=std::move(action);return;}
+        if(soundJob_.valid())
+        {
+            // Anything asked replaces a preparation still waiting: the latest is the one wanted.
+            std::erase_if(pendingSounds_,[](const SoundAction& a){return a.kind==SoundAction::PrepareFromLibrary;});
+            pendingSounds_.push_back(std::move(action));return;
+        }
         refreshSounds(std::move(action));
     }
 
@@ -228,9 +233,9 @@ namespace oscairn::standalone
         if(loaded && result.error.empty()){pendingControls_.clear();padChannels_.fill(0);refreshPads();}
         auto pending=std::move(pendingControls_);pendingControls_.clear();
         for(auto& action:pending)command(std::move(action));
-        if(pendingSound_ && connected())
+        if(!pendingSounds_.empty() && connected())
         {
-            auto action=std::move(*pendingSound_);pendingSound_.reset();refreshSounds(std::move(action));
+            auto action=std::move(pendingSounds_.front());pendingSounds_.pop_front();refreshSounds(std::move(action));
         }
     }
     std::optional<Control::LibraryResult> Engine::library(const Control::LibraryQuery& query) const
@@ -316,7 +321,7 @@ namespace oscairn::standalone
     void Engine::failed(const std::string& message)
     {
         pendingControls_.clear();
-        pendingSound_.reset();
+        pendingSounds_.clear();
         failure_=message;std::fprintf(stderr,"oscairn: control connection: %s\n",message.c_str());
         if(client_)client_->disconnect();
     }
