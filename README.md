@@ -110,7 +110,8 @@ panel layouts in the View menu, or start with one:
 open build-app/hosts/standalone/oscairn_standalone_artefacts/RelWithDebInfo/Oscairn.app --args --layout kick
 ```
 
-Options: `--layout desktop|kick|kick-screen|ignite|keys49|file.json`, `--profile kick` (a
+Options: `--app performance|library|setlist|groovebox` (open an app instead of Home),
+`--layout desktop|kick|kick-screen|ignite|keys49|file.json`, `--profile kick` (a
 device's screen, full screen; see [running on a KICK](docs/kick.md)), and `--snapshot out.png
 [--size WxH] [--play SECONDS]` to render the window to a PNG and quit. Layouts are described in
 [hosts/standalone/layouts](hosts/standalone/layouts/README.md).

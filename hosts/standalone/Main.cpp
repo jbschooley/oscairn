@@ -5,6 +5,7 @@
 //
 //   oscairn-standalone [--profile NAME|path.json] [--layout NAME|path.json] [--plugins DIR]
 //                      [--in-process | --connect SOCKET] [--play] [--input-mode automatic|mouse|touch]
+//                      [--app performance|library|setlist|groovebox]
 //                      [--snapshot out.png [--size WxH] [--play SECONDS] [--view TAB]]
 //
 // --profile names the device it runs on (RFC 0024): a built-in profile (qemu-aarch64, kick,
@@ -205,6 +206,15 @@ namespace oscairn::standalone
             auto* home = new Launcher( engine_, launcherApps() );
             setDesktopMode( *home, inputMode_ == InputMode::Touch ? 2 : 1 );
             setContentOwned( home, false );
+        }
+        // An app by name, as its tile opens it (--app): performance, library, setlist or groovebox.
+        void openApp( const juce::String& name )
+        {
+            if( name == "performance" ) openPerformance();
+            else if( name == "library" ) showLibraryApp();
+            else if( name == "setlist" ) showSetlist();
+            else if( name == "groovebox" ) openGroovebox();
+            else throw std::invalid_argument( "--app is performance, library, setlist or groovebox" );
         }
         // The Performance app: playing and editing the open Performance. Its live-controls view
         // is not built yet, so it opens the parts editor.
@@ -637,7 +647,7 @@ namespace oscairn::standalone
                 theme_=std::make_unique<Theme>();
                 host::AudioConfiguration audio;
                 bool audioOptions=false;
-                const juce::StringArray valued{"--plugins","--connect","--profile","--layout","--snapshot","--size","--view","--input-mode"};
+                const juce::StringArray valued{"--plugins","--connect","--profile","--layout","--snapshot","--size","--view","--input-mode","--app"};
                 for(int i=0;i<args.size();++i)
                 {
                     const auto name=args[i].toStdString();
@@ -691,6 +701,7 @@ namespace oscairn::standalone
                     else throw std::invalid_argument( "--input-mode must be automatic, mouse or touch" );
                 }
                 window_ = std::make_unique<Window>( *engine_, std::move( layouts ), Layout::parse( json ), profile,*theme_,juce::File(dir.unquoted()), mode );
+                if( const auto app = argument( args, "--app" ); app.isNotEmpty() ) window_->openApp( app.toLowerCase() );
                 if( const auto view = argument( args, "--view" ); view.isNotEmpty() )
                 {
                     DesktopShell::Tab tab;
