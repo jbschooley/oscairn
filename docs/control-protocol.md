@@ -98,6 +98,7 @@ request members.
 | Method | `params` | `result` |
 | --- | --- | --- |
 | `session.hello` | omitted or `{}` | `protocolVersion`, `server`, supported methods and optional features in `capabilities`, `limits` |
+| `engine.attach`, `engine.release` | `{}` | `{"accepted":true}`. A UI attaches when it connects to a managed engine and releases it when it quits normally; the managed engine stops once every attached client has released it. A client that disconnects while attached (a crash) keeps the engine running until a client attaches again; clients that never attach (background jobs) do not count. Engines started without `--managed` ignore both |
 | `session.status` | omitted or `{}` | `audioDevice`, `midiInputs` (each `{"source","name","kind","port"}`, below), `sampleRate`, `bufferSize`, `cpuLoad`, `deadlineMisses`, `graphEventDrops`, `midiEventDrops`, `audioReady`, mapped `audioInputs`/`audioOutputs`, and `failures`: each plugin that has failed and is silent (`node`, `name`, `reason`) |
 | `state.info` | `{"node":"synth"}` | `{"supported":true}` when opaque state export is available |
 | `state.save` | `{"node":"synth","directory":"/path/to/new-state"}` | `{"saved":true}` after publishing a new state directory |

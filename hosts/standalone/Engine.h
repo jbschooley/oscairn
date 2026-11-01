@@ -111,6 +111,7 @@ namespace oscairn::standalone
 
     private:
         void timerCallback()override;
+        void attach();
         template<class F> void command(F&& f)
         {
             if(!failure_.empty() || (soundJob_.valid() && soundJobKind_==SoundAction::Replace))return;

@@ -221,7 +221,7 @@ What is in place:
   [wire contract and schema](docs/control-protocol.md). A bounded Unix socket server,
   cached remote client and separate `oscairn-engine` helper support explicit desktop
   connections via `--connect SOCKET` ([instructions](hosts/README.md)). The desktop now
-  starts or reconnects to its bundled helper by default, retains audio when the UI exits,
+  starts or reconnects to its bundled helper by default, keeps playing if the UI crashes and stops it when the app quits,
   and offers fresh-session recovery after helper failure. `--in-process` remains available
   for debugging ([RFC 0003](docs/rfcs/0003-control-api.md)).
 - **Desktop workflow:** isolated CLAP/LV2 discovery, plugin selection for the demo instrument

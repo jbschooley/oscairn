@@ -14,11 +14,14 @@ namespace
     struct Pump : juce::Timer
     {
         oscairn::LocalServer& server;
+        bool managed;
         int result=0;
-        explicit Pump(oscairn::LocalServer& s):server(s){startTimer(5);}
+        Pump(oscairn::LocalServer& s,bool m):server(s),managed(m){startTimer(5);}
         void timerCallback()override
         {
             if(stopping){juce::MessageManager::getInstance()->stopDispatchLoop();return;}
+            // A managed engine stops when its UIs have quit normally (crashes leave it running).
+            if(managed && server.released()){stopping=1;juce::MessageManager::getInstance()->stopDispatchLoop();return;}
             try
             {
                 const auto now=std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
@@ -55,7 +58,7 @@ int main(int argc,char** argv)
         if(managed)lease=std::make_unique<oscairn::host::EngineLease>(socket);
         oscairn::host::AudioEngine audio(plugins,std::move(audioConfig));
         oscairn::LocalServer server(audio.control());server.listen(socket);
-        Pump pump(server);
+        Pump pump(server,managed);
         std::cout<<"oscairn-engine: listening on "<<socket<<std::endl;
         // On macOS runDispatchLoop() calls [NSApp run], but this console host
         // has no NSApplication. The bounded loop pumps the native run loop too,

@@ -324,10 +324,14 @@ controls are disabled. A managed helper's death enables Restart engine; it loads
 fresh demo with transport stopped. Unsaved engine state is not restored. External
 `--connect` sessions reconnect but leave lifecycle management to their owner.
 
-Closing a managed UI leaves its engine and audio device open. Reopening attaches to
-that session, including its existing transport and parameter state. Stop playback before
-closing if you want silence. Engine shutdown is currently external (SIGTERM); a UI
-shutdown command and session save/restore remain separate work.
+The engine is still its own process, so a UI crash leaves the sound playing and a plugin or
+engine crash leaves the UI up, but the app is self-contained: quitting it stops its engine
+once no other Oscairn window uses it. Each window sends `engine.attach` when it connects and
+`engine.release` when it quits normally ([protocol](../docs/control-protocol.md)). A window
+that crashes never releases, so its engine keeps playing, with its transport and state, until
+a window opens and attaches again. Session save/restore across engine restarts remains
+separate work. Checked by `control-local-stream` (two windows and a background job; a crash;
+a reopened window quitting) and by hand with the app on macOS (quit, `kill -9`, reopen).
 
 `engine-process-policy` checks ownership locks, refusal to replace unrelated files and
 bounded cleanup of an unresponsive child. `engine-process-lifecycle` checks concurrent

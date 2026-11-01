@@ -167,6 +167,7 @@ namespace oscairn
         dev_t device=0;ino_t inode=0;
         struct Peer { Stream stream; JsonRpc rpc; Peer(int fd,Control& c):stream(fd),rpc(c){} };
         std::vector<std::unique_ptr<Peer>> peers;
+        bool everAttached=false,abandoned=false; // abandoned: an attached UI left without releasing
         explicit Impl(Control& c):control(c){}
         ~Impl()
         {
@@ -179,6 +180,11 @@ namespace oscairn
     LocalServer::LocalServer(Control& c):impl_(std::make_unique<Impl>(c)){}
     LocalServer::~LocalServer()=default;
     size_t LocalServer::clients()const{return impl_->peers.size();}
+    bool LocalServer::released()const
+    {
+        const auto& s=*impl_;
+        return s.everAttached && !s.abandoned && std::none_of(s.peers.begin(),s.peers.end(),[](const auto& p){return p->rpc.attached() && !p->rpc.released();});
+    }
     void LocalServer::listen(const std::string& path)
     {
         auto& s=*impl_;
@@ -234,7 +240,9 @@ namespace oscairn
                     if(stream.line(line))
                     {
                         if(line.size()>JsonRpc::maxMessageBytes)throw std::runtime_error("Request too large");
+                        const bool wasAttached=peer->rpc.attached();
                         if(auto reply=peer->rpc.dispatch(line))stream.queue(*reply);
+                        if(!wasAttached && peer->rpc.attached()){s.everAttached=true;s.abandoned=false;} // a UI back after a crash keeps it again
                         ++requests;
                     }
                     else if(reads++>=16 || !stream.read(JsonRpc::maxMessageBytes+1))break;
@@ -247,6 +255,7 @@ namespace oscairn
             }
             catch(const std::exception&){stream.close();} // failure isolates this client
         }
+        for(const auto& peer:s.peers)if(peer->stream.fd<0 && peer->rpc.attached() && !peer->rpc.released())s.abandoned=true;
         std::erase_if(s.peers,[](const auto& peer){return peer->stream.fd<0;});
     }
 

@@ -127,6 +127,29 @@ namespace
         check(notices.size()<=128 && std::any_of(notices.begin(),notices.end(),[](const auto& n){return n.find("session.resync")!=std::string::npos;}),"overflow becomes resync");
         clientWhileRendering(f,[&]{check(client.call("transport.get").find("\"tempo\"")!=std::string::npos,"replies continue after overflow");});
     }
+    // A managed engine's lifetime: it may stop once every UI that keeps it has quit normally;
+    // one that leaves without releasing (a crash) keeps it until a UI attaches again, and a
+    // client that never attached (a background job) does not count.
+    void lifetime(const char* plugin)
+    {
+        Fixture f(plugin);
+        auto connect = [&] { auto fd = pair(); f.server.adopt(fd[0]); auto c = std::make_unique<LocalClient>(); c->adopt(fd[1]); return c; };
+        auto settle = [&] { for(int i = 0; i < 4; ++i) f.tick(); };
+        check(!f.server.released(), "nothing attached: not released");
+        auto desktop = connect(), kick = connect(), job = connect();
+        clientWhileRendering(f, [&] { desktop->call("engine.attach"); kick->call("engine.attach"); job->call("transport.get"); });
+        clientWhileRendering(f, [&] { desktop->call("engine.release"); });
+        desktop.reset(); settle();
+        check(!f.server.released(), "another window still keeps it");
+        job.reset(); settle();
+        check(!f.server.released(), "a background job's connection is not a window");
+        kick.reset(); settle(); // the KICK window crashed: it left without releasing
+        check(!f.server.released(), "a crash keeps the engine for the UI to come back to");
+        auto back = connect();
+        clientWhileRendering(f, [&] { back->call("engine.attach"); back->call("engine.release"); });
+        back.reset(); settle();
+        check(f.server.released(), "the last window quit normally: released");
+    }
     void clientAndReconnect(const char* plugin)
     {
         Fixture f(plugin);auto fd=pair();f.server.adopt(fd[0]);
@@ -526,7 +549,7 @@ int main(int argc,char** argv)
         if(argc==3 && std::string_view(argv[2])=="--path-policy"){pathPolicy(argv[1]);return 0;}
         if(argc==3 && std::string_view(argv[2])=="--named")return named(argv[1],argv[0]);
         if(argc!=2)return 2;
-        framing(argv[1]);slowReader(argv[1]);clientAndReconnect(argv[1]);pressure(argv[1]);clientFailures();typedClient(argv[1]);controllerCrash(argv[1],argv[0]);
+        framing(argv[1]);lifetime(argv[1]);slowReader(argv[1]);clientAndReconnect(argv[1]);pressure(argv[1]);clientFailures();typedClient(argv[1]);controllerCrash(argv[1],argv[0]);
         std::cout<<"ok: real Unix streams, framing, backpressure, notifications, reconnect, continuing audio and client failures\n";
     }
     catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}

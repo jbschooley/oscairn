@@ -26,11 +26,17 @@ namespace oscairn
         /// Default notifications are throttled to 60 Hz; allChanges bypasses coalescing.
         std::vector<std::string> notifications( uint64_t nowNanoseconds );
         void subscription( std::string_view topic, bool enabled, bool allChanges = false );
+        /// A managed engine's lifetime: this client is a UI that keeps it (engine.attach) and has
+        /// quit normally (engine.release). The transport decides what they mean for the process.
+        void attach() { attached_ = true; released_ = false; }
+        void release() { released_ = true; }
+        bool attached() const { return attached_; }
+        bool released() const { return released_; }
 
     private:
         Control& control_;
         bool params_ = false, transport_ = false, graph_ = false, allChanges_ = false;
-        bool status_ = false;
+        bool status_ = false, attached_ = false, released_ = false;
         uint64_t paramsCursor_ = 0, graphCursor_ = 0;
         std::optional<uint64_t> lastParams_, lastTransport_;
         std::string lastTransportValue_;

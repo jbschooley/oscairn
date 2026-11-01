@@ -34,6 +34,10 @@ namespace oscairn
         bool adopt(int connectedSocket);
         void poll(uint64_t monotonicNanoseconds);
         size_t clients() const;
+        /// A managed engine may stop: a UI attached, every attached UI has released it (quit
+        /// normally), and none left without releasing (a crash, after which the engine stays for
+        /// the UI to come back to) since the last one attached.
+        bool released() const;
     private:
         struct Impl;
         std::unique_ptr<Impl> impl_;
