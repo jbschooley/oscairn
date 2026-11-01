@@ -149,6 +149,16 @@ namespace
         clientWhileRendering(f, [&] { back->call("engine.attach"); back->call("engine.release"); });
         back.reset(); settle();
         check(f.server.released(), "the last window quit normally: released");
+        // Two windows; one crashes, the other quits normally: the user quit the app.
+        Fixture g(plugin);
+        auto join = [&] { auto fd = pair(); g.server.adopt(fd[0]); auto c = std::make_unique<LocalClient>(); c->adopt(fd[1]); return c; };
+        auto first = join(), second = join();
+        clientWhileRendering(g, [&] { first->call("engine.attach"); second->call("engine.attach"); });
+        first.reset(); for(int i = 0; i < 4; ++i) g.tick();
+        check(!g.server.released(), "one window crashed, the other still open");
+        clientWhileRendering(g, [&] { second->call("engine.release"); });
+        second.reset(); for(int i = 0; i < 4; ++i) g.tick();
+        check(g.server.released(), "and the last one open quits normally: released");
     }
     void clientAndReconnect(const char* plugin)
     {

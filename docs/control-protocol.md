@@ -98,7 +98,7 @@ request members.
 | Method | `params` | `result` |
 | --- | --- | --- |
 | `session.hello` | omitted or `{}` | `protocolVersion`, `server`, supported methods and optional features in `capabilities`, `limits` |
-| `engine.attach`, `engine.release` | `{}` | `{"accepted":true}`. A UI attaches when it connects to a managed engine and releases it when it quits normally; the managed engine stops once every attached client has released it. A client that disconnects while attached (a crash) keeps the engine running until a client attaches again; clients that never attach (background jobs) do not count. Engines started without `--managed` ignore both |
+| `engine.attach`, `engine.release` | `{}` | `{"accepted":true}`. A UI attaches when it connects to a managed engine and releases it when it quits normally; the managed engine stops once every attached client has released it. A client that disconnects while attached (a crash) keeps the engine running until a client attaches again, or the last attached client still connected releases it; clients that never attach (background jobs) do not count. Engines started without `--managed` ignore both |
 | `session.status` | omitted or `{}` | `audioDevice`, `midiInputs` (each `{"source","name","kind","port"}`, below), `sampleRate`, `bufferSize`, `cpuLoad`, `deadlineMisses`, `graphEventDrops`, `midiEventDrops`, `audioReady`, mapped `audioInputs`/`audioOutputs`, and `failures`: each plugin that has failed and is silent (`node`, `name`, `reason`) |
 | `state.info` | `{"node":"synth"}` | `{"supported":true}` when opaque state export is available |
 | `state.save` | `{"node":"synth","directory":"/path/to/new-state"}` | `{"saved":true}` after publishing a new state directory |
@@ -794,7 +794,8 @@ fader or name in the Performance, nor wires to or from the rest of the graph.
   `cpu` the share of the audio thread's time the plugins may take (0 checks nothing), `memory` in
   bytes (0 or absent: not checked). `budget.estimate` takes an optional `{directory}` (absent: the
   open Performance) and returns `{cpu,memory,fits,seamless,budget,plugins}`, each plugin with
-  `name`, `plugin`, `cpu`, `memory` and `measured`. With a budget, opening a Performance over it,
+  `name`, `plugin`, `cpu`, `memory` and `measured`. For the open Performance, `fits` counts it
+  alone and `seamless` adds the last Performance still ringing out. With a budget, opening a Performance over it,
   or adding a plugin that would take the open one over it, fails saying what does not fit; one
   that fits only alone opens as a cut, without the last ringing out.
 - `performance.save` and `library.save` both keep each part's `from`.

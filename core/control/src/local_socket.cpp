@@ -9,6 +9,7 @@
 #include <cerrno>
 #include <chrono>
 #include <cstdlib>
+#include <cstdio>
 #include <cstring>
 #include <deque>
 #include <filesystem>
@@ -225,8 +226,9 @@ namespace oscairn
                 const auto fd=::accept(s.listener,nullptr,nullptr);
                 if(fd<0 && errno==EINTR)continue;
                 if(fd<0 && again())break;
-                if(fd<0)systemError("accept");
-                adopt(fd);
+                // ECONNABORTED, EMFILE and the like belong to that connection: never stop the engine.
+                if(fd<0){std::fprintf(stderr,"oscairn: accept: %s\n",std::strerror(errno));break;}
+                try{adopt(fd);}catch(const std::exception& e){std::fprintf(stderr,"oscairn: a new control client: %s\n",e.what());}
             }
         for(auto& peer:s.peers)
         {
@@ -240,9 +242,11 @@ namespace oscairn
                     if(stream.line(line))
                     {
                         if(line.size()>JsonRpc::maxMessageBytes)throw std::runtime_error("Request too large");
-                        const bool wasAttached=peer->rpc.attached();
+                        const bool wasAttached=peer->rpc.attached(),wasReleased=peer->rpc.released();
                         if(auto reply=peer->rpc.dispatch(line))stream.queue(*reply);
                         if(!wasAttached && peer->rpc.attached()){s.everAttached=true;s.abandoned=false;} // a UI back after a crash keeps it again
+                        // The last window quitting normally: the user quit the app, whatever crashed before.
+                        if(!wasReleased && peer->rpc.released() && std::none_of(s.peers.begin(),s.peers.end(),[&](const auto& p){return p!=peer && p->rpc.attached() && !p->rpc.released();}))s.abandoned=false;
                         ++requests;
                     }
                     else if(reads++>=16 || !stream.read(JsonRpc::maxMessageBytes+1))break;

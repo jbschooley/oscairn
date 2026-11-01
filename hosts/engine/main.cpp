@@ -20,14 +20,15 @@ namespace
         void timerCallback()override
         {
             if(stopping){juce::MessageManager::getInstance()->stopDispatchLoop();return;}
-            // A managed engine stops when its UIs have quit normally (crashes leave it running).
-            if(managed && server.released()){stopping=1;juce::MessageManager::getInstance()->stopDispatchLoop();return;}
             try
             {
                 const auto now=std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
                 server.poll(static_cast<uint64_t>(now));
             }
-            catch(const std::exception& e){std::cerr<<"oscairn-engine: "<<e.what()<<'\n';result=1;juce::MessageManager::getInstance()->stopDispatchLoop();}
+            catch(const std::exception& e){std::cerr<<"oscairn-engine: "<<e.what()<<'\n';result=1;juce::MessageManager::getInstance()->stopDispatchLoop();return;}
+            // A managed engine stops when its UIs have quit normally (crashes leave it running),
+            // checked after reading this tick's requests, so a window just opening keeps it.
+            if(managed && server.released()){stopping=1;juce::MessageManager::getInstance()->stopDispatchLoop();}
         }
     };
 }

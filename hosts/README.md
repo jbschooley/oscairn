@@ -329,7 +329,8 @@ engine crash leaves the UI up, but the app is self-contained: quitting it stops 
 once no other Oscairn window uses it. Each window sends `engine.attach` when it connects and
 `engine.release` when it quits normally ([protocol](../docs/control-protocol.md)). A window
 that crashes never releases, so its engine keeps playing, with its transport and state, until
-a window opens and attaches again. Session save/restore across engine restarts remains
+a window opens and attaches again, or until the last window still open quits normally (the user
+has quit the app). A window whose connection dropped (a timeout) reconnects once to release it. Session save/restore across engine restarts remains
 separate work. Checked by `control-local-stream` (two windows and a background job; a crash;
 a reopened window quitting) and by hand with the app on macOS (quit, `kill -9`, reopen).
 

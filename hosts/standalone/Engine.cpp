@@ -33,10 +33,10 @@ namespace oscairn::standalone
             {
                 process_=std::make_unique<host::EngineProcess>(helperExecutable,pluginDir,std::string{},audio);
                 process_->connectOrStart(*client_);socketPath_=process_->socketPath();
-                attach();
             }
             else client_->connect(socketPath);
             remote_=std::make_unique<RemoteControl>(*client_);control_=remote_.get();
+            attach(); // once it is usable: a window that failed to start never kept it
         }
         refreshSounds();
         refreshPads();
@@ -47,8 +47,13 @@ namespace oscairn::standalone
         stopTimer();pendingSound_.reset();if(soundJob_.valid()){soundJob_.wait();finishSounds();}
         // Quitting normally lets the managed engine stop once no other window keeps it; a crash
         // never gets here, so the engine plays on for the UI to come back to.
-        if(process_ && client_ && client_->connected())
-            try{client_->call("engine.release","{}",500);}catch(const std::exception&){}
+        if(process_ && client_)
+            try
+            {
+                if(!client_->connected())client_->connect(socketPath_,100); // dropped after a timeout: say it once more
+                client_->call("engine.release","{}",500);
+            }
+            catch(const std::exception&){}
     }
     // This window keeps its managed engine (it stops when every window that keeps it has quit).
     void Engine::attach()
@@ -283,9 +288,10 @@ namespace oscairn::standalone
         if(!process_ || !recoveryAvailable_)return;
         try
         {
-            process_->connectOrStart(*client_);attach();
+            process_->connectOrStart(*client_);
             auto fresh=std::make_unique<RemoteControl>(*client_);
             remote_=std::move(fresh);control_=remote_.get();failure_.clear();textCache_.clear();recoveryAvailable_=false;refreshPads();
+            attach();
         }
         catch(const std::exception& e){failed(e.what());}
     }
@@ -313,9 +319,10 @@ namespace oscairn::standalone
             reconnectTicks_=0;
             try
             {
-                client_->connect(socketPath_,100);attach();
+                client_->connect(socketPath_,100);
                 auto fresh=std::make_unique<RemoteControl>(*client_);
                 remote_=std::move(fresh);control_=remote_.get();failure_.clear();textCache_.clear();recoveryAvailable_=false;refreshPads();
+                attach();
             }
             catch(const std::exception&)
             {
