@@ -17,7 +17,7 @@ The manifest:
 | `format`, `version` | Exactly `oscairn.library` and integer `1` |
 | `id` | The library's ID: its folder's name when installed as a library, and what imported copies record as their `origin` |
 | `name` | Its name |
-| `kind` | `library`, or `performance` for an exported Performance (its ID and name are the Performance's) |
+| `kind` | `library`, `performance` for an exported Performance or `sound` for an exported Sound (its ID and name are that item's) |
 | `items` | Each item's `kind` (`performance` or `sound`), `id`, `name` and `path`, its folder in the archive |
 
 An export holds the Performance, the library Sound of each part that is still that Sound (the

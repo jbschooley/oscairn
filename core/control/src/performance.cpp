@@ -140,25 +140,57 @@ std::vector<assets::Ref> Session::assetsOf(const fs::path& manifest) {
 }
 
 void Session::exportPerformance(const std::string& file,bool editedSounds) {
-    const fs::path archive(file);
-    if(archive.filename().empty() || fs::exists(archive))bad("the export file has no name or exists already");
-    std::random_device random;
-    const auto stage=fs::temp_directory_path()/("oscairn-export-"+std::to_string(random())+std::to_string(random()));
-    try{
-        Package package;package.kind="performance";
-        const auto name=info_.name.empty()?archive.stem().string():info_.name;
+    exportArchive(file,"performance",[&](const fs::path& stage,Package& package){
+        const auto name=info_.name.empty()?fs::path(file).stem().string():info_.name;
         const auto folder=fs::path("Performances")/(library().newFolder(name,"performance").filename());
         fs::create_directories(stage/"Performances");
         const auto saved=writeDocument((stage/folder).string(),info_,nullptr,nullptr); // this Performance's info is not changed by exporting
         package.id=saved.id;package.name=saved.name;
         package.items.push_back({"performance",saved.id,saved.name,folder.generic_string()});
-        std::vector<fs::path> manifests{stage/folder/"performance.json"};
-        // A part's Sound goes when the part is still it (that revision is the library's); an edited part's, when asked.
+        std::vector<PartSource> from;for(const auto& p:parts_)from.push_back(p.from);
+        return from;
+    },editedSounds);
+}
+
+void Session::exportLibraryItem(const std::string& id,const std::string& file,bool editedSounds) {
+    const auto* found=library().find(id);
+    if(!found)bad("no such library item");
+    const auto item=*found;
+    exportArchive(file,item.kind,[&](const fs::path& stage,Package& package){
+        const auto folder=fs::path(item.kind=="sound"?"Sounds":"Performances")/fs::path(item.path).filename();
+        fs::create_directories((stage/folder).parent_path());fs::copy(item.path,stage/folder,fs::copy_options::recursive);
+        package.id=item.id;package.name=item.name;
+        package.items.push_back({item.kind,item.id,item.name,folder.generic_string()});
+        // A Performance's parts, as saved: where each came from.
+        std::vector<PartSource> from;
+        if(item.kind=="performance"){
+            const auto bytes=state_files::read(stage/folder/"performance.json",4*1024*1024);
+            const std::unique_ptr<json_value_s,decltype(&std::free)> doc{json_parse(bytes.data(),bytes.size()),&std::free};
+            if(!doc)bad("invalid JSON in "+item.path);
+            for(auto part:array(field(doc.get(),"parts"),1024))
+                if(const auto* f=member(part,"from");f && f->type==json_type_object)from.push_back({text(field(f,"sound")),text(field(f,"revision")),text(field(f,"name")),boolean(field(f,"modified"))});
+        }
+        return from;
+    },editedSounds);
+}
+
+// An archive of what write puts in the stage, with the Sounds of the parts it reports (each only
+// while the part is still that Sound, that revision the library's; an edited part's when asked)
+// and every sample they all use.
+void Session::exportArchive(const std::string& file,const std::string& kind,const std::function<std::vector<PartSource>(const fs::path&,Package&)>& write,bool editedSounds) {
+    const fs::path archive(file);
+    if(archive.filename().empty() || fs::exists(archive))bad("the export file has no name or exists already");
+    std::random_device random;
+    const auto stage=fs::temp_directory_path()/("oscairn-export-"+std::to_string(random())+std::to_string(random()));
+    try{
+        Package package;package.kind=kind;
+        const auto from=write(stage,package);
+        std::vector<fs::path> manifests{stage/package.items.front().path/(kind=="sound"?"sound.json":"performance.json")};
         std::set<std::string> sounds;
-        for(const auto& p:parts_){
-            if(p.from.sound.empty() || (p.from.modified && !editedSounds) || sounds.count(p.from.sound))continue;
-            const auto* item=library().find(p.from.sound);
-            if(!item || item->kind!="sound" || item->revision!=p.from.revision)continue;
+        for(const auto& f:from){
+            if(f.sound.empty() || (f.modified && !editedSounds) || sounds.count(f.sound))continue;
+            const auto* item=library().find(f.sound);
+            if(!item || item->kind!="sound" || item->revision!=f.revision)continue;
             sounds.insert(item->id);
             const auto to=fs::path("Sounds")/fs::path(item->path).filename();
             fs::create_directories(stage/to);fs::copy(item->path,stage/to,fs::copy_options::recursive);

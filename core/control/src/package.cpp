@@ -144,7 +144,7 @@ namespace oscairn
                 bad("its version is not 1");
             Package p;
             p.id = text(detail::member(d, "id")); p.name = text(detail::member(d, "name")); p.kind = text(detail::member(d, "kind"));
-            if(p.id.empty() || p.id.size() > 64 || (p.kind != "library" && p.kind != "performance")) bad("its ID or kind is wrong");
+            if(p.id.empty() || p.id.size() > 64 || (p.kind != "library" && p.kind != "performance" && p.kind != "sound")) bad("its ID or kind is wrong");
             const V items = detail::member(d, "items");
             if(!items || items->type != json_type_array) bad("it lists no items");
             std::set<std::string> ids;

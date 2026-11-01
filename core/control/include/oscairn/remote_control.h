@@ -32,6 +32,7 @@ namespace oscairn
         void uninstallLibrary(const std::string& library) override;
         void deleteLibraryItem(const std::string& item) override;
         void libraryEdit(const std::string& id, const PerformanceInfo& info) override;
+        void exportLibraryItem(const std::string& id, const std::string& file, bool editedSounds = false) override;
         std::string libraryCopy(const std::string& id) override;
         SoundSaved savePartAsSound(uint32_t part, const std::string& name, bool asNew = false) override;
         std::vector<std::string> loadSound(uint32_t part, const std::string& id) override;

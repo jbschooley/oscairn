@@ -34,6 +34,7 @@ int main(int argc, char** argv)
     {
         state_files::TemporaryDirectory temp;
         const auto archive = temp.path / "Set.olib";
+        const auto soundArchive = temp.path / "Bass.olib";
         kick::clap::AssetReference sample;
         std::string soundId, performanceId;
         // Device A: a part saved as a Sound that uses a sample, then the Performance exported.
@@ -58,6 +59,15 @@ int main(int argc, char** argv)
             check(again, "an export never overwrites a file");
             const auto contents = a.archiveContents(archive.string());
             check(contents.kind == "performance" && contents.name == "Set" && contents.items.size() == 2, "the export holds the Performance and its part's Sound: " + std::to_string(contents.items.size()));
+            // From the library, without opening: the Performance as saved with its part's Sound, and a Sound alone.
+            a.exportLibraryItem(performanceId, (temp.path / "Saved.olib").string());
+            const auto saved = a.archiveContents((temp.path / "Saved.olib").string());
+            check(saved.kind == "performance" && saved.id == performanceId && saved.items.size() == 2 && saved.items[1].id == soundId, "a library Performance exported with its part's Sound");
+            a.exportLibraryItem(soundId, soundArchive.string());
+            const auto sound = a.archiveContents(soundArchive.string());
+            check(sound.kind == "sound" && sound.items.size() == 1 && sound.items[0].id == soundId, "a library Sound exported alone");
+            bool missing = false; try { a.exportLibraryItem("nothing", (temp.path / "None.olib").string()); } catch(const std::exception&) { missing = true; }
+            check(missing, "an item not in the library is refused");
         }
         // Device B: into the user's own storage, then as a library.
         {
@@ -115,6 +125,7 @@ int main(int argc, char** argv)
             Session c(48000, 64);
             const auto installed = c.installArchive(archive.string(), false, {soundId});
             check(installed.added == 1 && items(c, "performance").empty() && items(c, "sound").size() == 1, "only the chosen Sound");
+            check(c.installArchive(soundArchive.string(), false).added == 1 && items(c, "sound").size() == 2, "an exported Sound installs as the user's own");
             bool refused = false; try { c.installArchive(archive.string(), false, {"nothing"}); } catch(const std::exception&) { refused = true; }
             check(refused, "an item the archive does not have is refused");
         }

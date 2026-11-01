@@ -13,12 +13,14 @@
 #include <map>
 #include <deque>
 #include <set>
+#include <functional>
 #include <span>
 
 struct json_value_s; // sheredom/json.h: the document readers' parsed values
 
 namespace oscairn
 {
+    struct Package; // package.h
     /// Device-independent graph session. Construct/configure/service/destroy on the
     /// control thread. One audio thread calls process(); stop it before destruction.
     /// The caller owns audio I/O, MIDI capture, clocks, output buffers and scheduling.
@@ -42,6 +44,7 @@ namespace oscairn
         void setBudget(const Budget& budget) override;
         Estimate estimate(const std::string& directory = {}) override;
         void exportPerformance(const std::string& file, bool editedSounds = false) override;
+        void exportLibraryItem(const std::string& id, const std::string& file, bool editedSounds = false) override;
         void loadPerformance(const std::string& directory) override;
         PerformanceInfo performanceInfo() const override {return info_;}
         void setPerformanceInfo(const PerformanceInfo& info) override;
@@ -342,6 +345,7 @@ namespace oscairn
         std::map<std::string,NodeId> addNodes(const ::json_value_s* nodes,const std::filesystem::path& root,std::vector<NodeId>& added,const std::set<std::string>* only); // only: these keys (and their engines); null: all
         std::set<NodeId> nodesOf(const Part& part) const;
         static std::vector<assets::Ref> assetsOf(const std::filesystem::path& manifest);
+        void exportArchive(const std::string& file, const std::string& kind, const std::function<std::vector<PartSource>(const std::filesystem::path&, Package&)>& write, bool editedSounds);
         uint64_t revision_ = 0, sequence_ = 0;
         using Address = std::pair<NodeId,uint32_t>;
         struct Command { ChangeKind kind; double value; };

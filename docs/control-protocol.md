@@ -801,6 +801,9 @@ fader or name in the Performance, nor wires to or from the rest of the graph.
   `{"exported":true}`: one [archive](library-archive.md) holding the open Performance, every
   sample its plugins use, and the library Sound of each part still that Sound (with
   `editedSounds`, also each edited part's). It refuses a file that exists.
+- `library.export` takes `{id,file}` and optional `editedSounds`, and returns the same: a
+  library item as it is saved, without opening it. A Performance comes with its parts' Sounds
+  by the same rule (from what its file records), a Sound alone; with every sample they use.
 
 ### Libraries
 
