@@ -51,6 +51,8 @@ namespace oscairn::standalone
             return out;
         }
         const juce::StringArray controlKinds{"keys", "pads", "encoders", "knobs", "faders", "buttons", "pedal", "footswitches", "expression", "jog", "touchstrip", "wheels"};
+        const juce::StringArray controlRoles{"notes", "screen", "assign", "fixed"};
+        const juce::StringArray banks{"assign", "filter", "ampEG", "eq", "levels", "effects"};
         const juce::StringArray surfaces{"desktop", "panel", "compact"};
         const juce::StringArray reliabilities{"desktop", "instrument", "pass-through"};
         const juce::StringArray sections{"platform", "compute", "audio", "controls", "screens", "midi", "cv", "network", "power"};
@@ -66,7 +68,7 @@ namespace oscairn::standalone
         const auto& root = object(value, "a profile");
         fields(root, {"format", "version", "id", "name", "platform", "compute", "audio", "controls", "screens", "midi", "cv", "network", "power", "reliability", "apps", "estimated"}, "the profile");
         require(text(root, "format") == "oscairn.profile", "format must be oscairn.profile");
-        require(root.getProperty("version").isInt() && int(root.getProperty("version")) == 1, "version must be 1");
+        require(root.getProperty("version").isInt() && int(root.getProperty("version")) == 2, "version must be 2");
         Profile p;
         p.id = text(root, "id"); p.name = text(root, "name");
         require(!p.id.empty() && std::all_of(p.id.begin(), p.id.end(), [](char c) { return std::isalnum(static_cast<unsigned char>(c)) || c == '-' || c == '.'; }), "id holds letters, digits, dots and hyphens");
@@ -98,10 +100,32 @@ namespace oscairn::standalone
             require(v.isArray() && v.size() <= 64, "controls must be a list");
             for(const auto& e : *v.getArray())
             {
-                const auto& o = object(e, "a control"); fields(o, {"kind", "count", "sensing"}, "a control");
-                Control c{text(o, "kind"), count(o, "count", 1024), text(o, "sensing", false)};
+                const auto& o = object(e, "a control"); fields(o, {"kind", "count", "sensing", "role", "rows", "paging", "modes", "functions"}, "a control");
+                Control c{text(o, "kind"), count(o, "count", 1024), text(o, "sensing", false), text(o, "role")};
                 require(controlKinds.contains(juce::String(c.kind)), "unknown control kind " + c.kind);
                 require(c.count > 0, "a control's count is at least 1");
+                require(controlRoles.contains(juce::String(c.role)), "a control's role is notes, screen, assign or fixed");
+                require((c.role == "notes") == (c.kind == "keys" || c.kind == "pads"), "keys and pads, and only they, play notes");
+                if(const auto r = o.getProperty("rows"); !r.isVoid())
+                {
+                    require(r.isArray() && r.size() > 0 && r.size() <= 16, "rows must be a list of 1 to 16");
+                    for(const auto& row : *r.getArray())
+                    {
+                        const auto& ro = object(row, "a row"); fields(ro, {"name", "bank"}, "a row");
+                        c.rows.push_back({text(ro, "name"), text(ro, "bank")});
+                        require(banks.contains(juce::String(c.rows.back().bank)), "a row's bank is assign, filter, ampEG, eq, levels or effects");
+                    }
+                }
+                c.paging = text(o, "paging", false);
+                require(c.paging.empty() || c.paging == "button" || c.paging == "screen", "paging is button or screen");
+                c.modes = names(o, "modes");
+                for(const auto& m : c.modes) require(m == "part" || m == "element" || m == "audio", "a fader mode is part, element or audio");
+                c.functions = names(o, "functions");
+                const bool banked = c.role == "assign" && c.kind != "faders" && c.kind != "buttons";
+                require(!banked || c.rows.empty() != c.paging.empty(), "an assign group of " + c.kind + " has rows or paging, not both");
+                require(banked || (c.rows.empty() && c.paging.empty()), "only an assign group of knobs has rows or paging");
+                require(c.modes.empty() || c.kind == "faders", "only faders have modes");
+                require(c.functions.empty() || (c.role == "fixed" && int(c.functions.size()) == c.count), "a fixed group's functions are one per control");
                 p.controls.push_back(c);
             }
         }

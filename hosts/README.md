@@ -135,7 +135,7 @@ The offline renderer is independent: it defaults to 512 frames at 48 kHz and acc
 ### Launching
 
 `--profile NAME|FILE` names the device the app runs on ([RFC 0024](../docs/rfcs/0024-device-profiles.md)):
-`qemu-aarch64`, `kick` or `ignite` (built in, in `standalone/profiles/`), or a profile file
+`qemu-aarch64`, `kick`, `ignite` or `modx-m` (built in, in `standalone/profiles/`), or a profile file
 ([schema](../docs/profile.schema.json)). Without it the app makes a profile of the computer.
 A panel profile fills the display with no title or menu bar and shows its screen's layout; its
 `apps` decide Home's tiles and the Apps menu; its block is the audio request. `--layout` still overrides the

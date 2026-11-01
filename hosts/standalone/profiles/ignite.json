@@ -1,15 +1,18 @@
 {
   "format": "oscairn.profile",
-  "version": 1,
+  "version": 2,
   "id": "ignite",
   "name": "Ignite (BE 0716-AAF)",
   "platform": { "os": "linux", "cpu": "arm64", "runtime": "oscairn-buildroot-2026.08", "board": "imx8mm" },
   "compute": { "cores": 4, "realtimeCores": 1, "memory": 2048, "storage": 16384 },
   "audio": { "inputs": 2, "outputs": 2, "rates": [48000], "block": 128, "headphones": true },
   "controls": [
-    { "kind": "pads", "count": 16 },
-    { "kind": "encoders", "count": 27 },
-    { "kind": "buttons", "count": 26 }
+    { "kind": "encoders", "count": 8, "role": "fixed", "functions": ["release", "cutoff", "resonance", "volume", "reverb", "chorus", "eqHigh", "eqLow"] },
+    { "kind": "encoders", "count": 16, "role": "fixed", "functions": ["step1", "step2", "step3", "step4", "step5", "step6", "step7", "step8", "step9", "step10", "step11", "step12", "step13", "step14", "step15", "step16"] },
+    { "kind": "jog", "count": 1, "role": "fixed", "functions": ["data"] },
+    { "kind": "encoders", "count": 2, "role": "fixed", "functions": ["row", "bar"] },
+    { "kind": "pads", "count": 16, "role": "notes" },
+    { "kind": "buttons", "count": 26, "role": "fixed" }
   ],
   "screens": [ { "width": 1024, "height": 600, "touch": true, "surface": "panel", "layout": "ignite" } ],
   "midi": { "din": 4, "usbDevice": true, "usbHost": true },

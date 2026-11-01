@@ -8,8 +8,8 @@
 //                      [--app performance|library|setlist|groovebox]
 //                      [--snapshot out.png [--size WxH] [--play SECONDS] [--view TAB]]
 //
-// --profile names the device it runs on (RFC 0024): a built-in profile (qemu-aarch64, kick,
-// ignite) or a file; without it, the computer's own. A panel profile fills the display with no
+// --profile names the device it runs on (RFC 0024): a built-in profile (qemu-aarch64, kick, ignite,
+// modx-m) or a file; without it, the computer's own. A panel profile fills the display with no
 // title bar, shows its layout and asks the audio device for its block size; --layout and the
 // audio options override it for a run. --play starts the sequencer at launch. --input-mode overrides the saved preference for this run. --snapshot
 // renders the window to a PNG and quits: at the layout's design size, or as in a window of

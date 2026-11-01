@@ -6,6 +6,7 @@
 #include "../Profile.h"
 #include "../../audio/AudioConfiguration.h"
 #include <juce_gui_basics/juce_gui_basics.h>
+#include <algorithm>
 #include <cstdio>
 #include <string>
 
@@ -30,17 +31,24 @@ int main()
     try
     {
         const auto all = builtInProfiles();
-        check(all.size() == 3, "three built-in profiles: " + std::to_string(all.size()));
+        check(all.size() == 4, "four built-in profiles: " + std::to_string(all.size()));
         for(const auto& [id, json] : all)
         {
             const auto p = Profile::parse(json);
             check(p.id == id && p.screen() && p.screen()->surface == "panel" && p.audio.block == 128 && p.reliability == "instrument", id + " parses as a panel instrument");
             check(p.offers("oscairn.library") && !p.offers("oscairn.nothing"), id + " offers its apps");
         }
-        const auto kick = loadProfile("kick"), ignite = loadProfile("ignite"), qemu = loadProfile("qemu-aarch64");
+        const auto kick = loadProfile("kick"), ignite = loadProfile("ignite"), qemu = loadProfile("qemu-aarch64"), modx = loadProfile("modx-m");
         check(kick.name == "Behringer KICK" && kick.screen()->layout == "kick-screen" && kick.screen()->touch, "the KICK shows its screen layout, by touch");
         check(ignite.screen()->layout == "ignite" && ignite.cv.outputs > 0, "the Ignite shows its panel and has CV");
         check(!kick.estimated.empty() && qemu.estimated.empty(), "the KICK's values are estimates; QEMU's are its test setup");
+        // Their controls in groups (RFC 0024): the KICK's four assignable knobs paged on screen beside
+        // fixed ones; the MODX M's screen knobs, knobs in rows and faders in modes.
+        check(kick.controls.front().kind == "encoders" && kick.controls.front().count == 4 && kick.controls.front().role == "assign" && kick.controls.front().paging == "screen" &&
+              kick.controls[1].functions.size() == 3 && kick.controls[2].functions.front() == "tempo", "the KICK: P1 to P4 paged on screen; VOLUME, MASTER, REC GAIN and the tempo wheel fixed");
+        check(modx.controls[1].role == "screen" && modx.controls[1].count == 6 && modx.controls[2].rows.size() == 6 && modx.controls[2].rows[2].bank == "filter" &&
+              modx.controls[3].kind == "faders" && modx.controls[3].modes.size() == 3 && modx.screen()->layout == "modx-m-screen", "the MODX M: six screen knobs, four knobs in six rows, eight faders in three modes");
+        check(std::none_of(ignite.controls.begin(), ignite.controls.end(), [](const Profile::Control& c) { return c.role == "assign"; }), "the Ignite's knobs are all dedicated");
         check(kick.cpuBudget() == .75 && kick.memoryBudget() == 2048ull * 1024 * 1024 * 8 / 10, "an instrument's budget: 75% of the audio thread, 80% of its memory");
         const auto desktop = loadProfile("");
         check(desktop.id == "desktop" && desktop.compute.cores >= 1 && desktop.screen() && desktop.screen()->surface == "desktop" && desktop.screen()->layout == "desktop" &&
@@ -51,7 +59,7 @@ int main()
         // Refused: each mistake on its own.
         const auto json = all.front().second;
         check(refused(replaced(json, "\"oscairn.profile\"", "\"oscairn.layout\"")), "another format");
-        check(refused(replaced(json, "\"version\": 1", "\"version\": 2")), "another version");
+        check(refused(replaced(json, "\"version\": 2", "\"version\": 1")), "another version");
         check(refused(replaced(json, "\"reliability\"", "\"shader\": 1, \"reliability\"")), "an unknown field");
         check(refused(replaced(json, "\"instrument\"", "\"unbreakable\"")), "an unknown reliability");
         check(refused(replaced(json, "\"surface\": \"panel\"", "\"surface\": \"hologram\"")), "an unknown surface");
@@ -59,6 +67,16 @@ int main()
         check(refused(replaced(json, "\"cores\": 4, \"realtimeCores\": 1", "\"cores\": 1, \"realtimeCores\": 4")), "more realtime cores than cores");
         check(refused(replaced(json, "\"width\": 1024", "\"width\": 0")), "a screen with no size");
         check(refused("[1, 2]"), "not an object");
+        // Control groups: a role each; rows or paging for an assign group of knobs; modes for faders only.
+        std::string kickJson; for(const auto& [id, text] : all) if(id == "kick") kickJson = text;
+        const std::string paged = "\"role\": \"assign\", \"paging\": \"screen\"";
+        check(refused(replaced(kickJson, paged, "\"role\": \"assign\"")), "an assign group of knobs with neither rows nor paging");
+        check(refused(replaced(kickJson, paged, paged + ", \"rows\": [{\"name\": \"A\", \"bank\": \"assign\"}]")), "with both");
+        check(refused(replaced(kickJson, paged, "\"role\": \"assign\", \"rows\": [{\"name\": \"A\", \"bank\": \"tone\"}]")), "a row naming an unknown bank");
+        check(refused(replaced(kickJson, paged, "\"role\": \"steer\"")), "an unknown role");
+        check(refused(replaced(kickJson, "\"role\": \"notes\"", "\"role\": \"assign\"")), "pads that do not play notes");
+        check(refused(replaced(kickJson, paged, paged + ", \"modes\": [\"part\"]")), "modes on knobs");
+        check(refused(replaced(kickJson, "[\"volume\", \"master\", \"recGain\"]", "[\"volume\"]")), "fewer functions than controls");
 
         // A profile's block reaches the engine as an audio option, and back.
         oscairn::host::AudioConfiguration audio;

@@ -1,0 +1,27 @@
+{
+  "format": "oscairn.profile",
+  "version": 2,
+  "id": "modx-m",
+  "name": "Yamaha MODX M",
+  "platform": { "os": "linux", "cpu": "arm64", "runtime": "oscairn-buildroot-2026.08", "board": "unknown" },
+  "compute": { "cores": 4, "realtimeCores": 1, "memory": 2048, "storage": 16384 },
+  "audio": { "inputs": 2, "outputs": 2, "rates": [44100], "block": 128, "headphones": true },
+  "controls": [
+    { "kind": "keys", "count": 61, "role": "notes" },
+    { "kind": "knobs", "count": 6, "role": "screen" },
+    { "kind": "knobs", "count": 4, "role": "assign", "rows": [
+      { "name": "Assign 1", "bank": "assign" }, { "name": "Assign 2", "bank": "assign" }, { "name": "Tone", "bank": "filter" },
+      { "name": "EG", "bank": "ampEG" }, { "name": "EQ", "bank": "eq" }, { "name": "Effects", "bank": "effects" } ] },
+    { "kind": "faders", "count": 8, "role": "assign", "modes": ["part", "element", "audio"] },
+    { "kind": "knobs", "count": 2, "role": "fixed", "functions": ["superKnob", "volume"] },
+    { "kind": "jog", "count": 1, "role": "fixed", "functions": ["data"] },
+    { "kind": "buttons", "count": 8, "role": "fixed", "functions": ["scene1", "scene2", "scene3", "scene4", "scene5", "scene6", "scene7", "scene8"] },
+    { "kind": "buttons", "count": 8, "role": "fixed", "functions": ["part1", "part2", "part3", "part4", "part5", "part6", "part7", "part8"] },
+    { "kind": "wheels", "count": 2, "role": "fixed", "functions": ["pitchBend", "modulation"] }
+  ],
+  "screens": [ { "width": 800, "height": 480, "touch": true, "surface": "panel", "layout": "modx-m-screen" } ],
+  "midi": { "din": 1, "usbDevice": true, "usbHost": true },
+  "reliability": "instrument",
+  "apps": ["oscairn.library", "oscairn.setlist"],
+  "estimated": ["platform", "compute", "audio", "controls", "screens", "midi"]
+}

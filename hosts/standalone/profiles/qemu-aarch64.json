@@ -1,6 +1,6 @@
 {
   "format": "oscairn.profile",
-  "version": 1,
+  "version": 2,
   "id": "qemu-aarch64",
   "name": "QEMU ARM64 image",
   "platform": { "os": "linux", "cpu": "arm64", "runtime": "oscairn-buildroot-2026.08", "board": "qemu-virt" },

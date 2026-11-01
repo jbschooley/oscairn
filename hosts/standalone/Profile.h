@@ -15,7 +15,17 @@ namespace oscairn::standalone
         struct Platform { std::string os, cpu, runtime, board; } platform;
         struct Compute { int cores = 0, realtimeCores = 0, memory = 0, storage = 0; } compute; // memory and storage in MiB
         struct Audio { int inputs = 0, outputs = 2; std::vector<int> rates; int block = 0; bool headphones = false; } audio; // block 0: the build's default
-        struct Control { std::string kind; int count = 0; std::string sensing; };
+        // A group of physical controls (RFC 0024, RFC 0011's physical controls): its kind and
+        // count, and its role: notes (keys, pads), screen (following what the screen shows),
+        // assign (playing banks), fixed (a dedicated function, named in `functions`, one each).
+        // An assign group of knobs has hardware `rows` (each a bank its row button picks, named on
+        // screen) or `paging` (button or screen); faders may have `modes` (part, element, audio).
+        struct Row { std::string name, bank; }; // bank: assign, filter, ampEG, eq, levels or effects
+        struct Control
+        {
+            std::string kind; int count = 0; std::string sensing, role;
+            std::vector<Row> rows; std::string paging; std::vector<std::string> modes, functions;
+        };
         std::vector<Control> controls;
         // A screen: its size, touch, the surface drawn on it (RFC 0019) and that surface's layout.
         struct Screen { int width = 0, height = 0; bool touch = false; std::string surface = "desktop", layout = "desktop"; };
@@ -44,7 +54,7 @@ namespace oscairn::standalone
         static Profile desktop();
     };
 
-    // The profiles that come with the app, by id: the QEMU image, the Behringer KICK, the Ignite.
+    // The profiles that come with the app, by id: the QEMU image, the Behringer KICK, the Ignite, a MODX M (estimated).
     std::vector<std::pair<std::string, std::string>> builtInProfiles(); // id, json
     // A built-in profile by id, or a profile file by path; "desktop" (or nothing) makes the desktop's.
     Profile loadProfile(const std::string& nameOrFile);

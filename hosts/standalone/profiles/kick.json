@@ -1,15 +1,18 @@
 {
   "format": "oscairn.profile",
-  "version": 1,
+  "version": 2,
   "id": "kick",
   "name": "Behringer KICK",
   "platform": { "os": "linux", "cpu": "arm64", "runtime": "oscairn-buildroot-2026.08", "board": "imx8mm" },
   "compute": { "cores": 4, "realtimeCores": 1, "memory": 2048, "storage": 16384 },
   "audio": { "inputs": 2, "outputs": 2, "rates": [48000], "block": 128, "headphones": true },
   "controls": [
-    { "kind": "pads", "count": 16 },
-    { "kind": "encoders", "count": 8 },
-    { "kind": "buttons", "count": 31 }
+    { "kind": "encoders", "count": 4, "role": "assign", "paging": "screen" },
+    { "kind": "knobs", "count": 3, "role": "fixed", "functions": ["volume", "master", "recGain"] },
+    { "kind": "jog", "count": 1, "role": "fixed", "functions": ["tempo"] },
+    { "kind": "pads", "count": 16, "role": "notes" },
+    { "kind": "buttons", "count": 31, "role": "fixed" },
+    { "kind": "touchstrip", "count": 1, "role": "fixed" }
   ],
   "screens": [ { "width": 1024, "height": 600, "touch": true, "surface": "panel", "layout": "kick-screen" } ],
   "midi": { "din": 1, "usbDevice": true, "usbHost": true },

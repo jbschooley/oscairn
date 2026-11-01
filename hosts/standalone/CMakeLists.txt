@@ -10,6 +10,7 @@ juce_add_binary_data(oscairn_standalone_layouts SOURCES
     layouts/desktop.json
     layouts/kick.json
     layouts/kick-screen.json
+    layouts/modx-m-screen.json
     layouts/ignite.json
     layouts/keys49.json
     layouts/compact.json)
@@ -17,6 +18,7 @@ juce_add_binary_data(oscairn_standalone_layouts SOURCES
 juce_add_binary_data(oscairn_standalone_profiles HEADER_NAME ProfileData.h NAMESPACE ProfileData SOURCES
     profiles/qemu-aarch64.json
     profiles/kick.json
+    profiles/modx-m.json
     profiles/ignite.json)
 
 # Icons (Lucide, ISC: icons/LICENSE).

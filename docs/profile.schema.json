@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Oscairn device profile version 1",
+  "title": "Oscairn device profile version 2",
   "description": "One product Oscairn runs on (RFC 0024): read by the app and the engine instead of flags. Values in sections listed in estimated are estimates, not measured on a unit.",
   "type": "object",
   "properties": {
@@ -8,7 +8,7 @@
       "const": "oscairn.profile"
     },
     "version": {
-      "const": 1
+      "const": 2
     },
     "id": {
       "type": "string",
@@ -138,13 +138,209 @@
           },
           "sensing": {
             "type": "string"
+          },
+          "role": {
+            "enum": [
+              "notes",
+              "screen",
+              "assign",
+              "fixed"
+            ],
+            "description": "notes: keys and pads, and only they; screen: plays what the screen shows; assign: plays banks; fixed: a dedicated function each"
+          },
+          "rows": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 16,
+            "description": "An assign group of knobs: hardware rows, each a bank its row button picks, named on screen",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256
+                },
+                "bank": {
+                  "enum": [
+                    "assign",
+                    "filter",
+                    "ampEG",
+                    "eq",
+                    "levels",
+                    "effects"
+                  ]
+                }
+              },
+              "required": [
+                "name",
+                "bank"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "paging": {
+            "enum": [
+              "button",
+              "screen"
+            ],
+            "description": "An assign group of knobs without rows: what pages its banks"
+          },
+          "modes": {
+            "type": "array",
+            "maxItems": 64,
+            "description": "Faders only: what they play by mode",
+            "items": {
+              "enum": [
+                "part",
+                "element",
+                "audio"
+              ]
+            }
+          },
+          "functions": {
+            "type": "array",
+            "maxItems": 64,
+            "description": "A fixed group: each control's function, one per control",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
           }
         },
         "required": [
           "kind",
-          "count"
+          "count",
+          "role"
         ],
-        "additionalProperties": false
+        "additionalProperties": false,
+        "description": "A group of physical controls of one kind doing one job (RFC 0024's control groups, RFC 0011's physical controls)",
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "kind": {
+                  "enum": [
+                    "keys",
+                    "pads"
+                  ]
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "role": {
+                  "const": "notes"
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "role": {
+                  "enum": [
+                    "screen",
+                    "assign",
+                    "fixed"
+                  ]
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "role": {
+                  "const": "assign"
+                },
+                "kind": {
+                  "not": {
+                    "enum": [
+                      "faders",
+                      "buttons"
+                    ]
+                  }
+                }
+              }
+            },
+            "then": {
+              "oneOf": [
+                {
+                  "required": [
+                    "rows"
+                  ],
+                  "not": {
+                    "required": [
+                      "paging"
+                    ]
+                  }
+                },
+                {
+                  "required": [
+                    "paging"
+                  ],
+                  "not": {
+                    "required": [
+                      "rows"
+                    ]
+                  }
+                }
+              ]
+            },
+            "else": {
+              "not": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "rows"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "paging"
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "if": {
+              "not": {
+                "properties": {
+                  "kind": {
+                    "const": "faders"
+                  }
+                }
+              }
+            },
+            "then": {
+              "not": {
+                "required": [
+                  "modes"
+                ]
+              }
+            }
+          },
+          {
+            "if": {
+              "not": {
+                "properties": {
+                  "role": {
+                    "const": "fixed"
+                  }
+                }
+              }
+            },
+            "then": {
+              "not": {
+                "required": [
+                  "functions"
+                ]
+              }
+            }
+          }
+        ]
       }
     },
     "screens": {

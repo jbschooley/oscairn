@@ -9,6 +9,7 @@ a device that does not exist yet and be tried with the same engine behind it. Bu
 | `desktop.json` | The desktop app's own window (the Desktop surface): toolbar, parts list, and tabs for the part, Mixer, Routing and Controls; apps such as the Groovebox open from the Apps menu |
 | `kick.json` | The KICK's panel, with the geometry of chillbeast's KickEM simulator board (1024 x 600 screen); P1 to P4 play the row selected on screen; most buttons do nothing yet |
 | `kick-screen.json` | The KICK's screen alone, 1024 x 600: on the device, the hardware panel supplies the controls |
+| `modx-m-screen.json` | The MODX M profile's screen alone, 800 x 480 (an estimate): the hardware panel supplies the controls |
 | `ignite.json` | The Ignite's panel (BE 0716-AAF), from its front-panel photo, with its 1024 x 600 screen; the 16 step encoders edit each step's note, CUTOFF and VOLUME the synth; most buttons do nothing yet |
 | `keys49.json` | A concept 49-key keyboard: screen, knobs, pads and keys |
 | `compact.json` | A small screen (320 x 240) with four encoders under it, the Compact surface's test layout ([RFC 0019](../../../docs/rfcs/0019-adaptive-ui.md#compact)): the Performance's plugins, their pages and their parameters as lists |

@@ -46,6 +46,8 @@ The first profiles, and the products every part of this design is checked agains
   1024 x 600 touchscreen and endless encoders, is the `ignite` layout. It needs external MIDI,
   CV and clock (RFC 0012).
 - **The desktop app** on macOS and Linux, and the **QEMU image** (`oscairn_qemu_aarch64_defconfig`).
+- **A MODX M-style keyboard** (`modx-m`, estimated), the test case for control groups with
+  hardware rows and fader modes.
 
 Their profiles' values (cores, memory, audio interface, controls) are filled from the hardware
 and measured on real units, not assumed; the layouts already describe their panels.
@@ -57,18 +59,22 @@ An illustrative profile (the values are an example, not a real product's):
 ```json
 {
   "format": "oscairn.profile",
-  "version": 1,
+  "version": 2,
   "id": "org.example.keys61",
   "name": "Example 61-key instrument",
   "platform": { "os": "linux", "cpu": "arm64", "runtime": "oscairn-buildroot-2026", "board": "rk3588" },
   "compute": { "cores": 8, "realtimeCores": 2, "memory": 8192, "storage": 65536 },
   "audio": { "inputs": 2, "outputs": 4, "rates": [48000], "block": 64, "headphones": true },
   "controls": [
-    { "kind": "keys", "count": 61, "aftertouch": "channel" },
-    { "kind": "pads", "count": 16, "pressure": "poly" },
-    { "kind": "encoders", "count": 8, "detents": false },
-    { "kind": "faders", "count": 8 },
-    { "kind": "pedal", "count": 2 }
+    { "kind": "keys", "count": 61, "role": "notes", "sensing": "channel aftertouch" },
+    { "kind": "pads", "count": 16, "role": "notes", "sensing": "poly pressure" },
+    { "kind": "knobs", "count": 6, "role": "screen" },
+    { "kind": "encoders", "count": 4, "role": "assign", "rows": [
+      { "name": "Assign 1", "bank": "assign" }, { "name": "Assign 2", "bank": "assign" },
+      { "name": "Tone", "bank": "filter" }, { "name": "EG", "bank": "ampEG" } ] },
+    { "kind": "faders", "count": 8, "role": "assign", "modes": ["part", "element", "audio"] },
+    { "kind": "knobs", "count": 1, "role": "fixed", "functions": ["volume"] },
+    { "kind": "pedal", "count": 2, "role": "assign", "paging": "button" }
   ],
   "screens": [ { "width": 1024, "height": 600, "touch": true, "surface": "panel" } ],
   "midi": { "din": 1, "usbDevice": true, "usbHost": true },
@@ -85,14 +91,34 @@ An illustrative profile (the values are an example, not a real product's):
   ceiling (RFC 0025).
 - **`audio`:** its interface, the sample rates and the block size it runs at, headphones (a cue
   bus).
-- **`controls`:** every physical control by kind and count, with what it can sense. Default
-  control mappings and the panel layout come from these (RFC 0011's physical controls).
+- **`controls`:** every physical control, in groups (below). Default control mappings and the
+  panel layout come from these (RFC 0011's physical controls).
 - **`screens`:** each screen's size, touch and surface (RFC 0019: desktop, panel, compact, or
   none for a headless unit).
 - **`midi`, `cv`, `network`:** what it can connect to; CV outputs mean the CV service of RFC 0004.
 - **`power`:** battery or mains, for power management (RFC 0028).
 - **`reliability`:** its level (RFC 0027): `desktop`, `instrument` or `pass-through`.
 - **`apps`:** the apps installed with it (RFC 0022); the user can add others.
+
+### Control groups
+
+A group is controls of one kind that do one job: `kind` (keys, pads, knobs, encoders, faders,
+buttons, wheels, jog, touchstrip, pedal, expression, footswitches), `count`, what they can sense
+(`sensing`, free text), and `role`:
+
+| Role | The controls | Group fields |
+| --- | --- | --- |
+| `notes` | Play notes: keys and pads, and only they | |
+| `screen` | Play what the screen shows: the Performance app's knob row, an editor page's top parameters | |
+| `assign` | Play banks ([RFC 0011](0011-performance-ui-and-editors.md#physical-controls)) | Knobs: `rows` (each `{name, bank}`, its row button picking it, `bank` one of `assign`, `filter`, `ampEG`, `eq`, `levels`, `effects`) or `paging` (`button` or `screen`), not both. Faders: `modes`, from `part`, `element` and `audio` |
+| `fixed` | A dedicated function each | `functions`, one name per control, when known |
+
+Banks are as wide as the group playing them. For example, the KICK's panel has four encoders,
+P1 to P4, that play the row selected on screen (`assign`, `paging: screen`); VOLUME, MASTER and
+REC GAIN knobs and the large TEMPO wheel (`fixed`); 16 pads (`notes`); 31 buttons and a touch
+strip. A MODX M has six display knobs (`screen`), four control knobs whose panel buttons pick
+their row (Assign 1, Assign 2, Tone, EG, EQ, Effects: names to be confirmed on a unit), eight
+faders in Part, Element and Audio modes, a Super Knob, and Scene and Part buttons.
 
 A profile describes the product, not one unit: the unit reports what it actually has (RFC 0006
 separates the catalog's profile, the device's reported inventory and the user's settings), and
@@ -128,7 +154,12 @@ cores than cores, a block under 16 frames, an unknown surface or reliability) re
 in: `qemu-aarch64` (its values are the QEMU test machine's), `kick` and `ignite` (best guesses,
 every guessed section listed in `estimated`: the board is taken as the i.MX8M Mini named in the
 OS notes, the controls are counted from their panel layouts, the rest is assumed until a unit is
-measured). The desktop app makes `desktop` from the computer: its cores, memory and main display,
+measured). Profile version 2 (2026-11-01) describes controls in groups with roles, replacing
+version 1's flat counts: the KICK's are corrected (four assignable encoders paged on screen,
+three fixed knobs, the tempo wheel, pads, buttons and a touch strip, where version 1 had eight
+encoders), the Ignite's eight sound encoders, 16 step encoders, DATA, ROW and BAR are fixed
+functions from its layout, and `modx-m` (all estimated, with an 800 x 480 screen layout of its
+own) is added. `desktop-profile` checks them and the groups' refusals. The desktop app makes `desktop` from the computer: its cores, memory and main display,
 desktop reliability, every app.
 
 The app takes `--profile NAME|FILE` (the image's `/etc/default/oscairn` passes `qemu-aarch64`,

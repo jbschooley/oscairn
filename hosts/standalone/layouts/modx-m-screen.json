@@ -1,0 +1,7 @@
+{
+  "name": "MODX M screen",
+  "size": [800, 480],
+  "controls": [
+    {"type": "screen", "rect": [0, 0, 800, 480]}
+  ]
+}
