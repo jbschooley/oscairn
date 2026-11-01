@@ -62,8 +62,11 @@ static void native(const char* synth,const char* delay,const char* seq,const fs:
     try{original.savePerformance(file.string());throw std::logic_error("overwrote existing save");}catch(const std::runtime_error&){}
     Session a(48000,127),b(48000,127);configure(a,synth,delay,seq);configure(b,synth,delay,seq);const auto old=a.nodeId("synth");
     Audio reset;
-    a.note(true,100,1);reset.run(a);a.loadPerformance(file.string());
-    check(a.nodeId("synth")!=old && !a.hasNode(old),"old node IDs must become invalid");
+    // Prepared ahead while the old one plays (RFC 0021): the cue only publishes it. A plugin added
+    // meanwhile takes an ID after the prepared ones and goes with the old Performance.
+    a.note(true,100,1);reset.run(a);check(a.preparePerformance(file.string()),"prepared ahead");reset.run(a);
+    const auto between=a.add("between",synth);a.commit();reset.run(a);a.service();a.loadPerformance(file.string());
+    check(a.nodeId("synth")!=old && !a.hasNode(old) && !a.hasNode(between) && a.nodeId("synth")<between,"old node IDs must become invalid");
     reset.run(a);reset.run(b); // adopt and flush parameter-only sequencer state
     // Seamless (RFC 0021): the note held through the change rings out on the old Performance's
     // plugins; released, they go once silent, leaving the restored one alone.
@@ -100,6 +103,14 @@ static void native(const char* synth,const char* delay,const char* seq,const fs:
     }
     // Byte-identical continuing playback proves rejection didn't reset the live graph.
     compare(a,b);
+    // Saved over after it was prepared: the cue reads it again.
+    const auto resaved=root/"resaved";fs::copy(file,resaved,fs::copy_options::recursive);check(a.preparePerformance(resaved.string()),"prepared again");
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));replaceText(resaved/"performance.json","\"tempo\":137","\"tempo\":90");
+    a.loadPerformance(resaved.string());reset.run(a);check(a.transportState().tempo==90,"a Performance saved over since it was prepared is read again");
+    // A prepared Performance carries its physical controls' overrides, as a direct load does.
+    a.assign("knob:1",{Assignment::Kind::Parameter,a.nodeId("synth"),1});a.savePerformance((root/"assigned").string());check(a.preparePerformance((root/"assigned").string()),"prepared with overrides");
+    a.loadPerformance((root/"assigned").string());check(a.assignments().size()==1 && a.assignments()[0].control=="knob:1" && a.assignments()[0].target.node==a.nodeId("synth"),"overrides carried by the prepared one");
+    check(!a.preparePerformance(""),"letting go of a prepared one");
     // Select+edit+save before the next callback must capture the accepted selection.
     const auto n=original.nodeId("synth");const auto c=original.prepareSound(n,"Pending",{{1,.1},{4,2}});
     check(original.selectSound(n,c) && original.setParameter(n,1,.37),"pending edit");original.savePerformance((root/"pending").string());

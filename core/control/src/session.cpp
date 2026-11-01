@@ -330,6 +330,7 @@ namespace oscairn
     void Session::service()
     {
         graph_.service();
+        if( prepared_ ) prepared_->next->service(); // its plugins' main-thread callbacks while it waits
         ringOut();
         meter();
         measure();

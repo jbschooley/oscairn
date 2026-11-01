@@ -46,6 +46,7 @@ namespace oscairn
         std::vector<std::string> exportPerformance(const std::string& file, bool editedSounds = false) override;
         std::vector<std::string> exportLibraryItem(const std::string& id, const std::string& file, bool editedSounds = false) override;
         void loadPerformance(const std::string& directory) override;
+        bool preparePerformance(const std::string& directory) override;
         PerformanceInfo performanceInfo() const override {return info_;}
         void setPerformanceInfo(const PerformanceInfo& info) override;
         LibraryResult libraryQuery(const LibraryQuery& query) override {return library().query(query);}
@@ -381,6 +382,32 @@ namespace oscairn
         std::map<std::string, std::string> digests_;        // each plugin build's digest, by its path, once
         void lockPlugin(std::vector<LockEntry>& lock, const std::string& format, const std::string& id, const std::string& version, const std::string& path, bool standIn);
         void mergeLock(const std::vector<LockEntry>& more);
+        // A Performance read and its plugins loaded with their state, not playing yet (RFC 0021).
+        struct Prepared
+        {
+            std::filesystem::path root;
+            std::filesystem::file_time_type stamp;
+            std::unique_ptr<Graph> next;
+            PadMap pads;
+            PerformanceInfo info;
+            std::vector<LockEntry> lock;
+            double tempo = 120;
+            Transport::ClockSource clock = Transport::ClockSource::Internal;
+            std::set<NodeId> disabled;
+            std::map<NodeId,std::string> names;
+            std::vector<Wire> wires;
+            std::vector<Part> parts;
+            uint32_t nextPart = 1, nextWire = 1;
+            std::vector<Scene> scenes;
+            std::vector<SceneParameter> untouched;
+            uint32_t nextScene = 1, selectedScene = 0, mappingScene = 0;
+            std::vector<Macro> macros;
+            uint32_t nextMacro = 1;
+            std::vector<AssignmentOverride> assignments;
+        };
+        std::unique_ptr<Prepared> read(const std::filesystem::path& root);
+        void open(Prepared& prepared, bool seamless);
+        std::unique_ptr<Prepared> prepared_; // the next one, prepared ahead; after graph_, so it goes first
         std::set<NodeId> nodesOf(const Part& part) const;
         static std::vector<assets::Ref> assetsOf(const std::filesystem::path& manifest);
         std::vector<std::string> exportArchive(const std::string& file, const std::string& kind, const std::function<std::vector<PartSource>(const std::filesystem::path&, Package&)>& write, bool editedSounds);

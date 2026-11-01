@@ -277,6 +277,12 @@ namespace oscairn::standalone
         if(shown_[size_t(index)].missing) { say(text(entry.name) + " is no longer in the library."); return; }
         SoundAction open; open.kind = SoundAction::LoadFromLibrary; open.libraryId = entry.id;
         engine_.soundAction(std::move(open));
+        // The next entry is prepared while this one plays, so going to it only switches.
+        if(size_t(index) + 1 < setlist_.entries.size() && !shown_[size_t(index) + 1].missing)
+        {
+            SoundAction next; next.kind = SoundAction::PrepareFromLibrary; next.libraryId = setlist_.entries[size_t(index) + 1].id;
+            engine_.soundAction(std::move(next));
+        }
         current_ = index;
         list_.selectRow(index);
         say(juce::String(index + 1) + ". " + text(entry.name));

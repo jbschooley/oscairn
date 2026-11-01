@@ -18,6 +18,7 @@ namespace oscairn
         Estimate estimate(const std::string& directory = {}) override;
         std::vector<std::string> exportPerformance(const std::string& file, bool editedSounds = false) override;
         void loadPerformance(const std::string& directory) override;
+        bool preparePerformance(const std::string& directory) override;
         PerformanceInfo performanceInfo() const override;
         void setPerformanceInfo(const PerformanceInfo& info) override;
         LibraryResult libraryQuery(const LibraryQuery& query) override;

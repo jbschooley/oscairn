@@ -339,6 +339,9 @@ in the others.
      ([status](rfcs/0021-sounds-performances-and-library.md#seamless-switching)). A change that
      would not fit beside the outgoing one opens as a cut, and the desktop says so
      ([RFC 0025](rfcs/0025-resource-budgets.md#status))
+   - [x] the next setlist entry prepared while one plays (plugins created, state and sounds
+     loaded), so the cue only publishes it: 0.6 ms instead of 39 ms in `control-setlist-change`
+     ([status](rfcs/0021-sounds-performances-and-library.md#seamless-switching))
    - [x] audition: a Sound in a part's place, or a Performance in the open one's, put back as it
      was (the same plugins) or kept ([status](rfcs/0021-sounds-performances-and-library.md#audition))
    - [ ] tag suggestions, plugin presets in the library, `LibraryModel`, and the Library on the

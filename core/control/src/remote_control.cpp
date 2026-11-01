@@ -301,6 +301,9 @@ namespace oscairn
     void RemoteControl::loadPerformance(const std::string& directory) {
         impl_->call("performance.load","{\"directory\":"+quote(directory)+'}',30000);impl_->refresh();
     }
+    bool RemoteControl::preparePerformance(const std::string& directory) {
+        auto d=impl_->call("performance.prepare","{\"directory\":"+quote(directory)+'}',30000);return boolean(field(field(d.get(),"result"),"prepared"));
+    }
     namespace {
         std::vector<std::string> strings(V v){std::vector<std::string> out;for(auto e:array(v))out.push_back(string(e));return out;}
         std::string quoted(const std::vector<std::string>& values){std::string out="[";for(const auto& v:values){if(out.size()>1)out+=',';out+=quote(v);}return out+']';}

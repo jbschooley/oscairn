@@ -56,10 +56,10 @@ try:
             jsonschema.validate(manifest, json.loads(schema.read_text()))
             protocol = json.loads((schema.parent / 'control-protocol.schema.json').read_text())
             jsonschema.Draft202012Validator.check_schema(protocol)
-            for method in ['performance.save', 'performance.load']:
+            for method in ['performance.save', 'performance.load', 'performance.prepare']:
                 jsonschema.validate({'jsonrpc':'2.0','id':1,'method':method,
                                      'params':{'directory':'/tmp/example'}}, protocol)
-            for key in ['saved', 'loaded']:
+            for key in ['saved', 'loaded', 'prepared']:
                 jsonschema.validate({'jsonrpc':'2.0','id':1,'result':{key:True}}, protocol)
             # A live graph.get with a part and its wires (RFC 0011).
             part = rpc('parts.add', {'name': 'Check'})['result']['part']
@@ -95,6 +95,9 @@ try:
         p = start()
         moved = root / 'moved'
         saved.rename(moved)
+        # Prepared ahead, then loaded: the load only publishes it.
+        assert rpc('performance.prepare', {'directory': str(moved)})['result'] == {'prepared': True}
+        render()
         rpc('performance.load', {'directory': str(moved)})
         render()
         sounds = rpc('sounds.get', {'node': 'synth'})['result']['contexts']

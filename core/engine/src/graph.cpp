@@ -162,7 +162,8 @@ namespace oscairn
         next->nextId_=nextId_;next->assets_=assets_;return next;
     }
     void Graph::carryOver(const Graph& current,const std::set<NodeId>& ids) {
-        for(const auto id:ids){auto node=current.nodes_.at(id);node.retiring=false;nodes_[id]=std::move(node);setRetiring(id,true);}
+        for(const auto id:ids){if(nodes_.count(id))throw std::logic_error("a carried-over node ID is taken");auto node=current.nodes_.at(id);node.retiring=false;nodes_[id]=std::move(node);setRetiring(id,true);}
+        nextId_=std::max(nextId_,current.nextId_); // a replacement prepared ahead: the current graph may have added since
         for(const auto& r:current.audioRoutes_)if(ids.count(r.from.node) && (ids.count(r.to.node) || r.to.node==graphOutput))audioRoutes_.push_back(r);
         for(const auto& [edge,route]:current.noteEdges_)if(ids.count(edge.second) && (ids.count(edge.first) || edge.first==graphInput)){
             noteEdges_.emplace(edge,route);draining_.insert(edge);

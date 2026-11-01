@@ -23,7 +23,7 @@ namespace oscairn::standalone
     struct SoundAction
     {
         enum Kind { Refresh, Prepare, Select, Discard, BrightnessLocks, Replace, SavePerformance, LoadPerformance, SaveToLibrary, LoadFromLibrary, SaveSound, LoadSound, PartFromSound, ImportPerformance,
-                    ExportPerformance, InstallArchive, AuditionStart, AuditionStop } kind = Refresh;
+                    ExportPerformance, InstallArchive, AuditionStart, AuditionStop, PrepareFromLibrary } kind = Refresh;
         NodeId node = 0;
         std::string pluginId;
         uint32_t context = 0, track = 0;
@@ -32,7 +32,7 @@ namespace oscairn::standalone
         bool enableLocks = false;
         SoundChoice choice;
         std::string replacementPath,replacementId,directory;
-        std::string libraryId; // LoadFromLibrary, LoadSound, PartFromSound, ExportPerformance (that library item, not the open one); SaveToLibrary and SaveSound save under choice.name
+        std::string libraryId; // LoadFromLibrary, PrepareFromLibrary, LoadSound, PartFromSound, ExportPerformance (that library item, not the open one); SaveToLibrary and SaveSound save under choice.name
         uint32_t part = 0;     // SaveSound, LoadSound, AuditionStart (a Sound's)
         std::vector<uint32_t> parts, scenes; // ImportPerformance from directory: by its IDs; both none for all of it
         bool asNew = false;    // SaveToLibrary, SaveSound: a new library item, not the next revision of the one it came from;

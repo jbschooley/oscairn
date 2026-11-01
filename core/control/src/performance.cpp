@@ -486,15 +486,47 @@ Control::PerformanceInfo Session::writeDocument(const std::string& directory,Per
     return info;
 }
 
+namespace {
+    fs::path performanceRoot(const std::string& directory) {
+        if(directory.empty() || directory.find('\0')!=std::string::npos)bad("invalid directory");
+        return fs::canonical(directory);
+    }
+    // What a prepared Performance was read from; saving over it changes this.
+    fs::file_time_type stamp(const fs::path& root) { return fs::last_write_time(root/"performance.json"); }
+}
+
 void Session::loadPerformance(const std::string& directory) {
     audition_.reset(); // opening a Performance keeps what an audition tried; auditionStart sets its own after
-    if(directory.empty() || directory.find('\0')!=std::string::npos)bad("invalid directory");
-    const auto root=fs::canonical(directory);validateTree(root);const auto doc=document(root);V d=doc.get();
-    fields(d,{"format","version","info","libraries","transport","audioInputs","audioOutputs","nodes","wires","parts","mappings","pads","scenes","sceneUntouched","scene","controls","assignments","lock"});
+    const auto root=performanceRoot(directory);
+    // Prepared ahead (RFC 0021), the cue only publishes it; another one prepared is let go first.
+    auto prepared=std::move(prepared_);
+    if(prepared && (prepared->root!=root || prepared->stamp!=stamp(root)))prepared.reset();
     // Over the budget it is refused, saying what does not fit (RFC 0025).
     bool seamless=true;
     if(budget_.cpu>0){const auto e=estimate(root.string());if(!e.fits)bad("this Performance "+tooMuch(e));seamless=e.seamless;
         if(!seamless)std::fprintf(stderr,"oscairn: opened at once: with the last Performance ringing out it would not fit\n");}
+    if(!prepared)prepared=read(root);
+    open(*prepared,seamless);
+}
+
+// Plays a Performance prepared ahead at the next loadPerformance of the same folder. One that
+// would not fit beside what plays now is not prepared (false): it loads at the cue, as a cut.
+bool Session::preparePerformance(const std::string& directory) {
+    prepared_.reset();
+    if(directory.empty())return false;
+    const auto root=performanceRoot(directory);
+    if(budget_.cpu>0){const auto e=estimate(root.string());if(!e.fits)bad("this Performance "+tooMuch(e));
+        if(!e.seamless){std::fprintf(stderr,"oscairn: not prepared: beside the open Performance it would not fit; it opens at the cue\n");return false;}}
+    prepared_=read(root);
+    graph_.reserveIds(*prepared_->next); // so plugins added meanwhile cannot take its IDs
+    return true;
+}
+
+// Reads a Performance and loads its plugins with their state into a replacement graph, without
+// touching what plays. Throws, leaving nothing behind, on anything it cannot restore.
+std::unique_ptr<Session::Prepared> Session::read(const fs::path& root) {
+    validateTree(root);const auto doc=document(root);V d=doc.get();
+    fields(d,{"format","version","info","libraries","transport","audioInputs","audioOutputs","nodes","wires","parts","mappings","pads","scenes","sceneUntouched","scene","controls","assignments","lock"});
     const auto pads=padsFrom(field(d,"pads"));
     if(text(field(d,"format"))!="oscairn.performance" || integer(field(d,"version"))!=6)bad("unsupported format version");
     fields(field(d,"info"),{"id","name","description","tags","color","revision","parent","hash","origin"});const auto info=readInfo(root/"performance.json","oscairn.performance");
@@ -709,12 +741,21 @@ void Session::loadPerformance(const std::string& directory) {
             else bad("invalid assignment kind");}
         assignments.push_back(std::move(o));
     }
+    std::set<std::pair<NodeId,uint32_t>> mappings;
+    for(auto m:array(field(d,"mappings"),4096)){fields(m,{"from","lane","to","param"});const auto from=node(field(m,"from")),lane=integer(field(m,"lane"));if(!mappings.emplace(from,lane).second)bad("duplicate parameter mapping");next->mapParamTarget(from,lane,node(field(m,"to")),integer(field(m,"param")));}
+    return std::make_unique<Prepared>(Prepared{root,stamp(root),std::move(next),pads,info,std::move(lock),tempo,clock=="internal"?Transport::ClockSource::Internal:Transport::ClockSource::MidiClock,
+        std::move(disabled),std::move(names),std::move(wires),std::move(parts),nextPart,nextWire,std::move(scenes),std::move(untouched),nextScene,selectedScene,mappingScene,std::move(macros),nextMacro,std::move(assignments)});
+}
+
+// Publishes a read Performance in place of the open one.
+void Session::open(Prepared& p,bool seamless) {
+    auto& next=p.next;auto& wires=p.wires;auto& disabled=p.disabled;
     // A part's input wires hear the devices its selector chooses here (RFC 0012); files keep selectors, not sources.
     for(auto& w:wires)if(w.owner==WireOwner::Part && w.kind==WireKind::Notes && w.from==graphInput)
-        for(const auto& p:parts)if(p.id==w.part && (!p.input.devices.empty() || p.input.maxNotes)){
+        for(const auto& part:p.parts)if(part.id==w.part && (!part.input.devices.empty() || part.input.maxNotes)){
             // The file's zones (a lane's included) with this machine's sources and the part's note limit.
             if(w.zones.empty())w.zones.emplace_back();
-            const auto mask=resolveDevices(p.input.devices,hostStatus_.midiInputs);for(auto& z:w.zones){z.sources=mask;z.maxNotes=p.input.maxNotes;}}
+            const auto mask=resolveDevices(part.input.devices,hostStatus_.midiInputs);for(auto& z:w.zones){z.sources=mask;z.maxNotes=part.input.maxNotes;}}
     // Seamless (RFC 0021): this Performance's plugins, and any still ringing out from the one
     // before, come along retiring: held notes play on until released and tails ring out, while
     // new notes go to the new Performance.
@@ -723,21 +764,19 @@ void Session::loadPerformance(const std::string& directory) {
     if(seamless){leaving=leaving_;for(const auto& [id,name]:nodes_)leaving.insert(id);}
     next->carryOver(graph_,leaving);
     compileWires(*next,wires,disabled,disabled,leaving);auto rungOut=disabled;
-    std::set<std::pair<NodeId,uint32_t>> mappings;
-    for(auto m:array(field(d,"mappings"),4096)){fields(m,{"from","lane","to","param"});const auto from=node(field(m,"from")),lane=integer(field(m,"lane"));if(!mappings.emplace(from,lane).second)bad("duplicate parameter mapping");next->mapParamTarget(from,lane,node(field(m,"to")),integer(field(m,"param")));}
-    std::map<Address,double> observed;for(const auto& [id,name]:names)for(const auto& p:next->host(id).parameters())observed[{id,p.id}]=next->host(id).parameterValue(p.id);
+    std::map<Address,double> observed;for(const auto& [id,name]:p.names)for(const auto& q:next->host(id).parameters())observed[{id,q.id}]=next->host(id).parameterValue(q.id);
     // Compilation and all allocating preparation precede publication. The audio thread
     // adopts at one boundary; old plans and their hosts are reclaimed by service().
     auto history=history_;
     if(history.size()==historyCapacity)history.pop_front();
     history.push_back({sequence_+1,ChangeKind::Resync,0,0,0,false});
     graph_.publishReplacement(*next,[&]() noexcept {
-        nodes_.swap(names);observed_.swap(observed);parts_.swap(parts);wires_.swap(wires);disabled_.swap(disabled);rungOut_.swap(rungOut);leaving_.swap(leaving);nextPart_=nextPart;nextWire_=nextWire;padMap_=pads;heldPads_={};scenes_.swap(scenes);untouched_.swap(untouched);scene_=selectedScene;mappingScene_=mappingScene;transition_.reset();pendingScene_.reset();nextScene_=nextScene;macros_.swap(macros);assignments_.swap(assignments);nextMacro_=nextMacro;pending_.clear();commandCount_=0;outputDrops_.clear();staged_=false;
-        tempo_.store(tempo);clockSource_.store(clock=="internal"?Transport::ClockSource::Internal:Transport::ClockSource::MidiClock);playing_.store(false);
+        nodes_.swap(p.names);observed_.swap(observed);parts_.swap(p.parts);wires_.swap(wires);disabled_.swap(disabled);rungOut_.swap(rungOut);leaving_.swap(leaving);nextPart_=p.nextPart;nextWire_=p.nextWire;padMap_=p.pads;heldPads_={};scenes_.swap(p.scenes);untouched_.swap(p.untouched);scene_=p.selectedScene;mappingScene_=p.mappingScene;transition_.reset();pendingScene_.reset();nextScene_=p.nextScene;macros_.swap(p.macros);assignments_.swap(p.assignments);nextMacro_=p.nextMacro;pending_.clear();commandCount_=0;outputDrops_.clear();staged_=false;
+        tempo_.store(p.tempo);clockSource_.store(p.clock);playing_.store(false);
         ++revision_;++sequence_;history_.swap(history);
     });
-    info_=info;
-    lock_=std::move(lock);
+    info_=p.info;
+    lock_=std::move(p.lock);
     clearHistory(); // undo does not reach back into another Performance
 }
 

@@ -91,6 +91,8 @@ namespace oscairn
         /// held notes are still released; nothing else reaches them. The caller removes each once
         /// idle(). Their IDs are below the replacement's, so none is taken.
         void carryOver( const Graph& current, const std::set<NodeId>& ids );
+        /// A replacement prepared ahead keeps its node IDs: nodes added here meanwhile take later ones.
+        void reserveIds( const Graph& prepared ) { nextId_ = std::max( nextId_, prepared.nextId_ ); }
         // Where plugins added from now on resolve sound assets (RFC 0009); must outlive the graph.
         void setAssets(kick::clap::AssetResolver* assets) noexcept { assets_ = assets; }
         // onPublish must not throw; called after successful compilation/allocation, before publication.

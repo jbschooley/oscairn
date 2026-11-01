@@ -1867,6 +1867,38 @@
               "$ref": "#/$defs/Id"
             },
             "method": {
+              "const": "performance.prepare"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "directory": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "directory"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "params"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
               "const": "performance.info"
             },
             "params": {
@@ -5309,6 +5341,9 @@
                   "$ref": "#/$defs/PerformanceLoaded"
                 },
                 {
+                  "$ref": "#/$defs/PerformancePrepared"
+                },
+                {
                   "$ref": "#/$defs/PartResult"
                 },
                 {
@@ -6468,6 +6503,18 @@
       },
       "required": [
         "loaded"
+      ],
+      "additionalProperties": false
+    },
+    "PerformancePrepared": {
+      "type": "object",
+      "properties": {
+        "prepared": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "prepared"
       ],
       "additionalProperties": false
     },

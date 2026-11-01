@@ -109,6 +109,13 @@ namespace oscairn::standalone
             control.loadPerformanceFromLibrary(action.libraryId);
             return seamless ? std::string() : cut;
         }
+        // The next one, loaded while this one plays (RFC 0021), so opening it only publishes it.
+        if(action.kind == SoundAction::PrepareFromLibrary){
+            Control::LibraryQuery all; all.limit = 1000; all.kind = "performance";
+            for(const auto& item : control.libraryQuery(all).items)
+                if(item.id == action.libraryId && !control.preparePerformance(item.path)) return "Not prepared ahead: beside this Performance it would not fit this device. It opens when you go to it.";
+            return {};
+        }
         if(action.kind == SoundAction::SaveSound){control.savePartAsSound(action.part,action.choice.name,action.asNew);return {};}
         if(action.kind == SoundAction::LoadSound){control.loadSound(action.part,action.libraryId);return {};}
         if(action.kind == SoundAction::PartFromSound){control.partFromSound(action.libraryId);return {};}

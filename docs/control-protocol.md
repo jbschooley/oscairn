@@ -712,6 +712,14 @@ a load failure leaves the playing graph intact. Successful publication emits a g
 invalidates old node/context references, and starts stopped at beat zero on adoption. The
 change is seamless: the previous Performance's plugins ring out (held notes until released,
 tails until idle) and are hidden from `graph.get` meanwhile.
+`performance.prepare` takes the same `{"directory":...}` and returns `{"prepared":true}`: the
+Performance is read and its plugins loaded with their state while the open one plays, so the
+next `performance.load` (or `library.load`) of that folder only publishes it. It returns
+`{"prepared":false}` without loading anything when it would not fit the budget beside what plays
+now (budgets below); its load is then a cut. One Performance is prepared at a time: preparing
+another, loading a different one, or an empty `directory` lets it go. A folder saved over
+since it was prepared is read again at the load. Preparing takes as long as a load and blocks
+other control calls meanwhile; only the load gets faster.
 The current note/tail audio is not saved. Resource/state/format failures use `-32005`;
 malformed RPC arguments use `-32602`. These control-thread calls can take time; remote
 wrappers allow 30 seconds, and callers must reread the graph after a timeout before retrying

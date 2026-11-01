@@ -602,6 +602,29 @@ resident memory, and 32 to 48 instances live until the old ones have rung out. T
 found every change keeping the plugins it retired alive for good (about 80 MiB more each time);
 fixed in `Graph::publishReplacement`, and the bench checks memory no longer grows with each change.
 
+**The next one prepared ahead**, built 2026-11-01: while one Performance plays, the next is read
+and its plugins created with their saved state and sounds, off the audio thread, in a
+replacement graph that waits (`preparePerformance`, `performance.prepare`); its plugins get
+their main-thread callbacks meanwhile. Opening that folder then only carries the playing one
+over and publishes. One is prepared at a time; preparing another, opening a different one or a
+folder saved over since lets it go and the open reads as before. Plugins added while it waits
+take IDs after its own. Admission decides first: a Performance that would not fit beside what
+plays now is not prepared, and opens as a cut when cued, as before; the Setlist app says so. The
+Setlist app prepares the entry after the one it opens; going to it while it is still being
+prepared waits for it, going anywhere else lets it go. Preparing holds the engine's control
+thread as long as a load does, so on-screen controls wait meanwhile.
+
+Measured with the same bench: the cue takes 0.5–1.0 ms (median 0.6 ms) instead of 39 ms;
+preparing takes what the load took, while the last one plays. Memory is the same, both
+Performances at once, but from the preparation on rather than from the cue. `control-performance`
+checks the prepared change (a held note through it, a plugin added while it waited, output
+identical to a fresh load once the old one has rung out), its physical controls' overrides
+carried as by a direct load, and a folder saved over after
+preparing read again; `control-parts` checks admission (not prepared when both would not fit,
+then a cut; prepared and ringing out when they would); `control-performance-format` the RPC;
+`desktop-shell` the Setlist preparing its next entry over the app's engine connection without an
+error, and going to it.
+
 **Load preset** on a node is seamless where `sounds.prepare` accepts it (native contexts and
 pooled instruments) and an interrupting state load otherwise, as today.
 

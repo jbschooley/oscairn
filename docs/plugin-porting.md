@@ -107,7 +107,9 @@ Everything else is handled for you:
   out its held notes and tail and stops once it is idle: one that sleeps stops as soon as it
   is done; one that never does waits for three seconds of silence. Until then it runs beside
   the new Performance, so memory and CPU for both are needed for a moment; when both would not
-  fit the device's budget, the change is a cut instead.
+  fit the device's budget, the change is a cut instead. A setlist prepares its next
+  Performance while one plays: that one's plugins are created, activated and given their saved
+  state, and get their main-thread callbacks, perhaps minutes before they first process.
 - **Keep your cost steady and your version honest:** the host measures each plugin's CPU per
   block and its memory on the device, by plugin ID and version, and refuses a Performance, or
   an added plugin, that would go over the device's budget, saying why

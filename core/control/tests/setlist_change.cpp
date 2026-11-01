@@ -2,7 +2,8 @@
 //
 // The change from one setlist entry to the next (RFC 0021, seamless switching), measured: how long
 // from the cue until the next Performance plays, and the process's memory before, just after and
-// once the last one has rung out. Each Performance has eight parts of the bundled engines: four
+// once the last one has rung out; loaded at the cue, and prepared ahead while the last one plays
+// so the cue only publishes it. Each Performance has eight parts of the bundled engines: four
 // Samplers each playing its own sample, four Basic Synths, each part through its own Delay context.
 //   oscairn-setlist-change-test SYNTH.clap SAMPLER.clap DELAY.clap
 #include "oscairn/session.h"
@@ -64,15 +65,22 @@ namespace
         s.savePerformance(file.string());
     }
 
-    struct Change { double cueMs = 0; uint64_t before = 0, after = 0, rungOut = 0; size_t instances = 0; bool heldRang = false; };
-    // From `from` playing with a note held, the cue to `to`: its time, and memory around it.
-    Change change(Session& s, const fs::path& from, const fs::path& to)
+    struct Change { double prepareMs = 0, cueMs = 0; uint64_t before = 0, after = 0, rungOut = 0; size_t instances = 0; bool heldRang = false; };
+    // From `from` playing with a note held, the cue to `to`, prepared ahead or not: its time, and memory around it.
+    Change change(Session& s, const fs::path& from, const fs::path& to, bool ahead)
     {
         Audio audio; Change c;
         s.loadPerformance(from.string());
         for(int i = 0; i < 20; ++i) audio.run(s);
         s.note(true, 60, 1); audio.run(s); audio.run(s);
         c.before = residentBytes();
+        if(ahead)
+        {
+            const auto start = std::chrono::steady_clock::now();
+            check(s.preparePerformance(to.string()), "prepared ahead");
+            c.prepareMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+            for(int i = 0; i < 20; ++i) audio.run(s);
+        }
         const auto start = std::chrono::steady_clock::now();
         s.loadPerformance(to.string());
         c.cueMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
@@ -104,20 +112,25 @@ int main(int argc, char** argv)
         build(a, 0, argv[1], argv[2], argv[3], samples); build(b, 1, argv[1], argv[2], argv[3], samples);
 
         Session s(48000, frames);
-        std::vector<double> cues; uint64_t first = 0;
-        for(int round = 0; round < 5; ++round)
+        uint64_t first = 0;
+        for(const bool ahead : {false, true})
         {
-            const auto c = change(s, round % 2 ? b : a, round % 2 ? a : b);
-            if(!round) first = c.rungOut;
-            // Each change used to keep the plugins it retired alive (about 80 MiB here each time).
-            if(round == 4) check(c.rungOut < first + (200u << 20), "memory does not grow with each change");
-            check(c.heldRang, "the held note plays on through the change");
-            cues.push_back(c.cueMs);
-            std::printf("load at the cue: %.1f ms; %zu plugin instances; resident memory %.0f MiB before, %.0f MiB just after, %.0f MiB once rung out\n",
-                        c.cueMs, c.instances, mib(c.before), mib(c.after), mib(c.rungOut));
+            std::vector<double> cues;
+            for(int round = 0; round < 5; ++round)
+            {
+                const auto c = change(s, round % 2 ? b : a, round % 2 ? a : b, ahead);
+                if(!round && !ahead) first = c.rungOut;
+                // Each change used to keep the plugins it retired alive (about 80 MiB here each time).
+                if(round == 4) check(c.rungOut < first + (200u << 20), "memory does not grow with each change");
+                check(c.heldRang, "the held note plays on through the change");
+                cues.push_back(c.cueMs);
+                std::printf("%s: cue %.1f ms; %zu plugin instances; resident memory %.0f MiB before, %.0f MiB just after, %.0f MiB once rung out\n",
+                            ahead ? "prepared ahead" : "loaded at the cue", c.cueMs, c.instances, mib(c.before), mib(c.after), mib(c.rungOut));
+                if(ahead) std::printf("  (preparing took %.1f ms while the last one played)\n", c.prepareMs);
+            }
+            std::sort(cues.begin(), cues.end());
+            std::printf("%s: median %.2f ms from the cue until the next Performance is published\n", ahead ? "prepared ahead" : "loaded at the cue", cues[cues.size() / 2]);
         }
-        std::sort(cues.begin(), cues.end());
-        std::printf("median: %.1f ms from the cue until the next Performance is published\n", cues[cues.size() / 2]);
     }
     catch(const std::exception& e) { std::fprintf(stderr, "FAIL: %s\n", e.what()); return 1; }
     if(failures) return 1;

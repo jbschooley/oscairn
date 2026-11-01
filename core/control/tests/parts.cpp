@@ -1044,11 +1044,13 @@ namespace
         u.loadPerformance((root / "budget-one").string());
         const auto e = u.estimate((root / "budget-one").string());
         check(e.fits && !e.seamless, "it fits alone, not beside itself");
+        check(!u.preparePerformance((root / "budget-one").string()), "nor is it prepared ahead beside it");
         u.loadPerformance((root / "budget-one").string());
         check(u.leaving() == 0, "so the change is a cut");
         u.setBudget({.05, 0});
+        check(u.preparePerformance((root / "budget-one").string()), "with room for both, it is prepared ahead");
         u.loadPerformance((root / "budget-one").string());
-        check(u.leaving() == 1, "with room for both, it rings out");
+        check(u.leaving() == 1, "and rings out");
     }
 
     // Switching plugins and wires off and on (RFC 0011's full scene model): an off plugin takes

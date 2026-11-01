@@ -94,7 +94,8 @@ namespace oscairn::standalone
         const SoundPickerState& soundPicker() const { return soundPicker_; }
         const std::string& soundMessage() const { return soundMessage_; }
         bool controlReady() const { return !soundJob_.valid(); }
-        bool soundBusy() const { return pendingSound_.has_value() || (soundJob_.valid() && soundJobKind_!=SoundAction::Refresh); }
+        // Preparing the next Performance ahead is not busy: anything asked meanwhile waits for it, or replaces it while it waits.
+        bool soundBusy() const { return (pendingSound_ && pendingSound_->kind!=SoundAction::PrepareFromLibrary) || (soundJob_.valid() && soundJobKind_!=SoundAction::Refresh && soundJobKind_!=SoundAction::PrepareFromLibrary); }
         bool canPrepareSounds() const { return !socketPath_.empty(); }
         void soundAction(SoundAction action);
         std::function<void()> openBrowser;

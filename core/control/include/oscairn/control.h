@@ -121,6 +121,11 @@ namespace oscairn
         // edited part's when editedSounds), or a Sound; every sample they use. Refuses a file that exists.
         virtual std::vector<std::string> exportLibraryItem(const std::string& id, const std::string& file, bool editedSounds = false) = 0;
         virtual void loadPerformance(const std::string& directory) = 0;
+        // The next Performance, read and its plugins loaded off the audio thread while this one
+        // plays (RFC 0021), so loading it then only publishes it. False: it would not fit beside
+        // what plays now (RFC 0025), and loads when loaded, as a cut. Empty: lets go of the
+        // prepared one; preparing another or loading any other Performance does too.
+        virtual bool preparePerformance(const std::string& directory) = 0;
         // The Performance's own details (format 3's info block, RFC 0021): saved with it, read
         // by the library. The ID is made on the first save and kept.
         // color: "#rrggbb", or empty for none; how lists and setlists show it.

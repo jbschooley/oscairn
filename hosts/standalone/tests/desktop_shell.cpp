@@ -315,6 +315,8 @@ int main(int argc, char** argv)
                 // Played in order: each opens its Performance.
                 setlist->go(0);
                 check(wait([&] { return !engine.soundBusy() && engine.performanceInfo() && engine.performanceInfo()->name == "Bass Split"; }), "the first entry opened");
+                // The next is prepared meanwhile (RFC 0021); done, it said nothing over the opening.
+                check(wait([&] { return engine.controlReady(); }) && engine.soundMessage() == "Performance opened. Press Play or play a note.", "the next prepared: " + engine.soundMessage());
                 setlist->step(1);
                 check(setlist->current() == 1 && wait([&] { return !engine.soundBusy() && engine.performanceInfo() && engine.performanceInfo()->name == "Verse Keys"; }), "Next opened the second");
                 // Its own color for an entry, over the Performance's.

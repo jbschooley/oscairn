@@ -100,11 +100,13 @@ never write the user's data folder.
 - **Admitted:** a Performance over the budget is refused, and so is a plugin that would take the
   open one over it (it is unloaded again), each saying what is needed, what is allowed and the
   three heaviest plugins. A Performance that fits alone but not beside the one playing (and any
-  still ringing out) opens as a cut; the desktop says so after opening it.
+  still ringing out) opens as a cut; the desktop says so after opening it. Nor is it prepared
+  ahead (RFC 0021): `preparePerformance` returns false, and the Setlist app says it will open
+  when cued.
 
 `control-parts` checks a plugin measured while it plays and known to the next session, a plugin
-and a Performance refused, and a change that becomes a cut when both would not fit and rings out
-when they would. `desktop-profile` checks the profile's budget figures.
+and a Performance refused, a change that becomes a cut when both would not fit and rings out
+when they would, and a Performance prepared ahead only when both would fit. `desktop-profile` checks the profile's budget figures.
 
 ## Open questions
 
