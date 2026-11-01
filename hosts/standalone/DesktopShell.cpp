@@ -25,13 +25,15 @@ namespace oscairn::standalone
     bool touchSized(InputMode mode) { return mode == InputMode::Touch; }
     juce::String inputModeName(InputMode mode) { return mode == InputMode::Touch ? "Touch" : mode == InputMode::Mouse ? "Keyboard and mouse" : "Automatic"; }
 
-    SequencerPane::SequencerPane(Engine& engine) : engine_(engine), screen_(engine)
+    SequencerPane::SequencerPane(Engine& engine, bool transport) : engine_(engine), screen_(engine)
     {
         play_.onClick = [this] { engine_.setPlaying(true); };
         stop_.onClick = [this] { engine_.setPlaying(false); };
         sync_.setTooltip("Start, stop and follow tempo from an external MIDI clock");
         sync_.onClick = [this] { engine_.setFollowMidiClock(sync_.getToggleState()); };
-        for(auto* c : std::initializer_list<juce::Component*>{&play_, &stop_, &sync_, &screen_}) addAndMakeVisible(c);
+        for(auto* c : std::initializer_list<juce::Component*>{&play_, &stop_, &sync_}) addChildComponent(c);
+        for(auto* c : std::initializer_list<juce::Component*>{&play_, &stop_, &sync_}) c->setVisible(transport);
+        addAndMakeVisible(screen_);
         refresh();
         startTimer(200);
     }
@@ -47,11 +49,14 @@ namespace oscairn::standalone
     {
         const int control = desktopMode(*this) == 2 ? 44 : 30;
         auto area = getLocalBounds().reduced(16, 12);
-        auto bar = area.removeFromTop(control);
-        play_.setBounds(bar.removeFromLeft(88)); bar.removeFromLeft(6);
-        stop_.setBounds(bar.removeFromLeft(88)); bar.removeFromLeft(16);
-        sync_.setBounds(bar.removeFromLeft(180));
-        area.removeFromTop(12);
+        if(play_.isVisible())
+        {
+            auto bar = area.removeFromTop(control);
+            play_.setBounds(bar.removeFromLeft(88)); bar.removeFromLeft(6);
+            stop_.setBounds(bar.removeFromLeft(88)); bar.removeFromLeft(16);
+            sync_.setBounds(bar.removeFromLeft(180));
+            area.removeFromTop(12);
+        }
         screen_.setBounds(area);
     }
 
@@ -223,6 +228,9 @@ namespace oscairn::standalone
     {
         setDesktopMode(*this, modeNumber(mode));
         undo_.setTooltip("Undo"); redo_.setTooltip("Redo");
+        home_.setTooltip("Home: the apps");
+        home_.onClick = [this] { if(onHome) juce::MessageManager::callAsync(onHome); }; // going Home replaces this view
+        addChildComponent(home_);
         undo_.onClick = [this] { engine_.edit([](Control& c) { c.undo(); }); };
         redo_.onClick = [this] { engine_.edit([](Control& c) { c.redo(); }); };
         tempo_.setRange(40, 240, .1);
@@ -385,6 +393,8 @@ namespace oscairn::standalone
         for(auto* l : {&tempoLabel_, &sceneLabel_, &status_}) l->setFont(juce::FontOptions(textSize(TextRole::Small, mode)));
         auto area = getLocalBounds();
         auto bar = area.removeFromTop(m.control + 2 * m.gap).reduced(m.gap * 2, m.gap);
+        home_.setVisible(onHome != nullptr);
+        if(onHome) { home_.setBounds(bar.removeFromLeft(m.control)); bar.removeFromLeft(m.gap * 2); }
         auto labeled = [&](juce::Label& label, juce::Component& c, int width) {
             label.setBounds(bar.removeFromLeft(juce::GlyphArrangement::getStringWidthInt(label.getFont(), label.getText()) + 10));
             c.setBounds(bar.removeFromLeft(width));

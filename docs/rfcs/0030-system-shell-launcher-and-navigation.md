@@ -12,7 +12,13 @@ and the web UI ([RFC 0026](0026-network-control-and-web-ui.md)).
 Checked when built and tested; the sections below say how.
 
 - [ ] 1. The shell: the top bar, Home, Back and the running apps, on the Panel surface in the desktop app
+      (built 2026-11-01: Home first in every window; on a panel, each app in a frame whose top bar
+      has its name and a Home icon unless a button is bound to `home`; layout buttons `home` and
+      `back`, Back going Home for now; the desktop's Performance app has Home in its toolbar.
+      Not yet: the rest of the top bar, the running apps)
 - [ ] 2. The launcher as an app answering `oscairn.home`, with home cards, and a fallback the shell draws itself
+      (built: a launcher inside the app, `Launcher.cpp`, with the profile's apps as tiles and a
+      line of state each; not yet an app of its own, no cards)
 - [ ] 3. The flow language's parts: sheets, dialogs, menus, toasts and banners, shared by every app
 - [ ] 4. Physical buttons: each profile's buttons opening actions, and the top bar showing only what they lack
 - [ ] 5. A second launcher installed and chosen; a profile that fixes its launcher

@@ -19,6 +19,7 @@
 #include "Engine.h"
 #include "Layout.h"
 #include "LibraryPane.h"
+#include "Launcher.h"
 #include "Panel.h"
 #include "Profile.h"
 #include "PluginBrowser.h"
@@ -112,6 +113,9 @@ namespace oscairn::standalone
             engine_.openBrowser=[this]{showLibrary();};
             engine_.openPads=[this]{showPads();};
             engine_.openParts=[this]{showParts();};
+            engine_.goHome=[this]{showHome();};
+            engine_.goBack=[this]{showHome();}; // shortcut: every app's top screen is one level down; deeper levels go back inside their apps
+
             // What the built-in apps offer each other (RFC 0022): the Library picks, the Setlist takes.
             actions_.offer(pickPerformance,"Library",[this](const std::string&,Actions::Answer answer){showPicker(std::move(answer),"performance");});
             actions_.offer(pickSound,"Library",[this](const std::string&,Actions::Answer answer){showPicker(std::move(answer),"sound");});
@@ -125,6 +129,8 @@ namespace oscairn::standalone
             engine_.openBrowser={};
             engine_.openPads={};
             engine_.openParts={};
+            engine_.goHome={};
+            engine_.goBack={};
 #if JUCE_MAC
             juce::MenuBarModel::setMacMainMenu( nullptr );
 #else
@@ -136,10 +142,10 @@ namespace oscairn::standalone
         {
             pads_.reset();parts_.reset();
             layout_ = layout;
-            if( layout.surface == Layout::Surface::Desktop )
-                setContentOwned( new DesktopShell( engine_, scanner(), inputMode_ ), false );
-            else
+            // Home first (RFC 0030): the window's content on the desktop, over a panel's screen.
+            if( layout.surface != Layout::Surface::Desktop )
                 setContentOwned( new Panel( engine_, layout ), false );
+            showHome();
             setName( "Oscairn - " + juce::String( layout.name ) );
 
             // Start at the layout's design size (one design unit per pixel) if it fits,
@@ -184,6 +190,31 @@ namespace oscairn::standalone
         }
 
         const Layout& layout() const { return layout_; }
+
+        // Home (RFC 0030): the launcher, as the window's content on the desktop, over the screen
+        // on a panel. What it replaces goes after it is in place: a panel points at its overlay.
+        void showHome()
+        {
+            if( auto* p = panel() )
+            {
+                if( !launcher_ ) { launcher_ = std::make_unique<Launcher>( engine_, launcherApps() ); setDesktopMode( *launcher_, 2 ); }
+                p->overlay( launcher_.get() );
+                parts_.reset(); frame_.reset(); panelApp_.reset();
+                return;
+            }
+            auto* home = new Launcher( engine_, launcherApps() );
+            setDesktopMode( *home, inputMode_ == InputMode::Touch ? 2 : 1 );
+            setContentOwned( home, false );
+        }
+        // The Performance app: playing and editing the open Performance. Its live-controls view
+        // is not built yet, so it opens the parts editor.
+        void openPerformance()
+        {
+            if( panel() ) { showParts(); return; }
+            auto* shell = new DesktopShell( engine_, scanner(), inputMode_ );
+            shell->onHome = [this] { showHome(); };
+            setContentOwned( shell, false );
+        }
         DesktopShell* shell() const { return dynamic_cast<DesktopShell*>( getContentComponent() ); }
 
         juce::StringArray getMenuBarNames() override { return { "Performance", "Edit", "View", "Plugins", "Appearance", "Apps", "Part" }; }
@@ -217,6 +248,8 @@ namespace oscairn::standalone
                 return menu;}
             // The apps this device has (its profile's).
             if(index==5){
+                menu.addItem(8003,"Home");menu.addSeparator();
+                menu.addItem(8004,"Performance");
                 if(profile_.offers("oscairn.groovebox"))menu.addItem(8000,"Groovebox");
                 if(profile_.offers("oscairn.library"))menu.addItem(8001,"Library");
                 if(profile_.offers("oscairn.setlist"))menu.addItem(8002,"Setlist");
@@ -253,9 +286,11 @@ namespace oscairn::standalone
                     });return;
             }
             if(id>=7000 && id<=7002){inputMode_=InputMode(id-7000);writeInputMode(theme_.configuration(),inputMode_);if(auto* s=shell())s->setInputMode(inputMode_);return;}
-            if(id==8000){showGroovebox();return;}
-            if(id==8001){showApp(libraryApp_,"Library",[this]{return libraryPane(LibraryPane::Mode::Play);},900,700);return;}
-            if(id==8002){setlist();showApp(setlist_,"Setlist",nullptr,0,0);return;}
+            if(id==8000){openGroovebox();return;}
+            if(id==8001){showLibraryApp();return;}
+            if(id==8002){showSetlist();return;}
+            if(id==8003){showHome();return;}
+            if(id==8004){openPerformance();return;}
             if(id==5002 || id==5003){saveToLibrary(id==5003);return;}
             if(id==5004){importPerformance();return;}
             if(id==5005){exportPerformance();return;}
@@ -284,6 +319,60 @@ namespace oscairn::standalone
 
     private:
         void showGroovebox(){showApp(groovebox_,"Groovebox",[this]{return new SequencerPane(engine_);},1100,760);}
+        Panel* panel() const { return dynamic_cast<Panel*>( getContentComponent() ); }
+        bool layoutBinds( const std::string& bind ) const
+        {
+            return std::any_of( layout_.controls.begin(), layout_.controls.end(), [&]( const Layout::Control& c ) { return c.bind == bind; } );
+        }
+        // An app on a panel's screen, in its frame: Home on screen only where no button is Home.
+        // The frame goes before the app it shows, and both after the new ones are in place.
+        void openOnScreen( const juce::String& name, juce::Component& app, std::unique_ptr<juce::Component> owned )
+        {
+            auto frame = std::make_unique<AppFrame>( name, app, !layoutBinds( "home" ), [this] { showHome(); } );
+            setDesktopMode( *frame, 2 ); setDesktopMode( app, 2 );
+            panel()->overlay( frame.get() );
+            parts_.reset();
+            frame_ = std::move( frame );
+            panelApp_ = std::move( owned );
+        }
+        // The apps Home offers: the Performance always, the rest as the profile has them.
+        std::vector<Launcher::App> launcherApps()
+        {
+            std::vector<Launcher::App> apps;
+            apps.push_back( { "Performance", "piano", [this] {
+                const auto info = engine_.performanceInfo();
+                return info ? juce::String::fromUTF8( info->name.empty() ? "Untitled" : info->name.c_str() ) + ": play or edit it" : juce::String(); },
+                [this] { openPerformance(); } } );
+            if( profile_.offers( "oscairn.library" ) )
+                apps.push_back( { "Library", "library-big", [this] {
+                    Control::LibraryQuery q; q.limit = 1; q.kind = "performance";
+                    const auto performances = engine_.library( q ); q.kind = "sound"; const auto sounds = engine_.library( q );
+                    if( !performances || !sounds ) return juce::String();
+                    auto count = []( uint32_t n, const char* one, const char* many ) { return juce::String( int( n ) ) + " " + ( n == 1 ? one : many ); };
+                    return count( performances->total, "Performance", "Performances" ) + ", " + count( sounds->total, "Sound", "Sounds" ); },
+                    [this] { showLibraryApp(); } } );
+            if( profile_.offers( "oscairn.setlist" ) )
+                apps.push_back( { "Setlist", "list-music", [] { return juce::String( "Songs in order, for the stage" ); }, [this] { showSetlist(); } } );
+            if( profile_.offers( "oscairn.groovebox" ) )
+                apps.push_back( { "Groovebox", "layout-grid", [] { return juce::String( "Patterns and steps" ); }, [this] { openGroovebox(); } } );
+            return apps;
+        }
+        void showLibraryApp()
+        {
+            if( panel() ) { std::unique_ptr<juce::Component> pane( libraryPane( LibraryPane::Mode::Play ) ); auto& app = *pane; openOnScreen( "Library", app, std::move( pane ) ); return; }
+            showApp( libraryApp_, "Library", [this] { return libraryPane( LibraryPane::Mode::Play ); }, 900, 700 );
+        }
+        void showSetlist()
+        {
+            if( panel() ) { openOnScreen( "Setlist", setlist(), nullptr ); return; }
+            if( !setlist_ ) { setlist_ = std::make_unique<AppWindow>( "Setlist", nullptr, 700, 760 ); setlist_->setContentNonOwned( &setlist(), false ); }
+            showApp( setlist_, "Setlist", nullptr, 0, 0 );
+        }
+        void openGroovebox()
+        {
+            if( panel() ) { auto pane = std::make_unique<SequencerPane>( engine_, false ); auto& app = *pane; openOnScreen( "Groovebox", app, std::move( pane ) ); return; } // a panel has Play and Stop
+            showGroovebox();
+        }
         // An app's window, made the first time; it keeps its state while hidden.
         void showApp(std::unique_ptr<AppWindow>& window,const juce::String& name,std::function<juce::Component*()> make,int width,int height)
         {
@@ -294,8 +383,8 @@ namespace oscairn::standalone
         // The Setlist app, made hidden when another app sends it a Performance before it was opened.
         SetlistPane& setlist()
         {
-            if(!setlist_){setlist_=std::make_unique<AppWindow>("Setlist",new SetlistPane(engine_,actions_),700,760);setDesktopMode(*setlist_->getContentComponent(),inputMode_==InputMode::Touch?2:1);}
-            return *static_cast<SetlistPane*>(setlist_->getContentComponent());
+            if(!setlistPane_){setlistPane_=std::make_unique<SetlistPane>(engine_,actions_);setDesktopMode(*setlistPane_,inputMode_==InputMode::Touch?2:1);}
+            return *setlistPane_;
         }
         // A Library pane auditioning Sounds in the part the Part view shows.
         LibraryPane* libraryPane(LibraryPane::Mode mode,const std::string& kind="performance")
@@ -464,13 +553,13 @@ namespace oscairn::standalone
         static std::string scanner() { return juce::File::getSpecialLocation( juce::File::currentExecutableFile ).getSiblingFile( "oscairn-plugin-scan" ).getFullPathName().toStdString(); }
         void showParts()
         {
+            if( !panel() && !shell() ) openPerformance(); // from Home: the Performance app has them
             if( auto* s = shell() ) { s->showTab( DesktopShell::Tab::Part ); return; } // the desktop has them in its window
             parts_ = std::make_unique<PartsView>( engine_, scanner() );
             setDesktopMode( *parts_, 2 ); // a device's screen: the type scale and targets for touch
             parts_->onDone = [this] { juce::MessageManager::callAsync( [safe = juce::Component::SafePointer<Window>( this )] {
                 if( !safe ) return;
-                if( auto* panel = dynamic_cast<Panel*>( safe->getContentComponent() ) ) panel->overlay( nullptr );
-                safe->parts_.reset();
+                safe->showHome(); // done editing: back Home, which lets go of the parts views
             } ); };
             // Over the device's screen, so its knobs and buttons stay in reach, as on the hardware.
             if( auto* panel = dynamic_cast<Panel*>( getContentComponent() ) ) { panel->overlay( parts_.get() ); return; }
@@ -510,6 +599,10 @@ namespace oscairn::standalone
         juce::File plugins_;
         std::unique_ptr<LibraryWindow> library_;
         Actions actions_;
+        std::unique_ptr<SetlistPane> setlistPane_; // before its window, which shows it without owning it
+        std::unique_ptr<Launcher> launcher_;       // Home on a panel
+        std::unique_ptr<juce::Component> panelApp_; // the app on a panel's screen, if it owns it,
+        std::unique_ptr<AppFrame> frame_;           // and its frame, which goes first
         std::unique_ptr<AppWindow> groovebox_, libraryApp_, setlist_, picker_;
         Actions::Answer pickerAnswer_;
         std::unique_ptr<PadEditor> pads_;
@@ -599,6 +692,7 @@ namespace oscairn::standalone
                 if( const auto view = argument( args, "--view" ); view.isNotEmpty() )
                 {
                     DesktopShell::Tab tab;
+                    if( !window_->shell() ) window_->openPerformance(); // from Home, as a tap on it would
                     if( !window_->shell() || !DesktopShell::tabNamed( view, tab ) )
                         throw std::invalid_argument( "--view needs the desktop layout and one of Part, Mixer, Routing, Controls" );
                     window_->shell()->showTab( tab );

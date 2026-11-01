@@ -62,7 +62,13 @@ authoritative.
   `square-arrow-out-up-right.svg` `968a03c02ab9ffbb4e92de4c5d2e75c7140e8c63752a63258527e764ff214998`,
   `star.svg` `ebc8483f1006df4cc16551ccbefc511e3cca2e17c7f3a727842e422fdac7a9b0`,
   `tags.svg` `724af60488ee052f78f8b3a5622adb06e8c30abea41c9c48a718f808a7bcdc4a`,
-  `undo-2.svg` `63030cafa632c7cce406680b920d286696f136b3ea58218bdb21b6897a31eea9`.
+  `undo-2.svg` `63030cafa632c7cce406680b920d286696f136b3ea58218bdb21b6897a31eea9`,
+  `house.svg` `9a58539fef2871ca76cae55ae876273db11caa5d3ae9e92630ff22fc00dd9feb`,
+  `arrow-left.svg` `36e308511d88b74cf4f32714a12a7259b60c0db0b62bfb0c93fb58e8cc326161`,
+  `piano.svg` `1faf752aab14fbc3ac73fd8e4c00b50139b6f2399c3572beb1eab842ec891a10`,
+  `library-big.svg` `731e42d894afa7ae0fb3fa659152a7d4e9db9f2ec0a05472cd6aeeb1e1563c42`,
+  `list-music.svg` `44294e91e13c683726ff88b8be763f08ad005d2dc37574b6f025d56339d8e85d`,
+  `layout-grid.svg` `9b4aaf142b53bb72cb0405a64486756ad96463555dd9d3ec5da4f7cef46b4345`.
 
 ## Sample decoding
 

@@ -12,6 +12,7 @@
 //   oscairn_desktop_shell_test PLUGIN_DIR SCANNER THEMES [SNAPSHOTS [PLUGIN.clap...]]
 #include "../DesktopShell.h"
 #include "../LibraryPane.h"
+#include "../Launcher.h"
 #include "../Setlist.h"
 #include "../Panel.h"
 #include "../ParameterGrid.h"
@@ -134,6 +135,18 @@ int main(int argc, char** argv)
                     juce::PNGImageFormat().writeImageToStream(c.createComponentSnapshot(c.getLocalBounds()), stream);
                 };
                 theme.apply("oscairn-dark");
+                // Home (RFC 0030): the apps as tiles, each opening its app once the click is done.
+                {
+                    std::string opened;
+                    standalone::Launcher home(engine, {{"Performance", "piano", [] { return juce::String("Untitled: play or edit it"); }, [&] { opened = "Performance"; }},
+                                                       {"Library", "library-big", {}, [&] { opened = "Library"; }}});
+                    standalone::setDesktopMode(home, 1); home.setSize(1280, 800);
+                    check(home.apps() == 2 && home.name(1) == "Library", "Home lists its apps");
+                    home.open(1);
+                    check(opened.empty(), "an app opens after the click, not during it");
+                    check(wait([&] { return opened == "Library"; }), "a tile opens its app");
+                    snapshot(home, "launcher");
+                }
                 engine.edit([](Control& c) {
                     c.setPerformanceInfo({"", "Verse Keys", "for the verse", {"keys", "live"}, "#3e63dd"});
                     c.savePerformanceToLibrary("");

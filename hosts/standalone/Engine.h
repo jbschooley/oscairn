@@ -51,6 +51,7 @@ namespace oscairn::standalone
         const std::string& editError() const {return editError_;}
         const std::string& pluginDir() const {return pluginDir_;}
         std::function<void()> openParts;
+        std::function<void()> goHome, goBack; // the shell's (RFC 0030), for a panel's buttons
         // Controls (RFC 0011's control tree) by name, for knobs bound as "control:NAME". The
         // values are read once per timer tick.
         bool hasControl(const std::string& name) const;

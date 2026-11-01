@@ -25,7 +25,7 @@ namespace oscairn::standalone
     class SequencerPane : public juce::Component, private juce::Timer
     {
     public:
-        explicit SequencerPane(Engine& engine);
+        explicit SequencerPane(Engine& engine, bool transport = true); // transport: Play, Stop and clock on screen
         void refresh();
         void resized() override;
     private:
@@ -47,6 +47,7 @@ namespace oscairn::standalone
         DesktopShell(Engine& engine, const std::string& scanner, InputMode mode);
         ~DesktopShell() override;
 
+        std::function<void()> onHome; // Home (RFC 0030): shown when set
         void setInputMode(InputMode mode);
         InputMode inputMode() const { return mode_; }
         void showTab(Tab tab);
@@ -79,7 +80,7 @@ namespace oscairn::standalone
         int ticks_ = 0;
 
         // The toolbar.
-        IconButton undo_{IconButton::Glyph::Undo, "Undo"}, redo_{IconButton::Glyph::Redo, "Redo"};
+        IconButton undo_{IconButton::Glyph::Undo, "Undo"}, redo_{IconButton::Glyph::Redo, "Redo"}, home_{IconButton::Glyph::Home, "Home"};
         juce::Slider tempo_{juce::Slider::LinearBar, juce::Slider::TextBoxLeft};
         juce::Label tempoLabel_{{}, "Tempo"}, sceneLabel_{{}, "Scene"};
         juce::ComboBox sceneBox_;

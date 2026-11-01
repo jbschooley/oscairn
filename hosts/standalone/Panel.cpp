@@ -394,6 +394,9 @@ namespace oscairn::standalone
             auto b = std::make_unique<juce::TextButton>( c.label );
             if(c.bind.empty())b->setEnabled(false);
             if(c.bind=="plugins")b->onClick=[this]{if(engine_.openBrowser)engine_.openBrowser();};
+            // The shell's own (RFC 0030): Home and Back.
+            else if(c.bind=="home")b->onClick=[this]{if(engine_.goHome)engine_.goHome();};
+            else if(c.bind=="back")b->onClick=[this]{if(engine_.goBack)engine_.goBack();};
             else if( c.bind == "play" )
                 b->onClick = [this] { engine_.setPlaying( true ); };
             else if( c.bind == "stop" )
