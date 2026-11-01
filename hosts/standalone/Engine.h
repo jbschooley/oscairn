@@ -57,11 +57,13 @@ namespace oscairn::standalone
         bool hasControl(const std::string& name) const;
         double controlValue(const std::string& name) const;
         void setControl(const std::string& name,double value);
+        const std::vector<Macro>& controls() const {return macros_;}
+        void setControl(uint32_t id,double value);
         void selectTrack(uint32_t track){sequenceTrack_=std::min(track,1u);}
         // The row selected on screen (RFC 0019): the parameters a device's knobs bound "row:N"
         // play, in order, and how many such knobs the device has and on which edge of its
         // screen they sit (none on the desktop). Main thread.
-        struct RowParam { std::string node; uint32_t param = 0; std::string name; };
+        struct RowParam { std::string node; uint32_t param = 0; std::string name; uint32_t control = 0; }; // control: a control of the tree (RFC 0011) instead of a parameter
         enum class Edge { Bottom, Top, Left, Right };
         void setRow(std::vector<RowParam> row) { row_ = std::move(row); }
         const std::vector<RowParam>& row() const { return row_; }

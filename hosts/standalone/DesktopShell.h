@@ -5,6 +5,7 @@
 #include "Icons.h"
 #include "PartsModel.h"
 #include "PartsView.h"
+#include "PlayView.h"
 #include "Screen.h"
 #include "Theme.h"
 
@@ -37,13 +38,13 @@ namespace oscairn::standalone
     };
 
     /// The Desktop surface (RFC 0019): the desktop app's own window rather than a device's
-    /// panel. A toolbar with the tempo, scenes and undo; the parts and buses down the left with
-    /// their meters; tabs for the selected part, the Mixer, Routing and Controls, each of which
-    /// can also open in a window of its own.
+    /// panel. A toolbar with the tempo, scenes and undo; Play (RFC 0011) under it, first; and
+    /// Edit's: the parts and buses down the left with their meters, and tabs for the selected
+    /// part, the Mixer, Routing and Controls, each of which can also open in a window of its own.
     class DesktopShell : public juce::Component, private juce::Timer
     {
     public:
-        enum class Tab { Part, Mixer, Routing, Controls };
+        enum class Tab { Part, Mixer, Routing, Controls, Play }; // Play is not one of Edit's tabs
         DesktopShell(Engine& engine, const std::string& scanner, InputMode mode);
         ~DesktopShell() override;
 
@@ -53,6 +54,7 @@ namespace oscairn::standalone
         InputMode inputMode() const { return mode_; }
         void showTab(Tab tab);
         uint32_t selectedPart() const { return selected_; } // the part the Part tab shows
+        PlayView& play() { return play_; }
         void detach(Tab tab); // the tab's view in a window of its own, beside this one
         static bool tabNamed(const juce::String& name, Tab& tab);
 
@@ -72,7 +74,7 @@ namespace oscairn::standalone
         Engine& engine_;
         std::string scanner_;
         InputMode mode_;
-        Tab tab_ = Tab::Part;
+        Tab tab_ = Tab::Play, editTab_ = Tab::Part; // editTab_: the tab Edit goes to
         uint32_t selected_ = 0; // the part the Part tab shows
         PartsState state_;
         std::map<uint32_t, std::vector<double>> meters_; // per part, per channel
@@ -83,7 +85,7 @@ namespace oscairn::standalone
         // The toolbar.
         IconButton undo_{IconButton::Glyph::Undo, "Undo"}, redo_{IconButton::Glyph::Redo, "Redo"}, home_{IconButton::Glyph::Home, "Home"};
         juce::Label performance_;              // the open Performance's name
-        juce::TextButton save_{"Save"};
+        juce::TextButton save_{"Save"}, edit_{"Edit"}; // Edit, or Play from Edit's views
         juce::Slider tempo_{juce::Slider::LinearBar, juce::Slider::TextBoxLeft};
         juce::Label tempoLabel_{{}, "Tempo"}, sceneLabel_{{}, "Scene"};
         juce::ComboBox sceneBox_;
@@ -94,6 +96,7 @@ namespace oscairn::standalone
         std::unique_ptr<PartList> list_;
         juce::TextButton addPart_{"+ Part"}, addBus_{"+ Bus"};
         PartsView parts_;
+        PlayView play_;
         std::vector<std::unique_ptr<juce::DocumentWindow>> windows_; // detached tabs
     };
 }

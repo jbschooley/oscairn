@@ -89,6 +89,17 @@ void drawListRow(juce::Graphics& g,juce::Rectangle<int> r,int index,juce::Colour
         case ThemeStyle::Rows::Fill:break;
     }
 }
+void drawInked(juce::Graphics& g,const juce::String& s,juce::Rectangle<int> r,const juce::Font& font,juce::Justification h) {
+    // Measured from the outlines: a glyph arrangement's boxes are the font's whole line height.
+    auto inkOf=[](const juce::GlyphArrangement& a){juce::Path p;a.createPath(p);return p.getBounds();};
+    juce::GlyphArrangement mark;mark.addLineOfText(font,s==s.toUpperCase()?"H":"x",0,0);
+    const float top=inkOf(mark).getY();
+    juce::GlyphArrangement line;line.addCurtailedLineOfText(font,s,0,0,float(r.getWidth()),true);
+    const auto ink=inkOf(line);
+    const float x=h.testFlags(juce::Justification::horizontallyCentred)?r.toFloat().getCentreX()-ink.getCentreX():h.testFlags(juce::Justification::right)?float(r.getRight())-ink.getRight():float(r.getX());
+    line.moveRangeOfGlyphs(0,-1,x,r.toFloat().getCentreY()-top/2);
+    line.draw(g);
+}
 bool darkTheme(){return ink(Ink::Background).getPerceivedBrightness()<.5f;}
 float buttonRadius(float height){return current.style.buttons==ThemeStyle::Buttons::Pill?height/2:current.radius;}
 // Pill themes round single-line fields like their buttons; a taller field (several lines) keeps the radius plus 3.

@@ -71,8 +71,8 @@ namespace oscairn::standalone
                 // The Nth parameter of the row selected on screen, whatever it is now.
                 row_ = std::atoi( c.bind.c_str() + 4 );
                 layoutLabel_ = label_;
-                slider_.textFromValueFunction = [this]( double v ) { return node_.empty() ? juce::String() : juce::String( engine_.paramText( node_, param_, v ) ); };
-                slider_.onValueChange         = [this] { if( !node_.empty() ) engine_.setParam( node_, param_, slider_.getValue() ); };
+                slider_.textFromValueFunction = [this]( double v ) { return rowControl_ ? juce::String( juce::roundToInt( v * 100 ) ) + "%" : node_.empty() ? juce::String() : juce::String( engine_.paramText( node_, param_, v ) ); };
+                slider_.onValueChange         = [this] { if( rowControl_ ) engine_.setControl( rowControl_, slider_.getValue() ); else if( !node_.empty() ) engine_.setParam( node_, param_, slider_.getValue() ); };
                 slider_.onDragStart           = [this] { if( !node_.empty() ) engine_.paramGesture( node_, param_, true ); };
                 slider_.onDragEnd             = [this] { if( !node_.empty() ) engine_.paramGesture( node_, param_, false ); };
                 refresh();
@@ -110,7 +110,18 @@ namespace oscairn::standalone
                 // Follow the row: a new parameter takes its range and name; none disables it.
                 const auto& row = engine_.row();
                 const auto* bound = size_t( row_ ) <= row.size() ? &row[size_t( row_ - 1 )] : nullptr;
-                if( !bound ) { node_.clear(); slider_.setEnabled( false ); slider_.updateText(); if( label_ != layoutLabel_ ) { label_ = layoutLabel_; repaint(); } return; }
+                if( !bound ) { node_.clear(); rowControl_ = 0; slider_.setEnabled( false ); slider_.updateText(); if( label_ != layoutLabel_ ) { label_ = layoutLabel_; repaint(); } return; }
+                // A control of the tree (Play's knobs) rather than a parameter.
+                if( bound->control )
+                {
+                    if( bound->control != rowControl_ ) { rowControl_ = bound->control; node_.clear(); label_ = bound->name; slider_.setRange( 0.0, 1.0, 0.0 ); repaint(); }
+                    const auto& controls = engine_.controls();
+                    const auto it = std::find_if( controls.begin(), controls.end(), [&]( const Macro& m ) { return m.id == rowControl_; } );
+                    slider_.setEnabled( it != controls.end() );
+                    if( it != controls.end() ) { slider_.setValue( it->value, juce::dontSendNotification ); slider_.updateText(); }
+                    return;
+                }
+                rowControl_ = 0;
                 if( bound->node != node_ || bound->param != param_ )
                 {
                     node_ = bound->node; param_ = bound->param; label_ = bound->name; repaint();
@@ -167,6 +178,7 @@ namespace oscairn::standalone
         std::string   label_, node_, pluginId_, control_, layoutLabel_;
         uint32_t      param_ = 0;
         int           row_ = 0; // bound "row:N": the Nth parameter of the row on screen
+        uint32_t      rowControl_ = 0; // or, there, a control of the tree
         bool          tempo_ = false, available_ = false;
         juce::Slider  slider_;
     };

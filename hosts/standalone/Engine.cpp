@@ -123,6 +123,11 @@ namespace oscairn::standalone
         for(auto& m:macros_)if(m.name==name)m.value=value; // shown at once
         edit([name,value](Control& c){for(const auto& m:c.graphState().macros)if(m.name==name){c.setMacro(m.id,value);return;}});
     }
+    void Engine::setControl(uint32_t id,double value)
+    {
+        for(auto& m:macros_)if(m.id==id)m.value=value; // shown at once
+        edit([id,value](Control& c){c.setMacro(id,value);});
+    }
     void Engine::edit(std::function<void(Control&)> change)
     {
         command([this,change=std::move(change)]{

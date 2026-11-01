@@ -15,6 +15,7 @@
 #include "../Launcher.h"
 #include "../Setlist.h"
 #include "../Panel.h"
+#include "../PlayView.h"
 #include "../ParameterGrid.h"
 #include "../ZoneEditor.h"
 #include "oscairn/local_socket.h"
@@ -88,6 +89,7 @@ int main(int argc, char** argv)
                 const auto knob = c.addMacro("Brightness");
                 MacroTarget level; level.kind = MacroTarget::Kind::PartLevel; level.part = strings;
                 c.setMacroTargets(knob, {level});
+                c.addMacro("Swell"); c.addMacro("Drive", piano); // the Performance's second control, and the piano's own
             });
             for(int i = 0; i < 500 && engine.graph().parts.size() < 5; ++i) juce::MessageManager::getInstance()->runDispatchLoopUntil(10);
             play = true;
@@ -109,7 +111,7 @@ int main(int argc, char** argv)
                 bool moving = false;
                 for(int i = 0; i < 200 && !moving; ++i) { juce::MessageManager::getInstance()->runDispatchLoopUntil(10); for(const auto& m : engine.meters()) moving |= m.peak > 0; }
                 check(moving, "the parts' meters move while notes play");
-                for(const char* name : {"Part", "Mixer", "Routing", "Controls"})
+                for(const char* name : {"Play", "Part", "Mixer", "Routing", "Controls"})
                 {
                     standalone::DesktopShell::Tab tab{};
                     check(standalone::DesktopShell::tabNamed(name, tab), std::string("a tab named ") + name);
@@ -158,6 +160,26 @@ int main(int argc, char** argv)
                     shown = 0; for(auto* c : bar.getChildren()) shown += c->isVisible() ? 1 : 0;
                     check(shown == 2 + 3 + 1, "three actions and the menu for the fourth: " + std::to_string(shown));
                     snapshot(bar, "top-bar");
+                }
+                // Play (RFC 0011), the Performance app's first view, on a device's screen under the top bar.
+                {
+                    standalone::PerformanceApp app(engine, argv[2]);
+                    standalone::AppFrame frame(engine, "Performance", app, {});
+                    standalone::setDesktopMode(frame, 2); frame.setSize(1024, 600);
+                    app.attach(frame.bar(), [] {});
+                    auto& play = app.play();
+                    check(play.isVisible() && !app.editing(), "the Performance app opens in Play");
+                    auto names = [&] { std::string out; for(const auto& m : play.knobControls()) out += m.name + ","; return out; };
+                    check(names() == "Brightness,Swell,", "the knobs follow the Performance's controls: " + names());
+                    play.select(piano); play.showPartControls(true);
+                    check(play.showsPartControls() && names() == "Drive,", "switched, the selected part's own: " + names());
+                    play.showPartControls(false);
+                    for(int i = 0; i < 30; ++i) juce::MessageManager::getInstance()->runDispatchLoopUntil(10); // its meters' first readings
+                    snapshot(frame, "play-panel");
+                    app.edit(true);
+                    check(app.editing() && !play.isVisible(), "Edit shows the parts views");
+                    app.edit(false);
+                    check(!app.editing(), "and Play again");
                 }
                 engine.edit([](Control& c) {
                     c.setPerformanceInfo({"", "Verse Keys", "for the verse", {"keys", "live"}, "#3e63dd"});

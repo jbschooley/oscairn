@@ -149,7 +149,10 @@ toolbar has a Home button), and the other apps open in their own windows; **Apps
 back. In a panel layout, Home covers the screen, and each app opens on the screen in a frame whose top
 bar has its name and a Home icon, unless a layout button is bound to `home`. Layout buttons bound
 to `home` and `back` go Home (Back goes Home for now); the KICK layout's MAIN is `home` and BACK
-is `back`. `--view Part|Mixer|Routing|Controls` (desktop layout only) opens the Performance app on that
+is `back`. The Performance app opens in **Play**, for the stage: the scenes, a row of knobs
+following the Performance's controls (or the selected part's), and a strip per part and bus;
+**Edit** (in the top bar, or the desktop's toolbar) goes to the parts views, and **Play** back.
+`--view Part|Mixer|Routing|Controls|Play` (desktop layout only) opens the Performance app on that
 view instead.
 
 `-DOSCAIRN_STANDALONE=ON` builds both the desktop and helper. To build only the live

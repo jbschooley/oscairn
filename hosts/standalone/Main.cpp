@@ -14,7 +14,7 @@
 // audio options override it for a run. --play starts the sequencer at launch. --input-mode overrides the saved preference for this run. --snapshot
 // renders the window to a PNG and quits: at the layout's design size, or as in a window of
 // --size; with --play SECONDS, the sequencer plays for that long first; with --view, the
-// desktop shows that tab (Part, Mixer, Routing or Controls).
+// desktop shows that tab (Part, Mixer, Routing or Controls) or Play.
 
 #include "DesktopShell.h"
 #include "Engine.h"
@@ -27,6 +27,7 @@
 #include "PadEditor.h"
 #include "PartsView.h"
 #include "PerformanceColors.h"
+#include "PlayView.h"
 #include "Setlist.h"
 
 #include <BinaryData.h>
@@ -227,12 +228,12 @@ namespace oscairn::standalone
                               : name == "setlist" ? static_cast<juce::Component*>( setlistPane_.get() )
                               : name == "groovebox" && groovebox_ ? groovebox_->getContentComponent() : nullptr;
         }
-        // The Performance app: playing and editing the open Performance. Its live-controls view
-        // is not built yet, so it opens the parts editor.
+        // The Performance app: playing the open Performance (Play, first) and editing it.
         void openPerformance()
         {
-            if( panel() ) { showParts(); return; }
+            if( panel() ) { showPerformanceApp( false ); return; }
             auto* shell = new DesktopShell( engine_, scanner(), inputMode_ );
+            followSetlist( shell->play() );
             shell->onHome = [this] { showHome(); };
             shell->onSave = [this] { saveToLibrary( false ); };
             setContentOwned( shell, false );
@@ -625,16 +626,7 @@ namespace oscairn::standalone
         {
             if( !panel() && !shell() ) openPerformance(); // from Home: the Performance app has them
             if( auto* s = shell() ) { s->showTab( DesktopShell::Tab::Part ); return; } // the desktop has them in its window
-            if( panel() )
-            {
-                // The Performance app on a device's screen, its parts editor for now.
-                if( bringForward( "Performance" ) ) return;
-                auto view = std::make_unique<PartsView>( engine_, scanner() );
-                view->onSave = [this] { saveToLibrary( false ); };
-                view->onDone = [this] { juce::MessageManager::callAsync( [safe = juce::Component::SafePointer<Window>( this )] { if( safe ) safe->showHome(); } ); };
-                auto& app = *view; openOnScreen( "Performance", "piano", app, std::move( view ) );
-                return;
-            }
+            if( panel() ) { showPerformanceApp( true ); return; } // the Performance app's Edit
             parts_ = std::make_unique<PartsView>( engine_, scanner() );
             parts_->onSave = [this] { saveToLibrary( false ); };
             setDesktopMode( *parts_, 2 ); // a device's screen: the type scale and targets for touch
@@ -646,6 +638,29 @@ namespace oscairn::standalone
             if( auto* panel = dynamic_cast<Panel*>( getContentComponent() ) ) { panel->overlay( parts_.get() ); return; }
             addAndMakeVisible( *parts_ );
             if( getContentComponent() ) parts_->setBounds( getContentComponent()->getBounds() );
+        }
+        // The Performance app on a panel's screen: Play, or its Edit (the parts views).
+        void showPerformanceApp( bool editing )
+        {
+            if( !bringForward( "Performance" ) )
+            {
+                auto view = std::make_unique<PerformanceApp>( engine_, scanner() );
+                followSetlist( view->play() );
+                auto& app = *view; openOnScreen( "Performance", "piano", app, std::move( view ) );
+                app.attach( running_.back().frame->bar(), [this] { saveToLibrary( false ); } );
+            }
+            for( auto& r : running_ ) if( auto* app = r.name == "Performance" ? dynamic_cast<PerformanceApp*>( r.app ) : nullptr ) app->edit( editing );
+        }
+        // Play's Previous and Next, while the open Performance is the setlist's current entry.
+        void followSetlist( PlayView& play )
+        {
+            play.inSetlist = [this] {
+                if( !setlistPane_ || setlistPane_->current() < 0 ) return false;
+                const auto& entries = setlistPane_->setlist().entries;
+                const auto info = engine_.performanceInfo();
+                return info && size_t( setlistPane_->current() ) < entries.size() && entries[size_t( setlistPane_->current() )].id == info->id;
+            };
+            play.step = [this]( int by ) { if( setlistPane_ ) setlistPane_->step( by ); };
         }
         static juce::String title( const NamedLayout& l )
         {
@@ -780,7 +795,7 @@ namespace oscairn::standalone
                     DesktopShell::Tab tab;
                     if( !window_->shell() ) window_->openPerformance(); // from Home, as a tap on it would
                     if( !window_->shell() || !DesktopShell::tabNamed( view, tab ) )
-                        throw std::invalid_argument( "--view needs the desktop layout and one of Part, Mixer, Routing, Controls" );
+                        throw std::invalid_argument( "--view needs the desktop layout and one of Part, Mixer, Routing, Controls, Play" );
                     window_->shell()->showTab( tab );
                 }
                 if( args.contains( "--play" ) )

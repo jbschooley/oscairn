@@ -1,6 +1,6 @@
 # RFC 0011: Performance UI, routing views and plugin editors
 
-Status: in progress, 2026-10-31. Steps 1–4 and undo implemented (see [Progress](#progress)). Builds on the graph, note routes and parameter
+Status: in progress, 2026-11-01. Steps 1–4, undo and Play implemented (see [Progress](#progress)). Builds on the graph, note routes and parameter
 lanes that exist today ([architecture](../architecture.md#live-note-routes)), the planned
 controller-mapping service ([physical controls](../architecture.md#physical-controls-takeover-and-direct-position-access-planned))
 and the theme contract ([design language](../design-language.md)).
@@ -17,7 +17,7 @@ Checked when built and tested; the sections below say how.
 - [ ] 5. Editors: knob pages for every plugin (started through [RFC 0019](0019-adaptive-ui.md)'s generated editors), the Modular grid
 - [ ] 6. Physical controls: default layers, overrides, learn, banks
 - [ ] 7. Groups, pedal view, move, copy and share
-- [ ] Play: the Performance app's view for the stage ([design](#play-the-performance-apps-first-view))
+- [x] Play: the Performance app's view for the stage ([design](#play-the-performance-apps-first-view), [status](#play-status))
 - [x] The full scene model (blocks and wires enabled per scene, what each scene saves),
       seamless on the engine's draining and retiring ([status](#scenes-status))
   - [x] plugins and wires switched off and on, seamlessly
@@ -661,6 +661,35 @@ loading; the socket test and `desktop-pad-editor` cover the protocol and the eng
 Not yet: undo of preset and state loads, which replace a plugin's
 whole state outside this model; and a plugin's own edits in its window, which reach the host
 as parameter changes it reports, not edits made here.
+
+## Play status
+
+Implemented 2026-11-01 (`hosts/standalone/PlayView.h`, `PlayView.cpp`). The Performance app
+opens in Play on both surfaces. On a device's screen it sits under the top bar, whose actions
+are **Edit** (the app's main action, opening the parts views on the part selected in Play) and
+**Save**; Edit's views have **Play** there instead, and their Done goes back to Play. On the
+desktop, Play fills the window under its toolbar, and the toolbar's **Edit** shows the parts
+list and tabs (and **Play** returns); `--view Play` names it.
+
+- Scenes: eight tiles, one tap each; the first empty one adds a scene. Only the first eight
+  show for now.
+- Previous and Next at the ends of the scenes, while the open Performance is the Setlist app's
+  current entry; they step the setlist.
+- Knobs: a bank of four (eight on an eight-knob device) of the Performance's controls, each
+  with its name, what it drives and its value; with more, a Bank button pages them. Tapping a
+  strip's name selects its part, and a switch beside the knobs moves them to that part's own
+  controls. A device's knobs bound `row:N` play the bank shown.
+- Strips: one per part and bus, with its fader, a meter per channel, mute and solo, dimmed
+  while muted or silenced; more than six scroll sideways.
+- Drawn with the theme's sections, edges, sliders, rotary knobs and marks (no colors of its
+  own), with text placed by its ink (`drawInked`, Theme.h).
+
+`desktop-shell` renders Play in every built-in theme and both input modes, and the Performance
+app at 1024 × 600 under its top bar, checking that it opens in Play, the knobs follow the
+Performance's controls and switch to the selected part's, and Edit and Play swap the views.
+The app's `--profile kick --app performance --snapshot` was looked at too. Not yet: the pads
+selecting scenes in Play, a glide's progress on a scene's tile, and the strips' part colors
+(parts have none yet).
 
 ## Open questions
 

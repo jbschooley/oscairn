@@ -198,6 +198,7 @@ namespace oscairn::standalone
                 tabs_[i] = area.removeFromLeft(width);
                 area.removeFromLeft(2);
             }
+            if(shell_.tab_ == Tab::Play) return; // the tabs are hidden in Play
             const auto on = tabs_[size_t(shell_.tab_)];
             const int glyph = std::min(icon, on.getHeight() - 4);
             detach_.setBounds(on.withTrimmedLeft(on.getWidth() - glyph - 10).withSizeKeepingCentre(glyph, glyph).translated(-4, segmented ? 0 : 1));
@@ -224,7 +225,7 @@ namespace oscairn::standalone
     };
 
     DesktopShell::DesktopShell(Engine& engine, const std::string& scanner, InputMode mode)
-        : engine_(engine), scanner_(scanner), mode_(mode), tabs_(std::make_unique<TabStrip>(*this)), list_(std::make_unique<PartList>(*this)), parts_(engine, scanner)
+        : engine_(engine), scanner_(scanner), mode_(mode), tabs_(std::make_unique<TabStrip>(*this)), list_(std::make_unique<PartList>(*this)), parts_(engine, scanner), play_(engine)
     {
         setDesktopMode(*this, modeNumber(mode));
         undo_.setTooltip("Undo"); redo_.setTooltip("Redo");
@@ -233,6 +234,14 @@ namespace oscairn::standalone
         save_.onClick = [this] { if(onSave) onSave(); };
         performance_.setTooltip("The open Performance");
         addChildComponent(save_); addAndMakeVisible(performance_);
+        edit_.setTooltip("Edit the Performance: its parts, the Mixer, Routing and Controls");
+        edit_.onClick = [this] {
+            if(tab_ != Tab::Play) { showTab(Tab::Play); return; }
+            if(const auto part = play_.selectedPart()) { selected_ = part; parts_.showPart(part); showTab(Tab::Part); return; } // the part chosen in Play
+            showTab(editTab_);
+        };
+        addAndMakeVisible(edit_);
+        addChildComponent(play_);
         home_.onClick = [this] { if(onHome) juce::MessageManager::callAsync(onHome); }; // going Home replaces this view
         addChildComponent(home_);
         undo_.onClick = [this] { engine_.edit([](Control& c) { c.undo(); }); };
@@ -260,7 +269,7 @@ namespace oscairn::standalone
         addAndMakeVisible(parts_);
         parts_.setEmbedded(true);
         refresh();
-        showTab(Tab::Part);
+        showTab(Tab::Play); // the Performance app opens in Play
         startTimer(50);
     }
 
@@ -279,12 +288,22 @@ namespace oscairn::standalone
     bool DesktopShell::tabNamed(const juce::String& name, Tab& tab)
     {
         for(size_t i = 0; i < std::size(tabNames); ++i) if(name.equalsIgnoreCase(tabNames[i])) { tab = Tab(i); return true; }
+        if(name.equalsIgnoreCase("Play")) { tab = Tab::Play; return true; }
         return false;
     }
 
     void DesktopShell::showTab(Tab tab)
     {
         tab_ = tab;
+        if(tab != Tab::Play) editTab_ = tab;
+        // Play covers Edit's parts list, tabs and views; the toolbar's Edit goes back to them.
+        const bool playing = tab == Tab::Play;
+        for(auto* c : std::initializer_list<juce::Component*>{tabs_.get(), list_.get(), &addPart_, &addBus_, &parts_}) c->setVisible(!playing);
+        play_.setVisible(playing);
+        edit_.setButtonText(playing ? "Edit" : "Play");
+        edit_.setColour(juce::TextButton::buttonColourId, playing ? ink(Ink::Accent) : ink(Ink::Raised));
+        edit_.setColour(juce::TextButton::textColourOffId, playing ? ink(Ink::Accent).contrasting() : ink(Ink::Text));
+        if(playing && selected_) play_.select(selected_);
         switch(tab)
         {
         case Tab::Part:
@@ -294,7 +313,9 @@ namespace oscairn::standalone
         case Tab::Mixer: parts_.showPart(PartsView::mixerPage); break;
         case Tab::Routing: parts_.showRouting(0); break;
         case Tab::Controls: parts_.showPart(PartsView::controlsPage); break;
+        case Tab::Play: break;
         }
+        resized();
         tabs_->resized();
         list_->repaint();
     }
@@ -388,7 +409,7 @@ namespace oscairn::standalone
         g.setColour(ink(Ink::Surface)); g.fillRect(0, 0, getWidth(), bar);
         g.setColour(ink(Ink::Border).withAlpha(.6f));
         g.fillRect(0, bar, getWidth(), 1);
-        g.fillRect(list_->getRight(), bar, 1, getHeight() - bar);
+        if(list_->isVisible()) g.fillRect(list_->getRight(), bar, 1, getHeight() - bar);
     }
 
     void DesktopShell::resized()
@@ -404,7 +425,8 @@ namespace oscairn::standalone
         performance_.setFont(juce::FontOptions(textSize(TextRole::Body, mode), juce::Font::bold));
         performance_.setBounds(bar.removeFromLeft(std::min(220, juce::GlyphArrangement::getStringWidthInt(performance_.getFont(), performance_.getText()) + 12)));
         save_.setVisible(onSave != nullptr);
-        if(onSave) { save_.setBounds(bar.removeFromLeft(touchSized(mode_) ? 90 : 70)); bar.removeFromLeft(m.gap * 3); }
+        if(onSave) { save_.setBounds(bar.removeFromLeft(touchSized(mode_) ? 90 : 70)); bar.removeFromLeft(m.gap); }
+        edit_.setBounds(bar.removeFromLeft(touchSized(mode_) ? 90 : 70)); bar.removeFromLeft(m.gap * 3);
         auto labeled = [&](juce::Label& label, juce::Component& c, int width) {
             label.setBounds(bar.removeFromLeft(juce::GlyphArrangement::getStringWidthInt(label.getFont(), label.getText()) + 10));
             c.setBounds(bar.removeFromLeft(width));
@@ -416,6 +438,7 @@ namespace oscairn::standalone
         undo_.setBounds(bar.removeFromRight(m.control)); bar.removeFromRight(m.gap * 2);
         status_.setBounds(bar);
         area.removeFromTop(1);
+        play_.setBounds(area);
         // The parts and buses, with their add buttons under them.
         auto side = area.removeFromLeft(touchSized(mode_) ? 300 : 260);
         auto adds = side.removeFromBottom(m.control + 2 * m.gap).reduced(m.gap);
