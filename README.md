@@ -10,16 +10,24 @@ Oscairn is an independent, unofficial project. It is not affiliated with or endo
 Behringer, Klark Teknik or Music Tribe. KICK is a product of Klark Teknik; the name is used
 here only to describe compatibility.
 
-> **Status:** early. What runs today: a graph of CLAP plugins (for example a sequencer
-> playing a synth through a delay, with per-step parameter locks), sample-accurately,
-> following its own tempo or an external MIDI clock, rendered offline to a WAV file, and a
-> desktop demo app with live audio, MIDI input and switchable panel layouts, and a Linux
-> image that boots into Oscairn (tested in QEMU, [`os/`](os/README.md)). Optional LV2 hosting
-> supports mixed CLAP/LV2 graphs with audio, controls, MIDI/time atoms, Worker, plugin
-> state/presets and scalar patch properties. The control API supports prepared sounds,
-> state export, preset enumeration and typed property access. Versioned JSON
-> [Performance folders](docs/performance-format.md) save/reopen graphs, prepared sounds and effects. Transpose and MIDI delay
-> are included as reference plugins. No AU/VST3, patch library or real-hardware image yet.
+> **Status:** early, and moving quickly (November 2026). What runs today:
+>
+> - a graph of CLAP plugins, with optional LV2, played sample-accurately live or rendered
+>   offline, following its own tempo or an external MIDI clock, with plugins isolated in
+>   worker processes on macOS;
+> - **Performances** of parts and buses (splits, layers, sends, scenes with transitions,
+>   controls such as Super Knobs, undo), saved as [folders](docs/performance-format.md) and
+>   changed seamlessly while notes and tails ring out;
+> - a **library** of Performances and Sounds with tags, favorites, editing, audition, and
+>   installable or exportable [archives](docs/library-archive.md);
+> - **resource budgets** measured on the device, refusing what would not fit;
+> - a **desktop app** that starts at Home, with the Performance, Library, Setlist and
+>   Groovebox apps, themes, and the panel layouts of the KICK, the Ignite and a 49-key
+>   keyboard; and **device profiles** that make it a device's screen;
+> - a **Linux image** that boots into it, tested in QEMU ([`os/`](os/README.md)).
+>
+> Not yet: running on a real device's board (see [running on a KICK](docs/kick.md)), its
+> panel's physical controls, VST3 and AU hosting, and most of the system shell's top bar.
 
 See the [roadmap](docs/roadmap.md) for implementation status and planned work.
 For plugins, controllers and integrations, start with the [developer guide](docs/developer-guide.md)
@@ -32,7 +40,8 @@ Needs CMake 3.21+, Ninja and a C++20 compiler (on macOS: Xcode command line tool
 
 ### The desktop app
 
-Builds the demo groovebox and starts it. The first build downloads JUCE 9.0.4 and takes a
+Builds the app and starts it at Home: tap Performance to play and edit the open Performance,
+or the Library, Setlist or Groovebox. The first build downloads JUCE 9.0.4 and takes a
 few minutes. Tested on macOS; the Linux build is untested so far.
 
 ```bash
@@ -48,8 +57,9 @@ panel layouts in the View menu, or start with one:
 open build-app/hosts/standalone/oscairn_standalone_artefacts/RelWithDebInfo/Oscairn.app --args --layout kick
 ```
 
-Options: `--layout desktop|kick|keys49|file.json`, and `--snapshot out.png [--size WxH]
-[--play SECONDS]` to render the panel to a PNG and quit. Layouts are described in
+Options: `--layout desktop|kick|kick-screen|ignite|keys49|file.json`, `--profile kick` (a
+device's screen, full screen; see [running on a KICK](docs/kick.md)), and `--snapshot out.png
+[--size WxH] [--play SECONDS]` to render the window to a PNG and quit. Layouts are described in
 [hosts/standalone/layouts](hosts/standalone/layouts/README.md).
 
 The display's sound picker prepares Basic Synth variations (or a loaded instrument's
@@ -68,14 +78,14 @@ plugins; there is no graphical plugin browser yet.
 ### Panel layouts
 
 The same engine runs behind every layout; the View menu or `--layout` switches between
-them. Captured with `--snapshot` while playing.
+them. Each starts at Home. Captured with `--snapshot`.
 
 **Desktop** (`desktop`): stretches to any window shape.
 
 ![Desktop layout](docs/images/layouts/desktop.png)
 
-**KICK** (`kick`), with the geometry of chillbeast's KickEM simulator board, and the KICK's
-screen alone (`kick-screen`), as the device shows it:
+**KICK** (`kick`), with the geometry of chillbeast's KickEM simulator board (MAIN goes Home), and
+the KICK's screen alone (`kick-screen`), as the device shows it:
 
 ![KICK layout](docs/images/layouts/kick.png)
 
