@@ -149,6 +149,12 @@ target_link_libraries(oscairn-performance-test PRIVATE oscairn_control)
 add_test(NAME control-performance COMMAND oscairn-performance-test
     $<TARGET_FILE:oscairn_basic_synth> $<TARGET_FILE:oscairn_delay> $<TARGET_FILE:oscairn_step_sequencer> $<TARGET_FILE:kick-clap-fixture-normal>)
 set_tests_properties(control-performance PROPERTIES TIMEOUT 60)
+add_executable(oscairn-setlist-change-test tests/setlist_change.cpp)
+target_include_directories(oscairn-setlist-change-test PRIVATE ../clap-host/tests)
+target_link_libraries(oscairn-setlist-change-test PRIVATE oscairn_control)
+add_test(NAME control-setlist-change COMMAND oscairn-setlist-change-test
+    $<TARGET_FILE:oscairn_basic_synth> $<TARGET_FILE:oscairn_sampler> $<TARGET_FILE:oscairn_delay>)
+set_tests_properties(control-setlist-change PROPERTIES TIMEOUT 120)
 if(Python3_Interpreter_FOUND)
     add_test(NAME control-performance-format COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/performance.py"
         $<TARGET_FILE:oscairn-json-rpc-test> $<TARGET_FILE:oscairn_basic_synth>)

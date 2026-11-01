@@ -593,6 +593,15 @@ through the change, an edit to the new Performance leaving the old one ringing, 
 reaching only the new one and the old one going; `control-performance` checks a held note
 through the change and, once it has rung out, output identical to a fresh load.
 
+Measured 2026-11-01 (`control-setlist-change`, Release, Apple Silicon, in-process plugins): two
+Performances of eight parts each (four Samplers with their own 16 MiB sample, four Basic Synths,
+each part through its own Delay context: 16 plugin instances), changed back and forth with a note
+held. The cue takes 36–63 ms (median 39 ms) until the next Performance is published, all of it
+instantiating plugins and loading their state and samples; the change adds about 80 MiB of
+resident memory, and 32 to 48 instances live until the old ones have rung out. The same bench
+found every change keeping the plugins it retired alive for good (about 80 MiB more each time);
+fixed in `Graph::publishReplacement`, and the bench checks memory no longer grows with each change.
+
 **Load preset** on a node is seamless where `sounds.prepare` accepts it (native contexts and
 pooled instruments) and an interrupting state load otherwise, as today.
 
