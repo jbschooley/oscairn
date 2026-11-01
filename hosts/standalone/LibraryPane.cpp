@@ -738,8 +738,13 @@ namespace oscairn::standalone
             for(size_t i = 0; i < all.size(); ++i) if(all[i] != platform()) platforms.addItem(int(i) + 1, "For " + text(all[i]));
             platforms.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&safe->libraries_), [safe, plugin, path, all](int chosen) {
                 if(!safe || chosen <= 0) return;
-                const auto error = safe->engine_.addPluginBuild(plugin, all[size_t(chosen - 1)], path);
-                safe->tell(error.empty() ? "Added the " + text(all[size_t(chosen - 1)]) + " build." : text(error));
+                if(safe->engine_.soundBusy()) { safe->tell("The engine is busy; try again in a moment."); return; }
+                // Copied on the engine's worker, so the screen keeps going.
+                SoundAction add; add.kind = SoundAction::AddPluginBuild; add.format = plugin.format; add.pluginId = plugin.id; add.version = plugin.version;
+                add.platform = all[size_t(chosen - 1)]; add.directory = path;
+                safe->engine_.soundAction(std::move(add));
+                safe->tell("Adding the " + text(all[size_t(chosen - 1)]) + " build...");
+                safe->stale_ = true; safe->awaiting_ = true;
             });
         });
     }

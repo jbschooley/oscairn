@@ -456,8 +456,9 @@ int main(int argc, char** argv)
                 // listed in its place: the library shows none.
                 standalone::SoundAction locked; locked.kind = standalone::SoundAction::InstallArchive; locked.directory = archive.getFullPathName().toStdString(); locked.asNew = true;
                 engine.soundAction(std::move(locked));
-                check(wait([&] { return !engine.soundBusy(); }) && engine.libraries().size() == 1, "installed as a library: " + engine.soundMessage());
-                library.showSource(engine.libraries()[0].id);
+                std::vector<Control::InstalledLibrary> libraries; // none while the engine is busy, so kept once read
+                check(wait([&] { libraries = engine.libraries(); return libraries.size() == 1; }), "installed as a library: " + engine.soundMessage());
+                library.showSource(libraries.empty() ? std::string() : libraries[0].id);
                 check(wait([&] { return library.message().isEmpty() && library.items().empty(); }), "only the library's own items, by choosing it");
                 snapshot(library, "library-locked");
                 library.showSource("");

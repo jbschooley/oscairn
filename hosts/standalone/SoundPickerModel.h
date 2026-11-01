@@ -23,7 +23,7 @@ namespace oscairn::standalone
     struct SoundAction
     {
         enum Kind { Refresh, Prepare, Select, Discard, BrightnessLocks, Replace, SavePerformance, LoadPerformance, SaveToLibrary, LoadFromLibrary, SaveSound, LoadSound, PartFromSound, ImportPerformance,
-                    ExportPerformance, InstallArchive, AuditionStart, AuditionStop, PrepareFromLibrary } kind = Refresh;
+                    ExportPerformance, InstallArchive, AuditionStart, AuditionStop, PrepareFromLibrary, AddPluginBuild } kind = Refresh;
         NodeId node = 0;
         std::string pluginId;
         uint32_t context = 0, track = 0;
@@ -39,6 +39,7 @@ namespace oscairn::standalone
                                // ExportPerformance: with edited parts' Sounds; InstallArchive: as a locked library; AuditionStop: keep it
         std::vector<std::string> items; // InstallArchive from directory (the archive file): these items; none for all
         std::string importPath; // Prepare from this .sfz or .wav instead of choice
+        std::string format, version, platform; // AddPluginBuild: the plugin (with pluginId) and the build's platform; directory: the build
     };
     SoundPickerState readSoundPicker(Control&);
     // A .sfz file as written (its folder registered as an asset library), or a one-region SFZ

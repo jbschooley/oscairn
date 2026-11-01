@@ -132,6 +132,7 @@ namespace oscairn::standalone
             for(const auto& n:r.notes)message+=" "+n+".";
             return message;
         }
+        if(action.kind == SoundAction::AddPluginBuild){control.addPluginBuild(action.format,action.pluginId,action.version,action.platform,action.directory);return "Added the "+action.platform+" build.";}
         if(action.kind==SoundAction::Replace) {
             const auto graph=control.graphState();
             const auto found=std::find_if(graph.topology.nodes.begin(),graph.topology.nodes.end(),[&](const auto& n){return n.id==action.node && n.plugin.id==action.pluginId;});

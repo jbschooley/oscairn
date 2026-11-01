@@ -119,11 +119,11 @@ namespace oscairn::standalone
         std::string editLibraryItem(const std::string& id, const Control::PerformanceInfo& info);
         std::string copyLibraryItem(const std::string& id, std::string& copied);
         std::string uninstallLibrary(const std::string& id);
-        // The plugin store (RFC 0006): what is installed and what uses it; removing a plugin's
-        // builds or adding another platform's (the error, or empty).
+        // The plugin store (RFC 0006): what is installed and what uses it (nothing while the
+        // engine is busy), and removing a plugin's builds (the error, or empty). Another
+        // platform's build is added by soundAction (AddPluginBuild).
         std::vector<Control::InstalledPlugin> installedPlugins() const;
         std::string removePlugin(const Control::InstalledPlugin& plugin);
-        std::string addPluginBuild(const Control::InstalledPlugin& plugin, const std::string& platform, const std::string& path);
         std::string pluginId(const std::string& node) const;
         void replacePlugin(const std::string& node,const std::string& path,const std::string& id,const std::string& preset={});
         struct Editor { std::string name,id,path;std::vector<ParamInfo> parameters;std::vector<PresetInfo> presets; };
