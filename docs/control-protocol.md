@@ -742,7 +742,7 @@ fader or name in the Performance, nor wires to or from the rest of the graph.
   wires and mappings inside it or its own controls, or a parameter of one of its plugins (as
   a graph change, so clients refresh); undoing a model step clears it again. Preset and state
   loads, which are not undoable steps yet, do not set it. Its seat (input, output, sends,
-  fader) is not the Sound's and does not. `library.query` items carry their `revision`.
+  fader) is not the Sound's and does not. `library.query` items carry their `revision` and content `hash` (as recorded at their last save).
 - `performance.save` to a folder is an export: parts are written without `from`. Performances
   saved with `library.save` keep it. Planned: exports keep `from` and bring the Sounds along
   ([RFC 0021](rfcs/0021-sounds-performances-and-library.md#exporting-a-performance)).

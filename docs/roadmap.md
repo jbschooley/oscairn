@@ -283,6 +283,8 @@ in the others.
      from; **Save** writes that Sound's next revision, **Save As New** makes another, the
      parts list marks a part edited since (`*`), and **Update from library** loads a newer
      revision (Part menu); a Sound deleted from the library breaks no Performance
+   - [x] content hashes for Sounds and Performances (beside their IDs, not instead), written
+     at every save and kept in the library index
    - [ ] authors in the info block; preset and state loads marking a part edited
    - [ ] **libraries:** a sound pack, exported library or the factory content, its Sounds and
      samples locked (Save As New makes your own copy); items can be deleted and libraries

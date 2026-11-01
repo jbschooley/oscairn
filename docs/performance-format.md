@@ -45,7 +45,7 @@ Required top-level fields:
 | Field | Meaning |
 | --- | --- |
 | `format`, `version` | Exactly `oscairn.performance` and integer `3` |
-| `info` | What the library shows ([RFC 0021](rfcs/0021-sounds-performances-and-library.md)): `id` (made at the first save, kept by every later one), `name` (the folder's name when none is set), `description`, up to 32 free `tags`, `color` (`#rrggbb`, or empty for none), and `revision` (made at every save) and `parent` (the revision it was saved over; empty for the first) |
+| `info` | What the library shows ([RFC 0021](rfcs/0021-sounds-performances-and-library.md)): `id` (made at the first save, kept by every later one), `name` (the folder's name when none is set), `description`, up to 32 free `tags`, `color` (`#rrggbb`, or empty for none), and `revision` (made at every save) and `parent` (the revision it was saved over; empty for the first), and `hash`: SHA-256 of the contents, over the document without its info block followed by each file under `nodes/` by path with its own SHA-256, in path order. Names, tags and revisions are not contents. Equal hashes mean equal contents; the ID stays the identifier |
 | `transport` | Tempo and `internal` or `midi` clock source |
 | `audioInputs`, `audioOutputs` | Required logical graph ports: ID, channels, flags |
 | `nodes` | Local key, display name, plugin identity/version, path hint, shared engine key, expected audio/note ports |

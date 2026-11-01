@@ -187,9 +187,10 @@ Control::PerformanceInfo Session::writeDocument(const std::string& directory,Per
     info.parent=info.revision;info.revision=fresh();
     if(info.name.empty())info.name=fs::path(directory).stem().string();
     std::vector<std::string> tags;for(const auto& t:info.tags)tags.push_back(quote(t));
-    const auto infoText="{\"id\":"+quote(info.id)+",\"name\":"+quote(info.name)+",\"description\":"+quote(info.description)+",\"tags\":"+join(tags)+",\"color\":"+quote(info.color)+",\"revision\":"+quote(info.revision)+",\"parent\":"+quote(info.parent)+'}';
-    std::string out;
-    if(sound)out="{\"format\":\"oscairn.sound\",\"version\":3,\"info\":"+infoText+",\"libraries\":"+join(named)+",\"nodes\":"+join(nodes)+",\"wires\":"+join(wires)+",\"part\":{\"chain\":"+chainText(sound->chain)+",\"splits\":"+splitsText(*sound)+"},\"mappings\":"+join(mappings)+",\"controls\":"+join(controls)+"}\n";
+    auto infoText=[&]{return "{\"id\":"+quote(info.id)+",\"name\":"+quote(info.name)+",\"description\":"+quote(info.description)+",\"tags\":"+join(tags)+",\"color\":"+quote(info.color)+",\"revision\":"+quote(info.revision)+",\"parent\":"+quote(info.parent)+",\"hash\":"+quote(info.hash)+'}';};
+    // The document around its info block; the content hash covers it and the plugins' state.
+    std::string head,tail;
+    if(sound){head="{\"format\":\"oscairn.sound\",\"version\":3,\"info\":";tail=",\"libraries\":"+join(named)+",\"nodes\":"+join(nodes)+",\"wires\":"+join(wires)+",\"part\":{\"chain\":"+chainText(sound->chain)+",\"splits\":"+splitsText(*sound)+"},\"mappings\":"+join(mappings)+",\"controls\":"+join(controls)+"}\n";}
     else{
         // Scenes: each part's fader and each scene parameter's value; and the scene last selected.
         std::vector<std::string> scenes,parameters;
@@ -201,8 +202,10 @@ Control::PerformanceInfo Session::writeDocument(const std::string& directory,Per
             scenes.push_back("{\"id\":"+std::to_string(s.id)+",\"name\":"+quote(s.name)+",\"parts\":"+join(sp)+",\"values\":"+join(values)+",\"controls\":"+join(sc)+'}');
         }
         for(const auto& at:sceneParameters_)parameters.push_back("{\"node\":"+quote(keys.at(at.node))+",\"param\":"+std::to_string(at.param)+'}');
-        out="{\"format\":\"oscairn.performance\",\"version\":3,\"info\":"+infoText+",\"libraries\":"+join(named)+",\"transport\":{\"tempo\":"+numeric(tempo_.load())+",\"clockSource\":"+quote(clockSource_.load()==Transport::ClockSource::Internal?"internal":"midi")+"},\"audioInputs\":"+ports(graph.audioLayout.inputs)+",\"audioOutputs\":"+ports(graph.audioLayout.outputs)+",\"nodes\":"+join(nodes)+",\"wires\":"+join(wires)+",\"parts\":"+join(parts)+",\"mappings\":"+join(mappings)+",\"pads\":"+padsText(padMap_)+",\"scenes\":"+join(scenes)+",\"sceneParameters\":"+join(parameters)+",\"scene\":"+std::to_string(scene_)+",\"controls\":"+join(controls)+"}\n";
+        head="{\"format\":\"oscairn.performance\",\"version\":3,\"info\":";tail=",\"libraries\":"+join(named)+",\"transport\":{\"tempo\":"+numeric(tempo_.load())+",\"clockSource\":"+quote(clockSource_.load()==Transport::ClockSource::Internal?"internal":"midi")+"},\"audioInputs\":"+ports(graph.audioLayout.inputs)+",\"audioOutputs\":"+ports(graph.audioLayout.outputs)+",\"nodes\":"+join(nodes)+",\"wires\":"+join(wires)+",\"parts\":"+join(parts)+",\"mappings\":"+join(mappings)+",\"pads\":"+padsText(padMap_)+",\"scenes\":"+join(scenes)+",\"sceneParameters\":"+join(parameters)+",\"scene\":"+std::to_string(scene_)+",\"controls\":"+join(controls)+"}\n";
     }
+    info.hash=contentHash(head+tail,bundle.temporary.path/"nodes");
+    const auto out=head+infoText()+tail;
     if(out.size()>4*1024*1024)bad("manifest exceeds size limit");
     const auto encoding=detail::jsonPreflight(out,32);if(!encoding.empty())bad(std::string(encoding));
     state_files::write(bundle.temporary.path/(sound?"sound.json":"performance.json"),out.data(),out.size());validateTree(bundle.temporary.path);bundle.publish();
@@ -215,7 +218,7 @@ void Session::loadPerformance(const std::string& directory) {
     fields(d,{"format","version","info","libraries","transport","audioInputs","audioOutputs","nodes","wires","parts","mappings","pads","scenes","sceneParameters","scene","controls"});
     const auto pads=padsFrom(field(d,"pads"));
     if(text(field(d,"format"))!="oscairn.performance" || integer(field(d,"version"))!=3)bad("unsupported format version");
-    fields(field(d,"info"),{"id","name","description","tags","color","revision","parent"});const auto info=readInfo(root/"performance.json","oscairn.performance");
+    fields(field(d,"info"),{"id","name","description","tags","color","revision","parent","hash"});const auto info=readInfo(root/"performance.json","oscairn.performance");
     const auto transport=field(d,"transport");fields(transport,{"tempo","clockSource"});const double tempo=number(field(transport,"tempo"));
     const auto clock=text(field(transport,"clockSource"));if(tempo<1 || tempo>1000 || (clock!="internal" && clock!="midi"))bad("invalid transport");
     const auto layout=graph_.describe().audioLayout;checkPorts(field(d,"audioInputs"),layout.inputs);checkPorts(field(d,"audioOutputs"),layout.outputs);
@@ -426,7 +429,7 @@ std::vector<std::string> Session::loadSoundInto(uint32_t partId,const fs::path& 
     V d=doc.get();if(!d)bad("invalid JSON");
     fields(d,{"format","version","info","libraries","nodes","wires","part","mappings","controls"});
     if(text(field(d,"format"))!="oscairn.sound" || integer(field(d,"version"))!=3)bad("not a version 3 Sound");
-    fields(field(d,"info"),{"id","name","description","tags","color","revision","parent"});
+    fields(field(d,"info"),{"id","name","description","tags","color","revision","parent","hash"});
     const auto info=readInfo(root/"sound.json","oscairn.sound");
     // Every asset resolves before any plugin loads.
     for(auto node:array(field(d,"nodes"),256))if(member(node,"assets"))for(auto a:array(field(node,"assets"),65536)){

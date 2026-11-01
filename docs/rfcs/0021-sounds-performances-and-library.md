@@ -35,6 +35,7 @@ Checked when built and tested; the sections below say how.
 - [x] 1. Provenance: each part records the Sound and revision it came from and whether it was
       edited since; revisions with parents for Sounds and Performances; Save and Save As New
       for Sounds; Update from library; exports detach; a deleted Sound breaks nothing
+- [x] Content hashes for Sounds and Performances, in the info block and the index
 - [ ] Authors in the info block, and `modified` set by preset and state loads
 - [ ] Libraries: items locked, Save As New from them, deleting items, uninstalling, and
       reinstalling to restore what is missing ([design](#libraries)); factory content as a

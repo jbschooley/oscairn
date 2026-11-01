@@ -40,6 +40,12 @@ namespace oscairn
     std::filesystem::path dataHome();
     // "#rrggbb" in hex digits, or empty: a Performance's color.
     bool validColor(const std::string& color);
+    // A Sound's or Performance's content hash: SHA-256 over its document without the info block,
+    // then each file of its plugins' saved state (nodes/) by path with its own SHA-256, in path
+    // order. Names, tags and revisions are not contents; plugins' state is. The second form is
+    // what the writer uses, from the document text it is about to write without its info.
+    std::string contentHash(const std::filesystem::path& file);
+    std::string contentHash(std::string_view documentWithoutInfo, const std::filesystem::path& nodes);
     // The info block of a performance.json or sound.json (format names which); throws on a bad one.
     Control::PerformanceInfo readInfo(const std::filesystem::path& file, const std::string& format);
 }

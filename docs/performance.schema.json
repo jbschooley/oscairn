@@ -50,6 +50,11 @@
           "type": "string",
           "maxLength": 64,
           "description": "The revision this one was saved over; empty for the first"
+        },
+        "hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "SHA-256 of the contents: the document without its info block, then each nodes/ file by path with its own SHA-256 (RFC 0021). Not an identifier"
         }
       },
       "required": [
@@ -59,7 +64,8 @@
         "tags",
         "color",
         "revision",
-        "parent"
+        "parent",
+        "hash"
       ],
       "additionalProperties": false
     },

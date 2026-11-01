@@ -411,7 +411,7 @@ namespace oscairn
                 try{r=c.libraryQuery(q);}catch(const std::exception& e){throw Failure{-32005,e.what()};}
                 std::vector<std::string> items,counts;
                 for(const auto& i:r.items){std::vector<std::string> t;for(const auto& x:i.tags)t.push_back(quote(x));
-                    items.push_back("{\"id\":"+quote(i.id)+",\"kind\":"+quote(i.kind)+",\"name\":"+quote(i.name)+",\"description\":"+quote(i.description)+",\"path\":"+quote(i.path)+",\"tags\":"+join(t)+",\"favourite\":"+(i.favourite?"true":"false")+",\"recent\":"+std::to_string(i.recent)+",\"color\":"+quote(i.color)+",\"revision\":"+quote(i.revision)+'}');}
+                    items.push_back("{\"id\":"+quote(i.id)+",\"kind\":"+quote(i.kind)+",\"name\":"+quote(i.name)+",\"description\":"+quote(i.description)+",\"path\":"+quote(i.path)+",\"tags\":"+join(t)+",\"favourite\":"+(i.favourite?"true":"false")+",\"recent\":"+std::to_string(i.recent)+",\"color\":"+quote(i.color)+",\"revision\":"+quote(i.revision)+",\"hash\":"+quote(i.hash)+'}');}
                 for(const auto& [tag,n]:r.tags)counts.push_back("{\"tag\":"+quote(tag)+",\"count\":"+std::to_string(n)+'}');
                 return "{\"items\":"+join(items)+",\"tags\":"+join(counts)+",\"total\":"+std::to_string(r.total)+'}';
             }

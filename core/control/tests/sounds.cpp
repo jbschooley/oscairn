@@ -15,6 +15,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <fstream>
 #include <string>
 
 using namespace oscairn;
@@ -143,6 +144,24 @@ int main(int argc, char** argv)
         const auto reread = state_files::read(next, 1 << 22);
         const std::string nextJson(reread.begin(), reread.end());
         check(nextJson.find("\"revision\":\"" + again.revision + "\",\"parent\":\"" + saved.revision + "\"") != std::string::npos, "its parent is the revision the part came from");
+        // Content hashes: the one written is the one the files give; saving unchanged contents
+        // again keeps it while the revision moves on; an edit changes it, and so does a changed
+        // state file.
+        const auto info = readInfo(next, "oscairn.sound");
+        check(info.hash.size() == 64 && info.hash == contentHash(next), "the hash written is the one its files give");
+        const auto resave = t.savePartAsSound(seat, "");
+        const auto unchanged = readInfo(next, "oscairn.sound");
+        check(resave.revision != again.revision && unchanged.hash == info.hash, "saved again unchanged, the same hash and a new revision");
+        t.setParameter(t.nodeId("High"), 7, .45);
+        t.savePartAsSound(seat, "");
+        const auto edited = readInfo(next, "oscairn.sound");
+        check(edited.hash != info.hash && edited.hash == contentHash(next), "an edit changes the hash");
+        for(const auto& e : std::filesystem::recursive_directory_iterator(next.parent_path() / "nodes"))
+            if(e.is_regular_file()) { std::ofstream(e.path(), std::ios::app) << ' '; break; }
+        check(contentHash(next) != edited.hash, "so does a state file changed on disk");
+        t.setParameter(t.nodeId("High"), 7, .5);
+        const auto latestSave = t.savePartAsSound(seat, "");
+        check(readInfo(next, "oscairn.sound").hash == info.hash, "and putting it back gives the first hash again");
         // An edit to its chain marks it within its step, so undoing it unmarks it.
         Lane quieter = t.parts()[0].splits[0].lanes[0]; quieter.level = .3;
         t.setLane(seat, t.parts()[0].splits[0].id, 0, quieter); t.commit();
@@ -160,9 +179,9 @@ int main(int argc, char** argv)
         s.libraryRescan(); // two sessions here, so two libraries in memory; a device has one
         const auto listed = s.libraryQuery(all);
         const auto latest = std::find_if(listed.items.begin(), listed.items.end(), [&](const auto& i) { return i.id == saved.id; });
-        check(latest != listed.items.end() && latest->revision == again.revision, "the library has the newer revision");
+        check(latest != listed.items.end() && latest->revision == latestSave.revision && latest->hash == info.hash, "the library has the newer revision, with its hash");
         s.loadSound(part, saved.id);
-        check(s.parts()[0].from.revision == again.revision, "Update from library loads it");
+        check(s.parts()[0].from.revision == latestSave.revision, "Update from library loads it");
         // Kept with the Performance in the library; an export to a folder detaches it.
         const auto kept = t.savePerformanceToLibrary("With Sources");
         Session u(48000, frames); u.loadPerformanceFromLibrary(kept);

@@ -100,13 +100,14 @@ namespace oscairn
         // The Performance's own details (format 3's info block, RFC 0021): saved with it, read
         // by the library. The ID is made on the first save and kept.
         // color: "#rrggbb", or empty for none; how lists and setlists show it.
-        // revision: this save's, made at each save; parent: the one it was saved over.
-        struct PerformanceInfo { std::string id, name, description; std::vector<std::string> tags; std::string color, revision, parent; };
+        // revision: this save's, made at each save; parent: the one it was saved over. hash: of
+        // its contents (contentHash in library.h), not an identifier: equal hashes, equal contents.
+        struct PerformanceInfo { std::string id, name, description; std::vector<std::string> tags; std::string color, revision, parent, hash; };
         virtual PerformanceInfo performanceInfo() const = 0;
         virtual void setPerformanceInfo(const PerformanceInfo& info) = 0; // the ID is kept as it is
         // The library (RFC 0021): the device's Performances, by tags, text, favourites and
         // recent use. Performances save into it by name; loading by ID marks one used.
-        struct LibraryItem { std::string id, kind = "performance", name, description, path; std::vector<std::string> tags; bool favourite = false; uint32_t recent = 0; std::string color, revision; };
+        struct LibraryItem { std::string id, kind = "performance", name, description, path; std::vector<std::string> tags; bool favourite = false; uint32_t recent = 0; std::string color, revision, hash; };
         // kind: "performance" or "sound"; empty for both.
         struct LibraryQuery { std::string text; std::vector<std::string> tags; bool favourites = false, recent = false; uint32_t limit = 200; std::string kind; };
         struct LibraryResult { std::vector<LibraryItem> items; std::vector<std::pair<std::string, uint32_t>> tags; uint32_t total = 0; };

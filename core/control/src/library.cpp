@@ -2,6 +2,7 @@
 #include "oscairn/library.h"
 #include "sheredom/json.h"
 #include "JsonInput.h"
+#include "oscairn/assets.h"
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
@@ -83,6 +84,39 @@ namespace oscairn
         return c.empty() || (c.size() == 7 && c[0] == '#' && std::all_of(c.begin() + 1, c.end(), [](char x) { return std::isxdigit(static_cast<unsigned char>(x)) != 0; }));
     }
 
+    std::string contentHash(std::string_view document, const fs::path& nodes)
+    {
+        std::string summary(document);
+        summary += '\n';
+        std::vector<fs::path> files;
+        std::error_code error;
+        if(fs::is_directory(nodes, error))
+            for(const auto& e : fs::recursive_directory_iterator(nodes, error)) if(e.is_regular_file()) files.push_back(e.path());
+        std::sort(files.begin(), files.end());
+        for(const auto& f : files) summary += fs::relative(f, nodes).generic_string() + ' ' + assets::sha256File(f) + '\n';
+        return assets::sha256(summary);
+    }
+
+    std::string contentHash(const fs::path& file)
+    {
+        const auto text = slurp(file);
+        // The top-level info object, by its key, skipped to its matching brace outside strings.
+        const auto key = text.find(",\"info\":{");
+        if(key == std::string::npos) throw std::runtime_error("no info block in " + file.string());
+        size_t at = key + 8, depth = 0;
+        bool quoted = false, escaped = false;
+        for(; at < text.size(); ++at)
+        {
+            const char ch = text[at];
+            if(quoted) { if(escaped) escaped = false; else if(ch == '\\') escaped = true; else if(ch == '"') quoted = false; continue; }
+            if(ch == '"') quoted = true;
+            else if(ch == '{') ++depth;
+            else if(ch == '}' && --depth == 0) break;
+        }
+        if(at >= text.size()) throw std::runtime_error("an unfinished info block in " + file.string());
+        return contentHash(text.substr(0, key + 8) + text.substr(at + 1), file.parent_path() / "nodes");
+    }
+
     Control::PerformanceInfo readInfo(const fs::path& file, const std::string& format)
     {
         const auto doc = parse(slurp(file));
@@ -97,7 +131,7 @@ namespace oscairn
         out.id = str(detail::member(info, "id")); out.name = str(detail::member(info, "name"));
         out.description = str(detail::member(info, "description")); out.tags = strings(detail::member(info, "tags"));
         out.color = str(detail::member(info, "color"));
-        out.revision = str(detail::member(info, "revision")); out.parent = str(detail::member(info, "parent"));
+        out.revision = str(detail::member(info, "revision")); out.parent = str(detail::member(info, "parent")); out.hash = str(detail::member(info, "hash"));
         if(out.id.empty() || out.id.size() > 64 || !validColor(out.color) || out.name.size() > 256 || out.description.size() > 4096 || out.tags.size() > maxTags ||
            std::any_of(out.tags.begin(), out.tags.end(), [](const std::string& t) { return t.empty() || t.size() > maxTag; }))
             throw std::runtime_error("invalid info");
@@ -125,7 +159,7 @@ namespace oscairn
                     Control::LibraryItem item;
                     item.path = str(detail::member(e->value, "path")); item.id = str(detail::member(e->value, "id")); item.kind = str(detail::member(e->value, "kind"));
                     item.name = str(detail::member(e->value, "name")); item.description = str(detail::member(e->value, "description"));
-                    item.tags = strings(detail::member(e->value, "tags")); item.color = str(detail::member(e->value, "color")); item.revision = str(detail::member(e->value, "revision"));
+                    item.tags = strings(detail::member(e->value, "tags")); item.color = str(detail::member(e->value, "color")); item.revision = str(detail::member(e->value, "revision")); item.hash = str(detail::member(e->value, "hash"));
                     const auto modified = std::stoll(str(detail::member(e->value, "modified")));
                     cached[item.path] = {modified, item};
                 }
@@ -150,14 +184,14 @@ namespace oscairn
                     try
                     {
                         const auto info = readInfo(manifest, std::string("oscairn.") + kind);
-                        item.kind = kind; item.id = info.id; item.name = info.name; item.description = info.description; item.tags = info.tags; item.color = info.color; item.revision = info.revision; item.path = path;
+                        item.kind = kind; item.id = info.id; item.name = info.name; item.description = info.description; item.tags = info.tags; item.color = info.color; item.revision = info.revision; item.hash = info.hash; item.path = path;
                     }
                     catch(const std::exception&) { continue; } // not one the library can show; it stays on disk
                 }
                 if(std::any_of(items_.begin(), items_.end(), [&](const auto& i) { return i.id == item.id; })) continue; // a copied folder: the first wins
                 items_.push_back(item);
                 index += std::string(index.empty() ? "" : ",") + "{\"path\":" + detail::quote(item.path) + ",\"kind\":" + detail::quote(item.kind) + ",\"modified\":" + detail::quote(std::to_string(modified)) +
-                         ",\"id\":" + detail::quote(item.id) + ",\"name\":" + detail::quote(item.name) + ",\"description\":" + detail::quote(item.description) + ",\"tags\":" + list(item.tags) + ",\"color\":" + detail::quote(item.color) + ",\"revision\":" + detail::quote(item.revision) + '}';
+                         ",\"id\":" + detail::quote(item.id) + ",\"name\":" + detail::quote(item.name) + ",\"description\":" + detail::quote(item.description) + ",\"tags\":" + list(item.tags) + ",\"color\":" + detail::quote(item.color) + ",\"revision\":" + detail::quote(item.revision) + ",\"hash\":" + detail::quote(item.hash) + '}';
             }
         try { writeAtomically(cache_ / "index.json", "{\"items\":[" + index + "]}\n"); } catch(const std::exception&) {} // a cache: reading works without it
         // Favourites and recents of items that went stay in the user file, for when they return.
