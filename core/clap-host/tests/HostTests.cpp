@@ -71,6 +71,13 @@ int main(int argc, char** argv) {
         check(late.load(catalog.plugins[0], 48000, 128), "a plugin whose functions are filled in by init loads");
         late.unload();
         unsetenv("KICK_FIXTURE_LATE_FUNCTIONS");
+        // Defaults outside the range or not numbers are brought into it, not refused.
+        setenv("KICK_FIXTURE_BAD_DEFAULT", "1", 1);
+        Host bad;
+        check(bad.load(catalog.plugins[0], 48000, 128) && bad.parameters().size() == 2 && bad.parameters()[0].defaultValue == 0 && bad.parameters()[1].defaultValue == 1,
+              "a parameter's default outside its range is brought into it");
+        bad.unload();
+        unsetenv("KICK_FIXTURE_BAD_DEFAULT");
     }
     check(h.load(catalog.plugins[0], 48000, 128), "load exact instrument ID");
     check(h.parameters().size() == 2 && h.latency() == 13 && h.supportsState(), "parameters, latency, state");

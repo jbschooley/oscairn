@@ -197,6 +197,7 @@ struct Plugin {
                 *out = {}; out->id = index ? 99 : 7; out->cookie = &get(p);
                 std::strcpy(out->name, index ? "Read only" : "Gain");
                 out->min_value = 0; out->max_value = 1; out->default_value = .5;
+                if (std::getenv("KICK_FIXTURE_BAD_DEFAULT")) out->default_value = index ? 1e34 : std::numeric_limits<double>::quiet_NaN();
                 out->flags = index ? CLAP_PARAM_IS_READONLY : CLAP_PARAM_IS_AUTOMATABLE;
                 return true;
             },

@@ -24,7 +24,7 @@ tried yet.
 | Audio outputs, note outputs or both (a pure tuner or meter has neither) | "Plugin has neither audio nor note outputs" |
 | At most 64 audio channels in each direction across all ports; no port without channels | "Audio bus count exceeds the 64-channel budget", "Invalid or unsupported audio channel layout" |
 | At most 16 note ports in each direction | "More than 16 note ports are unsupported" |
-| If it has the params extension, all its functions; every parameter with a unique ID and finite minimum ≤ default ≤ maximum; at most 32,768 | "Incomplete CLAP parameter interface", "Invalid CLAP parameter metadata", "Duplicate CLAP parameter ID", "Plugin advertises too many parameters" |
+| If it has the params extension, all its functions; every parameter with a unique ID and a finite minimum ≤ maximum (a default outside that range, or not a number, is brought into it: it only misplaces a reset); at most 32,768 | "Incomplete CLAP parameter interface", "Invalid CLAP parameter metadata", "Duplicate CLAP parameter ID", "Plugin advertises too many parameters" |
 | If it has the state or audio-ports extension, all its functions | "Incomplete plugin state interface", "Incomplete CLAP audio-ports interface" |
 | Activates at the host's sample rate and maximum block size | "Plugin activation failed" |
 | An audio port layout that does not change while loaded (parameter and note-port changes need a restart request) | "CLAP audio port layout changed; reload this graph node before reconnecting audio" |

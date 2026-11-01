@@ -391,11 +391,15 @@ struct Host::Impl {
             if (count > 32768) throw std::runtime_error("Plugin advertises too many parameters");
             for (uint32_t i = 0; i < count; ++i) {
                 clap_param_info_t p{};
-                if (!params->get_info(plugin, i, &p) || p.id == CLAP_INVALID_ID ||
-                    !std::isfinite(p.min_value) || !std::isfinite(p.max_value) ||
-                    !std::isfinite(p.default_value) || p.min_value > p.max_value ||
-                    p.default_value < p.min_value || p.default_value > p.max_value)
-                    throw std::runtime_error("Invalid CLAP parameter metadata");
+                if (!params->get_info(plugin, i, &p) || p.id == CLAP_INVALID_ID)
+                    throw std::runtime_error("Invalid CLAP parameter metadata: parameter " + std::to_string(i) + " has no info");
+                if (!std::isfinite(p.min_value) || !std::isfinite(p.max_value) || p.min_value > p.max_value)
+                    throw std::runtime_error("Invalid CLAP parameter metadata: '" + std::string(p.name, strnlen(p.name, sizeof p.name)) + "' (" + std::to_string(p.id) +
+                                             ") minimum " + std::to_string(p.min_value) + ", maximum " + std::to_string(p.max_value));
+                // A default outside the range only misplaces a reset, so it is brought into the
+                // range rather than refusing the plugin (Airwindows Consolidated reports garbage
+                // defaults for the controls an effect does not use).
+                p.default_value = std::isfinite(p.default_value) ? std::clamp(p.default_value, p.min_value, p.max_value) : p.min_value;
                 double value = p.default_value;
                 params->get_value(plugin, p.id, &value);
                 if (!std::isfinite(value)) value = p.default_value;
