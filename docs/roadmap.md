@@ -297,16 +297,18 @@ in the others.
    - [x] content hashes for Sounds and Performances (beside their IDs, not instead), written
      at every save and kept in the library index
    - [ ] authors in the info block; preset and state loads marking a part edited
-   - [ ] **libraries:** a sound pack, exported library or the factory content, its Sounds and
-     samples locked (Save As New makes your own copy); items can be deleted and libraries
-     uninstalled, and reinstalling puts back whatever is missing
-     ([design](rfcs/0021-sounds-performances-and-library.md#libraries))
-   - [ ] **importing:** as a locked library or into your own storage (editable, new IDs), and
-     all of it or chosen items; importing again skips copies still unchanged, by content
-     hash; the same choice of parts for any package, such as only its
-     plugin ([RFC 0006](rfcs/0006-packages-and-portability.md#choosing-what-to-import))
+   - [x] **libraries**, as one archive file ([format](library-archive.md)): a sound pack or
+     exported library, its Sounds and Performances locked (Save As New makes your own copy);
+     items can be deleted and libraries uninstalled, and reinstalling puts back whatever is
+     missing ([design](rfcs/0021-sounds-performances-and-library.md#libraries))
+   - [ ] the factory content, as a preloaded library (none exists yet)
+   - [x] **importing:** as a locked library or into your own storage (editable, new IDs), and
+     all of it or chosen items; importing again skips copies still unchanged, by content hash
+   - [ ] the same choice of parts for any package, such as only its plugin
+     ([RFC 0006](rfcs/0006-packages-and-portability.md#choosing-what-to-import))
+   - [ ] the desktop's Install, Export, Delete and Uninstall
    - [x] exporting a Performance keeps its parts' references to the Sounds they came from
-   - [ ] **exporting with its Sounds and assets:** every sample, waveform and other asset
+   - [x] **exporting with its Sounds and assets:** every sample, waveform and other asset
      always travels; a part's Sound travels when the part is unedited since it, and as an
      option when it was edited; importing adds what the device lacks, by hash
      ([design](rfcs/0021-sounds-performances-and-library.md#exporting-a-performance))

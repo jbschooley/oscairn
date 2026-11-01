@@ -3,6 +3,7 @@
 #include "../../plugin-host/src/StateFiles.h"
 #include "sheredom/json.h"
 #include "JsonInput.h"
+#include "oscairn/package.h"
 #include <algorithm>
 #include <charconv>
 #include <cmath>
@@ -121,6 +122,56 @@ std::unique_ptr<json_value_s,decltype(&std::free)> document(const fs::path& root
 
 void Session::savePerformance(const std::string& directory) {info_=writeDocument(directory,info_,nullptr,nullptr);}
 
+// The samples a saved Performance's or Sound's plugins use, as its document lists them.
+std::vector<assets::Ref> Session::assetsOf(const fs::path& manifest) {
+    const auto bytes=state_files::read(manifest,4*1024*1024);
+    const std::unique_ptr<json_value_s,decltype(&std::free)> doc{json_parse(bytes.data(),bytes.size()),&std::free};
+    if(!doc)bad("invalid JSON in "+manifest.string());
+    std::vector<assets::Ref> out;
+    for(auto node:array(field(doc.get(),"nodes"),256))if(member(node,"assets"))
+        for(auto a:array(field(node,"assets"),65536))out.push_back({text(field(a,"library")),text(field(a,"path")),text(field(a,"sha256"))});
+    return out;
+}
+
+void Session::exportPerformance(const std::string& file,bool editedSounds) {
+    const fs::path archive(file);
+    if(archive.filename().empty() || fs::exists(archive))bad("the export file has no name or exists already");
+    std::random_device random;
+    const auto stage=fs::temp_directory_path()/("oscairn-export-"+std::to_string(random())+std::to_string(random()));
+    try{
+        Package package;package.kind="performance";
+        const auto name=info_.name.empty()?archive.stem().string():info_.name;
+        const auto folder=fs::path("Performances")/(library().newFolder(name,"performance").filename());
+        fs::create_directories(stage/"Performances");
+        const auto saved=writeDocument((stage/folder).string(),info_,nullptr,nullptr); // this Performance's info is not changed by exporting
+        package.id=saved.id;package.name=saved.name;
+        package.items.push_back({"performance",saved.id,saved.name,folder.generic_string()});
+        std::vector<fs::path> manifests{stage/folder/"performance.json"};
+        // A part's Sound goes when the part is still it (that revision is the library's); an edited part's, when asked.
+        std::set<std::string> sounds;
+        for(const auto& p:parts_){
+            if(p.from.sound.empty() || (p.from.modified && !editedSounds) || sounds.count(p.from.sound))continue;
+            const auto* item=library().find(p.from.sound);
+            if(!item || item->kind!="sound" || item->revision!=p.from.revision)continue;
+            sounds.insert(item->id);
+            const auto to=fs::path("Sounds")/fs::path(item->path).filename();
+            fs::create_directories(stage/to);fs::copy(item->path,stage/to,fs::copy_options::recursive);
+            package.items.push_back({"sound",item->id,item->name,to.generic_string()});
+            manifests.push_back(stage/to/"sound.json");
+        }
+        // Every sample they use, each once, by its hash.
+        std::set<std::string> copied;
+        for(const auto& m:manifests)for(auto ref:assetsOf(m)){
+            const auto source=assets_.resolve(ref);
+            if(!copied.insert(ref.sha256).second)continue;
+            const auto to=stage/"Assets"/ref.sha256.substr(0,16)/source.filename();
+            fs::create_directories(to.parent_path());fs::copy_file(source,to);
+        }
+        writePackage(archive,package,stage);
+    }catch(...){std::error_code ignored;fs::remove_all(stage,ignored);throw;}
+    std::error_code ignored;fs::remove_all(stage,ignored);
+}
+
 // The nodes a part holds: its chains' and lanes' boxes, and its splits' Split and Join nodes.
 std::set<NodeId> Session::nodesOf(const Part& p) const {
     std::set<NodeId> out;
@@ -209,7 +260,7 @@ Control::PerformanceInfo Session::writeDocument(const std::string& directory,Per
     info.parent=info.revision;info.revision=fresh();
     if(info.name.empty())info.name=fs::path(directory).stem().string();
     std::vector<std::string> tags;for(const auto& t:info.tags)tags.push_back(quote(t));
-    auto infoText=[&]{return "{\"id\":"+quote(info.id)+",\"name\":"+quote(info.name)+",\"description\":"+quote(info.description)+",\"tags\":"+join(tags)+",\"color\":"+quote(info.color)+",\"revision\":"+quote(info.revision)+",\"parent\":"+quote(info.parent)+",\"hash\":"+quote(info.hash)+'}';};
+    auto infoText=[&]{return infoJson(info);};
     // The document around its info block; the content hash covers it and the plugins' state.
     std::string head,tail;
     if(sound){head="{\"format\":\"oscairn.sound\",\"version\":4,\"info\":";tail=",\"libraries\":"+join(named)+",\"nodes\":"+join(nodes)+",\"wires\":"+join(wires)+",\"part\":{\"chain\":"+chainText(sound->chain)+",\"splits\":"+splitsText(*sound)+"},\"mappings\":"+join(mappings)+",\"controls\":"+join(controls)+"}\n";}
@@ -251,7 +302,7 @@ void Session::loadPerformance(const std::string& directory) {
     fields(d,{"format","version","info","libraries","transport","audioInputs","audioOutputs","nodes","wires","parts","mappings","pads","scenes","sceneUntouched","scene","controls"});
     const auto pads=padsFrom(field(d,"pads"));
     if(text(field(d,"format"))!="oscairn.performance" || integer(field(d,"version"))!=4)bad("unsupported format version");
-    fields(field(d,"info"),{"id","name","description","tags","color","revision","parent","hash"});const auto info=readInfo(root/"performance.json","oscairn.performance");
+    fields(field(d,"info"),{"id","name","description","tags","color","revision","parent","hash","origin"});const auto info=readInfo(root/"performance.json","oscairn.performance");
     const auto transport=field(d,"transport");fields(transport,{"tempo","clockSource"});const double tempo=number(field(transport,"tempo"));
     const auto clock=text(field(transport,"clockSource"));if(tempo<1 || tempo>1000 || (clock!="internal" && clock!="midi"))bad("invalid transport");
     const auto layout=graph_.describe().audioLayout;checkPorts(field(d,"audioInputs"),layout.inputs);checkPorts(field(d,"audioOutputs"),layout.outputs);
@@ -524,7 +575,7 @@ std::vector<std::string> Session::loadSoundInto(uint32_t partId,const fs::path& 
     V d=doc.get();if(!d)bad("invalid JSON");
     fields(d,{"format","version","info","libraries","nodes","wires","part","mappings","controls"});
     if(text(field(d,"format"))!="oscairn.sound" || integer(field(d,"version"))!=4)bad("not a version 4 Sound");
-    fields(field(d,"info"),{"id","name","description","tags","color","revision","parent","hash"});
+    fields(field(d,"info"),{"id","name","description","tags","color","revision","parent","hash","origin"});
     const auto info=readInfo(root/"sound.json","oscairn.sound");
     std::vector<NodeId> added;
     auto ids=addNodes(field(d,"nodes"),root,added,nullptr);
@@ -645,7 +696,7 @@ Control::SoundSaved Session::savePartAsSound(uint32_t partId,const std::string& 
     // Save writes over the Sound the part came from, as its next revision; Save As New, or a
     // part from no Sound (or one no longer in the library), makes a new one.
     const auto* item=asNew || part.from.sound.empty()?nullptr:l.find(part.from.sound);
-    if(item && item->kind!="sound")item=nullptr;
+    if(item && (item->kind!="sound" || !item->library.empty()))item=nullptr; // nothing saves over a locked library's Sound: Save is Save As New
     PerformanceInfo info;
     if(item){info=readInfo(fs::path(item->path)/"sound.json","oscairn.sound");info.revision=part.from.revision;}
     if(!name.empty())info.name=name;
@@ -718,7 +769,7 @@ Control::Imported Session::importPerformance(const std::string& directory,const 
     const auto root=fs::canonical(directory);validateTree(root);const auto doc=document(root);V d=doc.get();
     fields(d,{"format","version","info","libraries","transport","audioInputs","audioOutputs","nodes","wires","parts","mappings","pads","scenes","sceneUntouched","scene","controls"});
     if(text(field(d,"format"))!="oscairn.performance" || integer(field(d,"version"))!=4)bad("unsupported format version");
-    fields(field(d,"info"),{"id","name","description","tags","color","revision","parent","hash"});
+    fields(field(d,"info"),{"id","name","description","tags","color","revision","parent","hash","origin"});
     // The parts that come: those chosen, and the buses they play through or send to, and theirs.
     const auto partList=array(field(d,"parts"),256);
     std::map<uint32_t,V> byId;
@@ -943,13 +994,15 @@ void Session::setPerformanceInfo(const PerformanceInfo& info) {
     if(info.name.size()>256 || info.description.size()>4096 || info.tags.size()>32 ||
        std::any_of(info.tags.begin(),info.tags.end(),[](const std::string& t){return t.empty() || t.size()>64 || t.find('\0')!=std::string::npos;}) ||
        info.name.find('\0')!=std::string::npos || info.description.find('\0')!=std::string::npos || !validColor(info.color))bad("invalid info");
-    const auto id=info_.id,revision=info_.revision,parent=info_.parent;info_=info;info_.id=id;info_.revision=revision;info_.parent=parent;
+    const auto id=info_.id,revision=info_.revision,parent=info_.parent;const auto origin=info_.origin;info_=info;info_.id=id;info_.revision=revision;info_.parent=parent;info_.origin=origin;
 }
 
 std::string Session::savePerformanceToLibrary(const std::string& name,bool asNew) {
     auto& l=library();
-    // Save writes over the open library Performance; Save As New, or one not from the library, makes a new one.
-    if(asNew){info_.id.clear();info_.revision.clear();}
+    // Save writes over the open library Performance; Save As New, or one not from the library or
+    // from a locked library, makes a new one.
+    if(const auto* open=info_.id.empty()?nullptr:l.find(info_.id);open && !open->library.empty())asNew=true;
+    if(asNew){info_.id.clear();info_.revision.clear();info_.origin={};}
     if(!name.empty())info_.name=name;
     const auto* item=info_.id.empty()?nullptr:l.find(info_.id);
     const auto folder=item?fs::path(item->path):l.newFolder(info_.name.empty()?"Performance":info_.name,"performance");
@@ -964,6 +1017,100 @@ std::string Session::savePerformanceToLibrary(const std::string& name,bool asNew
     }
     l.rescan();l.used(info_.id);
     return info_.id;
+}
+
+// Libraries (RFC 0021). An archive is unpacked into a folder of its own and checked before
+// anything is installed; it goes again afterwards.
+namespace {
+fs::path unpackFolder(){std::random_device random;return fs::temp_directory_path()/("oscairn-archive-"+std::to_string(random())+std::to_string(random()));}
+std::string freshId(){std::random_device random;constexpr char hex[]="0123456789abcdef";std::string id;for(int i=0;i<16;++i)id+=hex[random()&15];return id;}
+std::string safeName(const std::string& id){std::string out;for(const char c:id)out+=std::isalnum(static_cast<unsigned char>(c))?c:'_';return out;}
+}
+
+Control::Archive Session::archiveContents(const std::string& file) {
+    const auto into=unpackFolder();
+    const auto p=readPackage(file,into);
+    std::error_code ignored;fs::remove_all(into,ignored);
+    Archive out{p.id,p.name,p.kind,{}};
+    for(const auto& i:p.items){LibraryItem item;item.kind=i.kind;item.id=i.id;item.name=i.name;out.items.push_back(item);}
+    return out;
+}
+
+Control::Installed Session::installArchive(const std::string& file,bool asLibrary,const std::vector<std::string>& chosen) {
+    auto& l=library();
+    const auto into=unpackFolder();
+    const auto p=readPackage(file,into);
+    Installed out;
+    try{
+        std::vector<Package::Item> items;
+        for(const auto& id:chosen)if(std::none_of(p.items.begin(),p.items.end(),[&](const auto& i){return i.id==id;}))bad("no item "+id+" in that archive");
+        for(const auto& i:p.items)if(chosen.empty() || std::find(chosen.begin(),chosen.end(),i.id)!=chosen.end())items.push_back(i);
+        auto manifest=[&](const Package::Item& i){return into/i.path/(i.kind=="sound"?"sound.json":"performance.json");};
+        // Each item is what it says it is.
+        for(const auto& i:items){const auto info=readInfo(manifest(i),"oscairn."+i.kind);if(info.id!=i.id)bad("the item "+i.name+" is not the one its archive lists");}
+        // The samples they use, into the user's samples by their hash, so they stay when a library goes.
+        for(const auto& i:items)for(const auto& ref:assetsOf(manifest(i))){
+            const auto folder=into/"Assets"/ref.sha256.substr(0,16);
+            bool found=false;std::error_code error;
+            if(fs::is_directory(folder,error))for(const auto& f:fs::directory_iterator(folder,error))if(f.is_regular_file() && assets_.import(f.path()).sha256==ref.sha256)found=true;
+            if(!found){auto copy=ref;try{assets_.resolve(copy);}catch(const std::exception&){out.notes.push_back(i.name+" uses a sample that is not in the archive or on this device: "+ref.path);}}
+        }
+        if(asLibrary){
+            // Locked, in its own folder: what is there stays, what is missing comes back.
+            const auto root=l.libraries()/safeName(p.id);
+            fs::create_directories(root);
+            {std::ofstream m(root/"library.json",std::ios::binary|std::ios::trunc);m<<manifestJson(p);if(!m)bad("cannot write the library's manifest");}
+            for(const auto& i:items){
+                const auto to=root/i.path;
+                if(fs::exists(to)){++out.skipped;continue;}
+                fs::create_directories(to.parent_path());fs::copy(into/i.path,to,fs::copy_options::recursive);++out.added;
+            }
+        }else{
+            // The user's own, under new IDs: Sounds first, so the Performances that came with them point at their copies.
+            std::map<std::string,std::string> ids; // the archive's item ID -> the copy's
+            std::stable_sort(items.begin(),items.end(),[](const auto& a,const auto& b){return a.kind=="sound" && b.kind!="sound";});
+            l.rescan();
+            for(const auto& i:items){
+                const auto copy=std::find_if(l.items().begin(),l.items().end(),[&](const LibraryItem& x){return x.library.empty() && x.origin.library==p.id && x.origin.item==i.id;});
+                if(copy!=l.items().end() && copy->hash==copy->origin.hash){ids[i.id]=copy->id;++out.skipped;continue;} // still as imported
+                const auto to=l.newFolder(i.name,i.kind);
+                fs::create_directories(to.parent_path());fs::copy(into/i.path,to,fs::copy_options::recursive);
+                const auto doc=to/(i.kind=="sound"?"sound.json":"performance.json");
+                if(i.kind=="performance"){
+                    // Parts point at the Sounds' copies. IDs are 16 hex digits, so the text is unambiguous.
+                    const auto bytes=state_files::read(doc,4*1024*1024);std::string text(bytes.begin(),bytes.end());
+                    for(const auto& [from,id]:ids)for(auto at=text.find("\"sound\":"+quote(from));at!=std::string::npos;at=text.find("\"sound\":"+quote(from),at))text.replace(at,8+from.size()+2,"\"sound\":"+quote(id));
+                    state_files::write(doc,text.data(),text.size());
+                }
+                auto info=readInfo(doc,"oscairn."+i.kind);
+                info.id=freshId();info.parent.clear();info.revision=freshId();
+                info.hash=contentHash(doc);info.origin={p.id,i.id,info.hash};
+                writeInfo(doc,info);
+                ids[i.id]=info.id;++out.added;
+            }
+        }
+    }catch(...){std::error_code ignored;fs::remove_all(into,ignored);l.rescan();throw;}
+    std::error_code ignored;fs::remove_all(into,ignored);
+    l.rescan();
+    return out;
+}
+
+std::vector<Control::InstalledLibrary> Session::libraries() { return library().installed(); }
+
+void Session::uninstallLibrary(const std::string& id) {
+    auto& l=library();
+    const auto all=l.installed();
+    if(std::none_of(all.begin(),all.end(),[&](const auto& x){return x.id==id;}))bad("no such library installed");
+    fs::remove_all(l.libraries()/safeName(id));
+    l.rescan();
+}
+
+void Session::deleteLibraryItem(const std::string& id) {
+    auto& l=library();
+    const auto* item=l.find(id);
+    if(!item)bad("no such library item");
+    fs::remove_all(item->path);
+    l.rescan();
 }
 
 void Session::loadPerformanceFromLibrary(const std::string& id) {

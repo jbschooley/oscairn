@@ -36,14 +36,15 @@ Checked when built and tested; the sections below say how.
       for Sounds; Update from library; a deleted Sound breaks nothing
 - [x] Content hashes for Sounds and Performances, in the info block and the index
 - [ ] Authors in the info block, and `modified` set by preset and state loads
-- [ ] Libraries: items locked, Save As New from them, deleting items, uninstalling, and
-      reinstalling to restore what is missing ([design](#libraries)); factory content as a
-      preloaded library
-- [ ] Importing a library as a library or into your own storage, all of it or chosen items;
+- [x] Libraries as archive files: items locked, Save As New from them, deleting items,
+      uninstalling, and reinstalling to restore what is missing ([design](#libraries))
+- [ ] Factory content as a preloaded library (there is no factory content yet)
+- [x] Importing a library as a library or into your own storage, all of it or chosen items;
       importing again skips copies still unchanged (by content hash)
+- [ ] The desktop's Install, Export, Delete and Uninstall
 - [ ] Hidden tags and tag colors
 - [x] Exporting a Performance keeps its parts' references to their Sounds
-- [ ] Exporting with every asset, the Sounds of unedited parts, and optionally those of edited
+- [x] Exporting with every asset, the Sounds of unedited parts, and optionally those of edited
       parts ([design](#exporting-a-performance))
 - [ ] 2. Library index and tags: index, user file and Sounds done; tag editing, suggestions,
       packages and `LibraryModel` remain
@@ -434,6 +435,21 @@ filed as one or the other.
   package store when it exists), so it plays without the medium it came from.
 - CLAP preset features become tags as above.
 
+Built 2026-11-01 ([archive format](../library-archive.md); `library.contents`,
+`library.install`, `library.libraries`, `library.uninstall`, `library.delete`): a library is
+one archive file (a zip, decided 2026-11-01, with a single-file form easier to share than a
+folder), read as untrusted input. Installed as a library its items are locked under its ID in
+`Libraries/`, Save over one is Save As New, deleting an item or uninstalling works and
+installing again restores only what is missing. Installed into the user's own storage its
+items get new IDs and an `origin` in their info (the archive's ID, the item's ID there, the
+copy's content hash), and installing again skips copies still as imported. All of it or chosen
+items; the samples go into the user's sample library by hash either way, so they stay when a
+library goes. `control-archives` checks export and install across three data folders;
+`control-package` checks unsafe archives refused. Not yet: the factory library itself (there is
+no factory content yet), plugins in archives (RFC 0006), and a chosen Performance bringing the
+Sounds it needs when they are not chosen.
+
+
 ### Exporting a Performance
 
 An exported Performance carries its parts complete, as copies, whatever they came from: many
@@ -456,9 +472,11 @@ none. Each part also keeps where it came from, if it came from a Sound, as a ref
 - A Sound from a locked library comes as that library's item, locked, with its library's name
   and ID.
 
-Today a Performance saved to a folder keeps its parts' references; the export that brings
-Sounds and assets along is not built yet (the folder references samples in their libraries,
-as RFC 0009 has it for saved Performances).
+Built 2026-11-01 (`performance.export`, the [archive format](../library-archive.md)): the export
+is one archive file holding the Performance, every sample, and the Sounds as above. Installing
+it is installing a library (below), into the user's own storage by default; a part's `from`
+then points at its Sound's copy. Not yet: a Sound from a locked library exported as that
+library's item.
 
 ### Filtering
 

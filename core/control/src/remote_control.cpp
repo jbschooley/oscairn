@@ -283,6 +283,9 @@ namespace oscairn
     void RemoteControl::savePerformance(const std::string& directory) {
         impl_->call("performance.save","{\"directory\":"+quote(directory)+'}',30000);
     }
+    void RemoteControl::exportPerformance(const std::string& file,bool editedSounds) {
+        impl_->call("performance.export","{\"file\":"+quote(file)+",\"editedSounds\":"+(editedSounds?"true":"false")+'}',30000);
+    }
     void RemoteControl::loadPerformance(const std::string& directory) {
         impl_->call("performance.load","{\"directory\":"+quote(directory)+'}',30000);impl_->refresh();
     }
@@ -300,7 +303,7 @@ namespace oscairn
     Control::LibraryResult RemoteControl::libraryQuery(const LibraryQuery& q) {
         auto d=impl_->call("library.query","{\"text\":"+quote(q.text)+",\"tags\":"+quoted(q.tags)+",\"favourites\":"+(q.favourites?"true":"false")+",\"recent\":"+(q.recent?"true":"false")+",\"limit\":"+std::to_string(q.limit)+(q.kind.empty()?std::string():",\"kind\":"+quote(q.kind))+'}');
         auto r=field(d.get(),"result");LibraryResult result;
-        for(auto i:array(field(r,"items")))result.items.push_back({string(field(i,"id")),string(field(i,"kind")),string(field(i,"name")),string(field(i,"description")),string(field(i,"path")),strings(field(i,"tags")),boolean(field(i,"favourite")),static_cast<uint32_t>(integer(field(i,"recent"))),string(field(i,"color")),string(field(i,"revision")),string(field(i,"hash"))});
+        for(auto i:array(field(r,"items")))result.items.push_back({string(field(i,"id")),string(field(i,"kind")),string(field(i,"name")),string(field(i,"description")),string(field(i,"path")),strings(field(i,"tags")),boolean(field(i,"favourite")),static_cast<uint32_t>(integer(field(i,"recent"))),string(field(i,"color")),string(field(i,"revision")),string(field(i,"hash")),string(field(i,"library")),{}});
         for(auto t:array(field(r,"tags")))result.tags.emplace_back(string(field(t,"tag")),static_cast<uint32_t>(integer(field(t,"count"))));
         result.total=static_cast<uint32_t>(integer(field(r,"total")));
         return result;
@@ -309,6 +312,23 @@ namespace oscairn
         impl_->call("library.favourite","{\"id\":"+quote(id)+",\"favourite\":"+(favourite?"true":"false")+'}');
     }
     // A rescan, save or load reads or writes every Performance file, so allow time.
+    Control::Archive RemoteControl::archiveContents(const std::string& file) {
+        auto d=impl_->call("library.contents","{\"file\":"+quote(file)+'}',30000);auto r=field(d.get(),"result");
+        Archive a{string(field(r,"id")),string(field(r,"name")),string(field(r,"kind")),{}};
+        for(auto i:array(field(r,"items"))){LibraryItem item;item.kind=string(field(i,"kind"));item.id=string(field(i,"id"));item.name=string(field(i,"name"));a.items.push_back(item);}
+        return a;
+    }
+    Control::Installed RemoteControl::installArchive(const std::string& file,bool asLibrary,const std::vector<std::string>& items) {
+        auto d=impl_->call("library.install","{\"file\":"+quote(file)+",\"asLibrary\":"+(asLibrary?"true":"false")+",\"items\":"+quoted(items)+'}',120000);auto r=field(d.get(),"result");
+        return {static_cast<uint32_t>(integer(field(r,"added"))),static_cast<uint32_t>(integer(field(r,"skipped"))),strings(field(r,"notes"))};
+    }
+    std::vector<Control::InstalledLibrary> RemoteControl::libraries() {
+        auto d=impl_->call("library.libraries","{}");std::vector<InstalledLibrary> out;
+        for(auto l:array(field(field(d.get(),"result"),"libraries")))out.push_back({string(field(l,"id")),string(field(l,"name")),static_cast<uint32_t>(integer(field(l,"items")))});
+        return out;
+    }
+    void RemoteControl::uninstallLibrary(const std::string& id) { impl_->call("library.uninstall","{\"library\":"+quote(id)+'}',30000); }
+    void RemoteControl::deleteLibraryItem(const std::string& id) { impl_->call("library.delete","{\"id\":"+quote(id)+'}',30000); }
     uint32_t RemoteControl::libraryRescan() {
         auto d=impl_->call("library.rescan","{}",30000);return static_cast<uint32_t>(integer(field(field(d.get(),"result"),"items")));
     }

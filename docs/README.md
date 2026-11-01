@@ -23,6 +23,7 @@ an implemented capability.
 | Drive external MIDI/CV gear, sync clocks or link several devices in one setlist | [Sync and multi-device RFC](rfcs/0012-sync-external-midi-and-multi-device.md) (proposed) |
 | Build native sample support or choose a sample format | [SFZ-based native samples and conversion plan](rfcs/0008-sfz-native-samples-and-conversion.md), [player/format research](sample-players-and-formats.md), [ESP observations](yamaha-esp-samples-research.md) (first one-region slice implemented; multisample planned) |
 | Save, reopen, import or export a Performance | [Format and behavior](performance-format.md), [JSON Schema](performance.schema.json) |
+| Install a library, or read and write export archives | [Library archive format](library-archive.md) |
 | Emit parameter-lock lanes from a sequencer | [Parameter-target extension](rfcs/0002-param-target.md) |
 | Add a desktop panel layout | [Layout format](../hosts/standalone/layouts/README.md) |
 | Configure audio, MIDI and helper processes | [Hosts](../hosts/README.md) |

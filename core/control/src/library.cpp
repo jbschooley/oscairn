@@ -97,24 +97,49 @@ namespace oscairn
         return assets::sha256(summary);
     }
 
+    namespace
+    {
+        // The top-level info object, by its key, from its opening brace to just past its matching
+        // one, outside strings.
+        std::pair<size_t, size_t> infoSpan(const std::string& text, const fs::path& file)
+        {
+            const auto key = text.find(",\"info\":{");
+            if(key == std::string::npos) throw std::runtime_error("no info block in " + file.string());
+            size_t at = key + 8, depth = 0;
+            bool quoted = false, escaped = false;
+            for(; at < text.size(); ++at)
+            {
+                const char ch = text[at];
+                if(quoted) { if(escaped) escaped = false; else if(ch == '\\') escaped = true; else if(ch == '"') quoted = false; continue; }
+                if(ch == '"') quoted = true;
+                else if(ch == '{') ++depth;
+                else if(ch == '}' && --depth == 0) break;
+            }
+            if(at >= text.size()) throw std::runtime_error("an unfinished info block in " + file.string());
+            return {key + 8, at + 1};
+        }
+    }
+
     std::string contentHash(const fs::path& file)
     {
         const auto text = slurp(file);
-        // The top-level info object, by its key, skipped to its matching brace outside strings.
-        const auto key = text.find(",\"info\":{");
-        if(key == std::string::npos) throw std::runtime_error("no info block in " + file.string());
-        size_t at = key + 8, depth = 0;
-        bool quoted = false, escaped = false;
-        for(; at < text.size(); ++at)
-        {
-            const char ch = text[at];
-            if(quoted) { if(escaped) escaped = false; else if(ch == '\\') escaped = true; else if(ch == '"') quoted = false; continue; }
-            if(ch == '"') quoted = true;
-            else if(ch == '{') ++depth;
-            else if(ch == '}' && --depth == 0) break;
-        }
-        if(at >= text.size()) throw std::runtime_error("an unfinished info block in " + file.string());
-        return contentHash(text.substr(0, key + 8) + text.substr(at + 1), file.parent_path() / "nodes");
+        const auto [from, to] = infoSpan(text, file);
+        return contentHash(text.substr(0, from) + text.substr(to), file.parent_path() / "nodes");
+    }
+
+    std::string infoJson(const Control::PerformanceInfo& info)
+    {
+        const auto& o = info.origin;
+        return "{\"id\":" + detail::quote(info.id) + ",\"name\":" + detail::quote(info.name) + ",\"description\":" + detail::quote(info.description) + ",\"tags\":" + list(info.tags) +
+               ",\"color\":" + detail::quote(info.color) + ",\"revision\":" + detail::quote(info.revision) + ",\"parent\":" + detail::quote(info.parent) + ",\"hash\":" + detail::quote(info.hash) +
+               ",\"origin\":" + (o.library.empty() ? std::string("null") : "{\"library\":" + detail::quote(o.library) + ",\"item\":" + detail::quote(o.item) + ",\"hash\":" + detail::quote(o.hash) + '}') + '}';
+    }
+
+    void writeInfo(const fs::path& file, const Control::PerformanceInfo& info)
+    {
+        auto text = slurp(file);
+        const auto [from, to] = infoSpan(text, file);
+        writeAtomically(file, text.substr(0, from) + infoJson(info) + text.substr(to));
     }
 
     Control::PerformanceInfo readInfo(const fs::path& file, const std::string& format)
@@ -132,6 +157,8 @@ namespace oscairn
         out.description = str(detail::member(info, "description")); out.tags = strings(detail::member(info, "tags"));
         out.color = str(detail::member(info, "color"));
         out.revision = str(detail::member(info, "revision")); out.parent = str(detail::member(info, "parent")); out.hash = str(detail::member(info, "hash"));
+        if(const V o = detail::member(info, "origin"); !o || o->type != json_type_null)
+            out.origin = {str(detail::member(o, "library")), str(detail::member(o, "item")), str(detail::member(o, "hash"))};
         if(out.id.empty() || out.id.size() > 64 || !validColor(out.color) || out.name.size() > 256 || out.description.size() > 4096 || out.tags.size() > maxTags ||
            std::any_of(out.tags.begin(), out.tags.end(), [](const std::string& t) { return t.empty() || t.size() > maxTag; }))
             throw std::runtime_error("invalid info");
@@ -141,7 +168,7 @@ namespace oscairn
     Library::Library(fs::path home)
     {
         if(home.empty()) home = dataHome();
-        performances_ = home / "Performances"; sounds_ = home / "Sounds"; cache_ = home / "library";
+        performances_ = home / "Performances"; sounds_ = home / "Sounds"; libraries_ = home / "Libraries"; cache_ = home / "library";
         readUser();
         rescan();
     }
@@ -160,6 +187,8 @@ namespace oscairn
                     item.path = str(detail::member(e->value, "path")); item.id = str(detail::member(e->value, "id")); item.kind = str(detail::member(e->value, "kind"));
                     item.name = str(detail::member(e->value, "name")); item.description = str(detail::member(e->value, "description"));
                     item.tags = strings(detail::member(e->value, "tags")); item.color = str(detail::member(e->value, "color")); item.revision = str(detail::member(e->value, "revision")); item.hash = str(detail::member(e->value, "hash"));
+                    item.library = str(detail::member(e->value, "library"));
+                    item.origin = {str(detail::member(e->value, "originLibrary")), str(detail::member(e->value, "originItem")), str(detail::member(e->value, "originHash"))};
                     const auto modified = std::stoll(str(detail::member(e->value, "modified")));
                     cached[item.path] = {modified, item};
                 }
@@ -168,7 +197,25 @@ namespace oscairn
         items_.clear();
         std::string index;
         std::error_code error;
-        for(const auto& [folder, kind, file] : {std::tuple{performances_, "performance", "performance.json"}, std::tuple{sounds_, "sound", "sound.json"}})
+        // The user's own folders, then each installed library's, its items locked.
+        std::vector<std::tuple<fs::path, const char*, const char*, std::string>> folders{{performances_, "performance", "performance.json", ""}, {sounds_, "sound", "sound.json", ""}};
+        installed_.clear();
+        if(fs::is_directory(libraries_, error))
+            for(const auto& entry : fs::directory_iterator(libraries_, error))
+            {
+                if(!entry.is_directory() || entry.path().filename().string().starts_with(".")) continue;
+                try
+                {
+                    const auto doc = parse(slurp(entry.path() / "library.json"));
+                    Control::InstalledLibrary l{str(detail::member(doc.get(), "id")), str(detail::member(doc.get(), "name")), 0};
+                    if(l.id != entry.path().filename().string()) continue; // not where it was installed
+                    installed_.push_back(l);
+                    folders.push_back({entry.path() / "Performances", "performance", "performance.json", l.id});
+                    folders.push_back({entry.path() / "Sounds", "sound", "sound.json", l.id});
+                }
+                catch(const std::exception&) {} // a damaged library: install it again
+            }
+        for(const auto& [folder, kind, file, library] : folders)
         if(fs::is_directory(folder, error))
             for(const auto& entry : fs::directory_iterator(folder, error))
             {
@@ -185,13 +232,17 @@ namespace oscairn
                     {
                         const auto info = readInfo(manifest, std::string("oscairn.") + kind);
                         item.kind = kind; item.id = info.id; item.name = info.name; item.description = info.description; item.tags = info.tags; item.color = info.color; item.revision = info.revision; item.hash = info.hash; item.path = path;
+                        item.origin = info.origin;
                     }
                     catch(const std::exception&) { continue; } // not one the library can show; it stays on disk
                 }
+                item.library = library;
                 if(std::any_of(items_.begin(), items_.end(), [&](const auto& i) { return i.id == item.id; })) continue; // a copied folder: the first wins
                 items_.push_back(item);
+                for(auto& l : installed_) if(l.id == library) ++l.items;
                 index += std::string(index.empty() ? "" : ",") + "{\"path\":" + detail::quote(item.path) + ",\"kind\":" + detail::quote(item.kind) + ",\"modified\":" + detail::quote(std::to_string(modified)) +
-                         ",\"id\":" + detail::quote(item.id) + ",\"name\":" + detail::quote(item.name) + ",\"description\":" + detail::quote(item.description) + ",\"tags\":" + list(item.tags) + ",\"color\":" + detail::quote(item.color) + ",\"revision\":" + detail::quote(item.revision) + ",\"hash\":" + detail::quote(item.hash) + '}';
+                         ",\"id\":" + detail::quote(item.id) + ",\"name\":" + detail::quote(item.name) + ",\"description\":" + detail::quote(item.description) + ",\"tags\":" + list(item.tags) + ",\"color\":" + detail::quote(item.color) + ",\"revision\":" + detail::quote(item.revision) + ",\"hash\":" + detail::quote(item.hash) +
+                         ",\"library\":" + detail::quote(item.library) + ",\"originLibrary\":" + detail::quote(item.origin.library) + ",\"originItem\":" + detail::quote(item.origin.item) + ",\"originHash\":" + detail::quote(item.origin.hash) + '}';
             }
         try { writeAtomically(cache_ / "index.json", "{\"items\":[" + index + "]}\n"); } catch(const std::exception&) {} // a cache: reading works without it
         // Favourites and recents of items that went stay in the user file, for when they return.
@@ -231,6 +282,8 @@ namespace oscairn
         result.items = std::move(found);
         return result;
     }
+
+    std::vector<Control::InstalledLibrary> Library::installed() const { return installed_; }
 
     const Control::LibraryItem* Library::find(const std::string& id) const
     {

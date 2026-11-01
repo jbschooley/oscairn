@@ -38,6 +38,7 @@ namespace oscairn
         // Edits are staged; a failed commit leaves the live plan unchanged and the
         // staging area available for correction. Empty names address nodes by ID only.
         void savePerformance(const std::string& directory) override;
+        void exportPerformance(const std::string& file, bool editedSounds = false) override;
         void loadPerformance(const std::string& directory) override;
         PerformanceInfo performanceInfo() const override {return info_;}
         void setPerformanceInfo(const PerformanceInfo& info) override;
@@ -46,6 +47,11 @@ namespace oscairn
         uint32_t libraryRescan() override {return library().rescan();}
         std::string savePerformanceToLibrary(const std::string& name, bool asNew = false) override;
         void loadPerformanceFromLibrary(const std::string& id) override;
+        Archive archiveContents(const std::string& file) override;
+        Installed installArchive(const std::string& file, bool asLibrary, const std::vector<std::string>& items = {}) override;
+        std::vector<InstalledLibrary> libraries() override;
+        void uninstallLibrary(const std::string& library) override;
+        void deleteLibraryItem(const std::string& item) override;
         SoundSaved savePartAsSound(uint32_t part,const std::string& name,bool asNew = false) override;
         std::vector<std::string> loadSound(uint32_t part,const std::string& id) override;
         uint32_t partFromSound(const std::string& id) override;
@@ -298,6 +304,7 @@ namespace oscairn
         std::vector<std::string> loadSoundInto(uint32_t part,const std::filesystem::path& folder);
         std::map<std::string,NodeId> addNodes(const ::json_value_s* nodes,const std::filesystem::path& root,std::vector<NodeId>& added,const std::set<std::string>* only); // only: these keys (and their engines); null: all
         std::set<NodeId> nodesOf(const Part& part) const;
+        static std::vector<assets::Ref> assetsOf(const std::filesystem::path& manifest);
         uint64_t revision_ = 0, sequence_ = 0;
         using Address = std::pair<NodeId,uint32_t>;
         struct Command { ChangeKind kind; double value; };

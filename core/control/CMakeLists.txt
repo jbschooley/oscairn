@@ -96,6 +96,10 @@ if(UNIX)
     set_tests_properties(control-remote-parts PROPERTIES TIMEOUT 30)
 endif()
 
+add_executable(oscairn-archives-test tests/archives.cpp)
+target_link_libraries(oscairn-archives-test PRIVATE oscairn_control)
+add_test(NAME control-archives COMMAND oscairn-archives-test $<TARGET_FILE:kick-clap-fixture-normal>)
+
 add_executable(oscairn-parts-test tests/parts.cpp)
 target_include_directories(oscairn-parts-test PRIVATE ../clap-host/tests)
 target_link_libraries(oscairn-parts-test PRIVATE oscairn_control)

@@ -14,6 +14,7 @@ namespace oscairn
         ~RemoteControl() override;
         void service();
         void savePerformance(const std::string& directory) override;
+        void exportPerformance(const std::string& file, bool editedSounds = false) override;
         void loadPerformance(const std::string& directory) override;
         PerformanceInfo performanceInfo() const override;
         void setPerformanceInfo(const PerformanceInfo& info) override;
@@ -22,6 +23,11 @@ namespace oscairn
         uint32_t libraryRescan() override;
         std::string savePerformanceToLibrary(const std::string& name, bool asNew = false) override;
         void loadPerformanceFromLibrary(const std::string& id) override;
+        Archive archiveContents(const std::string& file) override;
+        Installed installArchive(const std::string& file, bool asLibrary, const std::vector<std::string>& items = {}) override;
+        std::vector<InstalledLibrary> libraries() override;
+        void uninstallLibrary(const std::string& library) override;
+        void deleteLibraryItem(const std::string& item) override;
         SoundSaved savePartAsSound(uint32_t part, const std::string& name, bool asNew = false) override;
         std::vector<std::string> loadSound(uint32_t part, const std::string& id) override;
         uint32_t partFromSound(const std::string& id) override;

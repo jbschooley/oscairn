@@ -52,14 +52,19 @@ namespace oscairn
         };
     }
 
-    void writePackage(const fs::path& archive, const Package& package, const fs::path& root)
+    std::string manifestJson(const Package& package)
     {
-        if(fs::exists(archive)) throw std::runtime_error(archive.string() + " already exists");
         std::string items;
         for(const auto& i : package.items)
             items += std::string(items.empty() ? "" : ",") + "{\"kind\":" + detail::quote(i.kind) + ",\"id\":" + detail::quote(i.id) + ",\"name\":" + detail::quote(i.name) + ",\"path\":" + detail::quote(i.path) + '}';
-        const auto manifest = "{\"format\":\"oscairn.library\",\"version\":1,\"id\":" + detail::quote(package.id) + ",\"name\":" + detail::quote(package.name) +
-                              ",\"kind\":" + detail::quote(package.kind) + ",\"items\":[" + items + "]}\n";
+        return "{\"format\":\"oscairn.library\",\"version\":1,\"id\":" + detail::quote(package.id) + ",\"name\":" + detail::quote(package.name) +
+               ",\"kind\":" + detail::quote(package.kind) + ",\"items\":[" + items + "]}\n";
+    }
+
+    void writePackage(const fs::path& archive, const Package& package, const fs::path& root)
+    {
+        if(fs::exists(archive)) throw std::runtime_error(archive.string() + " already exists");
+        const auto manifest = manifestJson(package);
         const auto temporary = archive.parent_path() / ("." + archive.filename().string() + ".tmp");
         fs::remove(temporary);
         {

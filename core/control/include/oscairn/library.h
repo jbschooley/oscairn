@@ -19,9 +19,14 @@ namespace oscairn
         // folders are its Performances/ and Sounds/, the cache and user file its library/.
         explicit Library(std::filesystem::path dataHome = {});
         const std::filesystem::path& performances() const { return performances_; }
+        // Installed libraries (RFC 0021): each in its own folder here, named by its ID, with its
+        // manifest (library.json) and its items' folders. Their items are locked.
+        const std::filesystem::path& libraries() const { return libraries_; }
+        std::vector<Control::InstalledLibrary> installed() const;
         uint32_t rescan();
         Control::LibraryResult query(const Control::LibraryQuery&) const;
         const Control::LibraryItem* find(const std::string& id) const;
+        const std::vector<Control::LibraryItem>& items() const { return items_; }
         void setFavourite(const std::string& id, bool favourite);
         void used(const std::string& id); // most recent first; at most 50 kept
         // A folder for a new Performance or Sound (kind) named `name`, its name made safe and unique.
@@ -30,7 +35,8 @@ namespace oscairn
     private:
         void readUser();
         void writeUser() const;
-        std::filesystem::path performances_, sounds_, cache_;
+        std::filesystem::path performances_, sounds_, libraries_, cache_;
+        std::vector<Control::InstalledLibrary> installed_;
         std::vector<Control::LibraryItem> items_;
         std::vector<std::string> favourites_, recent_;
     };
@@ -48,4 +54,8 @@ namespace oscairn
     std::string contentHash(std::string_view documentWithoutInfo, const std::filesystem::path& nodes);
     // The info block of a performance.json or sound.json (format names which); throws on a bad one.
     Control::PerformanceInfo readInfo(const std::filesystem::path& file, const std::string& format);
+    // An info block as the documents hold it.
+    std::string infoJson(const Control::PerformanceInfo& info);
+    // Replaces a document's info block with this one, keeping the rest byte for byte.
+    void writeInfo(const std::filesystem::path& file, const Control::PerformanceInfo& info);
 }

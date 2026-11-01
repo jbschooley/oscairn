@@ -768,14 +768,35 @@ fader or name in the Performance, nor wires to or from the rest of the graph.
   and how scenes and names are handled, is in
   [RFC 0021](rfcs/0021-sounds-performances-and-library.md#importing-a-performance). One step
   to undo; refused while graph edits are staged.
-- `performance.save` and `library.save` both keep each part's `from`. Planned: an export brings
-  every asset and the Sounds of unedited parts, and optionally of edited ones
-  ([RFC 0021](rfcs/0021-sounds-performances-and-library.md#exporting-a-performance)).
+- `performance.save` and `library.save` both keep each part's `from`.
+- `performance.export` takes `{file}` and optional `editedSounds`, and returns
+  `{"exported":true}`: one [archive](library-archive.md) holding the open Performance, every
+  sample its plugins use, and the library Sound of each part still that Sound (with
+  `editedSounds`, also each edited part's). It refuses a file that exists.
+
+### Libraries
+
+Libraries come as [archives](library-archive.md): a library, or an exported Performance.
+
+- `library.contents` takes `{file}` and returns `{id,name,kind,items}`, each item's `kind`,
+  `id` and `name`.
+- `library.install` takes `{file}` and optional `asLibrary` and `items` (IDs; absent or empty
+  for all), and returns `{added,skipped,notes}`. As a library its items are locked and keep
+  their IDs, and installing again adds only what is missing; otherwise they are copied into the
+  user's own storage under new IDs, and installing again skips copies still as imported. The
+  samples they use go into the user's sample library; `notes` names any that are in neither the
+  archive nor the device.
+- `library.libraries` (`{}`) returns `{libraries}`, each `{id,name,items}`.
+- `library.uninstall` takes `{library}`; `library.delete` takes `{id}`, any item's.
+- `library.query` items carry `library`: the installed library holding them, locked, or empty
+  for the user's own. Saving over a locked item, a Performance by `library.save` or a part's
+  Sound by `parts.saveSound`, makes a new one.
 - `parts.fromSound` takes `{id}` and returns `{part}`: a new part listening to every key,
   playing to the first output, with the Sound loaded.
 
 The typed methods are `Control::performanceInfo`, `setPerformanceInfo`, `libraryQuery`,
 `libraryFavourite`, `libraryRescan`, `savePerformanceToLibrary`,
 `loadPerformanceFromLibrary`, `savePartAsSound`, `loadSound`, `partFromSound`,
-`performanceContents` and `importPerformance`. Errors use
+`performanceContents`, `importPerformance`, `exportPerformance`, `archiveContents`,
+`installArchive`, `libraries`, `uninstallLibrary` and `deleteLibraryItem`. Errors use
 `-32005`; malformed arguments `-32602`.

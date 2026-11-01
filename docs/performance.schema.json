@@ -55,6 +55,39 @@
           "type": "string",
           "pattern": "^[0-9a-f]{64}$",
           "description": "SHA-256 of the contents: the document without its info block, then each nodes/ file by path with its own SHA-256 (RFC 0021). Not an identifier"
+        },
+        "origin": {
+          "description": "For an item imported into the user's own storage (RFC 0021): the library it came from, its ID there, and this copy's content hash as imported, so importing again skips it while unchanged; null otherwise",
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "library": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                },
+                "item": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                },
+                "hash": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                }
+              },
+              "required": [
+                "library",
+                "item",
+                "hash"
+              ],
+              "additionalProperties": false
+            }
+          ]
         }
       },
       "required": [
@@ -65,7 +98,8 @@
         "color",
         "revision",
         "parent",
-        "hash"
+        "hash",
+        "origin"
       ],
       "additionalProperties": false
     },

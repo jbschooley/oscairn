@@ -98,18 +98,26 @@ namespace oscairn
         // Control thread, engine-local paths. Performance save includes all prepared sounds
         // in a NEW folder; load validates before replacing the current graph.
         virtual void savePerformance(const std::string& directory) = 0;
+        // An export (RFC 0021): one archive file (package.h) holding this Performance, every sample
+        // its plugins use, and the library Sound of each part still that Sound; with editedSounds,
+        // also the Sound of each part edited since, as it is in the library. Refuses a file that exists.
+        virtual void exportPerformance(const std::string& file, bool editedSounds = false) = 0;
         virtual void loadPerformance(const std::string& directory) = 0;
         // The Performance's own details (format 3's info block, RFC 0021): saved with it, read
         // by the library. The ID is made on the first save and kept.
         // color: "#rrggbb", or empty for none; how lists and setlists show it.
         // revision: this save's, made at each save; parent: the one it was saved over. hash: of
         // its contents (contentHash in library.h), not an identifier: equal hashes, equal contents.
-        struct PerformanceInfo { std::string id, name, description; std::vector<std::string> tags; std::string color, revision, parent, hash; };
+        // origin: for an item imported into the user's own storage (RFC 0021), the library it came
+        // from, its ID there and the content hash of this copy as imported; empty otherwise.
+        struct Origin { std::string library, item, hash; bool operator==(const Origin&) const = default; };
+        struct PerformanceInfo { std::string id, name, description; std::vector<std::string> tags; std::string color, revision, parent, hash; Origin origin; };
         virtual PerformanceInfo performanceInfo() const = 0;
         virtual void setPerformanceInfo(const PerformanceInfo& info) = 0; // the ID is kept as it is
         // The library (RFC 0021): the device's Performances, by tags, text, favourites and
         // recent use. Performances save into it by name; loading by ID marks one used.
-        struct LibraryItem { std::string id, kind = "performance", name, description, path; std::vector<std::string> tags; bool favourite = false; uint32_t recent = 0; std::string color, revision, hash; };
+        // library: the installed library it is in (its ID), locked; empty for the user's own.
+        struct LibraryItem { std::string id, kind = "performance", name, description, path; std::vector<std::string> tags; bool favourite = false; uint32_t recent = 0; std::string color, revision, hash, library; Origin origin; };
         // kind: "performance" or "sound"; empty for both.
         struct LibraryQuery { std::string text; std::vector<std::string> tags; bool favourites = false, recent = false; uint32_t limit = 200; std::string kind; };
         struct LibraryResult { std::vector<LibraryItem> items; std::vector<std::pair<std::string, uint32_t>> tags; uint32_t total = 0; };
@@ -120,6 +128,20 @@ namespace oscairn
         // asNew: always a new one, with its own ID. Returns its ID.
         virtual std::string savePerformanceToLibrary(const std::string& name, bool asNew = false) = 0;
         virtual void loadPerformanceFromLibrary(const std::string& id) = 0;
+        // Libraries (RFC 0021), from archives (package.h): a library or an exported Performance.
+        struct Archive { std::string id, name, kind; std::vector<LibraryItem> items; }; // items: kind, id, name
+        virtual Archive archiveContents(const std::string& file) = 0;
+        // Installs an archive, all of it or the chosen items (IDs), with the samples they use.
+        // asLibrary: locked, under its name and its items' IDs; installing again puts back only
+        // what is missing. Else into the user's own Performances and Sounds, under new IDs, a
+        // Performance's parts pointing at the Sounds that came with it; an item whose copy is
+        // still as imported is skipped, one edited or deleted since comes again as a new copy.
+        struct Installed { uint32_t added = 0, skipped = 0; std::vector<std::string> notes; };
+        virtual Installed installArchive(const std::string& file, bool asLibrary, const std::vector<std::string>& items = {}) = 0;
+        struct InstalledLibrary { std::string id, name; uint32_t items = 0; };
+        virtual std::vector<InstalledLibrary> libraries() = 0;
+        virtual void uninstallLibrary(const std::string& library) = 0; // its items go; Performances keep their parts, copies, and samples
+        virtual void deleteLibraryItem(const std::string& item) = 0;   // a locked library's comes back when it is installed again
         // Sounds (RFC 0021): a part saved to the library, without its seat. Wires that cross the
         // part's edge are not saved and are listed in `left`. Save writes a new revision of the
         // Sound the part came from (renamed when name is given); asNew, or a part from no Sound,

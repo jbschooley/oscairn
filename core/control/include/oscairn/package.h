@@ -18,6 +18,9 @@ namespace oscairn
         std::vector<Item> items;
     };
 
+    // The manifest, library.json, as the archive and an installed library hold it.
+    std::string manifestJson(const Package& package);
+
     // Writes `root` (a folder holding Performances/, Sounds/ and Assets/) and the manifest into a
     // new archive. Refuses an archive that exists; written beside it and moved in once complete.
     void writePackage(const std::filesystem::path& archive, const Package& package, const std::filesystem::path& root);
