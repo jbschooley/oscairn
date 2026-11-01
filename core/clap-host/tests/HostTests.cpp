@@ -65,6 +65,13 @@ int main(int argc, char** argv) {
         check(hint(99).widget == OSCAIRN_WIDGET_AUTO, "an unknown widget is the host's choice");
         hinted.unload();
     }
+    {
+        setenv("KICK_FIXTURE_LATE_FUNCTIONS", "1", 1);
+        Host late;
+        check(late.load(catalog.plugins[0], 48000, 128), "a plugin whose functions are filled in by init loads");
+        late.unload();
+        unsetenv("KICK_FIXTURE_LATE_FUNCTIONS");
+    }
     check(h.load(catalog.plugins[0], 48000, 128), "load exact instrument ID");
     check(h.parameters().size() == 2 && h.latency() == 13 && h.supportsState(), "parameters, latency, state");
     check(h.parameters()[0].widget == OSCAIRN_WIDGET_AUTO && h.parameters()[0].priority == 0, "no hints without oscairn.ui");

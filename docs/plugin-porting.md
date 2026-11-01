@@ -20,7 +20,7 @@ tried yet.
 | Requirement | Refused with |
 | --- | --- |
 | A `clap_entry` with a plugin factory | "No CLAP plugin factory" |
-| Every function of the plugin interface (`init`, `activate`, `process`, `get_extension`, `on_main_thread` …) | "Incomplete CLAP plugin interface" |
+| `init` and `destroy` before `init`; once `init` returns true, every other function of the plugin interface (`activate`, `process`, `get_extension`, `on_main_thread` …), as plugins built on clap-helpers fill them in during `init` | "Incomplete CLAP plugin interface" |
 | Audio outputs, note outputs or both (a pure tuner or meter has neither) | "Plugin has neither audio nor note outputs" |
 | At most 64 audio channels in each direction across all ports; no port without channels | "Audio bus count exceeds the 64-channel budget", "Invalid or unsupported audio channel layout" |
 | At most 16 note ports in each direction | "More than 16 note ports are unsupported" |

@@ -47,7 +47,7 @@ const clap_plugin_descriptor_t descriptors[]{
     {CLAP_VERSION, ids[11], "KICK transport", "KICK", "", "", "", "1", "Transport fixture", instrument},
     {CLAP_VERSION, ids[12], "KICK tail", "KICK", "", "", "", "1", "Release-tail instrument", instrument}};
 struct Plugin {
-    clap_plugin_t api{};
+    clap_plugin_t api{}, late{}; // late: the functions held back until init (KICK_FIXTURE_LATE_FUNCTIONS)
     const clap_host_t* host;
     const clap_host_thread_check_t* check;
     int kind;
@@ -65,6 +65,7 @@ struct Plugin {
         api.desc = &descriptors[k]; api.plugin_data = this;
         api.init = [](const clap_plugin_t* p) {
             auto& s = get(p);
+            if (s.late.process) s.api = s.late;
             s.check = static_cast<const clap_host_thread_check_t*>(s.host->get_extension(s.host, CLAP_EXT_THREAD_CHECK));
             s.main(); s.host->request_callback(s.host);
             if (auto* timer = static_cast<const clap_host_timer_support_t*>(s.host->get_extension(s.host, CLAP_EXT_TIMER_SUPPORT)))
@@ -85,6 +86,12 @@ struct Plugin {
             auto& s = get(p); s.main(); ++callbackCalls;
             if (auto* params = static_cast<const clap_host_params_t*>(s.host->get_extension(s.host, CLAP_EXT_PARAMS))) params->request_flush(s.host);
         };
+        // As plugins built on clap-helpers do: only init and destroy until init fills in the rest.
+        if (std::getenv("KICK_FIXTURE_LATE_FUNCTIONS")) {
+            late = api;
+            api.activate = nullptr; api.deactivate = nullptr; api.start_processing = nullptr; api.stop_processing = nullptr;
+            api.reset = nullptr; api.process = nullptr; api.get_extension = nullptr; api.on_main_thread = nullptr;
+        }
     }
     void event(const clap_event_header_t* e) {
         if (!e) { ++threadErrors; return; }

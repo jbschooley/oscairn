@@ -351,11 +351,12 @@ struct Host::Impl {
     }
     void initialize(double sampleRate,uint32_t frames,const std::vector<uint8_t>& bytes) {
         auto& s=*this;
-        if (!s.plugin || !s.plugin->init || !s.plugin->destroy || !s.plugin->activate || !s.plugin->deactivate ||
-            !s.plugin->start_processing || !s.plugin->stop_processing || !s.plugin->reset ||
+        if (!s.plugin || !s.plugin->init || !s.plugin->destroy) throw std::runtime_error("Incomplete CLAP plugin interface");
+        if (!s.plugin->init(s.plugin)) throw std::runtime_error("Plugin initialization failed");
+        // The rest only once initialized: plugins built on clap-helpers fill them in during init.
+        if (!s.plugin->activate || !s.plugin->deactivate || !s.plugin->start_processing || !s.plugin->stop_processing || !s.plugin->reset ||
             !s.plugin->process || !s.plugin->get_extension || !s.plugin->on_main_thread)
             throw std::runtime_error("Incomplete CLAP plugin interface");
-        if (!s.plugin->init(s.plugin)) throw std::runtime_error("Plugin initialization failed");
         s.params = static_cast<const clap_plugin_params_t*>(s.plugin->get_extension(s.plugin, CLAP_EXT_PARAMS));
         s.ui = static_cast<const oscairn_plugin_ui_t*>(s.plugin->get_extension(s.plugin, OSCAIRN_EXT_UI));
         if (s.ui && !s.ui->param_hint) s.ui = nullptr;
