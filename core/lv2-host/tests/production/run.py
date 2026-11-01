@@ -54,9 +54,11 @@ def main():
     parser.add_argument("--sequencer", type=Path, help="Oscairn CLAP step sequencer for chain tests")
     parser.add_argument("--prepared-probe", type=Path, help="Also compare instrument switches with independent reference instances")
     parser.add_argument("--only", nargs="+", help="Restrict individual-plugin tests to these case names")
+    parser.add_argument("--case", action="append", default=[], metavar="NAME,PATH,ID,KIND,PARAM,VALUE",
+                        help="Any other CLAP or LV2 plugin: KIND synth or effect, and a parameter edit that must change the audio")
     args = parser.parse_args()
-    if not (args.mod_root or args.system_root):
-        parser.error("Specify at least one bundle root")
+    if not (args.mod_root or args.system_root or args.case):
+        parser.error("Specify at least one bundle root or --case")
     if args.renderer and not (args.sequencer and args.mod_root):
         parser.error("--renderer requires --sequencer and --mod-root")
     cases = []
@@ -77,6 +79,12 @@ def main():
             ("x42-fil4-stereo", "fil4", "http://gareus.org/oss/lv2/fil4#stereo", 3, -12, None),
         ]:
             cases.append((name, args.system_root / f"{bundle}.lv2", uri, "effect", param, value, rejection))
+    for spec in args.case:
+        fields = spec.split(",")
+        if len(fields) != 6 or fields[3] not in ("synth", "effect"):
+            parser.error("--case needs NAME,PATH,ID,synth|effect,PARAM,VALUE")
+        name, path, uri, kind, param, value = fields
+        cases.append((name, Path(path), uri, kind, int(param), float(value), None))
     if args.only:
         missing=set(args.only)-{case[0] for case in cases}
         if missing:

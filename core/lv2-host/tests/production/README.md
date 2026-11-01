@@ -103,7 +103,9 @@ It needs only Python's standard library. Missing bundles are failures, not skips
 
 CI builds and exercises the pinned six MOD plugins and mixed chains on Linux and
 macOS, plus the packaged x42 stereo EQ on Linux, uploading JSON measurements.
-Other packaged Linux tests remain opt-in. `--only x42-fil4-stereo` selects just x42
+Other packaged Linux tests remain opt-in. `--case NAME,PATH,ID,synth|effect,PARAM,VALUE`
+(repeatable) runs the same checks on any other CLAP or LV2 plugin, with a parameter edit that
+must change the audio; it works without the bundle roots. `--only x42-fil4-stereo` selects just x42
 when combined with `--system-root /usr/lib/lv2`.
 [Recorded measurements](results-2026-10-28.json) preserve the local baseline,
 parameter IDs/ranges, repeat/block differences and note-release comparisons.
