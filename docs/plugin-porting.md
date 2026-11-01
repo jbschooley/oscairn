@@ -73,6 +73,17 @@ Everything else is handled for you:
   render mode, and watching preset folders for changes (they are read when listed). (From
   the host's source; not exercised with a plugin.)
 
+- **Moving to another device:** an exported Performance or Sound
+  ([archive](library-archive.md)) carries the exporting device's build of each CLAP plugin it
+  uses, and installing it puts that build in the plugin store
+  (`Plugins/clap/<id>@<version>/` in the data folder). Only that platform's build goes: a
+  Performance made on a Mac opens on Linux with a stand-in until a Linux build of the same
+  version is installed. Keep the ID and version stable across platforms, and keep everything
+  the plugin needs inside its bundle; files it installs elsewhere do not go with it.
+- **A plugin that is not here,** in another version, or that fails to load opens as a
+  stand-in: silent, its ports and parameters as saved, its state written back unchanged, so
+  installing the plugin later brings the sound back.
+
 ## Recommended: behaving well
 
 - **Real-time safety:** no allocation, locks, file access or waiting in `process`. In a

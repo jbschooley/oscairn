@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Oscairn Performance version 4",
+  "title": "Oscairn Performance version 5",
   "description": "performance.json inside a Performance folder. See performance-format.md for binary state, asset limits, plugin validation and transactional loading. Runtime node/context IDs and live voices are not persisted. Wires and parts (RFC 0011) define the graph's audio routes and note connections.",
   "type": "object",
   "properties": {
@@ -8,7 +8,7 @@
       "const": "oscairn.performance"
     },
     "version": {
-      "const": 4
+      "const": 5
     },
     "info": {
       "type": "object",
@@ -246,6 +246,56 @@
       "items": {
         "$ref": "#/$defs/Control"
       }
+    },
+    "lock": {
+      "type": "object",
+      "description": "The plugin builds it was saved with (RFC 0006): for each plugin and platform, the build's digest, so an archive or a device can tell it has exactly that build",
+      "properties": {
+        "plugins": {
+          "type": "array",
+          "maxItems": 4096,
+          "items": {
+            "type": "object",
+            "properties": {
+              "format": {
+                "enum": [
+                  "clap",
+                  "lv2"
+                ]
+              },
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "version": {
+                "type": "string"
+              },
+              "platform": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Operating system and CPU, such as macos-arm64 or linux-arm64"
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$",
+                "description": "The build's digest: a file's SHA-256, or for a bundle the SHA-256 of each file's path and SHA-256 in path order, hidden files left out"
+              }
+            },
+            "required": [
+              "format",
+              "id",
+              "version",
+              "platform",
+              "sha256"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "plugins"
+      ],
+      "additionalProperties": false
     }
   },
   "required": [
@@ -263,7 +313,8 @@
     "scenes",
     "sceneUntouched",
     "scene",
-    "controls"
+    "controls",
+    "lock"
   ],
   "additionalProperties": false,
   "$defs": {

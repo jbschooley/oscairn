@@ -437,9 +437,10 @@ namespace oscairn
             }
             if(method=="performance.export") {
                 fields(p,{"file","editedSounds"});
-                try{c.exportPerformance(std::string(string(member(p,"file"))),member(p,"editedSounds") && boolean(member(p,"editedSounds")));}
+                std::vector<std::string> notes;
+                try{for(const auto& n:c.exportPerformance(std::string(string(member(p,"file"))),member(p,"editedSounds") && boolean(member(p,"editedSounds"))))notes.push_back(quote(n));}
                 catch(const std::exception& e){throw Failure{-32005,e.what()};}
-                return R"({"exported":true})";
+                return "{\"exported\":true,\"notes\":"+join(notes)+'}';
             }
             if(method=="audition.start") {
                 fields(p,{"id","part"});
@@ -459,9 +460,10 @@ namespace oscairn
             }
             if(method=="library.export") {
                 fields(p,{"id","file","editedSounds"});
-                try{c.exportLibraryItem(std::string(string(member(p,"id"))),std::string(string(member(p,"file"))),member(p,"editedSounds") && boolean(member(p,"editedSounds")));}
+                std::vector<std::string> notes;
+                try{for(const auto& n:c.exportLibraryItem(std::string(string(member(p,"id"))),std::string(string(member(p,"file"))),member(p,"editedSounds") && boolean(member(p,"editedSounds"))))notes.push_back(quote(n));}
                 catch(const std::exception& e){throw Failure{-32005,e.what()};}
-                return R"({"exported":true})";
+                return "{\"exported\":true,\"notes\":"+join(notes)+'}';
             }
             // RFC 0021: the open Performance's info and the library of saved ones.
             if(method=="performance.info" || method=="performance.setInfo") {

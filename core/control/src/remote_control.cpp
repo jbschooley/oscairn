@@ -298,15 +298,16 @@ namespace oscairn
         for(auto x:array(field(r,"plugins")))e.plugins.push_back({string(field(x,"name")),string(field(x,"plugin")),number(field(x,"cpu")),uint64_t(integer(field(x,"memory"))),boolean(field(x,"measured"))});
         return e;
     }
-    void RemoteControl::exportPerformance(const std::string& file,bool editedSounds) {
-        impl_->call("performance.export","{\"file\":"+quote(file)+",\"editedSounds\":"+(editedSounds?"true":"false")+'}',30000);
-    }
     void RemoteControl::loadPerformance(const std::string& directory) {
         impl_->call("performance.load","{\"directory\":"+quote(directory)+'}',30000);impl_->refresh();
     }
     namespace {
         std::vector<std::string> strings(V v){std::vector<std::string> out;for(auto e:array(v))out.push_back(string(e));return out;}
         std::string quoted(const std::vector<std::string>& values){std::string out="[";for(const auto& v:values){if(out.size()>1)out+=',';out+=quote(v);}return out+']';}
+    }
+    std::vector<std::string> RemoteControl::exportPerformance(const std::string& file,bool editedSounds) {
+        auto d=impl_->call("performance.export","{\"file\":"+quote(file)+",\"editedSounds\":"+(editedSounds?"true":"false")+'}',120000);
+        return strings(field(field(d.get(),"result"),"notes"));
     }
     Control::PerformanceInfo RemoteControl::performanceInfo() const {
         auto d=impl_->call("performance.info");auto r=field(d.get(),"result");
@@ -359,8 +360,9 @@ namespace oscairn
         auto d=impl_->call("audition.get");auto r=field(d.get(),"result");
         return {string(field(r,"id")),string(field(r,"kind")),static_cast<uint32_t>(integer(field(r,"part")))};
     }
-    void RemoteControl::exportLibraryItem(const std::string& id,const std::string& file,bool editedSounds) {
-        impl_->call("library.export","{\"id\":"+quote(id)+",\"file\":"+quote(file)+",\"editedSounds\":"+(editedSounds?"true":"false")+'}',120000);
+    std::vector<std::string> RemoteControl::exportLibraryItem(const std::string& id,const std::string& file,bool editedSounds) {
+        auto d=impl_->call("library.export","{\"id\":"+quote(id)+",\"file\":"+quote(file)+",\"editedSounds\":"+(editedSounds?"true":"false")+'}',120000);
+        return strings(field(field(d.get(),"result"),"notes"));
     }
     std::string RemoteControl::libraryCopy(const std::string& id) {
         auto d=impl_->call("library.copy","{\"id\":"+quote(id)+'}',30000);return string(field(field(d.get(),"result"),"id"));

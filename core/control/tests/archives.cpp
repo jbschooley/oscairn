@@ -4,13 +4,17 @@
 // Performance carries its unedited part's Sound and the samples they use; installed into the
 // user's own storage it gets new IDs, its part pointing at the Sound's copy, and installing again
 // skips what is unchanged; installed as a library it is locked, comes back when deleted and goes
-// when uninstalled, leaving the user's copies and the samples.
+// when uninstalled, leaving the user's copies and the samples. The plugin it uses goes with it
+// (RFC 0006) and installs into the store, where a Performance whose plugin is not at its saved
+// path finds it.
 //   oscairn-archives-test FIXTURE.clap
 #include "oscairn/session.h"
+#include "oscairn/package.h"
 #include "oscairn/wav_file.h"
 #include "../../plugin-host/src/StateFiles.h"
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <fstream>
 #include <sstream>
 
@@ -54,7 +58,10 @@ int main(int argc, char** argv)
             std::ofstream(doc, std::ios::binary | std::ios::trunc) << text;
             a.libraryRescan();
             performanceId = a.savePerformanceToLibrary("Set");
-            a.exportPerformance(archive.string());
+            check(a.exportPerformance(archive.string()).empty(), "nothing left out");
+            const auto packed = readPackage(archive, {});
+            check(packed.plugins.size() == 1 && packed.plugins[0].id == "org.kick.test.synth" && packed.plugins[0].builds.size() == 1 &&
+                  packed.plugins[0].builds[0].platform == platform() && packed.plugins[0].builds[0].sha256 == bundleDigest(fixture), "the plugin it uses goes with it, this device's build");
             bool again = false; try { a.exportPerformance(archive.string()); } catch(const std::exception&) { again = true; }
             check(again, "an export never overwrites a file");
             const auto contents = a.archiveContents(archive.string());
@@ -75,6 +82,8 @@ int main(int argc, char** argv)
             Session b(48000, 64);
             const auto installed = b.installArchive(archive.string(), false);
             check(installed.added == 2 && installed.skipped == 0 && installed.notes.empty(), "both copied in: " + std::to_string(installed.added));
+            const auto store = temp.path / "b" / "Plugins" / "clap";
+            check(fs::is_directory(store) && std::distance(fs::directory_iterator(store), fs::directory_iterator()) == 1, "its plugin is in the store");
             const auto sounds = items(b, "sound"), performances = items(b, "performance");
             check(sounds.size() == 1 && performances.size() == 1 && sounds[0].id != soundId && performances[0].id != performanceId && sounds[0].library.empty(),
                   "under new IDs, as the user's own");
@@ -129,8 +138,25 @@ int main(int argc, char** argv)
             bool refused = false; try { c.installArchive(archive.string(), false, {"nothing"}); } catch(const std::exception&) { refused = true; }
             check(refused, "an item the archive does not have is refused");
         }
+        // Device D: the plugin is not where the Performance last found it, so it opens from the store.
+        {
+            device(temp.path / "d");
+            Session d(48000, 64);
+            d.installArchive(archive.string(), false);
+            const auto performance = items(d, "performance").at(0);
+            const auto doc = fs::path(performance.path) / "performance.json";
+            auto text = read(doc);
+            for(auto at = text.find(fixture); at != std::string::npos; at = text.find(fixture)) text.replace(at, std::strlen(fixture), "/nowhere/Synth.clap");
+            std::ofstream(doc, std::ios::binary | std::ios::trunc) << text;
+            d.libraryRescan();
+            d.loadPerformanceFromLibrary(performance.id);
+            const auto nodes = d.graphState().topology.nodes;
+            check(nodes.size() == 1 && nodes[0].plugin.path.find((temp.path / "d" / "Plugins").string()) == 0 && d.sessionStatus().failures.empty(), "the plugin opens from the store");
+            // Installing again with the build there already adds nothing and says nothing.
+            check(d.installArchive(archive.string(), false).notes.empty(), "the same build is not installed twice");
+        }
     }
     catch(const std::exception& e) { std::fprintf(stderr, "FAIL: %s\n", e.what()); ++failures; }
-    if(!failures) std::puts("ok: export, install as the user's own and as a library, reinstall, uninstall and chosen items");
+    if(!failures) std::puts("ok: export, install as the user's own and as a library, reinstall, uninstall, chosen items and plugins from the store");
     return failures ? 1 : 0;
 }

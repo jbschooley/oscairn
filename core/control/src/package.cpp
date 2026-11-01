@@ -3,6 +3,7 @@
 #include "sheredom/json.h"
 #include "JsonInput.h"
 #include "miniz/miniz.h"
+#include "oscairn/assets.h"
 #include <algorithm>
 #include <cstdlib>
 #include <memory>
@@ -18,7 +19,8 @@ namespace oscairn
         using V = const json_value_s*;
         constexpr size_t maxEntries = 65536, maxPath = 1024;
         constexpr uint64_t maxEntry = 2ull << 30, maxTotal = 8ull << 30;
-        const std::set<std::string> tops{"Performances", "Sounds", "Assets"};
+        const std::set<std::string> tops{"Performances", "Sounds", "Assets", "Plugins"};
+        bool hidden(const fs::path& relative) { for(const auto& part : relative) if(!part.empty() && part.string()[0] == '.') return true; return false; }
 
         [[noreturn]] void bad(const std::string& why) { throw std::runtime_error("not a usable Oscairn archive: " + why); }
         std::string text(V v)
@@ -52,34 +54,79 @@ namespace oscairn
         };
     }
 
+    std::string platform()
+    {
+#if defined(__APPLE__)
+        const std::string os = "macos";
+#elif defined(_WIN32)
+        const std::string os = "windows";
+#else
+        const std::string os = "linux";
+#endif
+#if defined(__aarch64__) || defined(_M_ARM64)
+        return os + "-arm64";
+#elif defined(__x86_64__) || defined(_M_X64)
+        return os + "-x86_64";
+#else
+        return os + "-other";
+#endif
+    }
+
+    std::string bundleDigest(const fs::path& build)
+    {
+        if(fs::is_regular_file(build)) return assets::sha256File(build);
+        std::vector<fs::path> files;
+        for(const auto& e : fs::recursive_directory_iterator(build))
+        {
+            const auto relative = fs::relative(e.path(), build);
+            if(e.is_symlink()) throw std::runtime_error("a link in a plugin build: " + e.path().string());
+            if(e.is_regular_file() && !hidden(relative)) files.push_back(relative);
+        }
+        std::sort(files.begin(), files.end());
+        std::string lines;
+        for(const auto& f : files) lines += f.generic_string() + '\n' + assets::sha256File(build / f) + '\n';
+        return assets::sha256(lines);
+    }
+
     std::string manifestJson(const Package& package)
     {
-        std::string items;
+        std::string items, plugins, files;
         for(const auto& i : package.items)
             items += std::string(items.empty() ? "" : ",") + "{\"kind\":" + detail::quote(i.kind) + ",\"id\":" + detail::quote(i.id) + ",\"name\":" + detail::quote(i.name) + ",\"path\":" + detail::quote(i.path) + '}';
-        return "{\"format\":\"oscairn.library\",\"version\":1,\"id\":" + detail::quote(package.id) + ",\"name\":" + detail::quote(package.name) +
-               ",\"kind\":" + detail::quote(package.kind) + ",\"items\":[" + items + "]}\n";
+        for(const auto& p : package.plugins)
+        {
+            std::string builds;
+            for(const auto& b : p.builds) builds += std::string(builds.empty() ? "" : ",") + "{\"platform\":" + detail::quote(b.platform) + ",\"path\":" + detail::quote(b.path) + ",\"sha256\":" + detail::quote(b.sha256) + '}';
+            plugins += std::string(plugins.empty() ? "" : ",") + "{\"format\":" + detail::quote(p.format) + ",\"id\":" + detail::quote(p.id) + ",\"version\":" + detail::quote(p.version) +
+                       ",\"name\":" + detail::quote(p.name) + ",\"builds\":[" + builds + "]}";
+        }
+        for(const auto& [path, sha] : package.files) files += std::string(files.empty() ? "" : ",") + detail::quote(path) + ":" + detail::quote(sha);
+        return "{\"format\":\"oscairn.library\",\"version\":2,\"id\":" + detail::quote(package.id) + ",\"name\":" + detail::quote(package.name) +
+               ",\"kind\":" + detail::quote(package.kind) + ",\"items\":[" + items + "],\"plugins\":[" + plugins + "],\"files\":{" + files + "}}\n";
     }
 
     void writePackage(const fs::path& archive, const Package& package, const fs::path& root)
     {
         if(fs::exists(archive)) throw std::runtime_error(archive.string() + " already exists");
-        const auto manifest = manifestJson(package);
+        // Every file, and its SHA-256 for the manifest; hidden files are not packed.
+        std::vector<fs::path> files;
+        for(const auto& top : tops)
+            if(fs::is_directory(root / top))
+                for(const auto& e : fs::recursive_directory_iterator(root / top))
+                {
+                    if(e.is_symlink()) throw std::runtime_error("a link in what is being packed: " + e.path().string());
+                    if(e.is_regular_file() && !hidden(fs::relative(e.path(), root))) files.push_back(e.path());
+                }
+        std::sort(files.begin(), files.end());
+        auto listed = package;
+        for(const auto& f : files) listed.files[fs::relative(f, root).generic_string()] = assets::sha256File(f);
+        const auto manifest = manifestJson(listed);
         const auto temporary = archive.parent_path() / ("." + archive.filename().string() + ".tmp");
         fs::remove(temporary);
         {
             Zip z(false);
             if(!mz_zip_writer_init_file(&z.zip, temporary.string().c_str(), 0)) throw std::runtime_error("cannot write " + archive.string());
             if(!mz_zip_writer_add_mem(&z.zip, "library.json", manifest.data(), manifest.size(), MZ_DEFAULT_COMPRESSION)) throw std::runtime_error("cannot write the manifest");
-            std::vector<fs::path> files;
-            for(const auto& top : tops)
-                if(fs::is_directory(root / top))
-                    for(const auto& e : fs::recursive_directory_iterator(root / top))
-                    {
-                        if(e.is_symlink()) throw std::runtime_error("a link in what is being packed: " + e.path().string());
-                        if(e.is_regular_file()) files.push_back(e.path());
-                    }
-            std::sort(files.begin(), files.end());
             for(const auto& f : files)
             {
                 const auto name = fs::relative(f, root).generic_string();
@@ -140,8 +187,8 @@ namespace oscairn
             V d = doc.get();
             if(text(detail::member(d, "format")) != "oscairn.library") bad("it is not an Oscairn library");
             const V version = detail::member(d, "version");
-            if(!version || version->type != json_type_number || std::string(static_cast<const json_number_s*>(version->payload)->number, static_cast<const json_number_s*>(version->payload)->number_size) != "1")
-                bad("its version is not 1");
+            if(!version || version->type != json_type_number || std::string(static_cast<const json_number_s*>(version->payload)->number, static_cast<const json_number_s*>(version->payload)->number_size) != "2")
+                bad("its version is not 2");
             Package p;
             p.id = text(detail::member(d, "id")); p.name = text(detail::member(d, "name")); p.kind = text(detail::member(d, "kind"));
             if(p.id.empty() || p.id.size() > 64 || (p.kind != "library" && p.kind != "performance" && p.kind != "sound")) bad("its ID or kind is wrong");
@@ -157,6 +204,47 @@ namespace oscairn
                    !names.count(item.path + (sound ? "/sound.json" : "/performance.json")))
                     bad("an item is not in the archive: " + item.path);
                 p.items.push_back(std::move(item));
+            }
+            // Plugins: each build in the archive, under Plugins/.
+            const V plugins = detail::member(d, "plugins");
+            if(!plugins || plugins->type != json_type_array) bad("it lists no plugins");
+            for(auto* e = static_cast<const json_array_s*>(plugins->payload)->start; e; e = e->next)
+            {
+                Package::Plugin plugin{text(detail::member(e->value, "format")), text(detail::member(e->value, "id")), text(detail::member(e->value, "version")), text(detail::member(e->value, "name")), {}};
+                if((plugin.format != "clap" && plugin.format != "lv2") || plugin.id.empty() || plugin.id.size() > 256 || plugin.version.size() > 128) bad("a plugin's format, ID or version is wrong");
+                const V builds = detail::member(e->value, "builds");
+                if(!builds || builds->type != json_type_array) bad("a plugin lists no builds");
+                for(auto* b = static_cast<const json_array_s*>(builds->payload)->start; b; b = b->next)
+                {
+                    Package::Build build{text(detail::member(b->value, "platform")), text(detail::member(b->value, "path")), text(detail::member(b->value, "sha256"))};
+                    const bool there = names.count(build.path) || std::any_of(names.begin(), names.end(), [&](const std::string& n) { return n.rfind(build.path + "/", 0) == 0; });
+                    if(!safe(build.path) || build.path.rfind("Plugins/", 0) != 0 || !there || build.sha256.size() != 64 || build.platform.empty() || build.platform.size() > 64)
+                        bad("a plugin build is not in the archive: " + build.path);
+                    plugin.builds.push_back(std::move(build));
+                }
+                p.plugins.push_back(std::move(plugin));
+            }
+            // Every file's SHA-256, as the manifest lists it, and each build's digest.
+            const V files = detail::member(d, "files");
+            if(!files || files->type != json_type_object) bad("it lists no files");
+            for(auto* e = static_cast<const json_object_s*>(files->payload)->start; e; e = e->next)
+                p.files[std::string(e->name->string, e->name->string_size)] = text(e->value);
+            if(extract)
+            {
+                size_t found = 0;
+                for(const auto& e : fs::recursive_directory_iterator(into))
+                {
+                    if(!e.is_regular_file()) continue;
+                    const auto name = fs::relative(e.path(), into).generic_string();
+                    const auto listed = p.files.find(name);
+                    if(listed == p.files.end()) bad("a file the manifest does not list: " + name);
+                    if(assets::sha256File(e.path()) != listed->second) bad("a file that is not what the manifest says: " + name);
+                    ++found;
+                }
+                if(found != p.files.size()) bad("a file the manifest lists is not in it");
+                for(const auto& plugin : p.plugins)
+                    for(const auto& build : plugin.builds)
+                        if(bundleDigest(into / build.path) != build.sha256) bad("a plugin build that is not what the manifest says: " + build.path);
             }
             return p;
         }

@@ -115,10 +115,11 @@ namespace oscairn
         // An export (RFC 0021): one archive file (package.h) holding this Performance, every sample
         // its plugins use, and the library Sound of each part still that Sound; with editedSounds,
         // also the Sound of each part edited since, as it is in the library. Refuses a file that exists.
-        virtual void exportPerformance(const std::string& file, bool editedSounds = false) = 0;
+        // Returns notes on what could not go: plugins not here, formats not bundled yet.
+        virtual std::vector<std::string> exportPerformance(const std::string& file, bool editedSounds = false) = 0;
         // A library item as an archive, as it is saved: a Performance with its parts' Sounds (an
         // edited part's when editedSounds), or a Sound; every sample they use. Refuses a file that exists.
-        virtual void exportLibraryItem(const std::string& id, const std::string& file, bool editedSounds = false) = 0;
+        virtual std::vector<std::string> exportLibraryItem(const std::string& id, const std::string& file, bool editedSounds = false) = 0;
         virtual void loadPerformance(const std::string& directory) = 0;
         // The Performance's own details (format 3's info block, RFC 0021): saved with it, read
         // by the library. The ID is made on the first save and kept.

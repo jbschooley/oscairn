@@ -704,7 +704,7 @@ intentionally combines them before the effects. Allocate different buses for dif
 
 `performance.save` and `performance.load` take `{"directory":"/path/to/performance"}`;
 returns are `{"saved":true}` and `{"loaded":true}`. Both are advertised by `session.hello`.
-Files use the [Performance version 4 format/schema](performance-format.md). Saving refuses
+Files use the [Performance version 5 format/schema](performance-format.md). Saving refuses
 existing directories and staged graph edits. Loading validates a complete replacement;
 a load failure leaves the playing graph intact. Successful publication emits a graph resync,
 invalidates old node/context references, and starts stopped at beat zero on adoption. The
@@ -801,9 +801,11 @@ fader or name in the Performance, nor wires to or from the rest of the graph.
   that fits only alone opens as a cut, without the last ringing out.
 - `performance.save` and `library.save` both keep each part's `from`.
 - `performance.export` takes `{file}` and optional `editedSounds`, and returns
-  `{"exported":true}`: one [archive](library-archive.md) holding the open Performance, every
-  sample its plugins use, and the library Sound of each part still that Sound (with
-  `editedSounds`, also each edited part's). It refuses a file that exists.
+  `{"exported":true,"notes":[...]}`: one [archive](library-archive.md) holding the open
+  Performance, every sample its plugins use, this device's build of every CLAP plugin they use,
+  and the library Sound of each part still that Sound (with `editedSounds`, also each edited
+  part's). `notes` says what was left out: an LV2 plugin, or one not on this device. It refuses
+  a file that exists.
 - `audition.start` takes `{id}` and, for a Sound, the `part` to try it in; `audition.stop` takes
   an optional `keep`; both return `{"accepted":true}`. `audition.get` (`{}`) returns `{id,kind,part}`
   (`id` empty when none). A Sound plays in the part's place, its chain set aside; a Performance
@@ -815,7 +817,8 @@ fader or name in the Performance, nor wires to or from the rest of the graph.
   open one is refused.
 - `library.export` takes `{id,file}` and optional `editedSounds`, and returns the same: a
   library item as it is saved, without opening it. A Performance comes with its parts' Sounds
-  by the same rule (from what its file records), a Sound alone; with every sample they use.
+  by the same rule (from what its file records), a Sound alone; with every sample and plugin they
+use.
 
 ### Libraries
 
@@ -827,8 +830,10 @@ Libraries come as [archives](library-archive.md): a library, or an exported Perf
   for all), and returns `{added,skipped,notes}`. As a library its items are locked and keep
   their IDs, and installing again adds only what is missing; otherwise they are copied into the
   user's own storage under new IDs, and installing again skips copies still as imported. The
-  samples they use go into the user's sample library; `notes` names any that are in neither the
-  archive nor the device.
+  samples they use go into the user's sample library, and this device's builds of the plugins
+  they use into the plugin store; `notes` names any sample that is in neither the archive nor
+  the device, a plugin with no build for this device, and a different build of one already
+  installed (kept).
 - `library.libraries` (`{}`) returns `{libraries}`, each `{id,name,items}`.
 - `library.uninstall` takes `{library}`; `library.delete` takes `{id}`, any item's.
 - `library.query` items carry `library`: the installed library holding them, locked, or empty

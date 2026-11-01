@@ -122,11 +122,24 @@ std::map<std::string,std::set<uint32_t>> parameterRefs(V d){
     if(const V controls=member(d,"controls");controls && controls->type==json_type_array)for(auto c=static_cast<const json_array_s*>(controls->payload)->start;c;c=c->next)each(member(c->value,"targets"),"node","param");
     return refs;
 }
+// A document's lock (RFC 0006): each plugin build it was saved with, per platform.
+std::vector<Session::LockEntry> readLock(V d){
+    std::vector<Session::LockEntry> out;
+    const V lock=field(d,"lock");fields(lock,{"plugins"});
+    for(auto e:array(field(lock,"plugins"),4096)){fields(e,{"format","id","version","platform","sha256"});
+        Session::LockEntry l{text(field(e,"format")),text(field(e,"id")),text(field(e,"version")),text(field(e,"platform")),text(field(e,"sha256"))};
+        if((l.format!="clap" && l.format!="lv2") || l.id.empty() || l.platform.empty() || l.sha256.size()!=64)bad("invalid lock entry");
+        out.push_back(std::move(l));}
+    return out;
+}
 // The plugin store (RFC 0006): installed plugin builds by format, ID and version, apart from
 // any one Performance; empty when that build is not there.
-fs::path storedPlugin(const std::string& format,const std::string& id,const std::string& version){
+std::string storeName(const std::string& id,const std::string& version){
     std::string safe;for(const char c:id+"@"+version)safe+=(std::isalnum(static_cast<unsigned char>(c)) || c=='.' || c=='-' || c=='@' || c=='_')?c:'_';
-    const auto folder=dataHome()/"Plugins"/format/safe;std::error_code e;
+    return safe;
+}
+fs::path storedPlugin(const std::string& format,const std::string& id,const std::string& version){
+    const auto folder=dataHome()/"Plugins"/format/storeName(id,version);std::error_code e;
     if(fs::is_directory(folder,e))for(const auto& entry:fs::directory_iterator(folder,e))if(entry.path().extension()==(format=="lv2"?".lv2":".clap"))return entry.path();
     return {};
 }
@@ -191,8 +204,8 @@ std::vector<assets::Ref> Session::assetsOf(const fs::path& manifest) {
     return out;
 }
 
-void Session::exportPerformance(const std::string& file,bool editedSounds) {
-    exportArchive(file,"performance",[&](const fs::path& stage,Package& package){
+std::vector<std::string> Session::exportPerformance(const std::string& file,bool editedSounds) {
+    return exportArchive(file,"performance",[&](const fs::path& stage,Package& package){
         const auto name=info_.name.empty()?fs::path(file).stem().string():info_.name;
         const auto folder=fs::path("Performances")/(library().newFolder(name,"performance").filename());
         fs::create_directories(stage/"Performances");
@@ -204,11 +217,11 @@ void Session::exportPerformance(const std::string& file,bool editedSounds) {
     },editedSounds);
 }
 
-void Session::exportLibraryItem(const std::string& id,const std::string& file,bool editedSounds) {
+std::vector<std::string> Session::exportLibraryItem(const std::string& id,const std::string& file,bool editedSounds) {
     const auto* found=library().find(id);
     if(!found)bad("no such library item");
     const auto item=*found;
-    exportArchive(file,item.kind,[&](const fs::path& stage,Package& package){
+    return exportArchive(file,item.kind,[&](const fs::path& stage,Package& package){
         const auto folder=fs::path(item.kind=="sound"?"Sounds":"Performances")/fs::path(item.path).filename();
         fs::create_directories((stage/folder).parent_path());fs::copy(item.path,stage/folder,fs::copy_options::recursive);
         package.id=item.id;package.name=item.name;
@@ -229,7 +242,8 @@ void Session::exportLibraryItem(const std::string& id,const std::string& file,bo
 // An archive of what write puts in the stage, with the Sounds of the parts it reports (each only
 // while the part is still that Sound, that revision the library's; an edited part's when asked)
 // and every sample they all use.
-void Session::exportArchive(const std::string& file,const std::string& kind,const std::function<std::vector<PartSource>(const fs::path&,Package&)>& write,bool editedSounds) {
+std::vector<std::string> Session::exportArchive(const std::string& file,const std::string& kind,const std::function<std::vector<PartSource>(const fs::path&,Package&)>& write,bool editedSounds) {
+    std::vector<std::string> notes;
     const fs::path archive(file);
     if(archive.filename().empty() || fs::exists(archive))bad("the export file has no name or exists already");
     std::random_device random;
@@ -257,9 +271,36 @@ void Session::exportArchive(const std::string& file,const std::string& kind,cons
             const auto to=stage/"Assets"/ref.sha256.substr(0,16)/source.filename();
             fs::create_directories(to.parent_path());fs::copy_file(source,to);
         }
+        // Every plugin they use (RFC 0006), this device's build of each: from its saved path, else
+        // the store; one not here, or not CLAP yet, is said and left out.
+        std::set<std::string> bundled,said;
+        for(const auto& m:manifests){
+            const auto bytes=state_files::read(m,4*1024*1024);
+            const std::unique_ptr<json_value_s,decltype(&std::free)> doc{json_parse(bytes.data(),bytes.size()),&std::free};
+            for(auto node:array(field(doc.get(),"nodes"),256)){
+                const V plugin=field(node,"plugin");
+                const auto format=text(field(plugin,"format")),id=text(field(plugin,"id")),version=text(field(plugin,"version"));
+                const auto name=id+" "+version;
+                if(!bundled.insert(format+" "+name).second)continue;
+                if(format!="clap"){if(said.insert(name).second)notes.push_back(name+" was left out: only CLAP plugins go in archives so far");continue;}
+                // The saved path only while it still holds the build the document locked, else the store's.
+                std::string locked;
+                for(const auto& l:readLock(doc.get()))if(l.format==format && l.id==id && l.version==version && l.platform==platform())locked=l.sha256;
+                std::error_code e;fs::path build=text(field(plugin,"pathHint"));
+                if(locked.empty() || !fs::exists(build,e) || bundleDigest(build)!=locked)build=storedPlugin(format,id,version);
+                std::string pluginName=id;
+                for(const auto& n:nodes_)if(const auto& d=graph_.host(n.first).descriptor();d.id==id && d.version==version && !d.name.empty())pluginName=d.name;
+                if(build.empty()){if(said.insert(name).second)notes.push_back(name+" was left out: it is not here");continue;}
+                const auto to=fs::path("Plugins")/format/storeName(id,version)/platform()/build.filename();
+                fs::create_directories((stage/to).parent_path());
+                fs::copy(build,stage/to,fs::copy_options::recursive);
+                package.plugins.push_back({format,id,version,pluginName,{{platform(),to.generic_string(),bundleDigest(stage/to)}}});
+            }
+        }
         writePackage(archive,package,stage);
     }catch(...){std::error_code ignored;fs::remove_all(stage,ignored);throw;}
     std::error_code ignored;fs::remove_all(stage,ignored);
+    return notes;
 }
 
 // The nodes a part holds: its chains' and lanes' boxes, and its splits' Split and Join nodes.
@@ -285,6 +326,7 @@ Control::PerformanceInfo Session::writeDocument(const std::string& directory,Per
     std::map<NodeId,std::string> keys{{graphInput,"input"},{graphOutput,"output"}};
     {size_t i=0;for(const auto& n:graph.nodes)if(kept(n.id))keys[n.id]="node-"+std::to_string(++i);}
     std::vector<std::string> nodes,wires,parts,mappings;std::set<std::string> libraries;
+    std::vector<LockEntry> lock; // RFC 0006: each plugin build it uses, by its digest, per platform
     for(const auto& n:graph.nodes){if(!kept(n.id))continue;const auto& key=keys.at(n.id);auto& h=graph_.host(n.id);
         if(!keys.count(graph_.effectSource(n.id)))bad(nodes_.at(n.id)+" shares its engine with a plugin outside the part");
         // Sound assets are dependencies (RFC 0009): record references, never the files.
@@ -292,6 +334,7 @@ Control::PerformanceInfo Session::writeDocument(const std::string& directory,Per
         for(const auto& a:h.assetDependencies()){libraries.insert(a.library);assets.push_back("{\"library\":"+quote(a.library)+",\"path\":"+quote(a.path)+",\"sha256\":"+quote(a.sha256)+'}');}
         try{h.saveSnapshot((bundle.temporary.path/"nodes"/key).string());}catch(const std::exception& e){bad("cannot save "+nodes_.at(n.id)+" ("+n.plugin.id+"): "+e.what());}
         const bool lv2=lv2Path(n.plugin.path);
+        lockPlugin(lock,lv2?"lv2":"clap",n.plugin.id,n.plugin.version,n.plugin.path,!h.failure().empty());
         nodes.push_back("{\"key\":"+quote(key)+",\"name\":"+quote(nodes_.at(n.id))+",\"plugin\":{\"format\":"+quote(lv2?"lv2":"clap")+",\"id\":"+quote(n.plugin.id)+",\"version\":"+quote(n.plugin.version)+",\"pathHint\":"+quote(n.plugin.path)+"},\"engine\":"+quote(keys.at(graph_.effectSource(n.id)))+",\"inputs\":"+ports(n.inputs)+",\"outputs\":"+ports(n.outputs)+",\"noteInputs\":"+std::to_string(n.noteInputs)+",\"noteOutputs\":"+std::to_string(n.noteOutputs)+",\"assets\":"+join(assets)+",\"enabled\":"+(disabled_.count(n.id)?"false":"true")+'}');
     }
     // RFC 0011: wires with their owners and Mix settings, and the parts; graph routes follow from them.
@@ -354,7 +397,10 @@ Control::PerformanceInfo Session::writeDocument(const std::string& directory,Per
     auto infoText=[&]{return infoJson(info);};
     // The document around its info block; the content hash covers it and the plugins' state.
     std::string head,tail;
-    if(sound){head="{\"format\":\"oscairn.sound\",\"version\":4,\"info\":";tail=",\"libraries\":"+join(named)+",\"nodes\":"+join(nodes)+",\"wires\":"+join(wires)+",\"part\":{\"chain\":"+chainText(sound->chain)+",\"splits\":"+splitsText(*sound)+"},\"mappings\":"+join(mappings)+",\"controls\":"+join(controls)+"}\n";}
+    std::vector<std::string> locked;
+    for(const auto& l:lock)locked.push_back("{\"format\":"+quote(l.format)+",\"id\":"+quote(l.id)+",\"version\":"+quote(l.version)+",\"platform\":"+quote(l.platform)+",\"sha256\":"+quote(l.sha256)+'}');
+    const auto lockText="{\"plugins\":"+join(locked)+'}';
+    if(sound){head="{\"format\":\"oscairn.sound\",\"version\":5,\"info\":";tail=",\"libraries\":"+join(named)+",\"nodes\":"+join(nodes)+",\"wires\":"+join(wires)+",\"part\":{\"chain\":"+chainText(sound->chain)+",\"splits\":"+splitsText(*sound)+"},\"mappings\":"+join(mappings)+",\"controls\":"+join(controls)+",\"lock\":"+lockText+"}\n";}
     else{
         // Scenes: all each holds (parts.h), its scope; the parameters scenes leave alone; and the scene last selected.
         auto ref=[&](const WireRef& r){return "\"kind\":"+std::string(r.kind==WireKind::Audio?"\"audio\"":"\"notes\"")+",\"part\":"+std::to_string(r.part)+",\"from\":"+quote(keys.at(r.from))+",\"to\":"+quote(keys.at(r.to))
@@ -377,7 +423,7 @@ Control::PerformanceInfo Session::writeDocument(const std::string& directory,Per
             scenes.push_back("{\"id\":"+std::to_string(s.id)+",\"name\":"+quote(s.name)+",\"scope\":"+join(scope)+",\"glide\":"+std::to_string(s.glide)+",\"curve\":"+quote(sceneCurves[size_t(s.curve)])+",\"launch\":"+quote(sceneLaunches[size_t(s.launch)])+",\"off\":"+join(off)+",\"offWires\":"+join(offWires)+",\"parts\":"+join(sp)+",\"wires\":"+join(mixes)+",\"values\":"+join(values)+",\"controls\":"+join(sc)+'}');
         }
         for(const auto& at:untouched_)if(keys.count(at.node))parameters.push_back("{\"node\":"+quote(keys.at(at.node))+",\"param\":"+std::to_string(at.param)+'}');
-        head="{\"format\":\"oscairn.performance\",\"version\":4,\"info\":";tail=",\"libraries\":"+join(named)+",\"transport\":{\"tempo\":"+numeric(tempo_.load())+",\"clockSource\":"+quote(clockSource_.load()==Transport::ClockSource::Internal?"internal":"midi")+"},\"audioInputs\":"+ports(graph.audioLayout.inputs)+",\"audioOutputs\":"+ports(graph.audioLayout.outputs)+",\"nodes\":"+join(nodes)+",\"wires\":"+join(wires)+",\"parts\":"+join(parts)+",\"mappings\":"+join(mappings)+",\"pads\":"+padsText(padMap_)+",\"scenes\":"+join(scenes)+",\"sceneUntouched\":"+join(parameters)+",\"scene\":"+std::to_string(scene_)+",\"controls\":"+join(controls)+"}\n";
+        head="{\"format\":\"oscairn.performance\",\"version\":5,\"info\":";tail=",\"libraries\":"+join(named)+",\"transport\":{\"tempo\":"+numeric(tempo_.load())+",\"clockSource\":"+quote(clockSource_.load()==Transport::ClockSource::Internal?"internal":"midi")+"},\"audioInputs\":"+ports(graph.audioLayout.inputs)+",\"audioOutputs\":"+ports(graph.audioLayout.outputs)+",\"nodes\":"+join(nodes)+",\"wires\":"+join(wires)+",\"parts\":"+join(parts)+",\"mappings\":"+join(mappings)+",\"pads\":"+padsText(padMap_)+",\"scenes\":"+join(scenes)+",\"sceneUntouched\":"+join(parameters)+",\"scene\":"+std::to_string(scene_)+",\"controls\":"+join(controls)+",\"lock\":"+lockText+"}\n";
     }
     info.hash=contentHash(head+tail,bundle.temporary.path/"nodes");
     const auto out=head+infoText()+tail;
@@ -391,14 +437,15 @@ void Session::loadPerformance(const std::string& directory) {
     audition_.reset(); // opening a Performance keeps what an audition tried; auditionStart sets its own after
     if(directory.empty() || directory.find('\0')!=std::string::npos)bad("invalid directory");
     const auto root=fs::canonical(directory);validateTree(root);const auto doc=document(root);V d=doc.get();
-    fields(d,{"format","version","info","libraries","transport","audioInputs","audioOutputs","nodes","wires","parts","mappings","pads","scenes","sceneUntouched","scene","controls"});
+    fields(d,{"format","version","info","libraries","transport","audioInputs","audioOutputs","nodes","wires","parts","mappings","pads","scenes","sceneUntouched","scene","controls","lock"});
     // Over the budget it is refused, saying what does not fit (RFC 0025).
     bool seamless=true;
     if(budget_.cpu>0){const auto e=estimate(root.string());if(!e.fits)bad("this Performance "+tooMuch(e));seamless=e.seamless;
         if(!seamless)std::fprintf(stderr,"oscairn: opened at once: with the last Performance ringing out it would not fit\n");}
     const auto pads=padsFrom(field(d,"pads"));
-    if(text(field(d,"format"))!="oscairn.performance" || integer(field(d,"version"))!=4)bad("unsupported format version");
+    if(text(field(d,"format"))!="oscairn.performance" || integer(field(d,"version"))!=5)bad("unsupported format version");
     fields(field(d,"info"),{"id","name","description","tags","color","revision","parent","hash","origin"});const auto info=readInfo(root/"performance.json","oscairn.performance");
+    auto lock=readLock(d);
     const auto transport=field(d,"transport");fields(transport,{"tempo","clockSource"});const double tempo=number(field(transport,"tempo"));
     const auto clock=text(field(transport,"clockSource"));if(tempo<1 || tempo>1000 || (clock!="internal" && clock!="midi"))bad("invalid transport");
     const auto layout=graph_.describe().audioLayout;checkPorts(field(d,"audioInputs"),layout.inputs);checkPorts(field(d,"audioOutputs"),layout.outputs);
@@ -622,12 +669,31 @@ void Session::loadPerformance(const std::string& directory) {
         ++revision_;++sequence_;history_.swap(history);
     });
     info_=info;
+    lock_=std::move(lock);
     clearHistory(); // undo does not reach back into another Performance
 }
 
-// Adds a document's plugins (all, or those keyed in `keep` and the engines they share), with
-// their saved state, roots before the effect contexts sharing their engines; names that are
-// taken get the next number. Every asset must resolve first. On failure nothing stays added.
+// A plugin into a lock being written: this platform's build by its digest (once per build) where
+// it loaded, else what the documents loaded said; other platforms' builds as they said.
+void Session::lockPlugin(std::vector<LockEntry>& lock,const std::string& format,const std::string& id,const std::string& version,const std::string& path,bool standIn) {
+    if(std::any_of(lock.begin(),lock.end(),[&](const LockEntry& l){return l.format==format && l.id==id && l.version==version;}))return;
+    const auto here=platform();
+    std::string digest;
+    std::error_code e;
+    if(!standIn && fs::exists(path,e)){
+        auto& known=digests_[path];
+        if(known.empty())try{known=bundleDigest(path);}catch(const std::exception&){}
+        digest=known;
+    }
+    for(const auto& l:lock_)if(l.format==format && l.id==id && l.version==version && (l.platform!=here || digest.empty()))lock.push_back(l);
+    if(!digest.empty())lock.push_back({format,id,version,here,digest});
+}
+
+void Session::mergeLock(const std::vector<LockEntry>& more) {
+    for(const auto& l:more)
+        if(std::none_of(lock_.begin(),lock_.end(),[&](const LockEntry& x){return x.format==l.format && x.id==l.id && x.version==l.version && x.platform==l.platform;}))lock_.push_back(l);
+}
+
 NodeId Session::adopt(const std::string& name,std::shared_ptr<PluginHost> host) {
     const auto id=graph_.add(std::move(host));
     nodes_.emplace(id,name);
@@ -636,6 +702,9 @@ NodeId Session::adopt(const std::string& name,std::shared_ptr<PluginHost> host) 
     return id;
 }
 
+// Adds a document's plugins (all, or those keyed in `keep` and the engines they share), with
+// their saved state, roots before the effect contexts sharing their engines; names that are
+// taken get the next number. Every asset must resolve first. On failure nothing stays added.
 std::map<std::string,NodeId> Session::addNodes(const json_value_s* document,const fs::path& root,std::vector<NodeId>& added,const std::set<std::string>* only) {
     const auto nodes=array(field(document,"nodes"),256);
     auto refs=parameterRefs(document);
@@ -691,8 +760,9 @@ std::vector<std::string> Session::loadSoundInto(uint32_t partId,const fs::path& 
     if(const auto error=detail::jsonPreflight({reinterpret_cast<const char*>(bytes.data()),bytes.size()},32);!error.empty())bad(std::string(error));
     const std::unique_ptr<json_value_s,decltype(&std::free)> doc{json_parse(bytes.data(),bytes.size()),&std::free};
     V d=doc.get();if(!d)bad("invalid JSON");
-    fields(d,{"format","version","info","libraries","nodes","wires","part","mappings","controls"});
-    if(text(field(d,"format"))!="oscairn.sound" || integer(field(d,"version"))!=4)bad("not a version 4 Sound");
+    fields(d,{"format","version","info","libraries","nodes","wires","part","mappings","controls","lock"});
+    mergeLock(readLock(d)); // its plugins' builds, for saving the Performance it joins
+    if(text(field(d,"format"))!="oscairn.sound" || integer(field(d,"version"))!=5)bad("not a version 5 Sound");
     fields(field(d,"info"),{"id","name","description","tags","color","revision","parent","hash","origin"});
     const auto info=readInfo(root/"sound.json","oscairn.sound");
     std::vector<NodeId> added;
@@ -865,7 +935,7 @@ uint32_t Session::partFromSound(const std::string& id) {
 Control::PerformanceContents Session::performanceContents(const std::string& directory) {
     if(directory.empty() || directory.find('\0')!=std::string::npos)bad("invalid directory");
     const auto doc=document(fs::canonical(directory));V d=doc.get();
-    if(text(field(d,"format"))!="oscairn.performance" || integer(field(d,"version"))!=4)bad("unsupported format version");
+    if(text(field(d,"format"))!="oscairn.performance" || integer(field(d,"version"))!=5)bad("unsupported format version");
     PerformanceContents out;
     for(auto p:array(field(d,"parts"),256))out.parts.push_back({integer(field(p,"id")),text(field(p,"name")),text(field(field(p,"input"),"kind"))=="bus"});
     for(auto s:array(field(d,"scenes"),256))out.scenes.push_back({integer(field(s,"id")),text(field(s,"name"))});
@@ -885,8 +955,9 @@ Control::Imported Session::importPerformance(const std::string& directory,const 
     record(); // an edit waiting for its step comes first: the import is a step of its own
     if(directory.empty() || directory.find('\0')!=std::string::npos)bad("invalid directory");
     const auto root=fs::canonical(directory);validateTree(root);const auto doc=document(root);V d=doc.get();
-    fields(d,{"format","version","info","libraries","transport","audioInputs","audioOutputs","nodes","wires","parts","mappings","pads","scenes","sceneUntouched","scene","controls"});
-    if(text(field(d,"format"))!="oscairn.performance" || integer(field(d,"version"))!=4)bad("unsupported format version");
+    fields(d,{"format","version","info","libraries","transport","audioInputs","audioOutputs","nodes","wires","parts","mappings","pads","scenes","sceneUntouched","scene","controls","lock"});
+    mergeLock(readLock(d));
+    if(text(field(d,"format"))!="oscairn.performance" || integer(field(d,"version"))!=5)bad("unsupported format version");
     fields(field(d,"info"),{"id","name","description","tags","color","revision","parent","hash","origin"});
     // The parts that come: those chosen, and the buses they play through or send to, and theirs.
     const auto partList=array(field(d,"parts"),256);
@@ -1183,6 +1254,28 @@ Control::Installed Session::installArchive(const std::string& file,bool asLibrar
             bool found=false;std::error_code error;
             if(fs::is_directory(folder,error))for(const auto& f:fs::directory_iterator(folder,error))if(f.is_regular_file() && assets_.import(f.path()).sha256==ref.sha256)found=true;
             if(!found){auto copy=ref;try{assets_.resolve(copy);}catch(const std::exception&){out.notes.push_back(i.name+" uses a sample that is not in the archive or on this device: "+ref.path);}}
+        }
+        // The plugin builds for this device that they use, into the store (RFC 0006), each whole or
+        // not at all; a different build already there is kept.
+        std::set<std::tuple<std::string,std::string,std::string>> used;
+        for(const auto& i:items){
+            const auto bytes=state_files::read(manifest(i),4*1024*1024);
+            const std::unique_ptr<json_value_s,decltype(&std::free)> doc{json_parse(bytes.data(),bytes.size()),&std::free};
+            for(auto node:array(field(doc.get(),"nodes"),256)){const V plugin=field(node,"plugin");used.insert({text(field(plugin,"format")),text(field(plugin,"id")),text(field(plugin,"version"))});}
+        }
+        for(const auto& plugin:p.plugins){
+            if(!used.count({plugin.format,plugin.id,plugin.version}))continue;
+            const auto build=std::find_if(plugin.builds.begin(),plugin.builds.end(),[](const auto& b){return b.platform==platform();});
+            if(build==plugin.builds.end()){out.notes.push_back(plugin.name+" "+plugin.version+" has no build for this device in the archive");continue;}
+            if(const auto there=storedPlugin(plugin.format,plugin.id,plugin.version);!there.empty()){
+                if(bundleDigest(there)!=build->sha256)out.notes.push_back("a different build of "+plugin.name+" "+plugin.version+" is already installed; it was kept");
+                continue;
+            }
+            const auto folder=dataHome()/"Plugins"/plugin.format/storeName(plugin.id,plugin.version);
+            const auto partial=folder.parent_path()/("."+folder.filename().string()+".partial");
+            std::error_code e;fs::remove_all(partial,e);fs::create_directories(partial);
+            fs::copy(into/build->path,partial/fs::path(build->path).filename(),fs::copy_options::recursive);
+            fs::remove_all(folder,e);fs::rename(partial,folder);
         }
         if(asLibrary){
             // Locked, in its own folder: what is there stays, what is missing comes back.

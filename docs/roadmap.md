@@ -187,7 +187,7 @@ in the others.
 
 1. **Performance UI** ([RFC 0011](rfcs/0011-performance-ui-and-editors.md#progress))
    - [x] step 1: wire ownership, parts, implicit Mixes and port-level routes with channel
-     rules, saved in the Performance format (now version 4) and in the control protocol
+     rules, saved in the Performance format (now version 5) and in the control protocol
      ([status](rfcs/0011-performance-ui-and-editors.md#step-1-status))
    - [x] step 2: zones, shared buses, the desktop's Parts and Part views, scenes
    - [x] step 3: splits (lanes with zones and a Mix, joining after) in the model, protocol and
@@ -511,7 +511,9 @@ Each starts as an RFC:
 - [ ] signed updates with A/B system images
 - [ ] the platform as a DAW plugin
 
-- [ ] **Packages and portability** ([RFC 0006](rfcs/0006-packages-and-portability.md), proposed):
+- [ ] **Packages and portability** ([RFC 0006](rfcs/0006-packages-and-portability.md), proposed;
+  built: stand-ins for plugins not here, the plugin store, locks in documents, archives
+  carrying and installing CLAP builds with every file hashed):
   first a clean-machine, offline Performance/Setlist transfer with managed CLAP packages,
   project manifests/exact dependency locks, target builds, project-local dependency views
   backed by a shared installed store, shared runtime/sample packages and unavailable-node

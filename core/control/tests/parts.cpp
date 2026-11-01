@@ -1241,10 +1241,10 @@ namespace
         }
 
         // An earlier format version is refused clearly, the session untouched.
-        const auto old = root / "version-3";
+        const auto old = root / "version-4";
         fs::copy(saved, old, fs::copy_options::recursive);
         auto text = std::string(first.begin(), first.end());
-        text.replace(text.find("\"version\":4"), 11, "\"version\":3");
+        text.replace(text.find("\"version\":5"), 11, "\"version\":4");
         state_files::write(old / "performance.json", text.data(), text.size());
         const auto before = describe(t);
         bool refused = false; try { t.loadPerformance(old.string()); } catch(const std::runtime_error& e) { refused = std::string(e.what()).find("unsupported format version") != std::string::npos; }

@@ -16,7 +16,7 @@ namespace oscairn
         void savePerformance(const std::string& directory) override;
         void setBudget(const Budget& budget) override;
         Estimate estimate(const std::string& directory = {}) override;
-        void exportPerformance(const std::string& file, bool editedSounds = false) override;
+        std::vector<std::string> exportPerformance(const std::string& file, bool editedSounds = false) override;
         void loadPerformance(const std::string& directory) override;
         PerformanceInfo performanceInfo() const override;
         void setPerformanceInfo(const PerformanceInfo& info) override;
@@ -35,7 +35,7 @@ namespace oscairn
         void auditionStart(const std::string& id, uint32_t part = 0) override;
         void auditionStop(bool keep = false) override;
         Audition audition() const override;
-        void exportLibraryItem(const std::string& id, const std::string& file, bool editedSounds = false) override;
+        std::vector<std::string> exportLibraryItem(const std::string& id, const std::string& file, bool editedSounds = false) override;
         std::string libraryCopy(const std::string& id) override;
         SoundSaved savePartAsSound(uint32_t part, const std::string& name, bool asNew = false) override;
         std::vector<std::string> loadSound(uint32_t part, const std::string& id) override;

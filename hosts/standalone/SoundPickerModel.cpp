@@ -115,8 +115,10 @@ namespace oscairn::standalone
         if(action.kind == SoundAction::ImportPerformance){control.importPerformance(action.directory,action.parts,action.scenes);return {};}
         if(action.kind == SoundAction::AuditionStart){control.auditionStart(action.libraryId,action.part);return {};}
         if(action.kind == SoundAction::AuditionStop){control.auditionStop(action.asNew);return {};}
-        if(action.kind == SoundAction::ExportPerformance && !action.libraryId.empty()){control.exportLibraryItem(action.libraryId,action.directory,action.asNew);return "Exported.";}
-        if(action.kind == SoundAction::ExportPerformance){control.exportPerformance(action.directory,action.asNew);return "Performance exported.";}
+        // What could not go, after what went.
+        auto withNotes = [](std::string done, const std::vector<std::string>& notes) { for(const auto& n : notes) done += " " + n + "."; return done; };
+        if(action.kind == SoundAction::ExportPerformance && !action.libraryId.empty()) return withNotes("Exported.", control.exportLibraryItem(action.libraryId,action.directory,action.asNew));
+        if(action.kind == SoundAction::ExportPerformance) return withNotes("Performance exported.", control.exportPerformance(action.directory,action.asNew));
         if(action.kind == SoundAction::InstallArchive){
             const auto r=control.installArchive(action.directory,action.asNew,action.items);
             std::string message="Installed "+std::to_string(r.added)+(r.skipped?", "+std::to_string(r.skipped)+" already here":"")+".";

@@ -11,7 +11,11 @@ Checked when built and tested; the sections below say how.
 - [ ] 1. Format-qualified IDs, package references and provenance in persisted identities; profiles, manifest and lock schemas
 - [ ] 2. First vertical slice: managed CLAP packages, locks, offline export and import, unavailable-node preservation
       (built 2026-11-01: unavailable-node preservation, a stand-in keeping the plugin's place and
-      saved state, `control-parts`; the plugin store's lookup by format, ID and version)
+      saved state, `control-parts`; the plugin store's lookup by format, ID and version; the
+      lock in Performances and Sounds, version 5; archives version 2 carrying this device's CLAP
+      builds, every file hashed and checked, installed into the store, `control-package`,
+      `control-archives`. Not yet: Used by and safe removal, builds for other platforms, shared
+      runtime packages, a Setlist on a clean machine. [Decisions](#first-slice-decisions))
 - [ ] 3. Cross-platform proof
 - [ ] 4. LV2, existing installs, VST3 and AU with their adapters
 - [ ] 5. DAW delivery proof
@@ -72,6 +76,26 @@ destination implementation. Packaging an external binary does not promote it to 
 Otherwise disable the unavailable node, show the reason, preserve its state/routes, and mark
 the affected performance not ready. Do not silently bypass the node. Other complete songs
 remain usable; a user can deliberately save a reduced/substituted version of the affected one.
+
+## First slice decisions
+
+Made 2026-11-01, for the first slice:
+
+- **The archive is the library archive,** `.olib`, extended to version 2
+  ([format](../library-archive.md)), not a second package format: plugin builds go under
+  `Plugins/<format>/<id>@<version>/<platform>/`, listed in the manifest with each build's digest.
+- **Any CLAP plugin goes in,** the build the exporting device has, not only plugins marked as
+  managed packages. Whether a plugin may be redistributed is the musician's call, as when
+  copying its files by hand. LV2 waits for its bundle and state-asset rules (step 4).
+- **Hashes now, signatures later.** Every file in an archive has its SHA-256 in the manifest,
+  and each plugin build its digest, checked on extraction: an archive is whole and as it was
+  made. Who made it is not proven until signatures.
+- **The lock is in the document,** `lock` in `performance.json` and `sound.json`
+  ([format](../performance-format.md)), not a separate lockfile: each plugin's build digest per
+  platform. Saving keeps other platforms' entries and a stand-in's.
+- **The store** is `OSCAIRN_DATA_HOME/Plugins/<format>/<id>@<version>/<bundle>`, one build per
+  version, tried after the saved path. A different build of the same version already there is
+  kept and reported, never replaced.
 
 ## Project manifest, lockfile and shared store
 

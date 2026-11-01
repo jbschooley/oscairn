@@ -1,4 +1,4 @@
-# Performance format, version 4
+# Performance format, version 5
 
 A Performance saves the graph, all prepared sounds and their MIDI-channel assignments,
 plugin settings/state, its wires and parts ([RFC 0011](rfcs/0011-performance-ui-and-editors.md)),
@@ -44,7 +44,7 @@ Required top-level fields:
 
 | Field | Meaning |
 | --- | --- |
-| `format`, `version` | Exactly `oscairn.performance` and integer `4` |
+| `format`, `version` | Exactly `oscairn.performance` and integer `5` |
 | `info` | What the library shows ([RFC 0021](rfcs/0021-sounds-performances-and-library.md)): `id` (made at the first save, kept by every later one), `name` (the folder's name when none is set), `description`, up to 32 free `tags`, `color` (`#rrggbb`, or empty for none), and `revision` (made at every save) and `parent` (the revision it was saved over; empty for the first), and `hash`: SHA-256 of the contents, over the document without its info block followed by each file under `nodes/` by path with its own SHA-256, in path order. Names, tags and revisions are not contents. Equal hashes mean equal contents; the ID stays the identifier. `origin`: for an item imported into the user's own storage from a [library archive](library-archive.md), the archive's ID, the item's ID there and this copy's content hash as imported; `null` otherwise |
 | `transport` | Tempo and `internal` or `midi` clock source |
 | `audioInputs`, `audioOutputs` | Required logical graph ports: ID, channels, flags |
@@ -55,6 +55,7 @@ Required top-level fields:
 | `mappings` | Source node/lane to destination node/parameter |
 | `scenes`, `sceneUntouched`, `scene` | Each scene (RFC 0011's full model): `id`, `name`, `scope` (the kinds selecting it applies: `enabled`, `mutes`, `mix`, `parameters`, `mappings`), its transition (`glide` in milliseconds, `curve`: `linear`, `ease` or `equal-power`, `launch`: `now`, `beat` or `bar`), and as stored: `off` (plugins switched off, by node key) and `offWires` (wires switched off, each by `kind`, `part` (0 for a user wire), `from`, `to`, `fromPort`, `toPort`, `send`, `split`, `lane`, `fader`), `parts` (each part's `level`, `pan`, `mute`, `solo`, `sends` and its splits' `lanes` Mix rows), `wires` (user wires' Mix rows, named the same way), `values` (every parameter scenes touch) and `controls` (each control's value); the parameters scenes never touch; and the scene last selected |
 | `controls` | The control tree: each control's `part` (the part that owns it, or 0 for the Performance), name, value and targets (kind, node key and parameter, part, control, or for a `morph` the `from` and `to` scenes; start, end, curve, relative, base, and `offIn`: the scenes the mapping is off in, empty in a Sound) |
+| `lock` | The plugin builds it was saved with ([RFC 0006](rfcs/0006-packages-and-portability.md)): `plugins`, each `{format, id, version, platform, sha256}`: per platform (such as `macos-arm64`), the build's digest, a file's SHA-256 or for a bundle the SHA-256 of each file's path and SHA-256 in path order, hidden files left out. Saving writes this platform's digest for each plugin that loaded, and keeps the entries the loaded documents had for other platforms and for stand-ins. An [archive](library-archive.md) bundles a plugin's build from its `pathHint` only while that build still has the locked digest, else from the plugin store |
 | `pads` | The pad map: the selected bank and eight banks of 16 pads, each with its note, MIDI channel (-1 follows the player), velocity (0 as played) and pressure mode |
 
 `node-1` etc. are document-local keys, not runtime node IDs. `input` and `output` name
@@ -71,8 +72,8 @@ unconnected.
 
 Plugin identity is `(format, id)`, plus the observed version as state provenance.
 `pathHint` locates an installed binary/bundle and is verified against that identity and
-version; the plugin store (`OSCAIRN_DATA_HOME/Plugins/<format>/<id>@<version>/`, RFC 0006) is
-tried next. It is **not** a package ID or portability guarantee. There are no silent upgrades
+version; the plugin store (`OSCAIRN_DATA_HOME/Plugins/<format>/<id>@<version>/<bundle>`, RFC 0006,
+where installing an archive puts the builds it carries) is tried next. It is **not** a package ID or portability guarantee. There are no silent upgrades
 or untested state conversions: a plugin that is not here, or only in another version, or that
 fails to load, opens as a **stand-in** in its place (RFC 0006's unavailable-node preservation).
 The stand-in keeps the saved identity, ports and the parameters the snapshot and the document
@@ -121,11 +122,11 @@ Unknown versions are rejected, preserving the current session and original folde
 
 A Sound ([RFC 0021](rfcs/0021-sounds-performances-and-library.md)) is a part saved without its
 seat, in a folder with the same layout: `sound.json` and `nodes/`. It uses the same objects
-and limits as a Performance, with `format` `oscairn.sound` and version 4:
+and limits as a Performance, with `format` `oscairn.sound` and version 5:
 
 | Field | Meaning |
 | --- | --- |
-| `format`, `version`, `info`, `libraries` | As in a Performance |
+| `format`, `version`, `info`, `libraries`, `lock` | As in a Performance |
 | `nodes` | The part's plugins only, keyed `node-1` onwards; none may share an engine with a plugin outside the part |
 | `wires` | The wires with both ends among those nodes: user wires, and the part's own wires for their Mix (the part's wires are rebuilt from its chain on load, taking those settings) |
 | `part` | `chain` and `splits`, as in a Performance's part; no ID, name, input, output, fader or sends |
@@ -182,7 +183,7 @@ has adopted it. The typed methods are `Control::savePerformance` / `loadPerforma
 See [control-protocol.md](control-protocol.md).
 
 `control-parts` saves and reloads parts, wires of both owners, Mix settings and a flagged
-wire, comparing the model and rendered audio, and checks a version 2 document is refused.
+wire, comparing the model and rendered audio, and checks a version 4 document is refused.
 `control-performance` checks sample-identical audio against a separately configured graph,
 prepared native/hosted sounds, shared delay state, sequencer edits, load failures, queued
 selections and concurrent publication with an audio allocation guard.

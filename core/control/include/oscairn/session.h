@@ -43,8 +43,8 @@ namespace oscairn
         void savePerformance(const std::string& directory) override;
         void setBudget(const Budget& budget) override;
         Estimate estimate(const std::string& directory = {}) override;
-        void exportPerformance(const std::string& file, bool editedSounds = false) override;
-        void exportLibraryItem(const std::string& id, const std::string& file, bool editedSounds = false) override;
+        std::vector<std::string> exportPerformance(const std::string& file, bool editedSounds = false) override;
+        std::vector<std::string> exportLibraryItem(const std::string& id, const std::string& file, bool editedSounds = false) override;
         void loadPerformance(const std::string& directory) override;
         PerformanceInfo performanceInfo() const override {return info_;}
         void setPerformanceInfo(const PerformanceInfo& info) override;
@@ -366,9 +366,17 @@ namespace oscairn
         // A document's nodes (a Performance's or a Sound's), each its saved plugin or, not here, its stand-in.
         std::map<std::string,NodeId> addNodes(const ::json_value_s* document,const std::filesystem::path& root,std::vector<NodeId>& added,const std::set<std::string>* only); // only: these keys (and their engines); null: all
         NodeId adopt(const std::string& name, std::shared_ptr<PluginHost> host); // a stand-in (RFC 0006), with no budget check
+    public:
+        // A plugin build a document was saved with (RFC 0006), for one platform.
+        struct LockEntry { std::string format, id, version, platform, sha256; bool operator==(const LockEntry&) const = default; };
+    private:
+        std::vector<LockEntry> lock_;                       // what the documents loaded said, merged
+        std::map<std::string, std::string> digests_;        // each plugin build's digest, by its path, once
+        void lockPlugin(std::vector<LockEntry>& lock, const std::string& format, const std::string& id, const std::string& version, const std::string& path, bool standIn);
+        void mergeLock(const std::vector<LockEntry>& more);
         std::set<NodeId> nodesOf(const Part& part) const;
         static std::vector<assets::Ref> assetsOf(const std::filesystem::path& manifest);
-        void exportArchive(const std::string& file, const std::string& kind, const std::function<std::vector<PartSource>(const std::filesystem::path&, Package&)>& write, bool editedSounds);
+        std::vector<std::string> exportArchive(const std::string& file, const std::string& kind, const std::function<std::vector<PartSource>(const std::filesystem::path&, Package&)>& write, bool editedSounds);
         uint64_t revision_ = 0, sequence_ = 0;
         using Address = std::pair<NodeId,uint32_t>;
         struct Command { ChangeKind kind; double value; };
