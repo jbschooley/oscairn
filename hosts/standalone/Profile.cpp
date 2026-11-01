@@ -123,7 +123,7 @@ namespace oscairn::standalone
                 c.functions = names(o, "functions");
                 const bool banked = c.role == "assign" && c.kind != "faders" && c.kind != "buttons";
                 require(!banked || c.rows.empty() != c.paging.empty(), "an assign group of " + c.kind + " has rows or paging, not both");
-                require(banked || (c.rows.empty() && c.paging.empty()), "only an assign group of knobs has rows or paging");
+                require(banked || (c.rows.empty() && c.paging.empty()), "only an assign group, not of faders or buttons, has rows or paging");
                 require(c.modes.empty() || c.kind == "faders", "only faders have modes");
                 require(c.functions.empty() || (c.role == "fixed" && int(c.functions.size()) == c.count), "a fixed group's functions are one per control");
                 p.controls.push_back(c);
