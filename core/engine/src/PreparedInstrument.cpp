@@ -232,6 +232,7 @@ public:
     }
     uint64_t outputEventDrops() const noexcept override {uint64_t n=drops_.load();for(const auto& s:desired_.instances)if(s)n+=s->host->outputEventDrops();return n;}
     const Event* outputEvents(uint32_t& n) const noexcept override {n=outputCount_;return output_.data();}
+    bool asleep_=false; // audio thread
     kick::clap::Statistics statistics() const noexcept override {
         kick::clap::Statistics result{};
         for(const auto& s:desired_.instances)if(s){const auto v=s->host->statistics();
@@ -283,6 +284,7 @@ public:
             }
         }
         if(!ok){++drops_;silence();}
+        asleep_=true;
         for(auto& s:current_->instances)if(s && s->running){
             s->rendered.store(true);
             if(!s->host->process(nullptr,0,s->outputs.data(),s->outputs.size(),frames,s->events.data(),s->count,transport)){
@@ -300,9 +302,12 @@ public:
                 s->notes.ended(emitted[i]);
             }
             s->owned.store(std::count_if(s->notes.notes.begin(),s->notes.notes.end(),[](const auto& n){return n.used;}));
+            asleep_=asleep_ && s->host->asleep();
         }
         applied_.store(current_->revision);return ok;
     }
+    // Asleep when every instance that ran this block said so (audio thread, after process).
+    bool asleep() const noexcept override {return asleep_;}
 };
 }
 std::shared_ptr<PluginHost> preparedInstrument(std::shared_ptr<PluginHost> h,double rate,uint32_t frames,ProcessingMode mode,Lv2BufferLimits limits) {

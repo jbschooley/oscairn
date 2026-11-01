@@ -184,5 +184,18 @@ int main(int argc,char** argv){try{
         check(!d.idle(s,uint64_t(48000)*60,UINT64_MAX),"but not before the silence asked for");
         d.setDraining(graphInput,s,false);d.commit();play({&other,1});check(held()==1,"undrained, it takes notes again");
     }
+    {
+        // A retiring instrument that says it is asleep (CLAP_PROCESS_SLEEP) is idle as soon as its
+        // notes end, without the silence window: through the prepared-instrument wrapper too.
+        Graph g(48000,512);
+        const auto s=g.add(argv[3],"org.kick.test.sleep");g.connectNotes(graphInput,s);g.connectAudio(s,graphOutput);g.commit();
+        auto play=[&](std::span<const Event> events={}){check(g.process(out,512,nullptr,events.data(),events.size()),"render the sleeping fixture");};
+        const auto down=Event::note(true,60,1),up=Event::note(false,60,0);
+        play({&down,1});
+        g.setDraining(graphInput,s,true);g.setRetiring(s,true);g.commit();play();
+        check(!g.idle(s,UINT64_MAX,UINT64_MAX),"busy while its note is held");
+        play({&up,1});play();play();
+        check(g.idle(s,UINT64_MAX,UINT64_MAX),"asleep once released: idle without waiting for silence");
+    }
     std::cout<<"ok: route ownership, retirement, sustain, physical MIDI overflow, the steal fade, draining and retiring\n";
 }catch(const std::exception& e){forbidAllocation=false;std::cerr<<e.what()<<'\n';return 1;}}
