@@ -419,6 +419,9 @@ namespace oscairn::standalone
         for(auto* l : {&tempoLabel_, &sceneLabel_, &status_}) l->setFont(juce::FontOptions(textSize(TextRole::Small, mode)));
         auto area = getLocalBounds();
         auto bar = area.removeFromTop(m.control + 2 * m.gap).reduced(m.gap * 2, m.gap);
+        // Undo and Redo first, so a narrow window shortens the status, never them.
+        redo_.setBounds(bar.removeFromRight(m.control)); bar.removeFromRight(4);
+        undo_.setBounds(bar.removeFromRight(m.control)); bar.removeFromRight(m.gap * 2);
         home_.setVisible(onHome != nullptr);
         if(onHome) { home_.setBounds(bar.removeFromLeft(m.control)); bar.removeFromLeft(m.gap * 2); }
         // The open Performance, and Save.
@@ -432,10 +435,10 @@ namespace oscairn::standalone
             c.setBounds(bar.removeFromLeft(width));
         };
         labeled(tempoLabel_, tempo_, touchSized(mode_) ? 150 : 120); bar.removeFromLeft(m.gap * 3);
-        labeled(sceneLabel_, sceneBox_, 160); bar.removeFromLeft(6);
+        // The scene box narrows so Store still fits beside it.
+        const int sceneRoom = bar.getWidth() - juce::GlyphArrangement::getStringWidthInt(sceneLabel_.getFont(), sceneLabel_.getText()) - 10 - 6 - (m.control * 2 + 8);
+        labeled(sceneLabel_, sceneBox_, std::clamp(sceneRoom, 80, 160)); bar.removeFromLeft(6);
         storeScene_.setBounds(bar.removeFromLeft(m.control * 2 + 8));
-        redo_.setBounds(bar.removeFromRight(m.control)); bar.removeFromRight(4);
-        undo_.setBounds(bar.removeFromRight(m.control)); bar.removeFromRight(m.gap * 2);
         status_.setBounds(bar);
         area.removeFromTop(1);
         play_.setBounds(area);
