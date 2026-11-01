@@ -160,7 +160,7 @@ Everything else is handled for you:
     down, sample and hold or noise, user steps); others show as drawn by the plugin;
   - list parameters in the order a player reads them (attack before decay), since tiles follow
     the plugin's order within a page;
-  - a stepped parameter with 2 to 4 values is a row of buttons (Off and On: a switch), with
+  - a stepped parameter with 2 to 4 values is a row of buttons (Off and On, or 0 and 1: a switch), with
     up to 64 a list of their value texts, otherwise a slider; a symmetric range with a
     default of 0 fills from the center;
   - a filter's response is drawn when one module has `Cutoff` and `Resonance`, and its

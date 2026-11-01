@@ -47,7 +47,7 @@ namespace oscairn::standalone
         };
         constexpr size_t tabbedAbove = 24; // a page with more parameters than this gets tabs
         constexpr int maxChoices = 4;      // up to this many values: buttons side by side
-        bool onOff(const juce::String& a, const juce::String& b) { return a.equalsIgnoreCase("off") && b.equalsIgnoreCase("on"); }
+        bool onOff(const juce::String& a, const juce::String& b) { return (a.equalsIgnoreCase("off") && b.equalsIgnoreCase("on")) || (a == "0" && b == "1"); } // 0 and 1: a plugin without names for them
         std::string level(const std::string& module, size_t n) // the module path's nth level, or ""
         {
             size_t from = 0;
@@ -1008,7 +1008,7 @@ namespace oscairn::standalone
             if(!t.range->isMouseButtonDown()) t.range->setMinAndMaxValues(value, t.shownHigh, juce::dontSendNotification);
         }
         if(t.list) t.list->setSelectedId(int(std::lround(value - p.minimum)) + 1, juce::dontSendNotification);
-        if(t.toggle) { t.toggle->setToggleState(value > p.minimum, juce::dontSendNotification); t.toggle->setButtonText(shown); }
+        if(t.toggle) { t.toggle->setToggleState(value > p.minimum, juce::dontSendNotification); t.toggle->setButtonText(shown == "1" ? "On" : shown == "0" ? "Off" : shown); }
     }
 
     void ParameterGrid::timerCallback()

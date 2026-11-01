@@ -203,7 +203,8 @@ in the others.
    - [ ] the adaptive UI ([RFC 0019](rfcs/0019-adaptive-ui.md#progress)): view models drawn
      for the desktop and the device panel (done), a desktop shell like Gig Performer's with a
      keyboard-and-mouse or touch input mode (started), described plugin editors covering
-     step 5's knob pages (started)
+     step 5's knob pages (done for every plugin's parameters on Desktop, Panel and the
+     Compact test layout; modulation shown on knobs and the Modular grid remain)
    - [ ] plugin windows, then step 6's physical controls (default layers, banks in fours,
      overrides saved in the Performance format (now version 6) and learn on a panel's knobs
      done; [status](rfcs/0011-performance-ui-and-editors.md#step-6-status))

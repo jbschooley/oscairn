@@ -14,7 +14,9 @@ Checked when built and tested; the sections below say how.
 - [x] 3. Split, join, buses, the Mixer ([status](#step-3-status))
 - [x] 4. Routing view on the desktop ([status](#step-4-status))
 - [x] Undo for every edit ([status](#undo-status)); preset and state loads remain
-- [ ] 5. Editors: knob pages for every plugin (started through [RFC 0019](0019-adaptive-ui.md)'s generated editors), the Modular grid
+- [ ] 5. Editors: knob pages for every plugin done through [RFC 0019](0019-adaptive-ui.md)'s
+      generated editors ([status](#step-5-status)); what modulates each knob and the Modular
+      grid remain
 - [ ] 6. Physical controls: default layers, overrides, learn, banks (layers, banks, overrides saved and learn on a panel's knobs done; [status](#step-6-status))
 - [ ] 7. Groups, pedal view, move, copy and share
 - [x] Play: the Performance app's view for the stage ([design](#play-the-performance-apps-first-view), [status](#play-status))
@@ -661,6 +663,21 @@ loading; the socket test and `desktop-pad-editor` cover the protocol and the eng
 Not yet: undo of preset and state loads, which replace a plugin's
 whole state outside this model; and a plugin's own edits in its window, which reach the host
 as parameter changes it reports, not edits made here.
+
+## Step 5 status
+
+Knob pages for every plugin are [RFC 0019](0019-adaptive-ui.md#step-1-status)'s generated
+editors, 2026-11-01: every CLAP plugin's parameters as pages from its module paths (or, for a
+large plugin without any, from its names), drawn as tiles with the control each wants on the
+Desktop and on a device's Panel, where the device's knobs play the line selected on screen,
+and as lists for four encoders on the Compact test layout. A mode that hides controls redraws
+the pages. `desktop-shell` checks the gate's plugins on all three: the Basic Synth, the
+Sampler (which has no parameters yet, so nothing to edit there) and Odin 2 (258 parameters, 26
+pages, checked where it is built beside the checkout); the bundled Delay, Transpose and Step
+Sequencer were rendered and looked at. Two-valued parameters written 0 and 1 are switches
+labeled Off and On. Not yet: what modulates each knob (parameter lanes, aftertouch), the
+structured-editor description beyond `oscairn.ui`'s hints, and the Modular grid; the Sampler's
+zones, sounds and envelope wait on its parameters and RFC 0019 step 5.
 
 ## Step 6 status
 
