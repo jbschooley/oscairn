@@ -14,8 +14,8 @@ Checked when built and tested; the sections below say how.
 
 - [x] 1. The profile schema, and profiles for the desktop, the QEMU image, the Behringer KICK and the Ignite ([status](#step-1-status))
 - [ ] 2. The app reads its profile: surface, layouts, default mappings and app set follow from it
-      (surface, layout and apps done; RFC 0011's physical controls resolve default mappings
-      for a device's knobs, sliders and buttons, but the profile's counts are not read into them yet)
+      (surface, layout and apps done; the control groups reach RFC 0011's physical controls,
+      which resolve each group's defaults; the panel playing faders, rows and buttons remains)
 - [ ] 3. The engine reads it: audio block size, budgets and reliability level follow from it
       (block size and the budget (RFC 0025) done; reliability waits for RFC 0027)
 - [ ] 4. Packages and Performances checked against it (with RFC 0006 and RFC 0025)

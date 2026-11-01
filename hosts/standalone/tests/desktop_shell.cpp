@@ -195,6 +195,15 @@ int main(int argc, char** argv)
                     snapshot(frame, "play-panel");
                     engine.setRowKnobs(0, standalone::Engine::Edge::Bottom);
                     engine.edit([](Control& c) { c.assign("knob:3", {}); });
+                    // A device with six screen knobs (the MODX M's): six tiles, banks six wide.
+                    ControlGroup screenKnobs; screenKnobs.role = ControlGroup::Role::Screen; screenKnobs.kind = "knobs"; screenKnobs.count = 6;
+                    ControlGroup rowKnobs; rowKnobs.kind = "knobs"; rowKnobs.count = 4; rowKnobs.rows = {{"Assign 1", BankKind::Assign}};
+                    engine.setControlGroups({screenKnobs, rowKnobs});
+                    play.select(bass); play.showPartControls(true); settle();
+                    check(play.knobs() == 6 && play.knobSlots().size() == 6 && play.knobSlots()[0].control == "screen:1" && play.knobSlots()[0].bank == "Assign 1\xE2\x80\x93" "6",
+                          "six screen knobs: six tiles, a bank six wide: " + play.knobSlots()[0].bank);
+                    snapshot(frame, "play-six");
+                    engine.setControlGroups({}); play.showPartControls(false); play.select(piano); settle();
                     app.edit(true);
                     check(app.editing() && !play.isVisible(), "Edit shows the parts views");
                     app.edit(false);

@@ -5,6 +5,7 @@
 #include "Launcher.h"
 #include "PartsModel.h"
 #include "PartsView.h"
+#include "Profile.h"
 #include "oscairn/physical_controls.h"
 
 #include <juce_gui_basics/juce_gui_basics.h>
@@ -30,7 +31,10 @@ namespace oscairn::standalone
         bool showsPartControls() const { return partControls_ && selected_; }
         // What the knobs play on the page shown, resolved through the physical controls' layers.
         const std::vector<ResolvedControl>& knobSlots() const { return knobSlots_; }
-        int knobs() const;
+        int knobs() const { return int(knobGroup().count); }
+        // The group the knob row shows: the device's screen knobs, or else its first assign group
+        // of knobs, or else (the desktop, a panel layout) the layout's row knobs or four, paged.
+        ControlGroup knobGroup() const;
         // Learn (RFC 0011): move a device's knob, then touch what it should play: a strip (its
         // level, or its M for its mute), a scene, or a knob's target. Default removes its override.
         void learn(bool on);
@@ -84,6 +88,9 @@ namespace oscairn::standalone
         juce::Component stripRow_;
         std::vector<std::unique_ptr<Strip>> strips_;
     };
+
+    /// A profile's control groups, as physical controls resolve them.
+    std::vector<ControlGroup> controlGroups(const Profile&);
 
     /// The Performance app on a device's screen (RFC 0030): Play, and Edit's parts views, with
     /// the top bar's actions for each.

@@ -153,7 +153,7 @@ is `back`. The Performance app opens in **Play**, for the stage: the scenes, a r
 following the Performance's controls (or the selected part's), and a strip per part and bus;
 **Edit** (in the top bar, or the desktop's toolbar) goes to the parts views, and **Play** back.
 Selected, a part's knobs follow its banks: its own controls, then its instrument's first
-parameters, then each effect's main control, in fours (**Bank** pages them). On a device with
+parameters, then each effect's main control, as many at a time as the device has screen knobs or assignable knobs (**Bank** pages them). On a device with
 knobs, **Learn** assigns one: move it, then touch a strip, its M, a scene or a knob.
 `--view Part|Mixer|Routing|Controls|Play` (desktop layout only) opens the Performance app on that
 view instead.

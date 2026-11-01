@@ -100,7 +100,7 @@ static void native(const char* synth,const char* delay,const char* seq,const fs:
         Session s(48000,127);s.loadPerformance(gone.string());
         check(s.sessionStatus().failures.size()==1 && s.sessionStatus().failures[0].reason.find("not here")!=std::string::npos,"a missing plugin opens as a stand-in, reported");}
     for(int which=0;which<5;++which){if(which==1)continue;const auto bad=root/("bad"+std::to_string(which));fs::copy(file,bad,fs::copy_options::recursive);
-        if(which==0)replaceText(bad/"performance.json","\"version\":6","\"version\":999");
+        if(which==0)replaceText(bad/"performance.json","\"version\":7","\"version\":999");
         if(which==2)fs::remove(bad/"nodes/node-1/state/state.clap");
         if(which==3)replaceText(bad/"performance.json","\"engine\":\"node-1\"","\"engine\":\"node-4\"");
         if(which==4)fs::create_symlink(file/"performance.json",bad/"link");

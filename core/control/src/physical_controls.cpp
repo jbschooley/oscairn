@@ -6,6 +6,7 @@
 #include "oscairn/session.h"
 
 #include <algorithm>
+#include <set>
 #include <stdexcept>
 #include <tuple>
 
@@ -16,7 +17,8 @@ namespace oscairn
         const auto colon = control.find(':');
         if(colon == std::string::npos) return false;
         const auto kind = control.substr(0, colon), number = control.substr(colon + 1);
-        if(kind != "knob" && kind != "slider" && kind != "button") return false;
+        static const std::set<std::string> kinds{"knob", "fader", "button", "wheel", "strip", "jog", "pedal", "footswitch"};
+        if(!kinds.count(kind)) return false;
         return !number.empty() && number.size() <= 3 && number[0] != '0' && std::all_of(number.begin(), number.end(), [](char c) { return c >= '0' && c <= '9'; });
     }
 
@@ -52,25 +54,102 @@ namespace oscairn
             return out;
         }
         using Item = std::pair<Assignment, std::string>;
-        // Items in banks of four: "Assign 1–4", "Assign 5–8".
-        void inFours(std::vector<Bank>& banks, const std::string& name, AssignmentLayer layer, const std::vector<Item>& items)
+        std::string numbered(const std::string& name, size_t from, size_t to) { return name + " " + std::to_string(from) + "\xE2\x80\x93" + std::to_string(to); }
+        Bank blank(const std::string& name, BankKind kind, uint32_t width) { Bank b; b.name = name; b.kind = kind; b.slots.resize(width); b.labels.resize(width); return b; }
+        // Items in banks as wide as the group: "Assign 1–6", "Assign 7–12".
+        void chunk(std::vector<Bank>& banks, const std::string& name, BankKind kind, AssignmentLayer layer, const std::vector<Item>& items, uint32_t width)
         {
-            for(size_t i = 0; i < items.size(); i += 4)
+            for(size_t i = 0; i < items.size(); i += width)
             {
-                Bank b; b.layer = layer;
-                b.name = name + " " + std::to_string(i + 1) + "\xE2\x80\x93" + std::to_string(i + 4);
-                for(size_t k = 0; k < 4 && i + k < items.size(); ++k) { b.slots[k] = items[i + k].first; b.labels[k] = items[i + k].second; }
+                auto b = blank(numbered(name, i + 1, i + width), kind, width); b.layer = layer;
+                for(size_t k = 0; k < width && i + k < items.size(); ++k) { b.slots[k] = items[i + k].first; b.labels[k] = items[i + k].second; }
                 banks.push_back(std::move(b));
             }
         }
         Item parameter(const AssignableNode& n, const AssignableParam& p) { Assignment a; a.kind = Assignment::Kind::Parameter; a.node = n.node; a.param = p.id; return {a, n.name + ": " + p.name}; }
         Item of(Assignment::Kind kind, uint32_t id, const std::string& label) { Assignment a; a.kind = kind; a.id = id; return {a, label}; }
-        // Parts first, then buses: what sliders and buttons take in turn.
+        // Parts first, then buses: what faders and buttons take in turn.
         std::vector<const Part*> faderOrder(const AssignmentSource& s)
         {
             std::vector<const Part*> out;
             for(const bool bus : {false, true}) for(const auto& p : s.parts) if((p.input.kind == PartInput::Kind::Bus) == bus) out.push_back(&p);
             return out;
+        }
+        // A part's banks by kind, `width` wide.
+        struct PartBanks { std::vector<Bank> assign, roles, effects; };
+        PartBanks banksOf(const AssignmentSource& s, uint32_t partId, uint32_t width)
+        {
+            PartBanks out;
+            width = std::max(1u, width);
+            const auto* part = partOf(s, partId);
+            if(!part)
+            {
+                // No part selected: the Performance's own controls (Super Knobs and the others).
+                std::vector<Item> items;
+                for(const auto& m : s.controls) if(!m.part) items.push_back(of(Assignment::Kind::Control, m.id, m.name));
+                chunk(out.assign, "Controls", BankKind::Assign, AssignmentLayer::Convention, items, width);
+                return out;
+            }
+            const auto nodes = nodesOf(s, *part);
+            // 2. The sound's own assignments: its controls.
+            std::vector<Item> own;
+            for(const auto& m : s.controls) if(m.part == partId) own.push_back(of(Assignment::Kind::Control, m.id, m.name));
+            chunk(out.assign, "Assign", BankKind::Assign, AssignmentLayer::Sound, own, width);
+            // 3. The role banks, from its instruments' declared roles, each taking as many roles as
+            // the group is wide; a role none declares is blank.
+            bool declared = false;
+            for(const auto& n : nodes) for(const auto& p : n->params) declared = declared || !p.role.empty();
+            if(declared)
+            {
+                for(const auto& rb : roleBanks)
+                {
+                    auto b = blank(rb.name, rb.kind, width); b.layer = AssignmentLayer::Role;
+                    bool any = false;
+                    for(size_t k = 0; k < width && k < rb.roles.size(); ++k)
+                        for(const auto* n : nodes)
+                        {
+                            if(n->effect || b.slots[k].kind != Assignment::Kind::None) continue;
+                            for(const auto& p : n->params) if(p.role == rb.roles[k]) { std::tie(b.slots[k], b.labels[k]) = parameter(*n, p); any = true; break; }
+                        }
+                    if(any) out.roles.push_back(std::move(b));
+                }
+            }
+            else if(own.empty())
+            {
+                // Nothing declared and nothing assigned: two Assign banks from its instrument's first parameters.
+                const AssignableNode* first = nullptr;
+                for(const auto* n : nodes) if(!first && n->instrument && !n->params.empty()) first = n;
+                for(const auto* n : nodes) if(!first && !n->effect && !n->params.empty()) first = n;
+                for(const auto* n : nodes) if(!first && !n->params.empty()) first = n;
+                std::vector<Item> items;
+                if(first) for(const auto* p : byPriority(*first)) if(items.size() < 2 * width) items.push_back(parameter(*first, *p));
+                chunk(out.assign, "Assign", BankKind::Assign, AssignmentLayer::Role, items, width);
+            }
+            // 5. The effects bank: each effect's main control, in chain order.
+            std::vector<Item> effects;
+            for(const auto* n : nodes)
+            {
+                if(!n->effect || n->params.empty()) continue;
+                const AssignableParam* main = nullptr;
+                for(const auto& p : n->params) if(!main && p.role == mixRole) main = &p;
+                if(!main) main = byPriority(*n).front();
+                effects.push_back(parameter(*n, *main));
+            }
+            chunk(out.effects, "Effects", BankKind::Effects, AssignmentLayer::Effects, effects, width);
+            return out;
+        }
+        // A group's controls' identity: "knob" for knobs and encoders, and so on; empty for notes.
+        std::string identity(const std::string& kind)
+        {
+            static const std::map<std::string, std::string> names{{"knobs", "knob"}, {"encoders", "knob"}, {"faders", "fader"}, {"buttons", "button"}, {"wheels", "wheel"},
+                                                                 {"touchstrip", "strip"}, {"jog", "jog"}, {"pedal", "pedal"}, {"expression", "pedal"}, {"footswitches", "footswitch"}};
+            const auto it = names.find(kind);
+            return it == names.end() ? std::string() : it->second;
+        }
+        const char* bankName(BankKind kind)
+        {
+            for(const auto& rb : roleBanks) if(rb.kind == kind) return rb.name;
+            return kind == BankKind::Effects ? "Effects" : "Assign";
         }
     }
 
@@ -91,102 +170,90 @@ namespace oscairn
         return {};
     }
 
-    std::vector<Bank> knobBanks(const AssignmentSource& s, uint32_t partId)
+    std::vector<Bank> knobBanks(const AssignmentSource& s, uint32_t part, uint32_t width)
     {
-        std::vector<Bank> banks;
-        const auto* part = partOf(s, partId);
-        if(!part)
-        {
-            // No part selected: the Performance's own controls (Super Knobs and the others).
-            std::vector<Item> items;
-            for(const auto& m : s.controls) if(!m.part) items.push_back(of(Assignment::Kind::Control, m.id, m.name));
-            inFours(banks, "Controls", AssignmentLayer::Convention, items);
-            return banks;
-        }
-        const auto nodes = nodesOf(s, *part);
-        // 2. The sound's own assignments: its controls.
-        std::vector<Item> own;
-        for(const auto& m : s.controls) if(m.part == partId) own.push_back(of(Assignment::Kind::Control, m.id, m.name));
-        inFours(banks, "Assign", AssignmentLayer::Sound, own);
-        // 3. The role banks, from its instruments' declared roles; a role none declares is blank.
-        bool declared = false;
-        for(const auto& n : nodes) for(const auto& p : n->params) declared = declared || !p.role.empty();
-        if(declared)
-        {
-            for(const auto& rb : roleBanks)
-            {
-                Bank b; b.name = rb.name; b.layer = AssignmentLayer::Role;
-                bool any = false;
-                for(size_t k = 0; k < rb.roles.size(); ++k)
-                    for(const auto* n : nodes)
-                    {
-                        if(n->effect || b.slots[k].kind != Assignment::Kind::None) continue;
-                        for(const auto& p : n->params) if(p.role == rb.roles[k]) { std::tie(b.slots[k], b.labels[k]) = parameter(*n, p); any = true; break; }
-                    }
-                if(any) banks.push_back(std::move(b));
-            }
-        }
-        else if(own.empty())
-        {
-            // Nothing declared and nothing assigned: Assign banks from its instrument's first parameters.
-            const AssignableNode* first = nullptr;
-            for(const auto* n : nodes) if(!first && n->instrument && !n->params.empty()) first = n;
-            for(const auto* n : nodes) if(!first && !n->effect && !n->params.empty()) first = n;
-            for(const auto* n : nodes) if(!first && !n->params.empty()) first = n;
-            std::vector<Item> items;
-            if(first) for(const auto* p : byPriority(*first)) if(items.size() < 8) items.push_back(parameter(*first, *p));
-            inFours(banks, "Assign", AssignmentLayer::Role, items);
-        }
-        // 5. The effects bank: each effect's main control, in chain order.
-        std::vector<Item> effects;
-        for(const auto* n : nodes)
-        {
-            if(!n->effect || n->params.empty()) continue;
-            const AssignableParam* main = nullptr;
-            for(const auto& p : n->params) if(!main && p.role == mixRole) main = &p;
-            if(!main) main = byPriority(*n).front();
-            effects.push_back(parameter(*n, *main));
-        }
-        inFours(banks, "Effects", AssignmentLayer::Effects, effects);
-        return banks;
+        auto b = banksOf(s, part, width);
+        auto out = std::move(b.assign);
+        for(auto* list : {&b.roles, &b.effects}) for(auto& bank : *list) out.push_back(std::move(bank));
+        return out;
     }
 
-    uint32_t knobPages(const AssignmentSource& s, uint32_t knobs, uint32_t part)
+    Bank bankOf(const AssignmentSource& s, uint32_t part, uint32_t width, BankKind kind, uint32_t index)
     {
-        const size_t perPage = std::max<size_t>(1, (knobs + 3) / 4), banks = knobBanks(s, part).size();
-        return uint32_t(std::max<size_t>(1, (banks + perPage - 1) / perPage));
+        auto b = banksOf(s, part, width);
+        const auto& list = kind == BankKind::Assign ? b.assign : kind == BankKind::Effects ? b.effects : b.roles;
+        size_t seen = 0;
+        for(const auto& bank : list) if(bank.kind == kind && seen++ == index) return bank;
+        return blank(bankName(kind), kind, std::max(1u, width));
     }
 
-    std::vector<ResolvedControl> resolveControls(const AssignmentSource& s, const PhysicalControls& device, uint32_t part, uint32_t page)
+    uint32_t groupPositions(const AssignmentSource& s, const ControlGroup& g, uint32_t part)
+    {
+        if(g.role != ControlGroup::Role::Screen && g.role != ControlGroup::Role::Assign) return 1;
+        if(g.kind == "faders") return uint32_t(std::max<size_t>(1, g.modes.size()));
+        if(g.kind == "buttons") return 1;
+        if(!g.rows.empty()) return uint32_t(g.rows.size());
+        return uint32_t(std::max<size_t>(1, knobBanks(s, part, g.count).size()));
+    }
+
+    std::vector<ResolvedControl> resolveControls(const AssignmentSource& s, const std::vector<ControlGroup>& groups, uint32_t part, const GroupPositions& positions)
     {
         std::vector<ResolvedControl> out;
         // 1. Overrides, where what they name is still there.
         auto overridden = [&](ResolvedControl& r) {
             for(const auto& o : s.overrides)
                 if(o.control == r.control)
-                    if(const auto name = assignmentName(s, o.target); !name.empty()) { r.target = o.target; r.layer = AssignmentLayer::Override; r.label = name; r.bank.clear(); return true; }
-            return false;
+                    if(const auto name = assignmentName(s, o.target); !name.empty()) { r.target = o.target; r.layer = AssignmentLayer::Override; r.label = name; r.bank.clear(); return; }
         };
-        const auto banks = knobBanks(s, part);
-        const size_t perPage = std::max<size_t>(1, (device.knobs + 3) / 4), pages = std::max<size_t>(1, (banks.size() + perPage - 1) / perPage);
-        for(uint32_t i = 0; i < device.knobs; ++i)
-        {
-            ResolvedControl r; r.control = "knob:" + std::to_string(i + 1);
-            const size_t bank = (page % pages) * perPage + i / 4;
-            if(bank < banks.size()) { r.target = banks[bank].slots[i % 4]; r.label = banks[bank].labels[i % 4]; r.bank = banks[bank].name; if(r.target.kind != Assignment::Kind::None) r.layer = banks[bank].layer; }
-            overridden(r);
-            out.push_back(std::move(r));
-        }
-        // 4. Conventions: sliders play part levels, buttons part mutes, parts first, then buses.
+        std::map<std::string, uint32_t> numbers; // per identity, across groups
         const auto order = faderOrder(s);
-        for(const auto [kind, count, name, suffix] : {std::tuple{Assignment::Kind::PartLevel, device.sliders, "slider:", " level"}, std::tuple{Assignment::Kind::PartMute, device.buttons, "button:", " mute"}})
-            for(uint32_t i = 0; i < count; ++i)
+        for(size_t g = 0; g < groups.size(); ++g)
+        {
+            const auto& group = groups[g];
+            const bool screen = group.role == ControlGroup::Role::Screen;
+            const auto name = screen ? std::string("screen") : identity(group.kind);
+            if((!screen && group.role != ControlGroup::Role::Assign) || name.empty()) continue;
+            const uint32_t at = g < positions.size() ? positions[g] : 0;
+            // What the group plays now, a slot per control.
+            Bank b = blank({}, BankKind::Assign, std::max(1u, group.count));
+            auto levels = [&](const std::vector<const Part*>& parts, Assignment::Kind kind, const char* suffix) {
+                for(size_t i = 0; i < group.count && i < parts.size(); ++i) std::tie(b.slots[i], b.labels[i]) = of(kind, parts[i]->id, parts[i]->name + suffix);
+                b.layer = AssignmentLayer::Convention;
+            };
+            if(group.kind == "faders")
             {
-                ResolvedControl r; r.control = name + std::to_string(i + 1);
-                if(i < order.size()) { std::tie(r.target, r.label) = of(kind, order[i]->id, order[i]->name + suffix); r.layer = AssignmentLayer::Convention; }
-                overridden(r);
+                // 4. Faders by their mode: part levels, the part's Levels bank, or the audio parts' levels.
+                const auto mode = group.modes.empty() ? std::string("part") : group.modes[at % group.modes.size()];
+                if(mode == "element") b = bankOf(s, part, group.count, BankKind::Levels, 0);
+                else if(mode == "audio")
+                {
+                    std::vector<const Part*> audio;
+                    for(const auto* p : order) if(p->input.kind == PartInput::Kind::Audio) audio.push_back(p);
+                    levels(audio, Assignment::Kind::PartLevel, " level");
+                }
+                else levels(order, Assignment::Kind::PartLevel, " level");
+                b.name = mode;
+            }
+            else if(group.kind == "buttons") levels(order, Assignment::Kind::PartMute, " mute");
+            else if(!group.rows.empty())
+            {
+                // A hardware row: its bank, the Nth of its kind for the Nth row naming that kind.
+                const auto row = at % group.rows.size();
+                uint32_t index = 0;
+                for(size_t r = 0; r < row; ++r) index += group.rows[r].bank == group.rows[row].bank;
+                b = bankOf(s, part, group.count, group.rows[row].bank, index);
+                b.name = group.rows[row].name;
+            }
+            else if(const auto banks = knobBanks(s, part, group.count); !banks.empty()) b = banks[at % banks.size()];
+            for(uint32_t i = 0; i < group.count; ++i)
+            {
+                ResolvedControl r; r.control = name + ":" + std::to_string(++numbers[name]);
+                r.target = b.slots[i]; r.label = b.labels[i]; r.bank = b.name;
+                if(r.target.kind != Assignment::Kind::None) r.layer = b.layer;
+                if(!screen) overridden(r); // screen knobs play what the screen shows
                 out.push_back(std::move(r));
             }
+        }
         return out;
     }
 
@@ -226,7 +293,7 @@ namespace oscairn
 
     void Session::assign(const std::string& control, const Assignment& target)
     {
-        if(!validPhysicalControl(control)) throw std::invalid_argument("a physical control is knob:N, slider:N or button:N");
+        if(!validPhysicalControl(control)) throw std::invalid_argument("a physical control is knob:N, fader:N, button:N, wheel:N, strip:N, jog:N, pedal:N or footswitch:N");
         switch(target.kind)
         {
         case Assignment::Kind::None: break;

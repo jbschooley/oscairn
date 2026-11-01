@@ -270,9 +270,25 @@ device panel, small screen) draws it.
 ## Physical controls
 
 Controls follow the device: the KICK, the Ignite and a MODX-style keyboard have different
-knobs, sliders and buttons. A device **layout** names its logical controls
-([design language](../design-language.md)). The planned controller-mapping service owns
-pickup, relative encoders and bank state.
+knobs, faders and buttons. A device's **profile** ([RFC 0024](0024-device-profiles.md#control-groups))
+describes them in **groups**, each with its kind (knobs, encoders, faders, buttons, wheels, a
+touch strip...), its count and its **role**:
+
+- **notes:** keys and pads, which play notes (pads through the pad map below);
+- **screen:** knobs that play what the screen shows. In Play they are the knob row, as many
+  tiles as the device has screen knobs (six on a MODX M); in an editor, the page's top
+  parameters by priority ([RFC 0019](0019-adaptive-ui.md)). They are never overridden;
+- **assign:** controls that play banks. An assign group of knobs either has hardware **rows**,
+  each a bank its row button picks directly and names on screen (the MODX M's four control
+  knobs: Assign 1, Assign 2, Tone, EG, EQ, Effects; Quick Edit's 24 parameters are six rows of
+  four), or is **paged** by a button or the screen (the KICK's P1 to P4). Faders may have
+  **modes**: part (part levels), element (the sound's element, operator or oscillator levels)
+  and audio (the levels of parts playing audio inputs);
+- **fixed:** a dedicated function, named per control (volume, master, rec gain, tempo, a Super
+  Knob, scene and part buttons), which assignments leave alone.
+
+A device **layout** places the controls on its panel ([design language](../design-language.md)).
+The planned controller-mapping service owns pickup, relative encoders and bank state.
 
 ### Defaults, so nothing must be programd
 
@@ -286,14 +302,20 @@ Assignments resolve in layers. Each layer fills only what the layers above it le
    shows as a blank control rather than something unrelated. Third-party plugins without
    declared roles get Assign banks from their first parameters until someone maps them.
 4. **Performance conventions:**
-   - sliders control part levels;
+   - faders control part levels (in their part mode);
    - buttons control part mute, or scenes;
    - knobs follow the selected part's banks;
    - the mod wheel, pedals and aftertouch are sent to every part as standard controllers.
 5. **Effects bank:** the main control of each effect box in the selected part, in chain order.
 
-Banks come in fours. A four-knob device pages through them (Assign 1–4, Assign 5–8, Filter,
-Amp EG, Effects), and an eight-knob device shows two at once.
+**Banks are as wide as the group playing them**, not a fixed four: a group of six knobs gets
+Assign 1–6. Each role bank has an order longer than four (Amp EG: attack, decay, sustain,
+release, then hold, velocity, key tracking and level), so a group of any width takes its first
+as many roles and fills its row with no blanks where the roles exist. A paged group pages
+through the banks (Assign 1–4, Assign 5–8, Filter, Amp EG, Effects on the KICK); a group with
+rows shows each row's bank, the Nth row of a kind taking the Nth bank of that kind. Two banks
+side by side would only fit a group twice a bank's width, and every bank is as wide as its
+group, so a group shows one bank at a time.
 
 ### Pads
 
@@ -314,7 +336,7 @@ editor); a "learn" mode that takes a note from the keyboard is still to do.
 
 Every assignable control is a **control**: a named value from 0 to 1 saved in the
 Performance. A sound's Assign 1–8, a MODX-style Super Knob, a macro and a group knob are all
-controls; physical knobs, sliders, buttons, MIDI CC and sequencer lanes drive them.
+controls; physical knobs, faders, buttons, MIDI CC and sequencer lanes drive them.
 
 - A control has **targets**. A target is a destination (a node's parameter, or a part's
   level or mute) or **another control**, which makes a tree: a Super Knob drives Assign
@@ -368,7 +390,7 @@ override it could not apply.
 | 3. Split, join, buses | Split and join nodes, Mix with mute and solo, shared buses, Mixer | Rendering identical to the same graph wired by hand |
 | 4. Routing view | Nodes and wires, part wires shown and hidable, user wires, badges | Every structure from steps 2–3 appears; wiring a second source creates a shared row |
 | 5. Editors | Knob pages for every plugin, structured-editor description draft, Modular grid as the first case | Basic Synth, Sampler and one third-party plugin editable on the device without a plugin window |
-| 6. Physical controls | Default layers, overrides, learn, per-layout banks | A new performance with three sounds has working knobs, sliders and buttons with no programming |
+| 6. Physical controls | Default layers, overrides, learn, banks per control group | A new performance with three sounds has working knobs, faders and buttons with no programming |
 | 7. Groups, pedal view, move/copy/share | | |
 
 ## Step 1 status
@@ -682,42 +704,55 @@ zones, sounds and envelope wait on its parameters and RFC 0019 step 5.
 ## Step 6 status
 
 Started 2026-11-01 (`core/control/include/oscairn/physical_controls.h`,
-`src/physical_controls.cpp`). Assignments resolve in the layers above, each filling only what
-the ones above left empty:
+`src/physical_controls.cpp`); control groups the same day. Assignments resolve per control
+group of the device ([RFC 0024](0024-device-profiles.md#control-groups)) in the layers above,
+each filling only what the ones above left empty:
 
-1. **Overrides**, saved in the Performance (format version 6, `assignments`) by the control's
-   logical identity (`knob:N`, `slider:N`, `button:N`), each to a parameter, a control, a part's
-   level or mute, or a scene. An override whose target is gone falls through to the defaults
-   and is left out at save. Assigning is an edit, undone like any other.
+1. **Overrides**, saved in the Performance (format version 7, `assignments`) by the control's
+   logical identity, numbered across the device's assign groups: `knob:N` (knobs and encoders),
+   `fader:N`, `button:N`, `wheel:N`, `strip:N`, `jog:N`, `pedal:N`, `footswitch:N`. Each sets a
+   parameter, a control, a part's level or mute, or a scene. Screen knobs are not overridden.
+   An override whose target is gone falls through to the defaults and is left out at save.
+   Assigning is an edit, undone like any other.
 2. **The sound's own assignments**: the selected part's controls, as Assign banks.
-3. **Role banks** (Filter: cutoff, resonance, filter envelope, key tracking; Amp EG: attack,
-   decay, sustain, release) from declared roles, a missing role left blank; with no roles and no
-   controls, Assign banks from the part's instrument's first parameters in `oscairn.ui`
-   priority order.
-4. **Conventions**: sliders play part levels and buttons part mutes (parts, then buses); with no
-   part selected the knobs follow the Performance's own controls.
+3. **Role banks**: Filter (cutoff, resonance, filter envelope, key tracking, then the filter
+   envelope's stages), Amp EG (attack, decay, sustain, release, hold, velocity, key tracking,
+   level), EQ (low, mid and high gain and frequencies, mid Q, output) and Levels (element,
+   operator or oscillator levels 1 to 8), each taking as many roles as its group is wide; a
+   role the sound lacks is blank. With no roles and no controls, two Assign banks from the
+   part's instrument's first parameters in `oscairn.ui` priority order.
+4. **Conventions**: faders play part levels (parts, then buses), the Levels bank or the audio
+   parts' levels by their mode; assign buttons play part mutes; with no part selected the
+   knobs follow the Performance's own controls.
 5. **The effects bank**: each effect's main control (its `mix` role, else its first parameter
    by priority) in chain order.
 
-Banks come in fours; `resolveControls` pages them on a four-knob device and shows two at once
-on an eight-knob one. `assignments.get` and `assignments.set` carry overrides over the control
-protocol. Play's knob row shows the resolved bank (its name, or Override, on each knob) and a
-device's `row:N` knobs play it. **Learn** (a top bar action on a device with knobs): move a
-knob, then touch a strip (its level), its M (its mute), a scene or a knob (its target);
-Default removes the override.
+`resolveControls` takes the device's groups and each group's position (page, row or mode);
+`groupPositions` says how many it has. `assignments.get` and `assignments.set` carry overrides
+over the control protocol. Play's knob row shows the device's screen knobs, or where it has
+none its first assign group of knobs (or, on the desktop and panel layouts, the layout's row
+knobs, else four), each tile with its bank (or row, or Override); on six or more tiles the text
+goes under the dial. A layout's `row:N` knobs play the bank shown. **Learn** (a top bar
+action on a layout with row knobs): move a knob, then touch a strip (its level), its M (its
+mute), a scene or a knob (its target); Default removes the override.
 
-`control-physical-controls` checks each layer, roles in their places, paging, overrides on
-knobs, sliders and buttons, refusals, falling through, undo and redo, and saving and loading
-(with an override to a removed plugin left out). `desktop-shell` checks Play's knobs through
-the layers (a part's own controls, its instrument's first parameters past a Transpose) and
-learn assigning a moved knob to a scene; its snapshots were looked at.
+`control-physical-controls` checks each layer and banks sized to their group (six wide, with
+Amp EG's sixth role), the KICK (four encoders paged, fixed knobs, wheel, pads, buttons and
+strip resolving nothing), the MODX M (six screen knobs, four knobs in six rows, eight faders in
+part, element and audio modes), an eight-knob device with assign buttons, overrides (and not on
+screen knobs), refusals, falling through, undo and redo, and saving and loading.
+`desktop-shell` checks Play's knobs through the layers, learn, and six screen knobs giving six
+tiles and a six-wide bank; `desktop-profile` checks the new profiles and the groups' refusals.
+Snapshots of Play with four and six knobs, and the app with `--profile modx-m` at 800 x 480,
+were looked at.
 
-Not yet: plugins cannot declare roles (an `oscairn.ui` addition, so the role banks are only
-reached through the API's role function today); sliders and buttons have no panel controls
-bound to them, so their conventions and overrides are resolved but not yet played; device
-profiles' control counts are not read into the resolution (Play uses the panel's row knobs);
-targets for sends, bypass and the transport; overrides in a Performance import; MIDI CC
-learn; reporting overrides a device could not apply.
+Not yet: plugins cannot declare roles (an `oscairn.ui` addition, so the role banks are reached
+only through the API's role function today); screen knobs in an editor following the page's
+top parameters, which waits for the generated editors and the Compact layout (RFC 0019, in
+progress apart from this); no panel layout binds faders, buttons or a row-switching group, so
+those resolve but are not yet played, and row buttons have no layout binding; targets for
+sends, bypass and the transport; overrides in a Performance import; MIDI CC learn; reporting
+overrides a device could not apply.
 
 ## Play status
 

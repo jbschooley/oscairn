@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #pragma once
+#include "oscairn/physical_controls.h"
 #include "oscairn/remote_control.h"
 #include "../audio/AudioConfiguration.h"
 #include "SoundPickerModel.h"
@@ -66,6 +67,9 @@ namespace oscairn::standalone
         void touched(const std::string& control){touched_=control;++touches_;}
         const std::string& lastTouched() const {return touched_;}
         uint32_t touches() const {return touches_;}
+        // The device's control groups, from its profile (RFC 0024); none on the desktop.
+        void setControlGroups(std::vector<ControlGroup> groups){groups_=std::move(groups);}
+        const std::vector<ControlGroup>& controlGroups() const {return groups_;}
         void selectTrack(uint32_t track){sequenceTrack_=std::min(track,1u);}
         // The row selected on screen (RFC 0019): the parameters a device's knobs bound "row:N"
         // play, in order, and how many such knobs the device has and on which edge of its
@@ -159,6 +163,7 @@ namespace oscairn::standalone
         std::vector<RowParam> row_;
         std::string touched_;
         uint32_t touches_=0;
+        std::vector<ControlGroup> groups_;
         int rowKnobs_=0;
         Edge rowEdge_=Edge::Bottom;
         std::array<uint16_t,128> padChannels_{};

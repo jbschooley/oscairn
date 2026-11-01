@@ -67,26 +67,31 @@ namespace oscairn::standalone
             drawSection(g, getLocalBounds(), ink(Ink::Surface));
             if(view_.learning_ && view_.learnFrom_.isNotEmpty()) drawEdge(g, getLocalBounds().toFloat().reduced(1), themeData().radius + 2, true); // a target to touch
             const int m = view_.mode();
-            auto r = getLocalBounds().reduced(12, 8).withTrimmedLeft(slider_.getRight() - 2);
+            // Beside the dial, or under it when the tile is narrow (six or more across).
+            auto r = stacked() ? getLocalBounds().reduced(8, 6).withTrimmedTop(slider_.getBottom() - 2) : getLocalBounds().reduced(12, 8).withTrimmedLeft(slider_.getRight() - 2);
+            const auto just = stacked() ? juce::Justification::horizontallyCentred : juce::Justification::left;
             const juce::Font small{juce::FontOptions(textSize(TextRole::Small, m))}, body{juce::FontOptions(textSize(TextRole::Body, m), juce::Font::bold)};
             const int line = int(textSize(TextRole::Body, m)) + 6;
             if(slot_.target.kind == Assignment::Kind::None)
             {
-                g.setColour(ink(Ink::Muted)); drawInked(g, "No control", r, small);
+                g.setColour(ink(Ink::Muted)); drawInked(g, "No control", stacked() ? getLocalBounds() : r, small, just);
                 return;
             }
             auto block = r.withSizeKeepingCentre(r.getWidth(), line * 3);
             // Its bank, or Override, after the physical knob it follows on a device.
             const auto where = slot_.layer == AssignmentLayer::Override ? juce::String("Override") : text(slot_.bank);
-            g.setColour(ink(Ink::Accent)); drawInked(g, view_.engine_.rowKnobs() > 0 ? juce::String(index_ + 1) + juce::String::fromUTF8(" · ") + where : where, block.removeFromTop(line), small.boldened());
-            g.setColour(ink(Ink::Text)); drawInked(g, text(slot_.label), block.removeFromTop(line), body);
-            g.setColour(ink(Ink::Muted)); drawInked(g, view_.describe(slot_.target, slider_.getValue()), block.removeFromTop(line), small);
+            g.setColour(ink(Ink::Accent)); drawInked(g, view_.engine_.rowKnobs() > 0 ? juce::String(index_ + 1) + juce::String::fromUTF8(" · ") + where : where, block.removeFromTop(line), small.boldened(), just);
+            g.setColour(ink(Ink::Text)); drawInked(g, stacked() ? text(slot_.label).fromLastOccurrenceOf(": ", false, false) : text(slot_.label), block.removeFromTop(line), body, just); // narrow: the parameter, not its plugin
+            g.setColour(ink(Ink::Muted)); drawInked(g, view_.describe(slot_.target, slider_.getValue()), block.removeFromTop(line), small, just);
         }
         void resized() override
         {
+            if(stacked()) { const int side = std::min(getWidth() - 24, 52); slider_.setBounds((getWidth() - side) / 2, 8, side, side); return; }
             const int side = getHeight() - 16;
             slider_.setBounds(10, 8, side, side);
         }
+        static constexpr int narrow = 200; // narrower tiles put the text under the dial
+        bool stacked() const { return getWidth() < narrow; }
         void mouseUp(const juce::MouseEvent& e) override { if(!e.mouseWasDraggedSinceMouseDown()) view_.learnTarget(slot_.target); }
     private:
         PlayView& view_;
@@ -202,7 +207,29 @@ namespace oscairn::standalone
 
     PlayView::~PlayView() { stopTimer(); }
 
-    int PlayView::knobs() const { return engine_.rowKnobs() >= 8 ? 8 : 4; } // banks in fours; an eight-knob device shows two
+    ControlGroup PlayView::knobGroup() const
+    {
+        const auto& groups = engine_.controlGroups();
+        for(const auto role : {ControlGroup::Role::Screen, ControlGroup::Role::Assign})
+            for(const auto& g : groups) if(g.role == role && g.kind != "faders" && g.kind != "buttons") return g;
+        ControlGroup g; g.kind = "knobs"; g.count = uint32_t(engine_.rowKnobs() > 0 ? engine_.rowKnobs() : 4);
+        return g;
+    }
+
+    std::vector<ControlGroup> controlGroups(const Profile& profile)
+    {
+        std::vector<ControlGroup> out;
+        for(const auto& c : profile.controls)
+        {
+            ControlGroup g;
+            g.role = c.role == "notes" ? ControlGroup::Role::Notes : c.role == "screen" ? ControlGroup::Role::Screen : c.role == "fixed" ? ControlGroup::Role::Fixed : ControlGroup::Role::Assign;
+            g.kind = c.kind; g.count = uint32_t(c.count); g.modes = c.modes;
+            for(const auto& r : c.rows)
+                for(size_t k = 0; k < bankKinds.size(); ++k) if(r.bank == bankKinds[k]) g.rows.push_back({r.name, BankKind(k)});
+            out.push_back(std::move(g));
+        }
+        return out;
+    }
 
     void PlayView::select(uint32_t part) { selected_ = part; if(!part) partControls_ = false; page_ = 0; shape_.clear(); refresh(); repaint(); }
     void PlayView::showPartControls(bool part) { partControls_ = part; page_ = 0; shape_.clear(); refresh(); }
@@ -231,12 +258,13 @@ namespace oscairn::standalone
         // physical controls' layers (overrides first).
         const uint32_t owner = partControls_ && selected_ ? selected_ : 0;
         source_ = assignmentSource(graph_, engine_.assignments(), [this](NodeId node) { return parametersOf(node); });
-        const int banks = int(knobPages(source_, uint32_t(knobs()), owner));
+        const auto group = knobGroup();
+        const int banks = int(groupPositions(source_, group, owner));
         page_ %= banks;
-        knobSlots_ = resolveControls(source_, {uint32_t(knobs()), 0, 0}, owner, uint32_t(page_));
+        knobSlots_ = resolveControls(source_, {group}, owner, {uint32_t(page_)});
         pageButton_.setVisible(banks > 1);
         // Rebuilt when what shows changes, so a fader being moved survives the rest.
-        std::string shape = std::to_string(getWidth()) + "x" + std::to_string(getHeight()) + "/" + std::to_string(owner) + "/" + std::to_string(banks) + "/" + std::to_string(selected_);
+        std::string shape = std::to_string(getWidth()) + "x" + std::to_string(getHeight()) + "/" + std::to_string(owner) + "/" + std::to_string(banks) + "/" + std::to_string(group.count) + "/" + std::to_string(selected_);
         for(const auto* list : {&state_.parts, &state_.buses}) for(const auto& p : *list) shape += "," + std::to_string(p.id);
         if(shape != shape_) { shape_ = shape; rebuild(); }
         for(auto& s : strips_) for(const auto* list : {&state_.parts, &state_.buses}) for(const auto& p : *list) if(p.id == s->part()) s->set(p);
@@ -246,7 +274,7 @@ namespace oscairn::standalone
         if(part) partControlsButton_.setButtonText(text(part->name));
         performanceControls_.setToggleState(!owner, juce::dontSendNotification);
         partControlsButton_.setToggleState(owner != 0, juce::dontSendNotification);
-        pageButton_.setButtonText("Bank " + juce::String(page_ + 1) + "/" + juce::String(banks));
+        pageButton_.setButtonText(group.rows.empty() ? "Bank " + juce::String(page_ + 1) + "/" + juce::String(banks) : text(group.rows[size_t(page_)].name)); // a row by its name
         publishRow();
         repaint();
     }
@@ -387,7 +415,11 @@ namespace oscairn::standalone
         for(int i = 0; i < sceneTiles; ++i) scenes_.push_back(row.removeFromLeft(sceneWidth)), row.removeFromLeft(sceneGap);
         area.removeFromTop(touch ? 12 : 10);
         // The knobs, and their switch and bank at the right.
-        knobRow_ = area.removeFromTop(touch ? 84 : 72);
+        // Taller when the tiles are too narrow for text beside the dial (six screen knobs and more).
+        const int sideWidth = (performanceControls_.isVisible() || pageButton_.isVisible() ? (touch ? 150 : 130) + 8 : 0) + (performanceControls_.isVisible() && pageButton_.isVisible() ? (touch ? 110 : 96) + 8 : 0);
+        const int tiles = std::max(1, int(knobs_.size()));
+        const bool tall = (area.getWidth() - sideWidth - gap * (tiles - 1)) / tiles < Knob::narrow;
+        knobRow_ = area.removeFromTop(tall ? (touch ? 140 : 128) : touch ? 84 : 72);
         auto knobs = knobRow_;
         const bool side = performanceControls_.isVisible() || pageButton_.isVisible();
         if(side)

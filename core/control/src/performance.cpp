@@ -476,7 +476,7 @@ Control::PerformanceInfo Session::writeDocument(const std::string& directory,Per
                            :std::any_of(parts_.begin(),parts_.end(),[&](const Part& p){return p.id==t.id;});
             if(here)assigned.push_back("{\"control\":"+quote(o.control)+",\"kind\":"+quote(assignmentKinds[size_t(t.kind)])+",\"id\":"+std::to_string(t.id)+'}');}
         for(const auto& at:untouched_)if(keys.count(at.node))parameters.push_back("{\"node\":"+quote(keys.at(at.node))+",\"param\":"+std::to_string(at.param)+'}');
-        head="{\"format\":\"oscairn.performance\",\"version\":6,\"info\":";tail=",\"libraries\":"+join(named)+",\"transport\":{\"tempo\":"+numeric(tempo_.load())+",\"clockSource\":"+quote(clockSource_.load()==Transport::ClockSource::Internal?"internal":"midi")+"},\"audioInputs\":"+ports(graph.audioLayout.inputs)+",\"audioOutputs\":"+ports(graph.audioLayout.outputs)+",\"nodes\":"+join(nodes)+",\"wires\":"+join(wires)+",\"parts\":"+join(parts)+",\"mappings\":"+join(mappings)+",\"pads\":"+padsText(padMap_)+",\"scenes\":"+join(scenes)+",\"sceneUntouched\":"+join(parameters)+",\"scene\":"+std::to_string(scene_)+",\"controls\":"+join(controls)+",\"assignments\":"+join(assigned)+",\"lock\":"+lockText+"}\n";
+        head="{\"format\":\"oscairn.performance\",\"version\":7,\"info\":";tail=",\"libraries\":"+join(named)+",\"transport\":{\"tempo\":"+numeric(tempo_.load())+",\"clockSource\":"+quote(clockSource_.load()==Transport::ClockSource::Internal?"internal":"midi")+"},\"audioInputs\":"+ports(graph.audioLayout.inputs)+",\"audioOutputs\":"+ports(graph.audioLayout.outputs)+",\"nodes\":"+join(nodes)+",\"wires\":"+join(wires)+",\"parts\":"+join(parts)+",\"mappings\":"+join(mappings)+",\"pads\":"+padsText(padMap_)+",\"scenes\":"+join(scenes)+",\"sceneUntouched\":"+join(parameters)+",\"scene\":"+std::to_string(scene_)+",\"controls\":"+join(controls)+",\"assignments\":"+join(assigned)+",\"lock\":"+lockText+"}\n";
     }
     info.hash=contentHash(head+tail,bundle.temporary.path/"nodes");
     const auto out=head+infoText()+tail;
@@ -528,7 +528,7 @@ std::unique_ptr<Session::Prepared> Session::read(const fs::path& root) {
     validateTree(root);const auto doc=document(root);V d=doc.get();
     fields(d,{"format","version","info","libraries","transport","audioInputs","audioOutputs","nodes","wires","parts","mappings","pads","scenes","sceneUntouched","scene","controls","assignments","lock"});
     const auto pads=padsFrom(field(d,"pads"));
-    if(text(field(d,"format"))!="oscairn.performance" || integer(field(d,"version"))!=6)bad("unsupported format version");
+    if(text(field(d,"format"))!="oscairn.performance" || integer(field(d,"version"))!=7)bad("unsupported format version");
     fields(field(d,"info"),{"id","name","description","tags","color","revision","parent","hash","origin"});const auto info=readInfo(root/"performance.json","oscairn.performance");
     auto lock=readLock(d);
     const auto transport=field(d,"transport");fields(transport,{"tempo","clockSource"});const double tempo=number(field(transport,"tempo"));
@@ -1052,7 +1052,7 @@ uint32_t Session::partFromSound(const std::string& id) {
 Control::PerformanceContents Session::performanceContents(const std::string& directory) {
     if(directory.empty() || directory.find('\0')!=std::string::npos)bad("invalid directory");
     const auto doc=document(fs::canonical(directory));V d=doc.get();
-    if(text(field(d,"format"))!="oscairn.performance" || integer(field(d,"version"))!=6)bad("unsupported format version");
+    if(text(field(d,"format"))!="oscairn.performance" || integer(field(d,"version"))!=7)bad("unsupported format version");
     PerformanceContents out;
     for(auto p:array(field(d,"parts"),256))out.parts.push_back({integer(field(p,"id")),text(field(p,"name")),text(field(field(p,"input"),"kind"))=="bus"});
     for(auto s:array(field(d,"scenes"),256))out.scenes.push_back({integer(field(s,"id")),text(field(s,"name"))});
@@ -1074,7 +1074,7 @@ Control::Imported Session::importPerformance(const std::string& directory,const 
     const auto root=fs::canonical(directory);validateTree(root);const auto doc=document(root);V d=doc.get();
     fields(d,{"format","version","info","libraries","transport","audioInputs","audioOutputs","nodes","wires","parts","mappings","pads","scenes","sceneUntouched","scene","controls","assignments","lock"});
     mergeLock(readLock(d));
-    if(text(field(d,"format"))!="oscairn.performance" || integer(field(d,"version"))!=6)bad("unsupported format version");
+    if(text(field(d,"format"))!="oscairn.performance" || integer(field(d,"version"))!=7)bad("unsupported format version");
     fields(field(d,"info"),{"id","name","description","tags","color","revision","parent","hash","origin"});
     // The parts that come: those chosen, and the buses they play through or send to, and theirs.
     const auto partList=array(field(d,"parts"),256);

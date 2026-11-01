@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Oscairn Performance version 6",
+  "title": "Oscairn Performance version 7",
   "description": "performance.json inside a Performance folder. See performance-format.md for binary state, asset limits, plugin validation and transactional loading. Runtime node/context IDs and live voices are not persisted. Wires and parts (RFC 0011) define the graph's audio routes and note connections.",
   "type": "object",
   "properties": {
@@ -8,7 +8,7 @@
       "const": "oscairn.performance"
     },
     "version": {
-      "const": 6
+      "const": 7
     },
     "info": {
       "type": "object",
@@ -250,7 +250,7 @@
     "assignments": {
       "type": "array",
       "maxItems": 4096,
-      "description": "Physical controls' overrides (RFC 0011), by the control's logical identity in a device layout; each control at most once",
+      "description": "Physical controls' overrides (RFC 0011), by the control's logical identity, numbered across a device's assign groups; each control at most once",
       "items": {
         "oneOf": [
           {
@@ -384,7 +384,7 @@
   "$defs": {
     "PhysicalControl": {
       "type": "string",
-      "pattern": "^(knob|slider|button):[1-9][0-9]{0,2}$"
+      "pattern": "^(knob|fader|button|wheel|strip|jog|pedal|footswitch):[1-9][0-9]{0,2}$"
     },
     "NodeKey": {
       "type": "string",
