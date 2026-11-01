@@ -733,7 +733,11 @@ is listed.
   absent) and `limit` (1–1000, default 200). It returns `{items,tags,total}`: items with `id`,
   `kind`, `name`, `description`, `path`, `tags`, `favorite`, `recent` (1 is the most recent,
   0 none) and `color`, sorted by name or, with `recent`, most recent first; `tags` counts each
-  tag over every match, and `total` counts matches before the limit.
+  tag over every match but those the user hid, and `total` counts matches before the limit;
+  `tagColors` lists the colors the user gave tags (`{tag,color}`) and `hiddenTags` every hidden one.
+- `library.tag` takes `{tag}` and optional `hidden` and `color` (`#rrggbb`; absent or empty for
+  none) and sets both: a hidden tag leaves the tag list but still matches a search and a chosen
+  tag filter. These are the user's, in `library/user.json` beside favorites, never in an item.
 - `library.favorite` takes `{id,favorite}`; `library.rescan` (`{}`) returns `{"items":n}`.
 - `library.save` takes an optional `name` and `new`, and returns `{"id":…}`. Save (`new`
   false or absent) writes a Performance opened from the library over its folder (saved

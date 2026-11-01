@@ -2038,6 +2038,48 @@
               "$ref": "#/$defs/Id"
             },
             "method": {
+              "const": "library.tag",
+              "description": "A tag as the user sees it: hidden from the tag list, and its color"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "tag": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                },
+                "hidden": {
+                  "type": "boolean"
+                },
+                "color": {
+                  "type": "string",
+                  "pattern": "^(#[0-9A-Fa-f]{6})?$"
+                }
+              },
+              "required": [
+                "tag"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "params"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
               "const": "library.rescan"
             },
             "params": {

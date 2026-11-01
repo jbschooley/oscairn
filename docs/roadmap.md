@@ -315,7 +315,8 @@ in the others.
      always travels; a part's Sound travels when the part is unedited since it, and as an
      option when it was edited; importing adds what the device lacks, by hash
      ([design](rfcs/0021-sounds-performances-and-library.md#exporting-a-performance))
-   - [ ] hiding tags from the tag list, and tag colors
+   - [x] hiding tags from the tag list, and tag colors: the user's, in the library's user file;
+     right-click a tag in the Library app, and **Libraries...** shows a hidden one again
    - [ ] **item types** ([RFC 0023](rfcs/0023-item-types.md#progress), proposed): kinds of
      item declared by manifests (managed, stored by content, or indexed in place), so the
      library, archives and pickers work for any type, and packages can add types such as a DJ

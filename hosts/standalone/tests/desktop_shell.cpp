@@ -172,6 +172,19 @@ int main(int argc, char** argv)
                 check(wait([&] { return library.items().size() == 1; }) && library.items()[0].name == "Big Strings", "two tags narrow it to what has both");
                 library.toggleTag("live"); library.toggleTag("pad");
                 check(wait([&] { return library.items().size() == 3; }), "and clearing them shows all again");
+                // A tag hidden from the tag list, another colored: the user's settings, not the items'.
+                auto listed = [&](const std::string& tag) { return std::any_of(library.tags().begin(), library.tags().end(), [&](const auto& t) { return t.first == tag; }); };
+                engine.edit([](Control& c) { c.libraryTag("live", true, ""); c.libraryTag("pad", false, "#3a7bd5"); });
+                library.refresh();
+                check(wait([&] { return !listed("live") && listed("pad"); }), "a hidden tag leaves the tag list");
+                library.search("live");
+                check(wait([&] { return library.items().size() == 2; }), "and still matches a search typed in full");
+                library.search("");
+                wait([&] { return library.items().size() == 3; });
+                snapshot(library, "library-tags");
+                engine.edit([](Control& c) { c.libraryTag("live", false, ""); c.libraryTag("pad", false, ""); });
+                library.refresh();
+                check(wait([&] { return listed("live"); }), "shown again");
 
                 // From the Setlist, Add asks for a pick, which the Library answers.
                 const auto folder = data.getChildFile("Setlists");

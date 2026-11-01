@@ -8,6 +8,13 @@ namespace oscairn::standalone
     {
         juce::String text(const std::string& s) { return juce::String::fromUTF8(s.c_str()); }
         constexpr size_t shownTags = 16;
+        // A tag chip: a toggle, and a menu on a right click (hide it, give it a color).
+        struct TagChip : juce::TextButton
+        {
+            using juce::TextButton::TextButton;
+            std::function<void()> onMenu;
+            void mouseDown(const juce::MouseEvent& e) override { if(e.mods.isPopupMenu() && onMenu) { onMenu(); return; } juce::TextButton::mouseDown(e); }
+        };
         void drawStar(juce::Graphics& g, juce::Rectangle<float> r, bool on)
         {
             juce::Path star;
@@ -38,7 +45,7 @@ namespace oscairn::standalone
         delete_.onClick = [this] { deleteItem(list_.getSelectedRow()); };
         delete_.setTooltip("Delete the selected item from the library. A locked library's comes back when the library is installed again");
         libraries_.onClick = [this] { librariesMenu(); };
-        libraries_.setTooltip("Install a library or an exported Performance, or uninstall a library");
+        libraries_.setTooltip("Install a library or an exported Performance, uninstall a library, or show a hidden tag");
         status_.setColour(juce::Label::textColourId, ink(Ink::Muted));
         for(auto* c : std::initializer_list<juce::Component*>{&search_, &favorites_, &recent_, &list_, &status_}) addAndMakeVisible(c);
         for(auto* c : std::initializer_list<juce::Component*>{&send_, &part_, &cancel_, &pick_, &performances_, &sounds_, &delete_, &libraries_}) addChildComponent(c);
@@ -114,11 +121,15 @@ namespace oscairn::standalone
         tagButtons_.clear();
         for(const auto& [tag, count] : counts)
         {
-            auto* b = tagButtons_.add(new juce::TextButton(text(tag)));
+            auto* b = new TagChip(text(tag));
+            tagButtons_.add(b);
             b->setClickingTogglesState(true);
             b->setToggleState(std::count(query_.tags.begin(), query_.tags.end(), tag) != 0, juce::dontSendNotification);
-            b->setTooltip(juce::String(count) + (count == 1 ? " match" : " matches"));
+            b->setTooltip(juce::String(count) + (count == 1 ? " match" : " matches") + ". Right-click to hide it or give it a color");
             b->onClick = [this, t = tag] { toggleTag(t); };
+            b->onMenu = [this, t = tag] { tagMenu(t); };
+            // The color the user gave it, as a tint.
+            if(const auto color = colorOf(tagColor(tag)); !color.isTransparent()) b->setColour(juce::TextButton::buttonColourId, color.withAlpha(.45f));
             addAndMakeVisible(b);
         }
         resized();
@@ -264,13 +275,25 @@ namespace oscairn::standalone
     {
         juce::PopupMenu menu;
         menu.addItem(1, "Install from a file...");
+        // Tags hidden from the tag list, to show again.
+        juce::PopupMenu hidden;
+        const auto hiddenTags = result_.hiddenTags;
+        for(size_t i = 0; i < hiddenTags.size(); ++i) hidden.addItem(1000 + int(i), text(hiddenTags[i]));
+        menu.addSubMenu("Show a hidden tag", hidden, !hiddenTags.empty());
         const auto installed = engine_.libraries();
         if(!installed.empty()) menu.addSeparator();
         for(size_t i = 0; i < installed.size(); ++i)
             menu.addItem(int(i) + 2, "Uninstall " + text(installed[i].name) + " (" + juce::String(int(installed[i].items)) + (installed[i].items == 1 ? " item)" : " items)"));
-        menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&libraries_), [safe = juce::Component::SafePointer<LibraryPane>(this), installed](int chosen) {
+        menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&libraries_), [safe = juce::Component::SafePointer<LibraryPane>(this), installed, hiddenTags](int chosen) {
             if(!safe || chosen <= 0) return;
             if(chosen == 1) { safe->install(); return; }
+            if(chosen >= 1000)
+            {
+                const auto tag = hiddenTags[size_t(chosen - 1000)];
+                safe->engine_.edit([tag, color = safe->tagColor(tag)](Control& c) { c.libraryTag(tag, false, color); });
+                safe->refresh();
+                return;
+            }
             const auto library = installed[size_t(chosen - 2)];
             auto options = juce::MessageBoxOptions::makeOptionsOkCancel(juce::MessageBoxIconType::QuestionIcon, "Uninstall " + text(library.name) + "?",
                 "Its Sounds and Performances are removed. Your Performances keep their parts and samples, and your own copies stay.", "Uninstall", "Cancel", safe.getComponent());
@@ -345,6 +368,34 @@ namespace oscairn::standalone
                 safe->status_.setText(safe->message_, juce::dontSendNotification);
                 safe->stale_ = true; safe->installing_ = true;
             };
+        });
+    }
+
+    std::string LibraryPane::tagColor(const std::string& tag) const
+    {
+        for(const auto& [t, color] : result_.tagColors) if(t == tag) return color;
+        return {};
+    }
+
+    // A tag as the user sees it: hidden from the tag list, and its color. A hidden tag chosen as
+    // a filter stops filtering.
+    void LibraryPane::tagMenu(const std::string& tag)
+    {
+        juce::PopupMenu menu, colors;
+        menu.addItem(1, "Hide from the tag list");
+        addColors(colors, tagColor(tag), 100, "None");
+        menu.addSubMenu("Color", colors);
+        menu.showMenuAsync(juce::PopupMenu::Options(), [safe = juce::Component::SafePointer<LibraryPane>(this), tag](int chosen) {
+            if(!safe || chosen <= 0) return;
+            const auto color = safe->tagColor(tag);
+            std::string picked;
+            if(chosen == 1)
+            {
+                std::erase(safe->query_.tags, tag);
+                safe->engine_.edit([tag, color](Control& c) { c.libraryTag(tag, true, color); });
+            }
+            else if(colorChosen(chosen, 100, picked)) safe->engine_.edit([tag, picked](Control& c) { c.libraryTag(tag, false, picked); });
+            safe->refresh();
         });
     }
 }

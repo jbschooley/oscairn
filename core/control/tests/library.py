@@ -32,7 +32,7 @@ with tempfile.TemporaryDirectory(prefix='oscairn-library-') as temporary:
     p = subprocess.Popen([sys.argv[1], sys.argv[2], '--stdio'], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                          text=True, encoding='utf-8', env={**os.environ, 'OSCAIRN_DATA_HOME': temporary})
     try:
-        assert rpc('library.query') == {'items': [], 'tags': [], 'total': 0}
+        assert rpc('library.query') == {'items': [], 'tags': [], 'total': 0, 'tagColors': [], 'hiddenTags': []}
         assert rpc('performance.info') == {'id': '', 'name': '', 'description': '', 'tags': [], 'color': ''}
         rpc('performance.setInfo', {'name': 'Warm Pad', 'description': 'slow strings', 'tags': ['pad', 'warm'], 'color': '#3a7bd5'})
         pad = rpc('library.save')['id']
@@ -67,6 +67,19 @@ with tempfile.TemporaryDirectory(prefix='oscairn-library-') as temporary:
         rpc('library.favorite', {'id': pad, 'favorite': True})
         assert rpc('library.query', {'favorites': True})['items'][0]['favorite'] is True
         assert rpc('library.query', {'recent': True})['items'][0]['recent'] == 1
+        # Tags the user hides leave the tag list but still match a search typed in full; tag colors
+        # are the user's too, kept in the user file beside favorites.
+        rpc('library.tag', {'tag': 'warm', 'hidden': True, 'color': '#e8a33d'})
+        hidden = rpc('library.query')
+        assert hidden['tags'] == [{'tag': 'pad', 'count': 1}] and hidden['hiddenTags'] == ['warm']
+        assert hidden['tagColors'] == [{'tag': 'warm', 'color': '#e8a33d'}]
+        assert rpc('library.query', {'text': 'warm'})['total'] == 1 and rpc('library.query', {'tags': ['warm']})['total'] == 1
+        user = json.loads((home / 'library/user.json').read_text())
+        assert user['hiddenTags'] == ['warm'] and user['tagColors'] == {'warm': '#e8a33d'}
+        rpc('library.tag', {'tag': 'warm'})
+        assert rpc('library.query')['tags'] == [{'tag': 'pad', 'count': 1}, {'tag': 'warm', 'count': 1}] and rpc('library.query')['tagColors'] == []
+        rpc('library.tag', {'tag': 'warm', 'color': 'orange'}, True)
+        rpc('library.tag', {'tag': ''}, True)
         rpc('library.favorite', {'id': 'missing', 'favorite': True}, True)
         rpc('library.load', {'id': 'missing'}, True)
         rpc('library.query', {'limit': 0}, True)

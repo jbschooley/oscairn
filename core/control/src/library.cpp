@@ -275,8 +275,10 @@ namespace oscairn
         // Recent first when asked for, else by name.
         std::sort(found.begin(), found.end(), [&](const auto& a, const auto& b) { return q.recent ? a.recent < b.recent : lower(a.name) < lower(b.name); });
         std::map<std::string, uint32_t> counts;
-        for(const auto& item : found) for(const auto& t : item.tags) ++counts[t];
+        for(const auto& item : found) for(const auto& t : item.tags) if(std::find(hiddenTags_.begin(), hiddenTags_.end(), t) == hiddenTags_.end()) ++counts[t];
         result.tags.assign(counts.begin(), counts.end());
+        result.tagColors.assign(tagColors_.begin(), tagColors_.end());
+        result.hiddenTags = hiddenTags_;
         result.total = uint32_t(found.size());
         if(found.size() > q.limit) found.resize(q.limit);
         result.items = std::move(found);
@@ -296,6 +298,16 @@ namespace oscairn
         if(!find(id)) throw std::invalid_argument("no such library item");
         std::erase(favorites_, id);
         if(favorite) favorites_.push_back(id);
+        writeUser();
+    }
+
+    void Library::setTag(const std::string& tag, bool hidden, const std::string& color)
+    {
+        if(tag.empty() || tag.size() > maxTag || tag.find('\0') != std::string::npos) throw std::invalid_argument("invalid tag");
+        if(!validColor(color)) throw std::invalid_argument("a tag's color is #rrggbb, or empty for none");
+        std::erase(hiddenTags_, tag);
+        if(hidden) hiddenTags_.push_back(tag);
+        if(color.empty()) tagColors_.erase(tag); else tagColors_[tag] = color;
         writeUser();
     }
 
@@ -328,12 +340,23 @@ namespace oscairn
             const auto doc = parse(slurp(cache_ / "user.json"));
             favorites_ = strings(detail::member(doc.get(), "favorites"));
             recent_ = strings(detail::member(doc.get(), "recent"));
+            hiddenTags_ = strings(detail::member(doc.get(), "hiddenTags"));
+            tagColors_.clear();
+            if(V colors = detail::member(doc.get(), "tagColors"); colors && colors->type == json_type_object)
+                for(auto* e = static_cast<const json_object_s*>(colors->payload)->start; e; e = e->next)
+                {
+                    const std::string tag(e->name->string, e->name->string_size), color = str(e->value);
+                    if(validColor(color) && !color.empty()) tagColors_[tag] = color;
+                }
         }
-        catch(const std::exception&) { favorites_.clear(); recent_.clear(); } // none yet
+        catch(const std::exception&) { favorites_.clear(); recent_.clear(); hiddenTags_.clear(); tagColors_.clear(); } // none yet
     }
 
     void Library::writeUser() const
     {
-        writeAtomically(cache_ / "user.json", "{\"favorites\":" + list(favorites_) + ",\"recent\":" + list(recent_) + "}\n");
+        std::string colors;
+        for(const auto& [tag, color] : tagColors_) colors += std::string(colors.empty() ? "" : ",") + detail::quote(tag) + ":" + detail::quote(color);
+        writeAtomically(cache_ / "user.json", "{\"favorites\":" + list(favorites_) + ",\"recent\":" + list(recent_) + ",\"hiddenTags\":" + list(hiddenTags_) +
+                                              ",\"tagColors\":{" + colors + "}}\n");
     }
 }

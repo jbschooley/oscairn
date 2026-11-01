@@ -310,8 +310,13 @@ namespace oscairn
         auto r=field(d.get(),"result");LibraryResult result;
         for(auto i:array(field(r,"items")))result.items.push_back({string(field(i,"id")),string(field(i,"kind")),string(field(i,"name")),string(field(i,"description")),string(field(i,"path")),strings(field(i,"tags")),boolean(field(i,"favorite")),static_cast<uint32_t>(integer(field(i,"recent"))),string(field(i,"color")),string(field(i,"revision")),string(field(i,"hash")),string(field(i,"library")),{}});
         for(auto t:array(field(r,"tags")))result.tags.emplace_back(string(field(t,"tag")),static_cast<uint32_t>(integer(field(t,"count"))));
+        for(auto t:array(field(r,"tagColors")))result.tagColors.emplace_back(string(field(t,"tag")),string(field(t,"color")));
+        result.hiddenTags=strings(field(r,"hiddenTags"));
         result.total=static_cast<uint32_t>(integer(field(r,"total")));
         return result;
+    }
+    void RemoteControl::libraryTag(const std::string& tag,bool hidden,const std::string& color) {
+        impl_->call("library.tag","{\"tag\":"+quote(tag)+",\"hidden\":"+(hidden?"true":"false")+",\"color\":"+quote(color)+'}');
     }
     void RemoteControl::libraryFavorite(const std::string& id,bool favorite) {
         impl_->call("library.favorite","{\"id\":"+quote(id)+",\"favorite\":"+(favorite?"true":"false")+'}');

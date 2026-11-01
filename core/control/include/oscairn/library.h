@@ -2,6 +2,7 @@
 #pragma once
 #include "oscairn/control.h"
 #include <filesystem>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -29,6 +30,7 @@ namespace oscairn
         const std::vector<Control::LibraryItem>& items() const { return items_; }
         void setFavorite(const std::string& id, bool favorite);
         void used(const std::string& id); // most recent first; at most 50 kept
+        void setTag(const std::string& tag, bool hidden, const std::string& color);
         // A folder for a new Performance or Sound (kind) named `name`, its name made safe and unique.
         std::filesystem::path newFolder(const std::string& name, const std::string& kind) const;
 
@@ -38,7 +40,8 @@ namespace oscairn
         std::filesystem::path performances_, sounds_, libraries_, cache_;
         std::vector<Control::InstalledLibrary> installed_;
         std::vector<Control::LibraryItem> items_;
-        std::vector<std::string> favorites_, recent_;
+        std::vector<std::string> favorites_, recent_, hiddenTags_;
+        std::map<std::string, std::string> tagColors_;
     };
 
     // The platform's folder for Oscairn's user data: OSCAIRN_DATA_HOME, else Application Support

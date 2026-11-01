@@ -33,6 +33,8 @@ namespace oscairn::standalone
         void install();
         void deleteItem(int row);
         void librariesMenu();
+        void tagMenu(const std::string& tag);                // hide it from the tag list, or color it
+        std::string tagColor(const std::string& tag) const; // the user's color for it, or empty
         const juce::String& message() const { return message_; }
 
         void paint(juce::Graphics&) override;
