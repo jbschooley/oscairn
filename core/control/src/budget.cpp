@@ -36,10 +36,23 @@ namespace oscairn
         return d.id + "@" + d.version;
     }
 
-    Control::Cost Session::costOf(const std::string& key, const std::string& name, const std::string& plugin) const
+    // Measured: at rest, plus its cost per voice for as many notes as its part may play at once;
+    // with no limit, or before its voices are measured, the busiest block seen.
+    Control::Cost Session::costOf(const std::string& key, const std::string& name, const std::string& plugin, uint32_t limit) const
     {
-        if(const auto it = measured_.find(key); it != measured_.end()) return {name, plugin, it->second.cpu, it->second.memory, true};
+        if(const auto it = measured_.find(key); it != measured_.end())
+        {
+            const auto& m = it->second;
+            const double cpu = limit && m.voice > 0 ? m.rest + m.voice * limit : m.cpu;
+            return {name, plugin, cpu, m.memory, true};
+        }
         return {name, plugin, unmeasuredCpu, unmeasuredMemory, false};
+    }
+
+    uint32_t Session::noteLimit(NodeId node) const
+    {
+        for(const auto& p : parts_) if(nodesOf(p).count(node)) return p.input.maxNotes;
+        return 0;
     }
 
     void Session::loadMeasurements()
@@ -58,9 +71,10 @@ namespace oscairn
                     const auto* v = detail::member(e->value, key);
                     return v && v->type == json_type_number ? std::strtod(static_cast<const json_number_s*>(v->payload)->number, nullptr) : 0.0;
                 };
-                const double cpu = number("cpu"), memory = number("memory");
-                if(std::isfinite(cpu) && cpu >= 0 && std::isfinite(memory) && memory >= 0)
-                    measured_[std::string(e->name->string, e->name->string_size)] = {cpu, uint64_t(memory)};
+                const double cpu = number("cpu"), rest = number("rest"), voice = number("voice"), voices = number("voices"), memory = number("memory");
+                if(std::isfinite(cpu) && cpu >= 0 && std::isfinite(rest) && rest >= 0 && std::isfinite(voice) && voice >= 0 &&
+                   std::isfinite(voices) && voices >= 0 && voices <= 4096 && std::isfinite(memory) && memory >= 0)
+                    measured_[std::string(e->name->string, e->name->string_size)] = {cpu, rest, voice, uint32_t(voices), uint64_t(memory)};
             }
         }
         catch(const std::exception&) {} // none yet, or unreadable: measured afresh
@@ -73,7 +87,7 @@ namespace oscairn
         bool first = true;
         for(const auto& [key, m] : measured_)
         {
-            char numbers[96]; std::snprintf(numbers, sizeof(numbers), "{\"cpu\":%.6g,\"memory\":%llu}", m.cpu, static_cast<unsigned long long>(m.memory));
+            char numbers[160]; std::snprintf(numbers, sizeof(numbers), "{\"cpu\":%.6g,\"rest\":%.6g,\"voice\":%.6g,\"voices\":%u,\"memory\":%llu}", m.cpu, m.rest, m.voice, m.voices, static_cast<unsigned long long>(m.memory));
             text += std::string(first ? "" : ",") + detail::quote(key) + ":" + numbers; first = false;
         }
         text += "}}\n";
@@ -113,8 +127,17 @@ namespace oscairn
             const auto st = host.statistics();
             if(st.blocks < 32) return;
             auto& m = measured_[pluginKey(node)];
-            const double was = m.cpu;
-            m.cpu = std::max(st.lastMicroseconds / blockMicroseconds, m.cpu * decay);
+            const double was = m.cpu, wasRest = m.rest, wasVoice = m.voice;
+            const double share = st.lastMicroseconds / blockMicroseconds;
+            m.cpu = std::max(share, m.cpu * decay);
+            // Split by the notes sounding through it in that block: at rest, and added per note.
+            if(const auto voices = graph_.sounding(node); voices == 0) m.rest = std::max(share, m.rest * decay);
+            else if(voices != UINT32_MAX)
+            {
+                m.voice = std::max(std::max(0.0, share - m.rest) / voices, m.voice * decay);
+                m.voices = std::max(m.voices, voices);
+            }
+            if(std::abs(m.rest - wasRest) > 1e-4 || std::abs(m.voice - wasVoice) > 1e-5) measurementsChanged_ = true;
             if(memoryNow)
             {
                 auto bytes = host.residentBytes();
@@ -156,7 +179,7 @@ namespace oscairn
         if(budget_.cpu > 0) loadMeasurements();
         // What plays now: this Performance's plugins and any still ringing out from the last.
         std::vector<Cost> playing;
-        for(const auto& [node, name] : nodes_) playing.push_back(costOf(pluginKey(node), name, graph_.host(node).descriptor().id));
+        for(const auto& [node, name] : nodes_) playing.push_back(costOf(pluginKey(node), name, graph_.host(node).descriptor().id, noteLimit(node)));
         for(const auto node : leaving_) if(graph_.contains(node)) playing.push_back(costOf(pluginKey(node), {}, graph_.host(node).descriptor().id));
         if(directory.empty()) return estimateOf(playing, {});
         // A Performance in a folder: its plugins by identity, from its document.
@@ -165,12 +188,28 @@ namespace oscairn
         const auto* nodes = detail::member(doc.get(), "nodes");
         if(!nodes || nodes->type != json_type_array) throw std::runtime_error("not a Performance: " + directory);
         auto text = [](const json_value_s* v) { return v && v->type == json_type_string ? std::string(static_cast<const json_string_s*>(v->payload)->string, static_cast<const json_string_s*>(v->payload)->string_size) : std::string(); };
+        // Each node's part's note limit, by its key: in the part's chain or a split's lanes.
+        std::map<std::string, uint32_t> limits;
+        if(const auto* parts = detail::member(doc.get(), "parts"); parts && parts->type == json_type_array)
+            for(auto* p = static_cast<const json_array_s*>(parts->payload)->start; p; p = p->next)
+            {
+                const auto* limit = detail::member(detail::member(p->value, "input"), "maxNotes");
+                const uint32_t n = limit && limit->type == json_type_number ? uint32_t(std::strtoul(static_cast<const json_number_s*>(limit->payload)->number, nullptr, 10)) : 0;
+                auto chain = [&](const json_value_s* c) {
+                    if(c && c->type == json_type_array) for(auto* k = static_cast<const json_array_s*>(c->payload)->start; k; k = k->next) limits[text(k->value)] = n;
+                };
+                chain(detail::member(p->value, "chain"));
+                if(const auto* splits = detail::member(p->value, "splits"); splits && splits->type == json_type_array)
+                    for(auto* s = static_cast<const json_array_s*>(splits->payload)->start; s; s = s->next)
+                        if(const auto* lanes = detail::member(s->value, "lanes"); lanes && lanes->type == json_type_array)
+                            for(auto* l = static_cast<const json_array_s*>(lanes->payload)->start; l; l = l->next) chain(detail::member(l->value, "chain"));
+            }
         std::vector<Cost> coming;
         for(auto* e = static_cast<const json_array_s*>(nodes->payload)->start; e; e = e->next)
         {
             const auto* plugin = detail::member(e->value, "plugin");
-            const auto id = text(detail::member(plugin, "id"));
-            coming.push_back(costOf(id + "@" + text(detail::member(plugin, "version")), text(detail::member(e->value, "name")), id));
+            const auto id = text(detail::member(plugin, "id")), key = text(detail::member(e->value, "key"));
+            coming.push_back(costOf(id + "@" + text(detail::member(plugin, "version")), text(detail::member(e->value, "name")), id, limits.count(key) ? limits.at(key) : 0));
         }
         return estimateOf(coming, playing);
     }

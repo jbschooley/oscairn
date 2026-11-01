@@ -941,6 +941,35 @@ namespace
         }
         check(fs::exists(root / "budget-home" / "measurements.json"), "measurements kept in the data folder");
         {
+            // A held note splits the cost: something per voice, the most voices seen.
+            std::ifstream in(root / "budget-home" / "measurements.json"); const std::string text((std::istreambuf_iterator<char>(in)), {});
+            check(text.find("\"voice\":") != std::string::npos && text.find("\"voices\":1") != std::string::npos, "its cost per voice measured while a note sounded: " + text);
+        }
+        {
+            // At rest plus per voice, for as many notes as the part may play; no limit, the busiest block.
+            const auto home = root / "budget-voices";
+            fs::create_directories(home);
+            ::setenv("OSCAIRN_DATA_HOME", home.c_str(), 1);
+            std::string key;
+            {
+                std::ifstream in(root / "budget-home" / "measurements.json"); const std::string text((std::istreambuf_iterator<char>(in)), {});
+                const auto at = text.find("{\"plugins\":{\"") + 13; key = text.substr(at, text.find('"', at) - at);
+            }
+            std::ofstream(home / "measurements.json") << "{\"plugins\":{\"" << key << "\":{\"cpu\":0.3,\"rest\":0.05,\"voice\":0.01,\"voices\":3,\"memory\":1000}}}";
+            Session v(48000, frames);
+            v.setBudget({.9, 0});
+            const auto a = v.add("a", fixture, "org.kick.test.synth");
+            PartInput limited; limited.maxNotes = 4;
+            const auto part = v.addPart("A", limited); v.insertIntoPart(part, 0, a); v.commit();
+            check(near(v.estimate().cpu, .05 + .01 * 4), "at rest plus four voices: " + std::to_string(v.estimate().cpu));
+            v.setPartInput(part, {}); v.commit();
+            check(near(v.estimate().cpu, .3), "with no limit, the busiest block seen: " + std::to_string(v.estimate().cpu));
+            v.setPartInput(part, limited); v.commit();
+            v.savePerformance((root / "budget-limited").string());
+            check(near(v.estimate((root / "budget-limited").string()).cpu, .09), "and from a saved Performance's parts: " + std::to_string(v.estimate((root / "budget-limited").string()).cpu));
+            ::setenv("OSCAIRN_DATA_HOME", (root / "budget-home").c_str(), 1);
+        }
+        {
             Session t(48000, frames);
             t.setBudget({.9, 0});
             check(t.estimate((root / "budget-one").string()).plugins.at(0).measured, "and known to the next session before it loads");

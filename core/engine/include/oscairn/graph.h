@@ -117,6 +117,10 @@ namespace oscairn
         /// like. Takes effect at commit().
         void setRetiring( NodeId node, bool retiring );
         bool idle( NodeId node, uint64_t quietFrames, uint64_t limitFrames ) const;
+        /// The notes sounding through a node's note connections at its last block (held, or
+        /// sustained by the pedal), for measuring its cost per voice (RFC 0025); 0 for a node that
+        /// takes no notes, UINT32_MAX for one just set retiring and not yet counted.
+        uint32_t sounding( NodeId node ) const;
         void disconnectAudio( NodeId from, NodeId to );
         void disconnectNotes( NodeId from, NodeId to );
 

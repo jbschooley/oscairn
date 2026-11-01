@@ -1,6 +1,6 @@
 # RFC 0025: Resource budgets: knowing before loading whether it fits
 
-Status: in progress, 2026-11-01: steps 2–4 built, step 1 partly ([status](#status)). Required for
+Status: in progress, 2026-11-01: steps 1–4 built ([status](#status)). Required for
 every product Oscairn runs on. Builds on the
 voice budget ([RFC 0018](0018-voice-budget-and-stealing.md)), device profiles
 ([RFC 0024](0024-device-profiles.md)), packages' resource estimates
@@ -11,8 +11,7 @@ reservations ([RFC 0004](0004-hardware-services.md#select-and-reserve-before-act
 
 Checked when built and tested; the sections below say how.
 
-- [ ] 1. Measuring: each plugin's CPU per block (at rest and per voice) and memory, recorded on the device
-      (built: one CPU figure per plugin build, its busiest recent blocks, and memory; not yet split at rest and per voice)
+- [x] 1. Measuring: each plugin's CPU per block (at rest and per voice) and memory, recorded on the device
 - [x] 2. Estimating a Performance from those measurements and the device's budget
 - [x] 3. Admission: loading, switching and editing check the estimate; refuse or warn with the reason
       (loading a Performance and adding a plugin are checked and refused with the reason; a warning instead of a refusal is not offered yet)
@@ -88,8 +87,16 @@ never write the user's data folder.
   process's resident memory or, in the engine's process, what the process grew by while the
   plugin loaded. Kept in `measurements.json` in the data folder, saved every 30 seconds when
   changed and when the session ends. One sample a tick can miss a rare spike between ticks.
+  Each sample is also split by the notes sounding through the plugin in that block (held, or
+  sustained by the pedal; the graph counts them for every plugin that takes notes): with none,
+  it updates the plugin's cost **at rest**; with some, its cost **per voice** (the time above
+  rest, divided by the notes), each a falling high-water mark too, and the most notes seen at
+  once. A plugin that takes no notes (an effect) is all at rest.
 - **Estimated:** the open Performance, or one in a folder from its document's plugin identities;
-  a plugin never measured here counts at 2% of the audio time and 32 MiB, marked unmeasured.
+  a plugin never measured here counts at 2% of the audio time and 32 MiB, marked unmeasured. A
+  measured plugin in a part with a note limit (RFC 0018) counts at rest plus its cost per voice
+  for that many notes, so the estimate is the part's worst case; with no limit, or before a
+  voice was measured, it counts at its busiest block seen.
 - **Admitted:** a Performance over the budget is refused, and so is a plugin that would take the
   open one over it (it is unloaded again), each saying what is needed, what is allowed and the
   three heaviest plugins. A Performance that fits alone but not beside the one playing (and any

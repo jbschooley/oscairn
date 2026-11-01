@@ -101,7 +101,9 @@ Everything else is handled for you:
   block and its memory on the device, by plugin ID and version, and refuses a Performance, or
   an added plugin, that would go over the device's budget, saying why
   ([RFC 0025](rfcs/0025-resource-budgets.md)). CPU is a slowly falling high-water mark of its
-  block times, so a heavy passage counts for minutes after it. In the engine's process,
+  block times, so a heavy passage counts for minutes after it, split into a cost at rest and a
+  cost per sounding note; in a part with a note limit, the estimate is at rest plus that many
+  notes, so keep your per-voice cost proportional to the voices actually sounding. In the engine's process,
   memory is what the process grew by while the plugin loaded. A plugin never measured on the
   device counts as 2% of the block's time and 32 MiB until it is, and a new version starts
   unmeasured.

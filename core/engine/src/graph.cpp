@@ -358,6 +358,11 @@ namespace oscairn
         n.activity->sounding.store(UINT32_MAX,std::memory_order_relaxed); // not idle until it has been counted
     }
 
+    uint32_t Graph::sounding( NodeId node ) const
+    {
+        const auto it=nodes_.find(node);
+        return it==nodes_.end() || !it->second.activity ? UINT32_MAX : it->second.activity->sounding.load(std::memory_order_relaxed);
+    }
     bool Graph::idle( NodeId node, uint64_t quietFrames, uint64_t limitFrames ) const
     {
         const auto& a=*nodes_.at(node).activity;
@@ -674,6 +679,12 @@ namespace oscairn
                     auto& held=(*step.peaks)[c];
                     for(float seen=held.load(std::memory_order_relaxed);peak>seen && !held.compare_exchange_weak(seen,peak,std::memory_order_relaxed););
                 }
+            // Any node taking notes: how many sound through it, for its cost per voice (RFC 0025).
+            if(processed && !step.retiring && step.activity && !step.noteSources.empty())
+            {
+                uint32_t sounding=0;for(const auto& source:step.noteSources)sounding+=source.route->sounding();
+                step.activity->sounding.store(sounding,std::memory_order_relaxed);
+            }
             if(processed && step.retiring && step.activity)
             {
                 // A retiring node: its notes still sounding, and how long it has been silent.

@@ -411,7 +411,8 @@ drum module, a DJ unit, a Eurorack module, a DAW plugin). These are required of 
 - [ ] **knowing before loading whether it fits:** CPU and memory measured on the device, and
   admission for loading, editing and seamless changes ([RFC 0025](rfcs/0025-resource-budgets.md#progress)).
   Built: measuring, estimates, refusing a Performance or plugin over the budget, and a change
-  that would not fit beside the last Performance becoming a cut; CPU at rest and per voice remain
+  that would not fit beside the last Performance becoming a cut; CPU at rest and per voice,
+  counting a part's note limit
 - [ ] **builds for every device's platform:** first-party plugins and apps on Linux ARM64 beside
   the desktop; packages without a build install as unavailable, saying so
   ([RFC 0006](rfcs/0006-packages-and-portability.md#platform-builds-and-hardware))

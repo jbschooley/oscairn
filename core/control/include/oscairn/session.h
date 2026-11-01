@@ -230,7 +230,9 @@ namespace oscairn
         void meter();                            // service(): updates the meters from the graph's peaks
         // Resource budgets (budget.cpp, RFC 0025): this device's measurements of each plugin build,
         // kept in the data folder once a budget is set.
-        struct Measurement { double cpu = 0; uint64_t memory = 0; };
+        // cpu: the busiest block seen; rest: with no note sounding; voice: added per sounding note;
+        // voices: the most notes seen sounding at once. All shares of a block's time.
+        struct Measurement { double cpu = 0, rest = 0, voice = 0; uint32_t voices = 0; uint64_t memory = 0; };
         Budget budget_;
         std::map<std::string, Measurement> measured_;          // by plugin ID and version
         bool measurementsLoaded_ = false, measurementsChanged_ = false;
@@ -242,7 +244,9 @@ namespace oscairn
         void loadMeasurements();
         void saveMeasurements();
         std::string pluginKey(NodeId node) const;
-        Cost costOf(const std::string& key, const std::string& name, const std::string& plugin) const;
+        // limit: the notes its part may play at once (RFC 0018), 0 for none.
+        Cost costOf(const std::string& key, const std::string& name, const std::string& plugin, uint32_t limit = 0) const;
+        uint32_t noteLimit(NodeId node) const; // its part's, or 0
         Estimate estimateOf(const std::vector<Cost>& plugins, const std::vector<Cost>& playing) const;
         std::string tooMuch(const Estimate& e) const;          // what does not fit, for a refusal
         std::map<uint32_t, std::vector<double>> meters_, wireMeters_; // per part and per wire, per channel
