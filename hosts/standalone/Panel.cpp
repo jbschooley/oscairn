@@ -352,7 +352,8 @@ namespace oscairn::standalone
         void refresh()
         {
             const auto status = engine_.status();
-            if( screen_ )
+            // The screen under an app (RFC 0030) is hidden: no need to draw it.
+            if( screen_ && !overlay_ )
                 screen_->refresh();
             for( auto* knob : knobs_ )
                 knob->refresh();

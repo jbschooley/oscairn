@@ -35,7 +35,7 @@ namespace oscairn::standalone
         for(auto* c : std::initializer_list<juce::Component*>{&play_, &stop_, &sync_}) c->setVisible(transport);
         addAndMakeVisible(screen_);
         refresh();
-        startTimer(200);
+        startTimerHz(30); // as a panel's screen: a step clicked or dragged shows at once, the playhead moves smoothly
     }
     void SequencerPane::refresh()
     {
