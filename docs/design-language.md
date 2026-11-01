@@ -95,7 +95,7 @@ fonts, so text never depends on what a device has installed.
 
 | Style | Choices | Draws |
 | --- | --- | --- |
-| `buttons` | `rounded`, `pill` | Buttons with the theme's radius, or fully round ends (fields then use the radius plus 3) |
+| `buttons` | `rounded`, `pill` | Buttons with the theme's radius, or fully round ends (single-line fields round the same way; taller ones use the radius plus 3) |
 | `edges` | `none`, `hairline`, `outlined` | Outlines on buttons, fields and cards: none, faint, or the full border colour. Keyboard focus is always drawn |
 | `depth` | `flat`, `soft` | A small shadow under buttons, slider thumbs and the selected tab |
 | `sliders` | `filled`, `line`, `cap` | An accent thumb on a thick track, a thin track with a light round thumb, or with a square cap |

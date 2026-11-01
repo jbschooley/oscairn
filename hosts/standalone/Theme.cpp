@@ -64,7 +64,8 @@ void drawSection(juce::Graphics& g,juce::Rectangle<int> r,juce::Colour fill) {
 }
 bool darkTheme(){return ink(Ink::Background).getPerceivedBrightness()<.5f;}
 float buttonRadius(float height){return current.style.buttons==ThemeStyle::Buttons::Pill?height/2:current.radius;}
-float fieldRadius(float height){return std::min(height/2,current.style.buttons==ThemeStyle::Buttons::Pill?current.radius+3:current.radius);}
+// Pill themes round single-line fields like their buttons; a taller field (several lines) keeps the radius plus 3.
+float fieldRadius(float height){if(current.style.buttons!=ThemeStyle::Buttons::Pill)return std::min(height/2,current.radius);return height<=56?height/2:current.radius+3;}
 void drawEdge(juce::Graphics& g,juce::Rectangle<float> r,float radius,bool focus) {
     if(focus){g.setColour(ink(Ink::Accent));g.drawRoundedRectangle(r,radius,2.f);return;}
     if(current.style.edges==ThemeStyle::Edges::None)return;

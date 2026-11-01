@@ -21,7 +21,6 @@ namespace oscairn::standalone
     {
         query_.kind = kind;
         for(auto* b : {&performances_, &sounds_}) { b->setClickingTogglesState(true); b->setRadioGroupId(1); }
-        performances_.setConnectedEdges(juce::Button::ConnectedOnRight); sounds_.setConnectedEdges(juce::Button::ConnectedOnLeft);
         performances_.onClick = [this] { showKind("performance"); };
         sounds_.onClick = [this] { showKind("sound"); };
         part_.onClick = [this] { newPart(list_.getSelectedRow()); };
@@ -206,7 +205,7 @@ namespace oscairn::standalone
         auto bar = area.removeFromTop(control);
         if(mode_ == Mode::Play)
         {
-            performances_.setBounds(bar.removeFromLeft(touch ? 150 : 120));
+            performances_.setBounds(bar.removeFromLeft(touch ? 150 : 120)); bar.removeFromLeft(gap);
             sounds_.setBounds(bar.removeFromLeft(touch ? 110 : 90)); bar.removeFromLeft(gap);
         }
         recent_.setBounds(bar.removeFromRight(touch ? 110 : 90)); bar.removeFromRight(gap);
