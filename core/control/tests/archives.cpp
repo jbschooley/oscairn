@@ -14,6 +14,7 @@
 #include "oscairn/package.h"
 #include "oscairn/wav_file.h"
 #include "../../plugin-host/src/StateFiles.h"
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -179,6 +180,23 @@ int main(int argc, char** argv)
             std::ofstream(index, std::ios::binary | std::ios::trunc) << text;
             e.libraryRescan();
             check(items(e, "performance").at(0).name == "From the index", "an index over 4 MiB is used");
+        }
+        // Device F: a plugin rebuilt in place while it plays goes with an export as rebuilt.
+        {
+            device(temp.path / "f");
+            const auto build = temp.path / "f" / "Synth.clap";
+            fs::copy_file(fixture, build);
+            Session f(48000, 64);
+            f.add("synth", build.string(), "org.kick.test.synth"); f.commit();
+            check(f.exportPerformance((temp.path / "Before.olib").string()).empty(), "a plugin at its own path goes with an export");
+            // Rebuilt as a linker does: written beside it and moved over it.
+            fs::copy_file(fixture, build.string() + ".new");
+            std::ofstream(build.string() + ".new", std::ios::binary | std::ios::app) << "rebuilt";
+            fs::rename(build.string() + ".new", build);
+            fs::last_write_time(build, fs::file_time_type::clock::now() + std::chrono::minutes(1));
+            const auto notes = f.exportPerformance((temp.path / "After.olib").string());
+            check(notes.empty() && readPackage(temp.path / "After.olib", {}).plugins.at(0).builds.at(0).sha256 == bundleDigest(build),
+                  "and once rebuilt, as rebuilt: " + (notes.empty() ? std::string() : notes[0]));
         }
         // Device D: the plugin is not where the Performance last found it, so it opens from the store.
         {

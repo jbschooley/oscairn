@@ -379,7 +379,7 @@ namespace oscairn
         struct LockEntry { std::string format, id, version, platform, sha256; bool operator==(const LockEntry&) const = default; };
     private:
         std::vector<LockEntry> lock_;                       // what the documents loaded said, merged
-        std::map<std::string, std::string> digests_;        // each plugin build's digest, by its path, once
+        std::map<std::string, std::pair<std::filesystem::file_time_type, std::string>> digests_; // each plugin build's digest by its path, as of its newest write
         void lockPlugin(std::vector<LockEntry>& lock, const std::string& format, const std::string& id, const std::string& version, const std::string& path, bool standIn);
         void mergeLock(const std::vector<LockEntry>& more);
         // A Performance read and its plugins loaded with their state, not playing yet (RFC 0021).

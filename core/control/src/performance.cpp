@@ -798,9 +798,12 @@ void Session::lockPlugin(std::vector<LockEntry>& lock,const std::string& format,
     std::string digest;
     std::error_code e;
     if(!standIn && fs::exists(path,e)){
+        // Again once it is rebuilt: the newest write to it, or to anything in its bundle.
+        auto newest=fs::last_write_time(path,e);
+        if(fs::is_directory(path,e))for(const auto& f:fs::recursive_directory_iterator(path,e))newest=std::max(newest,f.last_write_time(e));
         auto& known=digests_[path];
-        if(known.empty())try{known=bundleDigest(path);}catch(const std::exception&){}
-        digest=known;
+        if(known.second.empty() || known.first!=newest){known={newest,{}};try{known.second=bundleDigest(path);}catch(const std::exception&){}}
+        digest=known.second;
     }
     for(const auto& l:lock_)if(l.format==format && l.id==id && l.version==version && (l.platform!=here || digest.empty()))lock.push_back(l);
     if(!digest.empty())lock.push_back({format,id,version,here,digest});
