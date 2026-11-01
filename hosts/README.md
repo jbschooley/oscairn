@@ -14,10 +14,10 @@ Programs built on the core: a file renderer, a live audio/MIDI engine and a desk
 - `process/`: desktop helper startup and lifetime locks, independent of JUCE. A
   launcher attaches to a running engine or starts the bundled helper. Its destruction
   leaves that helper alive. Concurrent launches share one engine per plugin directory and audio configuration.
-- `standalone/`: `Oscairn`, the desktop UI and panel layouts. It starts or reconnects
-  to a helper by default through cached `RemoteControl`. `--in-process` runs audio in
-  the UI process; `--connect SOCKET` attaches to an externally managed engine. After
-  disconnection the UI retries and refreshes snapshots, without replaying commands.
+- `standalone/`: `Oscairn`, the desktop UI and panel layouts. It starts at Home
+  ([launching](#launching)). It starts or reconnects to a helper by default through
+  cached `RemoteControl`. `--in-process` runs audio in the UI process; `--connect SOCKET`
+  attaches to an externally managed engine. After disconnection the UI retries and refreshes snapshots, without replaying commands.
   If its managed engine stops, a banner offers **Restart engine**, which opens a fresh
   demo session. Startup failures offer Retry/Quit; snapshot commands fail immediately.
 
@@ -136,8 +136,19 @@ The offline renderer is independent: it defaults to 512 frames at 48 kHz and acc
 `qemu-aarch64`, `kick` or `ignite` (built in, in `standalone/profiles/`), or a profile file
 ([schema](../docs/profile.schema.json)). Without it the app makes a profile of the computer.
 A panel profile fills the display with no title or menu bar and shows its screen's layout; its
-`apps` decide the Apps menu; its block is the audio request. `--layout` still overrides the
+`apps` decide Home's tiles and the Apps menu; its block is the audio request. `--layout` still overrides the
 layout for a run (on the desktop, `--profile kick` shows the KICK's screen, full screen).
+
+The app starts at **Home** ([RFC 0030](../docs/rfcs/0030-system-shell-launcher-and-navigation.md)):
+a top bar and the apps as tiles, each with a line of its state. Performance is always there;
+Library, Setlist and Groovebox are there when the profile offers them (the computer's and the
+KICK's do). In the desktop layout, Home is the window's content: Performance opens in its place (its
+toolbar has a Home button), and the other apps open in their own windows; **Apps → Home** goes
+back. In a panel layout, Home covers the screen, and each app opens on the screen in a frame whose top
+bar has its name and a Home icon, unless a layout button is bound to `home`. Layout buttons bound
+to `home` and `back` go Home (Back goes Home for now); the KICK layout's MAIN is `home` and BACK
+is `back`. `--view Part|Mixer|Routing|Controls` (desktop layout only) opens the Performance app on that
+view instead.
 
 `-DOSCAIRN_STANDALONE=ON` builds both the desktop and helper. To build only the live
 engine, use `-DOSCAIRN_ENGINE=ON`. Both options default to OFF. JUCE is downloaded for

@@ -36,10 +36,10 @@ not require preserving experimental pre-release formats now.
 | Native multitimbral instrument | CLAP plus `oscairn.sound-contexts/draft-4` | [Basic Synth](../plugins/basic-synth/basic_synth.cpp), [Sampler](https://github.com/oscairn/sampler), [shared contexts](../core/clap-ext/include/oscairn-clap/sound-contexts-plugin.hpp), [RFC 0005](rfcs/0005-sound-contexts.md) |
 | UI, editor or automation script | Typed `Control` or JSON-RPC over the local Unix socket | [Protocol and schema](control-protocol.md) |
 | New host/application | C++20 `Session` or `Graph`, supplied audio buffers and events | [Core](../core/README.md), [hosts](../hosts/README.md) |
-| Hardware panel/layout | Desktop JSON layouts today; timestamped hardware services are proposed | [Layouts](../hosts/standalone/layouts/README.md), [RFC 0004](rfcs/0004-hardware-services.md) |
+| Hardware panel/layout | Desktop JSON layouts and device profiles today; timestamped hardware services are proposed | [Layouts](../hosts/standalone/layouts/README.md), [profiles](rfcs/0024-device-profiles.md), [RFC 0004](rfcs/0004-hardware-services.md) |
 
-VST3 hosting, plugin GUI embedding, a distributable Oscairn SDK/package registry, Setlist/library
-persistence, automatic DSP/auxiliary-core offloading, and a native DJ deck engine
+VST3 hosting, plugin GUI embedding, a distributable Oscairn SDK/package registry,
+automatic DSP/auxiliary-core offloading, and a native DJ deck engine
 are not implemented. A plugin binary must match the host OS, CPU architecture and ABI.
 A macOS plugin cannot be copied unchanged onto an ARM Linux image.
 
@@ -175,7 +175,8 @@ an existing bundle. Raw adapter restore can reset/silence that instance; graph-p
 instruments instead prepare and select a spare. State export, preset enumeration and typed LV2 patch-property methods also use the
 [control API](control-protocol.md#state-export-presets-and-patch-properties). Query capabilities
 and distinguish queued property acceptance from plugin-confirmed readback.
-Complete projects, context-pool persistence and a sound-library UI are still future work.
+Complete projects are still future work. Sounds, Performances and the library are in
+[RFC 0021](rfcs/0021-sounds-performances-and-library.md#progress).
 
 ## Packaging and portability (planned)
 

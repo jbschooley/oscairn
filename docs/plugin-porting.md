@@ -95,7 +95,16 @@ Everything else is handled for you:
   change ([RFC 0021](rfcs/0021-sounds-performances-and-library.md#seamless-switching)), plays
   out its held notes and tail and stops once it is idle: one that sleeps stops as soon as it
   is done; one that never does waits for three seconds of silence. Until then it runs beside
-  the new Performance, so memory and CPU for both are needed for a moment.
+  the new Performance, so memory and CPU for both are needed for a moment; when both would not
+  fit the device's budget, the change is a cut instead.
+- **Keep your cost steady and your version honest:** the host measures each plugin's CPU per
+  block and its memory on the device, by plugin ID and version, and refuses a Performance, or
+  an added plugin, that would go over the device's budget, saying why
+  ([RFC 0025](rfcs/0025-resource-budgets.md)). CPU is a slowly falling high-water mark of its
+  block times, so a heavy passage counts for minutes after it. In the engine's process,
+  memory is what the process grew by while the plugin loaded. A plugin never measured on the
+  device counts as 2% of the block's time and 32 MiB until it is, and a new version starts
+  unmeasured.
 - **Parameter metadata:** clear names, CLAP module paths for grouping, value text, and the
   stepped and read-only flags. The generated editors are built from them:
   - the first level of the module path names the page (`Operator 1`, `LFO 2`); numbered pages

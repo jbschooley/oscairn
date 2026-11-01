@@ -28,6 +28,9 @@ an implemented capability.
 | Add a desktop panel layout | [Layout format](../hosts/standalone/layouts/README.md) |
 | Configure audio, MIDI and helper processes | [Hosts](../hosts/README.md) |
 | Build the Linux image | [OS instructions](../os/README.md) |
+| Try Oscairn on a KICK or a KICK emulator | [Running on a KICK](kick.md) |
+| Describe a device, or check whether a Performance fits its CPU and memory | [Device profiles](rfcs/0024-device-profiles.md), [profile schema](profile.schema.json), [resource budgets](rfcs/0025-resource-budgets.md) (both in progress) |
+| Understand Home, the top bar and how screens flow | [System shell RFC](rfcs/0030-system-shell-launcher-and-navigation.md) (proposed; Home built) |
 | Use native plugins in other DAWs or standalone | [Planned delivery contract](rfcs/0006-packages-and-portability.md#native-plugins-in-daws-and-standalone-applications) |
 | Plan installer-free transfers and shared plugin dependencies | [Packages and cross-device portability](rfcs/0006-packages-and-portability.md) (proposed) |
 | Understand hardware acceleration and timestamped I/O plans | [Hardware-services proposal](rfcs/0004-hardware-services.md) |

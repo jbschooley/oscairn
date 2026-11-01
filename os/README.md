@@ -13,6 +13,12 @@ generic `virt` machine with a Cortex-A76 CPU (code is built for the RK3588's
 Cortex-A76/A55). It tests the toolchain, packaging and startup, not board-specific parts
 (display controller, audio codec, panel).
 
+The image does not suit the KICK as it is. Cortex-A76/A55 code is ARMv8.2, and the KICK's
+Cortex-A53 is ARMv8.0, so the image's binaries may stop with an illegal instruction on a KICK
+or an emulator of one. Set `BR2_cortex_a53=y` in place of `BR2_cortex_a76_a55=y` to build for
+it (not tried yet). Its kernel is also configured for QEMU's `virt` machine. See
+[running on a KICK](../docs/kick.md).
+
 ## What is in the image
 
 - GCC 15, glibc, Linux 6.18 (LTS) with a low-latency (`PREEMPT`) kernel, BusyBox init, eudev.
@@ -22,7 +28,8 @@ Cortex-A76/A55). It tests the toolchain, packaging and startup, not board-specif
   `/usr/libexec/oscairn-session`, which starts an X server and then Oscairn full screen,
   and restarts Oscairn if it exits. Its arguments are in `/etc/default/oscairn`
   (`--profile qemu-aarch64 --play`: the image's [device profile](../docs/rfcs/0024-device-profiles.md),
-  which fills the screen with the KICK's screen layout and asks for 128-frame audio blocks). Logs: `/var/log/oscairn.log` and
+  which fills the screen with the KICK's screen layout, starting at Home, and asks for
+  128-frame audio blocks). Logs: `/var/log/oscairn.log` and
   `/var/log/oscairn-xorg.log`.
 - Sound through ALSA. The QEMU image uses the kernel's dummy sound card, which plays
   silently. Audio requests a 128-frame buffer, through the
@@ -89,7 +96,8 @@ Other Buildroot targets go after the defconfig, for example
 
 - A board image for an RK3588 development board (mainline kernel), with a real audio
   interface and a real-time kernel, and latency measurements.
-- The KICK, once units exist: its kernel, display, audio codec, and a driver for the panel.
+- The KICK, once units exist: its kernel, display, audio codec, and a driver for the panel
+  ([what exists today](../docs/kick.md)).
 - Signed updates with A/B system images.
 
 ## Optional LV2 hosting

@@ -3,8 +3,49 @@
 *Pronounced "OSS-cairn": **osc**illator + **cairn**, sound built up in layers.*
 
 Oscairn is an open instrument platform: one realtime host for synthesis engines, samplers,
-effects and sequencers that runs on hardware instruments, on the desktop and inside a DAW.
-A sound or performance is not tied to one device.
+effects and sequencers, made for hardware instruments, the desktop and the DAW.
+
+Until now musicians have had two choices.
+
+- **Hardware instruments** play only the engines installed on the device. A sound made on
+  one cannot move to a device from another maker, or to one with different engines.
+- **Software instruments** (VST and other plugins) are flexible, but each use starts a
+  separate copy of the engine. That means long waits, high RAM use and unreliable patch
+  switching.
+
+Oscairn sets out to solve both. How, and how much of it is built today:
+
+- **One engine, many sounds.** An engine with Oscairn's sound contexts holds up to eight
+  prepared sounds in one instance. Each MIDI channel picks one, and switching to another
+  reloads nothing and keeps held notes playing ([RFC 0005](docs/rfcs/0005-sound-contexts.md)).
+  Effects can share one engine the same way ([RFC 0007](docs/rfcs/0007-effect-contexts.md)).
+  Today only Oscairn's own Basic Synth, Sampler and Delay do this. A third-party plugin
+  without it still switches instantly, but through a spare instance per prepared sound (up to
+  eight, instruments only), each with its own memory.
+- **Seamless Performance changes.** Opening another Performance, from a setlist or the
+  library, lets the outgoing one's held notes and tails ring out while new notes play the new
+  one. Scene changes do the same
+  ([RFC 0021](docs/rfcs/0021-sounds-performances-and-library.md#seamless-switching)).
+- **Your sounds are files.** Sounds and Performances are plain folders in a
+  [documented format](docs/performance-format.md); each plugin's state inside is that
+  plugin's own data. A library, or a Performance with its Sounds and samples, exports to and
+  installs from one [archive file](docs/library-archive.md).
+- **Sounds that move between devices** (mostly planned). Packages that carry what a sound
+  needs, plugins and samples at exact versions, to another device are proposed
+  ([RFC 0006](docs/rfcs/0006-packages-and-portability.md)). Built so far: device profiles
+  that describe each product's screen, controls, audio, CPU and memory, which the app and
+  engine follow in part ([RFC 0024](docs/rfcs/0024-device-profiles.md)). A plugin still
+  needs a build for each device's CPU and operating system.
+- **Knowing before loading whether it fits.** Oscairn measures each plugin's CPU and memory
+  on the device, and refuses a Performance or plugin that would not fit, saying why, instead
+  of failing while it plays ([RFC 0025](docs/rfcs/0025-resource-budgets.md), in progress).
+- **A crashing plugin silences only itself.** Plugins can run in separate worker processes:
+  a crash, hang or overrun stays in that plugin, which restarts with its sounds
+  ([RFC 0010](docs/rfcs/0010-plugin-worker-isolation.md)). Built and tested on macOS; not yet
+  the app's default, and not yet for LV2.
+- **Engines that also run in a DAW.** Oscairn hosts CLAP plugins, and LV2 as a build option.
+  Its own engines and effects are CLAP plugins, so a DAW that hosts CLAP can load them (not
+  tested in a DAW yet). VST3 and AU hosting, and Oscairn itself as a DAW plugin, are planned.
 
 Oscairn is an independent, unofficial project. It is not affiliated with or endorsed by
 Behringer, Klark Teknik or Music Tribe. KICK is a product of Klark Teknik; the name is used
@@ -13,8 +54,8 @@ here only to describe compatibility.
 > **Status:** early, and moving quickly (November 2026). What runs today:
 >
 > - a graph of CLAP plugins, with optional LV2, played sample-accurately live or rendered
->   offline, following its own tempo or an external MIDI clock, with plugins isolated in
->   worker processes on macOS;
+>   offline, following its own tempo or an external MIDI clock, with plugins optionally
+>   isolated in worker processes on macOS;
 > - **Performances** of parts and buses (splits, layers, sends, scenes with transitions,
 >   controls such as Super Knobs, undo), saved as [folders](docs/performance-format.md) and
 >   changed seamlessly while notes and tails ring out;
@@ -74,6 +115,26 @@ It defaults to OFF so CLAP-only builds keep their existing dependency set.
 See [LV2 hosting](core/lv2-host/README.md) for loading bundles, supported extensions,
 limits and examples. The desktop's default demo and layouts still use the three CLAP
 plugins; there is no graphical plugin browser yet.
+
+### The desktop app's screens
+
+**Home**, where the app starts: the apps as tiles, each with a line of its state.
+
+![Home](docs/images/desktop/home.png)
+
+The **Performance** app's Part view (a part's chain, inputs, keys and levels) and its Routing
+view (the whole graph, laid out by signal flow):
+
+![Part view](docs/images/desktop/part.png)
+
+![Routing view](docs/images/desktop/routing.png)
+
+The **Library** app: Performances and Sounds by source and tag, with audition:
+
+![Library](docs/images/desktop/library.png)
+
+Home was captured with `--snapshot`; the others by the `desktop-shell` test, with its own test
+Performance and library.
 
 ### Panel layouts
 
@@ -184,7 +245,7 @@ State export, preset enumeration and typed patch properties are available throug
 
 ## Design in brief
 
-The design the code is built towards; most of it is not built yet. In full:
+The design the code is built towards; parts of it are not built yet. In full:
 [architecture](docs/architecture.md), and what exists and what comes next:
 [roadmap](docs/roadmap.md).
 
@@ -210,9 +271,9 @@ The design the code is built towards; most of it is not built yet. In full:
 
 | Folder | Contents |
 | --- | --- |
-| `core/` | Graph, transport and clock, event routing, plugin hosting; library index (not built yet). A library. |
+| `core/` | Graph, transport and clock, event routing, plugin hosting, the control API and the Sounds and Performances library. A library. |
 | `hosts/` | Programs built on the core: headless (render to file, for CI), desktop, later device and plugin builds. |
-| `plugins/` | First-party plugins: step sequencer, basic synth, delay; arpeggiator (not built yet). |
+| `plugins/` | First-party plugins: step sequencer, basic synth, delay, split and join, MIDI effects, the Modular wrapper; arpeggiator (not built yet). |
 | `docs/` | [Architecture](docs/architecture.md), [roadmap](docs/roadmap.md), and design decisions in [`rfcs/`](docs/rfcs/README.md). |
 
 ## License

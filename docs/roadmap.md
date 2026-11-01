@@ -4,7 +4,7 @@ How Oscairn gets from nothing to the [architecture](architecture.md): the smalle
 that each produce something that runs. Nobody has the target hardware yet, so everything
 early runs on a desktop.
 
-Status as of October 31, 2026. Implementation status below includes the current branch;
+Status as of November 1, 2026. Implementation status below includes the current branch;
 it does not mean every completed item has merged to `main`.
 
 A checked box is built and tested; an unchecked one is still to do, with what is already done
@@ -330,8 +330,9 @@ in the others.
      Loading a Sound into a part cuts, by decision: it is editing
    - [x] **seamless Performance changes**, in setlists and wherever a Performance opens: the
      outgoing Performance's held notes and tails ring out while the next one plays
-     ([status](rfcs/0021-sounds-performances-and-library.md#seamless-switching)). Every change is
-     seamless; nothing yet limits the memory two Performances take at once
+     ([status](rfcs/0021-sounds-performances-and-library.md#seamless-switching)). A change that
+     would not fit beside the outgoing one opens as a cut, and the desktop says so
+     ([RFC 0025](rfcs/0025-resource-budgets.md#status))
    - [x] audition: a Sound in a part's place, or a Performance in the open one's, put back as it
      was (the same plugins) or kept ([status](rfcs/0021-sounds-performances-and-library.md#audition))
    - [ ] tag suggestions, plugin presets in the library, `LibraryModel`, and the Library on the
@@ -400,7 +401,8 @@ drum module, a DJ unit, a Eurorack module, a DAW plugin). These are required of 
 - [ ] **device profiles:** one manifest per product that the image, engine, UI, mappings,
   packages and admission read instead of flags ([RFC 0024](rfcs/0024-device-profiles.md#progress)).
   Built: the schema, the desktop's, QEMU, KICK and Ignite profiles (the last two estimated),
-  `--profile`, and the app's surface, layout, apps and audio block following it
+  `--profile`, the app's surface, layout, apps and audio block following it, and the engine's
+  budget set from it
 - [ ] **knowing before loading whether it fits:** CPU and memory measured on the device, and
   admission for loading, editing and seamless changes ([RFC 0025](rfcs/0025-resource-budgets.md#progress)).
   Built: measuring, estimates, refusing a Performance or plugin over the budget, and a change
@@ -421,7 +423,11 @@ drum module, a DJ unit, a Eurorack module, a DAW plugin). These are required of 
 - [ ] **the system shell:** one top bar (showing only what the product's buttons do not),
   Home, Back and the running apps, a launcher that is a replaceable app with home cards for
   instruments, recorders, DJ units and more, and one flow language (levels, sheets, dialogs,
-  menus, toasts, banners) for every app and surface ([RFC 0030](rfcs/0030-system-shell-launcher-and-navigation.md#progress))
+  menus, toasts, banners) for every app and surface ([RFC 0030](rfcs/0030-system-shell-launcher-and-navigation.md#progress)).
+  Built: Home inside the app, first in every window, with the profile's apps as tiles; on a
+  panel, each app in a frame with a Home icon unless a layout button is bound to `home`, and
+  layout buttons for `home` and `back` (Back goes Home for now). The rest of the top bar, the
+  running apps, the launcher as its own app and the flow language remain
 - [ ] **internationalization:** catalogs, installable translations, locale formatting, layouts
   for longer text and right-to-left scripts ([RFC 0029](rfcs/0029-internationalization.md#progress)).
   Until then, text and identifiers use American English throughout (format names included:
@@ -462,8 +468,9 @@ drum module, a DJ unit, a Eurorack module, a DAW plugin). These are required of 
   complete processing latency and sustained capacity with its CPU backend. Only use acceleration
   when a compatible implementation and measured benefit exist; keep CPU-only devices
   and offline rendering supported.
-- [ ] The KICK (i.MX8M Mini), once beta units exist: an image for its board, and a
-  hardware-services adapter for its panel, screen and audio.
+- [ ] The KICK (i.MX8M Mini), once beta units exist: an image for its board, built for its
+  Cortex-A53, and a hardware-services adapter for its panel, screen and audio. What exists
+  for it today, and how to try it on an emulator: [running on a KICK](kick.md).
 - [ ] The Ignite (BE 0716-AAF), which uses the same board family and panel protocol: a 64-track
   MIDI and CV sequencer with a General MIDI sound engine. Its features need several MIDI
   ports (5 DIN pairs, USB device and USB host), CV/Gate with calibration, sync in and out,

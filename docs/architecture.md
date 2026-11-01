@@ -15,14 +15,14 @@ Backward compatibility is required from the first public product release onward.
 | --- | --- |
 | Graph of CLAP and optional LV2 plugins: audio/note connections, dependency order, lock-free live editing; LV2 Worker, state/presets and scalar patch properties | Remaining LV2 extensions (UI, CV), VST3 hosting |
 | Sample-accurate event routing; renders identical at different block sizes (tested in CI) | Persistent session recovery |
-| JUCE-free session and typed local/remote Control interface, including host/device status | Gesture ownership/undo |
+| JUCE-free session and typed local/remote Control interface, including host/device status; undo (not yet for preset and state loads) | Gesture ownership |
 | JSON-RPC graph editing, parameter coalescing/gestures, notifications and bounded Unix sockets; default engine/UI separation with startup, reattachment and explicit recovery | UI engine shutdown and automatic session recovery |
 | Transport: internal tempo or external MIDI clock | Ableton Link, DAW and CV clock sync |
-| Parameter events between plugins (`oscairn.param-target`, [RFC 0002](rfcs/0002-param-target.md)); [versioned Performance save/reopen](performance-format.md), including prepared contexts/pools and collected state assets | Setlists, standalone Sound/library management, dependency acquisition and automatic session recovery |
+| Parameter events between plugins (`oscairn.param-target`, [RFC 0002](rfcs/0002-param-target.md)); [versioned Performance save/reopen](performance-format.md), including prepared contexts/pools and collected state assets; Sounds, the library, [library archives](library-archive.md) and [setlists](setlist-format.md) ([RFC 0021](rfcs/0021-sounds-performances-and-library.md)) | Dependency acquisition and automatic session recovery |
 | Two-track A/B step sequencer, Basic Synth and Delay plugins | Swing, further tracks/lanes, scenes and crash recovery |
 | Basic Synth and one-region SFZ Sampler prepared sound contexts, channel parts and held-note ownership; typed/JSON/remote controls ([RFC 0005](rfcs/0005-sound-contexts.md)); prepared-instance pools for ordinary CLAP/LV2 instruments; desktop picker; native Delay contexts and per-sound buses ([RFC 0007](rfcs/0007-effect-contexts.md)) | Automatic effect-chain transitions, multisample/streaming sampler patches and general graph-editing UI |
 | Isolated CLAP/LV2 browser, generic parameter/preset editor and atomic slot replacement; installable shared themes | Custom plugin pages, arbitrary graph editor and managed package installation |
-| Offline renderer; desktop app with live audio, MIDI input and panel layouts | Hardware-services interface; the platform as a DAW plugin |
+| Offline renderer; desktop app with live audio, MIDI input and panel layouts, starting at Home ([RFC 0030](rfcs/0030-system-shell-launcher-and-navigation.md)); device profiles and resource budgets, in part ([RFC 0024](rfcs/0024-device-profiles.md), [RFC 0025](rfcs/0025-resource-budgets.md)) | Hardware-services interface; the platform as a DAW plugin |
 | A Linux image (Buildroot) that boots into Oscairn, tested in QEMU | Images for real hardware |
 | | Packages: sound packs, libraries, installable plugins |
 
@@ -329,7 +329,7 @@ layers and transitions, not six independently initialized organs.
   [Performance save/reopen](performance-format.md) includes prepared native contexts and
   ordinary-plugin pools. Automatic chain preparation/retirement and asset-bearing native
   patches remain to do; the [sample research and first implementation scope](sample-players-and-formats.md)
-  describe the next slice. Setlist/library persistence remains planned.
+  describe the next slice. Setlists and the library are saved ([RFC 0021](rfcs/0021-sounds-performances-and-library.md)).
 - The planned native sampler uses an SFZ baseline with documented extensions for proven
   gaps; complete Performances keep their existing container and other engines retain
   their state contracts. [RFC 0008](rfcs/0008-sfz-native-samples-and-conversion.md) defines
