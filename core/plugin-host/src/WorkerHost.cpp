@@ -446,6 +446,8 @@ namespace oscairn
             bool usesClapNotes(uint32_t port) const noexcept override { return port < clapNotes_.size() && clapNotes_[port]; }
             // While down, a panic would reach the restarted worker and drop its first block's events.
             void panic() noexcept override { if(!process_->failed.load()) shared_->panic.store(1, std::memory_order_release); }
+            // As the plugin said in its last block; a failed worker is silent, so asleep too.
+            bool asleep() const noexcept override { return process_->failed.load() || shared_->asleep.load(std::memory_order_relaxed) != 0; }
             double parameterValue(clap_id id) const noexcept override
             {
                 const auto i = index_.find(id);

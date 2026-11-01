@@ -254,7 +254,7 @@ in the others.
    - [ ] step 6: memory and CPU limits, sandboxing
    - [ ] step 7: LV2 in workers
    - [ ] measurements on native Linux and the target; workers by default in the app
-   - [ ] workers reporting CLAP sleep, so a seamless change can retire a plugin in a worker as
+   - [x] workers reporting CLAP sleep, so a seamless change can retire a plugin in a worker as
      soon as it is done, not after a silence window
 4. **Sequencers** ([the comparison](sequencer-evaluation.md) of the KICK firmware's sequencer
    with chillbeast's work, zynseq and hosted plugins)

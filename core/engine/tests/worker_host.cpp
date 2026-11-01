@@ -129,10 +129,22 @@ namespace
     }
 }
 
+// A plugin in a worker that says it is asleep (CLAP_PROCESS_SLEEP) is reported asleep to the
+// engine, as one in the engine is, so a plugin switched off goes as soon as it is done.
+void sleeping(const std::string& worker, const std::string& fixture)
+{
+    constexpr uint32_t frames = 64;
+    auto remote = oscairn::loadPluginInWorker(worker, fixture, "org.kick.test.sleep", 48000, frames, oscairn::ProcessingMode::Offline);
+    std::vector<float> l(frames), r(frames); float* out[]{l.data(), r.data()};
+    check(remote->process(nullptr, 0, out, 2, frames, nullptr, 0, nullptr) && remote->asleep(), "silent, it reports sleep through the worker");
+    const auto on = kick::clap::Event::note(true, 60, 1);
+    check(remote->process(nullptr, 0, out, 2, frames, &on, 1, nullptr) && !remote->asleep(), "a note wakes it");
+}
+
 int main(int argc, char** argv)
 {
     if(argc < 3) { std::fprintf(stderr, "usage: %s WORKER PLUGIN...\n", argv[0]); return 2; }
-    try { for(int i = 2; i < argc; ++i) compare(argv[1], argv[i]); }
+    try { sleeping(argv[1], argv[2]); for(int i = 2; i < argc; ++i) compare(argv[1], argv[i]); }
     catch(const std::exception& e) { std::fprintf(stderr, "FAIL: %s\n", e.what()); return 1; }
     return failures ? 1 : 0;
 }

@@ -25,6 +25,7 @@ namespace oscairn::worker
         alignas(64) std::atomic<uint32_t> done{0};
         alignas(64) std::atomic<uint32_t> stop{0}, panic{0};
         std::atomic<uint32_t> crashed{0}; // the signal that is ending the worker, set as it dies
+        std::atomic<uint32_t> asleep{0};  // the plugin said, in the last block, that it is asleep (CLAP_PROCESS_SLEEP)
         uint32_t frames = 0, eventCount = 0, hasTransport = 0, ok = 0, outputCount = 0;
         uint32_t inputChannels = 0, outputChannels = 0, maxFrames = 0, parameterCount = 0;
         double sampleRate = 48000;

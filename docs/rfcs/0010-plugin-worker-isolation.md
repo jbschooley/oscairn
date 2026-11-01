@@ -18,9 +18,10 @@ Checked when built and tested; the sections below say how.
 - [ ] 6. Memory and CPU limits, then sandboxing
 - [ ] 7. LV2 in workers
 - [ ] Measurements on native Linux and the target; workers by default in the app
-- [ ] Workers report the plugin's CLAP sleep to the engine, so a seamless scene or Performance
+- [x] Workers report the plugin's CLAP sleep to the engine, so a seamless scene or Performance
       change ([RFC 0021](0021-sounds-performances-and-library.md#seamless-switching)) can
-      retire a plugin in a worker as soon as it is done
+      retire a plugin in a worker as soon as it is done (the shared block's `asleep`, set after
+      each block; a failed worker counts as asleep; `worker-host` checks it)
 
 ## Problem
 

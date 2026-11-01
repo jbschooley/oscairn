@@ -225,6 +225,7 @@ namespace oscairn::worker
                 s.blocks.store(st.blocks); s.droppedEvents.store(st.droppedEvents); s.processErrors.store(st.processErrors);
                 s.deadlineMisses.store(st.deadlineMisses); s.controlSilences.store(st.controlSilences); s.idleBlocks.store(st.idleBlocks);
                 s.lastMicroseconds.store(st.lastMicroseconds); s.maximumMicroseconds.store(st.maximumMicroseconds);
+                s.asleep.store(host.asleep() ? 1 : 0, std::memory_order_relaxed);
                 s.done.store(seen, std::memory_order_release);
                 wake(s.done);
             }
