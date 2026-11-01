@@ -787,12 +787,16 @@ namespace
         s.note(false, 60, 0); ring();
         const auto back = s.graphState().parts.front();
         check(back.chain == std::vector<NodeId>{synth} && s.audition().id.empty() && s.history().undo == undoBefore, "the part's own plugin is back, the history as it was");
+        Control::LibraryQuery recent; recent.recent = true;
+        auto used = [&] { const auto items = s.libraryQuery(recent).items; return std::any_of(items.begin(), items.end(), [&](const auto& i) { return i.id == half; }); };
+        check(!used(), "a Sound auditioned and put back is not marked used");
         s.note(true, 62, 1); x.run(s); x.run(s);
         check(near(x.l[0], .25), "and plays: " + std::to_string(x.l[0]));
         s.note(false, 62, 0); x.run(s);
         // Kept: the Sound's load is one step to undo.
         s.auditionStart(half, part); s.auditionStop(true);
         check(s.graphState().parts.front().chain != std::vector<NodeId>{synth} && s.audition().id.empty(), "kept, the Sound is the part's");
+        check(used(), "kept, it is");
         check(s.undo() && s.graphState().parts.front().chain == std::vector<NodeId>{synth}, "and undone, the part's own plugin is back");
         s.commit();
 

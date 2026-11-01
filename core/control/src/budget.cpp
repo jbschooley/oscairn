@@ -177,11 +177,14 @@ namespace oscairn
     Control::Estimate Session::estimate(const std::string& directory)
     {
         if(budget_.cpu > 0) loadMeasurements();
-        // What plays now: this Performance's plugins and any still ringing out from the last.
-        std::vector<Cost> playing;
-        for(const auto& [node, name] : nodes_) playing.push_back(costOf(pluginKey(node), name, graph_.host(node).descriptor().id, noteLimit(node)));
-        for(const auto node : leaving_) if(graph_.contains(node)) playing.push_back(costOf(pluginKey(node), {}, graph_.host(node).descriptor().id));
-        if(directory.empty()) return estimateOf(playing, {});
+        // What plays now: this Performance's plugins, and any still ringing out from the last.
+        std::vector<Cost> open, ringing;
+        for(const auto& [node, name] : nodes_) open.push_back(costOf(pluginKey(node), name, graph_.host(node).descriptor().id, noteLimit(node)));
+        for(const auto node : leaving_) if(graph_.contains(node)) ringing.push_back(costOf(pluginKey(node), {}, graph_.host(node).descriptor().id));
+        // The open one fits on its own; what rings out from the last only makes it not seamless,
+        // so adding a plugin right after a change is not refused for a tail.
+        if(directory.empty()) return estimateOf(open, ringing);
+        auto playing = open; playing.insert(playing.end(), ringing.begin(), ringing.end());
         // A Performance in a folder: its plugins by identity, from its document.
         const auto bytes = state_files::read(fs::path(directory) / "performance.json", 4 * 1024 * 1024);
         const std::unique_ptr<json_value_s, decltype(&std::free)> doc{json_parse(bytes.data(), bytes.size()), &std::free};

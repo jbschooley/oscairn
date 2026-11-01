@@ -107,6 +107,8 @@ namespace oscairn
         // What a Performance needs: the open one (directory empty) or one in a folder, each plugin
         // at its cost measured on this device or at a default (measured false). fits: within the
         // budget; seamless: within it together with what plays now, so a change to it rings out.
+        // For the open one, what plays now is the last Performance still ringing out: it never
+        // makes the open one not fit, so adding a plugin right after a change is not refused.
         struct Cost { std::string name, plugin; double cpu = 0; uint64_t memory = 0; bool measured = false; };
         struct Estimate { double cpu = 0; uint64_t memory = 0; std::vector<Cost> plugins; Budget budget; bool fits = true, seamless = true; };
         virtual Estimate estimate(const std::string& directory = {}) = 0;

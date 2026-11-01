@@ -20,7 +20,7 @@ namespace oscairn
         a.before = std::make_shared<const Model>(model());
         a.undo = undo_; a.redo = redo_;
         a.info = info_; a.tempo = tempo_.load(); a.clock = clockSource_.load(); a.scene = scene_; a.mappingScene = mappingScene_;
-        if(found.kind == "sound") loadSound(part, found.id);
+        if(found.kind == "sound") loadSoundInto(part, found.path); // as loading it, but not marked used
         else
         {
             // This Performance stays loaded while the other plays: both must fit (RFC 0025).
@@ -37,7 +37,7 @@ namespace oscairn
         if(!audition_) return;
         auto a = std::move(*audition_);
         audition_.reset();
-        if(keep) return; // what was set aside goes: a Performance's is already ringing out
+        if(keep) { library().used(a.what.id); return; } // kept: it was used; what was set aside goes (a Performance's is already ringing out)
         // The tried plugins ring out where they are, as the last Performance's do after a change:
         // their sound stays, their notes drain, nothing new reaches them.
         std::set<NodeId> tried;

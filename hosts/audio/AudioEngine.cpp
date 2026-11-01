@@ -51,7 +51,6 @@ namespace oscairn::host
         const auto groovebox = session_->addPart( "Groovebox", generates );
         session_->insertIntoPart( groovebox, 0, seq );
         session_->connectNotes( seq, synth );
-        // Brightness locks are opt-in: the demo must not overwrite every selected sound.
         session_->commit();
         session_->clearHistory(); // undo starts from the startup instrument
 
