@@ -346,7 +346,8 @@ Also open:
 - [ ] swing, additional tracks/patterns and more lanes in the sequencer
 - [ ] sounds spilling over to another instance when an engine's slots are full, and parts
   sharing one engine (each part has its own instance today), so a Performance or setlist uses
-  as few instances as its sounds need ([RFC 0005](rfcs/0005-sound-contexts.md),
+  as few instances as its sounds need. The goal: as little memory as possible, with switching
+  as instant as possible, above all from one setlist entry to the next ([RFC 0005](rfcs/0005-sound-contexts.md),
   [RFC 0007](rfcs/0007-effect-contexts.md))
 - [ ] automatic Sound/effect-chain preparation and retirement, and asset-bearing native
   patches (Setlist and library persistence are done: item 7)
