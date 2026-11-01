@@ -72,8 +72,9 @@ unconnected.
 
 Plugin identity is `(format, id)`, plus the observed version as state provenance.
 `pathHint` locates an installed binary/bundle and is verified against that identity and
-version; the plugin store (`OSCAIRN_DATA_HOME/Plugins/<format>/<id>@<version>/<bundle>`, RFC 0006,
-where installing an archive puts the builds it carries) is tried next. It is **not** a package ID or portability guarantee. There are no silent upgrades
+version; the [plugin store](library-archive.md#the-plugin-store)
+(`OSCAIRN_DATA_HOME/Plugins/<format>/<id>@<version>/<platform>/<bundle>`, RFC 0006, where
+installing an archive puts the builds it carries) is tried next. It is **not** a package ID or portability guarantee. There are no silent upgrades
 or untested state conversions: a plugin that is not here, or only in another version, or that
 fails to load, opens as a **stand-in** in its place (RFC 0006's unavailable-node preservation).
 The stand-in keeps the saved identity, ports and the parameters the snapshot and the document

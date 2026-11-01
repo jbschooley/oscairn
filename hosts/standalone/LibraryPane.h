@@ -43,6 +43,8 @@ namespace oscairn::standalone
         void install();
         void deleteItem(int row);
         void librariesMenu();
+        void removePlugin(const Control::InstalledPlugin& plugin);
+        void addPluginBuild(const Control::InstalledPlugin& plugin);
         void itemMenu(int row);                              // everything that can be done with it
         void editItem(int row);                              // its name, description and tags, asked for
         std::string copyItem(int row);                       // into the user's own; the copy's ID, or empty

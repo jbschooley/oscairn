@@ -26,9 +26,10 @@ The manifest:
 An export holds the Performance, the library Sound of each part that is still that Sound (the
 part unedited since it was loaded or saved, and the library holding that revision), and with
 **edited Sounds**, the Sound of each part edited since, as the library has it. Every sample their
-plugins list goes in once, by its hash. Each plugin they use goes in with this device's build:
-from its `pathHint` while that build still has the document's locked digest, else from the plugin
-store. Only CLAP plugins go in so far; an LV2 plugin, or one not on this device, is left out, and
+plugins list goes in once, by its hash. Each plugin they use goes in with every build there is:
+this device's from its `pathHint` while that build still has the document's locked digest, else
+from the plugin store, and the store's builds for other platforms (installed from archives, or
+added with `plugins.addBuild`). Only CLAP plugins go in so far; an LV2 plugin, or one not on this device, is left out, and
 the export says which.
 
 ## Reading one
@@ -64,16 +65,23 @@ Hashes say an archive is whole and as it was made, not who made it: signatures a
 - **Samples** go into the user's sample library (RFC 0009) by their hash either way, so they stay
   when a library is uninstalled. A sample an item needs that is in neither the archive nor the
   device is reported.
-- **Plugins:** this device's build of each plugin the installed items use goes into the plugin
-  store, `Plugins/<format>/<id>@<version>/` in the data folder, whole or not at all, where a
-  Performance whose plugin is not at its `pathHint` finds it. A build already there with the same
-  digest is left; a different one is kept and reported; a plugin with no build for this device is
-  reported.
+- **Plugins:** every build of each plugin the installed items use goes into the plugin store,
+  each whole or not at all, so this device can pass the others on in its own exports (a desktop
+  carrying a device's builds). A Performance whose plugin is not at its `pathHint` finds this
+  device's build there. A build already there with the same digest is left; a different one is
+  kept and reported; a plugin with no build for this device is reported.
+
+## The plugin store
+
+`Plugins/<format>/<id>@<version>/` in the data folder (characters other than letters, digits,
+`.`, `-`, `@` and `_` made `_`) holds `plugin.json`, `{format, id, version, name}`, as the folder
+name cannot say them exactly, and a folder per platform with its build: `macos-arm64/Odin2.clap`.
+`plugins.list` shows each plugin with the library items that use it; removing one is refused
+while the open Performance plays it, and what used it opens with a stand-in until it is back.
 
 Two items with one ID are listed once, the user's own first: so a Performance exported and
 installed as a library on the device it came from shows the original, not the locked copy.
 Installed into the user's own storage (the default for an export) it is a new copy.
 
-Not yet: a Sound from a locked library exported as that library's item, builds for other
-platforms, LV2 plugins, signatures, and seeing which items use an installed plugin before
-removing it (RFC 0006).
+Not yet: a Sound from a locked library exported as that library's item, LV2 plugins, signatures,
+and grouped cleanup of plugins nothing uses (RFC 0006).

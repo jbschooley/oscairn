@@ -6,7 +6,9 @@
 // skips what is unchanged; installed as a library it is locked, comes back when deleted and goes
 // when uninstalled, leaving the user's copies and the samples. The plugin it uses goes with it
 // (RFC 0006) and installs into the store, where a Performance whose plugin is not at its saved
-// path finds it.
+// path finds it. A build for another platform added on one device goes along too. The store
+// lists each plugin with what uses it, and removing one is refused while the open Performance
+// plays it; what used it then opens with a stand-in until it is installed again.
 //   oscairn-archives-test FIXTURE.clap
 #include "oscairn/session.h"
 #include "oscairn/package.h"
@@ -41,6 +43,7 @@ int main(int argc, char** argv)
         const auto soundArchive = temp.path / "Bass.olib";
         kick::clap::AssetReference sample;
         std::string soundId, performanceId;
+        const std::string other = platform() == "linux-arm64" ? "macos-arm64" : "linux-arm64";
         // Device A: a part saved as a Sound that uses a sample, then the Performance exported.
         {
             device(temp.path / "a");
@@ -58,10 +61,16 @@ int main(int argc, char** argv)
             std::ofstream(doc, std::ios::binary | std::ios::trunc) << text;
             a.libraryRescan();
             performanceId = a.savePerformanceToLibrary("Set");
+            // The fixture stands in for another platform's build: it cannot be loaded here to check either way.
+            const auto version = a.graphState().topology.nodes.at(0).plugin.version;
+            bool here = false; try { a.addPluginBuild("clap", "org.kick.test.synth", version, platform(), fixture); } catch(const std::exception&) { here = true; }
+            check(here, "this device's build is not added: it is the one it loads");
+            a.addPluginBuild("clap", "org.kick.test.synth", version, other, fixture);
             check(a.exportPerformance(archive.string()).empty(), "nothing left out");
             const auto packed = readPackage(archive, {});
-            check(packed.plugins.size() == 1 && packed.plugins[0].id == "org.kick.test.synth" && packed.plugins[0].builds.size() == 1 &&
-                  packed.plugins[0].builds[0].platform == platform() && packed.plugins[0].builds[0].sha256 == bundleDigest(fixture), "the plugin it uses goes with it, this device's build");
+            check(packed.plugins.size() == 1 && packed.plugins[0].id == "org.kick.test.synth" && packed.plugins[0].builds.size() == 2 &&
+                  packed.plugins[0].builds[0].sha256 == bundleDigest(fixture) && packed.plugins[0].builds[1].sha256 == bundleDigest(fixture),
+                  "the plugin it uses goes with it, this device's build and the other platform's");
             bool again = false; try { a.exportPerformance(archive.string()); } catch(const std::exception&) { again = true; }
             check(again, "an export never overwrites a file");
             const auto contents = a.archiveContents(archive.string());
@@ -84,6 +93,12 @@ int main(int argc, char** argv)
             check(installed.added == 2 && installed.skipped == 0 && installed.notes.empty(), "both copied in: " + std::to_string(installed.added));
             const auto store = temp.path / "b" / "Plugins" / "clap";
             check(fs::is_directory(store) && std::distance(fs::directory_iterator(store), fs::directory_iterator()) == 1, "its plugin is in the store");
+            const auto listed = b.installedPlugins();
+            check(listed.size() == 1 && listed[0].id == "org.kick.test.synth" && listed[0].platforms.size() == 2 && listed[0].bytes > 0 && listed[0].usedBy.size() == 2 && !listed[0].open,
+                  "the store lists it with both platforms' builds and the two items that use it");
+            // Re-exported from here, both builds go again: this device's and the other from the store.
+            check(b.exportLibraryItem(items(b, "sound").at(0).id, (temp.path / "Again.olib").string()).empty() && readPackage(temp.path / "Again.olib", {}).plugins.at(0).builds.size() == 2,
+                  "a re-export carries every platform's build");
             const auto sounds = items(b, "sound"), performances = items(b, "performance");
             check(sounds.size() == 1 && performances.size() == 1 && sounds[0].id != soundId && performances[0].id != performanceId && sounds[0].library.empty(),
                   "under new IDs, as the user's own");
@@ -154,6 +169,20 @@ int main(int argc, char** argv)
             check(nodes.size() == 1 && nodes[0].plugin.path.find((temp.path / "d" / "Plugins").string()) == 0 && d.sessionStatus().failures.empty(), "the plugin opens from the store");
             // Installing again with the build there already adds nothing and says nothing.
             check(d.installArchive(archive.string(), false).notes.empty(), "the same build is not installed twice");
+            const auto plugin = d.installedPlugins().at(0);
+            check(plugin.open, "the store says the open Performance plays it");
+            bool refused = false; try { d.removePlugin(plugin.format, plugin.id, plugin.version); } catch(const std::exception&) { refused = true; }
+            check(refused && !d.installedPlugins().empty(), "removing a plugin the open Performance plays is refused");
+            d.removePlugin(plugin.format, plugin.id, plugin.version, other);
+            check(d.installedPlugins().at(0).platforms == std::vector<std::string>{platform()}, "one platform's build removed alone");
+            d.remove(nodes[0].id); d.commit();
+            d.removePlugin(plugin.format, plugin.id, plugin.version);
+            check(d.installedPlugins().empty(), "removed once nothing open plays it");
+            d.loadPerformanceFromLibrary(performance.id);
+            check(d.sessionStatus().failures.size() == 1, "what used it opens with a stand-in");
+            d.installArchive(archive.string(), false);
+            d.loadPerformanceFromLibrary(performance.id);
+            check(d.sessionStatus().failures.empty(), "and plays again once it is installed again");
         }
     }
     catch(const std::exception& e) { std::fprintf(stderr, "FAIL: %s\n", e.what()); ++failures; }

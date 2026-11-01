@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #include "LibraryPane.h"
 #include "PerformanceColors.h"
+#include "oscairn/package.h"
 
 namespace oscairn::standalone
 {
@@ -662,13 +663,51 @@ namespace oscairn::standalone
         const auto hiddenTags = result_.hiddenTags;
         for(size_t i = 0; i < hiddenTags.size(); ++i) hidden.addItem(1000 + int(i), text(hiddenTags[i]));
         menu.addSubMenu("Show a hidden tag", hidden, !hiddenTags.empty());
+        // Plugins installed with archives (RFC 0006): what uses each, another platform's build, removal.
+        auto plugins = engine_.installedPlugins();
+        const auto stored = plugins.size();
+        // And the open Performance's CLAP plugins installed some other way, for their other platforms' builds.
+        if(engine_.connected())
+            for(const auto& n : engine_.graph().topology.nodes)
+                if(juce::File(n.plugin.path).hasFileExtension("clap") && std::none_of(plugins.begin(), plugins.end(), [&](const auto& p) { return p.id == n.plugin.id && p.version == n.plugin.version; }))
+                    plugins.push_back({"clap", n.plugin.id, n.plugin.version, n.plugin.name, {}, 0, {}, true});
+        juce::PopupMenu pluginMenu;
+        for(size_t i = 0; i < plugins.size(); ++i)
+        {
+            const auto& p = plugins[i];
+            juce::PopupMenu one;
+            if(i == stored) pluginMenu.addSectionHeader("In this Performance");
+            if(i >= stored)
+            {
+                one.addItem(100000 + int(i) * 2, "Add a build for another platform...");
+                pluginMenu.addSubMenu(text(p.name.empty() ? p.id : p.name) + " " + text(p.version), one);
+                continue;
+            }
+            juce::StringArray used;
+            for(const auto& u : p.usedBy) used.add(text(u));
+            one.addItem(-1, used.isEmpty() ? juce::String("Nothing in the library uses it") : "Used by " + used.joinIntoString(", "), false);
+            juce::StringArray platforms;
+            for(const auto& s : p.platforms) platforms.add(text(s));
+            one.addItem(-1, "Builds: " + platforms.joinIntoString(", ") + "  (" + juce::File::descriptionOfSizeInBytes(int64_t(p.bytes)) + ")", false);
+            one.addSeparator();
+            one.addItem(100000 + int(i) * 2, "Add a build for another platform...");
+            one.addItem(100001 + int(i) * 2, "Remove from this device...");
+            pluginMenu.addSubMenu(text(p.name.empty() ? p.id : p.name) + " " + text(p.version), one);
+        }
+        menu.addSubMenu("Plugins", pluginMenu, !plugins.empty());
         const auto installed = engine_.libraries();
         if(!installed.empty()) menu.addSeparator();
         for(size_t i = 0; i < installed.size(); ++i)
             menu.addItem(int(i) + 2, "Uninstall " + text(installed[i].name) + " (" + juce::String(int(installed[i].items)) + (installed[i].items == 1 ? " item)" : " items)"));
-        menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&libraries_), [safe = juce::Component::SafePointer<LibraryPane>(this), installed, hiddenTags](int chosen) {
+        menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&libraries_), [safe = juce::Component::SafePointer<LibraryPane>(this), installed, hiddenTags, plugins](int chosen) {
             if(!safe || chosen <= 0) return;
             if(chosen == 1) { safe->install(); return; }
+            if(chosen >= 100000)
+            {
+                const auto& plugin = plugins[size_t((chosen - 100000) / 2)];
+                if(chosen % 2 == 0) safe->addPluginBuild(plugin); else safe->removePlugin(plugin);
+                return;
+            }
             if(chosen >= 1000)
             {
                 const auto tag = hiddenTags[size_t(chosen - 1000)];
@@ -684,6 +723,40 @@ namespace oscairn::standalone
                 const auto error = safe->engine_.uninstallLibrary(library.id);
                 safe->refresh();
                 safe->tell(error.empty() ? text(library.name) + " uninstalled." : text(error));
+            });
+        });
+    }
+
+    void LibraryPane::removePlugin(const Control::InstalledPlugin& plugin)
+    {
+        const auto name = text(plugin.name.empty() ? plugin.id : plugin.name) + " " + text(plugin.version);
+        const auto count = int(plugin.usedBy.size());
+        auto options = juce::MessageBoxOptions::makeOptionsOkCancel(juce::MessageBoxIconType::QuestionIcon, "Remove " + name + "?",
+            count == 0 ? juce::String("Nothing in the library uses it. Every platform's build is removed.")
+                       : juce::String(count) + (count == 1 ? " item uses it. It keeps its place and saved state and plays silence" : " items use it. They keep its place and saved state and play silence")
+                             + " until it is installed again.", "Remove", "Cancel", this);
+        juce::AlertWindow::showAsync(options, [safe = juce::Component::SafePointer<LibraryPane>(this), plugin, name](int chosen) {
+            if(!safe || chosen != 1) return;
+            const auto error = safe->engine_.removePlugin(plugin);
+            safe->tell(error.empty() ? name + " removed." : text(error));
+        });
+    }
+
+    // Another platform's build, such as the device's while on the desktop, so exports carry it.
+    void LibraryPane::addPluginBuild(const Control::InstalledPlugin& plugin)
+    {
+        chooser_ = std::make_unique<juce::FileChooser>("A build of " + text(plugin.name) + " " + text(plugin.version) + " for another platform", juce::File(), "*.clap");
+        chooser_->launchAsync(juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles | juce::FileBrowserComponent::canSelectDirectories,
+                              [safe = juce::Component::SafePointer<LibraryPane>(this), plugin](const juce::FileChooser& fc) {
+            if(!safe || fc.getResult() == juce::File()) return;
+            const auto path = fc.getResult().getFullPathName().toStdString();
+            juce::PopupMenu platforms;
+            const std::vector<std::string> all{"linux-arm64", "linux-x86_64", "macos-arm64", "macos-x86_64", "windows-x86_64"};
+            for(size_t i = 0; i < all.size(); ++i) if(all[i] != platform()) platforms.addItem(int(i) + 1, "For " + text(all[i]));
+            platforms.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&safe->libraries_), [safe, plugin, path, all](int chosen) {
+                if(!safe || chosen <= 0) return;
+                const auto error = safe->engine_.addPluginBuild(plugin, all[size_t(chosen - 1)], path);
+                safe->tell(error.empty() ? "Added the " + text(all[size_t(chosen - 1)]) + " build." : text(error));
             });
         });
     }

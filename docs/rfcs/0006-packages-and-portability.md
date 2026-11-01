@@ -13,9 +13,11 @@ Checked when built and tested; the sections below say how.
       (built 2026-11-01: unavailable-node preservation, a stand-in keeping the plugin's place and
       saved state, `control-parts`; the plugin store's lookup by format, ID and version; the
       lock in Performances and Sounds, version 5; archives version 2 carrying this device's CLAP
-      builds, every file hashed and checked, installed into the store, `control-package`,
-      `control-archives`. Not yet: Used by and safe removal, builds for other platforms, shared
-      runtime packages, a Setlist on a clean machine. [Decisions](#first-slice-decisions))
+      builds, every platform's, every file hashed and checked, installed into the store, a build
+      added for another platform; the store's Used by and removal, refused while the open
+      Performance plays it, `control-package`, `control-archives`. Not yet: grouped cleanup
+      prompts and retention settings, shared runtime packages, a Setlist on a clean machine,
+      signatures. [Decisions](#first-slice-decisions))
 - [ ] 3. Cross-platform proof
 - [ ] 4. LV2, existing installs, VST3 and AU with their adapters
 - [ ] 5. DAW delivery proof
@@ -93,9 +95,13 @@ Made 2026-11-01, for the first slice:
 - **The lock is in the document,** `lock` in `performance.json` and `sound.json`
   ([format](../performance-format.md)), not a separate lockfile: each plugin's build digest per
   platform. Saving keeps other platforms' entries and a stand-in's.
-- **The store** is `OSCAIRN_DATA_HOME/Plugins/<format>/<id>@<version>/<bundle>`, one build per
-  version, tried after the saved path. A different build of the same version already there is
-  kept and reported, never replaced.
+- **The store** is `OSCAIRN_DATA_HOME/Plugins/<format>/<id>@<version>/<platform>/<bundle>`, one
+  build per version and platform, tried after the saved path. Installing keeps every platform's
+  build, so a desktop can carry a device's builds on to it; a build for another platform can be
+  added by hand, unchecked until the device it is for loads it. A different build of the same
+  version already there is kept and reported, never replaced by an install.
+- **Removal** is refused while the open Performance plays the build. What uses it is shown
+  first; it then opens with a stand-in, keeping its state, until the plugin is back.
 
 ## Project manifest, lockfile and shared store
 

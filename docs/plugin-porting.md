@@ -74,11 +74,11 @@ Everything else is handled for you:
   the host's source; not exercised with a plugin.)
 
 - **Moving to another device:** an exported Performance or Sound
-  ([archive](library-archive.md)) carries the exporting device's build of each CLAP plugin it
-  uses, and installing it puts that build in the plugin store
-  (`Plugins/clap/<id>@<version>/` in the data folder). Only that platform's build goes: a
-  Performance made on a Mac opens on Linux with a stand-in until a Linux build of the same
-  version is installed. Keep the ID and version stable across platforms, and keep everything
+  ([archive](library-archive.md)) carries every build of each CLAP plugin it uses that the
+  exporting machine has: its own, and other platforms' added to its plugin store, and
+  installing it puts them in the store (`Plugins/clap/<id>@<version>/<platform>/` in the data
+  folder). A Performance made on a Mac opens on Linux with a stand-in unless a Linux build of
+  the same version went with it or is installed. Keep the ID and version stable across platforms, and keep everything
   the plugin needs inside its bundle; files it installs elsewhere do not go with it.
 - **A plugin that is not here,** in another version, or that fails to load opens as a
   stand-in: silent, its ports and parameters as saved, its state written back unchanged, so

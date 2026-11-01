@@ -529,6 +529,28 @@ namespace oscairn
                 catch(const std::exception& e){throw Failure{-32005,e.what()};}
                 return R"({"accepted":true})";
             }
+            // The plugin store (RFC 0006).
+            if(method=="plugins.list") {
+                fields(p,{});std::vector<std::string> out;
+                for(const auto& x:c.installedPlugins()){
+                    std::vector<std::string> platforms,used;
+                    for(const auto& s:x.platforms)platforms.push_back(quote(s));
+                    for(const auto& s:x.usedBy)used.push_back(quote(s));
+                    out.push_back("{\"format\":"+quote(x.format)+",\"id\":"+quote(x.id)+",\"version\":"+quote(x.version)+",\"name\":"+quote(x.name)+",\"platforms\":"+join(platforms)+
+                                  ",\"bytes\":"+std::to_string(x.bytes)+",\"usedBy\":"+join(used)+",\"open\":"+(x.open?"true":"false")+'}');
+                }
+                return "{\"plugins\":"+join(out)+'}';
+            }
+            if(method=="plugins.remove" || method=="plugins.addBuild") {
+                const bool add=method=="plugins.addBuild";
+                if(add)fields(p,{"format","id","version","platform","path"});else fields(p,{"format","id","version","platform"});
+                const auto format=std::string(string(member(p,"format"))),id=std::string(string(member(p,"id"))),version=std::string(string(member(p,"version")));
+                const auto platform=member(p,"platform")?std::string(string(member(p,"platform"))):std::string();
+                try{if(add)c.addPluginBuild(format,id,version,platform,std::string(string(member(p,"path"))));else c.removePlugin(format,id,version,platform);}
+                catch(const std::invalid_argument& e){throw Failure{-32602,e.what()};}
+                catch(const std::exception& e){throw Failure{-32005,e.what()};}
+                return R"({"accepted":true})";
+            }
             if(method=="library.tag") {
                 fields(p,{"tag","hidden","color"});
                 try{c.libraryTag(std::string(string(member(p,"tag"))),member(p,"hidden") && boolean(member(p,"hidden")),member(p,"color")?std::string(string(member(p,"color"))):std::string());}

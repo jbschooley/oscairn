@@ -348,6 +348,18 @@ namespace oscairn
         for(auto l:array(field(field(d.get(),"result"),"libraries")))out.push_back({string(field(l,"id")),string(field(l,"name")),static_cast<uint32_t>(integer(field(l,"items")))});
         return out;
     }
+    std::vector<Control::InstalledPlugin> RemoteControl::installedPlugins() {
+        auto d=impl_->call("plugins.list","{}",30000);std::vector<InstalledPlugin> out;
+        for(auto x:array(field(field(d.get(),"result"),"plugins")))
+            out.push_back({string(field(x,"format")),string(field(x,"id")),string(field(x,"version")),string(field(x,"name")),strings(field(x,"platforms")),uint64_t(integer(field(x,"bytes"))),strings(field(x,"usedBy")),boolean(field(x,"open"))});
+        return out;
+    }
+    void RemoteControl::removePlugin(const std::string& format,const std::string& id,const std::string& version,const std::string& platform) {
+        impl_->call("plugins.remove","{\"format\":"+quote(format)+",\"id\":"+quote(id)+",\"version\":"+quote(version)+",\"platform\":"+quote(platform)+'}',30000);
+    }
+    void RemoteControl::addPluginBuild(const std::string& format,const std::string& id,const std::string& version,const std::string& platform,const std::string& path) {
+        impl_->call("plugins.addBuild","{\"format\":"+quote(format)+",\"id\":"+quote(id)+",\"version\":"+quote(version)+",\"platform\":"+quote(platform)+",\"path\":"+quote(path)+'}',120000);
+    }
     void RemoteControl::uninstallLibrary(const std::string& id) { impl_->call("library.uninstall","{\"library\":"+quote(id)+'}',30000); }
     void RemoteControl::libraryEdit(const std::string& id,const PerformanceInfo& info) {
         impl_->call("library.edit","{\"id\":"+quote(id)+",\"name\":"+quote(info.name)+",\"description\":"+quote(info.description)+",\"tags\":"+quoted(info.tags)+",\"color\":"+quote(info.color)+'}',30000);

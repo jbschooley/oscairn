@@ -250,6 +250,21 @@ namespace oscairn::standalone
         if(!connected()) return "The engine is not running.";
         try{copied=control_->libraryCopy(id);return {};}catch(const std::exception& e){return e.what();}
     }
+    std::vector<Control::InstalledPlugin> Engine::installedPlugins() const
+    {
+        if(!connected()) return {};
+        try{return control_->installedPlugins();}catch(const std::exception& e){std::fprintf(stderr,"oscairn: installed plugins: %s\n",e.what());return {};}
+    }
+    std::string Engine::removePlugin(const Control::InstalledPlugin& plugin)
+    {
+        if(!connected()) return "The engine is not running.";
+        try{control_->removePlugin(plugin.format,plugin.id,plugin.version);return {};}catch(const std::exception& e){return e.what();}
+    }
+    std::string Engine::addPluginBuild(const Control::InstalledPlugin& plugin, const std::string& platform, const std::string& path)
+    {
+        if(!connected()) return "The engine is not running.";
+        try{control_->addPluginBuild(plugin.format,plugin.id,plugin.version,platform,path);return {};}catch(const std::exception& e){return e.what();}
+    }
     std::string Engine::uninstallLibrary(const std::string& id)
     {
         if(!connected()) return "The engine is not running.";

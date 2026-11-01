@@ -310,6 +310,9 @@ in the others.
    - [x] the desktop's Install, Export, Delete and Uninstall: **Export Performance...** and
      **Install Library...** in the Performance menu, **Delete** and **Libraries...** in the
      Library app, locked items marked
+   - [x] the desktop's **Libraries > Plugins**: each plugin installed with an archive, what uses
+     it, its builds and size, removal, and adding another platform's build (also for the open
+     Performance's plugins installed some other way)
    - [x] exporting a Performance keeps its parts' references to the Sounds they came from
    - [x] **exporting with its Sounds and assets:** every sample, waveform and other asset
      always travels; a part's Sound travels when the part is unedited since it, and as an
@@ -512,8 +515,9 @@ Each starts as an RFC:
 - [ ] the platform as a DAW plugin
 
 - [ ] **Packages and portability** ([RFC 0006](rfcs/0006-packages-and-portability.md), proposed;
-  built: stand-ins for plugins not here, the plugin store, locks in documents, archives
-  carrying and installing CLAP builds with every file hashed):
+  built: stand-ins for plugins not here, the plugin store with Used by and removal, locks in
+  documents, archives carrying and installing every platform's CLAP builds with every file
+  hashed):
   first a clean-machine, offline Performance/Setlist transfer with managed CLAP packages,
   project manifests/exact dependency locks, target builds, project-local dependency views
   backed by a shared installed store, shared runtime/sample packages and unavailable-node

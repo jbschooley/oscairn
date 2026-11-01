@@ -138,10 +138,47 @@ std::string storeName(const std::string& id,const std::string& version){
     std::string safe;for(const char c:id+"@"+version)safe+=(std::isalnum(static_cast<unsigned char>(c)) || c=='.' || c=='-' || c=='@' || c=='_')?c:'_';
     return safe;
 }
+fs::path storeFolder(const std::string& format,const std::string& id,const std::string& version){return dataHome()/"Plugins"/format/storeName(id,version);}
+// A plugin's builds in the store by platform: <folder>/<platform>/<bundle>, beside plugin.json.
+std::map<std::string,fs::path> storedBuilds(const std::string& format,const std::string& id,const std::string& version){
+    std::map<std::string,fs::path> out;std::error_code e;
+    const auto folder=storeFolder(format,id,version);
+    if(fs::is_directory(folder,e))for(const auto& p:fs::directory_iterator(folder,e)){
+        if(!p.is_directory() || p.path().filename().string().front()=='.')continue;
+        for(const auto& b:fs::directory_iterator(p.path(),e))if(b.path().extension()==(format=="lv2"?".lv2":".clap")){out[p.path().filename().string()]=b.path();break;}
+    }
+    return out;
+}
 fs::path storedPlugin(const std::string& format,const std::string& id,const std::string& version){
-    const auto folder=dataHome()/"Plugins"/format/storeName(id,version);std::error_code e;
-    if(fs::is_directory(folder,e))for(const auto& entry:fs::directory_iterator(folder,e))if(entry.path().extension()==(format=="lv2"?".lv2":".clap"))return entry.path();
-    return {};
+    const auto builds=storedBuilds(format,id,version);const auto here=builds.find(platform());
+    return here==builds.end()?fs::path():here->second;
+}
+// A store entry's plugin.json: the plugin's format, ID, version and name, as the folder's name
+// cannot say them exactly. Empty ID when it cannot be read.
+Control::InstalledPlugin storedIdentity(const fs::path& folder){
+    Control::InstalledPlugin p;
+    try{
+        const auto bytes=state_files::read(folder/"plugin.json",64*1024);
+        const std::unique_ptr<json_value_s,decltype(&std::free)> doc{json_parse(bytes.data(),bytes.size()),&std::free};
+        if(!doc)return p;
+        p.format=text(field(doc.get(),"format"));p.id=text(field(doc.get(),"id"));p.version=text(field(doc.get(),"version"));p.name=text(field(doc.get(),"name"));
+    }catch(const std::exception&){p.id.clear();}
+    return p;
+}
+std::string storedName(const std::string& format,const std::string& id,const std::string& version){
+    const auto p=storedIdentity(storeFolder(format,id,version));
+    return p.id==id && !p.name.empty()?p.name:id;
+}
+// Puts one platform's build into the store, whole or not at all, replacing that platform's.
+void storeBuild(const std::string& format,const std::string& id,const std::string& version,const std::string& name,const std::string& forPlatform,const fs::path& build){
+    const auto folder=storeFolder(format,id,version);
+    fs::create_directories(folder);
+    const auto identity="{\"format\":"+quote(format)+",\"id\":"+quote(id)+",\"version\":"+quote(version)+",\"name\":"+quote(name)+"}\n";
+    state_files::write(folder/"plugin.json",identity.data(),identity.size());
+    const auto partial=folder/("."+forPlatform+".partial");
+    std::error_code e;fs::remove_all(partial,e);fs::create_directories(partial);
+    fs::copy(build,partial/build.filename(),fs::copy_options::recursive);
+    fs::remove_all(folder/forPlatform,e);fs::rename(partial,folder/forPlatform);
 }
 // A plugin that is not here stands in its place (RFC 0006), with the saved identity, ports and
 // the parameters its snapshot and the document name, keeping its saved state.
@@ -271,8 +308,9 @@ std::vector<std::string> Session::exportArchive(const std::string& file,const st
             const auto to=stage/"Assets"/ref.sha256.substr(0,16)/source.filename();
             fs::create_directories(to.parent_path());fs::copy_file(source,to);
         }
-        // Every plugin they use (RFC 0006), this device's build of each: from its saved path, else
-        // the store; one not here, or not CLAP yet, is said and left out.
+        // Every plugin they use (RFC 0006), each build there is: this device's from its saved path,
+        // else the store, and the store's for other platforms; one not here, or not CLAP yet, is
+        // said and left out.
         std::set<std::string> bundled,said;
         for(const auto& m:manifests){
             const auto bytes=state_files::read(m,4*1024*1024);
@@ -286,15 +324,21 @@ std::vector<std::string> Session::exportArchive(const std::string& file,const st
                 // The saved path only while it still holds the build the document locked, else the store's.
                 std::string locked;
                 for(const auto& l:readLock(doc.get()))if(l.format==format && l.id==id && l.version==version && l.platform==platform())locked=l.sha256;
+                // Other platforms' builds come from the store.
+                auto builds=storedBuilds(format,id,version);
                 std::error_code e;fs::path build=text(field(plugin,"pathHint"));
-                if(locked.empty() || !fs::exists(build,e) || bundleDigest(build)!=locked)build=storedPlugin(format,id,version);
-                std::string pluginName=id;
+                if(!locked.empty() && fs::exists(build,e) && bundleDigest(build)==locked)builds[platform()]=build;
+                std::string pluginName=storedName(format,id,version);
                 for(const auto& n:nodes_)if(const auto& d=graph_.host(n.first).descriptor();d.id==id && d.version==version && !d.name.empty())pluginName=d.name;
-                if(build.empty()){if(said.insert(name).second)notes.push_back(name+" was left out: it is not here");continue;}
-                const auto to=fs::path("Plugins")/format/storeName(id,version)/platform()/build.filename();
-                fs::create_directories((stage/to).parent_path());
-                fs::copy(build,stage/to,fs::copy_options::recursive);
-                package.plugins.push_back({format,id,version,pluginName,{{platform(),to.generic_string(),bundleDigest(stage/to)}}});
+                if(builds.empty()){if(said.insert(name).second)notes.push_back(name+" was left out: it is not here");continue;}
+                Package::Plugin packed{format,id,version,pluginName,{}};
+                for(const auto& [forPlatform,from]:builds){
+                    const auto to=fs::path("Plugins")/format/storeName(id,version)/forPlatform/from.filename();
+                    fs::create_directories((stage/to).parent_path());
+                    fs::copy(from,stage/to,fs::copy_options::recursive);
+                    packed.builds.push_back({forPlatform,to.generic_string(),bundleDigest(stage/to)});
+                }
+                package.plugins.push_back(std::move(packed));
             }
         }
         writePackage(archive,package,stage);
@@ -1255,8 +1299,8 @@ Control::Installed Session::installArchive(const std::string& file,bool asLibrar
             if(fs::is_directory(folder,error))for(const auto& f:fs::directory_iterator(folder,error))if(f.is_regular_file() && assets_.import(f.path()).sha256==ref.sha256)found=true;
             if(!found){auto copy=ref;try{assets_.resolve(copy);}catch(const std::exception&){out.notes.push_back(i.name+" uses a sample that is not in the archive or on this device: "+ref.path);}}
         }
-        // The plugin builds for this device that they use, into the store (RFC 0006), each whole or
-        // not at all; a different build already there is kept.
+        // The plugin builds they use, every platform's, into the store (RFC 0006), each whole or not
+        // at all; a different build already there is kept.
         std::set<std::tuple<std::string,std::string,std::string>> used;
         for(const auto& i:items){
             const auto bytes=state_files::read(manifest(i),4*1024*1024);
@@ -1265,17 +1309,16 @@ Control::Installed Session::installArchive(const std::string& file,bool asLibrar
         }
         for(const auto& plugin:p.plugins){
             if(!used.count({plugin.format,plugin.id,plugin.version}))continue;
-            const auto build=std::find_if(plugin.builds.begin(),plugin.builds.end(),[](const auto& b){return b.platform==platform();});
-            if(build==plugin.builds.end()){out.notes.push_back(plugin.name+" "+plugin.version+" has no build for this device in the archive");continue;}
-            if(const auto there=storedPlugin(plugin.format,plugin.id,plugin.version);!there.empty()){
-                if(bundleDigest(there)!=build->sha256)out.notes.push_back("a different build of "+plugin.name+" "+plugin.version+" is already installed; it was kept");
-                continue;
+            if(std::none_of(plugin.builds.begin(),plugin.builds.end(),[](const auto& b){return b.platform==platform();}))
+                out.notes.push_back(plugin.name+" "+plugin.version+" has no build for this device in the archive");
+            const auto there=storedBuilds(plugin.format,plugin.id,plugin.version);
+            for(const auto& build:plugin.builds){
+                if(const auto at=there.find(build.platform);at!=there.end()){
+                    if(bundleDigest(at->second)!=build.sha256)out.notes.push_back("a different "+build.platform+" build of "+plugin.name+" "+plugin.version+" is already installed; it was kept");
+                    continue;
+                }
+                storeBuild(plugin.format,plugin.id,plugin.version,plugin.name,build.platform,into/build.path);
             }
-            const auto folder=dataHome()/"Plugins"/plugin.format/storeName(plugin.id,plugin.version);
-            const auto partial=folder.parent_path()/("."+folder.filename().string()+".partial");
-            std::error_code e;fs::remove_all(partial,e);fs::create_directories(partial);
-            fs::copy(into/build->path,partial/fs::path(build->path).filename(),fs::copy_options::recursive);
-            fs::remove_all(folder,e);fs::rename(partial,folder);
         }
         if(asLibrary){
             // Locked, in its own folder: what is there stays, what is missing comes back.
@@ -1325,6 +1368,73 @@ void Session::uninstallLibrary(const std::string& id) {
     if(std::none_of(all.begin(),all.end(),[&](const auto& x){return x.id==id;}))bad("no such library installed");
     fs::remove_all(l.libraries()/safeName(id));
     l.rescan();
+}
+
+std::vector<Control::InstalledPlugin> Session::installedPlugins() {
+    // What each library item uses. shortcut: reads every item's document on each call; keep it in
+    // the library's index when libraries reach thousands of items.
+    std::vector<std::pair<std::string,std::set<std::tuple<std::string,std::string,std::string>>>> uses;
+    for(const auto& item:library().items())try{
+        const auto bytes=state_files::read(fs::path(item.path)/(item.kind=="sound"?"sound.json":"performance.json"),4*1024*1024);
+        const std::unique_ptr<json_value_s,decltype(&std::free)> doc{json_parse(bytes.data(),bytes.size()),&std::free};
+        if(!doc)continue;
+        std::set<std::tuple<std::string,std::string,std::string>> plugins;
+        for(auto node:array(field(doc.get(),"nodes"),256)){const V plugin=field(node,"plugin");plugins.insert({text(field(plugin,"format")),text(field(plugin,"id")),text(field(plugin,"version"))});}
+        uses.push_back({item.name.empty()?"Untitled":item.name,std::move(plugins)});
+    }catch(const std::exception&){}
+    std::vector<InstalledPlugin> out;
+    std::error_code e;
+    for(const auto* format:{"clap","lv2"})
+        if(fs::is_directory(dataHome()/"Plugins"/format,e))for(const auto& entry:fs::directory_iterator(dataHome()/"Plugins"/format,e)){
+            if(!entry.is_directory() || entry.path().filename().string().front()=='.')continue;
+            auto p=storedIdentity(entry.path());
+            if(p.id.empty() || p.format!=format || storeFolder(p.format,p.id,p.version)!=entry.path())continue;
+            for(const auto& [forPlatform,build]:storedBuilds(p.format,p.id,p.version)){
+                p.platforms.push_back(forPlatform);
+                if(fs::is_regular_file(build,e))p.bytes+=fs::file_size(build,e);
+                else for(const auto& f:fs::recursive_directory_iterator(build,e))if(f.is_regular_file())p.bytes+=f.file_size();
+            }
+            for(const auto& [name,plugins]:uses)if(plugins.count({p.format,p.id,p.version}))p.usedBy.push_back(name);
+            const auto here=(entry.path()/platform()).string()+"/";
+            for(const auto& n:nodes_)if(graph_.host(n.first).descriptor().path.rfind(here,0)==0)p.open=true;
+            out.push_back(std::move(p));
+        }
+    std::sort(out.begin(),out.end(),[](const auto& a,const auto& b){return std::tie(a.name,a.version)<std::tie(b.name,b.version);});
+    return out;
+}
+
+void Session::removePlugin(const std::string& format,const std::string& id,const std::string& version,const std::string& forPlatform) {
+    const auto folder=storeFolder(format,id,version);
+    const auto p=storedIdentity(folder);
+    if(p.id!=id || p.version!=version || p.format!=format)bad("that plugin is not installed");
+    if(forPlatform.empty() || forPlatform==platform()){
+        const auto here=(folder/platform()).string()+"/";
+        for(const auto& n:nodes_)if(graph_.host(n.first).descriptor().path.rfind(here,0)==0)
+            bad("the open Performance plays "+(p.name.empty()?id:p.name)+"; remove it from the Performance or open another first");
+    }
+    std::error_code e;
+    if(!forPlatform.empty()){
+        if(!fs::is_directory(folder/forPlatform,e) || forPlatform.front()=='.')bad("that plugin has no "+forPlatform+" build installed");
+        fs::remove_all(folder/forPlatform);
+        if(!storedBuilds(format,id,version).empty())return;
+    }
+    // Out of the store's sight first, so a removal cut short leaves nothing half there.
+    const auto gone=folder.parent_path()/("."+folder.filename().string()+".removing");
+    fs::remove_all(gone,e);fs::rename(folder,gone);fs::remove_all(gone,e);
+}
+
+void Session::addPluginBuild(const std::string& format,const std::string& id,const std::string& version,const std::string& forPlatform,const std::string& path) {
+    if(format!="clap")bad("only CLAP plugin builds can be added so far");
+    if(id.empty() || id.size()>256 || version.size()>128)bad("invalid plugin ID or version");
+    static const std::set<std::string> platforms{"macos-arm64","macos-x86_64","linux-arm64","linux-x86_64","windows-x86_64"};
+    if(!platforms.count(forPlatform))bad("unknown platform "+forPlatform);
+    if(forPlatform==platform())bad("this device's build is the one it loads; add builds for other platforms");
+    const fs::path build=path;std::error_code e;
+    if(build.extension()!=".clap" || !fs::exists(build,e) || fs::is_symlink(build,e))bad("not a CLAP build: "+path);
+    if(fs::is_directory(build,e))for(const auto& f:fs::recursive_directory_iterator(build))if(f.is_symlink())bad("a link in the build: "+f.path().string());
+    std::string name=storedName(format,id,version);
+    for(const auto& n:nodes_)if(const auto& d=graph_.host(n.first).descriptor();d.id==id && d.version==version && !d.name.empty())name=d.name;
+    storeBuild(format,id,version,name,forPlatform,build);
 }
 
 void Session::deleteLibraryItem(const std::string& id) {

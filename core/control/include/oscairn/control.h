@@ -172,6 +172,18 @@ namespace oscairn
         virtual std::vector<InstalledLibrary> libraries() = 0;
         virtual void uninstallLibrary(const std::string& library) = 0; // its items go; Performances keep their parts, copies, and samples
         virtual void deleteLibraryItem(const std::string& item) = 0;   // a locked library's comes back when it is installed again
+        // The plugin store (RFC 0006): the plugin builds installed from archives or added, by
+        // platform, with their size on disk, the library items that use the plugin (names), and
+        // whether the open Performance plays this device's build from the store.
+        struct InstalledPlugin { std::string format, id, version, name; std::vector<std::string> platforms; uint64_t bytes = 0; std::vector<std::string> usedBy; bool open = false; };
+        virtual std::vector<InstalledPlugin> installedPlugins() = 0;
+        // Removes a plugin's builds from the store, one platform's or (empty) all. Refused while the
+        // open Performance plays the build; items that use it open with a stand-in until it is back.
+        virtual void removePlugin(const std::string& format, const std::string& id, const std::string& version, const std::string& platform = {}) = 0;
+        // Adds another platform's build (such as linux-arm64) from a file or bundle here, so
+        // exports carry it, replacing that platform's build in the store. It cannot be loaded here
+        // to check: the device it is for checks its ID and version when it loads it.
+        virtual void addPluginBuild(const std::string& format, const std::string& id, const std::string& version, const std::string& platform, const std::string& path) = 0;
         // Sounds (RFC 0021): a part saved to the library, without its seat. Wires that cross the
         // part's edge are not saved and are listed in `left`. Save writes a new revision of the
         // Sound the part came from (renamed when name is given); asNew, or a part from no Sound,

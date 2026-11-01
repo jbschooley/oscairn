@@ -2739,6 +2739,131 @@
               "$ref": "#/$defs/Id"
             },
             "method": {
+              "const": "plugins.list",
+              "description": "The plugin store (RFC 0006): each plugin with its platforms' builds, size, the library items that use it and whether the open Performance plays it"
+            },
+            "params": {
+              "type": "object",
+              "properties": {},
+              "required": [],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
+              "const": "plugins.remove",
+              "description": "Removes a plugin's builds from the store, one platform's or (empty or absent) all; refused while the open Performance plays it"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "format": {
+                  "enum": [
+                    "clap",
+                    "lv2"
+                  ]
+                },
+                "id": {
+                  "type": "string"
+                },
+                "version": {
+                  "type": "string"
+                },
+                "platform": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "format",
+                "id",
+                "version"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "params"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
+              "const": "plugins.addBuild",
+              "description": "Adds another platform's build from a file or bundle on this device, so exports carry it"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "format": {
+                  "enum": [
+                    "clap",
+                    "lv2"
+                  ]
+                },
+                "id": {
+                  "type": "string"
+                },
+                "version": {
+                  "type": "string"
+                },
+                "platform": {
+                  "type": "string"
+                },
+                "path": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "format",
+                "id",
+                "version",
+                "platform",
+                "path"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "params"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
               "const": "library.delete",
               "description": "Deletes a library item; a locked library's comes back when it is installed again"
             },

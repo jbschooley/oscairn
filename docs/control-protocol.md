@@ -802,7 +802,7 @@ fader or name in the Performance, nor wires to or from the rest of the graph.
 - `performance.save` and `library.save` both keep each part's `from`.
 - `performance.export` takes `{file}` and optional `editedSounds`, and returns
   `{"exported":true,"notes":[...]}`: one [archive](library-archive.md) holding the open
-  Performance, every sample its plugins use, this device's build of every CLAP plugin they use,
+  Performance, every sample its plugins use, every build there is of each CLAP plugin they use,
   and the library Sound of each part still that Sound (with `editedSounds`, also each edited
   part's). `notes` says what was left out: an LV2 plugin, or one not on this device. It refuses
   a file that exists.
@@ -830,11 +830,23 @@ Libraries come as [archives](library-archive.md): a library, or an exported Perf
   for all), and returns `{added,skipped,notes}`. As a library its items are locked and keep
   their IDs, and installing again adds only what is missing; otherwise they are copied into the
   user's own storage under new IDs, and installing again skips copies still as imported. The
-  samples they use go into the user's sample library, and this device's builds of the plugins
-  they use into the plugin store; `notes` names any sample that is in neither the archive nor
-  the device, a plugin with no build for this device, and a different build of one already
-  installed (kept).
+  samples they use go into the user's sample library, and the builds of the plugins they use,
+  every platform's, into the plugin store; `notes` names any sample that is in neither the
+  archive nor the device, a plugin with no build for this device, and a different build of one
+  already installed (kept).
 - `library.libraries` (`{}`) returns `{libraries}`, each `{id,name,items}`.
+- `plugins.list` (`{}`) returns `{plugins}`: the plugin store ([RFC 0006](rfcs/0006-packages-and-portability.md)),
+  each `{format,id,version,name,platforms,bytes,usedBy,open}`: the platforms it has builds for,
+  their size on disk, the names of the library items that use it, and whether the open
+  Performance plays this device's build from the store.
+- `plugins.remove` takes `{format,id,version}` and optional `platform` (absent or empty: every
+  build) and returns `{"accepted":true}`. It is refused while the open Performance plays the
+  build; items that use it open with a stand-in until it is installed again.
+- `plugins.addBuild` takes `{format,id,version,platform,path}`: another platform's build (one
+  of `linux-arm64`, `linux-x86_64`, `macos-arm64`, `macos-x86_64`, `windows-x86_64`, not this
+  device's) from a file or bundle here, into the store so exports carry it, replacing that
+  platform's build. CLAP only. It cannot be loaded here; the device it is for checks its ID and
+  version when it loads it.
 - `library.uninstall` takes `{library}`; `library.delete` takes `{id}`, any item's.
 - `library.query` items carry `library`: the installed library holding them, locked, or empty
   for the user's own. Saving over a locked item, a Performance by `library.save` or a part's
