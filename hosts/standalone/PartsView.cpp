@@ -17,6 +17,12 @@ namespace oscairn::standalone
         }
         juce::String text(const std::string& s) { return juce::String::fromUTF8(s.c_str()); }
         constexpr int header = 56, columnTitles = 28, rowHeight = 60;
+        // Whether Routing shows parts collapsed: the user's, beside the theme selection.
+        juce::File routingPreference()
+        {
+            auto* theme = dynamic_cast<Theme*>(&juce::LookAndFeel::getDefaultLookAndFeel());
+            return theme ? theme->configuration().getChildFile("routing-view.txt") : juce::File();
+        }
     }
 
     PartsView::PartsView(Engine& engine, const std::string& scanner) : engine_(engine)
@@ -24,6 +30,7 @@ namespace oscairn::standalone
         for(auto* c : std::initializer_list<juce::Component*>{&title_, &message_, &done_, &addPart_, &addBus_, &back_, &removePart_, &name_, &controlsButton_, &mixerButton_, &routingButton_, &addControl_, &undo_, &redo_}) addChildComponent(c);
         routingButton_.setTooltip("Every plugin and wire: draw wires the parts cannot, and set each source's level");
         routingButton_.onClick = [this] { showRouting(0); };
+        if(const auto f = routingPreference(); f.existsAsFile()) collapsedParts_ = f.loadFileAsString().trim() != "expanded";
         addPart_.setButtonText("+ Part"); addBus_.setButtonText("+ Bus");
         undo_.onClick = [this] { edit([](Control& c) { c.undo(); }); };
         redo_.onClick = [this] { edit([](Control& c) { c.redo(); }); };
@@ -76,7 +83,7 @@ namespace oscairn::standalone
     }
 
     void PartsView::showPart(uint32_t id) { page_ = id; selected_ = 0; selectedSplit_ = 0; selectedLane_ = -1; shape_.clear(); refresh(); }
-    void PartsView::showRouting(NodeId node, uint32_t port) { page_ = routingPage; selected_ = 0; routed_ = node; routedPort_ = port; shape_.clear(); refresh(); }
+    void PartsView::showRouting(NodeId node, uint32_t port) { page_ = routingPage; selected_ = 0; routed_ = node; routedPort_ = port; routedPart_ = 0; shape_.clear(); refresh(); }
     void PartsView::selectBox(NodeId node) { selected_ = node; selectedSplit_ = 0; selectedLane_ = -1; shape_.clear(); refresh(); }
     void PartsView::showLane(uint32_t split, int lane) { selected_ = 0; selectedSplit_ = split; selectedLane_ = lane; shape_.clear(); refresh(); }
 
@@ -91,6 +98,7 @@ namespace oscairn::standalone
         catch(const std::exception&) { return; }
         if(page_ && page_ != controlsPage && page_ != mixerPage && page_ != routingPage && !part(page_)) { page_ = 0; shape_.clear(); }
         if(page_ == routingPage && routed_ && !routing_.find(routed_, routedPort_)) routed_ = 0;
+        if(page_ == routingPage && routedPart_ && !part(routedPart_)) routedPart_ = 0;
         for(auto& p : state_.parts) if(p.notes && !p.devices.empty() && !resolveDevices(p.devices, endpoints_)) p.input = "No device: " + p.input;
         // An edit that failed, or else a plugin that failed: outlined in red wherever it shows.
         std::string message = engine_.editError();
@@ -117,7 +125,8 @@ namespace oscairn::standalone
         shape += "|selected:" + std::to_string(selectedSplit_) + "/" + std::to_string(selectedLane_);
         if(page_ == routingPage)
         {
-            shape += "|routing:" + std::to_string(routed_) + "/" + std::to_string(routedPort_) + "/" + std::to_string(partWires_);
+            shape += "|routing:" + std::to_string(routed_) + "/" + std::to_string(routedPort_) + "/" + std::to_string(routedPart_) + "/" + std::to_string(collapsedParts_);
+            for(const auto p : expandedParts_) shape += "+" + std::to_string(p);
             for(const auto& n : routing_.nodes) shape += "," + std::to_string(n.node) + ":" + std::to_string(n.port) + ":" + n.name;
             for(const auto& w : routing_.wires) shape += ";" + std::to_string(w.id) + ":" + std::to_string(w.from) + ">" + std::to_string(w.to);
         }
@@ -146,7 +155,6 @@ namespace oscairn::standalone
         back_.setVisible(!list); addControl_.setVisible(controlsShown);
         title_.setVisible(list || controlsShown || mixerShown || routingShown); done_.setVisible(true); message_.setVisible(true);
         title_.setText(controlsShown ? "Controls" : mixerShown ? "Mixer" : routingShown ? "Routing" : "Parts", juce::dontSendNotification);
-        routingBoxes_.clear();
         auto top = getLocalBounds().reduced(16, 8).removeFromTop(header - 8);
         // On the desktop with a mouse, rows are tighter and text follows the type scale (RFC 0019).
         const int mode = desktopMode(*this), lineHeight = mode == 1 ? 34 : 40;
@@ -254,22 +262,36 @@ namespace oscairn::standalone
             auto* add = button(top.removeFromLeft(100).reduced(2), "+ Plugin", {});
             add->setTooltip("A plugin outside the parts, to wire by hand");
             add->onClick = [this, add] { addLooseMenu(*add); };
-            toggle(top.removeFromLeft(130).reduced(4, 8), "Part wires", [this] { return partWires_; }, [this](bool on) { partWires_ = on; shape_.clear(); refresh(); });
-            // Columns of nodes above; the selected node's wiring and Mix below.
+            toggle(top.removeFromLeft(160).reduced(4, 8), "Parts collapsed", [this] { return collapsedParts_; }, [this](bool on) {
+                collapsedParts_ = on; expandedParts_.clear();
+                if(const auto f = routingPreference(); f != juce::File()) { f.getParentDirectory().createDirectory(); f.replaceWithText(on ? "collapsed\n" : "expanded\n"); }
+                shape_.clear(); refresh(); });
+            // The graph above, laid out by signal flow and fitted to the space; the chosen plugin's
+            // or part's wiring below.
             auto area = getLocalBounds().reduced(16, 0).withTrimmedTop(header).withTrimmedBottom(28);
             auto panel = area.removeFromBottom(190);
-            auto canvas = area.withTrimmedTop(22);
-            const int columnWidth = canvas.getWidth() / 5;
-            for(int column = 0; column < 5; ++column)
-            {
-                std::vector<const RoutingNode*> in;
-                for(const auto& n : routing_.nodes) if(n.column == column) in.push_back(&n);
-                const int height = std::clamp(in.empty() ? 40 : (canvas.getHeight() - 8) / int(in.size()), 22, 44);
-                auto col = canvas.withX(canvas.getX() + column * columnWidth).withWidth(columnWidth).reduced(14, 0);
-                for(const auto* n : in) routingBoxes_.push_back({n->node, n->port, col.removeFromTop(height).reduced(0, 3)});
-            }
+            const auto canvas = area.reduced(8).toFloat();
+            layout_ = layoutRouting(graph_, collapsedParts_, expandedParts_);
+            routingScale_ = std::min({1.0f, canvas.getWidth() / float(std::max(1, layout_.width)), canvas.getHeight() / float(std::max(1, layout_.height))});
+            routingOrigin_ = {canvas.getX(), canvas.getY() + (canvas.getHeight() - layout_.height * routingScale_) / 2};
             const auto* chosen = routed_ || routedPort_ ? routing_.find(routed_, routedPort_) : nullptr;
-            if(!chosen)
+            if(routedPart_)
+            {
+                const auto* p = part(routedPart_);
+                auto head = panel.removeFromTop(36);
+                auto l = std::make_unique<juce::Label>(juce::String(), p ? text(p->name) : juce::String());
+                l->setFont(juce::FontOptions(15.0f * themeData().fontScale, juce::Font::bold));
+                l->setBounds(head.removeFromLeft(240)); addAndMakeVisible(*l); controls_.push_back(std::move(l));
+                button(head.removeFromLeft(110).reduced(2), "Open part", [this, id = routedPart_] { showPart(id); });
+                if(collapsedParts_)
+                {
+                    const bool open = expandedParts_.count(routedPart_) != 0;
+                    button(head.removeFromLeft(110).reduced(2), open ? "Collapse" : "Expand", [this, id = routedPart_, open] {
+                        if(open) expandedParts_.erase(id); else expandedParts_.insert(id);
+                        shape_.clear(); refresh(); });
+                }
+            }
+            else if(!chosen)
             {
                 auto l = std::make_unique<juce::Label>(juce::String(), "Tap a plugin to wire it, or to set the level of each source into it.");
                 l->setBounds(panel.removeFromTop(30)); addAndMakeVisible(*l); controls_.push_back(std::move(l));
@@ -894,35 +916,69 @@ namespace oscairn::standalone
         if(page_ == routingPage)
         {
             const auto scale = themeData().fontScale;
-            auto titles = getLocalBounds().reduced(16, 0).withTrimmedTop(header).withHeight(20);
-            g.setColour(ink(Ink::Muted)); g.setFont(juce::FontOptions(11.0f * scale, juce::Font::bold));
-            const int columnWidth = titles.getWidth() / 5;
-            for(const auto* name : {"INPUTS", "NOTES", "INSTRUMENTS", "EFFECTS AND BUSES", "OUTPUTS"}) g.drawText(name, titles.removeFromLeft(columnWidth).reduced(14, 0), juce::Justification::centredLeft);
-            auto boxOf = [&](NodeId node, uint32_t port) -> const RoutingBox* {
-                for(const auto& b : routingBoxes_) if(b.node == node && ((node != graphInput && node != graphOutput) || b.port == port)) return &b;
-                return nullptr;
+            using Kind = RoutingLayout::Box::Kind;
+            auto at = [&](const RoutingRect& r) { return juce::Rectangle<float>(routingOrigin_.x + r.x * routingScale_, routingOrigin_.y + r.y * routingScale_, r.w * routingScale_, r.h * routingScale_); };
+            auto point = [&](const RoutingPoint& p) { return juce::Point<float>(routingOrigin_.x + float(p.x) * routingScale_, routingOrigin_.y + float(p.y) * routingScale_); };
+            auto partOfNode = [&](NodeId node) -> uint32_t { for(const auto& n : routing_.nodes) if(n.node == node && n.part) return n.part; return 0; };
+            // Focus: with a plugin or part chosen, its wires and what they reach stay bright.
+            const bool focus = routed_ || routedPart_;
+            auto touches = [&](const Wire& w) {
+                if(routedPart_) return partOfNode(w.from) == routedPart_ || partOfNode(w.to) == routedPart_;
+                if(routed_ == graphInput) return w.from == graphInput && (w.kind == WireKind::Notes ? routedPort_ == notesPort : w.fromPort == routedPort_);
+                if(routed_ == graphOutput) return w.to == graphOutput && w.toPort == routedPort_;
+                return w.from == routed_ || w.to == routed_;
             };
-            // Wires first, under the boxes, in the theme's wire colours: enabled audio and note wires
-            // (part wires faint, user wires bright), disabled and draining ones dashed, and those
-            // that no longer fit their ports.
-            for(const auto& w : routing_.wires)
+            std::set<NodeId> reached; std::set<uint32_t> reachedParts;
+            for(const auto& p : layout_.paths) if(touches(p.wire))
+                for(const auto n : {p.wire.from, p.wire.to}) { reached.insert(n); if(const auto pp = partOfNode(n)) reachedParts.insert(pp); }
+            auto bright = [&](const RoutingLayout::Box& b) {
+                if(!focus) return true;
+                if(b.kind == Kind::Node) return b.node == graphInput || b.node == graphOutput ? reached.count(b.node) != 0 : reached.count(b.node) || (routedPart_ && b.part == routedPart_);
+                return b.part == routedPart_ || reachedParts.count(b.part) != 0;
+            };
+            auto chevron = [&](juce::Rectangle<float> r, bool down) {
+                g.setColour(ink(Ink::Raised)); g.fillEllipse(r); g.setColour(ink(Ink::Border)); g.drawEllipse(r, 1);
+                const auto c = r.getCentre(); const float s = r.getWidth() * .14f;
+                juce::Path p;
+                if(down) { p.startNewSubPath(c.x - s * 1.4f, c.y - s * .6f); p.lineTo(c.x, c.y + s * .8f); p.lineTo(c.x + s * 1.4f, c.y - s * .6f); }
+                else { p.startNewSubPath(c.x - s * .6f, c.y - s * 1.4f); p.lineTo(c.x + s * .8f, c.y); p.lineTo(c.x - s * .6f, c.y + s * 1.4f); }
+                g.setColour(ink(Ink::Text)); g.strokePath(p, juce::PathStrokeType(2.f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+            };
+            const float chevronSize = 30 * routingScale_;
+            // Expanded parts' frames, under everything.
+            for(const auto& b : layout_.boxes)
             {
-                if(w.owner == WireOwner::Part && !partWires_) continue;
-                const auto* a = boxOf(w.from, w.from == graphInput ? (w.kind == WireKind::Notes ? notesPort : w.fromPort) : 0);
-                const auto* b = boxOf(w.to, w.toPort);
-                if(!a || !b) continue;
-                const juce::Point<float> p0(float(a->bounds.getRight()), float(a->bounds.getCentreY())), p1(float(b->bounds.getX()), float(b->bounds.getCentreY()));
-                juce::Path path; path.startNewSubPath(p0);
-                const float bend = std::max(30.0f, (p1.x - p0.x) / 2);
-                path.cubicTo(p0.translated(bend, 0), p1.translated(-bend, 0), p1);
-                const auto state = wireState(w, graph_.topology);
-                const auto& wires = themeData().wires; // the theme's
-                auto colour = !w.connected ? wires.unconnected : state == WireState::Draining ? wires.draining : state == WireState::Disabled ? wires.disabled
-                            : w.kind == WireKind::Notes ? wires.notes : wires.audio;
-                if(w.owner == WireOwner::Part && state == WireState::Enabled) colour = colour.withAlpha(.35f);
+                if(b.kind != Kind::Frame) continue;
+                const auto r = at(b.bounds);
+                g.setColour(ink(Ink::Background).interpolatedWith(ink(Ink::Surface), .45f).withMultipliedAlpha(bright(b) ? 1.f : .5f));
+                g.fillRoundedRectangle(r, themeData().radius + 2);
+                g.setColour((b.part == routedPart_ ? ink(Ink::Accent) : ink(Ink::Border)).withMultipliedAlpha(bright(b) ? 1.f : .5f));
+                g.drawRoundedRectangle(r, themeData().radius + 2, b.part == routedPart_ ? 2.f : 1.f);
+                g.setColour(ink(Ink::Text)); g.setFont(juce::FontOptions(14.0f * scale * routingScale_, juce::Font::bold));
+                g.drawText(text(b.name), r.withHeight(RoutingMetrics{}.frameHead * routingScale_).reduced(12 * routingScale_, 0), juce::Justification::centredLeft, true);
+                if(collapsedParts_) chevron(juce::Rectangle<float>(chevronSize, chevronSize).withCentre({r.getRight() - 22 * routingScale_, r.getY() + RoutingMetrics{}.frameHead * routingScale_ / 2}), true);
+            }
+            // Wires, under the boxes, in the theme's wire colours: enabled audio and note wires
+            // (user wires thicker), disabled and draining ones dashed, and those that no longer fit
+            // their ports. With a plugin or part chosen, the rest are faint.
+            const auto& colours = themeData().wires;
+            for(const auto& p : layout_.paths)
+            {
+                if(p.points.size() < 2) continue;
+                const auto& w = p.wire;
+                juce::Path path; path.startNewSubPath(point(p.points[0]));
+                for(size_t i = 1; i < p.points.size(); ++i)
+                {
+                    const auto a = point(p.points[i - 1]), b = point(p.points[i]);
+                    const float mid = (a.x + b.x) / 2;
+                    path.cubicTo({mid, a.y}, {mid, b.y}, b);
+                }
+                auto colour = !w.connected ? colours.unconnected : p.state == WireState::Draining ? colours.draining : p.state == WireState::Disabled ? colours.disabled
+                            : w.kind == WireKind::Notes ? colours.notes : colours.audio;
+                colour = colour.withAlpha(focus && !touches(w) ? .15f : w.owner == WireOwner::User ? 1.f : .75f);
                 g.setColour(colour);
-                const juce::PathStrokeType stroke(w.owner == WireOwner::User || state == WireState::Draining ? 2.5f : 1.5f);
-                if(w.connected && state != WireState::Enabled)
+                const juce::PathStrokeType stroke((w.owner == WireOwner::User || p.state == WireState::Draining ? 2.5f : 1.75f) * std::max(.6f, routingScale_));
+                if(w.connected && p.state != WireState::Enabled)
                 {
                     const float dashes[] = {6.f, 4.f};
                     juce::Path dashed; stroke.createDashedStroke(dashed, path, dashes, 2);
@@ -930,21 +986,53 @@ namespace oscairn::standalone
                 }
                 else g.strokePath(path, stroke);
             }
-            for(const auto& b : routingBoxes_)
+            // Plugins, collapsed parts and the graph's ends.
+            for(const auto& b : layout_.boxes)
             {
+                if(b.kind == Kind::Frame) continue;
+                const auto r = at(b.bounds);
+                const float alpha = bright(b) ? 1.f : .45f;
+                if(b.kind == Kind::Part)
+                {
+                    const auto* row = part(b.part);
+                    const bool chosenPart = b.part == routedPart_;
+                    g.setColour(ink(Ink::Surface).withMultipliedAlpha(alpha)); g.fillRoundedRectangle(r, themeData().radius + 2);
+                    // Muted or draining: the tint the parts lists give it.
+                    if(row && (row->draining || row->mute)) { g.setColour((row->draining ? ink(Ink::Accent) : ink(Ink::Danger)).withAlpha(.14f * alpha)); g.fillRoundedRectangle(r, themeData().radius + 2); }
+                    g.setColour((chosenPart ? ink(Ink::Accent) : ink(Ink::Border)).withMultipliedAlpha(alpha));
+                    g.drawRoundedRectangle(r, themeData().radius + 2, chosenPart ? 2.f : 1.f);
+                    auto inner = r.reduced(12 * routingScale_, 8 * routingScale_);
+                    chevron(juce::Rectangle<float>(chevronSize, chevronSize).withCentre({r.getRight() - 22 * routingScale_, r.getCentreY()}), false);
+                    inner.removeFromRight(chevronSize + 8 * routingScale_);
+                    g.setColour(ink(Ink::Text).withMultipliedAlpha(alpha)); g.setFont(juce::FontOptions(14.0f * scale * routingScale_, juce::Font::bold));
+                    g.drawText(text(b.name) + (b.detail.empty() ? juce::String() : "  " + text(b.detail).toUpperCase()), inner.removeFromTop(inner.getHeight() / 2), juce::Justification::bottomLeft, true);
+                    // Its plugins as chips, in order, as many as fit.
+                    g.setFont(juce::FontOptions(11.0f * scale * routingScale_));
+                    auto chips = inner.withTrimmedTop(4 * routingScale_).withHeight(18 * routingScale_);
+                    for(size_t i = 0; i < b.chips.size(); ++i)
+                    {
+                        const auto label = text(b.chips[i]);
+                        const float width = juce::GlyphArrangement::getStringWidth(g.getCurrentFont(), label) + 14 * routingScale_;
+                        if(width > chips.getWidth()) { g.setColour(ink(Ink::Muted).withMultipliedAlpha(alpha)); g.drawText(juce::String::fromUTF8("…"), chips, juce::Justification::centredLeft); break; }
+                        const auto chip = chips.removeFromLeft(width);
+                        g.setColour(ink(Ink::Raised).withMultipliedAlpha(alpha)); g.fillRoundedRectangle(chip, 4);
+                        g.setColour(ink(Ink::Text).withMultipliedAlpha(alpha)); g.drawText(label, chip, juce::Justification::centred);
+                        if(i + 1 < b.chips.size()) { const auto arrow = chips.removeFromLeft(14 * routingScale_); g.setColour(ink(Ink::Muted).withMultipliedAlpha(alpha)); g.drawText(juce::String::fromUTF8("›"), arrow, juce::Justification::centred); }
+                    }
+                    continue;
+                }
                 const auto* n = routing_.find(b.node, b.port);
-                if(!n) continue;
-                const bool chosen = b.node == routed_ && ((b.node != graphInput && b.node != graphOutput) || b.port == routedPort_);
-                g.setColour(chosen ? ink(Ink::Accent).withAlpha(.25f) : ink(Ink::Surface));
-                g.fillRoundedRectangle(b.bounds.toFloat(), themeData().radius);
-                g.setColour(chosen ? ink(Ink::Accent) : failed(b.node) ? ink(Ink::Danger) : ink(Ink::Border));
-                g.drawRoundedRectangle(b.bounds.toFloat(), themeData().radius, chosen ? 2.0f : 1.0f);
-                auto inner = b.bounds.reduced(8, 2);
-                g.setColour(ink(Ink::Text)); g.setFont(juce::FontOptions(13.0f * scale));
-                g.drawText(text(n->name), inner.removeFromTop(inner.getHeight() * 3 / 5), juce::Justification::bottomLeft, true);
-                g.setColour(ink(Ink::Muted)); g.setFont(juce::FontOptions(10.0f * scale));
-                g.drawText(n->part ? text(n->partName) : n->node == graphInput || n->node == graphOutput ? juce::String() : juce::String("no part"), inner, juce::Justification::topLeft, true);
-                if(n->userWires && n->part) { g.setColour(juce::Colour(0xffffa040)); g.fillEllipse(float(b.bounds.getRight() - 12), float(b.bounds.getY() + 5), 7, 7); }
+                const bool chosenNode = b.node == routed_ && ((b.node != graphInput && b.node != graphOutput) || b.port == routedPort_);
+                g.setColour((chosenNode ? ink(Ink::Accent).withAlpha(.25f) : ink(Ink::Surface)).withMultipliedAlpha(alpha));
+                g.fillRoundedRectangle(r, themeData().radius);
+                g.setColour((chosenNode ? ink(Ink::Accent) : failed(b.node) ? ink(Ink::Danger) : ink(Ink::Border)).withMultipliedAlpha(alpha));
+                g.drawRoundedRectangle(r, themeData().radius, chosenNode ? 2.0f : 1.0f);
+                auto inner = r.reduced(8 * routingScale_, 2);
+                g.setColour(ink(Ink::Text).withMultipliedAlpha(alpha)); g.setFont(juce::FontOptions(13.0f * scale * routingScale_));
+                g.drawText(text(b.name), inner.removeFromTop(inner.getHeight() * 3 / 5), juce::Justification::bottomLeft, true);
+                g.setColour(ink(Ink::Muted).withMultipliedAlpha(alpha)); g.setFont(juce::FontOptions(10.0f * scale * routingScale_));
+                g.drawText(text(b.detail), inner, juce::Justification::topLeft, true);
+                if(n && n->userWires && n->part) { g.setColour(juce::Colour(0xffffa040)); g.fillEllipse(r.getRight() - 12, r.getY() + 5, 7, 7); }
             }
             return;
         }
@@ -1125,14 +1213,26 @@ namespace oscairn::standalone
         if(page_ == controlsPage || page_ == mixerPage) return;
         if(page_ == routingPage)
         {
-            for(const auto& b : routingBoxes_)
-                if(b.bounds.contains(e.getPosition()))
+            // In the layout's own pixels: the topmost box under the click.
+            const double x = (e.position.x - routingOrigin_.x) / routingScale_, y = (e.position.y - routingOrigin_.y) / routingScale_;
+            using Kind = RoutingLayout::Box::Kind;
+            const RoutingMetrics m;
+            for(auto b = layout_.boxes.rbegin(); b != layout_.boxes.rend(); ++b)
+            {
+                const auto& r = b->bounds;
+                if(!(x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h)) continue;
+                if(b->kind == Kind::Frame && y > r.y + m.frameHead) continue; // inside the frame: its plugins or nothing
+                const bool control = x > r.x + r.w - 44; // the expand or collapse button
+                if(b->kind != Kind::Node && control && collapsedParts_)
                 {
-                    const bool again = routed_ == b.node && routedPort_ == b.port;
-                    routed_ = again ? 0 : b.node; routedPort_ = again ? 0 : b.port;
-                    if(!routed_) routedPort_ = 0;
+                    if(b->kind == Kind::Part) expandedParts_.insert(b->part); else expandedParts_.erase(b->part);
                     shape_.clear(); refresh(); return;
                 }
+                if(b->kind != Kind::Node) { routedPart_ = routedPart_ == b->part ? 0 : b->part; routed_ = 0; routedPort_ = 0; shape_.clear(); refresh(); return; }
+                const bool again = routed_ == b->node && routedPort_ == b->port;
+                routed_ = again ? 0 : b->node; routedPort_ = again ? 0 : b->port; routedPart_ = 0;
+                shape_.clear(); refresh(); return;
+            }
             return;
         }
         if(page_ == 0)

@@ -38,6 +38,42 @@ int main(int argc, char** argv)
 
         const auto state = readParts(s.graphState());
         check(state.parts.size() == 2 && state.buses.size() == 1, "two parts and a bus");
+
+        // The Routing layout, collapsed and expanded: no wire passes under a plugin or part, boxes
+        // do not overlap, collapsed parts are one box each, expanded ones frames round their plugins.
+        {
+            const auto g = s.graphState();
+            size_t collapsedPaths = 0, expandedPaths = 0;
+            for(const bool collapsedView : {true, false})
+            {
+                const auto layout = layoutRouting(g, collapsedView, {});
+                using Kind = RoutingLayout::Box::Kind;
+                std::string under;
+                for(const auto& p : layout.paths)
+                    for(const auto& pt : routingCurve(p.points))
+                        for(const auto& b : layout.boxes)
+                            if(b.kind != Kind::Frame && b.bounds.contains(pt.x, pt.y)) under = b.name;
+                check(under.empty(), std::string(collapsedView ? "collapsed" : "expanded") + ": no wire passes under a box (one passes under " + under + ")");
+                bool overlap = false;
+                for(size_t i = 0; i < layout.boxes.size(); ++i) for(size_t j = i + 1; j < layout.boxes.size(); ++j)
+                {
+                    const auto& a = layout.boxes[i]; const auto& b = layout.boxes[j];
+                    if(a.kind == Kind::Frame && b.part == a.part) continue; // a frame holds its plugins
+                    if(a.bounds.x < b.bounds.x + b.bounds.w && b.bounds.x < a.bounds.x + a.bounds.w && a.bounds.y < b.bounds.y + b.bounds.h && b.bounds.y < a.bounds.y + a.bounds.h) overlap = true;
+                }
+                check(!overlap, std::string(collapsedView ? "collapsed" : "expanded") + ": boxes do not overlap");
+                const auto parts = std::count_if(layout.boxes.begin(), layout.boxes.end(), [&](const auto& b) { return b.kind == (collapsedView ? Kind::Part : Kind::Frame); });
+                const auto partNodes = std::count_if(layout.boxes.begin(), layout.boxes.end(), [](const auto& b) { return b.kind == Kind::Node && b.part; });
+                const auto expected = readParts(g).parts.size() + readParts(g).buses.size();
+                check(size_t(parts) == expected && (collapsedView ? partNodes == 0 : partNodes > 0), std::string(collapsedView ? "one box per part" : "a frame per part, its plugins inside"));
+                (collapsedView ? collapsedPaths : expandedPaths) = layout.paths.size();
+            }
+            check(collapsedPaths < expandedPaths, "collapsed, fewer wires: " + std::to_string(collapsedPaths) + " of " + std::to_string(expandedPaths));
+            const auto one = layoutRouting(g, true, {bass});
+            const auto frames = std::count_if(one.boxes.begin(), one.boxes.end(), [&](const auto& b) { return b.kind == RoutingLayout::Box::Kind::Frame && b.part == bass; });
+            check(frames == 1 && std::none_of(one.boxes.begin(), one.boxes.end(), [&](const auto& b) { return b.kind == RoutingLayout::Box::Kind::Part && b.part == bass; }), "one part expanded, the rest collapsed");
+        }
+
         const auto& b = state.parts[0];
         check(b.name == "Bass" && b.input == "Any device · C-1–B3" && b.sound == "Basic Synth", "the bass row: " + b.input);
         check(b.chain.size() == 2 && b.chain[0].role == "Notes" && b.chain[1].role == "Instrument" && b.chain[1].name == "Basic Synth", "the bass chain: a note effect, then the synth");
@@ -146,12 +182,29 @@ int main(int argc, char** argv)
         check(everyNode && routing.wires.size() == g.wires.size(), "every node once, and every wire, in Routing");
         const auto& sp = *std::find_if(g.parts.begin(), g.parts.end(), [&](const Part& p) { return p.id == layers; });
         const auto* splitNode = routing.find(sp.splits[0].splitter, 0);
-        check(splitNode && splitNode->splitNode && splitNode->part == layers && splitNode->column == 3, "a split's node belongs to its part, among the effects");
-        const auto* keys = routing.find(graphInput, notesPort); const auto* main = routing.find(graphOutput, 0);
-        check(keys && keys->column == 0 && main && main->column == 4, "the keys on the left, Main on the right");
+        check(splitNode && splitNode->splitNode && splitNode->part == layers, "a split's node belongs to its part");
+        // Laid out by flow: the keys first, Main last, a plugin after what feeds it.
+        {
+            const auto layout = layoutRouting(g, false, {});
+            auto boxOf = [&](NodeId node, uint32_t port) -> const RoutingLayout::Box* {
+                for(const auto& b : layout.boxes) if(b.kind == RoutingLayout::Box::Kind::Node && b.node == node && b.port == port) return &b;
+                return nullptr; };
+            const auto* keys = boxOf(graphInput, notesPort); const auto* main = boxOf(graphOutput, 0);
+            bool keysFirst = keys && main, mainLast = keysFirst;
+            for(const auto& b : layout.boxes) if(keysFirst && b.kind == RoutingLayout::Box::Kind::Node)
+            {
+                keysFirst = keysFirst && keys->bounds.x <= b.bounds.x;
+                mainLast = mainLast && main->bounds.x >= b.bounds.x;
+            }
+            check(keysFirst && mainLast, "the keys on the left, Main on the right");
+            const auto* split = boxOf(sp.splits[0].splitter, 0);
+            bool afterFeed = split != nullptr;
+            for(const auto& w : g.wires) if(split && w.to == sp.splits[0].splitter && w.from != graphInput) if(const auto* f = boxOf(w.from, 0)) afterFeed = afterFeed && f->bounds.x < split->bounds.x;
+            check(afterFeed, "a split after what feeds it");
+        }
         auto byName = [&](const std::string& name) { for(const auto& [id, n] : s.graphState().names) if(n == name) return id; throw std::runtime_error("no node " + name); };
         const auto bassSynth = byName("Basic Synth"), leadSynth = byName("Basic Synth 2");
-        check(routing.find(bassSynth, 0)->column == 2 && routing.find(bassSynth, 0)->partName == "Bass", "an instrument in its part's column");
+        check(routing.find(bassSynth, 0)->partName == "Bass", "an instrument knows its part");
         // Two parts wired by hand into a reverb outside the parts.
         const auto hall = addLoose(s, delay);
         connectNodes(s, bassSynth, hall, WireKind::Audio); connectNodes(s, leadSynth, hall, WireKind::Audio); connectNodes(s, hall, graphOutput, WireKind::Audio);

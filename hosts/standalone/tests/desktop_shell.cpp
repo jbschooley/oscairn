@@ -277,6 +277,23 @@ int main(int argc, char** argv)
                 bool refused = false; try { standalone::readSetlist(bad); } catch(const std::exception&) { refused = true; }
                 check(refused, "a setlist of another version is refused");
             }
+            // Routing with parts expanded, the preference read from the configuration folder.
+            {
+                theme.apply("oscairn-dark");
+                configuration.getChildFile("routing-view.txt").replaceWithText("expanded\n");
+                standalone::DesktopShell shell(engine, argv[2], standalone::InputMode::Mouse);
+                shell.setSize(1440, 900);
+                shell.showTab(standalone::DesktopShell::Tab::Routing);
+                for(int i = 0; i < 30; ++i) juce::MessageManager::getInstance()->runDispatchLoopUntil(10);
+                const auto image = shell.createComponentSnapshot(shell.getLocalBounds());
+                check(image.getWidth() == 1440, "renders Routing expanded");
+                if(argc >= 5)
+                {
+                    const juce::File out{juce::String(argv[4]) + "-dark-mouse-routing-expanded.png"};
+                    out.deleteFile(); juce::FileOutputStream stream(out); juce::PNGImageFormat().writeImageToStream(image, stream);
+                }
+                configuration.getChildFile("routing-view.txt").deleteFile();
+            }
             // Envelopes recognised from their parameters' names.
             {
                 const auto adsr = standalone::envelopeOf({"Attack Shape", "Attack", "Decay", "Sustain", "Release"});

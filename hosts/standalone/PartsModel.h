@@ -3,6 +3,7 @@
 #include "oscairn/control.h"
 #include <functional>
 #include <map>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -65,7 +66,6 @@ namespace oscairn::standalone
         NodeId node = 0;
         uint32_t port = 0;
         std::string name, role;
-        int column = 0;
         uint32_t part = 0;     // the part or bus it belongs to; 0: none
         std::string partName;
         bool userWires = false, splitNode = false;
@@ -86,6 +86,36 @@ namespace oscairn::standalone
     // A wire that no longer fits its plugin's ports (Wire::connected false) is drawn apart.
     enum class WireState { Enabled, Disabled, Draining };
     WireState wireState(const Wire&, const Graph::Description&);
+
+    // The Routing view's layout (layered by signal flow): each box one column after what feeds
+    // it, inputs first and outputs last; a wire skipping columns keeps a slot in each it crosses;
+    // each column ordered to cross fewer wires; each wire leaving and entering at its own place on
+    // a box's edge. Curves run only in the gaps between columns, so no wire passes under a box.
+    // A collapsed part is one box with its plugins as chips; an expanded part is a frame holding
+    // its plugins, laid out the same way inside it. Pixels, from (0, 0).
+    struct RoutingRect { int x = 0, y = 0, w = 0, h = 0; bool contains(double px, double py) const { return px > x && px < x + w && py > y && py < y + h; } };
+    struct RoutingPoint { double x = 0, y = 0; };
+    struct RoutingLayout
+    {
+        struct Box
+        {
+            enum class Kind { Node, Part, Frame } kind = Kind::Node;
+            NodeId node = 0; uint32_t port = 0; // a node, or a graph input or output port
+            uint32_t part = 0;                  // a part's box or frame, or the part a node is in
+            std::string name, detail;
+            std::vector<std::string> chips;     // a collapsed part's plugins, in chain order
+            RoutingRect bounds;
+        };
+        struct Path { Wire wire; WireState state = WireState::Enabled; std::vector<RoutingPoint> points; };
+        std::vector<Box> boxes; // frames first, then what is drawn over them
+        std::vector<Path> paths;
+        int width = 0, height = 0;
+    };
+    struct RoutingMetrics { int node = 170, nodeHeight = 44, part = 280, partHeight = 64, gap = 56, row = 16, slot = 10, frame = 14, frameHead = 40; };
+    // collapsed: parts are one box each, but those in `expanded`; otherwise every part is a frame.
+    RoutingLayout layoutRouting(const Control::GraphState&, bool collapsed, const std::set<uint32_t>& expanded, const RoutingMetrics& = {});
+    // Points along a path as drawn: a curve through its points, level at each one.
+    std::vector<RoutingPoint> routingCurve(const std::vector<RoutingPoint>& points, int steps = 16);
     // A node's audio inputs that have sources, with a row per source (its Mix), and its notes.
     std::vector<RoutingInput> inputsOf(const Control::GraphState&, NodeId node);
 

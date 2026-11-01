@@ -6,6 +6,7 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <future>
+#include <set>
 
 namespace oscairn::standalone
 {
@@ -81,12 +82,15 @@ namespace oscairn::standalone
         std::vector<juce::Rectangle<int>> tiles_; // the Part page's settings on the desktop, a tile each
         std::unique_ptr<class ParameterGrid> grid_; // the selected plugin's parameters, on the desktop
         std::map<uint32_t, std::vector<double>> peaks_; // the parts' meters per channel, read at each tick while the Mixer shows
-        // Routing: the graph as nodes in columns, the node selected, and whether part wires show.
+        // Routing: the graph laid out by signal flow (layoutRouting), drawn at routingOrigin_ and
+        // routingScale_; the plugin or part chosen; whether parts are collapsed (the user's
+        // preference, kept beside the theme's) and which are expanded meanwhile.
         RoutingState routing_;
-        struct RoutingBox { NodeId node; uint32_t port; juce::Rectangle<int> bounds; };
-        std::vector<RoutingBox> routingBoxes_;
-        NodeId routed_ = 0; uint32_t routedPort_ = 0;
-        bool partWires_ = true;
+        RoutingLayout layout_;
+        juce::Point<float> routingOrigin_; float routingScale_ = 1;
+        NodeId routed_ = 0; uint32_t routedPort_ = 0, routedPart_ = 0;
+        bool collapsedParts_ = true;
+        std::set<uint32_t> expandedParts_;
         void connectMenu(WireKind kind, juce::Component& at);
         void addLooseMenu(juce::Component& at);
     };

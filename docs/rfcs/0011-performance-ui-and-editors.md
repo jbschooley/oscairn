@@ -507,11 +507,18 @@ Not yet:
 
 ## Step 4 status
 
-The **Routing** view implemented 2026-10-31 on the desktop (`PartsView`, `readRouting` and
-`inputsOf` in `PartsModel`), opened by **Routing** on the Parts view. It draws every node in
-its column (inputs, notes, instruments, effects and buses, outputs) with the part it belongs
-to, and every wire in the theme's wire colours (theme format 4): enabled audio and note wires,
-part wires faint and hidable, wires drawn here bright; disabled ones (muted; off in a scene
+The **Routing** view implemented 2026-10-31 on the desktop (`PartsView`, `readRouting`,
+`layoutRouting` and `inputsOf` in `PartsModel`), opened by **Routing** on the Parts view. It is
+laid out by signal flow (layered): each box one column after what feeds it, inputs first and
+outputs last; a wire that skips columns keeps a slot in each it crosses; each column is ordered
+to cross fewer wires; each wire leaves and enters at its own place on a box's edge. Curves run
+only in the gaps between columns, so no wire passes under a box (`desktop-parts-model` checks
+this). Nothing is dragged into place. Parts are **collapsed** by default, each one box with its
+plugins as chips and a button to expand it in place, as a frame holding its plugins laid out
+the same way; the choice is remembered (`routing-view.txt` beside the theme selection), and
+**Parts collapsed** off shows every part expanded. Choosing a plugin or part keeps its wires and
+what they reach bright and dims the rest. It draws every node and every wire in the theme's wire colours (theme format 4): enabled audio and note wires,
+part wires fainter, wires drawn here bright; disabled ones (muted; off in a scene
 with the full scene model) and draining ones (seamless changes) dashed in their own colours;
 unconnected ones apart. A part's row in the parts lists takes a tint when muted (the mute's)
 or draining (the accent's). Tapping a node offers **Connect audio to...** and

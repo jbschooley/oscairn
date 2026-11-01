@@ -177,8 +177,8 @@ namespace oscairn::standalone
         RoutingState state;
         state.wires = g.wires;
         const auto owner = owners(g);
-        state.nodes.push_back({graphInput, notesPort, "Keys & MIDI", "Notes", 0});
-        for(const auto& p : g.topology.audioLayout.inputs) state.nodes.push_back({graphInput, p.id, p.name.empty() ? "Audio in" : p.name, "Audio", 0});
+        state.nodes.push_back({graphInput, notesPort, "Keys & MIDI", "Notes"});
+        for(const auto& p : g.topology.audioLayout.inputs) state.nodes.push_back({graphInput, p.id, p.name.empty() ? "Audio in" : p.name, "Audio"});
         // Nodes in part order, then the rest.
         std::vector<NodeId> order;
         for(const auto& p : g.parts)
@@ -192,14 +192,325 @@ namespace oscairn::standalone
             if(!n) continue;
             RoutingNode r{id, 0, nameOf(g, id), roleOf(*n)};
             const bool splitter = n->plugin.id == splitPlugin || n->plugin.id == joinPlugin;
-            r.column = (r.role == "Notes" || r.role == "Sequencer") ? 1 : (r.role == "Instrument" || r.role == "Generator") ? 2 : 3;
             r.splitNode = splitter;
             if(const auto o = owner.find(id); o != owner.end()) { r.part = o->second->id; r.partName = o->second->name; }
             r.userWires = hasUserWires(g, id);
             state.nodes.push_back(r);
         }
-        for(const auto& p : g.topology.audioLayout.outputs) state.nodes.push_back({graphOutput, p.id, p.name.empty() ? "Output" : p.name, "Output", 4});
+        for(const auto& p : g.topology.audioLayout.outputs) state.nodes.push_back({graphOutput, p.id, p.name.empty() ? "Output" : p.name, "Output"});
         return state;
+    }
+
+    namespace
+    {
+        // One layered placement: elements with their sizes (first: the first column; last: the
+        // last), and edges between them, each with its points from exit to entry.
+        struct Element { int w = 0, h = 0; bool first = false, last = false; };
+        struct Edge { int from = 0, to = 0; };
+        struct Placed { std::vector<RoutingRect> rects; std::vector<std::vector<RoutingPoint>> paths; int width = 0, height = 0; };
+
+        Placed place(const std::vector<Element>& elements, const std::vector<Edge>& edges, const RoutingMetrics& m)
+        {
+            const int n = int(elements.size());
+            Placed out; out.rects.resize(static_cast<size_t>(n)); out.paths.resize(edges.size());
+            if(!n) return out;
+            std::vector<std::vector<int>> preds(static_cast<size_t>(n)), succs(static_cast<size_t>(n));
+            for(const auto& e : edges) if(e.from != e.to) { preds[size_t(e.to)].push_back(e.from); succs[size_t(e.from)].push_back(e.to); }
+            // Ranks: the longest path from the first column; a loop's elements follow what was ranked.
+            std::vector<int> indegree(static_cast<size_t>(n)), order;
+            for(int v = 0; v < n; ++v) indegree[size_t(v)] = int(preds[size_t(v)].size());
+            for(int v = 0; v < n; ++v) if(!indegree[size_t(v)]) order.push_back(v);
+            for(size_t i = 0; i < order.size(); ++i) for(const auto s : succs[size_t(order[i])]) if(--indegree[size_t(s)] == 0) order.push_back(s);
+            for(int v = 0; v < n; ++v) if(std::find(order.begin(), order.end(), v) == order.end()) order.push_back(v);
+            const bool anyFirst = std::any_of(elements.begin(), elements.end(), [](const Element& e) { return e.first; });
+            std::vector<int> rank(static_cast<size_t>(n));
+            for(int v = 0; v < n; ++v) rank[size_t(v)] = elements[size_t(v)].first || !anyFirst ? 0 : 1;
+            for(const auto u : order) for(const auto s : succs[size_t(u)])
+                if(!elements[size_t(s)].first && std::find(order.begin(), order.end(), s) > std::find(order.begin(), order.end(), u)) rank[size_t(s)] = std::max(rank[size_t(s)], rank[size_t(u)] + 1);
+            int top = 0;
+            for(int v = 0; v < n; ++v) if(!elements[size_t(v)].last) top = std::max(top, rank[size_t(v)]);
+            for(int v = 0; v < n; ++v) if(elements[size_t(v)].last) rank[size_t(v)] = top + 1;
+            const int columns = *std::max_element(rank.begin(), rank.end()) + 1;
+            // Layers, with a slot for each wire in each column it crosses.
+            struct Slot { int element = -1, edge = -1; };
+            std::vector<std::vector<Slot>> layers(static_cast<size_t>(columns));
+            for(int v = 0; v < n; ++v) layers[size_t(rank[size_t(v)])].push_back({v, -1});
+            for(size_t i = 0; i < edges.size(); ++i)
+                for(int r = rank[size_t(edges[i].from)] + 1; r < rank[size_t(edges[i].to)]; ++r) layers[size_t(r)].push_back({-1, int(i)});
+            auto position = [&](int r, Slot s) {
+                const auto& l = layers[size_t(r)];
+                for(size_t i = 0; i < l.size(); ++i) if(l[i].element == s.element && l[i].edge == s.edge) return double(i);
+                return -1.0;
+            };
+            // What a slot is joined to in the column before (up) or after.
+            auto neighbours = [&](int r, const Slot& s, bool up) {
+                std::vector<double> at;
+                const int other = up ? r - 1 : r + 1;
+                if(other < 0 || other >= columns) return at;
+                if(s.element < 0)
+                {
+                    const auto& e = edges[size_t(s.edge)];
+                    const int end = up ? e.from : e.to;
+                    at.push_back(rank[size_t(end)] == other ? position(other, {end, -1}) : position(other, {-1, s.edge}));
+                    return at;
+                }
+                for(size_t i = 0; i < edges.size(); ++i)
+                {
+                    const auto& e = edges[i];
+                    const int self = up ? e.to : e.from, end = up ? e.from : e.to;
+                    if(self != s.element || e.from == e.to) continue;
+                    const bool forward = up ? rank[size_t(end)] < r : rank[size_t(end)] > r;
+                    if(!forward) continue;
+                    at.push_back(rank[size_t(end)] == other ? position(other, {end, -1}) : position(other, {-1, int(i)}));
+                }
+                return at;
+            };
+            for(int sweep = 0; sweep < 8; ++sweep)
+            {
+                const bool up = sweep % 2 == 0;
+                for(int step = 0; step < columns; ++step)
+                {
+                    const int r = up ? step : columns - 1 - step;
+                    auto& l = layers[size_t(r)];
+                    std::vector<std::pair<double, Slot>> keyed;
+                    for(size_t i = 0; i < l.size(); ++i)
+                    {
+                        const auto at = neighbours(r, l[i], up);
+                        double key = double(i);
+                        if(!at.empty()) { key = 0; for(const auto a : at) key += a; key /= double(at.size()); }
+                        keyed.push_back({key, l[i]});
+                    }
+                    std::stable_sort(keyed.begin(), keyed.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
+                    for(size_t i = 0; i < l.size(); ++i) l[i] = keyed[i].second;
+                }
+            }
+            // Pixels: columns left to right, each centred on the tallest.
+            std::vector<int> x(static_cast<size_t>(columns)), width(static_cast<size_t>(columns), 0), height(static_cast<size_t>(columns), 0);
+            for(int r = 0; r < columns; ++r)
+            {
+                for(const auto& s : layers[size_t(r)]) width[size_t(r)] = std::max(width[size_t(r)], s.element < 0 ? 0 : elements[size_t(s.element)].w);
+                for(size_t i = 0; i < layers[size_t(r)].size(); ++i)
+                    height[size_t(r)] += (i ? m.row : 0) + (layers[size_t(r)][i].element < 0 ? m.slot : elements[size_t(layers[size_t(r)][i].element)].h);
+                x[size_t(r)] = r ? x[size_t(r) - 1] + width[size_t(r) - 1] + m.gap : 0;
+            }
+            out.width = x.back() + width.back();
+            out.height = *std::max_element(height.begin(), height.end());
+            std::map<std::pair<int, int>, double> dummyY; // (edge, column) -> its slot's middle
+            for(int r = 0; r < columns; ++r)
+            {
+                int y = (out.height - height[size_t(r)]) / 2;
+                for(const auto& s : layers[size_t(r)])
+                {
+                    if(s.element < 0) { dummyY[{s.edge, r}] = y + m.slot / 2.0; y += m.slot + m.row; continue; }
+                    const auto& e = elements[size_t(s.element)];
+                    out.rects[size_t(s.element)] = {x[size_t(r)], y, e.w, e.h};
+                    y += e.h + m.row;
+                }
+            }
+            // Ports: each wire its own place on an edge, in the order of what is at its other end.
+            auto towards = [&](size_t i, bool exit) {
+                const auto& e = edges[i];
+                const int r = rank[size_t(exit ? e.from : e.to)], next = exit ? r + 1 : r - 1;
+                if(const auto d = dummyY.find({int(i), next}); d != dummyY.end()) return d->second;
+                const auto& o = out.rects[size_t(exit ? e.to : e.from)];
+                return o.y + o.h / 2.0;
+            };
+            std::vector<double> exitY(edges.size()), entryY(edges.size());
+            for(int v = 0; v < n; ++v)
+            {
+                for(const bool exit : {true, false})
+                {
+                    std::vector<size_t> mine;
+                    for(size_t i = 0; i < edges.size(); ++i) if((exit ? edges[i].from : edges[i].to) == v && edges[i].from != edges[i].to) mine.push_back(i);
+                    std::stable_sort(mine.begin(), mine.end(), [&](size_t a, size_t b) { return towards(a, exit) < towards(b, exit); });
+                    const auto& rect = out.rects[size_t(v)];
+                    for(size_t k = 0; k < mine.size(); ++k) (exit ? exitY : entryY)[mine[k]] = rect.y + rect.h * double(k + 1) / double(mine.size() + 1);
+                }
+            }
+            bool back = false;
+            for(size_t i = 0; i < edges.size(); ++i)
+            {
+                const auto& e = edges[i];
+                if(e.from == e.to) continue;
+                const auto& a = out.rects[size_t(e.from)]; const auto& b = out.rects[size_t(e.to)];
+                const int ra = rank[size_t(e.from)], rb = rank[size_t(e.to)];
+                auto& p = out.paths[i];
+                p.push_back({double(a.x + a.w), exitY[i]});
+                const double right = x[size_t(ra)] + width[size_t(ra)];
+                if(right > a.x + a.w) p.push_back({right, exitY[i]}); // along its own row to the gap
+                if(rb > ra)
+                {
+                    for(int r = ra + 1; r < rb; ++r) { const auto y = dummyY.at({int(i), r}); p.push_back({double(x[size_t(r)]), y}); p.push_back({double(x[size_t(r)] + width[size_t(r)]), y}); }
+                }
+                else
+                {
+                    // Back to an earlier column: below everything, through the gaps either side.
+                    back = true;
+                    const double below = out.height + m.row;
+                    p.push_back({right + m.gap / 2.0, exitY[i]}); p.push_back({right + m.gap / 2.0, below});
+                    p.push_back({b.x - m.gap / 2.0, below}); p.push_back({b.x - m.gap / 2.0, entryY[i]});
+                }
+                p.push_back({double(b.x), entryY[i]});
+            }
+            if(back) out.height += m.row * 2;
+            return out;
+        }
+    }
+
+    std::vector<RoutingPoint> routingCurve(const std::vector<RoutingPoint>& points, int steps)
+    {
+        std::vector<RoutingPoint> out;
+        for(size_t i = 0; i + 1 < points.size(); ++i)
+        {
+            const auto p = points[i], q = points[i + 1];
+            const double half = (q.x - p.x) / 2;
+            for(int s = i ? 1 : 0; s <= steps; ++s)
+            {
+                const double t = double(s) / steps, u = 1 - t;
+                const double cx1 = p.x + half, cx2 = q.x - half;
+                out.push_back({u * u * u * p.x + 3 * u * u * t * cx1 + 3 * u * t * t * cx2 + t * t * t * q.x,
+                               u * u * u * p.y + 3 * u * u * t * p.y + 3 * u * t * t * q.y + t * t * t * q.y});
+            }
+        }
+        return out;
+    }
+
+    RoutingLayout layoutRouting(const Control::GraphState& g, bool collapsed, const std::set<uint32_t>& expanded, const RoutingMetrics& m)
+    {
+        RoutingLayout out;
+        const auto routing = readRouting(g);
+        const auto rows = readParts(g);
+        auto open = [&](uint32_t part) { return !collapsed || expanded.count(part) != 0; };
+        // The elements of the whole view: graph inputs and outputs, loose plugins and parts.
+        struct Top { int node = -1; uint32_t part = 0; };  // node: an index into routing.nodes
+        std::vector<Top> tops; std::vector<Element> elements;
+        std::map<std::pair<NodeId, uint32_t>, int> topOf;  // (node, port) of an end, (node, 0) of a plugin
+        std::map<uint32_t, int> topOfPart;
+        std::map<NodeId, uint32_t> partOf;
+        for(size_t i = 0; i < routing.nodes.size(); ++i)
+        {
+            const auto& n = routing.nodes[i];
+            if(n.part)
+            {
+                partOf[n.node] = n.part;
+                if(!topOfPart.count(n.part)) { topOfPart[n.part] = int(tops.size()); tops.push_back({-1, n.part}); elements.push_back({m.part, m.partHeight}); }
+                topOf[{n.node, 0}] = topOfPart[n.part];
+                continue;
+            }
+            const bool input = n.node == graphInput, output = n.node == graphOutput;
+            topOf[{n.node, input || output ? n.port : 0}] = int(tops.size());
+            tops.push_back({int(i), 0});
+            elements.push_back({m.node, m.nodeHeight, input, output});
+        }
+        auto endOf = [&](const Wire& w, bool from) {
+            const NodeId node = from ? w.from : w.to;
+            if(node == graphInput) return topOf.count({node, w.kind == WireKind::Notes ? notesPort : w.fromPort}) ? topOf.at({node, w.kind == WireKind::Notes ? notesPort : w.fromPort}) : -1;
+            if(node == graphOutput) return topOf.count({node, w.toPort}) ? topOf.at({node, w.toPort}) : -1;
+            return topOf.count({node, 0}) ? topOf.at({node, 0}) : -1;
+        };
+        // Wires: between elements of the view, or inside an expanded part.
+        struct Inner { std::vector<NodeId> nodes; std::vector<Element> elements; std::vector<Edge> edges; std::map<NodeId, int> index; int in = 0, out = 0; Placed placed; };
+        std::map<uint32_t, Inner> inner;
+        for(const auto& [part, top] : topOfPart)
+        {
+            if(!open(part)) continue;
+            auto& in = inner[part];
+            for(const auto& n : routing.nodes) if(n.part == part) { in.index[n.node] = int(in.nodes.size()); in.nodes.push_back(n.node); in.elements.push_back({m.node, m.nodeHeight}); }
+            in.in = int(in.elements.size()); in.elements.push_back({0, m.nodeHeight, true, false});
+            in.out = int(in.elements.size()); in.elements.push_back({0, m.nodeHeight, false, true});
+        }
+        std::vector<Edge> topEdges; std::vector<size_t> topWire;
+        std::map<size_t, int> enterEdge, leaveEdge, innerEdge; // wire index -> edge index inside its part
+        for(size_t i = 0; i < g.wires.size(); ++i)
+        {
+            const auto& w = g.wires[i];
+            const int a = endOf(w, true), b = endOf(w, false);
+            if(a < 0 || b < 0) continue;
+            if(a == b)
+            {
+                if(!tops[size_t(a)].part || !open(tops[size_t(a)].part)) continue; // inside a collapsed part
+                auto& in = inner[tops[size_t(a)].part];
+                innerEdge[i] = int(in.edges.size()); in.edges.push_back({in.index.at(w.from), in.index.at(w.to)});
+                continue;
+            }
+            topWire.push_back(i); topEdges.push_back({a, b});
+            if(const auto pa = tops[size_t(a)].part; pa && open(pa)) { auto& in = inner[pa]; leaveEdge[i] = int(in.edges.size()); in.edges.push_back({in.index.at(w.from), in.out}); }
+            if(const auto pb = tops[size_t(b)].part; pb && open(pb)) { auto& in = inner[pb]; enterEdge[i] = int(in.edges.size()); in.edges.push_back({in.in, in.index.at(w.to)}); }
+        }
+        auto inside = m; inside.gap = m.gap / 2; // a frame's plugins sit closer
+        for(auto& [part, in] : inner)
+        {
+            in.placed = place(in.elements, in.edges, inside);
+            elements[size_t(topOfPart.at(part))] = {in.placed.width + 2 * m.frame, in.placed.height + m.frameHead + m.frame};
+        }
+        const auto placed = place(elements, topEdges, m);
+        out.width = placed.width; out.height = placed.height;
+        // Boxes: frames first, then plugins, parts and ends over them.
+        auto origin = [&](uint32_t part) { const auto& r = placed.rects[size_t(topOfPart.at(part))]; return RoutingPoint{double(r.x + m.frame), double(r.y + m.frameHead)}; };
+        for(const auto& [part, in] : inner)
+        {
+            RoutingLayout::Box frame; frame.kind = RoutingLayout::Box::Kind::Frame; frame.part = part; frame.bounds = placed.rects[size_t(topOfPart.at(part))];
+            for(const auto& r : rows.parts) if(r.id == part) frame.name = r.name;
+            for(const auto& r : rows.buses) if(r.id == part) frame.name = r.name;
+            out.boxes.push_back(frame);
+        }
+        for(size_t t = 0; t < tops.size(); ++t)
+        {
+            const auto& top = tops[t];
+            if(top.part && open(top.part)) continue;
+            RoutingLayout::Box box; box.bounds = placed.rects[t];
+            if(top.part)
+            {
+                box.kind = RoutingLayout::Box::Kind::Part; box.part = top.part;
+                for(const auto* list : {&rows.parts, &rows.buses}) for(const auto& r : *list) if(r.id == top.part)
+                {
+                    box.name = r.name; box.detail = r.bus ? "bus" : "";
+                    for(const auto& c : r.chain) box.chips.push_back(c.split ? c.name + " · " + std::to_string(c.lanes.size()) + " lanes" : c.name);
+                }
+            }
+            else
+            {
+                const auto& n = routing.nodes[size_t(top.node)];
+                box.node = n.node; box.port = n.port; box.name = n.name; box.detail = n.node == graphInput || n.node == graphOutput ? "" : "no part";
+            }
+            out.boxes.push_back(box);
+        }
+        for(const auto& [part, in] : inner)
+        {
+            const auto o = origin(part);
+            for(size_t k = 0; k < in.nodes.size(); ++k)
+            {
+                RoutingLayout::Box box; box.node = in.nodes[k]; box.part = part;
+                for(const auto& n : routing.nodes) if(n.node == in.nodes[k]) { box.name = n.name; box.detail = n.partName; }
+                const auto& r = in.placed.rects[k];
+                box.bounds = {int(o.x) + r.x, int(o.y) + r.y, r.w, r.h};
+                out.boxes.push_back(box);
+            }
+        }
+        // Paths: inside a part to its frame's edge, across the view, into the other part.
+        auto shifted = [&](uint32_t part, const std::vector<RoutingPoint>& points) {
+            const auto o = origin(part); std::vector<RoutingPoint> p;
+            for(const auto& q : points) p.push_back({q.x + o.x, q.y + o.y});
+            return p;
+        };
+        for(size_t k = 0; k < topEdges.size(); ++k)
+        {
+            const auto i = topWire[k];
+            const auto& w = g.wires[i];
+            std::vector<RoutingPoint> points;
+            const auto pa = tops[size_t(topEdges[k].from)].part, pb = tops[size_t(topEdges[k].to)].part;
+            if(leaveEdge.count(i)) { auto p = shifted(pa, inner.at(pa).placed.paths[size_t(leaveEdge.at(i))]); p.back().x = placed.rects[size_t(topEdges[k].from)].x + placed.rects[size_t(topEdges[k].from)].w; points = p; }
+            const auto& across = placed.paths[k];
+            points.insert(points.end(), across.begin() + (points.empty() ? 0 : 1), across.end() - (enterEdge.count(i) ? 1 : 0));
+            if(enterEdge.count(i)) { auto p = shifted(pb, inner.at(pb).placed.paths[size_t(enterEdge.at(i))]); p.front().x = placed.rects[size_t(topEdges[k].to)].x; points.insert(points.end(), p.begin(), p.end()); }
+            out.paths.push_back({w, wireState(w, g.topology), points});
+        }
+        for(const auto& [i, e] : innerEdge)
+        {
+            const auto part = partOf.at(g.wires[i].from);
+            out.paths.push_back({g.wires[i], wireState(g.wires[i], g.topology), shifted(part, inner.at(part).placed.paths[size_t(e)])});
+        }
+        return out;
     }
 
     std::vector<RoutingInput> inputsOf(const Control::GraphState& g, NodeId node)
