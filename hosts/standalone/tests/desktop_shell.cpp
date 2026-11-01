@@ -194,6 +194,15 @@ int main(int argc, char** argv)
                 check(library.pills(), "the libraries and tags as pills");
                 snapshot(library, "library-pills");
                 library.setPills(false);
+                // Both views in the other built-in themes: light, outlined, and square-edged.
+                for(const char* other : {"oscairn-light", "oscairn-classic", "oscairn-block"})
+                {
+                    theme.apply(other); library.resized();
+                    const auto suffix = juce::String(other).fromFirstOccurrenceOf("oscairn-", false, false);
+                    snapshot(library, "library-list-" + suffix);
+                    library.setPills(true); snapshot(library, "library-pills-" + suffix); library.setPills(false);
+                }
+                theme.apply("oscairn-dark"); library.resized();
                 // The user's own, by source; a copy is the user's own, under its own ID.
                 library.showSource("mine");
                 check(wait([&] { return library.items().size() == 3; }), "the user's own, by source");
@@ -205,8 +214,10 @@ int main(int argc, char** argv)
                 library.refresh();
                 check(wait([&] { return library.items().size() == 3; }), "back to three");
                 // Audition: a Performance tried in place of the open one, then put back.
+                check(wait([&] { return !engine.soundBusy(); }), "the engine free before auditioning");
                 const auto openName = engine.performanceInfo()->name;
                 library.startAudition(1);
+                check(!library.auditioning().id.empty(), "the audition asked for: " + library.message().toStdString());
                 const auto tried = library.items()[1];
                 check(wait([&] { return !engine.soundBusy(); }) && engine.audition()->id == tried.id && engine.performanceInfo()->name == tried.name,
                       "auditioning " + tried.name + ": " + engine.soundMessage());
@@ -325,12 +336,14 @@ int main(int argc, char** argv)
                 Control::Archive exported;
                 check(engine.archiveContents(archive.getFullPathName().toStdString(), exported).empty() && exported.kind == "performance", "its contents read back");
                 // Installed back as the user's own, the default for an export: a copy under a new ID.
-                const auto before = engine.library({})->total;
+                // The library answers only while the engine is free: wait for an answer, not a guess.
+                auto total = [&] { std::optional<Control::LibraryResult> r; wait([&] { return (r = engine.library({})).has_value(); }); return r ? r->total : ~0u; };
+                const auto before = total();
                 standalone::SoundAction in; in.kind = standalone::SoundAction::InstallArchive; in.directory = archive.getFullPathName().toStdString();
                 engine.soundAction(std::move(in));
                 const auto count = exported.items.size(); // the Performance, and the Sound its part still is
                 check(wait([&] { return !engine.soundBusy(); }) && engine.soundMessage() == "Installed " + std::to_string(count) + ".", "installed: " + engine.soundMessage());
-                check(count == 2 && engine.library({})->total == before + count, "copies of the Performance and its part's Sound, under new IDs");
+                check(count == 2 && total() == before + count, "copies of the Performance and its part's Sound, under new IDs");
                 library.showKind("performance"); library.refresh();
                 wait([&] { return library.items().size() == 4; });
                 snapshot(library, "library-installed");

@@ -23,15 +23,20 @@ namespace oscairn::standalone
             g.setColour(on ? ink(Ink::Accent) : ink(Ink::Muted).withAlpha(.6f));
             if(on) g.fillPath(star); else g.strokePath(star, juce::PathStrokeType(1.2f));
         }
-        // Text centered on its capital letters, so it sits in the middle of a row or pill whatever
-        // the font's ascent and descent.
+        // Text placed by its glyphs: its capital letters' middle on the box's, the baseline below,
+        // and its ink across the box as justified, shortened to fit with an ellipsis.
         void drawCentered(juce::Graphics& g, const juce::String& s, juce::Rectangle<int> r, const juce::Font& font, juce::Justification h = juce::Justification::left)
         {
+            // Measured from the outlines: a glyph arrangement's boxes are the font's whole line height.
+            auto inkOf = [](const juce::GlyphArrangement& a) { juce::Path p; a.createPath(p); return p.getBounds(); };
             juce::GlyphArrangement caps; caps.addLineOfText(font, "H", 0, 0);
-            const float capHeight = -caps.getBoundingBox(0, 1, true).getY();
-            const float baseline = r.toFloat().getCentreY() + capHeight / 2;
-            g.setFont(font);
-            g.drawText(s, juce::Rectangle<float>(float(r.getX()), baseline - font.getAscent(), float(r.getWidth()), font.getHeight()), h.getOnlyHorizontalFlags() | juce::Justification::top, true);
+            const float capTop = inkOf(caps).getY(); // above the baseline: negative
+            juce::GlyphArrangement line; line.addCurtailedLineOfText(font, s, 0, 0, float(r.getWidth()), true);
+            const auto ink = inkOf(line);
+            const float x = h.testFlags(juce::Justification::horizontallyCentred) ? r.toFloat().getCentreX() - ink.getCentreX()
+                          : h.testFlags(juce::Justification::right) ? float(r.getRight()) - ink.getRight() : float(r.getX());
+            line.moveRangeOfGlyphs(0, -1, x, r.toFloat().getCentreY() - capTop / 2);
+            line.draw(g);
         }
         juce::String tagText(const std::vector<std::string>& tags)
         {
@@ -56,7 +61,6 @@ namespace oscairn::standalone
         compactButton_.setClickingTogglesState(true);
         compactButton_.setTooltip("One line a row, to see more at once");
         compactButton_.onClick = [this] { setCompact(compactButton_.getToggleState()); };
-        list_.setColour(juce::ListBox::backgroundColourId, ink(Ink::Surface));
         list_.setOutlineThickness(0);
         list_.setRowSelectedOnMouseDown(false); // clicks come on release, so a long press can open the menu
         sideView_.setViewedComponent(&sidebar_, false);
@@ -72,7 +76,6 @@ namespace oscairn::standalone
         options_.setTooltip("Everything for the selected item: edit, color, copy, delete. A right click or a long press on a row does the same");
         libraries_.onClick = [this] { librariesMenu(); };
         libraries_.setTooltip("Install a library or an exported Performance, uninstall a library, or show a hidden tag");
-        status_.setColour(juce::Label::textColourId, ink(Ink::Muted));
         for(auto* c : std::initializer_list<juce::Component*>{&search_, &favorites_, &recent_, &compactButton_, &sideView_, &list_, &options_, &audition_, &status_}) addAndMakeVisible(c);
         addChildComponent(keep_);
         for(auto* c : std::initializer_list<juce::Component*>{&send_, &part_, &cancel_, &pick_, &performances_, &sounds_, &libraries_}) addChildComponent(c);
@@ -84,7 +87,7 @@ namespace oscairn::standalone
             compact_ = words.contains("compact"); pills_ = words.contains("pills");
         }
         compactButton_.setToggleState(compact_, juce::dontSendNotification);
-        sidebar_.pills.setToggleState(pills_, juce::dontSendNotification);
+        (pills_ ? sidebar_.pills : sidebar_.list).setToggleState(true, juce::dontSendNotification);
         showKind(kind);
         startTimer(300);
     }
@@ -119,7 +122,7 @@ namespace oscairn::standalone
     void LibraryPane::setPills(bool pills)
     {
         pills_ = pills;
-        sidebar_.pills.setToggleState(pills, juce::dontSendNotification);
+        (pills ? sidebar_.pills : sidebar_.list).setToggleState(true, juce::dontSendNotification);
         savePreference();
         rebuildSide();
     }
@@ -202,10 +205,10 @@ namespace oscairn::standalone
 
     LibraryPane::Sidebar::Sidebar(LibraryPane& p) : pane(p)
     {
-        pills.setClickingTogglesState(true);
-        pills.setTooltip("Show the libraries and tags as pills, to see more at once, or as a list");
-        pills.onClick = [this] { pane.setPills(pills.getToggleState()); };
-        addAndMakeVisible(pills);
+        for(auto* b : {&list, &pills}) { b->setClickingTogglesState(true); b->setRadioGroupId(1); addAndMakeVisible(b); }
+        list.setTooltip("The libraries and tags as a list"); pills.setTooltip("The libraries and tags as pills, to see more at once");
+        list.onClick = [this] { pane.setPills(false); };
+        pills.onClick = [this] { pane.setPills(true); };
     }
 
     int LibraryPane::Sidebar::layout(int width)
@@ -229,7 +232,13 @@ namespace oscairn::standalone
                 flow = {};
                 area.removeFromTop(first ? gap : gap * 2);
                 s.bounds = area.removeFromTop(int(small) + 2);
-                if(first) { const int w = touch ? 76 : 58; pills.setBounds(s.bounds.withLeft(s.bounds.getRight() - w).withSizeKeepingCentre(w, int(small) + 10)); }
+                if(first)
+                {
+                    // The two views' icons at the heading's end.
+                    const int side = touch ? 36 : 24;
+                    auto icons = s.bounds.withLeft(s.bounds.getRight() - 2 * side - 2).withSizeKeepingCentre(2 * side + 2, side);
+                    pills.setBounds(icons.removeFromRight(side)); icons.removeFromRight(2); list.setBounds(icons.removeFromRight(side));
+                }
                 area.removeFromTop(gap);
                 first = false;
                 continue;
@@ -294,7 +303,8 @@ namespace oscairn::standalone
             }
             if(!color.isTransparent() || (s.kind == Side::Tag && !pane.pills_)) r.removeFromLeft(14); // tags line up whether or not they have a color
             g.setColour(on ? ink(Ink::Accent) : ink(Ink::Text));
-            drawCentered(g, s.label, r, juce::Font(juce::FontOptions(body, on && !pane.pills_ ? juce::Font::bold : juce::Font::plain)));
+            drawCentered(g, s.label, r, juce::Font(juce::FontOptions(body, on && !pane.pills_ ? juce::Font::bold : juce::Font::plain)),
+                         pane.pills_ ? juce::Justification::horizontallyCentred : juce::Justification::left);
         }
     }
 
@@ -445,7 +455,13 @@ namespace oscairn::standalone
 
     void LibraryPane::listBoxItemDoubleClicked(int row, const juce::MouseEvent&) { if(mode_ == Mode::Pick) choose(row); }
 
-    void LibraryPane::paint(juce::Graphics& g) { g.fillAll(ink(Ink::Background)); }
+    void LibraryPane::paint(juce::Graphics& g)
+    {
+        // The theme can change while the pane is open: colors set once would keep the old one.
+        list_.setColour(juce::ListBox::backgroundColourId, ink(Ink::Surface));
+        status_.setColour(juce::Label::textColourId, ink(Ink::Muted));
+        g.fillAll(ink(Ink::Background));
+    }
 
     void LibraryPane::resized()
     {

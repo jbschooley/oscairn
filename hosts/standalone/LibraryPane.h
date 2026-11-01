@@ -2,6 +2,7 @@
 #pragma once
 #include "Apps.h"
 #include "Engine.h"
+#include "Icons.h"
 #include "Theme.h"
 #include <juce_gui_basics/juce_gui_basics.h>
 
@@ -68,7 +69,7 @@ namespace oscairn::standalone
         {
             explicit Sidebar(LibraryPane& p);
             LibraryPane& pane;
-            juce::TextButton pills{"Pills"};
+            IconButton list{IconButton::Glyph::List, "Show as a list"}, pills{IconButton::Glyph::Pills, "Show as pills"};
             int layout(int width); // places every entry; returns the height they take
             void paint(juce::Graphics&) override;
             void mouseUp(const juce::MouseEvent&) override;

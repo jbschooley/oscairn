@@ -12,13 +12,16 @@ namespace oscairn::standalone
     class IconButton : public juce::Button
     {
     public:
-        enum class Glyph { Plus, Undo, Redo, Detach };
+        enum class Glyph { Plus, Undo, Redo, Detach, List, Pills };
         IconButton(Glyph glyph, const juce::String& name) : juce::Button(name), glyph_(glyph) { setTitle(name); }
 
         void paintButton(juce::Graphics& g, bool hover, bool down) override
         {
-            // A transparent button color draws the glyph alone, for icons inside another control.
-            if(const auto color = findColour(juce::TextButton::buttonColourId); !color.isTransparent()) getLookAndFeel().drawButtonBackground(g, *this, color, hover, down);
+            // A transparent button color draws the glyph alone, for icons inside another control;
+            // a toggle that is on is tinted with the accent, as a chosen tab is.
+            const bool on = getClickingTogglesState() && getToggleState();
+            if(on) { g.setColour(ink(Ink::Accent).withAlpha(.22f)); g.fillRoundedRectangle(getLocalBounds().toFloat(), buttonRadius(float(getHeight()))); }
+            else if(const auto color = findColour(juce::TextButton::buttonColourId); !color.isTransparent()) getLookAndFeel().drawButtonBackground(g, *this, color, hover, down);
             else if(hover || down) { g.setColour(ink(Ink::Text).withAlpha(down ? .16f : .08f)); g.fillRoundedRectangle(getLocalBounds().toFloat(), 4); }
             const float side = std::min(float(getWidth()), float(getHeight())) * .5f;
             const auto box = getLocalBounds().toFloat().withSizeKeepingCentre(side, side);
@@ -51,12 +54,31 @@ namespace oscairn::standalone
                 p.startNewSubPath(box.getX() + side * .45f, box.getY() + side * .55f); p.lineTo(box.getRight(), box.getY());
                 p.startNewSubPath(box.getRight() - side * .4f, box.getY()); p.lineTo(box.getRight(), box.getY()); p.lineTo(box.getRight(), box.getY() + side * .4f);
                 break;
+            case Glyph::List:
+                // Three rows, each a dot and a line.
+                for(int i = 0; i < 3; ++i)
+                {
+                    const float y = box.getY() + side * (.1f + .4f * float(i));
+                    p.addEllipse(box.getX(), y - side * .04f, side * .08f, side * .08f);
+                    p.startNewSubPath(box.getX() + side * .28f, y); p.lineTo(box.getRight(), y);
+                }
+                break;
+            case Glyph::Pills:
+            {
+                // Two pills, one above the other, as they wrap, filled: wider than the box, so each
+                // reads as a pill, with a clear gap between them.
+                const float w = side * 1.2f, h = side * .36f, x = box.getCentreX() - w / 2;
+                p.addRoundedRectangle(x, box.getY(), w, h, h / 2);
+                p.addRoundedRectangle(x, box.getBottom() - h, w * .62f, h, h / 2);
+                break;
+            }
             }
             // Centred by what is drawn, so an arrow sits in the middle of its box.
             const auto drawn = p.getBounds();
             p.applyTransform(juce::AffineTransform::translation(box.getCentreX() - drawn.getCentreX(), box.getCentreY() - drawn.getCentreY()));
-            g.setColour(ink(Ink::Text).withMultipliedAlpha(isEnabled() ? 1.f : .35f));
-            g.strokePath(p, juce::PathStrokeType(std::max(1.5f, side * .12f), juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+            g.setColour((on ? ink(Ink::Accent) : ink(Ink::Text)).withMultipliedAlpha(isEnabled() ? 1.f : .35f));
+            if(glyph_ == Glyph::Pills) g.fillPath(p); // outlines this small run together
+            else g.strokePath(p, juce::PathStrokeType(std::max(1.5f, side * .12f), juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
         }
 
     private:
