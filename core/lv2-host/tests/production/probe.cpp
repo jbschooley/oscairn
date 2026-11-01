@@ -29,8 +29,8 @@ int main(int argc,char** argv)
         }
         const bool held=std::string(argv[3])=="held";
         const bool synth=held || std::string(argv[3])=="synth";
-        const int param=std::stoi(argv[7]);const double value=std::stod(argv[8]);
-        if(param>=0 && !host->setParameter(param,value))throw std::runtime_error("parameter write rejected");
+        const long long param=std::stoll(argv[7]);const double value=std::stod(argv[8]); // CLAP IDs reach 2^32-1
+        if(param>=0 && !host->setParameter(static_cast<uint32_t>(param),value))throw std::runtime_error("parameter write rejected");
         const auto ni=host->inputPorts().size(),no=host->outputPorts().size();
         if(!no || no>8 || ni>8 || (synth && !host->noteInputPorts()))throw std::runtime_error("unexpected port inventory");
         std::vector<std::vector<float>> input(ni,std::vector<float>(block)),output(no,std::vector<float>(block));
