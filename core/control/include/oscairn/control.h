@@ -80,6 +80,8 @@ namespace oscairn
             std::vector<SceneParameter> sceneParameters;
             uint32_t scene = 0; // the scene last selected or stored, or 0
             std::vector<Macro> macros;
+            std::set<NodeId> disabled; // plugins switched off (setNodeEnabled)
+            std::set<NodeId> ringing;  // those of them still sounding out: notes held, a tail
         };
         enum class ChangeKind { Value, GestureBegin, GestureEnd, Graph, Resync };
         struct Change
@@ -218,6 +220,13 @@ namespace oscairn
         virtual std::vector<WireMeter> wireMeters() const = 0;
         virtual uint32_t connectPorts( const Wire& wire ) = 0; // a user wire; returns its ID
         virtual void disconnectWire( uint32_t wire ) = 0;
+        // Switching plugins and wires off and on, as scenes do (RFC 0011). An off plugin takes no
+        // new notes and no sound: notes it holds play on until released, with their releases and
+        // pedal, and its sound rings out, then stops. In a part's chain, what reached an off plugin
+        // also passes around it, so an effect off is bypassed. An off note wire takes no new notes;
+        // an off audio wire is silent. Edits, like a level; staged until commit.
+        virtual void setNodeEnabled( NodeId node, bool enabled ) = 0;
+        virtual void setWireEnabled( uint32_t wire, bool enabled ) = 0;
         virtual void setMix( uint32_t wire, double level, double pan, bool mute, bool solo ) = 0;
         virtual void setZones( uint32_t wire, const std::vector<NoteZone>& zones ) = 0; // a note wire's zones
 

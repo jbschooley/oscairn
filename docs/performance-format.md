@@ -1,4 +1,4 @@
-# Performance format, version 3
+# Performance format, version 4
 
 A Performance saves the graph, all prepared sounds and their MIDI-channel assignments,
 plugin settings/state, its wires and parts ([RFC 0011](rfcs/0011-performance-ui-and-editors.md)),
@@ -44,12 +44,12 @@ Required top-level fields:
 
 | Field | Meaning |
 | --- | --- |
-| `format`, `version` | Exactly `oscairn.performance` and integer `3` |
+| `format`, `version` | Exactly `oscairn.performance` and integer `4` |
 | `info` | What the library shows ([RFC 0021](rfcs/0021-sounds-performances-and-library.md)): `id` (made at the first save, kept by every later one), `name` (the folder's name when none is set), `description`, up to 32 free `tags`, `color` (`#rrggbb`, or empty for none), and `revision` (made at every save) and `parent` (the revision it was saved over; empty for the first), and `hash`: SHA-256 of the contents, over the document without its info block followed by each file under `nodes/` by path with its own SHA-256, in path order. Names, tags and revisions are not contents. Equal hashes mean equal contents; the ID stays the identifier |
 | `transport` | Tempo and `internal` or `midi` clock source |
 | `audioInputs`, `audioOutputs` | Required logical graph ports: ID, channels, flags |
-| `nodes` | Local key, display name, plugin identity/version, path hint, shared engine key, expected audio/note ports |
-| `wires` | Audio and note wires: owner (`part`, with its part ID, or `user`), source and destination node and audio port, explicit channel pairs or none (the channel rules), the source's level, pan, mute and solo in the destination's Mix, and a note wire's zones |
+| `nodes` | Local key, display name, plugin identity/version, path hint, shared engine key, expected audio/note ports, and `enabled` (false: switched off, as scenes do; it takes no notes and no sound, and a part passes what reaches it around it) |
+| `wires` | Audio and note wires: owner (`part`, with its part ID, or `user`), source and destination node and audio port, explicit channel pairs or none (the channel rules), the source's level, pan, mute and solo in the destination's Mix, a note wire's zones, and `enabled` (false: switched off; a note wire takes no new notes, an audio wire is silent) |
 | `parts` | ID, name, input (`notes` with its zones, device rules (selectors, resolved against the devices of the machine that opens it) and `maxNotes`, `audio` with a graph input port, `none`, or `bus` for a shared bus), the chain of node keys and `{"split":id}` entries, its `splits` (kind, the keys of its Split and Join nodes or null, and each lane with its chain, zones, level, pan, mute and solo), the graph output port or the `bus` it plays through, its `sends` to buses with their levels, and its `level`, `pan`, `mute` and `solo` |
 | `parts[].from` | Where the part came from (RFC 0021): `{sound, revision, name, modified}`, the library Sound and revision loaded into it, its name then, and whether the part has been edited since; `null` when none. Kept wherever the Performance is saved, to the library or to a folder (an export). The part never needs the Sound: it is a copy. Planned: an export brings every asset and the Sounds of unedited parts, and optionally of edited ones ([RFC 0021](rfcs/0021-sounds-performances-and-library.md#exporting-a-performance)) |
 | `mappings` | Source node/lane to destination node/parameter |
@@ -118,7 +118,7 @@ Unknown versions are rejected, preserving the current session and original folde
 
 A Sound ([RFC 0021](rfcs/0021-sounds-performances-and-library.md)) is a part saved without its
 seat, in a folder with the same layout: `sound.json` and `nodes/`. It uses the same objects
-and limits as a Performance, with `format` `oscairn.sound` and version 3:
+and limits as a Performance, with `format` `oscairn.sound` and version 4:
 
 | Field | Meaning |
 | --- | --- |

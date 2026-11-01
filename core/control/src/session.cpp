@@ -2,6 +2,7 @@
 #include "oscairn/session.h"
 
 #include <algorithm>
+#include <iterator>
 #include <cmath>
 #include <stdexcept>
 
@@ -177,7 +178,9 @@ namespace oscairn
 
     Control::GraphState Session::graphState() const
     {
-        return {graph_.describe(),nodes_,revision_,staged_,parts_,wires_,scenes_,sceneParameters_,scene_,macros_};
+        std::set<NodeId> ringing;
+        std::set_difference(disabled_.begin(), disabled_.end(), rungOut_.begin(), rungOut_.end(), std::inserter(ringing, ringing.end()));
+        return {graph_.describe(),nodes_,revision_,staged_,parts_,wires_,scenes_,sceneParameters_,scene_,macros_,disabled_,ringing};
     }
 
     void Session::saveState(NodeId node,const std::string& directory)
@@ -223,8 +226,9 @@ namespace oscairn
         auto mains=[&](bool input){try{return old.mainAudioPorts(input);}catch(const std::exception&){return std::vector<uint32_t>{};}};
         const auto mainIn=mains(true),mainOut=mains(false);
         auto parts=parts_;auto wires=wires_;
-        try{graph_.replace(node,path,pluginId,preset,[&]{remapPorts(node,inputs,outputs,mainIn,mainOut);compileWires(graph_,wires_);});}
+        try{graph_.replace(node,path,pluginId,preset,[&]{remapPorts(node,inputs,outputs,mainIn,mainOut);compileWires(graph_,wires_,disabled_,rungOut_);});}
         catch(...){parts_.swap(parts);wires_.swap(wires);throw;}
+        if(disabled_.count(node))graph_.setRetiring(node,true); // the new plugin is off too
         for(auto it=pending_.begin();it!=pending_.end();)
             if(it->first.first==node){commandCount_-=it->second.size();it=pending_.erase(it);}else ++it;
         std::erase_if(observed_,[&](const auto& entry){return entry.first.first==node;});
@@ -236,6 +240,7 @@ namespace oscairn
     {
         graph_.remove(node);
         nodes_.erase(node);
+        disabled_.erase(node); rungOut_.erase(node);
         outputDrops_.erase(node);
         for( auto it = pending_.begin(); it != pending_.end(); )
             if( it->first.first == node ) { commandCount_ -= it->second.size(); it = pending_.erase(it); }
@@ -298,6 +303,7 @@ namespace oscairn
     void Session::service()
     {
         graph_.service();
+        ringOut();
         meter();
         if( !staged_ ) record(); // changes that need no commit (scenes, controls, pads) are steps too
         for( const auto& [node,name] : nodes_ )

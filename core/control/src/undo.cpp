@@ -93,7 +93,7 @@ namespace oscairn
 
     Session::Model Session::model() const
     {
-        Model m{parts_, wires_, scenes_, sceneParameters_, macros_, padMap_, graph_.describe().mappings, {}};
+        Model m{parts_, wires_, scenes_, sceneParameters_, macros_, padMap_, graph_.describe().mappings, {}, disabled_};
         for(const auto& [id, name] : nodes_) m.nodes.emplace(id, std::pair{name, graph_.node(id)});
         return m;
     }
@@ -107,7 +107,7 @@ namespace oscairn
         const auto& b = *baseline_;
         const bool same = b.parts == now->parts && userWires(b.wires) == userWires(now->wires) && partWires(b.wires) == partWires(now->wires) &&
                           b.scenes == now->scenes && b.sceneParameters == now->sceneParameters && sameMacros(b.macros, now->macros) &&
-                          b.pads == now->pads && sameMappings(b.mappings, now->mappings) && sameNodes(b.nodes, now->nodes);
+                          b.pads == now->pads && sameMappings(b.mappings, now->mappings) && sameNodes(b.nodes, now->nodes) && b.disabled == now->disabled;
         if(!same)
         {
             Step step;
@@ -280,6 +280,8 @@ namespace oscairn
                 }
                 nodes_[id] = t->second.first;
             }
+            for(const auto id : ids)
+                if(graph_.contains(id) && from.disabled.count(id) != to.disabled.count(id)) enable(id, !to.disabled.count(id));
 
             // A part changes only in what the step changed: undoing a rename keeps a level a scene set since.
             patch(parts_, from.parts, to.parts, [](const Part& p) { return p.id; }, [](const Part& a, const Part& b) { return a == b; },
@@ -302,8 +304,8 @@ namespace oscairn
                 const auto k = keyOf(w);
                 const auto f = fromPart.find(k), t = toPart.find(k);
                 if(t != toPart.end() && (f == fromPart.end() || f->second.level != t->second.level || f->second.pan != t->second.pan ||
-                                         f->second.mute != t->second.mute || f->second.solo != t->second.solo))
-                    { w.level = t->second.level; w.pan = t->second.pan; w.mute = t->second.mute; w.solo = t->second.solo; }
+                                         f->second.mute != t->second.mute || f->second.solo != t->second.solo || f->second.enabled != t->second.enabled))
+                    { w.level = t->second.level; w.pan = t->second.pan; w.mute = t->second.mute; w.solo = t->second.solo; w.enabled = t->second.enabled; }
                 rebuilt.push_back(w);
             }
             wires_ = std::move(rebuilt);
@@ -393,16 +395,28 @@ namespace oscairn
                 return {"Edit " + p->name, ""};
             }
             if(!changed.empty()) return {"Edit parts", ""};
+            for(const auto id : b.disabled) if(!a.disabled.count(id)) return {"Turn off " + nameOf(id), ""};
+            for(const auto id : a.disabled) if(!b.disabled.count(id)) return {"Turn on " + nameOf(id), ""};
 
             if(userWires(a.wires) != userWires(b.wires))
             {
                 const auto x = userWires(a.wires), y = userWires(b.wires);
                 if(x.size() == y.size())
                     for(size_t i = 0; i < x.size(); ++i)
-                        if(!(x[i] == y[i]) && x[i].id == y[i].id) return {"Mix of " + nameOf(y[i].from), "wire:" + std::to_string(y[i].id)};
+                        if(!(x[i] == y[i]) && x[i].id == y[i].id)
+                        {
+                            if(x[i].enabled != y[i].enabled) return {std::string(y[i].enabled ? "Turn on" : "Turn off") + " the wire from " + nameOf(y[i].from), ""};
+                            return {"Mix of " + nameOf(y[i].from), "wire:" + std::to_string(y[i].id)};
+                        }
                 return {"Wiring", ""};
             }
-            if(partWires(a.wires) != partWires(b.wires)) return {"Mix", ""};
+            if(partWires(a.wires) != partWires(b.wires))
+            {
+                const auto x = partWires(a.wires), y = partWires(b.wires);
+                for(const auto& [k, w] : y)
+                    if(const auto o = x.find(k); o != x.end() && o->second.enabled != w.enabled) return {std::string(w.enabled ? "Turn on" : "Turn off") + " the wire from " + nameOf(w.from), ""};
+                return {"Mix", ""};
+            }
             if(a.scenes != b.scenes)
             {
                 if(a.scenes.size() < b.scenes.size()) return {"Add scene " + b.scenes.back().name, ""};

@@ -114,7 +114,8 @@ request members.
 | `transport.set` | one or more of `playing` (boolean), `tempo` (1..1000), `clockSource` (`"internal"` or `"midi"`) | `{"accepted":true}` |
 | `params.gesture` | `node`, `param`, `begin` (boolean) | `{"accepted":true}` |
 | `subscribe`, `unsubscribe` | `topics` (1..4 of `params.changed`, `transport`, `graph.changed`, `status`), optional `allChanges` boolean | `{"accepted":true}` |
-| `graph.get` | omitted or `{}` | staged topology, names/plugin metadata/ports, connections, mappings, parts, wires, `revision`, `staged`, numeric `input`/`output` endpoints |
+| `graph.get` | omitted or `{}` | staged topology, names/plugin metadata/ports, each node's `enabled` and `ringing` (switched off and still sounding out), connections, mappings, parts, wires (each with `enabled`), `revision`, `staged`, numeric `input`/`output` endpoints |
+| `graph.enable` | `node`, `enabled`: switches a plugin off or on, as scenes do. Off, it takes no new notes and no sound: notes it holds play on until released, its sound rings out and then stops (`ringing` until then). In a part's chain, what reached it passes around it, so an effect off is bypassed. An edit, staged until commit | `{"accepted":true}` |
 | `graph.add` | `path`, optional `name` and `pluginId` | numeric `node` |
 | `graph.remove` | `node`, optional `userWires` (`remove`, the default, or `reconnect`) | `{"accepted":true}` |
 | `graph.connect`, `graph.disconnect` | `kind` (`audio` or `notes`), `from`, `to`; optional explicit audio route fields below | `{"accepted":true}` |
@@ -144,6 +145,7 @@ request members.
 | `wires.meters` | omitted or `{}` | `meters`: each audio wire's recent peak after its level and pan (linear), held and falling: `wire`, `peak`, and `channels` with one value per channel its source's port sends. A muted wire shows 0 |
 | `wires.connect` | `kind`, `from`, `to`; for audio `fromPort`, `toPort`, optional `channels` pairs; optional `level`, `pan` | numeric `wire` |
 | `wires.disconnect` | `wire` | `{"accepted":true}` |
+| `wires.enable` | `wire`, `enabled`: switches a wire off or on. Off, a note wire takes no new notes (held ones are still released); an audio wire is silent. An edit, staged until commit | `{"accepted":true}` |
 | `wires.mix` | `wire`, `level`, `pan`, `mute`, `solo` | `{"accepted":true}` |
 | `wires.zones` | `wire` (a note wire), `zones` | `{"accepted":true}` |
 | `scenes.add` | optional `name`: captures the parts' faders and the scene parameters' values | numeric `scene` |
@@ -678,7 +680,7 @@ intentionally combines them before the effects. Allocate different buses for dif
 
 `performance.save` and `performance.load` take `{"directory":"/path/to/performance"}`;
 returns are `{"saved":true}` and `{"loaded":true}`. Both are advertised by `session.hello`.
-Files use the [Performance version 3 format/schema](performance-format.md). Saving refuses
+Files use the [Performance version 4 format/schema](performance-format.md). Saving refuses
 existing directories and staged graph edits. Loading validates a complete replacement;
 a load failure leaves the playing graph intact. Successful publication emits a graph resync,
 invalidates old node/context references, and starts stopped at beat zero on adoption.

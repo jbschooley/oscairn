@@ -226,19 +226,24 @@ int main(int argc, char** argv)
         check(s.graphState().topology.nodes.size() == nodesBefore - 1, "a plugin outside the parts removed in Routing");
         removeSplitKeepingFirst(s, layers, wide);
 
-        // How wires and parts are drawn: enabled, disabled (muted) or draining; a part whose note
-        // input drains is draining.
+        // How wires and parts are drawn: enabled, disabled (muted or switched off) or draining (on a
+        // plugin switched off and still sounding out); a part with such a plugin is draining.
         {
             auto g = s.graphState();
             const auto input = std::find_if(g.wires.begin(), g.wires.end(), [&](const Wire& w) { return w.owner == WireOwner::Part && w.part == bass && w.from == graphInput && w.kind == WireKind::Notes; });
-            check(input != g.wires.end() && wireState(*input, g.topology) == WireState::Enabled && !readParts(g).parts[0].draining, "a part's note input, enabled");
-            g.topology.draining.insert({input->from, input->to});
-            check(wireState(*input, g.topology) == WireState::Draining, "draining when its connection drains");
+            check(input != g.wires.end() && wireState(*input, g) == WireState::Enabled && !readParts(g).parts[0].draining, "a part's note input, enabled");
+            g.disabled.insert(input->to); g.ringing.insert(input->to);
+            check(wireState(*input, g) == WireState::Draining, "draining while its plugin, switched off, sounds out");
             const auto rows = readParts(g).parts;
             check(std::any_of(rows.begin(), rows.end(), [&](const PartRow& r) { return r.id == bass && r.draining; }) &&
                   std::none_of(rows.begin(), rows.end(), [&](const PartRow& r) { return r.id != bass && r.draining; }), "its part is draining, the others not");
-            auto muted = *input; muted.mute = true; g.topology.draining.clear();
-            check(wireState(muted, g.topology) == WireState::Disabled, "a muted wire is disabled");
+            g.ringing.clear();
+            check(wireState(*input, g) == WireState::Disabled, "disabled once its plugin has rung out");
+            g.disabled.clear();
+            auto off = *input; off.enabled = false;
+            check(wireState(off, g) == WireState::Disabled, "a wire switched off is disabled");
+            auto muted = *input; muted.mute = true;
+            check(wireState(muted, g) == WireState::Disabled, "a muted wire is disabled");
             // A line per channel: the source port's, or the source channels its pairs take.
             check(wireChannels(*input, g.topology) == 1, "a note wire is one line");
             Wire audio; audio.from = graphInput; audio.fromPort = 7;

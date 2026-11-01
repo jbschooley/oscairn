@@ -42,6 +42,7 @@ namespace oscairn
         uint32_t split = 0, lane = 0; // part wires: the split lane this wire joins from, or enters in a bus (its Mix), if any
         bool fader = false;          // part wires: where the part plays, carrying its level and mute
         bool connected = true; // false: kept, though it no longer fits (after a plugin replacement)
+        bool enabled = true;   // false: off (scenes): a note wire takes no new notes, an audio wire is silent
         bool operator==(const Wire&) const = default;
     };
 

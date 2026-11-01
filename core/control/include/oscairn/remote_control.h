@@ -78,6 +78,8 @@ namespace oscairn
         void setPartName(uint32_t part,const std::string& name) override;
         uint32_t connectPorts(const Wire& wire) override;
         void disconnectWire(uint32_t wire) override;
+        void setNodeEnabled(NodeId node, bool enabled) override;
+        void setWireEnabled(uint32_t wire, bool enabled) override;
         void setMix(uint32_t wire,double level,double pan,bool mute,bool solo) override;
         void setZones(uint32_t wire,const std::vector<NoteZone>& zones) override;
         uint32_t addScene(const std::string& name) override;

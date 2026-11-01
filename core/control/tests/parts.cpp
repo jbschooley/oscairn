@@ -668,6 +668,66 @@ namespace
         s.removeScene(chorus); check(s.graphState().scenes.size() == 1 && s.graphState().scene == 0, "removing the selected scene");
     }
 
+    // Switching plugins and wires off and on (RFC 0011's full scene model): an off plugin takes
+    // no new notes but plays out the ones it holds, then stops; an off effect in a chain is
+    // passed around; an off note wire takes no new notes; undo and saving keep it.
+    void onOff(const char* fixture, const fs::path& root)
+    {
+        Session s(48000, frames);
+        const auto a = s.add("a", fixture, "org.kick.test.synth"), b = s.add("b", fixture, "org.kick.test.synth");
+        s.setParameter(a, 7, .25); s.setParameter(b, 7, .5);
+        const auto pa = s.addPart("A"), pb = s.addPart("B");
+        s.insertIntoPart(pa, 0, a); s.insertIntoPart(pb, 0, b); s.commit();
+        Audio x;
+        s.note(true, 60, 1); x.run(s); x.run(s);
+        check(near(x.l[0], .75), "both play: " + std::to_string(x.l[0]));
+        s.setNodeEnabled(a, false); s.commit(); x.run(s);
+        check(near(x.l[0], .75) && s.graphState().disabled.count(a) && s.graphState().ringing.count(a), "a held note plays on through the switch: " + std::to_string(x.l[0]));
+        check(s.history().undo == "Turn off a", "an edit: " + s.history().undo);
+        s.note(false, 60, 0); x.run(s);
+        check(near(x.l[0], 0), "its release reaches it: " + std::to_string(x.l[0]));
+        s.note(true, 62, 1); x.run(s); x.run(s);
+        check(near(x.l[0], .5), "a new note goes only to what is on: " + std::to_string(x.l[0]));
+        s.note(false, 62, 0);
+        for(int i = 0; i < int(48000 * 3.2 / frames) && s.graphState().ringing.count(a); ++i) x.run(s);
+        check(!s.graphState().ringing.count(a), "it has rung out after three seconds of silence");
+        s.undo(); s.commit(); s.note(true, 64, 1); x.run(s); x.run(s);
+        check(!s.graphState().disabled.count(a) && near(x.l[0], .75), "undone: on again and playing: " + std::to_string(x.l[0]));
+        s.note(false, 64, 0); x.run(s);
+
+        // An effect off is passed around: the part sounds dry.
+        const auto fx = s.add("fx", fixture, "org.kick.test.effect"); s.setParameter(fx, 7, .5);
+        s.insertIntoPart(pb, 1, fx); s.commit();
+        s.note(true, 60, 1); x.run(s); x.run(s);
+        check(near(x.l[0], .25 + .25), "B through the effect at half: " + std::to_string(x.l[0]));
+        s.setNodeEnabled(fx, false); s.commit(); x.run(s); x.run(s);
+        check(near(x.l[0], .25 + .5), "the effect off: B dry: " + std::to_string(x.l[0]));
+        s.setNodeEnabled(fx, true); s.commit(); x.run(s); x.run(s);
+        check(near(x.l[0], .25 + .25), "and on again: " + std::to_string(x.l[0]));
+        s.note(false, 60, 0); x.run(s);
+
+        // An off note wire: the held note is released, a new one does not pass.
+        const auto input = [&] { for(const auto& w : s.wires()) if(w.part == pa && w.kind == WireKind::Notes && w.from == graphInput) return w.id; return 0u; };
+        s.note(true, 60, 1); x.run(s);
+        s.setWireEnabled(input(), false); s.commit(); x.run(s);
+        check(near(x.l[0], .5), "A's held note plays on: " + std::to_string(x.l[0]));
+        s.note(false, 60, 0); x.run(s); s.note(true, 62, 1); x.run(s); x.run(s);
+        check(near(x.l[0], .25), "A's input off: only B takes the new note: " + std::to_string(x.l[0]));
+        s.note(false, 62, 0); x.run(s);
+
+        // Saved and loaded.
+        s.setNodeEnabled(b, false); s.commit();
+        s.savePerformance((root / "on-off").string());
+        Session t(48000, frames);
+        t.loadPerformance((root / "on-off").string());
+        const auto g = t.graphState();
+        bool inputOff = false;
+        for(const auto& w : g.wires) if(w.kind == WireKind::Notes && w.from == graphInput && !w.enabled) inputOff = true;
+        check(g.disabled.size() == 1 && g.ringing.empty() && inputOff, "the off plugin and wire round-trip, not ringing");
+        t.note(true, 60, 1); Audio y; y.run(t); y.run(t);
+        check(near(y.l[0], 0), "nothing on plays: " + std::to_string(y.l[0]));
+    }
+
     // The control tree: a Super control drives an Assign control, which drives a gain and (reversed)
     // a part's level; the Super also moves another gain around where it was. Values, loops,
     // last-moved-wins, scenes and saving.
@@ -798,14 +858,14 @@ namespace
         }
 
         // An earlier format version is refused clearly, the session untouched.
-        const auto old = root / "version-2";
+        const auto old = root / "version-3";
         fs::copy(saved, old, fs::copy_options::recursive);
         auto text = std::string(first.begin(), first.end());
-        text.replace(text.find("\"version\":3"), 11, "\"version\":2");
+        text.replace(text.find("\"version\":4"), 11, "\"version\":3");
         state_files::write(old / "performance.json", text.data(), text.size());
         const auto before = describe(t);
         bool refused = false; try { t.loadPerformance(old.string()); } catch(const std::runtime_error& e) { refused = std::string(e.what()).find("unsupported format version") != std::string::npos; }
-        check(refused && describe(t) == before, "a version 2 Performance is refused and the session kept");
+        check(refused && describe(t) == before, "a version 3 Performance is refused and the session kept");
     }
 }
 
@@ -826,6 +886,7 @@ int main(int argc, char** argv)
         noteLimits(argv[1], temp.path);
         buses(argv[1], argv[3]);
         scenes(argv[1], temp.path);
+        onOff(argv[1], temp.path);
         controls(argv[1], temp.path);
         persistence(argv[1], argv[2], argv[3], temp.path);
     }

@@ -136,6 +136,8 @@ namespace oscairn
                 auto plugin=field(n,"plugin");node.plugin.id=string(field(plugin,"id"));node.plugin.name=string(field(plugin,"name"));node.plugin.path=string(field(plugin,"path"));
                 node.inputs=ports(field(n,"audioInputs"));node.outputs=ports(field(n,"audioOutputs"));
                 node.noteInputs=static_cast<uint32_t>(integer(field(n,"noteInputs")));node.noteOutputs=static_cast<uint32_t>(integer(field(n,"noteOutputs")));
+                if(!boolean(field(n,"enabled")))next.disabled.insert(node.id);
+                if(boolean(field(n,"ringing")))next.ringing.insert(node.id);
                 next.topology.nodes.push_back(std::move(node));
             }
             for(auto c:array(field(root,"connections")))
@@ -194,7 +196,7 @@ namespace oscairn
                 for(auto pair:array(field(w,"channels"))){const auto ends=array(pair);if(ends.size()!=2)throw std::runtime_error("Invalid wire channel pair");wire.channels.push_back({static_cast<uint32_t>(integer(ends[0])),static_cast<uint32_t>(integer(ends[1]))});}
                 wire.level=number(field(w,"level"));wire.pan=number(field(w,"pan"));
                 wire.mute=boolean(field(w,"mute"));wire.solo=boolean(field(w,"solo"));wire.zones=zones(field(w,"zones"));wire.send=static_cast<uint32_t>(integer(field(w,"send")));
-                wire.split=static_cast<uint32_t>(integer(field(w,"split")));wire.lane=static_cast<uint32_t>(integer(field(w,"lane")));wire.fader=boolean(field(w,"fader"));wire.connected=boolean(field(w,"connected"));
+                wire.split=static_cast<uint32_t>(integer(field(w,"split")));wire.lane=static_cast<uint32_t>(integer(field(w,"lane")));wire.fader=boolean(field(w,"fader"));wire.connected=boolean(field(w,"connected"));wire.enabled=boolean(field(w,"enabled"));
                 next.wires.push_back(std::move(wire));
             }
             for(auto s:array(field(root,"scenes")))
@@ -585,6 +587,8 @@ namespace oscairn
         const auto id=static_cast<uint32_t>(integer(field(field(reply.get(),"result"),"wire")));impl_->refresh();return id;
     }
     void RemoteControl::disconnectWire(uint32_t wire){impl_->call("wires.disconnect","{\"wire\":"+std::to_string(wire)+'}');impl_->refresh();}
+    void RemoteControl::setWireEnabled(uint32_t wire,bool enabled){impl_->call("wires.enable","{\"wire\":"+std::to_string(wire)+",\"enabled\":"+(enabled?"true":"false")+'}');impl_->refresh();}
+    void RemoteControl::setNodeEnabled(NodeId node,bool enabled){impl_->call("graph.enable","{\"node\":"+std::to_string(node)+",\"enabled\":"+(enabled?"true":"false")+'}');impl_->refresh();}
     void RemoteControl::setMix(uint32_t wire,double level,double pan,bool mute,bool solo)
     {impl_->call("wires.mix","{\"wire\":"+std::to_string(wire)+",\"level\":"+encode(level)+",\"pan\":"+encode(pan)+",\"mute\":"+(mute?"true":"false")+",\"solo\":"+(solo?"true":"false")+'}');impl_->refresh();}
     void RemoteControl::connectAudio(NodeId a,NodeId b){impl_->edge("graph.connect","audio",a,b);}

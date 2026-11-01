@@ -3062,6 +3062,84 @@
               "$ref": "#/$defs/Id"
             },
             "method": {
+              "const": "wires.enable",
+              "description": "Switches a wire off or on (an edit, staged until commit)"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "wire": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 4294967295
+                },
+                "enabled": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "wire",
+                "enabled"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "params"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
+              "const": "graph.enable",
+              "description": "Switches a plugin off or on (an edit, staged until commit)"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "node": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 4294967295
+                },
+                "enabled": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "node",
+                "enabled"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "params"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
               "const": "wires.mix"
             },
             "params": {
@@ -4428,6 +4506,14 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 4294967295
+        },
+        "enabled": {
+          "type": "boolean",
+          "description": "false: switched off (graph.enable)"
+        },
+        "ringing": {
+          "type": "boolean",
+          "description": "Switched off and still sounding out: notes held, a tail"
         }
       },
       "required": [
@@ -4437,7 +4523,9 @@
         "audioInputs",
         "audioOutputs",
         "noteInputs",
-        "noteOutputs"
+        "noteOutputs",
+        "enabled",
+        "ringing"
       ],
       "additionalProperties": false
     },
@@ -5609,6 +5697,10 @@
         "fader": {
           "type": "boolean",
           "description": "A part's wire to where it plays, carrying its level and mute"
+        },
+        "enabled": {
+          "type": "boolean",
+          "description": "false: switched off (wires.enable): a note wire takes no new notes, an audio wire is silent"
         }
       },
       "required": [
@@ -5629,7 +5721,8 @@
         "send",
         "split",
         "lane",
-        "fader"
+        "fader",
+        "enabled"
       ],
       "if": {
         "properties": {

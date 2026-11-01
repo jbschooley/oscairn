@@ -112,6 +112,8 @@ namespace oscairn
         // A user wire between audio ports (channel rules or explicit pairs) or note endpoints.
         uint32_t connectPorts(const Wire& wire) override;
         void disconnectWire(uint32_t wire) override;
+        void setNodeEnabled(NodeId node, bool enabled) override;
+        void setWireEnabled(uint32_t wire, bool enabled) override;
         // A source's level, pan, mute and solo in its destination input's implicit Mix.
         void setMix(uint32_t wire, double level, double pan, bool mute, bool solo) override;
         void setZones(uint32_t wire, const std::vector<NoteZone>& zones) override;
@@ -189,7 +191,10 @@ namespace oscairn
 
     private:
         static ParamInfo describe( const kick::clap::Parameter& param );
-        static void compileWires(Graph& graph, std::vector<Wire>& wires);
+        // off: plugins switched off; rungOut: those of them whose notes and sound have ended.
+        static void compileWires(Graph& graph, std::vector<Wire>& wires, const std::set<NodeId>& off, const std::set<NodeId>& rungOut);
+        void enable(NodeId node, bool enabled);  // the flags and the graph's retiring count; wires are the caller's
+        void ringOut();                          // service(): an off plugin that has rung out stops sounding
         bool enqueue(const kick::clap::Event& event);
         void syncWires();
         void dropNode(NodeId node);
@@ -214,6 +219,7 @@ namespace oscairn
             PadMap pads;
             std::vector<Graph::Mapping> mappings;
             std::map<NodeId, std::pair<std::string, Graph::Node>> nodes;
+            std::set<NodeId> disabled;
         };
         struct Step
         {
@@ -269,6 +275,7 @@ namespace oscairn
         std::array<HeldPad, PadMap::pads> heldPads_{};
         std::vector<Part> parts_;
         std::vector<Wire> wires_;
+        std::set<NodeId> disabled_, rungOut_; // plugins switched off, and those of them done sounding
         uint32_t nextPart_ = 1, nextWire_ = 1;
         std::vector<Scene> scenes_;
         std::vector<SceneParameter> sceneParameters_;

@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Oscairn Performance version 3",
+  "title": "Oscairn Performance version 4",
   "description": "performance.json inside a Performance folder. See performance-format.md for binary state, asset limits, plugin validation and transactional loading. Runtime node/context IDs and live voices are not persisted. Wires and parts (RFC 0011) define the graph's audio routes and note connections.",
   "type": "object",
   "properties": {
@@ -8,7 +8,7 @@
       "const": "oscairn.performance"
     },
     "version": {
-      "const": 3
+      "const": 4
     },
     "info": {
       "type": "object",
@@ -373,6 +373,10 @@
             ],
             "additionalProperties": false
           }
+        },
+        "enabled": {
+          "type": "boolean",
+          "description": "false: switched off (RFC 0011 scenes): it takes no notes and no sound, and a part passes what reaches it around it"
         }
       },
       "required": [
@@ -383,7 +387,8 @@
         "inputs",
         "outputs",
         "noteInputs",
-        "noteOutputs"
+        "noteOutputs",
+        "enabled"
       ],
       "additionalProperties": false
     },
@@ -489,6 +494,10 @@
         "fader": {
           "type": "boolean",
           "description": "A part's wire to where it plays, carrying its level and mute"
+        },
+        "enabled": {
+          "type": "boolean",
+          "description": "false: switched off: a note wire takes no new notes, an audio wire is silent"
         }
       },
       "required": [
@@ -507,7 +516,8 @@
         "send",
         "split",
         "lane",
-        "fader"
+        "fader",
+        "enabled"
       ],
       "if": {
         "properties": {

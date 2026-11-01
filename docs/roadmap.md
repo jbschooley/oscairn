@@ -187,7 +187,7 @@ in the others.
 
 1. **Performance UI** ([RFC 0011](rfcs/0011-performance-ui-and-editors.md#progress))
    - [x] step 1: wire ownership, parts, implicit Mixes and port-level routes with channel
-     rules, saved in the Performance format (now version 3) and in the control protocol
+     rules, saved in the Performance format (now version 4) and in the control protocol
      ([status](rfcs/0011-performance-ui-and-editors.md#step-1-status))
    - [x] step 2: zones, shared buses, the desktop's Parts and Part views, scenes
    - [x] step 3: splits (lanes with zones and a Mix, joining after) in the model, protocol and
@@ -205,7 +205,9 @@ in the others.
      keyboard-and-mouse or touch input mode (started), described plugin editors covering
      step 5's knob pages (started)
    - [ ] plugin windows, then step 6's physical controls
-   - [ ] the full scene model: blocks and wires enabled per scene, and what each scene saves;
+   - [ ] the full scene model: blocks and wires enabled per scene, and what each scene saves
+     (plugins and wires switched off and on, seamlessly, done
+     ([status](rfcs/0011-performance-ui-and-editors.md#scenes-status)); scenes recording it next);
      seamless on the engine's draining and retiring (notes held on a disabled block play on
      until released, its tail rings out). Scene changes today set levels, mutes and values without
      rebuilding, so held notes and tails already carry on

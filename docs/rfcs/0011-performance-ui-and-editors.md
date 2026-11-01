@@ -18,7 +18,10 @@ Checked when built and tested; the sections below say how.
 - [ ] 6. Physical controls: default layers, overrides, learn, banks
 - [ ] 7. Groups, pedal view, move, copy and share
 - [ ] The full scene model (blocks and wires enabled per scene, what each scene saves),
-      seamless on the engine's draining and retiring
+      seamless on the engine's draining and retiring ([status](#scenes-status))
+  - [x] plugins and wires switched off and on, seamlessly
+  - [ ] scenes record all of it, each with its scope
+  - [ ] the desktop's controls for it
 
 ## Problem
 
@@ -451,6 +454,25 @@ For advanced users:
 
 What exists today (above) is a subset: levels, mutes and the chosen scene parameters, and
 control values. The rest, and the scope, are to build; the Performance format records them.
+
+### Scenes status
+
+**Plugins and wires switched off and on** implemented 2026-11-01 (`setNodeEnabled`,
+`setWireEnabled`; `graph.enable`, `wires.enable`). An off plugin's note connections drain:
+notes it holds play on until released, with their releases and pedal, and new notes go only to
+what is on. Sound into it stops; its own sound goes on (a tail rings out) until it is idle, by
+the engine's retiring count: no note sounding, and asleep or three seconds of silence, or 30
+seconds without a note. In a part's chain, what reached an off plugin also passes around it to
+what follows, so an effect off is bypassed and an instrument off lets the notes go on. An off
+note wire takes no new notes; an off audio wire is silent at once. Switching is an edit (undo
+says "Turn off ..."), saved in the Performance and Sound (format version 4: `enabled` on nodes
+and wires); a plugin loaded off has nothing to ring out. Routing draws wires on an off plugin
+disabled, or draining while it still sounds, and a part with such a plugin takes the draining
+tint. `control-parts` checks a held note playing through the switch and released after it, a
+new note reaching only what is on, ringing out after three seconds of silence, undo, the
+bypassed effect, the off note wire and the round-trip.
+
+Not yet: scenes recording any of it (next), and the desktop's controls for it.
 
 ## Step 3 status
 

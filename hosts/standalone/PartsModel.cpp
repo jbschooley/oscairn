@@ -66,7 +66,7 @@ namespace oscairn::standalone
             row.id = p.id; row.name = p.name; row.bus = p.input.kind == PartInput::Kind::Bus;
             row.edited = !p.from.sound.empty() && p.from.modified;
             row.draining = std::any_of(g.wires.begin(), g.wires.end(), [&](const Wire& w) {
-                return w.owner == WireOwner::Part && w.part == p.id && w.from == graphInput && wireState(w, g.topology) == WireState::Draining; });
+                return w.owner == WireOwner::Part && w.part == p.id && (g.ringing.count(w.from) || g.ringing.count(w.to)); });
             row.level = p.level; row.pan = p.pan; row.mute = p.mute; row.solo = p.solo; row.through = p.bus;
             // Its own mute, or someone else's solo: the wires where it plays are muted either way.
             row.silenced = !p.mute && std::any_of(g.wires.begin(), g.wires.end(), [&](const Wire& w) { return w.owner == WireOwner::Part && w.part == p.id && w.fader && w.mute; });
@@ -166,10 +166,12 @@ namespace oscairn::standalone
         return nullptr;
     }
 
-    WireState wireState(const Wire& w, const Graph::Description& topology)
+    WireState wireState(const Wire& w, const Control::GraphState& g)
     {
-        if(w.kind == WireKind::Notes && topology.draining.count({w.from, w.to})) return WireState::Draining;
-        return w.mute ? WireState::Disabled : WireState::Enabled;
+        if(g.ringing.count(w.from) || g.ringing.count(w.to)) return WireState::Draining;
+        if(w.mute || !w.enabled || g.disabled.count(w.from) || g.disabled.count(w.to)) return WireState::Disabled;
+        if(w.kind == WireKind::Notes && g.topology.draining.count({w.from, w.to})) return WireState::Draining;
+        return WireState::Enabled;
     }
 
     uint32_t wireChannels(const Wire& w, const Graph::Description& topology)
@@ -513,12 +515,12 @@ namespace oscairn::standalone
             const auto& across = placed.paths[k];
             points.insert(points.end(), across.begin() + (points.empty() ? 0 : 1), across.end() - (enterEdge.count(i) ? 1 : 0));
             if(enterEdge.count(i)) { auto p = shifted(pb, inner.at(pb).placed.paths[size_t(enterEdge.at(i))]); p.front().x = placed.rects[size_t(topEdges[k].to)].x; points.insert(points.end(), p.begin(), p.end()); }
-            out.paths.push_back({w, wireState(w, g.topology), points});
+            out.paths.push_back({w, wireState(w, g), points});
         }
         for(const auto& [i, e] : innerEdge)
         {
             const auto part = partOf.at(g.wires[i].from);
-            out.paths.push_back({g.wires[i], wireState(g.wires[i], g.topology), shifted(part, inner.at(part).placed.paths[size_t(e)])});
+            out.paths.push_back({g.wires[i], wireState(g.wires[i], g), shifted(part, inner.at(part).placed.paths[size_t(e)])});
         }
         return out;
     }

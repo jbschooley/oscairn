@@ -163,15 +163,17 @@ namespace oscairn
     }
 
     // Compiles the wires into the graph's routes, changing only what differs, and marks each
-    // wire connected or not.
-    void Session::compileWires(Graph& g, std::vector<Wire>& wires)
+    // wire connected or not. Off wires and wires into an off plugin carry no new notes (their
+    // connection drains when no other wire on it is on) and no sound; sound from an off plugin goes
+    // on until it has rung out, and its notes out drain too.
+    void Session::compileWires(Graph& g, std::vector<Wire>& wires, const std::set<NodeId>& off, const std::set<NodeId>& rungOut)
     {
         const auto layout = g.describe().audioLayout;
         using Key = std::tuple<NodeId, uint32_t, uint32_t, NodeId, uint32_t, uint32_t>;
         std::map<Key, double> audio;
         // Note connections and their zones: none when any wire on the connection passes every note.
         std::map<std::pair<NodeId, NodeId>, std::vector<NoteZone>> notes;
-        std::set<std::pair<NodeId, NodeId>> passAll;
+        std::set<std::pair<NodeId, NodeId>> passAll, live; // live: a connection with a wire that takes new notes
         // Each input's implicit Mix: a soloed source silences the unsoloed ones.
         std::set<std::pair<NodeId, uint32_t>> soloed;
         for(const auto& w : wires) if(w.kind == WireKind::Audio && w.solo) soloed.insert({w.to, w.toPort});
@@ -182,12 +184,13 @@ namespace oscairn
                 w.connected = sendsNotes(g, w.from) && takesNotes(g, w.to);
                 if(!w.connected) continue;
                 auto& zones = notes[{w.from, w.to}];
+                if(w.enabled && !off.count(w.from) && !off.count(w.to)) live.insert({w.from, w.to});
                 if(w.zones.empty()) passAll.insert({w.from, w.to});
                 else if(zones.size() + w.zones.size() > NoteZones::capacity) w.connected = false; // over the connection's zones
                 else zones.insert(zones.end(), w.zones.begin(), w.zones.end());
                 continue;
             }
-            const bool silent = w.mute || (soloed.count({w.to, w.toPort}) && !w.solo);
+            const bool silent = w.mute || (soloed.count({w.to, w.toPort}) && !w.solo) || !w.enabled || off.count(w.to) || rungOut.count(w.from);
             const auto compiled = pairs(g, layout, w, silent ? 0 : w.level);
             w.connected = compiled.has_value();
             if(!compiled || silent) continue;
@@ -209,10 +212,52 @@ namespace oscairn
             const bool exists = std::find(present.notes.begin(), present.notes.end(), e) != present.notes.end();
             const auto had = present.noteZones.find(e);
             if(!exists || (had == present.noteZones.end() ? !zones.empty() : had->second != zones)) g.connectNotes(e.first, e.second, zones);
+            if(present.draining.count(e) != !live.count(e)) g.setDraining(e.first, e.second, !live.count(e));
         }
     }
 
-    void Session::syncWires() { compileWires(graph_, wires_); staged_ = true; }
+    void Session::syncWires() { compileWires(graph_, wires_, disabled_, rungOut_); staged_ = true; }
+
+    void Session::enable(NodeId node, bool enabled)
+    {
+        if(enabled) { disabled_.erase(node); rungOut_.erase(node); }
+        else disabled_.insert(node);
+        graph_.setRetiring(node, !enabled); // counts the notes it holds, for ringOut
+    }
+
+    void Session::setNodeEnabled(NodeId node, bool enabled)
+    {
+        if(!graph_.contains(node)) throw std::invalid_argument("unknown node");
+        if(enabled != (disabled_.count(node) != 0)) return;
+        enable(node, enabled);
+        try { editWires([&] { buildParts(); }); }
+        catch(...) { enable(node, !enabled); throw; }
+    }
+
+    void Session::setWireEnabled(uint32_t id, bool enabled)
+    {
+        editWires([&] {
+            const auto it = std::find_if(wires_.begin(), wires_.end(), [&](const Wire& w) { return w.id == id; });
+            if(it == wires_.end()) throw std::invalid_argument("unknown wire");
+            it->enabled = enabled;
+        });
+    }
+
+    // An off plugin stops sounding once it has rung out: no note sounding through it, and asleep
+    // (it said so) or three seconds of silence for plugins that never say, longer than a gap
+    // between echoes (the bundled Delay's longest is two); or 30 seconds without a note, for a
+    // sound that never ends. Not an edit.
+    void Session::ringOut()
+    {
+        if(staged_) return;
+        bool done = false;
+        for(const auto n : disabled_)
+            if(!rungOut_.count(n) && graph_.idle(n, uint64_t(sampleRate_ * 3), uint64_t(sampleRate_ * 30))) { rungOut_.insert(n); done = true; }
+        if(!done) return;
+        compileWires(graph_, wires_, disabled_, rungOut_);
+        graph_.commit();
+        ++revision_; publish(ChangeKind::Graph);
+    }
 
     // Applies an edit to the parts and wires as a whole: if it or its compilation fails, both
     // return to how they were.
@@ -280,7 +325,7 @@ namespace oscairn
             w.owner = WireOwner::Part; w.part = part.id; w.id = nextWire_++;
             for(const auto& p : previous)
                 if(p.kind == w.kind && p.from == w.from && p.to == w.to && p.fromPort == w.fromPort && p.toPort == w.toPort)
-                    { w.level = p.level; w.pan = p.pan; w.mute = p.mute; w.solo = p.solo; break; }
+                    { w.level = p.level; w.pan = p.pan; w.mute = p.mute; w.solo = p.solo; w.enabled = p.enabled; break; }
             wires_.push_back(std::move(w));
             return &wires_.back();
         };
@@ -310,6 +355,8 @@ namespace oscairn
             }
             End next; next.node = node; next.audio = sendsAudio(graph_, layout, node); next.notes = sendsNotes(graph_, node);
             if(next.audio) next.port = mainPort(graph_, layout, node, false);
+            // An off plugin is passed around: what reached it goes on, beside its own sound ringing out.
+            if(disabled_.count(node)) { auto on = ends; on.push_back(next); return on; }
             return std::vector<End>{next};
         };
         std::function<std::vector<End>(const std::vector<NodeId>&, std::vector<End>)> walk = [&](const std::vector<NodeId>& chain, std::vector<End> ends) {

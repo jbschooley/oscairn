@@ -322,7 +322,7 @@ namespace oscairn
                 ",\"owner\":" + (w.owner == WireOwner::Part ? "\"part\",\"part\":" + std::to_string(w.part) : std::string("\"user\"")) +
                 ",\"from\":" + std::to_string(w.from) + ",\"to\":" + std::to_string(w.to) + ",\"fromPort\":" + std::to_string(w.fromPort) +
                 ",\"toPort\":" + std::to_string(w.toPort) + ",\"channels\":" + join(pairs) + ",\"level\":" + encode(w.level) + ",\"pan\":" + encode(w.pan) +
-                ",\"mute\":" + (w.mute ? "true" : "false") + ",\"solo\":" + (w.solo ? "true" : "false") + ",\"zones\":" + zonesJson(w.zones) + ",\"send\":" + std::to_string(w.send) + ",\"split\":" + std::to_string(w.split) + ",\"lane\":" + std::to_string(w.lane) + ",\"fader\":" + (w.fader ? "true" : "false") + ",\"connected\":" + (w.connected ? "true" : "false") + '}';
+                ",\"mute\":" + (w.mute ? "true" : "false") + ",\"solo\":" + (w.solo ? "true" : "false") + ",\"zones\":" + zonesJson(w.zones) + ",\"send\":" + std::to_string(w.send) + ",\"split\":" + std::to_string(w.split) + ",\"lane\":" + std::to_string(w.lane) + ",\"fader\":" + (w.fader ? "true" : "false") + ",\"connected\":" + (w.connected ? "true" : "false") + ",\"enabled\":" + (w.enabled ? "true" : "false") + '}';
         }
         const char* inputKind( PartInput::Kind k ) { return k == PartInput::Kind::Notes ? "notes" : k == PartInput::Kind::Audio ? "audio" : k == PartInput::Kind::Bus ? "bus" : "none"; }
         // A chain's entries: node IDs, and {"split":id} for a split.
@@ -367,7 +367,7 @@ namespace oscairn
             if( method == "session.hello" )
             {
                 fields(p, {});
-                return R"({"protocolVersion":1,"server":"oscairn","capabilities":["performance.save","performance.load","performance.info","performance.setInfo","library.query","library.favourite","library.rescan","library.save","library.load","parts.saveSound","parts.loadSound","parts.fromSound","performance.contents","performance.import","state.info","state.save","presets.list","properties.list","properties.get","properties.set","properties.request","sounds.get","sounds.prepare","sounds.select","sounds.discard","assets.register","assets.import","assets.libraries","session.status","params.list","params.get","params.set","params.text","params.gesture","graph.audio-routing","graph.get","graph.add","effects.create","effects.resources","graph.remove","graph.replace","graph.connect","graph.disconnect","graph.map","graph.unmap","graph.commit","parts.add","parts.remove","parts.insert","parts.removeNode","parts.move","parts.addSplit","parts.removeSplit","parts.addLane","parts.removeLane","parts.lane","parts.input","parts.output","parts.send","parts.level","parts.name","parts.solo","parts.pan","parts.meters","wires.meters","edit.undo","edit.redo","edit.history","wires.connect","wires.disconnect","wires.mix","wires.zones","scenes.add","scenes.store","scenes.select","scenes.remove","scenes.name","scenes.parameters","controls.add","controls.remove","controls.name","controls.targets","controls.set","subscribe","unsubscribe","transport.get","transport.set","notes.send","pads.get","pads.set","pads.play","pads.pressure"],"limits":{"messageBytes":65536,"depth":32,"batch":64,"parameterChanges":128}})";
+                return R"({"protocolVersion":1,"server":"oscairn","capabilities":["performance.save","performance.load","performance.info","performance.setInfo","library.query","library.favourite","library.rescan","library.save","library.load","parts.saveSound","parts.loadSound","parts.fromSound","performance.contents","performance.import","state.info","state.save","presets.list","properties.list","properties.get","properties.set","properties.request","sounds.get","sounds.prepare","sounds.select","sounds.discard","assets.register","assets.import","assets.libraries","session.status","params.list","params.get","params.set","params.text","params.gesture","graph.audio-routing","graph.get","graph.add","effects.create","effects.resources","graph.remove","graph.replace","graph.connect","graph.disconnect","graph.map","graph.unmap","graph.commit","parts.add","parts.remove","parts.insert","parts.removeNode","parts.move","parts.addSplit","parts.removeSplit","parts.addLane","parts.removeLane","parts.lane","parts.input","parts.output","parts.send","parts.level","parts.name","parts.solo","parts.pan","parts.meters","wires.meters","edit.undo","edit.redo","edit.history","wires.connect","wires.disconnect","wires.enable","graph.enable","wires.mix","wires.zones","scenes.add","scenes.store","scenes.select","scenes.remove","scenes.name","scenes.parameters","controls.add","controls.remove","controls.name","controls.targets","controls.set","subscribe","unsubscribe","transport.get","transport.set","notes.send","pads.get","pads.set","pads.play","pads.pressure"],"limits":{"messageBytes":65536,"depth":32,"batch":64,"parameterChanges":128}})";
             }
             if( method == "subscribe" || method == "unsubscribe" )
             {
@@ -555,7 +555,8 @@ namespace oscairn
                     nodes.push_back("{\"id\":" + std::to_string(n.id) + ",\"name\":" + quote(graph.names.at(n.id)) +
                         ",\"plugin\":{\"id\":" + quote(n.plugin.id) + ",\"path\":" + quote(n.plugin.path) + ",\"name\":" + quote(n.plugin.name) +
                         "},\"audioInputs\":" + ports(n.inputs) + ",\"audioOutputs\":" + ports(n.outputs) +
-                        ",\"noteInputs\":" + std::to_string(n.noteInputs) + ",\"noteOutputs\":" + std::to_string(n.noteOutputs) + '}');
+                        ",\"noteInputs\":" + std::to_string(n.noteInputs) + ",\"noteOutputs\":" + std::to_string(n.noteOutputs) +
+                        ",\"enabled\":" + (graph.disabled.count(n.id) ? "false" : "true") + ",\"ringing\":" + (graph.ringing.count(n.id) ? "true" : "false") + '}');
                 auto edges = [&](const auto& list, const char* kind) {
                     for( const auto& [from,to] : list ) connections.push_back("{\"kind\":" + quote(kind) +
                         ",\"from\":" + std::to_string(from) + ",\"to\":" + std::to_string(to) +
@@ -597,6 +598,7 @@ namespace oscairn
                 try { return "{\"node\":" + std::to_string(c.add(name,path,plugin)) + '}'; }
                 catch( const std::runtime_error& e ) { throw Failure{-32004,e.what()}; }
             }
+            if( method == "graph.enable" ) { fields(p,{"node","enabled"}); c.setNodeEnabled(node(c,member(p,"node")),boolean(member(p,"enabled"))); return R"({"accepted":true})"; }
             if(method=="graph.replace")
             {
                 fields(p,{"node","path","pluginId","preset"});
@@ -793,6 +795,7 @@ namespace oscairn
                         return "{\"wire\":" + std::to_string(c.connectPorts(w)) + '}';
                     }
                     if( method == "wires.disconnect" ) { fields(p,{"wire"}); c.disconnectWire(integer(member(p,"wire"))); return R"({"accepted":true})"; }
+                    if( method == "wires.enable" ) { fields(p,{"wire","enabled"}); c.setWireEnabled(integer(member(p,"wire")),boolean(member(p,"enabled"))); return R"({"accepted":true})"; }
                     if( method == "wires.mix" )
                     {
                         fields(p,{"wire","level","pan","mute","solo"});
