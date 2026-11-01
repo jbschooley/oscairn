@@ -55,6 +55,14 @@ authoritative.
   [oscairn/sampler](https://github.com/oscairn/sampler), which Oscairn builds at a pinned
   commit.
 
+## Archives
+
+- **miniz:** Rich Geldreich, RAD Game Tools and Valve Software
+  ([richgel999/miniz](https://github.com/richgel999/miniz), MIT). The unmodified 3.0.2
+  `miniz.c` and `miniz.h` are vendored to read and write library and export archives
+  (RFC 0021), with their [license](core/control/third_party/miniz/LICENSE) and
+  [pinned provenance](core/control/third_party/miniz/upstream.json).
+
 ## LV2 host reference work
 
 The [LV2 audit](core/lv2-host/AUDIT.md) records pinned revisions, source files and

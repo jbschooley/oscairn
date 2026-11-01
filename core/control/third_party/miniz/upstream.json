@@ -1,0 +1,7 @@
+{
+  "repository": "https://github.com/richgel999/miniz",
+  "snapshot_source": "https://github.com/richgel999/miniz/releases/download/3.0.2/miniz-3.0.2.zip",
+  "sha256": "ada38db0b703a56d3dd6d57bf84a9c5d664921d870d8fea4db153979fb5332c5",
+  "license": "MIT (LICENSE), by Rich Geldreich, RAD Game Tools and Valve Software",
+  "note": "Unmodified miniz.c and miniz.h from the 3.0.2 release amalgamation (their header still says 3.0.0). Used for library and export archives (RFC 0021)."
+}

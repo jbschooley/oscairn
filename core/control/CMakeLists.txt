@@ -1,4 +1,5 @@
-add_library(oscairn_control STATIC src/session.cpp src/performance.cpp src/parts.cpp src/pads.cpp src/undo.cpp src/library.cpp)
+add_library(oscairn_control STATIC src/session.cpp src/performance.cpp src/parts.cpp src/pads.cpp src/undo.cpp src/library.cpp src/package.cpp third_party/miniz/miniz.c)
+set_source_files_properties(third_party/miniz/miniz.c PROPERTIES COMPILE_OPTIONS "-w") # vendored, unmodified
 target_include_directories(oscairn_control SYSTEM PRIVATE third_party)
 target_include_directories(oscairn_control PUBLIC include)
 target_link_libraries(oscairn_control PUBLIC oscairn_engine)
@@ -16,6 +17,11 @@ if(UNIX)
     target_link_libraries(oscairn_control_socket PUBLIC oscairn_control_json)
     target_compile_options(oscairn_control_socket PRIVATE -Wall -Wextra)
 endif()
+
+add_executable(oscairn-package-test tests/package.cpp)
+target_include_directories(oscairn-package-test SYSTEM PRIVATE third_party)
+target_link_libraries(oscairn-package-test PRIVATE oscairn_control)
+add_test(NAME control-package COMMAND oscairn-package-test)
 
 add_executable(oscairn-session-test tests/session.cpp)
 target_include_directories(oscairn-session-test PRIVATE ../clap-host/tests)
