@@ -10,7 +10,7 @@ isolation the architecture already describes.
 
 Checked when built and tested; the sections below say how.
 
-- [x] 1. Measure the hand-off (macOS only; native Linux and the target remain) ([results](#step-1-measurements))
+- [x] 1. Measure the hand-off (macOS, and Linux arm64 in a VM; native Linux and the target remain) ([results](#step-1-measurements))
 - [x] 2. One isolated plugin ([status](#step-2-status))
 - [x] 3. Contain failure, on macOS ([status](#step-3-status))
 - [x] 4. Recover ([status](#step-4-status))
@@ -18,7 +18,7 @@ Checked when built and tested; the sections below say how.
 - [ ] 6. Memory and CPU limits, then sandboxing (limits built, sandboxing not started) ([status](#step-6-status))
 - [ ] 7. LV2 in workers
 - [ ] Measurements on native Linux and the target; workers by default in the app (workers by
-      default done, [status](#workers-in-the-desktop-app); Linux measured only in a VM; target not measured)
+      default done, [status](#workers-in-the-desktop-app); Linux measured only in a VM, [results](#step-1-measurements); target not measured)
 - [x] Workers report the plugin's CLAP sleep to the engine, so a seamless scene or Performance
       change ([RFC 0021](0021-sounds-performances-and-library.md#seamless-switching)) can
       retire a plugin in a worker as soon as it is done (the shared block's `asleep`, set after
@@ -163,6 +163,35 @@ per row (20,000 for the Basic Synth), on a loaded desktop (load average 23–30)
 - **Linux is not measured yet.** Docker's linuxkit VM on the same Mac gave about 80 µs median and
   multi-millisecond tails with or without real-time priority, which reflects the VM's scheduling
   rather than Linux. Native Linux x86 and the aarch64 target are still needed to close this step.
+  A second run in that VM, on 2026-11-01, follows.
+
+**Linux arm64 in a VM, 2026-11-01:** Debian 13 arm64 (`oscairn-ports-linux:local`, kernel
+6.10.14-linuxkit, 16 CPUs) in Docker Desktop's VM on the same M3 Max, real-time scheduling
+allowed (`--cap-add SYS_NICE --ulimit rtprio=99`), 20,000 blocks per row, with the Mac at a
+load average of 70–210 from other builds. This is not native Linux and not the target, which
+was not available; the numbers show the VM's scheduling, not the hand-off's cost.
+
+| Block | Workers | Chain overhead median / p99.9 (µs), misses | Parallel overhead median / p99.9 (µs), misses |
+| --- | --- | --- | --- |
+| 128 frames | 1 | 29 / 1,608, 6 | 39 / 1,937, 16 |
+| | 2 | 276 / 61,191, 2,580 | 488 / 48,877, 3,126 |
+| | 4 | 477 / 61,585, 3,166 | 357 / 21,194, 1,132 |
+| | 8 | 909 / 39,768, 3,263 | 464 / 21,368, 1,419 |
+| | 16 | 828 / 47,012, 3,934 | 405 / 18,870, 1,303 |
+| | 32 | 1,307 / 38,566, 17,240 | 562 / 28,967, 1,849 |
+| 64 frames | 1 / 8 / 32 | 96 / 20,494, 2,032; 1,217 / 88,691, 12,256; 2,368 / 75,980, 20,000 | 318 / 28,044, 4,129; 728 / 44,120, 6,440; 566 / 26,043, 3,981 |
+| 256 frames | 1 / 8 / 32 | 117 / 20,984, 252; 395 / 21,585, 503; 1,511 / 92,448, 2,573 | 81 / 25,823, 553; 568 / 27,412, 931; 1,221 / 58,080, 3,289 |
+| 128, Basic Synth | 1 / 8 / 32 | 51 / 5,201, 96; 367 / 17,750, 423; 1,371 / 39,212, 3,936 | 55 / 5,532, 96; 104 / 5,987, 109; 621 / 26,770, 2,370 |
+
+- One worker's median hand-off, 29 µs, is close to macOS's 34 µs; everything beyond it is
+  tens of milliseconds of tail, with blocks missed in every row, so no default can be drawn
+  from it. At normal priority (128 frames, 1 and 8 workers in a chain) the medians are 48 and
+  474 µs and the p99.9 tails 5 and 34 ms.
+- In the same VM and build, 19 of the 20 worker tests pass (the 17 `*-workers`, `worker-host`
+  and `worker-recovery`). `worker-failures` detects and names every
+  failure, the memory limit included, but fails its timing and identity checks (blocks over
+  the block's time with the slow, leaking and crashing fixtures), as in step 3.
+- Still needed: native Linux (x86 and arm64 hardware, not a VM) and the aarch64 target.
 
 **Recommended defaults, pending the target:** keep one worker per third-party plugin and
 first-party plugins in the engine. Up to 8 workers in one chain cost under 15% of a 128-frame
