@@ -36,6 +36,8 @@ Checked when built and tested; the sections below say how.
       edited since; revisions with parents for Sounds and Performances; Save and Save As New
       for Sounds; Update from library; exports detach; a deleted Sound breaks nothing
 - [ ] Authors in the info block, and `modified` set by preset and state loads
+- [ ] Restoring preloaded content: missing items back by ID, nothing else touched; Restore
+      original for one item ([design](#preloaded-content-and-packages))
 - [ ] 2. Library index and tags: index, user file and Sounds done; tag editing, suggestions,
       packages and `LibraryModel` remain
 - [ ] 3. Desktop pane: the Library app and Part menu done; the dockable pane, inspector,
@@ -384,8 +386,13 @@ filed as one or the other.
   with the tags they come with. Removing the package does not take back items that were
   added; parts that came from them keep their copies and where they came from.
 - CLAP preset features become tags as above.
-- Getting preloaded content back after deleting or changing it is a reinstall of that
-  content, offered by the device, never a separate read-only layer.
+- **Restoring preloaded content puts back only what is missing.** Preloaded items ship with
+  fixed library IDs, the same on every device and every restore. Restore adds each one whose
+  ID is not in the library, so Sounds a part came from link up again. An item that is there
+  is never touched, edited or not: no copies, no kept versions, and a second restore changes
+  nothing. To get the original of an edited item back, delete it and restore, or choose
+  **Restore original** on that one item, which replaces it after asking. Performances are not
+  affected either way: they keep their own copies of their parts.
 
 ### Filtering
 

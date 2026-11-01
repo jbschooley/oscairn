@@ -285,6 +285,9 @@ in the others.
      revision (Part menu); Performances exported to a folder detach their parts, and a Sound
      deleted from the library breaks no Performance
    - [ ] authors in the info block; preset and state loads marking a part edited
+   - [ ] restoring preloaded Sounds and Performances: only missing ones come back (by ID),
+     edited and untouched ones are left alone, and Restore original replaces one item
+     ([design](rfcs/0021-sounds-performances-and-library.md#preloaded-content-and-packages))
    - [ ] **importing a Performance:** all of another Performance's parts, buses, their wires
      and controls added to the open one, in one step
      ([design](rfcs/0021-sounds-performances-and-library.md#importing-a-performance))
