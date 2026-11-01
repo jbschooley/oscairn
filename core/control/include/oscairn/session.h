@@ -59,6 +59,9 @@ namespace oscairn
         std::vector<InstalledLibrary> libraries() override;
         void uninstallLibrary(const std::string& library) override;
         void deleteLibraryItem(const std::string& item) override;
+        void auditionStart(const std::string& id, uint32_t part = 0) override;
+        void auditionStop(bool keep = false) override;
+        Audition audition() const override { return audition_ ? audition_->what : Audition{}; }
         void libraryEdit(const std::string& id, const PerformanceInfo& info) override;
         std::string libraryCopy(const std::string& id) override;
         SoundSaved savePartAsSound(uint32_t part,const std::string& name,bool asNew = false) override;
@@ -282,6 +285,19 @@ namespace oscairn
         bool applyParameter(NodeId node, uint32_t param, double value, double* applied = nullptr, bool bounded = true); // not an edit; bounded: see queue
         std::vector<Step> undo_, redo_;
         std::shared_ptr<const Model> baseline_;
+        // An audition: what it set aside (the model before it, holding those plugins) and what
+        // stopping puts back that the model does not hold.
+        struct Auditioning
+        {
+            Audition what;
+            std::shared_ptr<const Model> before;
+            std::vector<Step> undo, redo;
+            PerformanceInfo info;
+            double tempo = 120;
+            Transport::ClockSource clock = Transport::ClockSource::Internal;
+            uint32_t scene = 0, mappingScene = 0;
+        };
+        std::optional<Auditioning> audition_;
         int quiet_ = 0;
         bool mergeable_ = false; // the last step may take in the next
         void dropSplitNodes(const Split& split); // removes them from the graph, with their wires

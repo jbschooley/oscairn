@@ -1,4 +1,4 @@
-add_library(oscairn_control STATIC src/session.cpp src/performance.cpp src/parts.cpp src/pads.cpp src/undo.cpp src/library.cpp src/package.cpp src/budget.cpp third_party/miniz/miniz.c)
+add_library(oscairn_control STATIC src/session.cpp src/performance.cpp src/parts.cpp src/pads.cpp src/undo.cpp src/library.cpp src/package.cpp src/budget.cpp src/audition.cpp third_party/miniz/miniz.c)
 set_source_files_properties(third_party/miniz/miniz.c PROPERTIES COMPILE_OPTIONS "-w") # vendored, unmodified
 target_include_directories(oscairn_control SYSTEM PRIVATE third_party)
 target_include_directories(oscairn_control PUBLIC include)

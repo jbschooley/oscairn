@@ -61,7 +61,9 @@ Checked when built and tested; the sections below say how.
 - [x] Engine support for seamless changes: draining note connections, retiring nodes, plugin
       sleep ([status](#seamless-switching)); loading a Sound cuts, by decision
 - [x] Seamless Performance changes: the outgoing Performance rings out beside the new one ([status](#seamless-switching))
-- [ ] 5. The audition part
+- [x] Audition of a Sound in a part and of a Performance in place of the open one, put back as
+      it was or kept ([status](#audition))
+- [ ] 5. Seamless loading into a part (part transitions on RFC 0007's chain preparation)
 - [ ] 6. Panel
 - [ ] 7. Compact test layout
 
@@ -520,13 +522,30 @@ seamless check for the selected item against that target.
 
 ### Audition
 
-Audition prepares the item on a hidden **audition part**: outside the Performance, never
-saved, fed by the same notes as the target part, and playing to the same place. Auditioning
-mutes the target part's own chain while it lasts, so the musician hears the candidate in
-place. Leaving audition, or choosing another item, retires the audition chain with its
-tails. Audition passes the same memory check as loading
-([keeping plugins loaded](../architecture.md#keeping-plugins-loaded)) and says when an item
-will not fit.
+Audition tries an item without keeping it, and without losing what it replaces.
+
+- **A Sound** plays in the target part's place: the part's chain is set aside, silent, and the
+  Sound's chain takes its notes and plays to the same place, so the musician hears the
+  candidate in place.
+- **A Performance** opens in place of the open one (decided by Jacob, 2026-11-01), which stays
+  loaded and silent; its held notes and tails ring out as in any Performance change.
+- **Stop** puts back what was there: the same plugins, with their state and prepared sounds,
+  not copies loaded again, and the undo history as it was. The tried plugins ring out with
+  their tails. **Keep** makes the tried item the change; a Sound's load is then one step to
+  undo. Edits made while auditioning go with the tried item. Choosing another item stops the
+  last; opening a Performance keeps it.
+- With a budget set ([RFC 0025](0025-resource-budgets.md)), a Performance that would not fit
+  beside the open one is refused, saying so; a Sound's plugins pass the same check as adding
+  them, while the part's own chain is still loaded.
+
+Built 2026-11-01 (`core/control/src/audition.cpp`; `audition.start`, `audition.stop`,
+`audition.get`). What is set aside is held the way the undo history holds a removed plugin
+(the model before the audition, holding the plugins), so putting it back is the undo
+machinery's own. Earlier designs used a hidden audition part beside the target; trying the
+item in the part's place gives the same sound with nothing hidden in the Performance.
+`control-parts` checks a Sound put back and kept (and its load undone), and a Performance
+whose held note plays on through the audition and back, put back and kept;
+`control-library` checks the methods.
 
 Where audio goes when the device has a cue output is an open question.
 

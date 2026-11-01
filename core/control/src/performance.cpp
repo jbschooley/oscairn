@@ -336,6 +336,7 @@ Control::PerformanceInfo Session::writeDocument(const std::string& directory,Per
 }
 
 void Session::loadPerformance(const std::string& directory) {
+    audition_.reset(); // opening a Performance keeps what an audition tried; auditionStart sets its own after
     if(directory.empty() || directory.find('\0')!=std::string::npos)bad("invalid directory");
     const auto root=fs::canonical(directory);validateTree(root);const auto doc=document(root);V d=doc.get();
     fields(d,{"format","version","info","libraries","transport","audioInputs","audioOutputs","nodes","wires","parts","mappings","pads","scenes","sceneUntouched","scene","controls"});

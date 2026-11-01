@@ -110,6 +110,13 @@ with tempfile.TemporaryDirectory(prefix='oscairn-library-') as temporary:
         rpc('library.edit', {'id': 'missing', 'name': '', 'description': '', 'tags': []}, True)
         rpc('library.edit', {'id': pad, 'name': '', 'description': '', 'tags': ['']}, True)
         rpc('library.copy', {'id': 'missing'}, True)
+        # Audition (RFC 0021): a Performance tried in place of this one, then put back.
+        assert rpc('audition.get') == {'id': '', 'kind': '', 'part': 0}
+        rpc('audition.start', {'id': pad})
+        assert rpc('audition.get') == {'id': pad, 'kind': 'performance', 'part': 0} and rpc('performance.info')['name'] == 'Warm Pad'
+        rpc('audition.stop')
+        assert rpc('audition.get')['id'] == '' and rpc('performance.info')['id'] == pad
+        rpc('audition.start', {'id': 'missing'}, True)
         # A part saved as a Sound (RFC 0021), listed apart, loaded into a part and as a new part.
         part = rpc('parts.add', {'name': 'Lead'})['part']
         rpc('parts.insert', {'part': part, 'index': 0, 'node': 'synth'})

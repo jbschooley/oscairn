@@ -749,6 +749,77 @@ namespace
         check(s.leaving() == 0, "A goes after three seconds of silence");
     }
 
+    // Audition (RFC 0021): a Sound in a part's place and a Performance in this one's, each put
+    // back as it was (the same plugins: a note held through it still sounds) or kept.
+    void audition(const char* fixture, const fs::path& root)
+    {
+        ::setenv("OSCAIRN_DATA_HOME", (root / "audition-home").c_str(), 1);
+        std::string b, half;
+        {
+            Session p(48000, frames);
+            const auto synth = p.add("synth", fixture, "org.kick.test.synth"); p.setParameter(synth, 7, .5);
+            const auto part = p.addPart("Part"); p.insertIntoPart(part, 0, synth); p.commit();
+            half = p.savePartAsSound(part, "Half").id;
+            b = p.savePerformanceToLibrary("B", true);
+        }
+        Session s(48000, frames);
+        const auto synth = s.add("synth", fixture, "org.kick.test.synth"); s.setParameter(synth, 7, .25);
+        const auto part = s.addPart("A"); s.insertIntoPart(part, 0, synth); s.commit();
+        s.setPerformanceInfo({"", "A", "", {}, ""});
+        const auto undoBefore = s.history().undo;
+        Audio x;
+        auto ring = [&] { for(int i = 0; i < int(48000 * 3.2 / frames) && s.leaving(); ++i) x.run(s); };
+        // Played first, as on a device: a parameter change reaches a plugin with its next block.
+        s.note(true, 61, 1); x.run(s); x.run(s);
+        check(near(x.l[0], .25), "A plays before any audition: " + std::to_string(x.l[0]));
+        s.note(false, 61, 0); x.run(s); x.run(s);
+        bool refused = false; try { s.auditionStart("missing"); } catch(const std::exception&) { refused = true; }
+        check(refused && s.audition().id.empty(), "an item not in the library is refused");
+
+        // A Sound in the part's place, then stopped: the part's own chain is back.
+        s.auditionStart(half, part);
+        check(s.audition().id == half && s.audition().kind == "sound" && s.audition().part == part, "auditioning the Sound");
+        s.note(true, 60, 1); x.run(s); x.run(s);
+        check(near(x.l[0], .5), "the part plays the Sound: " + std::to_string(x.l[0]));
+        s.auditionStop();
+        x.run(s); x.run(s);
+        check(near(x.l[0], .5) && s.leaving() == 1, "its held note rings on: " + std::to_string(x.l[0]));
+        s.note(false, 60, 0); ring();
+        const auto back = s.graphState().parts.front();
+        check(back.chain == std::vector<NodeId>{synth} && s.audition().id.empty() && s.history().undo == undoBefore, "the part's own plugin is back, the history as it was");
+        s.note(true, 62, 1); x.run(s); x.run(s);
+        check(near(x.l[0], .25), "and plays: " + std::to_string(x.l[0]));
+        s.note(false, 62, 0); x.run(s);
+        // Kept: the Sound's load is one step to undo.
+        s.auditionStart(half, part); s.auditionStop(true);
+        check(s.graphState().parts.front().chain != std::vector<NodeId>{synth} && s.audition().id.empty(), "kept, the Sound is the part's");
+        check(s.undo() && s.graphState().parts.front().chain == std::vector<NodeId>{synth}, "and undone, the part's own plugin is back");
+        s.commit();
+
+        // A Performance in this one's place: A's held note plays on through it and back.
+        s.note(true, 60, 1); x.run(s); x.run(s);
+        check(near(x.l[0], .25), "A plays: " + std::to_string(x.l[0]));
+        s.auditionStart(b);
+        check(s.audition().kind == "performance" && s.performanceInfo().name == "B" && s.graphState().topology.nodes.size() == 1, "B open, A set aside");
+        s.note(true, 64, 1); x.run(s); x.run(s);
+        check(near(x.l[0], .75), "A's held note and B's new one: " + std::to_string(x.l[0]));
+        s.note(false, 64, 0); x.run(s);
+        s.auditionStop(); x.run(s); x.run(s);
+        check(near(x.l[0], .25) && s.performanceInfo().name == "A" && s.graphState().parts.front().chain == std::vector<NodeId>{synth},
+              "stopped, A is back with its note still held, the same plugin: " + std::to_string(x.l[0]));
+        s.note(false, 60, 0); x.run(s);
+        check(near(x.l[0], 0), "A's note released: " + std::to_string(x.l[0]));
+        ring();
+        check(s.leaving() == 0 && s.graphState().topology.nodes.size() == 1, "B gone once rung out");
+        s.note(true, 62, 1); x.run(s); x.run(s);
+        check(near(x.l[0], .25), "A plays new notes: " + std::to_string(x.l[0]));
+        s.note(false, 62, 0); x.run(s);
+        // Kept: B is the Performance, A rings out and goes.
+        s.auditionStart(b); s.auditionStop(true); ring();
+        check(s.performanceInfo().name == "B" && s.leaving() == 0 && s.graphState().topology.nodes.size() == 1 && s.audition().id.empty(), "kept, B is open and A gone");
+        ::unsetenv("OSCAIRN_DATA_HOME");
+    }
+
     // Scene transitions: a glide over time along a curve, a part muted on the way fading to
     // silence, a hand on a fader stopping the glide, a scene waiting for the next beat, and a
     // control morphing between two scenes; all saved.
@@ -1110,6 +1181,7 @@ int main(int argc, char** argv)
         sceneSwitching(argv[1], temp.path);
         onOff(argv[1], temp.path);
         performanceChange(argv[1], temp.path);
+        audition(argv[1], temp.path);
         sceneTransitions(argv[1], temp.path);
         budgets(argv[1], temp.path);
         controls(argv[1], temp.path);

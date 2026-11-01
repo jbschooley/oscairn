@@ -351,6 +351,14 @@ namespace oscairn
     void RemoteControl::libraryEdit(const std::string& id,const PerformanceInfo& info) {
         impl_->call("library.edit","{\"id\":"+quote(id)+",\"name\":"+quote(info.name)+",\"description\":"+quote(info.description)+",\"tags\":"+quoted(info.tags)+",\"color\":"+quote(info.color)+'}',30000);
     }
+    void RemoteControl::auditionStart(const std::string& id,uint32_t part) {
+        impl_->call("audition.start","{\"id\":"+quote(id)+",\"part\":"+std::to_string(part)+'}',120000);
+    }
+    void RemoteControl::auditionStop(bool keep) { impl_->call("audition.stop",std::string("{\"keep\":")+(keep?"true":"false")+'}',30000); }
+    Control::Audition RemoteControl::audition() const {
+        auto d=impl_->call("audition.get");auto r=field(d.get(),"result");
+        return {string(field(r,"id")),string(field(r,"kind")),static_cast<uint32_t>(integer(field(r,"part")))};
+    }
     void RemoteControl::exportLibraryItem(const std::string& id,const std::string& file,bool editedSounds) {
         impl_->call("library.export","{\"id\":"+quote(id)+",\"file\":"+quote(file)+",\"editedSounds\":"+(editedSounds?"true":"false")+'}',120000);
     }

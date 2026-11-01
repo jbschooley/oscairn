@@ -332,7 +332,8 @@ in the others.
      outgoing Performance's held notes and tails ring out while the next one plays
      ([status](rfcs/0021-sounds-performances-and-library.md#seamless-switching)). Every change is
      seamless; nothing yet limits the memory two Performances take at once
-   - [ ] the audition part
+   - [x] audition: a Sound in a part's place, or a Performance in the open one's, put back as it
+     was (the same plugins) or kept ([status](rfcs/0021-sounds-performances-and-library.md#audition))
    - [ ] tag suggestions, plugin presets in the library, `LibraryModel`, and the Library on the
      panel and compact screens (RFC 0021 steps 2–7; editing an item's info and tags, copying, a
      source filter, the tag column, compact rows and the item menu are done)

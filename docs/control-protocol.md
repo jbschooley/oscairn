@@ -801,6 +801,15 @@ fader or name in the Performance, nor wires to or from the rest of the graph.
   `{"exported":true}`: one [archive](library-archive.md) holding the open Performance, every
   sample its plugins use, and the library Sound of each part still that Sound (with
   `editedSounds`, also each edited part's). It refuses a file that exists.
+- `audition.start` takes `{id}` and, for a Sound, the `part` to try it in; `audition.stop` takes
+  an optional `keep`; both return `{"accepted":true}`. `audition.get` (`{}`) returns `{id,kind,part}`
+  (`id` empty when none). A Sound plays in the part's place, its chain set aside; a Performance
+  opens in place of the open one, which stays loaded and silent while its held notes and tails
+  ring out. Stopping puts back what was there, the same plugins with their state, and the tried
+  plugins ring out; `keep` makes the tried item the change (a Sound's load is then one step to
+  undo). Edits made meanwhile go with the tried item. Starting another stops the one before;
+  opening a Performance keeps it. With a budget set, a Performance that would not fit beside the
+  open one is refused.
 - `library.export` takes `{id,file}` and optional `editedSounds`, and returns the same: a
   library item as it is saved, without opening it. A Performance comes with its parts' Sounds
   by the same rule (from what its file records), a Sound alone; with every sample they use.

@@ -179,6 +179,17 @@ namespace oscairn
         // what could not be kept (wires and control targets on the old plugins).
         virtual std::vector<std::string> loadSound(uint32_t part, const std::string& id) = 0;
         virtual uint32_t partFromSound(const std::string& id) = 0; // a new part, playing to Main
+        // Audition (RFC 0021): a library item tried without keeping it. A Sound plays in part's
+        // place, its chain set aside; a Performance opens in place of this one, which stays loaded
+        // and silent (its held notes and tails ring out). Stop puts back what was there, the same
+        // plugins with their state, and the tried one's tails ring out; keep makes it the change
+        // (a Sound's load one step to undo). Edits made meanwhile go with the tried one. Starting
+        // another stops this one; opening a Performance keeps it. A Performance is refused when
+        // the two together would not fit the budget (RFC 0025).
+        struct Audition { std::string id, kind; uint32_t part = 0; }; // id empty: none
+        virtual void auditionStart(const std::string& id, uint32_t part = 0) = 0;
+        virtual void auditionStop(bool keep = false) = 0;
+        virtual Audition audition() const = 0;
         // Importing a Performance (RFC 0021): all of it, or chosen parts and scenes, added to the
         // open one in one step. performanceContents lists what a Performance folder holds, by
         // its own IDs.
