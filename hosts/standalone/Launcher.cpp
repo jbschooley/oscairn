@@ -59,7 +59,7 @@ namespace oscairn::standalone
         for(const auto& s : graph.scenes) if(s.id == graph.scene) scene_ = juce::String::fromUTF8(s.name.c_str());
         const auto status = engine_.status();
         status_ = juce::String(status.tempo, 1) + " BPM   " + juce::String(juce::roundToInt(status.load * 100)) + "%";
-        load_ = status.load >= .9 ? ink(Ink::Danger) : status.load >= .75 ? juce::Colour(0xffe8c547) : ink(Ink::Muted);
+        load_ = status.load >= .9 ? ink(Ink::Danger) : status.load >= .75 ? meterYellow : ink(Ink::Muted);
         resized();
         repaint();
     }
