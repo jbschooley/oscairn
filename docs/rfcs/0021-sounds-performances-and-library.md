@@ -625,6 +625,47 @@ then a cut; prepared and ringing out when they would); `control-performance-form
 `desktop-shell` the Setlist preparing its next entry over the app's engine connection without an
 error, and going to it.
 
+### Fewer instances: reusing what is loaded
+
+Preparing ahead moves the load off the cue but still holds two Performances' instances while
+the old one rings out, and each part has its own instance even when several use one engine
+with native contexts. Engines with native contexts can do with fewer: the Basic Synth and the
+Sampler hold several sounds in one instance ([RFC 0005](0005-sound-contexts.md); the Sampler
+keeps audio that several sounds use once), the Delay several effects
+([RFC 0007](0007-effect-contexts.md)). Three slices, each on its own:
+
+1. **Effect contexts across a change.** Reading the next Performance, a group of nodes sharing
+   one engine (its saved `engine` key) whose plugin (format, ID, version, path) is an engine
+   of the playing Performance that offers effect contexts becomes new contexts of that engine
+   instead of a new instance, each given its saved state; the engine is left alone, and the
+   old Performance's contexts ring out on it as before. The whole group goes into one engine,
+   so the saved grouping holds: when the engine has too few free contexts for the group
+   (`effectResources`: capacity less prepared), it spills, and the group gets an instance of
+   its own as today. A context that outlives the engine's first node keeps the engine; saving
+   names the engine by the open Performance's first node in it, never one ringing out.
+   Output after the change matches a fresh load, since contexts are independent.
+2. **Sound contexts across a change.** The next Performance's instrument whose plugin is one
+   playing, with native sound contexts, has its sounds prepared in the playing instance
+   instead of a new one: the node is kept, at the cue its channels select the new sounds,
+   held notes keep theirs until released, and the old sounds are discarded once idle (the
+   contract's own lifetime rule). This needs the next Performance's sounds out of its saved
+   snapshot without loading another instance: a contract call that prepares a snapshot's
+   contexts beside the live ones, not replacing them, with IDs of the instance's choosing; and
+   per-sound output buses where the two Performances' chains after the instrument differ (the
+   Basic Synth's eight; the Sampler has none yet), else that instrument loads as today. It
+   spills the same way, to a new instance, when the free slots (Basic Synth: seven beside
+   Default) are too few. Where the Sampler's sounds use the same samples, the change holds
+   them once instead of twice.
+3. **Parts sharing one engine.** Within a Performance, parts whose instruments are the same
+   native-context plugin share one instance: each part its own sound, MIDI channel and output
+   bus, its chain starting at that bus. A node then belongs to several parts, which the part
+   model and the saved format (a part's instrument as engine plus sound) must say; a format
+   change replaces the old one outright. A Performance needing more sounds or buses than an
+   instance has spills to a second instance, and so on.
+
+Slice 1 is built first: it needs no contract change and makes the cross-graph sharing that
+slices 2 and 3 also need. Slices 2 and 3 are not built.
+
 **Load preset** on a node is seamless where `sounds.prepare` accepts it (native contexts and
 pooled instruments) and an interrupting state load otherwise, as today.
 

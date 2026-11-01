@@ -18,6 +18,8 @@ Checked when built and tested; the sections below say how.
 - [x] The Sampler preparing SFZ patches
 - [x] Prepared sounds saved in Performances; the desktop sound picker
 - [ ] Automatic effect-chain transitions (with [RFC 0007](0007-effect-contexts.md))
+- [ ] Sounds prepared in a playing instance across a Performance change, and parts sharing one
+      instance ([RFC 0021, slices 2 and 3](0021-sounds-performances-and-library.md#fewer-instances-reusing-what-is-loaded))
 
 ## Contract
 

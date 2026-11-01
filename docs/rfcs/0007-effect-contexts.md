@@ -14,6 +14,8 @@ Checked when built and tested; the sections below say how.
 - [x] Typed, JSON and remote controls, state, resource telemetry and reference-graph tests
 - [x] Saved in Performances
 - [ ] Automatic Sound-to-chain management (preparation and retirement)
+- [ ] The next Performance's effects as contexts of a playing engine, spilling to a new instance
+      when it is full ([RFC 0021, slice 1](0021-sounds-performances-and-library.md#fewer-instances-reusing-what-is-loaded))
 
 ## Musician-facing behavior
 
