@@ -34,9 +34,10 @@ not fit. Estimates come from measurements on the device, not from the plugin's w
 
 ## Measuring
 
-- **CPU:** the engine already times each plugin's process call. Kept per plugin and build, on this
-  device: the time per block at rest and the added time per sounding voice, as a high percentile
-  (not the mean), at the device's block size.
+- **CPU:** the engine times each plugin's process call (today only the audio callback as a whole
+  is timed, for the CPU load in `session.status`; per-plugin timing is this RFC's first step).
+  Kept per plugin and build, on this device: the time per block at rest and the added time per
+  sounding voice, as a high percentile (not the mean), at the device's block size.
 - **Memory:** what a plugin instance holds after activation and after loading its state (samples
   included), from the worker process's accounting where it runs isolated (RFC 0010), else from
   the plugin's declaration.
