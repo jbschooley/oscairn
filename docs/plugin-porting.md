@@ -166,7 +166,17 @@ pinned commit.
 Copy the reference plugins' tests in `core/engine/tests/` and `plugins/`: deterministic
 offline rendering with `oscairn-render`, rendering that never allocates, state round trips,
 and the same tests with the plugin in a worker process (the `*-workers` tests). Run them
-under AddressSanitizer and ThreadSanitizer. See
+under AddressSanitizer and ThreadSanitizer. Two checks run on a plugin as built, without
+writing tests:
+
+- `core/lv2-host/tests/production/run.py ... --case NAME,PATH,ID,synth|effect,PARAM,VALUE`:
+  renders at 44.1 and 48 kHz, 37- and 512-frame blocks, offline and realtime, a fresh-instance
+  repeat and a parameter edit that must change the sound
+  ([how](../core/lv2-host/tests/production/README.md)).
+- `oscairn-plugin-check PLUGIN ID synth|effect [--param ID=VALUE]`: the path a musician's sound
+  takes. The plugin plays in a part, is saved to the library and opened again with every
+  parameter as saved, is exported in an archive with its build, and is installed on a fresh
+  device, where it opens from the plugin store and plays the same. See
 [Test before publishing a plugin](developer-guide.md#test-before-publishing-a-plugin).
 
 ## Licenses
