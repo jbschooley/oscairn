@@ -126,6 +126,13 @@ Everything else is handled for you:
     of one kind are kept together in number order. A page of more than 24 parameters gets a
     tab for each second level (`Operator 1/Envelope`); the rest of the path is a heading. So
     give a large page second levels of a dozen or so parameters each;
+  - without module paths, a plugin of more than 24 parameters gets pages from its names'
+    leading words (`Osc2 Detune` is `Detune` on page `Osc2`; `Arp Step 6 Transpose` is
+    `Transpose` on page `Arp`, tab `Step 6`), pages in name order; give module paths to choose
+    the pages and their order yourself. The host lists parameters in ID order, so number IDs
+    in reading order where you can;
+  - value texts are shown as written, except a bare number with more than three decimals,
+    which is shortened (`0.0100000` shows as `0.01`), so write units and names where they help;
   - a search box finds parameters on any page by name or module, so keep names specific;
   - a small screen with a few encoders (RFC 0019's Compact surface, tried with the Compact
     layout) lists the same pages, then a page's parameters four at a time in priority order,

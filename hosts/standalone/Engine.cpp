@@ -5,6 +5,8 @@
 #include "EngineProcess.h"
 #include <algorithm>
 #include <bit>
+#include <cctype>
+#include <cstdlib>
 #include <cmath>
 #include <cstdio>
 #include <stdexcept>
@@ -69,13 +71,28 @@ namespace oscairn::standalone
         try{return control_->parameter(control_->nodeId(n),p);}
         catch(const std::invalid_argument&){return 0;} // another client may remove a displayed node
     }
+    // A bare number written with more than three decimals ("0.0100000", JUCE's default for a
+    // parameter with no text of its own) to three at most, without trailing zeros ("0.01"); other
+    // text as the plugin writes it.
+    std::string tidyNumber(const std::string& text)
+    {
+        const auto dot=text.find('.');
+        if(dot==std::string::npos || text.size()-dot-1<=3)return text;
+        for(size_t i=0;i<text.size();++i)
+            if(!(std::isdigit(static_cast<unsigned char>(text[i])) || i==dot || (i==0 && text[i]=='-')))return text;
+        char out[64];std::snprintf(out,sizeof out,"%.3f",std::strtod(text.c_str(),nullptr));
+        std::string tidy=out;
+        while(tidy.back()=='0')tidy.pop_back();
+        if(tidy.back()=='.')tidy.pop_back();
+        return tidy=="-0"?"0":tidy;
+    }
     std::string Engine::paramText(const std::string& n,uint32_t p,double v)const
     {
         const auto key=std::make_pair(n,p);const auto it=textCache_.find(key);
         const auto bits=std::bit_cast<uint64_t>(v); // reuse formatting only for the exact cached value
         if(it!=textCache_.end() && it->second.first==bits)return it->second.second;
         if(soundJob_.valid())return std::to_string(v);
-        try{auto text=control_->parameterText(control_->nodeId(n),p,v);textCache_[key]={bits,text};return text;}
+        try{auto text=tidyNumber(control_->parameterText(control_->nodeId(n),p,v));textCache_[key]={bits,text};return text;}
         catch(const std::exception&){return std::to_string(v);}
     }
     void Engine::setParam(const std::string& n,uint32_t p,double v)

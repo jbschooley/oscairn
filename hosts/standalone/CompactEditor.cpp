@@ -46,8 +46,7 @@ namespace oscairn::standalone
     {
         plugin_ = {node, name};
         params_.clear();
-        try { params_ = engine_.parameters(node); } catch(const std::exception&) {}
-        std::erase_if(params_, [](const Engine::ParamInfo& p) { return (p.flags & CLAP_PARAM_IS_HIDDEN) != 0; });
+        try { params_ = editorParameters(engine_.parameters(node)); } catch(const std::exception&) {}
         pages_ = editorPages(params_);
         level_ = Level::Pages; chosen_ = 0;
         if(pages_.size() == 1) open(0);

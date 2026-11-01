@@ -384,6 +384,38 @@ namespace oscairn::standalone
         int dragging_ = -1;
     };
 
+    std::vector<Engine::ParamInfo> editorParameters(std::vector<Engine::ParamInfo> params)
+    {
+        std::erase_if(params, [](const Engine::ParamInfo& p) { return (p.flags & CLAP_PARAM_IS_HIDDEN) != 0; });
+        if(params.size() <= tabbedAbove || std::any_of(params.begin(), params.end(), [](const Engine::ParamInfo& p) { return !p.module.empty(); })) return params;
+        // A name's leading word, with the number after it when it has one ("Step 6"); empty when
+        // nothing would be left of the name.
+        auto lead = [](const std::string& name) {
+            auto end = name.find(' ');
+            if(end == std::string::npos) return std::string();
+            if(const auto next = name.find(' ', end + 1); next != std::string::npos &&
+               std::all_of(name.begin() + long(end) + 1, name.begin() + long(next), [](char c) { return std::isdigit(static_cast<unsigned char>(c)) != 0; }))
+                end = next;
+            return name.substr(0, end);
+        };
+        for(int depth = 0; depth < 2; ++depth)
+        {
+            std::map<std::string, size_t> count, page; // per module the next word would make, and per page
+            for(const auto& p : params) { ++page[level(p.module, 0)]; if(const auto l = lead(p.name); !l.empty()) ++count[p.module + "/" + l]; }
+            for(auto& p : params)
+            {
+                const auto l = lead(p.name);
+                if(l.empty() || count[p.module + "/" + l] < 2 || (depth == 1 && (p.module.empty() || page[p.module] <= tabbedAbove))) continue;
+                p.module = p.module.empty() ? l : p.module + "/" + l;
+                p.name = p.name.substr(l.size() + 1);
+            }
+        }
+        std::stable_sort(params.begin(), params.end(), [](const Engine::ParamInfo& a, const Engine::ParamInfo& b) {
+            return juce::String(a.module).compareNatural(juce::String(b.module)) < 0;
+        });
+        return params;
+    }
+
     std::vector<EditorPage> editorPages(const std::vector<Engine::ParamInfo>& params)
     {
         // A page per top-level module, in the order the plugin lists them.
@@ -505,16 +537,18 @@ namespace oscairn::standalone
 
     ParameterGrid::ParameterGrid(Engine& engine, NodeId node, std::string name) : engine_(engine), node_(node), name_(std::move(name)), content_(std::make_unique<Content>(*this))
     {
-        try { params_ = engine_.parameters(node_); } catch(const std::exception&) {}
-        std::erase_if(params_, [](const Engine::ParamInfo& p) { return (p.flags & CLAP_PARAM_IS_HIDDEN) != 0; });
+        try { params_ = editorParameters(engine_.parameters(node_)); } catch(const std::exception&) {}
         pages_ = editorPages(params_);
         if(pages_.size() > 1)
             for(size_t i = 0; i < pages_.size(); ++i)
             {
                 auto b = std::make_unique<PageButton>(text(pages_[i].name), false);
                 b->onClick = [this, i] { showPage(i); };
-                addAndMakeVisible(*b); pageButtons_.push_back(std::move(b));
+                pageHolder_.addAndMakeVisible(*b); pageButtons_.push_back(std::move(b));
             }
+        pageList_.setViewedComponent(&pageHolder_, false);
+        pageList_.setScrollBarsShown(true, false);
+        if(!pageButtons_.empty()) addAndMakeVisible(pageList_);
         viewport_.setViewedComponent(content_.get(), false);
         viewport_.setScrollBarsShown(true, false);
         addAndMakeVisible(viewport_);
@@ -637,24 +671,31 @@ namespace oscairn::standalone
             auto list = area.removeFromLeft(mode == 2 ? 200 : 170);
             area.removeFromLeft(sectionGap(8));
             if(search_.isVisible()) { search_.setFont(juce::FontOptions(textSize(TextRole::Body, mode))); search_.setBounds(list.removeFromTop(height)); list.removeFromTop(8); }
+            pageList_.setBounds(list);
+            const int listed = int(pageButtons_.size()) * (height + 2);
+            const int width = list.getWidth() - (listed > list.getHeight() ? pageList_.getScrollBarThickness() : 0);
+            pageHolder_.setSize(width, listed);
             for(size_t i = 0; i < pageButtons_.size(); ++i)
             {
                 auto& b = static_cast<PageButton&>(*pageButtons_[i]);
                 b.shown = i == page_ && search_.isEmpty(); b.repaint();
-                b.setBounds(list.removeFromTop(height)); list.removeFromTop(2);
+                b.setBounds(0, int(i) * (height + 2), width, height);
             }
         }
         if(!tabButtons_.empty())
         {
-            auto strip = area.removeFromTop(height);
-            area.removeFromTop(8);
+            // As many rows of tabs as they need.
             const juce::Font font(juce::FontOptions(textSize(TextRole::Button, mode), juce::Font::bold));
+            int x = 0, y = 0;
             for(size_t i = 0; i < tabButtons_.size(); ++i)
             {
                 auto& b = static_cast<PageButton&>(*tabButtons_[i]);
                 b.shown = i == tab_; b.repaint();
-                b.setBounds(strip.removeFromLeft(juce::GlyphArrangement::getStringWidthInt(font, b.getName()) + 28)); strip.removeFromLeft(2);
+                const int w = juce::GlyphArrangement::getStringWidthInt(font, b.getName()) + 28;
+                if(x && x + w > area.getWidth()) { x = 0; y += height + 2; }
+                b.setBounds(area.getX() + x, area.getY() + y, w, height); x += w + 2;
             }
+            area.removeFromTop(y + height + 8);
         }
         // The device's row knobs, named along the screen's edge nearest them.
         strip_ = {};

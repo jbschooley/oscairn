@@ -14,6 +14,7 @@
 namespace oscairn::host { class AudioEngine; class EngineProcess; }
 namespace oscairn::standalone
 {
+    std::string tidyNumber(const std::string& valueText); // "0.0100000" -> "0.01"; other text unchanged
     /// UI facade over either an in-process Control or a remote engine's cached Control.
     class Engine : private juce::Timer
     {

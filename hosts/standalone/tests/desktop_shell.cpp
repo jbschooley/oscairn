@@ -483,6 +483,22 @@ int main(int argc, char** argv)
                       bef.kind == FK::Notch && bef.poles == 1 && standalone::filterNamed("LPF12+HPF12").kind == FK::BandPass &&
                       standalone::filterNamed("Thru").kind == FK::None && standalone::filterNamed("FX Comb +").kind == FK::Unknown, "filter types by their names");
             }
+            // A large plugin without module paths gets them from its names.
+            {
+                std::vector<standalone::Engine::ParamInfo> named;
+                for(const char* n : {"Osc2 Vol", "Glide", "Osc1 Vol", "Osc2 Detune", "Solo Thing"}) named.push_back({uint32_t(named.size() + 1), n});
+                for(int step = 1; step <= 13; ++step) for(const char* n : {" Transpose", " Mod"}) named.push_back({uint32_t(named.size() + 1), "Arp Step " + std::to_string(step) + n});
+                const auto shown = standalone::editorParameters(named);
+                auto at = [&](uint32_t id) { return *std::find_if(shown.begin(), shown.end(), [&](const auto& p) { return p.id == id; }); };
+                check(at(1).module == "Osc2" && at(1).name == "Vol" && at(2).module.empty() && at(5).module.empty() && at(5).name == "Solo Thing" &&
+                      at(6).module == "Arp/Step 1" && at(6).name == "Transpose", "modules from names");
+                const auto pages = standalone::editorPages(shown);
+                check(pages.size() == 3 && pages[0].name == "Main" && pages[1].name == "Arp" && pages[2].name == "Osc2" && at(3).name == "Osc1 Vol", "their pages in name order: " + [&] { std::string n; for(const auto& p : pages) n += p.name + ","; return n; }());
+                named.resize(10);
+                check(standalone::editorParameters(named)[0].module.empty(), "a small plugin keeps its names");
+                check(standalone::tidyNumber("0.0100000") == "0.01" && standalone::tidyNumber("80.0000000") == "80" && standalone::tidyNumber("-0.0000000") == "0" &&
+                      standalone::tidyNumber("7.0 cents") == "7.0 cents" && standalone::tidyNumber("0.25") == "0.25", "long numbers shortened");
+            }
             // Parameter pages, in Oscairn Dark with a mouse.
             theme.apply("oscairn-dark");
             {
@@ -788,8 +804,7 @@ int main(int argc, char** argv)
                     // The same description as Desktop and Panel: its pages, each one's parameters by priority.
                     NodeId node = 0;
                     for(const auto& [id, n] : engine.graph().names) if(n == name) node = id;
-                    auto params = engine.parameters(node);
-                    std::erase_if(params, [](const standalone::Engine::ParamInfo& p) { return (p.flags & CLAP_PARAM_IS_HIDDEN) != 0; });
+                    const auto params = standalone::editorParameters(engine.parameters(node));
                     const auto pages = standalone::editorPages(params);
                     // A plugin with no parameters (the Sampler, so far) says so.
                     check(pages.empty() ? compact->level() == Level::Pages && compact->listShown().empty() : compact->level() == (pages.size() > 1 ? Level::Pages : Level::Parameters),
@@ -823,6 +838,41 @@ int main(int argc, char** argv)
                         if(pages.size() > 1) press(0);
                     }
                     std::printf("compact: %s, %zu pages, %zu parameters turned\n", name.c_str(), pages.size(), turned);
+                    // And the same plugin on the Desktop and on a Panel's 1024 × 600 screen: every
+                    // page and tab laid out with no controls overlapping, and a slider edits it.
+                    for(const int mode : {1, 2})
+                    {
+                        if(params.empty()) break;
+                        juce::Component holder; standalone::setDesktopMode(holder, mode); holder.setSize(mode == 1 ? 1180 : 1024, mode == 1 ? 820 : 600);
+                        standalone::ParameterGrid grid(engine, node, name);
+                        holder.addAndMakeVisible(grid); grid.setBounds(holder.getLocalBounds());
+                        const auto where = name + (mode == 1 ? " on the Desktop" : " on a Panel");
+                        check(grid.pages() == pages.size(), where + ": the description's pages");
+                        std::vector<juce::Slider*> sliders;
+                        std::function<void(juce::Component&)> gather = [&](juce::Component& c) { for(auto* child : c.getChildren()) { if(auto* s = dynamic_cast<juce::Slider*>(child)) sliders.push_back(s); gather(*child); } };
+                        for(size_t page = 0; page < grid.pages(); ++page)
+                        {
+                            grid.showPage(page);
+                            for(size_t tab = 0; tab < std::max<size_t>(1, grid.tabs()); ++tab)
+                            {
+                                if(grid.tabs()) grid.showTab(tab);
+                                std::vector<juce::Rectangle<int>> cells;
+                                std::function<void(juce::Component&)> boxes = [&](juce::Component& c) { for(auto* child : c.getChildren()) { if(dynamic_cast<juce::Slider*>(child) || dynamic_cast<juce::ComboBox*>(child)) cells.push_back(child->getBoundsInParent()); boxes(*child); } };
+                                boxes(grid);
+                                bool overlap = false;
+                                for(size_t a = 0; a < cells.size(); ++a) for(size_t b = a + 1; b < cells.size(); ++b) overlap |= cells[a].intersects(cells[b]);
+                                check(grid.tilesShown() + grid.panelsShown() > 0 && !overlap, where + ": " + grid.pageName(page) + " laid out");
+                            }
+                        }
+                        grid.showPage(0); gather(grid);
+                        std::map<uint32_t, double> before;
+                        for(const auto& p : params) before[p.id] = engine.param(name, p.id);
+                        auto changed = [&] { for(const auto& [id, v] : before) if(engine.param(name, id) != v) return true; return false; };
+                        if(!sliders.empty()) { auto* s = sliders.front(); s->setValue(s->getValue() > (s->getMinimum() + s->getMaximum()) / 2 ? s->getMinimum() : s->getMaximum(), juce::sendNotificationSync); }
+                        for(int i = 0; i < 100 && !changed(); ++i) juce::MessageManager::getInstance()->runDispatchLoopUntil(10);
+                        check(!sliders.empty() && changed(), where + ": a slider edits it");
+                        if(argc >= 5) { const juce::File out{juce::String(argv[4]) + "-gate-" + juce::String(name).replaceCharacter(' ', '-').toLowerCase() + (mode == 1 ? "-desktop" : "-panel") + ".png"}; out.deleteFile(); juce::FileOutputStream stream(out); juce::PNGImageFormat().writeImageToStream(holder.createComponentSnapshot(holder.getLocalBounds()), stream); }
+                    }
                 }
             }
             // The preference: Automatic until one is saved, then what was saved.

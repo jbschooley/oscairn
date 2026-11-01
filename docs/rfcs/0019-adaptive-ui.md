@@ -13,8 +13,8 @@ Checked when built and tested; the sections below say how.
 - [ ] 2. Desktop shell: menu bar, toolbar, parts list, tabs and detached windows done; dockable
       panes with a saved arrangement, the inspector and shortcuts remain
 - [ ] 3. Generated editors: parameter pages from module paths, `oscairn.ui` draft hints, panel
-      row knobs and the Compact test layout done; the gate's Desktop and Panel checks with a
-      third-party plugin remain
+      row knobs, the Compact test layout and the gate's checks done (Odin 2 on Desktop, Panel
+      and Compact); the Sampler has no parameters to edit yet
 - [ ] 4. Plugin windows
 - [ ] 5. Rich widgets: envelope, LFO preview, key and velocity map done; waveform, step lane
       and the Modular grid remain
@@ -323,6 +323,18 @@ edited through its sounds and the Part page's zones), so its part of the gate sh
 having none. Loading Odin 2 needed a host fix: the CLAP host checked the plugin's functions
 before `init`, which plugins built on clap-helpers only fill in during `init`, and then
 destroyed it uninitialized, which aborts them.
+
+**Editors for real plugins (2026-11-01):** checked with Odin 2, whose 258 parameters have no
+module paths and come in its IDs' order (the host lists parameters by ID). A plugin of more
+than 24 parameters with no module paths now gets them from its names' leading words, in name
+order (`editorParameters`): "Osc2 Detune" is Detune on the Osc2 page, "Arp Step 6 Transpose"
+Transpose on the Arp page's Step 6 tab; a word leading one name only stays in it. Odin 2 gets
+26 pages, and its envelopes are recognized and drawn. The page list scrolls when it does not
+fit, tabs wrap onto more rows, and a value text that is a bare number with more than three
+decimals ("0.0100000", JUCE's default) is shortened ("0.01"). `desktop-shell` checks the
+names' modules on a made-up plugin and, for each gate plugin, every page and tab on the
+Desktop (1,180 × 820) and on a Panel's screen (1,024 × 600) with no controls overlapping, and
+that a slider edits it (Odin 2: 26 pages; 87 of its pages' top parameters turned on Compact).
 
 Not yet: the Mixer and Routing views' layout is still in `PartsView`, and the device's chain
 row, tabs and header are the older ones; Compact's real renderer waits for a device (by

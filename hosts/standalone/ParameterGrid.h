@@ -49,6 +49,12 @@ namespace oscairn::standalone
     /// that numbered pages of one kind sit together in number order (Operator 1 to 8). `params`
     /// are indices into the parameters given.
     struct EditorPage { std::string name; std::vector<size_t> params; };
+    // The parameters an editor shows: hidden ones left out; and for a plugin of more than 24 that
+    // gives no module paths (many JUCE plugins), modules from its names' leading words, in name
+    // order: "Osc2 Detune" is Detune in Osc2, "Arp Step 6 Transpose" Transpose in Arp/Step 6
+    // (that second level only on a page that would get tabs). A word that leads one name only
+    // stays in it.
+    std::vector<Engine::ParamInfo> editorParameters(std::vector<Engine::ParamInfo> params);
     std::vector<EditorPage> editorPages(const std::vector<Engine::ParamInfo>& params);
     // Parameters in the plugin's priority order (oscairn.ui): numbered first, then the rest in its order.
     void byPriority(const std::vector<Engine::ParamInfo>& params, std::vector<size_t>& indices);
@@ -129,6 +135,7 @@ namespace oscairn::standalone
         bool stale_ = false; // built while the engine was busy: value texts were placeholders
         std::vector<std::string> tabNames_;
         std::vector<std::unique_ptr<juce::Button>> pageButtons_, tabButtons_;
+        juce::Viewport pageList_; juce::Component pageHolder_; // the pages, scrolling when they do not fit
         juce::TextEditor search_;
         juce::Viewport viewport_;
         std::unique_ptr<Content> content_;
