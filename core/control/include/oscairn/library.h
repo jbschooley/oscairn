@@ -10,7 +10,7 @@ namespace oscairn
     /// The library (RFC 0021): the Performances and Sounds in the user's library folders, found by scanning,
     /// with their info blocks (name, tags, description) read from each file. Files first: the
     /// index under library/ is a cache of what was read, kept by each file's time so a rescan
-    /// reads only what changed, and deleting it loses nothing. Favourites and recently used are
+    /// reads only what changed, and deleting it loses nothing. Favorites and recently used are
     /// the user's own, in library/user.json, never in the items' files. Control thread.
     class Library
     {
@@ -27,7 +27,7 @@ namespace oscairn
         Control::LibraryResult query(const Control::LibraryQuery&) const;
         const Control::LibraryItem* find(const std::string& id) const;
         const std::vector<Control::LibraryItem>& items() const { return items_; }
-        void setFavourite(const std::string& id, bool favourite);
+        void setFavorite(const std::string& id, bool favorite);
         void used(const std::string& id); // most recent first; at most 50 kept
         // A folder for a new Performance or Sound (kind) named `name`, its name made safe and unique.
         std::filesystem::path newFolder(const std::string& name, const std::string& kind) const;
@@ -38,7 +38,7 @@ namespace oscairn
         std::filesystem::path performances_, sounds_, libraries_, cache_;
         std::vector<Control::InstalledLibrary> installed_;
         std::vector<Control::LibraryItem> items_;
-        std::vector<std::string> favourites_, recent_;
+        std::vector<std::string> favorites_, recent_;
     };
 
     // The platform's folder for Oscairn's user data: OSCAIRN_DATA_HOME, else Application Support

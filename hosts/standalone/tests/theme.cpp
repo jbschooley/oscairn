@@ -17,9 +17,9 @@ int main(int argc,char** argv){try{
     check(classic.style.buttons==ThemeStyle::Buttons::Rounded && classic.style.edges==ThemeStyle::Edges::Outlined && classic.style.depth==ThemeStyle::Depth::Flat &&
           classic.style.sliders==ThemeStyle::Sliders::Filled && classic.style.tabs==ThemeStyle::Tabs::Folder && classic.style.marks==ThemeStyle::Marks::Round && classic.style.sections==ThemeStyle::Sections::Joined,"every style choice parsed");
     check(ThemeData::parse(json.replace("\"line\"","\"cap\"")).style.sliders==ThemeStyle::Sliders::Cap,"slider caps parsed");
-    for(auto broken:{json.replace("\"midnight\"","\"../escape\""),json.replace("\"version\": 4","\"version\": 3"),json.replace("\"fontScale\": 1.0","\"fontScale\": 100"),
+    for(auto broken:{json.replace("\"midnight\"","\"../escape\""),json.replace("\"version\": 5","\"version\": 4"),json.replace("\"fontScale\": 1.0","\"fontScale\": 100"),
                      json.replace("#F0F5FC","#101724"),json.replace("#7CCEFF","red"),json.replace("\"radius\": 8","\"script\": \"evil\""),
-                     json.replace("\"license\": \"fonts/OFL.txt\"","\"licence\": \"fonts/OFL.txt\""),json.replace("\"regular\": \"fonts/Inter-Regular.ttf\",",""),
+                     json.replace("\"license\": \"fonts/OFL.txt\"","\"licenses\": \"fonts/OFL.txt\""),json.replace("\"regular\": \"fonts/Inter-Regular.ttf\",",""),
                      json.replace("\"tabs\": \"segmented\"","\"tabs\": \"ribbon\""),json.replace("\"marks\": \"square\"","\"marks\": \"square\", \"shader\": \"x\""),
                      json.replace("\"buttons\": \"pill\",","")}){
         bool rejected=false;try{ThemeData::parse(broken);}catch(const std::exception&){rejected=true;}check(rejected,"invalid or unreadable theme rejected");
@@ -45,7 +45,7 @@ int main(int argc,char** argv){try{
         {const auto fake=variant("fake-font",json);check(fake.getChildFile("fonts/Inter-Regular.ttf").replaceWithText("not a font"),"write fake font");check(refused(fake),"unreadable fonts are rejected");}
         {const auto linked=variant("linked-font",json);const auto font=linked.getChildFile("fonts/Inter-Regular.ttf");font.deleteFile();
             check(example.getChildFile("fonts/Inter-Regular.ttf").createSymbolicLink(font,true),"create link");check(refused(linked),"linked font files are rejected");}
-        check(refused(variant("no-license",json.replace("fonts/OFL.txt","fonts/missing.txt"))),"a theme must carry its font licence");
+        check(refused(variant("no-license",json.replace("fonts/OFL.txt","fonts/missing.txt"))),"a theme must carry its font license");
         installed.apply("oscairn-light");check(themeData().id=="oscairn-light","built-in selection applied");
         bool refusedId=false;try{installed.apply("../escape");}catch(const std::exception&){refusedId=true;}check(refusedId && themeData().id=="oscairn-light","invalid selection preserves active theme");}
     const auto selection=root.getChildFile("appearance.txt");selection.setLastModificationTime(juce::Time(1000000000));const auto saved=selection.getLastModificationTime();

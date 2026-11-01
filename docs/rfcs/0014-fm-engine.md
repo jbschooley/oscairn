@@ -1,13 +1,13 @@
 # RFC 0014: An 8-operator FM engine
 
 Status: proposed, 2026-10-30. Not implemented. Follows the [architecture](../architecture.md#engines)'s
-plan for "an FM engine, starting from an existing open engine where licences allow (such as
+plan for "an FM engine, starting from an existing open engine where licenses allow (such as
 Dexed / MSFA)". Same rules as [RFC 0013](0013-awm2-class-sample-engine.md): a new engine
 written for Oscairn, with no Yamaha code or content.
 
 **Decided by Jacob, 2026-10-30: fork Dexed** (`oscairn/dexed` on GitHub) and extend it, instead of
 the approach recommended below. The fork stays GPL-3.0 and runs as a separate plugin
-across the CLAP boundary ([RFC 0001](0001-licence.md)). The extension plan, with a gap table
+across the CLAP boundary ([RFC 0001](0001-license.md)). The extension plan, with a gap table
 against every Data List parameter, Oscairn integration work and milestones, is
 [on the fork's `oscairn` branch](https://github.com/oscairn/dexed/blob/oscairn/docs/oscairn-plan.md). The capability target and the IP rules below still apply.
 
@@ -85,7 +85,7 @@ configuring it.
 AGPL) as the starting point for the operator core. Write the voice structure, the general
 operator graph and the spectral oscillators in Oscairn. Keep DX7 SysEx import as a
 first-class feature: a DX7 voice is a strict subset of the engine. Reusing GPL-3.0 Dexed code
-is also licence-compatible (GPLv3 §13 allows combining with AGPLv3), but it isn't needed if
+is also license-compatible (GPLv3 §13 allows combining with AGPLv3), but it isn't needed if
 MSFA covers the core. Pin and credit whatever is reused.
 
 ## Build order

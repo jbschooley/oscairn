@@ -74,7 +74,7 @@ behind it, not the JUCE menu, file chooser or button state.
   graph revision unchanged.
 
 Level note: the Sampler matches liquidsfz's default level, 7.2 dB below the sample's own
-level (default CC7 volume and centre pan law; see RFC 0008 step 2 status). Judge whether
+level (default CC7 volume and center pan law; see RFC 0008 step 2 status). Judge whether
 that sounds right next to the Basic Synth.
 
 ## Repeatable setup

@@ -9,7 +9,7 @@ tests it, with a note on what remains of a step that is partly done. The
 
 | RFC | Title | Status |
 | --- | --- | --- |
-| [0001](0001-licence.md) | Licence | accepted |
+| [0001](0001-license.md) | License | accepted |
 | [0002](0002-param-target.md) | Parameter changes between plugins (oscairn.param-target) | draft, implemented |
 | [0003](0003-control-api.md) | Control API | partially implemented; local JSON-RPC transport and explicit engine/UI separation |
 | [0004](0004-hardware-services.md) | Hardware services, event timing and engine backends | proposed |
@@ -23,7 +23,7 @@ tests it, with a note on what remains of a step that is partly done. The
 | [0012](0012-sync-external-midi-and-multi-device.md) | Sync, external MIDI devices and multi-device setlists | proposed; input device selectors implemented |
 | [0013](0013-awm2-class-sample-engine.md) | An AWM2-class sample engine | proposed |
 | [0014](0014-fm-engine.md) | An 8-operator FM engine | proposed |
-| [0015](0015-analog-modelling-engine.md) | An analog-modelling engine | proposed |
+| [0015](0015-analog-modeling-engine.md) | An analog-modeling engine | proposed |
 | [0016](0016-effects-suite.md) | An effects suite covering the MODX M platform | proposed |
 | [0017](0017-host-tuning.md) | Host-level tuning | proposed |
 | [0018](0018-voice-budget-and-stealing.md) | Voice budget and stealing | in progress: step 1 and part note limits implemented |

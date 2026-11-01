@@ -7,7 +7,7 @@ Changing either must not change the audio graph, parameters, MIDI assignments or
 
 ## Shared design rules
 
-- Use the semantic roles below, never private colour constants in a system component.
+- Use the semantic roles below, never private color constants in a system component.
 - Use an 8-pixel spacing unit, 16-pixel outer margins and 30-pixel desktop controls with a
   keyboard and mouse, 44 pixels with touch ([RFC 0019](rfcs/0019-adaptive-ui.md#input-mode)).
   Hardware layouts retain their measured geometry and scale as a unit.
@@ -18,7 +18,7 @@ Changing either must not change the audio graph, parameters, MIDI assignments or
 - Buttons, dropdowns, text boxes and value boxes share the theme's corner radius and outline.
 - Use one corner radius and visible borders/focus rings. Keep a text label for every action.
 - Accent marks selection or an action; positive marks active playback; danger marks failures.
-  State must also be conveyed by text, position, shape or accessibility state, not colour alone.
+  State must also be conveyed by text, position, shape or accessibility state, not color alone.
 - Distinguish browsing from applying. **Replace instrument/effect** explicitly changes the
   loaded engine; **Use sound** switches a prepared sound. Replacement ends the old slot's
   notes, tails and prepared sounds. It is not a seamless sound transition.
@@ -70,11 +70,11 @@ on Oscairn OS). Each is a theme folder in the same format as installed themes, s
 bundled font is loaded exactly like a theme author's. An instrument builder can replace
 or add folders there; the file `default` names the theme a new user starts with. Built-in
 IDs are reserved: user themes cannot replace them. If no built-in theme is usable, an
-emergency theme with fixed colours and the platform's default font keeps text visible. Project exports do not
+emergency theme with fixed colors and the platform's default font keeps text visible. Project exports do not
 change a musician's appearance preference. Theme package distribution/sync will use the
 future package system; it is not needed for local theme installation.
 
-## Theme format, version 4
+## Theme format, version 5
 
 A theme is a folder named after its ID, holding `theme.json` ([schema](theme.schema.json))
 and the files it names. See the complete Midnight example. Themes contain data and fonts
@@ -83,20 +83,20 @@ fonts, so text never depends on what a device has installed.
 
 | Field | Contract |
 | --- | --- |
-| `version` | Integer `4` |
+| `version` | Integer `5` |
 | `id` | 1–64 lowercase letters, digits or hyphens; the folder's name; built-in IDs are reserved |
 | `name` | Display name, 1–80 characters |
 | `font` | `regular` and optional `bold` font files (`.ttf`/`.otf`, ≤ 4 MiB each) and the fonts' `license` text (≤ 64 KiB), as relative paths inside the folder |
 | `fontScale` | Optional number, 0.8–1.4; default 1 |
 | `radius` | Optional number, 0–16; default 6 |
-| `colours` | All nine semantic colours below, opaque `#RRGGBB` |
+| `colors` | All nine semantic colors below, opaque `#RRGGBB` |
 | `style` | How controls are drawn: one choice for each of the seven below |
-| `wires` | The routing views' wire colours, opaque `#RRGGBB`: `audio` and `notes` for enabled wires, `disabled` (muted, or off in a scene), `draining` (taking no new notes while held ones ring out, in a seamless change) and `unconnected` (no longer fits its plugin's ports). Disabled and draining wires are drawn dashed |
+| `wires` | The routing views' wire colors, opaque `#RRGGBB`: `audio` and `notes` for enabled wires, `disabled` (muted, or off in a scene), `draining` (taking no new notes while held ones ring out, in a seamless change) and `unconnected` (no longer fits its plugin's ports). Disabled and draining wires are drawn dashed |
 
 | Style | Choices | Draws |
 | --- | --- | --- |
 | `buttons` | `rounded`, `pill` | Buttons with the theme's radius, or fully round ends (single-line fields round the same way; taller ones use the radius plus 3) |
-| `edges` | `none`, `hairline`, `outlined` | Outlines on buttons, fields and cards: none, faint, or the full border colour. Keyboard focus is always drawn |
+| `edges` | `none`, `hairline`, `outlined` | Outlines on buttons, fields and cards: none, faint, or the full border color. Keyboard focus is always drawn |
 | `depth` | `flat`, `soft` | A small shadow under buttons, slider thumbs and the selected tab |
 | `sliders` | `filled`, `line`, `cap` | An accent thumb on a thick track, a thin track with a light round thumb, or with a square cap |
 | `tabs` | `folder`, `segmented` | Tabs joined to the view below, or a track with the selected tab lifted out |
@@ -118,14 +118,14 @@ round marks). Which control is used (a pan knob or a slider) is the surface's, n
 | `positive` | Playing/active state |
 | `danger` | Errors and unavailable resources |
 
-`theme.json` is limited to 16 KiB. Unknown fields, malformed colours, unsafe IDs,
-out-of-range metrics, paths leaving the folder, linked files, missing licences and files
+`theme.json` is limited to 16 KiB. Unknown fields, malformed colors, unsafe IDs,
+out-of-range metrics, paths leaving the folder, linked files, missing licenses and files
 that are not TrueType/OpenType fonts are rejected before installation. Only the files a
 theme names are copied. Fonts are parsed in the UI process by the platform's font engine,
 which is not hardened against malicious files: install themes only from trusted sources.
-Earlier theme versions are no longer read; add `wires` and set `version` to 4 (initial
-development). Primary text must have at least 4.5:1 contrast
-against background, surface and raised colours. Authors should also check secondary text,
+Earlier theme versions are no longer read; rename `colours` to `colors` (version 5 uses American
+spelling throughout), add `wires` if missing, and set `version` to 5 (initial development). Primary text must have at least 4.5:1 contrast
+against background, surface and raised colors. Authors should also check secondary text,
 small labels, keyboard focus and selected controls in every supported layout.
 Themes deliberately exclude image/knob assets and custom layout code; richer plugin
 pages and assets need separate bounded formats rather than executable theme hooks.

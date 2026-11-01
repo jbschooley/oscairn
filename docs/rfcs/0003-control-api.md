@@ -47,7 +47,7 @@ Session persistence, per-client gesture ownership, and independent graph transac
 remain unimplemented. Transport is atomic telemetry, and physical notes and pressure
 retain their existing next-block timing policy.
 
-The remainder of this RFC specifies the intended complete API, not existing behaviour.
+The remainder of this RFC specifies the intended complete API, not existing behavior.
 
 ## Problem
 

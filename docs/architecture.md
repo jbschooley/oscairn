@@ -84,15 +84,15 @@ To avoid an app framework, there are only plugins and the UI:
 | --- | --- | --- |
 | Runs | Inside the audio graph, every block, sample-accurate | Outside the audio path, through the control API |
 | Does | Takes transport and events in; emits notes and parameter events | Owns the screen and panel; decides what graph exists; browsing, editing, setlists |
-| Data | Its node state (for example the pattern's steps) | Organisation: setlists, layouts, preferences, kept as library files |
+| Data | Its node state (for example the pattern's steps) | Organization: setlists, layouts, preferences, kept as library files |
 | In a DAW | Works as a note-effect plugin | Becomes the editor window of the platform plugin |
 
 Rule of thumb: if it has to happen at an exact sample, it is a plugin; if it is about what
-you see, press or organise, it is the UI.
+you see, press or organize, it is the UI.
 
 "Plugins that play other plugins" means event plugins upstream in the graph, not
 container plugins that host plugins inside themselves. Containers would hide nodes from
-routing, crash recovery and the licence boundary. A rack-like grouping, if wanted, is a
+routing, crash recovery and the license boundary. A rack-like grouping, if wanted, is a
 sub-graph node that the core still manages.
 
 ### Custom sequencers, workflows and DAW ports
@@ -234,7 +234,7 @@ Performance
   the notes directly. The arpeggiator's settings are saved with the Sound, so it is
   reusable across performances.
 - Zones support key and velocity ranges, overlapping layers, transpose, MIDI channels,
-  controller filtering and mapping, sustain behaviour, MPE and polyphonic aftertouch, and
+  controller filtering and mapping, sustain behavior, MPE and polyphonic aftertouch, and
   external MIDI destinations.
 - There is no fixed number of parts: add engines, layers and effects while the hardware
   can run them reliably, with headroom kept for live playing and transitions.
@@ -279,14 +279,14 @@ nodes. Format support does not mean binary compatibility: an ARM64 Linux instrum
 ARM64 Linux builds compatible with the device's runtime/ABI and host features. Package
 self-containment and cross-format state migration are defined in [RFC 0006](rfcs/0006-packages-and-portability.md).
 
-Plugins loaded through a plugin API are separate works and may use any licence
-([RFC 0001](rfcs/0001-licence.md)).
+Plugins loaded through a plugin API are separate works and may use any license
+([RFC 0001](rfcs/0001-license.md)).
 
 ## Live reliability
 
 - Check dependencies and resources before activating a Performance, and keep headroom for
   peak load and transitions.
-- Predictable voice stealing and overload behaviour, reported clearly; no silent removal of
+- Predictable voice stealing and overload behavior, reported clearly; no silent removal of
   layers.
 - Scan plugins outside the audio process, so a failed scan cannot interrupt playing.
   (The host has an out-of-process scanner tool; the graph still scans in process.)
@@ -299,7 +299,7 @@ Plugins loaded through a plugin API are separate works and may use any licence
 The host manages engine code, shared read-only assets (samples, tables), patch
 definitions and running sound contexts (voices, envelopes, effect history) separately.
 Six organ patches are six patch definitions plus enough running contexts for simultaneous
-layers and transitions, not six independently initialised organs.
+layers and transitions, not six independently initialized organs.
 
 - Native Oscairn instruments must support simultaneous sound contexts and prepared
   sound switching: held notes retain their old sound while new notes use the selected
@@ -429,7 +429,7 @@ output buses. Connections can fan out, sum and apply explicit gains. The C++ Con
 JSON-RPC and RemoteControl interfaces expose the routes and external port metadata.
 The desktop/helper maps logical channels to selected device channels at startup and
 reports availability. Existing node-only connections retain their first-stereo-pair
-behavior, including centred mono; the default demo still opens no inputs and two outputs.
+behavior, including centered mono; the default demo still opens no inputs and two outputs.
 
 This is routing infrastructure, not a DJ mixer UI or project-file persistence. The
 renderer/Chain convenience interface still defaults to stereo. Hardware-specific
@@ -567,9 +567,9 @@ all of them:
 - **Mappings for DJ software that accepts them:** Mixxx (open source) first, then Traktor and
   VirtualDJ, which accept mappings for any controller, jog wheels included. Mappings are
   files, shipped as packages.
-- **No certification programmes.** Oscairn devices are open: they do not join vendor
+- **No certification programs.** Oscairn devices are open: they do not join vendor
   certification or hardware-unlock schemes, and carry no authentication for them. Serato
-  and rekordbox unlock features for hardware their vendors certify. With a paid licence
+  and rekordbox unlock features for hardware their vendors certify. With a paid license
   both map other controllers' buttons, faders and pads, but Serato does not map other
   controllers' platters, and rekordbox's mapping did not cover jog wheels when last
   documented, so on an Oscairn deck they work only partly. That is their choice.
@@ -671,12 +671,12 @@ reach physical outputs. Inputs retain capture timestamps; outputs carry deadline
 between the audio sample timeline and device clocks. A capable real-time core executes
 queued events at those deadlines, reducing dependence on Linux wake-up timing.
 
-This requires clock synchronisation, bounded queues, an explicit scheduling lead time,
+This requires clock synchronization, bounded queues, an explicit scheduling lead time,
 and cancellation on stop, seek or edits. Events emitted by a plugin for the current audio
 block are not automatically available in advance: the host must budget output lead time
 and align internal audio with external outputs. Live input latency is measured separately.
 Missed deadlines and queue overflows are reported, with defined note-off/gate-reset and
-disconnect behaviour. CPU-only backends implement the same event contract and report their
+disconnect behavior. CPU-only backends implement the same event contract and report their
 measured timing limits. Played events never pass through the UI control API.
 
 ## Portable sounds
@@ -735,7 +735,7 @@ parameter editor with search, groups and saved assignments.
 
 Plugins can look like themselves without bringing GUI code to a device, in levels:
 generated pages from the parameter list, styled like the rest of the UI; pages and a theme
-described in data (layout, colours, fonts, images, custom knob graphics), drawn natively by
+described in data (layout, colors, fonts, images, custom knob graphics), drawn natively by
 the UI on any device and mapped to hardware controls; later, custom views (an envelope
 editor, a waveform) as sandboxed code running in the UI process, not the engine; and a
 plugin's own native GUI on the desktop and in a DAW. First-party plugins use the same
@@ -745,7 +745,7 @@ consistent; a plugin owns its page.
 System areas now use a shared semantic palette and look-and-feel. Users can install
 validated data-only themes and apply one appearance across layouts, plugin browsing and
 generated parameter editors; other UI processes share the selection. Layout files own
-geometry/bindings, not colours. See the implemented [design language and theme contract](design-language.md).
+geometry/bindings, not colors. See the implemented [design language and theme contract](design-language.md).
 The desktop browser scans CLAP/LV2 in isolated helper processes, replaces instrument/effect
 slots through validated `graph.replace`, and exposes generic parameters and advertised
 presets. Plugin identity is format plus stable ID; filesystem paths locate installations.
@@ -838,7 +838,7 @@ preserving state/routes, and the affected performance is not ready. Native plugi
 report unsupported targets/resource limits. The existing sound-context `mode: native` alone
 does not establish package portability.
 
-- **Everything installable is a package:** a manifest (ID, version, author, licence,
+- **Everything installable is a package:** a manifest (ID, version, author, license,
   dependencies, the platforms its plugins are built for) and its files. Kinds: content
   (Sounds, Performances, Projects, samples, presets), code (plugins and shared runtimes,
   with builds for supported Linux, macOS and Windows CPU/ABI profiles), and looks (panel
@@ -859,7 +859,7 @@ does not establish package portability.
   own work. Sounds refer to its items by ID and version, so editing never changes the pack;
   saving makes the user's own copy. Updates install side by side, and saved work keeps the
   version it was made with until moved on deliberately.
-- **No copy protection.** The platform has no licence keys, no activation, no activation
+- **No copy protection.** The platform has no license keys, no activation, no activation
   servers and no licensing API, and the default catalog does not accept packages that need
   them: a plugin must work with nothing but its files. Copy protection and licensing are
   strongly discouraged, and the library and catalogs point users to open alternatives.
@@ -868,7 +868,7 @@ does not establish package portability.
   sandboxing does not make their installation or licensing portable. Runtime plugin
   isolation is not implemented yet. Packages
   can be signed, which shows who published a package and that it has not been altered:
-  authenticity, not copy protection. Licence terms ("do not redistribute") are stated in
+  authenticity, not copy protection. License terms ("do not redistribute") are stated in
   the manifest, not enforced. Paid packs are just files.
 - **Network is a permission.** Plugins have no network access unless granted. A package
   that needs it (a plugin that streams audio, talks to other software or hardware over the
@@ -929,7 +929,7 @@ defaults.
   dependencies on those targets; its graph must still fit the device's resources and I/O.
 - **Manufacturers' built-ins are ordinary packages**, pre-installed in the read-only system
   area of their devices. Installed on another device, where a build for it exists and its
-  licence allows, they work the same way. The Sounds and Performances a device comes
+  license allows, they work the same way. The Sounds and Performances a device comes
   with are a library preloaded on it, locked like any imported library: they load and play,
   Save As makes the musician's own copy, and restoring them is reinstalling the library
   ([RFC 0021](rfcs/0021-sounds-performances-and-library.md#libraries)).
@@ -955,7 +955,7 @@ share them, and not be able to break each other or the host.
 
 - **SDK (MIT):** Oscairn's CLAP extension headers (such as `oscairn.param-target`), templates
   for an instrument, an effect and a sequencer, and documentation. MIT so that plugins
-  under any licence can use them.
+  under any license can use them.
 - **Builder:** a container image with the same cross-compilers as the OS images, and a CI
   template, so anyone can build for every device from any computer. Builds made with it are
   reproducible: anyone can rebuild a package from its source and check it matches.
@@ -969,7 +969,7 @@ share them, and not be able to break each other or the host.
   run in sandboxed worker processes with no network unless granted, memory and CPU limits,
   and a deadline watchdog, so a plugin that crashes or hangs is recovered on its own and cannot take down
   the host or other plugins (see engine recovery).
-- **Distribution:** a package carries available target builds, licences/notices and exact
+- **Distribution:** a package carries available target builds, licenses/notices and exact
   source/build provenance where available. First-party packages ship source/build recipes;
   third-party redistributions preserve their applicable source and notice requirements.
   Catalogs list target availability explicitly; unavailable builds are not created by
@@ -1043,9 +1043,9 @@ processors use CPU implementations of the same interfaces.
 
 Oscairn should come with a few strong engines and leave room for many more:
 
-- an analog-modelling engine that scales from CPU-only devices to supported DSP- or
+- an analog-modeling engine that scales from CPU-only devices to supported DSP- or
   FPGA-assisted ones;
-- an FM engine, starting from an existing open engine where licences allow (such as
+- an FM engine, starting from an existing open engine where licenses allow (such as
   Dexed / MSFA);
 - a tonewheel organ with drawbars, percussion, vibrato and chorus, and a rotary speaker;
 - a multisample engine (SFZ, streaming from storage; sfizz is a candidate);

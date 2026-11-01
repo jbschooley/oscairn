@@ -2,10 +2,10 @@
 
 Status: in progress, 2026-10-31. Started with Performances: format version 3 with the info
 block (id, name, description, tags; no provenance or control owners yet), and a library of the
-Performances in the user's folder with the index as a cache, the user file (favourites and
+Performances in the user's folder with the index as a cache, the user file (favorites and
 recents), query, rescan and save and load by ID (`library.*`, `performance.info`/`setInfo`,
 see [control-protocol.md](../control-protocol.md#library)). The desktop app has a Library
-app (Performances and Sounds; search, tags, favourites, recent; a click opens a
+app (Performances and Sounds; search, tags, favorites, recent; a click opens a
 Performance, New part adds a Sound), a Part menu (Load Sound into Part through the Library's
 pick, Save Part as Sound) and a Setlist app
 ([setlist-format.md](../setlist-format.md)), and Performance > Save and Save As New. Step
@@ -29,7 +29,7 @@ and the three surfaces ([RFC 0019](0019-adaptive-ui.md)).
 Checked when built and tested; the sections below say how.
 
 - [x] Performance format 3 with the info block (name, description, tags, color)
-- [x] The library of Performances: cache, favourites, recents, query, Save and Save As New
+- [x] The library of Performances: cache, favorites, recents, query, Save and Save As New
 - [x] 1. Sound documents: save a part, load into a part or a new part, control owners
 - [x] 1. Provenance: each part records the Sound and revision it came from and whether it was
       edited since; revisions with parents for Sounds and Performances; Save and Save As New
@@ -342,10 +342,10 @@ A preset is one plugin's state. In the picker:
   sounds, this goes through `sounds.prepare` with the preset and `sounds.select`, so held
   notes keep the old patch; otherwise it is a state load and says it will interrupt.
 - **Tags from presets:** CLAP preset metadata carries `add_feature` strings ("bass", "pad",
-  "acid" … in CLAP's own examples), flags (factory, user, favourite), creators and a
+  "acid" … in CLAP's own examples), flags (factory, user, favorite), creators and a
   sound pack. The host's discovery receiver ignores all of these today (empty callbacks in
   `core/clap-host/src/Host.cpp`). Step 4 reads them: features become tags, flags set the
-  favourite, creators the author. Its factory and user flags are not used: a preset
+  favorite, creators the author. Its factory and user flags are not used: a preset
   is a preset wherever it came from.
 
 Presets are listed from the plugins, not copied into the library. The index records them so
@@ -394,8 +394,8 @@ filed as one or the other.
   give a tag a color, used on its chip and in lists. These are settings in the user file, not
   changes to any item, so they work the same on locked items. A hidden tag still matches a
   search typed in full.
-- **Favourites and recently used** are the user's, per device, in the same user file.
-  Favourites sync; recents do not. They never go in an item's file, so a favourite does not
+- **Favorites and recently used** are the user's, per device, in the same user file.
+  Favorites sync; recents do not. They never go in an item's file, so a favorite does not
   change a Sound's revision.
 
 ### Libraries
@@ -489,7 +489,7 @@ library's item.
   and combines with the chips by AND. Name matches rank first, then tag matches.
 - **Each chip shows its count** under the current filter, and chips with no matches are
   dimmed, not hidden, so the facet does not jump around.
-- **Favourites** and **Recent** are shortcuts above the facets. Recent lists the last 50
+- **Favorites** and **Recent** are shortcuts above the facets. Recent lists the last 50
   items loaded on this device, newest first.
 - **Sort:** name, recently used, or recently saved.
 
@@ -510,7 +510,7 @@ seamless check for the selected item against that target.
 | **Open performance** | For a Performance: replaces the whole Performance, after asking about unsaved changes; seamless (held notes and tails ring out); it is `performance.load` |
 | **Load preset** | With a node as target: changes only that plugin's state |
 | **Save as Sound** | From a part: saves it to the library, listing what stays behind |
-| Favourite, Edit tags | Change the user file or the item's own file |
+| Favorite, Edit tags | Change the user file or the item's own file |
 
 ### Audition
 
@@ -568,10 +568,10 @@ pooled instruments) and an interrupting state load otherwise, as today.
 
 A **Library** pane, dockable like the other RFC 0019 panes, beside the parts list.
 
-- Top: a search box, the kind switch (Sounds, Performances, Presets), and Favourites and
+- Top: a search box, the kind switch (Sounds, Performances, Presets), and Favorites and
   Recent.
 - Facet chips under it, one row per facet, wrapping; More tags collapsed.
-- Results as a list (name, tags, engine marks, favourite star) or a grid of cards. The
+- Results as a list (name, tags, engine marks, favorite star) or a grid of cards. The
   list is the default; the grid suits browsing a pack.
 - An inspector for the selection: description, author, every tag, the engines, the
   controls it brings, whether it loads seamlessly into the target part, and the actions.
@@ -588,7 +588,7 @@ A full-screen **Library** tab at 1024 × 600, touch sizes throughout.
 
 - The header names the target: "Into Part 2 · Pad". Tapping it picks another part or New
   part.
-- Left column: Favourites, Recent, then the facets as large chips, scrolling.
+- Left column: Favorites, Recent, then the facets as large chips, scrolling.
 - Middle: results as large rows with name, three tags and engine marks.
 - Right or bottom: the selected item's tags and the three actions, at least 44 pixels high.
 - **The knobs follow the screen,** as on parameter pages: on the KICK's P1–P4, P1 moves
@@ -600,7 +600,7 @@ A full-screen **Library** tab at 1024 × 600, touch sizes throughout.
 
 Not built now (RFC 0019). The view model must allow:
 
-- one list at a time: **Recent, Favourites, Tags, Engines, All**;
+- one list at a time: **Recent, Favorites, Tags, Engines, All**;
 - turning the encoder moves, pressing enters or loads into the current part, a long press
   or second button auditions;
 - Tags lists the tags, most used first, then matching items: AND by entering
@@ -616,10 +616,10 @@ Not built now (RFC 0019). The view model must allow:
 | Libraries (packs, factory content) | Their own folder per library under the library folders, locked | Imported content |
 | Plugin presets | Where the plugin keeps them | The plugin's |
 | Index of all of the above | Under `OSCAIRN_DATA_HOME/library/` | Cache, rebuilt by scanning |
-| Favourites, recents, hidden tags, tag colors | One user file under `OSCAIRN_DATA_HOME/library/` | User data |
+| Favorites, recents, hidden tags, tag colors | One user file under `OSCAIRN_DATA_HOME/library/` | User data |
 | Samples a Sound uses | Asset libraries (RFC 0009), referenced, never copied | Assets |
 
-The folder names are a convention, as `.oscairn` is today: the reader recognises the
+The folder names are a convention, as `.oscairn` is today: the reader recognizes the
 manifest. Exact folder locations follow the platform paths already used for the asset store.
 
 ### Control API
@@ -629,11 +629,11 @@ Proposed only; [control-protocol.md](../control-protocol.md) is not changed by t
 
 | Method | Parameters | Result |
 | --- | --- | --- |
-| `library.query` | optional `text`, `tags`, `engines`, `kinds`, `favourites`, `recent`, `sort`, `offset`, `limit` | `items` (id, revision, kind, name, tags, engines, favourite, seamless), `facets` with counts, `total` |
+| `library.query` | optional `text`, `tags`, `engines`, `kinds`, `favorites`, `recent`, `sort`, `offset`, `limit` | `items` (id, revision, kind, name, tags, engines, favorite, seamless), `facets` with counts, `total` |
 | `library.get` | `id`, optional `revision`, optional `part` to check against | the info block, nodes summary, controls it brings, estimated memory, and for a `part`: seamless or not, wires and controls that would be flagged |
 | `library.tags` | none | every tag in the library with its count, for suggestions |
 | `library.setTags` | `id`, `tags` | `{"accepted":true}`; writes the item's file |
-| `library.favourite` | `id`, `favourite` | `{"accepted":true}` |
+| `library.favorite` | `id`, `favorite` | `{"accepted":true}` |
 | `library.rescan` | none | counts added, changed and removed; emits `library.changed` |
 | `parts.loadSound` | `part`, `id`, optional `revision`, `confirm` | without `confirm`: what would change; with it: `{"accepted":true, "seamless":bool}` |
 | `parts.fromSound` | `id`, optional `revision` | numeric `part` |
@@ -649,7 +649,7 @@ other requests do not wait the way `assets.register` does today.
 | Step | Deliverable | Gate |
 | --- | --- | --- |
 | 1. Sound documents | Performance format version 3 with the info block, provenance and control owners; the Sound document on the same reader; `parts.saveSound`, `parts.loadSound` (cutting), `parts.fromSound` | A part with a split, two plugins, an internal user wire and two part controls, saved as a Sound and loaded into another Performance's part, renders sample for sample as the original part did. Crossing wires are listed and not saved; a Performance control is retargeted by name or flagged; scene parameters on removed nodes are reported. A version 2 document is refused |
-| 2. Library index and tags | Scanning user folders and packages, the index as cache, the user file, tag editing and suggestions, `library.*`, `LibraryModel` | Files copied in from a computer appear after a rescan. Deleting the index and rescanning gives the same results and loses no favourite or tag. AND filtering, counts and search are checked in `LibraryModel` tests without a window |
+| 2. Library index and tags | Scanning user folders and packages, the index as cache, the user file, tag editing and suggestions, `library.*`, `LibraryModel` | Files copied in from a computer appear after a rescan. Deleting the index and rescanning gives the same results and loses no favorite or tag. AND filtering, counts and search are checked in `LibraryModel` tests without a window |
 | 3. Desktop pane | The Library pane, inspector, drag to part, new part, keyboard | From the pane alone: find a Sound by two tags, load it into a part, make a new part from another, by mouse and by keyboard. `desktop-shell` renders the pane in both input modes |
 | 4. Plugin presets | Presets in the index; CLAP features, flags and creators read; Load preset on a node | The CLAP test fixture's presets appear tagged and load into their node; a native-context plugin's preset loads while a note is held without cutting it |
 | 5. Audition and seamless loading | The audition part; part transitions on RFC 0007's automatic chain preparation | A note held across **Load into part** keeps the outgoing sound and its delay tail while new notes play the incoming one, in uneven block sizes, with no allocation on the audio thread. A load that cannot be seamless says so before it happens |
@@ -698,7 +698,7 @@ other requests do not wait the way `assets.register` does today.
   change rehearsed work.
 - **A separate Sound format.** A Sound uses the Performance data model and reader.
 - **The index as the source of truth.** It is a cache; files and the user file are the truth.
-- **Favourites in item files.** They would change revisions, and are one musician's, not the
+- **Favorites in item files.** They would change revisions, and are one musician's, not the
   item's.
 - **Tags of different kinds:** user tag overlays on top of an item's tags, a fixed host
   vocabulary. Tags are tags; what the list shows is the musician's setting.

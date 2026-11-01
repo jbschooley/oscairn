@@ -7,7 +7,7 @@
 
 namespace oscairn::standalone
 {
-    /// An envelope recognised from its parameters' names: the level it starts at, then its
+    /// An envelope recognized from its parameters' names: the level it starts at, then its
     /// breakpoints in order, each reached after a time (or a rate, faster when higher) at a level.
     /// Indices are positions in the names given; -1 is none, with a fixed level instead. The
     /// sustain point holds until release.
@@ -18,10 +18,10 @@ namespace oscairn::standalone
         std::vector<Point> points;
         bool empty() const { return points.empty(); }
     };
-    // shortcut: recognised by name only (ADSR; DX7 rates and levels; FM-X times and levels), case-insensitive; replace with the plugins' own descriptions once oscairn.ui exists (RFC 0019).
+    // shortcut: recognized by name only (ADSR; DX7 rates and levels; FM-X times and levels), case-insensitive; replace with the plugins' own descriptions once oscairn.ui exists (RFC 0019).
     EnvelopeShape envelopeOf(const std::vector<std::string>& names);
 
-    /// An LFO recognised from its parameters' names: its wave and its speed, and a delay, fade-in,
+    /// An LFO recognized from its parameters' names: its wave and its speed, and a delay, fade-in,
     /// phase and user steps when it has them. Indices as for EnvelopeShape.
     struct LfoShape { int wave = -1, speed = -1, delay = -1, fade = -1, phase = -1; std::vector<int> steps; bool empty() const { return wave < 0 || speed < 0; } };
     // shortcut: by name only (Wave, Type or Shape with Speed, Rate or Frequency), as envelopeOf.
@@ -30,10 +30,10 @@ namespace oscairn::standalone
     enum class Wave { None, Sine, Triangle, Square, SawUp, SawDown, Random, Steps };
     Wave waveNamed(const juce::String& text);
 
-    /// A filter recognised from its parameters' names: Cutoff and Resonance, and its Type when it
+    /// A filter recognized from its parameters' names: Cutoff and Resonance, and its Type when it
     /// has one, whose value text gives the response (FilterResponse).
     struct FilterShape { int cutoff = -1, resonance = -1, type = -1; bool empty() const { return cutoff < 0 || resonance < 0; } };
-    // The parameters a recognised envelope, LFO or filter uses, in the order their tiles go when
+    // The parameters a recognized envelope, LFO or filter uses, in the order their tiles go when
     // linked (Attack, Decay, Sustain, Release; a DX7's rates, then its levels).
     std::vector<int> linkedOrder(const EnvelopeShape&);
     std::vector<int> linkedOrder(const struct LfoShape&);

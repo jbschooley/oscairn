@@ -59,7 +59,7 @@ namespace oscairn::host
         juce::StringArray initialInputs_,initialOutputs_;
         std::atomic<bool>        started_{ false }; // the device's rate matched the graph's
 
-        // Physical MIDI to the audio thread: many producers, serialised by the mutex
+        // Physical MIDI to the audio thread: many producers, serialized by the mutex
         // (never taken on the audio thread), one consumer.
         struct Incoming
         {

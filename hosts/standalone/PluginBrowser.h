@@ -27,7 +27,7 @@ private:
     std::vector<std::filesystem::path> roots_;
     juce::File sources_;
     std::future<kick::clap::ScanResult> scan_;
-    std::atomic<bool> cancelled_{false};
+    std::atomic<bool> canceled_{false};
     kick::clap::ScanResult catalog_;
     std::vector<size_t> visible_;
     std::vector<std::pair<juce::String,juce::String>> themes_;

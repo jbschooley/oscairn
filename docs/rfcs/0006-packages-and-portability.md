@@ -334,7 +334,7 @@ The UI offers **Export for another device** on Sounds, Performances, Setlists an
    on the audio path or unexpectedly during performance activation.
 4. Export the existing bundle model with the document, lock, state, permitted packages and
    assets. A complete offline bundle contains the target dependency closure beyond the
-   declared platform baseline. A references-only export is labelled incomplete for offline
+   declared platform baseline. A references-only export is labeled incomplete for offline
    use unless the destination already has everything. An unavailable download is not an
    included dependency. A multi-target bundle includes each selected available binary build;
    it does not synthesize new ones.
@@ -460,7 +460,7 @@ dependent musical work. The subsequent package-cleanup decision is a separate op
 
 After a deletion removes the final retention root, default to one grouped prompt offering
 **Keep installed** or **Remove unused content**, naming candidates, reclaimable space and
-offline reinstall implications. Cancelling keeps packages. Per-device policy offers **Ask
+offline reinstall implications. Canceling keeps packages. Per-device policy offers **Ask
 before removing unused content** (default) or **Keep installed without asking**; either still
 allows deliberate cleanup in Settings. Keeping particular content pins its dependency closure
 until the user releases that retention. Avoid repeated prompts for already retained content.
@@ -627,7 +627,7 @@ addition to CPU and runtime. The default Buildroot export covers only its advert
 profiles: include each selected profile's resolved backend dependency set, deduplicating
 common files. A named-device export includes its selected plan and any explicitly requested
 fallbacks. It does not include every FPGA/DSP image merely because the archive is for Linux.
-A generic CPU-only profile cannot be labelled ready for a hardware-required Sound or a
+A generic CPU-only profile cannot be labeled ready for a hardware-required Sound or a
 configuration whose CPU budget is insufficient. Unknown hardware capacity remains unverified.
 
 Import uses actual device service inventory, supported modes and measured capacity to select
@@ -751,7 +751,7 @@ Opening/editing the document is allowed; the affected performance is not reporte
 Do not silently bypass an unavailable effect, reroute a cue bus or replace an instrument
 with a different synth. A user can deliberately save a device-specific substitute and
 retain the original. Future optional rendered stems or multisampled versions can be
-prepared on a working source machine and exported as explicitly labelled alternatives:
+prepared on a working source machine and exported as explicitly labeled alternatives:
 a stem cannot replace an interactive instrument, and sampling does not preserve arbitrary
 modulation or MIDI behavior. Those alternatives are not the first package milestone.
 

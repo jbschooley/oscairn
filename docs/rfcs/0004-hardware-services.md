@@ -224,7 +224,7 @@ and identify its origin and uncertainty; never present it as a hardware capture 
 Outputs carry endpoint, payload, target presentation time, epoch, cancellation generation
 and deterministic ordering for equal deadlines. Endpoint semantics specify what the
 deadline means: a gate edge, calibrated CV validity, or a MIDI byte/message boundary.
-Account for MIDI serialisation, DAC settling and device buffering when relating external
+Account for MIDI serialization, DAC settling and device buffering when relating external
 events to audio. Do not promise simultaneous MIDI messages on one serial wire.
 
 ### Scheduling lead time and musical changes
@@ -248,12 +248,12 @@ by measurements, since longer lookahead makes edits harder to apply promptly.
 Stop, seek, tempo changes and pattern edits invalidate affected queued events using a
 cancellation generation. The device reports the boundary after which cancellation can
 take effect; already transmitted events cannot be recalled. Keep note ownership so
-cancelled future note-offs are replaced where needed, without cutting unrelated live notes.
+canceled future note-offs are replaced where needed, without cutting unrelated live notes.
 Reschedule from a known boundary, applying clock/transport changes consistently to audio
 and external outputs. This protocol must not wait for an acknowledgement on the audio
 thread.
 
-Define queue overflow, stale-epoch, disconnect and watchdog behaviour. Reserve a path for
+Define queue overflow, stale-epoch, disconnect and watchdog behavior. Reserve a path for
 stop and note/gate release; report dropped or late events and queue occupancy. Loss of the
 host link must not leave gates high or notes indefinitely held. An auxiliary processor can
 execute only its queued work during a host stall; continuing a complete performance after
@@ -266,7 +266,7 @@ may advertise weaker timing guarantees; do not claim hardware-timer precision fo
 unmeasured desktop MIDI backend. Sequencer and Sound definitions do not change by device.
 
 Packages can include per-target backend binaries and required firmware/kernel identities,
-along with licences and compatibility versions. A CPU build is not binary-compatible with
+along with licenses and compatibility versions. A CPU build is not binary-compatible with
 a DSP, nor does one vendor's DSP binary imply support for another. Board services control
 firmware loading, peripheral assignment and restart, with an explicit recovery route.
 
@@ -301,7 +301,7 @@ clock and callback constraints remain authoritative.
 - Exact versioned C extension/ABI for plugin backend negotiation and service handles;
   keep format adapters separate and use standard plugin features where sufficient.
 - Clock estimation method, timestamp representation and endpoint-specific timing budgets.
-- Per-board queue/cancellation protocol, minimum presentation delay and recovery behaviour.
+- Per-board queue/cancellation protocol, minimum presentation delay and recovery behavior.
 - Accelerator buffer ownership, sandbox transport and firmware/kernel packaging format.
 
 These need prototypes and measurements before an ABI is frozen. None requires moving

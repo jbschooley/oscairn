@@ -83,7 +83,7 @@ PluginPanel::PluginPanel(std::shared_ptr<PluginSession> owner, bool automaticall
     setSize(960, 540); rebuildParameters(); startTimerHz(10);
     if (automaticallyScan) scanPlugins();
 }
-PluginPanel::~PluginPanel() { stopTimer(); parameterList.setModel(nullptr); if (scanJob) scanJob->cancelled.store(true); }
+PluginPanel::~PluginPanel() { stopTimer(); parameterList.setModel(nullptr); if (scanJob) scanJob->canceled.store(true); }
 void PluginPanel::scanPlugins() {
     if (scanJob && !scanJob->complete.load()) return;
     scanJob = std::make_shared<ScanJob>();
@@ -92,7 +92,7 @@ void PluginPanel::scanPlugins() {
     // The worker owns only shared job data. Closing the panel cancels the child
     // process and cannot leave a callback pointing at a deleted component.
     std::thread([job, paths, scanner] {
-        try { job->result = scan(paths, scanner, 5000, &job->cancelled); }
+        try { job->result = scan(paths, scanner, 5000, &job->canceled); }
         catch (const std::exception& e) { job->result.failures.push_back({scanner.string(), e.what()}); }
         job->complete.store(true);
     }).detach();

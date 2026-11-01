@@ -23,7 +23,7 @@ Today Oscairn has no tuning. The host doesn't implement any tuning extension (no
 `core/clap-host/src` mentions it), the Sampler computes pitch from 12-TET only
 ([`src/sampler.cpp`](https://github.com/oscairn/sampler/blob/main/src/sampler.cpp)), and the Performance format has no tuning field. Two engines on
 the way already have their own tuning: Dexed, which Octet forks ([RFC 0014](0014-fm-engine.md)),
-and Surge XT, which the analog engine forks ([RFC 0015](0015-analog-modelling-engine.md)). Both
+and Surge XT, which the analog engine forks ([RFC 0015](0015-analog-modeling-engine.md)). Both
 include an MTS-ESP client (`MTS_RegisterClient` in Dexed's `source/PluginProcessor.cpp` and
 Surge's `src/common/SurgeStorage.cpp`).
 
@@ -49,7 +49,7 @@ The checks below test that design before this RFC commits to it.
 Checked on 2026-10-31 against [ODDSound/MTS-ESP at f214739](https://github.com/ODDSound/MTS-ESP/tree/f214739b8832e7f297cb9970d0c0efbf783f1462)
 (2026-02-04) and [free-audio/clap at a47f6ba](https://github.com/free-audio/clap/tree/a47f6badb49d948fd009998f28309cdab78979c9).
 
-### 1. Licences
+### 1. Licenses
 
 - **SDK sources.** The repository [LICENSE](https://github.com/ODDSound/MTS-ESP/blob/main/LICENSE)
   and the header of every source file (`Client/libMTSClient.*`, `Master/libMTSMaster.*`) give
@@ -59,11 +59,11 @@ Checked on 2026-10-31 against [ODDSound/MTS-ESP at f214739](https://github.com/O
   and GPL plugins can compile the client sources.
 - **libMTS.** This is the shared library that connects the master to its clients. It is
   shipped only as binaries under [`libMTS/`](https://github.com/ODDSound/MTS-ESP/tree/main/libMTS),
-  and its source isn't published. No licence file covers the binaries separately. The
+  and its source isn't published. No license file covers the binaries separately. The
   [README](https://github.com/ODDSound/MTS-ESP/blob/main/README.md#libmts) says "Installers are provided
   which you can bundle into your own installer or, if you prefer, just include the library
   files and install to the above locations". ODDSound's [developer page](https://oddsound.com/devs.php)
-  states no licence, fee or trademark terms. Whether the repository LICENSE covers the
+  states no license, fee or trademark terms. Whether the repository LICENSE covers the
   binaries is **unverified**; that is the most likely reading, but nothing says so outright.
 - **Who installs it.** Both the client and the master load libMTS at run time from a fixed
   path with `dlopen` / `LoadLibraryW` (`libMTSClient.cpp` `load_lib()`, and the same in
@@ -76,13 +76,13 @@ Checked on 2026-10-31 against [ODDSound/MTS-ESP at f214739](https://github.com/O
   subprograms that the work is specifically designed to require", and Oscairn can't supply
   libMTS's source. Whether an optional, `dlopen`ed library falls under that clause is
   **unverified**. It goes to counsel ([RFC 0013 IP rule 6](0013-awm2-class-sample-engine.md#ip-rules)
-  covers the process). RFC 0001 lets code move to and from the KICK firmware, so a licence
+  covers the process). RFC 0001 lets code move to and from the KICK firmware, so a license
   exception from Jacob alone may not cover every line.
 
 ### 2. Platforms
 
 - The repository ships libMTS for Windows (32- and 64-bit DLLs and an installer), macOS
-  (a universal x86_64/arm64 dylib and notarised installers) and Linux. For Linux it ships
+  (a universal x86_64/arm64 dylib and notarized installers) and Linux. For Linux it ships
   `libMTS/Linux/x86_64`, `arm32hf` and **`arm64`**. `file` reports the arm64 build as
   "ELF 64-bit LSB shared object, ARM aarch64", and it references only `GLIBC_2.17` symbol
   versions. The README's Linux install path is `/usr/local/lib`. It names no Linux
@@ -96,7 +96,7 @@ Checked on 2026-10-31 against [ODDSound/MTS-ESP at f214739](https://github.com/O
   exactly the set of C symbols that `libMTSClient.cpp` and `libMTSMaster.cpp` resolve with
   `dlsym` (`MTS_RegisterClient`, `MTS_GetTuningTable`, `MTS_GetMultiChannelTuningTable`,
   `MTS_UseMultiChannelTuning`, `MTS_SetNoteTunings`, `MTS_CanRegisterMaster` and the rest).
-  Their behaviour is set out in the two headers, and the 0BSD grant allows modifying those
+  Their behavior is set out in the two headers, and the 0BSD grant allows modifying those
   sources. One detail matters. The client fetches `const double *` pointers to the 128
   frequencies in Hz once, when the library loads, and reads them directly afterwards. A
   replacement must keep those tables at fixed addresses for the life of the process.
@@ -268,13 +268,13 @@ On the desktop:
 3. **Stale flag:** if Oscairn's own runtime record shows that its previous engine process held
    the master and that process is gone, the flag is Oscairn's own. No other master could have
    registered while it was set, so the host calls `MTS_Reinitialize()` and registers. In any
-   other case it offers reinitialising as a user choice, only when `MTS_HasIPC()` is true, as
+   other case it offers reinitializing as a user choice, only when `MTS_HasIPC()` is true, as
    the header prescribes.
 
 Oscairn never edits `MTS-ESP.conf`. It is system-wide and belongs to the user.
 
 **The device** has no other host, so the engine is the only master. At engine start it
-reinitialises and registers. It needs a libMTS at `/usr/local/lib/libMTS.so`, the path the
+reinitializes and registers. It needs a libMTS at `/usr/local/lib/libMTS.so`, the path the
 client sources hard-code. Two choices:
 
 - **(a) Bundle ODDSound's arm64 binary.** The repository has one, and the README invites

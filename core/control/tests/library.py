@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""The library through RPC (RFC 0021): info, save and load by ID, query, favourites, recents, the cache."""
+"""The library through RPC (RFC 0021): info, save and load by ID, query, favorites, recents, the cache."""
 import json
 import os
 from pathlib import Path
@@ -63,11 +63,11 @@ with tempfile.TemporaryDirectory(prefix='oscairn-library-') as temporary:
         assert everything['tags'] == [{'tag': 'pad', 'count': 1}, {'tag': 'warm', 'count': 1}]
         assert rpc('library.query', {'text': 'STRINGS'})['total'] == 1
         assert rpc('library.query', {'tags': ['pad', 'lead']})['total'] == 0
-        assert rpc('library.query', {'favourites': True})['total'] == 0
-        rpc('library.favourite', {'id': pad, 'favourite': True})
-        assert rpc('library.query', {'favourites': True})['items'][0]['favourite'] is True
+        assert rpc('library.query', {'favorites': True})['total'] == 0
+        rpc('library.favorite', {'id': pad, 'favorite': True})
+        assert rpc('library.query', {'favorites': True})['items'][0]['favorite'] is True
         assert rpc('library.query', {'recent': True})['items'][0]['recent'] == 1
-        rpc('library.favourite', {'id': 'missing', 'favourite': True}, True)
+        rpc('library.favorite', {'id': 'missing', 'favorite': True}, True)
         rpc('library.load', {'id': 'missing'}, True)
         rpc('library.query', {'limit': 0}, True)
         rpc('performance.setInfo', {'name': 'x', 'description': '', 'tags': ['']}, True)
@@ -122,9 +122,9 @@ with tempfile.TemporaryDirectory(prefix='oscairn-library-') as temporary:
         assert len(imported['parts']) == 1 and len(rpc('graph.get')['parts']) == count + 1, imported
         rpc('performance.import', {'directory': str(exported), 'parts': [9999]}, True)
         user = json.loads((home / 'library/user.json').read_text())
-        assert user['favourites'] == [pad] and user['recent'][-2:] == [pad, copy]  # a gone item's stays, for if it returns
+        assert user['favorites'] == [pad] and user['recent'][-2:] == [pad, copy]  # a gone item's stays, for if it returns
     finally:
         p.stdin.close()
         p.wait(timeout=10)
     assert p.returncode == 0
-print('ok: library info, save and load by ID, query, favourites, recents, rescan, Sounds and importing')
+print('ok: library info, save and load by ID, query, favorites, recents, rescan, Sounds and importing')

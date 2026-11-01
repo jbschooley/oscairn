@@ -439,7 +439,7 @@ namespace oscairn::standalone
         void paint(juce::Graphics& g) override
         {
             const int mode = std::max(1, desktopMode(*this));
-            // Linked tiles share a card per row, a line between neighbours.
+            // Linked tiles share a card per row, a line between neighbors.
             for(const auto& l : grid_.links_) drawSection(g, l, ink(Ink::Surface));
             for(const auto& t : grid_.tiles_)
             {
@@ -738,7 +738,7 @@ namespace oscairn::standalone
                     y += bounds.getHeight() + gap;
                 }
             }
-            // Runs: a linked group's tiles together (the plugin's groups, then a recognised
+            // Runs: a linked group's tiles together (the plugin's groups, then a recognized
             // envelope, LFO or filter), where its first tile would be; other tiles alone.
             std::vector<std::vector<size_t>> runs;
             {
@@ -753,14 +753,14 @@ namespace oscairn::standalone
                     }
                 std::vector<std::string> names;
                 for(const auto i : members) names.push_back(params_[i].name);
-                auto recognised = [&](const std::vector<int>& order) {
+                auto recognized = [&](const std::vector<int>& order) {
                     std::vector<size_t> run;
                     for(const int k : order) if(params_[members[size_t(k)]].group == 0) run.push_back(members[size_t(k)]);
                     if(run.size() > 1) linked.push_back(run);
                 };
-                if(auto e = envelopeOf(names); !e.empty()) recognised(linkedOrder(e));
-                if(auto l = lfoOf(names); !l.empty()) recognised(linkedOrder(l));
-                if(auto f = filterOf(names); !f.empty()) recognised(linkedOrder(f));
+                if(auto e = envelopeOf(names); !e.empty()) recognized(linkedOrder(e));
+                if(auto l = lfoOf(names); !l.empty()) recognized(linkedOrder(l));
+                if(auto f = filterOf(names); !f.empty()) recognized(linkedOrder(f));
                 std::vector<bool> done(params_.size());
                 for(const auto i : members)
                 {

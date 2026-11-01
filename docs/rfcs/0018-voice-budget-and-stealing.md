@@ -74,12 +74,12 @@ Choosing what to steal also avoids clicks:
 - **Choke without a fade only at the hard limit:** cutting a note is better than missing the
   deadline, which silences or crackles everything. This is counted and reported.
 
-CLAP doesn't say how a plugin should handle a choke, or require it to honour volume
+CLAP doesn't say how a plugin should handle a choke, or require it to honor volume
 expressions. So:
 
 - The porting guide recommends treating a host choke as a fast fade of 2–5 ms, and handling
   `CLAP_NOTE_EXPRESSION_VOLUME`.
-- The host can't detect whether a plugin honours volume expressions. A plugin may declare it
+- The host can't detect whether a plugin honors volume expressions. A plugin may declare it
   through C's extension; otherwise the host assumes it doesn't, and prefers that plugin's
   released notes.
 - The native instruments do both, with tests that check a stolen note leaves no
@@ -149,7 +149,7 @@ the others. A plugin that implements it:
   the shared budget moves between parts. This is the Kronos's dynamic allocation.
 - **Steals itself:** within that limit, it gives up voices with its own fades, choosing by
   voice: one element of a layered note, one unison copy, or the quietest voice in its pool.
-- **Declares volume expressions:** it can say it honours volume expressions, so B's fade is
+- **Declares volume expressions:** it can say it honors volume expressions, so B's fade is
   known to work.
 
 The native instruments implement it first, and the AWM2-class engine needs it most. A plugin
@@ -203,7 +203,7 @@ lanes.
 
 | Step | Deliverable | Gate |
 | --- | --- | --- |
-| 1. Fade and choke | The two-stage steal of one note in `NoteRoute`; the porting guide's choke and volume-expression advice; the Basic Synth and Sampler honour both | A stolen note in the rendered output has no step larger than a reference fade; no allocation |
+| 1. Fade and choke | The two-stage steal of one note in `NoteRoute`; the porting guide's choke and volume-expression advice; the Basic Synth and Sampler honor both | A stolen note in the rendered output has no step larger than a reference fade; no allocation |
 | 2. Part limits | Note limit, reserve and priority per part, stealing within the part; persisted and in the protocol; Part page fields | A part limited to 4 notes plays 8 keys without clicks, keeping the newest 4 and the protected keys |
 | 3. Shared budget | Cost per note from measurement, stealing across parts at note-on, soft and hard limits, counts on the Parts list | A Performance that misses deadlines without the budget plays a stress chart on the device with no deadline misses, and only quiet or released notes stolen |
 | 4. Extension | `oscairn.voice-budget` header, host support, the native instruments implementing it | A layered AWM2-class sound under pressure drops quiet elements before whole notes |

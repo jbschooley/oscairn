@@ -9,7 +9,7 @@ namespace oscairn::standalone
 {
     namespace
     {
-        juce::Colour roleColour(const std::string& role)
+        juce::Colour roleColor(const std::string& role)
         {
             if(role == "Instrument") return juce::Colour(0xff8cc2ff);
             if(role == "Effect") return juce::Colour(0xff6fd6e3);
@@ -406,7 +406,7 @@ namespace oscairn::standalone
                     small(sendRows[k], juce::String::fromUTF8("→ ") + text(b.name));
                     updates.push_back(slider(sendRows[k], 0, 1, sendOf(p.id, b.id), setSend(p.id, b.id)).second);
                 }
-                // Pan; a double-click centres it.
+                // Pan; a double-click centers it.
                 small(panRow, "Pan");
                 auto [pan, panUpdate] = slider(panRow.reduced(2, 0), -1, 1, [this, id = p.id] { const auto* q = part(id); return q ? q->pan : 0.0; },
                                                [this, id = p.id](double v) { edit([id, v](Control& c) { c.setPartPan(id, v); c.commit(); }); });
@@ -511,7 +511,7 @@ namespace oscairn::standalone
             name_.setBounds(top.reduced(8, 4));
             if(!name_.hasKeyboardFocus(true)) name_.setText(text(p->name), juce::dontSendNotification);
             name_.applyFontToAllText(name_.getFont());
-            name_.setIndents(10, 0); // the editor centres it vertically; this lines it up with the rows' text
+            name_.setIndents(10, 0); // the editor centers it vertically; this lines it up with the rows' text
             // The chain: IN, each box or split with a + before it, a last +, OUT. A split stacks its
             // lanes between a split pill and a join pill, each lane with its boxes and a + at its end.
             constexpr int laneHeight = 44, laneBox = 104;
@@ -599,7 +599,7 @@ namespace oscairn::standalone
             const int columns = std::clamp(panel.getWidth() / 300, 2, 4), tileGap = sectionGap(8);
             const int tileWidth = (panel.getWidth() - tileGap * (columns - 1)) / columns, tileHeight = 16 + 18 + lineHeight + 6;
             int column = 0, tileTop = -1, rowHeight = tileHeight;
-            auto labelled = [&](const juce::String& label, int span = 1, int height = 0) {
+            auto labeled = [&](const juce::String& label, int span = 1, int height = 0) {
                 span = std::min(span, columns);
                 if(tileTop < 0) tileTop = panel.getY();
                 if(column + span > columns)
@@ -638,7 +638,7 @@ namespace oscairn::standalone
                         for(size_t k = 0; k + 1 < split->lanes.size(); ++k)
                         {
                             const auto node = split->splitter; const auto param = uint32_t(3 + k);
-                            auto r = labelled("Crossover " + juce::String(int(k + 1)));
+                            auto r = labeled("Crossover " + juce::String(int(k + 1)));
                             auto [crossover, update] = slider(r.removeFromLeft(320).reduced(2, 8), 20, 20000, [this, node, param] { return engine_.param(node, param); },
                                                               [this, node, param](double v) { engine_.setParam(node, param, v); });
                             crossover->setSkewFactorFromMidPoint(1000);
@@ -654,7 +654,7 @@ namespace oscairn::standalone
                         button(actions.removeFromLeft(130).reduced(2), "Remove lane", [this, id, sp, lane] { selectedLane_ = -1; edit([id, sp, lane](Control& c) { removeLaneAndBoxes(c, id, sp, lane); }); })
                             ->setTooltip("Remove this lane and its plugins");
                     panel.removeFromTop(8);
-                    zoneEditor(labelled("Lane keys", columns, 120), [this, id, sp, lane] {
+                    zoneEditor(labeled("Lane keys", columns, 120), [this, id, sp, lane] {
                         if(const auto* q = part(id)) for(const auto& b : q->chain) if(b.split == sp && lane < b.lanes.size()) return std::array<int, 4>{b.lanes[lane].lowKey, b.lanes[lane].highKey, 0, 127};
                         return std::array<int, 4>{0, 127, 0, 127};
                     }, [this, id, sp, lane](int low, int high) { edit([id, sp, lane, low, high](Control& c) { setLaneKeys(c, id, sp, lane, low, high); }); }, {});
@@ -663,14 +663,14 @@ namespace oscairn::standalone
                         return nullptr;
                     };
                     // Mute and solo at the tile's right, the level slider in the rest.
-                    auto mix = labelled("Lane level");
+                    auto mix = labeled("Lane level");
                     toggle(mix.removeFromRight(34), "Solo", [laneOf] { const auto* x = laneOf(); return x && x->solo; },
                            [this, id, sp, lane](bool o) { edit([id, sp, lane, o](Control& c) { editLane(c, id, sp, lane, [o](Lane& x) { x.solo = o; }); }); });
                     toggle(mix.removeFromRight(34), "Mute", [laneOf] { const auto* x = laneOf(); return x && x->mute; },
                            [this, id, sp, lane](bool m) { edit([id, sp, lane, m](Control& c) { editLane(c, id, sp, lane, [m](Lane& x) { x.mute = m; }); }); });
                     updates.push_back(slider(mix.reduced(2, 10), 0, 1, [laneOf] { const auto* x = laneOf(); return x ? x->level : 1.0; },
                                              [this, id, sp, lane](double v) { edit([id, sp, lane, v](Control& c) { editLane(c, id, sp, lane, [v](Lane& x) { x.level = v; }); }); }).second);
-                    auto panRow = labelled("Lane pan");
+                    auto panRow = labeled("Lane pan");
                     auto [lanePan, lanePanUpdate] = slider(panRow.removeFromLeft(320).reduced(2, 10), -1, 1, [laneOf] { const auto* x = laneOf(); return x ? x->pan : 0.0; },
                                                            [this, id, sp, lane](double v) { edit([id, sp, lane, v](Control& c) { editLane(c, id, sp, lane, [v](Lane& x) { x.pan = v; }); }); });
                     lanePan->getProperties().set("bipolar", true);
@@ -686,7 +686,7 @@ namespace oscairn::standalone
             for(const auto& field : partFields(*p, state_))
             {
                 using K = PartField::Kind;
-                auto r = labelled(text(field.label), field.span ? field.span : columns, field.kind == K::Zone ? 140 : 0);
+                auto r = labeled(text(field.label), field.span ? field.span : columns, field.kind == K::Zone ? 140 : 0);
                 switch(field.kind)
                 {
                 case K::Devices:
@@ -1023,12 +1023,12 @@ namespace oscairn::standalone
                 g.drawText(text(b.name), r.withHeight(RoutingMetrics{}.frameHead * routingScale_).reduced(12 * routingScale_, 0), juce::Justification::centredLeft, true);
                 if(collapsedParts_) chevron(juce::Rectangle<float>(chevronSize, chevronSize).withCentre({r.getRight() - 22 * routingScale_, r.getY() + RoutingMetrics{}.frameHead * routingScale_ / 2}), true);
             }
-            // Wires, under the boxes, in the theme's wire colours: enabled audio and note wires
+            // Wires, under the boxes, in the theme's wire colors: enabled audio and note wires
             // (user wires thicker), disabled and draining ones dashed, and those that no longer fit
             // their ports. An audio wire is a line per channel, side by side, and with Meters on
-            // takes its level's colour while it carries sound. With a plugin or part chosen, the
+            // takes its level's color while it carries sound. With a plugin or part chosen, the
             // rest are faint.
-            const auto& colours = themeData().wires;
+            const auto& colors = themeData().wires;
             for(const auto& p : layout_.paths)
             {
                 if(p.points.size() < 2) continue;
@@ -1042,11 +1042,11 @@ namespace oscairn::standalone
                 }
                 const auto peak = wirePeaks_.find(w.id);
                 const bool sounding = wireMeters_ && w.kind == WireKind::Audio && w.connected && p.state == WireState::Enabled && peak != wirePeaks_.end() && peak->second >= .001; // -60 dB
-                auto colour = !w.connected ? colours.unconnected : p.state == WireState::Draining ? colours.draining : p.state == WireState::Disabled ? colours.disabled
-                            : sounding ? levelColour(peak->second) : w.kind == WireKind::Notes ? colours.notes : colours.audio;
-                colour = colour.withAlpha(focus && !touches(w) ? .15f : w.owner == WireOwner::User || sounding ? 1.f : .75f);
-                g.setColour(colour);
-                // The lines: nested strokes of the centre line filled even-odd, so every other band
+                auto color = !w.connected ? colors.unconnected : p.state == WireState::Draining ? colors.draining : p.state == WireState::Disabled ? colors.disabled
+                            : sounding ? levelColor(peak->second) : w.kind == WireKind::Notes ? colors.notes : colors.audio;
+                color = color.withAlpha(focus && !touches(w) ? .15f : w.owner == WireOwner::User || sounding ? 1.f : .75f);
+                g.setColour(color);
+                // The lines: nested strokes of the center line filled even-odd, so every other band
                 // between them is empty. shortcut: eight lines at most, so a wider bus stays narrower than its port spacing.
                 const float width = (w.owner == WireOwner::User || p.state == WireState::Draining ? 2.5f : 1.75f) * std::max(.6f, routingScale_);
                 const auto lines = std::min(8u, wireChannels(w, graph_.topology));
@@ -1146,7 +1146,7 @@ namespace oscairn::standalone
             g.setColour(selected ? ink(Ink::Accent) : !b.split && failed(b.node) ? ink(Ink::Danger) : ink(Ink::Border));
             g.drawRoundedRectangle(r, themeData().radius, selected ? 2.0f : 1.0f);
             auto inner = r.reduced(8, 4);
-            g.setColour(roleColour(b.role));
+            g.setColour(roleColor(b.role));
             g.setFont(juce::FontOptions(10.0f * scale, juce::Font::bold));
             g.drawText(text(b.role).toUpperCase() + (b.off ? juce::String::fromUTF8(" · OFF") : juce::String()), inner.removeFromTop(inner.getHeight() * .45f), juce::Justification::bottomLeft);
             g.setColour(ink(Ink::Text));

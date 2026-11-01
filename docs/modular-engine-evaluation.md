@@ -16,7 +16,7 @@ take modulation from a modulator, velocity, note, gate, mod wheel, bend, pressur
 macros. Cables add one audio module's output to another's input, which allows FM and feedback.
 After the voices come up to four stereo effects (stereo delay, chorus, reverb, saturator). It also has
 poly, mono and legato modes, glide, an arpeggiator, tempo-synced rates, factory and user
-presets, and a full-screen patch editor. AGPL-3.0-or-later, the same licence as Oscairn.
+presets, and a full-screen patch editor. AGPL-3.0-or-later, the same license as Oscairn.
 
 | Part | Files | Lines |
 | --- | --- | --- |
@@ -59,7 +59,7 @@ engine does not depend on the sequencer, mixer or audio manager.
 - **Timing is free-running.** The arpeggiator counts samples from the tempo, and synced LFOs
   restart on notes; neither follows the transport's beat position. That is acceptable for an
   instrument, but an arpeggiator locked to the bar would need the CLAP transport.
-- **Tests:** KICK's engine test app mentions Modular in its audit and optimisation regression
+- **Tests:** KICK's engine test app mentions Modular in its audit and optimization regression
   tests (15 and 8 mentions); there is no Modular test in `InstrumentVoiceTests.h`. These tests
   run inside KICK's test app, so Oscairn would need its own render tests.
 - **The upstream code changes fast.** The engine appeared on 2026-10-27, and its first three days
@@ -71,7 +71,7 @@ engine does not depend on the sequencer, mixer or audio manager.
 | | A. Keep upstream files and JUCE | B. Plain C++ port |
 | --- | --- | --- |
 | Engine, modules and patch files | Imported unchanged, with history (`git filter-repo`, as planned for the sequencer) | Rewritten: helpers replaced; patch layer redone in Oscairn's patch text |
-| Reverb | `juce::Reverb` as is | Replace (JUCE's Freeverb code may be reused with credit if the licence allows) |
+| Reverb | `juce::Reverb` as is | Replace (JUCE's Freeverb code may be reused with credit if the license allows) |
 | New Oscairn code | CLAP wrapper: events split at their sample, parameters (8 macros, level), state as patch XML, presets; a copy of `IInstrumentEngine` | The same wrapper, plus the rewritten patch layer |
 | Patch editor | Not usable as is; needs an Oscairn editor in either case | Same |
 | JUCE | First plugin to link JUCE (`juce_core`, `juce_audio_basics`, `juce_data_structures`); the hosts already fetch JUCE 9.0.4 | None |
@@ -92,5 +92,5 @@ engine does not depend on the sequencer, mixer or audio manager.
 Not done:
 - nothing was built or played;
 - the engine's DSP was read for structure, not reviewed line by line;
-- I did not check JUCE 9's licence terms for linking it into a plugin, or measure the spin-lock
+- I did not check JUCE 9's license terms for linking it into a plugin, or measure the spin-lock
   wait.

@@ -146,7 +146,7 @@ description as Compact would, is the check that this holds (step 3).
 
 A plugin provides a description through an Oscairn CLAP extension, `oscairn.ui`, MIT
 licensed like the other extensions
-([RFC 0001](0001-licence.md)). It is data, not code: the host draws it in the system theme,
+([RFC 0001](0001-license.md)). It is data, not code: the host draws it in the system theme,
 on every surface, with the physical controls mapped. Without the extension, the host
 generates one.
 
@@ -156,7 +156,7 @@ generates one.
   - a **priority** (1 is most important), which decides what Panel puts on the knobs first
     and what Compact shows at all;
   - an optional **role** (cutoff, resonance, attack, level, pan …), which lets the host map
-    physical controls by default ([RFC 0011](0011-performance-ui-and-editors.md#defaults-so-nothing-must-be-programmed))
+    physical controls by default ([RFC 0011](0011-performance-ui-and-editors.md#defaults-so-nothing-must-be-programd))
     and use the right widget;
   - an optional **widget hint**: knob, slider, switch, choice, or a field in a rich widget.
 - **Rich widgets,** a small fixed set the host draws on every surface that has the room, each
@@ -271,7 +271,7 @@ drawn for the type its value text names.
   Basic Synth's knobs and order. A range's two-sided slider is drawn but not yet checked by a
   test; no plugin gives a range yet.
 - *Linked tiles:* tiles that belong together (a hint's group, or an envelope's, LFO's or
-  filter's parameters recognised by name) are one run, in order (Attack, Decay, Sustain,
+  filter's parameters recognized by name) are one run, in order (Attack, Decay, Sustain,
   Release), drawn edge to edge in one card with a line between each. A run that does not fit
   what is left of a row starts the next one (the tile before it widening to the row's end); a
   run wider than the screen goes on in rows that touch, its last tile filling the row. The

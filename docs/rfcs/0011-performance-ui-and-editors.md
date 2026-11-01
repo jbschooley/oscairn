@@ -32,7 +32,7 @@ shared effects, mixer or editors. Two familiar models each solve half of it:
 
 - **Gig Performer** wires anything to anything, but every input and output is drawn by
   hand for every performance.
-- **The MODX** organises a Performance as parts with zones, inserts and shared effects,
+- **The MODX** organizes a Performance as parts with zones, inserts and shared effects,
   which is quick to set up but fixed in shape.
 
 Both also leave most physical controls to be assigned by hand, unless you start from a
@@ -71,7 +71,7 @@ Mockups of these views at the device's 1024 × 600 size were reviewed on 2026-10
 ## The model behind the views
 
 The graph stays the only model. The views are projections of it, plus a small amount of
-layout data (part order, names, colours, which nodes are grouped), saved in the Performance.
+layout data (part order, names, colors, which nodes are grouped), saved in the Performance.
 
 ### Parts
 
@@ -101,7 +101,7 @@ The rules that keep the views from breaking each other:
 - Inserting a node between A and B replaces the part wire A→B with A→new→B; user wires on
   A or B stay.
 - Deleting a node with user wires first lists them and asks whether to reconnect them to
-  its neighbours or remove them.
+  its neighbors or remove them.
 - Replacing a plugin remaps wires by port (main to main, sidechain to sidechain) using the
   channel rules below. A wire that cannot be remapped stays visible as unconnected; the
   replacement is not refused. (Implemented in step 1.)
@@ -144,8 +144,8 @@ How a bus shows in each view:
 - **Parts:** a row under the parts, showing what feeds it and its chain. Part rows show
   their send levels.
 - **Mixer:** a strip.
-- **Routing:** a Mix node (labelled with the bus name) in the effects and buses column,
-  followed by the bus chain. Sends are part wires into the Mix node, each labelled with its
+- **Routing:** a Mix node (labeled with the bus name) in the effects and buses column,
+  followed by the bus chain. Sends are part wires into the Mix node, each labeled with its
   level.
 
 **Shared effects wired by hand.** A musician may skip buses and, in Routing, wire two parts
@@ -222,7 +222,7 @@ A role is worked out from the plugin's ports, not chosen by hand. CLAP's feature
 | anything | parameter lanes | Modulator ([RFC 0002](0002-param-target.md) lanes) |
 | notes | notes + audio | Instrument with note output |
 
-The colour of a box follows its main output (notes, instrument, effect). A second tag names
+The color of a box follows its main output (notes, instrument, effect). A second tag names
 the input when it is unusual ("Effect · played by notes").
 
 ## Plugin editors
@@ -253,7 +253,7 @@ knobs, sliders and buttons. A device **layout** names its logical controls
 ([design language](../design-language.md)). The planned controller-mapping service owns
 pickup, relative encoders and bank state.
 
-### Defaults, so nothing must be programmed
+### Defaults, so nothing must be programd
 
 Assignments resolve in layers. Each layer fills only what the layers above it left empty.
 
@@ -406,7 +406,7 @@ and checks it renders sample for sample as the same graph wired by hand on the e
 
 **The Parts and Part views** followed on the desktop (`PartsView`, `PartsModel`), opened by
 **Parts...** over the main window so they fit a device's single screen. Parts lists each
-part (where it plays from with its zone over the keyboard, its chain as role-coloured boxes,
+part (where it plays from with its zone over the keyboard, its chain as role-colored boxes,
 level, mute and a send per bus) and the shared buses under them; **+ Add part** and **+ Add
 bus** make them. Tapping a part opens its chain (IN, the boxes with **+** between them to
 insert any plugin the isolated scanner finds, OUT with its sends), where a box can be moved
@@ -567,12 +567,12 @@ this). Nothing is dragged into place. Parts are **collapsed** by default, each o
 plugins as chips and a button to expand it in place, as a frame holding its plugins laid out
 the same way; the choice is remembered (`routing-view.txt` beside the theme selection), and
 **Parts collapsed** off shows every part expanded. Choosing a plugin or part keeps its wires and
-what they reach bright and dims the rest. It draws every node and every wire in the theme's wire colours (theme format 4): enabled audio and note wires,
+what they reach bright and dims the rest. It draws every node and every wire in the theme's wire colors (theme format 4, now 5): enabled audio and note wires,
 part wires fainter, wires drawn here bright; disabled ones (muted; off in a scene
-with the full scene model) and draining ones (seamless changes) dashed in their own colours;
+with the full scene model) and draining ones (seamless changes) dashed in their own colors;
 unconnected ones apart. An audio wire is a line per channel its source sends (the source
 channels its pairs take), side by side like one wire split in two or more, up to eight. With
-**Meters** on, an audio wire carrying sound takes its level's colour, after its level and pan,
+**Meters** on, an audio wire carrying sound takes its level's color, after its level and pan,
 in the Mixer meters' zones: green, yellow from -12 dB, red from -3 (`wires.meters`, held and
 falling like the part meters; both read the plugins' peaks once a tick). A part's row in the parts lists takes a tint when muted (the mute's)
 or draining (the accent's). Tapping a node offers **Connect audio to...** and

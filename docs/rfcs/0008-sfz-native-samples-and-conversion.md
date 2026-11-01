@@ -297,7 +297,7 @@ acceptance has not happened** and is queued with the other listening tests.
   matching level, pitch, transposition, tuning, volume, velocity and release agree within
   0.34% RMS. The release uses liquidsfz's exponential curve, and (Jacob, 2026-10-30) the
   Sampler adopts liquidsfz's default level: CC7 volume 100 on its squared curve and the
-  sine pan law at centre, together −7.2 dB. Levels now agree within 0.05 dB; the remaining
+  sine pan law at center, together −7.2 dB. Levels now agree within 0.05 dB; the remaining
   0.6% is not in liquidsfz's gain path and is unexplained. CC7 and CC10 changes are not
   implemented yet; only their default values are matched.
 - Step 3 groundwork: reuse sfizz's parser and value helpers, implement the region model and

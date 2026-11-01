@@ -147,15 +147,15 @@ bool decodeScan(const std::string& source, ScanResult& result) {
         result = std::move(decoded); return true;
     } catch (...) { return false; }
 }
-ScanResult scan(const std::vector<fs::path>& roots, const fs::path& helper, uint32_t timeoutMs, const std::atomic<bool>* cancelled, const std::string& extension) {
+ScanResult scan(const std::vector<fs::path>& roots, const fs::path& helper, uint32_t timeoutMs, const std::atomic<bool>* canceled, const std::string& extension) {
     ScanResult result;
     if (timeoutMs == 0 || timeoutMs > 60000) { result.failures.push_back({helper.string(), "Invalid scanner timeout"}); return result; }
 #ifdef _WIN32
-    (void)roots; (void)cancelled;
+    (void)roots; (void)canceled;
     result.failures.push_back({helper.string(), "Isolated scanning currently supports Linux and macOS"});
 #else
     for (const auto& path : findBinaries(roots,extension)) {
-        if (cancelled && cancelled->load()) break;
+        if (canceled && canceled->load()) break;
         int pipes[2], errors[2];
         if (::pipe(pipes) != 0) { result.failures.push_back({path.string(), "Cannot create scanner pipe"}); continue; }
         if (::pipe(errors) != 0) { ::close(pipes[0]); ::close(pipes[1]); result.failures.push_back({path.string(), "Cannot create scanner pipe"}); continue; }
@@ -200,7 +200,7 @@ ScanResult scan(const std::vector<fs::path>& roots, const fs::path& helper, uint
             const auto waited = ::waitpid(pid, &status, WNOHANG);
             if (waited == pid) { done = true; break; }
             if (waited < 0 && errno != EINTR) { done = true; status = -1; break; }
-            if (oversized || std::chrono::steady_clock::now() >= deadline || (cancelled && cancelled->load())) {
+            if (oversized || std::chrono::steady_clock::now() >= deadline || (canceled && canceled->load())) {
                 timedOut = !oversized;
                 ::kill(-pid, SIGKILL);
                 while (::waitpid(pid, &status, 0) < 0 && errno == EINTR) {}
@@ -219,7 +219,7 @@ ScanResult scan(const std::vector<fs::path>& roots, const fs::path& helper, uint
         for (auto& c : stderrTail) if (c == '\n' || c == '\r') c = ' ';
         const auto detail = stderrTail.empty() ? std::string() : ": " + stderrTail;
         ScanResult single;
-        if (timedOut) result.failures.push_back({binary, (cancelled && cancelled->load() ? "Scan cancelled" : "Plugin scan timed out") + detail});
+        if (timedOut) result.failures.push_back({binary, (canceled && canceled->load() ? "Scan canceled" : "Plugin scan timed out") + detail});
         else if (oversized) result.failures.push_back({binary, "Plugin scanner output exceeded size limit" + detail});
         else if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) result.failures.push_back({binary, "Plugin crashed or failed during scan" + detail});
         else if (!decodeScan(wire, single)) result.failures.push_back({binary, "Invalid scanner response" + detail});

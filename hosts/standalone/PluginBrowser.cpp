@@ -21,18 +21,18 @@ PluginBrowser::PluginBrowser(Engine& engine,Theme& theme,const juce::File& plugi
     sources_=theme.directory().getParentDirectory().getChildFile("plugin-folders.txt");
     roots_=pluginSearchPaths();roots_.emplace_back(plugins.getFullPathName().toStdString());
     for(const auto& path:juce::StringArray::fromLines(sources_.loadFileAsString()))if(path.isNotEmpty())roots_.emplace_back(path.toStdString());
-    scanButton_.onClick=[this]{if(scan_.valid()){cancelled_=true;scanButton_.setEnabled(false);}else scan();};
+    scanButton_.onClick=[this]{if(scan_.valid()){canceled_=true;scanButton_.setEnabled(false);}else scan();};
     folderButton_.onClick=[this]{chooser_=std::make_unique<juce::FileChooser>("Add a plugin folder");chooser_->launchAsync(juce::FileBrowserComponent::openMode|juce::FileBrowserComponent::canSelectDirectories,[safe=juce::Component::SafePointer<PluginBrowser>(this)](const auto& fc){if(!safe || fc.getResult()==juce::File())return;const auto path=fc.getResult().getFullPathName();safe->roots_.emplace_back(path.toStdString());safe->sources_.getParentDirectory().createDirectory();auto paths=juce::StringArray::fromLines(safe->sources_.loadFileAsString());paths.addIfNotAlreadyThere(path);if(!safe->sources_.replaceWithText(paths.joinIntoString("\n")))safe->messages_.setText("Folder added for this session; could not save folder settings.");safe->scan();});};
     loadButton_.onClick=[this]{const auto row=list_.getSelectedRow();if(row<0 || size_t(row)>=visible_.size())return;const auto& plugin=catalog_.plugins[visible_[size_t(row)]];engine_.replacePlugin(slot(),plugin.path,plugin.id);};
     presetButton_.onClick=[this]{const auto it=engine_.editors().find(slot());const auto i=presets_.getSelectedItemIndex();if(it==engine_.editors().end() || i<0 || size_t(i)>=it->second.presets.size())return;const auto& p=it->second;engine_.replacePlugin(slot(),p.path,p.id,p.presets[size_t(i)].uri);};
     setSize(1060,760);startTimer(100);scan();
 }
-PluginBrowser::~PluginBrowser(){stopTimer();cancelled_=true;if(scan_.valid())scan_.wait();viewport_.setViewedComponent(nullptr,false);}
+PluginBrowser::~PluginBrowser(){stopTimer();canceled_=true;if(scan_.valid())scan_.wait();viewport_.setViewedComponent(nullptr,false);}
 void PluginBrowser::themes(){themes_=theme_.installed();appearance_.clear(juce::dontSendNotification);for(size_t i=0;i<themes_.size();++i){appearance_.addItem(themes_[i].second,int(i)+1);if(themes_[i].first==themeData().id)appearance_.setSelectedId(int(i)+1,juce::dontSendNotification);}}
 void PluginBrowser::scan() {
-    if(scan_.valid())return;cancelled_=false;scanButton_.setButtonText("Cancel scan");folderButton_.setEnabled(false);messages_.setText("Scanning in isolated workers. Playback continues.");
+    if(scan_.valid())return;canceled_=false;scanButton_.setButtonText("Cancel scan");folderButton_.setEnabled(false);messages_.setText("Scanning in isolated workers. Playback continues.");
     const auto helper=juce::File::getSpecialLocation(juce::File::currentExecutableFile).getSiblingFile("oscairn-plugin-scan").getFullPathName().toStdString();
-    scan_=std::async(std::launch::async,[this,roots=roots_,helper]{return scanPlugins(roots,helper,&cancelled_);});
+    scan_=std::async(std::launch::async,[this,roots=roots_,helper]{return scanPlugins(roots,helper,&canceled_);});
 }
 void PluginBrowser::filter() {
     visible_.clear();const auto query=search_.getText().trim();
@@ -72,7 +72,7 @@ void PluginBrowser::editor() {
 void PluginBrowser::timerCallback() {
     if(scan_.valid() && scan_.wait_for(std::chrono::seconds(0))==std::future_status::ready) {
         try{catalog_=scan_.get();std::sort(catalog_.plugins.begin(),catalog_.plugins.end(),[](const auto& a,const auto& b){return a.name<b.name;});
-            juce::String message=cancelled_?"Scan cancelled. ":"Scan complete. ";message+=juce::String(catalog_.plugins.size())+" plugins; "+juce::String(catalog_.failures.size())+" scan issues.";
+            juce::String message=canceled_?"Scan canceled. ":"Scan complete. ";message+=juce::String(catalog_.plugins.size())+" plugins; "+juce::String(catalog_.failures.size())+" scan issues.";
             for(const auto& failure:catalog_.failures)message+="\n"+juce::String(failure.path)+": "+failure.message;messages_.setText(message);filter();
         }catch(const std::exception& e){messages_.setText(e.what());}
         scanButton_.setButtonText("Scan plugins");scanButton_.setEnabled(true);folderButton_.setEnabled(true);

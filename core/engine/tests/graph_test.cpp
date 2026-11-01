@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
-// Graph behaviour:
+// Graph behavior:
 // - fan-out and summing: one sequencer playing two synths that both feed one delay
 //   gives exactly twice the output of sequencer -> synth -> delay;
 // - note merging: notes from graphInput and from a sequencer reach the same instrument;

@@ -3,7 +3,7 @@
   "size": [2800, 1803],
   "controls": [
     {"type": "screen", "rect": [334, 153, 1024, 600]},
-    {"type": "label", "rect": [632, 743, 426, 55], "label": "IGNITE", "align": "centre"},
+    {"type": "label", "rect": [632, 743, 426, 55], "label": "IGNITE", "align": "center"},
     {"type": "button", "rect": [87, 447, 102, 64], "label": "USB STOP"},
     {"type": "button", "rect": [87, 630, 102, 64], "label": "MENU"},
     {"type": "knob", "rect": [1522, 334, 213, 277], "label": "DATA", "bind": "tempo", "mode": "endless"},

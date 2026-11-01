@@ -192,13 +192,13 @@ namespace oscairn::standalone
         octaveUp_.setBounds(notes.removeFromRight(56).reduced(2));
         noteUp_.setBounds(notes.removeFromRight(44).reduced(2));
         note_.setBounds(notes);
-        auto labelled = [&](juce::Label& label, juce::Component& control) { auto r = row(); label.setBounds(r.removeFromLeft(120)); control.setBounds(r); };
-        labelled(channelLabel_, channel_);
+        auto labeled = [&](juce::Label& label, juce::Component& control) { auto r = row(); label.setBounds(r.removeFromLeft(120)); control.setBounds(r); };
+        labeled(channelLabel_, channel_);
         auto v = row(); velocityLabel_.setBounds(v.removeFromLeft(120)); fixedVelocity_.setBounds(v.removeFromLeft(150)); velocity_.setBounds(v);
-        labelled(pressureLabel_, pressure_);
+        labeled(pressureLabel_, pressure_);
         setAll_.setBounds(row());
         side.removeFromTop(12);
-        labelled(fillLabel_, fillKind_);
+        labeled(fillLabel_, fillKind_);
         auto options = row();
         first_.setBounds(options);
         root_.setBounds(options.removeFromLeft(90).reduced(0, 0));

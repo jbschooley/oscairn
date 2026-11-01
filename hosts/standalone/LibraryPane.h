@@ -8,7 +8,7 @@
 namespace oscairn::standalone
 {
     /// The Library app (RFC 0021): the saved Performances and Sounds, found by typing or by tags
-    /// (each chosen tag narrows the list), and by favourites. In Play mode a click opens a
+    /// (each chosen tag narrows the list), and by favorites. In Play mode a click opens a
     /// Performance, like the MODX's Category Search played from the list, and "Add to setlist"
     /// sends it to whichever app takes Performances (RFC 0022); a Sound is added as a new part.
     /// In Pick mode it answers another app's pick, of the one kind asked for.
@@ -17,7 +17,7 @@ namespace oscairn::standalone
     public:
         enum class Mode { Play, Pick };
         LibraryPane(Engine& engine, Actions& actions, Mode mode, const std::string& kind = "performance");
-        std::function<void(const std::string& id)> onPicked; // Pick mode; empty when cancelled
+        std::function<void(const std::string& id)> onPicked; // Pick mode; empty when canceled
 
         void search(const juce::String& text);
         void toggleTag(const std::string& tag);
@@ -59,7 +59,7 @@ namespace oscairn::standalone
         bool stale_ = true, installing_ = false;
         juce::String message_;
         juce::TextEditor search_;
-        juce::TextButton favourites_{"Favourites"}, recent_{"Recent"}, performances_{"Performances"}, sounds_{"Sounds"};
+        juce::TextButton favorites_{"Favorites"}, recent_{"Recent"}, performances_{"Performances"}, sounds_{"Sounds"};
         juce::OwnedArray<juce::TextButton> tagButtons_;
         juce::ListBox list_{"Performances", this};
         juce::TextButton send_{"Add to setlist"}, part_{"New part"}, cancel_{"Cancel"}, pick_{"Choose"}, delete_{"Delete"}, libraries_{"Libraries..."};

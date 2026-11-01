@@ -43,7 +43,7 @@ void switching(const char* path,const char* id,clap_id gain){
     const std::array notes{Event::note(true,60,1,0,0,0,1),Event::note(true,64,1,0,1,0,2)};s.run(notes);s.level(1);
     const auto off=Event::note(false,60,0,123,0,0,1);s.one(off);check(s.left[122]==1 && s.left[123]==.25f,"sample-exact owner release across parts");
     s.one(Event::note(false,64,0,0,1,0,2));s.level(0);
-    s.host().selectSound(e);s.host().selectSound(0);check(!s.host().discardSound(e,true),"pending selection pins context until an audio boundary");s.run();check(s.host().discardSound(e,true),"cancelled selection eventually retires");
+    s.host().selectSound(e);s.host().selectSound(0);check(!s.host().discardSound(e,true),"pending selection pins context until an audio boundary");s.run();check(s.host().discardSound(e,true),"canceled selection eventually retires");
     bool failed=false;try{s.host().prepareSound("Bad",{{gain,99}});}catch(const std::invalid_argument&){failed=true;}check(failed,"patch bounds validated");
     s.one(Event::note(true,60,1));failed=false;try{s.host().prepareSound("Missing state",{},"/no/such/oscairn/state");}catch(const std::exception&){failed=true;}check(failed,"bad state rejected");s.run();s.level(.5);
     s.host().panic();s.run();s.level(0);

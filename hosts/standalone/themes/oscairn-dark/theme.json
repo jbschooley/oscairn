@@ -1,5 +1,5 @@
 {
-  "version": 4,
+  "version": 5,
   "id": "oscairn-dark",
   "name": "Oscairn Dark",
   "font": {
@@ -9,7 +9,7 @@
   },
   "fontScale": 1.0,
   "radius": 6,
-  "colours": {
+  "colors": {
     "background": "#111317",
     "surface": "#1D2127",
     "raised": "#2D333B",

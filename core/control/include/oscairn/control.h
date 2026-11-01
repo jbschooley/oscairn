@@ -114,15 +114,15 @@ namespace oscairn
         struct PerformanceInfo { std::string id, name, description; std::vector<std::string> tags; std::string color, revision, parent, hash; Origin origin; };
         virtual PerformanceInfo performanceInfo() const = 0;
         virtual void setPerformanceInfo(const PerformanceInfo& info) = 0; // the ID is kept as it is
-        // The library (RFC 0021): the device's Performances, by tags, text, favourites and
+        // The library (RFC 0021): the device's Performances, by tags, text, favorites and
         // recent use. Performances save into it by name; loading by ID marks one used.
         // library: the installed library it is in (its ID), locked; empty for the user's own.
-        struct LibraryItem { std::string id, kind = "performance", name, description, path; std::vector<std::string> tags; bool favourite = false; uint32_t recent = 0; std::string color, revision, hash, library; Origin origin; };
+        struct LibraryItem { std::string id, kind = "performance", name, description, path; std::vector<std::string> tags; bool favorite = false; uint32_t recent = 0; std::string color, revision, hash, library; Origin origin; };
         // kind: "performance" or "sound"; empty for both.
-        struct LibraryQuery { std::string text; std::vector<std::string> tags; bool favourites = false, recent = false; uint32_t limit = 200; std::string kind; };
+        struct LibraryQuery { std::string text; std::vector<std::string> tags; bool favorites = false, recent = false; uint32_t limit = 200; std::string kind; };
         struct LibraryResult { std::vector<LibraryItem> items; std::vector<std::pair<std::string, uint32_t>> tags; uint32_t total = 0; };
         virtual LibraryResult libraryQuery(const LibraryQuery& query) = 0;
-        virtual void libraryFavourite(const std::string& id, bool favourite) = 0;
+        virtual void libraryFavorite(const std::string& id, bool favorite) = 0;
         virtual uint32_t libraryRescan() = 0;                          // items found
         // Save: over the open library Performance (renamed when name is given), else a new one.
         // asNew: always a new one, with its own ID. Returns its ID.

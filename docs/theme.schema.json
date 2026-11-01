@@ -4,7 +4,7 @@
   "type": "object",
   "properties": {
     "version": {
-      "const": 4
+      "const": 5
     },
     "id": {
       "type": "string",
@@ -34,7 +34,7 @@
           "type": "string",
           "pattern": "^[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*$",
           "maxLength": 128,
-          "description": "The font's licence text, at most 64 KiB"
+          "description": "The font's license text, at most 64 KiB"
         }
       },
       "required": [
@@ -53,7 +53,7 @@
       "minimum": 0,
       "maximum": 16
     },
-    "colours": {
+    "colors": {
       "type": "object",
       "properties": {
         "background": {
@@ -206,7 +206,7 @@
     "id",
     "name",
     "font",
-    "colours",
+    "colors",
     "style",
     "wires"
   ],

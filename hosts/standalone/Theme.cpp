@@ -51,7 +51,7 @@ void write(const juce::File& destination,const juce::String& text) {
 }
 }
 const ThemeData& themeData(){return current;}
-juce::Colour ink(Ink role){return current.colours[static_cast<size_t>(role)];}
+juce::Colour ink(Ink role){return current.colors[static_cast<size_t>(role)];}
 int sectionGap(int separate){return current.style.sections==ThemeStyle::Sections::Joined?0:separate;}
 void drawSection(juce::Graphics& g,juce::Rectangle<int> r,juce::Colour fill) {
     if(current.style.sections==ThemeStyle::Sections::Joined) {
@@ -75,8 +75,8 @@ ThemeData ThemeData::parse(const juce::String& json) {
     require(json.getNumBytesAsUTF8()<=maxThemeBytes,"Theme exceeds 16 KiB");
     juce::var value;require(juce::JSON::parse(json,value).wasOk(),"Invalid theme JSON");
     const auto* object=value.getDynamicObject();require(object,"Theme must be an object");
-    fields(*object,{"version","id","name","font","fontScale","radius","colours","style","wires"});
-    require(value["version"].isInt() && int(value["version"])==4,"Unsupported theme version");
+    fields(*object,{"version","id","name","font","fontScale","radius","colors","style","wires"});
+    require(value["version"].isInt() && int(value["version"])==5,"Unsupported theme version");
     ThemeData t;t.id=value["id"].toString();t.name=value["name"].toString();
     require(value["id"].isString() && validId(t.id),"Theme ID must contain lowercase letters, digits or hyphens");
     require(value["name"].isString() && t.name.isNotEmpty() && t.name.length()<=80,"Theme needs a short name");
@@ -89,13 +89,13 @@ ThemeData ThemeData::parse(const juce::String& json) {
         require(std::isfinite(n) && n>=low && n<=high,"Theme metric is out of range");return static_cast<float>(n);
     };
     t.fontScale=number("fontScale",1,.8f,1.4f);t.radius=number("radius",6,0,16);
-    const auto* colours=value["colours"].getDynamicObject();require(colours,"Theme needs semantic colours");
-    juce::StringArray allowed;for(const auto& name:names)allowed.add(name);fields(*colours,allowed);
-    auto hex=[](const juce::var& colour){const auto text=colour.toString();
-        require(colour.isString() && text.length()==7 && text[0]=='#' && text.substring(1).containsOnly("0123456789abcdefABCDEF"),"Theme colours must be #RRGGBB");
+    const auto* colors=value["colors"].getDynamicObject();require(colors,"Theme needs semantic colors");
+    juce::StringArray allowed;for(const auto& name:names)allowed.add(name);fields(*colors,allowed);
+    auto hex=[](const juce::var& color){const auto text=color.toString();
+        require(color.isString() && text.length()==7 && text[0]=='#' && text.substring(1).containsOnly("0123456789abcdefABCDEF"),"Theme colors must be #RRGGBB");
         return juce::Colour(0xff000000u|static_cast<juce::uint32>(text.substring(1).getHexValue32()));};
-    for(size_t i=0;i<names.size();++i)t.colours[i]=hex(colours->getProperty(names[i]));
-    const auto* wires=value["wires"].getDynamicObject();require(wires,"Theme needs its wire colours");
+    for(size_t i=0;i<names.size();++i)t.colors[i]=hex(colors->getProperty(names[i]));
+    const auto* wires=value["wires"].getDynamicObject();require(wires,"Theme needs its wire colors");
     fields(*wires,{"audio","notes","disabled","draining","unconnected"});
     t.wires={hex(wires->getProperty("audio")),hex(wires->getProperty("notes")),hex(wires->getProperty("disabled")),hex(wires->getProperty("draining")),hex(wires->getProperty("unconnected"))};
     const auto* style=value["style"].getDynamicObject();require(style,"Theme needs a style");
@@ -110,7 +110,7 @@ ThemeData ThemeData::parse(const juce::String& json) {
     t.style.sections=ThemeStyle::Sections(choice("sections",{"separate","joined"}));
     auto luminance=[](juce::Colour c){auto linear=[](double v){return v<=.04045?v/12.92:std::pow((v+.055)/1.055,2.4);};return .2126*linear(c.getFloatRed())+.7152*linear(c.getFloatGreen())+.0722*linear(c.getFloatBlue());};
     for(auto background:{Ink::Background,Ink::Surface,Ink::Raised}) {
-        const auto a=luminance(t.colours[static_cast<size_t>(Ink::Text)]),b=luminance(t.colours[static_cast<size_t>(background)]);
+        const auto a=luminance(t.colors[static_cast<size_t>(Ink::Text)]),b=luminance(t.colors[static_cast<size_t>(background)]);
         require((std::max(a,b)+.05)/(std::min(a,b)+.05)>=4.5,"Theme text contrast must be at least 4.5:1");
     }
     return t;
@@ -251,22 +251,22 @@ void Theme::drawComboBox(juce::Graphics& g,int width,int height,bool,int,int,int
     g.strokePath(p,juce::PathStrokeType(1.6f,juce::PathStrokeType::curved,juce::PathStrokeType::rounded));
 }
 // Linear sliders: the Line style draws a thin track and a light thumb; a slider centred on zero
-// (pan, transpose: the property "bipolar") fills from its centre in either style.
+// (pan, transpose: the property "bipolar") fills from its center in either style.
 int Theme::getSliderThumbRadius(juce::Slider& slider){return current.style.sliders!=ThemeStyle::Sliders::Filled?8:LookAndFeel_V4::getSliderThumbRadius(slider);}
 void Theme::drawLinearSlider(juce::Graphics& g,int x,int y,int width,int height,float position,float minimum,float maximum,juce::Slider::SliderStyle style,juce::Slider& slider) {
     const bool horizontal=style==juce::Slider::LinearHorizontal,line=current.style.sliders!=ThemeStyle::Sliders::Filled,bipolar=slider.getProperties()["bipolar"];
     if((!horizontal && style!=juce::Slider::LinearVertical) || (!line && !bipolar)){LookAndFeel_V4::drawLinearSlider(g,x,y,width,height,position,minimum,maximum,style,slider);return;}
     const auto area=juce::Rectangle<int>(x,y,width,height).toFloat();
     const float track=line?(current.style.sliders==ThemeStyle::Sliders::Cap?3.f:4.f):juce::jmin(6.f,(horizontal?area.getHeight():area.getWidth())*.25f);
-    const auto centre=area.getCentre();
-    const auto at=horizontal?juce::Point<float>(position,centre.y):juce::Point<float>(centre.x,position);
-    const auto start=horizontal?juce::Point<float>(area.getX()+track,centre.y):juce::Point<float>(centre.x,area.getBottom()-track);
-    const auto end=horizontal?juce::Point<float>(area.getRight()-track,centre.y):juce::Point<float>(centre.x,area.getY()+track);
+    const auto center=area.getCentre();
+    const auto at=horizontal?juce::Point<float>(position,center.y):juce::Point<float>(center.x,position);
+    const auto start=horizontal?juce::Point<float>(area.getX()+track,center.y):juce::Point<float>(center.x,area.getBottom()-track);
+    const auto end=horizontal?juce::Point<float>(area.getRight()-track,center.y):juce::Point<float>(center.x,area.getY()+track);
     const float alpha=slider.isEnabled()?1.f:.5f;
-    auto stroke=[&](juce::Point<float> a,juce::Point<float> b,juce::Colour colour){juce::Path p;p.startNewSubPath(a);p.lineTo(b);g.setColour(colour);g.strokePath(p,juce::PathStrokeType(track,juce::PathStrokeType::curved,juce::PathStrokeType::rounded));};
+    auto stroke=[&](juce::Point<float> a,juce::Point<float> b,juce::Colour color){juce::Path p;p.startNewSubPath(a);p.lineTo(b);g.setColour(color);g.strokePath(p,juce::PathStrokeType(track,juce::PathStrokeType::curved,juce::PathStrokeType::rounded));};
     stroke(start,end,(line?ink(Ink::Border).withAlpha(.55f):slider.findColour(juce::Slider::backgroundColourId)).withMultipliedAlpha(alpha));
-    stroke(bipolar?centre:start,at,slider.findColour(juce::Slider::trackColourId).withMultipliedAlpha(alpha));
-    if(bipolar){g.setColour(ink(Ink::Muted));if(horizontal)g.fillRect(centre.x-.5f,centre.y-track-1,1.f,track*2+2);else g.fillRect(centre.x-track-1,centre.y-.5f,track*2+2,1.f);}
+    stroke(bipolar?center:start,at,slider.findColour(juce::Slider::trackColourId).withMultipliedAlpha(alpha));
+    if(bipolar){g.setColour(ink(Ink::Muted));if(horizontal)g.fillRect(center.x-.5f,center.y-track-1,1.f,track*2+2);else g.fillRect(center.x-track-1,center.y-.5f,track*2+2,1.f);}
     const float radius=float(getSliderThumbRadius(slider));
     // A cap is a short bar across the track; a line thumb is a disc.
     const bool cap=current.style.sliders==ThemeStyle::Sliders::Cap;
@@ -308,37 +308,37 @@ void Theme::drawTextEditorOutline(juce::Graphics& g,int width,int height,juce::T
     const auto bounds=juce::Rectangle<float>(0,0,float(width),float(height)).reduced(1);
     drawEdge(g,bounds,fieldRadius(bounds.getHeight()),editor.hasKeyboardFocus(true) && !editor.isReadOnly());
 }
-void Theme::drawButtonBackground(juce::Graphics& g,juce::Button& button,const juce::Colour& colour,bool hover,bool down) {
+void Theme::drawButtonBackground(juce::Graphics& g,juce::Button& button,const juce::Colour& color,bool hover,bool down) {
     const auto bounds=button.getLocalBounds().toFloat().reduced(1);const float radius=buttonRadius(bounds.getHeight());
     if(current.style.depth==ThemeStyle::Depth::Soft && button.isEnabled()){g.setColour(juce::Colours::black.withAlpha(darkTheme()?.35f:.12f));g.fillRoundedRectangle(bounds.translated(0,1),radius);}
-    g.setColour(colour.withMultipliedAlpha(button.isEnabled()?1.f:.4f).brighter(down?.15f:hover?.07f:0));
+    g.setColour(color.withMultipliedAlpha(button.isEnabled()?1.f:.4f).brighter(down?.15f:hover?.07f:0));
     g.fillRoundedRectangle(bounds,radius);drawEdge(g,bounds,radius,button.hasKeyboardFocus(true));
 }
 void Theme::drawRotarySlider(juce::Graphics& g,int x,int y,int width,int height,float position,float start,float end,juce::Slider& slider) {
     if(!slider.getProperties()["endless"]) {
-        // A thin track arc, the value lit along it in the accent (from the centre when the range
+        // A thin track arc, the value lit along it in the accent (from the center when the range
         // is centred on zero), and a disc with a pointer, like the sliders' thumbs.
         const auto bounds=juce::Rectangle<int>(x,y,width,height).toFloat().reduced(2);
         const float radius=std::min(bounds.getWidth(),bounds.getHeight())/2,line=std::max(2.f,radius*.14f);
-        const auto centre=bounds.getCentre();const float angle=start+position*(end-start);
-        auto arc=[&](float from,float to,juce::Colour colour){juce::Path p;p.addCentredArc(centre.x,centre.y,radius-line/2,radius-line/2,0,from,to,true);g.setColour(colour);g.strokePath(p,juce::PathStrokeType(line,juce::PathStrokeType::curved,juce::PathStrokeType::rounded));};
+        const auto center=bounds.getCentre();const float angle=start+position*(end-start);
+        auto arc=[&](float from,float to,juce::Colour color){juce::Path p;p.addCentredArc(center.x,center.y,radius-line/2,radius-line/2,0,from,to,true);g.setColour(color);g.strokePath(p,juce::PathStrokeType(line,juce::PathStrokeType::curved,juce::PathStrokeType::rounded));};
         const float alpha=slider.isEnabled()?1.f:.5f;
         arc(start,end,ink(Ink::Border).withAlpha(.55f*alpha));
         const bool bipolar=slider.getProperties()["bipolar"];const float from=bipolar?(start+end)/2:start;
         if(std::abs(angle-from)>.001f)arc(std::min(from,angle),std::max(from,angle),slider.findColour(juce::Slider::rotarySliderFillColourId).withMultipliedAlpha(alpha));
-        const auto disc=juce::Rectangle<float>(radius*1.3f,radius*1.3f).withCentre(centre);
+        const auto disc=juce::Rectangle<float>(radius*1.3f,radius*1.3f).withCentre(center);
         if(current.style.depth==ThemeStyle::Depth::Soft){g.setColour(juce::Colours::black.withAlpha(darkTheme()?.4f:.15f));g.fillEllipse(disc.translated(0,1));}
         g.setColour(current.style.sliders==ThemeStyle::Sliders::Filled?ink(Ink::Raised):juce::Colours::white.withMultipliedAlpha(alpha));g.fillEllipse(disc);
         g.setColour(ink(Ink::Border).withAlpha(.8f));g.drawEllipse(disc.reduced(.5f),1.f);
-        const auto tip=centre.getPointOnCircumference(radius*.55f,angle),root=centre.getPointOnCircumference(radius*.15f,angle);
+        const auto tip=center.getPointOnCircumference(radius*.55f,angle),root=center.getPointOnCircumference(radius*.15f,angle);
         g.setColour(current.style.sliders==ThemeStyle::Sliders::Filled?ink(Ink::Text):ink(Ink::Background));
         g.drawLine({root,tip},std::max(1.5f,radius*.1f));
         return;
     }
-    const auto bounds=juce::Rectangle<int>(x,y,width,height).toFloat().reduced(4);const auto radius=std::min(bounds.getWidth(),bounds.getHeight())/2,centreX=bounds.getCentreX(),centreY=bounds.getCentreY();
+    const auto bounds=juce::Rectangle<int>(x,y,width,height).toFloat().reduced(4);const auto radius=std::min(bounds.getWidth(),bounds.getHeight())/2,centerX=bounds.getCentreX(),centerY=bounds.getCentreY();
     const int on=slider.isEnabled()?juce::roundToInt(position*16):0;
-    for(int i=0;i<16;++i){const auto at=juce::Point<float>(centreX,centreY).getPointOnCircumference(radius*.9f,start+(end-start)*(i+.5f)/16);g.setColour(ink(i<on?Ink::Accent:Ink::Border));g.fillEllipse(juce::Rectangle<float>(radius*.14f,radius*.14f).withCentre(at));}
-    const auto knob=juce::Rectangle<float>(radius*1.4f,radius*1.4f).withCentre({centreX,centreY});
+    for(int i=0;i<16;++i){const auto at=juce::Point<float>(centerX,centerY).getPointOnCircumference(radius*.9f,start+(end-start)*(i+.5f)/16);g.setColour(ink(i<on?Ink::Accent:Ink::Border));g.fillEllipse(juce::Rectangle<float>(radius*.14f,radius*.14f).withCentre(at));}
+    const auto knob=juce::Rectangle<float>(radius*1.4f,radius*1.4f).withCentre({centerX,centerY});
     g.setColour(ink(Ink::Surface));g.fillEllipse(knob);g.setColour(ink(Ink::Border));g.drawEllipse(knob,radius*.05f);
 }
 }

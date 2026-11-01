@@ -1,5 +1,5 @@
 {
-  "version": 4,
+  "version": 5,
   "id": "oscairn-block",
   "name": "Oscairn Block",
   "font": {
@@ -9,7 +9,7 @@
   },
   "fontScale": 1.0,
   "radius": 0,
-  "colours": {
+  "colors": {
     "background": "#111317",
     "surface": "#191C21",
     "raised": "#262B32",

@@ -1,5 +1,5 @@
 {
-  "version": 4,
+  "version": 5,
   "id": "oscairn-classic",
   "name": "Oscairn Classic",
   "font": {
@@ -9,7 +9,7 @@
   },
   "fontScale": 1.0,
   "radius": 6,
-  "colours": {
+  "colors": {
     "background": "#15181D",
     "surface": "#20252D",
     "raised": "#2C333D",

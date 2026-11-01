@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
-// Host behaviour Oscairn relies on for live use, checked with the Oscairn Basic Synth:
+// Host behavior Oscairn relies on for live use, checked with the Oscairn Basic Synth:
 // - a late event in a block is dropped on its own; the notes around it still play;
 // - queued events beyond what one block takes are delivered in the next block.
 

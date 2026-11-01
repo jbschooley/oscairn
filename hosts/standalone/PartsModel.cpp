@@ -256,7 +256,7 @@ namespace oscairn::standalone
                 return -1.0;
             };
             // What a slot is joined to in the column before (up) or after.
-            auto neighbours = [&](int r, const Slot& s, bool up) {
+            auto neighbors = [&](int r, const Slot& s, bool up) {
                 std::vector<double> at;
                 const int other = up ? r - 1 : r + 1;
                 if(other < 0 || other >= columns) return at;
@@ -288,7 +288,7 @@ namespace oscairn::standalone
                     std::vector<std::pair<double, Slot>> keyed;
                     for(size_t i = 0; i < l.size(); ++i)
                     {
-                        const auto at = neighbours(r, l[i], up);
+                        const auto at = neighbors(r, l[i], up);
                         double key = double(i);
                         if(!at.empty()) { key = 0; for(const auto a : at) key += a; key /= double(at.size()); }
                         keyed.push_back({key, l[i]});

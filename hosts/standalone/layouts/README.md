@@ -40,7 +40,7 @@ Others can be opened with View > Open Layout File... or `--layout path.json`.
   scales to fit the tighter dimension and the space left over in the other goes to
   elements by their `anchor`) or `fixed`.
 - `anchor` (panels and controls, used by `stretch`): a horizontal and a vertical part,
-  `"left|right|centre|stretch top|bottom|centre|stretch"`. `right bottom` keeps the
+  `"left|right|center|stretch top|bottom|center|stretch"`. `right bottom` keeps the
   element's distance from the right and bottom edges; `stretch stretch` grows it with the
   window. The default is `left top`.
 - `panels`: background areas with a label.
@@ -59,7 +59,7 @@ Others can be opened with View > Open Layout File... or `--layout path.json`.
     what the Performance's pad map assigns it (**Pads...** on the screen edits it). With
     `"steps": true` they light with the sequencer's playhead.
   - `keys`: a piano keyboard of `count` keys from `note`.
-  - `label`: text; `"align"` is `left` (the default), `centre` or `right`.
+  - `label`: text; `"align"` is `left` (the default), `center` or `right`.
 
   A control without `bind` is drawn but does nothing yet. An unknown type or binding stops
   the layout loading, with the reason.

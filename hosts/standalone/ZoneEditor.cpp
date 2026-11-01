@@ -68,8 +68,8 @@ namespace oscairn::standalone
                 if(black(k) != blacks) continue;
                 const auto r = keyBounds(k);
                 const bool in = k >= lowKey_ && k <= highKey_;
-                const auto colour = blacks ? juce::Colour(0xff1a1d22) : juce::Colour(0xffe9edf2);
-                g.setColour(in ? colour : colour.interpolatedWith(ink(Ink::Background), .6f));
+                const auto color = blacks ? juce::Colour(0xff1a1d22) : juce::Colour(0xffe9edf2);
+                g.setColour(in ? color : color.interpolatedWith(ink(Ink::Background), .6f));
                 g.fillRect(blacks ? r : r.reduced(.5f, 0));
                 if(k % 12 == 0 && !blacks) { g.setColour(juce::Colours::black.withAlpha(.45f)); g.setFont(juce::FontOptions(9.f)); g.drawText(text(noteName(k)), r.withTrimmedTop(r.getHeight() - 12), juce::Justification::centred); }
             }

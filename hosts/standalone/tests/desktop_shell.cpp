@@ -311,7 +311,7 @@ int main(int argc, char** argv)
                 }
                 configuration.getChildFile("routing-view.txt").deleteFile();
             }
-            // Envelopes recognised from their parameters' names.
+            // Envelopes recognized from their parameters' names.
             {
                 const auto adsr = standalone::envelopeOf({"Attack Shape", "Attack", "Decay", "Sustain", "Release"});
                 check(adsr.points.size() == 3 && adsr.points[0].time == 1 && adsr.points[1].level == 3 && adsr.points[1].sustain && adsr.points[2].time == 4,

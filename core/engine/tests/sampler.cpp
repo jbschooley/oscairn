@@ -49,7 +49,7 @@ struct Sampler {
 void rejects(Sampler& s, const std::string& sfz, const fs::path& dir, const std::string& expected)
 { const auto why = s.rejection(sfz, dir); check(why.find(expected) != std::string::npos, "expected rejection '" + expected + "', got: " + why); }
 
-constexpr double level = 100.0 * 100.0 / (127.0 * 127.0) * 0.70710678118654752; // liquidsfz default (CC7 100, centre pan)
+constexpr double level = 100.0 * 100.0 / (127.0 * 127.0) * 0.70710678118654752; // liquidsfz default (CC7 100, center pan)
 std::vector<float> tone(size_t frames, double hz, double amplitude = .5)
 { std::vector<float> w(frames); for(size_t i = 0; i < frames; ++i) w[i] = float(amplitude * std::sin(2 * M_PI * hz * double(i) / 48000)); return w; }
 

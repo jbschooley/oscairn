@@ -31,8 +31,8 @@ covers the core, so Oscairn has its own:
 
 - [x] a new core in C++20, with no JUCE in the core;
 - [x] CLAP hosting seeded from Randy Chabot's host in KICK PR #13, imported with its history;
-- [x] AGPL-3.0-or-later, with plugin loading as the licence boundary
-  ([RFC 0001](rfcs/0001-licence.md)).
+- [x] AGPL-3.0-or-later, with plugin loading as the license boundary
+  ([RFC 0001](rfcs/0001-license.md)).
 
 The control API uses JSON-RPC over a local socket ([RFC 0003](rfcs/0003-control-api.md)).
 The UI toolkit on devices is proposed in [RFC 0019](rfcs/0019-adaptive-ui.md#toolkit): JUCE for
@@ -118,7 +118,7 @@ Goal: something new running "on the device" before anyone has the device.
   generic parameters/presets and atomic instrument/effect replacement. Failed loads preserve
   the working graph; compatible main buses remap, ambiguous buses and parameter mappings
   require explicit edits. The first UI exposes the demo instrument/effect slots.
-- [x] shared [design language and installable themes](design-language.md): semantic colours,
+- [x] shared [design language and installable themes](design-language.md): semantic colors,
   typography and control styling across layouts, browser and generated editors; built-in
   Dark/Light shipped as replaceable theme folders with the bundled Inter font, validated
   theme-folder installation and per-device selection shared across UI processes.
@@ -232,8 +232,8 @@ in the others.
      multisample (RFC 0008 step 3), the measurement harness and AEG tables, elements and XA
      Control, filters and FEG, PEG and LFOs, Drum Parts, then full converter coverage.
    - [ ] the other MODX M engines on the same rules: an 8-operator FM engine starting from
-     MSFA ([RFC 0014](rfcs/0014-fm-engine.md)), an analog-modelling engine
-     ([RFC 0015](rfcs/0015-analog-modelling-engine.md)) and effects covering every MODX M
+     MSFA ([RFC 0014](rfcs/0014-fm-engine.md)), an analog-modeling engine
+     ([RFC 0015](rfcs/0015-analog-modeling-engine.md)) and effects covering every MODX M
      effect type and slot ([RFC 0016](rfcs/0016-effects-suite.md)), all proposed
 3. **Plugin worker isolation** ([RFC 0010](rfcs/0010-plugin-worker-isolation.md#progress)):
    plugins in supervised worker processes, so a crash, hang or overrun silences only its own
@@ -283,7 +283,7 @@ in the others.
    ([RFC 0021](rfcs/0021-sounds-performances-and-library.md#progress)) and apps that ask each
    other for them ([RFC 0022](rfcs/0022-apps-and-requests.md#progress))
    - [x] Performance format 3 with an info block (name, description, tags, color)
-   - [x] the library of Performances and Sounds, with its cache, favourites and recents;
+   - [x] the library of Performances and Sounds, with its cache, favorites and recents;
      Save and Save As New
    - [x] Sounds: a part saved without its seat, loaded into a part as one undoable step or as
      a new part, with controls owned by parts
@@ -365,6 +365,10 @@ Also open:
 - [ ] recording as an engine service: any graph input, output, part or bus and the notes
   played, to WAV/RF64 off the audio thread, with retroactive capture
   ([RFC 0020](rfcs/0020-recording.md), proposed)
+- [ ] internationalization (i18n): every user-facing string through a translation catalog,
+  translations installable like themes, locale-aware number, time and note-name formatting,
+  and layouts that fit longer text and right-to-left scripts. Until then, text and
+  identifiers use American English throughout (format names included: `colors`, `favorites`)
 
 Plugins and apps (sequencers, instruments, the UI) must stay separate components, each in
 its own folder with its own build target and depending only on Oscairn's public headers, so
@@ -428,7 +432,7 @@ No package-manager dependency or prototype is required for the next desktop step
   with key lock, track analysis, DJ mixer outputs and cue, waveform streams, and the three
   ways of working with DJ software on a computer (see
   [architecture](architecture.md#dj-devices)). First Mixxx running on the device as its
-  application, then a native Oscairn deck; no certification programmes.
+  application, then a native Oscairn deck; no certification programs.
 - [ ] USB audio and MIDI in both directions, as a USB device to a computer and as a host for
   interfaces and controllers, on every device whose hardware allows it.
 - [ ] An RK3588 board, once the target hardware is known: real-time kernel, audio on isolated

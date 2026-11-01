@@ -48,7 +48,7 @@ int main(int argc,char** argv)
     } catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 2;}
     if(socket.empty()){std::cerr<<"--socket is required; its parent must be a private directory owned by this user\n";return 2;}
     std::signal(SIGINT,[](int){stopping=1;});std::signal(SIGTERM,[](int){stopping=1;});
-    juce::ScopedJuceInitialiser_GUI initialise; // JUCE event loop initialization; no GUI modules linked
+    juce::ScopedJuceInitialiser_GUI initialize; // JUCE event loop initialization; no GUI modules linked
     try
     {
         std::unique_ptr<oscairn::host::EngineLease> lease;

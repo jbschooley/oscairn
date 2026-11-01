@@ -161,7 +161,7 @@ What is in place:
   merging, cycle rejection and live editing; parameter locks applied from each step's first
   sample; step edits applied from their exact sample; tempo changes keep the beat position,
   and the delay glides without clicking; MIDI notes and polyphonic and channel aftertouch
-  converted, and aftertouch reaching the synth through the graph; host behaviour for live
+  converted, and aftertouch reaching the synth through the graph; host behavior for live
   use (bad events, queued-event overflow, mono output).
   The control/session test compares its rendered audio with the existing graph path,
   including tempo and pressure changes, and checks MIDI clock, input validation, UI-note
@@ -205,12 +205,12 @@ The design the code is built towards; most of it is not built yet. In full:
 | `plugins/` | First-party plugins: step sequencer, basic synth, delay; arpeggiator (not built yet). |
 | `docs/` | [Architecture](docs/architecture.md), [roadmap](docs/roadmap.md), and design decisions in [`rfcs/`](docs/rfcs/README.md). |
 
-## Licence
+## License
 
 Oscairn is licensed under the GNU Affero General Public License v3.0 or later. See
-[`LICENSE`](LICENSE) and [RFC 0001](docs/rfcs/0001-licence.md).
+[`LICENSE`](LICENSE) and [RFC 0001](docs/rfcs/0001-license.md).
 
 See [credits and source provenance](CREDITS.md) for dependency and prior-art
 acknowledgments, including the [LV2 host audit](core/lv2-host/AUDIT.md).
 
-Plugins loaded through CLAP, LV2 or VST3 are separate works and may use any licence.
+Plugins loaded through CLAP, LV2 or VST3 are separate works and may use any license.

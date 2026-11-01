@@ -61,14 +61,14 @@ Parts), then none, VCM Compressor 376, Classic Compressor and Amp Simulator 1.
 
 ## Open-source coverage
 
-Candidates to evaluate. Licences must be confirmed per project, and each reuse pinned and
+Candidates to evaluate. Licenses must be confirmed per project, and each reuse pinned and
 credited.
 
 | Need | Candidates | Gap |
 | --- | --- | --- |
 | Algorithmic reverbs, early reflections, gated, reverse, shimmer | Dragonfly Reverb (GPL-3.0, Freeverb3-based), Airwindows reverbs (MIT), Surge XT reverbs (GPL-3.0) | Matching each Yamaha algorithm's character needs tuning; shimmer and reverse need work |
 | Delays, tempo sync, analog delay | Airwindows, Surge XT; straightforward to write | Small |
-| Chorus, ensemble, flanger, phaser, tremolo, auto pan | Airwindows, Surge XT (chorus, ensemble, flanger, phaser) | Small; VCM (circuit-modelled) types need analog-style models |
+| Chorus, ensemble, flanger, phaser, tremolo, auto pan | Airwindows, Surge XT (chorus, ensemble, flanger, phaser) | Small; VCM (circuit-modeled) types need analog-style models |
 | Rotary speaker | setBfree (GPL-2.0-or-later; check compatibility), Surge XT rotary | Good existing models |
 | Amp and cab simulation | Guitarix (GPL), Neural Amp Modeler (MIT) | Need models per amp type; NAM requires training captures, which must not be captures of Yamaha's output |
 | Compressors, multiband, M/S, gate | LSP Plugins (LGPL-3.0), Airwindows | Small; VCM 376 is a circuit-style model |

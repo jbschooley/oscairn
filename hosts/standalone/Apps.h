@@ -12,7 +12,7 @@ namespace oscairn::standalone
     class Actions
     {
     public:
-        using Answer = std::function<void(const std::string& result)>; // empty: cancelled
+        using Answer = std::function<void(const std::string& result)>; // empty: canceled
         using Handler = std::function<void(const std::string& argument, Answer answer)>;
 
         // shortcut: one app per action, the first to offer it; the choice between two is RFC 0022 step 3.

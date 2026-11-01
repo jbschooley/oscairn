@@ -709,7 +709,7 @@ and Sounds in the data folder's `Performances/` and `Sounds/` (`OSCAIRN_DATA_HOM
 Application Support on macOS, else `XDG_DATA_HOME/oscairn` or `~/.local/share/oscairn`). Each
 file's `info` block is the truth; `library/index.json` caches what was read, by each file's
 modification time, so a rescan reads only changed files and deleting the cache loses nothing.
-Favourites and recently used (at most 50) are the user's, in `library/user.json`. Files the
+Favorites and recently used (at most 50) are the user's, in `library/user.json`. Files the
 library cannot read, and hidden folders, are skipped; of two files with one ID the first found
 is listed.
 
@@ -718,12 +718,12 @@ is listed.
   `performance.setInfo` takes `{name,description,tags}` and an optional `color` (empty when
   absent; the ID is kept) and returns the same. These are not undoable edits.
 - `library.query` takes optional `text` (case-insensitive, over name, description and tags),
-  `tags` (all must match), `favourites`, `recent`, `kind` (`performance` or `sound`; both when
+  `tags` (all must match), `favorites`, `recent`, `kind` (`performance` or `sound`; both when
   absent) and `limit` (1–1000, default 200). It returns `{items,tags,total}`: items with `id`,
-  `kind`, `name`, `description`, `path`, `tags`, `favourite`, `recent` (1 is the most recent,
+  `kind`, `name`, `description`, `path`, `tags`, `favorite`, `recent` (1 is the most recent,
   0 none) and `color`, sorted by name or, with `recent`, most recent first; `tags` counts each
   tag over every match, and `total` counts matches before the limit.
-- `library.favourite` takes `{id,favourite}`; `library.rescan` (`{}`) returns `{"items":n}`.
+- `library.favorite` takes `{id,favorite}`; `library.rescan` (`{}`) returns `{"items":n}`.
 - `library.save` takes an optional `name` and `new`, and returns `{"id":…}`. Save (`new`
   false or absent) writes a Performance opened from the library over its folder (saved
   beside it, then swapped), renamed when `name` is given; Save As New (`new: true`) gives it
@@ -795,7 +795,7 @@ Libraries come as [archives](library-archive.md): a library, or an exported Perf
   playing to the first output, with the Sound loaded.
 
 The typed methods are `Control::performanceInfo`, `setPerformanceInfo`, `libraryQuery`,
-`libraryFavourite`, `libraryRescan`, `savePerformanceToLibrary`,
+`libraryFavorite`, `libraryRescan`, `savePerformanceToLibrary`,
 `loadPerformanceFromLibrary`, `savePartAsSound`, `loadSound`, `partFromSound`,
 `performanceContents`, `importPerformance`, `exportPerformance`, `archiveContents`,
 `installArchive`, `libraries`, `uninstallLibrary` and `deleteLibraryItem`. Errors use

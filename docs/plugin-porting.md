@@ -84,7 +84,7 @@ Everything else is handled for you:
 - **CLAP notes,** not only MIDI: note IDs keep repeated notes on one key apart, per-note
   expression works, and `NOTE_END` tells the host when a voice and its tail have finished.
 - **Chokes and per-note volume:** treat a host `NOTE_CHOKE` as a fast fade of 2–5 ms, not a
-  cut, and honour `CLAP_NOTE_EXPRESSION_VOLUME`. When a part's note limit steals a note, the
+  cut, and honor `CLAP_NOTE_EXPRESSION_VOLUME`. When a part's note limit steals a note, the
   host lowers its volume expression to silence over 5 ms in eight steps, then chokes it
   ([RFC 0018](rfcs/0018-voice-budget-and-stealing.md)); a plugin that does neither clicks. An instrument built on the
   SDK's `sound-contexts-plugin.hpp` gets both: it multiplies each voice's samples by
@@ -103,7 +103,7 @@ Everything else is handled for you:
     tab for each second level (`Operator 1/Envelope`); the rest of the path is a heading. So
     give a large page second levels of a dozen or so parameters each;
   - a search box finds parameters on any page by name or module, so keep names specific;
-  - an envelope's, LFO's or filter's parameters recognised by name (below) are linked into
+  - an envelope's, LFO's or filter's parameters recognized by name (below) are linked into
     one group of tiles, as a hint's group would;
   - an envelope is drawn as a curve you can drag when one module holds its parameters under
     one of these sets of names: `Attack`, `Decay`, `Sustain`, `Release` (optionally `Delay`
@@ -118,14 +118,14 @@ Everything else is handled for you:
     the plugin's order within a page;
   - a stepped parameter with 2 to 4 values is a row of buttons (Off and On: a switch), with
     up to 64 a list of their value texts, otherwise a slider; a symmetric range with a
-    default of 0 fills from the centre;
+    default of 0 fills from the center;
   - a filter's response is drawn when one module has `Cutoff` and `Resonance`, and its
     `Type`'s value text names it (`LP 24 dB`, `LPF24D`, `HPF12`, `BEF6`; `Off` or `Thru`).
 
 ## Optional Oscairn extensions
 
-Headers are in `core/clap-ext/include/oscairn-clap/`, under the MIT licence, so plugins of
-any licence can include them. Each is optional; a plugin without them works as above. For native
+Headers are in `core/clap-ext/include/oscairn-clap/`, under the MIT license, so plugins of
+any license can include them. Each is optional; a plugin without them works as above. For native
 sound contexts, `sound-contexts-plugin.hpp` (also MIT) implements the extension's slot,
 selection, voice-ownership and snapshot rules; an instrument supplies its patch and voice DSP,
 as the Basic Synth and Sampler do. A plugin in its own repository vendors the folder at a
@@ -147,8 +147,8 @@ and the same tests with the plugin in a worker process (the `*-workers` tests). 
 under AddressSanitizer and ThreadSanitizer. See
 [Test before publishing a plugin](developer-guide.md#test-before-publishing-a-plugin).
 
-## Licences
+## Licenses
 
-Keep a reused engine's licence and notices with it and credit its authors in
+Keep a reused engine's license and notices with it and credit its authors in
 [CREDITS](../CREDITS.md). Chillbeast's Modular shows the pattern: imported unchanged with its
 history, wrapped as a CLAP plugin beside it ([plugins/modular](../plugins/modular/README.md)).

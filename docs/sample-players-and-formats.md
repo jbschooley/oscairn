@@ -97,7 +97,7 @@ same one-region patches (2026-10-30, liquidsfz `4cc901d1`, macOS arm64):
 
 The level ratio was 2.295 (+7.2 dB) before the Sampler adopted liquidsfz's default level
 from `lib/voice.cc`: a CC7 volume of 100 through its squared volume curve (about −4.2 dB)
-and the sine pan law at centre (1/√2 per channel, −3 dB). The remaining 0.6% is not in
+and the sine pan law at center (1/√2 per channel, −3 dB). The remaining 0.6% is not in
 that gain path and is unexplained. The release row was 16% before the Sampler adopted
 liquidsfz's exponential release (`lib/envelope.hh`: −60 dB at the release time, then
 silence). Velocity follows the same squared curve in both.

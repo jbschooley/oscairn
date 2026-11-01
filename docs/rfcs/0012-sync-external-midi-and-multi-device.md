@@ -248,7 +248,7 @@ messages attached to a trigger, sent to any destination.
   - any graph node's note input, as MIDI events at their exact sample, so plugins receive
     them exactly like played MIDI;
   - a node's parameter, as an ordinary parameter change.
-- **Timing:** at once, at the switch point, a set time before or after it, or quantised to
+- **Timing:** at once, at the switch point, a set time before or after it, or quantized to
   the next beat or bar. Messages in one action keep their order, with optional gaps between
   them.
 

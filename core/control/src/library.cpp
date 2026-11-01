@@ -245,7 +245,7 @@ namespace oscairn
                          ",\"library\":" + detail::quote(item.library) + ",\"originLibrary\":" + detail::quote(item.origin.library) + ",\"originItem\":" + detail::quote(item.origin.item) + ",\"originHash\":" + detail::quote(item.origin.hash) + '}';
             }
         try { writeAtomically(cache_ / "index.json", "{\"items\":[" + index + "]}\n"); } catch(const std::exception&) {} // a cache: reading works without it
-        // Favourites and recents of items that went stay in the user file, for when they return.
+        // Favorites and recents of items that went stay in the user file, for when they return.
         return uint32_t(items_.size());
     }
 
@@ -256,12 +256,12 @@ namespace oscairn
         std::vector<Control::LibraryItem> found;
         for(auto item : items_)
         {
-            item.favourite = std::find(favourites_.begin(), favourites_.end(), item.id) != favourites_.end();
+            item.favorite = std::find(favorites_.begin(), favorites_.end(), item.id) != favorites_.end();
             const auto r = std::find(recent_.begin(), recent_.end(), item.id);
             item.recent = r == recent_.end() ? 0 : uint32_t(r - recent_.begin()) + 1;
             // Every chosen tag (AND), the text in its name, tags or description, and the toggles.
             if(!std::all_of(q.tags.begin(), q.tags.end(), [&](const std::string& t) { return std::find(item.tags.begin(), item.tags.end(), t) != item.tags.end(); })) continue;
-            if(q.favourites && !item.favourite) continue;
+            if(q.favorites && !item.favorite) continue;
             if(!q.kind.empty() && item.kind != q.kind) continue;
             if(q.recent && !item.recent) continue;
             if(!text.empty())
@@ -291,11 +291,11 @@ namespace oscairn
         return it == items_.end() ? nullptr : &*it;
     }
 
-    void Library::setFavourite(const std::string& id, bool favourite)
+    void Library::setFavorite(const std::string& id, bool favorite)
     {
         if(!find(id)) throw std::invalid_argument("no such library item");
-        std::erase(favourites_, id);
-        if(favourite) favourites_.push_back(id);
+        std::erase(favorites_, id);
+        if(favorite) favorites_.push_back(id);
         writeUser();
     }
 
@@ -326,14 +326,14 @@ namespace oscairn
         try
         {
             const auto doc = parse(slurp(cache_ / "user.json"));
-            favourites_ = strings(detail::member(doc.get(), "favourites"));
+            favorites_ = strings(detail::member(doc.get(), "favorites"));
             recent_ = strings(detail::member(doc.get(), "recent"));
         }
-        catch(const std::exception&) { favourites_.clear(); recent_.clear(); } // none yet
+        catch(const std::exception&) { favorites_.clear(); recent_.clear(); } // none yet
     }
 
     void Library::writeUser() const
     {
-        writeAtomically(cache_ / "user.json", "{\"favourites\":" + list(favourites_) + ",\"recent\":" + list(recent_) + "}\n");
+        writeAtomically(cache_ / "user.json", "{\"favorites\":" + list(favorites_) + ",\"recent\":" + list(recent_) + "}\n");
     }
 }

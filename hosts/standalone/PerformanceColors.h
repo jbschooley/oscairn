@@ -10,7 +10,7 @@ namespace oscairn::standalone
     struct NamedColor { const char* name; const char* hex; };
     inline constexpr NamedColor performanceColors[] = {
         {"Red", "#e5484d"}, {"Orange", "#f76b15"}, {"Yellow", "#ffc53d"}, {"Green", "#46a758"}, {"Teal", "#12a594"},
-        {"Blue", "#3e63dd"}, {"Purple", "#8e4ec6"}, {"Pink", "#d6409f"}, {"Grey", "#8b8d98"}};
+        {"Blue", "#3e63dd"}, {"Purple", "#8e4ec6"}, {"Pink", "#d6409f"}, {"Gray", "#8b8d98"}};
 
     // Transparent for none.
     inline juce::Colour colorOf(const std::string& hex)

@@ -92,10 +92,10 @@ namespace oscairn::standalone
                 const float alpha = p.mute || p.silenced ? .5f : 1.f;
                 auto top = r.removeFromTop(int(body) + 4);
                 // Mute and solo at the right of the name: click to switch them.
-                auto mark = [&](const char* label, bool on, Ink colour) {
+                auto mark = [&](const char* label, bool on, Ink color) {
                     auto b = top.removeFromRight(int(body) + 6);
                     top.removeFromRight(4);
-                    drawMark(g, b.toFloat(), label, on, colour);
+                    drawMark(g, b.toFloat(), label, on, color);
                     return b;
                 };
                 rows_.back().solo = mark("S", p.solo, Ink::Accent); rows_.back().mute = mark("M", p.mute, Ink::Danger);
@@ -385,12 +385,12 @@ namespace oscairn::standalone
         for(auto* l : {&tempoLabel_, &sceneLabel_, &status_}) l->setFont(juce::FontOptions(textSize(TextRole::Small, mode)));
         auto area = getLocalBounds();
         auto bar = area.removeFromTop(m.control + 2 * m.gap).reduced(m.gap * 2, m.gap);
-        auto labelled = [&](juce::Label& label, juce::Component& c, int width) {
+        auto labeled = [&](juce::Label& label, juce::Component& c, int width) {
             label.setBounds(bar.removeFromLeft(juce::GlyphArrangement::getStringWidthInt(label.getFont(), label.getText()) + 10));
             c.setBounds(bar.removeFromLeft(width));
         };
-        labelled(tempoLabel_, tempo_, touchSized(mode_) ? 150 : 120); bar.removeFromLeft(m.gap * 3);
-        labelled(sceneLabel_, sceneBox_, 160); bar.removeFromLeft(6);
+        labeled(tempoLabel_, tempo_, touchSized(mode_) ? 150 : 120); bar.removeFromLeft(m.gap * 3);
+        labeled(sceneLabel_, sceneBox_, 160); bar.removeFromLeft(6);
         storeScene_.setBounds(bar.removeFromLeft(m.control * 2 + 8));
         redo_.setBounds(bar.removeFromRight(m.control)); bar.removeFromRight(4);
         undo_.setBounds(bar.removeFromRight(m.control)); bar.removeFromRight(m.gap * 2);

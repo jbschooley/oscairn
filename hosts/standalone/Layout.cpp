@@ -30,10 +30,10 @@ namespace oscairn::standalone
             const auto words = juce::StringArray::fromTokens( v.toString(), false );
             auto edge = [&]( const juce::String& word, bool horizontal ) {
                 if( word == "stretch" ) return Layout::Anchor::Stretch;
-                if( word == "centre" || word == "center" ) return Layout::Anchor::Centre;
+                if( word == "center" || word == "center" ) return Layout::Anchor::Centre;
                 if( word == ( horizontal ? "left" : "top" ) ) return Layout::Anchor::Start;
                 if( word == ( horizontal ? "right" : "bottom" ) ) return Layout::Anchor::End;
-                invalid( where + ": anchor \"" + v.toString() + "\" should be \"left|right|centre|stretch top|bottom|centre|stretch\"" );
+                invalid( where + ": anchor \"" + v.toString() + "\" should be \"left|right|center|stretch top|bottom|center|stretch\"" );
             };
             if( words.size() != 2 )
                 invalid( where + ": anchor needs a horizontal and a vertical part, like \"right bottom\"" );
@@ -136,9 +136,9 @@ namespace oscairn::standalone
             {
                 const auto align = c["align"].toString();
                 if( align == "left" ) control.align = juce::Justification::centredLeft;
-                else if( align == "centre" || align == "center" ) control.align = juce::Justification::centred;
+                else if( align == "center" || align == "center" ) control.align = juce::Justification::centred;
                 else if( align == "right" ) control.align = juce::Justification::centredRight;
-                else invalid( where + ": \"align\" must be left, centre or right" );
+                else invalid( where + ": \"align\" must be left, center or right" );
             }
             if( control.rows < 1 || control.cols < 1 || control.count < 1 || control.note < 0 || control.note > 127 )
                 invalid( where + ": rows, cols and count must be positive, note 0-127" );

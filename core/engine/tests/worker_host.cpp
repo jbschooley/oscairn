@@ -18,7 +18,7 @@ namespace
     void check(bool ok, const std::string& what) { if(!ok) { std::fprintf(stderr, "FAIL: %s\n", what.c_str()); ++failures; } }
 
     // Field by field: events carry alignment padding (a note's between key and velocity) that a
-    // plugin may leave uninitialised, which differs between processes.
+    // plugin may leave uninitialized, which differs between processes.
     bool sameEvent(const kick::clap::Event& x, const kick::clap::Event& y)
     {
         const auto *a = x.header(), *b = y.header();

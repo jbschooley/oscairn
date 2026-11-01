@@ -803,7 +803,7 @@ bool Host::loadState(const std::vector<uint8_t>& bytes) {
     } catch (...) { s.fail("Plugin state restoration failed"); return false; }
 }
 namespace {
-// What a preset provider declares while it initialises, and the presets it then reports.
+// What a preset provider declares while it initializes, and the presets it then reports.
 struct PresetIndex {
     std::vector<std::string> extensions;
     struct Location { uint32_t kind; std::string path; };

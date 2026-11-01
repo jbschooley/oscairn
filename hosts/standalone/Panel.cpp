@@ -172,7 +172,7 @@ namespace oscairn::standalone
     };
 
     /// A grid of pads that play through the engine's pad map, pad 1 at the bottom-left as on the
-    /// KICK, each labelled with its note; with `steps`, they light with the sequencer's playhead.
+    /// KICK, each labeled with its note; with `steps`, they light with the sequencer's playhead.
     class Panel::Pads : public juce::Component
     {
     public:
@@ -192,16 +192,16 @@ namespace oscairn::standalone
             for( int i = 0; i < control_.rows * control_.cols; ++i )
             {
                 const auto r = pad( i );
-                juce::Colour colour = ink(Ink::Raised);
+                juce::Colour color = ink(Ink::Raised);
                 if( i == held_ )
-                    colour = ink(Ink::Accent);
+                    color = ink(Ink::Accent);
                 else if( control_.steps && i == step_ )
-                    colour = ink(Ink::Positive).withAlpha( 0.8f );
-                g.setColour( colour );
+                    color = ink(Ink::Positive).withAlpha( 0.8f );
+                g.setColour( color );
                 g.fillRoundedRectangle( r, themeData().radius );
                 g.setColour( ink(Ink::Border) );
                 g.drawRoundedRectangle( r, themeData().radius, 1.5f );
-                g.setColour( i==held_ || (control_.steps && i==step_) ? colour.contrasting() : ink(Ink::Muted) );
+                g.setColour( i==held_ || (control_.steps && i==step_) ? color.contrasting() : ink(Ink::Muted) );
                 g.setFont( juce::FontOptions( 13.0f*themeData().fontScale ) );
                 g.drawText( juce::String( i + 1 ), r.reduced( 8.0f ), juce::Justification::topLeft );
                 if( i < int(PadMap::pads) )
@@ -424,13 +424,13 @@ namespace oscairn::standalone
     {
         // Knobs bound to the row on screen: how many, and the screen's edge they sit beyond,
         // where the screen names what each plays.
-        int rowKnobs = 0; juce::Point<int> centre;
+        int rowKnobs = 0; juce::Point<int> center;
         juce::Rectangle<int> screen;
         for( const auto& c : layout_.controls ) if( c.type == Layout::Control::Type::Screen ) screen = c.rect;
         for( const auto& c : layout_.controls )
-            if( c.type == Layout::Control::Type::Knob && c.bind.rfind( "row:", 0 ) == 0 ) { rowKnobs = std::max( rowKnobs, std::atoi( c.bind.c_str() + 4 ) ); centre = c.rect.getCentre(); }
+            if( c.type == Layout::Control::Type::Knob && c.bind.rfind( "row:", 0 ) == 0 ) { rowKnobs = std::max( rowKnobs, std::atoi( c.bind.c_str() + 4 ) ); center = c.rect.getCentre(); }
         using Edge = Engine::Edge;
-        const auto edge = centre.x >= screen.getRight() ? Edge::Right : centre.x < screen.getX() ? Edge::Left : centre.y < screen.getY() ? Edge::Top : Edge::Bottom;
+        const auto edge = center.x >= screen.getRight() ? Edge::Right : center.x < screen.getX() ? Edge::Left : center.y < screen.getY() ? Edge::Top : Edge::Bottom;
         engine_.setRowKnobs( screen.isEmpty() ? 0 : rowKnobs, edge );
         board_ = std::make_unique<Board>( engine, layout_ );
         addAndMakeVisible( *board_ );

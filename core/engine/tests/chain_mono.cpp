@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
-// A mono instrument in a chain plays in the centre: the chain copies its single
+// A mono instrument in a chain plays in the center: the chain copies its single
 // output channel to both sides. Uses the mono instrument from clap-host's test fixture.
 
 #include "oscairn/chain.h"

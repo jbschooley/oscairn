@@ -26,9 +26,9 @@ std::vector<fs::path> pluginSearchPaths() {
     }
     return result;
 }
-kick::clap::ScanResult scanPlugins(const std::vector<fs::path>& roots,const fs::path& helper,const std::atomic<bool>* cancelled) {
-    auto result=kick::clap::scan(roots,helper,5000,cancelled);
-    auto lv2=kick::clap::scan(roots,helper,5000,cancelled,".lv2");
+kick::clap::ScanResult scanPlugins(const std::vector<fs::path>& roots,const fs::path& helper,const std::atomic<bool>* canceled) {
+    auto result=kick::clap::scan(roots,helper,5000,canceled);
+    auto lv2=kick::clap::scan(roots,helper,5000,canceled,".lv2");
     result.plugins.insert(result.plugins.end(),lv2.plugins.begin(),lv2.plugins.end());
     result.failures.insert(result.failures.end(),lv2.failures.begin(),lv2.failures.end());return result;
 }

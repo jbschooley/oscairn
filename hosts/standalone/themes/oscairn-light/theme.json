@@ -1,5 +1,5 @@
 {
-  "version": 4,
+  "version": 5,
   "id": "oscairn-light",
   "name": "Oscairn Light",
   "font": {
@@ -9,7 +9,7 @@
   },
   "fontScale": 1.0,
   "radius": 6,
-  "colours": {
+  "colors": {
     "background": "#EEF1F5",
     "surface": "#FFFFFF",
     "raised": "#DFE4EA",

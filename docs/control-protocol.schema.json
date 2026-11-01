@@ -1962,7 +1962,7 @@
                     "maxLength": 64
                   }
                 },
-                "favourites": {
+                "favorites": {
                   "type": "boolean"
                 },
                 "recent": {
@@ -2001,7 +2001,7 @@
               "$ref": "#/$defs/Id"
             },
             "method": {
-              "const": "library.favourite"
+              "const": "library.favorite"
             },
             "params": {
               "type": "object",
@@ -2010,13 +2010,13 @@
                   "type": "string",
                   "minLength": 1
                 },
-                "favourite": {
+                "favorite": {
                   "type": "boolean"
                 }
               },
               "required": [
                 "id",
-                "favourite"
+                "favorite"
               ],
               "additionalProperties": false
             }

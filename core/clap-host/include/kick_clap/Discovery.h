@@ -15,7 +15,7 @@ ScanResult inspect(const std::filesystem::path& binary);
 ScanResult scan(const std::vector<std::filesystem::path>& roots,
                 const std::filesystem::path& scannerExecutable,
                 uint32_t timeoutMilliseconds = 5000,
-                const std::atomic<bool>* cancelled = nullptr, const std::string& extension = ".clap");
+                const std::atomic<bool>* canceled = nullptr, const std::string& extension = ".clap");
 std::string encodeScan(const ScanResult&);
 bool decodeScan(const std::string&, ScanResult&);
 } // namespace kick::clap

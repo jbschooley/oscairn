@@ -130,8 +130,8 @@ These apply to this RFC and to every engine and effect RFC that refers to it (00
    kept outside this repository, and the people writing engine code don't work from them.
 2. **No Yamaha content.** No Yamaha samples, waveforms, Performances, presets or reference
    renders in the repository or in packages. Fixtures and bundled sounds are generated, or
-   come from content whose licence allows commercial redistribution (public domain, CC0,
-   CC-BY or equivalent). No NC or ND licences.
+   come from content whose license allows commercial redistribution (public domain, CC0,
+   CC-BY or equivalent). No NC or ND licenses.
 3. **Import, don't decode.** Oscairn imports standard formats (SFZ, WAV, FLAC) and reads
    documented, unencrypted user files for interoperability. Anything that decodes Yamaha's
    proprietary sample codec stays outside Oscairn and isn't distributed with it.

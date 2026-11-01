@@ -314,7 +314,7 @@ Replacement cuts that slot's old notes/tails and prepared sounds. Use prepared s
 contexts for seamless switching within an engine instead.
 
 System UI components use the shared semantic palette and look-and-feel; device layouts
-contain geometry and bindings, not private colour schemes. Follow the
+contain geometry and bindings, not private color schemes. Follow the
 [design language and theme schema](design-language.md) when adding a screen. Generated
 plugin controls inherit the active theme. Vendor-native GUIs do not; declarative custom
 plugin pages and managed theme packages are future work.

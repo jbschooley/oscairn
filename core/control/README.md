@@ -57,7 +57,7 @@ ThreadSanitizer job includes this test.
 `oscairn_control_json` adds `JsonRpc`, a transport-independent JSON-RPC adapter for the
 controls and graph edits, with batches, subscriptions and explicit backpressure errors. Its
 [wire contract and schema](../../docs/control-protocol.md) describe the implemented subset.
-Two more tests check JSON-driven audio against typed controls and validate protocol behaviour
+Two more tests check JSON-driven audio against typed controls and validate protocol behavior
 with Python's independent decoder. JSON is never parsed on the audio thread.
 
 `control-flow` checks coalescing under plugin-queue pressure, final-value/gesture ordering,

@@ -55,7 +55,7 @@ like CLAP's extensions, so third parties can add their own without collisions.
 | --- | --- | --- | --- |
 | `oscairn.pick.performance` | optional tags to start with | a library ID | Library |
 | `oscairn.pick.sound` | optional part, tags | a library ID | Library |
-| `oscairn.send.performance` | a library ID | done or cancelled | Setlist |
+| `oscairn.send.performance` | a library ID | done or canceled | Setlist |
 | `oscairn.open.performance` | a library ID | | Sound editor |
 | `oscairn.open.part` | a part | | Sound editor |
 | `oscairn.open.pattern` | a part or sequencer node | | Groovebox |

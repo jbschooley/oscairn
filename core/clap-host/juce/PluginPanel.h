@@ -17,7 +17,7 @@ public:
 private:
     struct ParameterRow;
     struct ScanJob {
-        std::atomic<bool> cancelled{false}, complete{false};
+        std::atomic<bool> canceled{false}, complete{false};
         ScanResult result;
     };
     void scanPlugins();

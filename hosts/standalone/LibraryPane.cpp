@@ -26,8 +26,8 @@ namespace oscairn::standalone
         part_.onClick = [this] { newPart(list_.getSelectedRow()); };
         search_.setJustification(juce::Justification::centredLeft); search_.setIndents(10, 0);
         search_.onTextChange = [this] { query_.text = search_.getText().toStdString(); refresh(); };
-        favourites_.setClickingTogglesState(true);
-        favourites_.onClick = [this] { query_.favourites = favourites_.getToggleState(); refresh(); };
+        favorites_.setClickingTogglesState(true);
+        favorites_.onClick = [this] { query_.favorites = favorites_.getToggleState(); refresh(); };
         recent_.setClickingTogglesState(true);
         recent_.onClick = [this] { query_.recent = recent_.getToggleState(); refresh(); };
         list_.setColour(juce::ListBox::backgroundColourId, ink(Ink::Surface));
@@ -40,7 +40,7 @@ namespace oscairn::standalone
         libraries_.onClick = [this] { librariesMenu(); };
         libraries_.setTooltip("Install a library or an exported Performance, or uninstall a library");
         status_.setColour(juce::Label::textColourId, ink(Ink::Muted));
-        for(auto* c : std::initializer_list<juce::Component*>{&search_, &favourites_, &recent_, &list_, &status_}) addAndMakeVisible(c);
+        for(auto* c : std::initializer_list<juce::Component*>{&search_, &favorites_, &recent_, &list_, &status_}) addAndMakeVisible(c);
         for(auto* c : std::initializer_list<juce::Component*>{&send_, &part_, &cancel_, &pick_, &performances_, &sounds_, &delete_, &libraries_}) addChildComponent(c);
         performances_.setVisible(mode_ == Mode::Play); sounds_.setVisible(mode_ == Mode::Play);
         delete_.setVisible(mode_ == Mode::Play); libraries_.setVisible(mode_ == Mode::Play);
@@ -176,7 +176,7 @@ namespace oscairn::standalone
         if(!item.library.empty()) detail = "Locked" + (detail.isEmpty() ? juce::String() : "  ·  " + detail);
         g.setColour(ink(Ink::Muted)); g.setFont(juce::FontOptions(small));
         g.drawText(detail, area, juce::Justification::topLeft, true);
-        drawStar(g, starArea(width, height).toFloat().reduced(float(height) * .28f), item.favourite);
+        drawStar(g, starArea(width, height).toFloat().reduced(float(height) * .28f), item.favorite);
     }
 
     void LibraryPane::listBoxItemClicked(int row, const juce::MouseEvent& e)
@@ -185,7 +185,7 @@ namespace oscairn::standalone
         if(starArea(list_.getVisibleRowWidth(), list_.getRowHeight()).contains(e.getEventRelativeTo(list_.getComponentForRowNumber(row)).getPosition()))
         {
             const auto& item = result_.items[size_t(row)];
-            engine_.edit([id = item.id, on = !item.favourite](Control& c) { c.libraryFavourite(id, on); });
+            engine_.edit([id = item.id, on = !item.favorite](Control& c) { c.libraryFavorite(id, on); });
             refresh();
             return;
         }
@@ -209,7 +209,7 @@ namespace oscairn::standalone
             sounds_.setBounds(bar.removeFromLeft(touch ? 110 : 90)); bar.removeFromLeft(gap);
         }
         recent_.setBounds(bar.removeFromRight(touch ? 110 : 90)); bar.removeFromRight(gap);
-        favourites_.setBounds(bar.removeFromRight(touch ? 130 : 110)); bar.removeFromRight(gap);
+        favorites_.setBounds(bar.removeFromRight(touch ? 130 : 110)); bar.removeFromRight(gap);
         search_.setBounds(bar);
         search_.setFont(juce::FontOptions(textSize(TextRole::Body, mode())));
         area.removeFromTop(gap);

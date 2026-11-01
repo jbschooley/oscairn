@@ -19,7 +19,7 @@ namespace oscairn
         PerformanceInfo performanceInfo() const override;
         void setPerformanceInfo(const PerformanceInfo& info) override;
         LibraryResult libraryQuery(const LibraryQuery& query) override;
-        void libraryFavourite(const std::string& id, bool favourite) override;
+        void libraryFavorite(const std::string& id, bool favorite) override;
         uint32_t libraryRescan() override;
         std::string savePerformanceToLibrary(const std::string& name, bool asNew = false) override;
         void loadPerformanceFromLibrary(const std::string& id) override;

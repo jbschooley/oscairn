@@ -49,7 +49,7 @@ namespace oscairn
     /// dependency order within each block, so a sequencer's notes reach the instruments
     /// it plays in the same block. Audio connected into a node is summed; notes from
     /// several sources are merged in time order. Explicit audio routes preserve independent
-    /// ports/channels. Node connections resolve the main bus and centre mono into stereo.
+    /// ports/channels. Node connections resolve the main bus and center mono into stereo.
     ///
     /// Editing (add, remove, connect, commit) happens on the main thread while the audio
     /// thread keeps processing. commit() compiles the edits into a plan and hands it to

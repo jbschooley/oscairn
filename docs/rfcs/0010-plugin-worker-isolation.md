@@ -50,7 +50,7 @@ For an instrument played live with third-party plugins, this is the largest reli
 | Bitwig Studio | Hosting modes from *Within Bitwig* to *Individually*, plus *Together* (default), *By manufacturer* and *By plug-in*, and per-plugin overrides ([user guide](https://bitwig.com/userguide/latest/vst_plug-in_handling_and_options), [overview](https://www.bitwig.com/en/19/plugin-hosting-video.html)) | A crashed plugin's panel shows a notice; per-plugin processes are described as the safest and most memory-hungry. |
 | REAPER | Per plugin *Run as*: native, a shared separate process, or a dedicated process ([REAPER blog](https://reaper.blog/2012/02/run-plugin-as-dedicated-process/)) | A dedicated process limits a crash to that plugin. Community reports, not the manual, say it adds no latency. |
 | Carla | Plugin bridges in separate processes, attached through shared-memory audio and control regions ([commit](https://git.kx.studio/falkTX/Carla/commit/6970cb280edae5e55c46968ac5b2c3d11bcbcdce.diff)) | Listed as experimental in its README; the per-block exchange was not reviewed here. |
-| Zynthian | One `jalv` process per LV2 plugin, connected through JACK | Isolation follows from the process layout; synchronisation is per JACK period. |
+| Zynthian | One `jalv` process per LV2 plugin, connected through JACK | Isolation follows from the process layout; synchronization is per JACK period. |
 
 Every option trades memory and a little CPU for crash containment. Grouping several plugins in
 one worker is the common middle ground.
@@ -182,7 +182,7 @@ Implemented 2026-10-30 in `core/plugin-host` (`Worker.*`, `WorkerHost.cpp`) and 
   `os_sync_wait_on_address` or a futex and waits for completion. The shared buffer holds
   8,192 frames, so the worker's host splits larger blocks exactly as an in-engine host
   does; larger still are split by the engine.
-- **Control path:** a socket carries initialisation, parameter changes, gestures, parameter
+- **Control path:** a socket carries initialization, parameter changes, gestures, parameter
   text, state save and load, and `service`. The plugin is serviced only when the engine
   calls `service`, as in the engine; the worker refreshes parameter values every 10 ms.
 - **Stayed in the engine:** plugins with native sound or effect contexts (Basic Synth,
@@ -326,7 +326,7 @@ yet run on Linux or the device.
 
 ## Ruled out
 
-- **JACK as the isolation layer:** it synchronises separate programs per audio period, losing
+- **JACK as the isolation layer:** it synchronizes separate programs per audio period, losing
   sample-accurate routing, and requires a JACK server on every platform.
 - **A process per block or per note:** start-up costs far exceed an audio block.
 - **One-block latency as the default:** acceptable only where the musician or graph chooses it.

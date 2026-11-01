@@ -36,7 +36,7 @@ enum
 
 enum oscairn_param_target_mode
 {
-    /* Set the target parameter: value is normalised, 0..1 over the target's range. */
+    /* Set the target parameter: value is normalized, 0..1 over the target's range. */
     OSCAIRN_PARAM_TARGET_SET = 0,
     /* Modulate the target parameter: value is an amount, -1..1 of the target's range. */
     OSCAIRN_PARAM_TARGET_MODULATE = 1,
