@@ -17,7 +17,8 @@ Checked when built and tested; the sections below say how.
 - [ ] 5. Editors: knob pages for every plugin (started through [RFC 0019](0019-adaptive-ui.md)'s generated editors), the Modular grid
 - [ ] 6. Physical controls: default layers, overrides, learn, banks
 - [ ] 7. Groups, pedal view, move, copy and share
-- [ ] The full scene model (blocks and wires enabled per scene, what each scene saves)
+- [ ] The full scene model (blocks and wires enabled per scene, what each scene saves),
+      seamless on the draining used for switching Sounds
 
 ## Problem
 
@@ -427,7 +428,10 @@ What a scene can hold, all of it by default:
 - **Enabled or disabled, per wire and per block:** every wire and every node in the
   Performance can be switched on or off, and a scene records that for all of them. Switching a
   part between two instruments, or a pedal on and off, is a scene enabling one block and
-  disabling another; held notes on the disabled block end, its tail rings out.
+  disabling another. It is seamless, as switching a part's Sound is
+  ([RFC 0021](0021-sounds-performances-and-library.md#seamless-switching)): a disabled block's
+  note connections drain, so notes held on it play on until released, with their releases,
+  expressions and pedal, and its tail rings out; new notes go to what the scene enables.
 - **Each part's mute and solo.**
 - **The mix:** each part's level and pan, each send's level, each wire's Mix row.
 - **Plugin parameters.**

@@ -203,7 +203,10 @@ in the others.
      keyboard-and-mouse or touch input mode (started), described plugin editors covering
      step 5's knob pages (started)
    - [ ] plugin windows, then step 6's physical controls
-   - [ ] the full scene model: blocks and wires enabled per scene, and what each scene saves
+   - [ ] the full scene model: blocks and wires enabled per scene, and what each scene saves;
+     seamless like switching Sounds (notes held on a disabled block play on until released,
+     its tail rings out). Scene changes today set levels, mutes and values without
+     rebuilding, so held notes and tails already carry on
      ([RFC 0011](rfcs/0011-performance-ui-and-editors.md))
 2. **Native sample patches** ([sample players and formats](sample-players-and-formats.md),
    [ESP observations](yamaha-esp-samples-research.md)). The Sampler lives in its own
@@ -244,6 +247,8 @@ in the others.
    - [ ] step 6: memory and CPU limits, sandboxing
    - [ ] step 7: LV2 in workers
    - [ ] measurements on native Linux and the target; workers by default in the app
+   - [ ] workers reporting CLAP sleep, so seamless switching retires a plugin in a worker as
+     soon as it is done instead of after three seconds of silence
 4. **Sequencers** ([the comparison](sequencer-evaluation.md) of the KICK firmware's sequencer
    with chillbeast's work, zynseq and hosted plugins)
    - [x] the evaluation, recommending the KICK model and workflow with sample-accurate

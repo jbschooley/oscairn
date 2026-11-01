@@ -18,6 +18,9 @@ Checked when built and tested; the sections below say how.
 - [ ] 6. Memory and CPU limits, then sandboxing
 - [ ] 7. LV2 in workers
 - [ ] Measurements on native Linux and the target; workers by default in the app
+- [ ] Workers report the plugin's CLAP sleep to the engine, so a chain switched away from
+      ([RFC 0021](0021-sounds-performances-and-library.md#seamless-switching)) goes as soon
+      as a plugin in a worker is done; today it waits three seconds of silence
 
 ## Problem
 
