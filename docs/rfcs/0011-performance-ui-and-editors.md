@@ -510,8 +510,11 @@ Not yet:
 The **Routing** view implemented 2026-10-31 on the desktop (`PartsView`, `readRouting` and
 `inputsOf` in `PartsModel`), opened by **Routing** on the Parts view. It draws every node in
 its column (inputs, notes, instruments, effects and buses, outputs) with the part it belongs
-to, and every wire: audio and notes in their own colours, part wires faint and hidable, wires
-drawn here bright, unconnected ones red. Tapping a node offers **Connect audio to...** and
+to, and every wire in the theme's wire colours (theme format 4): enabled audio and note wires,
+part wires faint and hidable, wires drawn here bright; disabled ones (muted; off in a scene
+with the full scene model) and draining ones (seamless changes) dashed in their own colours;
+unconnected ones apart. A part's row in the parts lists takes a tint when muted (the mute's)
+or draining (the accent's). Tapping a node offers **Connect audio to...** and
 **Connect notes to...** (user wires, main port to main port), **Remove** for a node outside the
 parts (its sources are wired to its destinations), or **Open part**, and lists each of its
 inputs with a row per source: that source's level, mute and solo in the input's implicit Mix,

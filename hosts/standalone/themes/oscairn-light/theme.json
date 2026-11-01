@@ -1,5 +1,5 @@
 {
-  "version": 3,
+  "version": 4,
   "id": "oscairn-light",
   "name": "Oscairn Light",
   "font": {
@@ -28,5 +28,12 @@
     "tabs": "segmented",
     "marks": "square",
     "sections": "separate"
+  },
+  "wires": {
+    "audio": "#2F6FD0",
+    "notes": "#7B4BD6",
+    "disabled": "#9AA3AD",
+    "draining": "#B85A0A",
+    "unconnected": "#C42D2D"
   }
 }

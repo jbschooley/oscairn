@@ -558,7 +558,8 @@ namespace oscairn
                         ",\"noteInputs\":" + std::to_string(n.noteInputs) + ",\"noteOutputs\":" + std::to_string(n.noteOutputs) + '}');
                 auto edges = [&](const auto& list, const char* kind) {
                     for( const auto& [from,to] : list ) connections.push_back("{\"kind\":" + quote(kind) +
-                        ",\"from\":" + std::to_string(from) + ",\"to\":" + std::to_string(to) + '}');
+                        ",\"from\":" + std::to_string(from) + ",\"to\":" + std::to_string(to) +
+                        ",\"draining\":" + (graph.topology.draining.count({from,to}) ? "true" : "false") + '}');
                 };
                 edges(graph.topology.notes,"notes");
                 for(const auto& r:graph.topology.audioRoutes)

@@ -141,7 +141,9 @@ namespace oscairn
             for(auto c:array(field(root,"connections")))
             {
                 const auto from=static_cast<NodeId>(integer(field(c,"from"))),to=static_cast<NodeId>(integer(field(c,"to")));
-                if(string(field(c,"kind"))=="notes")next.topology.notes.emplace_back(from,to);
+                if(string(field(c,"kind"))=="notes"){
+                    next.topology.notes.emplace_back(from,to);
+                    if(const auto d=detail::member(c,"draining");d && d->type==json_type_true)next.topology.draining.insert({from,to});}
                 else next.topology.audioRoutes.push_back({
                     {from,static_cast<uint32_t>(integer(field(c,"fromPort"))),static_cast<uint32_t>(integer(field(c,"fromChannel")))},
                     {to,static_cast<uint32_t>(integer(field(c,"toPort"))),static_cast<uint32_t>(integer(field(c,"toChannel")))},

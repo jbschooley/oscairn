@@ -49,6 +49,7 @@ namespace oscairn::standalone
         std::map<uint32_t, double> sends; // bus -> level
         std::vector<std::string> exits;  // "→ Hall (shared)": nodes outside it its boxes are wired to in Routing
         bool edited = false;             // loaded from a library Sound and changed since (RFC 0021)
+        bool draining = false;           // its notes in drain: being switched out, notes held still sounding
     };
     // A node outside every part that several parts are wired into in Routing: a bus in all but
     // name (RFC 0011), shown as a row under the buses.
@@ -80,6 +81,11 @@ namespace oscairn::standalone
         const RoutingNode* find(NodeId node, uint32_t port) const; // the ends by port, other nodes by node
     };
     RoutingState readRouting(const Control::GraphState&);
+    // How a wire is drawn: enabled; disabled (muted; with RFC 0011's full scene model, also off in
+    // the scene); or draining (a note wire taking no new notes while held ones ring out, RFC 0021).
+    // A wire that no longer fits its plugin's ports (Wire::connected false) is drawn apart.
+    enum class WireState { Enabled, Disabled, Draining };
+    WireState wireState(const Wire&, const Graph::Description&);
     // A node's audio inputs that have sources, with a row per source (its Mix), and its notes.
     std::vector<RoutingInput> inputsOf(const Control::GraphState&, NodeId node);
 

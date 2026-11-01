@@ -143,6 +143,7 @@ namespace oscairn
             std::vector<NodeInfo> nodes;
             std::vector<std::pair<NodeId,NodeId>> notes;
             std::map<std::pair<NodeId,NodeId>,std::vector<NoteZone>> noteZones; // connections with zones
+            std::set<std::pair<NodeId,NodeId>> draining; // note connections draining (setDraining)
             std::vector<Mapping> mappings;
             std::vector<AudioConnection> audioRoutes;
             AudioLayout audioLayout;

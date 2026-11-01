@@ -17,7 +17,7 @@ int main(int argc,char** argv){try{
     check(classic.style.buttons==ThemeStyle::Buttons::Rounded && classic.style.edges==ThemeStyle::Edges::Outlined && classic.style.depth==ThemeStyle::Depth::Flat &&
           classic.style.sliders==ThemeStyle::Sliders::Filled && classic.style.tabs==ThemeStyle::Tabs::Folder && classic.style.marks==ThemeStyle::Marks::Round && classic.style.sections==ThemeStyle::Sections::Joined,"every style choice parsed");
     check(ThemeData::parse(json.replace("\"line\"","\"cap\"")).style.sliders==ThemeStyle::Sliders::Cap,"slider caps parsed");
-    for(auto broken:{json.replace("\"midnight\"","\"../escape\""),json.replace("\"version\": 3","\"version\": 2"),json.replace("\"fontScale\": 1.0","\"fontScale\": 100"),
+    for(auto broken:{json.replace("\"midnight\"","\"../escape\""),json.replace("\"version\": 4","\"version\": 3"),json.replace("\"fontScale\": 1.0","\"fontScale\": 100"),
                      json.replace("#F0F5FC","#101724"),json.replace("#7CCEFF","red"),json.replace("\"radius\": 8","\"script\": \"evil\""),
                      json.replace("\"license\": \"fonts/OFL.txt\"","\"licence\": \"fonts/OFL.txt\""),json.replace("\"regular\": \"fonts/Inter-Regular.ttf\",",""),
                      json.replace("\"tabs\": \"segmented\"","\"tabs\": \"ribbon\""),json.replace("\"marks\": \"square\"","\"marks\": \"square\", \"shader\": \"x\""),

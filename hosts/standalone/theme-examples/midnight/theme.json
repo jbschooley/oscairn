@@ -1,5 +1,5 @@
 {
-  "version": 3,
+  "version": 4,
   "id": "midnight",
   "name": "Midnight",
   "font": {
@@ -28,5 +28,12 @@
     "tabs": "segmented",
     "marks": "square",
     "sections": "separate"
+  },
+  "wires": {
+    "audio": "#7CCEFF",
+    "notes": "#C9A4FF",
+    "disabled": "#5F7189",
+    "draining": "#FFB86B",
+    "unconnected": "#FF9994"
   }
 }

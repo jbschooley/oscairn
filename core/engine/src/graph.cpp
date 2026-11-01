@@ -393,7 +393,7 @@ namespace oscairn
                                     node.host->noteInputPorts(),node.host->noteOutputPorts()});
         result.audioRoutes=audioRoutes_;result.audioLayout=audioLayout_;
         for(const auto& [edge,state]:noteEdges_)result.notes.push_back(edge);
-        result.noteZones=noteZones_;
+        result.noteZones=noteZones_;result.draining=draining_;
         for( const auto& [from,to] : paramTargets_ )
             result.mappings.push_back({from.first,from.second,to.first,to.second});
         return result;

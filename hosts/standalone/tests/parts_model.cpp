@@ -172,8 +172,23 @@ int main(int argc, char** argv)
         removeLoose(s, hall);
         check(s.graphState().topology.nodes.size() == nodesBefore - 1, "a plugin outside the parts removed in Routing");
         removeSplitKeepingFirst(s, layers, wide);
+
+        // How wires and parts are drawn: enabled, disabled (muted) or draining; a part whose note
+        // input drains is draining.
+        {
+            auto g = s.graphState();
+            const auto input = std::find_if(g.wires.begin(), g.wires.end(), [&](const Wire& w) { return w.owner == WireOwner::Part && w.part == bass && w.from == graphInput && w.kind == WireKind::Notes; });
+            check(input != g.wires.end() && wireState(*input, g.topology) == WireState::Enabled && !readParts(g).parts[0].draining, "a part's note input, enabled");
+            g.topology.draining.insert({input->from, input->to});
+            check(wireState(*input, g.topology) == WireState::Draining, "draining when its connection drains");
+            const auto rows = readParts(g).parts;
+            check(std::any_of(rows.begin(), rows.end(), [&](const PartRow& r) { return r.id == bass && r.draining; }) &&
+                  std::none_of(rows.begin(), rows.end(), [&](const PartRow& r) { return r.id != bass && r.draining; }), "its part is draining, the others not");
+            auto muted = *input; muted.mute = true; g.topology.draining.clear();
+            check(wireState(muted, g.topology) == WireState::Disabled, "a muted wire is disabled");
+        }
     }
     catch(const std::exception& e) { std::fprintf(stderr, "FAIL: %s\n", e.what()); return 1; }
-    if(!failures) std::puts("ok: a split and a shared delay built through the Parts views' model");
+    if(!failures) std::puts("ok: a split and a shared delay built through the Parts views' model; wire and part states");
     return failures ? 1 : 0;
 }

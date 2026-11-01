@@ -1,10 +1,10 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Oscairn theme version 3 (theme.json inside a theme folder)",
+  "title": "Oscairn theme version 4 (theme.json inside a theme folder)",
   "type": "object",
   "properties": {
     "version": {
-      "const": 3
+      "const": 4
     },
     "id": {
       "type": "string",
@@ -165,6 +165,40 @@
         "sections"
       ],
       "additionalProperties": false
+    },
+    "wires": {
+      "type": "object",
+      "description": "Wires in the routing views: enabled audio and note wires, disabled ones, draining ones (seamless changes) and ones that no longer fit their ports",
+      "properties": {
+        "audio": {
+          "type": "string",
+          "pattern": "^#[0-9A-Fa-f]{6}$"
+        },
+        "notes": {
+          "type": "string",
+          "pattern": "^#[0-9A-Fa-f]{6}$"
+        },
+        "disabled": {
+          "type": "string",
+          "pattern": "^#[0-9A-Fa-f]{6}$"
+        },
+        "draining": {
+          "type": "string",
+          "pattern": "^#[0-9A-Fa-f]{6}$"
+        },
+        "unconnected": {
+          "type": "string",
+          "pattern": "^#[0-9A-Fa-f]{6}$"
+        }
+      },
+      "required": [
+        "audio",
+        "notes",
+        "disabled",
+        "draining",
+        "unconnected"
+      ],
+      "additionalProperties": false
     }
   },
   "required": [
@@ -173,7 +207,8 @@
     "name",
     "font",
     "colours",
-    "style"
+    "style",
+    "wires"
   ],
   "additionalProperties": false
 }

@@ -4489,6 +4489,10 @@
                 "type": "number",
                 "minimum": -16,
                 "maximum": 16
+              },
+              "draining": {
+                "type": "boolean",
+                "description": "Note connections: draining, taking no new notes while the notes it holds still release (seamless scene and Performance changes, RFC 0021)"
               }
             },
             "required": [

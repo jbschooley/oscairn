@@ -74,8 +74,8 @@ ThemeData ThemeData::parse(const juce::String& json) {
     require(json.getNumBytesAsUTF8()<=maxThemeBytes,"Theme exceeds 16 KiB");
     juce::var value;require(juce::JSON::parse(json,value).wasOk(),"Invalid theme JSON");
     const auto* object=value.getDynamicObject();require(object,"Theme must be an object");
-    fields(*object,{"version","id","name","font","fontScale","radius","colours","style"});
-    require(value["version"].isInt() && int(value["version"])==3,"Unsupported theme version");
+    fields(*object,{"version","id","name","font","fontScale","radius","colours","style","wires"});
+    require(value["version"].isInt() && int(value["version"])==4,"Unsupported theme version");
     ThemeData t;t.id=value["id"].toString();t.name=value["name"].toString();
     require(value["id"].isString() && validId(t.id),"Theme ID must contain lowercase letters, digits or hyphens");
     require(value["name"].isString() && t.name.isNotEmpty() && t.name.length()<=80,"Theme needs a short name");
@@ -90,9 +90,13 @@ ThemeData ThemeData::parse(const juce::String& json) {
     t.fontScale=number("fontScale",1,.8f,1.4f);t.radius=number("radius",6,0,16);
     const auto* colours=value["colours"].getDynamicObject();require(colours,"Theme needs semantic colours");
     juce::StringArray allowed;for(const auto& name:names)allowed.add(name);fields(*colours,allowed);
-    for(size_t i=0;i<names.size();++i){const auto colour=colours->getProperty(names[i]);const auto text=colour.toString();
+    auto hex=[](const juce::var& colour){const auto text=colour.toString();
         require(colour.isString() && text.length()==7 && text[0]=='#' && text.substring(1).containsOnly("0123456789abcdefABCDEF"),"Theme colours must be #RRGGBB");
-        t.colours[i]=juce::Colour(0xff000000u|static_cast<juce::uint32>(text.substring(1).getHexValue32()));}
+        return juce::Colour(0xff000000u|static_cast<juce::uint32>(text.substring(1).getHexValue32()));};
+    for(size_t i=0;i<names.size();++i)t.colours[i]=hex(colours->getProperty(names[i]));
+    const auto* wires=value["wires"].getDynamicObject();require(wires,"Theme needs its wire colours");
+    fields(*wires,{"audio","notes","disabled","draining","unconnected"});
+    t.wires={hex(wires->getProperty("audio")),hex(wires->getProperty("notes")),hex(wires->getProperty("disabled")),hex(wires->getProperty("draining")),hex(wires->getProperty("unconnected"))};
     const auto* style=value["style"].getDynamicObject();require(style,"Theme needs a style");
     fields(*style,{"buttons","edges","depth","sliders","tabs","marks","sections"});
     auto choice=[&](const char* key,const juce::StringArray& options){const auto v=style->getProperty(key);const int i=options.indexOf(v.toString());require(v.isString() && i>=0,"Theme style choice is not one of its options");return i;};

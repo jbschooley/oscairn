@@ -1,5 +1,5 @@
 {
-  "version": 3,
+  "version": 4,
   "id": "oscairn-block",
   "name": "Oscairn Block",
   "font": {
@@ -28,5 +28,12 @@
     "tabs": "folder",
     "marks": "square",
     "sections": "joined"
+  },
+  "wires": {
+    "audio": "#8CC2FF",
+    "notes": "#C29CFF",
+    "disabled": "#6B7480",
+    "draining": "#FF9A45",
+    "unconnected": "#FF6B63"
   }
 }

@@ -74,7 +74,7 @@ emergency theme with fixed colours and the platform's default font keeps text vi
 change a musician's appearance preference. Theme package distribution/sync will use the
 future package system; it is not needed for local theme installation.
 
-## Theme format, version 3
+## Theme format, version 4
 
 A theme is a folder named after its ID, holding `theme.json` ([schema](theme.schema.json))
 and the files it names. See the complete Midnight example. Themes contain data and fonts
@@ -83,14 +83,15 @@ fonts, so text never depends on what a device has installed.
 
 | Field | Contract |
 | --- | --- |
-| `version` | Integer `3` |
+| `version` | Integer `4` |
 | `id` | 1–64 lowercase letters, digits or hyphens; the folder's name; built-in IDs are reserved |
 | `name` | Display name, 1–80 characters |
 | `font` | `regular` and optional `bold` font files (`.ttf`/`.otf`, ≤ 4 MiB each) and the fonts' `license` text (≤ 64 KiB), as relative paths inside the folder |
 | `fontScale` | Optional number, 0.8–1.4; default 1 |
 | `radius` | Optional number, 0–16; default 6 |
 | `colours` | All nine semantic colours below, opaque `#RRGGBB` |
-| `style` | How controls are drawn: one choice for each of the six below |
+| `style` | How controls are drawn: one choice for each of the seven below |
+| `wires` | The routing views' wire colours, opaque `#RRGGBB`: `audio` and `notes` for enabled wires, `disabled` (muted, or off in a scene), `draining` (taking no new notes while held ones ring out, in a seamless change) and `unconnected` (no longer fits its plugin's ports). Disabled and draining wires are drawn dashed |
 
 | Style | Choices | Draws |
 | --- | --- | --- |
@@ -122,7 +123,7 @@ out-of-range metrics, paths leaving the folder, linked files, missing licences a
 that are not TrueType/OpenType fonts are rejected before installation. Only the files a
 theme names are copied. Fonts are parsed in the UI process by the platform's font engine,
 which is not hardened against malicious files: install themes only from trusted sources.
-Earlier theme versions are no longer read; add a `style` and set `version` to 3 (initial
+Earlier theme versions are no longer read; add `wires` and set `version` to 4 (initial
 development). Primary text must have at least 4.5:1 contrast
 against background, surface and raised colours. Authors should also check secondary text,
 small labels, keyboard focus and selected controls in every supported layout.

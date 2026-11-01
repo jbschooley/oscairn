@@ -84,7 +84,10 @@ namespace oscairn::standalone
                 auto r = area.removeFromTop(height);
                 rows_.push_back({p.id, r, {}, {}, p.mute, p.solo, p.level});
                 const bool selected = p.id == shell_.selected_ && shell_.tab_ == Tab::Part;
-                if(selected) { g.setColour(ink(Ink::Raised)); g.fillRect(r); g.setColour(ink(Ink::Accent)); g.fillRect(r.withWidth(3)); }
+                if(selected) { g.setColour(ink(Ink::Raised)); g.fillRect(r); }
+                // Draining (being switched out) or muted: the row takes the accent's or the mute's tint.
+                if(p.draining || p.mute) { g.setColour((p.draining ? ink(Ink::Accent) : ink(Ink::Danger)).withAlpha(.14f)); g.fillRect(r); }
+                if(selected) { g.setColour(ink(Ink::Accent)); g.fillRect(r.withWidth(3)); }
                 r = r.reduced(pad + 4, pad);
                 const float alpha = p.mute || p.silenced ? .5f : 1.f;
                 auto top = r.removeFromTop(int(body) + 4);

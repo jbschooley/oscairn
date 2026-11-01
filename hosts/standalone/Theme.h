@@ -19,12 +19,18 @@ int sectionGap(int separate);                    // the gap between sections: `s
 // A section (a card, a tile, a mixer strip): rounded with its edge when sections are separate;
 // square when they join, its edge on the shared pixel so neighbours draw one line between them.
 void drawSection(juce::Graphics&, juce::Rectangle<int>, juce::Colour fill);
+// Wires in the routing views (theme format 4): enabled audio and note wires, disabled ones,
+// draining ones (seamless changes, RFC 0021) and ones that no longer fit their plugin's ports.
+struct ThemeWires {
+    juce::Colour audio{0xff8cc2ff},notes{0xffc29cff},disabled{0xff6b7480},draining{0xffff9a45},unconnected{0xffff6b63};
+};
 struct ThemeData {
     juce::String id="oscairn-dark",name="Oscairn Dark";
     ThemeFont font;
     std::array<juce::Colour,9> colours{{juce::Colour(0xff15181d),juce::Colour(0xff20252d),juce::Colour(0xff2c333d),juce::Colour(0xff526070),juce::Colour(0xffedf1f5),juce::Colour(0xffa3aebb),juce::Colour(0xffffa45b),juce::Colour(0xff5ad9a4),juce::Colour(0xffff8d87)}};
     float fontScale=1,radius=6;
     ThemeStyle style;
+    ThemeWires wires;
     static ThemeData parse(const juce::String&);
 };
 const ThemeData& themeData();

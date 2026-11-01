@@ -902,8 +902,9 @@ namespace oscairn::standalone
                 for(const auto& b : routingBoxes_) if(b.node == node && ((node != graphInput && node != graphOutput) || b.port == port)) return &b;
                 return nullptr;
             };
-            // Wires first, under the boxes: audio blue, notes violet; part wires faint, user wires
-            // bright, unconnected ones red.
+            // Wires first, under the boxes, in the theme's wire colours: enabled audio and note wires
+            // (part wires faint, user wires bright), disabled and draining ones dashed, and those
+            // that no longer fit their ports.
             for(const auto& w : routing_.wires)
             {
                 if(w.owner == WireOwner::Part && !partWires_) continue;
@@ -914,11 +915,20 @@ namespace oscairn::standalone
                 juce::Path path; path.startNewSubPath(p0);
                 const float bend = std::max(30.0f, (p1.x - p0.x) / 2);
                 path.cubicTo(p0.translated(bend, 0), p1.translated(-bend, 0), p1);
-                auto colour = !w.connected ? ink(Ink::Danger) : w.kind == WireKind::Notes ? juce::Colour(0xffc29cff) : juce::Colour(0xff8cc2ff);
-                if(w.owner == WireOwner::Part) colour = colour.withAlpha(.35f);
-                if(w.mute) colour = colour.withMultipliedAlpha(.4f);
+                const auto state = wireState(w, graph_.topology);
+                const auto& wires = themeData().wires; // the theme's
+                auto colour = !w.connected ? wires.unconnected : state == WireState::Draining ? wires.draining : state == WireState::Disabled ? wires.disabled
+                            : w.kind == WireKind::Notes ? wires.notes : wires.audio;
+                if(w.owner == WireOwner::Part && state == WireState::Enabled) colour = colour.withAlpha(.35f);
                 g.setColour(colour);
-                g.strokePath(path, juce::PathStrokeType(w.owner == WireOwner::User ? 2.5f : 1.5f));
+                const juce::PathStrokeType stroke(w.owner == WireOwner::User || state == WireState::Draining ? 2.5f : 1.5f);
+                if(w.connected && state != WireState::Enabled)
+                {
+                    const float dashes[] = {6.f, 4.f};
+                    juce::Path dashed; stroke.createDashedStroke(dashed, path, dashes, 2);
+                    g.fillPath(dashed);
+                }
+                else g.strokePath(path, stroke);
             }
             for(const auto& b : routingBoxes_)
             {
@@ -1002,6 +1012,8 @@ namespace oscairn::standalone
                     auto r = rowBounds(row++);
                     g.setColour(p.mute || p.silenced ? ink(Ink::Surface).withAlpha(.5f) : ink(Ink::Surface));
                     g.fillRoundedRectangle(r.toFloat(), themeData().radius);
+                    // Draining (being switched out) or muted: the row takes the accent's or the mute's tint.
+                    if(p.draining || p.mute) { g.setColour((p.draining ? ink(Ink::Accent) : ink(Ink::Danger)).withAlpha(.14f)); g.fillRoundedRectangle(r.toFloat(), themeData().radius); }
                     auto rr = r.reduced(8, 6);
                     g.setColour(ink(Ink::Muted)); g.setFont(juce::FontOptions(14.0f * scale));
                     g.drawText(p.bus ? juce::String() : juce::String(row), rr.removeFromLeft(20), juce::Justification::centredLeft);

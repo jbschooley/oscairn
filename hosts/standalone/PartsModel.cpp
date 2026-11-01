@@ -65,6 +65,8 @@ namespace oscairn::standalone
             PartRow row;
             row.id = p.id; row.name = p.name; row.bus = p.input.kind == PartInput::Kind::Bus;
             row.edited = !p.from.sound.empty() && p.from.modified;
+            row.draining = std::any_of(g.wires.begin(), g.wires.end(), [&](const Wire& w) {
+                return w.owner == WireOwner::Part && w.part == p.id && w.from == graphInput && wireState(w, g.topology) == WireState::Draining; });
             row.level = p.level; row.pan = p.pan; row.mute = p.mute; row.solo = p.solo; row.through = p.bus;
             // Its own mute, or someone else's solo: the wires where it plays are muted either way.
             row.silenced = !p.mute && std::any_of(g.wires.begin(), g.wires.end(), [&](const Wire& w) { return w.owner == WireOwner::Part && w.part == p.id && w.fader && w.mute; });
@@ -162,6 +164,12 @@ namespace oscairn::standalone
         for(const auto& n : nodes)
             if(n.node == node && ((node != graphInput && node != graphOutput) || n.port == port)) return &n;
         return nullptr;
+    }
+
+    WireState wireState(const Wire& w, const Graph::Description& topology)
+    {
+        if(w.kind == WireKind::Notes && topology.draining.count({w.from, w.to})) return WireState::Draining;
+        return w.mute ? WireState::Disabled : WireState::Enabled;
     }
 
     RoutingState readRouting(const Control::GraphState& g)
