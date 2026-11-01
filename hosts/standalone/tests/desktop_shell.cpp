@@ -165,6 +165,12 @@ int main(int argc, char** argv)
                     check(shown == 2 + 3 + 1, "three actions and the menu for the fourth: " + std::to_string(shown));
                     snapshot(bar, "top-bar");
                 }
+                // The running apps, each a card with its Close.
+                {
+                    standalone::AppSwitcher switcher(engine, {{"Performance", "piano"}, {"Library", "library-big"}}, [](int) {}, [](int) {}, {});
+                    standalone::setDesktopMode(switcher, 2); switcher.setSize(1024, 600);
+                    snapshot(switcher, "switcher");
+                }
                 // Play (RFC 0011), the Performance app's first view, on a device's screen under the top bar.
                 {
                     standalone::PerformanceApp app(engine, argv[2]);

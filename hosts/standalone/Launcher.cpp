@@ -5,18 +5,6 @@ namespace oscairn::standalone
 {
     namespace
     {
-        // Text placed by its glyphs, its lowercase letters' middle on the box's (as the Library's).
-        void drawMiddle(juce::Graphics& g, const juce::String& s, juce::Rectangle<int> r, const juce::Font& font, juce::Justification h = juce::Justification::left)
-        {
-            auto inkOf = [](const juce::GlyphArrangement& a) { juce::Path p; a.createPath(p); return p.getBounds(); };
-            juce::GlyphArrangement mark; mark.addLineOfText(font, s == s.toUpperCase() ? "H" : "x", 0, 0);
-            const float top = inkOf(mark).getY();
-            juce::GlyphArrangement line; line.addCurtailedLineOfText(font, s, 0, 0, float(r.getWidth()), true);
-            const auto ink = inkOf(line);
-            const float x = h.testFlags(juce::Justification::right) ? float(r.getRight()) - ink.getRight() : float(r.getX());
-            line.moveRangeOfGlyphs(0, -1, x, r.toFloat().getCentreY() - top / 2);
-            line.draw(g);
-        }
         // Opening an app may replace the component whose button asked: after the click is done.
         std::function<void()> later(std::function<void()> f) { return f ? [f] { juce::MessageManager::callAsync(f); } : std::function<void()>{}; }
     }
@@ -113,17 +101,17 @@ namespace oscairn::standalone
         auto r = getLocalBounds().reduced(6, 0);
         for(auto* b : {&home_, &back_, &apps_}) if(b->isVisible()) r.setLeft(b->getRight() + 2);
         g.setColour(ink(Ink::Text));
-        drawMiddle(g, where_, r.withTrimmedLeft(8).withRight(contextArea_.getX() - 4), body);
+        drawInked(g, where_, r.withTrimmedLeft(8).withRight(contextArea_.getX() - 4), body);
         // The Performance and scene, a pill to tap.
         if(!contextArea_.isEmpty())
         {
             g.setColour(ink(Ink::Surface)); g.fillRoundedRectangle(contextArea_.toFloat(), buttonRadius(float(contextArea_.getHeight())));
             g.setColour(ink(Ink::Text));
-            drawMiddle(g, context_ + (scene_.isEmpty() ? juce::String() : juce::String::fromUTF8("  ·  ") + scene_), contextArea_.reduced(12, 0), small);
+            drawInked(g, context_ + (scene_.isEmpty() ? juce::String() : juce::String::fromUTF8("  ·  ") + scene_), contextArea_.reduced(12, 0), small);
         }
         // The tempo and the engine's load.
         g.setColour(load_);
-        drawMiddle(g, status_, statusArea_.reduced(8, 0), small, juce::Justification::right);
+        drawInked(g, status_, statusArea_.reduced(8, 0), small, juce::Justification::right);
     }
 
     void TopBar::mouseUp(const juce::MouseEvent& e)
@@ -189,10 +177,8 @@ namespace oscairn::standalone
             g.setColour(ink(Ink::Raised)); g.fillRoundedRectangle(well, std::min(12.f, themeData().radius + 4));
             drawIcon(g, apps_[i].icon, well.reduced(12), ink(Ink::Text));
             auto state = inside.removeFromBottom(int(small) + 4);
-            g.setColour(ink(Ink::Text)); g.setFont(juce::FontOptions(title, juce::Font::bold));
-            g.drawText(apps_[i].name, inside.removeFromBottom(int(title) + 6), juce::Justification::bottomLeft, true);
-            g.setColour(ink(Ink::Muted)); g.setFont(juce::FontOptions(small));
-            g.drawText(states_[i], state, juce::Justification::centredLeft, true);
+            g.setColour(ink(Ink::Text)); drawInked(g, apps_[i].name, inside.removeFromBottom(int(title) + 6), juce::Font(juce::FontOptions(title, juce::Font::bold)));
+            g.setColour(ink(Ink::Muted)); drawInked(g, states_[i], state, juce::Font(juce::FontOptions(small)));
         }
     }
 
@@ -241,8 +227,8 @@ namespace oscairn::standalone
         const int m = std::max(1, desktopMode(*this));
         if(running_.empty())
         {
-            g.setColour(ink(Ink::Muted)); g.setFont(juce::FontOptions(textSize(TextRole::Body, m)));
-            g.drawText("No apps running. Open one from Home.", getLocalBounds().withTrimmedTop(TopBar::heightFor(*this)), juce::Justification::centred);
+            g.setColour(ink(Ink::Muted));
+            drawInked(g, "No apps running. Open one from Home.", getLocalBounds().withTrimmedTop(TopBar::heightFor(*this)), juce::Font(juce::FontOptions(textSize(TextRole::Body, m))), juce::Justification::horizontallyCentred);
         }
         for(size_t i = 0; i < cards_.size(); ++i)
         {
@@ -251,12 +237,10 @@ namespace oscairn::standalone
             auto top = r.reduced(14).removeFromTop(32);
             drawIcon(g, running_[i].icon, top.removeFromLeft(28).toFloat().reduced(2), ink(Ink::Text));
             top.removeFromLeft(10);
-            g.setColour(ink(Ink::Text)); g.setFont(juce::FontOptions(textSize(TextRole::Title, m), juce::Font::bold));
-            g.drawText(running_[i].name, top, juce::Justification::centredLeft, true);
+            g.setColour(ink(Ink::Text)); drawInked(g, running_[i].name, top, juce::Font(juce::FontOptions(textSize(TextRole::Title, m), juce::Font::bold)));
             const auto c = closes_[i].toFloat();
             g.setColour(ink(Ink::Raised)); g.fillRoundedRectangle(c, buttonRadius(c.getHeight()));
-            g.setColour(ink(Ink::Text)); g.setFont(juce::FontOptions(textSize(TextRole::Button, m)));
-            g.drawText("Close", closes_[i], juce::Justification::centred);
+            g.setColour(ink(Ink::Text)); drawInked(g, "Close", closes_[i], juce::Font(juce::FontOptions(textSize(TextRole::Button, m))), juce::Justification::horizontallyCentred);
         }
     }
 

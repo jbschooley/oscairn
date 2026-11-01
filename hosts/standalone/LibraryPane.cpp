@@ -21,23 +21,6 @@ namespace oscairn::standalone
         {
             drawIcon(g, "star", r, on ? ink(Ink::Accent) : ink(Ink::Muted).withAlpha(.6f), on);
         }
-        // Text placed by its glyphs, where the eye puts it: lowercase letters' middle (the
-        // x-height's) on the box's, or, for text all in capitals, the capitals' middle; its ink
-        // across the box as justified, shortened to fit with an ellipsis. (The font's line box,
-        // which drawText centers, put these low; so did the capitals' middle for lowercase words.)
-        void drawCentered(juce::Graphics& g, const juce::String& s, juce::Rectangle<int> r, const juce::Font& font, juce::Justification h = juce::Justification::left)
-        {
-            // Measured from the outlines: a glyph arrangement's boxes are the font's whole line height.
-            auto inkOf = [](const juce::GlyphArrangement& a) { juce::Path p; a.createPath(p); return p.getBounds(); };
-            juce::GlyphArrangement mark; mark.addLineOfText(font, s == s.toUpperCase() ? "H" : "x", 0, 0);
-            const float top = inkOf(mark).getY(); // above the baseline: negative
-            juce::GlyphArrangement line; line.addCurtailedLineOfText(font, s, 0, 0, float(r.getWidth()), true);
-            const auto ink = inkOf(line);
-            const float x = h.testFlags(juce::Justification::horizontallyCentred) ? r.toFloat().getCentreX() - ink.getCentreX()
-                          : h.testFlags(juce::Justification::right) ? float(r.getRight()) - ink.getRight() : float(r.getX());
-            line.moveRangeOfGlyphs(0, -1, x, r.toFloat().getCentreY() - top / 2);
-            line.draw(g);
-        }
         juce::String tagText(const std::vector<std::string>& tags)
         {
             juce::StringArray out; for(const auto& t : tags) out.add(text(t));
@@ -275,7 +258,7 @@ namespace oscairn::standalone
             if(s.kind == Side::Heading)
             {
                 g.setColour(ink(Ink::Muted));
-                drawCentered(g, s.label.toUpperCase(), r.withTrimmedLeft(4), juce::Font(juce::FontOptions(small, juce::Font::bold)));
+                drawInked(g, s.label.toUpperCase(), r.withTrimmedLeft(4), juce::Font(juce::FontOptions(small, juce::Font::bold)));
                 continue;
             }
             const bool on = s.kind == Side::Source ? pane.query_.source == s.value : std::count(pane.query_.tags.begin(), pane.query_.tags.end(), s.value) != 0;
@@ -301,7 +284,7 @@ namespace oscairn::standalone
                 if(s.count || s.kind == Side::Tag)
                 {
                     g.setColour(ink(Ink::Muted));
-                    drawCentered(g, juce::String(s.count), r.removeFromRight(int(body * 2.5f)), juce::Font(juce::FontOptions(small)), juce::Justification::right);
+                    drawInked(g, juce::String(s.count), r.removeFromRight(int(body * 2.5f)), juce::Font(juce::FontOptions(small)), juce::Justification::right);
                 }
             }
             if(!color.isTransparent())
@@ -311,7 +294,7 @@ namespace oscairn::standalone
             }
             if(!color.isTransparent() || (s.kind == Side::Tag && !pane.pills_)) r.removeFromLeft(14); // tags line up whether or not they have a color
             g.setColour(on ? ink(Ink::Accent) : ink(Ink::Text));
-            drawCentered(g, s.label, r, juce::Font(juce::FontOptions(body, on && !pane.pills_ ? juce::Font::bold : juce::Font::plain)),
+            drawInked(g, s.label, r, juce::Font(juce::FontOptions(body, on && !pane.pills_ ? juce::Font::bold : juce::Font::plain)),
                          pane.pills_ ? juce::Justification::horizontallyCentred : juce::Justification::left);
         }
     }
