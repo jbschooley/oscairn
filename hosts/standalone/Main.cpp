@@ -142,6 +142,7 @@ namespace oscairn::standalone
         void show( const Layout& layout )
         {
             pads_.reset();parts_.reset();
+            launcher_.reset();frame_.reset();panelApp_.reset(); // the last layout's Home and app, timers and all
             layout_ = layout;
             // Home first (RFC 0030): the window's content on the desktop, over a panel's screen.
             if( layout.surface != Layout::Surface::Desktop )
@@ -191,6 +192,8 @@ namespace oscairn::standalone
         }
 
         const Layout& layout() const { return layout_; }
+        // What --snapshot renders: an app's own window when --app opened one, else this window.
+        juce::Component* snapshotView() const { return snapshotView_ ? snapshotView_ : getContentComponent(); }
 
         // Home (RFC 0030): the launcher, as the window's content on the desktop, over the screen
         // on a panel. What it replaces goes after it is in place: a panel points at its overlay.
@@ -215,6 +218,11 @@ namespace oscairn::standalone
             else if( name == "setlist" ) showSetlist();
             else if( name == "groovebox" ) openGroovebox();
             else throw std::invalid_argument( "--app is performance, library, setlist or groovebox" );
+            // On the desktop those three open in windows of their own: --snapshot shows that window.
+            if( !panel() )
+                snapshotView_ = name == "library" && libraryApp_ ? libraryApp_->getContentComponent()
+                              : name == "setlist" ? static_cast<juce::Component*>( setlistPane_.get() )
+                              : name == "groovebox" && groovebox_ ? groovebox_->getContentComponent() : nullptr;
         }
         // The Performance app: playing and editing the open Performance. Its live-controls view
         // is not built yet, so it opens the parts editor.
@@ -296,7 +304,12 @@ namespace oscairn::standalone
                         action.directory=fc.getResult().getFullPathName().toStdString();safe->engine_.soundAction(std::move(action));
                     });return;
             }
-            if(id>=7000 && id<=7002){inputMode_=InputMode(id-7000);writeInputMode(theme_.configuration(),inputMode_);if(auto* s=shell())s->setInputMode(inputMode_);return;}
+            if(id>=7000 && id<=7002){
+                inputMode_=InputMode(id-7000);writeInputMode(theme_.configuration(),inputMode_);if(auto* s=shell())s->setInputMode(inputMode_);
+                // Open app windows take the new sizes now, not when next resized.
+                for(auto* w:{groovebox_.get(),libraryApp_.get(),setlist_.get(),picker_.get()})
+                    if(auto* content=w?w->getContentComponent():nullptr){setDesktopMode(*content,inputMode_==InputMode::Touch?2:1);content->resized();}
+                return;}
             if(id==8000){openGroovebox();return;}
             if(id==8001){showLibraryApp();return;}
             if(id==8002){showSetlist();return;}
@@ -388,7 +401,7 @@ namespace oscairn::standalone
         void showApp(std::unique_ptr<AppWindow>& window,const juce::String& name,std::function<juce::Component*()> make,int width,int height)
         {
             if(!window)window=std::make_unique<AppWindow>(name,make(),width,height);
-            if(auto* content=window->getContentComponent())setDesktopMode(*content,inputMode_==InputMode::Touch?2:1);
+            if(auto* content=window->getContentComponent()){setDesktopMode(*content,inputMode_==InputMode::Touch?2:1);content->resized();}
             window->setVisible(true);window->toFront(true);
         }
         // The Setlist app, made hidden when another app sends it a Performance before it was opened.
@@ -612,6 +625,7 @@ namespace oscairn::standalone
         std::unique_ptr<LibraryWindow> library_;
         Actions actions_;
         std::unique_ptr<SetlistPane> setlistPane_; // before its window, which shows it without owning it
+        juce::Component* snapshotView_ = nullptr;  // see snapshotView
         std::unique_ptr<Launcher> launcher_;       // Home on a panel
         std::unique_ptr<juce::Component> panelApp_; // the app on a panel's screen, if it owns it,
         std::unique_ptr<AppFrame> frame_;           // and its frame, which goes first
@@ -755,7 +769,7 @@ namespace oscairn::standalone
     private:
         void writeSnapshot( const juce::File& file, int width, int height )
         {
-            auto* content = window_->getContentComponent();
+            auto* content = window_->snapshotView();
             const auto& l = window_->layout();
             if( width > 0 && height > 0 )
                 content->setSize( width, height );

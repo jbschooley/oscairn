@@ -99,12 +99,20 @@ namespace oscairn::standalone
         query_.kind = kind;
         const bool sound = kind == "sound";
         performances_.setToggleState(!sound, juce::dontSendNotification); sounds_.setToggleState(sound, juce::dontSendNotification);
-        search_.setTextToShowWhenEmpty(sound ? "Search Sounds by name, tag or description" : "Search Performances by name, tag or description", ink(Ink::Muted));
+        updatePlaceholder();
         send_.setVisible(mode_ == Mode::Play && !sound && actions_.offered(sendPerformance));
         part_.setVisible(mode_ == Mode::Play && sound);
         updateButtons();
         refresh();
         resized();
+    }
+
+    // What to type, as long as the box allows: touch sizes leave it narrower.
+    void LibraryPane::updatePlaceholder()
+    {
+        const bool sound = query_.kind == "sound";
+        const juce::String what = sound ? "Sounds" : "Performances";
+        search_.setTextToShowWhenEmpty(mode() == 2 ? "Search " + what : "Search " + what + " by name, tag or description", ink(Ink::Muted));
     }
 
     void LibraryPane::showSource(const std::string& source) { query_.source = source; refresh(); }
@@ -216,7 +224,7 @@ namespace oscairn::standalone
         const bool touch = m == 2;
         const int gap = touch ? 10 : 8, pad = gap + 2;
         const float body = textSize(TextRole::Body, m), small = textSize(TextRole::Small, m);
-        const int row = std::max(touch ? 44 : 0, int(body) + 4 + 2 * (gap - 2)), pill = std::max(touch ? 40 : 0, int(body) + 4 + gap);
+        const int row = std::max(touch ? 44 : 0, int(body) + 4 + 2 * (gap - 2)), pill = std::max(touch ? 44 : 0, int(body) + 4 + gap);
         // Measured in the theme's typeface, the one it is drawn in.
         const juce::Font font{juce::FontOptions(body).withTypeface(juce::LookAndFeel::getDefaultLookAndFeel().getTypefaceForFont(juce::Font(juce::FontOptions(body))))};
         auto area = juce::Rectangle<int>(0, 0, width, 100000).reduced(gap, 0);
@@ -234,7 +242,7 @@ namespace oscairn::standalone
                 if(first)
                 {
                     // The two views' icons at the heading's end.
-                    const int side = touch ? 36 : 24;
+                    const int side = touch ? 44 : 24;
                     auto icons = s.bounds.withLeft(s.bounds.getRight() - 2 * side - 2).withSizeKeepingCentre(2 * side + 2, side);
                     pills.setBounds(icons.removeFromRight(side)); icons.removeFromRight(2); list.setBounds(icons.removeFromRight(side));
                 }
@@ -416,6 +424,9 @@ namespace oscairn::standalone
         if(!item->library.empty()) detail = "Locked" + (detail.isEmpty() ? juce::String() : separator + detail);
         if(item->id == auditioning_.id) detail = "Auditioning" + (detail.isEmpty() ? juce::String() : separator + detail);
         const juce::Font bold(juce::FontOptions(body, juce::Font::bold));
+        // On a row tinted with its color, the muted ink may not read: the text's own, a little lighter.
+        const bool tinted = themeData().style.rows == ThemeStyle::Rows::Fill && !colorOf(item->color).isTransparent();
+        const auto detailInk = tinted ? ink(Ink::Text).withAlpha(.78f) : ink(Ink::Muted);
         if(compact_)
         {
             // One line: the name, then the rest in muted text.
@@ -423,7 +434,7 @@ namespace oscairn::standalone
             g.setColour(ink(Ink::Text)); g.setFont(bold);
             g.drawText(name, area.removeFromLeft(w), juce::Justification::centredLeft, true);
             area.removeFromLeft(16);
-            g.setColour(ink(Ink::Muted)); g.setFont(juce::FontOptions(small));
+            g.setColour(detailInk); g.setFont(juce::FontOptions(small));
             g.drawText(detail, area, juce::Justification::centredLeft, true);
         }
         else
@@ -431,7 +442,7 @@ namespace oscairn::standalone
             auto top = area.removeFromTop(area.getHeight() / 2 + 2);
             g.setColour(ink(Ink::Text)); g.setFont(bold);
             g.drawText(name, top, juce::Justification::bottomLeft, true);
-            g.setColour(ink(Ink::Muted)); g.setFont(juce::FontOptions(small));
+            g.setColour(detailInk); g.setFont(juce::FontOptions(small));
             g.drawText(detail, area, juce::Justification::topLeft, true);
         }
         drawStar(g, starArea(width, height).toFloat().withSizeKeepingCentre(float(height), float(height)).reduced(float(height) * (compact_ ? .2f : .28f)), item->favorite);
@@ -479,6 +490,7 @@ namespace oscairn::standalone
         favorites_.setBounds(bar.removeFromRight(touch ? 130 : 110)); bar.removeFromRight(gap);
         search_.setBounds(bar);
         search_.setFont(juce::FontOptions(textSize(TextRole::Body, mode())));
+        updatePlaceholder();
         area.removeFromTop(gap);
         auto bottom = area.removeFromBottom(control);
         area.removeFromBottom(gap);
@@ -528,8 +540,12 @@ namespace oscairn::standalone
         menu.addItem(8, "Export...");
         menu.addSeparator();
         menu.addItem(7, "Delete...");
-        menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(list_.getComponentForRowNumber(row)), [safe = juce::Component::SafePointer<LibraryPane>(this), item, row](int chosen) {
+        menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(list_.getComponentForRowNumber(row)), [safe = juce::Component::SafePointer<LibraryPane>(this), item](int chosen) {
             if(!safe || chosen <= 0) return;
+            // The item's row now: the list may have been refreshed, and reordered, while the menu was open.
+            int row = -1;
+            for(size_t i = 0; i < safe->result_.items.size(); ++i) if(safe->result_.items[i].id == item.id) row = int(i);
+            if(row < 0) { safe->tell(text(item.name.empty() ? "Untitled" : item.name) + " is no longer in the list."); return; }
             std::string color;
             switch(chosen)
             {

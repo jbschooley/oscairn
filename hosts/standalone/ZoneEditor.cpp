@@ -71,7 +71,8 @@ namespace oscairn::standalone
                 const auto color = blacks ? juce::Colour(0xff1a1d22) : juce::Colour(0xffe9edf2);
                 g.setColour(in ? color : color.interpolatedWith(ink(Ink::Background), .6f));
                 g.fillRect(blacks ? r : r.reduced(.5f, 0));
-                if(k % 12 == 0 && !blacks) { g.setColour(juce::Colours::black.withAlpha(.45f)); g.setFont(juce::FontOptions(9.f)); g.drawText(text(noteName(k)), r.withTrimmedTop(r.getHeight() - 12), juce::Justification::centred); }
+                // Each C named, from the key's left edge so the first stays clear of the frame.
+                if(k % 12 == 0 && !blacks) { g.setColour(juce::Colours::black.withAlpha(.45f)); g.setFont(juce::FontOptions(9.f)); g.drawText(text(noteName(k)), r.withTrimmedTop(r.getHeight() - 12).withTrimmedLeft(2).withWidth(std::max(r.getWidth(), 24.f)), juce::Justification::centredLeft, false); }
             }
         g.setColour(ink(Ink::Accent)); g.drawRect(zone, 2.f);
         for(const float x : {zone.getX(), zone.getRight()}) g.fillRect(juce::Rectangle<float>(4, zone.getHeight() + 6).withCentre({x, zone.getCentreY()}));

@@ -239,7 +239,6 @@ namespace oscairn::standalone
         redo_.onClick = [this] { engine_.edit([](Control& c) { c.redo(); }); };
         tempo_.setRange(40, 240, .1);
         tempo_.setTextValueSuffix(" BPM");
-        tempo_.setColour(juce::Slider::trackColourId, ink(Ink::Raised)); // a value field, not a level
         tempo_.setDoubleClickReturnValue(true, 120);
         tempo_.setTooltip("The tempo every plugin follows: drag, or double-click to type");
         tempo_.onValueChange = [this] { engine_.setTempo(tempo_.getValue()); };

@@ -469,6 +469,9 @@ namespace oscairn::standalone
             if(byScene_ && !scenes_.empty() && !macros_.empty())
             {
                 // A row per mapping (control and target), a column per scene: ticked where it works.
+                // Touch (and a device's panel) gets 44-pixel targets, as the rest of the view.
+                const int tableMode = desktopMode(*this);
+                const bool touch = tableMode != 1;
                 const int nameWidth = std::min(320, area.getWidth() / 3);
                 const int column = std::max(60, std::min(140, (area.getWidth() - nameWidth) / int(scenes_.size())));
                 auto heading = area.removeFromTop(30);
@@ -476,20 +479,20 @@ namespace oscairn::standalone
                 for(const auto& s : scenes_)
                 {
                     auto l = std::make_unique<juce::Label>(juce::String(), text(s.name));
-                    l->setJustificationType(juce::Justification::centred); l->setFont(juce::FontOptions(13.0f * themeData().fontScale, juce::Font::bold));
+                    l->setJustificationType(juce::Justification::centred); l->setFont(juce::FontOptions(tableMode ? textSize(TextRole::Small, tableMode) : 13.0f * themeData().fontScale, juce::Font::bold));
                     l->setBounds(heading.removeFromLeft(column)); addAndMakeVisible(*l); controls_.push_back(std::move(l));
                 }
                 for(const auto& m : macros_)
                     for(size_t i = 0; i < m.targets.size(); ++i)
                     {
-                        if(area.getHeight() < 30) break;
-                        auto r = area.removeFromTop(32);
+                        if(area.getHeight() < (touch ? 48 : 30)) break;
+                        auto r = area.removeFromTop(touch ? 48 : 32);
                         auto l = std::make_unique<juce::Label>(juce::String(), text(m.name + "  ·  " + describe(m.targets[i])));
                         l->setBounds(r.removeFromLeft(nameWidth)); addAndMakeVisible(*l); controls_.push_back(std::move(l));
                         for(const auto& s : scenes_)
                         {
                             const auto cell = r.removeFromLeft(column);
-                            toggle(cell.withSizeKeepingCentre(std::min(cell.getWidth(), 40), 24), {},
+                            toggle(cell.withSizeKeepingCentre(std::min(cell.getWidth(), touch ? 56 : 40), touch ? 44 : 24), {},
                                    [this, id = m.id, i, scene = s.id] {
                                        for(const auto& x : macros_) if(x.id == id && i < x.targets.size()) return std::find(x.targets[i].offIn.begin(), x.targets[i].offIn.end(), scene) == x.targets[i].offIn.end();
                                        return true; },
@@ -508,32 +511,35 @@ namespace oscairn::standalone
                 auto l = std::make_unique<juce::Label>(juce::String(), "No controls yet. A control is a knob that drives any number of parameters, part levels or other controls, each with its own range and curve. Bind a panel knob to it with control:NAME.");
                 l->setJustificationType(juce::Justification::centred); l->setBounds(area.withHeight(80)); addAndMakeVisible(*l); controls_.push_back(std::move(l));
             }
+            const int controlsMode = desktopMode(*this);
+            const bool bigTargets = controlsMode != 1; // touch, or a device's panel: 44-pixel targets
+            const int buttonHeight = bigTargets ? 44 : 30;
             if(!byScene_ || scenes_.empty())
                 for(const auto& m : macros_)
                 {
                     const auto id = m.id;
-                    auto row = area.removeFromTop(40);
+                    auto row = area.removeFromTop(bigTargets ? 52 : 40);
                     auto name = std::make_unique<juce::Label>(juce::String(), text(m.name));
-                    name->setFont(juce::FontOptions(16.0f * themeData().fontScale, juce::Font::bold));
+                    name->setFont(juce::FontOptions(controlsMode ? textSize(TextRole::Title, controlsMode) : 16.0f * themeData().fontScale, juce::Font::bold));
                     name->setEditable(false, true);
                     name->onTextChange = [this, id, raw = name.get()] { const auto n = raw->getText().toStdString(); edit([id, n](Control& c) { c.setMacroName(id, n); }); };
                     name->setTooltip("Double-click to rename");
                     name->setBounds(row.removeFromLeft(170)); addAndMakeVisible(*name); controls_.push_back(std::move(name));
-                    button(row.removeFromRight(90).reduced(2), "Remove", [this, id] { edit([id](Control& c) { c.removeMacro(id); }); });
-                    auto* add = button(row.removeFromRight(110).reduced(2), "+ Target", {});
+                    button(row.removeFromRight(90).withSizeKeepingCentre(86, buttonHeight), "Remove", [this, id] { edit([id](Control& c) { c.removeMacro(id); }); });
+                    auto* add = button(row.removeFromRight(110).withSizeKeepingCentre(106, buttonHeight), "+ Target", {});
                     add->onClick = [this, id, add] { targetMenu(id, *add); };
                     updates.push_back(slider(row.reduced(4, 10), 0, 1, [this, id] { for(const auto& x : macros_) if(x.id == id) return x.value; return 0.0; },
                                              [this, id](double v) { edit([id, v](Control& c) { c.setMacro(id, v); }); }).second);
                     for(size_t i = 0; i < m.targets.size(); ++i)
                     {
                         const auto& t = m.targets[i];
-                        auto r = area.removeFromTop(34).withTrimmedLeft(24);
+                        auto r = area.removeFromTop(bigTargets ? 50 : 34).withTrimmedLeft(24);
                         auto l = std::make_unique<juce::Label>(juce::String(), text(describe(t)));
                         l->setBounds(r.removeFromLeft(220)); addAndMakeVisible(*l); controls_.push_back(std::move(l));
-                        button(r.removeFromRight(80).reduced(2), "Remove", [this, id, i] { setTargets(id, [i](auto& ts) { ts.erase(ts.begin() + std::ptrdiff_t(i)); }); });
+                        button(r.removeFromRight(80).withSizeKeepingCentre(76, buttonHeight), "Remove", [this, id, i] { setTargets(id, [i](auto& ts) { ts.erase(ts.begin() + std::ptrdiff_t(i)); }); });
                         if(!scenes_.empty())
                         {
-                            auto* in = button(r.removeFromRight(90).reduced(2), t.offIn.empty() ? "Scenes: all" : "Scenes...", {});
+                            auto* in = button(r.removeFromRight(100).withSizeKeepingCentre(96, buttonHeight), t.offIn.empty() ? "Scenes: all" : "Scenes...", {});
                             in->setTooltip("The scenes this mapping works in");
                             in->onClick = [this, id, i, in] { mappingScenesMenu(id, i, *in); };
                         }
@@ -541,12 +547,12 @@ namespace oscairn::standalone
                         relative->setToggleState(t.relative, juce::dontSendNotification);
                         relative->setTooltip("Move the value around where it was, instead of setting it");
                         relative->onClick = [this, id, i, raw = relative.get()] { const bool on = raw->getToggleState(); setTargets(id, [i, on](auto& ts) { ts[i].relative = on; }); };
-                        relative->setBounds(r.removeFromRight(100)); addAndMakeVisible(*relative); controls_.push_back(std::move(relative));
+                        relative->setBounds(r.removeFromRight(110).withSizeKeepingCentre(106, buttonHeight)); addAndMakeVisible(*relative); controls_.push_back(std::move(relative));
                         auto curve = std::make_unique<juce::ComboBox>("Curve");
                         for(const auto& [n, c] : {std::pair{"Linear", 1}, {"Exponential", 2}, {"Logarithmic", 3}, {"S-curve", 4}}) curve->addItem(n, c);
                         curve->setSelectedId(int(t.curve) + 1, juce::dontSendNotification);
                         curve->onChange = [this, id, i, raw = curve.get()] { const auto c = MacroTarget::Curve(raw->getSelectedId() - 1); setTargets(id, [i, c](auto& ts) { ts[i].curve = c; }); };
-                        curve->setBounds(r.removeFromRight(130).reduced(2)); addAndMakeVisible(*curve); controls_.push_back(std::move(curve));
+                        curve->setBounds(r.removeFromRight(130).withSizeKeepingCentre(126, buttonHeight)); addAndMakeVisible(*curve); controls_.push_back(std::move(curve));
                         const int half = r.getWidth() / 2;
                         auto rangeEnd = [this, id, i](bool end) {
                             return [this, id, i, end] { for(const auto& x : macros_) if(x.id == id && i < x.targets.size()) return end ? x.targets[i].end : x.targets[i].start; return 0.0; };

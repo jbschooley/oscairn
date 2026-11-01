@@ -77,6 +77,7 @@ namespace oscairn::standalone
         void timerCallback() override;
         void rebuildSide();
         void tell(const juce::String& text);
+        void updatePlaceholder();
         void savePreference() const;
         int getNumRows() override { return int(result_.items.size()); }
         void paintListBoxItem(int row, juce::Graphics&, int width, int height, bool selected) override;

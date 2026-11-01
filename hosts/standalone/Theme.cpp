@@ -292,14 +292,15 @@ void Theme::drawComboBox(juce::Graphics& g,int width,int height,bool,int,int,int
 int Theme::getSliderThumbRadius(juce::Slider& slider){return current.style.sliders!=ThemeStyle::Sliders::Filled?8:LookAndFeel_V4::getSliderThumbRadius(slider);}
 void Theme::drawLinearSlider(juce::Graphics& g,int x,int y,int width,int height,float position,float minimum,float maximum,juce::Slider::SliderStyle style,juce::Slider& slider) {
     const bool horizontal=style==juce::Slider::LinearHorizontal,line=current.style.sliders!=ThemeStyle::Sliders::Filled,bipolar=slider.getProperties()["bipolar"];
-    // A bar (a value field you drag, like the tempo): filled within the field's rounded shape.
+    // A bar (a value field you drag, like the tempo): a field like a text box, filled to its
+    // value in a light accent, in the theme's colors as they are now (a theme change follows).
     if(style==juce::Slider::LinearBar || style==juce::Slider::LinearBarVertical) {
         const auto field=juce::Rectangle<int>(0,0,slider.getWidth(),slider.getHeight()).toFloat().reduced(1);
         const float radius=fieldRadius(field.getHeight()),alpha=slider.isEnabled()?1.f:.5f;
         juce::Path shape;shape.addRoundedRectangle(field,radius);
-        g.setColour(slider.findColour(juce::Slider::backgroundColourId).withMultipliedAlpha(alpha));g.fillPath(shape);
+        g.setColour(ink(Ink::Surface).withMultipliedAlpha(alpha));g.fillPath(shape);
         {juce::Graphics::ScopedSaveState state(g);g.reduceClipRegion(shape);
-         g.setColour(slider.findColour(juce::Slider::trackColourId).withMultipliedAlpha(alpha));
+         g.setColour(ink(Ink::Accent).withAlpha(.28f*alpha));
          if(style==juce::Slider::LinearBar)g.fillRect(juce::Rectangle<float>(field.getX(),field.getY(),juce::jmax(0.f,position-field.getX()),field.getHeight()));
          else g.fillRect(juce::Rectangle<float>(field.getX(),position,field.getWidth(),juce::jmax(0.f,field.getBottom()-position)));}
         drawEdge(g,field,radius,slider.hasKeyboardFocus(true));
