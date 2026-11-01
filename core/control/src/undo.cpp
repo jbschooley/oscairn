@@ -39,7 +39,7 @@ namespace oscairn
             return out;
         }
         // A control's value moves when it is played; its name and targets are what is edited.
-        bool sameMacro(const Macro& a, const Macro& b) { return a.id == b.id && a.name == b.name && a.targets == b.targets; }
+        bool sameMacro(const Macro& a, const Macro& b) { return a.id == b.id && a.name == b.name && a.targets == b.targets && a.part == b.part; }
         bool sameMacros(const std::vector<Macro>& a, const std::vector<Macro>& b)
         {
             return a.size() == b.size() && std::equal(a.begin(), a.end(), b.begin(), sameMacro);

@@ -7,7 +7,7 @@
 
 namespace oscairn
 {
-    /// The library (RFC 0021): the Performances in the user's library folder, found by scanning,
+    /// The library (RFC 0021): the Performances and Sounds in the user's library folders, found by scanning,
     /// with their info blocks (name, tags, description) read from each file. Files first: the
     /// index under library/ is a cache of what was read, kept by each file's time so a rescan
     /// reads only what changed, and deleting it loses nothing. Favourites and recently used are
@@ -16,7 +16,7 @@ namespace oscairn
     {
     public:
         // dataHome: OSCAIRN_DATA_HOME's folder (empty: that, else the platform's); the library
-        // folder is its Performances/, the cache and user file its library/.
+        // folders are its Performances/ and Sounds/, the cache and user file its library/.
         explicit Library(std::filesystem::path dataHome = {});
         const std::filesystem::path& performances() const { return performances_; }
         uint32_t rescan();
@@ -24,13 +24,13 @@ namespace oscairn
         const Control::LibraryItem* find(const std::string& id) const;
         void setFavourite(const std::string& id, bool favourite);
         void used(const std::string& id); // most recent first; at most 50 kept
-        // A folder for a new Performance named `name` (its name made safe, made unique).
-        std::filesystem::path newFolder(const std::string& name) const;
+        // A folder for a new Performance or Sound (kind) named `name`, its name made safe and unique.
+        std::filesystem::path newFolder(const std::string& name, const std::string& kind) const;
 
     private:
         void readUser();
         void writeUser() const;
-        std::filesystem::path performances_, cache_;
+        std::filesystem::path performances_, sounds_, cache_;
         std::vector<Control::LibraryItem> items_;
         std::vector<std::string> favourites_, recent_;
     };
@@ -40,6 +40,6 @@ namespace oscairn
     std::filesystem::path dataHome();
     // "#rrggbb" in hex digits, or empty: a Performance's color.
     bool validColor(const std::string& color);
-    // A Performance's info block as the library and the format read it; throws on a bad one.
-    Control::PerformanceInfo readPerformanceInfo(const std::filesystem::path& folder);
+    // The info block of a performance.json or sound.json (format names which); throws on a bad one.
+    Control::PerformanceInfo readInfo(const std::filesystem::path& file, const std::string& format);
 }

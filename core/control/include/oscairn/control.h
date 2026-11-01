@@ -106,7 +106,8 @@ namespace oscairn
         // The library (RFC 0021): the device's Performances, by tags, text, favourites and
         // recent use. Performances save into it by name; loading by ID marks one used.
         struct LibraryItem { std::string id, kind = "performance", name, description, path; std::vector<std::string> tags; bool favourite = false; uint32_t recent = 0; std::string color; };
-        struct LibraryQuery { std::string text; std::vector<std::string> tags; bool favourites = false, recent = false; uint32_t limit = 200; };
+        // kind: "performance" or "sound"; empty for both.
+        struct LibraryQuery { std::string text; std::vector<std::string> tags; bool favourites = false, recent = false; uint32_t limit = 200; std::string kind; };
         struct LibraryResult { std::vector<LibraryItem> items; std::vector<std::pair<std::string, uint32_t>> tags; uint32_t total = 0; };
         virtual LibraryResult libraryQuery(const LibraryQuery& query) = 0;
         virtual void libraryFavourite(const std::string& id, bool favourite) = 0;
@@ -115,6 +116,14 @@ namespace oscairn
         // asNew: always a new one, with its own ID. Returns its ID.
         virtual std::string savePerformanceToLibrary(const std::string& name, bool asNew = false) = 0;
         virtual void loadPerformanceFromLibrary(const std::string& id) = 0;
+        // Sounds (RFC 0021): a part saved to the library, without its seat. Wires that cross the
+        // part's edge are not saved and are listed in `left`.
+        struct SoundSaved { std::string id; std::vector<std::string> left; };
+        virtual SoundSaved savePartAsSound(uint32_t part, const std::string& name) = 0;
+        // Replaces the part's chain with the Sound's, keeping its seat; one step to undo. Returns
+        // what could not be kept (wires and control targets on the old plugins).
+        virtual std::vector<std::string> loadSound(uint32_t part, const std::string& id) = 0;
+        virtual uint32_t partFromSound(const std::string& id) = 0; // a new part, playing to Main
         // Per-node export saves the selected channel-0 instance of a hosted pool.
         virtual bool supportsState(NodeId node) const = 0;
         virtual void saveState(NodeId node,const std::string& directory) = 0;
@@ -207,7 +216,7 @@ namespace oscairn
 
         // The control tree (parts.h). Setting a control's value sets its targets, and their
         // targets in turn; an assignment that would loop is refused.
-        virtual uint32_t addMacro( const std::string& name ) = 0;
+        virtual uint32_t addMacro( const std::string& name, uint32_t part = 0 ) = 0; // part: its owner; 0 the Performance
         virtual void removeMacro( uint32_t macro ) = 0;
         virtual void setMacroName( uint32_t macro, const std::string& name ) = 0;
         // A target newly relative takes its current value as base; one already relative keeps its base.

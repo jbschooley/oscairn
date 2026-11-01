@@ -150,7 +150,7 @@ request members.
 | `scenes.select` | `scene`: applies them at once and commits staged graph edits | `{"accepted":true}` |
 | `scenes.remove`, `scenes.name` | `scene` (and `name`) | `{"accepted":true}` |
 | `scenes.parameters` | `parameters`: the `{node, param}` scenes control; one added takes its current value in every scene | `{"accepted":true}` |
-| `controls.add` | optional `name` | numeric `control` |
+| `controls.add` | optional `name` and `part`, the part that owns it (RFC 0021; 0 or absent: the Performance). A part's control targets only its part's plugins and its other controls, and goes with it into a Sound and when it is removed | numeric `control` |
 | `controls.remove`, `controls.name` | `control` (and `name`) | `{"accepted":true}` |
 | `controls.targets` | `control`, `targets`: each `kind` (`parameter` with `node`, `param`; `partLevel` or `partMute` with `part`; `control` with `control`), optional `start`, `end` (0..1, end below start reverses), `curve` (`linear`, `exponential`, `logarithmic`, `s-curve`) and `relative` | `{"accepted":true}` |
 | `controls.set` | `control`, `value` (0..1): sets its targets, and theirs | `{"accepted":true}` |
@@ -689,23 +689,24 @@ because a disconnected request is not cancellation. The app runs them on its con
 ## Library
 
 The library ([RFC 0021](rfcs/0021-sounds-performances-and-library.md)) is the Performances
-in the data folder's `Performances/` (`OSCAIRN_DATA_HOME`, else Application Support on macOS,
-else `XDG_DATA_HOME/oscairn` or `~/.local/share/oscairn`). Each file's `info` block is the
-truth; `library/index.json` caches what was read, by each file's modification time, so a
-rescan reads only changed files and deleting the cache loses nothing. Favourites and recently
-used (at most 50) are the user's, in `library/user.json`. Files the library cannot read, and
-hidden folders, are skipped; of two files with one ID the first found is listed.
+and Sounds in the data folder's `Performances/` and `Sounds/` (`OSCAIRN_DATA_HOME`, else
+Application Support on macOS, else `XDG_DATA_HOME/oscairn` or `~/.local/share/oscairn`). Each
+file's `info` block is the truth; `library/index.json` caches what was read, by each file's
+modification time, so a rescan reads only changed files and deleting the cache loses nothing.
+Favourites and recently used (at most 50) are the user's, in `library/user.json`. Files the
+library cannot read, and hidden folders, are skipped; of two files with one ID the first found
+is listed.
 
-- `performance.info` (`{}`) returns the open Performance's `{id,name,description,tags,color}` (`color` is
-  `#rrggbb` or empty); the
-  ID is empty until the first save. `performance.setInfo` takes `{name,description,tags}` and
-  an optional `color` (empty when absent; the ID is kept) and returns the same. These are not undoable edits.
+- `performance.info` (`{}`) returns the open Performance's `{id,name,description,tags,color}`
+  (`color` is `#rrggbb` or empty); the ID is empty until the first save.
+  `performance.setInfo` takes `{name,description,tags}` and an optional `color` (empty when
+  absent; the ID is kept) and returns the same. These are not undoable edits.
 - `library.query` takes optional `text` (case-insensitive, over name, description and tags),
-  `tags` (all must match), `favourites`, `recent` and `limit` (1–1000, default 200). It returns
-  `{items,tags,total}`: items with `id`, `kind` (`performance`), `name`, `description`,
-  `path`, `tags`, `favourite`, `recent` and `color` (1 is the most recent, 0 none), sorted by name or,
-  with `recent`, most recent first; `tags` counts each tag over every match, and `total`
-  counts matches before the limit.
+  `tags` (all must match), `favourites`, `recent`, `kind` (`performance` or `sound`; both when
+  absent) and `limit` (1–1000, default 200). It returns `{items,tags,total}`: items with `id`,
+  `kind`, `name`, `description`, `path`, `tags`, `favourite`, `recent` (1 is the most recent,
+  0 none) and `color`, sorted by name or, with `recent`, most recent first; `tags` counts each
+  tag over every match, and `total` counts matches before the limit.
 - `library.favourite` takes `{id,favourite}`; `library.rescan` (`{}`) returns `{"items":n}`.
 - `library.save` takes an optional `name` and `new`, and returns `{"id":…}`. Save (`new`
   false or absent) writes a Performance opened from the library over its folder (saved
@@ -713,6 +714,28 @@ hidden folders, are skipped; of two files with one ID the first found is listed.
   a new ID. Either way, one not in the library goes to a new folder named after it.
   `library.load` takes `{id}`. Both mark the item recently used.
 
+### Sounds
+
+A Sound is a part saved without its seat ([RFC 0021](rfcs/0021-sounds-performances-and-library.md)):
+its chain, splits and lanes, its plugins with their state, the wires with both ends inside it,
+note-to-parameter mappings inside it, and the controls it owns. Not its input, output, sends,
+fader or name in the Performance, nor wires to or from the rest of the graph.
+
+- `parts.saveSound` takes `{part}` and an optional `name` (the part's when absent) and
+  returns `{id,left}`: the new Sound's library ID, and a description of each user wire that
+  crosses the part's edge and was not saved. Each save is a new Sound in a new folder.
+- `parts.loadSound` takes `{part,id}`: the part's chain is replaced with the Sound's, and the
+  part takes the Sound's name. The part keeps its input, output, sends, fader and solo. Its
+  old plugins go, with every wire, mapping, scene value and scene parameter on them. Its own
+  controls are replaced by the Sound's; a Performance control that targeted one of them moves
+  to the Sound's control of the same name, else that target is removed. It returns
+  `{"accepted":true,"flagged":[…]}`, describing each wire and control target removed. Notes
+  playing in the part are cut. It is one step to undo, and refused while graph edits are
+  staged.
+- `parts.fromSound` takes `{id}` and returns `{part}`: a new part listening to every key,
+  playing to the first output, with the Sound loaded.
+
 The typed methods are `Control::performanceInfo`, `setPerformanceInfo`, `libraryQuery`,
-`libraryFavourite`, `libraryRescan`, `savePerformanceToLibrary` and
-`loadPerformanceFromLibrary`. Errors use `-32005`; malformed arguments `-32602`.
+`libraryFavourite`, `libraryRescan`, `savePerformanceToLibrary`,
+`loadPerformanceFromLibrary`, `savePartAsSound`, `loadSound` and `partFromSound`. Errors use
+`-32005`; malformed arguments `-32602`.

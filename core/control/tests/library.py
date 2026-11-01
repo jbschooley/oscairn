@@ -85,10 +85,29 @@ with tempfile.TemporaryDirectory(prefix='oscairn-library-') as temporary:
         assert json.loads((home / 'library/index.json').read_text())['items'][0]['tags'] == ['pad', 'dark']
         rpc('library.load', {'id': pad})
         assert rpc('performance.info')['tags'] == ['pad', 'dark']
+        # A part saved as a Sound (RFC 0021), listed apart, loaded into a part and as a new part.
+        part = rpc('parts.add', {'name': 'Lead'})['part']
+        rpc('parts.insert', {'part': part, 'index': 0, 'node': 'synth'})
+        rpc('graph.commit')
+        tone = rpc('controls.add', {'name': 'Tone', 'part': part})['control']
+        sound = rpc('parts.saveSound', {'part': part, 'name': 'Lead Sound'})
+        # The harness wires its synth to the input and output by hand: those wires cross the part's edge.
+        assert sound['left'] == ['the input to synth', 'synth to the output'] and (home / 'Sounds/Lead Sound.osound/sound.json').is_file()
+        assert [i['id'] for i in rpc('library.query', {'kind': 'sound'})['items']] == [sound['id']]
+        assert rpc('library.query', {'kind': 'performance'})['total'] == 1
+        added = rpc('parts.fromSound', {'id': sound['id']})['part']
+        loaded = rpc('parts.loadSound', {'part': part, 'id': sound['id']})
+        assert loaded == {'accepted': True, 'flagged': ['the wire from the input to synth was removed', 'the wire from synth to the output was removed']}, loaded
+        graph = rpc('graph.get')
+        assert [p['name'] for p in graph['parts'] if p['id'] in (part, added)] == ['Lead Sound', 'Lead Sound']
+        owners = sorted(c['part'] for c in graph['controls'] if c['name'] == 'Tone')
+        assert owners == sorted([part, added]) and tone not in [c['id'] for c in graph['controls']]
+        rpc('parts.loadSound', {'part': part, 'id': pad}, True)
+        rpc('library.query', {'kind': 'preset'}, True)
         user = json.loads((home / 'library/user.json').read_text())
-        assert user == {'favourites': [pad], 'recent': [pad, copy]}  # a gone item's stays, for if it returns
+        assert user['favourites'] == [pad] and user['recent'][-2:] == [pad, copy]  # a gone item's stays, for if it returns
     finally:
         p.stdin.close()
         p.wait(timeout=10)
     assert p.returncode == 0
-print('ok: library info, save and load by ID, query, favourites, recents and rescan')
+print('ok: library info, save and load by ID, query, favourites, recents, rescan and Sounds')

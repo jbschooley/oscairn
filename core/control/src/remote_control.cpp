@@ -206,7 +206,7 @@ namespace oscairn
             next.scene=static_cast<uint32_t>(integer(field(root,"scene")));
             for(auto m:array(field(root,"controls")))
             {
-                Macro macro;macro.id=static_cast<uint32_t>(integer(field(m,"id")));macro.name=string(field(m,"name"));macro.value=number(field(m,"value"));
+                Macro macro;macro.id=static_cast<uint32_t>(integer(field(m,"id")));macro.part=static_cast<uint32_t>(integer(field(m,"part")));macro.name=string(field(m,"name"));macro.value=number(field(m,"value"));
                 for(auto t:array(field(m,"targets")))
                 {
                     MacroTarget target;const auto kind=string(field(t,"kind")),curve=string(field(t,"curve"));
@@ -278,7 +278,7 @@ namespace oscairn
         impl_->call("performance.setInfo","{\"name\":"+quote(info.name)+",\"description\":"+quote(info.description)+",\"tags\":"+quoted(info.tags)+",\"color\":"+quote(info.color)+'}');
     }
     Control::LibraryResult RemoteControl::libraryQuery(const LibraryQuery& q) {
-        auto d=impl_->call("library.query","{\"text\":"+quote(q.text)+",\"tags\":"+quoted(q.tags)+",\"favourites\":"+(q.favourites?"true":"false")+",\"recent\":"+(q.recent?"true":"false")+",\"limit\":"+std::to_string(q.limit)+'}');
+        auto d=impl_->call("library.query","{\"text\":"+quote(q.text)+",\"tags\":"+quoted(q.tags)+",\"favourites\":"+(q.favourites?"true":"false")+",\"recent\":"+(q.recent?"true":"false")+",\"limit\":"+std::to_string(q.limit)+(q.kind.empty()?std::string():",\"kind\":"+quote(q.kind))+'}');
         auto r=field(d.get(),"result");LibraryResult result;
         for(auto i:array(field(r,"items")))result.items.push_back({string(field(i,"id")),string(field(i,"kind")),string(field(i,"name")),string(field(i,"description")),string(field(i,"path")),strings(field(i,"tags")),boolean(field(i,"favourite")),static_cast<uint32_t>(integer(field(i,"recent"))),string(field(i,"color"))});
         for(auto t:array(field(r,"tags")))result.tags.emplace_back(string(field(t,"tag")),static_cast<uint32_t>(integer(field(t,"count"))));
@@ -294,6 +294,18 @@ namespace oscairn
     }
     std::string RemoteControl::savePerformanceToLibrary(const std::string& name,bool asNew) {
         auto d=impl_->call("library.save","{\"name\":"+quote(name)+",\"new\":"+(asNew?"true":"false")+'}',30000);return string(field(field(d.get(),"result"),"id"));
+    }
+    Control::SoundSaved RemoteControl::savePartAsSound(uint32_t part,const std::string& name) {
+        auto d=impl_->call("parts.saveSound","{\"part\":"+std::to_string(part)+",\"name\":"+quote(name)+'}',30000);auto r=field(d.get(),"result");
+        return {string(field(r,"id")),strings(field(r,"left"))};
+    }
+    std::vector<std::string> RemoteControl::loadSound(uint32_t part,const std::string& id) {
+        auto d=impl_->call("parts.loadSound","{\"part\":"+std::to_string(part)+",\"id\":"+quote(id)+'}',30000);impl_->refresh();
+        return strings(field(field(d.get(),"result"),"flagged"));
+    }
+    uint32_t RemoteControl::partFromSound(const std::string& id) {
+        auto d=impl_->call("parts.fromSound","{\"id\":"+quote(id)+'}',30000);impl_->refresh();
+        return static_cast<uint32_t>(integer(field(field(d.get(),"result"),"part")));
     }
     void RemoteControl::loadPerformanceFromLibrary(const std::string& id) {
         impl_->call("library.load","{\"id\":"+quote(id)+'}',30000);impl_->refresh();
@@ -468,8 +480,8 @@ namespace oscairn
         for(const auto& at:parameters){if(list.size()>1)list+=',';list+="{\"node\":"+std::to_string(at.node)+",\"param\":"+std::to_string(at.param)+'}';}
         impl_->call("scenes.parameters","{\"parameters\":"+list+"]}");impl_->refresh();
     }
-    uint32_t RemoteControl::addMacro(const std::string& name)
-    {auto reply=impl_->call("controls.add","{\"name\":"+quote(name)+'}');const auto id=static_cast<uint32_t>(integer(field(field(reply.get(),"result"),"control")));impl_->refresh();return id;}
+    uint32_t RemoteControl::addMacro(const std::string& name, uint32_t part)
+    {auto reply=impl_->call("controls.add","{\"name\":"+quote(name)+",\"part\":"+std::to_string(part)+'}');const auto id=static_cast<uint32_t>(integer(field(field(reply.get(),"result"),"control")));impl_->refresh();return id;}
     void RemoteControl::removeMacro(uint32_t macro){impl_->call("controls.remove","{\"control\":"+std::to_string(macro)+'}');impl_->refresh();}
     void RemoteControl::setMacroName(uint32_t macro,const std::string& name){impl_->call("controls.name","{\"control\":"+std::to_string(macro)+",\"name\":"+quote(name)+'}');impl_->refresh();}
     void RemoteControl::setMacroTargets(uint32_t macro,const std::vector<MacroTarget>& targets)

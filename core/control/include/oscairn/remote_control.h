@@ -22,6 +22,9 @@ namespace oscairn
         uint32_t libraryRescan() override;
         std::string savePerformanceToLibrary(const std::string& name, bool asNew = false) override;
         void loadPerformanceFromLibrary(const std::string& id) override;
+        SoundSaved savePartAsSound(uint32_t part, const std::string& name) override;
+        std::vector<std::string> loadSound(uint32_t part, const std::string& id) override;
+        uint32_t partFromSound(const std::string& id) override;
         bool supportsState(NodeId node) const override;
         void saveState(NodeId node,const std::string& directory) override;
         std::vector<PresetInfo> presets(NodeId node) override;
@@ -80,7 +83,7 @@ namespace oscairn
         void removeScene(uint32_t scene) override;
         void setSceneName(uint32_t scene,const std::string& name) override;
         void setSceneParameters(const std::vector<SceneParameter>& parameters) override;
-        uint32_t addMacro(const std::string& name) override;
+        uint32_t addMacro(const std::string& name, uint32_t part = 0) override;
         void removeMacro(uint32_t macro) override;
         void setMacroName(uint32_t macro,const std::string& name) override;
         void setMacroTargets(uint32_t macro,const std::vector<MacroTarget>& targets) override;

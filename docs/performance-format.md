@@ -53,7 +53,7 @@ Required top-level fields:
 | `parts` | ID, name, input (`notes` with its zones, device rules (selectors, resolved against the devices of the machine that opens it) and `maxNotes`, `audio` with a graph input port, `none`, or `bus` for a shared bus), the chain of node keys and `{"split":id}` entries, its `splits` (kind, the keys of its Split and Join nodes or null, and each lane with its chain, zones, level, pan, mute and solo), the graph output port or the `bus` it plays through, its `sends` to buses with their levels, and its `level`, `pan`, `mute` and `solo` |
 | `mappings` | Source node/lane to destination node/parameter |
 | `scenes`, `sceneParameters`, `scene` | Each scene's part faders and scene-parameter values, which parameters scenes set, and the scene last selected |
-| `controls` | The control tree: each control's name, value and targets (kind, node key and parameter, part or control; start, end, curve, relative and base) |
+| `controls` | The control tree: each control's `part` (the part that owns it, or 0 for the Performance), name, value and targets (kind, node key and parameter, part or control; start, end, curve, relative and base) |
 | `pads` | The pad map: the selected bank and eight banks of 16 pads, each with its note, MIDI channel (-1 follows the player), velocity (0 as played) and pressure mode |
 
 `node-1` etc. are document-local keys, not runtime node IDs. `input` and `output` name
@@ -112,6 +112,25 @@ separate from the plugin's own state version. During initial development, incomp
 changes replace the format outright; development saves/fixtures are recreated, not migrated.
 Unknown versions are rejected, preserving the current session and original folder. See the
 [compatibility policy](developer-guide.md#initial-development-compatibility-policy).
+
+## Sounds
+
+A Sound ([RFC 0021](rfcs/0021-sounds-performances-and-library.md)) is a part saved without its
+seat, in a folder with the same layout: `sound.json` and `nodes/`. It uses the same objects
+and limits as a Performance, with `format` `oscairn.sound` and version 3:
+
+| Field | Meaning |
+| --- | --- |
+| `format`, `version`, `info`, `libraries` | As in a Performance |
+| `nodes` | The part's plugins only, keyed `node-1` onwards; none may share an engine with a plugin outside the part |
+| `wires` | The wires with both ends among those nodes: user wires, and the part's own wires for their Mix (the part's wires are rebuilt from its chain on load, taking those settings) |
+| `part` | `chain` and `splits`, as in a Performance's part; no ID, name, input, output, fader or sends |
+| `mappings` | Those with both ends among the nodes |
+| `controls` | The controls the part owns, as in a Performance |
+
+No `transport`, ports, scenes, pads or other parts. A Sound is loaded into a part of the open
+Performance (`parts.loadSound`), never opened on its own. There is no schema file for Sounds
+yet; the reader checks every field.
 
 ## Publication and failure behavior
 

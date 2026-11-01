@@ -585,9 +585,10 @@ namespace oscairn
         return 0;
     }
 
-    uint32_t Session::addMacro(const std::string& name)
+    uint32_t Session::addMacro(const std::string& name, uint32_t part)
     {
-        macros_.push_back({nextMacro_, name, 0, {}});
+        if(part) findPart(part);
+        macros_.push_back({nextMacro_, name, 0, {}, part});
         return nextMacro_++;
     }
 
@@ -603,7 +604,8 @@ namespace oscairn
 
     void Session::setMacroTargets(uint32_t id, const std::vector<MacroTarget>& requested)
     {
-        findMacro(id);
+        const auto owner = findMacro(id).part;
+        const auto inside = owner ? nodesOf(findPart(owner)) : std::set<NodeId>{};
         auto targets = requested;
         if(targets.size() > 256) throw std::invalid_argument("at most 256 targets per control");
         for(auto& t : targets)
@@ -613,10 +615,14 @@ namespace oscairn
             {
             case MacroTarget::Kind::Parameter:
                 if(!graph_.contains(t.node) || !hasParameter(t.node, t.param) || (parameterInfo(t.node, t.param).flags & CLAP_PARAM_IS_READONLY)) throw std::invalid_argument("not a writable parameter");
+                if(owner && !inside.count(t.node)) throw std::invalid_argument("a part's control targets only the part's plugins");
                 break;
-            case MacroTarget::Kind::PartLevel: case MacroTarget::Kind::PartMute: findPart(t.part); break;
+            case MacroTarget::Kind::PartLevel: case MacroTarget::Kind::PartMute:
+                if(owner) throw std::invalid_argument("a part's control targets only the part's plugins and controls");
+                findPart(t.part); break;
             case MacroTarget::Kind::Macro:
             {
+                if(owner && findMacro(t.macro).part != owner) throw std::invalid_argument("a part's control targets only the part's own controls");
                 findMacro(t.macro);
                 // No loops: the target must not lead back to this control.
                 std::vector<uint32_t> pending{t.macro}, seen;
@@ -785,6 +791,11 @@ namespace oscairn
         editWires([&] {
             std::erase_if(parts_, [&](const Part& p) { return p.id == id; });
             std::erase_if(wires_, [&](const Wire& w) { return w.owner == WireOwner::Part && w.part == id; });
+            // Its controls go with it, and every target on them.
+            std::set<uint32_t> owned; for(const auto& m : macros_) if(m.part == id) owned.insert(m.id);
+            std::erase_if(macros_, [&](const Macro& m) { return owned.count(m.id) != 0; });
+            for(auto& m : macros_) std::erase_if(m.targets, [&](const MacroTarget& t) { return t.kind == MacroTarget::Kind::Macro && owned.count(t.macro); });
+            for(auto& scene : scenes_) std::erase_if(scene.macros, [&](const auto& v) { return owned.count(v.first) != 0; });
             for(auto& scene : scenes_) std::erase_if(scene.parts, [&](const Scene::PartState& s) { return s.part == id; });
             for(auto& m : macros_) std::erase_if(m.targets, [&](const MacroTarget& t) { return (t.kind == MacroTarget::Kind::PartLevel || t.kind == MacroTarget::Kind::PartMute) && t.part == id; });
             // Parts that played through a removed bus play to the main output; their sends to it end.

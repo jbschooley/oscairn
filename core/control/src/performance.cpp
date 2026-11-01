@@ -96,15 +96,33 @@ void validateTree(const fs::path& root){size_t files=0;uint64_t bytes=0;for(cons
 std::unique_ptr<json_value_s,decltype(&std::free)> document(const fs::path& root){const auto bytes=state_files::read(root/"performance.json",4*1024*1024);const auto error=detail::jsonPreflight({reinterpret_cast<const char*>(bytes.data()),bytes.size()},32);if(!error.empty())bad(std::string(error));auto* doc=json_parse(bytes.data(),bytes.size());if(!doc)bad("invalid JSON");return {doc,&std::free};}
 }
 
-void Session::savePerformance(const std::string& directory) {
+void Session::savePerformance(const std::string& directory) {info_=writeDocument(directory,info_,nullptr,nullptr);}
+
+// The nodes a part holds: its chains' and lanes' boxes, and its splits' Split and Join nodes.
+std::set<NodeId> Session::nodesOf(const Part& p) const {
+    std::set<NodeId> out;
+    auto add=[&](const std::vector<NodeId>& c){for(const auto n:c)if(!isSplit(n))out.insert(n);};
+    add(p.chain);
+    for(const auto& sp:p.splits){add(std::vector<NodeId>{sp.splitter,sp.joiner});for(const auto& l:sp.lanes)add(l.chain);}
+    out.erase(0);
+    return out;
+}
+
+// performance.json, or with `sound` set, that part's sound.json (RFC 0021): its nodes, the wires
+// with both ends among them, its chain and splits without its seat, and the controls it owns.
+// Wires that cross the part's edge are not saved; their descriptions go to `left`.
+Control::PerformanceInfo Session::writeDocument(const std::string& directory,PerformanceInfo info,const Part* sound,std::vector<std::string>* left) {
     if(staged_)bad("commit staged graph edits before saving");
     service();if(!pending_.empty())bad("parameter edits are still pending; retry after processing");
     const auto graph=graph_.describe();if(graph.nodes.size()>256 || graph.notes.size()>4096 || graph.mappings.size()>4096)bad("graph exceeds Performance limits");
+    const auto inside=sound?nodesOf(*sound):std::set<NodeId>{};
+    auto kept=[&](NodeId n){return !sound || inside.count(n);};
     state_files::Bundle bundle(directory);fs::create_directory(bundle.temporary.path/"nodes");
     std::map<NodeId,std::string> keys{{graphInput,"input"},{graphOutput,"output"}};
-    for(size_t i=0;i<graph.nodes.size();++i)keys[graph.nodes[i].id]="node-"+std::to_string(i+1);
+    {size_t i=0;for(const auto& n:graph.nodes)if(kept(n.id))keys[n.id]="node-"+std::to_string(++i);}
     std::vector<std::string> nodes,wires,parts,mappings;std::set<std::string> libraries;
-    for(const auto& n:graph.nodes){const auto& key=keys.at(n.id);auto& h=graph_.host(n.id);
+    for(const auto& n:graph.nodes){if(!kept(n.id))continue;const auto& key=keys.at(n.id);auto& h=graph_.host(n.id);
+        if(!keys.count(graph_.effectSource(n.id)))bad(nodes_.at(n.id)+" shares its engine with a plugin outside the part");
         // Sound assets are dependencies (RFC 0009): record references, never the files.
         std::vector<std::string> assets;
         for(const auto& a:h.assetDependencies()){libraries.insert(a.library);assets.push_back("{\"library\":"+quote(a.library)+",\"path\":"+quote(a.path)+",\"sha256\":"+quote(a.sha256)+'}');}
@@ -115,6 +133,11 @@ void Session::savePerformance(const std::string& directory) {
     // RFC 0011: wires with their owners and Mix settings, and the parts; graph routes follow from them.
     if(wires_.size()>Graph::maxAudioConnections || parts_.size()>256)bad("wires or parts exceed Performance limits");
     for(const auto& w:wires_){
+        if(sound){
+            const bool from=inside.count(w.from),to=inside.count(w.to);
+            if(!from && !to)continue;
+            if(from!=to){if(w.owner==WireOwner::User && left)left->push_back((from?nodes_.at(w.from):"the "+std::string(w.from==graphInput?"input":"output"))+" to "+(to?nodes_.at(w.to):w.to==graphOutput?"the output":nodes_.count(w.to)?nodes_.at(w.to):"elsewhere"));continue;}
+        }
         std::vector<std::string> pairs;for(const auto& [a,b]:w.channels)pairs.push_back("["+std::to_string(a)+","+std::to_string(b)+"]");
         wires.push_back(std::string("{\"kind\":")+(w.kind==WireKind::Audio?"\"audio\"":"\"notes\"")+",\"owner\":"+(w.owner==WireOwner::Part?"\"part\",\"part\":"+std::to_string(w.part):"\"user\"")
             +",\"from\":"+quote(keys.at(w.from))+",\"to\":"+quote(keys.at(w.to))+",\"fromPort\":"+std::to_string(w.fromPort)+",\"toPort\":"+std::to_string(w.toPort)
@@ -122,7 +145,7 @@ void Session::savePerformance(const std::string& directory) {
     }
     // A chain's entries: node keys, and {"split":id} for a split.
     auto chainText=[&](const std::vector<NodeId>& entries){std::vector<std::string> out;for(const auto n:entries)out.push_back(isSplit(n)?"{\"split\":"+std::to_string(n&~splitMark)+'}':quote(keys.at(n)));return join(out);};
-    for(const auto& p:parts_){
+    auto splitsText=[&](const Part& p){
         std::vector<std::string> splits;
         for(const auto& sp:p.splits){
             std::vector<std::string> lanes;
@@ -130,50 +153,54 @@ void Session::savePerformance(const std::string& directory) {
             auto key=[&](NodeId n){return n?quote(keys.at(n)):std::string("null");};
             splits.push_back("{\"id\":"+std::to_string(sp.id)+",\"kind\":\""+splitKinds[size_t(sp.kind)]+"\",\"splitter\":"+key(sp.splitter)+",\"joiner\":"+key(sp.joiner)+",\"lanes\":"+join(lanes)+'}');
         }
+        return join(splits);
+    };
+    if(!sound)for(const auto& p:parts_){
         const char* kind=p.input.kind==PartInput::Kind::Notes?"notes":p.input.kind==PartInput::Kind::Audio?"audio":p.input.kind==PartInput::Kind::Bus?"bus":"none";
         std::vector<std::string> sends;for(const auto& s:p.sends)sends.push_back("{\"bus\":"+std::to_string(s.bus)+",\"level\":"+numeric(s.level)+'}');
-        parts.push_back("{\"id\":"+std::to_string(p.id)+",\"name\":"+quote(p.name)+",\"input\":{\"kind\":\""+kind+"\",\"port\":"+std::to_string(p.input.port)+",\"zones\":"+zonesText(p.input.zones)+",\"devices\":"+devicesText(p.input.devices)+",\"maxNotes\":"+std::to_string(p.input.maxNotes)+"},\"chain\":"+chainText(p.chain)+",\"splits\":"+join(splits)+",\"output\":"+std::to_string(p.output)+",\"level\":"+numeric(p.level)+",\"pan\":"+numeric(p.pan)+",\"mute\":"+(p.mute?"true":"false")+",\"solo\":"+(p.solo?"true":"false")+",\"bus\":"+std::to_string(p.bus)+",\"sends\":"+join(sends)+'}');
+        parts.push_back("{\"id\":"+std::to_string(p.id)+",\"name\":"+quote(p.name)+",\"input\":{\"kind\":\""+kind+"\",\"port\":"+std::to_string(p.input.port)+",\"zones\":"+zonesText(p.input.zones)+",\"devices\":"+devicesText(p.input.devices)+",\"maxNotes\":"+std::to_string(p.input.maxNotes)+"},\"chain\":"+chainText(p.chain)+",\"splits\":"+splitsText(p)+",\"output\":"+std::to_string(p.output)+",\"level\":"+numeric(p.level)+",\"pan\":"+numeric(p.pan)+",\"mute\":"+(p.mute?"true":"false")+",\"solo\":"+(p.solo?"true":"false")+",\"bus\":"+std::to_string(p.bus)+",\"sends\":"+join(sends)+'}');
     }
-    for(const auto& m:graph.mappings)mappings.push_back("{\"from\":"+quote(keys.at(m.source))+",\"lane\":"+std::to_string(m.lane)+",\"to\":"+quote(keys.at(m.target))+",\"param\":"+std::to_string(m.param)+'}');
-    // Scenes: each part's fader and each scene parameter's value; and the scene last selected.
-    std::string scenesText;
-    {
-        std::vector<std::string> scenes,parameters;
-        for(const auto& s:scenes_){
-            std::vector<std::string> parts,values;
-            for(const auto& p:s.parts)parts.push_back("{\"part\":"+std::to_string(p.part)+",\"level\":"+numeric(p.level)+",\"mute\":"+(p.mute?"true":"false")+'}');
-            for(const auto& v:s.values)values.push_back("{\"node\":"+quote(keys.at(v.at.node))+",\"param\":"+std::to_string(v.at.param)+",\"value\":"+numeric(v.value)+'}');
-            std::vector<std::string> controls;for(const auto& [m,v]:s.macros)controls.push_back("{\"control\":"+std::to_string(m)+",\"value\":"+numeric(v)+'}');
-            scenes.push_back("{\"id\":"+std::to_string(s.id)+",\"name\":"+quote(s.name)+",\"parts\":"+join(parts)+",\"values\":"+join(values)+",\"controls\":"+join(controls)+'}');
+    for(const auto& m:graph.mappings)if(kept(m.source) && kept(m.target))mappings.push_back("{\"from\":"+quote(keys.at(m.source))+",\"lane\":"+std::to_string(m.lane)+",\"to\":"+quote(keys.at(m.target))+",\"param\":"+std::to_string(m.param)+'}');
+    // The control tree: each control's value and targets, parameters by node key.
+    std::vector<std::string> controls;
+    for(const auto& m:macros_){
+        if(sound && m.part!=sound->id)continue;
+        std::vector<std::string> targets;
+        for(const auto& t:m.targets){
+            if(t.kind==MacroTarget::Kind::Parameter && !keys.count(t.node))continue; // a plugin moved out of the part since
+            const char* kind=t.kind==MacroTarget::Kind::Parameter?"parameter":t.kind==MacroTarget::Kind::PartLevel?"partLevel":t.kind==MacroTarget::Kind::PartMute?"partMute":"control";
+            const char* curve=t.curve==MacroTarget::Curve::Linear?"linear":t.curve==MacroTarget::Curve::Exponential?"exponential":t.curve==MacroTarget::Curve::Logarithmic?"logarithmic":"s-curve";
+            std::string at=t.kind==MacroTarget::Kind::Parameter?",\"node\":"+quote(keys.at(t.node))+",\"param\":"+std::to_string(t.param):t.kind==MacroTarget::Kind::Macro?",\"control\":"+std::to_string(t.macro):",\"part\":"+std::to_string(t.part);
+            targets.push_back(std::string("{\"kind\":\"")+kind+"\""+at+",\"start\":"+numeric(t.start)+",\"end\":"+numeric(t.end)+",\"curve\":\""+curve+"\",\"relative\":"+(t.relative?"true":"false")+",\"base\":"+numeric(t.base)+'}');
         }
-        for(const auto& at:sceneParameters_)parameters.push_back("{\"node\":"+quote(keys.at(at.node))+",\"param\":"+std::to_string(at.param)+'}');
-        // The control tree: each control's value and targets, parameters by node key.
-        std::vector<std::string> controls;
-        for(const auto& m:macros_){
-            std::vector<std::string> targets;
-            for(const auto& t:m.targets){
-                const char* kind=t.kind==MacroTarget::Kind::Parameter?"parameter":t.kind==MacroTarget::Kind::PartLevel?"partLevel":t.kind==MacroTarget::Kind::PartMute?"partMute":"control";
-                const char* curve=t.curve==MacroTarget::Curve::Linear?"linear":t.curve==MacroTarget::Curve::Exponential?"exponential":t.curve==MacroTarget::Curve::Logarithmic?"logarithmic":"s-curve";
-                std::string at=t.kind==MacroTarget::Kind::Parameter?",\"node\":"+quote(keys.at(t.node))+",\"param\":"+std::to_string(t.param):t.kind==MacroTarget::Kind::Macro?",\"control\":"+std::to_string(t.macro):",\"part\":"+std::to_string(t.part);
-                targets.push_back(std::string("{\"kind\":\"")+kind+"\""+at+",\"start\":"+numeric(t.start)+",\"end\":"+numeric(t.end)+",\"curve\":\""+curve+"\",\"relative\":"+(t.relative?"true":"false")+",\"base\":"+numeric(t.base)+'}');
-            }
-            controls.push_back("{\"id\":"+std::to_string(m.id)+",\"name\":"+quote(m.name)+",\"value\":"+numeric(m.value)+",\"targets\":"+join(targets)+'}');
-        }
-        scenesText=",\"scenes\":"+join(scenes)+",\"sceneParameters\":"+join(parameters)+",\"scene\":"+std::to_string(scene_)+",\"controls\":"+join(controls);
+        controls.push_back("{\"id\":"+std::to_string(m.id)+",\"part\":"+std::to_string(m.part)+",\"name\":"+quote(m.name)+",\"value\":"+numeric(m.value)+",\"targets\":"+join(targets)+'}');
     }
     std::vector<std::string> named;
     for(const auto& l:assets_.libraries())if(libraries.count(l.id))named.push_back("{\"id\":"+quote(l.id)+",\"name\":"+quote(l.name)+",\"fingerprint\":"+quote(l.fingerprint)+'}');
     // RFC 0021: the library's info; the ID is made at the first save and kept by every later one.
-    auto info=info_;
     if(info.id.empty()){std::random_device random;constexpr char hex[]="0123456789abcdef";for(int i=0;i<16;++i)info.id+=hex[random()&15];}
     if(info.name.empty())info.name=fs::path(directory).stem().string();
     std::vector<std::string> tags;for(const auto& t:info.tags)tags.push_back(quote(t));
     const auto infoText="{\"id\":"+quote(info.id)+",\"name\":"+quote(info.name)+",\"description\":"+quote(info.description)+",\"tags\":"+join(tags)+",\"color\":"+quote(info.color)+'}';
-    const auto out="{\"format\":\"oscairn.performance\",\"version\":3,\"info\":"+infoText+",\"libraries\":"+join(named)+",\"transport\":{\"tempo\":"+numeric(tempo_.load())+",\"clockSource\":"+quote(clockSource_.load()==Transport::ClockSource::Internal?"internal":"midi")+"},\"audioInputs\":"+ports(graph.audioLayout.inputs)+",\"audioOutputs\":"+ports(graph.audioLayout.outputs)+",\"nodes\":"+join(nodes)+",\"wires\":"+join(wires)+",\"parts\":"+join(parts)+",\"mappings\":"+join(mappings)+",\"pads\":"+padsText(padMap_)+scenesText+"}\n";
+    std::string out;
+    if(sound)out="{\"format\":\"oscairn.sound\",\"version\":3,\"info\":"+infoText+",\"libraries\":"+join(named)+",\"nodes\":"+join(nodes)+",\"wires\":"+join(wires)+",\"part\":{\"chain\":"+chainText(sound->chain)+",\"splits\":"+splitsText(*sound)+"},\"mappings\":"+join(mappings)+",\"controls\":"+join(controls)+"}\n";
+    else{
+        // Scenes: each part's fader and each scene parameter's value; and the scene last selected.
+        std::vector<std::string> scenes,parameters;
+        for(const auto& s:scenes_){
+            std::vector<std::string> sp,values,sc;
+            for(const auto& p:s.parts)sp.push_back("{\"part\":"+std::to_string(p.part)+",\"level\":"+numeric(p.level)+",\"mute\":"+(p.mute?"true":"false")+'}');
+            for(const auto& v:s.values)values.push_back("{\"node\":"+quote(keys.at(v.at.node))+",\"param\":"+std::to_string(v.at.param)+",\"value\":"+numeric(v.value)+'}');
+            for(const auto& [m,v]:s.macros)sc.push_back("{\"control\":"+std::to_string(m)+",\"value\":"+numeric(v)+'}');
+            scenes.push_back("{\"id\":"+std::to_string(s.id)+",\"name\":"+quote(s.name)+",\"parts\":"+join(sp)+",\"values\":"+join(values)+",\"controls\":"+join(sc)+'}');
+        }
+        for(const auto& at:sceneParameters_)parameters.push_back("{\"node\":"+quote(keys.at(at.node))+",\"param\":"+std::to_string(at.param)+'}');
+        out="{\"format\":\"oscairn.performance\",\"version\":3,\"info\":"+infoText+",\"libraries\":"+join(named)+",\"transport\":{\"tempo\":"+numeric(tempo_.load())+",\"clockSource\":"+quote(clockSource_.load()==Transport::ClockSource::Internal?"internal":"midi")+"},\"audioInputs\":"+ports(graph.audioLayout.inputs)+",\"audioOutputs\":"+ports(graph.audioLayout.outputs)+",\"nodes\":"+join(nodes)+",\"wires\":"+join(wires)+",\"parts\":"+join(parts)+",\"mappings\":"+join(mappings)+",\"pads\":"+padsText(padMap_)+",\"scenes\":"+join(scenes)+",\"sceneParameters\":"+join(parameters)+",\"scene\":"+std::to_string(scene_)+",\"controls\":"+join(controls)+"}\n";
+    }
     if(out.size()>4*1024*1024)bad("manifest exceeds size limit");
     const auto encoding=detail::jsonPreflight(out,32);if(!encoding.empty())bad(std::string(encoding));
-    state_files::write(bundle.temporary.path/"performance.json",out.data(),out.size());validateTree(bundle.temporary.path);bundle.publish();
-    info_=info;
+    state_files::write(bundle.temporary.path/(sound?"sound.json":"performance.json"),out.data(),out.size());validateTree(bundle.temporary.path);bundle.publish();
+    return info;
 }
 
 void Session::loadPerformance(const std::string& directory) {
@@ -182,7 +209,7 @@ void Session::loadPerformance(const std::string& directory) {
     fields(d,{"format","version","info","libraries","transport","audioInputs","audioOutputs","nodes","wires","parts","mappings","pads","scenes","sceneParameters","scene","controls"});
     const auto pads=padsFrom(field(d,"pads"));
     if(text(field(d,"format"))!="oscairn.performance" || integer(field(d,"version"))!=3)bad("unsupported format version");
-    fields(field(d,"info"),{"id","name","description","tags","color"});const auto info=readPerformanceInfo(root);
+    fields(field(d,"info"),{"id","name","description","tags","color"});const auto info=readInfo(root/"performance.json","oscairn.performance");
     const auto transport=field(d,"transport");fields(transport,{"tempo","clockSource"});const double tempo=number(field(transport,"tempo"));
     const auto clock=text(field(transport,"clockSource"));if(tempo<1 || tempo>1000 || (clock!="internal" && clock!="midi"))bad("invalid transport");
     const auto layout=graph_.describe().audioLayout;checkPorts(field(d,"audioInputs"),layout.inputs);checkPorts(field(d,"audioOutputs"),layout.outputs);
@@ -322,7 +349,8 @@ void Session::loadPerformance(const std::string& directory) {
         const auto list=array(field(d,"controls"),4096);
         for(auto m:list){const auto id=integer(field(m,"id"));if(!id || !macroIds.insert(id).second)bad("invalid or duplicate control");}
         for(auto m:list){
-            fields(m,{"id","name","value","targets"});Macro macro;macro.id=integer(field(m,"id"));macro.name=text(field(m,"name"));macro.value=number(field(m,"value"));
+            fields(m,{"id","part","name","value","targets"});Macro macro;macro.id=integer(field(m,"id"));macro.part=integer(field(m,"part"));macro.name=text(field(m,"name"));macro.value=number(field(m,"value"));
+            if(macro.part && std::none_of(parts.begin(),parts.end(),[&](const Part& p){return p.id==macro.part;}))bad("a control of an unknown part");
             if(macro.value<0 || macro.value>1)bad("invalid control value");
             for(auto t:array(field(m,"targets"),256)){
                 MacroTarget target;const auto kind=text(field(t,"kind")),curve=text(field(t,"curve"));
@@ -373,6 +401,189 @@ void Session::loadPerformance(const std::string& directory) {
     clearHistory(); // undo does not reach back into another Performance
 }
 
+// A Sound into a part (RFC 0021): its nodes are added with their saved state, the part's old
+// nodes go with every wire, mapping, scene value and control target on them, and the part keeps
+// its seat (input, output, sends, fader). The part's own controls are replaced by the Sound's; a
+// Performance control that targeted one moves to the Sound's control of the same name. One undoable step; notes
+// playing in the part are cut. Returns what could not be kept.
+std::vector<std::string> Session::loadSoundInto(uint32_t partId,const fs::path& folder) {
+    if(staged_)bad("commit staged graph edits before loading a Sound");
+    findPart(partId);
+    const auto root=fs::canonical(folder);validateTree(root);
+    const auto bytes=state_files::read(root/"sound.json",4*1024*1024);
+    if(const auto error=detail::jsonPreflight({reinterpret_cast<const char*>(bytes.data()),bytes.size()},32);!error.empty())bad(std::string(error));
+    const std::unique_ptr<json_value_s,decltype(&std::free)> doc{json_parse(bytes.data(),bytes.size()),&std::free};
+    V d=doc.get();if(!d)bad("invalid JSON");
+    fields(d,{"format","version","info","libraries","nodes","wires","part","mappings","controls"});
+    if(text(field(d,"format"))!="oscairn.sound" || integer(field(d,"version"))!=3)bad("not a version 3 Sound");
+    fields(field(d,"info"),{"id","name","description","tags","color"});
+    const auto info=readInfo(root/"sound.json","oscairn.sound");
+    // Every asset resolves before any plugin loads.
+    for(auto node:array(field(d,"nodes"),256))if(member(node,"assets"))for(auto a:array(field(node,"assets"),65536)){
+        fields(a,{"library","path","sha256"});
+        assets::Ref ref{text(field(a,"library")),text(field(a,"path")),text(field(a,"sha256"))};
+        try{assets_.resolve(ref);}catch(const std::exception& e){bad("missing sound asset: "+std::string(e.what()));}}
+    // The Sound's plugins, roots before the effect contexts that share their engines.
+    std::map<std::string,NodeId> ids;std::vector<NodeId> added;
+    auto unique=[&](std::string name){const auto base=name;for(int n=2;!name.empty() && std::any_of(nodes_.begin(),nodes_.end(),[&](const auto& x){return x.second==name;});++n)name=base+" "+std::to_string(n);return name;};
+    try{
+        const auto nodes=array(field(d,"nodes"),256);
+        for(bool siblings:{false,true})for(auto node:nodes){
+            fields(node,{"key","name","plugin","engine","inputs","outputs","noteInputs","noteOutputs","assets"});
+            const auto key=text(field(node,"key")),engine=text(field(node,"engine"));if((key!=engine)!=siblings)continue;
+            if(key.size()<6 || key.size()>12 || key.substr(0,5)!="node-" || ids.count(key))bad("invalid or duplicate node key");
+            const auto plugin=field(node,"plugin");fields(plugin,{"format","id","version","pathHint"});
+            const auto id=text(field(plugin,"id")),path=text(field(plugin,"pathHint")),name=text(field(node,"name"));
+            NodeId runtime;
+            if(siblings){if(!ids.count(engine))bad("missing shared engine root");runtime=addEffectContext(unique(name),ids.at(engine));}
+            else runtime=add(unique(name),path,id);
+            added.push_back(runtime);
+            auto& h=graph_.host(runtime);
+            if(h.descriptor().id!=id || h.descriptor().version!=text(field(plugin,"version")))bad("saved plugin version does not match the loaded plugin: "+name);
+            h.loadSnapshot((root/"nodes"/key).string());
+            checkPorts(field(node,"inputs"),h.inputPorts());checkPorts(field(node,"outputs"),h.outputPorts());
+            if(integer(field(node,"noteInputs"),16)!=h.noteInputPorts() || integer(field(node,"noteOutputs"),16)!=h.noteOutputPorts())bad("note port layout changed: "+name);
+            for(const auto& p:h.parameters())observed_[{runtime,p.id}]=h.parameterValue(p.id);
+            ids.emplace(key,runtime);
+        }
+    }catch(...){for(const auto n:added)dropNode(n);graph_.commit();staged_=false;throw;}
+    std::vector<std::string> flagged;
+    try{
+        auto node=[&](V v){const auto key=text(v);const auto it=ids.find(key);if(it==ids.end())bad("unknown node reference "+key);return it->second;};
+        // The chain and its splits, by the Sound's keys.
+        const auto sp=field(d,"part");fields(sp,{"chain","splits"});
+        std::function<std::vector<NodeId>(V)> chain=[&](V list){std::vector<NodeId> out;for(auto n:array(list,256)){
+            if(n->type==json_type_object){fields(n,{"split"});const auto x=integer(field(n,"split"));if(!x || x>=splitMark)bad("invalid split entry");out.push_back(splitMark|x);}
+            else out.push_back(node(n));}return out;};
+        Part sound;sound.chain=chain(field(sp,"chain"));
+        for(auto x:array(field(sp,"splits"),256)){
+            fields(x,{"id","kind","splitter","joiner","lanes"});Split split;split.id=integer(field(x,"id"));
+            split.kind=Split::Kind(named(splitKinds,text(field(x,"kind")),"invalid split kind"));
+            for(auto [name,at]:{std::pair{"splitter",&split.splitter},std::pair{"joiner",&split.joiner}}){const auto v=field(x,name);*at=v->type==json_type_null?0:node(v);}
+            for(auto l:array(field(x,"lanes"),16)){
+                fields(l,{"chain","zones","level","pan","mute","solo"});Lane lane;lane.chain=chain(field(l,"chain"));lane.zones=zonesFrom(field(l,"zones"));
+                lane.level=number(field(l,"level"));lane.pan=number(field(l,"pan"));lane.mute=boolean(field(l,"mute"));lane.solo=boolean(field(l,"solo"));
+                if(lane.level<0 || lane.pan<-1 || lane.pan>1)bad("invalid lane level or pan");split.lanes.push_back(std::move(lane));}
+            sound.splits.push_back(std::move(split));
+        }
+        if(nodesOf(sound).size()!=added.size())bad("every node of a Sound is in its part, once");
+        // Its wires: user wires as they were; its part wires' Mix, for the rebuilt ones to take.
+        std::vector<Wire> users,mixes;
+        for(auto c:array(field(d,"wires"),Graph::maxAudioConnections)){
+            const auto owner=text(field(c,"owner"));Wire w;
+            w.kind=text(field(c,"kind"))=="audio"?WireKind::Audio:WireKind::Notes;w.owner=owner=="part"?WireOwner::Part:WireOwner::User;
+            w.from=node(field(c,"from"));w.to=node(field(c,"to"));w.fromPort=integer(field(c,"fromPort"));w.toPort=integer(field(c,"toPort"));
+            for(auto pair:array(field(c,"channels"),Graph::maxAudioChannels)){const auto ends=array(pair,2);if(ends.size()!=2)bad("invalid channel pair");w.channels.push_back({integer(ends[0],Graph::maxAudioChannels-1),integer(ends[1],Graph::maxAudioChannels-1)});}
+            w.level=number(field(c,"level"));w.pan=number(field(c,"pan"));w.mute=boolean(field(c,"mute"));w.solo=boolean(field(c,"solo"));
+            if(w.level<0 || w.pan<-1 || w.pan>1)bad("invalid wire level or pan");
+            w.zones=zonesFrom(field(c,"zones"));
+            (w.owner==WireOwner::User?users:mixes).push_back(std::move(w));
+        }
+        // The Sound's controls, numbered after this Performance's; parsed before anything changes.
+        std::map<uint32_t,uint32_t> controlIds;std::vector<Macro> arriving;
+        const auto list=array(field(d,"controls"),4096);
+        for(auto m:list)controlIds[integer(field(m,"id"))]=nextMacro_++;
+        for(auto m:list){
+            fields(m,{"id","part","name","value","targets"});Macro macro;macro.id=controlIds.at(integer(field(m,"id")));macro.part=partId;macro.name=text(field(m,"name"));macro.value=number(field(m,"value"));
+            if(macro.value<0 || macro.value>1)bad("invalid control value");
+            for(auto t:array(field(m,"targets"),256)){
+                MacroTarget target;const auto kind=text(field(t,"kind")),curve=text(field(t,"curve"));
+                if(kind=="parameter"){target.kind=MacroTarget::Kind::Parameter;target.node=node(field(t,"node"));target.param=integer(field(t,"param"));}
+                else if(kind=="control"){target.kind=MacroTarget::Kind::Macro;const auto it=controlIds.find(integer(field(t,"control")));if(it==controlIds.end())bad("control target of an unknown control");target.macro=it->second;}
+                else bad("a Sound's control targets only its own plugins and controls");
+                target.curve=curve=="linear"?MacroTarget::Curve::Linear:curve=="exponential"?MacroTarget::Curve::Exponential:curve=="logarithmic"?MacroTarget::Curve::Logarithmic:curve=="s-curve"?MacroTarget::Curve::SCurve:(bad("invalid curve"),MacroTarget::Curve::Linear);
+                target.start=number(field(t,"start"));target.end=number(field(t,"end"));target.relative=boolean(field(t,"relative"));target.base=number(field(t,"base"));
+                macro.targets.push_back(target);
+            }
+            arriving.push_back(std::move(macro));
+        }
+        std::vector<Graph::Mapping> mappings;
+        for(auto m:array(field(d,"mappings"),4096)){
+            fields(m,{"from","lane","to","param"});Graph::Mapping x;x.source=node(field(m,"from"));x.lane=integer(field(m,"lane"));x.target=node(field(m,"to"));x.param=integer(field(m,"param"));
+            const auto& all=graph_.host(x.target).parameters();if(std::none_of(all.begin(),all.end(),[&](const auto& q){return q.id==x.param;}))bad("unknown mapped parameter");
+            mappings.push_back(x);}
+        for(const auto& m:arriving)for(const auto& t:m.targets)if(t.kind==MacroTarget::Kind::Parameter){
+            const auto& all=graph_.host(t.node).parameters();if(std::none_of(all.begin(),all.end(),[&](const auto& q){return q.id==t.param;}))bad("unknown control target parameter");}
+        auto& part=findPart(partId);
+        const auto old=nodesOf(part);
+        std::set<uint32_t> oldControls;for(const auto& m:macros_)if(m.part==partId)oldControls.insert(m.id);
+        // As editWires: if the new wiring does not compile, the parts and wires return to how they were.
+        auto partsBefore=parts_;auto wiresBefore=wires_;
+        try{
+            for(const auto& w:wires_)if(w.owner==WireOwner::User && (old.count(w.from)!=old.count(w.to)))
+                flagged.push_back("the wire from "+(nodes_.count(w.from)?nodes_.at(w.from):std::string("the input"))+" to "+(nodes_.count(w.to)?nodes_.at(w.to):std::string("the output"))+" was removed");
+            std::erase_if(wires_,[&](const Wire& w){return old.count(w.from) || old.count(w.to);});
+            auto& p=findPart(partId);p.chain=sound.chain;p.splits=sound.splits;
+            for(auto w:users){w.id=nextWire_++;wires_.push_back(std::move(w));}
+            buildPart(p);
+            for(auto& w:wires_)if(w.owner==WireOwner::Part && w.part==partId)
+                for(const auto& m:mixes)if(m.kind==w.kind && m.from==w.from && m.to==w.to && m.fromPort==w.fromPort && m.toPort==w.toPort){w.level=m.level;w.pan=m.pan;w.mute=m.mute;w.solo=m.solo;break;}
+            syncWires();
+        }catch(...){parts_.swap(partsBefore);wires_.swap(wiresBefore);syncWires();flagged.clear();throw;}
+        for(const auto n:old)dropNode(n);
+        for(const auto& m:mappings)graph_.mapParamTarget(m.source,m.lane,m.target,m.param);
+        // Scene values and scene parameters on the old nodes go.
+        for(auto& scene:scenes_)std::erase_if(scene.values,[&](const Scene::Value& v){return old.count(v.at.node)!=0;});
+        const auto parameters=std::erase_if(sceneParameters_,[&](const SceneParameter& at){return old.count(at.node)!=0;});
+        if(parameters)flagged.push_back(std::to_string(parameters)+" scene parameter"+(parameters==1?"":"s")+" on the old plugins removed");
+        std::map<uint32_t,std::string> leaving;for(const auto& m:macros_)if(oldControls.count(m.id))leaving[m.id]=m.name;
+        std::erase_if(macros_,[&](const Macro& m){return oldControls.count(m.id)!=0;});
+        for(auto& m:macros_){
+            std::erase_if(m.targets,[&](MacroTarget& t){
+                if(t.kind==MacroTarget::Kind::Parameter && old.count(t.node)){flagged.push_back(m.name+": a target on the old plugins was removed");return true;}
+                if(t.kind!=MacroTarget::Kind::Macro || !leaving.count(t.macro))return false;
+                const auto same=std::find_if(arriving.begin(),arriving.end(),[&](const Macro& a){return a.name==leaving.at(t.macro);});
+                if(same==arriving.end()){flagged.push_back(m.name+": its target "+leaving.at(t.macro)+" is not in the Sound and was removed");return true;}
+                t.macro=same->id;return false;});
+        }
+        for(auto& scene:scenes_)for(auto& [id,value]:scene.macros)if(leaving.count(id)){
+            const auto same=std::find_if(arriving.begin(),arriving.end(),[&](const Macro& a){return a.name==leaving.at(id);});
+            id=same==arriving.end()?0:same->id;}
+        for(auto& scene:scenes_)std::erase_if(scene.macros,[](const auto& v){return v.first==0;});
+        macros_.insert(macros_.end(),arriving.begin(),arriving.end());
+        findPart(partId).name=info.name;
+    }catch(...){
+        // Everything that can fail comes before the old part changes: take the additions back.
+        for(const auto n:added)if(graph_.contains(n)){std::erase_if(wires_,[&](const Wire& w){return w.from==n || w.to==n;});dropNode(n);}
+        throw;
+    }
+    commit(); // one step to undo
+    return flagged;
+}
+
+Control::SoundSaved Session::savePartAsSound(uint32_t partId,const std::string& name) {
+    auto& l=library();
+    const auto& part=findPart(partId);
+    PerformanceInfo info;info.name=name.empty()?part.name:name;
+    if(info.name.size()>256 || info.name.find('\0')!=std::string::npos)bad("invalid Sound name");
+    SoundSaved saved;
+    const auto folder=l.newFolder(info.name,"sound");
+    fs::create_directories(folder.parent_path());
+    saved.id=writeDocument(folder.string(),info,&part,&saved.left).id;
+    l.rescan();
+    return saved;
+}
+
+std::vector<std::string> Session::loadSound(uint32_t partId,const std::string& id) {
+    auto& l=library();
+    const auto* item=l.find(id);
+    if(!item || item->kind!="sound")bad("no such Sound in the library");
+    const auto path=item->path;
+    auto flagged=loadSoundInto(partId,path);
+    l.used(id);
+    return flagged;
+}
+
+uint32_t Session::partFromSound(const std::string& id) {
+    auto& l=library();
+    const auto* item=l.find(id);
+    if(!item || item->kind!="sound")bad("no such Sound in the library");
+    const auto name=item->name;
+    const auto part=addPart(name,{},std::nullopt);commit();
+    try{loadSound(part,id);}catch(...){removePart(part);commit();throw;}
+    return part;
+}
+
 void Session::setPerformanceInfo(const PerformanceInfo& info) {
     if(info.name.size()>256 || info.description.size()>4096 || info.tags.size()>32 ||
        std::any_of(info.tags.begin(),info.tags.end(),[](const std::string& t){return t.empty() || t.size()>64 || t.find('\0')!=std::string::npos;}) ||
@@ -386,7 +597,7 @@ std::string Session::savePerformanceToLibrary(const std::string& name,bool asNew
     if(asNew)info_.id.clear();
     if(!name.empty())info_.name=name;
     const auto* item=info_.id.empty()?nullptr:l.find(info_.id);
-    const auto folder=item?fs::path(item->path):l.newFolder(info_.name.empty()?"Performance":info_.name);
+    const auto folder=item?fs::path(item->path):l.newFolder(info_.name.empty()?"Performance":info_.name,"performance");
     fs::create_directories(folder.parent_path());
     if(!item)savePerformance(folder.string());
     else{
@@ -403,7 +614,7 @@ std::string Session::savePerformanceToLibrary(const std::string& name,bool asNew
 void Session::loadPerformanceFromLibrary(const std::string& id) {
     auto& l=library();
     const auto* item=l.find(id);
-    if(!item)bad("no such library item");
+    if(!item || item->kind!="performance")bad("no such Performance in the library");
     loadPerformance(item->path);
     l.used(id);
 }

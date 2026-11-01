@@ -171,7 +171,9 @@ namespace oscairn
         double map(double value) const;
         bool operator==(const MacroTarget&) const = default;
     };
-    struct Macro { uint32_t id = 0; std::string name; double value = 0; std::vector<MacroTarget> targets; };
+    // A control belongs to the Performance, or to a part (RFC 0021): a part's controls target only
+    // its plugins and its other controls, and go with it into a Sound.
+    struct Macro { uint32_t id = 0; std::string name; double value = 0; std::vector<MacroTarget> targets; uint32_t part = 0; };
 
     // A scene: a state of the Performance for a section of a song. It records every part's level
     // and mute, and a value for each scene parameter (the plugin parameters scenes control).

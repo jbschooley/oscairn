@@ -6,9 +6,15 @@ Performances in the user's folder with the index as a cache, the user file (favo
 recents), query, rescan and save and load by ID (`library.*`, `performance.info`/`setInfo`,
 see [control-protocol.md](../control-protocol.md#library)). The desktop app has a Library
 app (search, tags, favourites, recent; a click opens a Performance) and a Setlist app
-([setlist-format.md](../setlist-format.md)), and Performance > Save and Save As New. Not yet:
-Sound documents, user tags, the vocabulary, packages, `LibraryModel` and the step 3 pane
-with its inspector and drag to part. Builds on parts, splits, buses, wire ownership,
+([setlist-format.md](../setlist-format.md)), and Performance > Save and Save As New. Step
+1's Sound documents are built (`parts.saveSound`, `parts.loadSound`, `parts.fromSound`, and
+control owners), with these differences from the text below: a Sound holds a `part` object
+rather than one entry in `parts`; a crossing wire is removed and flagged on load rather than
+kept unconnected; there is no provenance (`from`), revision, author or suggested input yet,
+so every save is a new Sound and a new part from a Sound listens to every key; and
+`parts.loadSound` applies at once, returning what it removed, with no `confirm` round. Not
+yet: user tags, the vocabulary, packages, `LibraryModel` and the step 3 pane with its
+inspector and drag to part. Builds on parts, splits, buses, wire ownership,
 scenes and controls ([RFC 0011](0011-performance-ui-and-editors.md)), prepared sounds
 ([RFC 0005](0005-sound-contexts.md), [RFC 0007](0007-effect-contexts.md)), sound assets
 ([RFC 0009](0009-sound-assets-and-dependencies.md)), packages ([RFC 0006](0006-packages-and-portability.md))

@@ -12,6 +12,7 @@
 #include <atomic>
 #include <map>
 #include <deque>
+#include <set>
 #include <span>
 
 namespace oscairn
@@ -43,6 +44,9 @@ namespace oscairn
         uint32_t libraryRescan() override {return library().rescan();}
         std::string savePerformanceToLibrary(const std::string& name, bool asNew = false) override;
         void loadPerformanceFromLibrary(const std::string& id) override;
+        SoundSaved savePartAsSound(uint32_t part,const std::string& name) override;
+        std::vector<std::string> loadSound(uint32_t part,const std::string& id) override;
+        uint32_t partFromSound(const std::string& id) override;
         bool supportsState(NodeId node) const override {return graph_.host(node).supportsState();}
         void saveState(NodeId node,const std::string& directory) override;
         std::vector<PresetInfo> presets(NodeId node) override {return graph_.host(node).presets();}
@@ -112,7 +116,7 @@ namespace oscairn
         void removeScene(uint32_t scene) override;
         void setSceneName(uint32_t scene, const std::string& name) override;
         void setSceneParameters(const std::vector<SceneParameter>& parameters) override;
-        uint32_t addMacro(const std::string& name) override;
+        uint32_t addMacro(const std::string& name, uint32_t part = 0) override;
         void removeMacro(uint32_t macro) override;
         void setMacroName(uint32_t macro, const std::string& name) override;
         void setMacroTargets(uint32_t macro, const std::vector<MacroTarget>& targets) override;
@@ -267,6 +271,9 @@ namespace oscairn
         PerformanceInfo info_; // the open Performance's; its ID is made at its first save
         std::unique_ptr<Library> library_; // made at first use, so a session without the library never reads the user's folders
         Library& library() {if(!library_)library_=std::make_unique<Library>();return *library_;}
+        PerformanceInfo writeDocument(const std::string& directory,PerformanceInfo info,const Part* sound,std::vector<std::string>* left);
+        std::vector<std::string> loadSoundInto(uint32_t part,const std::filesystem::path& folder);
+        std::set<NodeId> nodesOf(const Part& part) const;
         uint64_t revision_ = 0, sequence_ = 0;
         using Address = std::pair<NodeId,uint32_t>;
         struct Command { ChangeKind kind; double value; };

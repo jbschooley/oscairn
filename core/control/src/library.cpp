@@ -10,6 +10,7 @@
 #include <memory>
 #include <sstream>
 #include <stdexcept>
+#include <tuple>
 
 namespace oscairn
 {
@@ -82,30 +83,30 @@ namespace oscairn
         return c.empty() || (c.size() == 7 && c[0] == '#' && std::all_of(c.begin() + 1, c.end(), [](char x) { return std::isxdigit(static_cast<unsigned char>(x)) != 0; }));
     }
 
-    Control::PerformanceInfo readPerformanceInfo(const fs::path& folder)
+    Control::PerformanceInfo readInfo(const fs::path& file, const std::string& format)
     {
-        const auto doc = parse(slurp(folder / "performance.json"));
+        const auto doc = parse(slurp(file));
         V d = doc.get();
-        if(!d || str(detail::member(d, "format")) != "oscairn.performance") throw std::runtime_error("not a Performance");
+        if(!d || str(detail::member(d, "format")) != format) throw std::runtime_error("not a " + format);
         const V version = detail::member(d, "version");
         if(!version || version->type != json_type_number || std::string(static_cast<const json_number_s*>(version->payload)->number, static_cast<const json_number_s*>(version->payload)->number_size) != "3")
-            throw std::runtime_error("unsupported Performance version");
+            throw std::runtime_error("unsupported version");
         const V info = detail::member(d, "info");
-        if(!info || info->type != json_type_object) throw std::runtime_error("a Performance without its info");
+        if(!info || info->type != json_type_object) throw std::runtime_error("no info block");
         Control::PerformanceInfo out;
         out.id = str(detail::member(info, "id")); out.name = str(detail::member(info, "name"));
         out.description = str(detail::member(info, "description")); out.tags = strings(detail::member(info, "tags"));
         out.color = str(detail::member(info, "color"));
         if(out.id.empty() || out.id.size() > 64 || !validColor(out.color) || out.name.size() > 256 || out.description.size() > 4096 || out.tags.size() > maxTags ||
            std::any_of(out.tags.begin(), out.tags.end(), [](const std::string& t) { return t.empty() || t.size() > maxTag; }))
-            throw std::runtime_error("invalid Performance info");
+            throw std::runtime_error("invalid info");
         return out;
     }
 
     Library::Library(fs::path home)
     {
         if(home.empty()) home = dataHome();
-        performances_ = home / "Performances"; cache_ = home / "library";
+        performances_ = home / "Performances"; sounds_ = home / "Sounds"; cache_ = home / "library";
         readUser();
         rescan();
     }
@@ -121,7 +122,7 @@ namespace oscairn
                 for(auto* e = static_cast<const json_array_s*>(items->payload)->start; e; e = e->next)
                 {
                     Control::LibraryItem item;
-                    item.path = str(detail::member(e->value, "path")); item.id = str(detail::member(e->value, "id"));
+                    item.path = str(detail::member(e->value, "path")); item.id = str(detail::member(e->value, "id")); item.kind = str(detail::member(e->value, "kind"));
                     item.name = str(detail::member(e->value, "name")); item.description = str(detail::member(e->value, "description"));
                     item.tags = strings(detail::member(e->value, "tags")); item.color = str(detail::member(e->value, "color"));
                     const auto modified = std::stoll(str(detail::member(e->value, "modified")));
@@ -132,10 +133,11 @@ namespace oscairn
         items_.clear();
         std::string index;
         std::error_code error;
-        if(fs::is_directory(performances_, error))
-            for(const auto& entry : fs::directory_iterator(performances_, error))
+        for(const auto& [folder, kind, file] : {std::tuple{performances_, "performance", "performance.json"}, std::tuple{sounds_, "sound", "sound.json"}})
+        if(fs::is_directory(folder, error))
+            for(const auto& entry : fs::directory_iterator(folder, error))
             {
-                const auto manifest = entry.path() / "performance.json";
+                const auto manifest = entry.path() / file;
                 // Hidden folders are a save in progress or one left by a crash.
                 if(!entry.is_directory() || entry.path().filename().string().starts_with(".") || !fs::is_regular_file(manifest, error)) continue;
                 const auto path = entry.path().string();
@@ -146,14 +148,14 @@ namespace oscairn
                 {
                     try
                     {
-                        const auto info = readPerformanceInfo(entry.path());
-                        item.id = info.id; item.name = info.name; item.description = info.description; item.tags = info.tags; item.color = info.color; item.path = path;
+                        const auto info = readInfo(manifest, std::string("oscairn.") + kind);
+                        item.kind = kind; item.id = info.id; item.name = info.name; item.description = info.description; item.tags = info.tags; item.color = info.color; item.path = path;
                     }
                     catch(const std::exception&) { continue; } // not one the library can show; it stays on disk
                 }
                 if(std::any_of(items_.begin(), items_.end(), [&](const auto& i) { return i.id == item.id; })) continue; // a copied folder: the first wins
                 items_.push_back(item);
-                index += std::string(index.empty() ? "" : ",") + "{\"path\":" + detail::quote(item.path) + ",\"modified\":" + detail::quote(std::to_string(modified)) +
+                index += std::string(index.empty() ? "" : ",") + "{\"path\":" + detail::quote(item.path) + ",\"kind\":" + detail::quote(item.kind) + ",\"modified\":" + detail::quote(std::to_string(modified)) +
                          ",\"id\":" + detail::quote(item.id) + ",\"name\":" + detail::quote(item.name) + ",\"description\":" + detail::quote(item.description) + ",\"tags\":" + list(item.tags) + ",\"color\":" + detail::quote(item.color) + '}';
             }
         try { writeAtomically(cache_ / "index.json", "{\"items\":[" + index + "]}\n"); } catch(const std::exception&) {} // a cache: reading works without it
@@ -174,6 +176,7 @@ namespace oscairn
             // Every chosen tag (AND), the text in its name, tags or description, and the toggles.
             if(!std::all_of(q.tags.begin(), q.tags.end(), [&](const std::string& t) { return std::find(item.tags.begin(), item.tags.end(), t) != item.tags.end(); })) continue;
             if(q.favourites && !item.favourite) continue;
+            if(!q.kind.empty() && item.kind != q.kind) continue;
             if(q.recent && !item.recent) continue;
             if(!text.empty())
             {
@@ -216,14 +219,17 @@ namespace oscairn
         writeUser();
     }
 
-    fs::path Library::newFolder(const std::string& name) const
+    fs::path Library::newFolder(const std::string& name, const std::string& kind) const
     {
         std::string safe;
         for(const char c : name) safe += (std::isalnum(static_cast<unsigned char>(c)) || c == ' ' || c == '-' || c == '_') ? c : '_';
         while(!safe.empty() && safe.back() == ' ') safe.pop_back();
-        if(safe.empty()) safe = "Performance";
-        auto folder = performances_ / (safe + ".oscairn");
-        for(int n = 2; fs::exists(folder); ++n) folder = performances_ / (safe + " " + std::to_string(n) + ".oscairn");
+        const bool sound = kind == "sound";
+        if(safe.empty()) safe = sound ? "Sound" : "Performance";
+        const auto& root = sound ? sounds_ : performances_;
+        const std::string extension = sound ? ".osound" : ".oscairn";
+        auto folder = root / (safe + extension);
+        for(int n = 2; fs::exists(folder); ++n) folder = root / (safe + " " + std::to_string(n) + extension);
         return folder;
     }
 

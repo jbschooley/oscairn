@@ -270,7 +270,7 @@ namespace oscairn
                     targets.push_back(std::string("{\"kind\":\"") + kindName(t.kind) + "\",\"node\":" + std::to_string(t.node) + ",\"param\":" + std::to_string(t.param) +
                         ",\"part\":" + std::to_string(t.part) + ",\"control\":" + std::to_string(t.macro) + ",\"start\":" + encode(t.start) + ",\"end\":" + encode(t.end) +
                         ",\"curve\":\"" + curveName(t.curve) + "\",\"relative\":" + (t.relative ? "true" : "false") + ",\"base\":" + encode(t.base) + '}');
-                out.push_back("{\"id\":" + std::to_string(m.id) + ",\"name\":" + quote(m.name) + ",\"value\":" + encode(m.value) + ",\"targets\":" + join(targets) + '}');
+                out.push_back("{\"id\":" + std::to_string(m.id) + ",\"part\":" + std::to_string(m.part) + ",\"name\":" + quote(m.name) + ",\"value\":" + encode(m.value) + ",\"targets\":" + join(targets) + '}');
             }
             return join(out);
         }
@@ -366,7 +366,7 @@ namespace oscairn
             if( method == "session.hello" )
             {
                 fields(p, {});
-                return R"({"protocolVersion":1,"server":"oscairn","capabilities":["performance.save","performance.load","performance.info","performance.setInfo","library.query","library.favourite","library.rescan","library.save","library.load","state.info","state.save","presets.list","properties.list","properties.get","properties.set","properties.request","sounds.get","sounds.prepare","sounds.select","sounds.discard","assets.register","assets.import","assets.libraries","session.status","params.list","params.get","params.set","params.text","params.gesture","graph.audio-routing","graph.get","graph.add","effects.create","effects.resources","graph.remove","graph.replace","graph.connect","graph.disconnect","graph.map","graph.unmap","graph.commit","parts.add","parts.remove","parts.insert","parts.removeNode","parts.move","parts.addSplit","parts.removeSplit","parts.addLane","parts.removeLane","parts.lane","parts.input","parts.output","parts.send","parts.level","parts.name","parts.solo","parts.pan","parts.meters","edit.undo","edit.redo","edit.history","wires.connect","wires.disconnect","wires.mix","wires.zones","scenes.add","scenes.store","scenes.select","scenes.remove","scenes.name","scenes.parameters","controls.add","controls.remove","controls.name","controls.targets","controls.set","subscribe","unsubscribe","transport.get","transport.set","notes.send","pads.get","pads.set","pads.play","pads.pressure"],"limits":{"messageBytes":65536,"depth":32,"batch":64,"parameterChanges":128}})";
+                return R"({"protocolVersion":1,"server":"oscairn","capabilities":["performance.save","performance.load","performance.info","performance.setInfo","library.query","library.favourite","library.rescan","library.save","library.load","parts.saveSound","parts.loadSound","parts.fromSound","state.info","state.save","presets.list","properties.list","properties.get","properties.set","properties.request","sounds.get","sounds.prepare","sounds.select","sounds.discard","assets.register","assets.import","assets.libraries","session.status","params.list","params.get","params.set","params.text","params.gesture","graph.audio-routing","graph.get","graph.add","effects.create","effects.resources","graph.remove","graph.replace","graph.connect","graph.disconnect","graph.map","graph.unmap","graph.commit","parts.add","parts.remove","parts.insert","parts.removeNode","parts.move","parts.addSplit","parts.removeSplit","parts.addLane","parts.removeLane","parts.lane","parts.input","parts.output","parts.send","parts.level","parts.name","parts.solo","parts.pan","parts.meters","edit.undo","edit.redo","edit.history","wires.connect","wires.disconnect","wires.mix","wires.zones","scenes.add","scenes.store","scenes.select","scenes.remove","scenes.name","scenes.parameters","controls.add","controls.remove","controls.name","controls.targets","controls.set","subscribe","unsubscribe","transport.get","transport.set","notes.send","pads.get","pads.set","pads.play","pads.pressure"],"limits":{"messageBytes":65536,"depth":32,"batch":64,"parameterChanges":128}})";
             }
             if( method == "subscribe" || method == "unsubscribe" )
             {
@@ -399,7 +399,8 @@ namespace oscairn
                 return "{\"id\":"+quote(i.id)+",\"name\":"+quote(i.name)+",\"description\":"+quote(i.description)+",\"tags\":"+tags(i.tags)+",\"color\":"+quote(i.color)+'}';
             }
             if(method=="library.query") {
-                fields(p,{"text","tags","favourites","recent","limit"});Control::LibraryQuery q;
+                fields(p,{"text","tags","favourites","recent","limit","kind"});Control::LibraryQuery q;
+                if(member(p,"kind")){q.kind=std::string(string(member(p,"kind")));if(q.kind!="performance" && q.kind!="sound")invalid("Unknown library kind");}
                 if(member(p,"text"))q.text=std::string(string(member(p,"text")));
                 if(member(p,"tags"))for(auto t:array(member(p,"tags"),32,0))q.tags.push_back(std::string(string(t)));
                 if(member(p,"favourites"))q.favourites=boolean(member(p,"favourites"));
@@ -421,6 +422,21 @@ namespace oscairn
             if(method=="library.rescan") {
                 fields(p,{});
                 try{return "{\"items\":"+std::to_string(c.libraryRescan())+'}';}catch(const std::exception& e){throw Failure{-32005,e.what()};}
+            }
+            if(method=="parts.saveSound") {
+                fields(p,{"part","name"});Control::SoundSaved saved;
+                try{saved=c.savePartAsSound(integer(member(p,"part")),member(p,"name")?std::string(string(member(p,"name"))):std::string());}catch(const std::exception& e){throw Failure{-32005,e.what()};}
+                std::vector<std::string> left;for(const auto& l:saved.left)left.push_back(quote(l));
+                return "{\"id\":"+quote(saved.id)+",\"left\":"+join(left)+'}';
+            }
+            if(method=="parts.loadSound") {
+                fields(p,{"part","id"});std::vector<std::string> flagged;
+                try{for(const auto& f:c.loadSound(integer(member(p,"part")),std::string(string(member(p,"id")))))flagged.push_back(quote(f));}catch(const std::exception& e){throw Failure{-32005,e.what()};}
+                return "{\"accepted\":true,\"flagged\":"+join(flagged)+'}';
+            }
+            if(method=="parts.fromSound") {
+                fields(p,{"id"});
+                try{return "{\"part\":"+std::to_string(c.partFromSound(std::string(string(member(p,"id")))))+'}';}catch(const std::exception& e){throw Failure{-32005,e.what()};}
             }
             if(method=="library.save" || method=="library.load") {
                 if(method=="library.save")fields(p,{"name","new"});else fields(p,{"id"});
@@ -607,7 +623,7 @@ namespace oscairn
             {
                 try
                 {
-                    if( method == "controls.add" ) { fields(p,{"name"}); return "{\"control\":" + std::to_string(c.addMacro(member(p,"name") ? std::string(string(member(p,"name"))) : std::string())) + '}'; }
+                    if( method == "controls.add" ) { fields(p,{"name","part"}); return "{\"control\":" + std::to_string(c.addMacro(member(p,"name") ? std::string(string(member(p,"name"))) : std::string(), member(p,"part") ? integer(member(p,"part")) : 0)) + '}'; }
                     if( method == "controls.remove" ) { fields(p,{"control"}); c.removeMacro(integer(member(p,"control"))); return R"({"accepted":true})"; }
                     if( method == "controls.name" ) { fields(p,{"control","name"}); c.setMacroName(integer(member(p,"control")),std::string(string(member(p,"name")))); return R"({"accepted":true})"; }
                     if( method == "controls.targets" ) { fields(p,{"control","targets"}); c.setMacroTargets(integer(member(p,"control")),targetsFrom(c,member(p,"targets"))); return R"({"accepted":true})"; }
