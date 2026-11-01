@@ -718,6 +718,36 @@ namespace
         check(near(y.l[0], .5), "the loaded chorus plays b alone: " + std::to_string(y.l[0]));
     }
 
+    // Seamless Performance changes (RFC 0021): the one before rings out beside the new one.
+    void performanceChange(const char* fixture, const fs::path& root)
+    {
+        auto save = [&](const char* name, double gain) {
+            Session p(48000, frames);
+            const auto synth = p.add("synth", fixture, "org.kick.test.synth"); p.setParameter(synth, 7, gain);
+            const auto part = p.addPart("Part"); p.insertIntoPart(part, 0, synth); p.commit();
+            Audio x; x.run(p);
+            p.savePerformance((root / name).string());
+        };
+        save("change-a", .25); save("change-b", .5);
+        Session s(48000, frames);
+        s.loadPerformance((root / "change-a").string());
+        Audio x;
+        s.note(true, 60, 1); x.run(s); x.run(s);
+        check(near(x.l[0], .25), "A plays: " + std::to_string(x.l[0]));
+        s.loadPerformance((root / "change-b").string()); x.run(s); x.run(s);
+        check(near(x.l[0], .25) && s.leaving() == 1 && s.graphState().topology.nodes.size() == 1, "A's held note plays on, A hidden: " + std::to_string(x.l[0]));
+        const auto part = s.graphState().parts.front().id;
+        s.setPartLevel(part, .5, false); s.commit(); x.run(s);
+        check(near(x.l[0], .25), "an edit to B leaves A ringing: " + std::to_string(x.l[0]));
+        s.note(false, 60, 0); x.run(s);
+        check(near(x.l[0], 0), "A's note released: " + std::to_string(x.l[0]));
+        s.note(true, 62, 1); x.run(s); x.run(s);
+        check(near(x.l[0], .25), "a new note plays B alone, at half: " + std::to_string(x.l[0]));
+        s.note(false, 62, 0);
+        for(int i = 0; i < int(48000 * 3.2 / frames) && s.leaving(); ++i) x.run(s);
+        check(s.leaving() == 0, "A goes after three seconds of silence");
+    }
+
     // Switching plugins and wires off and on (RFC 0011's full scene model): an off plugin takes
     // no new notes but plays out the ones it holds, then stops; an off effect in a chain is
     // passed around; an off note wire takes no new notes; undo and saving keep it.
@@ -938,6 +968,7 @@ int main(int argc, char** argv)
         scenes(argv[1], temp.path);
         sceneSwitching(argv[1], temp.path);
         onOff(argv[1], temp.path);
+        performanceChange(argv[1], temp.path);
         controls(argv[1], temp.path);
         persistence(argv[1], argv[2], argv[3], temp.path);
     }

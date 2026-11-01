@@ -180,7 +180,18 @@ namespace oscairn
     {
         std::set<NodeId> ringing;
         std::set_difference(disabled_.begin(), disabled_.end(), rungOut_.begin(), rungOut_.end(), std::inserter(ringing, ringing.end()));
-        return {graph_.describe(),nodes_,revision_,staged_,parts_,wires_,scenes_,untouched_,scene_,macros_,disabled_,ringing};
+        auto topology = graph_.describe();
+        if(!leaving_.empty())
+        {
+            // The last Performance's plugins ringing out are not part of this one (RFC 0021).
+            auto gone = [&](NodeId n) { return leaving_.count(n) != 0; };
+            std::erase_if(topology.nodes, [&](const auto& n) { return gone(n.id); });
+            std::erase_if(topology.notes, [&](const auto& e) { return gone(e.first) || gone(e.second); });
+            std::erase_if(topology.noteZones, [&](const auto& e) { return gone(e.first.first) || gone(e.first.second); });
+            std::erase_if(topology.draining, [&](const auto& e) { return gone(e.first) || gone(e.second); });
+            std::erase_if(topology.audioRoutes, [&](const auto& r) { return gone(r.from.node) || gone(r.to.node); });
+        }
+        return {topology,nodes_,revision_,staged_,parts_,wires_,scenes_,untouched_,scene_,macros_,disabled_,ringing};
     }
 
     void Session::saveState(NodeId node,const std::string& directory)
@@ -226,7 +237,7 @@ namespace oscairn
         auto mains=[&](bool input){try{return old.mainAudioPorts(input);}catch(const std::exception&){return std::vector<uint32_t>{};}};
         const auto mainIn=mains(true),mainOut=mains(false);
         auto parts=parts_;auto wires=wires_;
-        try{graph_.replace(node,path,pluginId,preset,[&]{remapPorts(node,inputs,outputs,mainIn,mainOut);compileWires(graph_,wires_,disabled_,rungOut_);});}
+        try{graph_.replace(node,path,pluginId,preset,[&]{remapPorts(node,inputs,outputs,mainIn,mainOut);compileWires(graph_,wires_,disabled_,rungOut_,leaving_);});}
         catch(...){parts_.swap(parts);wires_.swap(wires);throw;}
         if(disabled_.count(node))graph_.setRetiring(node,true); // the new plugin is off too
         for(auto it=pending_.begin();it!=pending_.end();)
@@ -391,11 +402,11 @@ namespace oscairn
         {silence();return false;}
         for(uint32_t c=0;c<graph_.outputChannels();++c)if(!outputs[c]){silence();return false;}
 
-        if(const auto cutoff=graph_.beginBlock()) {
+        // A new Performance: the transport starts again. Queued notes still play: the last
+        // Performance's plugins ring out beside it (RFC 0021), so a release must reach them.
+        if(graph_.beginBlock()) {
             transport_.rewind();
             clocks={}; // prior-block clock messages belong to the outgoing Performance
-            const auto tail=noteTail_.load(std::memory_order_relaxed);
-            if(tail<*cutoff)noteTail_.store(*cutoff,std::memory_order_release);
         }
         const auto source = clockSource_.load();
         if( source != following_ )

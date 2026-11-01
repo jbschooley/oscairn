@@ -83,12 +83,18 @@ namespace oscairn
         NodeId addEffectContext(NodeId source);
         NodeId effectSource(NodeId node) const;
         std::unique_ptr<Graph> prepareReplacement() const;
+        /// Seamless Performance changes (RFC 0021), on a prepared replacement: `current`'s nodes
+        /// `ids` come along under their IDs, retiring. The sound they send to the outputs and to
+        /// each other stays; the note connections into them drain through the same routes, so
+        /// held notes are still released; nothing else reaches them. The caller removes each once
+        /// idle(). Their IDs are below the replacement's, so none is taken.
+        void carryOver( const Graph& current, const std::set<NodeId>& ids );
         // Where plugins added from now on resolve sound assets (RFC 0009); must outlive the graph.
         void setAssets(kick::clap::AssetResolver* assets) noexcept { assets_ = assets; }
         // onPublish must not throw; called after successful compilation/allocation, before publication.
-        void publishReplacement(Graph& prepared,size_t noteCutoff,const std::function<void()>& onPublish);
+        void publishReplacement(Graph& prepared,const std::function<void()>& onPublish);
         // Audio thread: adopt once before Session computes transport for this block.
-        std::optional<size_t> beginBlock() noexcept;
+        bool beginBlock() noexcept; // true: a replacement was adopted
 
         /// Connections take effect at the next commit(). Throw std::invalid_argument if
         /// the source cannot send or the destination cannot receive that kind of signal.
@@ -242,7 +248,6 @@ namespace oscairn
         std::vector<AudioConnection> audioRoutes_;
         NodeId   nextId_ = 1;
         uint64_t replacementSerial_=0;
-        size_t replacementNoteCutoff_=0;
 
         std::map<NodeId, Node>                nodes_;
         std::map<std::pair<NodeId, NodeId>,std::shared_ptr<NoteRoute>> noteEdges_;

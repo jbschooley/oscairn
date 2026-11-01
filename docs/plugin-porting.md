@@ -91,10 +91,11 @@ Everything else is handled for you:
   `amplitude(voice, offset)`, and a choked voice fades over 3 ms before it ends.
 - **Say when you are silent:** return `CLAP_PROCESS_SLEEP` from `process` when the plugin will
   make no sound until it gets input or events (an instrument with no voice playing, an effect
-  whose tail has ended). A plugin switched off (by a scene; Performance changes are planned,
-  [RFC 0021](rfcs/0021-sounds-performances-and-library.md#seamless-switching)) plays out its
-  held notes and tail, and its sound stops once it is idle: one that sleeps stops as soon as
-  it is done; one that never does waits for three seconds of silence.
+  whose tail has ended). A plugin switched off by a scene, or left behind by a Performance
+  change ([RFC 0021](rfcs/0021-sounds-performances-and-library.md#seamless-switching)), plays
+  out its held notes and tail and stops once it is idle: one that sleeps stops as soon as it
+  is done; one that never does waits for three seconds of silence. Until then it runs beside
+  the new Performance, so memory and CPU for both are needed for a moment.
 - **Parameter metadata:** clear names, CLAP module paths for grouping, value text, and the
   stepped and read-only flags. The generated editors are built from them:
   - the first level of the module path names the page (`Operator 1`, `LFO 2`); numbered pages

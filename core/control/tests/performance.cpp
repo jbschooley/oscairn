@@ -61,9 +61,16 @@ static void native(const char* synth,const char* delay,const char* seq,const fs:
     Session original(48000,127);configure(original,synth,delay,seq);const auto file=root/"original";original.savePerformance(file.string());
     try{original.savePerformance(file.string());throw std::logic_error("overwrote existing save");}catch(const std::runtime_error&){}
     Session a(48000,127),b(48000,127);configure(a,synth,delay,seq);configure(b,synth,delay,seq);const auto old=a.nodeId("synth");
-    a.note(true,100,1);a.loadPerformance(file.string());
+    Audio reset;
+    a.note(true,100,1);reset.run(a);a.loadPerformance(file.string());
     check(a.nodeId("synth")!=old && !a.hasNode(old),"old node IDs must become invalid");
-    Audio reset;reset.run(a);reset.run(b); // adopt and flush parameter-only sequencer state
+    reset.run(a);reset.run(b); // adopt and flush parameter-only sequencer state
+    // Seamless (RFC 0021): the note held through the change rings out on the old Performance's
+    // plugins; released, they go once silent, leaving the restored one alone.
+    bool sounded=false; // through its delay, whose first echo comes after an eighth of a second
+    for(int i=0;i<200;++i){reset.run(a);sounded=sounded || std::any_of(reset.l.begin(),reset.l.end(),[](float x){return x!=0;});reset.run(b);}
+    check(sounded,"the held note plays on through the change");
+    a.note(false,100,0);
     check(a.transportState().beat==0 && !a.transportState().playing,"load stopped at beat zero");
     const auto sounds=a.sounds(a.nodeId("synth"));
     check(sounds.contexts.size()==3 && sounds.contexts[1].selectedChannels==1 && sounds.contexts[2].selectedChannels==2,"all contexts and channel assignments");
@@ -72,7 +79,7 @@ static void native(const char* synth,const char* delay,const char* seq,const fs:
     }
     check(a.effectResources(a.nodeId("delay"))->prepared==2 && a.parameter(a.nodeId("long-echo"),2)==.7,"shared effect engine and independent state");
     // The live-configured reference must finish its parameter glides before comparison.
-    for(int i=0;i<1000;++i){reset.run(a);reset.run(b);}
+    for(int i=0;i<1000+48000*31/127;++i){reset.run(a);reset.run(b);} // and the old Performance's plugins ring out (30 s at most)
     compare(a,b);
     // A save made with voices/tails running restores patches, not that transient audio.
     original.note(true,55,1);reset.run(original);original.savePerformance((root/"held").string());

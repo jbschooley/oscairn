@@ -151,8 +151,9 @@ the failure instead of opening a partial graph with disabled placeholder nodes; 
 missing-dependency workflow remains planned.
 
 A successful load replaces the graph at an audio-block boundary. It starts stopped at beat
-zero, discards pre-load queued UI notes, and cuts the previous Performance's held notes and
-effect tails. It is not a seamless Performance transition. The engine's absolute sample
+zero. It is seamless ([RFC 0021](rfcs/0021-sounds-performances-and-library.md#seamless-switching)):
+the previous Performance's plugins come along, hidden, and ring out (held notes play on until
+released, tails decay), each going once idle; notes queued before the change still play. The engine's absolute sample
 clock keeps advancing, preserving the hardware MIDI timestamp domain. New node IDs avoid
 stale controls addressing unrelated plugins. Old plans/plugins are reclaimed on the control
 thread. Output-device settings and physical channel maps are host preferences, not saved

@@ -318,8 +318,10 @@ in the others.
      ones still released) and retiring nodes (idle once silent or asleep), with plugins'
      CLAP sleep reported ([RFC 0021](rfcs/0021-sounds-performances-and-library.md#seamless-switching)).
      Loading a Sound into a part cuts, by decision: it is editing
-   - [ ] **seamless Performance changes** in setlists: the outgoing Performance's notes and tails
-     ring out while the next one plays, and a change that cannot be seamless says so first
+   - [x] **seamless Performance changes**, in setlists and wherever a Performance opens: the
+     outgoing Performance's held notes and tails ring out while the next one plays
+     ([status](rfcs/0021-sounds-performances-and-library.md#seamless-switching)). Every change is
+     seamless; nothing yet limits the memory two Performances take at once
    - [ ] the audition part
    - [ ] tag editing and suggestions, plugin presets in the library, `LibraryModel`, and the
      Library on the panel and compact screens (RFC 0021 steps 2–7)

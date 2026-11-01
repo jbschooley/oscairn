@@ -694,7 +694,9 @@ returns are `{"saved":true}` and `{"loaded":true}`. Both are advertised by `sess
 Files use the [Performance version 4 format/schema](performance-format.md). Saving refuses
 existing directories and staged graph edits. Loading validates a complete replacement;
 a load failure leaves the playing graph intact. Successful publication emits a graph resync,
-invalidates old node/context references, and starts stopped at beat zero on adoption.
+invalidates old node/context references, and starts stopped at beat zero on adoption. The
+change is seamless: the previous Performance's plugins ring out (held notes until released,
+tails until idle) and are hidden from `graph.get` meanwhile.
 The current note/tail audio is not saved. Resource/state/format failures use `-32005`;
 malformed RPC arguments use `-32602`. These control-thread calls can take time; remote
 wrappers allow 30 seconds, and callers must reread the graph after a timeout before retrying

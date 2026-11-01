@@ -139,7 +139,7 @@ Control::PerformanceInfo Session::writeDocument(const std::string& directory,Per
     service();if(!pending_.empty())bad("parameter edits are still pending; retry after processing");
     const auto graph=graph_.describe();if(graph.nodes.size()>256 || graph.notes.size()>4096 || graph.mappings.size()>4096)bad("graph exceeds Performance limits");
     const auto inside=sound?nodesOf(*sound):std::set<NodeId>{};
-    auto kept=[&](NodeId n){return !sound || inside.count(n);};
+    auto kept=[&](NodeId n){return !leaving_.count(n) && (!sound || inside.count(n));};
     state_files::Bundle bundle(directory);fs::create_directory(bundle.temporary.path/"nodes");
     std::map<NodeId,std::string> keys{{graphInput,"input"},{graphOutput,"output"}};
     {size_t i=0;for(const auto& n:graph.nodes)if(kept(n.id))keys[n.id]="node-"+std::to_string(++i);}
@@ -446,7 +446,12 @@ void Session::loadPerformance(const std::string& directory) {
             // The file's zones (a lane's included) with this machine's sources and the part's note limit.
             if(w.zones.empty())w.zones.emplace_back();
             const auto mask=resolveDevices(p.input.devices,hostStatus_.midiInputs);for(auto& z:w.zones){z.sources=mask;z.maxNotes=p.input.maxNotes;}}
-    compileWires(*next,wires,disabled,disabled);auto rungOut=disabled;
+    // Seamless (RFC 0021): this Performance's plugins, and any still ringing out from the one
+    // before, come along retiring: held notes play on until released and tails ring out, while
+    // new notes go to the new Performance.
+    std::set<NodeId> leaving=leaving_;for(const auto& [id,name]:nodes_)leaving.insert(id);
+    next->carryOver(graph_,leaving);
+    compileWires(*next,wires,disabled,disabled,leaving);auto rungOut=disabled;
     std::set<std::pair<NodeId,uint32_t>> mappings;
     for(auto m:array(field(d,"mappings"),4096)){fields(m,{"from","lane","to","param"});const auto from=node(field(m,"from")),lane=integer(field(m,"lane"));if(!mappings.emplace(from,lane).second)bad("duplicate parameter mapping");next->mapParamTarget(from,lane,node(field(m,"to")),integer(field(m,"param")));}
     std::map<Address,double> observed;for(const auto& [id,name]:names)for(const auto& p:next->host(id).parameters())observed[{id,p.id}]=next->host(id).parameterValue(p.id);
@@ -455,8 +460,8 @@ void Session::loadPerformance(const std::string& directory) {
     auto history=history_;
     if(history.size()==historyCapacity)history.pop_front();
     history.push_back({sequence_+1,ChangeKind::Resync,0,0,0,false});
-    graph_.publishReplacement(*next,noteHead_.load(std::memory_order_acquire),[&]() noexcept {
-        nodes_.swap(names);observed_.swap(observed);parts_.swap(parts);wires_.swap(wires);disabled_.swap(disabled);rungOut_.swap(rungOut);nextPart_=nextPart;nextWire_=nextWire;padMap_=pads;heldPads_={};scenes_.swap(scenes);untouched_.swap(untouched);scene_=selectedScene;mappingScene_=mappingScene;nextScene_=nextScene;macros_.swap(macros);nextMacro_=nextMacro;pending_.clear();commandCount_=0;outputDrops_.clear();staged_=false;
+    graph_.publishReplacement(*next,[&]() noexcept {
+        nodes_.swap(names);observed_.swap(observed);parts_.swap(parts);wires_.swap(wires);disabled_.swap(disabled);rungOut_.swap(rungOut);leaving_.swap(leaving);nextPart_=nextPart;nextWire_=nextWire;padMap_=pads;heldPads_={};scenes_.swap(scenes);untouched_.swap(untouched);scene_=selectedScene;mappingScene_=mappingScene;nextScene_=nextScene;macros_.swap(macros);nextMacro_=nextMacro;pending_.clear();commandCount_=0;outputDrops_.clear();staged_=false;
         tempo_.store(tempo);clockSource_.store(clock=="internal"?Transport::ClockSource::Internal:Transport::ClockSource::MidiClock);playing_.store(false);
         ++revision_;++sequence_;history_.swap(history);
     });

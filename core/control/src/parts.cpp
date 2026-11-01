@@ -166,7 +166,7 @@ namespace oscairn
     // wire connected or not. Off wires and wires into an off plugin carry no new notes (their
     // connection drains when no other wire on it is on) and no sound; sound from an off plugin goes
     // on until it has rung out, and its notes out drain too.
-    void Session::compileWires(Graph& g, std::vector<Wire>& wires, const std::set<NodeId>& off, const std::set<NodeId>& rungOut)
+    void Session::compileWires(Graph& g, std::vector<Wire>& wires, const std::set<NodeId>& off, const std::set<NodeId>& rungOut, const std::set<NodeId>& leaving)
     {
         const auto layout = g.describe().audioLayout;
         using Key = std::tuple<NodeId, uint32_t, uint32_t, NodeId, uint32_t, uint32_t>;
@@ -199,6 +199,7 @@ namespace oscairn
         const auto present = g.describe();
         std::map<Key, double> existing;
         for(const auto& r : present.audioRoutes)
+            if(!leaving.count(r.from.node) && !leaving.count(r.to.node))
             for(uint32_t i = 0; i < r.channels; ++i) existing[{r.from.node, r.from.port, r.from.channel + i, r.to.node, r.to.port, r.to.channel + i}] = r.gain;
         auto connection = [](const Key& k, double gain) {
             return AudioConnection{{std::get<0>(k), std::get<1>(k), std::get<2>(k)}, {std::get<3>(k), std::get<4>(k), std::get<5>(k)}, 1, gain};
@@ -206,7 +207,7 @@ namespace oscairn
         for(const auto& [k, gain] : existing) if(!audio.count(k)) g.disconnectAudio(connection(k, gain));
         for(const auto& [k, gain] : audio) if(auto e = existing.find(k); e == existing.end() || e->second != gain) g.connectAudio(connection(k, gain));
         for(auto& [e, zones] : notes) if(passAll.count(e)) zones.clear();
-        for(const auto& e : present.notes) if(!notes.count(e)) g.disconnectNotes(e.first, e.second);
+        for(const auto& e : present.notes) if(!notes.count(e) && !leaving.count(e.first) && !leaving.count(e.second)) g.disconnectNotes(e.first, e.second);
         for(const auto& [e, zones] : notes)
         {
             const bool exists = std::find(present.notes.begin(), present.notes.end(), e) != present.notes.end();
@@ -216,7 +217,7 @@ namespace oscairn
         }
     }
 
-    void Session::syncWires() { compileWires(graph_, wires_, disabled_, rungOut_); staged_ = true; }
+    void Session::syncWires() { compileWires(graph_, wires_, disabled_, rungOut_, leaving_); staged_ = true; }
 
     void Session::enable(NodeId node, bool enabled)
     {
@@ -247,14 +248,19 @@ namespace oscairn
     // (it said so) or three seconds of silence for plugins that never say, longer than a gap
     // between echoes (the bundled Delay's longest is two); or 30 seconds without a note, for a
     // sound that never ends. Not an edit.
+    // The last Performance's plugins go the same way, once rung out (RFC 0021).
     void Session::ringOut()
     {
         if(staged_) return;
         bool done = false;
+        const auto quiet = uint64_t(sampleRate_ * 3), limit = uint64_t(sampleRate_ * 30);
         for(const auto n : disabled_)
-            if(!rungOut_.count(n) && graph_.idle(n, uint64_t(sampleRate_ * 3), uint64_t(sampleRate_ * 30))) { rungOut_.insert(n); done = true; }
+            if(!rungOut_.count(n) && graph_.idle(n, quiet, limit)) { rungOut_.insert(n); done = true; }
+        for(auto it = leaving_.begin(); it != leaving_.end(); )
+            if(graph_.idle(*it, quiet, limit)) { graph_.remove(*it); it = leaving_.erase(it); done = true; }
+            else ++it;
         if(!done) return;
-        compileWires(graph_, wires_, disabled_, rungOut_);
+        compileWires(graph_, wires_, disabled_, rungOut_, leaving_);
         graph_.commit();
         ++revision_; publish(ChangeKind::Graph);
     }

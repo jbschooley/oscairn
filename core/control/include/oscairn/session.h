@@ -143,7 +143,7 @@ namespace oscairn
         Changes changesAfter( uint64_t sequence ) const override;
 
         NodeId nodeId( const std::string& name ) const override;
-        bool hasNode( NodeId node ) const override { return graph_.contains( node ); }
+        bool hasNode( NodeId node ) const override { return graph_.contains( node ) && !leaving_.count( node ); } // the last Performance's plugins ringing out are not this one's
         bool hasParameter( NodeId node, uint32_t param ) const override;
         std::vector<ParamInfo> parameters( NodeId node ) const override;
         ParamInfo parameterInfo( NodeId node, uint32_t param ) const override;
@@ -188,12 +188,14 @@ namespace oscairn
         void panicInput() noexcept { graph_.panicInput(); } // audio thread only
         uint64_t droppedNotes() const noexcept { return droppedNotes_.load(); }
         double sampleRate() const noexcept { return sampleRate_; }
+        size_t leaving() const noexcept { return leaving_.size(); } // the last Performance's plugins still ringing out
         uint32_t maxFrames() const noexcept { return maxFrames_; }
 
     private:
         static ParamInfo describe( const kick::clap::Parameter& param );
         // off: plugins switched off; rungOut: those of them whose notes and sound have ended.
-        static void compileWires(Graph& graph, std::vector<Wire>& wires, const std::set<NodeId>& off, const std::set<NodeId>& rungOut);
+        // leaving: the last Performance's plugins ringing out (RFC 0021); their routes are left alone.
+        static void compileWires(Graph& graph, std::vector<Wire>& wires, const std::set<NodeId>& off, const std::set<NodeId>& rungOut, const std::set<NodeId>& leaving);
         void enable(NodeId node, bool enabled);  // the flags and the graph's retiring count; wires are the caller's
         void ringOut();                          // service(): an off plugin that has rung out stops sounding
         bool enqueue(const kick::clap::Event& event);
@@ -280,6 +282,7 @@ namespace oscairn
         std::vector<Part> parts_;
         std::vector<Wire> wires_;
         std::set<NodeId> disabled_, rungOut_; // plugins switched off, and those of them done sounding
+        std::set<NodeId> leaving_;            // the last Performance's plugins, ringing out after a change; not part of this one
         uint32_t nextPart_ = 1, nextWire_ = 1;
         std::vector<Scene> scenes_;
         std::vector<SceneParameter> untouched_; // parameters scenes never touch

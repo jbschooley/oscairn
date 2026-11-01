@@ -17,7 +17,6 @@ namespace oscairn
     struct Graph::Plan
     {
         uint64_t replacementSerial=0;
-        size_t noteCutoff=0;
         struct AudioRoute { int source; uint32_t from, to; float gain; bool first=false; }; // -1: external input
         std::vector<AudioRoute> outputRoutes;
         std::vector<float> externalInputs;
@@ -153,16 +152,23 @@ namespace oscairn
         auto next=std::make_unique<Graph>(sampleRate_,maxFrames_,mode_,lv2Buffers_,audioLayout_);
         next->nextId_=nextId_;next->assets_=assets_;return next;
     }
-    void Graph::publishReplacement(Graph& next,size_t cutoff,const std::function<void()>& onPublish) {
+    void Graph::carryOver(const Graph& current,const std::set<NodeId>& ids) {
+        for(const auto id:ids){auto node=current.nodes_.at(id);node.retiring=false;nodes_[id]=std::move(node);setRetiring(id,true);}
+        for(const auto& r:current.audioRoutes_)if(ids.count(r.from.node) && (ids.count(r.to.node) || r.to.node==graphOutput))audioRoutes_.push_back(r);
+        for(const auto& [edge,route]:current.noteEdges_)if(ids.count(edge.second) && (ids.count(edge.first) || edge.first==graphInput)){
+            noteEdges_.emplace(edge,route);draining_.insert(edge);
+            if(const auto z=current.noteZones_.find(edge);z!=current.noteZones_.end())noteZones_[edge]=z->second;}
+    }
+    void Graph::publishReplacement(Graph& next,const std::function<void()>& onPublish) {
         if(next.sampleRate_!=sampleRate_ || next.maxFrames_!=maxFrames_ || next.inputChannels_!=inputChannels_ || next.outputChannels_!=outputChannels_)
             throw std::invalid_argument("Replacement device layout mismatch");
-        next.replacementSerial_=replacementSerial_+1;next.replacementNoteCutoff_=cutoff;
+        next.replacementSerial_=replacementSerial_+1;
         std::unique_ptr<Plan> plan(next.compile());
         removedHosts_.reserve(removedHosts_.size()+nodes_.size());
         onPublish(); // caller supplies a nonthrowing metadata/transport commit
         for(const auto& [id,node]:nodes_)removedHosts_.push_back(node.host);
-        nodes_.swap(next.nodes_);audioRoutes_.swap(next.audioRoutes_);noteEdges_.swap(next.noteEdges_);noteZones_.swap(next.noteZones_);paramTargets_.swap(next.paramTargets_);
-        nextId_=next.nextId_;replacementSerial_=next.replacementSerial_;replacementNoteCutoff_=cutoff;
+        nodes_.swap(next.nodes_);audioRoutes_.swap(next.audioRoutes_);noteEdges_.swap(next.noteEdges_);noteZones_.swap(next.noteZones_);draining_.swap(next.draining_);paramTargets_.swap(next.paramTargets_);
+        nextId_=next.nextId_;replacementSerial_=next.replacementSerial_;
         delete pending_.exchange(plan.release(),std::memory_order_acq_rel);
     }
 
@@ -435,7 +441,7 @@ namespace oscairn
         }
 
         auto plan = std::make_unique<Plan>();
-        plan->replacementSerial=replacementSerial_;plan->noteCutoff=replacementNoteCutoff_;
+        plan->replacementSerial=replacementSerial_;
         std::map<NodeId, int> stepOf;
         for( const NodeId id : order )
         {
@@ -526,7 +532,7 @@ namespace oscairn
         for(const auto& host:removedHosts_)host->service();
     }
 
-    std::optional<size_t> Graph::beginBlock() noexcept {
+    bool Graph::beginBlock() noexcept {
         // Adopt the newest plan, retiring the current one, if there is room to retire it.
         if( !current_ || !retired_.full() )
             if( Plan* plan = pending_.exchange( nullptr, std::memory_order_acq_rel ) )
@@ -546,7 +552,7 @@ namespace oscairn
                     retired_.push( current_ );
                 }
                 current_ = plan;
-                if(replacement)return plan->noteCutoff;
+                return replacement;
             }
         return {};
     }

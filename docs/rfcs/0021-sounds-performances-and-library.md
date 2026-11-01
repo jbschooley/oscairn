@@ -53,6 +53,7 @@ Checked when built and tested; the sections below say how.
 - [ ] 4. Plugin presets
 - [x] Engine support for seamless changes: draining note connections, retiring nodes, plugin
       sleep ([status](#seamless-switching)); loading a Sound cuts, by decision
+- [x] Seamless Performance changes: the outgoing Performance rings out beside the new one ([status](#seamless-switching))
 - [ ] 5. The audition part
 - [ ] 6. Panel
 - [ ] 7. Compact test layout
@@ -485,7 +486,7 @@ seamless check for the selected item against that target.
 | **Load into part** | Replaces the target part's chain and part controls with the Sound's, keeping the part's seat. Confirms first when it would flag wires or controls or cut notes |
 | **New part from sound** | Adds a part with the Sound's chain, suggested input and zone, playing to Main |
 | **Audition** | Plays the selected item without changing the Performance (below) |
-| **Open performance** | For a Performance: replaces the whole Performance, after asking about unsaved changes. Not seamless; it is `performance.load` |
+| **Open performance** | For a Performance: replaces the whole Performance, after asking about unsaved changes; seamless (held notes and tails ring out); it is `performance.load` |
 | **Load preset** | With a node as target: changes only that plugin's state |
 | **Save as Sound** | From a part: saves it to the library, listing what stays behind |
 | Favourite, Edit tags | Change the user file or the item's own file |
@@ -522,9 +523,22 @@ What the engine has for it, tested in `note-routing`:
   plugin said it is asleep (`CLAP_PROCESS_SLEEP`, which hosts now report), so the control
   thread knows when it may go.
 
-A scene that disables a block (RFC 0011's full scene model) and a Performance change in a
-setlist will use them: the outgoing blocks drain and ring out while new notes play what comes
-in. A note held while importing a Performance already plays on (`control-import`).
+A scene that switches a block off (RFC 0011's full scene model, built) uses them: the block's
+notes drain and its tail rings out while new notes play what is on. A note held while importing
+a Performance plays on (`control-import`).
+
+**Performance changes** are seamless, built 2026-11-01: opening a Performance (from a setlist,
+the library or `performance.load`) carries the outgoing one's plugins into the new graph under
+their IDs (`Graph::carryOver`), retiring. Their sound to the outputs and to each other stays; the
+note connections into them drain through the same note routes, so a note held across the change
+plays on until released, pedal included; nothing else reaches them, and new notes play the new
+Performance. They are hidden from it (`graph.get`, saving, undo, node IDs) and each goes once
+idle, as a scene's: asleep or three seconds of silence, or 30 seconds without a note. Notes
+queued at the moment of the change are no longer dropped, so a release reaches the old plugins.
+Changing again while one still rings carries those too. `control-parts` checks a held note
+through the change, an edit to the new Performance leaving the old one ringing, a new note
+reaching only the new one and the old one going; `control-performance` checks a held note
+through the change and, once it has rung out, output identical to a fresh load.
 
 **Load preset** on a node is seamless where `sounds.prepare` accepts it (native contexts and
 pooled instruments) and an interrupting state load otherwise, as today.
