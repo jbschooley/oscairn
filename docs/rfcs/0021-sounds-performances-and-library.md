@@ -15,7 +15,7 @@ rather than one entry in `parts`; a crossing wire is removed and flagged on load
 kept unconnected; there is no provenance (`from`), revision, author or suggested input yet,
 so every save is a new Sound and a new part from a Sound listens to every key; and
 `parts.loadSound` applies at once, returning what it removed, with no `confirm` round. Not
-yet: user tags, the vocabulary, packages, `LibraryModel` and the step 3 pane with its
+yet: editing tags, tag suggestions, packages, `LibraryModel` and the step 3 pane with its
 inspector and drag to part. Builds on parts, splits, buses, wire ownership,
 scenes and controls ([RFC 0011](0011-performance-ui-and-editors.md)), prepared sounds
 ([RFC 0005](0005-sound-contexts.md), [RFC 0007](0007-effect-contexts.md)), sound assets
@@ -48,7 +48,7 @@ The word is also used in three different ways today:
 There is also no library. The architecture plans one:
 
 > **Library (default):** browse Sounds, Performances, Setlists, Projects and Samples by
-> category, tag and search. Saving just saves.
+> tag and search. Saving just saves.
 
 > **Files first, index second.** Everything a user owns is a plain file or folder in a
 > documented format. The core keeps an index (stable IDs, revisions, dependencies, content
@@ -71,9 +71,12 @@ Performance folders. Nothing has a name beyond its folder, a tag, an ID or a rev
   part came from, but never follows the library. It opens without the library.
 - **Plugin presets stay what they are:** the state of one plugin. The picker shows them, and
   loading one into a part makes a one-plugin Sound.
-- **Tags instead of a category tree.** Any number of free tags, a small suggested
-  vocabulary grouped into facets, and facets the host works out itself (engine, source,
-  kind). Filters combine with AND.
+- **Tags instead of a category tree.** Any number of free tags, all alike: there are no
+  factory tags and user tags, only tags. Facets the host works out itself (engine, kind,
+  seamless) sit beside them, never stored as tags. Filters combine with AND.
+- **No factory and user content.** Factory Sounds and Performances are ordinary library items
+  that happen to be preloaded, and may differ between devices. They are edited, retagged,
+  saved over and deleted like anything the musician made.
 - **One library view model, drawn three ways:** a pane beside the parts on the Desktop, a
   full-screen tab with the knobs on the Panel, and a short list on Compact.
 - **Loading a Sound into a part is seamless when it can be,** and says so before it
@@ -222,15 +225,12 @@ Reasons for copies over links:
 - **Rehearsed work stays put.** RFC 0006: "rehearsed Setlists keep their pinned revisions
   until updated", and the packages section: "saved work keeps the version it was made with
   until moved on deliberately". Editing a Sound in the library must not change a gig.
-- **Read-only packages.** Pack items are read-only; "saving makes the user's own copy".
-  A Performance editing a pack Sound is already a copy.
 
 The provenance makes the useful parts of linking explicit actions:
 
 - **Update from library:** when the library has a newer revision of the Sound, the part
   offers it, with the same confirmation as loading.
-- **Save part as Sound:** saves a new revision of the Sound it came from (when that Sound is
-  the user's own) or a new Sound.
+- **Save part as Sound:** saves a new revision of the Sound it came from or a new Sound.
 - `modified` is worked out by comparing the part with the revision it came from.
 
 **One data model, no second format.** The Performance format says: "Save, reopen, import and
@@ -293,16 +293,17 @@ A preset is one plugin's state. In the picker:
 
 - **In the library list**, presets appear as items of kind **Preset**, with their plugin's
   engine. Loading one into a part replaces the chain with that one plugin, as a one-plugin
-  Sound. **Save as Sound** turns it into the user's own.
+  Sound. **Save as Sound** saves it to the library as a Sound.
 - **On a selected box in the Part view**, the picker can narrow to **Presets for this
   plugin**. Loading one changes only that node's state. Where the plugin supports prepared
   sounds, this goes through `sounds.prepare` with the preset and `sounds.select`, so held
   notes keep the old patch; otherwise it is a state load and says it will interrupt.
 - **Tags from presets:** CLAP preset metadata carries `add_feature` strings ("bass", "pad",
-  "acid" … in CLAP's own examples), flags for factory, user and favourite, creators and a
+  "acid" … in CLAP's own examples), flags (factory, user, favourite), creators and a
   sound pack. The host's discovery receiver ignores all of these today (empty callbacks in
   `core/clap-host/src/Host.cpp`). Step 4 reads them: features become tags, flags set the
-  source and favourite, creators the author.
+  favourite, creators the author. Its factory and user flags are not used: a preset
+  is a preset wherever it came from.
 
 Presets are listed from the plugins, not copied into the library. The index records them so
 they can be searched with everything else.
@@ -327,19 +328,14 @@ filed as one or the other.
 ### Oscairn's tags
 
 - **Free tags.** Any short word or phrase. Stored lowercase, trimmed, up to 32 UTF-8 bytes,
-  up to 32 per item. Shown as typed by the vocabulary, if it has a display form.
-- **A suggested vocabulary,** small and fixed in the host, grouped into facets. Typing a tag
-  offers these first. Examples, to be settled during step 2:
-  - *Type:* piano, keys, organ, bass, lead, pad, pluck, strings, brass, choir, drums,
-    percussion, arp, sequence, fx, texture;
-  - *Character:* warm, bright, dark, soft, aggressive, evolving, clean, dirty, vintage,
-    modern;
-  - *Use:* split, layer, mono, poly, chords, solo, ambient.
-- **A tag in no facet** shows under **More tags**.
+  up to 32 per item. Every tag is the same kind of thing, whoever added it: one preloaded on
+  a device, one a pack came with, one the musician typed.
+- **Suggestions** come from the tags already in the library, most used first, so a new
+  device suggests the tags of its preloaded content and the list grows with use. There is no
+  separate vocabulary fixed in the host or added by packages.
 - **Facets the host works out**, never stored as tags:
   - *Engine:* the plugins a Sound uses (Basic Synth, Sampler, FM engine, analog engine,
     Delay …), from its nodes;
-  - *Source:* My sounds, Factory, or a package's name;
   - *Kind:* Sound, Performance, Preset;
   - *Seamless:* whether every plugin in it supports prepared switching, so it can load
     while notes are held.
@@ -349,23 +345,23 @@ filed as one or the other.
 - **In the file,** in the info block. The file is the truth: "Files first, index second."
 - **In the index,** as a copy for searching. The index is a cache, rebuilt by scanning, like
   the asset store's `index/` files. Deleting it loses nothing.
-- **The user's own tags on read-only items** (a factory or pack Sound) cannot go in the file.
-  They go in a small user file beside the library, keyed by item ID, and are shown merged with
-  the item's own tags. They are user data, not cache: never rebuilt, synced like other user
-  files. Saving the item as the user's own copy moves them into its file.
+- **Changing an item's tags changes its file**, preloaded or not. There is no overlay.
 - **Favourites and recently used** are the user's, per device, in the same user file.
   Favourites sync; recents do not. They never go in an item's file, so a favourite does not
-  change a Sound's revision and works on read-only items.
+  change a Sound's revision.
 
-### Factory content and packages
+### Preloaded content and packages
 
-- Factory content is a package like any other (the architecture's "Manufacturers' built-ins
-  are ordinary packages"). Its items carry tags in their own files.
-- A package manifest may add vocabulary: tags with a facet and a display form, so a pack's
-  own words ("80s", "film") group sensibly. Package vocabulary never renames the host's.
+- **Preloaded content is ordinary content.** A device's factory Sounds and Performances are
+  files in the library folders like the musician's own, put there when the device is made or
+  first started. Devices may come with different ones. Nothing marks them as factory: they are
+  listed, searched, edited, saved over, retagged and deleted the same way.
+- **Packages** that carry Sounds or Performances add them to the library as ordinary items,
+  with the tags they come with. Removing the package does not take back items that were
+  added; parts that came from them keep their copies and where they came from.
 - CLAP preset features become tags as above.
-- Installing or removing a package updates the index. Removed items disappear from the
-  library; parts that came from them keep their copies and provenance.
+- Getting preloaded content back after deleting or changing it is a reinstall of that
+  content, offered by the device, never a separate read-only layer.
 
 ### Filtering
 
@@ -449,7 +445,7 @@ A **Library** pane, dockable like the other RFC 0019 panes, beside the parts lis
 - Facet chips under it, one row per facet, wrapping; More tags collapsed.
 - Results as a list (name, tags, engine marks, favourite star) or a grid of cards. The
   list is the default; the grid suits browsing a pack.
-- An inspector for the selection: description, author, source, every tag, the engines, the
+- An inspector for the selection: description, author, every tag, the engines, the
   controls it brings, whether it loads seamlessly into the target part, and the actions.
 - **Drag** a result onto a part row: load into that part. Onto the space under the parts:
   new part. Onto a box in the Part view (presets): load into that plugin. The drop target
@@ -479,7 +475,7 @@ Not built now (RFC 0019). The view model must allow:
 - one list at a time: **Recent, Favourites, Tags, Engines, All**;
 - turning the encoder moves, pressing enters or loads into the current part, a long press
   or second button auditions;
-- Tags lists the vocabulary facets, then their tags, then matching items: AND by entering
+- Tags lists the tags, most used first, then matching items: AND by entering
   one tag, then another, from a "narrow further" row;
 - no free-text search, no drag, no grid.
 
@@ -489,10 +485,10 @@ Not built now (RFC 0019). The view model must allow:
 | --- | --- | --- |
 | A Sound | `Sounds/<name>.osound/` in the user's library folder: `sound.json` and `nodes/` | User file |
 | A Performance | `Performances/<name>.oscairn/`, as today, version 3 | User file |
-| Pack and factory items | The package store, read-only | Package content |
+| Preloaded and package items | `Sounds/` and `Performances/`, like any other | Ordinary library items |
 | Plugin presets | Where the plugin keeps them | The plugin's |
 | Index of all of the above | Under `OSCAIRN_DATA_HOME/library/` | Cache, rebuilt by scanning |
-| User tags on read-only items, favourites, recents | One user file under `OSCAIRN_DATA_HOME/library/` | User data |
+| Favourites, recents | One user file under `OSCAIRN_DATA_HOME/library/` | User data |
 | Samples a Sound uses | Asset libraries (RFC 0009), referenced, never copied | Assets |
 
 The folder names are a convention, as `.oscairn` is today: the reader recognises the
@@ -505,10 +501,10 @@ Proposed only; [control-protocol.md](../control-protocol.md) is not changed by t
 
 | Method | Parameters | Result |
 | --- | --- | --- |
-| `library.query` | optional `text`, `tags`, `engines`, `kinds`, `source`, `favourites`, `recent`, `sort`, `offset`, `limit` | `items` (id, revision, kind, name, tags, engines, source, favourite, seamless), `facets` with counts, `total` |
+| `library.query` | optional `text`, `tags`, `engines`, `kinds`, `favourites`, `recent`, `sort`, `offset`, `limit` | `items` (id, revision, kind, name, tags, engines, favourite, seamless), `facets` with counts, `total` |
 | `library.get` | `id`, optional `revision`, optional `part` to check against | the info block, nodes summary, controls it brings, estimated memory, and for a `part`: seamless or not, wires and controls that would be flagged |
-| `library.vocabulary` | none | facets and their tags, host and package |
-| `library.tags` | `id`, `tags` | `{"accepted":true}`; writes the user's file or the user overlay |
+| `library.tags` | none | every tag in the library with its count, for suggestions |
+| `library.setTags` | `id`, `tags` | `{"accepted":true}`; writes the item's file |
 | `library.favourite` | `id`, `favourite` | `{"accepted":true}` |
 | `library.rescan` | none | counts added, changed and removed; emits `library.changed` |
 | `parts.loadSound` | `part`, `id`, optional `revision`, `confirm` | without `confirm`: what would change; with it: `{"accepted":true, "seamless":bool}` |
@@ -525,7 +521,7 @@ other requests do not wait the way `assets.register` does today.
 | Step | Deliverable | Gate |
 | --- | --- | --- |
 | 1. Sound documents | Performance format version 3 with the info block, provenance and control owners; the Sound document on the same reader; `parts.saveSound`, `parts.loadSound` (cutting), `parts.fromSound` | A part with a split, two plugins, an internal user wire and two part controls, saved as a Sound and loaded into another Performance's part, renders sample for sample as the original part did. Crossing wires are listed and not saved; a Performance control is retargeted by name or flagged; scene parameters on removed nodes are reported. A version 2 document is refused |
-| 2. Library index and tags | Scanning user folders and packages, the index as cache, the user file, vocabulary, `library.*`, `LibraryModel` | Files copied in from a computer appear after a rescan. Deleting the index and rescanning gives the same results and loses no favourite or user tag. AND filtering, counts and search are checked in `LibraryModel` tests without a window |
+| 2. Library index and tags | Scanning user folders and packages, the index as cache, the user file, tag editing and suggestions, `library.*`, `LibraryModel` | Files copied in from a computer appear after a rescan. Deleting the index and rescanning gives the same results and loses no favourite or tag. AND filtering, counts and search are checked in `LibraryModel` tests without a window |
 | 3. Desktop pane | The Library pane, inspector, drag to part, new part, keyboard | From the pane alone: find a Sound by two tags, load it into a part, make a new part from another, by mouse and by keyboard. `desktop-shell` renders the pane in both input modes |
 | 4. Plugin presets | Presets in the index; CLAP features, flags and creators read; Load preset on a node | The CLAP test fixture's presets appear tagged and load into their node; a native-context plugin's preset loads while a note is held without cutting it |
 | 5. Audition and seamless loading | The audition part; part transitions on RFC 0007's automatic chain preparation | A note held across **Load into part** keeps the outgoing sound and its delay tail while new notes play the incoming one, in uneven block sizes, with no allocation on the audio thread. A load that cannot be seamless says so before it happens |
@@ -550,8 +546,7 @@ other requests do not wait the way `assets.register` does today.
   part whose input is audio, so it is already a Sound. Whether a fragment to insert into the
   middle of a chain is needed is left until groups exist (RFC 0011 step 7).
 - **Audition output** on a device with a cue output: cue, or in place on Main.
-- **Tag vocabulary and translation.** Which words, and whether display forms are localised
-  while stored tags stay as written.
+- **Translating tags.** Whether a tag can show translated while it is stored as written.
 - **Size limits on the device:** how many items the index must search quickly on the KICK's
   processor, and how it stays current. Options: rescan every folder at start (simplest,
   slowest with thousands of items on an SD card); keep the index and recheck only files whose
@@ -577,6 +572,8 @@ other requests do not wait the way `assets.register` does today.
   change rehearsed work.
 - **A separate Sound format.** A Sound uses the Performance data model and reader.
 - **The index as the source of truth.** It is a cache; files and the user file are the truth.
-- **Favourites and personal tags in item files.** They would change revisions and could not
-  apply to read-only packs.
+- **Favourites in item files.** They would change revisions, and are one musician's, not the
+  item's.
+- **Factory and user content kept apart:** read-only factory items, user tag overlays, a
+  Source facet, a host vocabulary. Preloaded content is ordinary content, and tags are tags.
 - **Silent cuts.** Loading never cuts held notes without saying so first.
