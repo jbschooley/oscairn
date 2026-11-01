@@ -99,12 +99,13 @@ namespace oscairn
         virtual void loadPerformance(const std::string& directory) = 0;
         // The Performance's own details (format 3's info block, RFC 0021): saved with it, read
         // by the library. The ID is made on the first save and kept.
-        struct PerformanceInfo { std::string id, name, description; std::vector<std::string> tags; };
+        // color: "#rrggbb", or empty for none; how lists and setlists show it.
+        struct PerformanceInfo { std::string id, name, description; std::vector<std::string> tags; std::string color; };
         virtual PerformanceInfo performanceInfo() const = 0;
         virtual void setPerformanceInfo(const PerformanceInfo& info) = 0; // the ID is kept as it is
         // The library (RFC 0021): the device's Performances, by tags, text, favourites and
         // recent use. Performances save into it by name; loading by ID marks one used.
-        struct LibraryItem { std::string id, kind = "performance", name, description, path; std::vector<std::string> tags; bool favourite = false; uint32_t recent = 0; };
+        struct LibraryItem { std::string id, kind = "performance", name, description, path; std::vector<std::string> tags; bool favourite = false; uint32_t recent = 0; std::string color; };
         struct LibraryQuery { std::string text; std::vector<std::string> tags; bool favourites = false, recent = false; uint32_t limit = 200; };
         struct LibraryResult { std::vector<LibraryItem> items; std::vector<std::pair<std::string, uint32_t>> tags; uint32_t total = 0; };
         virtual LibraryResult libraryQuery(const LibraryQuery& query) = 0;

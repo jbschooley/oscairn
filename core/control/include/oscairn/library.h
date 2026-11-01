@@ -38,6 +38,8 @@ namespace oscairn
     // The platform's folder for Oscairn's user data: OSCAIRN_DATA_HOME, else Application Support
     // on macOS, else XDG_DATA_HOME or ~/.local/share.
     std::filesystem::path dataHome();
+    // "#rrggbb" in hex digits, or empty: a Performance's color.
+    bool validColor(const std::string& color);
     // A Performance's info block as the library and the format read it; throws on a bad one.
     Control::PerformanceInfo readPerformanceInfo(const std::filesystem::path& folder);
 }

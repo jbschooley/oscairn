@@ -21,6 +21,7 @@
 #include "PluginBrowser.h"
 #include "PadEditor.h"
 #include "PartsView.h"
+#include "PerformanceColors.h"
 #include "Setlist.h"
 
 #include <BinaryData.h>
@@ -184,7 +185,10 @@ namespace oscairn::standalone
         juce::PopupMenu getMenuForIndex( int index, const juce::String& ) override
         {
             juce::PopupMenu menu;
-            if(index==0){const bool free=engine_.connected() && !engine_.soundBusy();menu.addItem(5002,"Save",free);menu.addItem(5003,"Save As New...",free);menu.addSeparator();menu.addItem(5000,"Save to Folder...",free);menu.addItem(5001,"Open Folder...",free);return menu;}
+            if(index==0){const bool free=engine_.connected() && !engine_.soundBusy();menu.addItem(5002,"Save",free);menu.addItem(5003,"Save As New...",free);
+                // The color lists and setlists show it in; saved with the Performance.
+                if(const auto info=engine_.performanceInfo()){juce::PopupMenu colors;addColors(colors,info->color,5100,"None");menu.addSubMenu("Color",colors,free);}
+                menu.addSeparator();menu.addItem(5000,"Save to Folder...",free);menu.addItem(5001,"Open Folder...",free);return menu;}
             if(index==1){const auto h=engine_.history();
                 menu.addItem(6000,h.undo.empty()?juce::String("Undo"):"Undo "+juce::String::fromUTF8(h.undo.c_str()),!h.undo.empty());
                 menu.addItem(6001,h.redo.empty()?juce::String("Redo"):"Redo "+juce::String::fromUTF8(h.redo.c_str()),!h.redo.empty());return menu;}
@@ -227,6 +231,7 @@ namespace oscairn::standalone
             if(id==8001){showApp(libraryApp_,"Library",[this]{return new LibraryPane(engine_,actions_,LibraryPane::Mode::Play);},900,700);return;}
             if(id==8002){setlist();showApp(setlist_,"Setlist",nullptr,0,0);return;}
             if(id==5002 || id==5003){saveToLibrary(id==5003);return;}
+            if(std::string color;colorChosen(id,5100,color)){engine_.edit([color](Control& c){auto info=c.performanceInfo();info.color=color;c.setPerformanceInfo(info);});return;}
             if(id==6000){engine_.edit([](Control& c){c.undo();});return;}
             if(id==6001){engine_.edit([](Control& c){c.redo();});return;}
             if(id==2000 || id==4000){showLibrary();return;}
@@ -266,10 +271,10 @@ namespace oscairn::standalone
             pickerAnswer_=std::move(answer);
             auto* pane=new LibraryPane(engine_,actions_,LibraryPane::Mode::Pick);
             pane->onPicked=[this](const std::string& id){
-                auto answer=std::move(pickerAnswer_);pickerAnswer_={};
+                auto pending=std::move(pickerAnswer_);pickerAnswer_={};
                 // The window goes after this click has finished with it.
                 juce::MessageManager::callAsync([safe=juce::Component::SafePointer<Window>(this)]{if(safe && !safe->pickerAnswer_)safe->picker_.reset();});
-                if(answer)answer(id);
+                if(pending)pending(id);
             };
             picker_=std::make_unique<AppWindow>("Choose a Performance",pane,760,620);
             picker_->onClose=[pane]{pane->onPicked({});};

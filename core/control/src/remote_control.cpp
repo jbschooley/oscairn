@@ -272,15 +272,15 @@ namespace oscairn
     }
     Control::PerformanceInfo RemoteControl::performanceInfo() const {
         auto d=impl_->call("performance.info");auto r=field(d.get(),"result");
-        return {string(field(r,"id")),string(field(r,"name")),string(field(r,"description")),strings(field(r,"tags"))};
+        return {string(field(r,"id")),string(field(r,"name")),string(field(r,"description")),strings(field(r,"tags")),string(field(r,"color"))};
     }
     void RemoteControl::setPerformanceInfo(const PerformanceInfo& info) {
-        impl_->call("performance.setInfo","{\"name\":"+quote(info.name)+",\"description\":"+quote(info.description)+",\"tags\":"+quoted(info.tags)+'}');
+        impl_->call("performance.setInfo","{\"name\":"+quote(info.name)+",\"description\":"+quote(info.description)+",\"tags\":"+quoted(info.tags)+",\"color\":"+quote(info.color)+'}');
     }
     Control::LibraryResult RemoteControl::libraryQuery(const LibraryQuery& q) {
         auto d=impl_->call("library.query","{\"text\":"+quote(q.text)+",\"tags\":"+quoted(q.tags)+",\"favourites\":"+(q.favourites?"true":"false")+",\"recent\":"+(q.recent?"true":"false")+",\"limit\":"+std::to_string(q.limit)+'}');
         auto r=field(d.get(),"result");LibraryResult result;
-        for(auto i:array(field(r,"items")))result.items.push_back({string(field(i,"id")),string(field(i,"kind")),string(field(i,"name")),string(field(i,"description")),string(field(i,"path")),strings(field(i,"tags")),boolean(field(i,"favourite")),static_cast<uint32_t>(integer(field(i,"recent")))});
+        for(auto i:array(field(r,"items")))result.items.push_back({string(field(i,"id")),string(field(i,"kind")),string(field(i,"name")),string(field(i,"description")),string(field(i,"path")),strings(field(i,"tags")),boolean(field(i,"favourite")),static_cast<uint32_t>(integer(field(i,"recent"))),string(field(i,"color"))});
         for(auto t:array(field(r,"tags")))result.tags.emplace_back(string(field(t,"tag")),static_cast<uint32_t>(integer(field(t,"count"))));
         result.total=static_cast<uint32_t>(integer(field(r,"total")));
         return result;

@@ -168,7 +168,7 @@ void Session::savePerformance(const std::string& directory) {
     if(info.id.empty()){std::random_device random;constexpr char hex[]="0123456789abcdef";for(int i=0;i<16;++i)info.id+=hex[random()&15];}
     if(info.name.empty())info.name=fs::path(directory).stem().string();
     std::vector<std::string> tags;for(const auto& t:info.tags)tags.push_back(quote(t));
-    const auto infoText="{\"id\":"+quote(info.id)+",\"name\":"+quote(info.name)+",\"description\":"+quote(info.description)+",\"tags\":"+join(tags)+'}';
+    const auto infoText="{\"id\":"+quote(info.id)+",\"name\":"+quote(info.name)+",\"description\":"+quote(info.description)+",\"tags\":"+join(tags)+",\"color\":"+quote(info.color)+'}';
     const auto out="{\"format\":\"oscairn.performance\",\"version\":3,\"info\":"+infoText+",\"libraries\":"+join(named)+",\"transport\":{\"tempo\":"+numeric(tempo_.load())+",\"clockSource\":"+quote(clockSource_.load()==Transport::ClockSource::Internal?"internal":"midi")+"},\"audioInputs\":"+ports(graph.audioLayout.inputs)+",\"audioOutputs\":"+ports(graph.audioLayout.outputs)+",\"nodes\":"+join(nodes)+",\"wires\":"+join(wires)+",\"parts\":"+join(parts)+",\"mappings\":"+join(mappings)+",\"pads\":"+padsText(padMap_)+scenesText+"}\n";
     if(out.size()>4*1024*1024)bad("manifest exceeds size limit");
     const auto encoding=detail::jsonPreflight(out,32);if(!encoding.empty())bad(std::string(encoding));
@@ -182,7 +182,7 @@ void Session::loadPerformance(const std::string& directory) {
     fields(d,{"format","version","info","libraries","transport","audioInputs","audioOutputs","nodes","wires","parts","mappings","pads","scenes","sceneParameters","scene","controls"});
     const auto pads=padsFrom(field(d,"pads"));
     if(text(field(d,"format"))!="oscairn.performance" || integer(field(d,"version"))!=3)bad("unsupported format version");
-    fields(field(d,"info"),{"id","name","description","tags"});const auto info=readPerformanceInfo(root);
+    fields(field(d,"info"),{"id","name","description","tags","color"});const auto info=readPerformanceInfo(root);
     const auto transport=field(d,"transport");fields(transport,{"tempo","clockSource"});const double tempo=number(field(transport,"tempo"));
     const auto clock=text(field(transport,"clockSource"));if(tempo<1 || tempo>1000 || (clock!="internal" && clock!="midi"))bad("invalid transport");
     const auto layout=graph_.describe().audioLayout;checkPorts(field(d,"audioInputs"),layout.inputs);checkPorts(field(d,"audioOutputs"),layout.outputs);
@@ -376,7 +376,7 @@ void Session::loadPerformance(const std::string& directory) {
 void Session::setPerformanceInfo(const PerformanceInfo& info) {
     if(info.name.size()>256 || info.description.size()>4096 || info.tags.size()>32 ||
        std::any_of(info.tags.begin(),info.tags.end(),[](const std::string& t){return t.empty() || t.size()>64 || t.find('\0')!=std::string::npos;}) ||
-       info.name.find('\0')!=std::string::npos || info.description.find('\0')!=std::string::npos)bad("invalid info");
+       info.name.find('\0')!=std::string::npos || info.description.find('\0')!=std::string::npos || !validColor(info.color))bad("invalid info");
     const auto id=info_.id;info_=info;info_.id=id;
 }
 

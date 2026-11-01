@@ -45,7 +45,7 @@ Required top-level fields:
 | Field | Meaning |
 | --- | --- |
 | `format`, `version` | Exactly `oscairn.performance` and integer `3` |
-| `info` | What the library shows ([RFC 0021](rfcs/0021-sounds-performances-and-library.md)): `id` (made at the first save, kept by every later one), `name` (the folder's name when none is set), `description` and up to 32 free `tags` |
+| `info` | What the library shows ([RFC 0021](rfcs/0021-sounds-performances-and-library.md)): `id` (made at the first save, kept by every later one), `name` (the folder's name when none is set), `description`, up to 32 free `tags` and `color` (`#rrggbb`, or empty for none) |
 | `transport` | Tempo and `internal` or `midi` clock source |
 | `audioInputs`, `audioOutputs` | Required logical graph ports: ID, channels, flags |
 | `nodes` | Local key, display name, plugin identity/version, path hint, shared engine key, expected audio/note ports |

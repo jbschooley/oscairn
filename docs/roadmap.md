@@ -390,6 +390,11 @@ a DAW plugin; and:
   separate Oscairn app to be running. Test old DAW-session state, runtime versions and
   missing assets; another DAW does not automatically understand our package lock.
 - **Plugin looks:** pages and themes described in data, then sandboxed custom views.
+- **Choosing between apps** ([RFC 0022](rfcs/0022-apps-and-requests.md) step 3): when two
+  installed apps offer one action (two setlist apps, two libraries), the musician picks one
+  once and may change the default per action in settings; nothing ranks Oscairn's own apps
+  first. Today the first app to offer an action answers it. Before this: step 2, actions
+  over the control API with app manifests, so apps in other processes can offer them.
 - **From Gig Performer's feature set** (compared October 31, 2026):
   - **Backing tracks:** an audio file player that follows the transport and setlist, as
     an app or plugin.

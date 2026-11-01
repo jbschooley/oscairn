@@ -135,11 +135,11 @@ int main(int argc, char** argv)
                 };
                 theme.apply("oscairn-dark");
                 engine.edit([](Control& c) {
-                    c.setPerformanceInfo({"", "Verse Keys", "for the verse", {"keys", "live"}});
+                    c.setPerformanceInfo({"", "Verse Keys", "for the verse", {"keys", "live"}, "#3e63dd"});
                     c.savePerformanceToLibrary("");
                     c.setPerformanceInfo({"", "Verse Keys", "", {"strings", "pad", "live"}});
                     c.savePerformanceToLibrary("Big Strings", true);
-                    c.setPerformanceInfo({"", "Big Strings", "with the bass split off", {"bass", "split"}});
+                    c.setPerformanceInfo({"", "Big Strings", "with the bass split off", {"bass", "split"}, "#46a758"});
                     c.savePerformanceToLibrary("Bass Split", true);
                 });
                 check(engine.editError().empty(), "three Performances saved into the library: " + engine.editError());
@@ -158,6 +158,7 @@ int main(int argc, char** argv)
                 library.setSize(900, 700);
                 check(wait([&] { return library.items().size() == 3; }), "the library lists the three Performances");
                 check(library.tags().size() == 6 && library.items()[0].name == "Bass Split", "sorted by name, with every tag counted");
+                check(library.items()[0].color == "#46a758" && library.items()[2].color == "#3e63dd", "each with its color");
                 snapshot(library, "library-mouse");
                 standalone::setDesktopMode(library, 2); library.resized();
                 snapshot(library, "library-touch");
@@ -194,9 +195,28 @@ int main(int argc, char** argv)
                 check(wait([&] { return !engine.soundBusy() && engine.performanceInfo() && engine.performanceInfo()->name == "Bass Split"; }), "the first entry opened");
                 setlist->step(1);
                 check(setlist->current() == 1 && wait([&] { return !engine.soundBusy() && engine.performanceInfo() && engine.performanceInfo()->name == "Verse Keys"; }), "Next opened the second");
+                // Its own color for an entry, over the Performance's.
+                check(setlist->colorAt(0) == juce::Colour(0xff46a758), "an entry shows its Performance's color");
+                setlist->setColor(0, "#e5484d");
+                check(setlist->colorAt(0) == juce::Colour(0xffe5484d), "and the setlist's own color over it");
                 snapshot(*setlist, "setlist-mouse");
                 standalone::setDesktopMode(*setlist, 2); setlist->resized();
                 snapshot(*setlist, "setlist-touch");
+                standalone::setDesktopMode(*setlist, 1);
+                // More entries, shown as a 3 × 2 grid; Next turns the page.
+                for(int i = 0; i < 5; ++i) { setlist->add(library.items()[size_t(i % 3)].id); }
+                setlist->setDisplay({standalone::SetlistDisplay::Mode::Grid, 3, 2});
+                setlist->setSize(900, 600);
+                snapshot(*setlist, "setlist-grid");
+                const auto grid = standalone::readSetlist(standalone::setlistFile(folder, "Friday"));
+                check(grid.display.mode == standalone::SetlistDisplay::Mode::Grid && grid.display.columns == 3 && grid.display.rows == 2
+                      && grid.entries.size() == 7 && grid.entries[0].color == "#e5484d" && grid.entries[1].color.empty(), "the display and colors were saved");
+                check(wait([&] { return !engine.soundBusy(); }), "the engine is free");
+                setlist->go(6);
+                check(setlist->current() == 6 && wait([&] { return !engine.soundBusy(); }), "the second page's first entry opened");
+                snapshot(*setlist, "setlist-grid-page-2");
+                setlist->setDisplay({standalone::SetlistDisplay::Mode::Scroll, 3, 2});
+                snapshot(*setlist, "setlist-scroll");
                 // A file that is not a setlist is refused.
                 const auto bad = folder.getChildFile("Bad.json");
                 bad.replaceWithText(R"({"format":"oscairn.setlist","version":2,"name":"x","entries":[]})");

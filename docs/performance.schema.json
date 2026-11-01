@@ -12,7 +12,7 @@
     },
     "info": {
       "type": "object",
-      "description": "What the library shows (RFC 0021): an ID made at the first save and kept by every later one, a name, a description and free tags",
+      "description": "What the library shows (RFC 0021): an ID made at the first save and kept by every later one, a name, a description, free tags and a color",
       "properties": {
         "id": {
           "type": "string",
@@ -35,13 +35,19 @@
             "minLength": 1,
             "maxLength": 64
           }
+        },
+        "color": {
+          "type": "string",
+          "pattern": "^(#[0-9A-Fa-f]{6})?$",
+          "description": "#rrggbb, or empty for none"
         }
       },
       "required": [
         "id",
         "name",
         "description",
-        "tags"
+        "tags",
+        "color"
       ],
       "additionalProperties": false
     },

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #include "LibraryPane.h"
+#include "PerformanceColors.h"
 
 namespace oscairn::standalone
 {
@@ -128,7 +129,8 @@ namespace oscairn::standalone
         g.setColour(selected ? ink(Ink::Accent).withAlpha(.18f) : (row % 2 ? ink(Ink::Raised).withAlpha(.35f) : ink(Ink::Surface)));
         g.fillRect(0, 0, width, height);
         if(selected) { g.setColour(ink(Ink::Accent)); g.fillRect(0, 0, 3, height); }
-        auto area = juce::Rectangle<int>(0, 0, width, height).reduced(12, 4);
+        if(const auto color = colorOf(item.color); !color.isTransparent()) { g.setColour(color); g.fillRoundedRectangle(juce::Rectangle<float>(10, height * .22f, 6, height * .56f), 3); }
+        auto area = juce::Rectangle<int>(0, 0, width, height).reduced(24, 4);
         area.removeFromRight(height);
         const float body = textSize(TextRole::Body, m), small = textSize(TextRole::Small, m);
         auto top = area.removeFromTop(area.getHeight() / 2 + 2);

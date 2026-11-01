@@ -109,6 +109,8 @@ try:
         changed(lambda m: m['info'].update(id=''))
         changed(lambda m: m['info'].update(extra=1))
         changed(lambda m: m['info'].update(tags=['']))
+        changed(lambda m: m['info'].update(color='#12345'))
+        changed(lambda m: m['info'].pop('color'))
         changed(lambda m: m.update(unknown=True))
         changed(lambda m: m['nodes'][0].update(key='../escape'))
         changed(lambda m: m['nodes'][0]['plugin'].update(version='incompatible'))

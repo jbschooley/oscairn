@@ -33,8 +33,8 @@ with tempfile.TemporaryDirectory(prefix='oscairn-library-') as temporary:
                          text=True, encoding='utf-8', env={**os.environ, 'OSCAIRN_DATA_HOME': temporary})
     try:
         assert rpc('library.query') == {'items': [], 'tags': [], 'total': 0}
-        assert rpc('performance.info') == {'id': '', 'name': '', 'description': '', 'tags': []}
-        rpc('performance.setInfo', {'name': 'Warm Pad', 'description': 'slow strings', 'tags': ['pad', 'warm']})
+        assert rpc('performance.info') == {'id': '', 'name': '', 'description': '', 'tags': [], 'color': ''}
+        rpc('performance.setInfo', {'name': 'Warm Pad', 'description': 'slow strings', 'tags': ['pad', 'warm'], 'color': '#3a7bd5'})
         pad = rpc('library.save')['id']
         assert len(pad) == 16 and rpc('performance.info')['id'] == pad
         assert (home / 'Performances/Warm Pad.oscairn/performance.json').is_file()
@@ -59,7 +59,7 @@ with tempfile.TemporaryDirectory(prefix='oscairn-library-') as temporary:
         assert rpc('performance.info')['name'] == 'Warm Pad'
 
         everything = rpc('library.query')
-        assert everything['total'] == 1 and everything['items'][0]['name'] == 'Warm Pad'
+        assert everything['total'] == 1 and everything['items'][0]['name'] == 'Warm Pad' and everything['items'][0]['color'] == '#3a7bd5'
         assert everything['tags'] == [{'tag': 'pad', 'count': 1}, {'tag': 'warm', 'count': 1}]
         assert rpc('library.query', {'text': 'STRINGS'})['total'] == 1
         assert rpc('library.query', {'tags': ['pad', 'lead']})['total'] == 0
@@ -71,6 +71,7 @@ with tempfile.TemporaryDirectory(prefix='oscairn-library-') as temporary:
         rpc('library.load', {'id': 'missing'}, True)
         rpc('library.query', {'limit': 0}, True)
         rpc('performance.setInfo', {'name': 'x', 'description': '', 'tags': ['']}, True)
+        rpc('performance.setInfo', {'name': 'x', 'description': '', 'tags': [], 'color': 'blue'}, True)
 
         # A file changed on disk is read again; one the library cannot read is skipped, and the cache lives.
         manifest = home / 'Performances/Warm Pad.oscairn/performance.json'

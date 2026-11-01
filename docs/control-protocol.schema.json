@@ -1906,6 +1906,10 @@
                   "type": "string",
                   "maxLength": 4096
                 },
+                "color": {
+                  "type": "string",
+                  "pattern": "^(#[0-9A-Fa-f]{6})?$"
+                },
                 "tags": {
                   "type": "array",
                   "maxItems": 32,

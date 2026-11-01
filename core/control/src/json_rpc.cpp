@@ -389,13 +389,14 @@ namespace oscairn
             if(method=="performance.info" || method=="performance.setInfo") {
                 auto tags=[&](const std::vector<std::string>& v){std::vector<std::string> out;for(const auto& t:v)out.push_back(quote(t));return join(out);};
                 if(method=="performance.setInfo") {
-                    fields(p,{"name","description","tags"});Control::PerformanceInfo info;
+                    fields(p,{"name","description","tags","color"});Control::PerformanceInfo info;
                     info.name=std::string(string(member(p,"name")));info.description=std::string(string(member(p,"description")));
                     for(auto t:array(member(p,"tags"),32,0))info.tags.push_back(std::string(string(t)));
+                    if(member(p,"color"))info.color=std::string(string(member(p,"color")));
                     try{c.setPerformanceInfo(info);}catch(const std::exception& e){throw Failure{-32005,e.what()};}
                 } else fields(p,{});
                 const auto i=c.performanceInfo();
-                return "{\"id\":"+quote(i.id)+",\"name\":"+quote(i.name)+",\"description\":"+quote(i.description)+",\"tags\":"+tags(i.tags)+'}';
+                return "{\"id\":"+quote(i.id)+",\"name\":"+quote(i.name)+",\"description\":"+quote(i.description)+",\"tags\":"+tags(i.tags)+",\"color\":"+quote(i.color)+'}';
             }
             if(method=="library.query") {
                 fields(p,{"text","tags","favourites","recent","limit"});Control::LibraryQuery q;
@@ -408,7 +409,7 @@ namespace oscairn
                 try{r=c.libraryQuery(q);}catch(const std::exception& e){throw Failure{-32005,e.what()};}
                 std::vector<std::string> items,counts;
                 for(const auto& i:r.items){std::vector<std::string> t;for(const auto& x:i.tags)t.push_back(quote(x));
-                    items.push_back("{\"id\":"+quote(i.id)+",\"kind\":"+quote(i.kind)+",\"name\":"+quote(i.name)+",\"description\":"+quote(i.description)+",\"path\":"+quote(i.path)+",\"tags\":"+join(t)+",\"favourite\":"+(i.favourite?"true":"false")+",\"recent\":"+std::to_string(i.recent)+'}');}
+                    items.push_back("{\"id\":"+quote(i.id)+",\"kind\":"+quote(i.kind)+",\"name\":"+quote(i.name)+",\"description\":"+quote(i.description)+",\"path\":"+quote(i.path)+",\"tags\":"+join(t)+",\"favourite\":"+(i.favourite?"true":"false")+",\"recent\":"+std::to_string(i.recent)+",\"color\":"+quote(i.color)+'}');}
                 for(const auto& [tag,n]:r.tags)counts.push_back("{\"tag\":"+quote(tag)+",\"count\":"+std::to_string(n)+'}');
                 return "{\"items\":"+join(items)+",\"tags\":"+join(counts)+",\"total\":"+std::to_string(r.total)+'}';
             }

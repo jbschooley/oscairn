@@ -696,13 +696,14 @@ rescan reads only changed files and deleting the cache loses nothing. Favourites
 used (at most 50) are the user's, in `library/user.json`. Files the library cannot read, and
 hidden folders, are skipped; of two files with one ID the first found is listed.
 
-- `performance.info` (`{}`) returns the open Performance's `{id,name,description,tags}`; the
-  ID is empty until the first save. `performance.setInfo` takes `{name,description,tags}`
-  (the ID is kept) and returns the same. These are not undoable edits.
+- `performance.info` (`{}`) returns the open Performance's `{id,name,description,tags,color}` (`color` is
+  `#rrggbb` or empty); the
+  ID is empty until the first save. `performance.setInfo` takes `{name,description,tags}` and
+  an optional `color` (empty when absent; the ID is kept) and returns the same. These are not undoable edits.
 - `library.query` takes optional `text` (case-insensitive, over name, description and tags),
   `tags` (all must match), `favourites`, `recent` and `limit` (1–1000, default 200). It returns
   `{items,tags,total}`: items with `id`, `kind` (`performance`), `name`, `description`,
-  `path`, `tags`, `favourite` and `recent` (1 is the most recent, 0 none), sorted by name or,
+  `path`, `tags`, `favourite`, `recent` and `color` (1 is the most recent, 0 none), sorted by name or,
   with `recent`, most recent first; `tags` counts each tag over every match, and `total`
   counts matches before the limit.
 - `library.favourite` takes `{id,favourite}`; `library.rescan` (`{}`) returns `{"items":n}`.
