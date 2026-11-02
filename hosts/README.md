@@ -158,12 +158,13 @@ To read what a controller sends, build `oscairn-midi-monitor` (with the app or t
 run it from the build folder, for example `build-app/hosts/oscairn_midi_monitor_artefacts/RelWithDebInfo/oscairn-midi-monitor`:
 it lists the MIDI inputs, prints every message (port, channel, type, number, value), and on Enter
 or Ctrl-C a table with a row per control (count, lowest and highest value, the values sent),
-ready to paste into a profile. `--list` only lists the inputs.
+ready to paste into a profile. `--list` only lists the inputs. Where there is no keyboard input
+(a shell that runs one command and shows its output), `--seconds 60` listens for a minute and then
+prints the table.
 
 The app starts at **Home** ([RFC 0030](../docs/rfcs/0030-system-shell-launcher-and-navigation.md)):
-a top bar and the apps as tiles, each with a line of its state. Performance is always there;
-Library, Setlist and Groovebox are there when the profile offers them (the computer's and the
-KICK's do). In the desktop layout, Home is the window's content: Performance opens in its place (its
+a top bar and the apps as tiles, each with a line of its state: Performance, Library, Setlist
+and Groovebox, those the profile offers (the computer's and the KICK's offer all four). In the desktop layout, Home is the window's content: Performance opens in its place (its
 toolbar has a Home button), and the other apps open in their own windows; **Apps → Home** goes
 back. In a panel layout, Home covers the screen, and each app opens on the screen in a frame whose top
 bar has its name and a Home icon, unless a layout button is bound to `home`. Layout buttons bound

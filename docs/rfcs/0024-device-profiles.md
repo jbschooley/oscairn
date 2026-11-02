@@ -240,7 +240,8 @@ guessed (from the defaults such keyboards often ship with: knobs on CC 74, 71, 7
 faders on CC 73, 75, 79 and 72, pads on notes 36 to 51 on channel 10), as is the encoding of
 knobs 7 and 8, which send something relative (taken as `signMagnitude`) where knobs 1 to 6 send
 absolute values. `oscairn-midi-monitor` (in `tools/`) prints every message from every input and
-a table per control, to fill in the real numbers.
+a table per control, to fill in the real numbers; `--seconds N` listens for that long instead of
+waiting for Enter.
 
 The second built-in controller is `modx-m-usb`, a MODX M played over USB in DAW Remote's Plugin
 mode (the DAW type Cubase, Logic or Live), apart from `modx-m`, the profile for running on that
