@@ -180,11 +180,16 @@ provide (recommended; none is built yet):
 Limits: 4096 presets per plugin library, 64 locations and file types per provider, 10,000
 files per folder and 16 folder levels, names up to 255 bytes, locations and load keys up to
 4096; a preset over a size limit is skipped. A scan indexes presets in a separate helper
-process with a 15-second timeout, and a listing for a loaded plugin reads them again through
-that same helper process (`oscairn-plugin-scan`, found beside the engine or named by
-`OSCAIRN_PLUGIN_SCAN`), so a plugin's preset-provider code never runs unbounded inside the
-engine or a worker. `get_metadata` must be fast and never interactive, as CLAP says.
-Nothing watches preset folders: a listing reads them again. What a Sound saves is the plugin's
+process with a 15-second timeout, and a listing for a loaded plugin reads them through that
+same helper process (`oscairn-plugin-scan`, found beside the engine or the desktop app, or
+named by `OSCAIRN_PLUGIN_SCAN`). The listing, or its failure, is kept per plugin binary until
+the binary changes, so a provider that hangs costs one 15-second timeout, not one per listing.
+A plugin in a worker lists presets only through the helper: without one it lists none, and
+`presets.list` says why. Only a plugin hosted in the engine's own process with no helper
+configured has its provider run there, on the control thread, as the rest of that plugin
+does. `get_metadata` must be fast and never interactive, as CLAP says.
+Nothing watches preset folders, and the listing is kept, so preset files added later show once
+the plugin's binary changes or the engine restarts. What a Sound saves is the plugin's
 own state (for native contexts, the snapshot of every prepared patch), never a reference to the
 preset, so it opens when the preset is gone.
 

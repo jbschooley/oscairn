@@ -21,7 +21,10 @@ extern "C" {
  *                  interface is one too. A new context on a running engine costs this alone;
  *   asset_bytes:   decoded assets (samples) the current state uses.
  * The total for an instance is shared_bytes + context_bytes + asset_bytes. An engine that also
- * offers oscairn.effect-contexts reports the same shared and context bytes through both. */
+ * offers oscairn.effect-contexts reports the same shared and context bytes through both. Every
+ * node of an engine, the originating interface and each effect context made from it, reports
+ * the engine's shared_bytes, the same value: a host counts it once, and keeps counting it while
+ * any node lives, after the originating interface is destroyed too. */
 static const char OSCAIRN_EXT_MEMORY[] = "oscairn.memory/draft";
 typedef struct oscairn_memory {
     uint64_t shared_bytes;

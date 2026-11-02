@@ -117,10 +117,17 @@ limits:
   reported beside the scan's as `Presets not indexed: <reason>` (`Plugin scan timed out`,
   `Plugin crashed or failed during scan`, …), and the plugin is listed without presets.
 - *For a loaded plugin* (`presets.list`), the process serving the call runs the same isolated
-  scan helper on the plugin's binary (15 s timeout, crash isolation): a preset provider that
-  hangs or crashes stalls the listing at most that long and takes neither the engine's control
-  thread nor the plugin's worker down with it. Where no helper is configured (a host running
-  plugins among its own code), the listing indexes in-process, stopping new reads after 10 s.
+  scan helper on the plugin's binary (15 s timeout, crash isolation, and on Linux a 1 GiB
+  address-space limit): a preset provider that hangs or crashes stalls the listing at most
+  that long and takes neither the engine's control thread nor the plugin's worker down with
+  it. The listing, or its failure, is kept per binary (its path and modification time), so a
+  hung provider stalls the control thread once, not on every refresh. A failed listing is a
+  `presets.list` error saying why (`Presets not listed: Plugin scan timed out`, …). A plugin in
+  a worker lists presets only this way: with no helper configured it lists none, saying so.
+  Only a plugin hosted in the engine's own process with no helper (a host running plugins
+  among its own code) has its provider run in-process, stopping new reads after 10 s; one
+  `get_metadata` call there is not bounded. The engine and the desktop's in-process mode use
+  the `oscairn-plugin-scan` beside them.
 - *Limits:* 4096 presets per plugin library; 64 locations and 64 file types per provider;
   10,000 files per folder and 16 levels of subfolders; names up to 255 bytes, locations and
   load keys up to 4096. A preset over a size limit is skipped; at the count or time limit the
