@@ -158,6 +158,9 @@ namespace oscairn
             std::vector<NoteZone> zones;
             uint64_t ports = 0;
             uint8_t channel = 0;
+            // What the part chose (its rules and channel). While it stays the same, the tap keeps its
+            // held notes even when its ports change, so a device renumbered under it gets their offs.
+            uint64_t destination = 0;
             bool operator==(const MidiTap&) const = default;
         };
         void setMidiTaps( std::vector<MidiTap> taps );

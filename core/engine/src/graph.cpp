@@ -419,9 +419,9 @@ namespace oscairn
         decltype(taps_) next;
         for(auto& t:taps)
         {
-            // A tap whose destination (ports or channel) moved is a different destination: the old
-            // route is gone, and beginBlock sends its held notes' offs with the old settings.
-            const auto kept=std::find_if(taps_.begin(),taps_.end(),[&](const auto& o){return o.first.key==t.key && o.first.from==t.from && o.first.ports==t.ports && o.first.channel==t.channel;});
+            // A tap whose chosen destination changed is a different tap: the old route is gone, and
+            // beginBlock sends its held notes' offs with the old ports and channel.
+            const auto kept=std::find_if(taps_.begin(),taps_.end(),[&](const auto& o){return o.first.key==t.key && o.first.from==t.from && o.first.destination==t.destination;});
             auto route=kept!=taps_.end() && std::none_of(next.begin(),next.end(),[&](const auto& n){return n.second==kept->second;})?kept->second:std::make_shared<NoteRoute>(16u);
             next.emplace_back(std::move(t),std::move(route));
         }

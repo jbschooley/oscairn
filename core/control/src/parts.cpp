@@ -269,8 +269,11 @@ namespace oscairn
             const auto ports = resolveDevices(part.midiOut.devices, hostStatus_.midiOutputs) & ~uint64_t(1); // outputs are numbered from 1
             if(!ports) continue;
             const auto first = taps.size();
+            std::string chosen = std::to_string(part.midiOut.channel);
+            for(const auto& r : part.midiOut.devices) chosen += '\n' + std::to_string(int(r.kind)) + ' ' + std::to_string(int(r.match)) + ' ' + std::to_string(r.port) + ' ' + r.pattern;
+            const uint64_t destination = std::hash<std::string>{}(chosen);
             auto add = [&](NodeId from, const std::vector<NoteZone>& zones) {
-                Graph::MidiTap t{part.id, from, zones, ports, part.midiOut.channel};
+                Graph::MidiTap t{part.id, from, zones, ports, part.midiOut.channel, destination};
                 if(std::find(taps.begin() + long(first), taps.end(), t) == taps.end()) taps.push_back(std::move(t));
             };
             for(const auto& w : wires)

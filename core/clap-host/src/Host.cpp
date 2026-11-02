@@ -241,7 +241,7 @@ struct Host::Impl {
     std::atomic<uint64_t> outputDrops{0};
     struct TimedEvent { Event event; uint32_t order = 0; };
     // Separate bounded budgets for carry, queued controls and graph events.
-    static constexpr uint32_t renderEvents = 3 * maxBlockEvents;
+    static constexpr uint32_t renderEvents = 2 * maxBlockEvents + maxProcessEvents;
     std::array<TimedEvent, renderEvents> ordered;
     std::array<Event, renderEvents> chunkEvents;
     std::array<Event, maxBlockEvents> carryEvents;

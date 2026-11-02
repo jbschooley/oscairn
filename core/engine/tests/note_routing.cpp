@@ -214,9 +214,15 @@ int main(int argc,char** argv){try{
         const auto on=Event::midi(0x90,60,127),off=Event::midi(0x80,60,0);
         t.setMidiTaps({{7,graphInput,{},2,1}});t.commit();
         check(tapOut({&on,1})==std::vector<std::string>{"144 2"},"the tap sends a held note-on on its port and channel");
-        t.setMidiTaps({{7,graphInput,{},4,2}});t.commit();
+        t.setMidiTaps({{7,graphInput,{},4,2,1}});t.commit(); // the part chose another destination
         check(tapOut()==std::vector<std::string>{"128 2"},"moving the tap releases the held note with the old port and channel");
         check(tapOut({&off,1}).empty(),"and the release itself reaches only the new tap, which holds no note");
+        // The same choice resolving to another port (a device plugged in again under a new number)
+        // keeps the held note, so its release follows the device.
+        check(tapOut({&on,1})==std::vector<std::string>{"145 4"},"a note on the new destination");
+        t.setMidiTaps({{7,graphInput,{},8,2,1}});t.commit();
+        check(tapOut().empty(),"a renumbered device keeps its held note");
+        check(tapOut({&off,1})==std::vector<std::string>{"129 8"},"and its release goes to the device's new port");
     }
     {
         // A block that fills every event slot: 512 notes (kick::clap::Host::maxBlockEvents) must

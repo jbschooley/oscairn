@@ -118,7 +118,8 @@ namespace oscairn
     uint64_t residentBytes(long pid = 0);
     // RFC 0025, Linux only: what the reliability level in OSCAIRN_RELIABILITY (set by the app from
     // its profile; workers inherit it) asks of an Oscairn process at its start. At instrument and
-    // pass-through: every page locked, current and future (mlockall), and the process's place in
+    // pass-through: every page locked (mlockall; future pages too only under an unlimited
+    // RLIMIT_MEMLOCK, since a finite one would turn later allocations into failures), and the process's place in
     // the out-of-memory killer's order (oom_score_adj: the engine -999, a worker 300). Returns what
     // could not be done, empty when everything asked was done or nothing was asked.
     std::string applyMemoryPolicy(int oomScoreAdj);

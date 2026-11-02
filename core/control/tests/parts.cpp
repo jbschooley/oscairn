@@ -318,13 +318,18 @@ namespace
         run({});
         out = run({Event::midi(0x90, 64, 100, 5)});
         check(out == Out{{5, 2, 0x90, 83, 100}}, "Transpose's notes, on their own channel:" + shown(out));
-        // Plugged in again under another number: the selector follows it, no commit needed. The
-        // held note was played on the old number, so its release goes there, not to the new one.
+        // Plugged in again under another number: the selector follows it, no commit needed.
         status.midiOutputs = {{E::Usb, 5, "SMK-37 Elite -Master"}}; s.setHostStatus(status);
         out = run({Event::midi(0x80, 64, 0, 2)});
-        check(out == Out{{0, 2, 0x80, 83, 0}} && !s.graphState().staged, "the release goes to the output it was played on:" + shown(out));
-        out = run({});
-        check(out.empty(), "and the held note is gone from the renumbered output, which never took it");
+        check(out == Out{{2, 1u << 5, 0x80, 83, 0}} && !s.graphState().staged, "the release goes to output 5 now:" + shown(out));
+        // Moved to another device while a key is held: the note was played on the SMK-37, so its
+        // release goes there; the new device never took the note.
+        status.midiOutputs = {{E::Usb, 5, "SMK-37 Elite -Master"}, {E::Usb, 6, "TR-8S"}}; s.setHostStatus(status);
+        out = run({Event::midi(0x90, 64, 100, 5)});
+        s.setPartMidiOut(keys, {{{K::UsbNamed, M::Equals, 0, "TR-8S"}}, 0}); s.commit();
+        out = run({Event::midi(0x80, 64, 0, 2)});
+        check(out == Out{{0, 1u << 5, 0x80, 83, 0}}, "moved while held, the release goes to the device it was played on:" + shown(out));
+        s.setPartMidiOut(keys, {{{K::UsbNamed, M::Equals, 0, "SMK-37 Elite -Master"}}, 0}); s.commit();
 
         // Performances keep the selector and channel, resolved again where they open.
         s.setPartMidiOut(keys, {{{K::UsbNamed, M::Contains, 0, "smk"}}, 16}); s.commit();
