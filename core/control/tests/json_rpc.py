@@ -109,6 +109,8 @@ try:
     assert all('rangeHigh' not in p for p in meta['parameters'])
     groups = {p['name']: p['group'] for p in meta['parameters']}
     assert groups['Pitch LFO rate'] == groups['Pitch LFO depth'] == 1 and groups['Brightness'] == 0, groups
+    roles = {p['name']: p['role'] for p in meta['parameters'] if 'role' in p}
+    assert roles == {'Brightness': 'cutoff', 'Level': 'level'}, roles  # its declared roles, and none for the rest
     assert rpc('params.text', {'node': 1, 'param': 3, 'value': 0.5})['result']['text'] == '50%'
     original = value(1)
     error(rpc('params.set', {'values': [{'node': 1, 'param': 1, 'value': 0.91}, {'node': 1, 'param': 999, 'value': 1}]}), -32002)

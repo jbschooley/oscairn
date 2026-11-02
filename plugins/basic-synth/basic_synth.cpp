@@ -46,11 +46,12 @@ namespace
         features,
     };
 
-    // Stable parameter IDs are the table index + 1. Each with the control it wants and its
-    // priority (oscairn.ui): the most played first, so physical knobs take them in that order.
-    struct Parameter { const char* name; double maximum, initial; const char* unit; bool stepped=false; uint32_t widget=OSCAIRN_WIDGET_KNOB, priority=0, group=0; };
+    // Stable parameter IDs are the table index + 1. Each with the control it wants, its
+    // priority (oscairn.ui): the most played first, so physical knobs take them in that order,
+    // and its role: Brightness is the filter's cutoff, Level the output level.
+    struct Parameter { const char* name; double maximum, initial; const char* unit; bool stepped=false; uint32_t widget=OSCAIRN_WIDGET_KNOB, priority=0, group=0, role=OSCAIRN_ROLE_NONE; };
     constexpr std::array<Parameter,10> parameters{{
-        {"Brightness",1,1,"%",false,OSCAIRN_WIDGET_KNOB,1}, {"Level",1,1,"%",false,OSCAIRN_WIDGET_KNOB,2}, {"Pressure",1,.5,"%",false,OSCAIRN_WIDGET_KNOB,5},
+        {"Brightness",1,1,"%",false,OSCAIRN_WIDGET_KNOB,1,0,OSCAIRN_ROLE_CUTOFF}, {"Level",1,1,"%",false,OSCAIRN_WIDGET_KNOB,2,0,OSCAIRN_ROLE_LEVEL}, {"Pressure",1,.5,"%",false,OSCAIRN_WIDGET_KNOB,5},
         {"Oscillator",2,0,"",true,OSCAIRN_WIDGET_BUTTONS,3}, {"Detune",50,7,"cents",false,OSCAIRN_WIDGET_KNOB,4},
         {"Pitch LFO rate",40,0,"Hz",false,OSCAIRN_WIDGET_KNOB,6,1}, {"Pitch LFO depth",200,0,"cents",false,OSCAIRN_WIDGET_KNOB,7,1}, // one LFO: drawn joined
         {"Output bus",8,0,"",true,OSCAIRN_WIDGET_LIST,0},
@@ -342,7 +343,7 @@ namespace
     const clap_plugin_params_t      params     = { paramsCount, paramsInfo, paramsValue, paramsToText, paramsFromText, paramsFlush };
     const oscairn_plugin_ui_t       ui         = { []( const clap_plugin_t*, clap_id id, oscairn_param_hint_t* hint ) {
         if( id < 1 || id > parameters.size() ) return false;
-        *hint = { parameters[id - 1].widget, parameters[id - 1].priority, CLAP_INVALID_ID, parameters[id - 1].group };
+        *hint = { parameters[id - 1].widget, parameters[id - 1].priority, CLAP_INVALID_ID, parameters[id - 1].group, parameters[id - 1].role };
         return true;
     } };
     const clap_plugin_audio_ports_t audioPorts = { audioPortsCount, audioPortsGet };

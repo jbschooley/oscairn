@@ -11,6 +11,7 @@
 
 #include <clap/clap.h>
 #include <oscairn-clap/effect-contexts.h>
+#include <oscairn-clap/ui.h>
 #include <array>
 #include <charconv>
 #include <sstream>
@@ -255,6 +256,11 @@ namespace
             if(!std::strcmp(id,CLAP_EXT_PARAMS))return &params;
             if(!std::strcmp(id,CLAP_EXT_STATE))return &state;
             if(!std::strcmp(id,OSCAIRN_EXT_EFFECT_CONTEXTS))return &contexts;
+            // Its role (oscairn.ui): Wet is its main control, its knob in the Effects bank.
+            static const oscairn_plugin_ui_t ui{[](const clap_plugin_t*,clap_id param,oscairn_param_hint_t* hint){
+                if(param!=3)return false;
+                *hint={OSCAIRN_WIDGET_AUTO,0,CLAP_INVALID_ID,0,OSCAIRN_ROLE_MIX};return true;}};
+            if(!std::strcmp(id,OSCAIRN_EXT_UI))return &ui;
             return nullptr;
         };
         s->plugin.on_main_thread   = []( const clap_plugin_t* ) {};
