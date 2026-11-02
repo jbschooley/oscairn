@@ -791,6 +791,16 @@ namespace
         check(near(x.l[0], .125), "a part playing into it plays at its level: " + std::to_string(x.l[0]));
         s.setMaster(.5, 0); s.commit(); x.run(s); check(near(x.l[0], .0625), "the master level applies once after it: " + std::to_string(x.l[0]));
         s.setPartLevel(room, .5, true); s.commit(); x.run(s); check(near(x.l[0], 0), "and is muted with it");
+        // Its own sends carry too: an empty bus sends what plays into it, after its level and mute.
+        s.setMaster(1, 0); s.setPartLevel(room, 1, false); s.commit(); x.run(s);
+        check(near(x.l[0], .25), "the keys play through the bus at unity: " + std::to_string(x.l[0]));
+        const auto hall = s.addPart("Hall", {PartInput::Kind::Bus});
+        s.setSend(room, hall, 1); s.commit(); x.run(s);
+        check(near(x.l[0], .5), "the bus's own send plays beside it: " + std::to_string(x.l[0]));
+        s.setPartLevel(hall, .5, false); s.commit(); x.run(s);
+        check(near(x.l[0], .375), "the send's bus plays at its own level: " + std::to_string(x.l[0]));
+        s.setPartLevel(hall, 1, false); s.setPartLevel(room, 1, true); s.commit(); x.run(s);
+        check(near(x.l[0], 0), "muting the bus mutes its send too");
     }
 
     // Zones on a wire inside a part's chain (note limits after a note plugin) survive a rebuild

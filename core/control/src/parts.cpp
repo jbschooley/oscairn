@@ -376,10 +376,18 @@ namespace oscairn
                 }
                 return out;
             }
-            // No box: the sound goes on, through the bus's own fader, pan and mute.
+            // No box: the sound goes on, through the bus's own fader, pan and mute, and into
+            // the buses it sends to, post-fader (its sends keep their own pan).
             auto out = bus.bus ? busEntries(bus.bus) : std::vector<BusEntry>{{graphOutput, bus.output}};
             const bool mute = bus.mute || !heard(bus);
             for(auto& x : out) { x.level *= bus.level; x.pan = std::clamp(x.pan + bus.pan, -1.0, 1.0); x.mute = x.mute || mute; x.fader = true; }
+            for(const auto& send : bus.sends)
+                for(const auto x : busEntries(send.bus))
+                {
+                    auto s = x;
+                    s.level *= bus.level * send.level; s.mute = s.mute || mute; s.fader = true;
+                    out.push_back(s);
+                }
             return out;
         };
         return reach(bus.chain);
