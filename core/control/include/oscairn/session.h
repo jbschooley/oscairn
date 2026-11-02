@@ -447,6 +447,7 @@ namespace oscairn
         std::vector<Macro> macros_;
         double masterLevel_ = 1, masterPan_ = 0; // the Performance's main output
         std::map<NodeId, std::string> roles_;   // RFC 0016's node roles
+        std::vector<std::string> notices_;      // SessionStatus::notices
         std::vector<AssignmentOverride> assignments_; // physical controls' overrides (physical_controls.cpp)
         uint32_t nextMacro_ = 1;
         bool staged_ = false;
@@ -491,6 +492,7 @@ namespace oscairn
             MusicalKey key;
             double masterLevel = 1, masterPan = 0;
             std::map<NodeId,std::string> roles;
+            std::vector<std::string> notices;
         };
         std::unique_ptr<Prepared> read(const std::filesystem::path& root);
         void open(Prepared& prepared, bool seamless);

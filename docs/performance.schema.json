@@ -540,6 +540,10 @@
               "sha256": {
                 "type": "string",
                 "pattern": "^[0-9a-f]{64}$"
+              },
+              "optional": {
+                "type": "boolean",
+                "description": "true: the plugin does without it; missing, the node loads anyway with a notice, and the plugin finds it unavailable. Absent: required"
               }
             },
             "required": [

@@ -26,11 +26,17 @@ typedef struct oscairn_host_assets {
 } oscairn_host_assets_t;
 
 /* Plugin extension. Main thread. Lists every asset the plugin's current state uses, so a host
- * can record a Performance's dependencies and check them before loading it. */
-static const char OSCAIRN_EXT_ASSET_DEPENDENCIES[] = "oscairn.asset-dependencies/draft-1";
+ * can record a Performance's dependencies and check them before loading it. Draft 2 adds
+ * optional: true for an asset the plugin can do without (it keeps a fallback, as the arpeggiator
+ * embeds its phrases), so a host loads the plugin with that asset missing, its resolve failing,
+ * and reports a notice instead of refusing. A host also accepts draft 1 (count and get only:
+ * every asset required). */
+static const char OSCAIRN_EXT_ASSET_DEPENDENCIES[] = "oscairn.asset-dependencies/draft-2";
+static const char OSCAIRN_EXT_ASSET_DEPENDENCIES_DRAFT_1[] = "oscairn.asset-dependencies/draft-1";
 typedef struct oscairn_plugin_asset_dependencies {
     uint32_t (CLAP_ABI *count)(const clap_plugin_t*);
     bool (CLAP_ABI *get)(const clap_plugin_t*, uint32_t index, oscairn_asset_ref_t* ref);
+    bool (CLAP_ABI *optional)(const clap_plugin_t*, uint32_t index); /* draft 2 only; null: every asset required */
 } oscairn_plugin_asset_dependencies_t;
 
 #ifdef __cplusplus

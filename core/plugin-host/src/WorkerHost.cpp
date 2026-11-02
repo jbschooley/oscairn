@@ -586,7 +586,7 @@ namespace oscairn
             {
                 Reader r = const_cast<WorkerHost*>(this)->request(Op::AssetDependencies);
                 std::vector<kick::clap::AssetReference> refs(r.u32());
-                for(auto& a : refs) { a.library = r.str(); a.path = r.str(); a.sha256 = r.str(); }
+                for(auto& a : refs) { a.library = r.str(); a.path = r.str(); a.sha256 = r.str(); a.optional = r.u8() != 0; }
                 return refs;
             }
             const kick::clap::Descriptor& descriptor() const noexcept override { return descriptor_; }

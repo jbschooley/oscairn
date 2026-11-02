@@ -396,7 +396,7 @@ namespace oscairn::worker
                 {
                     const auto refs = host.assetDependencies();
                     w.u32(uint32_t(refs.size()));
-                    for(const auto& a : refs) w.str(a.library).str(a.path).str(a.sha256);
+                    for(const auto& a : refs) w.str(a.library).str(a.path).str(a.sha256).u8(a.optional);
                     break;
                 }
                 case Op::Memory:

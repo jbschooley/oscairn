@@ -81,6 +81,13 @@ Two new Oscairn extensions, alongside `oscairn.sound-contexts`:
 - **Plugin extension `oscairn.asset-dependencies`**: list the asset references used by a
   prepared context or by the whole state, so the host can write the manifest, check
   availability before loading, package exports and keep referenced files from being collected.
+  Draft 2 (2026-11-01) marks a reference optional: one the plugin can do without, as
+  [RFC 0032](0032-arpeggiator.md)'s arpeggiator embeds its phrases so a deleted phrase leaves its
+  Sounds playing. Missing, an optional reference does not stop the load: the plugin loads, its
+  resolve fails, and the session reports a notice (`session.status`'s `notices`); a required one
+  still refuses the Performance. The manifest keeps the flag (`optional: true`); the host accepts
+  draft 1, every reference required. `control-parts` checks a Performance loading with an
+  optional reference missing and refused with a required one missing.
 
 Plugin state stores asset references only. Preparation receives references, not a
 directory: `prepare(patch, base reference)` replaces draft 3's `directory`, and relative
@@ -202,7 +209,7 @@ Steps 1 and 2 are implemented and tested (`assets`, `sampler`, `desktop-sound-pi
   several processes keep each other's registrations; indexes are caches and may be rebuilt.
 - Single-file imports go to the `user` library as `<first 16 hex digits of SHA-256>/<name>`.
 - The host extension `oscairn.assets/draft-1` and plugin extension
-  `oscairn.asset-dependencies/draft-1` are in [`oscairn-clap/assets.h`](../../core/clap-ext/include/oscairn-clap/assets.h);
+  `oscairn.asset-dependencies/draft-2` (draft 1 still accepted) are in [`oscairn-clap/assets.h`](../../core/clap-ext/include/oscairn-clap/assets.h);
   `oscairn.sound-contexts/draft-4` passes the patch's base reference. The Oscairn Sampler
   uses both and no longer reads directories itself.
 - Control: `assets.register`, `assets.import`, `assets.libraries`, and `sounds.prepare` with

@@ -164,6 +164,7 @@ struct Host::Impl {
     bool exclusiveState=false;
     const oscairn_plugin_sound_contexts_t* sounds = nullptr;
     const oscairn_plugin_asset_dependencies_t* assetDependencies = nullptr;
+    bool assetOptional = false; // draft 2: it says which assets are optional
     AssetResolver* assets = nullptr;
     const clap_plugin_latency_t* pluginLatency = nullptr;
     const clap_plugin_timer_support_t* timerSupport = nullptr;
@@ -518,7 +519,10 @@ struct Host::Impl {
         if(s.exclusiveState)s.state=s.sounds->state;
         if(s.state && (!s.state->save || !s.state->load))throw std::runtime_error("Incomplete plugin state interface");
         s.assetDependencies = static_cast<const oscairn_plugin_asset_dependencies_t*>(s.plugin->get_extension(s.plugin, OSCAIRN_EXT_ASSET_DEPENDENCIES));
+        s.assetOptional = s.assetDependencies != nullptr;
+        if(!s.assetDependencies) s.assetDependencies = static_cast<const oscairn_plugin_asset_dependencies_t*>(s.plugin->get_extension(s.plugin, OSCAIRN_EXT_ASSET_DEPENDENCIES_DRAFT_1)); // its first two members only
         if(s.assetDependencies && (!s.assetDependencies->count || !s.assetDependencies->get))throw std::runtime_error("Incomplete asset-dependency interface");
+        s.assetOptional = s.assetOptional && s.assetDependencies->optional; // draft 2 without optional: every asset required
         s.pluginLatency = static_cast<const clap_plugin_latency_t*>(s.plugin->get_extension(s.plugin, CLAP_EXT_LATENCY));
         s.timerSupport = static_cast<const clap_plugin_timer_support_t*>(s.plugin->get_extension(s.plugin, CLAP_EXT_TIMER_SUPPORT));
         s.fdSupport = static_cast<const clap_plugin_posix_fd_support_t*>(s.plugin->get_extension(s.plugin, CLAP_EXT_POSIX_FD_SUPPORT));
@@ -1061,7 +1065,8 @@ std::vector<AssetReference> Host::assetDependencies() const {
     for (uint32_t i = 0; i < count; ++i) {
         oscairn_asset_ref_t ref{};
         if (!s.assetDependencies->get(s.plugin, i, &ref)) throw std::runtime_error("Plugin did not describe an asset it uses");
-        result.push_back({{ref.library, strnlen(ref.library, sizeof(ref.library))}, {ref.path, strnlen(ref.path, sizeof(ref.path))}, {ref.sha256, strnlen(ref.sha256, sizeof(ref.sha256))}});
+        result.push_back({{ref.library, strnlen(ref.library, sizeof(ref.library))}, {ref.path, strnlen(ref.path, sizeof(ref.path))}, {ref.sha256, strnlen(ref.sha256, sizeof(ref.sha256))},
+                          s.assetOptional && s.assetDependencies->optional(s.plugin, i)});
     }
     return result;
 }

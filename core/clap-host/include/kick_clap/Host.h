@@ -82,7 +82,7 @@ struct SysexPool {
 };
 
 // A sound asset reference (RFC 0009): library ID, library-relative path, SHA-256 hex or empty.
-struct AssetReference { std::string library, path, sha256; };
+struct AssetReference { std::string library, path, sha256; bool optional = false; }; // optional: the plugin does without it (oscairn.asset-dependencies draft 2)
 // Resolves asset references for plugins through the oscairn.assets host extension. Main thread.
 struct AssetResolver {
     virtual ~AssetResolver() = default;

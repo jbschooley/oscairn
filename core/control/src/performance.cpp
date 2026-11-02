@@ -275,7 +275,7 @@ std::vector<assets::Ref> Session::assetsOf(const fs::path& manifest) {
     if(!doc)bad("invalid JSON in "+manifest.string());
     std::vector<assets::Ref> out;
     for(auto node:array(field(doc.get(),"nodes"),256))if(member(node,"assets"))
-        for(auto a:array(field(node,"assets"),65536))out.push_back({text(field(a,"library")),text(field(a,"path")),text(field(a,"sha256"))});
+        for(auto a:array(field(node,"assets"),65536))out.push_back({text(field(a,"library")),text(field(a,"path")),text(field(a,"sha256")),member(a,"optional") && boolean(field(a,"optional"))});
     return out;
 }
 
@@ -419,7 +419,7 @@ Control::PerformanceInfo Session::writeDocument(const std::string& directory,Per
         if(!keys.count(graph_.effectSource(n.id,leaving_)))bad(nodes_.at(n.id)+" shares its engine with a plugin outside the part");
         // Sound assets are dependencies (RFC 0009): record references, never the files.
         std::vector<std::string> assets;
-        for(const auto& a:h.assetDependencies()){libraries.insert(a.library);assets.push_back("{\"library\":"+quote(a.library)+",\"path\":"+quote(a.path)+",\"sha256\":"+quote(a.sha256)+'}');}
+        for(const auto& a:h.assetDependencies()){libraries.insert(a.library);assets.push_back("{\"library\":"+quote(a.library)+",\"path\":"+quote(a.path)+",\"sha256\":"+quote(a.sha256)+(a.optional?",\"optional\":true":"")+'}');}
         try{h.saveSnapshot((bundle.temporary.path/"nodes"/key).string());}catch(const std::exception& e){bad("cannot save "+nodes_.at(n.id)+" ("+n.plugin.id+"): "+e.what());}
         const bool lv2=lv2Path(n.plugin.path);
         lockPlugin(lock,lv2?"lv2":"clap",n.plugin.id,n.plugin.version,n.plugin.path,!h.failure().empty());
@@ -590,7 +590,9 @@ std::unique_ptr<Session::Prepared> Session::read(const fs::path& root) {
     const auto transport=field(d,"transport");fields(transport,{"tempo","clockSource"});const double tempo=number(field(transport,"tempo"));
     const auto clock=text(field(transport,"clockSource"));if(tempo<1 || tempo>1000 || (clock!="internal" && clock!="midi"))bad("invalid transport");
     const auto layout=graph_.describe().audioLayout;checkPorts(field(d,"audioInputs"),layout.inputs);checkPorts(field(d,"audioOutputs"),layout.outputs);
-    // Every sound asset must resolve before any plugin loads; report all that do not.
+    // Every required sound asset must resolve before any plugin loads; report all that do not. An
+    // optional one missing is a notice: the plugin loads, its resolve failing.
+    std::vector<std::string> notices;
     {
         std::map<std::string,std::string> names;
         if(member(d,"libraries"))for(auto l:array(field(d,"libraries"),4096)){fields(l,{"id","name","fingerprint"});names[text(field(l,"id"))]=text(field(l,"name"));}
@@ -598,9 +600,11 @@ std::unique_ptr<Session::Prepared> Session::read(const fs::path& root) {
         for(auto node:array(field(d,"nodes"),256)){
             if(!member(node,"assets"))continue;
             std::map<std::string,std::pair<size_t,std::string>> unavailable;size_t total=0;
-            for(auto a:array(field(node,"assets"),65536)){fields(a,{"library","path","sha256"});++total;
-                assets::Ref ref{text(field(a,"library")),text(field(a,"path")),text(field(a,"sha256"))};const auto library=ref.library;
-                try{assets_.resolve(ref);}catch(const std::exception& e){auto& u=unavailable[library];if(!u.first++)u.second=e.what();}}
+            for(auto a:array(field(node,"assets"),65536)){fields(a,{"library","path","sha256","optional"});++total;
+                assets::Ref ref{text(field(a,"library")),text(field(a,"path")),text(field(a,"sha256"))};const auto library=ref.library;const bool optional=member(a,"optional") && boolean(field(a,"optional"));
+                try{assets_.resolve(ref);}catch(const std::exception& e){
+                    if(optional){notices.push_back(text(field(node,"name"))+": optional "+ref.path+" unavailable, so it plays without it: "+e.what());continue;}
+                    auto& u=unavailable[library];if(!u.first++)u.second=e.what();}}
             for(const auto& [library,u]:unavailable)
                 missing.push_back(text(field(node,"name"))+": "+std::to_string(u.first)+" of "+std::to_string(total)+" files from library '"+(names.count(library)?names[library]:library)+"' unavailable, e.g. "+u.second);
         }
@@ -825,7 +829,7 @@ std::unique_ptr<Session::Prepared> Session::read(const fs::path& root) {
     std::set<std::pair<NodeId,uint32_t>> mappings;
     for(auto m:array(field(d,"mappings"),4096)){fields(m,{"from","lane","to","param"});const auto from=node(field(m,"from")),lane=integer(field(m,"lane"));if(!mappings.emplace(from,lane).second)bad("duplicate parameter mapping");next->mapParamTarget(from,lane,node(field(m,"to")),integer(field(m,"param")));}
     return std::make_unique<Prepared>(Prepared{root,stamp(root),std::move(next),pads,info,std::move(lock),tempo,clock=="internal"?Transport::ClockSource::Internal:Transport::ClockSource::MidiClock,
-        std::move(disabled),std::move(names),std::move(wires),std::move(parts),nextPart,nextWire,std::move(scenes),std::move(untouched),nextScene,selectedScene,mappingScene,std::move(macros),nextMacro,std::move(assignments),key,master.first,master.second,std::move(roles)});
+        std::move(disabled),std::move(names),std::move(wires),std::move(parts),nextPart,nextWire,std::move(scenes),std::move(untouched),nextScene,selectedScene,mappingScene,std::move(macros),nextMacro,std::move(assignments),key,master.first,master.second,std::move(roles),std::move(notices)});
 }
 
 // Publishes a read Performance in place of the open one.
@@ -852,7 +856,7 @@ void Session::open(Prepared& p,bool seamless) {
     if(history.size()==historyCapacity)history.pop_front();
     history.push_back({sequence_+1,ChangeKind::Resync,0,0,0,false});
     graph_.publishReplacement(*next,[&]() noexcept {
-        nodes_.swap(p.names);observed_.swap(observed);parts_.swap(p.parts);wires_.swap(wires);disabled_.swap(disabled);rungOut_.swap(rungOut);leaving_.swap(leaving);nextPart_=p.nextPart;nextWire_=p.nextWire;padMap_=p.pads;key_=p.key;masterLevel_=p.masterLevel;masterPan_=p.masterPan;roles_.swap(p.roles);heldPads_={};scenes_.swap(p.scenes);untouched_.swap(p.untouched);scene_=p.selectedScene;mappingScene_=p.mappingScene;transition_.reset();pendingScene_.reset();nextScene_=p.nextScene;macros_.swap(p.macros);assignments_.swap(p.assignments);nextMacro_=p.nextMacro;pending_.clear();commandCount_=0;outputDrops_.clear();parameterRevisions_.clear();staged_=false;
+        nodes_.swap(p.names);observed_.swap(observed);parts_.swap(p.parts);wires_.swap(wires);disabled_.swap(disabled);rungOut_.swap(rungOut);leaving_.swap(leaving);nextPart_=p.nextPart;nextWire_=p.nextWire;padMap_=p.pads;key_=p.key;masterLevel_=p.masterLevel;masterPan_=p.masterPan;roles_.swap(p.roles);notices_.swap(p.notices);heldPads_={};scenes_.swap(p.scenes);untouched_.swap(p.untouched);scene_=p.selectedScene;mappingScene_=p.mappingScene;transition_.reset();pendingScene_.reset();nextScene_=p.nextScene;macros_.swap(p.macros);assignments_.swap(p.assignments);nextMacro_=p.nextMacro;pending_.clear();commandCount_=0;outputDrops_.clear();parameterRevisions_.clear();staged_=false;
         tempo_.store(p.tempo);clockSource_.store(p.clock);playing_.store(false);
         ++revision_;++sequence_;history_.swap(history);
     });
@@ -899,14 +903,17 @@ NodeId Session::adopt(const std::string& name,std::shared_ptr<PluginHost> host) 
 // taken get the next number. Every asset must resolve first. On failure nothing stays added.
 std::map<std::string,NodeId> Session::addNodes(const json_value_s* document,const fs::path& root,std::vector<NodeId>& added,const std::set<std::string>* only) {
     const auto nodes=array(field(document,"nodes"),256);
+    notices_.clear(); // a Sound's or an import's notices take the place of the last ones
     auto refs=parameterRefs(document);
     std::set<std::string> keep;
     if(only){keep=*only;for(auto node:nodes){const auto key=text(field(node,"key"));if(keep.count(key))keep.insert(text(field(node,"engine")));}}
     auto wanted=[&](V node){return !only || keep.count(text(field(node,"key")))!=0;};
     for(auto node:nodes)if(wanted(node) && member(node,"assets"))for(auto a:array(field(node,"assets"),65536)){
-        fields(a,{"library","path","sha256"});
+        fields(a,{"library","path","sha256","optional"});
         assets::Ref ref{text(field(a,"library")),text(field(a,"path")),text(field(a,"sha256"))};
-        try{assets_.resolve(ref);}catch(const std::exception& e){bad("missing sound asset: "+std::string(e.what()));}}
+        try{assets_.resolve(ref);}catch(const std::exception& e){
+            if(member(a,"optional") && boolean(field(a,"optional"))){notices_.push_back(text(field(node,"name"))+": optional "+ref.path+" unavailable, so it plays without it: "+e.what());continue;}
+            bad("missing sound asset: "+std::string(e.what()));}}
     std::map<std::string,NodeId> ids;
     auto unique=[&](const std::string& name){return name.empty()?name:nextFree(name,[&](const std::string& n){return std::any_of(nodes_.begin(),nodes_.end(),[&](const auto& x){return x.second==n;});});};
     try{

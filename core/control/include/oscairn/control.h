@@ -89,6 +89,8 @@ namespace oscairn
             struct WorkerUsage { NodeId node=0; std::string name; double cpu=0; uint64_t memory=0; bool operator==(const WorkerUsage&) const = default; };
             std::vector<WorkerUsage> workers;
             std::vector<MidiEndpoint> midiOutputs; // its MIDI outputs, numbered from 1 apart from the inputs, for parts' MIDI out and clock
+            // What the last Performance load, Sound or import passed over without failing: an optional asset missing.
+            std::vector<std::string> notices;
         };
         virtual SessionStatus sessionStatus() const = 0;
         struct GraphState

@@ -6949,6 +6949,13 @@
             "additionalProperties": false
           }
         },
+        "notices": {
+          "type": "array",
+          "description": "What the last Performance load, Sound or import passed over without failing: an optional asset missing",
+          "items": {
+            "type": "string"
+          }
+        },
         "workers": {
           "type": "array",
           "description": "Plugins in their own worker processes: the CPU time used in seconds, restarts included, and memory in bytes (physical footprint on macOS, resident on Linux)",
@@ -6996,6 +7003,7 @@
         "audioOutputs",
         "audioReady",
         "failures",
+        "notices",
         "workers"
       ],
       "additionalProperties": false

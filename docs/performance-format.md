@@ -44,7 +44,7 @@ Required top-level fields:
 
 | Field | Meaning |
 | --- | --- |
-| `format`, `version` | Exactly `oscairn.performance` and integer `11` (version 6 added `assignments`; version 7 names controls by their device groups, `fader:N` replacing `slider:N`; version 8 adds each assignment's `part`, for a Sound's own; version 9 adds each part's `midiOut`; version 10 adds the `key` and each part's `key`; version 11 sums controls on one destination around its `base`, adds the `db` and `power` curves, the `aftertouch:N` and `breath:N` controls, the switches' fixed `button:N`, the `master` level and pan, and each node's optional `role`; earlier versions are refused) |
+| `format`, `version` | Exactly `oscairn.performance` and integer `11` (version 6 added `assignments`; version 7 names controls by their device groups, `fader:N` replacing `slider:N`; version 8 adds each assignment's `part`, for a Sound's own; version 9 adds each part's `midiOut`; version 10 adds the `key` and each part's `key`; version 11 sums controls on one destination around its `base`, adds the `db` and `power` curves, the `aftertouch:N` and `breath:N` controls, the switches' fixed `button:N`, the `master` level and pan, each node's optional `role`, and an asset's `optional`; earlier versions are refused) |
 | `info` | What the library shows ([RFC 0021](rfcs/0021-sounds-performances-and-library.md)): `id` (made at the first save, kept by every later one), `name` (the folder's name when none is set), `description`, up to 32 free `tags`, `color` (`#rrggbb`, or empty for none), and `revision` (made at every save) and `parent` (the revision it was saved over; empty for the first), and `hash`: SHA-256 of the contents, over the document without its info block followed by each file under `nodes/` by path with its own SHA-256, in path order. Names, tags and revisions are not contents. Equal hashes mean equal contents; the ID stays the identifier. `origin`: for an item imported into the user's own storage from a [library archive](library-archive.md), the archive's ID, the item's ID there and this copy's content hash as imported; `null` otherwise |
 | `transport` | Tempo and `internal` or `midi` clock source |
 | `audioInputs`, `audioOutputs` | Required logical graph ports: ID, channels, flags |
@@ -92,8 +92,11 @@ installing the plugin later restores it. A document that is malformed is still r
   modulation in progress are excluded. IDs are reconstructed, not persisted.
 - Each node lists the sound assets its plugin declares as `assets: [{library, path, sha256}]`,
   and the top-level `libraries: [{id, name, fingerprint}]` names the libraries they come from.
-  Before any plugin loads, every reference must resolve: by library and path, or by identical
-  content in any registered library. Otherwise loading fails, preserving the live graph,
+  Before any plugin loads, every required reference must resolve: by library and path, or by identical
+  content in any registered library. A reference with `optional: true` (one the plugin declares it
+  can do without, such as an arpeggiator phrase it also embeds) may be missing: the node loads
+  anyway, the plugin's own resolve of it fails, and `session.status` lists a notice instead of a
+  failure. Absent, a reference is required. Otherwise loading fails, preserving the live graph,
   with a message per sound and library such as `Piano: 641 of 641 files from library
   'Salamander' unavailable, e.g. …`. Moving the Performance folder does not move the samples;
   registering the same folder on another device is enough.

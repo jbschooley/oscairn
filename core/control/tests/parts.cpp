@@ -1607,6 +1607,34 @@ namespace
         check(!s.graphState().roles.count(b), "a removed node takes its role");
     }
 
+    // An optional asset reference that does not resolve: the Performance loads, with a notice; a
+    // required one refuses it, leaving what plays.
+    void optionalAssets(const char* fixture, const fs::path& root)
+    {
+        Session s(48000, frames);
+        const auto a = s.add("a", fixture, "org.kick.test.synth");
+        const auto pa = s.addPart("A");
+        s.insertIntoPart(pa, 0, a); s.commit();
+        s.savePerformance((root / "assets").string());
+        const auto manifest = root / "assets" / "performance.json";
+        std::string text; { std::ifstream in(manifest); text.assign(std::istreambuf_iterator<char>(in), {}); }
+        auto with = [&](const std::string& flag) {
+            auto t = text;
+            const auto at = t.find("\"assets\":[]");
+            t.replace(at, 11, "\"assets\":[{\"library\":\"nowhere\",\"path\":\"phrases/gone.ophr\",\"sha256\":\"" + std::string(64, '0') + "\"" + flag + "}]");
+            std::ofstream(manifest) << t;
+        };
+        with(",\"optional\":true");
+        Session t(48000, frames);
+        t.loadPerformance((root / "assets").string());
+        const auto notices = t.sessionStatus().notices;
+        check(t.graphState().parts.size() == 1 && notices.size() == 1 && notices[0].find("gone.ophr") != std::string::npos, "an optional asset missing: loaded, with a notice");
+        with("");
+        std::string why; const auto revision = t.graphState().revision;
+        try { t.loadPerformance((root / "assets").string()); } catch(const std::exception& e) { why = e.what(); }
+        check(why.find("missing sound assets") != std::string::npos && t.graphState().revision == revision, "a required one missing: refused, what plays kept: " + why);
+    }
+
     // Level curves: a part's fader in dB, and a power law; their numbers checked; saved and loaded.
     void levelCurves(const char* fixture, const fs::path& root)
     {
@@ -1765,6 +1793,7 @@ int main(int argc, char** argv)
         summing(argv[1]);
         master(argv[1], temp.path);
         roles(argv[1], temp.path);
+        optionalAssets(argv[1], temp.path);
         levelCurves(argv[1], temp.path);
         persistence(argv[1], argv[2], argv[3], temp.path);
     }

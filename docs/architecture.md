@@ -205,7 +205,7 @@ authors from the standard and gain nothing.
 | `oscairn.ui/draft-3` ([RFC 0019](rfcs/0019-adaptive-ui.md)) | A hint per parameter: the control it wants (knob, slider, buttons, switch, list, range), a priority, a group drawn joined, and a role (cutoff, attack, an effect's mix) for the role banks ([RFC 0011](rfcs/0011-performance-ui-and-editors.md)); pages and rich widgets to come | **Propose upstream** once it works on more than one surface; use `clap.remote-controls` where that is enough |
 | `oscairn.sound-contexts/draft-5` ([RFC 0005](rfcs/0005-sound-contexts.md)) | Several prepared patches inside one instance, switched under held notes | Keep. Specific to Oscairn's sound switching |
 | `oscairn.effect-contexts/draft` ([RFC 0007](rfcs/0007-effect-contexts.md)) | Independent effect instances sharing one engine | Keep, for the same reason |
-| `oscairn.assets/draft-1` and `oscairn.asset-dependencies/draft-1` ([RFC 0009](rfcs/0009-sound-assets-and-dependencies.md)) | Shared libraries of files referenced by hash; plugins declare the files a sound needs | Keep. CLAP's `resource-directory` draft is per instance and copies files, so it stays an adapter only |
+| `oscairn.assets/draft-1` and `oscairn.asset-dependencies/draft-2` ([RFC 0009](rfcs/0009-sound-assets-and-dependencies.md)) | Shared libraries of files referenced by hash; plugins declare the files a sound needs | Keep. CLAP's `resource-directory` draft is per instance and copies files, so it stays an adapter only |
 
 CLAP drafts come before new extensions of our own:
 
