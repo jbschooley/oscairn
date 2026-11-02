@@ -324,7 +324,7 @@ std::vector<std::string> Session::exportArchive(const std::string& file,const st
     std::optional<signing::Key> key;
     if(sign.items || sign.archive)key=signingKey(sign.key);
     std::random_device random;
-    const auto stage=dataHome()/(".export-"+std::to_string(random())+std::to_string(random())); // like installs: same file system as the export
+    const auto stage=dataHome()/(".export-"+std::to_string(random())+std::to_string(random())); // like installs: in the data folder, not the OS temp folder, which may be RAM (tmpfs)
     try{
         Package package;package.kind=kind;
         const auto from=write(stage,package);

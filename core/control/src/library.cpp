@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cerrno>
+#include <chrono>
 #include <cstdlib>
 #include <fstream>
 #include <map>
@@ -190,6 +191,19 @@ namespace oscairn
     {
         if(home.empty()) home = dataHome();
         performances_ = home / "Performances"; sounds_ = home / "Sounds"; libraries_ = home / "Libraries"; cache_ = home / "library";
+        // An install's or export's unpack folder left by a crash. Only those over a day old: a
+        // newer one may be another process's still at work.
+        std::error_code error;
+        const auto dayAgo = fs::file_time_type::clock::now() - std::chrono::hours(24);
+        for(const auto& entry : fs::directory_iterator(home, error))
+        {
+            const auto name = entry.path().filename().string();
+            if(!name.starts_with(".install-") && !name.starts_with(".export-")) continue;
+            std::error_code unread;
+            const bool folder = fs::is_directory(entry.symlink_status(unread));
+            const auto written = entry.last_write_time(unread);
+            if(folder && !unread && written < dayAgo) fs::remove_all(entry.path(), error);
+        }
         readUser();
         rescan();
     }

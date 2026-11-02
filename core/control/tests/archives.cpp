@@ -206,15 +206,38 @@ int main(int argc, char** argv)
             check(refused, "an item the archive does not have is refused");
             // Unpacking happens in the data folder, never the OS temp folder: on a tmpfs /tmp a
             // big archive would fill RAM on the way in. The OS temp folder is read-only here, so
-            // an install that unpacked there could not run (as non-root).
-            const auto fakeTemp = temp.path / "c" / "fake-temp";
-            fs::create_directories(fakeTemp);
-            ::setenv("TMPDIR", fakeTemp.c_str(), 1);
-            ::chmod(fakeTemp.c_str(), 0500);
-            const auto again = c.installArchive(soundArchive.string(), false); // the same export again: skipped
-            ::chmod(fakeTemp.c_str(), 0700);
-            ::unsetenv("TMPDIR");
-            check(again.skipped == 1 && items(c, "sound").size() == 2, "installing unpacks inside the data folder, not the read-only OS temp folder");
+            // an install that unpacked there could not run. Root writes there anyway, so as root
+            // this proves nothing and is skipped.
+            if(::geteuid() != 0)
+            {
+                const auto fakeTemp = temp.path / "c" / "fake-temp";
+                fs::create_directories(fakeTemp);
+                ::setenv("TMPDIR", fakeTemp.c_str(), 1);
+                ::chmod(fakeTemp.c_str(), 0500);
+                const auto again = c.installArchive(soundArchive.string(), false); // the same export again: skipped
+                ::chmod(fakeTemp.c_str(), 0700);
+                ::unsetenv("TMPDIR");
+                check(again.skipped == 1 && items(c, "sound").size() == 2, "installing unpacks inside the data folder, not the read-only OS temp folder");
+            }
+            else std::puts("skipped: unpacking outside a read-only OS temp folder (root writes there anyway)");
+        }
+        // An install or export cut short by a crash leaves its hidden folder in the data folder;
+        // the library clears those over a day old when it starts, and leaves newer ones, which
+        // may be another process's install in progress.
+        {
+            const auto home = temp.path / "o";
+            device(home);
+            const auto old = fs::file_time_type::clock::now() - std::chrono::hours(25);
+            for(const auto* name : {".install-1", ".export-1", ".install-2", ".other-1"})
+            {
+                fs::create_directories(home / name / "Sounds");
+                std::ofstream(home / name / "Sounds" / "big.bin") << "x";
+                if(std::string(name) != ".install-2") fs::last_write_time(home / name, old);
+            }
+            Session o(48000, 64);
+            check(items(o, "sound").empty(), "the library starts");
+            check(!fs::exists(home / ".install-1") && !fs::exists(home / ".export-1"), "an install's and an export's folder over a day old are cleared");
+            check(fs::is_directory(home / ".install-2") && fs::is_directory(home / ".other-1"), "a newer one, and any other hidden folder, stay");
         }
         // Device E: the library's index past the old 4 MiB limit is still used, as a library of
         // thousands of items has: a name only the index holds comes back.
