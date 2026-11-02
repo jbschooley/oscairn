@@ -258,6 +258,7 @@ namespace oscairn
                                     widgetNamed(std::string(string(field(p,"widget")))),static_cast<uint32_t>(integer(field(p,"priority")))};
                     if(param.widget==OSCAIRN_WIDGET_RANGE)param.rangeHigh=static_cast<uint32_t>(integer(field(p,"rangeHigh")));
                     param.group=static_cast<uint32_t>(integer(field(p,"group")));
+                    if(V role=detail::member(p,"role"))param.role=roleNamed(string(role));
                     metadata[n.id].push_back(param);if(count)batch+=',';batch+='{'+address(n.id,param.id)+'}';if(++count==128)flush();
                 }
                 metadata.try_emplace(n.id);

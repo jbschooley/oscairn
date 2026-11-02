@@ -24,6 +24,22 @@ namespace oscairn
         for(uint32_t w = 0; w <= OSCAIRN_WIDGET_RANGE; ++w) if(name == widgetName(w)) return w;
         return OSCAIRN_WIDGET_AUTO;
     }
+    // oscairn.ui's roles by name, as the role banks (physical_controls.h) and the control
+    // protocol write them ("cutoff"); none or unknown: empty.
+    inline const char* roleName(uint32_t role)
+    {
+        static const char* const names[] = {"", "cutoff", "resonance", "filterEnvelope", "keyTracking", "filterAttack", "filterDecay", "filterSustain", "filterRelease",
+                                            "attack", "decay", "sustain", "release", "hold", "velocity", "ampKeyTracking", "level",
+                                            "lowGain", "midGain", "highGain", "midFrequency", "lowFrequency", "highFrequency", "midQ", "eqOutput",
+                                            "level1", "level2", "level3", "level4", "level5", "level6", "level7", "level8", "mix", "pan"};
+        static_assert(std::size(names) == OSCAIRN_ROLE_PAN + 1);
+        return role < std::size(names) ? names[role] : "";
+    }
+    inline uint32_t roleNamed(const std::string& name)
+    {
+        for(uint32_t r = 1; r <= OSCAIRN_ROLE_PAN; ++r) if(name == roleName(r)) return r;
+        return OSCAIRN_ROLE_NONE;
+    }
 
     /// In-process control boundary. All calls belong to one control/main thread;
     /// audio and hardware input do not call this interface. No device or plugin handles
@@ -45,6 +61,7 @@ namespace oscairn
             // range its high parameter.
             uint32_t widget = 0, priority = 0, rangeHigh = CLAP_INVALID_ID;
             uint32_t group = 0; // drawn joined with the module's other parameters of this group
+            uint32_t role = 0;  // enum oscairn_role (roleName); 0: none declared
         };
         struct TransportState
         {

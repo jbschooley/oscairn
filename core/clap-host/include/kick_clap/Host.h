@@ -29,6 +29,7 @@ struct Parameter {
     uint32_t widget = 0, priority = 0;
     clap_id rangeHigh = CLAP_INVALID_ID;
     uint32_t group = 0; // drawn joined with the module's other parameters of this group; 0: none
+    uint32_t role = 0;  // enum oscairn_role: what it does on every instrument (cutoff, attack); 0: none
 };
 
 struct Port {

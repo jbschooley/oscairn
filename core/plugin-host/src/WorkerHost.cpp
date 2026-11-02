@@ -73,7 +73,7 @@ namespace oscairn
         std::vector<kick::clap::Parameter> readParameters(Reader& r)
         {
             std::vector<kick::clap::Parameter> parameters(r.u32());
-            for(auto& p : parameters) { p.id = r.u32(); p.name = r.str(); p.module = r.str(); p.minimum = r.f64(); p.maximum = r.f64(); p.defaultValue = r.f64(); p.flags = r.u32(); p.widget = r.u32(); p.priority = r.u32(); p.rangeHigh = r.u32(); p.group = r.u32(); }
+            for(auto& p : parameters) { p.id = r.u32(); p.name = r.str(); p.module = r.str(); p.minimum = r.f64(); p.maximum = r.f64(); p.defaultValue = r.f64(); p.flags = r.u32(); p.widget = r.u32(); p.priority = r.u32(); p.rangeHigh = r.u32(); p.group = r.u32(); p.role = r.u32(); }
             return parameters;
         }
 

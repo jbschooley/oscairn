@@ -254,10 +254,10 @@ struct Plugin {
         // not, which the host must replace with "the host decides".
         static const oscairn_plugin_ui_t ui{[](const clap_plugin_t*, clap_id id, oscairn_param_hint_t* hint) {
             switch (id) {
-            case 7: *hint = {OSCAIRN_WIDGET_RANGE, 1, 99, 0}; return true;         // a range up to "Read only": fits
-            case 8: *hint = {OSCAIRN_WIDGET_SWITCH, 2, CLAP_INVALID_ID, 5}; return true; // two values: fits; grouped
-            case 9: *hint = {OSCAIRN_WIDGET_SWITCH, 3, CLAP_INVALID_ID, 5}; return true; // five values: no switch
-            case 99: *hint = {42, 0, CLAP_INVALID_ID, 0}; return true;              // no such widget
+            case 7: *hint = {OSCAIRN_WIDGET_RANGE, 1, 99, 0, OSCAIRN_ROLE_CUTOFF}; return true; // a range up to "Read only": fits; the cutoff
+            case 8: *hint = {OSCAIRN_WIDGET_SWITCH, 2, CLAP_INVALID_ID, 5, 0}; return true; // two values: fits; grouped
+            case 9: *hint = {OSCAIRN_WIDGET_SWITCH, 3, CLAP_INVALID_ID, 5, 0}; return true; // five values: no switch
+            case 99: *hint = {42, 0, CLAP_INVALID_ID, 0, 4242}; return true;       // no such widget or role
             default: return false;
             }
         }};

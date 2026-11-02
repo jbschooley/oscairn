@@ -421,11 +421,11 @@ struct Host::Impl {
     }
     // Hints from oscairn.ui, each kept only where it fits its parameter: a control for stepped
     // values on a stepped parameter, a switch on two values, a range whose high end is another
-    // parameter. Anything else is drawn as the host decides.
+    // parameter. Anything else is drawn as the host decides. A role it does not know is none.
     void applyHints(std::vector<Parameter>& list) {
         if (!ui) return;
         for (auto& p : list) {
-            oscairn_param_hint_t hint{OSCAIRN_WIDGET_AUTO, 0, CLAP_INVALID_ID, 0};
+            oscairn_param_hint_t hint{OSCAIRN_WIDGET_AUTO, 0, CLAP_INVALID_ID, 0, OSCAIRN_ROLE_NONE};
             if (!ui->param_hint(plugin, p.id, &hint)) continue;
             const bool stepped = (p.flags & CLAP_PARAM_IS_STEPPED) != 0;
             const auto values = stepped ? std::llround(p.maximum - p.minimum) + 1 : 0;
@@ -437,6 +437,7 @@ struct Host::Impl {
             p.rangeHigh = p.widget == OSCAIRN_WIDGET_RANGE ? hint.range_high : CLAP_INVALID_ID;
             p.priority = hint.priority;
             p.group = hint.group;
+            p.role = hint.role <= OSCAIRN_ROLE_PAN ? hint.role : OSCAIRN_ROLE_NONE; // the last role this host knows
         }
     }
     // CLAP_PARAM_RESCAN_INFO: names, modules, the hidden and periodic flags and the editor hints,
@@ -455,7 +456,7 @@ struct Host::Impl {
             info.name.assign(p.name, strnlen(p.name, CLAP_NAME_SIZE));
             info.module.assign(p.module, strnlen(p.module, CLAP_PATH_SIZE));
             info.flags = (info.flags & ~changeable) | (p.flags & changeable);
-            info.widget = OSCAIRN_WIDGET_AUTO; info.priority = 0; info.rangeHigh = CLAP_INVALID_ID; info.group = 0;
+            info.widget = OSCAIRN_WIDGET_AUTO; info.priority = 0; info.rangeHigh = CLAP_INVALID_ID; info.group = 0; info.role = 0;
         }
         applyHints(next);
         Gate guard(gate);

@@ -63,6 +63,7 @@ int main(int argc, char** argv) {
         check(hint(8).widget == OSCAIRN_WIDGET_SWITCH && hint(8).priority == 2 && hint(8).group == 5 && hint(9).group == 5, "a switch on two values; a group kept");
         check(hint(9).widget == OSCAIRN_WIDGET_AUTO && hint(9).priority == 3, "a switch on five values is the host's choice; its priority stays");
         check(hint(99).widget == OSCAIRN_WIDGET_AUTO, "an unknown widget is the host's choice");
+        check(hint(7).role == OSCAIRN_ROLE_CUTOFF && hint(8).role == OSCAIRN_ROLE_NONE && hint(99).role == OSCAIRN_ROLE_NONE, "a declared role; an unknown one is none");
         // A mode that hides a parameter: an info rescan, taken in place.
         const auto revision = hinted.metadataRevision();
         std::array<float, 64> l{}, r{}; float* out[]{l.data(), r.data()};
@@ -89,7 +90,7 @@ int main(int argc, char** argv) {
     }
     check(h.load(catalog.plugins[0], 48000, 128), "load exact instrument ID");
     check(h.parameters().size() == 2 && h.latency() == 13 && h.supportsState(), "parameters, latency, state");
-    check(h.parameters()[0].widget == OSCAIRN_WIDGET_AUTO && h.parameters()[0].priority == 0, "no hints without oscairn.ui");
+    check(h.parameters()[0].widget == OSCAIRN_WIDGET_AUTO && h.parameters()[0].priority == 0 && h.parameters()[0].role == 0, "no hints without oscairn.ui");
     h.service();
     std::this_thread::sleep_for(std::chrono::milliseconds(2)); h.service();
     std::array<float, 1025> left{}, right{};
