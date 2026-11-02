@@ -553,6 +553,10 @@
         "enabled": {
           "type": "boolean",
           "description": "false: switched off (RFC 0011 scenes): it takes no notes and no sound, and a part passes what reaches it around it"
+        },
+        "role": {
+          "$ref": "#/$defs/NodeRole",
+          "description": "Optional; absent: none"
         }
       },
       "required": [
@@ -1872,6 +1876,19 @@
         "pan"
       ],
       "additionalProperties": false
+    },
+    "NodeRole": {
+      "enum": [
+        "insertion-a",
+        "insertion-b",
+        "part-eq",
+        "reverb",
+        "variation",
+        "master-effect",
+        "master-eq",
+        "arpeggiator"
+      ],
+      "description": "RFC 0016's node roles and RFC 0032's arpeggiator: what a node is to a panel's buttons and pages"
     }
   }
 }

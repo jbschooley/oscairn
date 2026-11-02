@@ -30,6 +30,19 @@
     }
   ],
   "$defs": {
+    "NodeRole": {
+      "enum": [
+        "insertion-a",
+        "insertion-b",
+        "part-eq",
+        "reverb",
+        "variation",
+        "master-effect",
+        "master-eq",
+        "arpeggiator"
+      ],
+      "description": "RFC 0016's node roles and RFC 0032's arpeggiator"
+    },
     "Master": {
       "type": "object",
       "description": "The Performance's level (a gain) and pan (a balance) on its main output, the first audio output port, after everything that plays there",
@@ -5221,6 +5234,51 @@
               "$ref": "#/$defs/Id"
             },
             "method": {
+              "const": "graph.role"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "node": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 4294967295
+                },
+                "role": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/NodeRole"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "node",
+                "role"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "params"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
               "const": "master.set"
             },
             "params": {
@@ -6255,6 +6313,17 @@
         "ringing": {
           "type": "boolean",
           "description": "Switched off and still sounding out: notes held, a tail"
+        },
+        "role": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NodeRole"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Its role (graph.role), or null for none"
         }
       },
       "required": [

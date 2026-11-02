@@ -1583,6 +1583,30 @@ namespace
         check(near(y.l[0], .5 * .75), "and the loaded master plays: " + std::to_string(y.l[0]));
     }
 
+    // RFC 0016's node roles: set, checked, undone, saved and loaded, and gone with their node.
+    void roles(const char* fixture, const fs::path& root)
+    {
+        Session s(48000, frames);
+        const auto a = s.add("a", fixture, "org.kick.test.synth"), b = s.add("b", fixture, "org.kick.test.synth");
+        const auto pa = s.addPart("A");
+        s.insertIntoPart(pa, 0, a); s.insertIntoPart(pa, 1, b); s.commit();
+        s.setNodeRole(a, "arpeggiator"); s.setNodeRole(b, "insertion-a"); s.commit();
+        check(s.graphState().roles == std::map<NodeId, std::string>{{a, "arpeggiator"}, {b, "insertion-a"}}, "both roles set");
+        bool refused = false; try { s.setNodeRole(a, "insertion-c"); } catch(const std::invalid_argument&) { refused = true; }
+        check(refused && s.graphState().roles.at(a) == "arpeggiator", "an unknown role is refused");
+        s.setNodeRole(b, "reverb"); s.commit();
+        check(s.history().undo == "Node role" && s.undo() && s.graphState().roles.at(b) == "insertion-a", "a role is an edit, undone");
+        s.setNodeRole(b, ""); s.commit();
+        check(!s.graphState().roles.count(b), "an empty role clears it");
+        s.setNodeRole(b, "part-eq"); s.commit();
+        s.savePerformance((root / "roles").string());
+        Session t(48000, frames);
+        t.loadPerformance((root / "roles").string());
+        check(t.graphState().roles == std::map<NodeId, std::string>{{t.nodeId("a"), "arpeggiator"}, {t.nodeId("b"), "part-eq"}}, "roles round-trip with their nodes");
+        s.removeFromPart(pa, b); s.remove(b, UserWires::Remove); s.commit();
+        check(!s.graphState().roles.count(b), "a removed node takes its role");
+    }
+
     // Level curves: a part's fader in dB, and a power law; their numbers checked; saved and loaded.
     void levelCurves(const char* fixture, const fs::path& root)
     {
@@ -1740,6 +1764,7 @@ int main(int argc, char** argv)
         controls(argv[1], temp.path);
         summing(argv[1]);
         master(argv[1], temp.path);
+        roles(argv[1], temp.path);
         levelCurves(argv[1], temp.path);
         persistence(argv[1], argv[2], argv[3], temp.path);
     }

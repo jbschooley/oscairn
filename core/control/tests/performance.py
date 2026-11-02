@@ -80,10 +80,14 @@ try:
                 rpc('controls.targets', {'control': control, 'targets': [{'kind': 'parameter', 'node': synth, 'param': 1, 'curve': bad}]}, True)
             rpc('graph.enable', {'node': synth, 'enabled': True})
             rpc('master.set', {'level': 0.8, 'pan': 0.25})
+            rpc('graph.role', {'node': synth, 'role': 'insertion-a'})
+            rpc('graph.role', {'node': synth, 'role': 'chorus'}, True)
+            jsonschema.validate({'jsonrpc': '2.0', 'id': 1, 'method': 'graph.role', 'params': {'node': synth, 'role': None}}, protocol)
             rpc('master.set', {'level': 3, 'pan': 0}, True)
             jsonschema.validate({'jsonrpc': '2.0', 'id': 1, 'method': 'master.set', 'params': {'level': 0.8, 'pan': 0.25}}, protocol)
             graph = rpc('graph.get')['result']
             assert graph['master'] == {'level': 0.8, 'pan': 0.25} and graph['scenes'][0]['master'] == {'level': 1, 'pan': 0}
+            assert next(n for n in graph['nodes'] if n['id'] == synth)['role'] == "insertion-a"
             assert graph['scenes'][0]['off'] == [synth] and graph['scenes'][0]['scope'] == ['enabled', 'mappings'] and graph['controls'][0]['targets'][0]['offIn'] == [scene]
             assert graph['controls'][0]['targets'][0]['curve'] == fader and graph['controls'][0]['targets'][1]['curve'] == power
             assert graph['parts'][0]['name'] == 'Check' and any(w['owner'] == 'part' for w in graph['wires'])
@@ -101,6 +105,8 @@ try:
             jsonschema.validate(split_manifest, json.loads(schema.read_text()))
             assert [t['curve'] for t in split_manifest['controls'][0]['targets']] == [fader, power]
             assert split_manifest['master'] == {'level': 0.8, 'pan': 0.25}
+            assert split_manifest['nodes'][0]['role'] == 'insertion-a'
+            rpc('graph.role', {'node': synth, 'role': None})
             rpc('master.set', {'level': 1, 'pan': 0})
             rpc('parts.remove', {'part': part})
         # The folder remains usable after the saving engine exits and the folder moves.

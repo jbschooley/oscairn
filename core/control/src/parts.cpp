@@ -625,6 +625,13 @@ namespace oscairn
         editWires([&] { masterLevel_ = level; masterPan_ = pan; });
     }
 
+    void Session::setNodeRole(NodeId node, const std::string& role)
+    {
+        if(!nodes_.count(node)) throw std::invalid_argument("unknown node");
+        if(!role.empty() && !validNodeRole(role)) throw std::invalid_argument("a node's role is insertion-a, insertion-b, part-eq, reverb, variation, master-effect, master-eq or arpeggiator");
+        if(role.empty()) roles_.erase(node); else roles_[node] = role;
+    }
+
     void Session::setPartSolo(uint32_t id, bool solo)
     {
         findPart(id);

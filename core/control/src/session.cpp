@@ -229,7 +229,7 @@ namespace oscairn
             std::erase_if(topology.draining, [&](const auto& e) { return gone(e.first) || gone(e.second); });
             std::erase_if(topology.audioRoutes, [&](const auto& r) { return gone(r.from.node) || gone(r.to.node); });
         }
-        return {topology,nodes_,revision_,staged_,parts_,wires_,scenes_,untouched_,scene_,macros_,disabled_,ringing,masterLevel_,masterPan_};
+        return {topology,nodes_,revision_,staged_,parts_,wires_,scenes_,untouched_,scene_,macros_,disabled_,ringing,masterLevel_,masterPan_,roles_};
     }
 
     void Session::saveState(NodeId node,const std::string& directory)
@@ -289,7 +289,7 @@ namespace oscairn
     void Session::dropNode( NodeId node )
     {
         graph_.remove(node);
-        nodes_.erase(node);
+        nodes_.erase(node); roles_.erase(node);
         disabled_.erase(node); rungOut_.erase(node); loadedBytes_.erase(node);
         std::erase_if(untouched_, [&](const SceneParameter& at) { return at.node == node; });
         outputDrops_.erase(node); parameterRevisions_.erase(node);

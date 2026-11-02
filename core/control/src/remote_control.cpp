@@ -156,6 +156,7 @@ namespace oscairn
                 node.noteInputs=static_cast<uint32_t>(integer(field(n,"noteInputs")));node.noteOutputs=static_cast<uint32_t>(integer(field(n,"noteOutputs")));
                 if(!boolean(field(n,"enabled")))next.disabled.insert(node.id);
                 if(boolean(field(n,"ringing")))next.ringing.insert(node.id);
+                if(const auto role=field(n,"role");role->type!=json_type_null)next.roles[node.id]=string(role);
                 next.topology.nodes.push_back(std::move(node));
             }
             for(auto c:array(field(root,"connections")))
@@ -794,6 +795,7 @@ namespace oscairn
     }
     bool RemoteControl::undo(){const bool any=!history().undo.empty();impl_->call("edit.undo");impl_->refresh();return any;}
     bool RemoteControl::redo(){const bool any=!history().redo.empty();impl_->call("edit.redo");impl_->refresh();return any;}
+    void RemoteControl::setNodeRole(NodeId node,const std::string& role){impl_->call("graph.role","{\"node\":"+std::to_string(node)+",\"role\":"+(role.empty()?std::string("null"):quote(role))+'}');impl_->refresh();}
     void RemoteControl::setMaster(double level,double pan){impl_->call("master.set","{\"level\":"+encode(level)+",\"pan\":"+encode(pan)+'}');impl_->refresh();}
     void RemoteControl::setPartPan(uint32_t part,double pan){impl_->call("parts.pan","{\"part\":"+std::to_string(part)+",\"pan\":"+encode(pan)+'}');impl_->refresh();}
     void RemoteControl::setPartSolo(uint32_t part,bool solo){impl_->call("parts.solo","{\"part\":"+std::to_string(part)+",\"solo\":"+(solo?"true":"false")+'}');impl_->refresh();}

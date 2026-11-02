@@ -10,7 +10,8 @@ effects written for Oscairn or reused from open-source projects, with no Yamaha 
 Checked when built and tested; the sections below say how.
 
 - [ ] 1. Routing for converted effects: the converter's mapping onto parts, buses and wires;
-      node roles for device profiles; a test of side-chain on effect contexts
+      node roles for device profiles (roles stored and exposed, [status](#node-roles-status);
+      mapping profile controls to them remains); a test of side-chain on effect contexts
 - [ ] 2. The most-used types
 - [ ] 3. The remaining categories
 - [ ] 4. Converter coverage
@@ -60,6 +61,14 @@ Two additions remain:
   can change; a device profile ([RFC 0024](0024-device-profiles.md)) maps its controls to roles,
   and a Performance without a node in that role shows nothing there. Saved with the node in the
   Performance format.
+  **Node roles status** (2026-11-01): a node carries one role or none, `insertion-a`,
+  `insertion-b`, `part-eq`, `reverb`, `variation`, `master-effect`, `master-eq` or, for
+  [RFC 0032](0032-arpeggiator.md), `arpeggiator` (`setNodeRole`; `graph.role`, `graph.get`'s
+  `role`); any other name is refused. It is an edit, undone like any other, saved with the node
+  in the Performance (format version 11) and the Sound (version 7) as `role`, and goes with its
+  node when the node is removed. Nothing reads it yet: a profile mapping its controls to roles is
+  still to do. `control-parts` checks setting, refusing, undoing, clearing, the round-trip and
+  removal; `control-performance-format` checks `graph.role` and the saved role against both schemas.
 - **A test of side-chain on effect contexts.** Each context of an engine shared through
   [RFC 0007](0007-effect-contexts.md) is a full CLAP interface the host loads like any plugin,
   ports included, so a context can declare a side-chain input and take a wire to it. Nothing in

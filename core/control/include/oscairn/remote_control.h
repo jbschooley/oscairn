@@ -96,6 +96,7 @@ namespace oscairn
         void setPartSolo(uint32_t part,bool solo) override;
         void setPartPan(uint32_t part,double pan) override;
         void setMaster(double level,double pan) override;
+        void setNodeRole(NodeId node,const std::string& role) override;
         History history() const override;
         bool undo() override;
         bool redo() override;

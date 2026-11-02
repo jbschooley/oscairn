@@ -98,6 +98,8 @@ std::string masterText(double level,double pan){return "{\"level\":"+numeric(lev
 std::pair<double,double> masterFrom(V v){
     fields(v,{"level","pan"});const double level=number(field(v,"level")),pan=number(field(v,"pan"));
     if(level<0 || level>2 || pan<-1 || pan>1)bad("invalid master level or pan");return {level,pan};}
+// RFC 0016: a node's role, or empty when it has none.
+std::string roleFrom(V node){const V r=member(node,"role");if(!r)return {};const auto role=text(r);if(!validNodeRole(role))bad("invalid node role");return role;}
 std::string keyText(const MusicalKey& k){
     std::vector<std::string> steps;for(int i=0;i<12;++i)if(k.scale>>i&1)steps.push_back(std::to_string(i));
     return "{\"root\":"+std::to_string(k.root)+",\"scale\":"+join(steps)+'}';
@@ -421,7 +423,7 @@ Control::PerformanceInfo Session::writeDocument(const std::string& directory,Per
         try{h.saveSnapshot((bundle.temporary.path/"nodes"/key).string());}catch(const std::exception& e){bad("cannot save "+nodes_.at(n.id)+" ("+n.plugin.id+"): "+e.what());}
         const bool lv2=lv2Path(n.plugin.path);
         lockPlugin(lock,lv2?"lv2":"clap",n.plugin.id,n.plugin.version,n.plugin.path,!h.failure().empty());
-        nodes.push_back("{\"key\":"+quote(key)+",\"name\":"+quote(nodes_.at(n.id))+",\"plugin\":{\"format\":"+quote(lv2?"lv2":"clap")+",\"id\":"+quote(n.plugin.id)+",\"version\":"+quote(n.plugin.version)+",\"pathHint\":"+quote(n.plugin.path)+"},\"engine\":"+quote(keys.at(graph_.effectSource(n.id,leaving_)))+",\"inputs\":"+ports(n.inputs)+",\"outputs\":"+ports(n.outputs)+",\"noteInputs\":"+std::to_string(n.noteInputs)+",\"noteOutputs\":"+std::to_string(n.noteOutputs)+",\"assets\":"+join(assets)+",\"enabled\":"+(disabled_.count(n.id)?"false":"true")+'}');
+        nodes.push_back("{\"key\":"+quote(key)+",\"name\":"+quote(nodes_.at(n.id))+",\"plugin\":{\"format\":"+quote(lv2?"lv2":"clap")+",\"id\":"+quote(n.plugin.id)+",\"version\":"+quote(n.plugin.version)+",\"pathHint\":"+quote(n.plugin.path)+"},\"engine\":"+quote(keys.at(graph_.effectSource(n.id,leaving_)))+",\"inputs\":"+ports(n.inputs)+",\"outputs\":"+ports(n.outputs)+",\"noteInputs\":"+std::to_string(n.noteInputs)+",\"noteOutputs\":"+std::to_string(n.noteOutputs)+",\"assets\":"+join(assets)+",\"enabled\":"+(disabled_.count(n.id)?"false":"true")+(roles_.count(n.id)?",\"role\":"+quote(roles_.at(n.id)):std::string())+'}');
     }
     // RFC 0011: wires with their owners and Mix settings, and the parts; graph routes follow from them.
     if(wires_.size()>Graph::maxAudioConnections || parts_.size()>256)bad("wires or parts exceed Performance limits");
@@ -605,9 +607,10 @@ std::unique_ptr<Session::Prepared> Session::read(const fs::path& root) {
         if(!missing.empty()){std::string all;for(const auto& m:missing)all+=(all.empty()?"":"; ")+m;bad("missing sound assets: "+all);}
     }
     std::set<NodeId> disabled; // off plugins: they never sounded here, so they have rung out
+    std::map<NodeId,std::string> roles; // RFC 0016
     auto next=graph_.prepareReplacement();std::map<std::string,NodeId> ids{{"input",graphInput},{"output",graphOutput}};std::map<NodeId,std::string> names;std::set<std::string> usedNames;
     std::map<std::string,V> definitions;const auto nodes=array(field(d,"nodes"),256);
-    for(auto node:nodes){fields(node,{"key","name","plugin","engine","inputs","outputs","noteInputs","noteOutputs","assets","enabled"});const auto key=text(field(node,"key"));
+    for(auto node:nodes){fields(node,{"key","name","plugin","engine","inputs","outputs","noteInputs","noteOutputs","assets","enabled","role"});const auto key=text(field(node,"key"));
         if(key.size()<6 || key.size()>12 || key.substr(0,5)!="node-" || !std::all_of(key.begin()+5,key.end(),[](char c){return c>='0' && c<='9';}) || !definitions.emplace(key,node).second)bad("invalid or duplicate node key");
         const auto name=text(field(node,"name"));if(!name.empty() && !usedNames.insert(name).second)bad("duplicate node name");}
     // RFC 0021: the nodes sharing one engine become contexts of an engine of that plugin playing
@@ -651,6 +654,7 @@ std::unique_ptr<Session::Prepared> Session::read(const fs::path& root) {
             if(integer(field(node,"noteInputs"),16)!=h.noteInputPorts() || integer(field(node,"noteOutputs"),16)!=h.noteOutputPorts())bad("note port layout changed");
             ids.emplace(key,runtime);names.emplace(runtime,name);
             if(!boolean(field(node,"enabled")))disabled.insert(runtime);
+            if(const auto role=roleFrom(node);!role.empty())roles[runtime]=role;
         }catch(const std::exception& e){bad("cannot restore "+name+" ("+id+"): "+e.what());}
     }
     auto node=[&](V v){const auto key=text(v);const auto it=ids.find(key);if(it==ids.end())bad("unknown node reference "+key);return it->second;};
@@ -821,7 +825,7 @@ std::unique_ptr<Session::Prepared> Session::read(const fs::path& root) {
     std::set<std::pair<NodeId,uint32_t>> mappings;
     for(auto m:array(field(d,"mappings"),4096)){fields(m,{"from","lane","to","param"});const auto from=node(field(m,"from")),lane=integer(field(m,"lane"));if(!mappings.emplace(from,lane).second)bad("duplicate parameter mapping");next->mapParamTarget(from,lane,node(field(m,"to")),integer(field(m,"param")));}
     return std::make_unique<Prepared>(Prepared{root,stamp(root),std::move(next),pads,info,std::move(lock),tempo,clock=="internal"?Transport::ClockSource::Internal:Transport::ClockSource::MidiClock,
-        std::move(disabled),std::move(names),std::move(wires),std::move(parts),nextPart,nextWire,std::move(scenes),std::move(untouched),nextScene,selectedScene,mappingScene,std::move(macros),nextMacro,std::move(assignments),key,master.first,master.second});
+        std::move(disabled),std::move(names),std::move(wires),std::move(parts),nextPart,nextWire,std::move(scenes),std::move(untouched),nextScene,selectedScene,mappingScene,std::move(macros),nextMacro,std::move(assignments),key,master.first,master.second,std::move(roles)});
 }
 
 // Publishes a read Performance in place of the open one.
@@ -848,7 +852,7 @@ void Session::open(Prepared& p,bool seamless) {
     if(history.size()==historyCapacity)history.pop_front();
     history.push_back({sequence_+1,ChangeKind::Resync,0,0,0,false});
     graph_.publishReplacement(*next,[&]() noexcept {
-        nodes_.swap(p.names);observed_.swap(observed);parts_.swap(p.parts);wires_.swap(wires);disabled_.swap(disabled);rungOut_.swap(rungOut);leaving_.swap(leaving);nextPart_=p.nextPart;nextWire_=p.nextWire;padMap_=p.pads;key_=p.key;masterLevel_=p.masterLevel;masterPan_=p.masterPan;heldPads_={};scenes_.swap(p.scenes);untouched_.swap(p.untouched);scene_=p.selectedScene;mappingScene_=p.mappingScene;transition_.reset();pendingScene_.reset();nextScene_=p.nextScene;macros_.swap(p.macros);assignments_.swap(p.assignments);nextMacro_=p.nextMacro;pending_.clear();commandCount_=0;outputDrops_.clear();parameterRevisions_.clear();staged_=false;
+        nodes_.swap(p.names);observed_.swap(observed);parts_.swap(p.parts);wires_.swap(wires);disabled_.swap(disabled);rungOut_.swap(rungOut);leaving_.swap(leaving);nextPart_=p.nextPart;nextWire_=p.nextWire;padMap_=p.pads;key_=p.key;masterLevel_=p.masterLevel;masterPan_=p.masterPan;roles_.swap(p.roles);heldPads_={};scenes_.swap(p.scenes);untouched_.swap(p.untouched);scene_=p.selectedScene;mappingScene_=p.mappingScene;transition_.reset();pendingScene_.reset();nextScene_=p.nextScene;macros_.swap(p.macros);assignments_.swap(p.assignments);nextMacro_=p.nextMacro;pending_.clear();commandCount_=0;outputDrops_.clear();parameterRevisions_.clear();staged_=false;
         tempo_.store(p.tempo);clockSource_.store(p.clock);playing_.store(false);
         ++revision_;++sequence_;history_.swap(history);
     });
@@ -908,7 +912,7 @@ std::map<std::string,NodeId> Session::addNodes(const json_value_s* document,cons
     try{
         for(bool siblings:{false,true})for(auto node:nodes){
             if(!wanted(node))continue;
-            fields(node,{"key","name","plugin","engine","inputs","outputs","noteInputs","noteOutputs","assets","enabled"});
+            fields(node,{"key","name","plugin","engine","inputs","outputs","noteInputs","noteOutputs","assets","enabled","role"});
             const auto key=text(field(node,"key")),engine=text(field(node,"engine"));if((key!=engine)!=siblings)continue;
             if(key.size()<6 || key.size()>12 || key.substr(0,5)!="node-" || ids.count(key))bad("invalid or duplicate node key");
             const auto plugin=field(node,"plugin");fields(plugin,{"format","id","version","pathHint"});
@@ -932,6 +936,7 @@ std::map<std::string,NodeId> Session::addNodes(const json_value_s* document,cons
             if(integer(field(node,"noteInputs"),16)!=h.noteInputPorts() || integer(field(node,"noteOutputs"),16)!=h.noteOutputPorts())bad("note port layout changed: "+name);
             for(const auto& p:h.parameters())observed_[{runtime,p.id}]=h.parameterValue(p.id);
             if(!boolean(field(node,"enabled"))){disabled_.insert(runtime);rungOut_.insert(runtime);} // off, and never sounded here
+            if(const auto role=roleFrom(node);!role.empty())roles_[runtime]=role;
             ids.emplace(key,runtime);
         }
     }catch(...){for(const auto n:added)dropNode(n);added.clear();graph_.commit();staged_=false;throw;}

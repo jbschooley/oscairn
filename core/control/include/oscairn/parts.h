@@ -298,6 +298,11 @@ namespace oscairn
     inline constexpr std::array<const char*, 5> sceneKinds{"enabled", "mutes", "mix", "parameters", "mappings"}; // the scope's names, bit by bit
     inline constexpr std::array<const char*, 3> sceneCurves{"linear", "ease", "equal-power"}, sceneLaunches{"now", "beat", "bar"};
 
+    // RFC 0016's node roles: what a node is to a panel's buttons and pages ("edit Insertion A"),
+    // and RFC 0032's arpeggiator. A node has one or none; the converter sets it, the musician may change it.
+    inline constexpr std::array<const char*, 8> nodeRoles{"insertion-a", "insertion-b", "part-eq", "reverb", "variation", "master-effect", "master-eq", "arpeggiator"};
+    inline bool validNodeRole(const std::string& role) { for(const auto* r : nodeRoles) if(role == r) return true; return false; }
+
     // What removing a node does with the user wires on it.
     enum class UserWires { Remove, Reconnect }; // Reconnect joins its user sources to its user destinations
 }

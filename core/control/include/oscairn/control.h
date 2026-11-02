@@ -106,6 +106,7 @@ namespace oscairn
             std::set<NodeId> disabled; // plugins switched off (setNodeEnabled)
             std::set<NodeId> ringing;  // those of them still sounding out: notes held, a tail
             double masterLevel = 1, masterPan = 0; // the Performance's main output (setMaster)
+            std::map<NodeId,std::string> roles; // nodes' roles (setNodeRole); a node without one is not listed
         };
         enum class ChangeKind { Value, GestureBegin, GestureEnd, Graph, Resync };
         struct Change
@@ -382,6 +383,8 @@ namespace oscairn
         // The Performance's level (0..2, a gain) and pan (-1 left .. 1 right, a balance) on its main
         // output, the first audio output port: after every part, bus and user wire that plays there.
         virtual void setMaster( double level, double pan ) = 0;
+        // RFC 0016: a node's role (nodeRoles, parts.h), or empty for none. An edit, saved with the node.
+        virtual void setNodeRole( NodeId node, const std::string& role ) = 0;
         // Undo (RFC 0011): edits to parts, wires, splits, Mix settings, scenes, controls and pads,
         // nodes added, removed or replaced, parameter mappings, and parameter values set through
         // this interface. Playing, switching scenes, moving controls and choosing sounds are not
