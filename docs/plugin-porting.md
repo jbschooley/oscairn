@@ -395,6 +395,20 @@ What changes for the plugin:
 - **Parameter info:** an info rescan is forwarded with the worker's next service. A rescan
   that changes the parameters' IDs or order is ignored until the plugin is loaded again.
 - **Reporting:** `session.status` lists each plugin in a worker with its CPU time and memory.
+- **Your own threads:** a plugin may start threads of its own in a worker, as in the engine (an
+  EQ matching its coefficients, a sampler streaming from disk). Only the worker's audio thread
+  has real-time priority; yours run at normal priority. Their memory counts toward the worker's
+  memory limit. Thread-check reports them as neither the main nor the audio thread, so call the
+  host from them only through CLAP's thread-safe functions (such as `request_callback`), and
+  stop them by `destroy`. A restart ends the process and them with it. `process` must not wait
+  for them: a block that does is late like any other.
+- **How their CPU counts:** the budget ([Behaving well](#behaving-well), RFC 0025) measures
+  each block's `process` call on the worker's audio thread, in wall time, as in the engine; the
+  time limit is how long the engine waits for the block. Neither counts a helper thread's CPU
+  time, unless that thread slows the audio thread by taking its core. The worker's whole CPU
+  time, every thread's user and system time, is what `session.status` reports (shared among the
+  plugins in that worker), and the budget does not use it. So work moved off the audio thread
+  is not charged against the budget; on a device with few cores it still competes with audio.
 
 ## Packages and signing
 

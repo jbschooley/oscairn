@@ -109,7 +109,11 @@ never write the user's data folder.
   sustained by the pedal; the graph counts them for every plugin that takes notes): with none,
   it updates the plugin's cost **at rest**; with some, its cost **per voice** (the time above
   rest, divided by the notes), each a falling high-water mark too, and the most notes seen at
-  once. A plugin that takes no notes (an effect) is all at rest.
+  once. A plugin that takes no notes (an effect) is all at rest. A block's time is the wall
+  time of the plugin's `process` call on its audio thread (the worker's, for a plugin in one),
+  so threads a plugin starts itself (an EQ's coefficient matching) are not counted, unless they
+  slow that call; a worker's whole CPU time, every thread's, is reported in `session.status`
+  but not budgeted.
 - **Estimated:** the open Performance, or one in a folder from its document's plugin identities;
   a plugin never measured here counts at 2% of the audio time and 32 MiB, marked unmeasured. A
   measured plugin in a part with a note limit (RFC 0018) counts at rest plus its cost per voice
