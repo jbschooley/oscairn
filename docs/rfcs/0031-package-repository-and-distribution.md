@@ -366,8 +366,8 @@ folder of signed archives into a repository, ready to upload anywhere.
 | Reproducibility | Where a package names its source and builder image, CI rebuilds it and compares, and the index says whether it matched (F-Droid's model; the builder is reproducible already) |
 
 **Review:** data-only updates from a known publisher are merged once the checks pass. A new
-publisher, and any package bringing plugin or app code, also needs a maintainer's review. How
-much review is an open question, with a [proposal](#publisher-trust-and-review).
+publisher, and any package newly bringing plugin or app code, also needs a maintainer's review
+([decided](#decided-2026-11-01)).
 
 ### Versions and yanking
 
@@ -471,9 +471,9 @@ plugin and app code needs System.
 
 A repository cannot forge a publisher's package: the publisher's signature would not verify.
 A publisher cannot appear in a repository without it. RFC 0006's trust store gains one purpose,
-`repositories`, beside `plugins` and `content`. Whether a repository's listing also counts as
-trust in its publishers' keys for plugins is an open question, with a
-[proposal](#publisher-trust-and-review).
+`repositories`, beside `plugins` and `content`. A repository's listing counts as trust in its
+publishers' keys for content, not for code: a new code publisher is approved once on the device
+([decided](#decided-2026-11-01)).
 
 ### Takedown and revocation
 
@@ -515,9 +515,9 @@ aggregate, if at all.
 
 ## Publisher trust and review
 
-Open questions (1) and (2) ask whether a repository's listing counts as trust in its
-publishers' keys for plugins, and how much human review a package with code gets. Jacob was not
-sure what other repositories do, so this section compares them. Sources were read on
+Whether a repository's listing counts as trust in its publishers' keys for plugins, and how
+much human review a package with code gets, were decided from this comparison of what other
+repositories do ([decided](#decided-2026-11-01)). Sources were read on
 2026-11-01.
 
 ### What others do
@@ -552,7 +552,7 @@ Inferred, not stated by the sources:
 
 ### Proposal
 
-For Jacob to confirm. Until then (1) and (2) stay [open](#open-questions).
+Accepted by Jacob on 2026-11-01 ([decided](#decided-2026-11-01)).
 
 - **A repository's listing counts as trust for content,** not for code. Sounds, Performances and
   samples from a listed publisher install as signed by a known key. Content installs anyway
@@ -610,7 +610,14 @@ step 8: nothing public without a way to stop it.
 
 ## Decided 2026-11-01
 
-Jacob's decisions on three of the open questions:
+Jacob's decisions on five of the open questions:
+
+- **Publisher trust:** a repository's listing counts as trust for content, not for code. Code is
+  approved once per publisher on the device, then pinned to its key, as the
+  [proposal](#proposal) describes.
+- **Review:** human review of a publisher's first submission and whenever a package newly adds
+  code; automated checks after that; a verified publisher badge for publishers who prove their
+  domain ([proposal](#proposal)).
 
 - **Paid content:** the official repository does not include paid content, for now. If it is
   ever added, paid packages must be marked as paid in the index, and search must offer a filter
@@ -624,14 +631,6 @@ Jacob's decisions on three of the open questions:
 
 ## Open questions
 
-- **Publisher trust:** does a repository's listing count as trust in its publishers' keys for
-  plugins, or does the musician approve each new plugin publisher once? A product may want the
-  first; a desktop user may want the second. Proposed: listing is trust for content; code is
-  approved once per publisher on the device, then pinned to its key ([proposal](#proposal)).
-- **Review:** a maintainer's review for every package with code, for every publisher's first
-  submission only, or automated checks alone after the first? Proposed: human review of a
-  publisher's first submission and whenever a package newly adds code, automated checks after
-  that, and a verified publisher badge ([proposal](#proposal)).
 - **Built-in apps:** do apps that ship in the system image also update from the repository
   between images, or only with the image?
 - **Publisher IDs:** verified by domain (reverse-DNS), or names the project hands out?
