@@ -387,6 +387,16 @@ int main(int argc, char** argv)
                       "the meters and undo names read at their own pace, not per edit: " + std::to_string(tap.count("parts.meters")) + " " + std::to_string(tap.count("wires.meters")) + " " +
                       std::to_string(tap.count("edit.history")) + " of at most " + std::to_string(allowed));
             }
+            // A Parts view not on screen (the one under Play, a background app's) polls nothing:
+            // on the Mixer, shown, it would read the meters twenty times a second.
+            {
+                standalone::PartsView view(engine, argv[2]);
+                view.setSize(1024, 600); view.showPart(standalone::PartsView::mixerPage);
+                check(!view.isShowing(), "the view is not on screen");
+                tap.reset();
+                for(int i = 0; i < 50; ++i) juce::MessageManager::getInstance()->runDispatchLoopUntil(10);
+                check(tap.count("parts.meters") == 0, "a hidden Mixer reads no meters: " + std::to_string(tap.count("parts.meters")));
+            }
             // An action asked while a job runs is refused, and said: a dropped Save must not
             // look saved.
             {
