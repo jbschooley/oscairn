@@ -104,7 +104,8 @@ with a `reason`. Maintainers change it, following the takedown policy.
 `.github/workflows/check.yml` builds `oscairn-sign` at a pinned commit of Oscairn and runs
 `scripts/build-index.py --check` from the base branch: every record's schema, each archive's
 hash, archive safety and every signature through `oscairn-sign verify`, the archive and every
-build signed by the publisher's key, each claimed platform's build, and no published version or
+build signed by the publisher's key, each claimed platform's build, that a package keeps the
+publisher of its other releases and that publisher IDs do not nest, and no published version or
 publisher key changed. Each check RFC 0031 lists that is not built yet is its own step that says
 so with a warning. Changes outside `publishers/`, `packages/` and `revoked.json` need a
 maintainer's review: a pull request can change the workflows it runs under.

@@ -101,6 +101,10 @@ def read_publishers(root, problems):
             problems.add(path, f"its file is not named {pid}.json")
         if pid and key:
             publishers[pid] = p
+    for pid in publishers:  # a publisher must not own another's namespace: com could claim com.example's packages
+        for other in publishers:
+            if other != pid and other.startswith(pid + "."):
+                problems.add("publishers", f"publisher IDs do not nest: {pid} is a prefix of {other}")
     return publishers
 
 
@@ -338,6 +342,12 @@ def main():
         got = read_release(path, root, publishers, args.oscairn_sign, args.cache, problems)
         if got:
             packages.setdefault(got[0]["id"], []).append(got)
+    # A package keeps its publisher: a second publisher owning the prefix could otherwise publish
+    # a newest release and take the package over on devices that trust by publisher key.
+    for pid, releases in sorted(packages.items()):
+        owners = {r["publisher"] for r, _ in releases}
+        if len(owners) > 1:
+            problems.add(f"packages/{pid}", f"a package keeps its publisher; these releases name {sorted(owners)}")
 
     revoked = load(root / "revoked.json", problems)
     if revoked is not None and check_format(revoked, "oscairn.repository-revocations", "revoked.json", problems):

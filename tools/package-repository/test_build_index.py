@@ -45,18 +45,18 @@ def main(tool):
             made[name] = (key_id, public)
 
         # A signed archive: one CLAP build for linux-arm64, signed by the publisher, and the whole.
-        def archive(path, signed=True):
+        def archive(path, signed=True, key="publisher", plugin="com.example.organ"):
             build = temp / "Organ.clap"
             build.write_bytes(b"not really a plugin")
             Path(str(build) + ".sig").unlink(missing_ok=True)
-            out = run(tool, "build", keys / "publisher.key", "clap", "com.example.organ", "2.1.0", "linux-arm64", build)
+            out = run(tool, "build", keys / f"{key}.key", "clap", plugin, "2.1.0", "linux-arm64", build)
             assert out.returncode == 0, out.stderr
             digest = out.stdout.split()[5]
-            inside = "Plugins/clap/com.example.organ@2.1.0/linux-arm64/Organ.clap"
+            inside = f"Plugins/clap/{plugin}@2.1.0/linux-arm64/Organ.clap"
             manifest = {
-                "format": "oscairn.library", "version": 3, "id": "com.example.organ", "name": "Example Organ", "kind": "library",
+                "format": "oscairn.library", "version": 3, "id": plugin, "name": "Example Organ", "kind": "library",
                 "items": [],
-                "plugins": [{"format": "clap", "id": "com.example.organ", "version": "2.1.0", "name": "Example Organ", "builds": [
+                "plugins": [{"format": "clap", "id": plugin, "version": "2.1.0", "name": "Example Organ", "builds": [
                     {"platform": "linux-arm64", "path": inside, "sha256": digest,
                      "signatures": json.loads(Path(str(build) + ".sig").read_text()) if signed else []}]}],
                 "files": {inside: hashlib.sha256(build.read_bytes()).hexdigest()},
@@ -65,7 +65,7 @@ def main(tool):
                 z.writestr("library.json", json.dumps(manifest))
                 z.write(build, inside)
             if signed:
-                out = run(tool, "archive", keys / "publisher.key", path)
+                out = run(tool, "archive", keys / f"{key}.key", path)
                 assert out.returncode == 0, out.stderr
             return path
 
@@ -168,6 +168,37 @@ def main(tool):
                 "not signed by its publisher's key", "an unsigned archive is refused", unsigned)
         refused(dict(release, publisher="org.other"), "no publishers/org.other.json", "a release from an unknown publisher is refused")
         refused(dict(release, archive=dict(release["archive"], size=2**31)), "under 2 GiB", "an archive too large for a release asset is refused")
+
+        # A package keeps its publisher, and publisher IDs do not nest: the owner of `io.github`
+        # cannot publish a new release of `io.github.alice.synth`, whose releases come from
+        # `io.github.alice` (RFC 0031's reverse-DNS case).
+        out = run(tool, "key", keys / "alice.key")
+        assert out.returncode == 0, out.stderr
+        _, _, alice_public = out.stdout.split()
+        out = run(tool, "key", keys / "other.key")
+        assert out.returncode == 0, out.stderr
+        _, _, other_public = out.stdout.split()
+        for pid, name, public in (("io.github.alice", "Alice", alice_public), ("io.github", "GitHub", other_public)):
+            (repo / "publishers" / f"{pid}.json").write_text(json.dumps({
+                "format": "oscairn.repository-publisher", "version": 1, "id": pid, "name": name,
+                "key": public, "verification": f"https://{pid}/.well-known/oscairn-publisher.json"}))
+        aliceDir = repo / "packages" / "io.github.alice.synth"
+        aliceDir.mkdir()
+        aliceOlib = archive(aliceDir / "1.0.0.olib", key="alice", plugin="io.github.alice.synth")
+        aliceData = aliceOlib.read_bytes()
+        (aliceDir / "1.0.0.json").write_text(json.dumps(dict(release, id="io.github.alice.synth", release="1.0.0", publisher="io.github.alice",
+            archive={"path": "1.0.0.olib", "sha256": hashlib.sha256(aliceData).hexdigest(), "size": len(aliceData)})))
+        otherOlib = archive(aliceDir / "2.0.0.olib", key="other", plugin="io.github.alice.synth")  # the intruder's own key
+        otherData = otherOlib.read_bytes()
+        (aliceDir / "2.0.0.json").write_text(json.dumps(dict(release, id="io.github.alice.synth", release="2.0.0", publisher="io.github",
+            archive={"path": "2.0.0.olib", "sha256": hashlib.sha256(otherData).hexdigest(), "size": len(otherData)})))
+        shutil.rmtree(temp / "cache", ignore_errors=True)
+        out = build(temp / "takeover")
+        check(out.returncode != 0 and "publisher IDs do not nest" in out.stderr, "publishers whose IDs nest are refused: " + out.stderr.strip())
+        check("keeps its publisher" in out.stderr, "another publisher's release of the same package is refused")
+        (repo / "publishers" / "io.github.json").unlink()
+        (aliceDir / "2.0.0.json").unlink()
+        check(build(temp / "whole").returncode == 0, "and the tree builds again once the newcomer is gone")
     finally:
         shutil.rmtree(temp, ignore_errors=True)
     return 1 if failures else 0
