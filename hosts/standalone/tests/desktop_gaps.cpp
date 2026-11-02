@@ -14,6 +14,7 @@
 #include "../PartsView.h"
 #include "../Settings.h"
 #include "oscairn/local_socket.h"
+#include "oscairn/package.h"
 #include "oscairn/session.h"
 #include <juce_gui_extra/juce_gui_extra.h>
 #include <atomic>
@@ -173,7 +174,9 @@ int main(int argc, char** argv)
                 // The protocol takes a reservation of at most 4 GiB, so a small device.
                 constexpr uint64_t MiB = 1ull << 20;
                 // The synth measured at 100 MiB, read when the budget is set, so the next song holds memory.
-                const std::string key = "org.oscairn.basic-synth@0.1.0"; // its ID and version: the graph over the socket does not carry the version
+                // Its ID, version and build digest (Session::pluginKey): the graph over the socket does not carry the version.
+                std::string key;
+                for(const auto& p : plugins) if(p.name == "Basic Synth") key = "org.oscairn.basic-synth@0.1.0 " + bundleDigest(p.path);
                 data.getChildFile("measurements.json").replaceWithText("{\"plugins\":{\"" + key + "\":{\"cpu\":0.01,\"rest\":0.01,\"voice\":0,\"voices\":0,\"memory\":" + std::to_string(100 * MiB) + "}}}");
                 engine.edit([](Control& c) { c.setBudget({.9, 0, 3072 * MiB, 256 * MiB, 0, 64 * MiB}); });
                 check(engine.launchApp({"oscairn.library", 120ull << 20}).admitted, "the Library fits");

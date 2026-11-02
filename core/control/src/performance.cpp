@@ -871,18 +871,23 @@ void Session::open(Prepared& p,bool seamless) {
 void Session::lockPlugin(std::vector<LockEntry>& lock,const std::string& format,const std::string& id,const std::string& version,const std::string& path,bool standIn) {
     if(std::any_of(lock.begin(),lock.end(),[&](const LockEntry& l){return l.format==format && l.id==id && l.version==version;}))return;
     const auto here=platform();
-    std::string digest;
-    std::error_code e;
-    if(!standIn && fs::exists(path,e)){
-        // Again once it is rebuilt: the newest write to it, or to anything in its bundle.
-        auto newest=fs::last_write_time(path,e);
-        if(fs::is_directory(path,e))for(const auto& f:fs::recursive_directory_iterator(path,e))newest=std::max(newest,f.last_write_time(e));
-        auto& known=digests_[path];
-        if(known.second.empty() || known.first!=newest){known={newest,{}};try{known.second=bundleDigest(path);}catch(const std::exception&){}}
-        digest=known.second;
-    }
+    const auto digest=standIn?std::string():buildDigest(path,true);
     for(const auto& l:lock_)if(l.format==format && l.id==id && l.version==version && (l.platform!=here || digest.empty()))lock.push_back(l);
     if(!digest.empty())lock.push_back({format,id,version,here,digest});
+}
+
+std::string Session::buildDigest(const std::string& path,bool fresh) const {
+    auto& known=digests_[path];
+    const auto now=std::chrono::steady_clock::now();
+    if(!fresh && !known.digest.empty() && now-known.checked<std::chrono::seconds(1))return known.digest;
+    known.checked=now;
+    std::error_code e;
+    if(!fs::exists(path,e))return known.digest={};
+    // Again once it is rebuilt: the newest write to it, or to anything in its bundle.
+    auto newest=fs::last_write_time(path,e);
+    if(fs::is_directory(path,e))for(const auto& f:fs::recursive_directory_iterator(path,e))newest=std::max(newest,f.last_write_time(e));
+    if(known.digest.empty() || known.newest!=newest){known.newest=newest;known.digest.clear();try{known.digest=bundleDigest(path);}catch(const std::exception&){}}
+    return known.digest;
 }
 
 void Session::mergeLock(const std::vector<LockEntry>& more) {

@@ -283,7 +283,7 @@ namespace oscairn
         // voices: the most notes seen sounding at once. All shares of a block's time.
         struct Measurement { double cpu = 0, rest = 0, voice = 0; uint32_t voices = 0; uint64_t memory = 0; };
         Budget budget_;
-        std::map<std::string, Measurement> measured_;          // by plugin ID and version, and what it declared (pluginKey)
+        std::map<std::string, Measurement> measured_;          // by plugin ID, version and build digest, and what it declared (pluginKey)
         bool measurementsLoaded_ = false, measurementsChanged_ = false;
         std::chrono::steady_clock::time_point measurementsSaved_{};
         uint64_t measureTicks_ = 0;
@@ -464,7 +464,12 @@ namespace oscairn
         struct LockEntry { std::string format, id, version, platform, sha256; bool operator==(const LockEntry&) const = default; };
     private:
         std::vector<LockEntry> lock_;                       // what the documents loaded said, merged
-        std::map<std::string, std::pair<std::filesystem::file_time_type, std::string>> digests_; // each plugin build's digest by its path, as of its newest write
+        // Each plugin build's digest by its path, as of its newest write, last looked at when checked.
+        struct Digest { std::filesystem::file_time_type newest; std::string digest; std::chrono::steady_clock::time_point checked; };
+        mutable std::map<std::string, Digest> digests_;
+        // The digest (bundleDigest) of the build at path; empty where there is none. Its writes are
+        // looked at again after a second, or now when fresh.
+        std::string buildDigest(const std::string& path, bool fresh = false) const;
         void lockPlugin(std::vector<LockEntry>& lock, const std::string& format, const std::string& id, const std::string& version, const std::string& path, bool standIn);
         void mergeLock(const std::vector<LockEntry>& more);
         // A Performance read and its plugins loaded with their state, not playing yet (RFC 0021).

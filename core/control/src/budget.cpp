@@ -48,27 +48,32 @@ namespace oscairn
         uint64_t total(const oscairn_memory_t& m) { return m.shared_bytes + m.context_bytes + m.asset_bytes; }
     }
 
-    // A plugin build, and what it declared for its state: a plugin whose modes need very different
-    // memory (a reverb's algorithms) is measured per declaration, not as one figure, the largest.
+    // A plugin build, by its version and the digest of its files (so a rebuild without a new version
+    // is measured again), and what it declared for its state: a plugin whose modes need very
+    // different memory (a reverb's algorithms) is measured per declaration, not as one figure, the largest.
     std::string Session::pluginKey(const Graph& graph, NodeId node) const
     {
         const auto& host = graph.host(node);
         const auto& d = host.descriptor();
         const auto declared = declaredBy(host);
-        return d.id + "@" + d.version + (declared ? "#" + std::to_string(total(*declared)) : std::string());
+        const auto digest = buildDigest(d.path);
+        return d.id + "@" + d.version + (digest.empty() ? std::string() : " " + digest) + (declared ? "#" + std::to_string(total(*declared)) : std::string());
     }
 
     // Measured: at rest, plus its cost per voice for as many notes as its part may play at once;
     // with no limit, or before its voices are measured, the busiest block seen. A build asked for
     // without a declaration (a Performance not open) counts at the most of what its declarations
-    // were measured at.
+    // were measured at; one without a digest (not here), at the most of that version's builds.
     Control::Cost Session::costOf(const std::string& key, const std::string& name, const std::string& plugin, uint32_t limit) const
     {
         Measurement m; bool found = false;
         if(const auto it = measured_.find(key); it != measured_.end()) { m = it->second; found = true; }
         else if(key.find('#') == std::string::npos)
-            for(auto it = measured_.lower_bound(key + "#"); it != measured_.end() && it->first.compare(0, key.size() + 1, key + "#") == 0; ++it, found = true)
+            for(auto it = measured_.lower_bound(key); it != measured_.end() && it->first.compare(0, key.size(), key) == 0; ++it)
             {
+                const char next = it->first.size() > key.size() ? it->first[key.size()] : 0;
+                if(next != '#' && (next != ' ' || key.find(' ') != std::string::npos)) continue;
+                found = true;
                 const auto& x = it->second;
                 m = {std::max(m.cpu, x.cpu), std::max(m.rest, x.rest), std::max(m.voice, x.voice), std::max(m.voices, x.voices), std::max(m.memory, x.memory)};
             }
@@ -475,7 +480,8 @@ namespace oscairn
         {
             const auto* plugin = detail::member(e->value, "plugin");
             const auto id = text(detail::member(plugin, "id")), key = text(detail::member(e->value, "key"));
-            coming.push_back(costOf(id + "@" + text(detail::member(plugin, "version")), text(detail::member(e->value, "name")), id, limits.count(key) ? limits.at(key) : 0));
+            const auto digest = buildDigest(text(detail::member(plugin, "pathHint"))); // the build it will load, where it is here
+            coming.push_back(costOf(id + "@" + text(detail::member(plugin, "version")) + (digest.empty() ? std::string() : " " + digest), text(detail::member(e->value, "name")), id, limits.count(key) ? limits.at(key) : 0));
         }
         return estimateOf(coming, playing);
     }

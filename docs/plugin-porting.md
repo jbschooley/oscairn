@@ -348,8 +348,8 @@ stepped, hidden and read-only flags. How the editors use them:
   fit the device's budget, the change is a cut instead. A setlist prepares its next
   Performance while one plays: that one's plugins are created, activated and given their saved
   state, and get their main-thread callbacks, perhaps minutes before they first process.
-- **Keep your cost steady and your version honest:** the host measures each plugin's CPU per
-  block and its memory on the device, by plugin ID and version, and refuses a Performance, or
+- **Keep your cost steady:** the host measures each plugin's CPU per block and its memory on
+  the device, by plugin ID, version and build, and refuses a Performance, or
   an added plugin, that would go over the device's budget, saying why
   ([RFC 0025](rfcs/0025-resource-budgets.md)). CPU is a slowly falling high-water mark of its
   block times, so a heavy passage counts for minutes after it, split into a cost at rest and a
@@ -357,7 +357,11 @@ stepped, hidden and read-only flags. How the editors use them:
   notes, so keep your per-voice cost proportional to the voices actually sounding. In a worker,
   memory is what the worker holds; in the engine's process, it is what the process grew by
   while the plugin loaded. A plugin never measured on the device counts as 2% of the block's
-  time and 32 MiB until it is, and a new version starts unmeasured.
+  time and 32 MiB until it is. A new version starts unmeasured, and so does a new build of the
+  same version: the build is the SHA-256 digest of the plugin's files (its bundle on macOS), as
+  the Performance lock records it, taken again when any of them is written, so a rebuilt 0.1.0
+  is measured again without a version bump. A Performance not open is estimated from the build
+  at its saved path; where none is there, from the most any build of that version measured.
 
 ## In a worker process
 

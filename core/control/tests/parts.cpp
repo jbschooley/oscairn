@@ -4,6 +4,7 @@
 // rules, plugin replacement and Performance persistence.
 //   oscairn-parts-test FIXTURE.clap AUDIO_FIXTURE.clap DELAY.clap SPLITTERS.clap TRANSPOSE.clap FOLLOWER.clap
 #include "oscairn/session.h"
+#include "oscairn/package.h"
 #include <oscairn-clap/harmony.h>
 #include "AllocationGuard.h"
 #include "../../plugin-host/src/StateFiles.h"
@@ -1242,6 +1243,33 @@ namespace
         check(u.leaving() == 1, "and rings out");
     }
 
+    // A build changed without a new version (0.1.0 stays 0.1.0) is measured again: measurements
+    // are kept by the digest of the build's files, not its version alone.
+    void rebuilt(const char* fixture, const fs::path& root)
+    {
+        const auto home = root / "rebuilt-home", plugin = root / "rebuilt.clap";
+        fs::create_directories(home);
+        ::setenv("OSCAIRN_DATA_HOME", home.c_str(), 1);
+        fs::copy_file(fixture, plugin);
+        auto measured = [&] { // whether it was measured before it played, and after
+            Session s(48000, frames);
+            s.setBudget({.9, 0});
+            const auto a = s.add("a", plugin.string(), "org.kick.test.synth");
+            const auto part = s.addPart("A"); s.insertIntoPart(part, 0, a); s.commit();
+            const bool before = s.estimate().plugins.at(0).measured;
+            Audio x; s.note(true, 60, 1);
+            for(int i = 0; i < 64; ++i) x.run(s);
+            s.note(false, 60, 0); x.run(s);
+            return std::pair{before, s.estimate().plugins.at(0).measured};
+        };
+        check(measured() == std::pair{false, true}, "a new build is measured while it plays");
+        check(measured().first, "and known to the next session");
+        // Rebuilt in place, its version unchanged: a new file, as a linker writes one.
+        { const auto next = root / "rebuilt.next"; fs::copy_file(fixture, next); std::ofstream(next, std::ios::app | std::ios::binary) << "rebuilt"; fs::rename(next, plugin); }
+        check(!measured().first, "rebuilt with the same version, it is measured anew");
+        ::setenv("OSCAIRN_DATA_HOME", (root / "budget-home").c_str(), 1);
+    }
+
     // Declared memory (RFC 0025, oscairn.memory): the fixture's memory effect declares 1 MiB shared
     // and its gain times 16 MiB per context (9 MiB at its default .5). Measurements are kept per
     // declaration, so a plugin's modes do not share one figure; admission counts the larger of the
@@ -1254,9 +1282,10 @@ namespace
         fs::create_directories(home);
         ::setenv("OSCAIRN_DATA_HOME", home.c_str(), 1);
         // Two modes measured: the default (9 MiB declared) at 10 MiB, a big one (17 MiB declared) at 100.
+        const auto build = "org.kick.test.memory@1 " + bundleDigest(fixture) + "#"; // measurements' key (Session::pluginKey)
         std::ofstream(home / "measurements.json") << "{\"plugins\":{"
-            "\"org.kick.test.memory@1#" << 9 * MiB << "\":{\"cpu\":0.01,\"rest\":0.01,\"voice\":0,\"voices\":0,\"memory\":" << 10 * MiB << "},"
-            "\"org.kick.test.memory@1#" << 17 * MiB << "\":{\"cpu\":0.01,\"rest\":0.01,\"voice\":0,\"voices\":0,\"memory\":" << 100 * MiB << "}}}";
+            "\"" << build << 9 * MiB << "\":{\"cpu\":0.01,\"rest\":0.01,\"voice\":0,\"voices\":0,\"memory\":" << 10 * MiB << "},"
+            "\"" << build << 17 * MiB << "\":{\"cpu\":0.01,\"rest\":0.01,\"voice\":0,\"voices\":0,\"memory\":" << 100 * MiB << "}}}";
         {
             Session s(48000, frames);
             s.setBudget({.9, 20 * MiB});
@@ -1289,7 +1318,7 @@ namespace
             const auto other = root / "memory-default";
             fs::create_directories(other);
             ::setenv("OSCAIRN_DATA_HOME", other.c_str(), 1);
-            std::ofstream(other / "measurements.json") << "{\"plugins\":{\"org.kick.test.memory@1#" << 9 * MiB
+            std::ofstream(other / "measurements.json") << "{\"plugins\":{\"" << build << 9 * MiB
                 << "\":{\"cpu\":0.01,\"rest\":0.01,\"voice\":0,\"voices\":0,\"memory\":" << 9 * MiB << "}}}";
             Session u(48000, frames);
             u.setBudget({.9, 12 * MiB});
@@ -1348,9 +1377,10 @@ namespace
         // Both modes measured at what they declare, so a Performance not open (which counts each
         // build at its largest measurement) is estimated, not taken at the 32 MiB default.
         const uint64_t half = MiB + uint64_t(.5 * (16 * MiB)), most = MiB + uint64_t(.9 * (16 * MiB));
+        const auto build = "org.kick.test.memory@1 " + bundleDigest(fixture) + "#";
         std::ofstream(home / "measurements.json") << "{\"plugins\":{"
-            "\"org.kick.test.memory@1#" << half << "\":{\"cpu\":0.001,\"rest\":0.001,\"voice\":0,\"voices\":0,\"memory\":" << half << "},"
-            "\"org.kick.test.memory@1#" << most << "\":{\"cpu\":0.001,\"rest\":0.001,\"voice\":0,\"voices\":0,\"memory\":" << most << "}}}";
+            "\"" << build << half << "\":{\"cpu\":0.001,\"rest\":0.001,\"voice\":0,\"voices\":0,\"memory\":" << half << "},"
+            "\"" << build << most << "\":{\"cpu\":0.001,\"rest\":0.001,\"voice\":0,\"voices\":0,\"memory\":" << most << "}}}";
         Session s(48000, frames);
         // A 110 MiB device: 20 for the system, a floor of 40, a margin of 5; the Performance app (6) and the Library (4) always available.
         s.setBudget({.9, 0, 110 * MiB, 20 * MiB, 40 * MiB, 5 * MiB});
@@ -1831,6 +1861,7 @@ int main(int argc, char** argv)
         unavailable(argv[1], temp.path);
         sceneTransitions(argv[1], temp.path);
         budgets(argv[1], temp.path);
+        rebuilt(argv[1], temp.path);
         declaredMemory(argv[1], argv[3], temp.path);
         memoryClasses(argv[1], temp.path);
         controls(argv[1], temp.path);

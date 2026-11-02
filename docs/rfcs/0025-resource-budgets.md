@@ -100,8 +100,8 @@ of the profile's memory. Until a budget is set nothing is measured or checked, s
 never write the user's data folder.
 
 - **Measured:** at each service tick, every plugin's last block as a share of the block's time,
-  kept as a slowly falling high-water mark (about ten minutes' half-life) per plugin build (ID
-  and version), skipping its first 32 blocks; memory every second, a worker's share of its
+  kept as a slowly falling high-water mark (about ten minutes' half-life) per plugin build (ID,
+  version and the digest of its files, so a rebuild without a new version is measured again), skipping its first 32 blocks; memory every second, a worker's share of its
   process's resident memory or, in the engine's process, what the process grew by while the
   plugin loaded. Kept in `measurements.json` in the data folder, saved every 30 seconds when
   changed and when the session ends. One sample a tick can miss a rare spike between ticks.
@@ -214,7 +214,7 @@ ones), and a plugin declaring more is refused before it activates: "needs 13 MiB
 12 MiB is left". An instance counts its shared, context and asset bytes, an effect context its
 context and asset bytes. Admission counts the larger of the declaration and the measurement, or
 the declaration alone until the plugin has been measured. Measurements are kept per plugin build
-and declared size (`id@version#bytes`), so a plugin whose modes differ (Reverb 1 at 2.2 MB, an
+and declared size (`id@version digest#bytes`), so a plugin whose modes differ (Reverb 1 at 2.2 MB, an
 EQ at 1 KB a context) is not counted at the largest seen; a Performance not open, which cannot
 ask its plugins, counts each build at the most of its measured declarations. Without
 `oscairn.memory`, an effect engine counts the shared and context bytes its effect contexts'
