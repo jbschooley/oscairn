@@ -16,6 +16,7 @@
 #include <clap/ext/preset-load.h>
 #include <clap/ext/gui.h>
 #include <clap/factory/preset-discovery.h>
+#include <oscairn-clap/beat.h>
 #include <oscairn-clap/param-target.h>
 #include <oscairn-clap/ui.h>
 #include <algorithm>
@@ -86,6 +87,10 @@ bool validEvent(const clap_event_header_t* h) noexcept {
         const auto* t = reinterpret_cast<const oscairn_event_param_target_t*>(h);
         return h->type == OSCAIRN_EVENT_PARAM_TARGET && h->size == sizeof(oscairn_event_param_target_t) &&
                (t->mode == OSCAIRN_PARAM_TARGET_SET || t->mode == OSCAIRN_PARAM_TARGET_MODULATE) && std::isfinite(t->value);
+    }
+    if (h && h->space_id == Host::beatSpace) {
+        const auto* b = reinterpret_cast<const oscairn_event_beat_t*>(h);
+        return h->type == OSCAIRN_EVENT_BEAT && h->size == sizeof(oscairn_event_beat_t) && std::isfinite(b->tempo) && b->tempo > 0;
     }
     if (!h || h->space_id != CLAP_CORE_EVENT_SPACE_ID || h->size > Event::capacity) return false;
     uint32_t size = 0;
@@ -179,6 +184,7 @@ struct Host::Impl {
     uint32_t maxFrames = 512;
     int64_t steadyTime = 0;
     bool active = false, sleeping = false;
+    std::atomic<bool> wantsBeat{false}; // the plugin queried oscairn.beat's event space
     std::atomic<bool> processing{false}; // read by service() without the gate
     std::atomic<uint32_t> pendingCommands{0}; // enqueued but not yet delivered to the plugin
     bool transportObserved = false, hadTransport = false;
@@ -654,8 +660,10 @@ struct Host::Impl {
         auto& s = *static_cast<Impl*>(list->ctx);
         return i < s.chunkCount ? s.chunkEvents[i].header() : nullptr;
     }
-    static bool CLAP_ABI queryEventSpace(const clap_host_t*, const char* name, uint16_t* space) {
-        if (!name || !space || std::strcmp(name, OSCAIRN_EVENT_SPACE_PARAM_TARGET) != 0) return false;
+    static bool CLAP_ABI queryEventSpace(const clap_host_t* h, const char* name, uint16_t* space) {
+        if (!name || !space) return false;
+        if (!std::strcmp(name, OSCAIRN_EVENT_SPACE_BEAT)) { self(h).wantsBeat.store(true); *space = Host::beatSpace; return true; }
+        if (std::strcmp(name, OSCAIRN_EVENT_SPACE_PARAM_TARGET) != 0) return false;
         *space = Host::paramTargetSpace;
         return true;
     }
@@ -665,6 +673,7 @@ struct Host::Impl {
             if (event && event->space_id == CLAP_CORE_EVENT_SPACE_ID && event->type == CLAP_EVENT_MIDI_SYSEX) s.dropped.fetch_add(1); // over the limit: counted
             return false;
         }
+        if (event->space_id == Host::beatSpace) return false; // the host's to send
         const bool core = event->space_id == CLAP_CORE_EVENT_SPACE_ID;
         if (core && event->type == CLAP_EVENT_PARAM_VALUE) {
             const auto* p = reinterpret_cast<const clap_event_param_value_t*>(event);
@@ -1201,6 +1210,13 @@ bool Host::process(const float* const* input, uint32_t ni, float* const* output,
         auto deliver = [&](Event e) {
             // A malformed or late event is dropped on its own; resetting the plugin
             // for it would cut every sounding note on stage.
+            // Oscairn's host-to-plugin events go only to a plugin that asked for them, as they are.
+            if (e.header()->space_id == Host::beatSpace) {
+                if (!validEvent(e.header()) || e.header()->time >= frames) { s.dropped.fetch_add(1); return; }
+                if (!s.wantsBeat.load(std::memory_order_relaxed)) return;
+                if (total == Impl::renderEvents) { s.dropped.fetch_add(1); return; }
+                s.ordered[total] = {e, total}; ++total; return;
+            }
             // Events in other spaces (param-target) are for the caller, never for a plugin.
             if (!validEvent(e.header()) || e.header()->space_id != CLAP_CORE_EVENT_SPACE_ID || e.header()->time >= frames) { s.dropped.fetch_add(1); return; }
             // Overflow can drop note-offs, so it still resets the plugin rather than

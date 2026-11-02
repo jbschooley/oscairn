@@ -247,6 +247,16 @@ add_dependencies(oscairn-sysex-test oscairn-sysex-fixture oscairn-plugin-worker)
 add_test(NAME sysex COMMAND oscairn-sysex-test $<TARGET_FILE:oscairn-plugin-worker> $<TARGET_FILE:oscairn-sysex-fixture>)
 set_tests_properties(sysex PROPERTIES TIMEOUT 60 ENVIRONMENT OSCAIRN_WORKER_BUDGET_US=50000)
 
+# RFC 0032 step 3 and RFC 0033 step 5: the free-running beat and the harmony, as a plugin sees them.
+add_library(oscairn-follower-fixture MODULE engine/tests/follower_fixture.cpp)
+target_link_libraries(oscairn-follower-fixture PRIVATE oscairn_clap_headers)
+set_target_properties(oscairn-follower-fixture PROPERTIES PREFIX "" SUFFIX ".clap")
+add_executable(oscairn-free-beat-test engine/tests/free_beat.cpp)
+target_link_libraries(oscairn-free-beat-test PRIVATE oscairn_engine)
+add_dependencies(oscairn-free-beat-test oscairn-follower-fixture oscairn-plugin-worker)
+add_test(NAME free-beat COMMAND oscairn-free-beat-test $<TARGET_FILE:oscairn-plugin-worker> $<TARGET_FILE:oscairn-follower-fixture>)
+set_tests_properties(free-beat PROPERTIES TIMEOUT 60 ENVIRONMENT OSCAIRN_WORKER_BUDGET_US=50000)
+
 # Sanitizers slow rendering several times over; there the test checks containment, not timing.
 # CI's virtual machines cannot keep real time either (GitHub sets CI).
 if(KICK_CLAP_SANITIZE OR CMAKE_CXX_FLAGS MATCHES "-fsanitize" OR DEFINED ENV{CI})

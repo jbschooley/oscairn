@@ -217,7 +217,10 @@ namespace oscairn
         // Audio thread ------------------------------------------------------------
 
         /// Renders `frames` (at most maxFrames) into `outputs[0..1]`. `events` enter at
-        /// graphInput, with times relative to the start of the block.
+        /// graphInput, with times relative to the start of the block. Every node also gets the
+        /// free-running beat (oscairn-clap/beat.h, RFC 0032) at sample 0: it starts at 0 with
+        /// the graph and moves on at the transport's tempo (120 BPM without one), playing or
+        /// stopped, through replacements (publishReplacement).
         bool process( float* const* outputs, uint32_t frames, const clap_event_transport_t* transport,
                       const kick::clap::Event* events = nullptr, uint32_t eventCount = 0 ) noexcept;
 
@@ -317,6 +320,7 @@ namespace oscairn
         std::atomic<Plan*> pending_{ nullptr };
         std::atomic<Listener*> listener_{ nullptr };
         bool panicInput_=false;
+        double freeBeats_ = 0; // audio thread: oscairn.beat's position at the next block's start
         Plan*              current_ = nullptr; // audio thread only
         Retired            retired_;
     };

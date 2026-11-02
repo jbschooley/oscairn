@@ -113,6 +113,10 @@ public:
     // through CLAP's event-registry. Plugins may send these events; the host passes them
     // to the caller in outputEvents() and never delivers them to a plugin.
     static constexpr uint16_t paramTargetSpace = 1000;
+    // oscairn.beat (oscairn-clap/beat.h): the caller sends these events to every host each block;
+    // the host delivers them only to a plugin that queried the space, and never counts the rest
+    // as dropped.
+    static constexpr uint16_t beatSpace = 1001;
     static constexpr uint32_t maxStateBytes = 64 * 1024 * 1024;
     static constexpr size_t maxPatchBytes = 1024 * 1024;
     Host();

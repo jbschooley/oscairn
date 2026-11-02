@@ -3,6 +3,7 @@
 #include "NoteRoute.h"
 #include "PreparedInstrument.h"
 
+#include <oscairn-clap/beat.h>
 #include <oscairn-clap/param-target.h>
 
 #include <algorithm>
@@ -595,7 +596,7 @@ namespace oscairn
             for(uint32_t c=0;c<step.audioInputs;++c)step.in.push_back(step.inputBuffer.data()+size_t(c)*maxFrames_);
             for(uint32_t c=0;c<step.audioOutputs;++c)step.out.push_back(step.outputBuffer.data()+size_t(c)*maxFrames_);
         }
-        plan->keys.reserve( kick::clap::Host::maxBlockEvents );
+        plan->keys.reserve( 2 * kick::clap::Host::maxBlockEvents ); // releases, then the beat and harmony, never reallocating
         plan->merged.resize( kick::clap::Host::maxBlockEvents );
         return plan.release();
     }
@@ -704,6 +705,14 @@ namespace oscairn
             else if(r.gain==1.f)for(uint32_t i=0;i<frames;++i)dest[i]+=from[i];
             else for(uint32_t i=0;i<frames;++i)dest[i]+=from[i]*r.gain;
         };
+        // RFC 0032: the free-running beat (oscairn-clap/beat.h), the same for every node this block.
+        const double tempo=transport && (transport->flags&CLAP_TRANSPORT_HAS_TEMPO) && std::isfinite(transport->tempo) && transport->tempo>0?transport->tempo:120.0;
+        oscairn_event_beat_t beat{};
+        beat.header={sizeof(beat),0,kick::clap::Host::beatSpace,OSCAIRN_EVENT_BEAT,0};
+        beat.beats=clap_beattime(std::llround(freeBeats_*double(CLAP_BEATTIME_FACTOR)));
+        beat.tempo=tempo;
+        const auto beatEvent=kick::clap::Event::from(beat);
+        freeBeats_+=frames/sampleRate_*tempo/60.0;
         bool ok = true;
         for( auto& step : plan->steps )
         {
@@ -714,6 +723,7 @@ namespace oscairn
             // Notes in: every source's events this block, merged in time order.
             plan->keys.clear();
             uint32_t order = 0;
+            plan->keys.push_back({0,order++,&beatEvent}); // oscairn.beat, first at sample 0
             uint64_t totalEvents=step.paramCount+step.paramDrops+step.releaseCount;
             bool overflow=step.paramDrops!=0 || step.releaseOverflow || inputRecovery;
             for(uint32_t i=0;i<step.releaseCount;++i)plan->keys.push_back({0,order++,&step.releases[i]});

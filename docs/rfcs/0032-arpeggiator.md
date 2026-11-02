@@ -1,6 +1,6 @@
 # RFC 0032: The arpeggiator
 
-Status: proposed, 2026-11-01. Step 1 built (below). The plugin is built in its own repository,
+Status: proposed, 2026-11-01. Steps 1 and 3 built in the host (below). The plugin is built in its own repository,
 `oscairn/arpeggiator` (MIT, private for now), from its plan (`doc/plan.md` there, read at
 commit d00c3b6 and again before this RFC was committed). This RFC is Oscairn's side: where the
 plugin sits, what the host must add for it, how conversion places it, and how it is tested.
@@ -18,7 +18,7 @@ Checked when built and tested; the sections below say how.
 
 - [x] 1. SysEx between plugins: the graph and workers carry `CLAP_EVENT_MIDI_SYSEX`
 - [ ] 2. The plugin in a part: phrase playback, state and push, hosted and tested in Oscairn
-- [ ] 3. A shared beat grid while the transport is stopped, so parts start together
+- [x] 3. A shared beat grid while the transport is stopped, so parts start together
 - [ ] 4. Conversion: each Part's arpeggio settings and phrases placed by the converter
 - [ ] 5. Measured against the reference: the most used settings, then every playback rule
 - [ ] 6. User phrases: files, MIDI import and recorded notes, as library items
@@ -116,11 +116,32 @@ and RFC 0002 lanes, or the converter folds them into each part when no scene cha
   plugin in a block, advancing at the tempo whether or not the transport plays, and carried in
   the shared block to workers (RFC 0010). The transport event itself keeps CLAP's meaning
   (stopped means its position does not move). The mechanism (a host extension read on the audio
-  thread, or an Oscairn event each block) is open below.
+  thread, or an Oscairn event each block) was open; step 3 chose the event (below).
 - **Playing to stopped** ends all sounding arp notes. A jump in song position while playing
   restarts phrases at the next grid line.
 - **Clock out:** the arpeggio's timing comes from the same transport that clock out writes, so
   external gear and the arpeggio agree with no extra work.
+
+#### Step 3 status
+
+Built in the host. The free-running beat is an Oscairn event, `oscairn.beat`
+(`core/clap-ext/include/oscairn-clap/beat.h`, MIT): an event rather than a host extension
+because events already cross the worker's shared block, so a plugin in a worker gets the same
+value with nothing more to carry. A plugin asks for it by querying the event space
+`oscairn.beat` through CLAP's event registry; it then gets `oscairn_event_beat` (the position in
+`clap_beattime` and the tempo) at sample 0 of every block, before the block's other events.
+Plugins that do not ask get nothing, and LV2 plugins never do.
+
+The graph keeps the position: 0 when it is made, moving on each block at the transport's tempo
+(120 BPM without a transport), playing or stopped, and through seamless Performance changes,
+which keep the same graph. It never goes back, so starting, stopping or moving the transport
+does not touch it. The transport event keeps CLAP's meaning.
+
+Tested in `free-beat` with a fixture that follows the beat: with the transport stopped at
+120 BPM the position runs at two beats a second; a second follower added 100 ms later has the
+same position at every sample, so both reach beat 1 on the same sample (the gate's two parts,
+which the arpeggiator's Sync Quantize turns into a shared start once it reads the event); in
+the engine and in workers, at 256- and 37-sample blocks. The test fails without the change.
 
 ### Pushing a phrase: SysEx between plugins
 
@@ -321,8 +342,8 @@ requires that nothing in steps 1–7 rules that out; the motion sequencer gets i
 ## Open questions
 
 - The measurement gate (2 ms onset, keys exact, velocity ±1, gate 5 ms), for Jacob to confirm.
-- How the free-running beat reaches plugins: a host extension called on the audio thread, or an
-  Oscairn event in each block. Either must be the same value in a worker.
+- ~~How the free-running beat reaches plugins.~~ Decided in step 3: an Oscairn event each block
+  (`oscairn.beat`), which workers carry like any event.
 - Pushed phrases parsed on the audio thread (plan) or the main thread (format document), and
   the latency each gives.
 - `7D` is MIDI's non-commercial manufacturer ID, meant for private use. That is fine inside the
