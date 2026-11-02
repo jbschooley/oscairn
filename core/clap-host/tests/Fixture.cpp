@@ -74,6 +74,7 @@ struct Plugin {
     double shownMode = 0; // main thread: the mode the parameters' info last described
     clap_id timerId = CLAP_INVALID_ID;
     uint32_t maxFrames = 0, tailFrames=0;
+    int down=0; // kind 12 in legato mode (KICK_FIXTURE_LEGATO): keys it believes are down
     clap_event_note_t tailNote{};
     std::shared_ptr<std::vector<char>> shared; std::vector<char> context; // the memory fixture's, allocated when it activates
     // The memory fixture declares 1 MiB shared and, per context, its gain (from its state) times
@@ -127,7 +128,7 @@ struct Plugin {
         api.deactivate = [](const clap_plugin_t* p) { auto& s = get(p); s.main(); if (s.processing) ++threadErrors; s.active = false; s.shared.reset(); std::vector<char>().swap(s.context); };
         api.start_processing = [](const clap_plugin_t* p) { auto& s = get(p); s.audio(); if (!s.active) ++threadErrors; if (s.kind == 7) return false; s.processing = true; return true; };
         api.stop_processing = [](const clap_plugin_t* p) { auto& s = get(p); s.audio(); if (!s.processing) ++threadErrors; s.processing = false; };
-        api.reset = [](const clap_plugin_t* p) { auto& s = get(p); s.audio(); s.gate = s.held = s.sustain = false;s.tailFrames=0; };
+        api.reset = [](const clap_plugin_t* p) { auto& s = get(p); s.audio(); s.gate = s.held = s.sustain = false;s.tailFrames=0;s.down=0; };
         api.process = process;
         api.get_extension = extension;
         api.on_main_thread = [](const clap_plugin_t* p) {
@@ -201,12 +202,17 @@ struct Plugin {
                 if (e->time < i || e->time >= b->frames_count) ++threadErrors;
                 if (e->time > i) break;
                 s.event(e);
-                if(s.kind==12 && e->type==CLAP_EVENT_NOTE_ON){s.tailNote=*reinterpret_cast<const clap_event_note_t*>(e);s.tailFrames=0;}
-                if(s.kind==12 && (e->type==CLAP_EVENT_NOTE_OFF || e->type==CLAP_EVENT_NOTE_CHOKE))s.tailFrames=e->type==CLAP_EVENT_NOTE_OFF?1024:1;
+                // Legato, as a mono synth slides one voice: a key down while another is held ends the new
+                // note's ID at once, though its key stays down; the plugin sounds while it believes a key is.
+                static const bool legato=std::getenv("KICK_FIXTURE_LEGATO")!=nullptr;
+                if(s.kind==12 && legato && e->type==CLAP_EVENT_NOTE_ON && s.down++>0){auto end=*reinterpret_cast<const clap_event_note_t*>(e);end.header.type=CLAP_EVENT_NOTE_END;end.header.time=i;b->out_events->try_push(b->out_events,&end.header);}
+                if(s.kind==12 && legato && (e->type==CLAP_EVENT_NOTE_OFF || e->type==CLAP_EVENT_NOTE_CHOKE) && s.down>0)--s.down;
+                if(s.kind==12 && e->type==CLAP_EVENT_NOTE_ON && !(legato && s.down>1)){s.tailNote=*reinterpret_cast<const clap_event_note_t*>(e);s.tailFrames=0;}
+                if(s.kind==12 && (e->type==CLAP_EVENT_NOTE_OFF || e->type==CLAP_EVENT_NOTE_CHOKE) && !(legato && s.down>0))s.tailFrames=e->type==CLAP_EVENT_NOTE_OFF?1024:1;
                 ++event;
             }
             for (uint32_t c = 0; c < b->audio_outputs[0].channel_count; ++c) {
-                float value = s.gate ? static_cast<float>(s.gain) : static_cast<float>(s.gain)*s.tailFrames/1024.f;
+                float value = s.gate || s.down>0 ? static_cast<float>(s.gain) : static_cast<float>(s.gain)*s.tailFrames/1024.f;
                 if (s.kind == 1) value = b->audio_inputs[0].data32[c][i] * static_cast<float>(s.gain);
                 if (s.kind == 3) value = std::numeric_limits<float>::quiet_NaN();
                 b->audio_outputs[0].data32[c][i] = value;

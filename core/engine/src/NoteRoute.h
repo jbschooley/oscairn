@@ -21,7 +21,8 @@ struct NoteRoute
     // the plugin to end it. volume: its last volume expression; fadeAt: when its next fade step
     // is due in this block, or -1; faded: the steps sent.
     struct Note { clap_event_note_t address{}; int32_t id=-1; bool used=false,held=false,midi=false,stolen=false; int16_t key=-1; int8_t zone=-1; uint8_t source=untaggedSource;
-        double volume=1; int32_t fadeAt=-1; uint8_t faded=0; };
+        double volume=1; int32_t fadeAt=-1; uint8_t faded=0;
+        bool voiceEnded=false; }; // its voice ended (NOTE_END) while the key was held
     static constexpr uint8_t fadeSteps=8;
     std::array<Note,kick::clap::Host::maxBlockEvents> notes{};
     std::array<std::array<uint8_t,16>,16> pedal{};
@@ -50,7 +51,12 @@ struct NoteRoute
         const auto& end=*reinterpret_cast<const clap_event_note_t*>(e.header());
         for(auto& n:notes)if(n.used && (end.note_id<0 || n.id==end.note_id) &&
             (end.port_index<0 || n.address.port_index==end.port_index) &&
-            (end.channel<0 || n.address.channel==end.channel) && (end.key<0 || n.key==end.key))n.used=false;
+            (end.channel<0 || n.address.channel==end.channel) && (end.key<0 || n.key==end.key))
+            {
+                // NOTE_END says a voice ended, not that the key went up: a mono synth gliding one voice
+                // ends a new note's ID at once. A held key keeps its slot, so its release still goes out.
+                if(n.held)n.voiceEnded=true;else n.used=false;
+            }
     }
     // A stolen note fades (RFC 0018): its volume expression falls in steps over fadeFrames, for
     // plugins that do not fade a choke themselves, then it is choked. Sends the steps due before
@@ -158,6 +164,9 @@ struct NoteRoute
             };
             auto play=[&](int8_t zone,int16_t key,double velocity) {
                 if(!makeRoom())return false;
+                // Full: a held note whose voice already ended gives its slot up, as before NOTE_END kept it.
+                if(std::none_of(notes.begin(),notes.end(),[](const Note& x){return !x.used;}))
+                    for(auto& slot:notes)if(slot.used && slot.voiceEnded){slot.used=false;break;}
                 for(auto& slot:notes)if(!slot.used) {
                     if(nextId>INT32_MAX)return false;
                     slot={n,static_cast<int32_t>(nextId++),true,true,midi,false,key,zone,source};
@@ -179,14 +188,18 @@ struct NoteRoute
             std::array<Note*,NoteZones::capacity+1> oldest{};
             if(midi)for(auto& slot:notes)if(slot.held && slot.midi && from(slot,source) && matches(slot,-1,n.port_index,n.channel,n.key))
                 if(auto& o=oldest[size_t(slot.zone+1)];!o || slot.id<o->id)o=&slot;
-            bool ok=true;
+            bool ok=true,sent=false;
             for(auto& slot:notes)if(!slot.stolen && from(slot,source) && matches(slot,n.note_id,n.port_index,n.channel,n.key) && (!midi || &slot==oldest[size_t(slot.zone+1)])) {
+                // A note whose voice already ended needs only the key's release, once: not one per slot.
+                if(slot.voiceEnded && sent){slot.used=false;continue;}
+                sent=true;
                 slot.held=false;
                 const bool sustained=pedal[slot.address.port_index][slot.address.channel]>=64;
                 auto output=release(slot,h->time,choke);
                 auto* off=reinterpret_cast<clap_event_note_t*>(output.bytes.data());off->velocity=n.velocity;off->header.flags=h->flags;
                 ok=emit(output) && ok;
-                if(choke || (!clap[slot.address.port_index] && !sustained)){end(slot,h->time);slot.used=false;}
+                if(slot.voiceEnded)slot.used=false; // its end was the plugin's own, already reported
+                else if(choke || (!clap[slot.address.port_index] && !sustained)){end(slot,h->time);slot.used=false;}
             }
             return ok;
         }
