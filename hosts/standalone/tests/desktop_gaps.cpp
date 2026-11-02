@@ -13,6 +13,7 @@
 #include "../LibraryPane.h"
 #include "../PartsView.h"
 #include "../Settings.h"
+#include "../Setlist.h"
 #include "oscairn/local_socket.h"
 #include "oscairn/package.h"
 #include "oscairn/session.h"
@@ -44,7 +45,7 @@ int main(int argc, char** argv)
         session->setHostStatus(status);
         auto server = std::make_unique<LocalServer>(*session);
         server->listen(socket.string());
-        std::atomic<bool> running = true, holdRequests = false, jobHeld = false;
+        std::atomic<bool> running = true, holdRequests = false, jobHeld = false, forcedHold = false;
         std::thread control([&] {
             std::array<float, 128> l{}, r{}; float* out[2]{l.data(), r.data()};
             while(running)
@@ -52,9 +53,13 @@ int main(int argc, char** argv)
                 server->poll(uint64_t(std::chrono::steady_clock::now().time_since_epoch().count()));
                 session->service();
                 session->process(nullptr, 0, out, 2, 128);
-                // The test leaves a refresh job in flight: once its own connection shows, stop
-                // answering, so its calls wait, as a long engine call does.
-                while(running && holdRequests && server->clients() >= 2) { jobHeld = true; std::this_thread::sleep_for(std::chrono::milliseconds(5)); }
+                // The test leaves a job in flight: while its own connection shows, stop
+                // answering, so its calls wait, as a long engine call does. A job asked behind
+                // a refresh still gets by: the hold lasts two seconds and then serves one tick,
+                // which is longer than any call's wait.
+                const auto since = std::chrono::steady_clock::now();
+                while(running && (forcedHold.load() || (holdRequests.load() && server->clients() >= 2 && std::chrono::steady_clock::now() - since < std::chrono::milliseconds(2000))))
+                    { jobHeld = true; std::this_thread::sleep_for(std::chrono::milliseconds(5)); }
                 jobHeld = false;
                 std::this_thread::sleep_for(std::chrono::milliseconds(1));
             }
@@ -231,6 +236,33 @@ int main(int argc, char** argv)
                 check(engine.controlReady(), "a refresh in flight leaves the controls ready");
                 holdRequests = false;
                 check(wait([&] { return !engine.soundBusy() && !jobHeld.load(); }), "the refresh finished");
+            }
+            // The polled reads (meters, undo names, the open Performance's name) come from the
+            // Engine's cache while a job holds the engine's thread, so the UI thread neither
+            // waits on the socket nor drops the connection over a stalled request.
+            {
+                std::string probe;
+                engine.edit([&](Control& c) {
+                    c.savePerformanceToLibrary("Cache probe", true);
+                    Control::LibraryQuery q; q.text = "Cache probe";
+                    for(const auto& item : c.libraryQuery(q).items) probe = item.path;
+                });
+                check(wait([&] { return !probe.empty() && engine.editError().empty(); }), "a Performance to prepare: " + engine.editError());
+                check(wait([&] { return engine.performanceInfo().has_value() && !engine.history().undo.empty(); }), "the reads are primed");
+                holdRequests = true;
+                standalone::SoundAction prepare; prepare.kind = standalone::SoundAction::Prepare; prepare.directory = probe;
+                engine.soundAction(std::move(prepare));
+                check(wait([&] { return engine.soundBusy() && !engine.controlReady() && jobHeld.load(); }), "a prepare job holds the engine's thread");
+                const auto began = std::chrono::steady_clock::now();
+                const auto info = engine.performanceInfo(); const auto undo = engine.history().undo; const auto meters = engine.meters();
+                const auto waited = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - began).count();
+                check(info && !undo.empty(), "the reads answer from the cache: " + std::to_string(meters.size()));
+                check(engine.connected(), "and no call waits on the stalled socket");
+                check(waited < 100000, "at once, not after a round trip: " + std::to_string(waited) + " us");
+                holdRequests = false;
+                check(wait([&] { return !engine.soundBusy() && !jobHeld.load() && engine.connected(); }), "the prepare finished, the engine answers again");
+                engine.edit([](Control& c) { c.addMacro("Cache probe control"); });
+                check(wait([&] { return engine.history().undo.find("Cache probe control") != std::string::npos && engine.connected(); }), "the cache follows the engine again once free");
             }
             juce::LookAndFeel::setDefaultLookAndFeel(nullptr);
             configuration.deleteRecursively();

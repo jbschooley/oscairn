@@ -226,7 +226,7 @@ namespace oscairn::standalone
     void LibraryPane::timerCallback()
     {
         // Saving into the library happens on the engine's worker; look again once it is done.
-        if(!engine_.controlReady()) { stale_ = true; return; }
+        if(engine_.jobRunning()) { stale_ = true; return; }
         // An audition ended elsewhere (a Performance opened keeps it): show that.
         if(!auditioning_.id.empty() && !engine_.soundBusy())
             if(const auto now = engine_.audition(); now && now->id != auditioning_.id) { auditioning_ = *now; updateButtons(); resized(); }

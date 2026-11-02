@@ -196,6 +196,9 @@ namespace oscairn::standalone
         // A separate client belongs entirely to this worker; the UI's cached client
         // is not serviced until preparation finishes, keeping long RPC waits off the UI.
         soundJobKind_=action.kind;
+        // What a job can change (the open Performance, the parts, the plugins' windows) reads
+        // fresh once it is done; until then the reads answer from the cache above.
+        takesRead_=metersRead_=wireMetersRead_=historyRead_=performanceRead_=windowsRead_=0;
         soundJob_=std::async(std::launch::async,[socket=socketPath_,request=std::move(action)] {
             SoundResult result;LocalClient client;
             try
@@ -270,6 +273,40 @@ namespace oscairn::standalone
         if(connected() && controlReady() && (!takesRead_ || now-takesRead_>=250))
             try{takes_=control_->recordTakes();takesRead_=std::max(1u,now);}catch(const std::exception& e){std::fprintf(stderr,"oscairn: takes: %s\n",e.what());}
         return takes_;
+    }
+    // Read at most twenty times a second and kept while the engine is busy: several views poll
+    // every 50 ms, and each round trip waits on the engine's own timer, so the message thread
+    // would spend much of every second in the socket.
+    std::vector<PartMeter> Engine::meters() const
+    {
+        const auto now=juce::Time::getMillisecondCounter();
+        if(connected() && controlReady() && (!metersRead_ || now-metersRead_>=50))
+            try{meters_=control_->partMeters();metersRead_=std::max(1u,now);}catch(const std::exception&){}
+        return meters_;
+    }
+    std::vector<WireMeter> Engine::wireMeters() const
+    {
+        const auto now=juce::Time::getMillisecondCounter();
+        if(connected() && controlReady() && (!wireMetersRead_ || now-wireMetersRead_>=50))
+            try{wireMeters_=control_->wireMeters();wireMetersRead_=std::max(1u,now);}catch(const std::exception&){}
+        return wireMeters_;
+    }
+    Control::History Engine::history() const
+    {
+        const auto now=juce::Time::getMillisecondCounter();
+        if(connected() && controlReady() && (!historyRead_ || now-historyRead_>=250))
+            try{history_=control_->history();historyRead_=std::max(1u,now);}catch(const std::exception&){}
+        return history_;
+    }
+    bool Engine::hasPluginWindow(NodeId node) const
+    {
+        const auto now=juce::Time::getMillisecondCounter();
+        if(connected() && controlReady() && (!windowsRead_ || now-windowsRead_>=250)) { windowCache_.clear(); windowsRead_=std::max(1u,now); }
+        const auto at=windowCache_.find(node);
+        if(at!=windowCache_.end())return at->second;
+        bool found=false;
+        try{found=connected() && control_->hasPluginWindow(node);}catch(const std::exception&){}
+        windowCache_[node]=found;return found;
     }
     uint32_t Engine::recordingTake() const
     {
@@ -369,8 +406,11 @@ namespace oscairn::standalone
     }
     std::optional<Control::PerformanceInfo> Engine::performanceInfo() const
     {
-        if(!connected() || !controlReady())return {};
-        try{return control_->performanceInfo();}catch(const std::exception&){return {};}
+        // Read at most four times a second and kept while the engine is busy, as several views ask.
+        const auto now=juce::Time::getMillisecondCounter();
+        if(connected() && controlReady() && (!performanceRead_ || now-performanceRead_>=250))
+            try{performance_=control_->performanceInfo();performanceRead_=std::max(1u,now);}catch(const std::exception&){}
+        return performance_;
     }
     const std::vector<AssignmentOverride>& Engine::assignments() const
     {

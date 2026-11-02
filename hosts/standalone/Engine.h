@@ -50,12 +50,16 @@ namespace oscairn::standalone
         Control::GraphState graph() const {return control_->graphState();}
         std::vector<Control::ParamInfo> parameters(NodeId node) const {return control_->parameters(node);}
         // The plugin's own window (RFC 0019), which its worker shows beside the app's; the title
-        // names the node and its part.
-        bool hasPluginWindow(NodeId node) const {try{return connected() && control_->hasPluginWindow(node);}catch(const std::exception&){return false;}}
+        // names the node and its part. Read at most four times a second per node and kept while
+        // the engine is busy, as the views ask for it on every rebuild.
+        bool hasPluginWindow(NodeId node) const;
         void openPluginWindow(NodeId node,std::string title){command([this,node,title]{control_->showPluginWindow(node,true,title);});}
-        std::vector<PartMeter> meters() const {try{return control_->partMeters();}catch(const std::exception&){return {};}}
-        std::vector<WireMeter> wireMeters() const {try{return control_->wireMeters();}catch(const std::exception&){return {};}}
-        Control::History history() const {try{return control_->history();}catch(const std::exception&){return {};}}
+        // Meters, the routing wires' meters, and the undo/redo names: read at most twenty and
+        // four times a second (the views poll faster) and kept while the engine is busy, so the
+        // message thread does not sit in socket waits between paints.
+        std::vector<PartMeter> meters() const;
+        std::vector<WireMeter> wireMeters() const;
+        Control::History history() const;
         void edit(std::function<void(Control&)> change);
         const std::string& editError() const {return editError_;}
         // MIDI inputs the engine leaves out (a controller's duplicate ports), sent again after a restart.
@@ -129,6 +133,9 @@ namespace oscairn::standalone
         // A refresh reads on its own connection and makes only short calls, so the UI's calls
         // wait on nothing long: it does not make the engine busy.
         bool controlReady() const { return !soundJob_.valid() || soundJobKind_ == SoundAction::Refresh; }
+        // Any job, including a refresh: edits asked now wait for it in the engine's queue, so a
+        // list read now would not yet hold them.
+        bool jobRunning() const { return soundJob_.valid(); }
         // Preparing the next Performance ahead is not busy: anything asked meanwhile waits for it, or replaces it while it waits.
         bool soundBusy() const { return std::any_of(pendingSounds_.begin(),pendingSounds_.end(),[](const SoundAction& a){return a.kind!=SoundAction::PrepareFromLibrary;}) || (soundJob_.valid() && soundJobKind_!=SoundAction::Refresh && soundJobKind_!=SoundAction::PrepareFromLibrary); }
         bool canPrepareSounds() const { return !socketPath_.empty(); }
@@ -187,6 +194,9 @@ namespace oscairn::standalone
         {
             if(!failure_.empty() || (soundJob_.valid() && soundJobKind_==SoundAction::Replace))return;
             if(soundJob_.valid()) { pendingControls_.emplace_back(std::forward<F>(f)); return; }
+            // An edit changes what the polled reads above answer (the undo names, the open
+            // Performance, the meters): the next read goes to the engine again.
+            metersRead_=wireMetersRead_=historyRead_=performanceRead_=takesRead_=0;
             try{f();}catch(const std::exception& e)
             {
                 if(client_ && !client_->connected())failed(e.what());
@@ -231,6 +241,11 @@ namespace oscairn::standalone
         bool recoveryAvailable_=false;
         mutable std::vector<Control::Take> takes_;
         mutable uint32_t takesRead_=0;
+        mutable std::vector<PartMeter> meters_; mutable uint32_t metersRead_=0;
+        mutable std::vector<WireMeter> wireMeters_; mutable uint32_t wireMetersRead_=0;
+        mutable Control::History history_; mutable uint32_t historyRead_=0;
+        mutable std::optional<Control::PerformanceInfo> performance_; mutable uint32_t performanceRead_=0;
+        mutable std::map<NodeId,bool> windowCache_; mutable uint32_t windowsRead_=0;
         double captureSeconds_=0;
         mutable std::map<std::pair<std::string,uint32_t>,std::pair<uint64_t,std::string>> textCache_;
         mutable std::vector<AssignmentOverride> assignments_;
