@@ -31,6 +31,14 @@ namespace oscairn
             const auto* s = static_cast<const json_string_s*>(v->payload);
             return {s->string, s->string_size};
         }
+        // The package's ID becomes the library's folder name, and an exported item's ID is its
+        // package's, so both are plain: 1 to 64 letters, digits, ".", "-" and "_", starting with a
+        // letter or digit and not ending in "." (Windows drops it from a folder's name).
+        bool plainId(std::string_view id)
+        {
+            return !id.empty() && id.size() <= 64 && std::isalnum(static_cast<unsigned char>(id.front())) && id.back() != '.' &&
+                   std::all_of(id.begin(), id.end(), [](char c) { return std::isalnum(static_cast<unsigned char>(c)) || c == '.' || c == '-' || c == '_'; });
+        }
         // A safe relative path: plain components, none empty, "." or "..", hidden or with a
         // separator, drive or control character in it.
         bool safe(const std::string& name)
@@ -239,12 +247,7 @@ namespace oscairn
                 if(!signing::verify(p.signature, signing::archiveMessage(manifest))) bad("its signature does not verify");
             }
             p.id = text(detail::member(d, "id")); p.name = text(detail::member(d, "name")); p.kind = text(detail::member(d, "kind"));
-            // The ID becomes the library's folder name, so it is plain: letters, digits, ".", "-", "_".
-            const std::string_view id = p.id;
-            const bool idOk = !id.empty() && id.size() <= 64 &&
-                (std::isalnum(static_cast<unsigned char>(id.front())) != 0) &&
-                std::all_of(id.begin(), id.end(), [](char c) { return std::isalnum(static_cast<unsigned char>(c)) || c == '.' || c == '-' || c == '_'; });
-            if(!idOk || (p.kind != "library" && p.kind != "performance" && p.kind != "sound")) bad("its ID or kind is wrong");
+            if(!plainId(p.id) || (p.kind != "library" && p.kind != "performance" && p.kind != "sound")) bad("its ID or kind is wrong");
             const V items = detail::member(d, "items");
             if(!items || items->type != json_type_array) bad("it lists no items");
             std::set<std::string> ids;
@@ -252,7 +255,7 @@ namespace oscairn
             {
                 Package::Item item{text(detail::member(e->value, "kind")), text(detail::member(e->value, "id")), text(detail::member(e->value, "name")), text(detail::member(e->value, "path"))};
                 const bool sound = item.kind == "sound";
-                if((!sound && item.kind != "performance") || item.id.empty() || !ids.insert(item.id).second) bad("an item's kind or ID is wrong");
+                if((!sound && item.kind != "performance") || !plainId(item.id) || !ids.insert(item.id).second) bad("an item's kind or ID is wrong");
                 if(!safe(item.path) || item.path.substr(0, item.path.find('/')) != (sound ? "Sounds" : "Performances") || item.path.find('/', item.path.find('/') + 1) != std::string::npos ||
                    !names.count(item.path + (sound ? "/sound.json" : "/performance.json")))
                     bad("an item is not in the archive: " + item.path);

@@ -17,10 +17,10 @@ The manifest:
 | Field | Meaning |
 | --- | --- |
 | `format`, `version` | Exactly `oscairn.library` and integer `3` |
-| `id` | The library's ID: its folder's name when installed as a library, and what imported copies record as their `origin`; 1 to 64 letters, digits, `.`, `-` and `_`, the first one a letter or digit |
+| `id` | The library's ID: its folder's name when installed as a library, and what imported copies record as their `origin`; 1 to 64 letters, digits, `.`, `-` and `_`, the first one a letter or digit and the last not a `.` |
 | `name` | Its name |
 | `kind` | `library`, `performance` for an exported Performance or `sound` for an exported Sound (its ID and name are that item's) |
-| `items` | Each item's `kind` (`performance` or `sound`), `id`, `name`, `path`, its folder in the archive, and `signatures` (optional) |
+| `items` | Each item's `kind` (`performance` or `sound`), `id` (as plain as the library's: an exported item's ID is its archive's), `name`, `path`, its folder in the archive, and `signatures` (optional) |
 | `plugins` | Each plugin's `format`, `id`, `version`, `name` and `builds`: each build's `platform` (such as `macos-arm64` or `linux-arm64`), `path` in the archive, `sha256`, its digest as a [Performance's lock](performance-format.md) gives it, and `signatures` (optional) |
 | `files` | Every other entry's SHA-256, by its path |
 
@@ -46,7 +46,8 @@ nothing behind:
 - more than 1,048,576 entries or 64 MiB of their names, more than 8 GiB in all, an entry over 2 GiB or a manifest over
   64 MiB, as declared; and a
   file that extracts to another size than it declares;
-- a manifest that is not version 3 (there is no reader for version 2), or names an item whose folder or document is not there, or
+- a manifest that is not version 3 (there is no reader for version 2), whose ID or an item's
+  is not plain (as `id` above says), or names an item whose folder or document is not there, or
   whose document's ID is not the one listed, or a plugin build not under `Plugins/`, not there,
   or for a platform other than `linux-arm64`, `linux-x86_64`, `macos-arm64`, `macos-x86_64` and
   `windows-x86_64`;

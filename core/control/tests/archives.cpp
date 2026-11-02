@@ -425,8 +425,8 @@ int main(int argc, char** argv)
                   "a build that is a bare file, not a .clap or .lv2 bundle, is refused: " + why);
         }
         // Device K: an item whose ID needs escaping in JSON (an `"`). Installing into the user's own
-        // storage rewrites a Performance's part pointers as text; the rewrite must measure the
-        // escaped needle, or the installed performance.json is left broken.
+        // storage rewrites a Performance's part pointers as text, and an exported item's ID is its
+        // package's, so such an ID is refused, installing nothing.
         {
             device(temp.path / "k");
             const auto root = temp.path / "k-root";
@@ -444,12 +444,9 @@ int main(int argc, char** argv)
             const auto escaped = temp.path / "Escaped.olib";
             writePackage(escaped, p, root);
             Session k(48000, 64);
-            const auto installed = k.installArchive(escaped.string(), false);
-            check(installed.added == 2, "an archive whose Sound's ID needs escaping installs whole");
-            std::string soundId;
-            for(const auto& i : items(k, "sound")) soundId = i.id;
-            const auto doc = fs::path(items(k, "performance").at(0).path) / "performance.json";
-            check(read(doc).find("\"sound\":\"" + soundId + "\"") != std::string::npos, "and its Performance's part points at the Sound's copy");
+            std::string why; try { k.installArchive(escaped.string(), false); } catch(const std::exception& e) { why = e.what(); }
+            check(why.find("an item's kind or ID is wrong") != std::string::npos && items(k, "sound").empty() && items(k, "performance").empty(),
+                  "an archive whose Sound's ID needs escaping is refused, installing nothing: " + why);
         }
         // A reverse-DNS library ID (RFC 0031's normal case) installs as a library: the folder is
         // the ID itself, so rescan lists it, its items show up, and it can be uninstalled.

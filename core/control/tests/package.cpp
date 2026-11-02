@@ -142,7 +142,22 @@ int main()
         // A build's platform names a folder in the plugin store: one that climbs out would replace what is there.
         refuse("a plugin build for no known platform", {{"library.json", withBuild(bundleDigest(staged / build), "../../../Performances")}, sound, {binary, "code"}});
         check(!fs::exists(root / "escape.txt") && !fs::exists("/tmp/escape.txt"), "nothing escaped");
-        refuse("version 2", {{"library.json", std::string(manifest).replace(manifest.find("\"version\":3"), 11, "\"version\":2")}, sound});
+        // The package's ID names the library's folder, and an exported item's ID is its package's:
+        // either one that is not a plain folder name is refused (as JSON: a\b is "a\\b"). Windows
+        // drops a trailing dot from a folder's name, so the folder would not be the ID.
+        for(const std::string bad : std::vector<std::string>{"../x", ".x", "a/b", "a\\\\b", "a:b", "x.", "", "a\\\"b", std::string(65, 'a')})
+        {
+            refuse("the package ID \"" + bad + "\"", {{"library.json", std::string(manifest).replace(manifest.find("\"id\":\"abc\""), 10, "\"id\":\"" + bad + "\"")}, sound});
+            refuse("the item ID \"" + bad + "\"", {{"library.json", std::string(manifest).replace(manifest.find("\"id\":\"s1\""), 9, "\"id\":\"" + bad + "\"")}, sound});
+        }
+        for(const std::string good : std::vector<std::string>{"com.example.pack", "a", "A-b_c.9", "0123456789abcdef", std::string(64, 'a')})
+        {
+            craft(root / "Good.olib", {{"library.json", std::string(manifest).replace(manifest.find("\"id\":\"s1\""), 9, "\"id\":\"" + good + "\"").replace(manifest.find("\"id\":\"abc\""), 10, "\"id\":\"" + good + "\"")}, sound});
+            std::string why; try { readPackage(root / "Good.olib", {}); } catch(const std::exception& e) { why = e.what(); }
+            check(why.empty(), "the ID " + good + " is a plain name: " + why);
+            fs::remove(root / "Good.olib");
+        }
+        refuse("version 2",{{"library.json", std::string(manifest).replace(manifest.find("\"version\":3"), 11, "\"version\":2")}, sound});
 
         // Signatures (RFC 0006): an item, a build and the whole archive, each verified on reading.
         const auto mine = signing::makeKey(root / "mine.key"), other = signing::makeKey(root / "other.key");
