@@ -296,6 +296,8 @@ namespace
             check(remote.graphState().topology.audioRoutes.size()==initial,"remote disconnect ignores gain");
             check(remote.graphState().topology.audioLayout.outputs[0].channels==2,"external port metadata crosses socket");
             check(remote.parameterText(synth,1,.5)=="0.500","remote plugin formatting");
+            bool ignored=true;try{remote.ignoreMidiInputs({"Test MIDI"});remote.ignoreMidiInputs({});}catch(const std::exception&){ignored=false;}
+            check(ignored,"MIDI inputs to ignore cross socket");
             remote.parameterGesture(synth,1,true);remote.setParameter(synth,1,.63);remote.parameterGesture(synth,1,false);
             check(remote.parameter(synth,1)==.63,"accepted value updates local cache");
             remote.setPlaying(true);remote.setTempo(131);remote.note(true,60,1);

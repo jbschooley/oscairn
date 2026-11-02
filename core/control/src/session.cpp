@@ -471,8 +471,11 @@ namespace oscairn
                 ++tail;
             }
         noteTail_.store( tail, std::memory_order_release );
+        const auto ignored = ignoredSources_.load( std::memory_order_acquire );
         for( size_t i = 0; i < events.size(); ++i )
         {
+            if( !sources.empty() && sources[i] < maxSources && ( ignored >> sources[i] & 1 ) )
+                continue; // a duplicate input's (RFC 0024)
             mergedSources_[count] = sources.empty() ? untaggedSource : sources[i];
             merged_[count++] = events[i];
         }

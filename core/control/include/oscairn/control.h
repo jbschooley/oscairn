@@ -370,6 +370,9 @@ namespace oscairn
         // All notes off (RFC 0030): every note played from the keys, MIDI inputs and the UI is
         // released at the next block. Any thread; never waits.
         virtual void allNotesOff() = 0;
+        // MIDI inputs whose messages are left out, by their names in the session status (RFC 0024:
+        // a controller's port that duplicates another's). Replaces the last list; empty: none.
+        virtual void ignoreMidiInputs( const std::vector<std::string>& names ) = 0;
 
         // Pads (pads.h): the Performance's pad map, and playing a pad through it. A pad press
         // plays its assigned note, on its channel or else `channel`; its release ends the note

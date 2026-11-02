@@ -152,6 +152,7 @@ namespace oscairn::standalone
             catch(const std::invalid_argument& e){editError_=e.what();}
         });
     }
+    void Engine::ignoreMidiInputs(std::vector<std::string> names){ignoredInputs_=std::move(names);command([this]{control_->ignoreMidiInputs(ignoredInputs_);});}
     void Engine::setPadMap(const PadMap& map){padMap_=map;command([this,map]{control_->setPadMap(map);});}
     void Engine::refreshPads(){try{padMap_=control_->padMap();}catch(const std::exception& e){std::fprintf(stderr,"oscairn: pad map: %s\n",e.what());}}
     std::string Engine::pluginId(const std::string& name) const {
@@ -335,6 +336,7 @@ namespace oscairn::standalone
             auto fresh=std::make_unique<RemoteControl>(*client_);
             remote_=std::move(fresh);control_=remote_.get();failure_.clear();textCache_.clear();recoveryAvailable_=false;refreshPads();
             attach();
+            if(!ignoredInputs_.empty())control_->ignoreMidiInputs(ignoredInputs_);
         }
         catch(const std::exception& e){failed(e.what());}
     }

@@ -1040,10 +1040,20 @@ namespace oscairn
         }
     }
 
+    void Session::ignoreMidiInputs(const std::vector<std::string>& names)
+    {
+        ignoredInputs_ = names;
+        uint64_t mask = 0;
+        for(const auto& input : hostStatus_.midiInputs)
+            if(input.source < maxSources && std::find(names.begin(), names.end(), input.name) != names.end()) mask |= uint64_t(1) << input.source;
+        ignoredSources_.store(mask, std::memory_order_release);
+    }
+
     void Session::setHostStatus(SessionStatus status)
     {
         const bool moved = status.midiInputs != hostStatus_.midiInputs;
         hostStatus_ = std::move(status);
+        if(moved) ignoreMidiInputs(ignoredInputs_); // the ignored names' sources now
         if(!moved || std::none_of(parts_.begin(), parts_.end(), [](const Part& p) { return !p.input.devices.empty(); })) return;
         const bool staged = staged_;
         Quiet devices(*this); // devices coming and going are not edits

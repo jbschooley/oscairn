@@ -182,6 +182,7 @@ namespace oscairn
         TransportState transportState() const override;
         bool note( bool on, int key, double velocity, int channel = 0 ) override;
         void allNotesOff() override { panic_.store( true, std::memory_order_release ); } // the queue overflow's emergency release
+        void ignoreMidiInputs( const std::vector<std::string>& names ) override;
         PadMap padMap() const override { return padMap_; }
         void setPadMap( const PadMap& map ) override;
         bool pad( uint32_t pad, bool on, double velocity, int channel = 0 ) override;
@@ -435,6 +436,8 @@ namespace oscairn
         std::atomic<size_t> noteHead_{ 0 }, noteTail_{ 0 };
         std::atomic<bool> panic_{ false };
         std::atomic<uint64_t> droppedNotes_{ 0 };
+        std::vector<std::string> ignoredInputs_;      // control thread
+        std::atomic<uint64_t> ignoredSources_{ 0 };   // their sources now, a bit each, for the audio thread
         std::array<kick::clap::Event, noteQueueCapacity + maxInputEvents + 1> merged_{};
         std::array<uint8_t, noteQueueCapacity + maxInputEvents + 1> mergedSources_{};
     };

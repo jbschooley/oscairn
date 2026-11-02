@@ -219,6 +219,15 @@ namespace
         play(true, 62, 5); check(near(x.l[0], .75), "the KeyLab, on the same channel, plays External");
         play(true, 64, 6); check(near(x.l[0], .75), "another device plays neither");
         play(false, 62, 5); s.note(false, 60, 0); x.run(s); check(near(x.l[0], 0), "both released");
+        // A controller's port duplicating another's, ignored by name (RFC 0024): its notes are left
+        // out, named before or after it appears; the other input still plays.
+        s.ignoreMidiInputs({"KeyLab 61 Private"});
+        status.midiInputs = {{E::Usb, 5, "Arturia KeyLab 61"}, {E::Usb, 6, "KeyLab 61 Private"}}; s.setHostStatus(status);
+        play(true, 62, 6); check(near(x.l[0], 0), "an ignored input's note is not delivered: " + std::to_string(x.l[0]));
+        play(false, 62, 6); play(true, 62, 5); check(near(x.l[0], .5), "the other input plays");
+        play(false, 62, 5); s.ignoreMidiInputs({}); play(true, 62, 6); check(near(x.l[0], .5), "no longer ignored, it plays");
+        play(false, 62, 6);
+        status.midiInputs = {{E::Usb, 5, "Arturia KeyLab 61"}}; s.setHostStatus(status);
         // Plugged in again under another number: the selector follows it, applied at once.
         status.midiInputs = {{E::Usb, 7, "Arturia KeyLab 61"}}; s.setHostStatus(status);
         play(true, 62, 7); check(near(x.l[0], .5) && !s.graphState().staged, "the KeyLab as source 7 plays External, no commit needed");

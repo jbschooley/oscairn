@@ -168,6 +168,7 @@ request members.
 | `assignments.set` | `control`, `kind` (as above, or `none` to remove its override), `node` and `param`, or `id`; optional `part`: that part's Sound's own assignment, to one of its plugins' parameters or its controls (the mod wheel's target) | `{"accepted":true}`; an unknown control or target, or a part's assignment to anything not its own, is refused (-32003). An edit: undone with `edit.undo`, saved with the Performance |
 | `notes.send` | `on` (boolean), `key` (0..127), optional `velocity` (0..1), optional `channel` (0..15) | `{"accepted":true}` |
 | `notes.panic` | `{}` | `{"accepted":true}`: all notes off. Every note played from the keys, MIDI inputs and `notes.send` is released at the next block |
+| `midi.ignore` | `inputs`: up to 64 MIDI input names, as `session.status` lists them (may be empty) | `{"accepted":true}`: the engine leaves out every message from those inputs, replacing the last list, until it exits. For a controller's port that duplicates another's ([RFC 0024](rfcs/0024-device-profiles.md#controllers)); a name not connected now applies when it appears |
 
 `graph.add` accepts a CLAP module or, in an LV2-enabled engine, a `.lv2` bundle directory.
 For LV2, `pluginId` is the plugin URI and is required when the bundle has multiple plugins.

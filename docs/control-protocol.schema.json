@@ -2534,6 +2534,43 @@
               "$ref": "#/$defs/Id"
             },
             "method": {
+              "const": "midi.ignore",
+              "description": "MIDI inputs, by name as session.status lists them, whose messages the engine leaves out (a controller's duplicate port, RFC 0024); replaces the last list"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "inputs": {
+                  "type": "array",
+                  "maxItems": 64,
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "inputs"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "params"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
               "const": "engine.attach",
               "description": "The open Performance as one archive file, with its samples and the Sounds of parts still those Sounds; editedSounds adds those of edited parts. Refuses a file that exists"
             },

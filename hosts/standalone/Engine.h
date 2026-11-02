@@ -51,6 +51,8 @@ namespace oscairn::standalone
         Control::History history() const {try{return control_->history();}catch(const std::exception&){return {};}}
         void edit(std::function<void(Control&)> change);
         const std::string& editError() const {return editError_;}
+        // MIDI inputs the engine leaves out (a controller's duplicate ports), sent again after a restart.
+        void ignoreMidiInputs(std::vector<std::string> names);
         const std::string& pluginDir() const {return pluginDir_;}
         std::function<void()> openParts;
         std::function<void()> goHome, goBack; // the shell's (RFC 0030), for a panel's buttons
@@ -177,6 +179,7 @@ namespace oscairn::standalone
         std::array<uint16_t,128> padChannels_{};
         PadMap padMap_;
         std::string editError_, pluginDir_;
+        std::vector<std::string> ignoredInputs_;
         std::vector<Macro> macros_;
         void refreshPads();
         std::string socketPath_,failure_;
