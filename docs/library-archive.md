@@ -17,7 +17,7 @@ The manifest:
 | Field | Meaning |
 | --- | --- |
 | `format`, `version` | Exactly `oscairn.library` and integer `3` |
-| `id` | The library's ID: its folder's name when installed as a library, and what imported copies record as their `origin` |
+| `id` | The library's ID: its folder's name when installed as a library, and what imported copies record as their `origin`; 1 to 64 letters, digits, `.`, `-` and `_`, the first one a letter or digit |
 | `name` | Its name |
 | `kind` | `library`, `performance` for an exported Performance or `sound` for an exported Sound (its ID and name are that item's) |
 | `items` | Each item's `kind` (`performance` or `sound`), `id`, `name`, `path`, its folder in the archive, and `signatures` (optional) |

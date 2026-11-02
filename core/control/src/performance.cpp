@@ -1449,7 +1449,6 @@ std::string Session::savePerformanceToLibrary(const std::string& name,bool asNew
 namespace {
 fs::path unpackFolder(){std::random_device random;return fs::temp_directory_path()/("oscairn-archive-"+std::to_string(random())+std::to_string(random()));}
 std::string freshId(){std::random_device random;constexpr char hex[]="0123456789abcdef";std::string id;for(int i=0;i<16;++i)id+=hex[random()&15];return id;}
-std::string safeName(const std::string& id){std::string out;for(const char c:id)out+=std::isalnum(static_cast<unsigned char>(c))?c:'_';return out;}
 }
 
 Control::Archive Session::archiveContents(const std::string& file) {
@@ -1525,7 +1524,7 @@ Control::Installed Session::installArchive(const std::string& file,bool asLibrar
         }
         if(asLibrary){
             // Locked, in its own folder: what is there stays, what is missing comes back.
-            const auto root=l.libraries()/safeName(p.id);
+            const auto root=l.libraries()/p.id; // readPackage: the ID is a plain name
             fs::create_directories(root);
             {std::ofstream m(root/"library.json",std::ios::binary|std::ios::trunc);m<<manifestJson(p);if(!m)bad("cannot write the library's manifest");}
             for(const auto& i:items){
@@ -1570,7 +1569,7 @@ void Session::uninstallLibrary(const std::string& id) {
     auto& l=library();
     const auto all=l.installed();
     if(std::none_of(all.begin(),all.end(),[&](const auto& x){return x.id==id;}))bad("no such library installed");
-    fs::remove_all(l.libraries()/safeName(id));
+    fs::remove_all(l.libraries()/id); // readPackage: the ID is a plain name
     l.rescan();
 }
 

@@ -431,6 +431,29 @@ int main(int argc, char** argv)
             const auto doc = fs::path(items(k, "performance").at(0).path) / "performance.json";
             check(read(doc).find("\"sound\":\"" + soundId + "\"") != std::string::npos, "and its Performance's part points at the Sound's copy");
         }
+        // A reverse-DNS library ID (RFC 0031's normal case) installs as a library: the folder is
+        // the ID itself, so rescan lists it, its items show up, and it can be uninstalled.
+        {
+            device(temp.path / "l");
+            const auto root = temp.path / "l-root";
+            fs::create_directories(root / "Sounds" / "tone");
+            std::ofstream(root / "Sounds" / "tone" / "sound.json", std::ios::binary | std::ios::trunc)
+                << R"({"format":"oscairn.sound","version":7,"info":{"id":"tone","name":"Tone","description":"","tags":[],"color":"","revision":"r","parent":"","origin":null,"hash":")"
+                << std::string(64, '0') << R"("},"nodes":[]})";
+            Package p; p.id = "com.example.pack"; p.name = "Dotted";
+            p.items.push_back({"sound", "tone", "Tone", "Sounds/tone", {}});
+            const auto dotted = temp.path / "Dotted.olib";
+            writePackage(dotted, p, root);
+            Session l(48000, 64);
+            check(l.installArchive(dotted.string(), true).added == 1, "a dotted ID installs as a library");
+            check(l.libraries().size() == 1 && l.libraries()[0].id == "com.example.pack" && l.libraries()[0].items == 1,
+                  "and is listed, under its own ID: " + std::to_string(l.libraries().size()));
+            Control::LibraryQuery inLibrary; inLibrary.source = "com.example.pack";
+            check(l.libraryQuery(inLibrary).total == 1, "its items can be queried");
+            check(fs::is_directory(temp.path / "l" / "Libraries" / "com.example.pack"), "the folder is the ID, dots and all");
+            l.uninstallLibrary("com.example.pack");
+            check(l.libraries().empty() && !fs::exists(temp.path / "l" / "Libraries" / "com.example.pack"), "and it is uninstalled");
+        }
     }
     catch(const std::exception& e) { std::fprintf(stderr, "FAIL: %s\n", e.what()); ++failures; }
     if(!failures) std::puts("ok: export, install as the user's own and as a library, reinstall, uninstall, chosen items and plugins from the store");

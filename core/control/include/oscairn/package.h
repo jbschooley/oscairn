@@ -62,7 +62,9 @@ namespace oscairn
     // Plugins/, paths that climb out or are absolute, links, duplicates, more than 1,048,576 entries
     // or 64 MiB of names, more than 8 GiB in all, an entry over 2 GiB or a manifest over maxManifestBytes (as declared; each file extracted must be the
     // size it declares), a file whose SHA-256 is not the manifest's or that the manifest does not
-    // list, a plugin build whose digest is not its own, and a manifest whose items or builds are
+    // list, a plugin build whose digest is not its own, and a manifest whose ID is not a plain
+    // folder name (1 to 64 letters, digits, `.`, `-` and `_`, starting with a letter or digit),
+    // or whose items or builds are
     // not in the archive, not for a knownPlatform, or whose build is not a .clap or .lv2 bundle,
     // and a signature that does not verify (each
     // build's over its listed digest, library.sig over the manifest, each item's over its content

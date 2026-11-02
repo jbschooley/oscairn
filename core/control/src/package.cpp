@@ -6,6 +6,7 @@
 #include "oscairn/assets.h"
 #include "oscairn/library.h"
 #include <algorithm>
+#include <cctype>
 #include <cstdlib>
 #include <memory>
 #include <set>
@@ -238,7 +239,12 @@ namespace oscairn
                 if(!signing::verify(p.signature, signing::archiveMessage(manifest))) bad("its signature does not verify");
             }
             p.id = text(detail::member(d, "id")); p.name = text(detail::member(d, "name")); p.kind = text(detail::member(d, "kind"));
-            if(p.id.empty() || p.id.size() > 64 || (p.kind != "library" && p.kind != "performance" && p.kind != "sound")) bad("its ID or kind is wrong");
+            // The ID becomes the library's folder name, so it is plain: letters, digits, ".", "-", "_".
+            const std::string_view id = p.id;
+            const bool idOk = !id.empty() && id.size() <= 64 &&
+                (std::isalnum(static_cast<unsigned char>(id.front())) != 0) &&
+                std::all_of(id.begin(), id.end(), [](char c) { return std::isalnum(static_cast<unsigned char>(c)) || c == '.' || c == '-' || c == '_'; });
+            if(!idOk || (p.kind != "library" && p.kind != "performance" && p.kind != "sound")) bad("its ID or kind is wrong");
             const V items = detail::member(d, "items");
             if(!items || items->type != json_type_array) bad("it lists no items");
             std::set<std::string> ids;
