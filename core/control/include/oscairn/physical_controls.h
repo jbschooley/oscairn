@@ -6,6 +6,7 @@
 #include <array>
 #include <functional>
 #include <map>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -87,7 +88,8 @@ namespace oscairn
     // controller to every part unless something is assigned to it. Other kinds than knobs and
     // encoders play banks only when `paged` or with rows; else nothing until assigned.
     // An external controller's group says how it talks MIDI (RFC 0024's controllers).
-    enum class Encoding { Absolute, TwosComplement, BinaryOffset, SignMagnitude };
+    // Steps: one value for a step up and another for a step down (the group's `steps`).
+    enum class Encoding { Absolute, TwosComplement, BinaryOffset, SignMagnitude, Steps };
     inline constexpr std::array<const char*, 4> encodings{"absolute", "twosComplement", "binaryOffset", "signMagnitude"}; // as profiles name them
     struct ControlGroup
     {
@@ -103,9 +105,11 @@ namespace oscairn
         {
             std::string device;                 // the controller's profile id; empty: not MIDI (a panel's own)
             uint32_t port = 1, channel = 1;     // the profile's port, from 1; channel 1 to 16
+            std::vector<uint32_t> channels;     // one per control, when they differ (then `channel` is unused)
             enum class Message { CC, Note, PitchBend } message = Message::CC;
             std::vector<uint8_t> numbers;       // CC or note per control, or per control per row
             std::vector<Encoding> encodings;    // one per control (absolute when missing)
+            std::vector<std::array<uint8_t, 2>> steps; // one per control: Steps' increment and decrement values
             bool latch = false;                 // buttons: the controller keeps their state
         } midi;
     };
@@ -134,7 +138,11 @@ namespace oscairn
     // for what the control it comes from plays, 0 to 1 across each target's range. Absolute
     // controls pick up (soft takeover); relative ones step from the current value; buttons
     // toggle, latch or select. Pickup is per control. Not thread-safe: one caller.
-    int relativeSteps(Encoding, uint8_t value); // the signed step a relative value sends
+    int relativeSteps(Encoding, uint8_t value, std::array<uint8_t, 2> steps = {}); // the signed step a relative value sends; Steps: 1, -1 or 0
+    // The control a controller's message comes from: its group, its place there and, for a group
+    // of rows sending a number per row, the row (-1: none); nothing when no control sends it.
+    struct MidiControl { size_t group = 0; uint32_t index = 0; int row = -1; };
+    std::optional<MidiControl> midiControl(const std::vector<ControlGroup>&, const std::string& device, uint32_t port, const uint8_t* bytes, size_t size);
     class ControllerMapping
     {
     public:

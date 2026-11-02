@@ -233,6 +233,24 @@ namespace
         check(out.size() == 1 && out[0].control == "knob:11" && std::abs(out[0].value - (.5 + 3 / 127.0)) < 1e-9, "a relative knob steps from the value, with no pickup");
         out = send("smk", {0xB0, 19, 66});
         check(out.size() == 1 && std::abs(out[0].value - (.5 + 1 / 127.0)) < 1e-9, "sign-magnitude 66 steps down two");
+        // The SMK37 Elite's knobs: 1 to 6 on channel 6, 7 and 8 on channel 1 sending 69 for a step up and 1 for a step down.
+        check(relativeSteps(Encoding::Steps, 69, {69, 1}) == 1 && relativeSteps(Encoding::Steps, 1, {69, 1}) == -1 && relativeSteps(Encoding::Steps, 64, {69, 1}) == 0,
+              "explicit steps decode 69 and 1 to +1 and -1, and nothing else");
+        {
+            auto smk = midi(knobs, "smk", Message::CC, {48, 49, 50, 51, 52, 53, 38, 37}, {abs, abs, abs, abs, abs, abs, Encoding::Steps, Encoding::Steps});
+            smk.midi.channels = {6, 6, 6, 6, 6, 6, 1, 1}; smk.midi.steps.assign(8, {69, 1});
+            const std::vector<ControlGroup> mixed{panel, smk};
+            ControllerMapping m; GroupPositions at;
+            auto play = [&](std::vector<uint8_t> bytes) { return m.handle(source(), mixed, keys, at, "smk", 1, bytes.data(), bytes.size(), value); };
+            values[key(target(Assignment::Kind::Control, super))] = .5;
+            auto up = play({0xB0, 38, 69}), down = play({0xB0, 38, 1});
+            check(up.size() == 1 && up[0].control == "knob:11" && std::abs(up[0].value - (.5 + 1 / 127.0)) < 1e-9 && down.size() == 1 && std::abs(down[0].value - (.5 - 1 / 127.0)) < 1e-9,
+                  "knob 7 on channel 1: 69 steps up one, 1 down one");
+            check(play({0xB5, 38, 69}).empty() && play({0xB0, 48, 64}).empty(), "a number on another control's channel is not that control");
+            values[key(parameter(synth, 7))] = 64 / 127.0;
+            out = play({0xB5, 48, 64});
+            check(out.size() == 1 && out[0].control == "knob:5", "knob 1 on channel 6");
+        }
         values[key(target(Assignment::Kind::PartLevel, keys))] = .7;
         out = send("smk", {0xB0, 73, 89});
         check(out.size() == 1 && out[0].target == target(Assignment::Kind::PartLevel, keys), "a fader picks up its part's level");
