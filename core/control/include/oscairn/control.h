@@ -85,8 +85,9 @@ namespace oscairn
             // Plugins that have failed and are silent: a worker that crashed, hung or was given up.
             struct PluginFailure { NodeId node=0; std::string name, reason; bool operator==(const PluginFailure&) const = default; };
             std::vector<PluginFailure> failures;
-            // Plugins in their own workers (RFC 0010): CPU time used in seconds, restarts included, and memory in bytes.
-            struct WorkerUsage { NodeId node=0; std::string name; double cpu=0; uint64_t memory=0; bool operator==(const WorkerUsage&) const = default; };
+            // Plugins in their own workers (RFC 0010): CPU time used in seconds, restarts included, memory in
+            // bytes, and the time its last block took inside the worker and the most a block has, in microseconds.
+            struct WorkerUsage { NodeId node=0; std::string name; double cpu=0; uint64_t memory=0; double block=0, blockMax=0; bool operator==(const WorkerUsage&) const = default; };
             std::vector<WorkerUsage> workers;
             std::vector<MidiEndpoint> midiOutputs; // its MIDI outputs, numbered from 1 apart from the inputs, for parts' MIDI out and clock
             // What the last Performance load, Sound or import passed over without failing: an optional asset missing.

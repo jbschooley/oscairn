@@ -6977,13 +6977,25 @@
               "memory": {
                 "type": "integer",
                 "minimum": 0
+              },
+              "block": {
+                "type": "number",
+                "minimum": 0,
+                "description": "Microseconds the last block took inside the worker"
+              },
+              "blockMax": {
+                "type": "number",
+                "minimum": 0,
+                "description": "The most microseconds any block has taken inside the worker"
               }
             },
             "required": [
               "node",
               "name",
               "cpu",
-              "memory"
+              "memory",
+              "block",
+              "blockMax"
             ],
             "additionalProperties": false
           }
