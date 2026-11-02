@@ -390,6 +390,15 @@ namespace oscairn
     void RemoteControl::addPluginBuild(const std::string& format,const std::string& id,const std::string& version,const std::string& platform,const std::string& path) {
         impl_->call("plugins.addBuild","{\"format\":"+quote(format)+",\"id\":"+quote(id)+",\"version\":"+quote(version)+",\"platform\":"+quote(platform)+",\"path\":"+quote(path)+'}',120000);
     }
+    std::vector<Control::TrustedKey> RemoteControl::trustedKeys() {
+        auto d=impl_->call("trust.list","{}");std::vector<TrustedKey> out;
+        for(auto k:array(field(field(d.get(),"result"),"keys")))out.push_back({string(field(k,"id")),string(field(k,"key")),string(field(k,"name")),strings(field(k,"scope")),boolean(field(k,"revoked"))});
+        return out;
+    }
+    void RemoteControl::setTrustedKey(const TrustedKey& k) {
+        impl_->call("trust.set","{\"key\":"+quote(k.key)+",\"name\":"+quote(k.name)+",\"scope\":"+quoted(k.scope)+",\"revoked\":"+(k.revoked?"true":"false")+'}');
+    }
+    void RemoteControl::removeTrustedKey(const std::string& id) { impl_->call("trust.remove","{\"id\":"+quote(id)+'}'); }
     void RemoteControl::uninstallLibrary(const std::string& id) { impl_->call("library.uninstall","{\"library\":"+quote(id)+'}',30000); }
     void RemoteControl::libraryEdit(const std::string& id,const PerformanceInfo& info) {
         impl_->call("library.edit","{\"id\":"+quote(id)+",\"name\":"+quote(info.name)+",\"description\":"+quote(info.description)+",\"tags\":"+quoted(info.tags)+",\"color\":"+quote(info.color)+'}',30000);

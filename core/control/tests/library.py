@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """The library through RPC (RFC 0021): info, save and load by ID, query, favorites, recents, the cache."""
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -157,6 +158,19 @@ with tempfile.TemporaryDirectory(prefix='oscairn-library-') as temporary:
         rpc('performance.import', {'directory': str(exported), 'parts': [9999]}, True)
         user = json.loads((home / 'library/user.json').read_text())
         assert user['favorites'] == [pad] and user['recent'][-2:] == [pad, copy]  # a gone item's stays, for if it returns
+        # The trust store (RFC 0006): keys added, changed, revoked and removed, kept in trust.json.
+        assert rpc('trust.list') == {'keys': []}
+        vendor = 'd75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a'
+        fingerprint = hashlib.sha256(bytes.fromhex(vendor)).hexdigest()[:16]
+        rpc('trust.set', {'key': vendor, 'name': 'Vendor', 'scope': ['plugins']})
+        rpc('trust.set', {'key': vendor, 'name': 'Vendor Inc', 'scope': ['plugins', 'apps'], 'revoked': True})
+        assert rpc('trust.list') == {'keys': [{'id': fingerprint, 'key': vendor, 'name': 'Vendor Inc', 'scope': ['apps', 'plugins'], 'revoked': True}]}
+        assert json.loads((home / 'trust.json').read_text())['keys'][0]['name'] == 'Vendor Inc'
+        rpc('trust.set', {'key': 'ab', 'name': 'x', 'scope': []}, True)
+        rpc('trust.set', {'key': vendor, 'name': 'x', 'scope': ['everything']}, True)
+        rpc('trust.remove', {'id': fingerprint})
+        assert rpc('trust.list') == {'keys': []}
+        rpc('trust.remove', {'id': fingerprint}, True)
     finally:
         p.stdin.close()
         p.wait(timeout=10)

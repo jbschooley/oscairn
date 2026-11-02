@@ -1,4 +1,4 @@
-add_library(oscairn_control STATIC src/session.cpp src/performance.cpp src/parts.cpp src/pads.cpp src/physical_controls.cpp src/controller_mapping.cpp src/control_surface.cpp src/undo.cpp src/library.cpp src/package.cpp src/budget.cpp src/audition.cpp src/signing.cpp third_party/miniz/miniz.c third_party/monocypher/monocypher.c third_party/monocypher/monocypher-ed25519.c)
+add_library(oscairn_control STATIC src/session.cpp src/performance.cpp src/parts.cpp src/pads.cpp src/physical_controls.cpp src/controller_mapping.cpp src/control_surface.cpp src/undo.cpp src/library.cpp src/package.cpp src/budget.cpp src/audition.cpp src/signing.cpp src/trust.cpp third_party/miniz/miniz.c third_party/monocypher/monocypher.c third_party/monocypher/monocypher-ed25519.c)
 set_source_files_properties(third_party/miniz/miniz.c third_party/monocypher/monocypher.c third_party/monocypher/monocypher-ed25519.c PROPERTIES COMPILE_OPTIONS "-w") # vendored, unmodified
 target_include_directories(oscairn_control SYSTEM PRIVATE third_party)
 target_include_directories(oscairn_control PUBLIC include)

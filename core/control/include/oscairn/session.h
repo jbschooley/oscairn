@@ -67,6 +67,9 @@ namespace oscairn
         std::vector<InstalledPlugin> installedPlugins() override;
         void removePlugin(const std::string& format, const std::string& id, const std::string& version, const std::string& platform = {}) override;
         void addPluginBuild(const std::string& format, const std::string& id, const std::string& version, const std::string& platform, const std::string& path) override;
+        std::vector<TrustedKey> trustedKeys() override;
+        void setTrustedKey(const TrustedKey& key) override;
+        void removeTrustedKey(const std::string& id) override;
         void auditionStart(const std::string& id, uint32_t part = 0) override;
         void auditionStop(bool keep = false) override;
         Audition audition() const override { return audition_ ? audition_->what : Audition{}; }

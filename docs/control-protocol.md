@@ -937,6 +937,12 @@ Libraries come as [archives](library-archive.md): a library, or an exported Perf
   device's) from a file or bundle here, into the store so exports carry it, replacing that
   platform's build. CLAP only. It cannot be loaded here; the device it is for checks its ID and
   version when it loads it.
+- `trust.list` (`{}`) returns `{keys}`: the trust store ([RFC 0006](rfcs/0006-packages-and-portability.md#signatures)),
+  `trust.json` in the data folder, each `{id,key,name,scope,revoked}`: the key's ID (the first
+  16 hex digits of the SHA-256 of its 32 bytes, its fingerprint), its Ed25519 public key in hex,
+  its name, what it is trusted for (any of `plugins`, `apps` and `content`) and whether it is
+  revoked. `trust.set` takes `{key,name,scope}` and optional `revoked`, adding the key or
+  replacing its entry; `trust.remove` takes `{id}`. Both return `{"accepted":true}`.
 - `library.uninstall` takes `{library}`; `library.delete` takes `{id}`, any item's.
 - `library.query` items carry `library`: the installed library holding them, locked, or empty
   for the user's own. Saving over a locked item, a Performance by `library.save` or a part's

@@ -401,7 +401,7 @@ namespace oscairn
             if( method == "session.hello" )
             {
                 fields(p, {});
-                return R"({"protocolVersion":1,"server":"oscairn","capabilities":["performance.save","performance.load","performance.prepare","performance.export","budget.set","budget.estimate","performance.info","performance.setInfo","library.query","library.favorite","library.tag","library.edit","library.copy","library.export","audition.start","audition.stop","audition.get","record.start","record.stop","record.get","record.takes","library.rescan","library.contents","library.install","library.libraries","library.uninstall","library.delete","library.save","library.load","parts.saveSound","parts.loadSound","parts.fromSound","performance.contents","performance.import","state.info","state.save","presets.list","properties.list","properties.get","properties.set","properties.request","sounds.get","sounds.prepare","sounds.select","sounds.discard","assets.register","assets.import","assets.libraries","session.status","engine.attach","engine.release","params.list","params.get","params.set","params.text","params.gesture","graph.audio-routing","graph.get","graph.add","effects.create","effects.resources","graph.remove","graph.replace","graph.connect","graph.disconnect","graph.map","graph.unmap","graph.commit","parts.add","parts.remove","parts.insert","parts.removeNode","parts.move","parts.addSplit","parts.removeSplit","parts.addLane","parts.removeLane","parts.lane","parts.input","parts.output","parts.send","parts.level","parts.name","parts.solo","parts.pan","parts.meters","wires.meters","edit.undo","edit.redo","edit.history","wires.connect","wires.disconnect","wires.enable","graph.enable","wires.mix","wires.zones","scenes.add","scenes.store","scenes.select","scenes.remove","scenes.name","scenes.scope","scenes.transition","scenes.untouched","controls.add","controls.remove","controls.name","controls.targets","controls.set","subscribe","unsubscribe","transport.get","transport.set","notes.send","notes.panic","midi.ignore","pads.get","pads.set","pads.play","pads.pressure","assignments.get","assignments.set","parts.midiOut"],"limits":{"messageBytes":65536,"depth":32,"batch":64,"parameterChanges":128}})";
+                return R"({"protocolVersion":1,"server":"oscairn","capabilities":["performance.save","performance.load","performance.prepare","performance.export","budget.set","budget.estimate","performance.info","performance.setInfo","library.query","library.favorite","library.tag","library.edit","library.copy","library.export","audition.start","audition.stop","audition.get","record.start","record.stop","record.get","record.takes","library.rescan","library.contents","library.install","library.libraries","library.uninstall","library.delete","library.save","library.load","parts.saveSound","parts.loadSound","parts.fromSound","performance.contents","performance.import","state.info","state.save","presets.list","properties.list","properties.get","properties.set","properties.request","sounds.get","sounds.prepare","sounds.select","sounds.discard","assets.register","assets.import","assets.libraries","session.status","engine.attach","engine.release","params.list","params.get","params.set","params.text","params.gesture","graph.audio-routing","graph.get","graph.add","effects.create","effects.resources","graph.remove","graph.replace","graph.connect","graph.disconnect","graph.map","graph.unmap","graph.commit","parts.add","parts.remove","parts.insert","parts.removeNode","parts.move","parts.addSplit","parts.removeSplit","parts.addLane","parts.removeLane","parts.lane","parts.input","parts.output","parts.send","parts.level","parts.name","parts.solo","parts.pan","parts.meters","wires.meters","edit.undo","edit.redo","edit.history","wires.connect","wires.disconnect","wires.enable","graph.enable","wires.mix","wires.zones","scenes.add","scenes.store","scenes.select","scenes.remove","scenes.name","scenes.scope","scenes.transition","scenes.untouched","controls.add","controls.remove","controls.name","controls.targets","controls.set","subscribe","unsubscribe","transport.get","transport.set","notes.send","notes.panic","midi.ignore","pads.get","pads.set","pads.play","pads.pressure","assignments.get","assignments.set","parts.midiOut","trust.list","trust.set","trust.remove"],"limits":{"messageBytes":65536,"depth":32,"batch":64,"parameterChanges":128}})";
             }
             if( method == "engine.attach" || method == "engine.release" )
             {
@@ -622,6 +622,26 @@ namespace oscairn
                 const auto format=std::string(string(member(p,"format"))),id=std::string(string(member(p,"id"))),version=std::string(string(member(p,"version")));
                 const auto platform=member(p,"platform")?std::string(string(member(p,"platform"))):std::string();
                 try{if(add)c.addPluginBuild(format,id,version,platform,std::string(string(member(p,"path"))));else c.removePlugin(format,id,version,platform);}
+                catch(const std::invalid_argument& e){throw Failure{-32602,e.what()};}
+                catch(const std::exception& e){throw Failure{-32005,e.what()};}
+                return R"({"accepted":true})";
+            }
+            // The trust store (RFC 0006).
+            if(method=="trust.list") {
+                fields(p,{});std::vector<std::string> out;
+                try{for(const auto& k:c.trustedKeys()){std::vector<std::string> scope;for(const auto& s:k.scope)scope.push_back(quote(s));
+                    out.push_back("{\"id\":"+quote(k.id)+",\"key\":"+quote(k.key)+",\"name\":"+quote(k.name)+",\"scope\":"+join(scope)+",\"revoked\":"+(k.revoked?"true":"false")+'}');}}
+                catch(const std::exception& e){throw Failure{-32005,e.what()};}
+                return "{\"keys\":"+join(out)+'}';
+            }
+            if(method=="trust.set" || method=="trust.remove") {
+                const bool set=method=="trust.set";
+                if(set)fields(p,{"key","name","scope","revoked"});else fields(p,{"id"});
+                Control::TrustedKey k;
+                if(set){k.key=std::string(string(member(p,"key")));k.name=std::string(string(member(p,"name")));
+                    for(auto s:array(member(p,"scope"),3,0))k.scope.push_back(std::string(string(s)));
+                    k.revoked=member(p,"revoked") && boolean(member(p,"revoked"));}
+                try{if(set)c.setTrustedKey(k);else c.removeTrustedKey(std::string(string(member(p,"id"))));}
                 catch(const std::invalid_argument& e){throw Failure{-32602,e.what()};}
                 catch(const std::exception& e){throw Failure{-32005,e.what()};}
                 return R"({"accepted":true})";

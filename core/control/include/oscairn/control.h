@@ -243,6 +243,15 @@ namespace oscairn
         // exports carry it, replacing that platform's build in the store. It cannot be loaded here
         // to check: the device it is for checks its ID and version when it loads it.
         virtual void addPluginBuild(const std::string& format, const std::string& id, const std::string& version, const std::string& platform, const std::string& path) = 0;
+        // The trust store (RFC 0006), trust.json in the data folder: the keys whose signatures this
+        // device trusts, each by its public key (64 hex digits) and ID (its fingerprint), with a
+        // name, what it is trusted for (scope: any of "plugins", "apps" and "content") and whether
+        // it is revoked. Setting one adds it or replaces the entry for that key (id is ignored);
+        // removing takes its ID.
+        struct TrustedKey { std::string id, key, name; std::vector<std::string> scope; bool revoked = false; };
+        virtual std::vector<TrustedKey> trustedKeys() = 0;
+        virtual void setTrustedKey(const TrustedKey& key) = 0;
+        virtual void removeTrustedKey(const std::string& id) = 0;
         // Sounds (RFC 0021): a part saved to the library, without its seat. Wires that cross the
         // part's edge are not saved and are listed in `left`. Save writes a new revision of the
         // Sound the part came from (renamed when name is given); asNew, or a part from no Sound,

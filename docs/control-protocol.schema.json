@@ -3119,6 +3119,123 @@
               "$ref": "#/$defs/Id"
             },
             "method": {
+              "const": "trust.list",
+              "description": "The trust store: the keys whose signatures this device trusts, with what for and whether revoked"
+            },
+            "params": {
+              "type": "object",
+              "properties": {},
+              "required": [],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "params"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
+              "const": "trust.set",
+              "description": "Adds a key to the trust store, or replaces its entry"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                },
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256
+                },
+                "scope": {
+                  "type": "array",
+                  "maxItems": 3,
+                  "uniqueItems": true,
+                  "items": {
+                    "enum": [
+                      "plugins",
+                      "apps",
+                      "content"
+                    ]
+                  }
+                },
+                "revoked": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "key",
+                "name",
+                "scope"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "params"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
+              "const": "trust.remove",
+              "description": "Removes a key from the trust store, by its ID"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{16}$"
+                }
+              },
+              "required": [
+                "id"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "params"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
               "const": "library.delete",
               "description": "Deletes a library item; a locked library's comes back when it is installed again"
             },
