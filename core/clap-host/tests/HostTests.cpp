@@ -242,6 +242,30 @@ int main(int argc, char** argv) {
     check(!h.load(missing, 48000, 128), "do not substitute another descriptor for missing saved ID");
     second.unload(); h.unload();
 #ifndef _WIN32
+    {
+        // CLAP gui: the effect floats its own window, so nothing is drawn. The host creates it with
+        // the title, shows it, carries out the plugin's requests in service(), and destroys it
+        // before the plugin, when closed, when the plugin destroys it and when it unloads.
+        auto state = reinterpret_cast<int(*)()>(dlsym(diagnostics, "fixture_gui_state"));
+        auto title = reinterpret_cast<const char*(*)()>(dlsym(diagnostics, "fixture_gui_title"));
+        auto request = reinterpret_cast<bool(*)(int)>(dlsym(diagnostics, "fixture_gui_request"));
+        check(state && title && request, "fixture window controls");
+        Host plain, windowed;
+        check(plain.load(catalog.plugins[0], 48000, 128) && !plain.hasGui() && !plain.showGui("Synth") && !plain.guiOpen(), "a plugin without a window has none to show");
+        check(windowed.load(catalog.plugins[1], 48000, 128) && windowed.hasGui() && !windowed.guiOpen(), "a plugin that floats its window has one");
+        check(windowed.showGui("KICK effect · Lead") && windowed.guiOpen() && state() == 2 && std::string(title()) == "KICK effect · Lead", "shown, with the node and part as its title");
+        check(windowed.showGui("KICK effect · Bass") && state() == 2 && std::string(title()) == "KICK effect · Bass", "shown again: titled anew, not a second window");
+        check(!request(3), "a floating window asks no resize");
+        check(request(0) && state() == 2, "a request to hide waits for the main loop");
+        windowed.service(); check(state() == 1 && windowed.guiOpen(), "hidden in service");
+        check(request(1), "a request to show"); windowed.service(); check(state() == 2, "and shown again");
+        windowed.closeGui(); check(state() == 0 && !windowed.guiOpen() && !request(1), "closed: destroyed");
+        check(windowed.showGui("KICK effect") && state() == 2, "opened again");
+        check(request(2), "the plugin destroys its window"); windowed.service(); check(state() == 0 && !windowed.guiOpen(), "the plugin destroying its window is acknowledged");
+        check(windowed.showGui("KICK effect") && state() == 2, "and opened once more");
+        windowed.unload(); check(state() == 0, "unloading destroys the window first");
+    }
+
     auto errors = reinterpret_cast<int(*)()>(dlsym(diagnostics, "fixture_thread_errors"));
     check(errors && errors() == 0, "all lifecycle and event calls satisfy fixture contracts");
     auto users = reinterpret_cast<int(*)()>(dlsym(diagnostics, "fixture_entry_users"));

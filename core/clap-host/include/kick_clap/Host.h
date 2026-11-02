@@ -134,6 +134,12 @@ public:
     // Main thread. Loads a preset (CLAP preset-load), never during process(); false with error().
     bool loadPreset(const Preset&);
     bool supportsSoundSnapshot() const noexcept;
+    // CLAP gui: the plugin's own window. Main thread. Embedded in a window of the host's own where
+    // the host makes them (macOS), else floating where the plugin floats one (RFC 0019).
+    bool hasGui() const noexcept;
+    bool showGui(const std::string& title); // opens it, or titles and raises it; false with error()
+    void closeGui();                        // destroys the editor and its window; also on unload
+    bool guiOpen() const noexcept;
     // Main thread. Where plugins resolve sound assets; null rejects every resolution.
     void setAssets(AssetResolver*) noexcept;
     // The assets the plugin's state uses (oscairn.asset-dependencies); empty if not declared.
@@ -192,5 +198,10 @@ private:
     struct Impl;
     std::unique_ptr<Impl> impl;
 };
+
+// For a process with no event loop of its own (a plugin worker) once a plugin window is open:
+// runs the platform's window events on the main thread for up to `milliseconds`, returning
+// early when `descriptor` becomes readable. False, at once, where there are none to run here.
+bool runWindowEvents(int descriptor, int milliseconds);
 
 } // namespace kick::clap

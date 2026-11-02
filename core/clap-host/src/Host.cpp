@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #include <kick_clap/Host.h>
 #include "Internal.h"
+#include "Window.h"
 #include <clap/ext/audio-ports.h>
 #include <clap/ext/note-ports.h>
 #include <clap/ext/params.h>
@@ -13,6 +14,7 @@
 #include <clap/ext/log.h>
 #include <clap/ext/event-registry.h>
 #include <clap/ext/preset-load.h>
+#include <clap/ext/gui.h>
 #include <clap/factory/preset-discovery.h>
 #include <oscairn-clap/param-target.h>
 #include <oscairn-clap/ui.h>
@@ -195,6 +197,15 @@ struct Host::Impl {
     clap_id nextTimer = 1;
     struct Fd { int fd; clap_posix_fd_flags_t flags; };
     std::vector<Fd> fds;
+    // CLAP gui: the plugin's own window, on the main thread; guiApi is null where it has none
+    // here. An embedded editor sits in a window of the host's own. The plugin's requests may come
+    // from any thread and are carried out in service().
+    const clap_plugin_gui_t* gui = nullptr;
+    const char* guiApi = nullptr;
+    bool guiFloating = false;
+    std::atomic<bool> guiCreated{false}, guiShow{false}, guiHide{false}, guiGone{false}, guiHints{false};
+    std::atomic<uint64_t> guiSize{0}; // a size asked for off the main thread: width << 32 | height
+    std::unique_ptr<detail::Window> window;
     static Impl& self(const clap_host_t* h) { return *static_cast<Impl*>(h->host_data); }
     bool main() {
         if (mainThread == std::thread::id{}) mainThread = std::this_thread::get_id();
@@ -282,6 +293,72 @@ struct Host::Impl {
         self(h).message = std::string("Preset not loaded") + (message ? std::string(": ") + message : std::string());
     }
     static void CLAP_ABI presetLoaded(const clap_host_t* h, uint32_t, const char*, const char*) { self(h).message.clear(); }
+    static void CLAP_ABI guiHintsChanged(const clap_host_t* h) { self(h).guiHints.store(true); }
+    static bool CLAP_ABI guiRequestResize(const clap_host_t* h, uint32_t width, uint32_t height) {
+        auto& s = self(h);
+        if (!width || !height || !s.guiCreated.load() || s.guiFloating) return false;
+        if (!isMain(h)) { s.guiSize.store(uint64_t(width) << 32 | height); return true; }
+        if (!s.window) return false;
+        s.window->setSize(width, height); return true;
+    }
+    static bool CLAP_ABI guiRequestShow(const clap_host_t* h) { auto& s = self(h); if (!s.guiCreated.load()) return false; s.guiShow.store(true); return true; }
+    static bool CLAP_ABI guiRequestHide(const clap_host_t* h) { auto& s = self(h); if (!s.guiCreated.load()) return false; s.guiHide.store(true); return true; }
+    // A floating window the person closed; one the plugin destroyed must be destroyed here too.
+    static void CLAP_ABI guiClosed(const clap_host_t* h, bool destroyed) { if (destroyed) self(h).guiGone.store(true); }
+    static const char* platformApi() noexcept {
+#if defined(__APPLE__)
+        return CLAP_WINDOW_API_COCOA;
+#elif defined(_WIN32)
+        return CLAP_WINDOW_API_WIN32;
+#else
+        return CLAP_WINDOW_API_X11;
+#endif
+    }
+    // Embedded where the host has windows of its own, else floating where the plugin floats one.
+    void findGui() {
+        gui = static_cast<const clap_plugin_gui_t*>(plugin->get_extension(plugin, CLAP_EXT_GUI));
+        guiApi = nullptr; guiFloating = false;
+        if (!gui || !gui->is_api_supported || !gui->create || !gui->destroy || !gui->show || !gui->hide) { gui = nullptr; return; }
+        if (const char* api = detail::Window::api(); api && gui->get_size && gui->set_parent && gui->is_api_supported(plugin, api, false)) guiApi = api;
+        else if (gui->is_api_supported(plugin, platformApi(), true)) { guiApi = platformApi(); guiFloating = true; }
+    }
+    void showGui(const std::string& title) {
+        if (!guiCreated.load()) {
+            detail::startWindows();
+            if (!gui->create(plugin, guiApi, guiFloating)) throw std::runtime_error("Plugin could not open its window");
+            guiCreated.store(true);
+            if (!guiFloating) {
+                uint32_t width = 0, height = 0;
+                if (!gui->get_size(plugin, &width, &height) || !width || !height) { width = 640; height = 480; }
+                window = detail::Window::create(title, width, height, gui->can_resize && gui->can_resize(plugin));
+                window->closing = [this] { guiGone.store(true); };
+                window->resized = [this](uint32_t& w, uint32_t& h) {
+                    if (gui->adjust_size) gui->adjust_size(plugin, &w, &h);
+                    if (gui->set_size) gui->set_size(plugin, w, h);
+                };
+                clap_window_t parent{}; parent.api = guiApi; parent.ptr = window->view();
+                if (!gui->set_parent(plugin, &parent)) throw std::runtime_error("Plugin could not open its window in the host's");
+            }
+        }
+        if (window) window->setTitle(title);
+        else if (gui->suggest_title) gui->suggest_title(plugin, title.c_str());
+        // An embedded editor shows with its window; a floating one must show itself.
+        if (!gui->show(plugin) && guiFloating) throw std::runtime_error("Plugin could not show its window");
+        if (window) window->show();
+    }
+    void destroyGui() {
+        if (guiCreated.exchange(false)) gui->destroy(plugin);
+        window.reset();
+        guiShow.store(false); guiHide.store(false); guiGone.store(false); guiHints.store(false); guiSize.store(0);
+    }
+    void serviceGui() {
+        if (!guiCreated.load()) return;
+        if (guiGone.load()) { destroyGui(); return; }
+        if (const auto size = guiSize.exchange(0); size && window) window->setSize(uint32_t(size >> 32), uint32_t(size));
+        if (guiHints.exchange(false) && window && gui->can_resize) window->setResizable(gui->can_resize(plugin));
+        if (guiHide.exchange(false)) { gui->hide(plugin); if (window) window->hide(); }
+        if (guiShow.exchange(false)) { gui->show(plugin); if (window) window->show(); }
+    }
     static const void* CLAP_ABI extension(const clap_host_t*, const char* id) {
         static const clap_host_thread_check_t threads{isMain, isAudio};
         static const clap_host_params_t parameters{rescanParams, clearParams, requestFlush};
@@ -296,7 +373,9 @@ struct Host::Impl {
         static const clap_host_posix_fd_support_t descriptors{registerFd, modifyFd, unregisterFd};
         static const oscairn_host_assets_t assets{resolveAsset};
         static const clap_host_preset_load_t presetLoad{presetError, presetLoaded};
+        static const clap_host_gui_t windows{guiHintsChanged, guiRequestResize, guiRequestShow, guiRequestHide, guiClosed};
         if (!id) return nullptr;
+        if (!std::strcmp(id, CLAP_EXT_GUI)) return &windows;
         if (!std::strcmp(id, OSCAIRN_EXT_ASSETS)) return &assets;
         if (!std::strcmp(id, CLAP_EXT_PRESET_LOAD) || !std::strcmp(id, CLAP_EXT_PRESET_LOAD_COMPAT)) return &presetLoad;
         if (!std::strcmp(id, CLAP_EXT_THREAD_CHECK)) return &threads;
@@ -340,6 +419,8 @@ struct Host::Impl {
     void close() {
         audioLayoutLocked=false;
         loaded.store(false);
+        if (plugin) destroyGui();
+        gui = nullptr; guiApi = nullptr;
         if (plugin) { deactivate(); if (plugin->destroy) plugin->destroy(plugin); }
         plugin = nullptr; params = nullptr; state = nullptr; sounds = nullptr; assetDependencies = nullptr; pluginLatency = nullptr;
         timerSupport = nullptr; fdSupport = nullptr; memory = nullptr; hasDeclared = false;
@@ -382,6 +463,7 @@ struct Host::Impl {
         s.fdSupport = static_cast<const clap_plugin_posix_fd_support_t*>(s.plugin->get_extension(s.plugin, CLAP_EXT_POSIX_FD_SUPPORT));
         s.memory = static_cast<const oscairn_plugin_memory_t*>(s.plugin->get_extension(s.plugin, OSCAIRN_EXT_MEMORY));
         if(s.memory && (!s.memory->estimate || !s.memory->current))throw std::runtime_error("Incomplete memory interface");
+        s.findGui();
         if (!bytes.empty()) {
             if (bytes.size() > maxStateBytes || !s.state || !s.state->load) throw std::runtime_error("Plugin cannot restore saved state");
             Stream stream; stream.bytes = bytes;
@@ -771,6 +853,7 @@ void Host::service() {
             }
         }
 #endif
+        s.serviceGui();
         const auto flags = s.rescan.exchange(0);
         const bool restart = s.restart.exchange(false);
         if (restart || (flags & CLAP_PARAM_RESCAN_ALL) || ((flags & CLAP_PARAM_RESCAN_INFO) && !s.readParameterInfo())) {
@@ -979,6 +1062,18 @@ std::vector<AssetReference> Host::assetDependencies() const {
     }
     return result;
 }
+bool Host::hasGui() const noexcept { return impl->guiApi != nullptr; }
+bool Host::guiOpen() const noexcept { return impl->guiCreated.load(); }
+bool Host::showGui(const std::string& title) {
+    auto& s = *impl;
+    if (!s.main()) return false;
+    if (!s.plugin || !s.guiApi) { s.message = "Plugin has no window here"; return false; }
+    try { s.showGui(title); return true; }
+    catch (const std::exception& e) { s.message = e.what(); }
+    catch (...) { s.message = "Plugin threw opening its window"; }
+    s.destroyGui(); return false;
+}
+void Host::closeGui() { auto& s = *impl; if (s.main() && s.plugin) s.destroyGui(); }
 bool Host::supportsState() const noexcept { return impl->state && impl->state->save && impl->state->load; }
 bool Host::supportsSoundSnapshot() const noexcept { return impl->exclusiveState && supportsState(); }
 bool Host::loaded() const noexcept { return impl->loaded.load(); }

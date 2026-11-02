@@ -8,6 +8,7 @@
 #include <clap/ext/timer-support.h>
 #include <clap/ext/latency.h>
 #include <clap/ext/preset-load.h>
+#include <clap/ext/gui.h>
 #include <clap/factory/preset-discovery.h>
 #include <oscairn-clap/ui.h>
 #include <oscairn-clap/memory.h>
@@ -28,6 +29,12 @@ namespace {
 std::atomic<bool> blockProcess{false}, enteredProcess{false}, releaseProcess{false};
 std::atomic<bool> savingState{false}, releaseState{false};
 std::atomic<int> threadErrors{0}, entryUsers{0}, processCalls{0}, callbackCalls{0};
+// The effect's window (CLAP gui), floating only, so a host shows it without drawing anything:
+// the instance whose window exists, whether it shows, and its suggested title. Main thread.
+struct Plugin;
+Plugin* guiOwner = nullptr;
+bool guiShown = false;
+std::string guiTitle;
 constexpr const char* ids[]{"org.kick.test.synth", "org.kick.test.effect", "org.kick.test.midi",
                             "org.kick.test.nan", "org.kick.test.error", "org.kick.test.sleep",
                             "org.kick.test.activate-failure", "org.kick.test.start-failure", "org.kick.test.stepped", "org.kick.test.no-state",
@@ -80,7 +87,7 @@ struct Plugin {
                 timer->register_timer(s.host, 1, &s.timerId);
             return true;
         };
-        api.destroy = [](const clap_plugin_t* p) { auto& s = get(p); s.main(); if (s.active || s.processing) ++threadErrors; delete &s; };
+        api.destroy = [](const clap_plugin_t* p) { auto& s = get(p); s.main(); if (s.active || s.processing || guiOwner == &s) ++threadErrors; delete &s; };
         api.activate = [](const clap_plugin_t* p, double rate, uint32_t, uint32_t max) {
             auto& s = get(p); s.main(); if (s.kind == 6) return false;
             if (s.kind == 8 && s.shownMode != 0) ++threadErrors; // its info rescan must not restart it
@@ -300,6 +307,23 @@ struct Plugin {
                 *out = {s.shared.size(), s.context.size(), 0}; return true;
             }};
         if (!std::strcmp(id, OSCAIRN_EXT_MEMORY)) return get(plugin).kind == 13 ? &memory : nullptr;
+        static const clap_plugin_gui_t gui{
+            [](const clap_plugin_t*, const char*, bool floating) { return floating; },
+            [](const clap_plugin_t*, const char**, bool*) { return false; },
+            [](const clap_plugin_t* p, const char*, bool floating) { auto& s = get(p); s.main(); if (!floating || guiOwner) return false; guiOwner = &s; return true; },
+            [](const clap_plugin_t* p) { auto& s = get(p); s.main(); if (guiOwner != &s) ++threadErrors; guiOwner = nullptr; guiShown = false; },
+            [](const clap_plugin_t*, double) { return false; },
+            [](const clap_plugin_t*, uint32_t*, uint32_t*) { return false; },
+            [](const clap_plugin_t*) { return false; },
+            [](const clap_plugin_t*, clap_gui_resize_hints_t*) { return false; },
+            [](const clap_plugin_t*, uint32_t*, uint32_t*) { return false; },
+            [](const clap_plugin_t*, uint32_t, uint32_t) { return false; },
+            [](const clap_plugin_t*, const clap_window_t*) { return false; },
+            [](const clap_plugin_t*, const clap_window_t*) { return false; },
+            [](const clap_plugin_t* p, const char* title) { get(p).main(); guiTitle = title ? title : ""; },
+            [](const clap_plugin_t* p) { auto& s = get(p); s.main(); if (guiOwner != &s) return false; guiShown = true; return true; },
+            [](const clap_plugin_t* p) { auto& s = get(p); s.main(); if (guiOwner != &s) return false; guiShown = false; return true; }};
+        if (!std::strcmp(id, CLAP_EXT_GUI)) return get(plugin).kind == 1 ? &gui : nullptr;
         return nullptr;
     }
 };
@@ -367,6 +391,22 @@ CLAP_EXPORT int fixture_thread_errors() { return threadErrors.load(); }
 CLAP_EXPORT int fixture_entry_users() { return entryUsers.load(); }
 CLAP_EXPORT int fixture_process_calls() { return processCalls.load(); }
 CLAP_EXPORT int fixture_callback_calls() { return callbackCalls.load(); }
+// The effect's window: 0 none, 1 hidden, 2 shown; its title. Main thread.
+CLAP_EXPORT int fixture_gui_state() { return guiOwner ? 1 + guiShown : 0; }
+CLAP_EXPORT const char* fixture_gui_title() { return guiTitle.c_str(); }
+// The effect asking its host, as a plugin's window does: 0 hide, 1 show, 2 closed and destroyed, 3 resize.
+CLAP_EXPORT bool fixture_gui_request(int what) {
+    if (!guiOwner) return false;
+    const auto* host = guiOwner->host;
+    const auto* gui = static_cast<const clap_host_gui_t*>(host->get_extension(host, CLAP_EXT_GUI));
+    if (!gui) return false;
+    switch (what) {
+    case 0: return gui->request_hide(host);
+    case 1: return gui->request_show(host);
+    case 2: guiShown = false; gui->closed(host, true); return true;
+    default: return gui->request_resize(host, 300, 200);
+    }
+}
 CLAP_EXPORT const clap_plugin_entry_t clap_entry{
     CLAP_VERSION,
     [](const char*) {
