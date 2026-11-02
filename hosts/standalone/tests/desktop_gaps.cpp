@@ -481,6 +481,26 @@ int main(int argc, char** argv)
                 check(pane.current() == 0 && pane.message().contains("no longer in the library"), "a gone entry is still marked: " + pane.message().toStdString());
                 check(wait([&] { return !engine.soundBusy(); }), "the staged setlist is done opening");
             }
+            // A reconnect to an engine still running (a timeout, another window) keeps its Capture
+            // buffer: Capture's length goes again only to an engine without it, a fresh one.
+            {
+                auto reconnect = [&] {
+                    tap.drop();
+                    engine.edit([](Control& c) { c.history(); }); // the next call finds the connection gone
+                    const bool dropped = wait([&] { return !engine.connected(); });
+                    return dropped && wait([&] { return engine.connected(); });
+                };
+                auto retro = [&] { double seconds = -1; wait([&] { return !engine.jobRunning(); }); engine.edit([&](Control& c) { seconds = c.recordRetroSeconds(); }); return seconds; };
+                check(wait([&] { return !engine.jobRunning(); }) && engine.setCapture(4).empty() && retro() == 4, "Capture keeps 4 seconds");
+                tap.reset();
+                check(reconnect(), "the client reconnects after a drop");
+                check(tap.count("record.retro") == 0 && retro() == 4, "the running engine's buffer is kept, not started again: " + std::to_string(tap.count("record.retro")));
+                engine.edit([](Control& c) { c.recordRetro(0); }); // as a fresh engine has it
+                tap.reset();
+                check(reconnect(), "the client reconnects again");
+                check(tap.count("record.retro") == 1 && retro() == 4, "an engine without Capture gets its length again: " + std::to_string(retro()));
+                check(engine.setCapture(0).empty(), "Capture off again");
+            }
             // A crash ends the desktop's every control with it; Home and the Performance app now
             // show the Panel's notice (and Restart where a restart is possible), and a setlist
             // entry does not pretend to be playing while the engine is gone.

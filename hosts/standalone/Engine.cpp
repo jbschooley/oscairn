@@ -67,15 +67,17 @@ namespace oscairn::standalone
             }
             catch(const std::exception&){}
     }
-    // This window keeps its managed engine (it stops when every window that keeps it has quit).
+    // This window keeps its managed engine (it stops when every window that keeps it has quit),
+    // and gives a fresh engine (a restart, or an external one restarted) the ignored ports and
+    // Capture it did not keep, as the engine it replaced had them.
     void Engine::attach()
     {
-        if(!process_)return;
-        try{client_->call("engine.attach");}catch(const std::exception& e){std::fprintf(stderr,"oscairn: engine.attach: %s\n",e.what());}
-        // A fresh engine kept neither the ignored ports nor Capture: resend both here, so a
-        // reconnect restores them as a restart does.
+        if(process_)try{client_->call("engine.attach");}catch(const std::exception& e){std::fprintf(stderr,"oscairn: engine.attach: %s\n",e.what());}
+        // Setting the same names again changes nothing.
         try{if(!ignoredInputs_.empty())control_->ignoreMidiInputs(ignoredInputs_);}catch(const std::exception& e){std::fprintf(stderr,"oscairn: ignored inputs: %s\n",e.what());}
-        if(captureSeconds_>0)try{control_->recordRetro(captureSeconds_);}catch(const std::exception& e){std::fprintf(stderr,"oscairn: capture: %s\n",e.what());}
+        // Only when the engine's length differs: setting it starts an empty buffer, and an engine
+        // still running (a timeout, another window) keeps the last seconds to capture.
+        if(captureSeconds_>0)try{if(control_->recordRetroSeconds()!=captureSeconds_)control_->recordRetro(captureSeconds_);}catch(const std::exception& e){std::fprintf(stderr,"oscairn: capture: %s\n",e.what());}
     }
     bool Engine::hasParam(const std::string& n,uint32_t p)const
     {try{return control_->hasParameter(control_->nodeId(n),p);}catch(const std::invalid_argument&){return false;}}
