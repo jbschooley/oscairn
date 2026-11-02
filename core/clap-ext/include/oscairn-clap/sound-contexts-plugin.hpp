@@ -24,10 +24,13 @@
 //   bool readPreset(uint32_t kind, const char* location, const char* loadKey, Patch&, std::string& error)
 // which reads the preset its preset discovery listed (preset-discovery-plugin.hpp) into a patch
 // that starts as Patch{}, and sets the table's prepare_preset to Engine::preparePreset.
-// It may provide snapshotLoading(bool), called around reading a snapshot's patches, and
+// It may provide buildPreset(Context&, std::string& error), called with the preset's patch in
+// place before the context is published (to build per-sound state; false refuses the preset),
+// snapshotLoading(bool), called around reading a snapshot's patches, and
 // voiceFinished(Voice&), called whenever a voice ends: released out, choked, stolen or reset.
-// A snapshot load resets every context's pins (users) and ends every voice: in
-// snapshotLoading(true), forget any pins the instrument holds itself, such as a ringing tail's.
+// A snapshot load that succeeds resets every context's pins (users) and ends every voice: in
+// restored(), forget any pins the instrument holds itself, such as a ringing tail's. A refused
+// load changes nothing and doesn't call restored(), so do not forget them in snapshotLoading(true).
 //
 // MIDI pitch bend and the mod wheel (CC 1) are kept per channel; each voice follows its
 // channel's values smoothly in VoiceBase::bend and modWheel once render calls followControls(v)
@@ -318,7 +321,9 @@ namespace oscairn::contexts
             if(!c) return fail("no free sound context");
             Patch patch{}; std::string error;
             if(!s.readPreset(kind, location, loadKey, patch, error)) return fail(error.empty() ? "preset not read" : error.c_str());
-            c->patch = std::move(patch); return s.publish(*c, name);
+            c->patch = std::move(patch);
+            if(!s.buildPreset(*c, error)) { c->patch = Patch{}; return fail(error.empty() ? "preset not built" : error.c_str()); }
+            return s.publish(*c, name);
         }
 
         // The snapshot callbacks are called only with rendering excluded.
@@ -426,6 +431,7 @@ namespace oscairn::contexts
         // Main thread, after a context is unpinned and discarded.
         void discarded(Context&) {}
         void snapshotLoading(bool) {}
+        bool buildPreset(Context&, std::string&) { return true; }
         void voiceFinished(Voice&) {}
     };
 }

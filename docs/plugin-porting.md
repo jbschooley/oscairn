@@ -124,8 +124,10 @@ sound contexts, `sound-contexts-plugin.hpp` (also MIT) implements the extension'
 selection, voice-ownership and snapshot rules; an instrument supplies its patch and voice DSP,
 as the Basic Synth and Sampler do. Its optional `voiceFinished(voice)` is called whenever a
 voice ends (released out, choked, stolen or reset), so an instrument need not poll its voices.
-A snapshot load resets every context's pins and ends every voice: an instrument that pins a
-context itself, as for a ringing tail, forgets those pins in `snapshotLoading(true)`. A plugin in its own repository vendors the folder at a
+A snapshot load that succeeds resets every context's pins and ends every voice: an instrument
+that pins a context itself, as for a ringing tail, forgets those pins in `restored()`, which a
+refused load never calls. `buildPreset(context, error)` runs with a preset's patch in place
+before the context is published, for an instrument that builds per-sound state. A plugin in its own repository vendors the folder at a
 pinned commit. The drafts change without notice during initial development; rebuild against
 the current headers.
 
