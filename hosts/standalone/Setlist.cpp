@@ -192,13 +192,18 @@ namespace oscairn::standalone
         current_ = -1;
         // Names and colors as the library has them now; entries it no longer has are marked.
         shown_.assign(setlist_.entries.size(), {});
-        Control::LibraryQuery all; all.limit = 1000;
+        // Entries are Performances: asking for both kinds would spend the 1000-item read on Sounds.
+        Control::LibraryQuery all; all.limit = 1000; all.kind = "performance";
         if(const auto found = engine_.library(all))
+        {
+            // A library larger than the read: what is not in it is unknown, not missing.
+            const bool whole = found->total <= found->items.size();
             for(size_t i = 0; i < setlist_.entries.size(); ++i)
             {
                 const auto at = std::find_if(found->items.begin(), found->items.end(), [&](const auto& item) { return item.id == setlist_.entries[i].id; });
-                if(at == found->items.end()) shown_[i].missing = true; else { setlist_.entries[i].name = at->name; shown_[i].color = at->color; }
+                if(at == found->items.end()) shown_[i].missing = whole; else { setlist_.entries[i].name = at->name; shown_[i].color = at->color; }
             }
+        }
         list_.updateContent(); list_.deselectAllRows();
         refreshChooser();
         say(juce::String(setlist_.entries.size()) + (setlist_.entries.size() == 1 ? " Performance" : " Performances"));

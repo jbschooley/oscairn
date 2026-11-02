@@ -312,6 +312,38 @@ int main(int argc, char** argv)
                 holdRequests = false;
                 check(wait([&] { return !engine.soundBusy() && !jobHeld.load() && engine.connected(); }), "the job finished");
             }
+            // A setlist marks entries "not in the library" once the mixed Sound+Performance read
+            // of 1000 items passes them: entries are Performances, and the read asks for that
+            // kind alone.
+            {
+                std::string lastId;
+                engine.edit([&](Control& c) { lastId = c.savePerformanceToLibrary("Z last", true); });
+                check(wait([&] { return !engine.soundBusy() && !lastId.empty(); }), "a Performance saved as the library's Z last");
+                const auto lib = juce::File(::getenv("OSCAIRN_DATA_HOME"));
+                const auto writeItem = [&](const char* kind, const std::string& folder, const std::string& id, const std::string& name) {
+                    const auto at = lib.getChildFile(kind).getChildFile(folder);
+                    at.createDirectory();
+                    at.getChildFile(std::string(kind == "Sounds" ? "sound" : "performance") + ".json").replaceWithText(
+                        "{\"format\":\"oscairn." + std::string(kind == "Sounds" ? "sound" : "performance") + "\",\"version\":" + std::string(kind == "Sounds" ? "7" : "11") +
+                        ",\"info\":{\"id\":\"" + id + "\",\"name\":\"" + name + "\",\"description\":\"\",\"tags\":[],\"color\":\"\",\"revision\":\"r\",\"parent\":\"\",\"hash\":\"h\",\"origin\":null}}");
+                };
+                for(int i = 0; i < 999; ++i) writeItem("Sounds", "Sound " + std::to_string(i), "sound-" + std::to_string(i), "Sound " + std::to_string(i));
+                writeItem("Performances", "Z dummy.oscairn", "perf-dummy", "Z dummy"); // sorted just before Z last: past the 1000-item mixed read
+                engine.edit([](Control& c) { c.libraryRescan(); });
+                check(wait([&] { const auto all = engine.library({}); return all && all->total >= 1003; }), "the library read holds 1001 staged items");
+                standalone::Actions actions;
+                standalone::SetlistPane pane(engine, actions, data.getChildFile("Setlists-staged"));
+                const std::string setlistName = "Staged";
+                standalone::Setlist staged; staged.name = setlistName; staged.entries = {{lastId, "Z last", {}}, {"perf-gone", "Gone", {}}};
+                standalone::writeSetlist(data.getChildFile("Setlists-staged"), staged);
+                pane.open(standalone::setlistFile(data.getChildFile("Setlists-staged"), setlistName));
+                pane.go(0);
+                check(pane.current() == 0 && !pane.message().contains("no longer in the library"), "the last Performance opens: " + pane.message().toStdString());
+                check(wait([&] { return !engine.soundBusy(); }), "it finished opening");
+                pane.go(1);
+                check(pane.current() == 0 && pane.message().contains("no longer in the library"), "a gone entry is still marked: " + pane.message().toStdString());
+                check(wait([&] { return !engine.soundBusy(); }), "the staged setlist is done opening");
+            }
             juce::LookAndFeel::setDefaultLookAndFeel(nullptr);
             configuration.deleteRecursively();
         }
