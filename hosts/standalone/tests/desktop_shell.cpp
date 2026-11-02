@@ -176,6 +176,7 @@ int main(int argc, char** argv)
                     standalone::PerformanceApp app(engine, argv[2]);
                     standalone::AppFrame frame(engine, "Performance", app, {});
                     standalone::setDesktopMode(frame, 2); frame.setSize(1024, 600);
+                    frame.setVisible(true); frame.addToDesktop(juce::ComponentPeer::windowIsTemporary); // showing: Play asks nothing while hidden
                     app.attach(frame.bar(), [] {});
                     auto& play = app.play();
                     check(play.isVisible() && !app.editing(), "the Performance app opens in Play");

@@ -236,7 +236,7 @@ namespace oscairn::standalone
 
     void PlayView::timerCallback()
     {
-        if(!isVisible()) return; // Edit's views are showing
+        if(!isShowing()) return; // Edit's views are showing, or the app is in the background
         if(learning_ && engine_.touches() != touches_)
         {
             touches_ = engine_.touches(); learnFrom_ = text(engine_.lastTouched());
