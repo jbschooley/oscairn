@@ -9,9 +9,12 @@
 // path finds it. A build for another platform added on one device goes along too. The store
 // lists each plugin with what uses it, and removing one is refused while the open Performance
 // plays it; what used it then opens with a stand-in until it is installed again.
-//   oscairn-archives-test FIXTURE.clap
+// Signatures (RFC 0006): oscairn-sign signs a build and an archive, an export carries the build's
+// signature and signs its items and the whole archive when asked.
+//   oscairn-archives-test FIXTURE.clap OSCAIRN-SIGN
 #include "oscairn/session.h"
 #include "oscairn/package.h"
+#include "miniz/miniz.h"
 #include "oscairn/wav_file.h"
 #include "../../plugin-host/src/StateFiles.h"
 #include <chrono>
@@ -20,6 +23,7 @@
 #include <cstring>
 #include <fstream>
 #include <sstream>
+#include <sys/stat.h>
 
 using namespace oscairn;
 namespace fs = std::filesystem;
@@ -31,12 +35,24 @@ namespace
     std::string read(const fs::path& f) { std::ifstream in(f, std::ios::binary); std::ostringstream out; out << in.rdbuf(); return out.str(); }
     void device(const fs::path& home) { fs::create_directories(home); ::setenv("OSCAIRN_DATA_HOME", home.c_str(), 1); }
     std::vector<Control::LibraryItem> items(Session& s, const std::string& kind) { Control::LibraryQuery q; q.kind = kind; return s.libraryQuery(q).items; }
+    std::string shell(const fs::path& p) { std::string out = "'"; for(char c : p.string()) out += c == '\'' ? std::string("'\\''") : std::string(1, c); return out + "'"; }
+    // A command's exit status and what it printed.
+    std::pair<int, std::string> run(const std::string& command)
+    {
+        std::string out;
+        FILE* p = ::popen(command.c_str(), "r");
+        if(!p) return {-1, out};
+        char buffer[4096];
+        while(const auto n = std::fread(buffer, 1, sizeof buffer, p)) out.append(buffer, n);
+        return {::pclose(p), out};
+    }
 }
 
 int main(int argc, char** argv)
 {
-    if(argc < 2) { std::fprintf(stderr, "usage: %s FIXTURE\n", argv[0]); return 2; }
+    if(argc < 3) { std::fprintf(stderr, "usage: %s FIXTURE OSCAIRN-SIGN\n", argv[0]); return 2; }
     const char* fixture = argv[1];
+    const std::string tool = shell(argv[2]);
     try
     {
         state_files::TemporaryDirectory temp;
@@ -255,6 +271,65 @@ int main(int argc, char** argv)
             const auto plugin = g.installedPlugins().at(0);
             g.removePlugin(plugin.format, plugin.id, plugin.version);
             check(g.installedPlugins().empty(), "so it is removed");
+        }
+        // Device H (RFC 0006): a plugin author signs a build with oscairn-sign; an export carries
+        // that signature, and signs its items and the whole archive with a key of the user's.
+        const auto signedArchive = temp.path / "Signed.olib";
+        std::string authorKey, version;
+        {
+            device(temp.path / "h");
+            const auto author = temp.path / "author.key";
+            const auto made = run(tool + " key " + shell(author));
+            authorKey = signing::loadKey(author).publicKey;
+            check(made.first == 0 && made.second.find(signing::keyId(authorKey)) != std::string::npos && made.second.find(authorKey) != std::string::npos, "oscairn-sign makes a key and shows its ID and public key");
+            const auto build = temp.path / "h" / "Synth.clap";
+            fs::copy_file(fixture, build);
+            Session h(48000, 64);
+            h.add("synth", build.string(), "org.kick.test.synth"); h.commit();
+            version = h.graphState().topology.nodes.at(0).plugin.version;
+            check(run(tool + " build " + shell(author) + " clap org.kick.test.synth " + shell(version) + " " + platform() + " " + shell(build)).first == 0 &&
+                  signing::readSignatures(build.string() + ".sig").size() == 1, "oscairn-sign signs a build, beside it");
+            const auto mine = h.makeSigningKey("mine");
+            struct stat st{};
+            check(::stat((temp.path / "h" / "Keys" / "mine.key").c_str(), &st) == 0 && (st.st_mode & 0777) == 0600, "a key made in the data folder is readable only by the user");
+            check(h.signingKeys().size() == 1 && h.signingKeys()[0].id == mine.id && mine.id == signing::keyId(mine.key), "the data folder's keys are listed by name, ID and public key");
+            bool twice = false; try { h.makeSigningKey("mine"); } catch(const std::exception&) { twice = true; }
+            check(twice, "a key is not made over another");
+            h.savePerformanceToLibrary("Signed");
+            check(h.exportPerformance(signedArchive.string(), false, {"mine", true, true}).empty(), "a signed export leaves nothing out");
+            const auto packed = readPackage(signedArchive, temp.path / "h-out");
+            check(packed.signature.key == mine.key && !packed.items.empty() && packed.items[0].signatures.size() == 1 && packed.items[0].signatures[0].key == mine.key,
+                  "the export signs its items and the whole archive with the chosen key");
+            check(packed.plugins.size() == 1 && packed.plugins[0].builds.size() == 1 && packed.plugins[0].builds[0].signatures.size() == 1 &&
+                  packed.plugins[0].builds[0].signatures[0].key == authorKey, "the export carries the build's signature from beside it");
+            h.exportPerformance((temp.path / "Plain.olib").string());
+            const auto plain = readPackage(temp.path / "Plain.olib", {});
+            check(plain.signature.key.empty() && plain.items[0].signatures.empty(), "an export is signed only when the exporter chooses");
+            bool unnamed = false; try { h.exportPerformance((temp.path / "None.olib").string(), false, {"nobody", false, true}); } catch(const std::exception&) { unnamed = true; }
+            check(unnamed && !fs::exists(temp.path / "None.olib"), "an export signed with a key that is not there is refused");
+            // oscairn-sign: an archive signed afterwards, and its signatures checked.
+            check(run(tool + " archive " + shell(author) + " " + shell(temp.path / "Plain.olib")).first == 0 && readPackage(temp.path / "Plain.olib", {}).signature.key == authorKey,
+                  "oscairn-sign signs an archive whole");
+            const auto verified = run(tool + " verify " + shell(signedArchive));
+            check(verified.first == 0 && verified.second.find("archive " + packed.id + " " + mine.id) != std::string::npos &&
+                  verified.second.find("build clap org.kick.test.synth " + version + " " + platform() + " " + signing::keyId(authorKey)) != std::string::npos,
+                  "oscairn-sign says who signed what: " + verified.second);
+            // The manifest's name changed under the archive's signature, every other entry as it was.
+            {
+                mz_zip_archive in{}, out{};
+                mz_zip_reader_init_file(&in, signedArchive.c_str(), 0);
+                mz_zip_writer_init_file(&out, (temp.path / "Changed.olib").c_str(), 0);
+                for(mz_uint i = 0; i < mz_zip_reader_get_num_files(&in); ++i)
+                {
+                    mz_zip_archive_file_stat st; mz_zip_reader_file_stat(&in, i, &st);
+                    if(std::string(st.m_filename) != "library.json") { mz_zip_writer_add_from_zip_reader(&out, &in, i); continue; }
+                    std::string m(size_t(st.m_uncomp_size), '\0'); mz_zip_reader_extract_to_mem(&in, i, m.data(), m.size(), 0);
+                    m.replace(m.find("\"Signed\""), 8, "\"Signer\"");
+                    mz_zip_writer_add_mem(&out, "library.json", m.data(), m.size(), MZ_DEFAULT_COMPRESSION);
+                }
+                mz_zip_writer_finalize_archive(&out); mz_zip_writer_end(&out); mz_zip_reader_end(&in);
+            }
+            check(run(tool + " verify " + shell(temp.path / "Changed.olib")).first != 0, "oscairn-sign refuses an archive changed after it was signed");
         }
     }
     catch(const std::exception& e) { std::fprintf(stderr, "FAIL: %s\n", e.what()); ++failures; }

@@ -20,7 +20,7 @@ namespace oscairn
         void appClosed(const std::string& app) override;
         MemoryState memoryState() override;
         Estimate estimate(const std::string& directory = {}) override;
-        std::vector<std::string> exportPerformance(const std::string& file, bool editedSounds = false) override;
+        std::vector<std::string> exportPerformance(const std::string& file, bool editedSounds = false, const ExportSigning& sign = {}) override;
         void loadPerformance(const std::string& directory) override;
         bool preparePerformance(const std::string& directory) override;
         PerformanceInfo performanceInfo() const override;
@@ -46,7 +46,9 @@ namespace oscairn
         void auditionStart(const std::string& id, uint32_t part = 0) override;
         void auditionStop(bool keep = false) override;
         Audition audition() const override;
-        std::vector<std::string> exportLibraryItem(const std::string& id, const std::string& file, bool editedSounds = false) override;
+        std::vector<std::string> exportLibraryItem(const std::string& id, const std::string& file, bool editedSounds = false, const ExportSigning& sign = {}) override;
+        std::vector<SigningKey> signingKeys() override;
+        SigningKey makeSigningKey(const std::string& name) override;
         std::string libraryCopy(const std::string& id) override;
         SoundSaved savePartAsSound(uint32_t part, const std::string& name, bool asNew = false) override;
         std::vector<std::string> loadSound(uint32_t part, const std::string& id) override;

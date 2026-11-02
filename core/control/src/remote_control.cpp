@@ -334,9 +334,11 @@ namespace oscairn
     namespace {
         std::vector<std::string> strings(V v){std::vector<std::string> out;for(auto e:array(v))out.push_back(string(e));return out;}
         std::string quoted(const std::vector<std::string>& values){std::string out="[";for(const auto& v:values){if(out.size()>1)out+=',';out+=quote(v);}return out+']';}
+        // An export's sign member, when it signs anything.
+        std::string signing(const Control::ExportSigning& s){return s.items || s.archive?",\"sign\":{\"key\":"+quote(s.key)+",\"items\":"+(s.items?"true":"false")+",\"archive\":"+(s.archive?"true":"false")+'}':std::string();}
     }
-    std::vector<std::string> RemoteControl::exportPerformance(const std::string& file,bool editedSounds) {
-        auto d=impl_->call("performance.export","{\"file\":"+quote(file)+",\"editedSounds\":"+(editedSounds?"true":"false")+'}',120000);
+    std::vector<std::string> RemoteControl::exportPerformance(const std::string& file,bool editedSounds,const ExportSigning& sign) {
+        auto d=impl_->call("performance.export","{\"file\":"+quote(file)+",\"editedSounds\":"+(editedSounds?"true":"false")+signing(sign)+'}',120000);
         return strings(field(field(d.get(),"result"),"notes"));
     }
     Control::PerformanceInfo RemoteControl::performanceInfo() const {
@@ -411,9 +413,18 @@ namespace oscairn
         auto d=impl_->call("audition.get");auto r=field(d.get(),"result");
         return {string(field(r,"id")),string(field(r,"kind")),static_cast<uint32_t>(integer(field(r,"part")))};
     }
-    std::vector<std::string> RemoteControl::exportLibraryItem(const std::string& id,const std::string& file,bool editedSounds) {
-        auto d=impl_->call("library.export","{\"id\":"+quote(id)+",\"file\":"+quote(file)+",\"editedSounds\":"+(editedSounds?"true":"false")+'}',120000);
+    std::vector<std::string> RemoteControl::exportLibraryItem(const std::string& id,const std::string& file,bool editedSounds,const ExportSigning& sign) {
+        auto d=impl_->call("library.export","{\"id\":"+quote(id)+",\"file\":"+quote(file)+",\"editedSounds\":"+(editedSounds?"true":"false")+signing(sign)+'}',120000);
         return strings(field(field(d.get(),"result"),"notes"));
+    }
+    std::vector<Control::SigningKey> RemoteControl::signingKeys() {
+        auto d=impl_->call("keys.list","{}");std::vector<SigningKey> out;
+        for(auto k:array(field(field(d.get(),"result"),"keys")))out.push_back({string(field(k,"name")),string(field(k,"id")),string(field(k,"key"))});
+        return out;
+    }
+    Control::SigningKey RemoteControl::makeSigningKey(const std::string& name) {
+        auto d=impl_->call("keys.make","{\"name\":"+quote(name)+'}');auto k=field(d.get(),"result");
+        return {string(field(k,"name")),string(field(k,"id")),string(field(k,"key"))};
     }
     std::string RemoteControl::libraryCopy(const std::string& id) {
         auto d=impl_->call("library.copy","{\"id\":"+quote(id)+'}',30000);return string(field(field(d.get(),"result"),"id"));

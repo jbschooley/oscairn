@@ -97,6 +97,12 @@ Everything else is handled for you:
   folder). A Performance made on a Mac opens on Linux with a stand-in unless a Linux build of
   the same version went with it or is installed. Keep the ID and version stable across platforms, and keep everything
   the plugin needs inside its bundle; files it installs elsewhere do not go with it.
+- **Signing your builds** ([RFC 0006](rfcs/0006-packages-and-portability.md#signatures)):
+  `oscairn-sign key author.key` makes your key (keep it private; it is readable only by you),
+  and `oscairn-sign build author.key clap <id> <version> <platform> MyPlugin.clap` writes
+  `MyPlugin.clap.sig` beside the build, over its ID, version, platform and digest. Ship the
+  `.sig` beside the bundle: exports carry it. Re-sign after every rebuild; a signature over another
+  build is left out. Publish your key's ID (shown by `oscairn-sign key`) so users can check it.
 - **A plugin that is not here,** in another version, or that fails to load opens as a
   stand-in: silent, its ports and parameters as saved, its state written back unchanged, so
   installing the plugin later brings the sound back.

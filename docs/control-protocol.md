@@ -895,7 +895,11 @@ fader or name in the Performance, nor wires to or from the rest of the graph.
   Performance, every sample its plugins use, every build there is of each CLAP plugin they use,
   and the library Sound of each part still that Sound (with `editedSounds`, also each edited
   part's). `notes` says what was left out: an LV2 plugin (installed on each device, never carried), or one not on this device. It refuses
-  a file that exists.
+  a file that exists. Each plugin build carries its publishers' signatures, from `<bundle>.sig`
+  beside it or in the store (one that is not over that build is left out and noted). Optional
+  `sign`, `{key,items,archive}`, signs with the signing key named (`keys.list`): each item
+  with `items`, the whole archive with `archive` ([signatures](library-archive.md#signatures)).
+  Nothing is signed unless asked.
 - `audition.start` takes `{id}` and, for a Sound, the `part` to try it in; `audition.stop` takes
   an optional `keep`; both return `{"accepted":true}`. `audition.get` (`{}`) returns `{id,kind,part}`
   (`id` empty when none). A Sound plays in the part's place, its chain set aside; a Performance
@@ -905,7 +909,7 @@ fader or name in the Performance, nor wires to or from the rest of the graph.
   undo). Edits made meanwhile go with the tried item. Starting another stops the one before;
   opening a Performance keeps it. With a budget set, a Performance that would not fit beside the
   open one is refused.
-- `library.export` takes `{id,file}` and optional `editedSounds`, and returns the same: a
+- `library.export` takes `{id,file}` and optional `editedSounds` and `sign`, and returns the same: a
   library item as it is saved, without opening it. A Performance comes with its parts' Sounds
   by the same rule (from what its file records), a Sound alone; with every sample and plugin they
 use.
@@ -943,6 +947,11 @@ Libraries come as [archives](library-archive.md): a library, or an exported Perf
   its name, what it is trusted for (any of `plugins`, `apps` and `content`) and whether it is
   revoked. `trust.set` takes `{key,name,scope}` and optional `revoked`, adding the key or
   replacing its entry; `trust.remove` takes `{id}`. Both return `{"accepted":true}`.
+- `keys.list` (`{}`) returns `{keys}`, the signing keys in the data folder's `Keys/`, each
+  `{name,id,key}`: its name, ID and public key; a private key is never sent. `keys.make` takes
+  `{name}` (letters, digits, `.`, `-` and `_`, at most 64, not starting with `.`) and
+  returns the new key's `{name,id,key}`; its private key is written to `Keys/<name>.key`,
+  readable only by the user. A name already used is refused.
 - `library.uninstall` takes `{library}`; `library.delete` takes `{id}`, any item's.
 - `library.query` items carry `library`: the installed library holding them, locked, or empty
   for the user's own. Saving over a locked item, a Performance by `library.save` or a part's

@@ -5,6 +5,7 @@
 #include "oscairn/assets.h"
 #include "oscairn/parts.h"
 #include "oscairn/library.h"
+#include "oscairn/signing.h"
 
 #include <array>
 #include <chrono>
@@ -47,8 +48,10 @@ namespace oscairn
         void appClosed(const std::string& app) override;
         MemoryState memoryState() override;
         Estimate estimate(const std::string& directory = {}) override;
-        std::vector<std::string> exportPerformance(const std::string& file, bool editedSounds = false) override;
-        std::vector<std::string> exportLibraryItem(const std::string& id, const std::string& file, bool editedSounds = false) override;
+        std::vector<std::string> exportPerformance(const std::string& file, bool editedSounds = false, const ExportSigning& sign = {}) override;
+        std::vector<std::string> exportLibraryItem(const std::string& id, const std::string& file, bool editedSounds = false, const ExportSigning& sign = {}) override;
+        std::vector<SigningKey> signingKeys() override;
+        SigningKey makeSigningKey(const std::string& name) override;
         void loadPerformance(const std::string& directory) override;
         bool preparePerformance(const std::string& directory) override;
         PerformanceInfo performanceInfo() const override {return info_;}
@@ -454,7 +457,8 @@ namespace oscairn
         std::unique_ptr<Prepared> prepared_; // the next one, prepared ahead; after graph_, so it goes first
         std::set<NodeId> nodesOf(const Part& part) const;
         static std::vector<assets::Ref> assetsOf(const std::filesystem::path& manifest);
-        std::vector<std::string> exportArchive(const std::string& file, const std::string& kind, const std::function<std::vector<PartSource>(const std::filesystem::path&, Package&)>& write, bool editedSounds);
+        std::vector<std::string> exportArchive(const std::string& file, const std::string& kind, const std::function<std::vector<PartSource>(const std::filesystem::path&, Package&)>& write, bool editedSounds, const ExportSigning& sign);
+        static signing::Key signingKey(const std::string& name); // Keys/<name>.key in the data folder
         uint64_t revision_ = 0, sequence_ = 0;
         using Address = std::pair<NodeId,uint32_t>;
         struct Command { ChangeKind kind; double value; };

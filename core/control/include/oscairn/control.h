@@ -169,10 +169,19 @@ namespace oscairn
         // its plugins use, and the library Sound of each part still that Sound; with editedSounds,
         // also the Sound of each part edited since, as it is in the library. Refuses a file that exists.
         // Returns notes on what could not go: plugins not here, formats not bundled yet.
-        virtual std::vector<std::string> exportPerformance(const std::string& file, bool editedSounds = false) = 0;
+        // sign (RFC 0006, the exporter's choice): with the signing key named, sign each item, the
+        // whole archive, or both. Plugin builds carry their publishers' signatures either way.
+        struct ExportSigning { std::string key; bool items, archive; }; // no member initializers, so it can be a default argument here; {} is all false
+        virtual std::vector<std::string> exportPerformance(const std::string& file, bool editedSounds = false, const ExportSigning& sign = {}) = 0;
         // A library item as an archive, as it is saved: a Performance with its parts' Sounds (an
         // edited part's when editedSounds), or a Sound; every sample they use. Refuses a file that exists.
-        virtual std::vector<std::string> exportLibraryItem(const std::string& id, const std::string& file, bool editedSounds = false) = 0;
+        virtual std::vector<std::string> exportLibraryItem(const std::string& id, const std::string& file, bool editedSounds = false, const ExportSigning& sign = {}) = 0;
+        // Signing keys (RFC 0006): private keys in the data folder, Keys/<name>.key, each readable
+        // only by the user; listed by name, ID and public key, never the private key. Make: a new
+        // one; a name is letters, digits, '.', '-' and '_', at most 64, not starting with '.'.
+        struct SigningKey { std::string name, id, key; };
+        virtual std::vector<SigningKey> signingKeys() = 0;
+        virtual SigningKey makeSigningKey(const std::string& name) = 0;
         virtual void loadPerformance(const std::string& directory) = 0;
         // The next Performance, read and its plugins loaded off the audio thread while this one
         // plays (RFC 0021), so loading it then only publishes it. False: it would not fit beside

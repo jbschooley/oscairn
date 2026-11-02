@@ -94,6 +94,17 @@ namespace oscairn
             if( result.ec != std::errc{} ) throw std::runtime_error( "Cannot encode number" );
             return { buffer, result.ptr };
         }
+        // An export's optional sign: {key, items, archive} (RFC 0006).
+        Control::ExportSigning exportSigning( Value v )
+        {
+            Control::ExportSigning s{};
+            if( !v ) return s;
+            fields( v, { "key", "items", "archive" } );
+            s.key = std::string( string( detail::member( v, "key" ) ) );
+            s.items = detail::member( v, "items" ) && boolean( detail::member( v, "items" ) );
+            s.archive = detail::member( v, "archive" ) && boolean( detail::member( v, "archive" ) );
+            return s;
+        }
         std::string join( const std::vector<std::string>& values )
         {
             std::string result = "[";
@@ -401,7 +412,7 @@ namespace oscairn
             if( method == "session.hello" )
             {
                 fields(p, {});
-                return R"({"protocolVersion":1,"server":"oscairn","capabilities":["performance.save","performance.load","performance.prepare","performance.export","budget.set","budget.estimate","performance.info","performance.setInfo","library.query","library.favorite","library.tag","library.edit","library.copy","library.export","audition.start","audition.stop","audition.get","record.start","record.stop","record.get","record.takes","library.rescan","library.contents","library.install","library.libraries","library.uninstall","library.delete","library.save","library.load","parts.saveSound","parts.loadSound","parts.fromSound","performance.contents","performance.import","state.info","state.save","presets.list","properties.list","properties.get","properties.set","properties.request","sounds.get","sounds.prepare","sounds.select","sounds.discard","assets.register","assets.import","assets.libraries","session.status","engine.attach","engine.release","params.list","params.get","params.set","params.text","params.gesture","graph.audio-routing","graph.get","graph.add","effects.create","effects.resources","graph.remove","graph.replace","graph.connect","graph.disconnect","graph.map","graph.unmap","graph.commit","parts.add","parts.remove","parts.insert","parts.removeNode","parts.move","parts.addSplit","parts.removeSplit","parts.addLane","parts.removeLane","parts.lane","parts.input","parts.output","parts.send","parts.level","parts.name","parts.solo","parts.pan","parts.meters","wires.meters","edit.undo","edit.redo","edit.history","wires.connect","wires.disconnect","wires.enable","graph.enable","wires.mix","wires.zones","scenes.add","scenes.store","scenes.select","scenes.remove","scenes.name","scenes.scope","scenes.transition","scenes.untouched","controls.add","controls.remove","controls.name","controls.targets","controls.set","subscribe","unsubscribe","transport.get","transport.set","notes.send","notes.panic","midi.ignore","pads.get","pads.set","pads.play","pads.pressure","assignments.get","assignments.set","parts.midiOut","trust.list","trust.set","trust.remove"],"limits":{"messageBytes":65536,"depth":32,"batch":64,"parameterChanges":128}})";
+                return R"({"protocolVersion":1,"server":"oscairn","capabilities":["performance.save","performance.load","performance.prepare","performance.export","budget.set","budget.estimate","performance.info","performance.setInfo","library.query","library.favorite","library.tag","library.edit","library.copy","library.export","audition.start","audition.stop","audition.get","record.start","record.stop","record.get","record.takes","library.rescan","library.contents","library.install","library.libraries","library.uninstall","library.delete","library.save","library.load","parts.saveSound","parts.loadSound","parts.fromSound","performance.contents","performance.import","state.info","state.save","presets.list","properties.list","properties.get","properties.set","properties.request","sounds.get","sounds.prepare","sounds.select","sounds.discard","assets.register","assets.import","assets.libraries","session.status","engine.attach","engine.release","params.list","params.get","params.set","params.text","params.gesture","graph.audio-routing","graph.get","graph.add","effects.create","effects.resources","graph.remove","graph.replace","graph.connect","graph.disconnect","graph.map","graph.unmap","graph.commit","parts.add","parts.remove","parts.insert","parts.removeNode","parts.move","parts.addSplit","parts.removeSplit","parts.addLane","parts.removeLane","parts.lane","parts.input","parts.output","parts.send","parts.level","parts.name","parts.solo","parts.pan","parts.meters","wires.meters","edit.undo","edit.redo","edit.history","wires.connect","wires.disconnect","wires.enable","graph.enable","wires.mix","wires.zones","scenes.add","scenes.store","scenes.select","scenes.remove","scenes.name","scenes.scope","scenes.transition","scenes.untouched","controls.add","controls.remove","controls.name","controls.targets","controls.set","subscribe","unsubscribe","transport.get","transport.set","notes.send","notes.panic","midi.ignore","pads.get","pads.set","pads.play","pads.pressure","assignments.get","assignments.set","parts.midiOut","trust.list","trust.set","trust.remove","keys.list","keys.make"],"limits":{"messageBytes":65536,"depth":32,"batch":64,"parameterChanges":128}})";
             }
             if( method == "engine.attach" || method == "engine.release" )
             {
@@ -469,9 +480,9 @@ namespace oscairn
                     ",\"budget\":{\"cpu\":"+encode(e.budget.cpu)+",\"memory\":"+std::to_string(e.budget.memory)+"},\"plugins\":"+join(plugins)+'}';
             }
             if(method=="performance.export") {
-                fields(p,{"file","editedSounds"});
+                fields(p,{"file","editedSounds","sign"});
                 std::vector<std::string> notes;
-                try{for(const auto& n:c.exportPerformance(std::string(string(member(p,"file"))),member(p,"editedSounds") && boolean(member(p,"editedSounds"))))notes.push_back(quote(n));}
+                try{for(const auto& n:c.exportPerformance(std::string(string(member(p,"file"))),member(p,"editedSounds") && boolean(member(p,"editedSounds")),exportSigning(member(p,"sign"))))notes.push_back(quote(n));}
                 catch(const std::exception& e){throw Failure{-32005,e.what()};}
                 return "{\"exported\":true,\"notes\":"+join(notes)+'}';
             }
@@ -533,9 +544,9 @@ namespace oscairn
                 return method=="record.get"?"{\"recording\":"+std::to_string(recording)+",\"takes\":"+join(takes)+'}':"{\"takes\":"+join(takes)+'}';
             }
             if(method=="library.export") {
-                fields(p,{"id","file","editedSounds"});
+                fields(p,{"id","file","editedSounds","sign"});
                 std::vector<std::string> notes;
-                try{for(const auto& n:c.exportLibraryItem(std::string(string(member(p,"id"))),std::string(string(member(p,"file"))),member(p,"editedSounds") && boolean(member(p,"editedSounds"))))notes.push_back(quote(n));}
+                try{for(const auto& n:c.exportLibraryItem(std::string(string(member(p,"id"))),std::string(string(member(p,"file"))),member(p,"editedSounds") && boolean(member(p,"editedSounds")),exportSigning(member(p,"sign"))))notes.push_back(quote(n));}
                 catch(const std::exception& e){throw Failure{-32005,e.what()};}
                 return "{\"exported\":true,\"notes\":"+join(notes)+'}';
             }
@@ -645,6 +656,17 @@ namespace oscairn
                 catch(const std::invalid_argument& e){throw Failure{-32602,e.what()};}
                 catch(const std::exception& e){throw Failure{-32005,e.what()};}
                 return R"({"accepted":true})";
+            }
+            // Signing keys: names, IDs and public keys, never the private key.
+            if(method=="keys.list" || method=="keys.make") {
+                auto entry=[](const Control::SigningKey& k){return "{\"name\":"+quote(k.name)+",\"id\":"+quote(k.id)+",\"key\":"+quote(k.key)+'}';};
+                try{
+                    if(method=="keys.make"){fields(p,{"name"});return entry(c.makeSigningKey(std::string(string(member(p,"name")))));}
+                    fields(p,{});std::vector<std::string> out;
+                    for(const auto& k:c.signingKeys())out.push_back(entry(k));
+                    return "{\"keys\":"+join(out)+'}';
+                }catch(const std::invalid_argument& e){throw Failure{-32602,e.what()};}
+                catch(const std::exception& e){throw Failure{-32005,e.what()};}
             }
             if(method=="library.tag") {
                 fields(p,{"tag","hidden","color"});

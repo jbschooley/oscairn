@@ -2339,6 +2339,27 @@
                 },
                 "editedSounds": {
                   "type": "boolean"
+                },
+                "sign": {
+                  "type": "object",
+                  "description": "Signs with the signing key named: each item, the whole archive, or both",
+                  "properties": {
+                    "key": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 64
+                    },
+                    "items": {
+                      "type": "boolean"
+                    },
+                    "archive": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "key"
+                  ],
+                  "additionalProperties": false
                 }
               },
               "required": [
@@ -2381,6 +2402,27 @@
                 },
                 "editedSounds": {
                   "type": "boolean"
+                },
+                "sign": {
+                  "type": "object",
+                  "description": "Signs with the signing key named: each item, the whole archive, or both",
+                  "properties": {
+                    "key": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 64
+                    },
+                    "items": {
+                      "type": "boolean"
+                    },
+                    "archive": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "key"
+                  ],
+                  "additionalProperties": false
                 }
               },
               "required": [
@@ -3215,6 +3257,67 @@
               },
               "required": [
                 "id"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "params"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
+              "const": "keys.list",
+              "description": "The signing keys in the data folder: names, IDs and public keys, never a private key"
+            },
+            "params": {
+              "type": "object",
+              "properties": {},
+              "required": [],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "params"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
+              "const": "keys.make",
+              "description": "Makes a signing key in the data folder, readable only by the user"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9_-][A-Za-z0-9._-]{0,63}$"
+                }
+              },
+              "required": [
+                "name"
               ],
               "additionalProperties": false
             }

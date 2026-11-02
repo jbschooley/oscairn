@@ -5,6 +5,7 @@
 #include "oscairn/signing.h"
 #include "JsonInput.h"
 #include <algorithm>
+#include <cctype>
 #include <fstream>
 #include <memory>
 #include <set>
@@ -66,6 +67,39 @@ void Session::setTrustedKey(const TrustedKey& key){
     const auto at=std::find_if(keys.begin(),keys.end(),[&](const auto& k){return k.key==t.key;});
     if(at!=keys.end())*at=t;else keys.push_back(t);
     writeTrust(keys);
+}
+
+// Signing keys: Keys/<name>.key in the data folder, each readable only by the user.
+namespace {
+fs::path keyFile(const std::string& name){
+    if(name.empty() || name.size()>64 || name[0]=='.' || !std::all_of(name.begin(),name.end(),[](char c){return std::isalnum(static_cast<unsigned char>(c)) || c=='.' || c=='-' || c=='_';}))
+        throw std::invalid_argument("a key's name is letters, digits, '.', '-' and '_', at most 64, not starting with '.'");
+    return dataHome()/"Keys"/(name+".key");
+}
+}
+
+signing::Key Session::signingKey(const std::string& name){return signing::loadKey(keyFile(name));}
+
+std::vector<Control::SigningKey> Session::signingKeys(){
+    std::vector<SigningKey> out;
+    std::error_code e;
+    if(fs::is_directory(dataHome()/"Keys",e))for(const auto& f:fs::directory_iterator(dataHome()/"Keys",e)){
+        if(f.path().extension()!=".key" || f.path().filename().string()[0]=='.')continue;
+        try{const auto k=signing::loadKey(f.path());out.push_back({f.path().stem().string(),signing::keyId(k.publicKey),k.publicKey});}
+        catch(const std::exception&){} // not a key, or others can read it: not offered
+    }
+    std::sort(out.begin(),out.end(),[](const auto& a,const auto& b){return a.name<b.name;});
+    return out;
+}
+
+Control::SigningKey Session::makeSigningKey(const std::string& name){
+    const auto file=keyFile(name);
+    std::error_code e;
+    if(fs::exists(file,e))throw std::invalid_argument("there is a key named "+name+" already");
+    fs::create_directories(file.parent_path());
+    fs::permissions(file.parent_path(),fs::perms::owner_all,e);
+    const auto k=signing::makeKey(file);
+    return {name,signing::keyId(k.publicKey),k.publicKey};
 }
 
 void Session::removeTrustedKey(const std::string& id){

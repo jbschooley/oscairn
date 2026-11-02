@@ -10,6 +10,7 @@
 #include <cmath>
 #include <functional>
 #include <locale>
+#include <optional>
 #include <random>
 #include <set>
 #include <sstream>
@@ -173,8 +174,9 @@ std::string storedName(const std::string& format,const std::string& id,const std
     const auto p=storedIdentity(storeFolder(format,id,version));
     return p.id==id && !p.name.empty()?p.name:id;
 }
-// Puts one platform's build into the store, whole or not at all, replacing that platform's.
-void storeBuild(const std::string& format,const std::string& id,const std::string& version,const std::string& name,const std::string& forPlatform,const fs::path& build){
+// Puts one platform's build into the store, whole or not at all, replacing that platform's, with
+// its publishers' signatures beside it as <bundle>.sig (RFC 0006).
+void storeBuild(const std::string& format,const std::string& id,const std::string& version,const std::string& name,const std::string& forPlatform,const fs::path& build,const std::vector<signing::Signature>& signatures={}){
     const auto folder=storeFolder(format,id,version);
     fs::create_directories(folder);
     const auto identity="{\"format\":"+quote(format)+",\"id\":"+quote(id)+",\"version\":"+quote(version)+",\"name\":"+quote(name)+"}\n";
@@ -182,7 +184,17 @@ void storeBuild(const std::string& format,const std::string& id,const std::strin
     const auto partial=folder/("."+forPlatform+".partial");
     std::error_code e;fs::remove_all(partial,e);fs::create_directories(partial);
     fs::copy(build,partial/build.filename(),fs::copy_options::recursive);
+    if(!signatures.empty())signing::writeSignatures(partial/(build.filename().string()+".sig"),signatures);
     fs::remove_all(folder/forPlatform,e);fs::rename(partial,folder/forPlatform);
+}
+// The signatures in <build>.sig, beside a build where its author or the store put it, that are
+// over this build; others are dropped, said in notes when given.
+std::vector<signing::Signature> buildSignatures(const fs::path& build,const std::string& format,const std::string& id,const std::string& version,const std::string& forPlatform,const std::string& digest,std::vector<std::string>* notes=nullptr){
+    std::vector<signing::Signature> out;
+    const auto message=signing::buildMessage(format,id,version,forPlatform,digest);
+    try{for(const auto& s:signing::readSignatures(build.string()+".sig"))if(signing::verify(s,message))out.push_back(s);else if(notes)notes->push_back("a signature beside "+build.filename().string()+" is not over this build; it was left out");}
+    catch(const std::runtime_error& x){if(notes)notes->push_back(x.what());}
+    return out;
 }
 // A plugin that is not here stands in its place (RFC 0006), with the saved identity, ports and
 // the parameters its snapshot and the document name, keeping its saved state.
@@ -248,7 +260,7 @@ std::vector<assets::Ref> Session::assetsOf(const fs::path& manifest) {
     return out;
 }
 
-std::vector<std::string> Session::exportPerformance(const std::string& file,bool editedSounds) {
+std::vector<std::string> Session::exportPerformance(const std::string& file,bool editedSounds,const ExportSigning& sign) {
     return exportArchive(file,"performance",[&](const fs::path& stage,Package& package){
         const auto name=info_.name.empty()?fs::path(file).stem().string():info_.name;
         const auto folder=fs::path("Performances")/(library().newFolder(name,"performance").filename());
@@ -258,10 +270,10 @@ std::vector<std::string> Session::exportPerformance(const std::string& file,bool
         package.items.push_back({"performance",saved.id,saved.name,folder.generic_string()});
         std::vector<PartSource> from;for(const auto& p:parts_)from.push_back(p.from);
         return from;
-    },editedSounds);
+    },editedSounds,sign);
 }
 
-std::vector<std::string> Session::exportLibraryItem(const std::string& id,const std::string& file,bool editedSounds) {
+std::vector<std::string> Session::exportLibraryItem(const std::string& id,const std::string& file,bool editedSounds,const ExportSigning& sign) {
     const auto* found=library().find(id);
     if(!found)bad("no such library item");
     const auto item=*found;
@@ -280,16 +292,18 @@ std::vector<std::string> Session::exportLibraryItem(const std::string& id,const 
                 if(const auto* f=member(part,"from");f && f->type==json_type_object)from.push_back({text(field(f,"sound")),text(field(f,"revision")),text(field(f,"name")),boolean(field(f,"modified"))});
         }
         return from;
-    },editedSounds);
+    },editedSounds,sign);
 }
 
 // An archive of what write puts in the stage, with the Sounds of the parts it reports (each only
 // while the part is still that Sound, that revision the library's; an edited part's when asked)
 // and every sample they all use.
-std::vector<std::string> Session::exportArchive(const std::string& file,const std::string& kind,const std::function<std::vector<PartSource>(const fs::path&,Package&)>& write,bool editedSounds) {
+std::vector<std::string> Session::exportArchive(const std::string& file,const std::string& kind,const std::function<std::vector<PartSource>(const fs::path&,Package&)>& write,bool editedSounds,const ExportSigning& sign) {
     std::vector<std::string> notes;
     const fs::path archive(file);
     if(archive.filename().empty() || fs::exists(archive))bad("the export file has no name or exists already");
+    std::optional<signing::Key> key;
+    if(sign.items || sign.archive)key=signingKey(sign.key);
     std::random_device random;
     const auto stage=fs::temp_directory_path()/("oscairn-export-"+std::to_string(random())+std::to_string(random()));
     try{
@@ -343,12 +357,16 @@ std::vector<std::string> Session::exportArchive(const std::string& file,const st
                     const auto to=fs::path("Plugins")/format/storeName(id,version)/forPlatform/from.filename();
                     fs::create_directories((stage/to).parent_path());
                     fs::copy(from,stage/to,fs::copy_options::recursive);
-                    packed.builds.push_back({forPlatform,to.generic_string(),bundleDigest(stage/to)});
+                    const auto digest=bundleDigest(stage/to);
+                    packed.builds.push_back({forPlatform,to.generic_string(),digest,buildSignatures(from,format,id,version,forPlatform,digest,&notes)});
                 }
                 package.plugins.push_back(std::move(packed));
             }
         }
-        writePackage(archive,package,stage);
+        // The exporter's signatures, when chosen: each item's over its content hash, and the whole archive's.
+        if(sign.items)for(auto& i:package.items)
+            i.signatures.push_back({key->publicKey,signing::sign(*key,signing::itemMessage(contentHash(stage/i.path/(i.kind=="sound"?"sound.json":"performance.json"))))});
+        writePackage(archive,package,stage,sign.archive?&*key:nullptr);
     }catch(...){std::error_code ignored;fs::remove_all(stage,ignored);throw;}
     std::error_code ignored;fs::remove_all(stage,ignored);
     return notes;
@@ -1439,7 +1457,7 @@ Control::Installed Session::installArchive(const std::string& file,bool asLibrar
                     if(bundleDigest(at->second)!=build.sha256)out.notes.push_back("a different "+build.platform+" build of "+plugin.name+" "+plugin.version+" is already installed; it was kept");
                     continue;
                 }
-                storeBuild(plugin.format,plugin.id,plugin.version,plugin.name,build.platform,into/build.path);
+                storeBuild(plugin.format,plugin.id,plugin.version,plugin.name,build.platform,into/build.path,build.signatures);
             }
         }
         if(asLibrary){
@@ -1558,7 +1576,7 @@ void Session::addPluginBuild(const std::string& format,const std::string& id,con
     if(fs::is_directory(build,e))for(const auto& f:fs::recursive_directory_iterator(build))if(f.is_symlink())bad("a link in the build: "+f.path().string());
     std::string name=storedName(format,id,version);
     for(const auto& n:nodes_)if(const auto& d=graph_.host(n.first).descriptor();d.id==id && d.version==version && !d.name.empty())name=d.name;
-    storeBuild(format,id,version,name,forPlatform,build);
+    storeBuild(format,id,version,name,forPlatform,build,buildSignatures(build,format,id,version,forPlatform,bundleDigest(build)));
 }
 
 void Session::deleteLibraryItem(const std::string& id) {

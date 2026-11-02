@@ -70,8 +70,14 @@ says what it signs:
 | `plugins[].builds[].signatures` | A plugin build, by its publisher | `oscairn-build-1\0` and the plugin's format, ID, version, the build's platform and digest, each followed by `\0` |
 | `library.sig` | The whole archive | `oscairn-archive-1\0` and `library.json`'s exact bytes, which list every file's SHA-256 and every build's digest |
 
-A key is shown by its ID, the first 16 hex digits of the SHA-256 of its 32 bytes. A signature
-that does not verify is refused like a wrong hash. Who signed is reported; whether that is
+A key is shown by its ID, the first 16 hex digits of the SHA-256 of its 32 bytes. An export
+signs its items, the whole archive, or both, only when the exporter asks, with a key of theirs
+from the data folder's `Keys/`. A build's signatures travel with it: an export carries those in
+`<bundle>.sig` beside the build it takes (a JSON list of `{key, signature}`, as
+`oscairn-sign build` writes it), whether at the plugin's own path or in the store, leaving out
+and noting any that is not over that build; an install, and `plugins.addBuild`, keep them in the
+store the same way, beside the build. A signature that does not verify is refused like a wrong
+hash. Who signed is reported; whether that is
 trusted is the installing device's [trust store](rfcs/0006-packages-and-portability.md#signatures).
 
 ## As a folder

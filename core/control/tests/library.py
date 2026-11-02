@@ -171,6 +171,16 @@ with tempfile.TemporaryDirectory(prefix='oscairn-library-') as temporary:
         rpc('trust.remove', {'id': fingerprint})
         assert rpc('trust.list') == {'keys': []}
         rpc('trust.remove', {'id': fingerprint}, True)
+        # Signing keys in the data folder, and an export signed with one; the private key is never sent.
+        made = rpc('keys.make', {'name': 'mine'})
+        assert made['name'] == 'mine' and len(made['key']) == 64 and made['id'] == hashlib.sha256(bytes.fromhex(made['key'])).hexdigest()[:16]
+        assert rpc('keys.list') == {'keys': [made]}
+        assert (home / 'Keys/mine.key').stat().st_mode & 0o777 == 0o600
+        rpc('keys.make', {'name': 'mine'}, True)
+        rpc('keys.make', {'name': '../escape'}, True)
+        assert rpc('library.export', {'id': pad, 'file': str(home / 'signed.olib'), 'sign': {'key': 'mine', 'items': True, 'archive': True}})['exported']
+        rpc('library.export', {'id': pad, 'file': str(home / 'unsigned.olib'), 'sign': {'key': 'nobody', 'archive': True}}, True)
+        assert not (home / 'unsigned.olib').exists()
     finally:
         p.stdin.close()
         p.wait(timeout=10)
