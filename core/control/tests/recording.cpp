@@ -458,7 +458,7 @@ namespace
         bool refused = false;
         try { s.recordRetro(0); } catch(const std::logic_error&) { refused = true; }
         check(!refused || s.recordRetroSeconds() == 2, "the buffer's change waits for the capture, refused or kept feeding its rings");
-        while(render.main.size() / 2 < start + 96000 + block) render.block(block);
+        while(render.main.size() / 2 < start + 96000 - 4800 + block) render.block(block); // to the capture's end: it began 0.1 s ago
         const auto t = finish(s, capture, false);
         check(t.state == "done" && t.frames == 96000 && t.overruns.empty(), "the 2 s capture finishes: " + t.state + " " + std::to_string(t.frames));
         s.recordRetro(0); // once the take is done, the change goes through
