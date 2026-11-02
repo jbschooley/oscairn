@@ -22,10 +22,112 @@
 #include <chrono>
 #include <cstdio>
 #include <filesystem>
+#include <map>
+#include <mutex>
 #include <thread>
+#include <poll.h>
+#include <sys/socket.h>
+#include <sys/un.h>
 #include <unistd.h>
 
 using namespace oscairn;
+
+namespace
+{
+    // Between the Engine and the server: passes every byte on and counts the requests by
+    // method, so a test can say which round trips a view or an edit made. drop() closes every
+    // connection, as an engine timing out does.
+    class SocketTap
+    {
+    public:
+        SocketTap(std::string listenPath, std::string serverPath) : path_(std::move(listenPath)), server_(std::move(serverPath))
+        {
+            ::unlink(path_.c_str());
+            listener_ = ::socket(AF_UNIX, SOCK_STREAM, 0);
+            const auto address = addressOf(path_);
+            if(::bind(listener_, reinterpret_cast<const sockaddr*>(&address), sizeof address) < 0 || ::listen(listener_, 16) < 0) throw std::runtime_error("tap listen");
+            thread_ = std::thread([this] { run(); });
+        }
+        ~SocketTap()
+        {
+            running_ = false; thread_.join();
+            for(auto& p : pairs_) { ::close(p.client); ::close(p.server); }
+            ::close(listener_); ::unlink(path_.c_str());
+        }
+        int count(const std::string& method) const { std::lock_guard lock(mutex_); const auto at = counts_.find(method); return at == counts_.end() ? 0 : at->second; }
+        void reset() { std::lock_guard lock(mutex_); counts_.clear(); }
+        void drop() { dropping_ = true; while(dropping_) std::this_thread::sleep_for(std::chrono::milliseconds(1)); }
+
+    private:
+        struct Pair { int client, server; std::string sent; };
+        static sockaddr_un addressOf(const std::string& path)
+        {
+            sockaddr_un a{}; a.sun_family = AF_UNIX; std::snprintf(a.sun_path, sizeof a.sun_path, "%s", path.c_str()); return a;
+        }
+        static void quiet(int fd) { int yes = 1; ::setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &yes, sizeof yes); }
+        bool pass(int from, int to) // false once either side is gone
+        {
+            char buffer[65536];
+            const auto n = ::read(from, buffer, sizeof buffer);
+            if(n <= 0) return false;
+            for(ssize_t done = 0; done < n;) { const auto w = ::write(to, buffer + done, size_t(n - done)); if(w <= 0) return false; done += w; }
+            read_.assign(buffer, size_t(n));
+            return true;
+        }
+        void counted(Pair& p)
+        {
+            p.sent += read_;
+            static const std::string key = "\"method\":\"";
+            size_t at = 0, keep = std::string::npos; // keep: where a request cut in two starts
+            for(size_t found; (found = p.sent.find(key, at)) != std::string::npos;)
+            {
+                const auto end = p.sent.find('"', found + key.size());
+                if(end == std::string::npos) { keep = found; break; }
+                { std::lock_guard lock(mutex_); ++counts_[p.sent.substr(found + key.size(), end - found - key.size())]; }
+                at = end + 1;
+            }
+            if(keep == std::string::npos) keep = std::max(at, p.sent.size() > key.size() ? p.sent.size() - key.size() : 0); // the key itself may be cut
+            p.sent.erase(0, keep);
+        }
+        void run()
+        {
+            while(running_)
+            {
+                if(dropping_) { for(auto& p : pairs_) { ::close(p.client); ::close(p.server); } pairs_.clear(); dropping_ = false; }
+                std::vector<pollfd> fds{{listener_, POLLIN, 0}};
+                for(const auto& p : pairs_) { fds.push_back({p.client, POLLIN, 0}); fds.push_back({p.server, POLLIN, 0}); }
+                if(::poll(fds.data(), nfds_t(fds.size()), 5) <= 0) continue;
+                const size_t polled = pairs_.size(); // a connection accepted now is polled next time
+                if(fds[0].revents & POLLIN)
+                {
+                    const int client = ::accept(listener_, nullptr, nullptr);
+                    const int server = ::socket(AF_UNIX, SOCK_STREAM, 0);
+                    const auto address = addressOf(server_);
+                    if(client >= 0 && server >= 0 && ::connect(server, reinterpret_cast<const sockaddr*>(&address), sizeof address) == 0) { quiet(client); quiet(server); pairs_.push_back({client, server, {}}); }
+                    else { if(client >= 0) ::close(client); if(server >= 0) ::close(server); }
+                }
+                std::vector<size_t> gone;
+                for(size_t i = 0; i < polled; ++i)
+                {
+                    auto& p = pairs_[i];
+                    bool alive = true;
+                    if(fds[1 + 2 * i].revents & (POLLIN | POLLHUP | POLLERR)) { alive = pass(p.client, p.server); if(alive) counted(p); }
+                    if(alive && (fds[2 + 2 * i].revents & (POLLIN | POLLHUP | POLLERR))) alive = pass(p.server, p.client);
+                    if(!alive) gone.push_back(i);
+                }
+                for(auto i = gone.rbegin(); i != gone.rend(); ++i) { ::close(pairs_[*i].client); ::close(pairs_[*i].server); pairs_.erase(pairs_.begin() + std::ptrdiff_t(*i)); }
+            }
+        }
+        std::string path_, server_;
+        int listener_ = -1;
+        std::vector<Pair> pairs_;
+        std::atomic<bool> running_ = true, dropping_ = false;
+        mutable std::mutex mutex_;
+        std::map<std::string, int> counts_;
+        std::string read_; // the last bytes passed on, on the tap's thread
+        std::thread thread_;
+    };
+}
 
 int main(int argc, char** argv)
 {
@@ -65,8 +167,11 @@ int main(int argc, char** argv)
             }
             server.reset(); session.reset();
         });
+        // The Engine reaches the server through the tap, which counts its requests.
+        const auto tapPath = socket.string() + "-tap";
+        SocketTap tap(tapPath, socket.string());
         {
-            standalone::Engine engine(argv[1], socket.string());
+            standalone::Engine engine(argv[1], tapPath);
             const auto configuration = juce::File::createTempFile("oscairn-gaps-config");
             standalone::Theme theme(configuration, juce::File(argv[3]));
             juce::LookAndFeel::setDefaultLookAndFeel(&theme);
@@ -263,6 +368,23 @@ int main(int argc, char** argv)
                 check(wait([&] { return !engine.soundBusy() && !jobHeld.load() && engine.connected(); }), "the prepare finished, the engine answers again");
                 engine.edit([](Control& c) { c.addMacro("Cache probe control"); });
                 check(wait([&] { return engine.history().undo.find("Cache probe control") != std::string::npos && engine.connected(); }), "the cache follows the engine again once free");
+            }
+            // A fader dragged sends 60 edits a second: the edits leave the meters' cache alone,
+            // so the views polling between them still read the engine at most twenty times a second.
+            {
+                NodeId synth = 0;
+                for(const auto& [id, n] : engine.graph().names) if(n == "Basic Synth") synth = id;
+                const auto node = engine.graph().names.at(synth);
+                check(wait([&] { return !engine.soundBusy(); }), "the engine is free for a drag");
+                engine.meters(); engine.wireMeters(); engine.history();
+                tap.reset();
+                const auto began = juce::Time::getMillisecondCounter();
+                for(int i = 0; i < 60; ++i) { engine.setParam(node, 4, i % 3); engine.meters(); engine.wireMeters(); engine.history(); }
+                const int allowed = int((juce::Time::getMillisecondCounter() - began) / 50) + 1;
+                check(tap.count("params.set") == 60, "the drag's 60 edits sent: " + std::to_string(tap.count("params.set")));
+                check(tap.count("parts.meters") <= allowed && tap.count("wires.meters") <= allowed && tap.count("edit.history") <= allowed,
+                      "the meters and undo names read at their own pace, not per edit: " + std::to_string(tap.count("parts.meters")) + " " + std::to_string(tap.count("wires.meters")) + " " +
+                      std::to_string(tap.count("edit.history")) + " of at most " + std::to_string(allowed));
             }
             // An action asked while a job runs is refused, and said: a dropped Save must not
             // look saved.

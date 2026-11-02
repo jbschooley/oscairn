@@ -194,9 +194,8 @@ namespace oscairn::standalone
         {
             if(!failure_.empty() || (soundJob_.valid() && soundJobKind_==SoundAction::Replace))return;
             if(soundJob_.valid()) { pendingControls_.emplace_back(std::forward<F>(f)); return; }
-            // An edit changes what the polled reads above answer (the undo names, the open
-            // Performance, the meters): the next read goes to the engine again.
-            metersRead_=wireMetersRead_=historyRead_=performanceRead_=takesRead_=0;
+            // The polled reads above keep their pace through edits: a fader dragged sends 60 a
+            // second, and the undo names and the open Performance may trail an edit by 250 ms.
             try{f();}catch(const std::exception& e)
             {
                 if(client_ && !client_->connected())failed(e.what());
