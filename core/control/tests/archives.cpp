@@ -516,6 +516,35 @@ int main(int argc, char** argv)
             check(m.libraries().size() == 1 && m.libraries()[0].items == 2 && rest.added == 2,
                   "and the same archive finishes once the way is clear");
         }
+        // A skipped Sound whose copy's ID is the archive's own (a copy edited by hand, or synced):
+        // the part-pointer rewrite replaces a needle with itself and must still end.
+        {
+            device(temp.path / "n");
+            const auto root = temp.path / "n-root";
+            fs::create_directories(root / "Sounds" / "same");
+            fs::create_directories(root / "Performances" / "set");
+            const std::string zeros(64, '0');
+            std::ofstream(root / "Sounds" / "same" / "sound.json", std::ios::binary | std::ios::trunc)
+                << R"({"format":"oscairn.sound","version":7,"info":{"id":"same","name":"Same","description":"","tags":[],"color":"","revision":"r","parent":"","origin":null,"hash":")" << zeros << R"("},"nodes":[]})";
+            std::ofstream(root / "Performances" / "set" / "performance.json", std::ios::binary | std::ios::trunc)
+                << R"({"format":"oscairn.performance","version":11,"info":{"id":"set","name":"Set","description":"","tags":[],"color":"","revision":"r","parent":"","origin":null,"hash":")" << zeros
+                << R"("},"nodes":[{"key":"n1","plugin":{"format":"clap","id":"x","version":"1","path":"p"},"sound":"same"}]})";
+            Package p; p.id = "n.same"; p.name = "Same";
+            p.items.push_back({"sound", "same", "Same", "Sounds/same", {}});
+            p.items.push_back({"performance", "set", "Set", "Performances/set", {}});
+            const auto same = temp.path / "Same.olib";
+            writePackage(same, p, root);
+            fs::create_directories(temp.path / "n" / "Sounds" / "Same.osound");
+            std::ofstream(temp.path / "n" / "Sounds" / "Same.osound" / "sound.json", std::ios::binary | std::ios::trunc)
+                << R"({"format":"oscairn.sound","version":7,"info":{"id":"same","name":"Same","description":"","tags":[],"color":"","revision":"r","parent":"","origin":{"library":"n.same","item":"same","hash":")" << zeros
+                << R"("},"hash":")" << zeros << R"("},"nodes":[]})";
+            Session n(48000, 64);
+            check(items(n, "sound").size() == 1 && items(n, "sound")[0].id == "same", "the user's own copy is there under the archive's ID");
+            const auto installed = n.installArchive(same.string(), false);
+            check(installed.added == 1 && installed.skipped == 1, "the Sound is skipped, the Performance added");
+            const auto doc = fs::path(items(n, "performance").at(0).path) / "performance.json";
+            check(read(doc).find("\"sound\":\"same\"") != std::string::npos, "and its part points at the copy, whose ID is the archive's");
+        }
     }
     catch(const std::exception& e) { std::fprintf(stderr, "FAIL: %s\n", e.what()); ++failures; }
     if(!failures) std::puts("ok: export, install as the user's own and as a library, reinstall, uninstall, chosen items and plugins from the store");

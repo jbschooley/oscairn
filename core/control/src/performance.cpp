@@ -1551,8 +1551,9 @@ Control::Installed Session::installArchive(const std::string& file,bool asLibrar
                 if(i.kind=="performance"){
                     // Parts point at the Sounds' copies. The span comes from the needle itself: an
                     // ID with a quote escapes longer than it reads, and a fixed length breaks the JSON.
+                    // The search goes on after the replacement, which may hold the needle itself.
                     const auto bytes=state_files::read(doc,4*1024*1024);std::string text(bytes.begin(),bytes.end());
-                    for(const auto& [from,id]:ids){const std::string needle="\"sound\":"+quote(from),with="\"sound\":"+quote(id);for(auto at=text.find(needle);at!=std::string::npos;at=text.find(needle,at))text.replace(at,needle.size(),with);}
+                    for(const auto& [from,id]:ids){const std::string needle="\"sound\":"+quote(from),with="\"sound\":"+quote(id);for(auto at=text.find(needle);at!=std::string::npos;at=text.find(needle,at+with.size()))text.replace(at,needle.size(),with);}
                     state_files::write(doc,text.data(),text.size());
                 }
                 auto info=readInfo(doc,"oscairn."+i.kind);
