@@ -48,6 +48,25 @@ namespace oscairn
         return {};
     }
 
+    std::vector<ControllerMapping::Action> ControllerMapping::latest(std::vector<Action> actions)
+    {
+        using K = Assignment::Kind;
+        std::vector<Action> kept;
+        std::vector<Assignment> seen;
+        for(auto it = actions.rbegin(); it != actions.rend(); ++it)
+        {
+            const auto k = it->target.kind;
+            if(k == K::Parameter || k == K::Control || k == K::PartLevel)
+            {
+                if(std::find(seen.begin(), seen.end(), it->target) != seen.end()) continue;
+                seen.push_back(it->target);
+            }
+            kept.push_back(std::move(*it));
+        }
+        std::reverse(kept.begin(), kept.end());
+        return kept;
+    }
+
     std::vector<ControllerMapping::Action> ControllerMapping::handle(const AssignmentSource& s, const std::vector<ControlGroup>& groups, uint32_t part, GroupPositions& positions,
                                                                      const std::string& device, uint32_t port, const uint8_t* bytes, size_t size,
                                                                      const std::function<double(const Assignment&)>& value)

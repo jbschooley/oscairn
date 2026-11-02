@@ -165,6 +165,10 @@ namespace oscairn
         std::vector<Action> handle(const AssignmentSource&, const std::vector<ControlGroup>&, uint32_t part, GroupPositions& positions,
                                    const std::string& device, uint32_t port, const uint8_t* bytes, size_t size,
                                    const std::function<double(const Assignment&)>& value);
+        // A batch of actions to apply, with each continuous target (a parameter, control or part
+        // level) set once, to its last value, where that last value came; mutes and scenes keep every
+        // action in order. A swept wheel sends a CC a millisecond: applying each in turn falls behind.
+        static std::vector<Action> latest(std::vector<Action> actions);
     private:
         struct Pickup { Assignment target; bool caught = false; double knob = -1; std::array<double, 32> sent{}; size_t sends = 0; };
         std::map<std::string, Pickup> pickup_;

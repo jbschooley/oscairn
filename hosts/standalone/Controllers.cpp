@@ -129,6 +129,7 @@ namespace oscairn::standalone
             catch(const std::exception&) { return; }
         }
         source_.screen = engine_.screenPage(); // screen knobs play the editor page shown
+        std::vector<ControllerMapping::Action> actions;
         for(const auto& [port, in, mackie] : taken)
         {
             if(mackie)
@@ -137,7 +138,7 @@ namespace oscairn::standalone
                 for(const auto& a : surfaces_[port].first.handle(state, source_, in.bytes, 3, [this](const Assignment& t) { return value(t); }))
                     switch(a.kind)
                     {
-                    case MackieControl::Action::Kind::Set: apply({{}, a.target, a.value}); break;
+                    case MackieControl::Action::Kind::Set: actions.push_back({{}, a.target, a.value}); break;
                     case MackieControl::Action::Kind::Play: engine_.setPlaying(true); break;
                     case MackieControl::Action::Kind::Stop: engine_.setPlaying(false); break;
                     case MackieControl::Action::Kind::Solo: { const auto id = a.part; const bool on = a.on; engine_.edit([id, on](Control& c) { c.setPartSolo(id, on); c.commit(); }); break; }
@@ -146,8 +147,9 @@ namespace oscairn::standalone
             }
             for(const auto& action : mapping_.handle(source_, engine_.controlGroups(), engine_.knobPart(), engine_.positions(), port.first, port.second, in.bytes, 3,
                                                      [this](const Assignment& a) { return value(a); }))
-                apply(action);
+                actions.push_back(action);
         }
+        for(const auto& action : ControllerMapping::latest(std::move(actions))) apply(action);
         if(fresh || !taken.empty()) feedback();
     }
 

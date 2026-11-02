@@ -457,6 +457,25 @@ namespace
     }
 }
 
+namespace
+{
+    // A swept wheel sends a CC every millisecond or so: a batch keeps each continuous target's last
+    // value only, and mutes and scenes in order.
+    void coalesced()
+    {
+        using A = ControllerMapping::Action; using K = Assignment::Kind;
+        const Assignment control{K::Control, 0, 0, 1}, mute{K::PartMute, 0, 0, 2}, scene{K::Scene, 0, 0, 3}, level{K::PartLevel, 0, 0, 4};
+        std::vector<A> sweep;
+        for(int i = 0; i <= 100; ++i) sweep.push_back({"wheel:1", control, i / 100.0});
+        auto kept = ControllerMapping::latest(sweep);
+        check(kept.size() == 1 && kept[0].value == 1, "a sweep of 101 moves applies once, at its last value");
+        kept = ControllerMapping::latest({{"", control, .1}, {"", mute, 1}, {"", control, .5}, {"", scene, 1}, {"", mute, 0}, {"", control, .9}, {"", level, .3}, {"", level, .7}});
+        check(kept.size() == 5 && kept[0].target == mute && kept[0].value == 1 && kept[1].target == scene && kept[2].target == mute && kept[2].value == 0
+              && kept[3].target == control && kept[3].value == .9 && kept[4].target == level && kept[4].value == .7,
+              "mutes and scenes keep every press in order; each control and level keeps its last value");
+    }
+}
+
 int main(int argc, char** argv)
 {
     if(argc < 4) { std::fprintf(stderr, "usage: %s FIXTURE DELAY BASIC_SYNTH\n", argv[0]); return 2; }
@@ -467,6 +486,7 @@ int main(int argc, char** argv)
         controllers(argv[1], argv[2], temp.path);
         roles(argv[1], argv[2], argv[3]);
         screen(argv[1], argv[2]);
+        coalesced();
     }
     catch(const std::exception& e) { std::fprintf(stderr, "FAIL: %s\n", e.what()); return 1; }
     if(!failures) std::puts("ok: physical controls resolve in layers and groups, by page, row and mode, and save");
