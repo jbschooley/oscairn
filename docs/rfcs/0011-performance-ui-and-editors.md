@@ -436,6 +436,23 @@ kept: the base survives it, so the value comes back as the controls go back.
 - **Scenes** store and restore the control values, then the parameter values and faders they
   hold, which have the last word: a stored value plays as stored, and the controls offset
   from it afterwards. Glides and morphs move them alike.
+
+**Converter notes** (MODX and MONTAGE Performances, format version 11):
+
+- **Controller boxes** (several sources on one destination) become one control per source, each
+  with a relative target on the destination; they add up as on the instrument. A box moving the
+  destination by up to `u` of its range (at most 0.5) is start 0.5, end 0.5 + `u` when unipolar
+  (0 to +`u`), and start 0.5 − `u`, end 0.5 + `u` when bipolar (−`u` to +`u`); a negative ratio
+  swaps start and end. The curve's shape goes on the target. The parameter's stored value is the
+  base.
+- **Part Volume** on a knob or slider is a `partLevel` target with a `db` curve
+  (`{"kind": "db", "min": M, "max": 0}`, M the taper's floor) or a `power` curve, whichever
+  matches the instrument's table, in place of the nearest of the four older curves.
+- **Aftertouch, breath and Assign Switch 1 and 2** are assigned by identity: `aftertouch:1`,
+  `breath:1`, `button:1` and `button:2`, as Performance overrides or a Sound's own assignments;
+  a device without that source keeps the assignment and plays it when one is connected.
+- **Performance Volume and Pan** go to the `master` level and pan instead of being folded into
+  each part; a scene that stores the mix stores them.
 - Any physical control on any device can be bound to any control, so a controller without
   a Super Knob gets one by binding a knob to the top of a tree. Pickup, relative encoders
   and feedback stay with the controller-mapping service.
