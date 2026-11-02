@@ -269,7 +269,9 @@ public:
         for(uint32_t e=0;e<count && ok;++e){
             const auto& event=events[e];const auto* h=event.header();
             if(!event.valid() || h->time>=frames){++drops_;ok=false;break;}
-            if(h->space_id!=CLAP_CORE_EVENT_SPACE_ID){++drops_;continue;}
+            // Oscairn's own events (the beat, a part's harmony) are for every instance, as global
+            // parameters are; dropping them counted a drop each block.
+            if(h->space_id!=CLAP_CORE_EVENT_SPACE_ID){for(auto& s:current_->instances)if(s && s->running)ok=route(*s,event) && ok;continue;}
             if(h->type==CLAP_EVENT_NOTE_ON){
                 const auto& n=*reinterpret_cast<const clap_event_note_t*>(h);
                 if(n.channel<0 || n.port_index<0 || static_cast<uint32_t>(n.port_index)>=notePorts_){++drops_;ok=false;break;}

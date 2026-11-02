@@ -27,6 +27,9 @@ struct Instrument {
 };
 void switching(const char* path,const char* id,clap_id gain){
     Instrument s(path,id,gain);check(std::string(s.host().soundContextMode())=="instances" && s.host().soundContextCapacity()==8,"hosted capability");
+    // The graph's own beat event goes to every plugin each block: not a drop, or every block
+    // would tell clients their view of the session was lost.
+    s.run();s.run();s.run();check(s.host().outputEventDrops()==0,"the beat reaches a prepared instrument without counting as a drop");
     auto a=s.prepare(.25),b=s.prepare(.75);s.host().selectSound(a);s.one(Event::midi(0x90,60,100));s.level(.25);
     s.host().selectSound(b);s.run();s.level(.25);s.one(Event::midi(0x90,60,100));s.level(1);
     check(!s.host().discardSound(a,true),"held outgoing instance stays pinned");
