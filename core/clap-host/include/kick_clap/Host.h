@@ -15,9 +15,15 @@
 
 namespace kick::clap {
 
+// A preset a plugin's library lists for it through CLAP preset discovery: inside the plugin
+// (kind 1, CLAP_PRESET_DISCOVERY_LOCATION_PLUGIN) or in a file (kind 0, location its path).
+struct Preset { std::string name; uint32_t kind = 0; std::string location, loadKey; };
+
 struct Descriptor {
     std::string path, id, name, vendor, version, description;
     std::vector<std::string> features;
+    bool presetDiscovery = false; // its library offers CLAP preset discovery
+    std::vector<Preset> presets;  // what a scan indexed (RFC 0005)
 };
 
 struct Parameter {
@@ -74,10 +80,6 @@ struct SysexPool {
     // not fit, and for any other event. Audio thread: no allocation.
     bool hold(Event& event) noexcept;
 };
-
-// A preset a plugin's library lists for it through CLAP preset discovery: inside the plugin
-// (kind 1, CLAP_PRESET_DISCOVERY_LOCATION_PLUGIN) or in a file (kind 0, location its path).
-struct Preset { std::string name; uint32_t kind = 0; std::string location, loadKey; };
 
 // A sound asset reference (RFC 0009): library ID, library-relative path, SHA-256 hex or empty.
 struct AssetReference { std::string library, path, sha256; };
@@ -150,7 +152,8 @@ public:
     bool loadState(const std::vector<uint8_t>& source);
     bool supportsState() const noexcept;
     // Main thread. The presets this plugin's library offers for it (CLAP preset discovery):
-    // those inside the plugin, and preset files of the declared types in the declared folders.
+    // those inside the plugin, and preset files of the declared types in the declared folders,
+    // within indexPresets' limits (Discovery.h).
     std::vector<Preset> presets();
     // Main thread. Loads a preset (CLAP preset-load), never during process(); false with error().
     bool loadPreset(const Preset&);

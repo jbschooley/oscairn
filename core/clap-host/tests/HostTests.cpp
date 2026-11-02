@@ -39,6 +39,22 @@ int main(int argc, char** argv) {
     check(!decodeScan("broken", decoded) && !decodeScan(encodeScan(catalog).substr(0, 20), decoded), "reject malformed scanner output");
     auto isolated = scan({argv[1]}, argv[2]);
     check(isolated.plugins.size() == 14 && isolated.failures.empty(), "isolated scanner enumeration");
+    {
+        // RFC 0005: a scan indexes each plugin's presets, in a second helper process with its own timeout.
+        auto names = [](const Descriptor& d) { std::string all; for (const auto& p : d.presets) all += p.name + ";"; return all; };
+        check(isolated.plugins[2].presetDiscovery && names(isolated.plugins[2]) == "Quiet;Bright;" && isolated.plugins[2].presets[0].loadKey == "quiet" &&
+              isolated.plugins[2].presets[0].kind == 1 && names(isolated.plugins[0]) == "Synth only;" && isolated.plugins[1].presets.empty(),
+              "a scan indexes each plugin's presets, only those for it");
+        check(decodeScan(encodeScan(isolated), decoded) && names(decoded.plugins[2]) == "Quiet;Bright;" && decoded.plugins[2].presets[1].loadKey == "bright",
+              "presets survive the scanner's wire");
+        setenv("KICK_FIXTURE_PRESETS_HANG", "1", 1);
+        const auto hung = scan({argv[1]}, argv[2], 5000, nullptr, ".clap", 500);
+        unsetenv("KICK_FIXTURE_PRESETS_HANG");
+        check(hung.plugins.size() == 14 && hung.plugins[2].presets.empty() && hung.failures.size() == 1 &&
+              hung.failures[0].message == "Presets not indexed: Plugin scan timed out", "a preset index that hangs times out and leaves the plugins listed");
+        const auto empty = indexPresets(nullptr, {"org.kick.test.midi"});
+        check(empty.presets.empty() && empty.problems.empty(), "no library, no presets");
+    }
     const auto crashed = scan({argv[3]}, argv[2], 1000);
     check(crashed.failures.size() == 1, "scanner crash isolation");
     check(crashed.failures[0].message.find("fixture: crashing during scan") != std::string::npos, "scanner failure keeps the plugin's error output");

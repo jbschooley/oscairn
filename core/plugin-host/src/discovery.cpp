@@ -32,8 +32,8 @@ kick::clap::ScanResult scanPlugins(const std::vector<fs::path>& roots,const fs::
     result.plugins.insert(result.plugins.end(),lv2.plugins.begin(),lv2.plugins.end());
     result.failures.insert(result.failures.end(),lv2.failures.begin(),lv2.failures.end());return result;
 }
-kick::clap::ScanResult inspectPlugin(const fs::path& source) {
-    if(source.extension()!=".lv2")return kick::clap::inspect(source);
+kick::clap::ScanResult inspectPlugin(const fs::path& source,bool presets) {
+    if(source.extension()!=".lv2")return kick::clap::inspect(source,presets);
     kick::clap::ScanResult result;
     try {
 #ifdef OSCAIRN_LV2

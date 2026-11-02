@@ -15,14 +15,14 @@
 
 int main(int argc, char** argv) {
     try {
-        if (argc == 3 && std::string(argv[1]) == "--worker") {
+        if (argc == 3 && (std::string(argv[1]) == "--worker" || std::string(argv[1]) == "--presets")) {
 #if defined(__linux__) && !defined(KICK_SCAN_SANITIZED)
             // Third-party code runs here: cap its memory so a runaway scan cannot starve the device.
             // macOS does not enforce address-space limits; there only the scan timeout applies.
             const rlimit cap{1ull << 30, 1ull << 30};
             if (setrlimit(RLIMIT_AS, &cap) != 0) { std::cerr << "cannot limit scanner memory\n"; return 3; }
 #endif
-            const auto result = kick::clap::inspect(argv[2]);
+            const auto result = kick::clap::inspect(argv[2], std::string(argv[1]) == "--presets");
             const auto wire = kick::clap::encodeScan(result);
             std::cout.write(wire.data(), static_cast<std::streamsize>(wire.size()));
             return 0;
