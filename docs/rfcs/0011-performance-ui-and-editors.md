@@ -260,8 +260,10 @@ and for plugins with no description.
    Editing actions travel as plugin-defined operations through the control API, not as
    pixels.
 3. **The plugin's own window:** for third-party plugins on the desktop. On the device such a
-   plugin gets knob pages. Windows from worker processes ([RFC 0010](0010-plugin-worker-isolation.md))
-   are an open question there.
+   plugin gets knob pages. The process hosting the plugin, its worker
+   ([RFC 0010](0010-plugin-worker-isolation.md)), shows the window, as a window of its own:
+   macOS cannot embed one process's view in another's window
+   ([RFC 0019](0019-adaptive-ui.md#plugin-windows)).
 
 The description format is a new Oscairn extension, `oscairn.ui`, defined in
 [RFC 0019](0019-adaptive-ui.md#plugin-editor-descriptions) with how each surface (desktop,

@@ -432,7 +432,9 @@ in-process; running the engine opens an audio device).
 
 - Default grouping on the device, which depends on step 1's measurements and memory per worker.
 - How often to refresh recovery state for plugins whose state is expensive to save.
-- How plugin GUIs are shown on the device's screen from a worker.
+- How plugin GUIs are shown on the device's screen from a worker. On the desktop the worker
+  shows them in a window of its own (decided 2026-11-01, [RFC 0019](0019-adaptive-ui.md#plugin-windows));
+  on the device's Linux, X11 could embed that window in the app's.
 
 ## Ruled out
 

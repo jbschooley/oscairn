@@ -97,8 +97,9 @@ Gig Performer is the model for how it feels. Not a device screen in a window, bu
 - **Desktop habits:** right-click menus, drag and drop (plugins from the browser into a
   chain, wires in Routing), multiple selection, hover help, double-click to edit, scroll
   wheel and fine adjustment with a modifier key.
-- **The plugin's own window,** through CLAP's GUI extension, as a floating window, and
-  embedded in a pane where the plugin and platform allow it.
+- **The plugin's own window,** through CLAP's GUI extension, as a window of its own beside
+  the app's ([Plugin windows](#plugin-windows)); embedded in a pane later, where the platform
+  allows it.
 - **Front panels, later:** a performance can have panels of knobs, sliders and buttons the
   user places and binds to any parameter, like Gig Performer's panels. The layout format
   already places controls and binds them (`"bind": "synth:1"`), so a front panel is a
@@ -186,6 +187,39 @@ names only where unambiguous ("Cutoff", "Resonance", "Attack").
 - Panel shows one page at a time, rich widgets full width, knobs bound to the page's
   parameters by priority.
 - Compact lists the pages, then each page's parameters by priority, one at a time.
+
+## Plugin windows
+
+Decided 2026-11-01. A plugin's own window is shown by **the process that hosts the plugin**:
+its worker ([RFC 0010](0010-plugin-worker-isolation.md)), which is where plugins run in the
+desktop app, or the engine for a plugin placed there. The app, a separate process, asks for
+it through the control API (`window.show`), and the engine passes the request to the node's
+host.
+
+**Why not in the app's window:** macOS cannot put one process's view inside another's
+window; there is no counterpart of X11's embedding there. And running plugins with windows in
+the engine instead would give up isolation for exactly the plugins most likely to crash (a
+third-party GUI), in a process that runs headless. So:
+
+- **A window of the hosting process's own.** Plugins that embed their editor in a host window
+  (CLAP's `set_parent`, which every JUCE-based plugin needs: Odin 2 and Airwindows Consolidated
+  offer nothing else) get a plain titled window made by the CLAP host, sized as the plugin
+  asks and resizable where the plugin is. Plugins that offer only a floating window of their
+  own get it, with the title suggested (`suggest_title`). Embedded is preferred when a plugin
+  offers both, so the host's window closes and titles the same way for every plugin.
+- **The title names the node and its part,** as the app shows them ("Odin 2 · Lead").
+- **No `set_transient`:** it needs the parent window in the plugin's own process, and the
+  app's window is in another. The window is an ordinary one of its own.
+- **The worker joins the window server only when a window opens.** A worker is a plain
+  process; the first window gives it an application object (no Dock icon) and, from then on,
+  it runs the platform's window events on its main thread between the engine's requests,
+  waking as soon as a request arrives.
+- **A window lives as long as its node.** Removing the node, replacing its plugin or loading
+  another Performance closes it; the person closing it destroys the plugin's editor; a worker
+  restarted after a crash opens it again, as its engine last asked.
+- **Linux: X11 can embed across processes** (XEmbed), so on the device's single screen a
+  worker's window could go inside the app later. Until then, on Linux and Windows only plugins
+  that float their own window show one.
 
 ## Toolkit
 
@@ -360,8 +394,8 @@ design).
   keyboard), or whether Panel's one-view model always fits.
 - How Desktop and Panel share one editing session when both are open on the same engine
   (also open in RFC 0011).
-- Embedding a plugin window from a worker process: X11 can embed another process's window,
-  macOS can't embed another process's view, so there it may stay a floating window.
+- Embedding a worker's plugin window in the app's window on Linux, through X11 (XEmbed); on
+  macOS it stays a window of its own ([Plugin windows](#plugin-windows)).
 - What Compact needs from the controller-mapping service when it has no touch.
 - Following CLAP's own work on remote controls (`clap.remote-controls`), which covers part of
   the priority and paging above; the description should use it rather than duplicate it
