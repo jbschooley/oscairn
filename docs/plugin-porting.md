@@ -312,8 +312,9 @@ What changes for the plugin:
   ([format](performance-format.md)). A Performance made on a Mac opens on Linux with a stand-in
   unless a Linux build of the same version went with it or is installed. Keep the ID and
   version stable across platforms, and keep everything the plugin needs inside its bundle;
-  files it installs elsewhere do not go with it. A different build under a version already in
-  the store is kept beside it and reported, so give a changed build a new version. LV2 plugins
+  files it installs elsewhere do not go with it. When a device's store already has a different
+  build of the same version for a platform, it keeps that one and notes that the incoming build
+  was not installed, so give a changed build a new version. LV2 plugins
   are not packaged; they must be installed on each device.
 - **Signing your builds** ([RFC 0006](rfcs/0006-packages-and-portability.md#signatures)):
   `oscairn-sign key author.key` makes your key (keep it private; it is readable only by you),
