@@ -133,8 +133,7 @@ namespace oscairn::standalone
         // A refresh reads on its own connection and makes only short calls, so the UI's calls
         // wait on nothing long: it does not make the engine busy.
         bool controlReady() const { return !soundJob_.valid() || soundJobKind_ == SoundAction::Refresh; }
-        // Any job, including a refresh: edits asked now wait for it in the engine's queue, so a
-        // list read now would not yet hold them.
+        // Any job, including a refresh.
         bool jobRunning() const { return soundJob_.valid(); }
         // Preparing the next Performance ahead is not busy: anything asked meanwhile waits for it, or replaces it while it waits.
         bool soundBusy() const { return std::any_of(pendingSounds_.begin(),pendingSounds_.end(),[](const SoundAction& a){return a.kind!=SoundAction::PrepareFromLibrary;}) || (soundJob_.valid() && soundJobKind_!=SoundAction::Refresh && soundJobKind_!=SoundAction::PrepareFromLibrary); }
@@ -195,7 +194,8 @@ namespace oscairn::standalone
         template<class F> void command(F&& f)
         {
             if(!failure_.empty() || (soundJob_.valid() && soundJobKind_==SoundAction::Replace))return;
-            if(soundJob_.valid()) { pendingControls_.emplace_back(std::forward<F>(f)); return; }
+            // Wait behind a job that may change the graph; a refresh changes nothing, so notes and edits go at once.
+            if(!controlReady()) { pendingControls_.emplace_back(std::forward<F>(f)); return; }
             // The polled reads above keep their pace through edits: a fader dragged sends 60 a
             // second, and the undo names and the open Performance may trail an edit by 250 ms.
             try{f();}catch(const std::exception& e)

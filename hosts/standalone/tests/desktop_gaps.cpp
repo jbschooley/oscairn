@@ -386,6 +386,15 @@ int main(int argc, char** argv)
                 check(tap.count("parts.meters") <= allowed && tap.count("wires.meters") <= allowed && tap.count("edit.history") <= allowed,
                       "the meters and undo names read at their own pace, not per edit: " + std::to_string(tap.count("parts.meters")) + " " + std::to_string(tap.count("wires.meters")) + " " +
                       std::to_string(tap.count("edit.history")) + " of at most " + std::to_string(allowed));
+                // The periodic refresh reads on its own connection and changes nothing: a note
+                // or a fader move asked while it runs goes at once, not after it.
+                check(wait([&] { return !engine.jobRunning(); }), "no job before the refresh");
+                standalone::SoundAction tick; tick.kind = standalone::SoundAction::Refresh;
+                engine.soundAction(std::move(tick));
+                check(engine.jobRunning(), "a refresh runs");
+                tap.reset();
+                engine.setParam(node, 4, 1); engine.note(true, 60, 1.f); engine.note(false, 60, 0);
+                check(tap.count("params.set") == 1 && tap.count("notes.send") == 2, "a fader move and a note go at once during a refresh: " + std::to_string(tap.count("params.set")) + " " + std::to_string(tap.count("notes.send")));
             }
             // A Parts view not on screen (the one under Play, a background app's) polls nothing:
             // on the Mixer, shown, it would read the meters twenty times a second.
