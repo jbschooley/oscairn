@@ -325,6 +325,32 @@ namespace
             s.assign("aftertouch:1", {}); s.assign("breath:1", {}); s.assign("button:1", {}); run(s);
         }
 
+        // A footswitch is a momentary button (RFC 0011): its scene or mute fires on each press,
+        // not on the release.
+        {
+            ControlGroup pedal = midi({Role::Assign, "footswitches", 1}, "smk", Message::CC, {64});
+            s.assign("footswitch:1", target(Assignment::Kind::Scene, verse)); run(s);
+            ControllerMapping m; GroupPositions at;
+            auto play = [&](std::vector<uint8_t> bytes) {
+                auto o = m.handle(source(), {pedal}, keys, at, "smk", 1, bytes.data(), bytes.size(), value);
+                for(const auto& a : o) values[key(a.target)] = a.value;
+                return o;
+            };
+            auto o = play({0xB0, 64, 127});
+            check(o.size() == 1 && o[0].control == "footswitch:1" && o[0].target == target(Assignment::Kind::Scene, verse) && o[0].value == 1, "a footswitch selects its scene on the press");
+            check(play({0xB0, 64, 0}).empty(), "the release plays nothing");
+            o = play({0xB0, 64, 127});
+            check(o.size() == 1 && o[0].value == 1, "every press selects it again");
+            s.assign("footswitch:1", target(Assignment::Kind::PartMute, lead)); run(s);
+            values[key(target(Assignment::Kind::PartMute, lead))] = 0;
+            o = play({0xB0, 64, 127});
+            check(o.size() == 1 && o[0].target == target(Assignment::Kind::PartMute, lead) && o[0].value == 1, "a mute toggles on the press");
+            check(play({0xB0, 64, 0}).empty(), "not on the release");
+            o = play({0xB0, 64, 127});
+            check(o.size() == 1 && o[0].value == 0, "and back off on the next press");
+            s.assign("footswitch:1", {}); run(s);
+        }
+
         // The Sound's own assignments: the mod wheel to a parameter of its own, played in its part;
         // a knob's when its part is selected. Only its own plugins and controls.
         s.assign("wheel:2", parameter(bass, 7), lead);

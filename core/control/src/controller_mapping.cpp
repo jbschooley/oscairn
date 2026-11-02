@@ -69,7 +69,7 @@ namespace oscairn
         if(r->target.kind != Assignment::Kind::None) targets.push_back(r->target);
         else for(const auto& [p, t] : r->parts) targets.push_back(t);
         std::vector<Action> out;
-        const bool button = group.kind == "buttons" || message == Message::Note;
+        const bool button = group.kind == "buttons" || group.kind == "footswitches" || message == Message::Note;
         const auto encoding = index < group.midi.encodings.size() ? group.midi.encodings[index] : Encoding::Absolute;
         constexpr double step = 1.0 / 127, tolerance = 1.0 / 127 + 1e-9;
         for(const auto& t : targets)
