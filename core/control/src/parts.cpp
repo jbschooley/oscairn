@@ -1597,13 +1597,17 @@ namespace oscairn
         if(it->split) throw std::invalid_argument("this wire joins a split's lane: set the lane's Mix");
         editWires([&] {
             auto& w = *std::find_if(wires_.begin(), wires_.end(), [&](const Wire& x) { return x.id == id; });
+            const auto was = w.level; // what it carried before, including any empty buses' gain
             w.level = level; w.pan = pan; w.mute = mute; w.solo = solo;
             // A part's output and send wires carry its fader: setting them sets the part and send.
+            // The wire also carries the levels of any empty buses it passes through; ask those
+            // out of the part and send so the wire lands at the level shown on it. (A wire
+            // through a level-0 bus carries 0 and cannot be divided: it takes the asked level.)
             if(w.owner == WireOwner::Part && (w.fader || w.send))
             {
                 auto& p = findPart(w.part);
-                if(w.send) { for(auto& s : p.sends) if(s.bus == w.send) s.level = p.level > 0 ? level / p.level : level; }
-                else { p.level = level; p.mute = mute; if(!w.split) p.pan = pan; }
+                if(w.send) { for(auto& s : p.sends) if(s.bus == w.send) s.level = was > 0 ? level * s.level / was : (p.level > 0 ? level / p.level : level); }
+                else { p.level = was > 0 ? level * p.level / was : level; p.mute = mute; if(!w.split) p.pan = pan; }
                 buildParts();
             }
         });

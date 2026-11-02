@@ -801,6 +801,23 @@ namespace
         check(near(x.l[0], .375), "the send's bus plays at its own level: " + std::to_string(x.l[0]));
         s.setPartLevel(hall, 1, false); s.setPartLevel(room, 1, true); s.commit(); x.run(s);
         check(near(x.l[0], 0), "muting the bus mutes its send too");
+        // A Routing level on a wire through a bus with a fader sets what was asked: the wire also
+        // carries the bus's gain, so the part takes the asked level divided by it.
+        s.setSend(room, hall, {}); s.setPartLevel(room, .5, false); s.setPartLevel(keys, .5, false); s.commit();
+        auto keysWire = [&](uint32_t send) { for(const auto& w : s.wires()) if(w.part == keys && w.from == synth && w.to == graphOutput && w.send == send) return w.id; throw std::runtime_error("no keys wire"); };
+        s.setMix(keysWire(0), .5, 0, false, false); s.commit(); x.run(s);
+        double dryLevel = -1; for(const auto& w : s.wires()) if(w.part == keys && !w.send && w.to == graphOutput) dryLevel = w.level;
+        check(near(dryLevel, .5) && near(s.parts()[0].level, 1) && near(x.l[0], .125), "asked .5 past the bus's half: the wire shows .5: " + std::to_string(dryLevel));
+        s.setMix(keysWire(0), .5, 0, false, false); s.commit(); x.run(s);
+        double again = -1; for(const auto& w : s.wires()) if(w.part == keys && !w.send && w.to == graphOutput) again = w.level;
+        check(near(again, .5), "asking again lands in the same place: " + std::to_string(again));
+        // A send wire's level: the send keeps its own share of the asked level, past its bus's fader.
+        s.setPartLevel(hall, .5, false); s.setSend(keys, hall, 1); s.commit();
+        s.setMix(keysWire(hall), .4, 0, false, false); s.commit(); x.run(s);
+        double sendLevel = -1; double sendWire = -1;
+        for(const auto& p : s.parts()) if(p.id == keys) for(const auto& sd : p.sends) if(sd.bus == hall) sendLevel = sd.level;
+        for(const auto& w : s.wires()) if(w.part == keys && w.send == hall) sendWire = w.level;
+        check(near(sendLevel, .8) && near(sendWire, .4) && near(x.l[0], .225), "the send wire shows the asked .4 past the bus's half: send " + std::to_string(sendLevel) + " wire " + std::to_string(sendWire) + " l " + std::to_string(x.l[0]));
     }
 
     // Zones on a wire inside a part's chain (note limits after a note plugin) survive a rebuild
