@@ -19,8 +19,9 @@ namespace oscairn
     // layers, each filling only what the layers above it left empty:
     //   1. Performance overrides, by the control's logical identity ("knob:1", "fader:3");
     //   2. the sound's own assignments: the selected part's controls, as Assign banks;
-    //   3. role banks (Filter, Amp EG, EQ, Levels) from the roles its plugins declare, or, when
-    //      they declare none and the sound has no controls, Assign banks from its first parameters;
+    //   3. role banks (Filter, Amp EG, EQ, Levels) from the roles its plugins declare (oscairn.ui),
+    //      or for a plugin declaring none, the roles its parameters' names suggest ("Cutoff"); with
+    //      no roles either way and no controls of its own, Assign banks from its first parameters;
     //   4. Performance conventions: faders play part levels (in their part mode), buttons part
     //      mutes, and with no part selected the knobs follow the Performance's own controls;
     //   5. the effects bank: the main control of each effect in the selected part, in chain order.
@@ -43,10 +44,12 @@ namespace oscairn
         std::vector<AssignmentOverride> overrides;
     };
     // From a graph state; `parameters` gives a node's parameters (Control::parameters, or a cache
-    // of it), and `roles` a parameter's declared role (none yet: plugins have no way to declare one).
+    // of it), with the roles its plugin declares; a plugin declaring none gets roles from names.
     AssignmentSource assignmentSource(const Control::GraphState&, const std::vector<AssignmentOverride>& overrides,
-                                      const std::function<std::vector<Control::ParamInfo>(NodeId)>& parameters,
-                                      const std::function<std::string(NodeId, const Control::ParamInfo&)>& roles = {});
+                                      const std::function<std::vector<Control::ParamInfo>(NodeId)>& parameters);
+    // The role a parameter's name suggests, for plugins that declare none: "Cutoff", "Resonance",
+    // "Attack" (a filter envelope's stages in a module named for the filter), "Wet"; empty: none.
+    std::string roleFromName(const std::string& name, const std::string& module = {});
 
     // The kinds of bank: a part's Assign banks (its controls, or its first parameters), the role
     // banks, and its effects. With no part selected, Assign banks are the Performance's controls.

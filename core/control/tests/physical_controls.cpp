@@ -5,7 +5,8 @@
 // as wide as their group, on the KICK (four knobs paged), the MODX M (six screen knobs, four knobs
 // in six rows, eight faders in three modes) and an eight-knob device; overrides checked, undone,
 // saved and loaded.
-//   oscairn-physical-controls-test FIXTURE.clap DELAY.clap
+// Roles declared through oscairn.ui and from names, filling the Basic Synth's role banks.
+//   oscairn-physical-controls-test FIXTURE.clap DELAY.clap BASIC_SYNTH.clap
 #include "oscairn/physical_controls.h"
 #include "oscairn/session.h"
 #include "../../plugin-host/src/StateFiles.h"
@@ -44,8 +45,13 @@ namespace
         const auto super = s.addMacro("Super"), swell = s.addMacro("Swell"), bright = s.addMacro("Brightness", lead);
         const auto verse = s.addScene("Verse");
         run(s);
+        // Roles as if the fixture declared them.
         auto source = [&](std::function<std::string(NodeId, const Control::ParamInfo&)> roles = {}) {
-            return assignmentSource(s.graphState(), s.assignments(), [&](NodeId n) { return s.parameters(n); }, roles);
+            return assignmentSource(s.graphState(), s.assignments(), [&](NodeId n) {
+                auto params = s.parameters(n);
+                if(roles) for(auto& p : params) p.role = roleNamed(roles(n, p));
+                return params;
+            });
         };
 
         // No part selected: the Performance's own controls, in banks as wide as the group.
@@ -288,16 +294,56 @@ namespace
         check(t.assignments().size() == 4 && sounds == 2, "a part's own assignments round-trip with the Performance");
         (void)fx;
     }
+
+    // Roles: declared through oscairn.ui (the Basic Synth's and the Delay's), else from names, and
+    // the role banks they fill, a role the plugin lacks left blank.
+    void roles(const char* fixture, const char* delay, const char* basicSynth)
+    {
+        check(roleFromName("Cutoff") == "cutoff" && roleFromName("RESONANCE") == "resonance" && roleFromName("Attack") == "attack" &&
+              roleFromName("Attack", "Filter envelope") == "filterAttack" && roleFromName("Wet") == "mix" && roleFromName("Gain").empty() && roleFromName("Cutoff 2").empty(),
+              "roles from names: cutoff, resonance, attack (a filter envelope's in its module), wet; none for others");
+        Session s(48000, frames, {}, stereoIn);
+        const auto synth = s.add("synth", basicSynth), fx = s.add("fx", delay), plain = s.add("plain", fixture, "org.kick.test.synth");
+        const auto keys = s.addPart("Keys"), other = s.addPart("Other");
+        s.insertIntoPart(keys, 0, synth); s.insertIntoPart(keys, 1, fx); s.insertIntoPart(other, 0, plain); s.commit();
+        run(s);
+        auto info = [&](NodeId n, const char* name) { for(const auto& p : s.parameters(n)) if(p.name == name) return p; throw std::runtime_error(std::string("no ") + name); };
+        check(info(synth, "Brightness").role == OSCAIRN_ROLE_CUTOFF && info(synth, "Level").role == OSCAIRN_ROLE_LEVEL && info(synth, "Detune").role == 0 && info(fx, "Wet").role == OSCAIRN_ROLE_MIX,
+              "the Basic Synth and the Delay declare their roles");
+        auto source = [&](std::function<void(NodeId, std::vector<Control::ParamInfo>&)> change = {}) {
+            return assignmentSource(s.graphState(), s.assignments(), [&](NodeId n) { auto p = s.parameters(n); if(change) change(n, p); return p; });
+        };
+        // Four wide: Filter with its cutoff, the rest blank (no resonance, envelope or key tracking);
+        // Amp EG's only role, level, is its eighth, so it is left out; the Delay's Wet in Effects.
+        auto banks = knobBanks(source(), keys, 4);
+        check(banks.size() == 2 && banks[0].name == "Filter" && banks[0].layer == AssignmentLayer::Role && banks[0].slots[0] == parameter(synth, info(synth, "Brightness").id) &&
+              banks[0].labels[0] == "synth: Brightness" && banks[0].slots[1].kind == Assignment::Kind::None && banks[0].slots[3].kind == Assignment::Kind::None &&
+              banks[1].layer == AssignmentLayer::Effects && banks[1].slots[0] == parameter(fx, info(fx, "Wet").id),
+              "Basic Synth, four wide: Filter (cutoff, then blanks), and the Delay's Wet: " + (banks.empty() ? std::string() : banks[0].name));
+        banks = knobBanks(source(), keys, 8);
+        check(banks.size() == 3 && banks[1].name == "Amp EG" && banks[1].slots[7] == parameter(synth, info(synth, "Level").id) && banks[1].slots[0].kind == Assignment::Kind::None,
+              "eight wide: Amp EG with its level, attack to ampKeyTracking blank");
+        // A plugin declaring no roles gets them from its names; a plugin declaring any keeps only those.
+        auto renamed = [&](NodeId n, std::vector<Control::ParamInfo>& p) { if(n == plain) p[0].name = "Cutoff"; };
+        banks = knobBanks(source(renamed), other, 4);
+        check(!banks.empty() && banks[0].name == "Filter" && banks[0].slots[0] == parameter(plain, 7), "from names: the fixture's \"Cutoff\" fills Filter");
+        banks = knobBanks(source([&](NodeId n, std::vector<Control::ParamInfo>& p) { renamed(n, p); if(n == plain) p[1].role = OSCAIRN_ROLE_RESONANCE; }), other, 4);
+        check(!banks.empty() && banks[0].name == "Filter" && banks[0].slots[0].kind == Assignment::Kind::None && banks[0].slots[1] == parameter(plain, 99),
+              "declared roles come first: a declared resonance, and the name \"Cutoff\" ignored");
+        banks = knobBanks(source(), other, 4);
+        check(!banks.empty() && banks[0].name == "Assign 1\xE2\x80\x93" "4", "no roles either way: Assign from its first parameters");
+    }
 }
 
 int main(int argc, char** argv)
 {
-    if(argc < 3) { std::fprintf(stderr, "usage: %s FIXTURE DELAY\n", argv[0]); return 2; }
+    if(argc < 4) { std::fprintf(stderr, "usage: %s FIXTURE DELAY BASIC_SYNTH\n", argv[0]); return 2; }
     try
     {
         state_files::TemporaryDirectory temp;
         layers(argv[1], argv[2], temp.path);
         controllers(argv[1], argv[2], temp.path);
+        roles(argv[1], argv[2], argv[3]);
     }
     catch(const std::exception& e) { std::fprintf(stderr, "FAIL: %s\n", e.what()); return 1; }
     if(!failures) std::puts("ok: physical controls resolve in layers and groups, by page, row and mode, and save");

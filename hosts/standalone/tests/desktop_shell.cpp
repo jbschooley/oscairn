@@ -186,8 +186,9 @@ int main(int argc, char** argv)
                     play.select(piano); play.showPartControls(true);
                     check(play.showsPartControls() && names() == "Drive," && play.knobSlots()[0].bank == "Assign 1\xE2\x80\x93" "4", "switched, the selected part's banks: its own controls first: " + names());
                     play.select(bass); play.showPartControls(true);
-                    check(play.knobSlots()[0].target.kind == Assignment::Kind::Parameter && play.knobSlots()[0].layer == AssignmentLayer::Role && play.knobSlots()[0].label.rfind("Basic Synth", 0) == 0,
-                          "a part with no controls: its instrument's first parameters, past its Transpose: " + play.knobSlots()[0].label);
+                    check(play.knobSlots()[0].target.kind == Assignment::Kind::Parameter && play.knobSlots()[0].layer == AssignmentLayer::Role && play.knobSlots()[0].label.rfind("Basic Synth", 0) == 0 && play.knobSlots()[0].label.ends_with(": Brightness") &&
+                          play.knobSlots()[0].bank == "Filter" && play.knobSlots()[1].target.kind == Assignment::Kind::None,
+                          "a part with no controls: its instrument's role banks, past its Transpose: Filter, the cutoff and blanks: " + play.knobSlots()[0].label);
                     play.showPartControls(false); play.select(piano);
                     // Learn, on a device with knobs: move one, then touch a target.
                     engine.setRowKnobs(4, standalone::Engine::Edge::Right);
@@ -207,7 +208,7 @@ int main(int argc, char** argv)
                     ControlGroup rowKnobs; rowKnobs.kind = "knobs"; rowKnobs.count = 4; rowKnobs.rows = {{"Assign 1", BankKind::Assign}};
                     engine.setControlGroups({screenKnobs, rowKnobs});
                     play.select(bass); play.showPartControls(true); settle();
-                    check(play.knobs() == 6 && play.knobSlots().size() == 6 && play.knobSlots()[0].control == "screen:1" && play.knobSlots()[0].bank == "Assign 1\xE2\x80\x93" "6",
+                    check(play.knobs() == 6 && play.knobSlots().size() == 6 && play.knobSlots()[0].control == "screen:1" && play.knobSlots()[0].bank == "Filter",
                           "six screen knobs: six tiles, a bank six wide: " + play.knobSlots()[0].bank);
                     snapshot(frame, "play-six");
                     frame.setSize(800, 480); settle(); // the MODX M's screen: the strips keep room

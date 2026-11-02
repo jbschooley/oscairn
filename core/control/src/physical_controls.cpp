@@ -6,6 +6,7 @@
 #include "oscairn/session.h"
 
 #include <algorithm>
+#include <cctype>
 #include <set>
 #include <stdexcept>
 #include <tuple>
@@ -95,28 +96,23 @@ namespace oscairn
             std::vector<Item> own;
             for(const auto& m : s.controls) if(m.part == partId) own.push_back(of(Assignment::Kind::Control, m.id, m.name));
             chunk(out.assign, "Assign", BankKind::Assign, AssignmentLayer::Sound, own, width);
-            // 3. The role banks, from its instruments' declared roles, each taking as many roles as
-            // the group is wide; a role none declares is blank.
-            bool declared = false;
-            for(const auto& n : nodes) for(const auto& p : n->params) declared = declared || !p.role.empty();
-            if(declared)
+            // 3. The role banks, from its instruments' roles, each taking as many roles as the
+            // group is wide; a role none has is blank, and a bank with none of its roles left out.
+            for(const auto& rb : roleBanks)
             {
-                for(const auto& rb : roleBanks)
-                {
-                    auto b = blank(rb.name, rb.kind, width); b.layer = AssignmentLayer::Role;
-                    bool any = false;
-                    for(size_t k = 0; k < width && k < rb.roles.size(); ++k)
-                        for(const auto* n : nodes)
-                        {
-                            if(n->effect || b.slots[k].kind != Assignment::Kind::None) continue;
-                            for(const auto& p : n->params) if(p.role == rb.roles[k]) { std::tie(b.slots[k], b.labels[k]) = parameter(*n, p); any = true; break; }
-                        }
-                    if(any) out.roles.push_back(std::move(b));
-                }
+                auto b = blank(rb.name, rb.kind, width); b.layer = AssignmentLayer::Role;
+                bool any = false;
+                for(size_t k = 0; k < width && k < rb.roles.size(); ++k)
+                    for(const auto* n : nodes)
+                    {
+                        if(n->effect || b.slots[k].kind != Assignment::Kind::None) continue;
+                        for(const auto& p : n->params) if(p.role == rb.roles[k]) { std::tie(b.slots[k], b.labels[k]) = parameter(*n, p); any = true; break; }
+                    }
+                if(any) out.roles.push_back(std::move(b));
             }
-            else if(own.empty())
+            if(out.roles.empty() && own.empty())
             {
-                // Nothing declared and nothing assigned: two Assign banks from its instrument's first parameters.
+                // No role bank filled (none declared, or none within the width) and nothing assigned: two Assign banks from its instrument's first parameters.
                 const AssignableNode* first = nullptr;
                 for(const auto* n : nodes) if(!first && n->instrument && !n->params.empty()) first = n;
                 for(const auto* n : nodes) if(!first && !n->effect && !n->params.empty()) first = n;
@@ -273,9 +269,31 @@ namespace oscairn
         return out;
     }
 
+    std::string roleFromName(const std::string& name, const std::string& module)
+    {
+        auto lower = [](std::string t) { for(auto& c : t) c = char(std::tolower((unsigned char)c)); return t; };
+        auto key = lower(name);
+        // shortcut: exact names only, and a filter's envelope only by its module; per-oscillator levels and other spellings fall to priority until plugins declare roles.
+        static const std::map<std::string, std::string> names{
+            {"cutoff", "cutoff"}, {"filter cutoff", "cutoff"}, {"cutoff frequency", "cutoff"}, {"filter frequency", "cutoff"},
+            {"resonance", "resonance"}, {"filter resonance", "resonance"}, {"reso", "resonance"},
+            {"filter envelope", "filterEnvelope"}, {"filter env", "filterEnvelope"}, {"filter env amount", "filterEnvelope"}, {"env amount", "filterEnvelope"}, {"envelope amount", "filterEnvelope"},
+            {"key tracking", "keyTracking"}, {"filter key tracking", "keyTracking"}, {"key track", "keyTracking"},
+            {"filter attack", "filterAttack"}, {"filter decay", "filterDecay"}, {"filter sustain", "filterSustain"}, {"filter release", "filterRelease"},
+            {"attack", "attack"}, {"decay", "decay"}, {"sustain", "sustain"}, {"release", "release"}, {"hold", "hold"},
+            {"amp attack", "attack"}, {"amp decay", "decay"}, {"amp sustain", "sustain"}, {"amp release", "release"},
+            {"velocity", "velocity"}, {"level", "level"}, {"volume", "level"},
+            {"low gain", "lowGain"}, {"mid gain", "midGain"}, {"high gain", "highGain"}, {"low frequency", "lowFrequency"}, {"mid frequency", "midFrequency"}, {"high frequency", "highFrequency"}, {"mid q", "midQ"},
+            {"mix", "mix"}, {"dry/wet", "mix"}, {"wet", "mix"}, {"pan", "pan"}};
+        const auto slash = module.rfind('/');
+        if(lower(slash == std::string::npos ? module : module.substr(slash + 1)).find("filter") != std::string::npos &&
+           (key == "attack" || key == "decay" || key == "sustain" || key == "release")) key = "filter " + key;
+        const auto it = names.find(key);
+        return it == names.end() ? std::string() : it->second;
+    }
+
     AssignmentSource assignmentSource(const Control::GraphState& g, const std::vector<AssignmentOverride>& overrides,
-                                      const std::function<std::vector<Control::ParamInfo>(NodeId)>& parameters,
-                                      const std::function<std::string(NodeId, const Control::ParamInfo&)>& roles)
+                                      const std::function<std::vector<Control::ParamInfo>(NodeId)>& parameters)
     {
         AssignmentSource s;
         s.parts = g.parts; s.controls = g.macros; s.overrides = overrides;
@@ -297,8 +315,10 @@ namespace oscairn
                         for(const auto& port : info.outputs) out += port.channels;
                         n.effect = in && out; n.instrument = out && !in;
                     }
-                if(parameters)
-                    for(const auto& p : parameters(id)) n.params.push_back({p.id, p.name, roles ? roles(id, p) : std::string(), p.priority});
+                // Declared roles; a plugin declaring none, the roles its names suggest.
+                const auto params = parameters ? parameters(id) : std::vector<Control::ParamInfo>{};
+                const bool declared = std::any_of(params.begin(), params.end(), [](const Control::ParamInfo& p) { return p.role != 0; });
+                for(const auto& p : params) n.params.push_back({p.id, p.name, declared ? roleName(p.role) : roleFromName(p.name, p.module), p.priority});
                 s.nodes.emplace(id, std::move(n));
             }
         }
