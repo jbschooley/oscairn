@@ -343,8 +343,8 @@ namespace oscairn
     // bus itself plays. Bus edits are refused if they would loop, so this ends.
     // Where sound sent to a bus enters it: its first box that takes sound, or, through a split
     // before that, the first such box in each lane (an empty lane continues after the split), at
-    // the lane's Mix. With no box to enter, wherever the bus itself plays. Bus edits are refused
-    // if they would loop, so this ends.
+    // the lane's Mix. With no box to enter, wherever the bus itself plays, through its fader.
+    // Bus edits are refused if they would loop, so this ends.
     std::vector<Session::BusEntry> Session::busEntries(uint32_t id)
     {
         const auto layout = graph_.describe().audioLayout;
@@ -373,8 +373,11 @@ namespace oscairn
                 }
                 return out;
             }
-            if(bus.bus) return busEntries(bus.bus);
-            return {{graphOutput, bus.output}};
+            // No box: the sound goes on, through the bus's own fader, pan and mute.
+            auto out = bus.bus ? busEntries(bus.bus) : std::vector<BusEntry>{{graphOutput, bus.output}};
+            const bool mute = bus.mute || !heard(bus);
+            for(auto& x : out) { x.level *= bus.level; x.pan = std::clamp(x.pan + bus.pan, -1.0, 1.0); x.mute = x.mute || mute; x.fader = true; }
+            return out;
         };
         return reach(bus.chain);
     }
@@ -483,7 +486,8 @@ namespace oscairn
         // A wire into a bus's lane also takes that lane's Mix.
         auto enter = [](Wire* w, const End& e, const BusEntry& d, double level, bool mute) {
             w->level = level * e.level * d.level; w->mute = mute || e.mute || d.mute;
-            if(d.split) { w->pan = std::clamp(e.pan + d.pan, -1.0, 1.0); if(!e.split) { w->split = d.split; w->lane = d.lane; } }
+            if(d.split || d.fader) w->pan = std::clamp(e.pan + d.pan, -1.0, 1.0);
+            if(d.split && !e.split) { w->split = d.split; w->lane = d.lane; }
         };
         const auto destinations = part.bus ? busEntries(part.bus) : std::vector<BusEntry>{{graphOutput, part.output}};
         const bool mute = part.mute || !heard(part);

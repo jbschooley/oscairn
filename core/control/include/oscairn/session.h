@@ -272,7 +272,7 @@ namespace oscairn
         template<class Edit> void editWires(Edit&& edit);
         void buildPart(const Part& part);
         void buildParts();
-        struct BusEntry { NodeId node = 0; uint32_t port = 0; double level = 1, pan = 0; bool mute = false; uint32_t split = 0, lane = 0; };
+        struct BusEntry { NodeId node = 0; uint32_t port = 0; double level = 1, pan = 0; bool mute = false; uint32_t split = 0, lane = 0; bool fader = false; }; // fader: passes an empty bus's fader
         std::vector<BusEntry> busEntries(uint32_t bus);
         bool splitNode(NodeId node) const;       // a split's Split or Join node
         bool heard(const Part& part);            // not silenced by another part's solo

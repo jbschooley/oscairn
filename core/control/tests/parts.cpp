@@ -764,6 +764,26 @@ namespace
         check(toMain == 1, "the lead plays to Main again");
     }
 
+    // A bus with no box still applies its fader: sends and parts into it play at its level,
+    // muted with it, panned with it.
+    void emptyBus(const char* fixture)
+    {
+        Session s(48000, frames);
+        const auto synth = s.add("synth", fixture, "org.kick.test.synth");
+        s.setParameter(synth, 7, .25);
+        const auto keys = s.addPart("Keys"), room = s.addPart("Room", {PartInput::Kind::Bus});
+        s.insertIntoPart(keys, 0, synth);
+        s.setSend(keys, room, 1); s.setPartLevel(room, 1, true); s.commit();
+        Audio x;
+        s.note(true, 60, 1); x.run(s); check(near(x.l[0], .25), "a send into a muted empty bus adds nothing: " + std::to_string(x.l[0]));
+        s.setPartLevel(room, .5, false); s.commit(); x.run(s); check(near(x.l[0], .375), "at level 0.5 it adds half: " + std::to_string(x.l[0]));
+        s.setPartPan(room, -1); s.commit(); x.run(s); check(x.r[0] < x.l[0], "panned left with it");
+        s.setPartPan(room, 0); s.setSend(keys, room, {}); s.setPartOutput(keys, room); s.commit(); x.run(s);
+        check(near(x.l[0], .125), "a part playing into it plays at its level: " + std::to_string(x.l[0]));
+        s.setMaster(.5, 0); s.commit(); x.run(s); check(near(x.l[0], .0625), "the master level applies once after it: " + std::to_string(x.l[0]));
+        s.setPartLevel(room, .5, true); s.commit(); x.run(s); check(near(x.l[0], 0), "and is muted with it");
+    }
+
     // Scenes: part faders and scene parameters, switched while a note is held without a gap,
     // and saved with the Performance.
     void scenes(const char* fixture, const fs::path& root)
@@ -1778,6 +1798,7 @@ int main(int argc, char** argv)
         mixer(argv[1], argv[3], temp.path);
         noteLimits(argv[1], temp.path);
         buses(argv[1], argv[3]);
+        emptyBus(argv[1]);
         scenes(argv[1], temp.path);
         sceneSwitching(argv[1], temp.path);
         onOff(argv[1], temp.path);
