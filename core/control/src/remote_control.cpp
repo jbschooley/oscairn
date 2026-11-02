@@ -722,7 +722,16 @@ namespace oscairn
         }
         impl_->call("controls.targets","{\"control\":"+std::to_string(macro)+",\"targets\":"+list+"]}");impl_->refresh();
     }
-    void RemoteControl::setMacro(uint32_t macro,double value){impl_->call("controls.set","{\"control\":"+std::to_string(macro)+",\"value\":"+encode(value)+'}');impl_->refresh();}
+    void RemoteControl::setMacro(uint32_t macro,double value)
+    {
+        impl_->call("controls.set","{\"control\":"+std::to_string(macro)+",\"value\":"+encode(value)+'}');
+        // A control that only moves plugin parameters changes nothing else in the graph state: keep
+        // its value here rather than read the whole graph again on every move. One that moves part
+        // levels, mutes, other controls or a morph is read again, so the state is current on return.
+        bool shown=false;
+        for(auto& m:impl_->graph.macros)if(m.id==macro){m.value=value;for(const auto& t:m.targets)shown=shown||t.kind!=MacroTarget::Kind::Parameter;}
+        if(shown)impl_->refresh();
+    }
     void RemoteControl::setZones(uint32_t wire,const std::vector<NoteZone>& zones){impl_->call("wires.zones","{\"wire\":"+std::to_string(wire)+",\"zones\":"+zonesText(zones)+'}');impl_->refresh();}
     void RemoteControl::removePart(uint32_t part){impl_->call("parts.remove","{\"part\":"+std::to_string(part)+'}');impl_->refresh();}
     namespace { std::string placeText(ChainPlace p){return p.split?",\"split\":"+std::to_string(p.split)+",\"lane\":"+std::to_string(p.lane):std::string{};} }
