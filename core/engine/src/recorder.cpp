@@ -579,7 +579,9 @@ namespace oscairn
     void Recorder::update(const Taps& taps)
     {
         if(!recording_) return;
-        auto& a = *live_.back();
+        const auto it = std::find_if(live_.begin(), live_.end(), [&](const auto& a) { return a->id == recording_; });
+        if(it == live_.end()) return;
+        auto& a = **it;
         // Its own taps; the retroactive ones follow updateRetro.
         for(size_t j = 0; j < a.own.taps.audio.size(); ++j) if(a.ownOf[j] < taps.audio.size()) a.own.taps.audio[j].sources = taps.audio[a.ownOf[j]].sources;
         if(a.own.notes) for(size_t i = 0; i < a.own.taps.notes.size() && i < taps.notes.size(); ++i) a.own.taps.notes[i].nodes = taps.notes[i].nodes;
@@ -589,7 +591,9 @@ namespace oscairn
     void Recorder::stop()
     {
         if(!recording_) return;
-        auto& a = *live_.back();
+        const auto it = std::find_if(live_.begin(), live_.end(), [&](const auto& a) { return a->id == recording_; });
+        if(it == live_.end()) return;
+        auto& a = **it;
         { std::lock_guard lock(a.mutex); if(a.status.state == "recording" || a.status.state == "waiting") a.status.state = "finishing"; }
         a.end.store(now()); // the rings hold everything before it: the clock is published after them
         a.fed = false;

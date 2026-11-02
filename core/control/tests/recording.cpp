@@ -402,6 +402,33 @@ namespace
         check(s.recorder().committedBytes() == 0 && on - s.memoryState().committed == rings, "turned off, the rings go and the budget no longer counts them");
     }
 
+    // A set-length capture taken while an open-ended take records: stop() ends the take
+    // recording, not the capture started last, and the capture keeps its whole length.
+    void stopDuringCapture(const char* synth)
+    {
+        constexpr uint32_t block = 128;
+        Session s(48000, block);
+        const auto node = s.add("synth", synth);
+        const auto part = s.addPart("Lead");
+        s.insertIntoPart(part, 0, node);
+        s.commit();
+        Render render(s);
+        render.block(block);
+        const auto before = render.main.size() / 2;
+        const auto take = s.recordStart({}, "Song"); // until stopped
+        Control::RecordWhen cap; cap.until = Control::RecordWhen::Until::Seconds; cap.length = 0.5;
+        const auto capture = s.recordStart({{Control::RecordTap::Kind::Output, 0}}, "Mid take", cap);
+        while(render.main.size() / 2 - before < 24000 + block) render.block(block);
+        s.recordStop(take); // the take recording, not the capture
+        const auto stopped = render.main.size() / 2;
+        while(render.main.size() / 2 < stopped + 24000) render.block(block); // let the capture's files close
+        const auto t = finish(s, take, false);
+        check(t.state == "done", "stop() closes the take recording even with a capture in flight: " + t.state);
+        check(t.frames == stopped - before, "the take holds every frame up to the stop: " + std::to_string(t.frames) + " for " + std::to_string(stopped - before));
+        const auto c = finish(s, capture, false);
+        check(c.state == "done" && c.frames == 24000 && c.overruns.empty(), "the capture keeps its half second beside it: " + c.state + " " + std::to_string(c.frames));
+    }
+
     // Step 3's gate, offline: a take from the next bar starts on the bar line's exact sample, and
     // one from the last bar reads the retroactive rings back to it; both for a length in bars or
     // seconds.
@@ -505,6 +532,7 @@ int main(int argc, char** argv)
         partsAndNotes(argv[1]);
         inputAndNode(argv[1]);
         protocol(argv[1]);
+        stopDuringCapture(argv[1]);
         retroactive(argv[1]);
         bars(argv[1]);
         earlierTakes();
