@@ -187,6 +187,32 @@ int main(int argc, char** argv)
             std::filesystem::remove_all(directory);
             check(why.empty(), "the state load on the orphaned context kept the engine's shared bytes in the limit: " + why);
         }
+        // RFC 0025: a state load refused before the plugin activates again leaves its node's
+        // declaration known, so a sibling context's own restart into a bigger mode is still refit.
+        {
+            setenv("KICK_FIXTURE_MEMORY_CONTEXTS", "1", 1);
+            const auto root = loadPluginInWorker(argv[1], argv[3], "org.kick.test.memory", 48000, frames);
+            const auto context = root->createEffectContext();
+            bool refused = false;
+            try { root->loadState((std::filesystem::temp_directory_path() / "oscairn-no-such-state").string()); } catch(const std::exception&) { refused = true; }
+            std::array<float, frames> m{}; float* out[1]{m.data()};
+            uint64_t shared = 0;
+            std::string killed;
+            for(int i = 0; i < 100 && killed.empty() && shared <= (uint64_t(100) << 20); ++i)
+            {
+                context->setParameter(7, .95); // the big mode, which restarts the context
+                context->process(nullptr, 0, out, 1, frames, nullptr, 0, nullptr);
+                context->service();
+                try { if(const auto d = context->declaredMemory()) shared = d->shared_bytes; } catch(const std::exception&) {}
+                killed = context->failure();
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(100)); // the supervisor's samples since
+            if(killed.empty()) killed = context->failure();
+            unsetenv("KICK_FIXTURE_MEMORY_CONTEXTS");
+            check(refused && shared == 201u << 20 && killed.empty(),
+                  "after a refused state load, a sibling's restart into a bigger mode is refit: " + std::to_string(shared >> 20) + " MiB, " + killed);
+        }
         // RFC 0025 test 4, a wrong declaration: a plugin declaring 9 MiB and holding 200 more is
         // stopped at its worker's limit (the declaration plus the margin, not the policy's 4 GiB),
         // and nothing else is.

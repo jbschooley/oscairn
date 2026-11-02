@@ -487,7 +487,8 @@ namespace oscairn
             void loadState(const std::string& directory) override
             {
                 std::lock_guard lock(controlFor());
-                declared_.reset();
+                // Its declaration stays known: a re-activation's Reserve replaces it, and a load refused
+                // before one leaves the plugin as it was (RFC 0025).
                 process_->exchange(header(Op::LoadState).str(directory).data);
                 record(Op::SaveState);
                 process_->fitLimit();
@@ -511,7 +512,8 @@ namespace oscairn
             void loadSnapshot(const std::string& directory) override
             {
                 std::lock_guard lock(controlFor());
-                declared_.reset();
+                // Its declaration stays known: a re-activation's Reserve replaces it, and a load refused
+                // before one leaves the plugin as it was (RFC 0025).
                 process_->exchange(header(Op::LoadSnapshot).str(directory).data);
                 if(contexts_)
                 {
