@@ -203,6 +203,19 @@ namespace oscairn
                       const kick::clap::Event* events = nullptr, uint32_t eventCount = 0, bool adopt = true,
                       const uint8_t* sources = nullptr ) noexcept;
         void panicInput() noexcept { panicInput_=true; } // audio thread only
+        /// Audio thread, after process(): this block's samples of one of a node's audio output
+        /// channels (in port order), or of an external input channel for graphInput; null when the
+        /// node is not in the plan or has no such channel. Recording reads its taps here (RFC 0020).
+        const float* audioOutput( NodeId node, uint32_t channel ) const noexcept;
+        /// Told, on the audio thread during process(), the events each node receives in this block
+        /// (in time order, after zones) and those it sent (emitted). Must not block or allocate.
+        struct Listener
+        {
+            virtual void events( NodeId node, const kick::clap::Event* events, uint32_t count, bool emitted ) noexcept = 0;
+        protected:
+            ~Listener() = default;
+        };
+        void setListener( Listener* listener ) noexcept { listener_.store( listener, std::memory_order_release ); } // control thread; null: none
         uint32_t inputChannels() const noexcept { return inputChannels_; }
         uint32_t outputChannels() const noexcept { return outputChannels_; }
 
@@ -271,6 +284,7 @@ namespace oscairn
         std::map<std::pair<NodeId, uint32_t>, std::pair<NodeId, clap_id>> paramTargets_; // (source, lane) -> (target, param)
 
         std::atomic<Plan*> pending_{ nullptr };
+        std::atomic<Listener*> listener_{ nullptr };
         bool panicInput_=false;
         Plan*              current_ = nullptr; // audio thread only
         Retired            retired_;

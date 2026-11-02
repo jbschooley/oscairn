@@ -24,6 +24,7 @@ namespace oscairn
         struct Step
         {
             std::shared_ptr<PluginHost> host; // keeps the plugin alive while any plan uses it
+            NodeId id = 0;
             std::shared_ptr<std::array<std::atomic<float>,Graph::meterChannels>> peaks; // the node's, shared with every plan
             uint32_t                          audioInputs = 0, audioOutputs = 0;
             std::vector<AudioRoute>           audioSources;
@@ -466,6 +467,7 @@ namespace oscairn
             const auto& node = nodes_.at( id );
             Plan::Step  step;
             step.host         = node.host;
+            step.id           = id;
             step.peaks        = node.peaks;
             step.retiring     = node.retiring;
             step.activity     = node.activity;
@@ -600,6 +602,7 @@ namespace oscairn
         if(adopt)beginBlock();
 
         const bool panicInput=std::exchange(panicInput_,false);
+        auto* const listener=listener_.load(std::memory_order_acquire);
         Plan* plan = current_;
         if(!plan){clear();return true;}
         for(uint32_t c=0;c<inputChannels_;++c)
@@ -677,6 +680,7 @@ namespace oscairn
                 for(auto& source:step.noteSources)source.route->clear();
             }
 
+            if(listener)listener->events(step.id,plan->merged.data(),merged,false);
             const bool processed=step.host->process(step.in.data(),step.audioInputs,step.out.data(),step.audioOutputs,frames,plan->merged.data(),merged,transport);
             if(!processed) {
                 // A busy control gate can discard a release; reset when rendering resumes.
@@ -684,6 +688,7 @@ namespace oscairn
                 for(auto& source:step.noteSources)source.route->clear();
             }
             ok &= processed;
+            if(listener && processed){uint32_t sent=0;const auto* list=step.host->outputEvents(sent);listener->events(step.id,list,sent,true);}
             if(processed && step.peaks)
                 for(uint32_t c=0;c<std::min(step.audioOutputs,meterChannels);++c)
                 {
@@ -767,5 +772,14 @@ namespace oscairn
 
         for(const auto& r:plan->outputRoutes)mix(r,outputs[r.to]);
         return ok;
+    }
+
+    const float* Graph::audioOutput(NodeId node,uint32_t channel) const noexcept
+    {
+        const Plan* plan=current_;
+        if(!plan)return nullptr;
+        if(node==graphInput)return channel<inputChannels_?plan->externalInputs.data()+size_t(channel)*maxFrames_:nullptr;
+        for(const auto& step:plan->steps)if(step.id==node)return channel<step.audioOutputs?step.out[channel]:nullptr;
+        return nullptr;
     }
 }
