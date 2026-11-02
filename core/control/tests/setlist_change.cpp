@@ -91,6 +91,8 @@ namespace
         check(!s.leaving(), "the last Performance's plugins go once rung out");
         for(int i = 0; i < 10; ++i) audio.run(s); // the retired plans and their hosts are freed
         c.rungOut = residentBytes();
+        // Counted, not judged by resident memory, which the allocator keeps after plugins go.
+        check(s.heldRemoved() == 0, "the last Performance's plugins are freed once rung out: " + std::to_string(s.heldRemoved()) + " held");
         return c;
     }
 }
@@ -112,16 +114,12 @@ int main(int argc, char** argv)
         build(a, 0, argv[1], argv[2], argv[3], samples); build(b, 1, argv[1], argv[2], argv[3], samples);
 
         Session s(48000, frames);
-        uint64_t first = 0;
         for(const bool ahead : {false, true})
         {
             std::vector<double> cues;
             for(int round = 0; round < 5; ++round)
             {
                 const auto c = change(s, round % 2 ? b : a, round % 2 ? a : b, ahead);
-                if(!round && !ahead) first = c.rungOut;
-                // Each change used to keep the plugins it retired alive (about 80 MiB here each time).
-                if(round == 4) check(c.rungOut < first + (200u << 20), "memory does not grow with each change");
                 check(c.heldRang, "the held note plays on through the change");
                 cues.push_back(c.cueMs);
                 std::printf("%s: cue %.1f ms; %zu plugin instances; resident memory %.0f MiB before, %.0f MiB just after, %.0f MiB once rung out\n",

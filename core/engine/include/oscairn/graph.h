@@ -174,6 +174,8 @@ namespace oscairn
 
         /// Frees plans the audio thread has finished with.
         void collect();
+        /// Removed plugins not freed yet: those an audio plan or undo still owns (control thread).
+        size_t heldRemoved() const noexcept { return removedHosts_.size(); }
         /// Service staged nodes and removed nodes still owned by an audio plan.
         void service();
         uint64_t eventDrops() const noexcept { return eventDrops_.load(std::memory_order_relaxed); }

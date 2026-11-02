@@ -215,6 +215,7 @@ namespace oscairn
         uint64_t droppedNotes() const noexcept { return droppedNotes_.load(); }
         double sampleRate() const noexcept { return sampleRate_; }
         size_t leaving() const noexcept { return leaving_.size(); } // the last Performance's plugins still ringing out
+        size_t heldRemoved() const noexcept { return graph_.heldRemoved(); } // removed plugins not freed yet
         uint32_t maxFrames() const noexcept { return maxFrames_; }
 
     private:
