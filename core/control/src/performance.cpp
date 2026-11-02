@@ -324,7 +324,7 @@ std::vector<std::string> Session::exportArchive(const std::string& file,const st
     std::optional<signing::Key> key;
     if(sign.items || sign.archive)key=signingKey(sign.key);
     std::random_device random;
-    const auto stage=fs::temp_directory_path()/("oscairn-export-"+std::to_string(random())+std::to_string(random()));
+    const auto stage=dataHome()/(".export-"+std::to_string(random())+std::to_string(random())); // like installs: same file system as the export
     try{
         Package package;package.kind=kind;
         const auto from=write(stage,package);
@@ -1447,7 +1447,9 @@ std::string Session::savePerformanceToLibrary(const std::string& name,bool asNew
 // Libraries (RFC 0021). An archive is unpacked into a folder of its own and checked before
 // anything is installed; it goes again afterwards.
 namespace {
-fs::path unpackFolder(){std::random_device random;return fs::temp_directory_path()/("oscairn-archive-"+std::to_string(random())+std::to_string(random()));}
+// Unpacked inside the data folder, not the OS temp folder: on devices that mount /tmp as tmpfs,
+// a big archive would fill RAM on the way in, and copies across file systems cannot be renames.
+fs::path unpackFolder(){std::random_device random;return dataHome()/(".install-"+std::to_string(random())+std::to_string(random()));}
 std::string freshId(){std::random_device random;constexpr char hex[]="0123456789abcdef";std::string id;for(int i=0;i<16;++i)id+=hex[random()&15];return id;}
 }
 

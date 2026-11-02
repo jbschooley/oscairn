@@ -259,7 +259,8 @@ build-dev/core/control/oscairn-sign verify Export.olib
 of the SHA-256 of the public key) and public key. `build` adds this key's signature to
 `MySynth.clap.sig` beside the build, over its format, ID, version, platform and digest;
 re-sign after every rebuild. `archive` signs an archive whole; `verify` checks every signature
-and hash in one and says who signed what. The app's own keys, for signing exports, are
+and hash in one and says who signed what (`--into <folder>` picks where it unpacks to check,
+on the file system with room for it). The app's own keys, for signing exports, are
 `Keys/<name>.key` in the data folder (`keys.make`, `keys.list`); the keys a device trusts, and
 for what (`plugins`, `apps`, `content`), are its `trust.json` (`trust.list`, `trust.set`,
 `trust.remove`; [protocol](control-protocol.md)).

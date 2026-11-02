@@ -25,8 +25,10 @@ namespace
                    "      sign a plugin build, adding the signature to <build>.sig beside it\n"
                    "  oscairn-sign archive <key-file> <archive.olib>\n"
                    "      sign an archive whole (library.sig), replacing any signature over it\n"
-                   "  oscairn-sign verify <archive.olib>\n"
-                   "      check every signature and hash in an archive and say who signed what\n"
+                   "  oscairn-sign verify [--into <folder>] <archive.olib>\n"
+                   "      check every signature and hash in an archive and say who signed what;\n"
+                   "      <folder>, which must not exist yet, is where it is unpacked to check (default: a\n"
+                   "      folder in the OS temp folder; pick one on the file system with room for it)\n"
                    "  oscairn-sign file <key-file> <file> <signature-file>\n"
                    "      sign a repository's file (its root, or its index key), writing <signature-file>\n"
                    "  oscairn-sign verify-file <file> <signature-file>\n"
@@ -82,11 +84,11 @@ int main(int argc, char** argv)
             std::printf("signed %s by %s\n", a[2].c_str(), signing::keyId(k.publicKey).c_str());
             return 0;
         }
-        if(a.size() == 2 && a[0] == "verify")
+        if(a.size() >= 2 && a[0] == "verify" && (a.size() == 2 || (a.size() == 4 && a[1] == "--into")))
         {
             std::random_device random;
-            const auto into = fs::temp_directory_path() / ("oscairn-verify-" + std::to_string(random()) + std::to_string(random()));
-            const auto p = readPackage(a[1], into); // throws on any signature or hash that does not hold
+            const auto into = a.size() == 4 ? fs::path(a[2]) : fs::temp_directory_path() / ("oscairn-verify-" + std::to_string(random()) + std::to_string(random()));
+            const auto p = readPackage(a.back(), into); // throws on any signature or hash that does not hold
             std::error_code ignored; fs::remove_all(into, ignored);
             std::printf("archive %s %s\n", p.id.c_str(), p.signature.key.empty() ? "unsigned" : signing::keyId(p.signature.key).c_str());
             for(const auto& i : p.items) std::printf("item %s %s %s\n", i.kind.c_str(), i.id.c_str(), signers(i.signatures).c_str());

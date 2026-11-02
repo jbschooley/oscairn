@@ -204,6 +204,17 @@ int main(int argc, char** argv)
             check(c.installArchive(soundArchive.string(), false).added == 1 && items(c, "sound").size() == 2, "an exported Sound installs as the user's own");
             bool refused = false; try { c.installArchive(archive.string(), false, {"nothing"}); } catch(const std::exception&) { refused = true; }
             check(refused, "an item the archive does not have is refused");
+            // Unpacking happens in the data folder, never the OS temp folder: on a tmpfs /tmp a
+            // big archive would fill RAM on the way in. The OS temp folder is read-only here, so
+            // an install that unpacked there could not run (as non-root).
+            const auto fakeTemp = temp.path / "c" / "fake-temp";
+            fs::create_directories(fakeTemp);
+            ::setenv("TMPDIR", fakeTemp.c_str(), 1);
+            ::chmod(fakeTemp.c_str(), 0500);
+            const auto again = c.installArchive(soundArchive.string(), false); // the same export again: skipped
+            ::chmod(fakeTemp.c_str(), 0700);
+            ::unsetenv("TMPDIR");
+            check(again.skipped == 1 && items(c, "sound").size() == 2, "installing unpacks inside the data folder, not the read-only OS temp folder");
         }
         // Device E: the library's index past the old 4 MiB limit is still used, as a library of
         // thousands of items has: a name only the index holds comes back.
@@ -339,6 +350,15 @@ int main(int argc, char** argv)
             check(verified.first == 0 && verified.second.find("archive " + packed.id + " " + mine.id) != std::string::npos &&
                   verified.second.find("build clap org.kick.test.synth " + version + " " + platform() + " " + signing::keyId(authorKey)) != std::string::npos,
                   "oscairn-sign says who signed what: " + verified.second);
+            // --into: unpacked to check on a file system of the caller's, and cleaned after.
+            const auto into = temp.path / "h" / "verify-into";
+            const auto local = run(tool + " verify --into " + shell(into) + " " + shell(signedArchive));
+            check(local.first == 0 && local.second == verified.second && !fs::exists(into), "oscairn-sign verifies into a folder of the caller's");
+            bool refusedInto = false;
+            fs::create_directories(into);
+            refusedInto = run(tool + " verify --into " + shell(into) + " " + shell(signedArchive)).first != 0;
+            check(refusedInto, "a --into folder that exists already is refused");
+            fs::remove(into);
             // The manifest's name changed under the archive's signature, every other entry as it was.
             {
                 mz_zip_archive in{}, out{};
