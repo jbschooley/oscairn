@@ -268,7 +268,8 @@ report the compiled per-channel routes.
   its wire to where it plays (`fader: true`) and scale its sends, which are post-fader. A wire
   through a bus with no box also carries that bus's level, pan and mute: `wires.mix` on it moves
   the part's level and pan by what was asked of the wire, and its mute only when the wire's own
-  changes, so the bus keeps its share. Edits that would loop a bus into itself are refused;
+  changes, so the bus keeps its share. Two ways from a part to one place (an empty bus's output,
+  and its send to another empty bus that plays there too) are one wire at their summed level. Edits that would loop a bus into itself are refused;
   removing a bus returns its parts to the main output and ends their sends to it.
 - **Zones** decide which notes a note wire passes and how they change: each is
   `{"keys":[low,high],"velocities":[low,high],"channels":mask,"transpose":n,"curve":x,"fixedVelocity":v}`

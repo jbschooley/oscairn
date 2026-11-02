@@ -838,7 +838,7 @@ namespace
         // Nested: Keys into Room into Hall, at .5. Room shows its own level, Hall its half; muting
         // Hall leaves Room's.
         s.setSend(room, hall, {}); s.setPartOutput(room, hall); s.setPartLevel(hall, .5, false); s.commit(); settle();
-        check(near6(meter(room), .25) && near6(meter(hall), .125), "nested empty buses each meter their own point: room " + std::to_string(meter(room)) + " hall " + std::to_string(meter(hall)));
+        check(near6(meter(room), .25) && near6(meter(hall), .125) && near6(meter(keys), .25), "nested empty buses each meter their own point: room " + std::to_string(meter(room)) + " hall " + std::to_string(meter(hall)));
         s.setPartLevel(hall, .5, true); s.commit(); settle();
         check(near6(meter(room), .25) && meter(hall) < 1e-3, "muting the outer bus leaves the inner one's meter: room " + std::to_string(meter(room)) + " hall " + std::to_string(meter(hall)));
         // A bus whose chain takes no sound (a synth on it) passes it on through its fader, and meters it.
@@ -867,6 +867,21 @@ namespace
         { const auto w = dry(); s.setMix(w.id, w.level, w.pan, false, w.solo); s.commit(); }
         check(!s.parts()[0].mute, "and unmuting it unmutes the part");
 
+        // Keys into Room into Main, and Room's send into Hall into Main: two ways from the synth to
+        // Main, one wire, so turning it off, scenes and undo, which know a wire by its ends, see one.
+        s.setPartLevel(keys, 1, false); s.setPartLevel(room, 1, false); s.setPartLevel(hall, 1, false); s.setSend(room, hall, .1); s.commit(); x.run(s);
+        size_t ways = 0; for(const auto& w : s.wires()) ways += w.part == keys && w.from == synth && w.to == graphOutput && w.fader;
+        check(ways == 1 && near(dry().level, 1.1) && near(x.l[0], .275), "two ways to one place are one wire at their sum: " + std::to_string(ways) + " " + std::to_string(x.l[0]));
+        s.setWireEnabled(dry().id, false); s.commit(); x.run(s);
+        check(near(x.l[0], 0), "turning it off silences both ways: " + std::to_string(x.l[0]));
+        s.setPartPan(keys, 0); s.setPartLevel(keys, 1, false); s.commit(); x.run(s);
+        check(near(x.l[0], 0) && !dry().enabled, "and it stays off through a rebuild: " + std::to_string(x.l[0]));
+        s.setWireEnabled(dry().id, true); s.commit(); x.run(s);
+        check(near(x.l[0], .275), "and plays again: " + std::to_string(x.l[0]));
+        s.setPartLevel(room, 1, true); s.commit(); x.run(s);
+        check(near(x.l[0], 0) && dry().mute, "a muted bus mutes both ways");
+        s.setPartLevel(room, .5, false); s.commit(); settle();
+        check(near6(meter(keys), .25) && near6(meter(room), .125), "the part meters at its own fader, not the sum of its ways or the bus's level: keys " + std::to_string(meter(keys)) + " room " + std::to_string(meter(room)));
     }
 
     // Zones on a wire inside a part's chain (note limits after a note plugin) survive a rebuild
