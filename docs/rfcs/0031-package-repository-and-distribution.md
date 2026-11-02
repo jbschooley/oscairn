@@ -15,11 +15,18 @@ profiles ([RFC 0024](0024-device-profiles.md)), resource estimates
 ([RFC 0030](0030-system-shell-launcher-and-navigation.md)) and sample assets
 ([RFC 0009](0009-sound-assets-and-dependencies.md)).
 
+Revised 2026-11-01 with Jacob's input: [ideas from npm, pnpm and yarn](#ideas-from-npm-pnpm-and-yarn),
+[installing in little space](#installing-in-little-space) (unpacked package folders and
+streamed installs), [decisions](#decided-2026-11-01) on paid content, large libraries and
+manufacturers' repositories, and [research and a proposal](#publisher-trust-and-review) on
+publisher trust and review. Those two stay open until Jacob confirms the proposal.
+
 ## Progress
 
 Checked when built and tested; the sections below say how.
 
-- [ ] 1. The repository format, and installing from a folder or USB drive
+- [ ] 1. The repository format; installing from a folder or USB drive, from an unpacked package
+      folder, and streamed
 - [ ] 2. Fetching over HTTPS: refresh, incremental index updates, mirrors, resumable downloads
 - [ ] 3. Publishing: the `oscairn publish` command, checks, immutable versions and yanking
 - [ ] 4. Revocation lists and the takedown process
@@ -72,6 +79,30 @@ gets any of it.
 
 The links are pointers for later reading; this RFC adopts none of their code.
 
+## Ideas from npm, pnpm and yarn
+
+Jacob asked on 2026-11-01 which ideas from the JavaScript package managers apply. Already
+borrowed:
+
+- **pnpm's content-addressed store:** RFC 0006's
+  [shared store](0006-packages-and-portability.md#project-manifest-lockfile-and-shared-store).
+- **`npm ci`:** installing exactly what the lock names, never a newer version (RFC 0006).
+- **Immutable versions and yanking,** from npm and crates.io ([below](#versions-and-yanking)).
+
+Considered:
+
+| Idea | Decision | Why |
+| --- | --- | --- |
+| [Scoped names](https://docs.npmjs.com/cli/v11/using-npm/scope) (`@publisher/package`) | Not adopted | Package IDs are already reverse-DNS under the publisher's ID (`com.example.organ`), which is the same namespacing. Scopes fixed npm's flat namespace; Oscairn never had one |
+| [Dist-tags](https://docs.npmjs.com/cli/v11/commands/npm-dist-tag) as release channels | Adopted, two channels | A version is published to `stable` (the default) or `beta`. The index lists each version's channel. A device offers beta versions of a package only when the musician turns them on for it. Locks name versions, never channels, so a channel never moves a Performance |
+| [`npm deprecate`](https://docs.npmjs.com/cli/v11/commands/npm-deprecate) | Adopted | A publisher can mark a package, or a range of its versions, deprecated with a message and an optional replacement package ID. It stays installable and is shown with the message. Unlike yanking, it is advice. Nothing is replaced on its own |
+| [npm provenance](https://docs.npmjs.com/generating-provenance-statements) (Sigstore attestations) | Not adopted on devices | It is a second signature system with its own services and trust root, which devices would have to carry and update, and npm supports it only from GitHub Actions and GitLab CI on cloud-hosted runners. Oscairn's Ed25519 signatures already say who. The goal, linking a build to its source, is met by the reproducibility check: the manifest names the source and builder image, CI rebuilds, and the index says whether it matched. A desktop tool may show a Sigstore bundle a publisher adds to the details; it grants no trust |
+| [Integrity hashes in the lock](https://docs.npmjs.com/cli/v11/configuring-npm/package-lock-json#packages) (Subresource Integrity) | Already adopted | A Performance's lock records each build's digest, and a package's identity is its manifest's hash (RFC 0006). Any source, a mirror, a USB drive or a friend, is checked against them. Oscairn writes SHA-256 in hex everywhere, not SRI's `sha512-` base64 strings |
+| [Yarn's offline mirror and zero-installs](https://yarnpkg.com/features/caching) | The mirror, yes; zero-installs, no | The offline mirror is a project's packages kept beside it so it installs with no registry. A USB repository (a signed root, index and the blobs needed) is the same idea, checked the same way. Zero-installs runs code straight from the committed cache. An instrument does not play from a removable drive, which can be pulled mid-show, so it always installs into its own storage. It can install by reading the drive in place ([below](#installing-in-little-space)) |
+| [pnpm's hard-linked store](https://pnpm.io/motivation) | Already adopted, within one filesystem | RFC 0006's store keeps each file once, by hash, and links or clones it where it is used. Samples are stored once by hash already (RFC 0009). Links stay inside the data folder's filesystem: never to a removable drive or a share, which may be gone at the next start |
+| [`engines`](https://docs.npmjs.com/cli/v11/configuring-npm/package-json#engines) | Already adopted as `requires.oscairn` | Both name the host version a package needs. npm's is advisory unless `engine-strict` is set. Oscairn's is enforced: a package needing a newer system is shown with "needs system update" and not installed. Platform builds and estimates cover what `os` and `cpu` cover in npm |
+| [Workspaces](https://docs.npmjs.com/cli/v11/using-npm/workspaces) | Adopted for publishing | A publisher with many packages keeps them in one folder with a list of members. `oscairn publish` checks them together, publishes each changed one as its own version, and submits them in one pull request. The dependency check accepts a dependency submitted in the same pull request. Devices see only separate packages |
+
 ## A repository
 
 ### What is in it
@@ -117,6 +148,11 @@ This keeps a 20 GB piano off the project's bandwidth.
 
 - A device keeps a list: the repositories its image ships (a product names them in its
   profile, RFC 0024's new `repositories`), and those the user adds.
+- **A manufacturer may make its own repository the default, or hide the official one,** but it
+  is heavily discouraged ([decided](#decided-2026-11-01)). The profile field that hides it,
+  `repositories.hideOfficial`, is documented as discouraged in the profile schema and in the
+  product documentation. Hidden means off by default, never removed: Settings always keeps the
+  official repository one switch away, and no profile can take that switch out.
 - **Adding one** takes its address and its root key's fingerprint, typed, scanned from a QR
   code, or read from a small `.orepo` file. Nothing is added by a package or a web page.
 - **Each installed package records its repository.** Updates and repair come from there, as
@@ -128,6 +164,61 @@ This keeps a 20 GB piano off the project's bandwidth.
   whose blobs are not there is shown as "not on this drive".
 - **Your own repository:** a desktop can make one from its own exports, signed with its device
   key (RFC 0006's "your own devices"), for a band or a studio to share.
+
+## Installing in little space
+
+An instrument may not have room, in storage or in memory, for a zipped package and its
+unzipped contents at once (Jacob, 2026-11-01). So no install needs the whole archive in the
+instrument's storage or memory. **Peak storage is the installed size plus one entry,** not
+twice the package.
+
+### Unpacked package folders
+
+A package can also come as a **folder**: the same tree as inside the archive, with
+`library.json`, `library.sig` and every file the manifest lists by hash. It might be on a USB
+drive or a desktop's share. This is a second form of the
+[library archive format](../library-archive.md), not a new format:
+
+- It is checked by the same rules as an archive: the manifest's signature, every path rule,
+  the limits, and every file's hash. A file the manifest does not list is refused, as in an
+  archive. Hidden files and folders (a name starting with `.`, such as `.DS_Store`) are skipped,
+  since desktops add them.
+- It is not the same as a folder repository ([above](#several-repositories)), which holds blobs
+  named by hash. A folder package is what a person gets by unzipping an `.olib`.
+- Each file is hashed **as it is copied** into place, never checked first and copied after: a
+  share or a drive can change between the two. A move instead of a copy is offered only within
+  one filesystem, and the moved file is hashed before it is used.
+
+### Streamed installs
+
+Every install writes entry by entry:
+
+1. Read the manifest and its signature, and check them. Check free space for the installed
+   size (the index's `installed` figure, or the sizes the archive or folder gives) plus the
+   largest entry, and stop before writing anything if it does not fit.
+2. For each entry needed, read or fetch it, decompress it as it arrives, hash it as it is
+   written into a staging folder in the data folder, and compare. Memory use is a fixed buffer,
+   not the entry's size.
+3. When an item, a sample or a plugin build is whole and verified, move it into place by a
+   rename in the same filesystem. Nothing is published half-written.
+4. On a bad hash, a pulled drive or a dropped connection, remove what this install staged and
+   leave what was there before, as reading an archive does now.
+
+Sources:
+
+- **From a repository,** this is the per-blob fetch ([package files](#package-files)): one blob
+  at a time, each resumable. A blob that is itself a zip (an item folder, a plugin build) is
+  unzipped as it streams, so it is never stored zipped beside its contents.
+- **An `.olib` on a USB drive or a share** is read in place, without copying it to the
+  instrument first. A zip's directory is at its end, so a seekable file is enough to find and
+  decompress each entry straight into staging.
+- **A folder package** is copied file by file, as above.
+- **An `.olib` already in the instrument's own storage** costs its own size as well. The
+  device can install from it, but offers to remove it after; downloads never land as a whole
+  archive.
+
+Today, reading an archive extracts every entry into a new folder before installing from it
+([format](../library-archive.md#reading-one)). Streaming replaces that for packages.
 
 ## The index
 
@@ -276,7 +367,7 @@ folder of signed archives into a repository, ready to upload anywhere.
 
 **Review:** data-only updates from a known publisher are merged once the checks pass. A new
 publisher, and any package bringing plugin or app code, also needs a maintainer's review. How
-much review is an open question.
+much review is an open question, with a [proposal](#publisher-trust-and-review).
 
 ### Versions and yanking
 
@@ -381,7 +472,8 @@ plugin and app code needs System.
 A repository cannot forge a publisher's package: the publisher's signature would not verify.
 A publisher cannot appear in a repository without it. RFC 0006's trust store gains one purpose,
 `repositories`, beside `plugins` and `content`. Whether a repository's listing also counts as
-trust in its publishers' keys for plugins is an open question.
+trust in its publishers' keys for plugins is an open question, with a
+[proposal](#publisher-trust-and-review).
 
 ### Takedown and revocation
 
@@ -421,6 +513,66 @@ No account to browse, download or install. Requests carry no device ID. The stat
 addresses and files, as any web server does; the project publishes download counts only in
 aggregate, if at all.
 
+## Publisher trust and review
+
+Open questions (1) and (2) ask whether a repository's listing counts as trust in its
+publishers' keys for plugins, and how much human review a package with code gets. Jacob was not
+sure what other repositories do, so this section compares them. Sources were read on
+2026-11-01.
+
+### What others do
+
+Confirmed from each source:
+
+| Repository | Publisher identity | Review of a first submission | Review of updates |
+| --- | --- | --- | --- |
+| [Flathub](https://docs.flathub.org/docs/for-app-authors/submission) | [Verified](https://docs.flathub.org/docs/for-app-authors/verification) by a token at a well-known URL or a DNS record on the app ID's domain, or by owning the repository for `io.github.` and similar IDs | Reviewed by volunteer reviewers on the pull request; permissions are reviewed separately | [Maintainers](https://docs.flathub.org/docs/for-app-authors/maintenance) test and merge their own updates. A change of permissions must be justified, and a build can be held until a moderator approves it |
+| [F-Droid](https://f-droid.org/docs/Inclusion_Policy/) | None needed: it builds every app from public source itself | Contributors review apps by hand, including for non-free dependencies and tracking; undisclosed anti-features are rejected | Built from source by F-Droid, as for the first |
+| [Debian](https://www.debian.org/doc/manuals/developers-reference/pkgs.en.html) | Uploads must be signed by a key in the Debian Developers or Debian Maintainers keyring | A new package is placed in the archive by hand, after the archive administrators review it | Updates to existing packages in `unstable` are processed automatically |
+| [VS Code Marketplace](https://code.visualstudio.com/docs/configure/extensions/extension-runtime-security) | A publisher can earn a verified badge by proving domain ownership | A malware scan of every package, with several antivirus engines | The same scan of every update. VS Code itself asks the user to trust a third-party publisher on the first install of one of its extensions; later ones from that publisher install without asking |
+| [npm](https://docs.npmjs.com/threats-and-mitigations) | An account; [provenance](https://docs.npmjs.com/generating-provenance-statements) is optional | No review before publishing. Names close to popular packages are blocked | Scanning for known malicious content; reported packages are removed after publishing |
+| [Apple App Store](https://developer.apple.com/distribute/app-review/) | Not covered by the source | Reviewed | Every update is reviewed |
+| [Google Play](https://support.google.com/googleplay/android-developer/answer/9859751) | Not covered by the source | Reviewed | Updates are reviewed and published "as soon as possible"; some apps and accounts get extended reviews of up to 7 days |
+| [Homebrew casks](https://docs.brew.sh/Acceptable-Casks) | Not covered by the source | Judged against the acceptance policy; macOS apps must pass Gatekeeper's checks without it being bypassed | Malware and removal are decided case by case, with evidence; Homebrew does not certify that cask apps are safe |
+| [VCV Library](https://github.com/VCVRack/library) | None stated | An open-source plugin is requested in an issue with its source URL; a closed-source one by email. A maintainer handles each request. No formal code review is described; plugins must follow VCV's ethics guidelines and not harm the user's computer or privacy | The developer comments with the new version and commit hash, and a maintainer updates the build |
+
+Inferred, not stated by the sources:
+
+- VCV appears to build open-source plugins itself from the commit given. Its
+  [licensing page](https://vcvrack.com/manual/PluginLicensing) says "a source package which we
+  will build for you", but in its section on commercial plugins.
+- Homebrew cask changes arrive as pull requests that maintainers merge, as for the rest of
+  Homebrew. The acceptance page does not describe the review step.
+- The pattern among the free repositories is human review at the door (a new package or a new
+  publisher) and automation after it, with a second human look when an update asks for more
+  power (Flathub's permission changes). Only the commercial stores, with paid staff, review
+  every update.
+- Domain verification is the common way to give a publisher a badge (Flathub, VS Code). This
+  RFC's `.well-known` check already does it.
+
+### Proposal
+
+For Jacob to confirm. Until then (1) and (2) stay [open](#open-questions).
+
+- **A repository's listing counts as trust for content,** not for code. Sounds, Performances and
+  samples from a listed publisher install as signed by a known key. Content installs anyway
+  under RFC 0006's policy; the listing changes what is shown, not what is allowed.
+- **For code, trust on first use, then pinned.** The first plugin or app from a publisher new to
+  the device asks once, naming the publisher, its fingerprint and its repository, as VS Code
+  does. Yes adds that key to the trust store for `plugins`. Later builds from that publisher
+  install without asking. Only that key is accepted for that publisher: a build under the same
+  publisher ID with another key is refused unless the old key signed the new one (RFC 0006's
+  key replacement). A product may skip the question for its own manufacturer's repository by
+  shipping its publishers' keys in the image's trust store, as RFC 0006 already allows.
+- **Human review** of a publisher's first submission, and whenever a package newly adds code: a
+  first plugin or app, or a plugin ID the package did not have before. Everything else, code
+  updates from a known publisher included, is merged on the automated checks. This is Flathub's
+  shape, with "adds code" in place of "adds permissions". Revocation is the backstop for what
+  review misses.
+- **A verified publisher badge** where the publisher ID's domain names its key at
+  `.well-known/oscairn-publisher.json`, shown on the package's page and in the install
+  question. A badge says who, not that the code is safe.
+
 ## Hosting and cost
 
 What the project runs for the first version:
@@ -434,14 +586,16 @@ What the project runs for the first version:
   mirrors; devices try them in turn. Mirrors need no trust.
 
 No server-side code: no upload API, no accounts, no database. Costs are storage and outgoing
-bandwidth, most of it sample libraries. Blob bases let publishers host large libraries
-themselves; sample deduplication and per-platform downloads keep the rest down.
+bandwidth, most of it sample libraries. The official repository may host a few large sample
+libraries; the rest are hosted by their publishers through blob bases
+([decided](#decided-2026-11-01)). Sample deduplication and per-platform downloads keep the rest
+down.
 
 ## Build order and gates
 
 | Step | Deliverable | Gate |
 | --- | --- | --- |
-| 1. Format and folders | `repository.json`, index, deltas and blobs; `oscairn repo build`; installing from a folder | A device with no network installs a package from a USB folder; a changed blob, a root with a bad signature and a root with a lower serial are each refused |
+| 1. Format and folders | `repository.json`, index, deltas and blobs; `oscairn repo build`; installing from a folder repository, a folder package and an `.olib` read in place; streamed installs | A device with no network installs a package from a USB folder; a changed blob, a root with a bad signature and a root with a lower serial are each refused; a folder package with a changed file is refused and leaves nothing behind; an `.olib` on USB installs with free space of only its installed size plus its largest entry; pulling the drive midway leaves the device as it was |
 | 2. HTTPS | Refresh with deltas, mirrors, resumable downloads, per-platform fetch | A refresh with one changed package downloads the root and one delta; a mirror serving a tampered blob is refused and the next mirror used; an interrupted download resumes |
 | 3. Publishing | `oscairn publish`, the submissions repository, CI checks, immutable versions, yanking | A signed release published through a pull request installs on a device; an unsigned one, a re-used version and a missing claimed platform build each fail in CI; a yanked version is not offered but its lock still fetches it |
 | 4. Revocation and takedown | Revocation lists, the takedown policy | A build revoked in the list stops loading on refresh and its Performance opens with a stand-in; the same from a system image on an offline device |
@@ -454,19 +608,30 @@ Steps 1 and 3 need RFC 0006's signatures built. Step 5 needs RFC 0022 step 2 (ap
 processes) for the Store app, and RFC 0023 step 2 for types in queries. Step 4 comes before
 step 8: nothing public without a way to stop it.
 
+## Decided 2026-11-01
+
+Jacob's decisions on three of the open questions:
+
+- **Paid content:** the official repository does not include paid content, for now. If it is
+  ever added, paid packages must be marked as paid in the index, and search must offer a filter
+  that excludes them. The filter's default is decided then.
+- **Large sample libraries:** the official repository may host a few. Others are hosted by their
+  publishers through the blob base ([package files](#package-files)).
+- **A manufacturer replacing or hiding the official repository:** allowed, but heavily
+  discouraged. The official repository stays one switch away in Settings, and the
+  documentation and the profile schema flag hiding it as discouraged
+  ([several repositories](#several-repositories)).
+
 ## Open questions
 
 - **Publisher trust:** does a repository's listing count as trust in its publishers' keys for
   plugins, or does the musician approve each new plugin publisher once? A product may want the
-  first; a desktop user may want the second.
+  first; a desktop user may want the second. Proposed: listing is trust for content; code is
+  approved once per publisher on the device, then pinned to its key ([proposal](#proposal)).
 - **Review:** a maintainer's review for every package with code, for every publisher's first
-  submission only, or automated checks alone after the first?
-- **Paid content:** list commercial packages with a link to the vendor (their licensing stays
-  theirs), or sell through the repository (which needs a server)?
-- **Large libraries:** does the official repository host big sample libraries, or ask their
-  publishers to host them with blob bases?
-- **Products:** may a manufacturer make its own repository the default on its product, and hide
-  or remove the official one?
+  submission only, or automated checks alone after the first? Proposed: human review of a
+  publisher's first submission and whenever a package newly adds code, automated checks after
+  that, and a verified publisher badge ([proposal](#proposal)).
 - **Built-in apps:** do apps that ship in the system image also update from the repository
   between images, or only with the image?
 - **Publisher IDs:** verified by domain (reverse-DNS), or names the project hands out?

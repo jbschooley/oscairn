@@ -89,6 +89,8 @@ Made 2026-11-01, for the first slice:
 - **The archive is the library archive,** `.olib`, extended to version 2
   ([format](../library-archive.md)), not a second package format: plugin builds go under
   `Plugins/<format>/<id>@<version>/<platform>/`, listed in the manifest with each build's digest.
+  An unpacked folder with the same tree is a second form of it, and installs are to stream entry
+  by entry ([RFC 0031](0031-package-repository-and-distribution.md#installing-in-little-space)).
 - **Any CLAP plugin goes in,** the build the exporting device has, not only plugins marked as
   managed packages. Whether a plugin may be redistributed is the musician's call, as when
   copying its files by hand.
@@ -211,6 +213,8 @@ store closer to [pnpm's layout](https://pnpm.io/faq). The
 [`npm ci`](https://docs.npmjs.com/cli/commands/npm-ci/) illustrates installing a frozen lock.
 Oscairn's store pins and offline-completeness checks are essential additions for live devices.
 The resolution process stays entirely off the real-time thread.
+[RFC 0031](0031-package-repository-and-distribution.md#ideas-from-npm-pnpm-and-yarn) lists which
+other npm, pnpm and yarn ideas the package repository takes and which it does not.
 
 ## Separate four identities
 

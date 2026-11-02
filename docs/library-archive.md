@@ -55,6 +55,16 @@ nothing behind:
 Hashes say an archive is whole and as it was made, not who made it: signatures are planned
 (RFC 0006).
 
+## As a folder
+
+Planned ([RFC 0031](rfcs/0031-package-repository-and-distribution.md#installing-in-little-space)),
+not built. A package can also be an unpacked folder: the same tree as inside the zip, with
+`library.json` and every file it lists by hash. It is a second form of this format, read by the
+same rules, except that hidden files a desktop adds are skipped. Each file is hashed as it is
+copied in. Archives on a USB drive or a share are to be read in place and installed entry by
+entry, so an install needs room for the installed files plus one entry, not for the archive and
+its contents at once.
+
 ## Installing one
 
 - **As a library:** locked, in `Libraries/<id>/` in the data folder with its manifest. Items
