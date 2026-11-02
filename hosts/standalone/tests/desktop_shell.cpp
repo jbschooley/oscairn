@@ -1083,6 +1083,8 @@ int main(int argc, char** argv)
                     try { c.showPluginWindow(effect, true, "KICK effect · Windows"); c.showPluginWindow(effect, false); failure.clear(); }
                     catch(const std::exception& e) { failure = e.what(); }
                 });
+                // An edit waits while a sound job (the periodic refresh) runs; give it time to run.
+                for(int i = 0; i < 500 && failure == "not run"; ++i) juce::MessageManager::getInstance()->runDispatchLoopUntil(10);
                 check(failure.empty() && engine.connected(), "its window opens and closes: " + failure);
                 view.showRouting(effect);
                 check(windowButton() != nullptr, "and in Routing");
