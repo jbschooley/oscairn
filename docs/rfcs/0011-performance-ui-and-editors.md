@@ -726,7 +726,9 @@ solo: while any part is soloed, only soloed parts, the parts that feed them and 
 they feed are heard, so a soloed part keeps its reverb bus. The graph records each node's
 largest output sample; the Session turns these into each part's peak after its fader, held
 and falling by about 17 dB a second, and the Mixer reads them 20 times a second
-(`parts.meters`). A part with several lanes shows its loudest lane, not their sum.
+(`parts.meters`). A part with several lanes shows its loudest lane, not their sum. A bus with
+no box that takes sound has no wire of its own: the part wires passing it record each such bus on
+their way, with their level, pan and mute up to its fader, and it meters those.
 `control-parts` covers solo through sends and buses, the meters and persistence; the socket
 test and `desktop-pad-editor` the rest.
 

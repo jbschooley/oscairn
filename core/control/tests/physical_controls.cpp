@@ -330,6 +330,7 @@ namespace
         {
             ControlGroup pedal = midi({Role::Assign, "footswitches", 1}, "smk", Message::CC, {64});
             s.assign("footswitch:1", target(Assignment::Kind::Scene, verse)); run(s);
+            values[key(target(Assignment::Kind::Scene, verse))] = 0; // as if Verse were not playing: an absolute CC would wait to pick it up
             ControllerMapping m; GroupPositions at;
             auto play = [&](std::vector<uint8_t> bytes) {
                 auto o = m.handle(source(), {pedal}, keys, at, "smk", 1, bytes.data(), bytes.size(), value);
@@ -348,6 +349,15 @@ namespace
             check(play({0xB0, 64, 0}).empty(), "not on the release");
             o = play({0xB0, 64, 127});
             check(o.size() == 1 && o[0].value == 0, "and back off on the next press");
+            // A latching footswitch keeps its state: down mutes, up unmutes.
+            pedal.midi.latch = true; m = ControllerMapping{};
+            values[key(target(Assignment::Kind::PartMute, lead))] = 0;
+            o = play({0xB0, 64, 127});
+            check(o.size() == 1 && o[0].target == target(Assignment::Kind::PartMute, lead) && o[0].value == 1, "a latching footswitch mutes while down");
+            o = play({0xB0, 64, 0});
+            check(o.size() == 1 && o[0].value == 0, "and unmutes when let up");
+            o = play({0xB0, 64, 127});
+            check(o.size() == 1 && o[0].value == 1, "every time");
             s.assign("footswitch:1", {}); run(s);
         }
 

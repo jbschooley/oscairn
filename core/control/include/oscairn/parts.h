@@ -22,6 +22,11 @@ namespace oscairn
     constexpr uint32_t unmappedMainPort = 0xFFFFFFFEu, unmappedPort = 0xFFFFFFFFu;
     enum class WireOwner { Part, User }; // made by the part views, or drawn in Routing
 
+    // A point on a part wire's way through an empty bus (one with no box that takes sound): the
+    // bus, and the wire's level, pan and mute up to and including that bus's fader, which its
+    // meter shows.
+    struct WireVia { uint32_t bus = 0; double level = 1, pan = 0; bool mute = false; bool operator==(const WireVia&) const = default; };
+
     struct Wire
     {
         uint32_t id = 0;
@@ -42,6 +47,7 @@ namespace oscairn
         uint32_t send = 0;           // part wires: the bus this wire sends to, if it is a send
         uint32_t split = 0, lane = 0; // part wires: the split lane this wire joins from, or enters in a bus (its Mix), if any
         bool fader = false;          // part wires: where the part plays, carrying its level and mute
+        std::vector<WireVia> via;    // part wires: the empty buses it passes through, in order along each way
         bool connected = true; // false: kept, though it no longer fits (after a plugin replacement)
         bool enabled = true;   // false: off (scenes): a note wire takes no new notes, an audio wire is silent
         bool operator==(const Wire&) const = default;

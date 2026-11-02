@@ -370,6 +370,7 @@ namespace oscairn
                     {
                         x.level *= lane.level; x.pan = std::clamp(x.pan + lane.pan, -1.0, 1.0);
                         x.mute = x.mute || lane.mute || (solo && !lane.solo);
+                        for(auto& v : x.via) { v.level *= lane.level; v.pan = std::clamp(v.pan + lane.pan, -1.0, 1.0); v.mute = v.mute || lane.mute || (solo && !lane.solo); }
                         if(!x.split) { x.split = split.id; x.lane = k; }
                         out.push_back(x);
                     }
@@ -377,16 +378,24 @@ namespace oscairn
                 return out;
             }
             // No box: the sound goes on, through the bus's own fader, pan and mute, and into
-            // the buses it sends to, post-fader (its sends keep their own pan).
+            // the buses it sends to, post-fader (its sends keep their own pan). Each way records
+            // this bus, then the empty buses past it, for their meters.
             auto out = bus.bus ? busEntries(bus.bus) : std::vector<BusEntry>{{graphOutput, bus.output}};
             const bool mute = bus.mute || !heard(bus);
-            for(auto& x : out) { x.level *= bus.level; x.pan = std::clamp(x.pan + bus.pan, -1.0, 1.0); x.mute = x.mute || mute; x.fader = true; }
+            const WireVia here{id, bus.level, bus.pan, mute};
+            for(auto& x : out)
+            {
+                x.level *= bus.level; x.pan = std::clamp(x.pan + bus.pan, -1.0, 1.0); x.mute = x.mute || mute; x.fader = true;
+                for(auto& v : x.via) { v.level *= bus.level; v.pan = std::clamp(v.pan + bus.pan, -1.0, 1.0); v.mute = v.mute || mute; }
+                x.via.insert(x.via.begin(), here);
+            }
             for(const auto& send : bus.sends)
-                for(const auto x : busEntries(send.bus))
+                for(auto x : busEntries(send.bus))
                 {
-                    auto s = x;
-                    s.level *= bus.level * send.level; s.mute = s.mute || mute; s.fader = true;
-                    out.push_back(s);
+                    x.level *= bus.level * send.level; x.mute = x.mute || mute; x.fader = true;
+                    for(auto& v : x.via) { v.level *= bus.level * send.level; v.mute = v.mute || mute; }
+                    x.via.insert(x.via.begin(), here);
+                    out.push_back(x);
                 }
             return out;
         };
@@ -498,10 +507,13 @@ namespace oscairn
         End input; input.audio = part.input.kind == PartInput::Kind::Audio; input.notes = part.input.kind == PartInput::Kind::Notes; input.zoned = true;
         input.port = part.input.port; input.zones = inputZones(part.input, hostStatus_.midiInputs);
         // A wire into a bus's lane also takes that lane's Mix.
-        auto enter = [](Wire* w, const End& e, const BusEntry& d, double level, bool mute) {
+        // pan: the part's, which its fader wires carry, for the empty buses' meters on the way.
+        auto enter = [](Wire* w, const End& e, const BusEntry& d, double level, bool mute, double pan) {
             w->level = level * e.level * d.level; w->mute = mute || e.mute || d.mute;
             if(d.split || d.fader) w->pan = std::clamp(e.pan + d.pan, -1.0, 1.0);
             if(d.split && !e.split) { w->split = d.split; w->lane = d.lane; }
+            w->via = d.via;
+            for(auto& v : w->via) { v.level *= level * e.level; v.pan = std::clamp(pan + e.pan + v.pan, -1.0, 1.0); v.mute = v.mute || mute || e.mute; }
         };
         const auto destinations = part.bus ? busEntries(part.bus) : std::vector<BusEntry>{{graphOutput, part.output}};
         const bool mute = part.mute || !heard(part);
@@ -510,14 +522,14 @@ namespace oscairn
             if(!e.audio) continue;
             for(const auto& d : destinations)
             {
-                auto* w = audioWire(e, d.node, d.port); w->fader = true; enter(w, e, d, part.level, mute);
+                auto* w = audioWire(e, d.node, d.port); w->fader = true; enter(w, e, d, part.level, mute, part.pan);
                 w->pan = std::clamp(part.pan + e.pan + d.pan, -1.0, 1.0); // the part's pan, with its lane's and the bus lane's
             }
             for(const auto& send : part.sends)
                 for(const auto& d : busEntries(send.bus))
                 {
                     auto* s = audioWire(e, d.node, d.port);
-                    s->send = send.bus; enter(s, e, d, send.level * part.level, mute); // post-fader
+                    s->send = send.bus; enter(s, e, d, send.level * part.level, mute, 0); // post-fader
                 }
         }
     }
@@ -659,8 +671,8 @@ namespace oscairn
     // Each audio wire's meter has a value per channel of the sound it carries from its source's
     // port: that channel's peak times the gain the wire plays it with (level and pan), the largest
     // where a channel reaches the destination twice (mono into stereo). A muted wire shows nothing.
-    // A part's meter is its fader wires' meters together. Held values fall by about 17 dB a second
-    // at the desktop's 5 ms tick.
+    // A part's meter is its fader wires' meters together; an empty bus's, the wires passing it,
+    // each at its point there. Held values fall by about 17 dB a second at the desktop's 5 ms tick.
     // shortcut: lanes are not summed, so a part with several lanes shows its loudest per channel; measure the summed Mix if that misleads.
     void Session::meter()
     {
@@ -687,23 +699,18 @@ namespace oscairn
                 part.resize(std::max(part.size(), bars.size()));
                 for(size_t c = 0; c < bars.size(); ++c) part[c] = std::max(part[c], bars[c]);
             }
-            // Sound through an empty bus rides another part's wire, which already carries the
-            // bus's level, pan and mute: meter it on that bus, and on the empty buses beyond
-            // it, as busEntries routed the wire through.
-            if(w.owner == WireOwner::Part)
-                if(const uint32_t entered = w.send ? w.send : (w.fader ? findPart(w.part).bus : 0))
+            // Sound through an empty bus rides another part's wire: meter it on each empty bus
+            // the wire passed, at its level, pan and mute up to that bus.
+            if(w.owner == WireOwner::Part && w.enabled)
+                for(const auto& v : w.via)
                 {
-                    std::function<void(uint32_t)> credit = [&](uint32_t id)
-                    {
-                        const auto& q = findPart(id);
-                        if(!q.chain.empty()) return; // a bus with a chain meters its own wires
-                        auto& via = parts[id];
-                        via.resize(std::max(via.size(), bars.size()));
-                        for(size_t c = 0; c < bars.size(); ++c) via[c] = std::max(via[c], bars[c]);
-                        if(q.bus) credit(q.bus);
-                        for(const auto& s : q.sends) credit(s.bus);
-                    };
-                    credit(entered);
+                    auto& bus = parts[v.bus];
+                    bus.resize(std::max(bus.size(), bars.size()));
+                    if(v.mute) continue;
+                    auto at = w; at.pan = v.pan;
+                    if(const auto compiled = pairs(graph_, layout, at, v.level))
+                        for(const auto& p : *compiled)
+                            if(p.from < bus.size() && offset + p.from < Graph::meterChannels) bus[p.from] = std::max(bus[p.from], double(peaks[w.from][offset + p.from]) * p.gain);
                 }
         }
         auto hold = [](std::map<uint32_t, std::vector<double>>& held, std::map<uint32_t, std::vector<double>>& now) {

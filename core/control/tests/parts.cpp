@@ -827,6 +827,27 @@ namespace
         s.setPartLevel(room, 1, true); s.commit();
         for(int i = 0; i < 800; ++i) x.run(s);
         check(meter(room) < 1e-3, "a muted empty bus meters nothing: " + std::to_string(meter(room)));
+        // Each empty bus meters its own point on the way: Room what passes its fader, and Hall,
+        // fed by Room's send at .1, a tenth of that, and nothing once Hall is muted.
+        auto settle = [&] { for(int i = 0; i < 800; ++i) x.run(s); };
+        auto near6 = [](double a, double b) { return std::abs(a - b) < 1e-6; };
+        s.setPartLevel(room, 1, false); s.setSend(room, hall, .1); s.commit(); settle();
+        check(near6(meter(room), .25) && near6(meter(hall), .025), "a send at .1 meters a tenth on its bus: room " + std::to_string(meter(room)) + " hall " + std::to_string(meter(hall)));
+        s.setPartLevel(hall, 1, true); s.commit(); settle();
+        check(near6(meter(room), .25) && meter(hall) < 1e-3, "a muted bus past it meters nothing, the bus before it its own: room " + std::to_string(meter(room)) + " hall " + std::to_string(meter(hall)));
+        // Nested: Keys into Room into Hall, at .5. Room shows its own level, Hall its half; muting
+        // Hall leaves Room's.
+        s.setSend(room, hall, {}); s.setPartOutput(room, hall); s.setPartLevel(hall, .5, false); s.commit(); settle();
+        check(near6(meter(room), .25) && near6(meter(hall), .125), "nested empty buses each meter their own point: room " + std::to_string(meter(room)) + " hall " + std::to_string(meter(hall)));
+        s.setPartLevel(hall, .5, true); s.commit(); settle();
+        check(near6(meter(room), .25) && meter(hall) < 1e-3, "muting the outer bus leaves the inner one's meter: room " + std::to_string(meter(room)) + " hall " + std::to_string(meter(hall)));
+        // A bus whose chain takes no sound (a synth on it) passes it on through its fader, and meters it.
+        s.setPartOutput(room, 0); s.setPartLevel(hall, 1, false);
+        const auto pad = s.add("pad", fixture, "org.kick.test.synth");
+        s.insertIntoPart(room, 0, pad); s.commit(); settle();
+        check(near6(meter(room), .25), "a bus whose box takes no sound meters what passes it: " + std::to_string(meter(room)));
+        s.removeFromPart(room, pad); s.commit();
+
     }
 
     // Zones on a wire inside a part's chain (note limits after a note plugin) survive a rebuild
