@@ -15,6 +15,7 @@
 #include "../PartsView.h"
 #include "../Settings.h"
 #include "../Setlist.h"
+#include "EngineProcess.h"
 #include "oscairn/local_socket.h"
 #include "oscairn/package.h"
 #include "oscairn/session.h"
@@ -29,6 +30,7 @@
 #include <thread>
 #include <poll.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <sys/un.h>
 #include <unistd.h>
 
@@ -741,6 +743,40 @@ int main(int argc, char** argv)
         control.join();
     }
     auto wait = [](auto done) { for(int i = 0; i < 1000 && !done(); ++i) juce::MessageManager::getInstance()->runDispatchLoopUntil(10); return done(); };
+    // A managed engine restarted: Restart starts it off the message thread, which goes on
+    // drawing (and says so) while the engine comes up. The engine here is a session served by
+    // this test where the managed engine's socket is, in a runtime folder of the test's own;
+    // the program started is a stand-in that only waits.
+    {
+        const std::string runtime = "/tmp/oscairn-gaps-run-" + std::to_string(::getpid());
+        std::filesystem::remove_all(runtime);
+        check(::mkdir(runtime.c_str(), 0700) == 0, "a private runtime folder");
+        ::setenv("OSCAIRN_RUNTIME_DIR", runtime.c_str(), 1);
+        const auto helper = runtime + "/stand-in";
+        juce::File(helper).replaceWithText("#!/bin/sh\nsleep 3\n", false, false, "\n");
+        ::chmod(helper.c_str(), 0700);
+        const auto path = host::EngineProcess(helper, argv[1]).socketPath();
+        auto served = std::make_unique<Served>(path);
+        {
+            standalone::Engine managed(argv[1], {}, helper);
+            check(managed.connected(), "the managed engine is reached");
+            served.reset(); // as the engine stops
+            check(wait([&] { return managed.canRestart(); }), "a stopped managed engine offers Restart");
+            standalone::EngineRecovery strip(managed);
+            const auto began = std::chrono::steady_clock::now();
+            strip.restartButton().onClick(); // as a click, at once
+            const auto waited = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - began).count();
+            check(waited < 1000 && strip.isVisible() && strip.notice().contains("Starting") && !strip.restartShown(),
+                  "Restart does not hold the message thread, and says the engine is starting: " + std::to_string(waited) + " ms, " + strip.notice().toStdString());
+            served = std::make_unique<Served>(path); // the engine comes up
+            check(wait([&] { return managed.connected(); }), "the restarted engine is used once it answers");
+            strip.update();
+            check(!strip.isVisible(), "and the notice goes");
+        }
+        served.reset();
+        std::filesystem::remove_all(runtime);
+        ::unsetenv("OSCAIRN_RUNTIME_DIR");
+    }
     // A plugin's presets still being listed (the engine answers at once and lists them meanwhile):
     // the picker says so, and a later refresh shows the presets and drops the message.
     {

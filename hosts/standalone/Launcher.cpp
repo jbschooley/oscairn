@@ -141,7 +141,11 @@ namespace oscairn::standalone
         restart_.onClick = [this] { if(onRestart) onRestart(); };
         addChildComponent(restart_);
     }
-    void EngineRecovery::update() { show(!engine_.connected(), engine_.canRestart()); }
+    void EngineRecovery::update()
+    {
+        show(!engine_.connected(), engine_.canRestart());
+        if(engine_.restarting() && isVisible()) notice_ = "Starting the engine...";
+    }
     void EngineRecovery::show(bool disconnected, bool canRestart)
     {
         notice_ = !disconnected ? juce::String()

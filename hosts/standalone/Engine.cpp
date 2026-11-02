@@ -505,19 +505,27 @@ namespace oscairn::standalone
     }
     void Engine::restart()
     {
-        if(!process_ || !recoveryAvailable_)return;
+        if(!process_ || !recoveryAvailable_ || restarting_.valid())return;
+        recoveryAvailable_=false;
+        // Starting may wait seconds for the engine: on a thread of its own, as the launch does,
+        // which alone uses process_ until it is done; the timer takes the client from there.
+        restarting_=std::async(std::launch::async,[process=process_.get()]{auto client=std::make_unique<LocalClient>();process->connectOrStart(*client);return client;});
+    }
+    void Engine::restarted()
+    {
         try
         {
-            process_->connectOrStart(*client_);
-            auto fresh=std::make_unique<RemoteControl>(*client_);
-            remote_=std::move(fresh);control_=remote_.get();failure_.clear();textCache_.clear();recoveryAvailable_=false;refreshPads();
+            auto client=restarting_.get();
+            auto fresh=std::make_unique<RemoteControl>(*client);
+            remote_=std::move(fresh);client_=std::move(client);control_=remote_.get();failure_.clear();textCache_.clear();refreshPads();
             attach(); // resends the ignored inputs and Capture, as any reconnect
         }
-        catch(const std::exception& e){failed(e.what());}
+        catch(const std::exception& e){failed(e.what());recoveryAvailable_=true;}
     }
     void Engine::timerCallback()
     {
         try{if(connected())macros_=control_->graphState().macros;}catch(const std::exception&){}
+        if(restarting_.valid() && restarting_.wait_for(std::chrono::seconds(0))==std::future_status::ready)restarted();
         if(soundJob_.valid())
         {
             if(soundJob_.wait_for(std::chrono::seconds(0))!=std::future_status::ready)return;
@@ -534,7 +542,7 @@ namespace oscairn::standalone
             try{remote_->service();}catch(const std::exception& e){failed(e.what());}
             if(failure_.empty() && ++soundTicks_>=30){soundTicks_=0;refreshSounds();}
         }
-        else if(++reconnectTicks_>=60)
+        else if(!restarting_.valid() && ++reconnectTicks_>=60)
         {
             reconnectTicks_=0;
             try

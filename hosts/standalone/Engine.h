@@ -115,7 +115,10 @@ namespace oscairn::standalone
         int trackChannel()const;
         bool connected()const{return failure_.empty();}
         bool canRestart()const{return recoveryAvailable_;}
+        // Restart starts the managed engine off the message thread (it may wait seconds for it);
+        // the engine is used once it answers, and restarting() is true until then.
         void restart();
+        bool restarting()const{return restarting_.valid();}
         struct Status
         {
             bool playing=false;
@@ -191,6 +194,7 @@ namespace oscairn::standalone
     private:
         void timerCallback()override;
         void attach();
+        void restarted(); // Restart's engine answers, or failed to start
         template<class F> void command(F&& f)
         {
             if(!failure_.empty() || (soundJob_.valid() && soundJobKind_==SoundAction::Replace))return;
@@ -219,6 +223,7 @@ namespace oscairn::standalone
         std::deque<std::function<void()>> pendingControls_;
         std::unique_ptr<host::AudioEngine> audio_;
         std::unique_ptr<host::EngineProcess> process_;
+        std::future<std::unique_ptr<LocalClient>> restarting_; // after process_: done before it goes
         std::unique_ptr<LocalClient> client_;
         std::unique_ptr<RemoteControl> remote_;
         Control* control_=nullptr;
