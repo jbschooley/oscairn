@@ -442,7 +442,7 @@ int main(int argc, char** argv)
                 engine.edit([&](Control& c) { lastId = c.savePerformanceToLibrary("Z last", true); });
                 check(wait([&] { return !engine.soundBusy() && !lastId.empty(); }), "a Performance saved as the library's Z last");
                 const auto lib = juce::File(::getenv("OSCAIRN_DATA_HOME"));
-                const auto writeItem = [&](const char* kind, const std::string& folder, const std::string& id, const std::string& name) {
+                const auto writeItem = [&](const std::string& kind, const std::string& folder, const std::string& id, const std::string& name) {
                     const auto at = lib.getChildFile(kind).getChildFile(folder);
                     at.createDirectory();
                     at.getChildFile(std::string(kind == "Sounds" ? "sound" : "performance") + ".json").replaceWithText(
