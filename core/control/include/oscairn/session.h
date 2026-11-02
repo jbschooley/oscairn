@@ -255,7 +255,7 @@ namespace oscairn
         // voices: the most notes seen sounding at once. All shares of a block's time.
         struct Measurement { double cpu = 0, rest = 0, voice = 0; uint32_t voices = 0; uint64_t memory = 0; };
         Budget budget_;
-        std::map<std::string, Measurement> measured_;          // by plugin ID and version
+        std::map<std::string, Measurement> measured_;          // by plugin ID and version, and what it declared (pluginKey)
         bool measurementsLoaded_ = false, measurementsChanged_ = false;
         std::chrono::steady_clock::time_point measurementsSaved_{};
         uint64_t measureTicks_ = 0;
@@ -264,9 +264,16 @@ namespace oscairn
         void measure();                                        // service()
         void loadMeasurements();
         void saveMeasurements();
-        std::string pluginKey(NodeId node) const;
+        std::string pluginKey(NodeId node) const { return pluginKey(graph_, node); }
+        std::string pluginKey(const Graph& graph, NodeId node) const;
         // limit: the notes its part may play at once (RFC 0018), 0 for none.
         Cost costOf(const std::string& key, const std::string& name, const std::string& plugin, uint32_t limit = 0) const;
+        // A loaded plugin's cost: its measurement, its memory the larger of that and what it
+        // declared (oscairn.memory); an effect context made from another counts its own bytes.
+        Cost nodeCost(const Graph& graph, NodeId node, const std::string& name = {}, uint32_t limit = 0) const;
+        // What the memory budget leaves for one more plugin to declare beside these (0: no memory budget).
+        uint64_t memoryRoom(const Graph& graph, const std::vector<NodeId>& beside) const;
+        uint64_t memoryRoom() const;                            // beside the open Performance
         uint32_t noteLimit(NodeId node) const; // its part's, or 0
         Estimate estimateOf(const std::vector<Cost>& plugins, const std::vector<Cost>& playing) const;
         std::string tooMuch(const Estimate& e) const;          // what does not fit, for a refusal

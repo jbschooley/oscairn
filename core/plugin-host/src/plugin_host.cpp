@@ -64,6 +64,8 @@ namespace oscairn
             std::optional<oscairn_effect_resources_t> effectResources() const override {
                 oscairn_effect_resources_t r{};if(host.effectResources(r))return r;return {};
             }
+            std::optional<oscairn_memory_t> declaredMemory() const override {oscairn_memory_t m{};if(host.declaredMemory(m))return m;return {};}
+            void setMemoryRoom(uint64_t bytes) override {host.setMemoryRoom(bytes);}
             uint32_t soundContextCapacity() const noexcept override {return host.soundContextCapacity();}
             std::vector<oscairn_sound_context_info_t> soundContexts() const override {return host.soundContexts();}
             uint32_t prepareSound(const std::string& name,const std::vector<oscairn_sound_parameter_t>& p,const std::string& state,const std::string& preset,const std::string& sfz,const std::string& library,const std::string& directory) override {if(!state.empty() || !preset.empty())throw std::invalid_argument("Native contexts accept parameter or SFZ patches only");return host.prepareSound(name,p,sfz,library,directory);}
@@ -191,7 +193,7 @@ namespace oscairn
 #endif
     }
 
-    std::shared_ptr<PluginHost> loadPlugin(const std::string& path,const std::string& id,double rate,uint32_t frames,ProcessingMode mode,Lv2BufferLimits lv2Buffers)
+    std::shared_ptr<PluginHost> loadPlugin(const std::string& path,const std::string& id,double rate,uint32_t frames,ProcessingMode mode,Lv2BufferLimits lv2Buffers,uint64_t memoryRoom)
     {
         (void)lv2Buffers; // LV2-only resource policy.
         (void)mode; // CLAP behavior is unchanged; LV2 uses the mode for Worker.
@@ -210,13 +212,15 @@ namespace oscairn
         const auto& policy=placementPolicy();
         const auto placement=policy.plugins.find(id);
         if(!policy.worker.empty() && (placement==policy.plugins.end()?policy.standard:placement->second)==Placement::Worker)
-            return loadPluginInWorker(policy.worker,path,id,rate,frames,mode,policy.memoryLimit);
+            return loadPluginInWorker(policy.worker,path,id,rate,frames,mode,policy.memoryLimit,memoryRoom);
         const auto scan=kick::clap::inspect(path);
         const auto found=std::find_if(scan.plugins.begin(),scan.plugins.end(),[&](const auto& p){return id.empty() || p.id==id;});
         if(found==scan.plugins.end())
             throw std::runtime_error(scan.failures.empty()?"No matching CLAP plugin in "+path:scan.failures.front().message);
         auto host=std::make_shared<ClapHost>();
+        host->host.setMemoryRoom(memoryRoom);
         if(!host->host.load(*found,rate,frames))throw std::runtime_error("Cannot load "+found->id+": "+host->host.error());
+        host->host.setMemoryRoom(0);
         host->host.lockAudioLayout();
         // The first service (the plugin's init callback, its parameter flush) holds the gate; run it
         // before any audio thread can see the plugin, or its first block is refused as a control silence.

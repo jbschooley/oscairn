@@ -20,7 +20,8 @@ Checked when built and tested; the sections below say how.
 - [ ] 5. Estimates in packages and Sounds, checked at install and in the library
 - [ ] 6. Memory classes: reserved (OS, engine, shell, app reservations), committed and
       opportunistic; admission against what reservations leave ([design](#memory-reserved-committed-and-opportunistic))
-- [ ] 7. Plugins declare memory before activating (`oscairn.memory`), checked against measurement
+- [x] 7. Plugins declare memory before activating (`oscairn.memory`), checked against measurement
+      (a plugin holding more than it declared is counted at what it holds; its declaration is not yet distrusted at the next activation)
 - [ ] 8. Apps declare reservations in their manifests; running apps and the always-available set
       reserved; the shell admitting or refusing a launch, making room first
 - [ ] 9. Opportunistic memory and its eviction order: the sample file cache, recently used items,
@@ -116,9 +117,32 @@ never write the user's data folder.
   ahead (RFC 0021): `preparePerformance` returns false, and the Setlist app says it will open
   when cued.
 
+**Declared memory** (step 7, built 2026-11-01): `core/clap-ext/include/oscairn-clap/memory.h`.
+The CLAP host asks `estimate` at every activation, after the state is loaded and before
+`activate` (a load, a state load, a new effect context, a change of rate), in the engine or in a
+worker. With a memory budget, the session gives each plugin the room the budget leaves beside
+the others (adding to the open Performance: beside its plugins; a Performance being opened:
+beside those of it loaded before, as its estimate is checked alone; a context: beside the open
+ones), and a plugin declaring more is refused before it activates: "needs 13 MiB of memory where
+12 MiB is left". An instance counts its shared, context and asset bytes, an effect context its
+context and asset bytes. Admission counts the larger of the declaration and the measurement, or
+the declaration alone until the plugin has been measured. Measurements are kept per plugin build
+and declared size (`id@version#bytes`), so a plugin whose modes differ (Reverb 1 at 2.2 MB, an
+EQ at 1 KB a context) is not counted at the largest seen; a Performance not open, which cannot
+ask its plugins, counts each build at the most of its measured declarations. Without
+`oscairn.memory`, an effect engine counts the shared and context bytes its effect contexts'
+`resources` report and each further context its context bytes, instead of an instance each.
+The first activation of a fresh instance, at its default state, is asked too; the Performance
+document does not record declarations, so an unopened item still uses measurements (step 5).
+
 `control-parts` checks a plugin measured while it plays and known to the next session, a plugin
 and a Performance refused, a change that becomes a cut when both would not fit and rings out
-when they would, and a Performance prepared ahead only when both would fit. `desktop-profile` checks the profile's budget figures.
+when they would, and a Performance prepared ahead only when both would fit. `desktop-profile` checks the profile's budget figures. `kick-clap-host` checks the fixture's declaration
+per state and rate, that it agrees with `current`, and a load and a state load refused before
+activating; `control-parts` checks the default mode counted at its own measurement beside a big
+mode's, a third plugin refused before activating, a saved state refused at loading when only
+another mode's measurement made it look like it fits, and effect contexts counted from their
+resources; `control-plugin-failures` checks the declaration and the refusal through a worker.
 
 ## Memory: reserved, committed and opportunistic
 
@@ -402,8 +426,8 @@ typedef struct oscairn_plugin_memory {
   failed as today, and its measurement raised. Workers holding opportunistic plugins are the
   first the kernel would kill.
 - **Effect contexts (RFC 0007):** a context reused across a change (RFC 0021 slice 1) costs
-  `context_bytes`, not a new instance. Admission still counts it at full instance cost today.
-  With declarations it can count the context alone.
+  `context_bytes`, not a new instance. Admission counts the context alone, from its declaration
+  or, without one, from its effect contexts' `resources` (built, step 7).
 - **Samplers (RFC 0008, 0009, 0013):** decoded samples are committed while their Performance is
   open. The Sampler's 256 MiB budget per instance (RFC 0008) stays as a bound of its own. Audio
   shared between a Sampler's contexts is counted once, in `shared_bytes`.

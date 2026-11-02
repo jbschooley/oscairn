@@ -1139,6 +1139,86 @@ namespace
         check(u.leaving() == 1, "and rings out");
     }
 
+    // Declared memory (RFC 0025, oscairn.memory): the fixture's memory effect declares 1 MiB shared
+    // and its gain times 16 MiB per context (9 MiB at its default .5). Measurements are kept per
+    // declaration, so a plugin's modes do not share one figure; admission counts the larger of the
+    // declaration and the measurement; a plugin or a saved state declaring more than the budget
+    // leaves is refused before it activates; effect contexts count their own bytes.
+    void declaredMemory(const char* fixture, const char* delay, const fs::path& root)
+    {
+        constexpr uint64_t MiB = 1ull << 20;
+        const auto home = root / "memory-home";
+        fs::create_directories(home);
+        ::setenv("OSCAIRN_DATA_HOME", home.c_str(), 1);
+        // Two modes measured: the default (9 MiB declared) at 10 MiB, a big one (17 MiB declared) at 100.
+        std::ofstream(home / "measurements.json") << "{\"plugins\":{"
+            "\"org.kick.test.memory@1#" << 9 * MiB << "\":{\"cpu\":0.01,\"rest\":0.01,\"voice\":0,\"voices\":0,\"memory\":" << 10 * MiB << "},"
+            "\"org.kick.test.memory@1#" << 17 * MiB << "\":{\"cpu\":0.01,\"rest\":0.01,\"voice\":0,\"voices\":0,\"memory\":" << 100 * MiB << "}}}";
+        {
+            Session s(48000, frames);
+            s.setBudget({.9, 20 * MiB});
+            const auto a = s.add("a", fixture, "org.kick.test.memory");
+            auto e = s.estimate();
+            check(e.plugins.size() == 1 && e.plugins[0].measured && e.memory == 10 * MiB,
+                  "the default mode counts at its own measurement, not the big mode's: " + std::to_string(e.memory >> 20) + " MiB");
+            // A second at 9 MiB declared fits beside it (10 left); a third has 1 MiB left and is refused before it activates.
+            s.setBudget({.9, 21 * MiB});
+            const auto b = s.add("b", fixture, "org.kick.test.memory");
+            std::string why;
+            try { s.add("c", fixture, "org.kick.test.memory"); } catch(const std::exception& x) { why = x.what(); }
+            check(why.find("9 MiB of memory where 1 MiB is left") != std::string::npos && s.graphState().topology.nodes.size() == 2,
+                  "a plugin declaring more than the budget leaves is refused before it activates: " + why);
+            // Saved louder: its state declares 13 MiB.
+            s.remove(b); s.commit();
+            s.setParameter(a, 7, .75);
+            Audio x; for(int i = 0; i < 4; ++i) x.run(s);
+            s.savePerformance((root / "memory-loud").string());
+        }
+        {
+            // Not open, it counts at the most its declarations were measured at.
+            Session t(48000, frames);
+            t.setBudget({.9, 200 * MiB});
+            check(t.estimate((root / "memory-loud").string()).memory == 100 * MiB, "a Performance not open counts the build at its largest measurement");
+        }
+        {
+            // Only the default mode measured: the saved Performance's estimate fits a 12 MiB budget, but
+            // its state declares 13 MiB, refused when the state loads, before activating with it.
+            const auto other = root / "memory-default";
+            fs::create_directories(other);
+            ::setenv("OSCAIRN_DATA_HOME", other.c_str(), 1);
+            std::ofstream(other / "measurements.json") << "{\"plugins\":{\"org.kick.test.memory@1#" << 9 * MiB
+                << "\":{\"cpu\":0.01,\"rest\":0.01,\"voice\":0,\"voices\":0,\"memory\":" << 9 * MiB << "}}}";
+            Session u(48000, frames);
+            u.setBudget({.9, 12 * MiB});
+            check(u.estimate((root / "memory-loud").string()).fits, "its estimate, from the default mode's measurement, fits");
+            std::string why;
+            try { u.loadPerformance((root / "memory-loud").string()); } catch(const std::exception& x) { why = x.what(); }
+            check(why.find("13 MiB of memory where 12 MiB is left") != std::string::npos && u.graphState().topology.nodes.empty(),
+                  "a saved state declaring more than the budget is refused before it activates: " + why);
+            u.setBudget({.9, 13 * MiB});
+            u.loadPerformance((root / "memory-loud").string());
+            const auto e = u.estimate();
+            check(e.memory == 13 * MiB && !e.plugins[0].measured, "with room it opens, counting at its declaration until measured in this mode: " + std::to_string(e.memory));
+        }
+        {
+            // Effect contexts without oscairn.memory: the engine counts its shared and context bytes,
+            // each further context its context bytes, not a whole instance's default.
+            const auto fresh = root / "memory-fresh";
+            fs::create_directories(fresh);
+            ::setenv("OSCAIRN_DATA_HOME", fresh.c_str(), 1);
+            Session v(48000, frames);
+            v.setBudget({.9, 512 * MiB});
+            const auto d = v.add("d", delay, "org.oscairn.delay");
+            const auto d2 = v.addEffectContext("d2", d);
+            const auto r = *v.effectResources(d2);
+            const auto e = v.estimate();
+            const auto cost = [&](const char* name) { for(const auto& c : e.plugins) if(c.name == name) return c.memory; return uint64_t(0); };
+            check(cost("d") == r.shared_bytes + r.context_bytes && cost("d2") == r.context_bytes && e.memory == r.shared_bytes + 2 * r.context_bytes,
+                  "effect contexts counted from their resources: " + std::to_string(cost("d")) + ", " + std::to_string(cost("d2")));
+        }
+        ::setenv("OSCAIRN_DATA_HOME", (root / "budget-home").c_str(), 1);
+    }
+
     // Switching plugins and wires off and on (RFC 0011's full scene model): an off plugin takes
     // no new notes but plays out the ones it holds, then stops; an off effect in a chain is
     // passed around; an off note wire takes no new notes; undo and saving keep it.
@@ -1366,6 +1446,7 @@ int main(int argc, char** argv)
         unavailable(argv[1], temp.path);
         sceneTransitions(argv[1], temp.path);
         budgets(argv[1], temp.path);
+        declaredMemory(argv[1], argv[3], temp.path);
         controls(argv[1], temp.path);
         persistence(argv[1], argv[2], argv[3], temp.path);
     }

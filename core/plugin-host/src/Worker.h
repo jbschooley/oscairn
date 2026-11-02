@@ -53,7 +53,7 @@ namespace oscairn::worker
     {
         Init = 1, Service, SetParameter, Gesture, ParameterText, SaveState, LoadState, Shutdown,
         CreateEffectContext, DestroyNode, EffectResources, SoundContexts, PrepareSound, SelectSound,
-        DiscardSound, SaveSnapshot, LoadSnapshot, AssetDependencies, Presets, LoadPreset
+        DiscardSound, SaveSnapshot, LoadSnapshot, AssetDependencies, Presets, LoadPreset, Memory, SetMemoryRoom
     };
     // First byte of every message from the worker: a reply, or a request to the engine made while
     // the worker serves one (the plugin resolving a sound asset).
@@ -66,6 +66,7 @@ namespace oscairn::worker
         Writer& u8(uint8_t v) { data.push_back(char(v)); return *this; }
         Writer& u32(uint32_t v) { data.append(reinterpret_cast<const char*>(&v), 4); return *this; }
         Writer& f64(double v) { data.append(reinterpret_cast<const char*>(&v), 8); return *this; }
+        Writer& u64(uint64_t v) { data.append(reinterpret_cast<const char*>(&v), 8); return *this; }
         Writer& str(const std::string& v) { u32(uint32_t(v.size())); data += v; return *this; }
         Writer& bytes(const void* p, size_t n) { data.append(static_cast<const char*>(p), n); return *this; }
     };
@@ -76,6 +77,7 @@ namespace oscairn::worker
         uint8_t u8() { need(1); return uint8_t(data[at++]); }
         uint32_t u32() { uint32_t v; need(4); std::memcpy(&v, data.data() + at, 4); at += 4; return v; }
         double f64() { double v; need(8); std::memcpy(&v, data.data() + at, 8); at += 8; return v; }
+        uint64_t u64() { uint64_t v; need(8); std::memcpy(&v, data.data() + at, 8); at += 8; return v; }
         std::string str() { const auto n = u32(); need(n); std::string v = data.substr(at, n); at += n; return v; }
         void bytes(void* p, size_t n) { need(n); std::memcpy(p, data.data() + at, n); at += n; }
     };

@@ -10,7 +10,9 @@
 #include <iostream>
 #include <limits>
 #include <new>
+#include <string>
 #include <thread>
+#include <vector>
 #ifndef _WIN32
 #include <dlfcn.h>
 #endif
@@ -31,12 +33,12 @@ int main(int argc, char** argv) {
     check(diagnostics != nullptr, "keep fixture diagnostics alive through all unloads");
 #endif
     const auto catalog = inspect(argv[1]);
-    check(catalog.failures.empty() && catalog.plugins.size() == 13, "enumerate every descriptor in one binary");
+    check(catalog.failures.empty() && catalog.plugins.size() == 14, "enumerate every descriptor in one binary");
     ScanResult decoded;
     check(decodeScan(encodeScan(catalog), decoded) && decoded.plugins[2].id == catalog.plugins[2].id, "catalog wire roundtrip");
     check(!decodeScan("broken", decoded) && !decodeScan(encodeScan(catalog).substr(0, 20), decoded), "reject malformed scanner output");
     auto isolated = scan({argv[1]}, argv[2]);
-    check(isolated.plugins.size() == 13 && isolated.failures.empty(), "isolated scanner enumeration");
+    check(isolated.plugins.size() == 14 && isolated.failures.empty(), "isolated scanner enumeration");
     const auto crashed = scan({argv[3]}, argv[2], 1000);
     check(crashed.failures.size() == 1, "scanner crash isolation");
     check(crashed.failures[0].message.find("fixture: crashing during scan") != std::string::npos, "scanner failure keeps the plugin's error output");
@@ -54,6 +56,28 @@ int main(int argc, char** argv) {
 #endif
 
     Host h;
+    {
+        // oscairn.memory (RFC 0025): asked after the state loads and before activating; refused
+        // before activating when it declares more than the room given; agrees with what it holds.
+        Host m;
+        check(m.load(catalog.plugins[13], 48000, 128), "load the memory fixture");
+        oscairn_memory_t declared{}, held{};
+        check(m.declaredMemory(declared) && declared.shared_bytes == 1u << 20 && declared.context_bytes == 8u << 20 && declared.asset_bytes == 0,
+              "its declaration at 48 kHz for its default state");
+        check(m.currentMemory(held) && held.shared_bytes == declared.shared_bytes && held.context_bytes == declared.context_bytes, "what it holds agrees with what it declared");
+        std::vector<uint8_t> state; const double louder = .75;
+        state.assign(reinterpret_cast<const uint8_t*>(&louder), reinterpret_cast<const uint8_t*>(&louder) + sizeof louder);
+        check(m.loadState(state) && m.declaredMemory(declared) && declared.context_bytes == 12u << 20, "another state, another declaration, asked before activating again");
+        m.setMemoryRoom(10u << 20);
+        const double loudest = 1;
+        state.assign(reinterpret_cast<const uint8_t*>(&loudest), reinterpret_cast<const uint8_t*>(&loudest) + sizeof loudest);
+        check(!m.loadState(state) && std::string(m.error()).find("17 MiB of memory where 10 MiB is left") != std::string::npos, "a state that would not fit is refused before activating");
+        Host fresh; fresh.setMemoryRoom(4u << 20);
+        check(!fresh.load(catalog.plugins[13], 48000, 128) && std::string(fresh.error()).find("MiB of memory") != std::string::npos, "and so is a load");
+        fresh.setMemoryRoom(32u << 20);
+        check(fresh.load(catalog.plugins[13], 96000, 128) && fresh.declaredMemory(declared) && declared.context_bytes == 16u << 20, "at 96 kHz it declares twice the context");
+        Host plain; check(plain.load(catalog.plugins[0], 48000, 128) && !plain.declaredMemory(declared), "a plugin without the extension declares nothing");
+    }
     {
         // oscairn.ui hints, kept only where they fit their parameter.
         Host hinted;

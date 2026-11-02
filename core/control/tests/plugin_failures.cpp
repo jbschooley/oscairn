@@ -52,6 +52,17 @@ int main(int argc, char** argv)
               "and in the protocol's status: " + reply);
         check(reply.find("\"workers\":[") != std::string::npos && reply.find("{\"node\":" + std::to_string(healthy) + ",\"name\":\"healthy\",\"cpu\":") != std::string::npos,
               "the protocol's status lists the workers' usage: " + reply);
+        // RFC 0025: a plugin in a worker declares its memory across the worker protocol, and is
+        // refused in the worker before it activates when it declares more than the room given.
+        {
+            const auto declaring = loadPluginInWorker(argv[1], argv[3], "org.kick.test.memory", 48000, frames);
+            const auto m = declaring->declaredMemory();
+            check(m && m->shared_bytes == 1u << 20 && m->context_bytes == 8u << 20, "a worker's plugin declares its memory");
+            std::string why;
+            try { loadPluginInWorker(argv[1], argv[3], "org.kick.test.memory", 48000, frames, ProcessingMode::Realtime, 0, 4u << 20); }
+            catch(const std::exception& e) { why = e.what(); }
+            check(why.find("9 MiB of memory where 4 MiB is left") != std::string::npos, "and is refused in its worker before activating: " + why);
+        }
     }
     catch(const std::exception& e) { std::fprintf(stderr, "FAIL: %s\n", e.what()); return 1; }
     if(!failures) std::puts("ok: a failed plugin is named in the session status");

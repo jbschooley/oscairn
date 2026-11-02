@@ -41,6 +41,12 @@ namespace oscairn
         virtual void loadSnapshot(const std::string& directory);
         virtual std::shared_ptr<PluginHost> createEffectContext() { throw std::runtime_error("Plugin has no native effect contexts"); }
         virtual std::optional<oscairn_effect_resources_t> effectResources() const { return {}; }
+        // Memory declared before activating (oscairn.memory, RFC 0025). Control thread. What the
+        // plugin said, at its last activation, activating would allocate; empty where it declares
+        // nothing. setMemoryRoom: the bytes it may declare at its next activations (a state load,
+        // an effect context made from it); one declaring more is refused before it activates. 0: no limit.
+        virtual std::optional<oscairn_memory_t> declaredMemory() const { return {}; }
+        virtual void setMemoryRoom(uint64_t) {}
         // Control thread. Save to a NEW directory; restore from a saved directory.
         // Raw adapters may silence/reset during restore. Graph-pooled instruments instead
         // prepare/select a spare; state export still snapshots the selected channel-0 instance.
@@ -107,7 +113,8 @@ namespace oscairn
     uint64_t residentBytes(long pid = 0);
     // CLAP module or LV2 bundle directory; pluginId is a CLAP ID or an LV2 URI.
     std::shared_ptr<PluginHost> loadPlugin(const std::string& path, const std::string& pluginId,
-                                           double sampleRate, uint32_t maxFrames, ProcessingMode mode = ProcessingMode::Realtime, Lv2BufferLimits lv2Buffers = {});
+                                           double sampleRate, uint32_t maxFrames, ProcessingMode mode = ProcessingMode::Realtime, Lv2BufferLimits lv2Buffers = {},
+                                           uint64_t memoryRoom = 0); // memoryRoom: as setMemoryRoom, for its first activation
     // RFC 0010: a CLAP plugin hosted by the worker executable `program` in its own process,
     // with the effect contexts later created from it. loadPlugin uses it as the placement
     // policy says.
@@ -127,5 +134,6 @@ namespace oscairn
     void setPlacementPolicy(PlacementPolicy);
     const PlacementPolicy& placementPolicy();
     std::shared_ptr<PluginHost> loadPluginInWorker(const std::string& program, const std::string& path, const std::string& pluginId,
-                                                   double sampleRate, uint32_t maxFrames, ProcessingMode mode = ProcessingMode::Realtime, uint64_t memoryLimit = 0);
+                                                   double sampleRate, uint32_t maxFrames, ProcessingMode mode = ProcessingMode::Realtime, uint64_t memoryLimit = 0,
+                                                   uint64_t memoryRoom = 0);
 }

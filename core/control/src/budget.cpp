@@ -13,6 +13,7 @@
 #include <cstdio>
 #include <fstream>
 #include <memory>
+#include <optional>
 
 namespace oscairn
 {
@@ -30,23 +31,80 @@ namespace oscairn
         std::string percent(double share) { char text[32]; std::snprintf(text, sizeof(text), "%.0f%%", share * 100); return text; }
     }
 
-    std::string Session::pluginKey(NodeId node) const
+    namespace
     {
-        const auto& d = graph_.host(node).descriptor();
-        return d.id + "@" + d.version;
+        // What a plugin declared at its last activation (oscairn.memory); none where a worker is down.
+        std::optional<oscairn_memory_t> declaredBy(const PluginHost& host)
+        {
+            try { return host.declaredMemory(); } catch(const std::exception&) { return {}; }
+        }
+        uint64_t total(const oscairn_memory_t& m) { return m.shared_bytes + m.context_bytes + m.asset_bytes; }
+    }
+
+    // A plugin build, and what it declared for its state: a plugin whose modes need very different
+    // memory (a reverb's algorithms) is measured per declaration, not as one figure, the largest.
+    std::string Session::pluginKey(const Graph& graph, NodeId node) const
+    {
+        const auto& host = graph.host(node);
+        const auto& d = host.descriptor();
+        const auto declared = declaredBy(host);
+        return d.id + "@" + d.version + (declared ? "#" + std::to_string(total(*declared)) : std::string());
     }
 
     // Measured: at rest, plus its cost per voice for as many notes as its part may play at once;
-    // with no limit, or before its voices are measured, the busiest block seen.
+    // with no limit, or before its voices are measured, the busiest block seen. A build asked for
+    // without a declaration (a Performance not open) counts at the most of what its declarations
+    // were measured at.
     Control::Cost Session::costOf(const std::string& key, const std::string& name, const std::string& plugin, uint32_t limit) const
     {
-        if(const auto it = measured_.find(key); it != measured_.end())
+        Measurement m; bool found = false;
+        if(const auto it = measured_.find(key); it != measured_.end()) { m = it->second; found = true; }
+        else if(key.find('#') == std::string::npos)
+            for(auto it = measured_.lower_bound(key + "#"); it != measured_.end() && it->first.compare(0, key.size() + 1, key + "#") == 0; ++it, found = true)
+            {
+                const auto& x = it->second;
+                m = {std::max(m.cpu, x.cpu), std::max(m.rest, x.rest), std::max(m.voice, x.voice), std::max(m.voices, x.voices), std::max(m.memory, x.memory)};
+            }
+        if(!found) return {name, plugin, unmeasuredCpu, unmeasuredMemory, false};
+        const double cpu = limit && m.voice > 0 ? m.rest + m.voice * limit : m.cpu;
+        return {name, plugin, cpu, m.memory, true};
+    }
+
+    // Memory: the larger of the measurement and the declaration (RFC 0025: never the plugin's word
+    // alone); a plugin not yet measured, its declaration instead of the default. An effect context
+    // made from another counts its context bytes, from oscairn.memory or else effect contexts'
+    // resources, since its engine's shared bytes are counted with the engine.
+    Control::Cost Session::nodeCost(const Graph& graph, NodeId node, const std::string& name, uint32_t limit) const
+    {
+        const auto& host = graph.host(node);
+        auto c = costOf(pluginKey(graph, node), name, host.descriptor().id, limit);
+        const auto declared = declaredBy(host);
+        std::optional<oscairn_effect_resources_t> resources;
+        if(!declared) try { resources = host.effectResources(); } catch(const std::exception&) {}
+        if(graph.effectSource(node) != node)
         {
-            const auto& m = it->second;
-            const double cpu = limit && m.voice > 0 ? m.rest + m.voice * limit : m.cpu;
-            return {name, plugin, cpu, m.memory, true};
+            if(declared) c.memory = declared->context_bytes + declared->asset_bytes;
+            else if(resources) c.memory = resources->context_bytes;
+            return c;
         }
-        return {name, plugin, unmeasuredCpu, unmeasuredMemory, false};
+        const uint64_t own = declared ? total(*declared) : resources ? resources->shared_bytes + resources->context_bytes : 0;
+        if(declared || resources) c.memory = c.measured ? std::max(c.memory, own) : own;
+        return c;
+    }
+
+    uint64_t Session::memoryRoom(const Graph& graph, const std::vector<NodeId>& beside) const
+    {
+        if(budget_.cpu <= 0 || !budget_.memory) return 0;
+        uint64_t used = 0;
+        for(const auto n : beside) if(graph.contains(n)) used += nodeCost(graph, n).memory;
+        return used < budget_.memory ? budget_.memory - used : 1; // 1 byte: nothing that declares fits
+    }
+
+    uint64_t Session::memoryRoom() const
+    {
+        std::vector<NodeId> open;
+        for(const auto& [node, name] : nodes_) open.push_back(node);
+        return memoryRoom(graph_, open);
     }
 
     uint32_t Session::noteLimit(NodeId node) const
@@ -180,8 +238,8 @@ namespace oscairn
         if(budget_.cpu > 0) loadMeasurements();
         // What plays now: this Performance's plugins, and any still ringing out from the last.
         std::vector<Cost> open, ringing;
-        for(const auto& [node, name] : nodes_) open.push_back(costOf(pluginKey(node), name, graph_.host(node).descriptor().id, noteLimit(node)));
-        for(const auto node : leaving_) if(graph_.contains(node)) ringing.push_back(costOf(pluginKey(node), {}, graph_.host(node).descriptor().id));
+        for(const auto& [node, name] : nodes_) open.push_back(nodeCost(graph_, node, name, noteLimit(node)));
+        for(const auto node : leaving_) if(graph_.contains(node)) ringing.push_back(nodeCost(graph_, node));
         // The open one fits on its own; what rings out from the last only makes it not seamless,
         // so adding a plugin right after a change is not refused for a tail.
         if(directory.empty()) return estimateOf(open, ringing);

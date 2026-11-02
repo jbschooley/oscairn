@@ -33,7 +33,7 @@ namespace oscairn
         if( !name.empty() && std::any_of(nodes_.begin(),nodes_.end(),[&](const auto& n){ return n.second == name; }) )
             throw std::invalid_argument( "duplicate node name: " + name );
         const auto before = budget_.cpu > 0 ? residentBytes() : 0;
-        const auto id = graph_.add( path, pluginId );
+        const auto id = graph_.add( path, pluginId, memoryRoom() ); // one declaring more than is left is refused before it activates
         nodes_.emplace( id, name );
         if( budget_.cpu > 0 )
         {
@@ -54,8 +54,20 @@ namespace oscairn
     {
         if( !name.empty() && std::any_of(nodes_.begin(),nodes_.end(),[&](const auto& n){ return n.second == name; }) )
             throw std::invalid_argument( "duplicate node name: " + name );
-        const auto id = graph_.addEffectContext(source);
+        // A context declaring more than the budget leaves is refused before it activates (RFC 0025).
+        auto& engine = graph_.host(source);
+        const auto room = memoryRoom();
+        if( room ) engine.setMemoryRoom(room);
+        NodeId id;
+        try { id = graph_.addEffectContext(source); } catch(...) { if( room ) engine.setMemoryRoom(0); throw; }
+        if( room ) engine.setMemoryRoom(0);
         nodes_.emplace( id, name );
+        if( budget_.cpu > 0 )
+            if( const auto e = estimate(); !e.fits )
+            {
+                dropNode(id);
+                throw std::invalid_argument( "adding " + (name.empty() ? graph_.host(source).descriptor().name : name) + ": the Performance " + tooMuch(e) );
+            }
         for( const auto& p : graph_.host(id).parameters() ) observed_[{id,p.id}] = graph_.host(id).parameterValue(p.id);
         staged_ = true;
         return id;

@@ -138,6 +138,12 @@ struct Host::Impl {
     const clap_plugin_latency_t* pluginLatency = nullptr;
     const clap_plugin_timer_support_t* timerSupport = nullptr;
     const clap_plugin_posix_fd_support_t* fdSupport = nullptr;
+    // oscairn.memory (RFC 0025): the plugin's estimate at its last activation, and the bytes the
+    // next activation may declare (0: no limit), set by the caller and kept across loads.
+    const oscairn_plugin_memory_t* memory = nullptr;
+    bool hasDeclared = false, context = false; // context: an effect context, costing its context bytes alone
+    oscairn_memory_t declared{};
+    uint64_t memoryRoom = 0;
     Descriptor info;
     std::string message;
     std::string lastLoggedError; // main thread only: explains a following failed call
@@ -336,7 +342,7 @@ struct Host::Impl {
         loaded.store(false);
         if (plugin) { deactivate(); if (plugin->destroy) plugin->destroy(plugin); }
         plugin = nullptr; params = nullptr; state = nullptr; sounds = nullptr; assetDependencies = nullptr; pluginLatency = nullptr;
-        timerSupport = nullptr; fdSupport = nullptr;
+        timerSupport = nullptr; fdSupport = nullptr; memory = nullptr; hasDeclared = false;
         timers.clear(); fds.clear();
         paramInfo.clear(); paramValues.reset(); cookies.clear(); inputs.clear(); outputs.clear(); noteInputs.clear(); noteOutputs.clear();
         inputBuffers.clear(); outputBuffers.clear(); inputPointers.clear(); outputPointers.clear(); scratch.clear();
@@ -374,6 +380,8 @@ struct Host::Impl {
         s.pluginLatency = static_cast<const clap_plugin_latency_t*>(s.plugin->get_extension(s.plugin, CLAP_EXT_LATENCY));
         s.timerSupport = static_cast<const clap_plugin_timer_support_t*>(s.plugin->get_extension(s.plugin, CLAP_EXT_TIMER_SUPPORT));
         s.fdSupport = static_cast<const clap_plugin_posix_fd_support_t*>(s.plugin->get_extension(s.plugin, CLAP_EXT_POSIX_FD_SUPPORT));
+        s.memory = static_cast<const oscairn_plugin_memory_t*>(s.plugin->get_extension(s.plugin, OSCAIRN_EXT_MEMORY));
+        if(s.memory && (!s.memory->estimate || !s.memory->current))throw std::runtime_error("Incomplete memory interface");
         if (!bytes.empty()) {
             if (bytes.size() > maxStateBytes || !s.state || !s.state->load) throw std::runtime_error("Plugin cannot restore saved state");
             Stream stream; stream.bytes = bytes;
@@ -525,6 +533,16 @@ struct Host::Impl {
         if (!std::isfinite(sampleRate) || sampleRate < 8000 || sampleRate > 768000 || maxFrames == 0 || maxFrames > 65536)
             throw std::runtime_error("Invalid sample rate or maximum block size");
         readPorts(); readParameters();
+        // Asked after the state is loaded and before activating, so a plugin that would not fit is
+        // refused before its allocation (RFC 0025).
+        hasDeclared = false;
+        if (memory && memory->estimate(plugin, sampleRate, maxFrames, &declared)) {
+            hasDeclared = true;
+            const uint64_t bytes = (context ? 0 : declared.shared_bytes) + declared.context_bytes + declared.asset_bytes;
+            if (memoryRoom && bytes > memoryRoom)
+                throw std::runtime_error("Plugin needs " + std::to_string((bytes + (1 << 20) - 1) >> 20) + " MiB of memory where " +
+                                         std::to_string(memoryRoom >> 20) + " MiB is left");
+        }
         if (!plugin->activate(plugin, sampleRate, 1, maxFrames)) throw std::runtime_error("Plugin activation failed");
         active = true;
         transportObserved = false;
@@ -665,7 +683,7 @@ bool Host::load(const Descriptor& descriptor, double sampleRate, uint32_t frames
     auto& s = *impl;
     if (!s.main()) return false;
     Gate guard(s.gate);
-    s.close(); s.message.clear(); s.info = descriptor;
+    s.close(); s.message.clear(); s.info = descriptor; s.context = false;
     try {
         s.library = detail::openLibrary(descriptor.path);
         auto* factory = s.library->factory();
@@ -691,7 +709,7 @@ bool Host::loadEffectContext(const Host& source) {
     try {
         const auto* ext=static_cast<const oscairn_plugin_effect_contexts_t*>(parent.plugin->get_extension(parent.plugin,OSCAIRN_EXT_EFFECT_CONTEXTS));
         if(!ext || !ext->create || !ext->resources)throw std::runtime_error("Plugin has no native effect contexts");
-        s.library=parent.library;s.info=parent.info;
+        s.library=parent.library;s.info=parent.info;s.context=true;s.memoryRoom=parent.memoryRoom;
         s.plugin=ext->create(parent.plugin,&s.host);
         if(!s.plugin)throw std::runtime_error("Effect context capacity exhausted");
         s.initialize(parent.sampleRate,parent.maxFrames,{});
@@ -699,6 +717,15 @@ bool Host::loadEffectContext(const Host& source) {
     } catch(const std::exception& e){s.message=e.what();}
       catch(...){s.message="Plugin threw preparing an effect context";}
     s.close();s.failed.store(true);return false;
+}
+void Host::setMemoryRoom(uint64_t bytes) noexcept { impl->memoryRoom = bytes; }
+bool Host::declaredMemory(oscairn_memory_t& result) const {
+    if (!impl->plugin || !impl->hasDeclared) return false;
+    result = impl->declared; return true;
+}
+bool Host::currentMemory(oscairn_memory_t& result) const {
+    auto& s = *impl;
+    return s.main() && s.plugin && s.memory && s.active && s.memory->current(s.plugin, &result);
 }
 bool Host::effectResources(oscairn_effect_resources_t& result) const {
     if(!impl->plugin)return false;
@@ -833,7 +860,8 @@ bool Host::loadState(const std::vector<uint8_t>& bytes) {
         Event e; while (s.commands.pop(e)) s.pendingCommands.fetch_sub(1);
         s.carryCount = 0;
         s.activate(); s.dirty.store(false); s.failed.store(false); return true;
-    } catch (...) { s.fail("Plugin state restoration failed"); return false; }
+    } catch (const std::exception& e) { s.fail(std::string("Plugin state restoration failed: ") + e.what()); return false; }
+      catch (...) { s.fail("Plugin state restoration failed"); return false; }
 }
 namespace {
 // What a preset provider declares while it initializes, and the presets it then reports.

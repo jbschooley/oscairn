@@ -74,8 +74,9 @@ namespace oscairn
 
         /// Loads a CLAP module or LV2 bundle as a new node. Multiple-plugin LV2 bundles
         /// require pluginId (the URI); CLAP defaults to the module's first plugin.
-        /// Throws std::runtime_error on failure.
-        NodeId add( const std::string& path, const std::string& pluginId = {} );
+        /// Throws std::runtime_error on failure. memoryRoom: the bytes the plugin may declare when
+        /// it activates (oscairn.memory, RFC 0025); 0: no limit.
+        NodeId add( const std::string& path, const std::string& pluginId = {}, uint64_t memoryRoom = 0 );
         /// Validates and commits replacement atomically; failure preserves the current graph. The
         /// node's routes and note edges are removed; rewire, called with the new plugin in place,
         /// connects what it wants before the commit (the Session moves its wires, RFC 0011).

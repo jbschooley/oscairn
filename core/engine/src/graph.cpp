@@ -159,11 +159,11 @@ namespace oscairn
         collect();
     }
 
-    NodeId Graph::add( const std::string& path, const std::string& pluginId )
+    NodeId Graph::add( const std::string& path, const std::string& pluginId, uint64_t memoryRoom )
     {
         if(nextId_>=graphInput)throw std::overflow_error("Graph node IDs exhausted");
         Node node;
-        auto loaded=loadPlugin(path,pluginId,sampleRate_,maxFrames_,mode_,lv2Buffers_);loaded->setAssets(assets_);
+        auto loaded=loadPlugin(path,pluginId,sampleRate_,maxFrames_,mode_,lv2Buffers_,memoryRoom);loaded->setAssets(assets_);
         node.host = preparedInstrument(std::move(loaded),sampleRate_,maxFrames_,mode_,lv2Buffers_);
         node.audioInputs=countChannels(node.host->inputPorts());
         node.audioOutputs=countChannels(node.host->outputPorts());

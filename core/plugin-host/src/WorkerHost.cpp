@@ -90,6 +90,7 @@ namespace oscairn
             long replySeconds = 30; // how long a control request may take (a big preset load)
             uint32_t missLimit = UINT32_MAX;
             uint64_t memoryLimit = 0; // bytes; 0: none
+            uint64_t memoryRoom = 0;  // what the plugin may declare at its first activation (RFC 0025); a restart is not refused
             // The supervisor's latest reading of the worker, and the CPU time of the workers it replaced.
             std::atomic<uint64_t> memory{0};
             std::atomic<double> cpu{0}, cpuBefore{0};
@@ -181,7 +182,8 @@ namespace oscairn
                 reaped = false;
                 // Starting a worker gets the full 30 s, whatever the requests' timeout.
                 timeval start{std::max(30L, replySeconds), 0}; setsockopt(socket, SOL_SOCKET, SO_RCVTIMEO, &start, sizeof start);
-                auto reply = exchange(Writer().u8(uint8_t(Op::Init)).str(path).str(id).f64(rate).u32(frames).data);
+                auto reply = exchange(Writer().u8(uint8_t(Op::Init)).str(path).str(id).f64(rate).u32(frames).u64(memoryRoom).data);
+                memoryRoom = 0;
                 timeval t{replySeconds, 0}; setsockopt(socket, SOL_SOCKET, SO_RCVTIMEO, &t, sizeof t);
                 return reply;
             }
@@ -395,6 +397,7 @@ namespace oscairn
             void loadState(const std::string& directory) override
             {
                 std::lock_guard lock(controlFor());
+                declared_.reset();
                 process_->exchange(header(Op::LoadState).str(directory).data);
                 record(Op::SaveState);
             }
@@ -417,6 +420,7 @@ namespace oscairn
             void loadSnapshot(const std::string& directory) override
             {
                 std::lock_guard lock(controlFor());
+                declared_.reset();
                 process_->exchange(header(Op::LoadSnapshot).str(directory).data);
                 if(contexts_)
                 {
@@ -440,6 +444,19 @@ namespace oscairn
                 if(!r.u8()) return {};
                 oscairn_effect_resources_t res{}; r.bytes(&res, sizeof res); return res;
             }
+            // Asked of the worker once after each activation it may have caused, then kept.
+            std::optional<oscairn_memory_t> declaredMemory() const override
+            {
+                if(!declared_)
+                {
+                    Reader r = const_cast<WorkerHost*>(this)->request(Op::Memory);
+                    std::optional<oscairn_memory_t> m;
+                    if(r.u8()) { m.emplace(); r.bytes(&*m, sizeof *m); }
+                    declared_ = m;
+                }
+                return *declared_;
+            }
+            void setMemoryRoom(uint64_t bytes) override { request(Op::SetMemoryRoom, Writer().u64(bytes)); }
             uint32_t soundContextCapacity() const noexcept override { return contexts_; }
             std::vector<oscairn_sound_context_info_t> soundContexts() const override
             {
@@ -730,6 +747,7 @@ namespace oscairn
 
             std::shared_ptr<Process> process_;
             mutable std::atomic<uint64_t> resident_{0}; // the last reading of residentBytes
+            mutable std::optional<std::optional<oscairn_memory_t>> declared_; // declaredMemory's answer, until a state load
             bool root_;
             uint32_t node_ = 0; // the worker's index for this node; under control
             std::string description_;
@@ -852,9 +870,10 @@ namespace oscairn
     }
 
     std::shared_ptr<PluginHost> loadPluginInWorker(const std::string& program, const std::string& path, const std::string& id,
-                                                   double sampleRate, uint32_t maxFrames, ProcessingMode mode, uint64_t memoryLimit)
+                                                   double sampleRate, uint32_t maxFrames, ProcessingMode mode, uint64_t memoryLimit, uint64_t memoryRoom)
     {
         auto process = std::make_shared<Process>(program, path, id, sampleRate, maxFrames, mode, memoryLimit);
+        process->memoryRoom = memoryRoom;
         std::shared_ptr<PluginHost> host;
         {
             std::lock_guard lock(process->control);

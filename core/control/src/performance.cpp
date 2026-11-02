@@ -201,6 +201,9 @@ std::shared_ptr<PluginHost> standIn(V node,const fs::path& snapshot,const std::s
     p.reason=p.descriptor.id+" "+p.descriptor.version+" is not here ("+reason+"); its place and saved state are kept";
     return unavailablePlugin(std::move(p));
 }
+// A plugin refused before activating because it declared more memory than the budget left
+// (kick::clap::Host's reason, which reaches here as text, also from a worker): not a stand-in.
+bool memoryRefusal(const std::exception& e){return std::string(e.what()).find(" MiB of memory where ")!=std::string::npos;}
 // A saved node's plugin: the build at its saved path, else the store's, of the saved version;
 // else its stand-in. load adds a build, version reads it, unload removes a mismatched one.
 template<class Load,class Unload,class Version,class Adopt>
@@ -211,7 +214,7 @@ NodeId resolvePlugin(V node,const fs::path& snapshot,const std::set<uint32_t>& r
     for(const auto& candidate:{fs::path(text(field(plugin,"pathHint"))),storedPlugin(format,id,saved)}){
         std::error_code e;if(candidate.empty() || !fs::exists(candidate,e))continue;
         try{const auto n=load(candidate.string(),id);const auto have=version(n);if(have==saved)return n;unload(n);reason="version "+have+" installed";}
-        catch(const std::runtime_error& x){reason=x.what();} // a load that failed; a refusal (the budget's) is not one
+        catch(const std::runtime_error& x){if(memoryRefusal(x))throw std::invalid_argument(x.what());reason=x.what();} // a load that failed; a refusal (the budget's) is not one
     }
     return adopt(standIn(node,snapshot,refs,reason));
 }
@@ -583,15 +586,26 @@ std::unique_ptr<Session::Prepared> Session::read(const fs::path& root) {
         const auto name=text(field(node,"name"));
         try {
             NodeId runtime;
+            // RFC 0025: each plugin may declare what the memory budget leaves beside those loaded
+            // before it (the Performance alone, as its estimate was checked); more is refused before it activates.
+            std::vector<NodeId> loaded;for(const auto& [n,x]:names)loaded.push_back(n);
+            const auto room=memoryRoom(*next,loaded);
+            auto context=[&](PluginHost& source,const std::function<NodeId()>& make){
+                if(room)source.setMemoryRoom(room);
+                try{const auto n=make();if(room)source.setMemoryRoom(0);return n;}catch(...){if(room)source.setMemoryRoom(0);throw;}};
             if(siblings){if(!definitions.contains(engine) || text(field(definitions.at(engine),"engine"))!=engine || !ids.contains(engine))bad("missing shared engine root");
                 const auto& source=next->host(ids.at(engine)).descriptor();if(source.id!=id || source.path!=path)bad("incompatible shared engine identity");
-                try{runtime=next->addEffectContext(ids.at(engine));}
-                catch(const std::exception& e){runtime=next->add(standIn(node,root/"nodes"/key,refs[key],std::string("its shared engine is not here: ")+e.what()));}}
-            else if(const auto engine=playing(id,path,text(field(plugin,"version")),group[key]))runtime=next->addEffectContext(graph_,*engine);
-            else runtime=resolvePlugin(node,root/"nodes"/key,refs[key],[&](const std::string& p,const std::string& i){return next->add(p,i);},[&](NodeId n){next->remove(n);},
+                try{runtime=context(next->host(ids.at(engine)),[&]{return next->addEffectContext(ids.at(engine));});}
+                catch(const std::exception& e){
+                    if(memoryRefusal(e))throw;
+                    runtime=next->add(standIn(node,root/"nodes"/key,refs[key],std::string("its shared engine is not here: ")+e.what()));}}
+            else if(const auto engine=playing(id,path,text(field(plugin,"version")),group[key]))runtime=context(graph_.host(*engine),[&]{return next->addEffectContext(graph_,*engine);});
+            else runtime=resolvePlugin(node,root/"nodes"/key,refs[key],[&](const std::string& p,const std::string& i){return next->add(p,i,room);},[&](NodeId n){next->remove(n);},
                                        [&](NodeId n){return next->host(n).descriptor().version;},[&](std::shared_ptr<PluginHost> h){return next->add(std::move(h));});
             auto& h=next->host(runtime);
+            if(room)h.setMemoryRoom(room);
             h.loadSnapshot((root/"nodes"/key).string());
+            if(room)h.setMemoryRoom(0);
             checkPorts(field(node,"inputs"),h.inputPorts());checkPorts(field(node,"outputs"),h.outputPorts());
             if(integer(field(node,"noteInputs"),16)!=h.noteInputPorts() || integer(field(node,"noteOutputs"),16)!=h.noteOutputPorts())bad("note port layout changed");
             ids.emplace(key,runtime);names.emplace(runtime,name);
@@ -860,13 +874,17 @@ std::map<std::string,NodeId> Session::addNodes(const json_value_s* document,cons
             const auto snapshot=root/"nodes"/key;
             if(siblings){if(!ids.count(engine))bad("missing shared engine root");
                 try{runtime=addEffectContext(unique(name),ids.at(engine));}
-                catch(const std::exception& e){runtime=adopt(unique(name),standIn(node,snapshot,refs[key],std::string("its shared engine is not here: ")+e.what()));}}
+                catch(const std::exception& e){if(memoryRefusal(e))throw;runtime=adopt(unique(name),standIn(node,snapshot,refs[key],std::string("its shared engine is not here: ")+e.what()));}}
             else runtime=resolvePlugin(node,snapshot,refs[key],[&](const std::string& p,const std::string& i){return add(unique(name),p,i);},[&](NodeId n){dropNode(n);},
                                        [&](NodeId n){return graph_.host(n).descriptor().version;},[&](std::shared_ptr<PluginHost> h){return adopt(unique(name),std::move(h));});
             added.push_back(runtime);
             auto& h=graph_.host(runtime);
             if(h.descriptor().id!=id)bad("saved plugin does not match the loaded plugin: "+name);
+            std::vector<NodeId> others;for(const auto& [n,x]:nodes_)if(n!=runtime)others.push_back(n);
+            const auto room=memoryRoom(graph_,others); // RFC 0025: its saved state may declare what the budget leaves
+            if(room)h.setMemoryRoom(room);
             h.loadSnapshot((root/"nodes"/key).string());
+            if(room)h.setMemoryRoom(0);
             checkPorts(field(node,"inputs"),h.inputPorts());checkPorts(field(node,"outputs"),h.outputPorts());
             if(integer(field(node,"noteInputs"),16)!=h.noteInputPorts() || integer(field(node,"noteOutputs"),16)!=h.noteOutputPorts())bad("note port layout changed: "+name);
             for(const auto& p:h.parameters())observed_[{runtime,p.id}]=h.parameterValue(p.id);

@@ -313,8 +313,8 @@ namespace oscairn::worker
                 if(op == Op::Init)
                 {
                     if(!nodes.empty()) throw std::runtime_error("Plugin already loaded");
-                    const auto path = r.str(), id = r.str(); const double rate = r.f64(); frames = r.u32();
-                    attach(loadPlugin(path, id, rate, frames));
+                    const auto path = r.str(), id = r.str(); const double rate = r.f64(); frames = r.u32(); const auto room = r.u64();
+                    attach(loadPlugin(path, id, rate, frames, ProcessingMode::Realtime, {}, room));
                     continue;
                 }
                 if(op == Op::Shutdown) { stopAll(); reply(socket, Writer{}); return 0; }
@@ -388,6 +388,14 @@ namespace oscairn::worker
                     for(const auto& a : refs) w.str(a.library).str(a.path).str(a.sha256);
                     break;
                 }
+                case Op::Memory:
+                {
+                    const auto declared = host.declaredMemory();
+                    w.u8(declared.has_value());
+                    if(declared) w.bytes(&*declared, sizeof *declared);
+                    break;
+                }
+                case Op::SetMemoryRoom: host.setMemoryRoom(r.u64()); break;
                 default: throw std::runtime_error("Unknown worker request");
                 }
                 reply(socket, w);

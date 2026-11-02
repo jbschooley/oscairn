@@ -10,6 +10,7 @@
 #include <clap/ext/preset-load.h>
 #include <clap/factory/preset-discovery.h>
 #include <oscairn-clap/ui.h>
+#include <oscairn-clap/memory.h>
 #include <filesystem>
 #include <fstream>
 #include <string>
@@ -21,6 +22,7 @@
 #include <cstring>
 #include <limits>
 #include <thread>
+#include <vector>
 
 namespace {
 std::atomic<bool> blockProcess{false}, enteredProcess{false}, releaseProcess{false};
@@ -29,7 +31,7 @@ std::atomic<int> threadErrors{0}, entryUsers{0}, processCalls{0}, callbackCalls{
 constexpr const char* ids[]{"org.kick.test.synth", "org.kick.test.effect", "org.kick.test.midi",
                             "org.kick.test.nan", "org.kick.test.error", "org.kick.test.sleep",
                             "org.kick.test.activate-failure", "org.kick.test.start-failure", "org.kick.test.stepped", "org.kick.test.no-state",
-                            "org.kick.test.save-failure", "org.kick.test.transport", "org.kick.test.tail"};
+                            "org.kick.test.save-failure", "org.kick.test.transport", "org.kick.test.tail", "org.kick.test.memory"};
 const char* instrument[]{CLAP_PLUGIN_FEATURE_INSTRUMENT, CLAP_PLUGIN_FEATURE_SYNTHESIZER, nullptr};
 const char* effect[]{CLAP_PLUGIN_FEATURE_AUDIO_EFFECT, nullptr};
 const clap_plugin_descriptor_t descriptors[]{
@@ -45,7 +47,8 @@ const clap_plugin_descriptor_t descriptors[]{
     {CLAP_VERSION, ids[9], "KICK no state", "KICK", "", "", "", "1", "Unsupported state fixture", instrument},
     {CLAP_VERSION, ids[10], "KICK save failure", "KICK", "", "", "", "1", "Failed state fixture", instrument},
     {CLAP_VERSION, ids[11], "KICK transport", "KICK", "", "", "", "1", "Transport fixture", instrument},
-    {CLAP_VERSION, ids[12], "KICK tail", "KICK", "", "", "", "1", "Release-tail instrument", instrument}};
+    {CLAP_VERSION, ids[12], "KICK tail", "KICK", "", "", "", "1", "Release-tail instrument", instrument},
+    {CLAP_VERSION, ids[13], "KICK memory", "KICK", "", "", "", "1", "Effect declaring its memory (oscairn.memory)", effect}};
 struct Plugin {
     clap_plugin_t api{}, late{}; // late: the functions held back until init (KICK_FIXTURE_LATE_FUNCTIONS)
     const clap_host_t* host;
@@ -59,6 +62,10 @@ struct Plugin {
     clap_id timerId = CLAP_INVALID_ID;
     uint32_t maxFrames = 0, tailFrames=0;
     clap_event_note_t tailNote{};
+    std::vector<char> shared, context; // the memory fixture's, allocated when it activates
+    // The memory fixture declares 1 MiB shared and, per context, its gain (from its state) times
+    // 16 MiB at 48 kHz, more at higher rates, as a reverb's buffers grow with the rate and mode.
+    static uint64_t contextBytes(double gain, double rate) { return uint64_t(gain * (16u << 20) * rate / 48000); }
     static Plugin& get(const clap_plugin_t* p) { return *static_cast<Plugin*>(p->plugin_data); }
     void main() const { if (!check || !check->is_main_thread(host)) ++threadErrors; }
     void audio() const { if (!check || !check->is_audio_thread(host)) ++threadErrors; }
@@ -74,12 +81,13 @@ struct Plugin {
             return true;
         };
         api.destroy = [](const clap_plugin_t* p) { auto& s = get(p); s.main(); if (s.active || s.processing) ++threadErrors; delete &s; };
-        api.activate = [](const clap_plugin_t* p, double, uint32_t, uint32_t max) {
+        api.activate = [](const clap_plugin_t* p, double rate, uint32_t, uint32_t max) {
             auto& s = get(p); s.main(); if (s.kind == 6) return false;
             if (s.kind == 8 && s.shownMode != 0) ++threadErrors; // its info rescan must not restart it
+            if (s.kind == 13) { s.shared.assign(1u << 20, 1); s.context.assign(contextBytes(s.gain, rate), 1); }
             s.active = true; s.maxFrames = max; return true;
         };
-        api.deactivate = [](const clap_plugin_t* p) { auto& s = get(p); s.main(); if (s.processing) ++threadErrors; s.active = false; };
+        api.deactivate = [](const clap_plugin_t* p) { auto& s = get(p); s.main(); if (s.processing) ++threadErrors; s.active = false; std::vector<char>().swap(s.shared); std::vector<char>().swap(s.context); };
         api.start_processing = [](const clap_plugin_t* p) { auto& s = get(p); s.audio(); if (!s.active) ++threadErrors; if (s.kind == 7) return false; s.processing = true; return true; };
         api.stop_processing = [](const clap_plugin_t* p) { auto& s = get(p); s.audio(); if (!s.processing) ++threadErrors; s.processing = false; };
         api.reset = [](const clap_plugin_t* p) { auto& s = get(p); s.audio(); s.gate = s.held = s.sustain = false;s.tailFrames=0; };
@@ -176,9 +184,9 @@ struct Plugin {
     }
     static const void* extension(const clap_plugin_t* plugin, const char* id) {
         static const clap_plugin_audio_ports_t audio{
-            [](const clap_plugin_t* p, bool input) -> uint32_t { get(p).main(); return input ? (get(p).kind == 1 ? 1 : 0) : 1; },
+            [](const clap_plugin_t* p, bool input) -> uint32_t { get(p).main(); return input ? (get(p).kind == 1 || get(p).kind == 13 ? 1 : 0) : 1; },
             [](const clap_plugin_t* p, uint32_t i, bool input, clap_audio_port_info_t* out) {
-                auto& s = get(p); s.main(); if (i || (input && s.kind != 1)) return false;
+                auto& s = get(p); s.main(); if (i || (input && s.kind != 1 && s.kind != 13)) return false;
                 *out = {}; out->id = 0; std::strcpy(out->name, "Main"); out->flags = CLAP_AUDIO_PORT_IS_MAIN;
                 out->channel_count = s.kind == 0 ? 1 : 2; out->port_type = s.kind == 0 ? CLAP_PORT_MONO : CLAP_PORT_STEREO;
                 out->in_place_pair = CLAP_INVALID_ID; return true;
@@ -278,6 +286,16 @@ struct Plugin {
             return true;
         }};
         if (!std::strcmp(id, CLAP_EXT_PRESET_LOAD)) return &presets;
+        static const oscairn_plugin_memory_t memory{
+            [](const clap_plugin_t* p, double rate, uint32_t, oscairn_memory_t* out) {
+                auto& s = get(p); s.main(); if (s.active) ++threadErrors;
+                *out = {1u << 20, contextBytes(s.gain, rate), 0}; return true;
+            },
+            [](const clap_plugin_t* p, oscairn_memory_t* out) {
+                auto& s = get(p); s.main(); if (!s.active) return false;
+                *out = {s.shared.size(), s.context.size(), 0}; return true;
+            }};
+        if (!std::strcmp(id, OSCAIRN_EXT_MEMORY)) return get(plugin).kind == 13 ? &memory : nullptr;
         return nullptr;
     }
 };
@@ -328,10 +346,10 @@ const clap_preset_discovery_factory_t presetFactory{
         return std::strcmp(id, presetProvider.id) ? nullptr : createPresetProvider(indexer);
     }};
 const clap_plugin_factory_t factory{
-    [](const clap_plugin_factory_t*) -> uint32_t { return 13; },
-    [](const clap_plugin_factory_t*, uint32_t index) -> const clap_plugin_descriptor_t* { return index < 13 ? &descriptors[index] : nullptr; },
+    [](const clap_plugin_factory_t*) -> uint32_t { return 14; },
+    [](const clap_plugin_factory_t*, uint32_t index) -> const clap_plugin_descriptor_t* { return index < 14 ? &descriptors[index] : nullptr; },
     [](const clap_plugin_factory_t*, const clap_host_t* host, const char* id) -> const clap_plugin_t* {
-        for (int i = 0; i < 13; ++i) if (!std::strcmp(id, ids[i])) return &(new Plugin(host, i))->api;
+        for (int i = 0; i < 14; ++i) if (!std::strcmp(id, ids[i])) return &(new Plugin(host, i))->api;
         return nullptr;
     }};
 }

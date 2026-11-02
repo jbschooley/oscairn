@@ -5,6 +5,7 @@
 #include <oscairn-clap/sound-contexts.h>
 #include <oscairn-clap/effect-contexts.h>
 #include <oscairn-clap/assets.h>
+#include <oscairn-clap/memory.h>
 #include <array>
 #include <cstdint>
 #include <cstring>
@@ -110,6 +111,15 @@ public:
               const std::vector<uint8_t>& state = {});
     bool loadEffectContext(const Host& source);
     bool effectResources(oscairn_effect_resources_t&) const;
+    // oscairn.memory (RFC 0025). Main thread. The bytes the plugin may declare when it next
+    // activates (a load, a state load, an effect context made from this one, which inherits it):
+    // one declaring more is refused before it activates; 0, the default, sets no limit. An effect
+    // context counts its context and asset bytes, an instance its shared bytes too.
+    void setMemoryRoom(uint64_t bytes) noexcept;
+    // What the plugin declared at its last activation; false where it declares nothing.
+    bool declaredMemory(oscairn_memory_t&) const;
+    // What it holds now, as it says; false where it does not say or is not active.
+    bool currentMemory(oscairn_memory_t&) const;
     void unload();
     bool reconfigure(double sampleRate, uint32_t maxFrames);
     // Main thread: reject later port ID/order/channel-count changes under the render gate.
