@@ -390,16 +390,27 @@ int main(int argc, char** argv)
             // An action asked while a job runs is refused, and said: a dropped Save must not
             // look saved.
             {
+                // The Performance app's toolbar Save shows it would be refused, and why; every
+                // Save also asks Engine::refusal before it sends, and alerts with its reason.
+                standalone::DesktopShell shell(engine, argv[2], standalone::InputMode::Mouse);
+                shell.onSave = [] {}; shell.setSize(1280, 800);
+                juce::TextButton* saveButton = nullptr;
+                for(auto* c : shell.getChildren()) if(auto* b = dynamic_cast<juce::TextButton*>(c); b && b->getButtonText() == "Save") saveButton = b;
+                check(saveButton && wait([&] { return saveButton->isEnabled(); }), "the toolbar's Save is offered while the engine is free");
                 wait([&] { return !engine.jobRunning(); }); // a refresh held too would time out: the job held is the one asked
                 holdRequests = true;
                 standalone::SoundAction prepare; prepare.kind = standalone::SoundAction::Prepare; prepare.directory = data.getChildFile("nothing").getFullPathName().toStdString();
                 engine.soundAction(std::move(prepare));
                 check(wait([&] { return engine.soundBusy() && !engine.controlReady() && jobHeld.load(); }), "a prepare of a missing folder holds the engine's thread");
+                check(engine.refusal().find("busy") != std::string::npos, "a Save asked now is refused as busy: " + engine.refusal());
                 standalone::SoundAction save; save.kind = standalone::SoundAction::SaveToLibrary;
                 engine.soundAction(std::move(save));
                 check(engine.soundMessage().find("busy") != std::string::npos, "a Save dropped while busy says so: " + engine.soundMessage());
+                check(saveButton && wait([&] { return !saveButton->isEnabled() && saveButton->getTooltip().contains("busy"); }),
+                      "the toolbar's Save shows it is refused, and why: " + (saveButton ? saveButton->getTooltip().toStdString() : std::string()));
                 holdRequests = false;
                 check(wait([&] { return !engine.soundBusy() && !jobHeld.load() && engine.connected(); }), "the held job finished");
+                check(saveButton && wait([&] { return saveButton->isEnabled(); }), "and Save is offered again");
             }
             // Exporting over a file the musician chose to replace: the old archive stays when the
             // export is refused, and goes only once the new one is written.
@@ -570,6 +581,9 @@ int main(int argc, char** argv)
                 forcedHold = true;
                 check(wait([&] { return engine.jobRunning(); }), "the next refresh starts against the stalled server");
                 check(wait([&] { return !engine.connected(); }), "its handshake times out; the engine reads as disconnected");
+                standalone::SoundAction save; save.kind = standalone::SoundAction::SaveToLibrary;
+                engine.soundAction(std::move(save));
+                check(engine.refusal() == "The engine is not running." && engine.soundMessage() == engine.refusal(), "a Save while disconnected says the engine is not running: " + engine.soundMessage());
                 check(engine.meters().empty() && engine.wireMeters().empty() && engine.history().undo.empty() && !engine.performanceInfo() && engine.takes().empty(),
                       "nothing read before the drop shows while disconnected");
                 const auto folder = data.getChildFile("Setlists-staged");

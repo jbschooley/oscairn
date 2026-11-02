@@ -400,6 +400,10 @@ namespace oscairn::standalone
         juce::String inputs;
         for(const auto& m : status.midiInputs) if(m.kind != MidiEndpoint::Kind::BuiltIn) inputs << (inputs.isEmpty() ? "" : ", ") << text(m.name);
         status_.setText((status.audioDevice.empty() ? juce::String("No audio") : text(status.audioDevice)) + juce::String::fromUTF8("  ·  ") + (inputs.isEmpty() ? juce::String("No MIDI inputs") : inputs), juce::dontSendNotification);
+        // Save shows when the engine would refuse it, and why.
+        const auto refused = engine_.refusal();
+        save_.setEnabled(refused.empty());
+        save_.setTooltip(refused.empty() ? juce::String("Save the Performance to the library") : "Not now: " + text(refused));
         const auto history = engine_.history();
         undo_.setEnabled(!history.undo.empty()); redo_.setEnabled(!history.redo.empty());
         undo_.setTooltip(history.undo.empty() ? juce::String("Nothing to undo") : "Undo " + text(history.undo));

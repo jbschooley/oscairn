@@ -667,14 +667,18 @@ namespace oscairn::standalone
         // been saved there; Save As New always asks, and makes a new one.
         void saveToLibrary(bool asNew)
         {
-            const auto info=engine_.performanceInfo();
-            if(!info){juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,"Not saved","The engine is not answering. Try again in a moment.");return;}
+            // Said here: every Save (the toolbar's, the top bar's, the menu's) comes this way, and
+            // a Save the engine would drop must not look saved.
+            const auto why=engine_.refusal();
+            const auto info=why.empty()?engine_.performanceInfo():std::nullopt;
+            if(!info){juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,"Not saved",why.empty()?"The engine is not answering. Try again in a moment.":juce::String(why));return;}
             if(!asNew && !info->id.empty()){SoundAction save;save.kind=SoundAction::SaveToLibrary;engine_.soundAction(std::move(save));return;}
             auto* w=new juce::AlertWindow(asNew?"Save As New":"Save","The Performance's name:",juce::MessageBoxIconType::NoIcon,this);
             w->addTextEditor("name",juce::String::fromUTF8(info->name.c_str()),"Name");
             w->addButton("Save",1,juce::KeyPress(juce::KeyPress::returnKey));w->addButton("Cancel",0,juce::KeyPress(juce::KeyPress::escapeKey));
             w->enterModalState(true,juce::ModalCallbackFunction::create([safe=juce::Component::SafePointer<Window>(this),w,asNew](int result){
                 if(!safe || result!=1)return;
+                if(const auto why=safe->engine_.refusal();!why.empty()){juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,"Not saved",juce::String(why));return;} // busy since the name was asked
                 SoundAction save;save.kind=SoundAction::SaveToLibrary;save.asNew=asNew;save.choice.name=w->getTextEditorContents("name").trim().toStdString();
                 safe->engine_.soundAction(std::move(save));
             }),true);
