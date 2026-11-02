@@ -40,3 +40,4 @@ tests it, with a note on what remains of a step that is partly done. The
 | [0029](0029-internationalization.md) | Internationalization | proposed |
 | [0030](0030-system-shell-launcher-and-navigation.md) | The system shell: launchers, the top bar and how screens flow | proposed; steps 1 and 2 started (Home, `home` and `back` buttons) |
 | [0031](0031-package-repository-and-distribution.md) | The package repository and distribution | proposed |
+| [0032](0032-arpeggiator.md) | The arpeggiator | proposed |

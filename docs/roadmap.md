@@ -363,6 +363,11 @@ in the others.
 Also open:
 
 - [ ] swing, additional tracks/patterns and more lanes in the sequencer
+- [ ] **the arpeggiator** ([RFC 0032](rfcs/0032-arpeggiator.md#progress), proposed): a phrase
+  arpeggiator doing everything a MONTAGE M / MODX M arpeggio does, built in its own repository;
+  SysEx between plugins for pushed phrases, a beat grid shared while the transport is stopped,
+  conversion of each Part's arpeggio, measurement against the reference, user phrases in the
+  library and a phrase editor drawn by Oscairn
 - [ ] sounds spilling over to another instance when an engine's slots are full, and parts
   sharing one engine (each part has its own instance today), so a Performance or setlist uses
   as few instances as its sounds need. The goal: as little memory as possible, with switching
