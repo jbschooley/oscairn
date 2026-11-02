@@ -70,9 +70,63 @@ the [LV2 guide](../core/lv2-host/README.md). The default build does not require 
 `-DOSCAIRN_MODULAR=ON` (implied by `OSCAIRN_STANDALONE`) also builds the
 [Modular instrument](../plugins/modular/README.md), which downloads and links JUCE.
 
+### Run the tests
+
+`ctest --test-dir build-dev` runs every test the configuration built; `-R` picks some by name
+(`ctest --test-dir build-dev -R '^control-'`). The names group by area:
+
+| Names | What they cover | Built with |
+| --- | --- | --- |
+| `kick-clap-*` | The CLAP host: loading, state, sessions, the scanner, benchmarks | default |
+| `graph`, `graph-lifecycle`, `note-routing`, `audio-routing`, `param-target`, `sequencer-*`, `midi-*`, `transport-tempo`, `sound-contexts`, `effect-contexts`, `prepared-instances`, `choke-fade`, `wheels`, `pressure`, `sampler`, ... | The engine and the reference plugins | default |
+| `worker-host`, `worker-failures`, `worker-recovery`, `handoff-bench*` | Plugin worker processes | default (`handoff-bench` on Unix) |
+| `*-workers` | The same engine and control tests with every plugin in a worker (`OSCAIRN_PLUGIN_WORKER` set) | default |
+| `control-*` | The session, control API, library, Performances, archives, signing (`control-signing`, `control-archives`), budgets (`control-plugin-failures`), physical controls and control surfaces | default |
+| `render-*` | `oscairn-render` output: repeatable and independent of block size | default |
+| `engine-process-*` | Starting and reconnecting to an engine process | default, on Unix |
+| `desktop-*`, `midi-monitor` | The desktop app's models and screens, the MIDI monitor | `OSCAIRN_STANDALONE` (`midi-monitor` also with `OSCAIRN_ENGINE`) |
+| `lv2-*`, `*-lv2`, `plugin-state` | LV2 hosting | `OSCAIRN_LV2` |
+| `modular` | The Modular instrument | `OSCAIRN_MODULAR` |
+
+`desktop-shell` also drives a third-party plugin when `OSCAIRN_THIRD_PARTY_CLAP` (a CMake cache
+path) names one that exists.
+
+### Tools
+
+Programs in `tools/`, and the ones built beside the tests, for plugin work:
+
+| Program | Built as | Use |
+| --- | --- | --- |
+| `kick-clap-scan` | `build-dev/core/clap-host/kick-clap-scan` | List a CLAP module's plugins and why any fails |
+| `oscairn-render` | `build-dev/hosts/oscairn-render` | Render a chain of plugins offline to a WAV |
+| `oscairn-plugin-worker` | `build-dev/core/oscairn-plugin-worker` | The worker process that runs a plugin outside the engine |
+| `oscairn-plugin-check` | `build-dev/core/control/oscairn-plugin-check` | Check a plugin through the library, an archive and the plugin store ([below](#test-before-publishing-a-plugin)) |
+| `oscairn-sign` (`tools/oscairn-sign`) | `build-dev/core/control/oscairn-sign` | Make a signing key, sign a plugin build or an archive, verify an archive ([below](#signing-keys-and-plugin-builds)) |
+| `oscairn-midi-monitor` (`tools/midi-monitor`) | with `OSCAIRN_STANDALONE` or `OSCAIRN_ENGINE` | Print what a MIDI controller sends, for writing its profile |
+| `oscairn-handoff-bench` (`tools/worker-bench`) | `build-dev/core/oscairn-handoff-bench`, on Unix | Measure handing audio blocks to worker processes and back |
+
+`tools/sampler-research` holds a research script, not a build tool.
+
+### Environment variables
+
+| Variable | Effect |
+| --- | --- |
+| `OSCAIRN_PLUGIN_WORKER` | The worker program that runs plugins ([RFC 0010](rfcs/0010-plugin-worker-isolation.md)). Unset, the desktop's engine helper uses the worker beside it or where it was built, and other hosts run plugins in the engine. Set but empty, plugins run in the engine. LV2 plugins always run in the engine |
+| `OSCAIRN_WORKER_MEMORY_MB` | A worker's memory limit when its plugins do not declare their memory; default 4096, 0 for none |
+| `OSCAIRN_CGROUP` | Linux: a delegated cgroup v2 subtree. The engine moves into `engine/`, each worker gets a cgroup under `workers/` with its memory limit as `memory.max`, and memory pressure is read from the subtree. Without it, workers have no cgroups and pressure comes from `/proc/pressure/memory` |
+| `OSCAIRN_RELIABILITY` | `instrument` or `pass-through`: on Linux the engine and workers lock their memory and take their places in the out-of-memory order, and say on stderr what they could not do ([RFC 0025](rfcs/0025-resource-budgets.md), [RFC 0027](rfcs/0027-reliability-levels.md)) |
+| `OSCAIRN_DATA_HOME` | The data folder: the library, `assets/`, the plugin store `Plugins/`, signing keys `Keys/`, `trust.json` and `measurements.json`. Default `~/Library/Application Support/Oscairn` on macOS, `$XDG_DATA_HOME/oscairn` or `~/.local/share/oscairn` on Linux. Point it at an empty folder to test as a fresh device |
+| `OSCAIRN_CONFIG_HOME` | The desktop's configuration folder (themes and the selected theme; see [design language](design-language.md)) |
+| `OSCAIRN_RUNTIME_DIR` | Where the desktop and its engine helper put their socket |
+| `OSCAIRN_WORKER_BUDGET_US`, `OSCAIRN_WORKER_REPLY_SECONDS` | Tests: a worker's time per block in microseconds, and how long a control call waits for a worker |
+| `OSCAIRN_REQUIRE_SOCKET_BIND` | Tests: fail, rather than skip, when local sockets cannot be bound |
+
 ## Make a first CLAP plugin
 
 The [reference plugins](../plugins/README.md) are working code rather than pseudocode.
+Basic Synth shows an instrument on the SDK's `sound-contexts-plugin.hpp` with `oscairn.ui`
+roles, pitch bend and the mod wheel; Delay shows native effect contexts, state and a `mix`
+role ([what each demonstrates](plugin-porting.md#examples)).
 For an in-tree native instrument, copy `plugins/basic-synth/basic_synth.cpp` into a new
 plugin directory. Change its descriptor ID, name and vendor before loading it alongside
 the original. Keep the lifecycle, event and sound-context handling while changing DSP.
@@ -178,10 +232,41 @@ and distinguish queued property acceptance from plugin-confirmed readback.
 Complete projects are still future work. Sounds, Performances and the library are in
 [RFC 0021](rfcs/0021-sounds-performances-and-library.md#progress).
 
-## Packaging and portability (planned)
+## Packaging and portability
 
-[RFC 0006](rfcs/0006-packages-and-portability.md) is the proposed distribution contract;
-there is no managed package installer yet. The plan uses a project manifest and exact
+Built today ([RFC 0006](rfcs/0006-packages-and-portability.md)): an exported Performance or
+Sound is a [library archive](library-archive.md) (format 3) that carries every build of each
+CLAP plugin it uses that the exporting machine has, each file hashed. Installing one puts the
+builds in the data folder's plugin store, and a Performance's `lock` records each build's
+digest ([format](performance-format.md)). A plugin that is missing, in another version, or
+fails to load opens as a stand-in that keeps its state. Builds, items and whole archives can be
+signed; an install refuses plugin builds that are unsigned or signed by a key the device does
+not trust, until the user agrees. LV2 plugins are not packaged: they are installed on each
+device. See [Porting a plugin](plugin-porting.md#packages-and-signing) for a plugin author's
+side.
+
+### Signing keys and plugin builds
+
+```sh
+build-dev/core/control/oscairn-sign key author.key
+build-dev/core/control/oscairn-sign build author.key clap com.example.synth 1.2.0 macos-arm64 MySynth.clap
+build-dev/core/control/oscairn-sign archive author.key Export.olib
+build-dev/core/control/oscairn-sign verify Export.olib
+```
+
+`key` makes an Ed25519 key readable only by you and prints its ID (the first 16 hex digits
+of the SHA-256 of the public key) and public key. `build` adds this key's signature to
+`MySynth.clap.sig` beside the build, over its format, ID, version, platform and digest;
+re-sign after every rebuild. `archive` signs an archive whole; `verify` checks every signature
+and hash in one and says who signed what. The app's own keys, for signing exports, are
+`Keys/<name>.key` in the data folder (`keys.make`, `keys.list`); the keys a device trusts, and
+for what (`plugins`, `apps`, `content`), are its `trust.json` (`trust.list`, `trust.set`,
+`trust.remove`; [protocol](control-protocol.md)).
+
+### Planned
+
+A managed package installer and repository are planned
+([RFC 0031](rfcs/0031-package-repository-and-distribution.md)). The plan uses a project manifest and exact
 lockfile with a project-local dependency view backed by a shared durable content store.
 A download cache is separate; clearing it must not remove installed offline dependencies.
 Design new engines with stable logical/format
@@ -262,7 +347,11 @@ Keep physical-control state (absolute position, relative encoder deltas, pickup/
 takeover, bank ownership) in the hardware/control-mapping layer, not in every synth.
 Plugins expose musical parameters; designs needing raw positions must request that
 separate control source. This distinction is documented in the [architecture](architecture.md)
-and hardware RFC, but the hardware mapping/acceleration APIs are not implemented yet.
+and hardware RFC. External MIDI controllers are mapped through controller profiles, banks and
+Mackie Control ([RFC 0024](rfcs/0024-device-profiles.md#controllers),
+[RFC 0011](rfcs/0011-performance-ui-and-editors.md#step-6-status)); a plugin's `oscairn.ui`
+roles and priorities decide which parameters those knobs reach. The hardware-services and
+acceleration APIs are not implemented yet.
 No plugin currently gets automatic work on a DSP or auxiliary microcontroller core.
 
 ## Test before publishing a plugin
@@ -281,6 +370,23 @@ to the component, using the existing CMake test conventions. Useful executable e
 - [Production LV2 checks](../core/lv2-host/tests/production/README.md): real instruments,
   effects, state assets and cross-platform measurements.
 
+Two checks run on a plugin as built, CLAP or LV2, without writing tests:
+
+- `build-dev/core/control/oscairn-plugin-check PLUGIN ID synth|effect [--param ID=VALUE]`
+  plays the plugin in a part, saves it to the library and opens it again with every parameter
+  as saved, exports it in an archive with its build, and installs that on a fresh device (a
+  new `OSCAIRN_DATA_HOME`), where it must open from the plugin store and play the same. An LV2
+  plugin stops after the export. `--juce-state NAME=VALUE` sets an attribute in a JUCE
+  plugin's saved state; `--add-build PLATFORM=PATH --keep-archive FILE` carries another
+  platform's build, and `--install FILE synth|effect` on that platform checks it there.
+- `core/lv2-host/tests/production/run.py PROBE OUT --case NAME,PATH,ID,synth|effect,PARAM,VALUE`
+  renders at two rates, two block sizes, offline and realtime, repeats with a fresh instance
+  and checks that a parameter edit changes the sound. Its probe is built only with
+  `-DOSCAIRN_LV2=ON`.
+
+Run both again with `OSCAIRN_PLUGIN_WORKER=build-dev/core/oscairn-plugin-worker` to test the
+plugin in a worker process, as the desktop app runs it.
+
 Exercise 37- and 512-frame blocks, multiple sample rates, simultaneous instances, repeated
 keys, sustain, malformed inputs and bounded-queue failures. Test cleanup after failed
 preparation and concurrent control/rendering under ThreadSanitizer. Use ASan/UBSan for
@@ -289,8 +395,12 @@ The host's [benchmark tools](../core/clap-host/README.md) can measure plugin wor
 
 Scanning has process crash isolation. Playback runs plugins inside the engine process unless
 the placement policy puts them in worker processes ([RFC 0010](rfcs/0010-plugin-worker-isolation.md)),
-where a crash, hang or overrun silences only that plugin, which is restarted; the desktop app
-does not use workers yet. In the engine, a native plugin memory fault can kill it. Do not describe the scanner
+where a crash, hang or overrun silences only that plugin, which is restarted. The desktop app
+runs every CLAP plugin in a worker; `oscairn-render` and the desktop's `--in-process` mode run
+them in the engine unless `OSCAIRN_PLUGIN_WORKER` names the worker. LV2 plugins always run in
+the engine.
+Workers are not a sandbox: a plugin keeps the user's file and network access. In the engine,
+a native plugin memory fault can kill it. Do not describe the scanner
 or render error checks as a security sandbox. Public APIs are still evolving; pin the
 Oscairn revision you build/test against and state your supported platforms and limits.
 
