@@ -223,6 +223,15 @@ int main(int argc,char** argv){try{
         t.setMidiTaps({{7,graphInput,{},8,2,1}});t.commit();
         check(tapOut().empty(),"a renumbered device keeps its held note");
         check(tapOut({&off,1})==std::vector<std::string>{"129 8"},"and its release goes to the device's new port");
+        // The part's input moving to another channel while a key is down: the new zones would not
+        // pass the key's release, but it ends the note the tap holds, so the synth stops sounding.
+        NoteZone first,second;first.channels=1u<<0;second.channels=1u<<1;
+        t.setMidiTaps({{9,graphInput,{first},2,0,3}});t.commit();
+        check(tapOut({&on,1})==std::vector<std::string>{"144 2"},"a held note through channel 1's zone");
+        t.setMidiTaps({{9,graphInput,{second},2,0,3}});t.commit();
+        check(tapOut().empty(),"a zone change keeps the tap's held note");
+        check(tapOut({&off,1})==std::vector<std::string>{"128 2"},"its release still reaches the synth");
+        check(tapOut({&off,1}).empty() && tapOut({&on,1}).empty(),"a release of nothing held, and a new note on channel 1, stay out");
     }
     {
         // A block that fills every event slot: 512 notes (kick::clap::Host::maxBlockEvents) must

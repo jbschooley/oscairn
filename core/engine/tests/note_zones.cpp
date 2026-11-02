@@ -118,6 +118,17 @@ int main(int argc, char** argv)
             check(keys(a, false) == std::vector<int>{72} && keys(a, true) == std::vector<int>{60}, "the held note's release finds 72; new notes play unchanged");
             check(p.graph.describe().noteZones.empty(), "no zones described once removed");
         }
+        { // Moving the zone off a held MIDI key's channel: its release still ends the note it played.
+            NoteZone first, second; first.channels = 1u << 0; second.channels = 1u << 1;
+            Probe p(transpose, {first});
+            auto a = p.play({Event::midi(0x90, 60, 100), Event::midi(0x90, 62, 100, 1)}, {1, 2});
+            check(keys(a, true) == std::vector<int>{60, 62}, "two keys on channel 1, from two devices");
+            p.graph.connectNotes(graphInput, p.node, {second}); p.graph.commit();
+            a = p.play({Event::midi(0x80, 62, 0), Event::midi(0x80, 60, 0, 1)}, {1, 2});
+            check(keys(a, false).empty(), "a device's release does not end another device's key");
+            a = p.play({Event::midi(0x80, 60, 0), Event::midi(0xb0, 123, 0, 1), Event::midi(0x90, 64, 100, 2)}, {1, 2, 1});
+            check(keys(a, false) == std::vector<int>{60, 62} && keys(a, true).empty(), "past the new zone: each release ends its own key; new notes stay out");
+        }
         { // A wire between two nodes filters and changes notes as a part's input does.
             NoteZone low; low.highKey = 59; low.transpose = 12;
             Probe p(transpose, {});

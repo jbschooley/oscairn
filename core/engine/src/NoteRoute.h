@@ -107,7 +107,10 @@ struct NoteRoute
             const auto m=*reinterpret_cast<const clap_event_midi_t*>(h);
             if(m.port_index>=ports || m.port_index>=16)return emit(e);
             const auto kind=m.data[0]&0xf0,channel=m.data[0]&15;
-            if(zones && zones->count && kind>=0x80 && kind<0xf0 && !zones->passes(channel,source))return true; // another zone's channel or device
+            // Releases and chokes pass any zone: they end only notes this route played, which zones
+            // since changed may no longer pass; one for a note never played here matches nothing.
+            const bool release=kind==0x80 || (kind==0x90 && !m.data[2]) || (kind==0xb0 && (m.data[1]==120 || m.data[1]==123));
+            if(zones && zones->count && kind>=0x80 && kind<0xf0 && !release && !zones->passes(channel,source))return true; // another zone's channel or device
             if(kind==0x90 || kind==0x80) {
                 e=Event::note(kind==0x90 && m.data[2],m.data[1],m.data[2]/127.0,h->time,channel,m.port_index);midi=true;h=e.header();
             } else if(kind==0xb0 && m.data[1]==64) {
