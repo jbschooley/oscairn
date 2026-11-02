@@ -61,6 +61,9 @@ namespace oscairn::standalone
             else
             {
                 std::fprintf(stderr,"oscairn: quit while the engine still works; not waiting further\n");
+                // shortcut: the job's thread runs on past main() while static objects are destroyed; it uses
+                // no JUCE (applySoundAction, readEditors, its own LocalClient), so no crash is known. If one
+                // shows after quit, end the process with _exit once the app has shut down.
                 std::thread([job=std::move(soundJob_)]{job.wait();}).detach();
             }
         }
