@@ -403,6 +403,24 @@ int main(int argc, char** argv)
                 const int most = int((juce::Time::getMillisecondCounter() - asked) / 250) + 1;
                 check(tap.count("assignments.get") <= most, "the assignments read at their own pace: " + std::to_string(tap.count("assignments.get")) + " of at most " + std::to_string(most));
             }
+            // The Library reads the library again after a job that may change it, not after the
+            // periodic refresh, which changes nothing.
+            {
+                standalone::Actions actions;
+                tap.reset();
+                standalone::LibraryPane pane(engine, actions, standalone::LibraryPane::Mode::Play);
+                check(wait([&] { return tap.count("library.query") > 0 && !engine.jobRunning(); }), "the Library read once");
+                holdRequests = true;
+                standalone::SoundAction tick; tick.kind = standalone::SoundAction::Refresh;
+                engine.soundAction(std::move(tick));
+                check(wait([&] { return jobHeld.load(); }), "a refresh in flight");
+                juce::MessageManager::getInstance()->runDispatchLoopUntil(400); // the pane looks at least once meanwhile
+                holdRequests = false;
+                check(wait([&] { return !engine.jobRunning() && !jobHeld.load(); }), "the refresh finished");
+                tap.reset();
+                juce::MessageManager::getInstance()->runDispatchLoopUntil(700);
+                check(tap.count("library.query") == 0, "the Library is not read again after a refresh: " + std::to_string(tap.count("library.query")));
+            }
             // A Parts view not on screen (the one under Play, a background app's) polls nothing:
             // on the Mixer, shown, it would read the meters twenty times a second.
             {
