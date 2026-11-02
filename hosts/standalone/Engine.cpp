@@ -330,6 +330,16 @@ namespace oscairn::standalone
         if(!connected() || !controlReady()) return {};
         try{return control_->installedPlugins();}catch(const std::exception& e){std::fprintf(stderr,"oscairn: installed plugins: %s\n",e.what());return {};}
     }
+    std::vector<Control::SigningKey> Engine::signingKeys() const
+    {
+        if(!connected() || !controlReady()) return {};
+        try{return control_->signingKeys();}catch(const std::exception& e){std::fprintf(stderr,"oscairn: signing keys: %s\n",e.what());return {};}
+    }
+    std::string Engine::makeSigningKey(const std::string& name, Control::SigningKey& made)
+    {
+        if(!connected()) return "The engine is not running.";
+        try{made=control_->makeSigningKey(name);return {};}catch(const std::exception& e){return e.what();}
+    }
     std::string Engine::removePlugin(const Control::InstalledPlugin& plugin)
     {
         if(!connected()) return "The engine is not running.";

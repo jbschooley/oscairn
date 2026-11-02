@@ -4,9 +4,12 @@
 // session over the control socket, without an audio device or any MIDI device. With SNAPSHOTS,
 // each new view is written to SNAPSHOTS-<name>.png.
 // - A part's MIDI out on the Part page, and clock out beside the transport (RFC 0012).
+// - Signing an export, its signer, and the keys in Settings (RFC 0006).
 //   oscairn_desktop_gaps_test PLUGIN_DIR SCANNER THEMES [SNAPSHOTS]
 #include "../DesktopShell.h"
+#include "../LibraryPane.h"
 #include "../PartsView.h"
+#include "../Settings.h"
 #include "oscairn/local_socket.h"
 #include "oscairn/session.h"
 #include <juce_gui_extra/juce_gui_extra.h>
@@ -102,6 +105,39 @@ int main(int argc, char** argv)
                 settle();
                 snapshot(pane, "clock-out");
                 engine.setClockOutputs({});
+            }
+            // Signing on export (RFC 0006): off by default; a key made from the export's choices,
+            // chosen, signs the archive, whose signer the install dialog then names.
+            {
+                standalone::ExportChoices choices(engine, true);
+                standalone::setDesktopMode(choices, 1);
+                check(choices.key().empty() && choices.signWith.getSelectedId() == 1 && choices.signWith.getNumItems() == 2 && choices.signWith.getItemText(1) == "Make a key...",
+                      "signing is off at first, with Make a key... offered");
+                Control::SigningKey made;
+                check(engine.makeSigningKey("stage", made).empty() && made.id.size() == 16, "a key made");
+                choices.chooseKey("stage");
+                check(choices.key() == "stage" && choices.signWith.getNumItems() == 3 && choices.signWith.getText() == "Sign with stage", "listed, and chosen once made");
+                snapshot(choices, "export-sign");
+                auto exportTo = [&](const char* name, const std::string& key) {
+                    const auto file = data.getChildFile(name);
+                    standalone::SoundAction out; out.kind = standalone::SoundAction::ExportPerformance; out.directory = file.getFullPathName().toStdString(); out.signKey = key;
+                    engine.soundAction(std::move(out));
+                    Control::Archive archive;
+                    check(wait([&] { return !engine.soundBusy(); }) && file.existsAsFile() && engine.archiveContents(file.getFullPathName().toStdString(), archive).empty(), std::string("exported: ") + engine.soundMessage());
+                    return archive;
+                };
+                const auto plain = exportTo("Plain.olib", {}), signedArchive = exportTo("Signed.olib", choices.key());
+                check(plain.signer.status == "unsigned" && standalone::describeSigner(plain.signer) == "Not signed", "unsigned unless a key is chosen");
+                check(signedArchive.signer.status == "unknown" && signedArchive.signer.key == made.id && engine.soundMessage().find("Signed with stage") != std::string::npos,
+                      "signed with the key chosen: " + signedArchive.signer.status + " " + engine.soundMessage());
+                const auto said = standalone::describeSigner(signedArchive.signer);
+                check(said.contains(standalone::fingerprint(made.id)) && said.contains("not a key you trust"), "the install dialog names its signer by fingerprint: " + said.toStdString());
+                // The keys in Settings: names and fingerprints, never a private key.
+                standalone::Settings settings(engine);
+                standalone::setDesktopMode(settings, 1); settings.setSize(640, 560);
+                check(settings.keys().size() == 1 && settings.keys()[0].name == "stage" && settings.keys()[0].key.size() == 64 && standalone::fingerprint(made.id).length() == 19,
+                      "Settings lists the key by name and fingerprint");
+                snapshot(settings, "settings-keys");
             }
             juce::LookAndFeel::setDefaultLookAndFeel(nullptr);
             configuration.deleteRecursively();

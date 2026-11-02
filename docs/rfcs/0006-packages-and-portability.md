@@ -30,8 +30,11 @@ Checked when built and tested; the sections below say how.
       `trust.*`; signing keys in the data folder (`keys.*`), an export signing its items and/or
       the whole archive when asked and carrying builds' signatures, and `oscairn-sign`; the
       install refusing plugin builds unsigned or by an unknown key without a yes, and a revoked
-      key's always, in the API and the desktop's install dialog; `control-signing`,
-      `control-package`, `control-archives`, `control-library`. Not yet: re-judging store builds
+      key's always, in the API and the desktop's install dialog; on the desktop, Export's
+      **Signature** (Not signed by default, a key, or Make a key...), the archive's signer named
+      in the install dialog, and the keys by name and fingerprint in **Settings**;
+      `control-signing`, `control-package`, `control-archives`, `control-library`,
+      `desktop-gaps`. Not yet: re-judging store builds
       when a key is revoked, revocations through system updates, a product profile refusing
       unsigned code, apps (not packaged yet), trusting a key from the install prompt, repositories
       requiring signatures, pairing)

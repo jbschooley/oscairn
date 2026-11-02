@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #include "LibraryPane.h"
 #include "PerformanceColors.h"
+#include "Settings.h"
 #include "oscairn/package.h"
 
 namespace oscairn::standalone
@@ -26,6 +27,85 @@ namespace oscairn::standalone
             juce::StringArray out; for(const auto& t : tags) out.add(text(t));
             return out.joinIntoString(", ");
         }
+    }
+
+    ExportChoices::ExportChoices(Engine& engine, bool performance) : engine_(engine), performance_(performance)
+    {
+        signWith.setTooltip("Signing shows others the export came from you; it is off unless you choose a key");
+        signWith.onChange = [this] {
+            const int id = signWith.getSelectedId();
+            if(id != 1000) { chosen_ = id; return; }
+            signWith.setSelectedId(chosen_, juce::dontSendNotification); // until a key is made
+            askToMakeKey(engine_, this, [safe = juce::Component::SafePointer<ExportChoices>(this)](const std::string& name) { if(safe) safe->chooseKey(name); });
+        };
+        for(auto* c : std::initializer_list<juce::Component*>{&signWith, &go, &cancel}) addAndMakeVisible(c);
+        if(performance_) addAndMakeVisible(editedSounds);
+        chooseKey({});
+        setSize(480, performance_ ? 250 : 200);
+    }
+
+    std::string ExportChoices::key() const { return chosen_ >= 2 && size_t(chosen_ - 2) < keys_.size() ? keys_[size_t(chosen_ - 2)].name : std::string(); }
+
+    void ExportChoices::chooseKey(const std::string& name)
+    {
+        keys_ = engine_.signingKeys();
+        signWith.clear(juce::dontSendNotification);
+        signWith.addItem("Not signed", 1);
+        chosen_ = 1;
+        for(size_t i = 0; i < keys_.size(); ++i)
+        {
+            signWith.addItem("Sign with " + text(keys_[i].name), int(i) + 2);
+            if(keys_[i].name == name) chosen_ = int(i) + 2;
+        }
+        signWith.addSeparator();
+        signWith.addItem("Make a key...", 1000);
+        signWith.setSelectedId(chosen_, juce::dontSendNotification);
+    }
+
+    void ExportChoices::resized()
+    {
+        const int control = desktopMode(*this) == 2 ? 44 : 30;
+        auto area = getLocalBounds().reduced(20, 16);
+        note_ = performance_ ? area.removeFromTop(control) : juce::Rectangle<int>();
+        if(performance_) { editedSounds.setBounds(area.removeFromTop(control)); area.removeFromTop(10); }
+        signLabel_ = area.removeFromTop(22);
+        signWith.setBounds(area.removeFromTop(control).removeFromLeft(300));
+        auto bar = area.removeFromBottom(control);
+        go.setBounds(bar.removeFromRight(110)); bar.removeFromRight(8); cancel.setBounds(bar.removeFromRight(100));
+    }
+
+    void ExportChoices::paint(juce::Graphics& g)
+    {
+        g.fillAll(ink(Ink::Background));
+        const int m = std::max(1, desktopMode(*this));
+        g.setColour(ink(Ink::Muted));
+        if(performance_) drawInked(g, "Samples and the Sounds of unedited parts always go.", note_, juce::Font(juce::FontOptions(textSize(TextRole::Body, m))));
+        drawInked(g, "Signature", signLabel_, juce::Font(juce::FontOptions(textSize(TextRole::Small, m), juce::Font::bold)));
+    }
+
+    void showExport(Engine& engine, juce::Component* over, const juce::String& title, bool performance, std::function<void(bool, const std::string&)> start)
+    {
+        auto* content = new ExportChoices(engine, performance);
+        if(over) setDesktopMode(*content, std::max(1, desktopMode(*over)));
+        juce::DialogWindow::LaunchOptions options;
+        options.dialogTitle = title;
+        options.content.setOwned(content); options.componentToCentreAround = over; options.useNativeTitleBar = true; options.resizable = false;
+        auto* dialog = options.launchAsync();
+        content->cancel.onClick = [dialog] { dialog->exitModalState(0); };
+        content->go.onClick = [dialog, content, then = std::move(start)] {
+            const bool edited = content->editedSounds.getToggleState(); const auto key = content->key();
+            dialog->exitModalState(0);
+            then(edited, key);
+        };
+    }
+
+    juce::String describeSigner(const Control::Signer& s)
+    {
+        const auto who = s.keyName.empty() ? "key " + fingerprint(s.key) : text(s.keyName) + " (" + fingerprint(s.key) + ")";
+        if(s.status == "trusted") return "Signed by " + who + ", a key you trust";
+        if(s.status == "unknown") return "Signed by " + who + ", not a key you trust";
+        if(s.status == "revoked") return "Signed by " + who + ", which is revoked";
+        return "Not signed";
     }
 
     LibraryPane::LibraryPane(Engine& engine, Actions& actions, Mode mode, const std::string& kind) : engine_(engine), actions_(actions), mode_(mode)
@@ -606,17 +686,13 @@ namespace oscairn::standalone
                 if(!safe || fc.getResult() == juce::File()) return;
                 auto file = fc.getResult(); if(!file.hasFileExtension("olib")) file = file.withFileExtension("olib");
                 if(file.existsAsFile() && !file.deleteFile()) { safe->tell("Cannot replace " + file.getFullPathName()); return; }
-                auto start = [safe, id = item.id, path = file.getFullPathName().toStdString()](bool editedSounds) {
-                    if(!safe) return;
-                    SoundAction out; out.kind = SoundAction::ExportPerformance; out.libraryId = id; out.directory = path; out.asNew = editedSounds;
-                    safe->engine_.soundAction(std::move(out));
-                    safe->tell("Exporting..."); safe->stale_ = true; safe->awaiting_ = true;
-                };
-                if(item.kind != "performance") { start(false); return; }
-                auto options = juce::MessageBoxOptions().withIconType(juce::MessageBoxIconType::QuestionIcon).withTitle("Export " + file.getFileNameWithoutExtension())
-                    .withMessage("Samples and the Sounds of parts unedited since they were loaded always go. The Sounds of edited parts can go too, as the library has them.")
-                    .withButton("Export").withButton("With edited parts' Sounds").withButton("Cancel").withAssociatedComponent(safe.getComponent());
-                juce::AlertWindow::showAsync(options, [start](int chosen) { if(chosen != 0) start(chosen == 2); }); // 1: Export, 2: with edited Sounds, 0: Cancel
+                showExport(safe->engine_, safe.getComponent(), "Export " + file.getFileNameWithoutExtension(), item.kind == "performance",
+                    [safe, id = item.id, path = file.getFullPathName().toStdString()](bool editedSounds, const std::string& key) {
+                        if(!safe) return;
+                        SoundAction out; out.kind = SoundAction::ExportPerformance; out.libraryId = id; out.directory = path; out.asNew = editedSounds; out.signKey = key;
+                        safe->engine_.soundAction(std::move(out));
+                        safe->tell("Exporting..."); safe->stale_ = true; safe->awaiting_ = true;
+                    });
             });
     }
 
@@ -767,6 +843,7 @@ namespace oscairn::standalone
             {
                 juce::ToggleButton own{"Into my Sounds and Performances, to edit"}, locked{"As a locked library"};
                 juce::Label heading{{}, "Items"}, code; // code: plugin builds from an unknown source or a revoked key (RFC 0006)
+                juce::String signer; juce::Rectangle<int> signerArea; // who signed the archive (RFC 0006)
                 juce::OwnedArray<juce::ToggleButton> items;
                 std::vector<std::string> ids;
                 juce::TextButton go{"Install"}, cancel{"Cancel"};
@@ -786,6 +863,7 @@ namespace oscairn::standalone
                     if(revoked.isNotEmpty()) warning << (asks ? "\n" : "") << "Signed by a revoked key, so not installed:" << revoked;
                     if(warning.isNotEmpty()) { code.setText(warning, juce::dontSendNotification); codeLines += asks + revoked.isNotEmpty(); addAndMakeVisible(code); }
                     if(asks) go.setButtonText("Install anyway");
+                    signer = describeSigner(a.signer);
                     own.setRadioGroupId(1); locked.setRadioGroupId(1);
                     (a.kind == "library" ? locked : own).setToggleState(true, juce::dontSendNotification);
                     for(const auto& i : a.items)
@@ -794,17 +872,23 @@ namespace oscairn::standalone
                         b->setToggleState(true, juce::dontSendNotification); addAndMakeVisible(b); ids.push_back(i.id);
                     }
                     for(auto* c : std::initializer_list<juce::Component*>{&own, &locked, &heading, &go, &cancel}) addAndMakeVisible(c);
-                    setSize(420, std::min(600, int(a.items.size()) * 30 + 180 + codeLines * 18));
+                    setSize(420, std::min(630, int(a.items.size()) * 30 + 210 + codeLines * 18));
                 }
                 void resized() override
                 {
                     auto area = getLocalBounds().reduced(16, 12);
+                    signerArea = area.removeFromTop(30);
                     own.setBounds(area.removeFromTop(30)); locked.setBounds(area.removeFromTop(30));
                     area.removeFromTop(6); heading.setBounds(area.removeFromTop(24));
                     auto bar = area.removeFromBottom(30);
                     if(codeLines) { area.removeFromBottom(6); code.setBounds(area.removeFromBottom(codeLines * 18)); }
                     go.setBounds(bar.removeFromRight(120)); bar.removeFromRight(8); cancel.setBounds(bar.removeFromRight(100));
                     for(auto* b : items) b->setBounds(area.removeFromTop(30));
+                }
+                void paint(juce::Graphics& g) override
+                {
+                    g.setColour(ink(Ink::Muted));
+                    drawInked(g, signer, signerArea, juce::Font(juce::FontOptions(textSize(TextRole::Body, std::max(1, desktopMode(*this))))));
                 }
             };
             auto* content = new Choose(archive);

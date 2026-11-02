@@ -124,8 +124,11 @@ namespace oscairn::standalone
         if(action.kind == SoundAction::AuditionStop){control.auditionStop(action.asNew);return {};}
         // What could not go, after what went.
         auto withNotes = [](std::string done, const std::vector<std::string>& notes) { for(const auto& n : notes) done += " " + n + "."; return done; };
-        if(action.kind == SoundAction::ExportPerformance && !action.libraryId.empty()) return withNotes("Exported.", control.exportLibraryItem(action.libraryId,action.directory,action.asNew));
-        if(action.kind == SoundAction::ExportPerformance) return withNotes("Performance exported.", control.exportPerformance(action.directory,action.asNew));
+        const bool sign = !action.signKey.empty();
+        const Control::ExportSigning signing{action.signKey, sign, sign}; // the items and the whole archive
+        const std::string signedNote = sign ? " Signed with " + action.signKey + "." : "";
+        if(action.kind == SoundAction::ExportPerformance && !action.libraryId.empty()) return withNotes("Exported." + signedNote, control.exportLibraryItem(action.libraryId,action.directory,action.asNew,signing));
+        if(action.kind == SoundAction::ExportPerformance) return withNotes("Performance exported." + signedNote, control.exportPerformance(action.directory,action.asNew,signing));
         if(action.kind == SoundAction::InstallArchive){
             const auto r=control.installArchive(action.directory,action.asNew,action.items,action.acceptCode);
             std::string message="Installed "+std::to_string(r.added)+(r.skipped?", "+std::to_string(r.skipped)+" already here":"")+".";

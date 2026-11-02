@@ -141,6 +141,13 @@ A panel profile fills the display with no title or menu bar and shows its screen
 `apps` decide Home's tiles and the Apps menu; its block is the audio request. `--layout` still overrides the
 layout for a run (on the desktop, `--profile kick` shows the KICK's screen, full screen).
 
+**Apps → Settings...** lists the signing keys
+([RFC 0006](../docs/rfcs/0006-packages-and-portability.md#signatures)) by name and fingerprint,
+never a private key, and makes one. **Export Performance...** (and the Library's Export) asks
+whether to sign: Not signed unless a key is chosen, or **Make a key...**; the item and the
+whole archive are then signed. Installing names the archive's signer, and whether this device
+trusts the key.
+
 External MIDI controllers have profiles of their own ([RFC 0024](../docs/rfcs/0024-device-profiles.md#controllers)):
 `smk37-elite` (the SMK37 Elite with its stock firmware, read from a unit with the monitor below;
 its buttons not described yet) and `modx-m-usb` (estimated) are built in, and `--controller FILE`, given as

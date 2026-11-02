@@ -8,6 +8,32 @@
 
 namespace oscairn::standalone
 {
+    /// An export's choices (RFC 0021, RFC 0006): for a Performance, its edited parts' Sounds too;
+    /// and a signature, off unless a key is chosen (Make a key... makes one and chooses it).
+    class ExportChoices : public juce::Component
+    {
+    public:
+        ExportChoices(Engine& engine, bool performance);
+        juce::ToggleButton editedSounds{"With edited parts' Sounds"};
+        juce::ComboBox signWith;
+        juce::TextButton go{"Export"}, cancel{"Cancel"};
+        std::string key() const;                 // the key chosen to sign with; empty: not signed
+        void chooseKey(const std::string& name); // the keys listed again, this one chosen
+        void paint(juce::Graphics&) override;
+        void resized() override;
+
+    private:
+        Engine& engine_;
+        bool performance_;
+        std::vector<Control::SigningKey> keys_;
+        int chosen_ = 1;
+        juce::Rectangle<int> note_, signLabel_;
+    };
+    /// The export's choices in a dialog over `over`; `start` gets them when Export is pressed.
+    void showExport(Engine& engine, juce::Component* over, const juce::String& title, bool performance, std::function<void(bool editedSounds, const std::string& key)> start);
+    /// Who signed an archive (RFC 0006), as the install dialog says it.
+    juce::String describeSigner(const Control::Signer& signer);
+
     /// The Library app (RFC 0021): the saved Performances and Sounds, found by typing, by where
     /// they are from (the user's own or an installed library) and by tags in the column on the
     /// left (each chosen tag narrows the list), and by favorites. In Play mode a click opens a

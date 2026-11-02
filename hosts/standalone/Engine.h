@@ -151,6 +151,10 @@ namespace oscairn::standalone
         // engine is busy), and removing a plugin's builds (the error, or empty). Another
         // platform's build is added by soundAction (AddPluginBuild).
         std::vector<Control::InstalledPlugin> installedPlugins() const;
+        // Signing keys (RFC 0006): by name, ID (its fingerprint) and public key, never the private
+        // key; none while the engine is busy. Making one gives the error, or empty.
+        std::vector<Control::SigningKey> signingKeys() const;
+        std::string makeSigningKey(const std::string& name, Control::SigningKey& made);
         std::string removePlugin(const Control::InstalledPlugin& plugin);
         std::string pluginId(const std::string& node) const;
         void replacePlugin(const std::string& node,const std::string& path,const std::string& id,const std::string& preset={});

@@ -33,6 +33,7 @@
 #include "PlayView.h"
 #include "Recording.h"
 #include "Setlist.h"
+#include "Settings.h"
 #include "Splash.h"
 
 #include <BinaryData.h>
@@ -287,6 +288,7 @@ namespace oscairn::standalone
                 if(profile_.offers("oscairn.library"))menu.addItem(8001,"Library");
                 if(profile_.offers("oscairn.setlist"))menu.addItem(8002,"Setlist");
                 if(profile_.offers("oscairn.recordings"))menu.addItem(8005,"Recordings");
+                menu.addSeparator();menu.addItem(8006,"Settings...");
                 return menu;}
             if(index==4){themeItems_=theme_.installed();for(size_t i=0;i<themeItems_.size();++i)menu.addItem(3000+int(i),themeItems_[i].second,true,themeItems_[i].first==themeData().id);menu.addSeparator();menu.addItem(4000,"Manage themes...");return menu;}
             for( size_t i = 0; i < layouts_.size(); ++i )
@@ -331,6 +333,8 @@ namespace oscairn::standalone
             if(id==8003){showHome();return;}
             if(id==8004){openPerformance();return;}
             if(id==8005){showRecordings();return;}
+            if(id==8006){showApp(settings_,"Settings",[this]{return new Settings(engine_);},640,560);
+                if(auto* s=dynamic_cast<Settings*>(settings_->getContentComponent()))s->refresh();return;} // the keys now
             if(id==5002 || id==5003){saveToLibrary(id==5003);return;}
             if(id==5004){importPerformance();return;}
             if(id==5005){exportPerformance();return;}
@@ -581,12 +585,9 @@ namespace oscairn::standalone
                     if(!safe || fc.getResult()==juce::File())return;
                     auto file=fc.getResult();if(!file.hasFileExtension("olib"))file=file.withFileExtension("olib");
                     if(file.existsAsFile() && !file.deleteFile()){juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,"Not exported","Cannot replace "+file.getFullPathName());return;}
-                    auto options=juce::MessageBoxOptions().withIconType(juce::MessageBoxIconType::QuestionIcon).withTitle("Export "+file.getFileNameWithoutExtension())
-                        .withMessage("Samples and the Sounds of parts unedited since they were loaded always go. The Sounds of edited parts can go too, as the library has them.")
-                        .withButton("Export").withButton("With edited parts' Sounds").withButton("Cancel").withAssociatedComponent(safe.getComponent());
-                    juce::AlertWindow::showAsync(options,[safe,path=file.getFullPathName().toStdString()](int chosen){
-                        if(!safe || chosen==0)return; // 1: Export, 2: with edited Sounds, 0: Cancel
-                        SoundAction out;out.kind=SoundAction::ExportPerformance;out.directory=path;out.asNew=chosen==2;
+                    showExport(safe->engine_,safe.getComponent(),"Export "+file.getFileNameWithoutExtension(),true,[safe,path=file.getFullPathName().toStdString()](bool editedSounds,const std::string& key){
+                        if(!safe)return;
+                        SoundAction out;out.kind=SoundAction::ExportPerformance;out.directory=path;out.asNew=editedSounds;out.signKey=key; // signed only when a key was chosen
                         safe->engine_.soundAction(std::move(out));
                     });
                 });
@@ -735,6 +736,7 @@ namespace oscairn::standalone
         std::vector<RunningApp> running_;
         std::unique_ptr<AppSwitcher> switcher_;
         std::unique_ptr<AppWindow> groovebox_, libraryApp_, setlist_, picker_, recordings_;
+        std::unique_ptr<AppWindow> settings_;
         Actions::Answer pickerAnswer_;
         std::unique_ptr<PadEditor> pads_;
         std::unique_ptr<PartsView> parts_;
