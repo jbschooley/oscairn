@@ -20,8 +20,9 @@ unless it says otherwise.
 3. **Implement the state extension**, deterministic and independent of CPU architecture.
    Without it a Performance keeps only parameter values.
 4. **Make every sound-relevant setting a parameter,** with a clear name, a module path, value
-   text and accurate stepped and hidden flags. Oscairn does not open the plugin's window; it
-   draws editors from the parameters ([Editing without the plugin's window](#editing-without-the-plugins-window)).
+   text and accurate stepped and hidden flags. Oscairn draws editors from the parameters
+   everywhere ([Editing without the plugin's window](#editing-without-the-plugins-window));
+   the plugin's own window opens on the desktop only ([The plugin's window](#the-plugins-window)).
 5. **Add `oscairn.ui` hints and roles** so the right parameters land on the physical knobs.
 6. **Declare memory with `oscairn.memory`** if activating allocates a lot (delay lines, sample
    pools, reverb tables).
@@ -172,16 +173,39 @@ the largest. In a worker process, a declaration also sets the worker's memory li
 ([In a worker process](#in-a-worker-process)). A plugin that holds more than it declared is
 counted at what it holds; distrusting its later declarations is planned.
 
+## The plugin's window
+
+On the desktop, a plugin with CLAP's GUI extension gets **Open plugin window** on its
+selected box in the Part page and in Routing. The window is shown by the process hosting the
+plugin, its worker, not by the app ([RFC 0019](rfcs/0019-adaptive-ui.md#plugin-windows)), so:
+
+- **Embedded is what the host asks for first** (`is_api_supported("cocoa", false)` on macOS).
+  The host makes a plain window titled with the node and its part ("Odin2 · Lead"), sized from
+  `get_size`, and gives the plugin its content view with `set_parent`. It is resizable when
+  `can_resize` says so; a resize goes through `adjust_size` and `set_size`, and
+  `request_resize` resizes the window. JUCE-based plugins work this way unchanged.
+- **Floating** is used when the plugin offers only that: the host calls `create(api, true)`,
+  `suggest_title` and `show`, and honors `request_show`, `request_hide` and `closed`. There is
+  no `set_transient`: the app's window is in another process.
+- **`set_scale` is not called:** on macOS the view works in points and the system scales it.
+- All calls are on the plugin's main thread (the worker's main thread). Requests made from
+  another thread are carried out at the host's next main-thread service, within a few
+  milliseconds.
+- The window closes when the node goes away (removed, replaced, another Performance loaded) or
+  the person closes it, which destroys the editor (`destroy`); it is created again the next
+  time. A worker restarted after a crash opens it again.
+- **Do not run a modal loop** in the editor (a blocking dialog): the worker answers the engine
+  between window events, and a loop that does not return holds its requests.
+- Devices never show plugin windows; they draw editors from the parameters (below).
+
 ## Editing without the plugin's window
 
-The host does not implement CLAP's GUI extension. Every plugin gets editors generated from
-its parameters, so anything a sound depends on must be a parameter (or a structured editor,
-below) to be editable. On the desktop an editor is pages of tiles: a page per top-level CLAP
-module path, a heading per module below that, and a tile per parameter. Every parameter that
-is not hidden is reachable there. The plan
-([RFC 0011](rfcs/0011-performance-ui-and-editors.md#plugin-editors)): the plugin's window on
-the desktop, and on the device editors Oscairn draws, from the parameters or from a
-description the plugin gives.
+Every plugin gets editors generated from its parameters, so anything a sound depends on must
+be a parameter (or a structured editor, below) to be editable on a device. On the desktop an
+editor is pages of tiles: a page per top-level CLAP module path, a heading per module below
+that, and a tile per parameter. Every parameter that is not hidden is reachable there. On the
+device, editors are always Oscairn's, from the parameters or from a description the plugin
+gives ([RFC 0011](rfcs/0011-performance-ui-and-editors.md#plugin-editors)).
 
 Parameter metadata to give: clear names, CLAP module paths for grouping, value text, and the
 stepped, hidden and read-only flags. How the editors use them:
@@ -375,11 +399,13 @@ The bundled plugins are working references ([plugins](../plugins/README.md)):
 
 ## Known limits
 
-- **The plugin's own window is not shown** (above).
+- **The plugin's window** is a window of its own on macOS, beside the app's, never inside it.
+  On Linux and Windows the host makes no windows yet, so only a plugin that floats its own
+  shows one. A plugin placed in the engine's process rather than a worker is unverified.
 - **Instant sound switching** for plugins without native sound contexts uses a whole extra
   instance per prepared sound (up to eight), and only for instruments: note input, audio
   output, no audio input, no note output.
-- **Not implemented:** the GUI extension, remote controls, voice info, note names,
+- **Not implemented:** remote controls, voice info, note names,
   audio-ports configurations, render mode, and watching preset folders for changes (they are
   read when listed). (From the host's source; not exercised with a plugin.)
 - **In a worker,** a restarted worker's parameter info shows only after its next rescan.

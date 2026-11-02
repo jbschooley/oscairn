@@ -208,7 +208,9 @@ in the others.
      keyboard-and-mouse or touch input mode (started), described plugin editors covering
      step 5's knob pages (done for every plugin's parameters on Desktop, Panel and the
      Compact test layout; modulation shown on knobs and the Modular grid remain)
-   - [ ] plugin windows, then step 6's physical controls (default layers, banks as wide as
+   - [ ] plugin windows (built on macOS: a worker shows the plugin's own window beside the app's,
+     [RFC 0019 step 4](rfcs/0019-adaptive-ui.md#step-4-status); editing it while audio plays
+     not yet checked), then step 6's physical controls (default layers, banks as wide as
      each control group of the device's profile, overrides saved in the Performance format
      (now version 9) and learn on a panel's knobs done; external MIDI controllers' groups,
      default targets per group and a Sound's own assignments, the mod wheel's among them, done;

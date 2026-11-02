@@ -1,6 +1,6 @@
 # RFC 0019: One UI across desktop, touch panel and small screens
 
-Status: in progress, 2026-10-31. Step 1 done; steps 2, 3 and 5 started (see [Progress](#progress)). Builds on the views and plugin editors of
+Status: in progress, 2026-11-01. Step 1 done; steps 2, 3, 4 and 5 started (see [Progress](#progress)). Builds on the views and plugin editors of
 [RFC 0011](0011-performance-ui-and-editors.md), the control API
 ([RFC 0003](0003-control-api.md)) and the layouts and themes of the
 [design language](../design-language.md).
@@ -15,7 +15,9 @@ Checked when built and tested; the sections below say how.
 - [ ] 3. Generated editors: parameter pages from module paths, `oscairn.ui` draft hints, panel
       row knobs, the Compact test layout and the gate's checks done (Odin 2 on Desktop, Panel
       and Compact); the Sampler has no parameters to edit yet
-- [ ] 4. Plugin windows
+- [ ] 4. Plugin windows: built on macOS, from workers, reopened after a restart
+      ([status](#step-4-status)); the gate's editing while audio plays, Linux and an engine-placed
+      plugin remain
 - [ ] 5. Rich widgets: envelope, LFO preview, key and velocity map done; waveform, step lane
       and the Modular grid remain
 - [ ] 6. Front panels
@@ -214,9 +216,10 @@ third-party GUI), in a process that runs headless. So:
   process; the first window gives it an application object (no Dock icon) and, from then on,
   it runs the platform's window events on its main thread between the engine's requests,
   waking as soon as a request arrives.
-- **A window lives as long as its node.** Removing the node, replacing its plugin or loading
-  another Performance closes it; the person closing it destroys the plugin's editor; a worker
-  restarted after a crash opens it again, as its engine last asked.
+- **A window lives as long as its node.** It belongs to the node's plugin host, which destroys
+  it before the plugin, so whatever removes the host (removing the node, replacing its plugin,
+  loading another Performance) closes it; the person closing it destroys the plugin's editor;
+  a worker restarted after a crash opens it again, as its engine last asked.
 - **Linux: X11 can embed across processes** (XEmbed), so on the device's single screen a
   worker's window could go inside the app later. Until then, on Linux and Windows only plugins
   that float their own window show one.
@@ -387,6 +390,37 @@ rescans on yet.
 Not yet: the Mixer and Routing views' layout is still in `PartsView`, and the device's chain
 row, tabs and header are the older ones; Compact's real renderer waits for a device (by
 design).
+
+## Step 4 status
+
+Started 2026-11-01, as decided in [Plugin windows](#plugin-windows):
+- **The CLAP host implements the GUI extension** (`core/clap-host/src/Host.cpp`): it picks
+  embedded in a window of its own on macOS (`src/Window.mm`, Cocoa) or else floating; creates,
+  titles, shows and destroys on the main thread; sizes the window from `get_size`, makes it
+  resizable when `can_resize` says so and passes resizes through `adjust_size` and `set_size`;
+  and carries out `request_resize`, `request_show`, `request_hide`, `closed` and
+  `resize_hints_changed`, those made off the main thread at its next service. Unloading
+  destroys the editor before the plugin.
+- **Workers show it:** a request (`Op::Window`) opens or closes it; from the first window the
+  worker runs Cocoa's events between the engine's requests, woken by the engine's socket; a
+  restarted worker opens the window again with the same title.
+- **The control API** has `window.info` and `window.show`
+  ([control protocol](../control-protocol.md)); the desktop offers **Open plugin window** on a
+  selected plugin in the Part page and in Routing, titled with the plugin and its part, only
+  when the plugin has a window.
+
+Verified: `kick-clap-host` drives the fixture's floating window through creating, titling,
+showing, the plugin's hide and show requests, closing, the plugin destroying it and unloading;
+`worker-host` opens, retitles and closes it in a worker, which keeps answering;
+`control-json-protocol` checks a plugin without one; `desktop-shell` checks the button shows
+for the fixture's effect in the Part page and Routing, not for the Basic Synth, and that the
+window opens and closes through a worker. By hand, Odin 2 and Airwindows Consolidated opened
+their own editors in a worker's window, titled as asked, and Odin 2's came back after its
+worker was killed and restarted.
+
+Not yet: the gate's editing in the window while audio plays (no audio was played); a plugin
+placed in the engine's process (the headless engine has no window events of its own); X11
+embedding on Linux; `set_scale` (not needed on macOS).
 
 ## Open questions
 
