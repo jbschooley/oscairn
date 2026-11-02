@@ -487,9 +487,13 @@ int main(int argc, char** argv)
             {
                 // Stall the server from this thread: the engine's next periodic refresh cannot
                 // finish its handshake, and its timeout marks the engine disconnected.
+                engine.edit([](Control& c) { c.addMacro("Drop probe"); }); // an undo name to read
+                check(wait([&] { return !engine.meters().empty() && !engine.history().undo.empty() && engine.performanceInfo(); }), "the meters, undo names and Performance read before the drop: " + std::to_string(engine.meters().size()) + " " + engine.history().undo);
                 forcedHold = true;
                 check(wait([&] { return engine.jobRunning(); }), "the next refresh starts against the stalled server");
                 check(wait([&] { return !engine.connected(); }), "its handshake times out; the engine reads as disconnected");
+                check(engine.meters().empty() && engine.wireMeters().empty() && engine.history().undo.empty() && !engine.performanceInfo() && engine.takes().empty(),
+                      "nothing read before the drop shows while disconnected");
                 const auto folder = data.getChildFile("Setlists-staged");
                 standalone::Actions actions;
                 standalone::SetlistPane pane(engine, actions, folder);
