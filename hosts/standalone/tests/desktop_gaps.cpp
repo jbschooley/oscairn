@@ -44,7 +44,7 @@ int main(int argc, char** argv)
         session->setHostStatus(status);
         auto server = std::make_unique<LocalServer>(*session);
         server->listen(socket.string());
-        std::atomic<bool> running = true;
+        std::atomic<bool> running = true, holdRequests = false, jobHeld = false;
         std::thread control([&] {
             std::array<float, 128> l{}, r{}; float* out[2]{l.data(), r.data()};
             while(running)
@@ -52,6 +52,10 @@ int main(int argc, char** argv)
                 server->poll(uint64_t(std::chrono::steady_clock::now().time_since_epoch().count()));
                 session->service();
                 session->process(nullptr, 0, out, 2, 128);
+                // The test leaves a refresh job in flight: once its own connection shows, stop
+                // answering, so its calls wait, as a long engine call does.
+                while(running && holdRequests && server->clients() >= 2) { jobHeld = true; std::this_thread::sleep_for(std::chrono::milliseconds(5)); }
+                jobHeld = false;
                 std::this_thread::sleep_for(std::chrono::milliseconds(1));
             }
             server.reset(); session.reset();
@@ -215,6 +219,18 @@ int main(int argc, char** argv)
                 engine.edit([&](Control& c) { now = c.memoryState(); });
                 check(std::none_of(now.running.begin(), now.running.end(), [](const auto& a) { return a.app == "oscairn.library"; }), "a closed app's reservation is let go");
                 engine.edit([](Control& c) { c.setBudget({}); });
+            }
+            // A refresh in flight (finding: the periodic sound refresh every ~30 ticks) must not
+            // make the engine busy: it reads on its own connection and makes only short calls,
+            // so Record, Save and the library work while it runs.
+            {
+                holdRequests = true;
+                standalone::SoundAction tick; tick.kind = standalone::SoundAction::Refresh;
+                engine.soundAction(std::move(tick)); // the periodic refresh, or this one, next
+                check(wait([&] { return jobHeld.load(); }), "a refresh job's own connection is in flight");
+                check(engine.controlReady(), "a refresh in flight leaves the controls ready");
+                holdRequests = false;
+                check(wait([&] { return !engine.soundBusy() && !jobHeld.load(); }), "the refresh finished");
             }
             juce::LookAndFeel::setDefaultLookAndFeel(nullptr);
             configuration.deleteRecursively();

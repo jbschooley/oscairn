@@ -126,7 +126,9 @@ namespace oscairn::standalone
         Status status()const;
         const SoundPickerState& soundPicker() const { return soundPicker_; }
         const std::string& soundMessage() const { return soundMessage_; }
-        bool controlReady() const { return !soundJob_.valid(); }
+        // A refresh reads on its own connection and makes only short calls, so the UI's calls
+        // wait on nothing long: it does not make the engine busy.
+        bool controlReady() const { return !soundJob_.valid() || soundJobKind_ == SoundAction::Refresh; }
         // Preparing the next Performance ahead is not busy: anything asked meanwhile waits for it, or replaces it while it waits.
         bool soundBusy() const { return std::any_of(pendingSounds_.begin(),pendingSounds_.end(),[](const SoundAction& a){return a.kind!=SoundAction::PrepareFromLibrary;}) || (soundJob_.valid() && soundJobKind_!=SoundAction::Refresh && soundJobKind_!=SoundAction::PrepareFromLibrary); }
         bool canPrepareSounds() const { return !socketPath_.empty(); }
