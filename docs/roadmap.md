@@ -123,6 +123,9 @@ Goal: something new running "on the device" before anyone has the device.
   Dark/Light shipped as replaceable theme folders with the bundled Inter font, validated
   theme-folder installation and per-device selection shared across UI processes.
   Theme changes do not touch audio or routing.
+- [x] Oscairn's [mark](../branding/README.md) in the app (the bundle's icon, Home's header) and
+  a splash screen while the engine starts, which a theme may change (theme format 7), so a
+  product can brand its start-up
 
 Done when: pressing pads and transport buttons programs and plays a pattern through the
 new core, from a UI that talks to it only through the control API.

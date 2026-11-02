@@ -74,6 +74,16 @@ emergency theme with fixed colors and the platform's default font keeps text vis
 change a musician's appearance preference. Theme package distribution/sync will use the
 future package system; it is not needed for local theme installation.
 
+### The splash screen
+
+While Oscairn starts and connects to its engine it shows a splash screen: the mark, the name
+"oscairn" in the theme's bold font and a line of status ("Starting the engine…", or why it
+could not start). It stays exactly as long as start-up takes, never longer. On a device's
+panel it fills the screen; on the desktop it is a small window in the middle of the screen.
+A theme's `splash` fields change it. A manufacturer can therefore brand start-up without
+code: a device profile or product image ships a built-in theme carrying its own splash image
+and colors, and names it in `default`.
+
 ## Icons
 
 Icons are [Lucide](https://lucide.dev)'s (ISC; see [CREDITS](../CREDITS.md#interface-icons)),
@@ -83,25 +93,26 @@ theme's ink, so an icon follows the theme like text does. `IconButton` is an ico
 with its name as the tooltip; a toggle that is on is tinted with the accent. Only plain paths,
 lines, circles and rectangles are used, which JUCE's SVG reader draws faithfully. To add one,
 copy the file unchanged from the same Lucide release, list it in the `oscairn_standalone_icons`
-target and record its hash in CREDITS. Themes do not carry icons (fonts and data only).
+target and record its hash in CREDITS. Themes do not carry icons (fonts, data and a splash
+image only).
 
 Oscairn's own mark ([branding](../branding/README.md)) is built in the same way, from the
 SVGs `branding/logo.mjs` draws: `drawBrandMark` draws it in its colors for a dark or light
-ground, where the brand shows, and `drawMonoMark` in one ink, where it follows the theme like
-an icon (Home's header). `markName` in `Icons.h` names the mark shown; the alternate is
-embedded too, so switching to it is that name alone. The app bundle's icon is
+ground, where the brand shows (the splash screen), and `drawMonoMark` in one ink, where it
+follows the theme like an icon (Home's header). `markName` in `Icons.h` names the mark shown;
+the alternate is embedded too, so switching to it is that name alone. The app bundle's icon is
 `branding/app-icon-1024.png`.
 
-## Theme format, version 6
+## Theme format, version 7
 
 A theme is a folder named after its ID, holding `theme.json` ([schema](theme.schema.json))
-and the files it names. See the complete Midnight example. Themes contain data and fonts
-only: no scripts, shaders, remote URLs or executable code. Every theme carries its own
+and the files it names. See the complete Midnight example. Themes contain data, fonts and an
+optional splash image only: no scripts, shaders, remote URLs or executable code. Every theme carries its own
 fonts, so text never depends on what a device has installed.
 
 | Field | Contract |
 | --- | --- |
-| `version` | Integer `6` |
+| `version` | Integer `7` |
 | `id` | 1–64 lowercase letters, digits or hyphens; the folder's name; built-in IDs are reserved |
 | `name` | Display name, 1–80 characters |
 | `font` | `regular` and optional `bold` font files (`.ttf`/`.otf`, ≤ 4 MiB each) and the fonts' `license` text (≤ 64 KiB), as relative paths inside the folder |
@@ -110,6 +121,7 @@ fonts, so text never depends on what a device has installed.
 | `colors` | All nine semantic colors below, opaque `#RRGGBB` |
 | `style` | How controls are drawn: one choice for each of the eight below |
 | `wires` | The routing views' wire colors, opaque `#RRGGBB`: `audio` and `notes` for enabled wires, `disabled` (muted, or off in a scene), `draining` (taking no new notes while held ones ring out, in a seamless change) and `unconnected` (no longer fits its plugin's ports). Disabled and draining wires are drawn dashed |
+| `splash` | Optional: the splash screen (below). `image`, an `.svg` or `.png` file inside the folder (≤ 1 MiB) shown in place of the mark; `background` and `ink`, opaque `#RRGGBB`, the colors behind it and of its name and status line, with at least 4.5:1 contrast. Each is optional; without them the splash shows the built-in mark on the theme's `background` in its `text` color |
 
 | Style | Choices | Draws |
 | --- | --- | --- |
@@ -138,14 +150,15 @@ round marks). Which control is used (a pan knob or a slider) is the surface's, n
 | `danger` | Errors and unavailable resources |
 
 `theme.json` is limited to 16 KiB. Unknown fields, malformed colors, unsafe IDs,
-out-of-range metrics, paths leaving the folder, linked files, missing licenses and files
-that are not TrueType/OpenType fonts are rejected before installation. Only the files a
-theme names are copied. Fonts are parsed in the UI process by the platform's font engine,
-which is not hardened against malicious files: install themes only from trusted sources.
+out-of-range metrics, paths leaving the folder, linked files, missing licenses, files
+that are not TrueType/OpenType fonts and splash images JUCE cannot read are rejected before
+installation. Only the files a theme names are copied. Fonts and splash images are parsed in
+the UI process by the platform's font engine and JUCE's image readers, which are not hardened
+against malicious files: install themes only from trusted sources.
 Earlier theme versions are no longer read; rename `colours` to `colors` (American spelling
 throughout), add `wires` if missing, add `style.rows` (`left` draws rows as version 5 did), and
-set `version` to 6 (initial development). Primary text must have at least 4.5:1 contrast
+set `version` to 7 (initial development; version 7 added the optional `splash`). Primary text must have at least 4.5:1 contrast
 against background, surface and raised colors. Authors should also check secondary text,
 small labels, keyboard focus and selected controls in every supported layout.
-Themes deliberately exclude image/knob assets and custom layout code; richer plugin
+Themes deliberately exclude knob assets and other images besides the splash, and custom layout code; richer plugin
 pages and assets need separate bounded formats rather than executable theme hooks.

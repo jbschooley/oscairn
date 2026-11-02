@@ -30,6 +30,9 @@ void drawListRow(juce::Graphics&, juce::Rectangle<int> row, int index, juce::Col
 struct ThemeWires {
     juce::Colour audio{0xff8cc2ff},notes{0xffc29cff},disabled{0xff6b7480},draining{0xffff9a45},unconnected{0xffff6b63};
 };
+// The splash screen (theme format 7), each part optional: an SVG or PNG in the theme's folder in
+// place of the mark, and the colors behind and of its text; by default the theme's background and text.
+struct ThemeSplash { juce::String image; std::optional<juce::Colour> background,ink; };
 struct ThemeData {
     juce::String id="oscairn-dark",name="Oscairn Dark";
     ThemeFont font;
@@ -37,10 +40,12 @@ struct ThemeData {
     float fontScale=1,radius=6;
     ThemeStyle style;
     ThemeWires wires;
+    ThemeSplash splash;
     static ThemeData parse(const juce::String&);
 };
 const ThemeData& themeData();
 juce::Colour ink(Ink);
+const juce::Drawable* splashImage();             // the theme's splash image, or null for the built-in mark
 bool darkTheme();                                // a dark background, for choices colors alone can't make
 float fieldRadius(float height);                 // dropdowns, text boxes, value boxes
 float buttonRadius(float height);
@@ -84,7 +89,7 @@ public:
     void drawButtonBackground(juce::Graphics&,juce::Button&,const juce::Colour&,bool,bool) override;
     void drawRotarySlider(juce::Graphics&,int,int,int,int,float,float,float,juce::Slider&) override;
 private:
-    struct Loaded { ThemeData data; juce::Typeface::Ptr regular,bold; };
+    struct Loaded { ThemeData data; juce::Typeface::Ptr regular,bold; std::shared_ptr<juce::Drawable> splash; };
     Loaded load(const juce::File& folder) const;
     juce::File find(const juce::String& id) const;
     juce::String defaultId() const;

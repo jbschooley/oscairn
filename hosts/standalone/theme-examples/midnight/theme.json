@@ -1,5 +1,5 @@
 {
-  "version": 6,
+  "version": 7,
   "id": "midnight",
   "name": "Midnight",
   "font": {
@@ -36,5 +36,10 @@
     "disabled": "#5F7189",
     "draining": "#FFB86B",
     "unconnected": "#FF9994"
+  },
+  "splash": {
+    "image": "splash.svg",
+    "background": "#0A101B",
+    "ink": "#F0F5FC"
   }
 }

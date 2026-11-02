@@ -422,6 +422,10 @@ and parameter inspection work, while replacement/preparation requires the separa
 **System theme** applies appearance across layouts, panels, browser and generated editors.
 Install a data-only theme with **Install theme…**; built-in Dark and Light remain available.
 See the [design language, format and install locations](../docs/design-language.md).
+While the app starts its engine (or connects to one) a splash screen shows the mark, the name
+and a line of status, or the error if the engine cannot start; the theme may change its image
+and colors. The engine starts off the message thread, so the splash stays drawn; with
+`--in-process` it starts on the message thread, where its audio devices open.
 
 Validation on October 29, 2026: all 54 local LV2-enabled desktop/core tests passed,
 including isolated scan failure, repeated atomic replacement, failed-load reference audio,

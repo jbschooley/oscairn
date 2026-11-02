@@ -6,12 +6,13 @@
 namespace oscairn::standalone {
 namespace {
 ThemeData current;
+std::shared_ptr<juce::Drawable> currentSplash;
 const std::array<juce::String,9> names{"background","surface","raised","border","text","muted","accent","positive","danger"};
 void require(bool condition,const char* message){if(!condition)throw std::runtime_error(message);}
 void fields(const juce::DynamicObject& object,const juce::StringArray& allowed) {
     for(const auto& item:object.getProperties())require(allowed.contains(item.name.toString()),"Unknown theme field");
 }
-constexpr juce::int64 maxThemeBytes=16384,maxFontBytes=4<<20,maxLicenseBytes=64<<10;
+constexpr juce::int64 maxThemeBytes=16384,maxFontBytes=4<<20,maxLicenseBytes=64<<10,maxSplashBytes=1<<20;
 bool validId(const juce::String& id){return id.isNotEmpty() && id.length()<=64 && id.containsOnly("abcdefghijklmnopqrstuvwxyz0123456789-");}
 // A file named by a theme: a relative path inside its folder, no links, within a size limit.
 juce::File inside(const juce::File& folder,const juce::String& relative,juce::int64 limit) {
@@ -53,6 +54,7 @@ void write(const juce::File& destination,const juce::String& text) {
 }
 const ThemeData& themeData(){return current;}
 juce::Colour ink(Ink role){return current.colors[static_cast<size_t>(role)];}
+const juce::Drawable* splashImage(){return currentSplash.get();}
 int sectionGap(int separate){return current.style.sections==ThemeStyle::Sections::Joined?0:separate;}
 void drawSection(juce::Graphics& g,juce::Rectangle<int> r,juce::Colour fill) {
     if(current.style.sections==ThemeStyle::Sections::Joined) {
@@ -113,8 +115,8 @@ ThemeData ThemeData::parse(const juce::String& json) {
     require(json.getNumBytesAsUTF8()<=maxThemeBytes,"Theme exceeds 16 KiB");
     juce::var value;require(juce::JSON::parse(json,value).wasOk(),"Invalid theme JSON");
     const auto* object=value.getDynamicObject();require(object,"Theme must be an object");
-    fields(*object,{"version","id","name","font","fontScale","radius","colors","style","wires"});
-    require(value["version"].isInt() && int(value["version"])==6,"Unsupported theme version");
+    fields(*object,{"version","id","name","font","fontScale","radius","colors","style","wires","splash"});
+    require(value["version"].isInt() && int(value["version"])==7,"Unsupported theme version");
     ThemeData t;t.id=value["id"].toString();t.name=value["name"].toString();
     require(value["id"].isString() && validId(t.id),"Theme ID must contain lowercase letters, digits or hyphens");
     require(value["name"].isString() && t.name.isNotEmpty() && t.name.length()<=80,"Theme needs a short name");
@@ -149,6 +151,18 @@ ThemeData ThemeData::parse(const juce::String& json) {
     t.style.rows=ThemeStyle::Rows(choice("rows",{"left","right","dot","fill"}));
     for(auto background:{Ink::Background,Ink::Surface,Ink::Raised})
         require(contrast(t.colors[static_cast<size_t>(Ink::Text)],t.colors[static_cast<size_t>(background)])>=4.5,"Theme text contrast must be at least 4.5:1");
+    if(object->hasProperty("splash")) {
+        const auto* splash=value["splash"].getDynamicObject();require(splash,"Theme splash must be an object");
+        fields(*splash,{"image","background","ink"});
+        if(splash->hasProperty("image")) {
+            const auto image=splash->getProperty("image");
+            require(image.isString() && (image.toString().endsWith(".svg") || image.toString().endsWith(".png")),"Theme splash image must be an .svg or .png file");
+            t.splash.image=image.toString();
+        }
+        if(splash->hasProperty("background"))t.splash.background=hex(splash->getProperty("background"));
+        if(splash->hasProperty("ink"))t.splash.ink=hex(splash->getProperty("ink"));
+        require(contrast(t.splash.ink.value_or(t.colors[static_cast<size_t>(Ink::Text)]),t.splash.background.value_or(t.colors[static_cast<size_t>(Ink::Background)]))>=4.5,"Theme splash text contrast must be at least 4.5:1");
+    }
     return t;
 }
 Theme::Theme(juce::File root,juce::File builtIn) {
@@ -174,7 +188,7 @@ Theme::Theme(juce::File root,juce::File builtIn) {
 }
 Theme::~Theme(){stopTimer();juce::LookAndFeel::setDefaultLookAndFeel(nullptr);}
 void Theme::set(const Loaded& loaded) {
-    current=loaded.data;regular_=loaded.regular;bold_=loaded.bold;
+    current=loaded.data;currentSplash=loaded.splash;regular_=loaded.regular;bold_=loaded.bold;
     // Without theme fonts (the emergency theme) text uses the platform default font.
     setDefaultSansSerifTypefaceName({});juce::Typeface::clearTypefaceCache();
     setColour(juce::ResizableWindow::backgroundColourId,ink(Ink::Background));
@@ -202,12 +216,17 @@ void Theme::set(const Loaded& loaded) {
 }
 Theme::Loaded Theme::load(const juce::File& folder) const {
     const auto file=inside(folder,"theme.json",maxThemeBytes);
-    Loaded result{ThemeData::parse(file.loadFileAsString()),nullptr,nullptr};
+    Loaded result{ThemeData::parse(file.loadFileAsString()),nullptr,nullptr,nullptr};
     require(folder.getFileName()==result.data.id,"Theme folder must be named after its ID");
     const auto& font=result.data.font;
     result.regular=typeface(inside(folder,font.regular,maxFontBytes));
     if(font.bold.isNotEmpty())result.bold=typeface(inside(folder,font.bold,maxFontBytes));
     inside(folder,font.license,maxLicenseBytes);
+    if(const auto& image=result.data.splash.image;image.isNotEmpty()) {
+        juce::MemoryBlock data;require(inside(folder,image,maxSplashBytes).loadFileAsData(data),"Cannot read theme splash image");
+        result.splash=juce::Drawable::createFromImageData(data.getData(),data.getSize());
+        require(result.splash!=nullptr,"Theme splash image cannot be read");
+    }
     return result;
 }
 juce::File Theme::find(const juce::String& id) const {
@@ -227,6 +246,7 @@ void Theme::install(const juce::File& source) {
     const auto loaded=load(folder);const auto& id=loaded.data.id;const auto& font=loaded.data.font;
     require(!builtIn_.getChildFile(id).isDirectory(),"Built-in theme IDs are reserved");
     juce::StringArray files{"theme.json",font.regular,font.license};if(font.bold.isNotEmpty())files.add(font.bold);
+    if(loaded.data.splash.image.isNotEmpty())files.add(loaded.data.splash.image);
     const auto destination=directory().getChildFile(id);
     if(destination.exists()) {
         for(const auto& name:files)require(destination.getChildFile(name).existsAsFile() && destination.getChildFile(name).hasIdenticalContentTo(folder.getChildFile(name)),"That theme ID is already installed; use a new ID for a different theme");

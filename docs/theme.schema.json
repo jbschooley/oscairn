@@ -1,10 +1,10 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Oscairn theme version 4 (theme.json inside a theme folder)",
+  "title": "Oscairn theme version 7 (theme.json inside a theme folder)",
   "type": "object",
   "properties": {
     "version": {
-      "const": 6
+      "const": 7
     },
     "id": {
       "type": "string",
@@ -207,6 +207,28 @@
         "draining",
         "unconnected"
       ],
+      "additionalProperties": false
+    },
+    "splash": {
+      "type": "object",
+      "description": "The splash screen shown while Oscairn starts; each field is optional, and without them it shows the built-in mark on the theme's background in its text color",
+      "properties": {
+        "image": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*\\.(svg|png)$",
+          "maxLength": 128,
+          "description": "An SVG or PNG file in the theme's folder, at most 1 MiB, shown in place of the mark"
+        },
+        "background": {
+          "type": "string",
+          "pattern": "^#[0-9A-Fa-f]{6}$"
+        },
+        "ink": {
+          "type": "string",
+          "pattern": "^#[0-9A-Fa-f]{6}$",
+          "description": "The name and status line; at least 4.5:1 against the splash background"
+        }
+      },
       "additionalProperties": false
     }
   },

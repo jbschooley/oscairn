@@ -32,6 +32,7 @@
 #include "PerformanceColors.h"
 #include "PlayView.h"
 #include "Setlist.h"
+#include "Splash.h"
 
 #include <BinaryData.h>
 #include <oscairn/plugin_host.h>
@@ -730,6 +731,7 @@ namespace oscairn::standalone
 
         void initialise( const juce::String& commandLine ) override
         {
+            commandLine_ = commandLine;
             const auto args = juce::StringArray::fromTokens( commandLine, true );
             auto       dir  = argument( args, "--plugins" );
             if( dir.isEmpty() )
@@ -780,7 +782,38 @@ namespace oscairn::standalone
                 if( socket.isEmpty() && helper.empty() )
                     if( const auto missed = applyMemoryPolicy( -999 ); !missed.empty() && profile.reliability != "desktop" )
                         std::fprintf( stderr, "oscairn: %s\n", missed.c_str() );
-                engine_ = std::make_unique<Engine>( dir.unquoted().toStdString(), socket.unquoted().toStdString(), helper, audio );
+                profile_ = profile; controllerProfiles_ = controllers; plugins_ = dir; // for started()
+                showSplash( profile );
+                // The engine starts, or is reached, off the message thread, so the splash stays
+                // drawn; an in-process engine opens its devices on the message thread, so it starts there.
+                const bool here = socket.isEmpty() && helper.empty();
+                starting_ = std::async( here ? std::launch::deferred : std::launch::async,
+                    [this, plugins = dir.unquoted().toStdString(), path = socket.unquoted().toStdString(), helper, audio] {
+                        struct Done { Application* app; ~Done() { juce::MessageManager::callAsync( [a = app] { a->started(); } ); } } done{ this };
+                        return std::make_unique<Engine>( plugins, path, helper, audio );
+                    } );
+                if( here )
+                    juce::MessageManager::callAsync( [this] { started(); } );
+            }
+            catch( const std::exception& e )
+            {
+                failed( e.what() );
+            }
+        }
+
+        // The rest of starting, once the engine has started or failed to (called again by a
+        // deferred start, which has nothing left to do then).
+        void started()
+        {
+            if( !starting_.valid() )
+                return;
+            const auto args = juce::StringArray::fromTokens( commandLine_, true );
+            const auto& profile = profile_;
+            const auto& controllers = controllerProfiles_;
+            const auto& dir = plugins_;
+            try
+            {
+                engine_ = starting_.get();
                 // RFC 0025: with the profile's memory classes, the device's memory less what is
                 // reserved; the shell's base (and an in-process engine's) is this process's memory now.
                 Control::Budget budget{ profile.cpuBudget(), profile.memoryBudget() };
@@ -848,38 +881,65 @@ namespace oscairn::standalone
                         quit();
                     } );
                 }
+                splash_.reset(); // the window is up
             }
             catch( const std::exception& e )
             {
-                std::fprintf( stderr, "oscairn-standalone: %s\n", e.what() );
-                setApplicationReturnValue( 1 );
-                if(args.contains("--snapshot"))quit();
-                else juce::AlertWindow::showAsync(
-                    juce::MessageBoxOptions().withIconType(juce::MessageBoxIconType::WarningIcon)
-                        .withTitle("Oscairn could not start").withMessage(e.what()).withButton("Retry").withButton("Quit"),
-                    [this,commandLine](int choice) {
-                        if(choice==1)
-                        {
-                            controllers_.reset();
-                            window_.reset(); // the panel uses the engine
-                            engine_.reset();
-                            setApplicationReturnValue(0);
-                            initialise(commandLine);
-                        }
-                        else quit();
-                    });
+                failed( e.what() );
             }
         }
 
         void shutdown() override
         {
+            if( starting_.valid() ) // quit while starting: the engine is let go here, once started
+                try { starting_.get(); } catch( const std::exception& ) {}
             controllers_.reset(); // they play through the engine
             window_.reset(); // the panel uses the engine
             engine_.reset();
+            splash_.reset();
             theme_.reset();
         }
 
     private:
+        // The splash screen until the window is up: the whole display on a device's panel, a
+        // small window in the middle of the screen on the desktop.
+        void showSplash( const Profile& profile )
+        {
+            splash_ = std::make_unique<Splash>();
+            const auto* display = juce::Desktop::getInstance().getDisplays().getPrimaryDisplay();
+            if( display == nullptr )
+                return;
+            const bool panel = profile.screen() && profile.screen()->surface != "desktop";
+            splash_->setBounds( panel ? display->logicalBounds.toNearestInt() : display->userBounds.toNearestInt().withSizeKeepingCentre( 420, 300 ) );
+            splash_->addToDesktop( panel ? 0 : juce::ComponentPeer::windowHasDropShadow );
+            splash_->setVisible( true );
+            splash_->toFront( true ); // over other apps' windows, as a starting app is
+        }
+
+        void failed( const juce::String& message )
+        {
+            std::fprintf( stderr, "oscairn-standalone: %s\n", message.toRawUTF8() );
+            setApplicationReturnValue( 1 );
+            if( splash_ )
+                splash_->setStatus( message );
+            if(juce::StringArray::fromTokens(commandLine_,true).contains("--snapshot"))quit();
+            else juce::AlertWindow::showAsync(
+                juce::MessageBoxOptions().withIconType(juce::MessageBoxIconType::WarningIcon)
+                    .withTitle("Oscairn could not start").withMessage(message).withButton("Retry").withButton("Quit"),
+                [this](int choice) {
+                    if(choice==1)
+                    {
+                        controllers_.reset();
+                        window_.reset(); // the panel uses the engine
+                        engine_.reset();
+                        splash_.reset();
+                        setApplicationReturnValue(0);
+                        initialise(commandLine_);
+                    }
+                    else quit();
+                });
+        }
+
         void writeSnapshot( const juce::File& file, int width, int height )
         {
             auto* content = window_->snapshotView();
@@ -902,6 +962,12 @@ namespace oscairn::standalone
         std::unique_ptr<Engine> engine_;
         std::unique_ptr<Window> window_;
         std::unique_ptr<Controllers> controllers_;
+        std::unique_ptr<Splash> splash_;
+        // Starting: the command line, what initialise found for started() and the engine on its way.
+        juce::String commandLine_, plugins_;
+        Profile profile_;
+        std::vector<Profile> controllerProfiles_;
+        std::future<std::unique_ptr<Engine>> starting_;
     };
 }
 
