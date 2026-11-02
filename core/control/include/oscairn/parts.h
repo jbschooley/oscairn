@@ -4,6 +4,7 @@
 #include "oscairn/graph.h"
 
 #include <array>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -104,6 +105,17 @@ namespace oscairn
         bool operator==(const PartMidiOut&) const = default;
     };
 
+    // RFC 0033: which notes belong to the key, not how they are tuned: a root (0 = C .. 11 = B)
+    // and a scale as pitch classes above it, bit n for n semitones up (bit 0, the root, always).
+    // The Performance has one; a part may override it. Default: C major.
+    struct MusicalKey
+    {
+        uint8_t root = 0;
+        uint16_t scale = 0xAB5;
+        bool operator==(const MusicalKey&) const = default;
+        bool valid() const { return root < 12 && scale < 4096 && (scale & 1); }
+    };
+
     struct Send { uint32_t bus = 0; double level = 1; bool operator==(const Send&) const = default; }; // a copy of a part's sound into a shared bus
 
     // RFC 0011 step 3: a split divides a part's notes and sound into lanes, each its own chain,
@@ -167,6 +179,7 @@ namespace oscairn
         bool solo = false;
         PartSource from;
         PartMidiOut midiOut;
+        std::optional<MusicalKey> key; // its own key and scale; none: the Performance's (RFC 0033)
         bool operator==(const Part&) const = default;
     };
     // A part's meter, after its fader and pan, linear: one value per channel of its sound (its last

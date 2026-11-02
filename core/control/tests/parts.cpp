@@ -2,8 +2,9 @@
 //
 // RFC 0011 step 1: parts and wire ownership, implicit Mixes, port-level routes with channel
 // rules, plugin replacement and Performance persistence.
-//   oscairn-parts-test FIXTURE.clap AUDIO_FIXTURE.clap DELAY.clap SPLITTERS.clap TRANSPOSE.clap
+//   oscairn-parts-test FIXTURE.clap AUDIO_FIXTURE.clap DELAY.clap SPLITTERS.clap TRANSPOSE.clap FOLLOWER.clap
 #include "oscairn/session.h"
+#include <oscairn-clap/harmony.h>
 #include "AllocationGuard.h"
 #include "../../plugin-host/src/StateFiles.h"
 #include <algorithm>
@@ -338,6 +339,61 @@ namespace
         const auto sent = t.midiOutput();
         check(ok && !sent.empty() && sent.back().bytes[0] == 0x9F && sent.back().bytes[1] == 83 && std::all_of(sent.begin(), sent.end(), [](const auto& m) { return m.ports == 1u << 9; }),
               "opened elsewhere, it sends to that machine's output, on channel 16:" + seen);
+    }
+
+    // RFC 0033: the Performance's key and a part's own, refused when invalid, undone as a step,
+    // and saved and opened again with the Performance; a plugin in the part reads its key and the
+    // chord its keys hold (the follower fixture saves what the host extension gives it).
+    void harmonyKeys(const char* fixture, const char* follower, const fs::path& root)
+    {
+        Session s(48000, frames);
+        const auto synth = s.add("synth", fixture, "org.kick.test.synth"), other = s.add("other", fixture, "org.kick.test.synth");
+        const auto keys = s.addPart("Keys", {PartInput::Kind::Notes});
+        const auto bass = s.addPart("Bass", {PartInput::Kind::Notes});
+        s.insertIntoPart(keys, 0, synth); s.insertIntoPart(bass, 0, other); s.commit();
+        check(s.key() == MusicalKey{} && MusicalKey{}.scale == 0xAB5, "a new Performance is in C major");
+        const MusicalKey dDorian{2, 1 | 1 << 2 | 1 << 3 | 1 << 5 | 1 << 7 | 1 << 9 | 1 << 10}, aMinor{9, 1 | 1 << 2 | 1 << 3 | 1 << 5 | 1 << 7 | 1 << 8 | 1 << 10};
+        s.setKey(dDorian); s.commit();
+        check(s.key() == dDorian && s.history().undo == "Key", "the key is set, an undoable step: " + s.history().undo);
+        s.undo(); s.service();
+        check(s.key() == MusicalKey{}, "and undone");
+        s.redo(); s.service();
+        s.setPartKey(bass, aMinor); s.commit();
+        check(s.parts()[1].key == aMinor && !s.parts()[0].key, "the bass part has its own key; the keys follow the Performance's");
+        for(const auto& bad : {MusicalKey{12, 1}, MusicalKey{0, 0xAB4}, MusicalKey{0, 0x1001}})
+        {
+            bool refused = false;
+            try { s.setKey(bad); } catch(const std::invalid_argument&) { refused = true; }
+            check(refused && s.key() == dDorian, "a root past B, a scale without its root or past twelve notes is refused");
+        }
+        const auto saved = root / "keys";
+        s.savePerformance(saved.string());
+        Session t(48000, frames);
+        t.loadPerformance(saved.string());
+        check(t.key() == dDorian && t.parts()[1].key == aMinor && !t.parts()[0].key, "the key and the part's own key round-trip");
+
+        // The follower in a part of its own, in A minor: C E G held on it make C major.
+        const auto f = s.add("follower", follower);
+        const auto lead = s.addPart("Lead", {PartInput::Kind::Notes});
+        s.insertIntoPart(lead, 0, f); s.setPartKey(lead, aMinor); s.commit();
+        Audio x;
+        const std::vector<kick::clap::Event> chord{kick::clap::Event::note(true, 48, .8, 3), kick::clap::Event::note(true, 52, .8, 3), kick::clap::Event::note(true, 55, .8, 3)};
+        s.service(); check(s.process(nullptr, 0, x.out, 2, frames, chord), "render");
+        const auto dir = root / "follower";
+        s.saveState(f, dir.string());
+        const auto bytes = state_files::read(dir / "state.clap", 1024);
+        oscairn_harmony_t h{};
+        check(bytes.size() == sizeof h, "the follower read a harmony");
+        if(bytes.size() == sizeof h) std::memcpy(&h, bytes.data(), sizeof h);
+        check(h.key_root == 9 && h.scale == aMinor.scale && h.chord_root == 0 && h.chord_type == OSCAIRN_CHORD_MAJOR,
+              "a plugin in the part reads its own key, A minor, and the C major chord held on it");
+        s.setPartKey(lead, std::nullopt); s.setPartKey(bass, std::nullopt); s.commit();
+        check(!s.parts()[1].key && !s.parts()[2].key, "a part's own key cleared");
+        s.service(); check(s.process(nullptr, 0, x.out, 2, frames, {}), "render");
+        s.saveState(f, (root / "follower-2").string());
+        const auto again = state_files::read(root / "follower-2" / "state.clap", 1024);
+        if(again.size() == sizeof h) std::memcpy(&h, again.data(), sizeof h);
+        check(again.size() == sizeof h && h.key_root == 2 && h.scale == dDorian.scale, "cleared, the part follows the Performance's D Dorian");
     }
 
     // RFC 0011 step 3: splits. Lanes built with part edits render exactly as the same graph wired
@@ -1524,17 +1580,17 @@ namespace
         const auto old = root / "version-4";
         fs::copy(saved, old, fs::copy_options::recursive);
         auto text = std::string(first.begin(), first.end());
-        text.replace(text.find("\"version\":9"), 11, "\"version\":8");
+        text.replace(text.find("\"version\":10"), 12, "\"version\":9");
         state_files::write(old / "performance.json", text.data(), text.size());
         const auto before = describe(t);
         bool refused = false; try { t.loadPerformance(old.string()); } catch(const std::runtime_error& e) { refused = std::string(e.what()).find("unsupported format version") != std::string::npos; }
-        check(refused && describe(t) == before, "a version 8 Performance is refused and the session kept");
+        check(refused && describe(t) == before, "a version 9 Performance is refused and the session kept");
     }
 }
 
 int main(int argc, char** argv)
 {
-    if(argc < 6) { std::fprintf(stderr, "usage: %s FIXTURE AUDIO_FIXTURE DELAY SPLITTERS TRANSPOSE\n", argv[0]); return 2; }
+    if(argc < 7) { std::fprintf(stderr, "usage: %s FIXTURE AUDIO_FIXTURE DELAY SPLITTERS TRANSPOSE FOLLOWER\n", argv[0]); return 2; }
     try
     {
         state_files::TemporaryDirectory temp;
@@ -1544,6 +1600,7 @@ int main(int argc, char** argv)
         zones(argv[1]);
         devices(argv[1], temp.path);
         midiOut(argv[1], argv[5], temp.path);
+        harmonyKeys(argv[1], argv[6], temp.path);
         splits(argv[1], argv[3], temp.path);
         soundSplits(argv[3], argv[4], temp.path);
         mixer(argv[1], argv[3], temp.path);

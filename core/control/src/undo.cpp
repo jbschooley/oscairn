@@ -93,7 +93,7 @@ namespace oscairn
 
     Session::Model Session::model() const
     {
-        Model m{parts_, wires_, scenes_, untouched_, macros_, padMap_, assignments_, graph_.describe().mappings, {}, disabled_};
+        Model m{parts_, wires_, scenes_, untouched_, macros_, padMap_, assignments_, graph_.describe().mappings, {}, disabled_, key_};
         for(const auto& [id, name] : nodes_) m.nodes.emplace(id, std::pair{name, graph_.node(id)});
         return m;
     }
@@ -107,7 +107,7 @@ namespace oscairn
         const auto& b = *baseline_;
         const bool same = b.parts == now->parts && userWires(b.wires) == userWires(now->wires) && partWires(b.wires) == partWires(now->wires) &&
                           b.scenes == now->scenes && b.untouched == now->untouched && sameMacros(b.macros, now->macros) &&
-                          b.pads == now->pads && b.assignments == now->assignments && sameMappings(b.mappings, now->mappings) && sameNodes(b.nodes, now->nodes) && b.disabled == now->disabled;
+                          b.pads == now->pads && b.assignments == now->assignments && sameMappings(b.mappings, now->mappings) && sameNodes(b.nodes, now->nodes) && b.disabled == now->disabled && b.key == now->key;
         if(!same)
         {
             Step step;
@@ -316,6 +316,7 @@ namespace oscairn
             patch(macros_, from.macros, to.macros, [](const Macro& m) { return m.id; }, sameMacro,
                   [](Macro& n, const Macro*, const Macro& t) { const auto value = n.value; n = t; n.value = value; });
             if(!(from.pads == to.pads)) { padMap_ = to.pads; heldPads_ = {}; }
+            if(!(from.key == to.key)) key_ = to.key;
             if(from.assignments != to.assignments) assignments_ = to.assignments;
             if(!sameMappings(from.mappings, to.mappings))
             {
@@ -433,6 +434,7 @@ namespace oscairn
                     if(!sameMacro(a.macros[i], b.macros[i])) return {"Control " + b.macros[i].name, "macro:" + std::to_string(b.macros[i].id)};
             }
             if(!(a.pads == b.pads)) return {"Pads", "pads"};
+            if(!(a.key == b.key)) return {"Key", ""};
             if(a.assignments != b.assignments) return {"Physical controls", ""};
             return {"Parameter mapping", ""};
         }

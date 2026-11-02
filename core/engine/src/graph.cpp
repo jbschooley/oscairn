@@ -3,21 +3,32 @@
 #include "NoteRoute.h"
 #include "PreparedInstrument.h"
 
+#include "oscairn/harmony.h"
 #include <oscairn-clap/beat.h>
 #include <oscairn-clap/param-target.h>
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 #include <stdexcept>
 #include <utility>
 
 namespace oscairn
 {
+    // A harmony's input (setHarmonies): the notes through its zones, and the last harmony sent.
+    struct Graph::HeldKeys { NoteRoute route{16u}; oscairn_harmony_t last{}; };
+
     /// A compiled graph: nodes in dependency order with everything the audio thread needs
     /// preallocated, so processing never allocates or locks.
     struct Graph::Plan
     {
         uint64_t replacementSerial=0;
+        struct Harmony // see setHarmonies; events: this block's, at their times
+        {
+            std::shared_ptr<Graph::HeldKeys> held; NoteZones zones; bool input=false; uint8_t root=0; uint16_t scale=1;
+            std::array<kick::clap::Event,32> events; uint32_t count=0;
+        };
+        std::vector<Harmony> harmonies;
         struct AudioRoute { int source; uint32_t from, to; float gain; bool first=false; }; // -1: external input
         std::vector<AudioRoute> outputRoutes;
         std::vector<float> externalInputs;
@@ -32,6 +43,7 @@ namespace oscairn
             std::vector<uint32_t> silentInputs;
             struct NoteSource {int step;std::shared_ptr<NoteRoute> route;NoteZones zones;bool draining=false;};
             bool retiring=false;std::shared_ptr<Graph::Activity> activity; // see Graph::setRetiring
+            int harmony=-1; // the part's harmony it gets, in Plan::harmonies
             std::vector<NoteSource> noteSources;
             std::array<kick::clap::Event,kick::clap::Host::maxBlockEvents> releases;
             uint32_t releaseCount=0;
@@ -219,7 +231,7 @@ namespace oscairn
         onPublish(); // caller supplies a nonthrowing metadata/transport commit
         // A host carried over stays in use; listing it here too would keep it alive forever (collect() frees at one owner).
         for(const auto& [id,node]:nodes_)if(const auto kept=next.nodes_.find(id);kept==next.nodes_.end() || kept->second.host!=node.host)removedHosts_.push_back(node.host);
-        nodes_.swap(next.nodes_);audioRoutes_.swap(next.audioRoutes_);noteEdges_.swap(next.noteEdges_);noteZones_.swap(next.noteZones_);draining_.swap(next.draining_);paramTargets_.swap(next.paramTargets_);taps_.swap(next.taps_);
+        nodes_.swap(next.nodes_);audioRoutes_.swap(next.audioRoutes_);noteEdges_.swap(next.noteEdges_);noteZones_.swap(next.noteZones_);draining_.swap(next.draining_);paramTargets_.swap(next.paramTargets_);taps_.swap(next.taps_);harmonies_.swap(next.harmonies_);
         nextId_=next.nextId_;replacementSerial_=next.replacementSerial_;
         delete pending_.exchange(plan.release(),std::memory_order_acq_rel);
     }
@@ -414,6 +426,21 @@ namespace oscairn
         taps_.swap(next);
     }
 
+    void Graph::setHarmonies( std::vector<Harmony> harmonies )
+    {
+        for(const auto& h:harmonies)
+            if(h.zones.size()>NoteZones::capacity || !std::all_of(h.zones.begin(),h.zones.end(),[](const NoteZone& z){return z.valid();}) ||
+               h.root>11 || h.scale>=4096 || !(h.scale&1))
+                throw std::invalid_argument("invalid harmony: zones, root or scale");
+        decltype(harmonies_) next;
+        for(auto& h:harmonies)
+        {
+            const auto kept=std::find_if(harmonies_.begin(),harmonies_.end(),[&](const auto& o){return o.first.key==h.key;});
+            next.emplace_back(std::move(h),kept!=harmonies_.end()?kept->second:std::make_shared<HeldKeys>());
+        }
+        harmonies_.swap(next);
+    }
+
     std::vector<Graph::MidiTap> Graph::midiTaps() const
     {
         std::vector<MidiTap> out;for(const auto& [t,route]:taps_)out.push_back(t);return out;
@@ -567,6 +594,14 @@ namespace oscairn
             plan->taps.push_back(std::move(t));
         }
 
+        for(const auto& [harmony,held]:harmonies_)
+        {
+            Plan::Harmony h{held,{},harmony.input,harmony.root,harmony.scale};
+            h.zones.count=harmony.zones.size();std::copy(harmony.zones.begin(),harmony.zones.end(),h.zones.zones.begin());
+            for(const auto node:harmony.nodes)if(const auto s=stepOf.find(node);s!=stepOf.end())plan->steps[(size_t)s->second].harmony=int(plan->harmonies.size());
+            plan->harmonies.push_back(std::move(h));
+        }
+
         for( const auto& [from, to] : paramTargets_ )
         {
             const auto& params = nodes_.at( to.first ).host->parameters();
@@ -713,6 +748,30 @@ namespace oscairn
         beat.tempo=tempo;
         const auto beatEvent=kick::clap::Event::from(beat);
         freeBeats_+=frames/sampleRate_*tempo/60.0;
+        // RFC 0033: each part's harmony at sample 0, then each change its input's keys make.
+        for(auto& h:plan->harmonies)
+        {
+            auto& held=*h.held;
+            auto add=[&](uint32_t time){
+                oscairn_harmony_t x{};x.key_root=h.root;x.scale=h.scale;
+                for(const auto& n:held.route.notes)if(n.used && n.held && n.key>=0 && n.key<128)x.held[n.key/64]|=uint64_t(1)<<(n.key%64);
+                recognizeChord(x);
+                if(h.count && !std::memcmp(&x,&held.last,sizeof x))return;
+                held.last=x;
+                oscairn_event_harmony_t e{};
+                e.header={sizeof(e),time,kick::clap::Host::harmonySpace,OSCAIRN_EVENT_HARMONY,0};
+                e.harmony=x;
+                // shortcut: past 32 changes in one block the last slot takes each later one, at its time; raise the capacity if played input ever needs more.
+                if(h.count==h.events.size())--h.count;
+                h.events[h.count++]=kick::clap::Event::from(e);};
+            h.count=0;add(0);
+            if(h.input)for(uint32_t i=0;i<eventCount;++i)
+                if(events[i].header()->space_id==CLAP_CORE_EVENT_SPACE_ID)
+                {
+                    held.route.route(events[i],nextNoteId_,[](const kick::clap::Event&){return true;},&h.zones,sources?sources[i]:untaggedSource);
+                    add(std::min(events[i].header()->time,frames-1));
+                }
+        }
         bool ok = true;
         for( auto& step : plan->steps )
         {
@@ -724,6 +783,11 @@ namespace oscairn
             plan->keys.clear();
             uint32_t order = 0;
             plan->keys.push_back({0,order++,&beatEvent}); // oscairn.beat, first at sample 0
+            if(step.harmony>=0) // the part's harmony, each before the notes at its sample
+            {
+                const auto& h=plan->harmonies[(size_t)step.harmony];
+                for(uint32_t i=0;i<h.count;++i)plan->keys.push_back({h.events[i].header()->time,order++,&h.events[i]});
+            }
             uint64_t totalEvents=step.paramCount+step.paramDrops+step.releaseCount;
             bool overflow=step.paramDrops!=0 || step.releaseOverflow || inputRecovery;
             for(uint32_t i=0;i<step.releaseCount;++i)plan->keys.push_back({0,order++,&step.releases[i]});

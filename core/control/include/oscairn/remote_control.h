@@ -103,6 +103,9 @@ namespace oscairn
         void setLane(uint32_t part,uint32_t split,uint32_t lane,const Lane& settings) override;
         void setPartInput(uint32_t part,const PartInput& input) override;
         void setPartMidiOut(uint32_t part,const PartMidiOut& midiOut) override;
+        MusicalKey key() const override;
+        void setKey(const MusicalKey& key) override;
+        void setPartKey(uint32_t part,const std::optional<MusicalKey>& key) override;
         void setPartOutput(uint32_t part,uint32_t bus,std::optional<uint32_t> port = {}) override;
         void setSend(uint32_t part,uint32_t bus,std::optional<double> level) override;
         void setPartLevel(uint32_t part,double level,bool mute) override;

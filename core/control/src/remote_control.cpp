@@ -52,6 +52,19 @@ namespace oscairn
             if(!v || v->type!=json_type_array)throw std::runtime_error("Expected RPC array");
             std::vector<V> result;for(auto* e=static_cast<const json_array_s*>(v->payload)->start;e;e=e->next)result.push_back(e->value);return result;
         }
+        // RFC 0033: a key as harmony.get and graph.get give it, and as harmony.set takes it.
+        MusicalKey keyFrom(V v)
+        {
+            MusicalKey k{uint8_t(integer(field(v,"root"))),0};
+            for(auto s:array(field(v,"scale")))k.scale|=uint16_t(1u<<(integer(s)&15));
+            if(!k.valid())throw std::runtime_error("Invalid RPC key");
+            return k;
+        }
+        std::string keyText(const MusicalKey& k)
+        {
+            std::string steps;for(int i=0;i<12;++i)if(k.scale>>i&1)steps+=(steps.empty()?"":",")+std::to_string(i);
+            return "{\"root\":"+std::to_string(k.root)+",\"scale\":["+steps+"]}";
+        }
         using detail::quote;
         std::string encode(double value)
         {
@@ -189,6 +202,7 @@ namespace oscairn
                 part.bus=static_cast<uint32_t>(integer(field(p,"bus")));
                 part.level=number(field(p,"level"));part.mute=boolean(field(p,"mute"));part.solo=boolean(field(p,"solo"));part.pan=number(field(p,"pan"));
                 for(auto s:array(field(p,"sends")))part.sends.push_back({static_cast<uint32_t>(integer(field(s,"bus"))),number(field(s,"level"))});
+                if(const auto key=field(p,"key");key->type!=json_type_null)part.key=keyFrom(key);
                 if(const auto from=field(p,"from");from->type!=json_type_null)part.from={string(field(from,"sound")),string(field(from,"revision")),string(field(from,"name")),boolean(field(from,"modified"))};
                 next.parts.push_back(std::move(part));
             }
@@ -652,6 +666,10 @@ namespace oscairn
     {impl_->call("transport.set","{\"clockOutputs\":"+devicesText(devices)+'}');auto state=impl_->call("transport.get");impl_->readTransport(field(state.get(),"result"));}
     void RemoteControl::setPartMidiOut(uint32_t part,const PartMidiOut& midiOut)
     {impl_->call("parts.midiOut","{\"part\":"+std::to_string(part)+",\"midiOut\":{\"devices\":"+devicesText(midiOut.devices)+",\"channel\":"+std::to_string(midiOut.channel)+"}}");impl_->refresh();}
+    MusicalKey RemoteControl::key() const {auto doc=impl_->call("harmony.get");return keyFrom(field(field(doc.get(),"result"),"key"));}
+    void RemoteControl::setKey(const MusicalKey& key){impl_->call("harmony.set","{\"key\":"+keyText(key)+'}');impl_->refresh();}
+    void RemoteControl::setPartKey(uint32_t part,const std::optional<MusicalKey>& key)
+    {impl_->call("harmony.set","{\"part\":"+std::to_string(part)+",\"key\":"+(key?keyText(*key):std::string("null"))+'}');impl_->refresh();}
     void RemoteControl::setPartOutput(uint32_t part,uint32_t bus,std::optional<uint32_t> port)
     {impl_->call("parts.output","{\"part\":"+std::to_string(part)+(bus?",\"bus\":"+std::to_string(bus):std::string{})+(port?",\"port\":"+std::to_string(*port):std::string{})+'}');impl_->refresh();}
     void RemoteControl::setSend(uint32_t part,uint32_t bus,std::optional<double> level)

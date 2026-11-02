@@ -117,6 +117,10 @@ public:
     // the host delivers them only to a plugin that queried the space, and never counts the rest
     // as dropped.
     static constexpr uint16_t beatSpace = 1001;
+    // oscairn.harmony (oscairn-clap/harmony.h): the same, and a harmony equal to the last one
+    // delivered is not delivered again. The plugin reads the last on the main thread through
+    // the host extension.
+    static constexpr uint16_t harmonySpace = 1002;
     static constexpr uint32_t maxStateBytes = 64 * 1024 * 1024;
     static constexpr size_t maxPatchBytes = 1024 * 1024;
     Host();

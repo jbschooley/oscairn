@@ -224,6 +224,21 @@ try:
     assert len(rpc('graph.get')['result']['nodes']) == 1
     error(rpc('params.list', {'node': 'delay'}), -32001)
     rpc('graph.commit')
+    # RFC 0033: the Performance's key, by a pad scale's name or by pitch classes.
+    harmony = rpc('harmony.get')['result']
+    assert harmony['key'] == {'root': 0, 'scale': [0, 2, 4, 5, 7, 9, 11], 'name': 'Major'}, harmony
+    assert 'Dorian' in harmony['scales'] and harmony['parts'] == [], harmony
+    assert rpc('harmony.set', {'key': {'root': 2, 'scale': 'Dorian'}})['result'] == {'accepted': True}
+    assert rpc('harmony.get')['result']['key'] == {'root': 2, 'scale': [0, 2, 3, 5, 7, 9, 10], 'name': 'Dorian'}
+    assert rpc('harmony.set', {'key': {'root': 9, 'scale': [0, 1, 4]}})['result'] == {'accepted': True}
+    assert rpc('harmony.get')['result']['key'] == {'root': 9, 'scale': [0, 1, 4], 'name': None}
+    error(rpc('harmony.set', {'key': {'root': 12, 'scale': 'Major'}}), -32602)
+    error(rpc('harmony.set', {'key': {'root': 0, 'scale': 'Phrygian dominant'}}), -32602)
+    error(rpc('harmony.set', {'key': {'root': 0, 'scale': [2, 4]}}), -32602)
+    error(rpc('harmony.set', {'part': 99, 'key': None}), -32003)
+    assert rpc('harmony.get')['result']['key']['root'] == 9  # refused keys changed nothing
+    assert rpc('graph.get')['result']['staged']  # a key is an edit, staged until commit
+    rpc('graph.commit')
     print('ok: JSON-RPC envelopes, IDs, batches, notifications, validation, limits and queue errors')
 finally:
     proc.stdin.close()

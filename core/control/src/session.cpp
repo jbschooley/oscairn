@@ -276,7 +276,7 @@ namespace oscairn
         auto mains=[&](bool input){try{return old.mainAudioPorts(input);}catch(const std::exception&){return std::vector<uint32_t>{};}};
         const auto mainIn=mains(true),mainOut=mains(false);
         auto parts=parts_;auto wires=wires_;
-        try{graph_.replace(node,path,pluginId,preset,[&]{remapPorts(node,inputs,outputs,mainIn,mainOut);compileWires(graph_,wires_,disabled_,rungOut_,leaving_);graph_.setMidiTaps(midiTaps(graph_,parts_,wires_));});}
+        try{graph_.replace(node,path,pluginId,preset,[&]{remapPorts(node,inputs,outputs,mainIn,mainOut);compileWires(graph_,wires_,disabled_,rungOut_,leaving_);graph_.setMidiTaps(midiTaps(graph_,parts_,wires_));graph_.setHarmonies(harmonies(parts_,key_));});}
         catch(...){parts_.swap(parts);wires_.swap(wires);throw;}
         if(disabled_.count(node))graph_.setRetiring(node,true); // the new plugin is off too
         for(auto it=pending_.begin();it!=pending_.end();)

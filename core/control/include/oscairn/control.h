@@ -367,6 +367,11 @@ namespace oscairn
         virtual void setLane( uint32_t part, uint32_t split, uint32_t lane, const Lane& settings ) = 0;
         virtual void setPartInput( uint32_t part, const PartInput& input ) = 0;
         virtual void setPartMidiOut( uint32_t part, const PartMidiOut& midiOut ) = 0; // RFC 0012 step 1 (parts.h)
+        // RFC 0033 (parts.h): the Performance's key and scale, and a part's own (none: the
+        // Performance's). Plugins in a part read its key with the chord it holds (oscairn.harmony).
+        virtual MusicalKey key() const = 0;
+        virtual void setKey( const MusicalKey& key ) = 0;
+        virtual void setPartKey( uint32_t part, const std::optional<MusicalKey>& key ) = 0;
         virtual void setPartOutput( uint32_t part, uint32_t bus, std::optional<uint32_t> port = {} ) = 0; // through a bus, or (bus 0) to a port
         virtual void setSend( uint32_t part, uint32_t bus, std::optional<double> level ) = 0;            // without a level, removes the send
         virtual void setPartLevel( uint32_t part, double level, bool mute ) = 0; // its fader, post-fader sends included

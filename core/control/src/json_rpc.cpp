@@ -406,6 +406,35 @@ namespace oscairn
             if( member(p,"lane") ) place.lane = integer(member(p,"lane"));
             return place;
         }
+        // RFC 0033: a key's root and its scale's pitch classes above the root, with the scale's
+        // name when it is one of the pads' scales (padScales), else null.
+        std::string keyJson( const MusicalKey& k )
+        {
+            std::vector<int> steps; std::vector<std::string> text;
+            for( int i = 0; i < 12; ++i ) if( k.scale >> i & 1 ) { steps.push_back(i); text.push_back(std::to_string(i)); }
+            std::string name;
+            for( const auto& [n, s] : padScales() ) if( s == steps ) name = n;
+            return "{\"root\":" + std::to_string(k.root) + ",\"scale\":" + join(text) + ",\"name\":" + (name.empty() ? std::string("null") : quote(name)) + '}';
+        }
+        // A scale is a name from padScales, or pitch classes above the root (0 included).
+        MusicalKey keyFrom( Value v )
+        {
+            fields(v,{"root","scale"});
+            MusicalKey k{uint8_t(integer(member(v,"root"),11)),0};
+            const auto scale = member(v,"scale");
+            if( scale && scale->type == json_type_string )
+            {
+                const auto name = string(scale);
+                const auto& scales = padScales();
+                const auto found = std::find_if(scales.begin(),scales.end(),[&](const auto& s){ return s.first == name; });
+                if( found == scales.end() ) invalid("Unknown scale");
+                for( int i : found->second ) k.scale |= uint16_t(1u << i);
+            }
+            else for( auto s : array(scale,12) ) k.scale |= uint16_t(1u << integer(s,11));
+            if( !k.valid() ) invalid("A scale holds its root, 0");
+            return k;
+        }
+
         std::string partJson( const Part& p )
         {
             const auto chain = chainJson(p.chain);
@@ -413,6 +442,7 @@ namespace oscairn
                 "\",\"port\":" + std::to_string(p.input.port) + ",\"zones\":" + zonesJson(p.input.zones) + ",\"devices\":" + devicesJson(p.input.devices) + ",\"maxNotes\":" + std::to_string(p.input.maxNotes) + "},\"chain\":" + chain + ",\"splits\":" + splitsJson(p.splits) + ",\"output\":" + std::to_string(p.output) +
                 ",\"level\":" + encode(p.level) + ",\"pan\":" + encode(p.pan) + ",\"mute\":" + (p.mute ? "true" : "false") + ",\"solo\":" + (p.solo ? "true" : "false") + ",\"bus\":" + std::to_string(p.bus) + ",\"sends\":" + [&]{ std::vector<std::string> v; for( const auto& s : p.sends ) v.push_back("{\"bus\":" + std::to_string(s.bus) + ",\"level\":" + encode(s.level) + '}'); return join(v); }()
                 + ",\"midiOut\":{\"devices\":" + devicesJson(p.midiOut.devices) + ",\"channel\":" + std::to_string(p.midiOut.channel) + '}'
+                + ",\"key\":" + (p.key ? keyJson(*p.key) : std::string("null"))
                 + ",\"from\":" + (p.from.sound.empty() ? std::string("null") : "{\"sound\":" + quote(p.from.sound) + ",\"revision\":" + quote(p.from.revision) + ",\"name\":" + quote(p.from.name) + ",\"modified\":" + (p.from.modified ? "true" : "false") + '}') + '}';
         }
 
@@ -421,7 +451,7 @@ namespace oscairn
             if( method == "session.hello" )
             {
                 fields(p, {});
-                return R"({"protocolVersion":1,"server":"oscairn","capabilities":["performance.save","performance.load","performance.prepare","performance.export","budget.set","budget.estimate","performance.info","performance.setInfo","library.query","library.favorite","library.tag","library.edit","library.copy","library.export","audition.start","audition.stop","audition.get","record.start","record.stop","record.get","record.takes","library.rescan","library.contents","library.install","library.libraries","library.uninstall","library.delete","library.save","library.load","parts.saveSound","parts.loadSound","parts.fromSound","performance.contents","performance.import","state.info","state.save","window.info","window.show","presets.list","properties.list","properties.get","properties.set","properties.request","sounds.get","sounds.prepare","sounds.select","sounds.discard","assets.register","assets.import","assets.libraries","session.status","engine.attach","engine.release","params.list","params.get","params.set","params.text","params.gesture","graph.audio-routing","graph.get","graph.add","effects.create","effects.resources","graph.remove","graph.replace","graph.connect","graph.disconnect","graph.map","graph.unmap","graph.commit","parts.add","parts.remove","parts.insert","parts.removeNode","parts.move","parts.addSplit","parts.removeSplit","parts.addLane","parts.removeLane","parts.lane","parts.input","parts.output","parts.send","parts.level","parts.name","parts.solo","parts.pan","parts.meters","wires.meters","edit.undo","edit.redo","edit.history","wires.connect","wires.disconnect","wires.enable","graph.enable","wires.mix","wires.zones","scenes.add","scenes.store","scenes.select","scenes.remove","scenes.name","scenes.scope","scenes.transition","scenes.untouched","controls.add","controls.remove","controls.name","controls.targets","controls.set","subscribe","unsubscribe","transport.get","transport.set","notes.send","notes.panic","midi.ignore","pads.get","pads.set","pads.play","pads.pressure","assignments.get","assignments.set","parts.midiOut","trust.list","trust.set","trust.remove","keys.list","keys.make","record.retro","record.delete","record.rename","record.play"],"limits":{"messageBytes":65536,"depth":32,"batch":64,"parameterChanges":128}})";
+                return R"({"protocolVersion":1,"server":"oscairn","capabilities":["performance.save","performance.load","performance.prepare","performance.export","budget.set","budget.estimate","performance.info","performance.setInfo","library.query","library.favorite","library.tag","library.edit","library.copy","library.export","audition.start","audition.stop","audition.get","record.start","record.stop","record.get","record.takes","library.rescan","library.contents","library.install","library.libraries","library.uninstall","library.delete","library.save","library.load","parts.saveSound","parts.loadSound","parts.fromSound","performance.contents","performance.import","state.info","state.save","window.info","window.show","presets.list","properties.list","properties.get","properties.set","properties.request","sounds.get","sounds.prepare","sounds.select","sounds.discard","assets.register","assets.import","assets.libraries","session.status","engine.attach","engine.release","params.list","params.get","params.set","params.text","params.gesture","graph.audio-routing","graph.get","graph.add","effects.create","effects.resources","graph.remove","graph.replace","graph.connect","graph.disconnect","graph.map","graph.unmap","graph.commit","parts.add","parts.remove","parts.insert","parts.removeNode","parts.move","parts.addSplit","parts.removeSplit","parts.addLane","parts.removeLane","parts.lane","parts.input","parts.output","parts.send","parts.level","parts.name","parts.solo","parts.pan","parts.meters","wires.meters","edit.undo","edit.redo","edit.history","wires.connect","wires.disconnect","wires.enable","graph.enable","wires.mix","wires.zones","scenes.add","scenes.store","scenes.select","scenes.remove","scenes.name","scenes.scope","scenes.transition","scenes.untouched","controls.add","controls.remove","controls.name","controls.targets","controls.set","subscribe","unsubscribe","transport.get","transport.set","notes.send","notes.panic","midi.ignore","pads.get","pads.set","pads.play","pads.pressure","assignments.get","assignments.set","parts.midiOut","trust.list","trust.set","trust.remove","keys.list","keys.make","record.retro","record.delete","record.rename","record.play","harmony.get","harmony.set"],"limits":{"messageBytes":65536,"depth":32,"batch":64,"parameterChanges":128}})";
             }
             if( method == "engine.attach" || method == "engine.release" )
             {
@@ -943,6 +973,26 @@ namespace oscairn
                 try{c.replace(node(c,member(p,"node")),path,std::string(string(member(p,"pluginId"))),member(p,"preset")?std::string(string(member(p,"preset"))):std::string{});}
                 catch(const std::runtime_error& e){throw Failure{-32004,e.what()};}
                 return "{\"revision\":"+std::to_string(c.graphState().revision)+'}';
+            }
+            if( method == "harmony.get" )
+            {
+                fields(p,{});
+                std::vector<std::string> parts, scales;
+                for( const auto& part : c.graphState().parts ) parts.push_back("{\"part\":" + std::to_string(part.id) + ",\"key\":" + (part.key ? keyJson(*part.key) : std::string("null")) + '}');
+                for( const auto& s : padScales() ) scales.push_back(quote(s.first));
+                return "{\"key\":" + keyJson(c.key()) + ",\"parts\":" + join(parts) + ",\"scales\":" + join(scales) + '}';
+            }
+            if( method == "harmony.set" )
+            {
+                fields(p,{"part","key"});
+                const auto key = member(p,"key");
+                try
+                {
+                    if( !member(p,"part") ) c.setKey(keyFrom(key));
+                    else c.setPartKey(integer(member(p,"part")), key && key->type == json_type_null ? std::optional<MusicalKey>{} : keyFrom(key));
+                }
+                catch( const std::invalid_argument& e ) { throw Failure{-32003,e.what()}; }
+                return R"({"accepted":true})";
             }
             if( method == "pads.get" ) { fields(p,{}); return padsJson(c.padMap()); }
             if( method == "pads.set" ) { fields(p,{"map"}); c.setPadMap(padsFrom(member(p,"map"))); return R"({"accepted":true})"; }

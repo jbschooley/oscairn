@@ -17,6 +17,7 @@
 #include <clap/ext/gui.h>
 #include <clap/factory/preset-discovery.h>
 #include <oscairn-clap/beat.h>
+#include <oscairn-clap/harmony.h>
 #include <oscairn-clap/param-target.h>
 #include <oscairn-clap/ui.h>
 #include <algorithm>
@@ -91,6 +92,11 @@ bool validEvent(const clap_event_header_t* h) noexcept {
     if (h && h->space_id == Host::beatSpace) {
         const auto* b = reinterpret_cast<const oscairn_event_beat_t*>(h);
         return h->type == OSCAIRN_EVENT_BEAT && h->size == sizeof(oscairn_event_beat_t) && std::isfinite(b->tempo) && b->tempo > 0;
+    }
+    if (h && h->space_id == Host::harmonySpace) {
+        const auto& x = reinterpret_cast<const oscairn_event_harmony_t*>(h)->harmony;
+        return h->type == OSCAIRN_EVENT_HARMONY && h->size == sizeof(oscairn_event_harmony_t) && x.key_root < 12 && x.chord_root < 12 &&
+               x.chord_bass < 12 && x.chord_type <= OSCAIRN_CHORD_MINOR9 && x.scale < 4096 && (x.scale & 1) && !x.reserved;
     }
     if (!h || h->space_id != CLAP_CORE_EVENT_SPACE_ID || h->size > Event::capacity) return false;
     uint32_t size = 0;
@@ -184,7 +190,36 @@ struct Host::Impl {
     uint32_t maxFrames = 512;
     int64_t steadyTime = 0;
     bool active = false, sleeping = false;
-    std::atomic<bool> wantsBeat{false}; // the plugin queried oscairn.beat's event space
+    std::atomic<bool> wantsBeat{false}, wantsHarmony{false}; // the plugin queried oscairn.beat's, oscairn.harmony's event space
+    // oscairn.harmony: the last delivered (audio thread), and a copy the main thread reads
+    // through the host extension, behind a sequence count that is odd while it is written.
+    oscairn_harmony_t lastHarmony{};
+    bool haveHarmony = false;
+    std::atomic<uint32_t> harmonySequence{0};
+    std::array<std::atomic<uint64_t>, 3> harmonyWords{};
+    static_assert(sizeof(oscairn_harmony_t) == 3 * sizeof(uint64_t));
+    void publishHarmony(const oscairn_harmony_t& h) noexcept {
+        uint64_t words[3]; std::memcpy(words, &h, sizeof words);
+        const auto n = harmonySequence.load(std::memory_order_relaxed);
+        harmonySequence.store(n + 1, std::memory_order_relaxed);
+        std::atomic_thread_fence(std::memory_order_release);
+        for (size_t i = 0; i < 3; ++i) harmonyWords[i].store(words[i], std::memory_order_relaxed);
+        harmonySequence.store(n + 2, std::memory_order_release);
+    }
+    static bool CLAP_ABI readHarmony(const clap_host_t* host, oscairn_harmony_t* out) {
+        auto& s = self(host);
+        if (!out) return false;
+        uint64_t words[3]; uint32_t before, after;
+        do {
+            before = s.harmonySequence.load(std::memory_order_acquire);
+            for (size_t i = 0; i < 3; ++i) words[i] = s.harmonyWords[i].load(std::memory_order_relaxed);
+            std::atomic_thread_fence(std::memory_order_acquire);
+            after = s.harmonySequence.load(std::memory_order_relaxed);
+        } while ((before & 1) || before != after);
+        if (!before) return false;
+        std::memcpy(out, words, sizeof words);
+        return true;
+    }
     std::atomic<bool> processing{false}; // read by service() without the gate
     std::atomic<uint32_t> pendingCommands{0}; // enqueued but not yet delivered to the plugin
     bool transportObserved = false, hadTransport = false;
@@ -397,9 +432,11 @@ struct Host::Impl {
         static const oscairn_host_assets_t assets{resolveAsset};
         static const clap_host_preset_load_t presetLoad{presetError, presetLoaded};
         static const clap_host_gui_t windows{guiHintsChanged, guiRequestResize, guiRequestShow, guiRequestHide, guiClosed};
+        static const oscairn_host_harmony_t harmony{readHarmony};
         if (!id) return nullptr;
         if (!std::strcmp(id, CLAP_EXT_GUI)) return &windows;
         if (!std::strcmp(id, OSCAIRN_EXT_ASSETS)) return &assets;
+        if (!std::strcmp(id, OSCAIRN_EXT_HARMONY)) return &harmony;
         if (!std::strcmp(id, CLAP_EXT_PRESET_LOAD) || !std::strcmp(id, CLAP_EXT_PRESET_LOAD_COMPAT)) return &presetLoad;
         if (!std::strcmp(id, CLAP_EXT_THREAD_CHECK)) return &threads;
         if (!std::strcmp(id, CLAP_EXT_PARAMS)) return &parameters;
@@ -650,7 +687,7 @@ struct Host::Impl {
         }
         if (!plugin->activate(plugin, sampleRate, 1, maxFrames)) throw std::runtime_error("Plugin activation failed");
         active = true;
-        transportObserved = false;
+        transportObserved = false; haveHarmony = false;
         latencyFrames.store(pluginLatency && pluginLatency->get ? pluginLatency->get(plugin) : 0);
         return true;
     }
@@ -663,6 +700,7 @@ struct Host::Impl {
     static bool CLAP_ABI queryEventSpace(const clap_host_t* h, const char* name, uint16_t* space) {
         if (!name || !space) return false;
         if (!std::strcmp(name, OSCAIRN_EVENT_SPACE_BEAT)) { self(h).wantsBeat.store(true); *space = Host::beatSpace; return true; }
+        if (!std::strcmp(name, OSCAIRN_EVENT_SPACE_HARMONY)) { self(h).wantsHarmony.store(true); *space = Host::harmonySpace; return true; }
         if (std::strcmp(name, OSCAIRN_EVENT_SPACE_PARAM_TARGET) != 0) return false;
         *space = Host::paramTargetSpace;
         return true;
@@ -673,7 +711,7 @@ struct Host::Impl {
             if (event && event->space_id == CLAP_CORE_EVENT_SPACE_ID && event->type == CLAP_EVENT_MIDI_SYSEX) s.dropped.fetch_add(1); // over the limit: counted
             return false;
         }
-        if (event->space_id == Host::beatSpace) return false; // the host's to send
+        if (event->space_id == Host::beatSpace || event->space_id == Host::harmonySpace) return false; // the host's to send
         const bool core = event->space_id == CLAP_CORE_EVENT_SPACE_ID;
         if (core && event->type == CLAP_EVENT_PARAM_VALUE) {
             const auto* p = reinterpret_cast<const clap_event_param_value_t*>(event);
@@ -1211,9 +1249,14 @@ bool Host::process(const float* const* input, uint32_t ni, float* const* output,
             // A malformed or late event is dropped on its own; resetting the plugin
             // for it would cut every sounding note on stage.
             // Oscairn's host-to-plugin events go only to a plugin that asked for them, as they are.
-            if (e.header()->space_id == Host::beatSpace) {
+            if (e.header()->space_id == Host::beatSpace || e.header()->space_id == Host::harmonySpace) {
                 if (!validEvent(e.header()) || e.header()->time >= frames) { s.dropped.fetch_add(1); return; }
-                if (!s.wantsBeat.load(std::memory_order_relaxed)) return;
+                if (e.header()->space_id == Host::beatSpace && !s.wantsBeat.load(std::memory_order_relaxed)) return;
+                if (e.header()->space_id == Host::harmonySpace) {
+                    const auto& h = reinterpret_cast<const oscairn_event_harmony_t*>(e.header())->harmony;
+                    if (!s.wantsHarmony.load(std::memory_order_relaxed) || (s.haveHarmony && !std::memcmp(&h, &s.lastHarmony, sizeof h))) return;
+                    s.lastHarmony = h; s.haveHarmony = true; s.publishHarmony(h);
+                }
                 if (total == Impl::renderEvents) { s.dropped.fetch_add(1); return; }
                 s.ordered[total] = {e, total}; ++total; return;
             }
@@ -1251,7 +1294,7 @@ bool Host::process(const float* const* input, uint32_t ni, float* const* output,
         if (s.panic.exchange(false)) {
             // Never leave a stuck gate after an event overflow. Reset is an
             // audio-thread operation and covers every note channel and port.
-            s.plugin->reset(s.plugin); total = 0; s.sleeping = false;
+            s.plugin->reset(s.plugin); total = 0; s.sleeping = false; s.haveHarmony = false; // the harmony comes again next block
         }
         std::sort(s.ordered.begin(), s.ordered.begin() + total, [](const Impl::TimedEvent& a, const Impl::TimedEvent& b) {
             return a.event.header()->time < b.event.header()->time ||

@@ -217,7 +217,39 @@ namespace oscairn
         }
     }
 
-    void Session::syncWires() { compileWires(graph_, wires_, disabled_, rungOut_, leaving_); graph_.setMidiTaps(midiTaps(graph_, parts_, wires_)); staged_ = true; }
+    void Session::syncWires() { compileWires(graph_, wires_, disabled_, rungOut_, leaving_); graph_.setMidiTaps(midiTaps(graph_, parts_, wires_)); graph_.setHarmonies(harmonies(parts_, key_)); staged_ = true; }
+
+    // Each part's harmony (RFC 0033): its key or the Performance's, for every plugin in its chain
+    // and lanes, with the chord held at its note input, through its zones.
+    std::vector<Graph::Harmony> Session::harmonies(const std::vector<Part>& parts, const MusicalKey& key) const
+    {
+        std::vector<Graph::Harmony> out;
+        for(const auto& part : parts)
+        {
+            const auto k = part.key.value_or(key);
+            Graph::Harmony h{part.id, {}, part.input.kind == PartInput::Kind::Notes, {}, k.root, k.scale};
+            if(h.input) h.zones = inputZones(part.input, hostStatus_.midiInputs);
+            auto add = [&](const std::vector<NodeId>& chain) { for(const auto n : chain) if(!isSplit(n)) h.nodes.push_back(n); };
+            add(part.chain);
+            for(const auto& s : part.splits) for(const auto& l : s.lanes) add(l.chain);
+            out.push_back(std::move(h));
+        }
+        return out;
+    }
+
+    void Session::setKey(const MusicalKey& key)
+    {
+        if(!key.valid()) throw std::invalid_argument("a key's root is 0 to 11, and its scale holds its root");
+        key_ = key;
+        graph_.setHarmonies(harmonies(parts_, key_)); staged_ = true;
+    }
+
+    void Session::setPartKey(uint32_t id, const std::optional<MusicalKey>& key)
+    {
+        findPart(id);
+        if(key && !key->valid()) throw std::invalid_argument("a key's root is 0 to 11, and its scale holds its root");
+        editWires([&] { findPart(id).key = key; });
+    }
 
     // Each part's MIDI out (parts.h) as graph taps: the note wires into its instruments (plugins
     // taking notes and sending none), or with none, the last plugin in its chain sending notes,

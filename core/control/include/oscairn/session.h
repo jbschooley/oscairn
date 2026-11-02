@@ -128,6 +128,9 @@ namespace oscairn
         void setLane(uint32_t part, uint32_t split, uint32_t lane, const Lane& settings) override;
         void setPartInput(uint32_t part, const PartInput& input) override;
         void setPartMidiOut(uint32_t part, const PartMidiOut& midiOut) override;
+        MusicalKey key() const override { return key_; }
+        void setKey(const MusicalKey& key) override;
+        void setPartKey(uint32_t part, const std::optional<MusicalKey>& key) override;
         void setPartOutput(uint32_t part, uint32_t bus, std::optional<uint32_t> port = {}) override; // bus 0: a graph output port
         void setSend(uint32_t part, uint32_t bus, std::optional<double> level) override;            // no level: remove the send
         void setPartLevel(uint32_t part, double level, bool mute) override;
@@ -260,6 +263,7 @@ namespace oscairn
         bool enqueue(const kick::clap::Event& event);
         void syncWires();
         std::vector<Graph::MidiTap> midiTaps(const Graph& graph, const std::vector<Part>& parts, const std::vector<Wire>& wires) const; // parts' MIDI out
+        std::vector<Graph::Harmony> harmonies(const std::vector<Part>& parts, const MusicalKey& key) const; // parts' oscairn.harmony (RFC 0033)
         void clock(const clap_event_transport_t& t, uint32_t frames) noexcept; // process(): clock out
         void dropNode(NodeId node);
         template<class Edit> void editWires(Edit&& edit);
@@ -325,6 +329,7 @@ namespace oscairn
             std::vector<Graph::Mapping> mappings;
             std::map<NodeId, std::pair<std::string, Graph::Node>> nodes;
             std::set<NodeId> disabled;
+            MusicalKey key;
         };
         struct Step
         {
@@ -405,6 +410,7 @@ namespace oscairn
         SessionStatus hostStatus_;
         std::map<NodeId,std::string> nodes_;
         PadMap padMap_;
+        MusicalKey key_; // the Performance's (RFC 0033)
         struct HeldPad { int16_t key = -1; int8_t channel = 0; PadAssignment::Pressure pressure = PadAssignment::Pressure::None; };
         std::array<HeldPad, PadMap::pads> heldPads_{};
         std::vector<Part> parts_;
@@ -458,6 +464,7 @@ namespace oscairn
             std::vector<Macro> macros;
             uint32_t nextMacro = 1;
             std::vector<AssignmentOverride> assignments;
+            MusicalKey key;
         };
         std::unique_ptr<Prepared> read(const std::filesystem::path& root);
         void open(Prepared& prepared, bool seamless);

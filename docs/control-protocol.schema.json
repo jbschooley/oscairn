@@ -4865,6 +4865,76 @@
               "$ref": "#/$defs/Id"
             },
             "method": {
+              "const": "harmony.get"
+            },
+            "params": {
+              "type": "object",
+              "properties": {},
+              "required": [],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
+              "const": "harmony.set"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "part": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "A part whose own key to set; without it, the Performance's"
+                },
+                "key": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/$defs/KeyInput"
+                    },
+                    {
+                      "type": "null",
+                      "description": "With part: the part follows the Performance's key again"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "key"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "params"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
               "const": "pads.get"
             },
             "params": {
@@ -5946,6 +6016,9 @@
                 },
                 {
                   "$ref": "#/$defs/PadMap"
+                },
+                {
+                  "$ref": "#/$defs/HarmonyResult"
                 },
                 {
                   "$ref": "#/$defs/SceneResult"
@@ -7553,6 +7626,17 @@
             }
           ],
           "description": "The library Sound and revision the part was loaded from (RFC 0021), and whether it has been edited since; null when none"
+        },
+        "key": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/Key"
+            }
+          ],
+          "description": "The part's own key and scale (RFC 0033); null follows the Performance's"
         }
       },
       "required": [
@@ -7569,6 +7653,7 @@
         "mute",
         "solo",
         "midiOut",
+        "key",
         "from"
       ],
       "additionalProperties": false
@@ -7695,6 +7780,123 @@
         "channel",
         "velocity",
         "pressure"
+      ],
+      "additionalProperties": false
+    },
+    "Key": {
+      "description": "A key and scale (RFC 0033): which notes belong to the key, not tuning",
+      "type": "object",
+      "properties": {
+        "root": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 11,
+          "description": "0 = C .. 11 = B"
+        },
+        "scale": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 12,
+          "items": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 11
+          },
+          "description": "Pitch classes in semitones above the root, 0 among them"
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "The scale's name when it is one of the pad editor's scales; null otherwise"
+        }
+      },
+      "required": [
+        "root",
+        "scale",
+        "name"
+      ],
+      "additionalProperties": false
+    },
+    "KeyInput": {
+      "type": "object",
+      "properties": {
+        "root": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 11
+        },
+        "scale": {
+          "oneOf": [
+            {
+              "type": "string",
+              "description": "A name from harmony.get's scales"
+            },
+            {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 12,
+              "items": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 11
+              },
+              "description": "Pitch classes in semitones above the root, 0 among them"
+            }
+          ]
+        }
+      },
+      "required": [
+        "root",
+        "scale"
+      ],
+      "additionalProperties": false
+    },
+    "HarmonyResult": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "$ref": "#/$defs/Key"
+        },
+        "parts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "part": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "key": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/$defs/Key"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "part",
+              "key"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "scales": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "key",
+        "parts",
+        "scales"
       ],
       "additionalProperties": false
     },

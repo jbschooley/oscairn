@@ -644,7 +644,7 @@ public:
         while(tail!=head && total<maxEvents){ordered_[total]={commands_[tail%commands_.size()],total};++total;++tail;}
         tail_.store(tail,std::memory_order_release);
         for(uint32_t i=0;i<count;++i)if(valid(events[i],frames)){ordered_[total]={events[i],total};++total;}
-            else if(events[i].header()->space_id!=kick::clap::Host::beatSpace)++drops_; // Oscairn's events for CLAP plugins that ask are not drops
+            else if(events[i].header()->space_id!=kick::clap::Host::beatSpace && events[i].header()->space_id!=kick::clap::Host::harmonySpace)++drops_; // Oscairn's events for CLAP plugins that ask are not drops
         std::sort(ordered_.begin(),ordered_.begin()+total,[](const auto& a,const auto& b){return a.event.header()->time!=b.event.header()->time?a.event.header()->time<b.event.header()->time:a.order<b.order;});
         for(auto& p:ports_)if(p.kind==Kind::Audio)
         {

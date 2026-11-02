@@ -32,6 +32,7 @@ target_include_directories(oscairn_clap_headers INTERFACE clap-host/third_party/
 add_library(oscairn_engine STATIC
     engine/src/chain.cpp
     engine/src/graph.cpp
+    engine/src/harmony.cpp
     engine/src/PreparedInstrument.cpp
     engine/src/midi_input.cpp
     engine/src/transport.cpp
@@ -256,6 +257,11 @@ target_link_libraries(oscairn-free-beat-test PRIVATE oscairn_engine)
 add_dependencies(oscairn-free-beat-test oscairn-follower-fixture oscairn-plugin-worker)
 add_test(NAME free-beat COMMAND oscairn-free-beat-test $<TARGET_FILE:oscairn-plugin-worker> $<TARGET_FILE:oscairn-follower-fixture>)
 set_tests_properties(free-beat PROPERTIES TIMEOUT 60 ENVIRONMENT OSCAIRN_WORKER_BUDGET_US=50000)
+add_executable(oscairn-harmony-test engine/tests/harmony.cpp)
+target_link_libraries(oscairn-harmony-test PRIVATE oscairn_engine)
+add_dependencies(oscairn-harmony-test oscairn-follower-fixture oscairn-plugin-worker)
+add_test(NAME harmony COMMAND oscairn-harmony-test $<TARGET_FILE:oscairn-plugin-worker> $<TARGET_FILE:oscairn-follower-fixture>)
+set_tests_properties(harmony PROPERTIES TIMEOUT 60 ENVIRONMENT OSCAIRN_WORKER_BUDGET_US=50000)
 
 # Sanitizers slow rendering several times over; there the test checks containment, not timing.
 # CI's virtual machines cannot keep real time either (GitHub sets CI).

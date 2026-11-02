@@ -91,6 +91,17 @@ std::vector<DeviceRule> devicesFrom(V v){
 // RFC 0012 step 1: a part's MIDI out, its output selector and channel.
 std::string midiOutText(const PartMidiOut& m){return "{\"devices\":"+devicesText(m.devices)+",\"channel\":"+std::to_string(m.channel)+'}';}
 PartMidiOut midiOutFrom(V v){fields(v,{"devices","channel"});return {devicesFrom(field(v,"devices")),uint8_t(integer(field(v,"channel"),16))};}
+// RFC 0033: a key, its root and its scale's pitch classes above the root, ascending from 0.
+std::string keyText(const MusicalKey& k){
+    std::vector<std::string> steps;for(int i=0;i<12;++i)if(k.scale>>i&1)steps.push_back(std::to_string(i));
+    return "{\"root\":"+std::to_string(k.root)+",\"scale\":"+join(steps)+'}';
+}
+MusicalKey keyFrom(V v){
+    fields(v,{"root","scale"});MusicalKey k{uint8_t(integer(field(v,"root"),11)),0};
+    int last=-1;for(auto s:array(field(v,"scale"),12)){const int i=int(integer(s,11));if(i<=last)bad("a scale's pitch classes ascend");last=i;k.scale|=uint16_t(1u<<i);}
+    if(!k.valid())bad("a scale starts at its root, 0");
+    return k;
+}
 // The pad map (pads.h): the selected bank and every bank's 16 pads.
 const char* pressureName(PadAssignment::Pressure p){return p==PadAssignment::Pressure::Poly?"poly":p==PadAssignment::Pressure::Channel?"channel":"none";}
 std::string padsText(const PadMap& map){
@@ -434,7 +445,7 @@ Control::PerformanceInfo Session::writeDocument(const std::string& directory,Per
     if(!sound)for(const auto& p:parts_){
         const char* kind=p.input.kind==PartInput::Kind::Notes?"notes":p.input.kind==PartInput::Kind::Audio?"audio":p.input.kind==PartInput::Kind::Bus?"bus":"none";
         std::vector<std::string> sends;for(const auto& s:p.sends)sends.push_back("{\"bus\":"+std::to_string(s.bus)+",\"level\":"+numeric(s.level)+'}');
-        parts.push_back("{\"id\":"+std::to_string(p.id)+",\"name\":"+quote(p.name)+",\"input\":{\"kind\":\""+kind+"\",\"port\":"+std::to_string(p.input.port)+",\"zones\":"+zonesText(p.input.zones)+",\"devices\":"+devicesText(p.input.devices)+",\"maxNotes\":"+std::to_string(p.input.maxNotes)+"},\"chain\":"+chainText(p.chain)+",\"splits\":"+splitsText(p)+",\"output\":"+std::to_string(p.output)+",\"level\":"+numeric(p.level)+",\"pan\":"+numeric(p.pan)+",\"mute\":"+(p.mute?"true":"false")+",\"solo\":"+(p.solo?"true":"false")+",\"bus\":"+std::to_string(p.bus)+",\"sends\":"+join(sends)+",\"midiOut\":"+midiOutText(p.midiOut)
+        parts.push_back("{\"id\":"+std::to_string(p.id)+",\"name\":"+quote(p.name)+",\"input\":{\"kind\":\""+kind+"\",\"port\":"+std::to_string(p.input.port)+",\"zones\":"+zonesText(p.input.zones)+",\"devices\":"+devicesText(p.input.devices)+",\"maxNotes\":"+std::to_string(p.input.maxNotes)+"},\"chain\":"+chainText(p.chain)+",\"splits\":"+splitsText(p)+",\"output\":"+std::to_string(p.output)+",\"level\":"+numeric(p.level)+",\"pan\":"+numeric(p.pan)+",\"mute\":"+(p.mute?"true":"false")+",\"solo\":"+(p.solo?"true":"false")+",\"bus\":"+std::to_string(p.bus)+",\"sends\":"+join(sends)+",\"midiOut\":"+midiOutText(p.midiOut)+",\"key\":"+(p.key?keyText(*p.key):std::string("null"))
             +",\"from\":"+(p.from.sound.empty()?std::string("null"):"{\"sound\":"+quote(p.from.sound)+",\"revision\":"+quote(p.from.revision)+",\"name\":"+quote(p.from.name)+",\"modified\":"+(p.from.modified?"true":"false")+'}')+'}');
     }
     for(const auto& m:graph.mappings)if(kept(m.source) && kept(m.target))mappings.push_back("{\"from\":"+quote(keys.at(m.source))+",\"lane\":"+std::to_string(m.lane)+",\"to\":"+quote(keys.at(m.target))+",\"param\":"+std::to_string(m.param)+'}');
@@ -507,7 +518,7 @@ Control::PerformanceInfo Session::writeDocument(const std::string& directory,Per
                            :std::any_of(parts_.begin(),parts_.end(),[&](const Part& p){return p.id==t.id;});
             if(here)assigned.push_back("{\"control\":"+quote(o.control)+",\"kind\":"+quote(assignmentKinds[size_t(t.kind)])+",\"id\":"+std::to_string(t.id)+part+'}');}
         for(const auto& at:untouched_)if(keys.count(at.node))parameters.push_back("{\"node\":"+quote(keys.at(at.node))+",\"param\":"+std::to_string(at.param)+'}');
-        head="{\"format\":\"oscairn.performance\",\"version\":9,\"info\":";tail=",\"libraries\":"+join(named)+",\"transport\":{\"tempo\":"+numeric(tempo_.load())+",\"clockSource\":"+quote(clockSource_.load()==Transport::ClockSource::Internal?"internal":"midi")+"},\"audioInputs\":"+ports(graph.audioLayout.inputs)+",\"audioOutputs\":"+ports(graph.audioLayout.outputs)+",\"nodes\":"+join(nodes)+",\"wires\":"+join(wires)+",\"parts\":"+join(parts)+",\"mappings\":"+join(mappings)+",\"pads\":"+padsText(padMap_)+",\"scenes\":"+join(scenes)+",\"sceneUntouched\":"+join(parameters)+",\"scene\":"+std::to_string(scene_)+",\"controls\":"+join(controls)+",\"assignments\":"+join(assigned)+",\"lock\":"+lockText+"}\n";
+        head="{\"format\":\"oscairn.performance\",\"version\":10,\"info\":";tail=",\"libraries\":"+join(named)+",\"transport\":{\"tempo\":"+numeric(tempo_.load())+",\"clockSource\":"+quote(clockSource_.load()==Transport::ClockSource::Internal?"internal":"midi")+"},\"audioInputs\":"+ports(graph.audioLayout.inputs)+",\"audioOutputs\":"+ports(graph.audioLayout.outputs)+",\"nodes\":"+join(nodes)+",\"wires\":"+join(wires)+",\"parts\":"+join(parts)+",\"mappings\":"+join(mappings)+",\"pads\":"+padsText(padMap_)+",\"key\":"+keyText(key_)+",\"scenes\":"+join(scenes)+",\"sceneUntouched\":"+join(parameters)+",\"scene\":"+std::to_string(scene_)+",\"controls\":"+join(controls)+",\"assignments\":"+join(assigned)+",\"lock\":"+lockText+"}\n";
     }
     info.hash=contentHash(head+tail,bundle.temporary.path/"nodes");
     const auto out=head+infoText()+tail;
@@ -563,9 +574,9 @@ bool Session::preparePerformance(const std::string& directory) {
 // touching what plays. Throws, leaving nothing behind, on anything it cannot restore.
 std::unique_ptr<Session::Prepared> Session::read(const fs::path& root) {
     validateTree(root);const auto doc=document(root);V d=doc.get();
-    fields(d,{"format","version","info","libraries","transport","audioInputs","audioOutputs","nodes","wires","parts","mappings","pads","scenes","sceneUntouched","scene","controls","assignments","lock"});
-    const auto pads=padsFrom(field(d,"pads"));
-    if(text(field(d,"format"))!="oscairn.performance" || integer(field(d,"version"))!=9)bad("unsupported format version");
+    fields(d,{"format","version","info","libraries","transport","audioInputs","audioOutputs","nodes","wires","parts","mappings","pads","key","scenes","sceneUntouched","scene","controls","assignments","lock"});
+    const auto pads=padsFrom(field(d,"pads"));const auto key=keyFrom(field(d,"key"));
+    if(text(field(d,"format"))!="oscairn.performance" || integer(field(d,"version"))!=10)bad("unsupported format version");
     fields(field(d,"info"),{"id","name","description","tags","color","revision","parent","hash","origin"});const auto info=readInfo(root/"performance.json","oscairn.performance");
     auto lock=readLock(d);
     const auto transport=field(d,"transport");fields(transport,{"tempo","clockSource"});const double tempo=number(field(transport,"tempo"));
@@ -642,7 +653,7 @@ std::unique_ptr<Session::Prepared> Session::read(const fs::path& root) {
         std::set<uint32_t> partIds;
         std::set<NodeId> partNodes; // a node belongs to one part
         for(auto p:array(field(d,"parts"),256)){
-            fields(p,{"id","name","input","chain","splits","output","bus","sends","level","pan","mute","solo","midiOut","from"});Part part;part.id=integer(field(p,"id"));part.name=text(field(p,"name"));
+            fields(p,{"id","name","input","chain","splits","output","bus","sends","level","pan","mute","solo","midiOut","key","from"});Part part;part.id=integer(field(p,"id"));part.name=text(field(p,"name"));
             if(const auto from=field(p,"from");from->type!=json_type_null){
                 fields(from,{"sound","revision","name","modified"});
                 part.from={text(field(from,"sound")),text(field(from,"revision")),text(field(from,"name")),boolean(field(from,"modified"))};
@@ -650,7 +661,7 @@ std::unique_ptr<Session::Prepared> Session::read(const fs::path& root) {
             if(!part.id || !partIds.insert(part.id).second)bad("invalid or duplicate part");
             const auto input=field(p,"input");fields(input,{"kind","port","zones","devices","maxNotes"});const auto kind=text(field(input,"kind"));
             part.input.kind=kind=="notes"?PartInput::Kind::Notes:kind=="audio"?PartInput::Kind::Audio:kind=="none"?PartInput::Kind::None:kind=="bus"?PartInput::Kind::Bus:(bad("invalid part input"),PartInput::Kind::None);
-            part.input.port=integer(field(input,"port"));part.input.zones=zonesFrom(field(input,"zones"));part.input.devices=devicesFrom(field(input,"devices"));part.input.maxNotes=uint16_t(integer(field(input,"maxNotes"),128));part.output=integer(field(p,"output"));part.midiOut=midiOutFrom(field(p,"midiOut"));
+            part.input.port=integer(field(input,"port"));part.input.zones=zonesFrom(field(input,"zones"));part.input.devices=devicesFrom(field(input,"devices"));part.input.maxNotes=uint16_t(integer(field(input,"maxNotes"),128));part.output=integer(field(p,"output"));part.midiOut=midiOutFrom(field(p,"midiOut"));if(const V k=field(p,"key");k->type!=json_type_null)part.key=keyFrom(k);
             // Chains hold node keys and split entries; every node and split appears once in the part, and each split is reached from the part's own chain.
             std::set<NodeId> seen;
             auto chain=[&](V list){std::vector<NodeId> out;for(auto n:array(list,256)){
@@ -803,7 +814,7 @@ std::unique_ptr<Session::Prepared> Session::read(const fs::path& root) {
     std::set<std::pair<NodeId,uint32_t>> mappings;
     for(auto m:array(field(d,"mappings"),4096)){fields(m,{"from","lane","to","param"});const auto from=node(field(m,"from")),lane=integer(field(m,"lane"));if(!mappings.emplace(from,lane).second)bad("duplicate parameter mapping");next->mapParamTarget(from,lane,node(field(m,"to")),integer(field(m,"param")));}
     return std::make_unique<Prepared>(Prepared{root,stamp(root),std::move(next),pads,info,std::move(lock),tempo,clock=="internal"?Transport::ClockSource::Internal:Transport::ClockSource::MidiClock,
-        std::move(disabled),std::move(names),std::move(wires),std::move(parts),nextPart,nextWire,std::move(scenes),std::move(untouched),nextScene,selectedScene,mappingScene,std::move(macros),nextMacro,std::move(assignments)});
+        std::move(disabled),std::move(names),std::move(wires),std::move(parts),nextPart,nextWire,std::move(scenes),std::move(untouched),nextScene,selectedScene,mappingScene,std::move(macros),nextMacro,std::move(assignments),key});
 }
 
 // Publishes a read Performance in place of the open one.
@@ -822,7 +833,7 @@ void Session::open(Prepared& p,bool seamless) {
     std::set<NodeId> leaving;
     if(seamless){leaving=leaving_;for(const auto& [id,name]:nodes_)leaving.insert(id);}
     next->carryOver(graph_,leaving);
-    compileWires(*next,wires,disabled,disabled,leaving);next->setMidiTaps(midiTaps(*next,p.parts,wires));auto rungOut=disabled;
+    compileWires(*next,wires,disabled,disabled,leaving);next->setMidiTaps(midiTaps(*next,p.parts,wires));next->setHarmonies(harmonies(p.parts,p.key));auto rungOut=disabled;
     std::map<Address,double> observed;for(const auto& [id,name]:p.names)for(const auto& q:next->host(id).parameters())observed[{id,q.id}]=next->host(id).parameterValue(q.id);
     // Compilation and all allocating preparation precede publication. The audio thread
     // adopts at one boundary; old plans and their hosts are reclaimed by service().
@@ -830,7 +841,7 @@ void Session::open(Prepared& p,bool seamless) {
     if(history.size()==historyCapacity)history.pop_front();
     history.push_back({sequence_+1,ChangeKind::Resync,0,0,0,false});
     graph_.publishReplacement(*next,[&]() noexcept {
-        nodes_.swap(p.names);observed_.swap(observed);parts_.swap(p.parts);wires_.swap(wires);disabled_.swap(disabled);rungOut_.swap(rungOut);leaving_.swap(leaving);nextPart_=p.nextPart;nextWire_=p.nextWire;padMap_=p.pads;heldPads_={};scenes_.swap(p.scenes);untouched_.swap(p.untouched);scene_=p.selectedScene;mappingScene_=p.mappingScene;transition_.reset();pendingScene_.reset();nextScene_=p.nextScene;macros_.swap(p.macros);assignments_.swap(p.assignments);nextMacro_=p.nextMacro;pending_.clear();commandCount_=0;outputDrops_.clear();parameterRevisions_.clear();staged_=false;
+        nodes_.swap(p.names);observed_.swap(observed);parts_.swap(p.parts);wires_.swap(wires);disabled_.swap(disabled);rungOut_.swap(rungOut);leaving_.swap(leaving);nextPart_=p.nextPart;nextWire_=p.nextWire;padMap_=p.pads;key_=p.key;heldPads_={};scenes_.swap(p.scenes);untouched_.swap(p.untouched);scene_=p.selectedScene;mappingScene_=p.mappingScene;transition_.reset();pendingScene_.reset();nextScene_=p.nextScene;macros_.swap(p.macros);assignments_.swap(p.assignments);nextMacro_=p.nextMacro;pending_.clear();commandCount_=0;outputDrops_.clear();parameterRevisions_.clear();staged_=false;
         tempo_.store(p.tempo);clockSource_.store(p.clock);playing_.store(false);
         ++revision_;++sequence_;history_.swap(history);
     });
@@ -1119,7 +1130,7 @@ uint32_t Session::partFromSound(const std::string& id) {
 Control::PerformanceContents Session::performanceContents(const std::string& directory) {
     if(directory.empty() || directory.find('\0')!=std::string::npos)bad("invalid directory");
     const auto doc=document(fs::canonical(directory));V d=doc.get();
-    if(text(field(d,"format"))!="oscairn.performance" || integer(field(d,"version"))!=9)bad("unsupported format version");
+    if(text(field(d,"format"))!="oscairn.performance" || integer(field(d,"version"))!=10)bad("unsupported format version");
     PerformanceContents out;
     for(auto p:array(field(d,"parts"),256))out.parts.push_back({integer(field(p,"id")),text(field(p,"name")),text(field(field(p,"input"),"kind"))=="bus"});
     for(auto s:array(field(d,"scenes"),256))out.scenes.push_back({integer(field(s,"id")),text(field(s,"name"))});
@@ -1139,9 +1150,9 @@ Control::Imported Session::importPerformance(const std::string& directory,const 
     record(); // an edit waiting for its step comes first: the import is a step of its own
     if(directory.empty() || directory.find('\0')!=std::string::npos)bad("invalid directory");
     const auto root=fs::canonical(directory);validateTree(root);const auto doc=document(root);V d=doc.get();
-    fields(d,{"format","version","info","libraries","transport","audioInputs","audioOutputs","nodes","wires","parts","mappings","pads","scenes","sceneUntouched","scene","controls","assignments","lock"});
+    fields(d,{"format","version","info","libraries","transport","audioInputs","audioOutputs","nodes","wires","parts","mappings","pads","key","scenes","sceneUntouched","scene","controls","assignments","lock"});
     mergeLock(readLock(d));
-    if(text(field(d,"format"))!="oscairn.performance" || integer(field(d,"version"))!=9)bad("unsupported format version");
+    if(text(field(d,"format"))!="oscairn.performance" || integer(field(d,"version"))!=10)bad("unsupported format version");
     fields(field(d,"info"),{"id","name","description","tags","color","revision","parent","hash","origin"});
     // The parts that come: those chosen, and the buses they play through or send to, and theirs.
     const auto partList=array(field(d,"parts"),256);
@@ -1194,11 +1205,11 @@ Control::Imported Session::importPerformance(const std::string& directory,const 
             else out.push_back(node(n));}return out;};
         for(auto p:partList){
             const auto fileId=integer(field(p,"id"));if(!taking.count(fileId))continue;
-            fields(p,{"id","name","input","chain","splits","output","bus","sends","level","pan","mute","solo","midiOut","from"});
+            fields(p,{"id","name","input","chain","splits","output","bus","sends","level","pan","mute","solo","midiOut","key","from"});
             Part part;part.id=partIds.at(fileId);part.name=text(field(p,"name"));
             const auto input=field(p,"input");fields(input,{"kind","port","zones","devices","maxNotes"});const auto kind=text(field(input,"kind"));
             part.input.kind=kind=="notes"?PartInput::Kind::Notes:kind=="audio"?PartInput::Kind::Audio:kind=="none"?PartInput::Kind::None:kind=="bus"?PartInput::Kind::Bus:(bad("invalid part input"),PartInput::Kind::None);
-            part.input.port=integer(field(input,"port"));part.input.zones=zonesFrom(field(input,"zones"));part.input.devices=devicesFrom(field(input,"devices"));part.input.maxNotes=uint16_t(integer(field(input,"maxNotes"),128));part.midiOut=midiOutFrom(field(p,"midiOut"));
+            part.input.port=integer(field(input,"port"));part.input.zones=zonesFrom(field(input,"zones"));part.input.devices=devicesFrom(field(input,"devices"));part.input.maxNotes=uint16_t(integer(field(input,"maxNotes"),128));part.midiOut=midiOutFrom(field(p,"midiOut"));if(const V k=field(p,"key");k->type!=json_type_null)part.key=keyFrom(k);
             if(part.input.kind==PartInput::Kind::Audio && !onPort(layout.inputs,part.input.port)){
                 if(layout.inputs.empty())bad(part.name+" listens to an audio input this device does not have");
                 part.input.port=layout.inputs.front().id;notes.push_back(part.name+" listens to the first audio input: this device has no input "+std::to_string(integer(field(input,"port"))));}

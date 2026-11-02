@@ -161,6 +161,25 @@ namespace oscairn
         };
         void setMidiTaps( std::vector<MidiTap> taps );
         std::vector<MidiTap> midiTaps() const;
+        /// RFC 0033: a part's harmony (oscairn-clap/harmony.h): its key and scale (`root`, and
+        /// `scale` as pitch classes above it, bit 0 the root), and the chord held at its input:
+        /// the keys that pass `zones` from graphInput, when `input` is set. Every node in `nodes`
+        /// gets oscairn.harmony events: the harmony at sample 0 of each block, and each change at
+        /// the sample of the note that made it, before that note (its host passes on only
+        /// changes, to plugins that asked). `key` is the caller's (a part's ID): a harmony kept
+        /// under the same key keeps the keys it holds. Replaces every harmony; takes effect at
+        /// commit(). Throws std::invalid_argument for bad zones, a root past 11 or a scale without
+        /// its root.
+        struct Harmony
+        {
+            uint32_t key = 0;
+            std::vector<NodeId> nodes;
+            bool input = false;
+            std::vector<NoteZone> zones;
+            uint8_t root = 0;
+            uint16_t scale = 1;
+        };
+        void setHarmonies( std::vector<Harmony> harmonies );
         /// One MIDI 1.0 message for external outputs, `time` samples into its block.
         struct MidiMessage { uint32_t time = 0; uint64_t ports = 0; uint8_t size = 0; std::array<uint8_t, 3> bytes{}; };
         static constexpr uint32_t maxMidiOut = 1024;
@@ -315,6 +334,8 @@ namespace oscairn
         std::map<std::pair<NodeId, uint32_t>, std::pair<NodeId, clap_id>> paramTargets_; // (source, lane) -> (target, param)
 
         std::vector<std::pair<MidiTap, std::shared_ptr<NoteRoute>>> taps_; // see setMidiTaps
+        struct HeldKeys; // a harmony's keys held at its input, kept across plans
+        std::vector<std::pair<Harmony, std::shared_ptr<HeldKeys>>> harmonies_; // see setHarmonies
         std::array<MidiMessage, maxMidiOut> midiOut_{}; // audio thread
         uint32_t midiOutCount_ = 0;
         std::atomic<Plan*> pending_{ nullptr };

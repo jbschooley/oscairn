@@ -1,6 +1,6 @@
 # RFC 0033: The script block
 
-Status: proposed, 2026-11-01. Not implemented. A general MIDI script plugin in Lua, in its own
+Status: proposed, 2026-11-01. The script block is not implemented; the host side of step 5, the part's key, scale and chord, is built ([below](#host-side-status)). A general MIDI script plugin in Lua, in its own
 repository (MIT), with an API Oscairn defines and documents. Builds on parameter lanes
 ([RFC 0002](0002-param-target.md)), plugin roles ([RFC 0011](0011-performance-ui-and-editors.md#plugin-roles)),
 the transport and clock out ([RFC 0012](0012-sync-external-midi-and-multi-device.md)), plugin
@@ -248,6 +248,36 @@ Oscairn has no key or scale today. The pad editor's in-key fills have a list of 
   like `param-target` events (RFC 0010).
 
 This is not tuning. RFC 0017's scales tune pitches; this says which notes belong to the key.
+
+#### Host side status
+
+Built in the host; the script block that reads it is not (step 5 stays open until it is).
+
+- **The key:** a Performance has a key and scale, a part may have its own (`key` in the
+  Performance format, version 10; `harmony.get` and `harmony.set` in the control protocol;
+  undo covers both). A scale is any set of pitch classes holding the root; the control
+  protocol also takes the pad editor's scale names (`padScales()`) and names a key's scale
+  when it is one of them. Scenes do not change it yet, and the pad editor's in-key fills do
+  not default to it yet.
+- **The chord:** the graph routes the part's input events through the part's zones, as a MIDI
+  out tap does, keeps the keys held (not those only sustained), and reads the chord from a
+  fixed table (`core/engine/src/harmony.cpp`): triads, suspended and power chords, sixths,
+  sevenths, add9 and ninths. Where the same pitch classes read as more than one chord, the one
+  rooted on the bass wins. Whether the arpeggiator's recognition should share this table is
+  still open below.
+- **`oscairn.harmony`** (`core/clap-ext/include/oscairn-clap/harmony.h`, MIT): the key root,
+  scale, chord root, type and bass, and the held keys. Every plugin in the part's chain and
+  lanes that queries the event space gets an event in its first block and wherever anything
+  changes, at the sample of the note that changed it, before that note; the host extension
+  gives the last on the main thread. Workers carry the event like any other.
+- **Limits:** keys held across a seamless Performance change count again only once pressed
+  again; past 32 changes in one block, the last event takes the later ones.
+
+Tested in `harmony` (common chords and inversions; the key from the first sample and each
+chord change at its sample through a transposing zone, in the engine and in workers, at two
+block sizes; the main-thread read) and `control-parts` (saving, opening, undo and refusals;
+a plugin in a part reading its own key and then the Performance's). The JSON-RPC test covers
+the protocol.
 
 ### Talking to the arpeggiator
 

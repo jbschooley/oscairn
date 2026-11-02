@@ -137,6 +137,8 @@ request members.
 | `parts.lane` | `part`, `split`, `lane`; any of `zones`, `level`, `pan`, `mute`, `solo` (others keep their values) | `{"accepted":true}` |
 | `parts.input` | `part`, `input` (as for `parts.add`, with optional `zones`, `devices` and `maxNotes`, notes at once from 0 (no limit) to 128) | `{"accepted":true}` |
 | `parts.midiOut` | `part`, `midiOut`: `devices` (rules choosing MIDI outputs, as for inputs; none, the default, sends nothing) and `channel` (1–16; 0, the default, keeps each message's own) | `{"accepted":true}`: the part's MIDI goes to those outputs as well ([RFC 0012](rfcs/0012-sync-external-midi-and-multi-device.md#step-1-status)) |
+| `harmony.get` | omitted or `{}` | the Performance's `key`, each part's own (`parts`: `{"part","key"}`, `key` null when it follows the Performance's), and the named `scales`. A key is `root` (0 = C .. 11 = B), `scale` (its pitch classes in semitones above the root, from 0) and `name` (the scale's, when it is one of the pad editor's; else null) ([RFC 0033](rfcs/0033-script-block.md#the-parts-scale-and-chord)) |
+| `harmony.set` | `key`: `root` and `scale`, a name from `scales` or pitch classes including 0; with `part`, that part's own key, or null to follow the Performance's again | `{"accepted":true}`; an edit, staged until commit. Plugins in a part read its key and the chord held on it through `oscairn.harmony` |
 | `parts.output` | `part`, and `bus` (play through that bus) or optional `port` (a graph output) | `{"accepted":true}` |
 | `parts.send` | `part`, `bus`, optional `level` (without one, the send is removed) | `{"accepted":true}` |
 | `parts.level` | `part`, `level`, `mute`: its fader; sends are post-fader | `{"accepted":true}` |
@@ -324,6 +326,8 @@ report the compiled per-channel routes.
   chain (with an empty chain, its own input). Each message leaves at its sample, timed to
   sound with the audio it was rendered beside. Removing the output, or a plugin, sends
   note offs for the notes it held there. `graph.get` shows each part's `midiOut`.
+- **Key** ([RFC 0033](rfcs/0033-script-block.md#the-parts-scale-and-chord)): `graph.get`
+  shows each part's own `key`, or null where it follows the Performance's (`harmony.get`).
 - A wire a plugin replacement could not map stays with `connected: false`; port 4294967294
   is a main port awaiting one, 4294967295 none.
 
