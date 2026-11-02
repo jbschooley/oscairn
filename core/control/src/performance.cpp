@@ -1545,9 +1545,10 @@ Control::Installed Session::installArchive(const std::string& file,bool asLibrar
                 fs::create_directories(to.parent_path());fs::copy(into/i.path,to,fs::copy_options::recursive);
                 const auto doc=to/(i.kind=="sound"?"sound.json":"performance.json");
                 if(i.kind=="performance"){
-                    // Parts point at the Sounds' copies. IDs are 16 hex digits, so the text is unambiguous.
+                    // Parts point at the Sounds' copies. The span comes from the needle itself: an
+                    // ID with a quote escapes longer than it reads, and a fixed length breaks the JSON.
                     const auto bytes=state_files::read(doc,4*1024*1024);std::string text(bytes.begin(),bytes.end());
-                    for(const auto& [from,id]:ids)for(auto at=text.find("\"sound\":"+quote(from));at!=std::string::npos;at=text.find("\"sound\":"+quote(from),at))text.replace(at,8+from.size()+2,"\"sound\":"+quote(id));
+                    for(const auto& [from,id]:ids){const std::string needle="\"sound\":"+quote(from),with="\"sound\":"+quote(id);for(auto at=text.find(needle);at!=std::string::npos;at=text.find(needle,at))text.replace(at,needle.size(),with);}
                     state_files::write(doc,text.data(),text.size());
                 }
                 auto info=readInfo(doc,"oscairn."+i.kind);

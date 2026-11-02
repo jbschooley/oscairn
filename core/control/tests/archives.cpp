@@ -404,6 +404,33 @@ int main(int argc, char** argv)
             check(why.find("not a .clap or .lv2 bundle") != std::string::npos && !fs::exists(temp.path / "bare-out"),
                   "a build that is a bare file, not a .clap or .lv2 bundle, is refused: " + why);
         }
+        // Device K: an item whose ID needs escaping in JSON (an `"`). Installing into the user's own
+        // storage rewrites a Performance's part pointers as text; the rewrite must measure the
+        // escaped needle, or the installed performance.json is left broken.
+        {
+            device(temp.path / "k");
+            const auto root = temp.path / "k-root";
+            fs::create_directories(root / "Sounds" / "esc");
+            fs::create_directories(root / "Performances" / "esc-perf");
+            std::ofstream(root / "Sounds" / "esc" / "sound.json", std::ios::binary | std::ios::trunc)
+                << R"({"format":"oscairn.sound","version":7,"info":{"id":"ab\"cd","name":"Bass","description":"","tags":[],"color":"","revision":"r","parent":"","origin":null,"hash":")"
+                << std::string(64, '0') << R"("},"nodes":[]})";
+            std::ofstream(root / "Performances" / "esc-perf" / "performance.json", std::ios::binary | std::ios::trunc)
+                << R"({"format":"oscairn.performance","version":11,"info":{"id":"perf","name":"Set","description":"","tags":[],"color":"","revision":"r","parent":"","origin":null,"hash":")"
+                << std::string(64, '0') << R"("},"nodes":[{"key":"n1","plugin":{"format":"clap","id":"x","version":"1","path":"p"},"sound":"ab\"cd"}]})";
+            Package p; p.id = "k.esc"; p.name = "Escaped";
+            p.items.push_back({"sound", "ab\"cd", "Bass", "Sounds/esc", {}});
+            p.items.push_back({"performance", "perf", "Set", "Performances/esc-perf", {}});
+            const auto escaped = temp.path / "Escaped.olib";
+            writePackage(escaped, p, root);
+            Session k(48000, 64);
+            const auto installed = k.installArchive(escaped.string(), false);
+            check(installed.added == 2, "an archive whose Sound's ID needs escaping installs whole");
+            std::string soundId;
+            for(const auto& i : items(k, "sound")) soundId = i.id;
+            const auto doc = fs::path(items(k, "performance").at(0).path) / "performance.json";
+            check(read(doc).find("\"sound\":\"" + soundId + "\"") != std::string::npos, "and its Performance's part points at the Sound's copy");
+        }
     }
     catch(const std::exception& e) { std::fprintf(stderr, "FAIL: %s\n", e.what()); ++failures; }
     if(!failures) std::puts("ok: export, install as the user's own and as a library, reinstall, uninstall, chosen items and plugins from the store");
