@@ -118,6 +118,17 @@ int main(int argc, char** argv)
             check(keys(a, false) == std::vector<int>{72} && keys(a, true) == std::vector<int>{60}, "the held note's release finds 72; new notes play unchanged");
             check(p.graph.describe().noteZones.empty(), "no zones described once removed");
         }
+        { // A wire between two nodes filters and changes notes as a part's input does.
+            NoteZone low; low.highKey = 59; low.transpose = 12;
+            Probe p(transpose, {});
+            const auto second = p.graph.add(transpose);
+            p.graph.connectNotes(p.node, second, {low}); p.graph.commit();
+            p.node = second; // read what reached the second node
+            auto a = p.play({Event::note(true, 48, .8, 0), Event::note(true, 72, .8, 1)});
+            check(keys(a, true) == std::vector<int>{60}, "node to node: 48 passes as 60, 72 is dropped");
+            a = p.play({Event::note(false, 48, 0, 0), Event::note(false, 72, 0, 1)});
+            check(keys(a, false) == std::vector<int>{60}, "node to node: only the passed note is released");
+        }
         { // Invalid zones are refused.
             NoteZone bad; bad.lowKey = 80; bad.highKey = 40;
             Graph g(48000, 128); const auto n = g.add(transpose);
