@@ -78,7 +78,8 @@ namespace oscairn
             if(button)
             {
                 const bool on = message == Message::Note ? kind == 0x90 && d2 > 0 : d2 >= 64;
-                if(t.kind == Assignment::Kind::Scene) { if(on) out.push_back({r->control, t, 1}); continue; }
+                // A latching switch changes state on every press, so each message is a press.
+                if(t.kind == Assignment::Kind::Scene) { if(on || group.midi.latch) out.push_back({r->control, t, 1}); continue; }
                 if(group.midi.latch) out.push_back({r->control, t, on ? 1.0 : 0.0});
                 else if(on) out.push_back({r->control, t, now >= .5 ? 0.0 : 1.0});
                 continue;

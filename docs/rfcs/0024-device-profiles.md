@@ -236,7 +236,7 @@ the same format, version 2, with three things a device profile does not have:
   A step larger than one is the controller's acceleration and moves the value as far. Buttons
   and footswitches say how they send with `button`: `momentary` (the default: a value of 64 or more, or a note
   on, is a press, and each press toggles a mute or selects a scene) or `latch` (the controller
-  keeps the state: 64 or more is on, less is off). An assign group of knobs with hardware `rows`
+  keeps the state: 64 or more is on, less is off; a scene is selected on either). An assign group of knobs with hardware `rows`
   whose row switch changes the numbers it sends (the MODX M's [ASSIGN] button: knobs 1 to 4, or
   5 to 8) lists a number per control per row, row after row; a message then also says which row
   the group is on. Two controls of one controller never share a message; where the hardware

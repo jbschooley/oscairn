@@ -358,6 +358,11 @@ namespace
             check(o.size() == 1 && o[0].value == 0, "and unmutes when let up");
             o = play({0xB0, 64, 127});
             check(o.size() == 1 && o[0].value == 1, "every time");
+            // A latching pedal sends 127 and 0 on alternate presses: each one selects its scene.
+            s.assign("footswitch:1", target(Assignment::Kind::Scene, verse)); run(s); m = ControllerMapping{};
+            bool every = true;
+            for(const uint8_t v : {127, 0, 127, 0}) { o = play({0xB0, 64, v}); every = every && o.size() == 1 && o[0].target == target(Assignment::Kind::Scene, verse) && o[0].value == 1; }
+            check(every, "a latching footswitch selects its scene on every press");
             s.assign("footswitch:1", {}); run(s);
         }
 

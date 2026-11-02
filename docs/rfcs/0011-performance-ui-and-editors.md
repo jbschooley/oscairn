@@ -348,7 +348,7 @@ What turns a moved control into a value at its target, the same for a panel and 
 - **Relative encoders** add each step, 1/127 of the target's range per step and the step's size
   with acceleration, to the target's current value: no pickup is needed.
 - **Buttons and footswitches:** a momentary one toggles a mute or selects a scene on each press; a latching
-  one sets the mute from its state, or selects a scene when it turns on.
+  one sets the mute from its state, or selects a scene on each change (each press, on or off).
 - **Passed through:** a control with a standard-controller function and nothing assigned does
   nothing in the service: its message reaches every part on its own as that controller.
 
