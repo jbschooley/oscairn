@@ -241,6 +241,14 @@ static bool runHelper(const fs::path& helper, const char* flag, const std::strin
     else return true;
     return false;
 }
+bool indexPresetsWithHelper(const fs::path& helper, const fs::path& binary, uint32_t timeoutMs, ScanResult& result, std::string& failure) {
+    return runHelper(helper, "--presets", binary.string(), timeoutMs ? timeoutMs : 1, nullptr, result, failure);
+}
+#else
+bool indexPresetsWithHelper(const fs::path&, const fs::path&, uint32_t, ScanResult&, std::string& failure) {
+    failure = "Isolated preset indexing currently supports Linux and macOS";
+    return false;
+}
 #endif
 ScanResult scan(const std::vector<fs::path>& roots, const fs::path& helper, uint32_t timeoutMs, const std::atomic<bool>* canceled, const std::string& extension, uint32_t presetTimeoutMs) {
     ScanResult result;

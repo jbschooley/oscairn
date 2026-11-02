@@ -140,12 +140,19 @@ namespace oscairn
         // The memory a worker may use before it is stopped, in bytes (0: no limit): its physical
         // footprint on macOS, resident memory on Linux, as its supervisor reads them.
         uint64_t memoryLimit = uint64_t(4) << 30;
+        std::string scan; // the oscairn-plugin-scan helper for a fresh preset listing (RFC 0005); empty: none
     };
     // Starts as OSCAIRN_PLUGIN_WORKER says: every plugin in the worker executable it names, or none;
-    // OSCAIRN_WORKER_MEMORY_MB sets the memory limit.
+    // OSCAIRN_WORKER_MEMORY_MB sets the memory limit; OSCAIRN_PLUGIN_SCAN names the scan helper
+    // a loaded plugin's preset listing reads through (empty: presets come from the scan's index alone).
     void setPlacementPolicy(PlacementPolicy);
     const PlacementPolicy& placementPolicy();
     std::shared_ptr<PluginHost> loadPluginInWorker(const std::string& program, const std::string& path, const std::string& pluginId,
                                                    double sampleRate, uint32_t maxFrames, ProcessingMode mode = ProcessingMode::Realtime, uint64_t memoryLimit = 0,
                                                    uint64_t memoryRoom = 0);
+    // RFC 0005: a fresh listing of one plugin's presets, read by the isolated scan helper named
+    // by the placement policy (its `scan`; empty: not configured). The plugin's preset-provider
+    // code runs in that helper process (timeout, crash isolation, stderr), never in this
+    // process's control thread. Empty where no helper is configured or its scan failed.
+    std::vector<PresetInfo> scanPluginPresets(const std::string& path, const std::string& pluginId);
 }

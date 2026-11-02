@@ -335,9 +335,9 @@ controls; mappings come with the scenes they are off in).
 
 The host already reads presets two ways:
 
-- **CLAP:** `kick_clap::Host::presets()` lists what a plugin's preset discovery factory
-  declares, both inside the plugin and in preset files, and `loadPreset` loads one through
-  `preset-load`. `presets.list` returns them as `clap-preset:` URIs.
+- **CLAP:** a plugin's presets, indexed by the isolated scan (or re-read through the scan
+  helper for a loaded plugin; RFC 0005), reach `presets.list` as `clap-preset:` URIs, and
+  `loadPreset` loads one through `preset-load`.
 - **LV2:** bundle presets, through the same method.
 
 A preset is one plugin's state. In the picker:

@@ -79,7 +79,7 @@ namespace oscairn::worker
     {
         Init = 1, Service, SetParameter, Gesture, ParameterText, SaveState, LoadState, Shutdown,
         CreateEffectContext, DestroyNode, EffectResources, SoundContexts, PrepareSound, SelectSound,
-        DiscardSound, SaveSnapshot, LoadSnapshot, AssetDependencies, Presets, LoadPreset, Memory, SetMemoryRoom,
+        DiscardSound, SaveSnapshot, LoadSnapshot, AssetDependencies, LoadPreset, Memory, SetMemoryRoom,
         Window // the plugin's own window: shown (with its title) or closed
     };
     // First byte of every message from the worker: a reply, or a request to the engine made while

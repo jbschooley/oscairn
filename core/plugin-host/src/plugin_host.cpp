@@ -82,7 +82,10 @@ namespace oscairn
             bool supportsState() const noexcept override {return host.supportsState();}
             bool hasWindow() const override {return host.hasGui();}
             void showWindow(bool show,const std::string& title) override {if(!show)host.closeGui();else if(!host.showGui(title))throw std::runtime_error(host.error());}
-            std::vector<PresetInfo> presets() override {std::vector<PresetInfo> r;for(const auto& p:host.presets())r.push_back({presetUri(p),p.name});return r;}
+            // RFC 0005: a fresh listing through the isolated scan helper (or, where no helper is
+            // configured, an in-process index within its budget); no provider code of the plugin's
+            // runs unbounded on this process's control thread.
+            std::vector<PresetInfo> presets() override { return scanPluginPresets(host.descriptor().path, host.descriptor().id); }
             void loadPreset(const std::string& uri) override {if(!host.loadPreset(presetFrom(uri)))throw std::runtime_error(host.error());}
             void setAssets(kick::clap::AssetResolver* assets) noexcept override {host.setAssets(assets);}
             std::vector<kick::clap::AssetReference> assetDependencies() const override {return host.assetDependencies();}
@@ -182,6 +185,7 @@ namespace oscairn
             static PlacementPolicy p=[]{
                 PlacementPolicy initial;if(const char* w=std::getenv("OSCAIRN_PLUGIN_WORKER"))initial.worker=w;
                 if(const char* mb=std::getenv("OSCAIRN_WORKER_MEMORY_MB"))initial.memoryLimit=std::strtoull(mb,nullptr,10)<<20;
+                if(const char* s=std::getenv("OSCAIRN_PLUGIN_SCAN"))initial.scan=s;
                 return initial;}();
             return p;
         }
@@ -226,6 +230,21 @@ namespace oscairn
         (void)oomScoreAdj;
         return "memory locking and the out-of-memory order are Linux only";
 #endif
+    }
+
+    std::vector<PresetInfo> scanPluginPresets(const std::string& path, const std::string& pluginId)
+    {
+        // The scan's own 15 s, so a hung provider stalls this thread at most that long and dies
+        // with the helper process. Without a helper, index in this process within the index's
+        // own budget (hosts that run plugins among their own code).
+        kick::clap::ScanResult result;
+        const auto& helper = placementPolicy().scan;
+        if(!helper.empty()) { std::string failure; if(!kick::clap::indexPresetsWithHelper(helper, path, 15000, result, failure)) return {}; }
+        else result = kick::clap::inspect(path, true);
+        std::vector<PresetInfo> presets;
+        for(const auto& plugin : result.plugins)
+            if(plugin.id == pluginId) for(const auto& preset : plugin.presets) presets.push_back({presetUri(preset), preset.name});
+        return presets;
     }
 
     std::shared_ptr<PluginHost> loadPlugin(const std::string& path,const std::string& id,double rate,uint32_t frames,ProcessingMode mode,Lv2BufferLimits lv2Buffers,uint64_t memoryRoom)

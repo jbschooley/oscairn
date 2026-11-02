@@ -116,10 +116,11 @@ limits:
   or crashing index never hides a plugin. It has its own timeout (15 s); its failures are
   reported beside the scan's as `Presets not indexed: <reason>` (`Plugin scan timed out`,
   `Plugin crashed or failed during scan`, …), and the plugin is listed without presets.
-- *For a loaded plugin* (`presets.list`), its own process indexes: in the engine that is the
-  plugin's worker, whose control requests time out after 30 s; the index stops starting new
-  `get_metadata` calls after 10 s, so a large library returns what was read in time instead of
-  failing the worker.
+- *For a loaded plugin* (`presets.list`), the process serving the call runs the same isolated
+  scan helper on the plugin's binary (15 s timeout, crash isolation): a preset provider that
+  hangs or crashes stalls the listing at most that long and takes neither the engine's control
+  thread nor the plugin's worker down with it. Where no helper is configured (a host running
+  plugins among its own code), the listing indexes in-process, stopping new reads after 10 s.
 - *Limits:* 4096 presets per plugin library; 64 locations and 64 file types per provider;
   10,000 files per folder and 16 levels of subfolders; names up to 255 bytes, locations and
   load keys up to 4096. A preset over a size limit is skipped; at the count or time limit the

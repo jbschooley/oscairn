@@ -3,6 +3,7 @@
 #include <kick_clap/Discovery.h>
 #include <oscairn-clap/ui.h>
 #include <atomic>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -54,6 +55,28 @@ int main(int argc, char** argv) {
               hung.failures[0].message == "Presets not indexed: Plugin scan timed out", "a preset index that hangs times out and leaves the plugins listed");
         const auto empty = indexPresets(nullptr, {"org.kick.test.midi"});
         check(empty.presets.empty() && empty.problems.empty(), "no library, no presets");
+    }
+    {
+        // RFC 0005: a loaded host answers presets() from the index its Descriptor carried. With the
+        // provider hung, nothing of it runs: the listing returns the scan's presets at once, and a
+        // fresh index runs in the helper, whose timeout stops it instead of blocking this process.
+        Host preset;
+        check(preset.load(isolated.plugins[2], 48000, 128), "load the MIDI fixture with its scan's presets");
+        setenv("KICK_FIXTURE_PRESETS_HANG", "1", 1);
+        auto names = [](const std::vector<Preset>& p) { std::string all; for (const auto& x : p) all += x.name + ";"; return all; };
+        const auto began = std::chrono::steady_clock::now();
+        const auto listed = preset.presets();
+        const auto took = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - began).count();
+        check(names(listed) == "Quiet;Bright;" && took < 4000,
+              ("a loaded host lists the scan's presets at once, without asking the provider (" + std::to_string(took) + " ms)").c_str());
+        ScanResult fresh; std::string failure;
+        check(!indexPresetsWithHelper(argv[2], argv[1], 500, fresh, failure) && failure.find("timed out") != std::string::npos,
+              "a fresh index runs in the helper, and its timeout ends it");
+        unsetenv("KICK_FIXTURE_PRESETS_HANG");
+        check(indexPresetsWithHelper(argv[2], argv[1], 5000, fresh, failure) && names(fresh.plugins[2].presets) == "Quiet;Bright;",
+              "and a healthy helper indexes the plugin's presets");
+        Host plain;
+        check(plain.load(catalog.plugins[2], 48000, 128) && plain.presets().empty(), "a host loaded without a scan's index lists none");
     }
     const auto crashed = scan({argv[3]}, argv[2], 1000);
     check(crashed.failures.size() == 1, "scanner crash isolation");

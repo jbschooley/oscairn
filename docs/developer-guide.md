@@ -112,6 +112,7 @@ Programs in `tools/`, and the ones built beside the tests, for plugin work:
 | Variable | Effect |
 | --- | --- |
 | `OSCAIRN_PLUGIN_WORKER` | The worker program that runs plugins ([RFC 0010](rfcs/0010-plugin-worker-isolation.md)). Unset, the desktop's engine helper uses the worker beside it or where it was built, and other hosts run plugins in the engine. Set but empty, plugins run in the engine. LV2 plugins always run in the engine |
+| `OSCAIRN_PLUGIN_SCAN` | The scan helper a loaded plugin's preset listing reads through ([RFC 0005](rfcs/0005-sound-contexts.md#presets)). Unset, the desktop's engine helper uses the one beside it or where it was built; with none, a listing indexes in the engine's own process |
 | `OSCAIRN_WORKER_MEMORY_MB` | A worker's memory limit when its plugins do not declare their memory; default 4096, 0 for none |
 | `OSCAIRN_CGROUP` | Linux: a delegated cgroup v2 subtree. The engine moves into `engine/`, each worker gets a cgroup under `workers/` with its memory limit as `memory.max`, and memory pressure is read from the subtree. Without it, workers have no cgroups and pressure comes from `/proc/pressure/memory` |
 | `OSCAIRN_RELIABILITY` | `instrument` or `pass-through`: on Linux the engine and workers lock their memory and take their places in the out-of-memory order, and say on stderr what they could not do ([RFC 0025](rfcs/0025-resource-budgets.md), [RFC 0027](rfcs/0027-reliability-levels.md)) |

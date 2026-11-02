@@ -866,6 +866,8 @@ bool Host::load(const Descriptor& descriptor, double sampleRate, uint32_t frames
         }
         if (!chosen) throw std::runtime_error("Saved plugin ID is absent from this binary");
         s.info = detail::describe(s.library->path, *chosen);
+        s.info.presetDiscovery = descriptor.presetDiscovery; // the scan's preset index stays with the plugin
+        s.info.presets = descriptor.presets;
         s.plugin = factory->create_plugin(factory, &s.host, chosen->id);
         s.initialize(sampleRate,frames,bytes);
         return true;
@@ -1037,9 +1039,9 @@ bool Host::loadState(const std::vector<uint8_t>& bytes) {
       catch (...) { s.fail("Plugin state restoration failed"); return false; }
 }
 std::vector<Preset> Host::presets() {
-    auto& s = *impl;
-    if (!s.main() || !s.library || !s.library->entry) return {};
-    return indexPresets(s.library->entry, {s.info.id}).presets[s.info.id];
+    // The scan's index this host was loaded with: no plugin preset-provider code runs here,
+    // so a slow or hung provider cannot block the thread that answers this process (RFC 0005).
+    return impl->info.presets;
 }
 
 bool Host::loadPreset(const Preset& preset) {

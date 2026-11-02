@@ -100,6 +100,7 @@ namespace oscairn
             // The supervisor's latest reading of the worker, and the CPU time of the workers it replaced.
             std::atomic<uint64_t> memory{0};
             std::atomic<double> cpu{0}, cpuBefore{0};
+            int overLimit = 0; // supervisor thread: consecutive samples over the limit before the kill
             std::mutex control;
             int socket = -1; pid_t pid = 0; bool reaped = true;
             std::string root; // the root plugin's description, which a restarted worker must repeat
@@ -478,12 +479,11 @@ namespace oscairn
                 process_->fitLimit();
             }
             void saveSnapshot(const std::string& directory) override { request(Op::SaveSnapshot, Writer().str(directory)); }
+            // The scan helper, in this process: the worker's plugin provider code never runs
+            // here, so a hung one cannot stall the worker or restart a playing instrument (RFC 0005).
             std::vector<PresetInfo> presets() override
             {
-                Reader r = request(Op::Presets);
-                std::vector<PresetInfo> result(r.u32());
-                for(auto& p : result) { p.uri = r.str(); p.name = r.str(); }
-                return result;
+                return scanPluginPresets(descriptor_.path, descriptor_.id);
             }
             // A preset changes the plugin's state, so the recovery record is saved again.
             void loadPreset(const std::string& uri) override
@@ -897,6 +897,9 @@ namespace oscairn
                 {
                     const auto& m = n->declaredLocked();
                     if(!m) return;
+                    // Every node of one engine reports the same shared bytes (memory.h), so the
+                    // largest is the engine's: counted once even when its root node is gone and
+                    // only its effect contexts remain, still holding those bytes.
                     declared += (n->isRoot() ? m->shared_bytes : 0) + m->context_bytes + m->asset_bytes;
                 }
             }
@@ -925,11 +928,18 @@ namespace oscairn
                 if(const auto u = usage(pid); u.memory)
                 {
                     memory.store(u.memory); cpu.store(u.cpu);
+                    // A worker re-activating (a restart it asked for) refits its limit through
+                    // the control socket; kill only what is still over at the next sample, so
+                    // that refit always lands first.
                     if(memoryLimit && u.memory > memoryLimit)
                     {
-                        fail("Plugin used too much memory: " + std::to_string(u.memory >> 20) + " MB, over its limit of " + std::to_string(memoryLimit >> 20) + " MB");
-                        continue;
+                        if(overLimit++)
+                        {
+                            fail("Plugin used too much memory: " + std::to_string(u.memory >> 20) + " MB, over its limit of " + std::to_string(memoryLimit >> 20) + " MB");
+                            continue;
+                        }
                     }
+                    else overLimit = 0;
                 }
                 const auto now = std::chrono::steady_clock::now().time_since_epoch().count();
                 std::string why;

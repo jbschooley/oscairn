@@ -59,15 +59,23 @@ int main(int argc,char** argv)
     juce::ScopedJuceInitialiser_GUI initialize; // JUCE event loop initialization; no GUI modules linked
     // RFC 0010: every plugin in a worker process, the worker found beside this program (in the app)
     // or where it was built. OSCAIRN_PLUGIN_WORKER overrides it; set but empty, plugins run in the engine.
+    auto policy = oscairn::placementPolicy();
     if(!std::getenv("OSCAIRN_PLUGIN_WORKER"))
     {
         auto worker=juce::File::getSpecialLocation(juce::File::currentExecutableFile).getSiblingFile("oscairn-plugin-worker");
         if(!worker.existsAsFile())worker=juce::File(OSCAIRN_PLUGIN_WORKER_PATH);
-        auto policy=oscairn::placementPolicy();
         if(worker.existsAsFile())policy.worker=worker.getFullPathName().toStdString();
         else std::cerr<<"oscairn-engine: no plugin worker found; plugins run in the engine\n";
-        oscairn::setPlacementPolicy(policy);
     }
+    // RFC 0005: a loaded plugin's preset listing runs the plugin's provider in this scan
+    // helper, never on this process's control thread. OSCAIRN_PLUGIN_SCAN overrides it.
+    if(policy.scan.empty())
+    {
+        auto scan=juce::File::getSpecialLocation(juce::File::currentExecutableFile).getSiblingFile("oscairn-plugin-scan");
+        if(!scan.existsAsFile())scan=juce::File(OSCAIRN_PLUGIN_SCAN_PATH);
+        if(scan.existsAsFile())policy.scan=scan.getFullPathName().toStdString();
+    }
+    oscairn::setPlacementPolicy(policy);
     try
     {
         std::unique_ptr<oscairn::host::EngineLease> lease;

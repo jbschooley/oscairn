@@ -13,6 +13,12 @@ std::vector<std::filesystem::path> findBinaries(const std::vector<std::filesyste
 // Loads native code. Only call in the scanner worker or with a trusted fixture. With presets,
 // also indexes each plugin's presets (indexPresets).
 ScanResult inspect(const std::filesystem::path& binary, bool presets = false);
+// Runs the scanner helper's --presets mode on one binary: a fresh preset index for it, with
+// the scan's timeout, crash isolation and stderr capture, so a slow or hung preset provider
+// runs in another process and this one waits at most presetTimeoutMilliseconds. False with
+// the reason in failure. Call it off any thread that must keep answering.
+bool indexPresetsWithHelper(const std::filesystem::path& helper, const std::filesystem::path& binary,
+                           uint32_t timeoutMilliseconds, ScanResult& result, std::string& failure);
 // Each binary is inspected by a fresh helper process with timeout/crash isolation; one whose
 // library offers preset discovery has its presets indexed by a second helper process with its
 // own timeout (presetTimeoutMilliseconds), so a failed index leaves its plugins listed.
