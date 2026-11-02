@@ -116,6 +116,12 @@ int main(int argc, char** argv)
                 bool moving = false;
                 for(int i = 0; i < 200 && !moving; ++i) { juce::MessageManager::getInstance()->runDispatchLoopUntil(10); for(const auto& m : engine.meters()) moving |= m.peak > 0; }
                 check(moving, "the parts' meters move while notes play");
+                // The Master strip is never drawn as selected: selecting none is 0, its own id.
+                check(!shell.play().stripSelected(0), "the master strip shows no selection while none is made");
+                shell.play().select(made.parts[0].id);
+                check(shell.play().stripSelected(made.parts[0].id) && !shell.play().stripSelected(0), "a chosen part is drawn selected, the master is not");
+                shell.play().select(0);
+                check(!shell.play().stripSelected(0), "and selecting none outlines nothing");
                 for(const char* name : {"Play", "Part", "Mixer", "Routing", "Controls"})
                 {
                     standalone::DesktopShell::Tab tab{};

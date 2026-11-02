@@ -149,7 +149,7 @@ namespace oscairn::standalone
         void paint(juce::Graphics& g) override
         {
             const int m = view_.mode();
-            const bool selected = view_.selected_ == part_;
+            const bool selected = view_.stripSelected(part_); // the master (part 0) never shows selected: 0 means none
             drawSection(g, getLocalBounds(), ink(Ink::Surface));
             if(selected) drawEdge(g, getLocalBounds().toFloat().reduced(1), themeData().radius + 2, true);
             g.setColour(ink(Ink::Text).withAlpha(alpha_)); drawInked(g, name_, nameArea(), juce::Font(juce::FontOptions(textSize(TextRole::Body, m), juce::Font::bold)));

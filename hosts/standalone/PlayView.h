@@ -26,6 +26,9 @@ namespace oscairn::standalone
         std::function<void(int by)> step;
 
         uint32_t selectedPart() const { return selected_; }
+        // A strip's outline: a chosen part only. 0 selects none, so the master (strip 0) is
+        // never drawn as selected and a tap on it cannot select or clear.
+        bool stripSelected(uint32_t part) const { return part && selected_ == part; }
         void select(uint32_t part);           // a part or bus; 0 none
         void showPartControls(bool part);     // the knobs follow the selected part's controls, or the Performance's
         bool showsPartControls() const { return partControls_ && selected_; }
