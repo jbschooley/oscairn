@@ -17,7 +17,7 @@ Checked when built and tested; the sections below say how.
 - [ ] 5. Editors: knob pages for every plugin done through [RFC 0019](0019-adaptive-ui.md)'s
       generated editors ([status](#step-5-status)); what modulates each knob and the Modular
       grid remain
-- [ ] 6. Physical controls: default layers, overrides, learn, banks (layers, banks, overrides saved and learn on a panel's knobs done; [status](#step-6-status))
+- [ ] 6. Physical controls: default layers, overrides, learn, banks (layers, banks, overrides saved, learn on a panel's knobs, plugin roles and screen knobs following the editor page done; [status](#step-6-status))
 - [ ] 7. Groups, pedal view, move, copy and share
 - [x] Play: the Performance app's view for the stage ([design](#play-the-performance-apps-first-view), [status](#play-status))
 - [x] The full scene model (blocks and wires enabled per scene, what each scene saves),
@@ -759,14 +759,26 @@ each filling only what the ones above left empty:
    envelope's stages), Amp EG (attack, decay, sustain, release, hold, velocity, key tracking,
    level), EQ (low, mid and high gain and frequencies, mid Q, output) and Levels (element,
    operator or oscillator levels 1 to 8), each taking as many roles as its group is wide; a
-   role the sound lacks is blank. With no roles and no controls, two Assign banks from the
-   part's instrument's first parameters in `oscairn.ui` priority order.
+   role the sound lacks is blank, and a bank with none of its roles is left out. Plugins
+   declare roles in `oscairn.ui` (draft 3, a `role` per parameter hint); a plugin declaring
+   none gets roles from its parameters' names ("Cutoff", "Resonance", "Attack", an "Attack" in
+   a module named for the filter as the filter envelope's, "Wet" as `mix`), never mixed with
+   declared ones. With no role bank filled and no controls, two Assign banks from the part's
+   instrument's first parameters in `oscairn.ui` priority order.
 4. **Conventions**: faders play part levels (parts, then buses), the Levels bank or the audio
    parts' levels by their mode; assign buttons play part mutes, or scenes (`target: scenes`);
    controls with `functions` (wheels, pedals) pass their standard controller to every part;
    with no part selected the knobs follow the Performance's own controls.
 5. **The effects bank**: each effect's main control (its `mix` role, else its first parameter
    by priority) in chain order.
+
+**Screen knobs** play what the screen shows: Play's knob row, or, while a generated editor
+page shows (a Desktop or Panel `ParameterGrid`, or a Compact page), that page's first
+parameters by priority, as many as the group has knobs, in the Editor layer under the page's
+name. The editor gives the engine its page while it shows and withdraws it when hidden
+(`Engine::showScreenPage`); the controller-mapping service reads it into the
+`AssignmentSource` (`screen`), so a controller's screen group follows it, and back in Play the
+screen knobs play the knob row again.
 
 `resolveControls` takes the device's groups and each group's position (page, row or mode);
 `groupPositions` says how many it has. `assignments.get` and `assignments.set` carry overrides
@@ -781,7 +793,12 @@ mute), a scene or a knob (its target); Default removes the override.
 Amp EG's sixth role), the KICK (four encoders paged, fixed knobs, wheel, pads, buttons and
 strip resolving nothing), the MODX M (six screen knobs, four knobs in six rows, eight faders in
 part, element and audio modes), an eight-knob device with assign buttons, overrides (and not on
-screen knobs), refusals, falling through, undo and redo, and saving and loading. It also
+screen knobs), refusals, falling through, undo and redo, and saving and loading; roles
+(2026-11-01): names suggesting roles, the Basic Synth's and Delay's declared roles read through
+the host, its role banks (four wide, Filter with Brightness as the cutoff and blanks after it,
+Amp EG left out; eight wide, Amp EG with only its level), a fixture's "Cutoff" filling Filter
+from its name, a declared role overriding names, and no roles giving Assign banks; and screen
+knobs playing an editor page's first parameters, and the knob row again without one. It also
 checks external controllers (2026-11-01): a controller's knobs numbered after a panel's and
 playing eight-wide banks, its faders part levels, its wheels passed through, scene and mute
 buttons; the mapping service (`ControllerMapping`) picking up an absolute knob at and across
@@ -792,15 +809,23 @@ encoding decoded; and a Sound's own assignments (the mod wheel playing its part'
 knob's when its part is selected, refusals of anything not its own, a Performance override
 over every part's, saving with the Performance). `control-sounds` checks the mod wheel's
 assignment saved with a Sound and replacing the part's own when it is loaded.
-`desktop-shell` checks Play's knobs through the layers, learn, and six screen knobs giving six
-tiles and a six-wide bank; `desktop-profile` checks the new profiles and the groups' refusals.
+`desktop-shell` checks Play's knobs through the layers (the Basic Synth's Filter bank for a part
+with no controls), learn, and six screen knobs giving six tiles and a six-wide bank, and the
+Basic Synth's editor page, shown, giving six screen knobs its Brightness, Level and Oscillator
+first, and hidden, none; `kick-clap-host` checks a declared role kept and an unknown one
+dropped, and `control-json-protocol` the Basic Synth's roles in `params.list`;
+`desktop-profile` checks the new profiles and the groups' refusals.
 Snapshots of Play with four and six knobs, and the app with `--profile modx-m` at 800 x 480,
 were looked at.
 
-Not yet: plugins cannot declare roles (an `oscairn.ui` addition, so the role banks are reached
-only through the API's role function today); screen knobs in an editor following the page's
-top parameters, which waits for the generated editors and the Compact layout (RFC 0019, in
-progress apart from this); no panel layout binds faders, buttons or a row-switching group, so
+Roles and the editor page's screen knobs, 2026-11-01: the Basic Synth declares Brightness as
+its cutoff and Level as its level, and the Delay its Wet as `mix`; Split, Join, Transpose and the
+Step Sequencer have no parameter that fits a role, and the Sampler (its own repository) has
+none yet to declare. A panel layout's own `row:N` knobs still play the line selected in an
+editor (the first by default, which is its top parameters in priority order), as before.
+
+Not yet: name matching beyond exact names (per-oscillator levels, other spellings); the
+Sampler's roles; no panel layout binds faders, buttons or a row-switching group, so
 those resolve but are not yet played, and row buttons have no layout binding; targets for
 sends, bypass and the transport; overrides in a Performance import; MIDI CC learn; reporting
 overrides a device could not apply.
@@ -836,8 +861,7 @@ selecting scenes in Play, a glide's progress on a scene's tile, and the strips' 
 
 ## Open questions
 
-- The extension for plugin roles (cutoff, attack and so on) and structured editor
-  descriptions.
+- Structured editor descriptions beyond `oscairn.ui`'s hints and roles.
 - Whether a part may send from the middle of its chain (sends are post-fader, from its end).
 - How scenes store the bypass and mute state shown in the pedal view.
 - The Ignite's physical controls, and default layouts for each device.

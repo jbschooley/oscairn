@@ -268,9 +268,12 @@ Since then: parameters with 2 to 4 values are rows of buttons (Mono | Poly), lis
 drawn for the type its value text names.
 
 **From the MODX's screens (2026-10-31), still to build:**
-- *Knobs and ranges where a plugin wants them:* done in `oscairn.ui/draft-2`
+- *Knobs and ranges where a plugin wants them:* done in `oscairn.ui/draft-2`, now draft 3
   (`oscairn-clap/ui.h`), a hint per parameter: knob, slider, buttons, switch, list or range
-  (with its high parameter), and a priority. The host reads the hints with the parameters'
+  (with its high parameter), and a priority. Draft 3 adds a role per parameter (cutoff,
+  attack, an effect's mix) for [RFC 0011](0011-performance-ui-and-editors.md#step-6-status)'s
+  role banks, and a device's screen knobs play the editor page shown, its first parameters by
+  priority (Desktop, Panel and Compact). The host reads the hints with the parameters'
   info, keeps each only where it fits, carries them through workers and `params.list`, and
   the pages draw them and order a section's tiles by priority. The Basic Synth gives them.
   `kick-clap-host` checks the host's checks on a fixture's good and bad hints, `worker-host`

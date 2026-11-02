@@ -209,6 +209,8 @@ in the others.
      each control group of the device's profile, overrides saved in the Performance format
      (now version 8) and learn on a panel's knobs done; external MIDI controllers' groups,
      default targets per group and a Sound's own assignments, the mod wheel's among them, done;
+     roles declared in `oscairn.ui` (or from names) filling the role banks, and screen knobs
+     following the editor page shown, done;
      [status](rfcs/0011-performance-ui-and-editors.md#step-6-status))
    - [x] Play, the Performance app's first view ([status](rfcs/0011-performance-ui-and-editors.md#play-status))
    - [x] the full scene model: blocks and wires enabled per scene, and what each scene saves
