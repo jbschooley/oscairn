@@ -110,8 +110,8 @@ gone. MIDI scripts do little arithmetic per block, so an interpreter is fast eno
 target's measurement (step 8) checks that. 5.5's `luaL_openselectedlibs` also makes opening a
 chosen set of libraries direct.
 
-Jacob's request named 5.4. Since 5.4 is now at its last release, this RFC proposes 5.5 instead;
-staying on 5.4 is open below.
+This RFC proposes 5.5, the current release; 5.4 has reached its last release, and staying on it
+is open below.
 
 ### The plugin
 
@@ -333,7 +333,7 @@ engine:
 
 ## Open questions
 
-- Lua 5.5 (proposed) or 5.4, which Jacob's request named; 5.4 has reached its last release.
+- Lua 5.5 (proposed) or 5.4, which has reached its last release.
 - The default and largest arena, the budget's share of the deadline, and the GC step size, from
   step 8's measurements.
 - Shared code between scripts (a `require` limited to scripts in the library) or not.
