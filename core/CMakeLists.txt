@@ -35,7 +35,8 @@ add_library(oscairn_engine STATIC
     engine/src/PreparedInstrument.cpp
     engine/src/midi_input.cpp
     engine/src/transport.cpp
-    engine/src/wav_file.cpp)
+    engine/src/wav_file.cpp
+    engine/src/recorder.cpp)
 target_include_directories(oscairn_engine PUBLIC engine/include)
 target_link_libraries(oscairn_engine PUBLIC oscairn_plugin_host)
 target_compile_options(oscairn_engine PRIVATE -Wall -Wextra)

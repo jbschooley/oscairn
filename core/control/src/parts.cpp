@@ -583,6 +583,101 @@ namespace oscairn
         hold(meters_, parts); hold(wireMeters_, wires);
     }
 
+    // Recording taps (RFC 0020). A part's post-fader tap sums its fader wires as compileWires
+    // gives them to the graph, so it records the part's share of where it plays, in that
+    // destination's channels; pre-fader, the same wires built again without the part's level,
+    // pan, mute and solo. Not strict: a tap that has gone records silence, keeping its file.
+    Recorder::Taps Session::compileTaps(const std::vector<RecordTap>& taps, bool strict)
+    {
+        const auto& layout = graph_.audioLayout();
+        Recorder::Taps out;
+        auto unknown = [&](const char* what) { if(strict) throw std::invalid_argument(what); };
+        // A port's first channel among its node's outputs (graphInput, graphOutput: the layout's ports).
+        auto first = [&](NodeId node, uint32_t port, bool input) -> std::optional<std::pair<uint32_t, const kick::clap::Port*>> {
+            uint32_t offset = 0;
+            if(const auto* list = portsOf(graph_, layout, node, input))
+                for(const auto& p : *list) { if(p.id == port) return std::pair{offset, &p}; offset += p.channels; }
+            return {};
+        };
+        auto port = [&](NodeId node, uint32_t id, bool input, const std::string& name) {
+            Recorder::AudioTap tap{name, 0, {}};
+            if(const auto at = first(node, id, input))
+            {
+                tap.channels = at->second->channels;
+                if(tap.name.empty()) tap.name = at->second->name;
+                for(uint32_t c = 0; c < tap.channels; ++c) tap.sources.push_back({node, at->first + c, c, 1.f});
+            }
+            else unknown("no such audio port");
+            out.audio.push_back(std::move(tap));
+        };
+        for(const auto& t : taps)
+        {
+            using Kind = RecordTap::Kind;
+            if(t.kind == Kind::Output) port(graphOutput, t.port, true, {});
+            else if(t.kind == Kind::Input) port(graphInput, t.port, false, {});
+            else if(t.kind == Kind::Node)
+            {
+                if(!graph_.contains(t.node)) { unknown("unknown node"); out.audio.push_back({"Node " + std::to_string(t.node), 0, {}}); continue; }
+                auto id = t.port;
+                const auto& ports = graph_.host(t.node).outputPorts();
+                if(!t.port && std::none_of(ports.begin(), ports.end(), [](const auto& p) { return p.id == 0; }) && sendsAudio(graph_, layout, t.node)) id = mainPort(graph_, layout, t.node, false);
+                std::string name = nodes_.count(t.node) && !nodes_.at(t.node).empty() ? nodes_.at(t.node) : graph_.host(t.node).descriptor().name;
+                if(ports.size() > 1) for(const auto& p : ports) if(p.id == id) name += " " + p.name;
+                port(t.node, id, false, name);
+            }
+            else if(t.kind == Kind::Part)
+            {
+                const auto part = std::find_if(parts_.begin(), parts_.end(), [&](const Part& p) { return p.id == t.part; });
+                if(part == parts_.end()) { unknown("unknown part"); out.audio.push_back({"Part " + std::to_string(t.part), 0, {}}); continue; }
+                std::vector<Wire> wires = wires_;
+                if(t.preFader)
+                {
+                    const auto parts = parts_; const auto next = nextWire_;
+                    for(auto& p : parts_) p.solo = false;
+                    auto open = *part; open.level = 1; open.pan = 0; open.mute = false;
+                    buildPart(open);
+                    wires.swap(wires_);
+                    parts_ = parts; nextWire_ = next;
+                }
+                std::set<std::pair<NodeId, uint32_t>> soloed;
+                for(const auto& w : wires) if(w.kind == WireKind::Audio && w.solo) soloed.insert({w.to, w.toPort});
+                std::map<std::tuple<NodeId, uint32_t, uint32_t>, double> gains;
+                Recorder::AudioTap tap{part->name.empty() ? "Part " + std::to_string(part->id) : part->name, 0, {}};
+                if(t.preFader) tap.name += " pre-fader";
+                for(const auto& w : wires)
+                {
+                    if(w.kind != WireKind::Audio || w.owner != WireOwner::Part || w.part != part->id || !w.fader) continue;
+                    if(const auto m = channelsOf(graph_, layout, w.to, w.toPort, true)) tap.channels = std::max(tap.channels, *m);
+                    const bool silent = w.mute || (soloed.count({w.to, w.toPort}) && !w.solo) || !w.enabled || disabled_.count(w.to) || rungOut_.count(w.from);
+                    const auto at = first(w.from, w.fromPort, false);
+                    const auto compiled = pairs(graph_, layout, w, w.level);
+                    if(silent || !at || !compiled) continue;
+                    for(const auto& p : *compiled) gains[{w.from, at->first + p.from, p.to}] += p.gain;
+                }
+                for(const auto& [k, gain] : gains) tap.sources.push_back({std::get<0>(k), std::get<1>(k), std::get<2>(k), float(gain)});
+                if(!tap.channels) tap.channels = 2; // plays nowhere now: silent
+                out.audio.push_back(std::move(tap));
+            }
+            else if(t.part)
+            {
+                const auto part = std::find_if(parts_.begin(), parts_.end(), [&](const Part& p) { return p.id == t.part; });
+                if(part == parts_.end()) unknown("unknown part");
+                Recorder::NoteTap tap{part == parts_.end() || part->name.empty() ? "Part " + std::to_string(t.part) : part->name, {}, false};
+                // What the part receives: what its first plugins (each lane's, after a split) take from the graph input.
+                for(const auto& w : wires_) if(w.kind == WireKind::Notes && w.owner == WireOwner::Part && w.part == t.part && w.from == graphInput) tap.nodes.push_back(w.to);
+                out.notes.push_back(std::move(tap));
+            }
+            else if(t.node)
+            {
+                if(!graph_.contains(t.node)) unknown("unknown node");
+                const auto name = nodes_.count(t.node) && !nodes_.at(t.node).empty() ? nodes_.at(t.node) : "Node " + std::to_string(t.node);
+                out.notes.push_back({name, {t.node}, true});
+            }
+            else out.notes.push_back({"Input", {graphInput}, false});
+        }
+        return out;
+    }
+
     std::vector<PartMeter> Session::partMeters() const
     {
         std::vector<PartMeter> out;

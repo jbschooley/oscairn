@@ -401,7 +401,8 @@ Also open:
   ([RFC 0011](rfcs/0011-performance-ui-and-editors.md#the-controller-mapping-service))
 - [ ] recording as an engine service: any graph input, output, part or bus and the notes
   played, to WAV/RF64 off the audio thread, with retroactive capture
-  ([RFC 0020](rfcs/0020-recording.md), proposed)
+  ([RFC 0020](rfcs/0020-recording.md)); started: takes of outputs, inputs, plugin ports, parts
+  and notes to float WAV and a MIDI file, over the control API (steps 1 and 2)
 
 Plugins and apps (sequencers, instruments, the UI) must stay separate components, each in
 its own folder with its own build target and depending only on Oscairn's public headers, so

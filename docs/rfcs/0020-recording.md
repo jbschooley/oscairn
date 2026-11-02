@@ -1,6 +1,7 @@
 # RFC 0020: Recording
 
-Status: proposed, 2026-10-31. Not implemented. Makes concrete the "bus recording" the
+Status: proposed, 2026-10-31; steps 1 and 2 built 2026-11-01, in part
+([step 1 status](#step-1-status), [step 2 status](#step-2-status)). Makes concrete the "bus recording" the
 [architecture](../architecture.md#layers) gives the host core, and the groovebox table's
 "the core records any bus; the UI decides where the result goes"
 ([architecture](../architecture.md#sounds-performances-and-projects)). Builds on the graph
@@ -13,8 +14,9 @@ and parts ([RFC 0011](0011-performance-ui-and-editors.md)), the event timeline o
 
 Checked when built and tested; the sections below say how.
 
-- [ ] 1. Capture core
-- [ ] 2. Parts and notes
+- [x] 1. Capture core ([status](#step-1-status); `bext`, RF64, cue points, journal repair and
+  notifications not yet)
+- [x] 2. Parts and notes ([status](#step-2-status); more MIDI messages into the graph not yet)
 - [ ] 3. Retroactive capture and sync
 - [ ] 4. Control API and UI
 - [ ] 5. Inputs and multitrack
@@ -34,7 +36,7 @@ Oscairn cannot record anything. Three uses need it:
 The architecture already names the pieces: the host core owns bus recording, a DJ setup
 has recording buses, and the Phase 5 list asks for a recorder. Nothing says how it works.
 
-There is no recording code today. The offline renderer writes a whole buffer to a 32-bit
+There was no recording code before step 1. The offline renderer writes a whole buffer to a 32-bit
 float WAV file in one call (`writeWavFile` in `core/engine/include/oscairn/wav_file.h`),
 which is not usable while playing.
 
@@ -386,7 +388,8 @@ Main, which this design covers.
 
 ## Control API
 
-Proposed only; [control-protocol.md](../control-protocol.md) is unchanged until it is built.
+`record.start`, `record.stop`, `record.get` and `record.takes` are built, in the subset the
+[control protocol](../control-protocol.md#recording) documents; the rest is proposed.
 Capability `record`.
 
 | Method | `params` | `result` |
@@ -458,6 +461,98 @@ Kept to the minimum:
 | 3. Retroactive capture and sync | Retroactive rings in the memory budget; `secondsAgo`, bar lines past and next, lengths in bars, punch on the transport | On the i.MX8M Mini target, Capture during a heavy Performance adds no deadline misses (measured, with the copy cost reported); a take from the next bar starts on the bar line's exact sample in an offline render |
 | 4. Control API and UI | The methods and notifications above; Capture and record on the desktop and the panel; the Recordings pane; drag into the Sampler | Over the socket: capture the last 10 seconds, prepare a Sampler sound from the file and play it, with no file path typed |
 | 5. Inputs and multitrack | Device latency reports and loopback measurement; input offsets; input meters; drive throughput measurement and admission | A click played out and recorded back lines up with the internal click within a few samples; 16 inputs at 48 kHz, 24-bit, recorded for an hour to an SD card on the target with no overrun |
+
+### Step 1 status
+
+Built 2026-11-01 and checked by the `control-recording` test (`core/control/tests/recording.cpp`),
+offline, with no audio device:
+
+- `Recorder` (`core/engine/include/oscairn/recorder.h`): per-tap rings of interleaved 32-bit
+  float, allocated, filled and `mlock`ed on the control thread (best effort), a tap table
+  handed to the audio thread through an atomic pointer, and one writer thread per take.
+  `Session::process` calls it before and after the graph; the graph tells it each node's
+  events through `Graph::Listener` and hands it a node's output buffers through
+  `Graph::audioOutput`. Taps on graph outputs, graph inputs and node output ports.
+- Files: 32-bit float WAV whose header sizes are rewritten every 2 seconds and at the end;
+  `take.json` written at the start (state `recording`) and at the end. The typed
+  `Control::recordStart`, `recordStop` and `recordTakes`, and their JSON-RPC methods and
+  `RemoteControl` calls.
+- Overrun: a span the writer lost to a lap is written as silence and reported with its exact
+  range in `record.takes` and `take.json`. Disk full: the writer stops before the reserve
+  (64 MiB), closes the files with correct headers and fails the take with `diskFull`. A short
+  write fails the take with the reason; that path is untested.
+- The test checks: a take of Main against the rendered output sample for sample, at maximum
+  blocks of 256 and 32 frames with uneven blocks; no allocation on the audio thread under the
+  allocation guard; a writer stalled on purpose giving one overrun with the exact range, silence
+  there and the rest aligned; a drive "full" by its reserve leaving a valid WAV; the rings'
+  memory as sized below, constant through a take and freed after it; a graph input tap equal to
+  what came in, and a plugin's output port tap equal to its part's pre-fader tap.
+
+Decisions made while building it:
+
+- **Lapping.** The audio thread never waits: it overwrites the ring. The writer copies, then
+  reads the write count again; a frame is intact only while it is more than a ring, less one
+  block, behind the count, since the audio thread may be writing up to a block past it. So an
+  overrun loses up to one block more than strictly needed.
+- **The timeline** is the session's count of processed frames, not `Transport::now_`, which
+  starts again when a Performance changes. RFC 0004's epoch is not there yet.
+- **One take at a time.** A second `record.start` is refused (`busy`). Starting and stopping on a
+  bar line, lengths and several takes at once come with step 3.
+- **Taps follow edits.** The session compiles the tap table again when its wires or graph
+  revision change, checked at each `service()`. Until then a part tap keeps the old gains: the
+  graph takes a commit at its next block, the tap table at the block after the next
+  `service()`. Exact when `service()` runs between the commit and the next block, as in the
+  test; otherwise off for at most one service period.
+- **Memory.** A live tap's ring is 10 seconds by default (`Recorder::setRingSeconds`), at least
+  four blocks: 3.84 MB per stereo tap at 48 kHz, plus one block of scratch per tap and the notes
+  ring (65,536 events of 16 bytes, 1 MiB). `Recorder::committedBytes()` reports what is
+  allocated. **RFC 0025:** a budget should count `committedBytes()` while a take records, and
+  reserve the retroactive rings (step 3) as a fixed amount: 46 MB for 2 minutes of stereo Main
+  at 48 kHz, 230 MB for 10, plus 1 MiB of notes. Not wired to a budget yet.
+- **The takes list** is this engine run's. Finding earlier takes by scanning `recordings/`
+  comes with step 4's Recordings pane.
+
+Not built yet: the `bext` chunk, RF64 past 4 GiB (sizes saturate there today), cue points for
+overruns, the journal and header repair at startup, the "falling behind" and overrun
+notifications (the `record` topic), the drive's measured write rate, and a take's channel
+counts reported when a replacement changes them (extra channels are dropped, missing ones
+silent, as the RFC says, but not reported).
+
+### Step 2 status
+
+Built 2026-11-01 and checked by the same test:
+
+- Part taps, post- and pre-fader. Post-fader sums the part's fader wires with the gains
+  `compileWires` gives the graph, including mute and the input Mix's solo. Pre-fader builds the
+  part's wires again with level 1, pan 0, no mute and no part soloed, so lanes keep their own
+  Mix. A bus is a part with a bus input, so bus taps take the same path (untested).
+- Note taps, each a track of `Notes.mid`: the events entering the graph; those a part's first
+  plugins receive from the graph input, after the part's zones (`Graph::Listener`); those a
+  plugin sends (untested: no first-party plugin in the test sends notes). Standard MIDI File type 1, 960 ticks per quarter, track 0 the tempo map from
+  the tempo at each block start.
+- The test checks: the post-fader taps of two parts playing to Main sum to Main through a fader
+  move and a mute; a muted part records silence; pre-fader is the part before its level; notes
+  land on the tick their sample gives at 120 BPM in the graph input's and a part's tracks, and
+  `take.json` keeps the first note's exact sample; an unknown part is refused; a second take is
+  refused; and `record.start`, `record.get`, `record.stop` and `record.takes` over JSON-RPC.
+
+Decisions made while building it:
+
+- **A part tap's channels are where it plays**, the destination port's channels, not the meter
+  rule in the table above: a mono synth panned into stereo Main records stereo, so the pan is
+  in the file and the post-fader taps sum to Main.
+- **Sum to Main within one rounding**, not bit for bit: the graph's mix may fuse a multiply and
+  an add, which the tap's separate sum does not. A take of Main itself is exact.
+- **A split part's lanes share its note track**; a note that two lanes both take appears twice.
+- **The graph input's track keeps no source** (note_zone.h's MIDI input number).
+- **Velocity and pressure** are rounded to 7 bits; note-ons at velocity 0 become 1. Wildcard
+  note-offs, chokes and note expressions other than pressure have no MIDI form and are counted
+  in `droppedNotes`. Parameter events are not notes and are left out.
+- **Events stay in the writer's memory until the take closes**, 16 bytes each; streaming them
+  for takes of many hours is left for later.
+
+Not built yet: more MIDI messages into the graph (`midiToClap` still drops other controllers
+and program changes), the per-take tempo map with changes inside a block, and `record.notes`.
 
 ## Open questions
 

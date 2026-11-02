@@ -180,6 +180,10 @@ namespace oscairn
         void setClockSource( Transport::ClockSource source ) override { clockSource_.store( source ); }
         Transport::ClockSource clockSource() const override { return clockSource_.load(); }
         TransportState transportState() const override;
+        uint32_t recordStart( const std::vector<RecordTap>& taps = {}, const std::string& name = {} ) override;
+        void recordStop( uint32_t take ) override;
+        std::vector<Take> recordTakes() const override { return recorder_.takes(); }
+        Recorder& recorder() noexcept { return recorder_; } // its ring length, disk reserve and test hooks
         bool note( bool on, int key, double velocity, int channel = 0 ) override;
         void allNotesOff() override { panic_.store( true, std::memory_order_release ); } // the queue overflow's emergency release
         void ignoreMidiInputs( const std::vector<std::string>& names ) override;
@@ -423,6 +427,12 @@ namespace oscairn
         std::map<NodeId,uint64_t> outputDrops_;
         std::map<NodeId,uint64_t> parameterRevisions_; // each plugin's parameter info as last seen
         Transport transport_; // audio thread after construction
+        // Recording (RFC 0020): the taps asked for, compiled again when the wires change.
+        Recorder recorder_;
+        std::vector<RecordTap> recordTaps_;
+        std::vector<Wire> recordWires_;
+        uint64_t recordRevision_ = 0;
+        Recorder::Taps compileTaps( const std::vector<RecordTap>& taps, bool strict ); // parts.cpp; strict: an unknown tap throws
         Transport::ClockSource following_ = Transport::ClockSource::Internal;
         std::atomic<bool> playing_{ false };
         std::atomic<double> tempo_{ 120.0 };

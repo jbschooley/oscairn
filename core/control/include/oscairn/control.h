@@ -4,6 +4,7 @@
 #include "oscairn/graph.h"
 #include "oscairn/parts.h"
 #include "oscairn/pads.h"
+#include "oscairn/recorder.h"
 #include "oscairn/transport.h"
 #include <oscairn-clap/ui.h>
 
@@ -403,5 +404,24 @@ namespace oscairn
         // the control's logical identity. Assigning Kind::None removes one; saved with it.
         virtual std::vector<AssignmentOverride> assignments() const = 0;
         virtual void assign( const std::string& control, const Assignment& target, uint32_t part = 0 ) = 0; // part: that part's Sound's own assignment
+
+        // Recording (RFC 0020): a take records taps, each to its own file in a folder of its own
+        // under the data folder's recordings/, from the next block until it is stopped. Taps:
+        // a graph output or input port (port), a part after or before its fader (part), a
+        // plugin's audio output port (node, port), and notes: those entering the graph, those a
+        // part receives (part) or a plugin sends (node), one track each in the take's MIDI file.
+        // No taps: Main and the notes entering the graph. One take at a time: throws
+        // std::invalid_argument for an unknown tap, std::logic_error while another records.
+        struct RecordTap
+        {
+            enum class Kind { Output, Input, Part, Node, Notes } kind = Kind::Output;
+            uint32_t port = 0, part = 0;
+            NodeId node = 0;
+            bool preFader = false; // parts
+        };
+        using Take = Recorder::Take;
+        virtual uint32_t recordStart( const std::vector<RecordTap>& taps = {}, const std::string& name = {} ) = 0;
+        virtual void recordStop( uint32_t take ) = 0; // the take ends at the next block; its files close after
+        virtual std::vector<Take> recordTakes() const = 0; // this session's, oldest first
     };
 }

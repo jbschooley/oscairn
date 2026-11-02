@@ -426,6 +426,7 @@ Example:
 | -32004 | Plugin failed to load |
 | -32005 | Pending command store or UI note queue refused a command |
 | -32006 | Message, nesting or batch limit exceeded |
+| -32007 | Recording refused; `data.reason` says why ([Recording](#recording)) |
 
 Input is limited to 65,536 bytes, 32 nested arrays/objects and 64 requests per batch.
 The adapter checks byte/depth limits before parsing and batch size before dispatching any
@@ -725,6 +726,47 @@ The current note/tail audio is not saved. Resource/state/format failures use `-3
 malformed RPC arguments use `-32602`. These control-thread calls can take time; remote
 wrappers allow 30 seconds, and callers must reread the graph after a timeout before retrying
 because a disconnected request is not cancellation. The app runs them on its control worker.
+
+## Recording
+
+[RFC 0020](rfcs/0020-recording.md) steps 1 and 2. The engine records taps into a take: one
+file per tap, all starting and ending on the same sample, in a folder of its own under the
+data folder's `recordings/` (`OSCAIRN_DATA_HOME/recordings`, beside `assets`), named by its
+local start time and the Performance or the given name: `2026-11-01 21-04-17 Open Road/`.
+
+- `record.start` takes optional `taps` and `name`, and returns `{take}`. Each tap is
+  `{kind}` with:
+  - `output`, `port`: a graph output port, as heard; `input`, `port`: a graph input port;
+  - `part`, `part`, optional `fader` (`post`, the default, or `pre`): the part's sound summed
+    from the wires to where it plays, after or before its level, pan, mute and solo, in that
+    destination's channels;
+  - `node`, `node`, optional `port`: one of a plugin's audio output ports (its main one when
+    `port` is absent and it has no port 0);
+  - `notes`: the events entering the graph; with `part`, those the part's first plugins
+    receive; with `node`, those a plugin sends.
+
+  Without `taps`, Main (the first output port) and the notes entering the graph. Audio taps
+  are 32-bit float WAV files named after the port, part or plugin (`Main.wav`, `Lead.wav`,
+  `Lead pre-fader.wav`); note taps are tracks of one Standard MIDI File, `Notes.mid` (type 1,
+  960 ticks per quarter, track 0 the tempo map). The take starts at the next block. One take
+  records at a time. Refusals are `-32007` with `data.reason`: `unknownTap`, `busy` (a take is
+  recording) or `drive` (the folder could not be made).
+- `record.stop` takes `{take}` and returns `{"accepted":true}`; the take ends at the next block
+  and its files close after. `-32602` for a take that is not recording.
+- `record.takes` (`{}`) returns `{takes}`, this engine run's takes, oldest first, each
+  `{take,state,folder,files,start,frames,overruns,droppedNotes,error}`. `state` is
+  `recording`, `finishing`, `done` or `failed`; `start` the first sample on the engine's
+  timeline; `frames` those written to each file so far; `overruns` each span the writer fell a
+  whole ring behind, `{start,frames}` from the take's start, written as silence so the files
+  stay aligned; `droppedNotes` the events the notes ring had no room for or that have no MIDI
+  form; `error` why a take failed (`diskFull` when the drive came within 64 MiB of full).
+- `record.get` (`{}`) returns `{recording,takes}`: the take recording, 0 for none, and the
+  same takes.
+
+Each take folder also holds `take.json`: its sample rate, start, frames, tempo and beat at the
+start, files, overruns, dropped notes and the first note's exact sample. Written when the take
+starts, with `state` `recording`, and again when it closes. The typed methods are
+`Control::recordStart`, `recordStop` and `recordTakes`.
 
 ## Library
 

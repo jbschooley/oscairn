@@ -658,6 +658,36 @@ namespace oscairn
         auto reply=impl_->call("parts.addLane","{\"part\":"+std::to_string(part)+",\"split\":"+std::to_string(split)+'}');
         const auto lane=static_cast<uint32_t>(integer(field(field(reply.get(),"result"),"lane")));impl_->refresh();return lane;
     }
+    uint32_t RemoteControl::recordStart(const std::vector<RecordTap>& taps,const std::string& name)
+    {
+        static const char* const kinds[]{"output","input","part","node","notes"};
+        std::string list;
+        for(const auto& t:taps)
+        {
+            list+=std::string(list.empty()?"":",")+"{\"kind\":\""+kinds[size_t(t.kind)]+"\"";
+            if(t.port)list+=",\"port\":"+std::to_string(t.port);
+            if(t.part)list+=",\"part\":"+std::to_string(t.part);
+            if(t.node)list+=",\"node\":"+std::to_string(t.node);
+            if(t.preFader)list+=",\"fader\":\"pre\"";
+            list+='}';
+        }
+        auto d=impl_->call("record.start","{\"taps\":["+list+"],\"name\":"+quote(name)+'}',30000);
+        return static_cast<uint32_t>(integer(field(field(d.get(),"result"),"take")));
+    }
+    void RemoteControl::recordStop(uint32_t take){impl_->call("record.stop","{\"take\":"+std::to_string(take)+'}');}
+    std::vector<Control::Take> RemoteControl::recordTakes() const
+    {
+        auto d=impl_->call("record.takes");std::vector<Take> out;
+        for(auto v:array(field(field(d.get(),"result"),"takes")))
+        {
+            Take t{static_cast<uint32_t>(integer(field(v,"take"))),string(field(v,"state")),string(field(v,"folder")),string(field(v,"error")),{},
+                   integer(field(v,"start")),integer(field(v,"frames")),{},integer(field(v,"droppedNotes"))};
+            for(auto f:array(field(v,"files")))t.files.push_back(string(f));
+            for(auto o:array(field(v,"overruns")))t.overruns.push_back({integer(field(o,"start")),integer(field(o,"frames"))});
+            out.push_back(std::move(t));
+        }
+        return out;
+    }
     Control::History RemoteControl::history() const
     {
         auto reply=impl_->call("edit.history");auto r=field(reply.get(),"result");

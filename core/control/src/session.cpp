@@ -1,7 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #include "oscairn/session.h"
 
+#include "oscairn/library.h"
+
 #include <algorithm>
+#include <chrono>
+#include <cstring>
+#include <ctime>
 #include <iterator>
 #include <cmath>
 #include <stdexcept>
@@ -9,16 +14,17 @@
 namespace oscairn
 {
     Session::Session( double sampleRate, uint32_t maxFrames, Lv2BufferLimits lv2Buffers, AudioLayout audio )
-        : sampleRate_( sampleRate ), maxFrames_( maxFrames ), graph_( sampleRate, maxFrames, ProcessingMode::Realtime, lv2Buffers, std::move(audio) ), transport_( sampleRate )
+        : sampleRate_( sampleRate ), maxFrames_( maxFrames ), graph_( sampleRate, maxFrames, ProcessingMode::Realtime, lv2Buffers, std::move(audio) ), transport_( sampleRate ), recorder_( sampleRate, maxFrames )
     {
         if( !std::isfinite( sampleRate ) || sampleRate <= 0 || maxFrames == 0 )
             throw std::invalid_argument( "session needs a positive sample rate and block size" );
         graph_.setAssets( &assets_ );
+        graph_.setListener( &recorder_ );
         transport_.setPlaying( false );
         baseline_ = std::make_shared<const Model>( model() );
     }
 
-    Session::~Session() { if( budget_.cpu > 0 ) saveMeasurements(); }
+    Session::~Session() { graph_.setListener( nullptr ); if( budget_.cpu > 0 ) saveMeasurements(); }
 
     // With a budget (RFC 0025), a plugin that would take the Performance past it is refused and
     // unloaded again; what this process grew by while an in-process plugin loaded is its memory.
@@ -334,6 +340,13 @@ namespace oscairn
         if( prepared_ ) prepared_->next->service(); // its plugins' main-thread callbacks while it waits
         ringOut();
         meter();
+        recorder_.service();
+        // A recording's taps follow the wires: a fader moved, a plugin replaced, a Performance changed.
+        if( recorder_.recording() && ( revision_ != recordRevision_ || wires_ != recordWires_ ) )
+        {
+            recorder_.update( compileTaps( recordTaps_, false ) );
+            recordRevision_ = revision_; recordWires_ = wires_;
+        }
         measure();
         if( !staged_ ) record(); // changes that need no commit (scenes, controls, pads) are steps too
         advanceScenes();
@@ -484,10 +497,44 @@ namespace oscairn
         statusPlaying_.store( ( t.flags & CLAP_TRANSPORT_IS_PLAYING ) != 0 );
         statusTempo_.store( t.tempo );
         statusBeat_.store( (double)t.song_pos_beats / (double)CLAP_BEATTIME_FACTOR );
+        recorder_.begin( framesProcessed_.load( std::memory_order_relaxed ), t.tempo, statusBeat_.load() );
+        recorder_.graphEvents( merged_.data(), (uint32_t)count );
         const bool ok = graph_.process( inputs, ni, outputs, no, frames, &t, merged_.data(), (uint32_t)count, false, mergedSources_.data() );
+        recorder_.end( graph_, outputs, no, frames );
         transport_.advance( frames );
         framesProcessed_.fetch_add( frames, std::memory_order_relaxed );
         blockFrames_.store( frames, std::memory_order_relaxed );
         return ok;
+    }
+
+    uint32_t Session::recordStart( const std::vector<RecordTap>& asked, const std::string& name )
+    {
+        auto taps = asked;
+        if( taps.empty() )
+        {
+            if( graph_.audioLayout().outputs.empty() ) throw std::invalid_argument( "no graph output to record" );
+            taps = { { RecordTap::Kind::Output, graph_.audioLayout().outputs.front().id }, { RecordTap::Kind::Notes } };
+        }
+        auto compiled = compileTaps( taps, true );
+        // A folder per take, named by its local start time and the Performance (RFC 0020).
+        const auto now = std::chrono::system_clock::to_time_t( std::chrono::system_clock::now() );
+        std::tm local{};
+        localtime_r( &now, &local );
+        char stamp[32];
+        std::strftime( stamp, sizeof stamp, "%Y-%m-%d %H-%M-%S", &local );
+        std::string title = name.empty() ? info_.name : name;
+        for( auto& c : title ) if( static_cast<unsigned char>( c ) < 0x20 || std::strchr( "<>:\"/\\|?*", c ) ) c = '_';
+        const auto base = dataHome() / "recordings" / ( title.empty() ? std::string( stamp ) : std::string( stamp ) + " " + title );
+        auto folder = base;
+        for( int n = 2; std::filesystem::exists( folder ); ++n ) folder = base.string() + " " + std::to_string( n );
+        const auto take = recorder_.start( folder, compiled, title );
+        recordTaps_ = taps; recordWires_ = wires_; recordRevision_ = revision_;
+        return take;
+    }
+
+    void Session::recordStop( uint32_t take )
+    {
+        if( !take || take != recorder_.recording() ) throw std::invalid_argument( "that take is not recording" );
+        recorder_.stop();
     }
 }

@@ -395,7 +395,7 @@ namespace oscairn
             if( method == "session.hello" )
             {
                 fields(p, {});
-                return R"({"protocolVersion":1,"server":"oscairn","capabilities":["performance.save","performance.load","performance.prepare","performance.export","budget.set","budget.estimate","performance.info","performance.setInfo","library.query","library.favorite","library.tag","library.edit","library.copy","library.export","audition.start","audition.stop","audition.get","library.rescan","library.contents","library.install","library.libraries","library.uninstall","library.delete","library.save","library.load","parts.saveSound","parts.loadSound","parts.fromSound","performance.contents","performance.import","state.info","state.save","presets.list","properties.list","properties.get","properties.set","properties.request","sounds.get","sounds.prepare","sounds.select","sounds.discard","assets.register","assets.import","assets.libraries","session.status","engine.attach","engine.release","params.list","params.get","params.set","params.text","params.gesture","graph.audio-routing","graph.get","graph.add","effects.create","effects.resources","graph.remove","graph.replace","graph.connect","graph.disconnect","graph.map","graph.unmap","graph.commit","parts.add","parts.remove","parts.insert","parts.removeNode","parts.move","parts.addSplit","parts.removeSplit","parts.addLane","parts.removeLane","parts.lane","parts.input","parts.output","parts.send","parts.level","parts.name","parts.solo","parts.pan","parts.meters","wires.meters","edit.undo","edit.redo","edit.history","wires.connect","wires.disconnect","wires.enable","graph.enable","wires.mix","wires.zones","scenes.add","scenes.store","scenes.select","scenes.remove","scenes.name","scenes.scope","scenes.transition","scenes.untouched","controls.add","controls.remove","controls.name","controls.targets","controls.set","subscribe","unsubscribe","transport.get","transport.set","notes.send","notes.panic","midi.ignore","pads.get","pads.set","pads.play","pads.pressure","assignments.get","assignments.set"],"limits":{"messageBytes":65536,"depth":32,"batch":64,"parameterChanges":128}})";
+                return R"({"protocolVersion":1,"server":"oscairn","capabilities":["performance.save","performance.load","performance.prepare","performance.export","budget.set","budget.estimate","performance.info","performance.setInfo","library.query","library.favorite","library.tag","library.edit","library.copy","library.export","audition.start","audition.stop","audition.get","record.start","record.stop","record.get","record.takes","library.rescan","library.contents","library.install","library.libraries","library.uninstall","library.delete","library.save","library.load","parts.saveSound","parts.loadSound","parts.fromSound","performance.contents","performance.import","state.info","state.save","presets.list","properties.list","properties.get","properties.set","properties.request","sounds.get","sounds.prepare","sounds.select","sounds.discard","assets.register","assets.import","assets.libraries","session.status","engine.attach","engine.release","params.list","params.get","params.set","params.text","params.gesture","graph.audio-routing","graph.get","graph.add","effects.create","effects.resources","graph.remove","graph.replace","graph.connect","graph.disconnect","graph.map","graph.unmap","graph.commit","parts.add","parts.remove","parts.insert","parts.removeNode","parts.move","parts.addSplit","parts.removeSplit","parts.addLane","parts.removeLane","parts.lane","parts.input","parts.output","parts.send","parts.level","parts.name","parts.solo","parts.pan","parts.meters","wires.meters","edit.undo","edit.redo","edit.history","wires.connect","wires.disconnect","wires.enable","graph.enable","wires.mix","wires.zones","scenes.add","scenes.store","scenes.select","scenes.remove","scenes.name","scenes.scope","scenes.transition","scenes.untouched","controls.add","controls.remove","controls.name","controls.targets","controls.set","subscribe","unsubscribe","transport.get","transport.set","notes.send","notes.panic","midi.ignore","pads.get","pads.set","pads.play","pads.pressure","assignments.get","assignments.set"],"limits":{"messageBytes":65536,"depth":32,"batch":64,"parameterChanges":128}})";
             }
             if( method == "engine.attach" || method == "engine.release" )
             {
@@ -463,6 +463,47 @@ namespace oscairn
             if(method=="audition.get") {
                 fields(p,{});const auto a=c.audition();
                 return "{\"id\":"+quote(a.id)+",\"kind\":"+quote(a.kind)+",\"part\":"+std::to_string(a.part)+'}';
+            }
+            // RFC 0020: recording.
+            if(method=="record.start") {
+                fields(p,{"taps","name"});
+                std::vector<Control::RecordTap> taps;
+                if(member(p,"taps"))for(auto v:array(member(p,"taps"),256,0)){
+                    fields(v,{"kind","port","part","node","fader"});
+                    Control::RecordTap t;const auto kind=string(member(v,"kind"));
+                    using K=Control::RecordTap::Kind;
+                    if(kind=="output")t.kind=K::Output;else if(kind=="input")t.kind=K::Input;else if(kind=="part")t.kind=K::Part;
+                    else if(kind=="node")t.kind=K::Node;else if(kind=="notes")t.kind=K::Notes;else invalid("Unknown tap kind");
+                    if(member(v,"port"))t.port=integer(member(v,"port"));
+                    if(member(v,"part"))t.part=integer(member(v,"part"));
+                    if(member(v,"node"))t.node=node(c,member(v,"node"));
+                    if(member(v,"fader")){const auto f=string(member(v,"fader"));if(f!="post" && f!="pre")invalid("fader is post or pre");t.preFader=f=="pre";}
+                    taps.push_back(t);
+                }
+                const auto refused=[](const std::exception& e,const char* reason){return Failure{-32007,e.what(),std::string("{\"reason\":\"")+reason+"\"}"};};
+                try{return "{\"take\":"+std::to_string(c.recordStart(taps,member(p,"name")?std::string(string(member(p,"name"))):std::string()))+'}';}
+                catch(const std::invalid_argument& e){throw refused(e,"unknownTap");}
+                catch(const std::logic_error& e){throw refused(e,"busy");}
+                catch(const std::exception& e){throw refused(e,"drive");}
+            }
+            if(method=="record.stop") {
+                fields(p,{"take"});
+                try{c.recordStop(integer(member(p,"take")));}catch(const std::invalid_argument& e){throw Failure{-32602,e.what()};}
+                return R"({"accepted":true})";
+            }
+            if(method=="record.get" || method=="record.takes") {
+                fields(p,{});
+                std::vector<std::string> takes;uint32_t recording=0;
+                for(const auto& t:c.recordTakes()){
+                    if(t.state=="recording")recording=t.take;
+                    std::vector<std::string> files,overruns;
+                    for(const auto& f:t.files)files.push_back(quote(f));
+                    for(const auto& o:t.overruns)overruns.push_back("{\"start\":"+std::to_string(o.start)+",\"frames\":"+std::to_string(o.frames)+'}');
+                    takes.push_back("{\"take\":"+std::to_string(t.take)+",\"state\":"+quote(t.state)+",\"folder\":"+quote(t.folder)+",\"files\":"+join(files)+
+                        ",\"start\":"+std::to_string(t.start)+",\"frames\":"+std::to_string(t.frames)+",\"overruns\":"+join(overruns)+
+                        ",\"droppedNotes\":"+std::to_string(t.droppedNotes)+",\"error\":"+quote(t.error)+'}');
+                }
+                return method=="record.get"?"{\"recording\":"+std::to_string(recording)+",\"takes\":"+join(takes)+'}':"{\"takes\":"+join(takes)+'}';
             }
             if(method=="library.export") {
                 fields(p,{"id","file","editedSounds"});
