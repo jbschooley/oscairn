@@ -63,7 +63,7 @@ namespace oscairn
         std::string savePerformanceToLibrary(const std::string& name, bool asNew = false) override;
         void loadPerformanceFromLibrary(const std::string& id) override;
         Archive archiveContents(const std::string& file) override;
-        Installed installArchive(const std::string& file, bool asLibrary, const std::vector<std::string>& items = {}) override;
+        Installed installArchive(const std::string& file, bool asLibrary, const std::vector<std::string>& items = {}, bool acceptUnsignedCode = false) override;
         std::vector<InstalledLibrary> libraries() override;
         void uninstallLibrary(const std::string& library) override;
         void deleteLibraryItem(const std::string& item) override;
@@ -459,6 +459,7 @@ namespace oscairn
         static std::vector<assets::Ref> assetsOf(const std::filesystem::path& manifest);
         std::vector<std::string> exportArchive(const std::string& file, const std::string& kind, const std::function<std::vector<PartSource>(const std::filesystem::path&, Package&)>& write, bool editedSounds, const ExportSigning& sign);
         static signing::Key signingKey(const std::string& name); // Keys/<name>.key in the data folder
+        static Signer judge(const std::string& kind, const std::vector<signing::Signature>& signatures); // against the trust store
         uint64_t revision_ = 0, sequence_ = 0;
         using Address = std::pair<NodeId,uint32_t>;
         struct Command { ChangeKind kind; double value; };

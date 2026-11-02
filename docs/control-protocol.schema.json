@@ -2950,6 +2950,10 @@
                     "minLength": 1,
                     "maxLength": 64
                   }
+                },
+                "acceptUnsignedCode": {
+                  "type": "boolean",
+                  "description": "The user said yes to plugin builds unsigned or signed by an unknown key"
                 }
               },
               "required": [

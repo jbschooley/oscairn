@@ -587,19 +587,23 @@ namespace oscairn
             // Libraries from archives (RFC 0021).
             if(method=="library.contents" || method=="library.install") {
                 const bool install=method=="library.install";
-                if(install)fields(p,{"file","asLibrary","items"});else fields(p,{"file"});
+                if(install)fields(p,{"file","asLibrary","items","acceptUnsignedCode"});else fields(p,{"file"});
                 const auto file=std::string(string(member(p,"file")));
                 std::vector<std::string> chosen;
                 if(install && member(p,"items"))for(auto t:array(member(p,"items"),65536,0))chosen.push_back(std::string(string(t)));
+                auto signer=[](const Control::Signer& s){return "{\"kind\":"+quote(s.kind)+",\"name\":"+quote(s.name)+",\"version\":"+quote(s.version)+",\"platform\":"+quote(s.platform)+
+                                                              ",\"status\":"+quote(s.status)+",\"key\":"+quote(s.key)+",\"keyName\":"+quote(s.keyName)+'}';};
+                auto code=[&](const std::vector<Control::Signer>& list){std::vector<std::string> out;for(const auto& s:list)out.push_back(signer(s));return join(out);};
                 try{
                     if(!install){
                         const auto a=c.archiveContents(file);std::vector<std::string> items;
                         for(const auto& i:a.items)items.push_back("{\"kind\":"+quote(i.kind)+",\"id\":"+quote(i.id)+",\"name\":"+quote(i.name)+'}');
-                        return "{\"id\":"+quote(a.id)+",\"name\":"+quote(a.name)+",\"kind\":"+quote(a.kind)+",\"items\":"+join(items)+'}';
+                        return "{\"id\":"+quote(a.id)+",\"name\":"+quote(a.name)+",\"kind\":"+quote(a.kind)+",\"items\":"+join(items)+",\"code\":"+code(a.code)+",\"signer\":"+signer(a.signer)+'}';
                     }
-                    const auto r=c.installArchive(file,member(p,"asLibrary") && boolean(member(p,"asLibrary")),chosen);std::vector<std::string> notes;
+                    const auto r=c.installArchive(file,member(p,"asLibrary") && boolean(member(p,"asLibrary")),chosen,member(p,"acceptUnsignedCode") && boolean(member(p,"acceptUnsignedCode")));
+                    std::vector<std::string> notes;
                     for(const auto& n:r.notes)notes.push_back(quote(n));
-                    return "{\"added\":"+std::to_string(r.added)+",\"skipped\":"+std::to_string(r.skipped)+",\"notes\":"+join(notes)+'}';
+                    return "{\"added\":"+std::to_string(r.added)+",\"skipped\":"+std::to_string(r.skipped)+",\"notes\":"+join(notes)+",\"code\":"+code(r.code)+'}';
                 }catch(const std::invalid_argument& e){throw Failure{-32602,e.what()};}
                 catch(const std::exception& e){throw Failure{-32005,e.what()};}
             }

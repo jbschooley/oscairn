@@ -443,7 +443,14 @@ int main(int argc, char** argv)
                 // The library answers only while the engine is free: wait for an answer, not a guess.
                 auto total = [&] { std::optional<Control::LibraryResult> r; wait([&] { return (r = engine.library({})).has_value(); }); return r ? r->total : ~0u; };
                 const auto before = total();
-                standalone::SoundAction in; in.kind = standalone::SoundAction::InstallArchive; in.directory = archive.getFullPathName().toStdString();
+                // Its plugin builds are unsigned (RFC 0006): the install dialog lists them, and the
+                // install goes ahead only once the user says yes.
+                check(!exported.code.empty() && exported.code[0].status == "unsigned", "its contents list its unsigned plugin builds");
+                standalone::SoundAction ask; ask.kind = standalone::SoundAction::InstallArchive; ask.directory = archive.getFullPathName().toStdString();
+                engine.soundAction(std::move(ask));
+                check(wait([&] { return !engine.soundBusy(); }) && engine.soundMessage().find("unknown source") != std::string::npos && total() == before,
+                      "without a yes, unsigned plugin builds refuse the install: " + engine.soundMessage());
+                standalone::SoundAction in; in.kind = standalone::SoundAction::InstallArchive; in.directory = archive.getFullPathName().toStdString(); in.acceptCode = true;
                 engine.soundAction(std::move(in));
                 const auto count = exported.items.size(); // the Performance, and the Sound its part still is
                 check(wait([&] { return !engine.soundBusy(); }) && engine.soundMessage() == "Installed " + std::to_string(count) + ".", "installed: " + engine.soundMessage());

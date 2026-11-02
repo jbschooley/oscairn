@@ -554,7 +554,8 @@ Each starts as an RFC:
 - [ ] **Packages and portability** ([RFC 0006](rfcs/0006-packages-and-portability.md), proposed;
   built: stand-ins for plugins not here, the plugin store with Used by and removal, locks in
   documents, archives carrying and installing every platform's CLAP builds with every file
-  hashed):
+  hashed, optional signatures on items, plugin builds and whole archives with a trust store, and
+  installs asking before plugin code unsigned or by an unknown key):
   first a clean-machine, offline Performance/Setlist transfer with managed CLAP packages,
   project manifests/exact dependency locks, target builds, project-local dependency views
   backed by a shared installed store, shared runtime/sample packages and unavailable-node

@@ -32,7 +32,7 @@ namespace oscairn
         std::string savePerformanceToLibrary(const std::string& name, bool asNew = false) override;
         void loadPerformanceFromLibrary(const std::string& id) override;
         Archive archiveContents(const std::string& file) override;
-        Installed installArchive(const std::string& file, bool asLibrary, const std::vector<std::string>& items = {}) override;
+        Installed installArchive(const std::string& file, bool asLibrary, const std::vector<std::string>& items = {}, bool acceptUnsignedCode = false) override;
         std::vector<InstalledLibrary> libraries() override;
         void uninstallLibrary(const std::string& library) override;
         void deleteLibraryItem(const std::string& item) override;

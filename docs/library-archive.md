@@ -109,6 +109,11 @@ its contents at once.
   carrying a device's builds). A Performance whose plugin is not at its `pathHint` finds this
   device's build there. A build already there with the same digest is left; a different one is
   kept and reported; a plugin with no build for this device is reported.
+- **Signatures** ([RFC 0006](rfcs/0006-packages-and-portability.md#signatures)): before anything
+  is installed, each plugin build that would go into the store is judged against the device's
+  trust store. One unsigned or signed by an unknown key refuses the install, listing them, until
+  the user says yes (`acceptUnsignedCode`); one signed by a revoked key is never installed, and
+  is noted. Sounds, Performances and samples install whether signed or not.
 
 ## The plugin store
 

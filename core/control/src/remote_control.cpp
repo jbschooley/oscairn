@@ -335,6 +335,8 @@ namespace oscairn
         std::vector<std::string> strings(V v){std::vector<std::string> out;for(auto e:array(v))out.push_back(string(e));return out;}
         std::string quoted(const std::vector<std::string>& values){std::string out="[";for(const auto& v:values){if(out.size()>1)out+=',';out+=quote(v);}return out+']';}
         // An export's sign member, when it signs anything.
+        Control::Signer signer(V s){return {string(field(s,"kind")),string(field(s,"name")),string(field(s,"version")),string(field(s,"platform")),string(field(s,"status")),string(field(s,"key")),string(field(s,"keyName"))};}
+        std::vector<Control::Signer> signers(V list){std::vector<Control::Signer> out;for(auto s:array(list))out.push_back(signer(s));return out;}
         std::string signing(const Control::ExportSigning& s){return s.items || s.archive?",\"sign\":{\"key\":"+quote(s.key)+",\"items\":"+(s.items?"true":"false")+",\"archive\":"+(s.archive?"true":"false")+'}':std::string();}
     }
     std::vector<std::string> RemoteControl::exportPerformance(const std::string& file,bool editedSounds,const ExportSigning& sign) {
@@ -367,13 +369,13 @@ namespace oscairn
     // A rescan, save or load reads or writes every Performance file, so allow time.
     Control::Archive RemoteControl::archiveContents(const std::string& file) {
         auto d=impl_->call("library.contents","{\"file\":"+quote(file)+'}',30000);auto r=field(d.get(),"result");
-        Archive a{string(field(r,"id")),string(field(r,"name")),string(field(r,"kind")),{}};
+        Archive a{string(field(r,"id")),string(field(r,"name")),string(field(r,"kind")),{},signers(field(r,"code")),signer(field(r,"signer"))};
         for(auto i:array(field(r,"items"))){LibraryItem item;item.kind=string(field(i,"kind"));item.id=string(field(i,"id"));item.name=string(field(i,"name"));a.items.push_back(item);}
         return a;
     }
-    Control::Installed RemoteControl::installArchive(const std::string& file,bool asLibrary,const std::vector<std::string>& items) {
-        auto d=impl_->call("library.install","{\"file\":"+quote(file)+",\"asLibrary\":"+(asLibrary?"true":"false")+",\"items\":"+quoted(items)+'}',120000);auto r=field(d.get(),"result");
-        return {static_cast<uint32_t>(integer(field(r,"added"))),static_cast<uint32_t>(integer(field(r,"skipped"))),strings(field(r,"notes"))};
+    Control::Installed RemoteControl::installArchive(const std::string& file,bool asLibrary,const std::vector<std::string>& items,bool acceptUnsignedCode) {
+        auto d=impl_->call("library.install","{\"file\":"+quote(file)+",\"asLibrary\":"+(asLibrary?"true":"false")+",\"items\":"+quoted(items)+",\"acceptUnsignedCode\":"+(acceptUnsignedCode?"true":"false")+'}',120000);auto r=field(d.get(),"result");
+        return {static_cast<uint32_t>(integer(field(r,"added"))),static_cast<uint32_t>(integer(field(r,"skipped"))),strings(field(r,"notes")),signers(field(r,"code"))};
     }
     std::vector<Control::InstalledLibrary> RemoteControl::libraries() {
         auto d=impl_->call("library.libraries","{}");std::vector<InstalledLibrary> out;

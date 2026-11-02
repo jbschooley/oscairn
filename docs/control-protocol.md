@@ -918,10 +918,21 @@ use.
 
 Libraries come as [archives](library-archive.md): a library, or an exported Performance.
 
-- `library.contents` takes `{file}` and returns `{id,name,kind,items}`, each item's `kind`,
-  `id` and `name`.
-- `library.install` takes `{file}` and optional `asLibrary` and `items` (IDs; absent or empty
-  for all), and returns `{added,skipped,notes}`. As a library its items are locked and keep
+- `library.contents` takes `{file}` and returns `{id,name,kind,items,code,signer}`, each item's `kind`,
+  `id` and `name`. `code` is each plugin build it would add to the store (not one already
+  there), and `signer` the whole archive's, each `{kind,name,version,platform,status,key,keyName}`
+  ([RFC 0006](rfcs/0006-packages-and-portability.md#signatures)): `kind` `plugin` (`app` once
+  archives carry apps) or `archive`; `status` `trusted` (signed by a key the trust store trusts
+  for it: `plugins`, `apps`, or `content` for the archive), `unknown` (signed by no such
+  key), `unsigned` or `revoked`; `key` the deciding key's ID (empty when unsigned) and `keyName`
+  its trust store name. An archive with a signature that does not verify is refused.
+- `library.install` takes `{file}` and optional `asLibrary`, `items` (IDs; absent or empty
+  for all) and `acceptUnsignedCode`, and returns `{added,skipped,notes,code}`. When a plugin
+  build the items use, not already in the store, is unsigned or by an unknown key, the install is
+  refused, naming each, unless `acceptUnsignedCode` is true: the user saw `library.contents`'
+  `code` and said yes. A build signed by a revoked key is never installed (noted; what uses it
+  opens with a stand-in where it is not installed otherwise). Sounds, Performances and samples
+  install whether signed or not. `code` is the signer of each build it judged. As a library its items are locked and keep
   their IDs, and installing again adds only what is missing; otherwise they are copied into the
   user's own storage under new IDs, and installing again skips copies still as imported. The
   samples they use go into the user's sample library, and the builds of the plugins they use,

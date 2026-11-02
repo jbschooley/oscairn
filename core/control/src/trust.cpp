@@ -57,6 +57,21 @@ void writeTrust(const std::vector<Control::TrustedKey>& keys){
 
 std::vector<Control::TrustedKey> Session::trustedKeys(){return readTrust();}
 
+// Revoked by any of its signers' keys wins; then trusted by a key trusted for this kind (plugins,
+// apps, or content for an archive); else unknown, or unsigned. Signatures are already verified.
+Control::Signer Session::judge(const std::string& kind,const std::vector<signing::Signature>& signatures){
+    Signer out;out.kind=kind;out.status=signatures.empty()?"unsigned":"unknown";
+    if(signatures.empty())return out;
+    const auto scope=kind=="plugin"?"plugins":kind=="app"?"apps":"content";
+    const auto keys=readTrust();
+    out.key=signing::keyId(signatures.front().key);
+    for(const auto& s:signatures)for(const auto& k:keys)if(k.key==s.key){
+        if(k.revoked){out.status="revoked";out.key=k.id;out.keyName=k.name;return out;}
+        if(out.status!="trusted" && std::find(k.scope.begin(),k.scope.end(),scope)!=k.scope.end()){out.status="trusted";out.key=k.id;out.keyName=k.name;}
+    }
+    return out;
+}
+
 void Session::setTrustedKey(const TrustedKey& key){
     TrustedKey t=key;t.id=signing::keyId(t.key);
     if(t.id.empty())throw std::invalid_argument("not a public key: 64 lowercase hex digits");

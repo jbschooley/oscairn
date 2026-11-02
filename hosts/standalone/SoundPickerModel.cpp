@@ -127,7 +127,7 @@ namespace oscairn::standalone
         if(action.kind == SoundAction::ExportPerformance && !action.libraryId.empty()) return withNotes("Exported.", control.exportLibraryItem(action.libraryId,action.directory,action.asNew));
         if(action.kind == SoundAction::ExportPerformance) return withNotes("Performance exported.", control.exportPerformance(action.directory,action.asNew));
         if(action.kind == SoundAction::InstallArchive){
-            const auto r=control.installArchive(action.directory,action.asNew,action.items);
+            const auto r=control.installArchive(action.directory,action.asNew,action.items,action.acceptCode);
             std::string message="Installed "+std::to_string(r.added)+(r.skipped?", "+std::to_string(r.skipped)+" already here":"")+".";
             for(const auto& n:r.notes)message+=" "+n+".";
             return message;

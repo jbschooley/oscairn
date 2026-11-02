@@ -106,7 +106,15 @@ int main(int argc, char** argv)
         {
             device(temp.path / "b");
             Session b(48000, 64);
-            const auto installed = b.installArchive(archive.string(), false);
+            // Its plugin builds are unsigned (RFC 0006): listed first, refused without a yes, leaving nothing.
+            const auto contents = b.archiveContents(archive.string());
+            check(contents.code.size() == 2 && contents.code[0].status == "unsigned" && contents.code[0].kind == "plugin" && contents.code[0].version == "1" && contents.signer.status == "unsigned",
+                  "an archive's contents say its plugin builds and the archive are unsigned");
+            std::string why; try { b.installArchive(archive.string(), false); } catch(const std::exception& e) { why = e.what(); }
+            check(why.find("unknown source") != std::string::npos && why.find("KICK fixture 1 (" + platform() + ") unsigned") != std::string::npos && items(b, "sound").empty() &&
+                  !fs::exists(temp.path / "b" / "Plugins"), "an unsigned plugin build is refused without a yes, listing it, installing nothing: " + why);
+            const auto installed = b.installArchive(archive.string(), false, {}, true);
+            check(installed.code.size() == 2 && installed.code[0].status == "unsigned", "and installed with one, saying so");
             check(installed.added == 2 && installed.skipped == 0 && installed.notes.empty(), "both copied in: " + std::to_string(installed.added));
             const auto store = temp.path / "b" / "Plugins" / "clap";
             check(fs::is_directory(store) && std::distance(fs::directory_iterator(store), fs::directory_iterator()) == 1, "its plugin is in the store");
@@ -174,7 +182,7 @@ int main(int argc, char** argv)
         {
             device(temp.path / "c");
             Session c(48000, 64);
-            const auto installed = c.installArchive(archive.string(), false, {soundId});
+            const auto installed = c.installArchive(archive.string(), false, {soundId}, true);
             check(installed.added == 1 && items(c, "performance").empty() && items(c, "sound").size() == 1, "only the chosen Sound");
             check(c.installArchive(soundArchive.string(), false).added == 1 && items(c, "sound").size() == 2, "an exported Sound installs as the user's own");
             bool refused = false; try { c.installArchive(archive.string(), false, {"nothing"}); } catch(const std::exception&) { refused = true; }
@@ -218,7 +226,7 @@ int main(int argc, char** argv)
         {
             device(temp.path / "d");
             Session d(48000, 64);
-            d.installArchive(archive.string(), false);
+            d.installArchive(archive.string(), false, {}, true);
             const auto performance = items(d, "performance").at(0);
             const auto doc = fs::path(performance.path) / "performance.json";
             auto text = read(doc);
@@ -247,7 +255,7 @@ int main(int argc, char** argv)
             check(d.installedPlugins().empty() && !fs::exists(cutShort), "a removal cut short is cleared away");
             d.loadPerformanceFromLibrary(performance.id);
             check(d.sessionStatus().failures.size() == 1, "what used it opens with a stand-in");
-            d.installArchive(archive.string(), false);
+            d.installArchive(archive.string(), false, {}, true);
             d.loadPerformanceFromLibrary(performance.id);
             check(d.sessionStatus().failures.empty(), "and plays again once it is installed again");
         }
@@ -256,7 +264,7 @@ int main(int argc, char** argv)
         {
             device(temp.path / "g");
             Session g(48000, 64);
-            g.installArchive(archive.string(), false);
+            g.installArchive(archive.string(), false, {}, true);
             const auto plugins = temp.path / "g" / "Plugins" / "clap";
             const auto stored = fs::directory_iterator(plugins)->path() / platform() / fs::path(fixture).filename();
             std::ofstream(stored, std::ios::binary | std::ios::trunc) << "not a plugin";
@@ -330,6 +338,39 @@ int main(int argc, char** argv)
                 mz_zip_writer_finalize_archive(&out); mz_zip_writer_end(&out); mz_zip_reader_end(&in);
             }
             check(run(tool + " verify " + shell(temp.path / "Changed.olib")).first != 0, "oscairn-sign refuses an archive changed after it was signed");
+            h.exportPerformance((temp.path / "Unsigned.olib").string());
+        }
+        // Device I: the build's publisher unknown, then trusted for plugins; data installs whether signed or not.
+        {
+            device(temp.path / "i");
+            Session i(48000, 64);
+            const auto unknown = i.archiveContents(signedArchive.string());
+            check(unknown.code.size() == 1 && unknown.code[0].status == "unknown" && unknown.code[0].key == signing::keyId(authorKey) && unknown.signer.status == "unknown",
+                  "a build signed by a key not trusted here is unknown");
+            std::string why; try { i.installArchive(signedArchive.string(), false); } catch(const std::exception& e) { why = e.what(); }
+            check(why.find("by an unknown key " + signing::keyId(authorKey)) != std::string::npos, "and refused without a yes: " + why);
+            i.setTrustedKey({"", authorKey, "Author", {"plugins"}});
+            const auto trusted = i.archiveContents(signedArchive.string());
+            check(trusted.code.at(0).status == "trusted" && trusted.code[0].keyName == "Author", "once its key is trusted for plugins, it is trusted");
+            const auto installed = i.installArchive(signedArchive.string(), false);
+            check(installed.added == 1 && installed.notes.empty() && installed.code.at(0).status == "trusted", "and installs without asking");
+            check(signing::readSignatures(temp.path / "i" / "Plugins" / "clap" / "org.kick.test.synth@1" / platform() / "Synth.clap.sig").size() == 1,
+                  "the store keeps the build's signature beside it");
+            check(i.exportLibraryItem(items(i, "performance").at(0).id, (temp.path / "Again.signed.olib").string()).empty() &&
+                  readPackage(temp.path / "Again.signed.olib", {}).plugins.at(0).builds.at(0).signatures.at(0).key == authorKey, "a re-export carries the signature from the store");
+            const auto plain = i.archiveContents((temp.path / "Unsigned.olib").string());
+            check(plain.code.empty() && plain.signer.status == "unsigned", "an unsigned archive whose build is here brings no code");
+            check(i.installArchive((temp.path / "Unsigned.olib").string(), true).added == 1, "unsigned data installs without asking");
+        }
+        // Device J: the publisher's key revoked: its build is never installed, the items still are.
+        {
+            device(temp.path / "j");
+            Session j(48000, 64);
+            j.setTrustedKey({"", authorKey, "Author", {"plugins"}, true});
+            check(j.archiveContents(signedArchive.string()).code.at(0).status == "revoked", "a revoked key's build is said to be revoked");
+            const auto installed = j.installArchive(signedArchive.string(), false, {}, true);
+            check(installed.added == 1 && installed.code.at(0).status == "revoked" && installed.notes.size() == 1 && installed.notes[0].find("revoked") != std::string::npos &&
+                  !fs::exists(temp.path / "j" / "Plugins"), "a revoked key's build is refused even with a yes, and noted");
         }
     }
     catch(const std::exception& e) { std::fprintf(stderr, "FAIL: %s\n", e.what()); ++failures; }

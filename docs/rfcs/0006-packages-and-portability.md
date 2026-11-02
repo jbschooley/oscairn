@@ -25,6 +25,16 @@ Checked when built and tested; the sections below say how.
       [RFC 0031](0031-package-repository-and-distribution.md))
 - [ ] Signatures: publisher-signed plugin builds, signed archives, the trust store and install
       policy ([design](#signatures))
+      (built 2026-11-01: Ed25519 with Monocypher; archives version 3 with optional item, plugin
+      build and whole-archive signatures, every one verified on reading; the trust store and
+      `trust.*`; signing keys in the data folder (`keys.*`), an export signing its items and/or
+      the whole archive when asked and carrying builds' signatures, and `oscairn-sign`; the
+      install refusing plugin builds unsigned or by an unknown key without a yes, and a revoked
+      key's always, in the API and the desktop's install dialog; `control-signing`,
+      `control-package`, `control-archives`, `control-library`. Not yet: re-judging store builds
+      when a key is revoked, revocations through system updates, a product profile refusing
+      unsigned code, apps (not packaged yet), trusting a key from the install prompt, repositories
+      requiring signatures, pairing)
 - [ ] Choosing what to import: chosen items with their dependencies, content as a locked
       library or into user storage ([design](#choosing-what-to-import))
 
@@ -103,7 +113,7 @@ Made 2026-11-01, for the first slice:
   a check of its binaries' libraries; not planned.
 - **Hashes now, signatures later.** Every file in an archive has its SHA-256 in the manifest,
   and each plugin build its digest, checked on extraction: an archive is whole and as it was
-  made. Who made it is not proven until signatures.
+  made. Who made it is proven by the optional [signatures](#signatures) that followed.
 - **The lock is in the document,** `lock` in `performance.json` and `sound.json`
   ([format](../performance-format.md)), not a separate lockfile: each plugin's build digest per
   platform. Saving keeps other platforms' entries and a stand-in's.
@@ -117,7 +127,8 @@ Made 2026-11-01, for the first slice:
 
 ## Signatures
 
-Accepted 2026-11-01; the owner's decisions of 2026-11-01 below change parts of the first design.
+Accepted 2026-11-01, built in part (see Progress); the owner's decisions of 2026-11-01 below
+change parts of the first design.
 Hashes prove an archive is whole and as it was made; signatures add who made it. Every
 signature is optional; what is signed is the publisher's choice.
 

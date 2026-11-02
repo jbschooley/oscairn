@@ -101,7 +101,8 @@ Everything else is handled for you:
   `oscairn-sign key author.key` makes your key (keep it private; it is readable only by you),
   and `oscairn-sign build author.key clap <id> <version> <platform> MyPlugin.clap` writes
   `MyPlugin.clap.sig` beside the build, over its ID, version, platform and digest. Ship the
-  `.sig` beside the bundle: exports carry it. Re-sign after every rebuild; a signature over another
+  `.sig` beside the bundle: exports carry it, and a device that trusts your key for plugins
+  installs the build without asking; otherwise installing asks first. Re-sign after every rebuild; a signature over another
   build is left out. Publish your key's ID (shown by `oscairn-sign key`) so users can check it.
 - **A plugin that is not here,** in another version, or that fails to load opens as a
   stand-in: silent, its ports and parameters as saved, its state written back unchanged, so

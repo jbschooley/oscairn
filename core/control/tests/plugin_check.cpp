@@ -104,7 +104,7 @@ std::vector<float> installAndOpen(const fs::path& archive, const fs::path& home,
 {
     device(home);
     Session b(rate, block, {}, stereoIn);
-    const auto installed = b.installArchive(archive.string(), false);
+    const auto installed = b.installArchive(archive.string(), false, {}, true); // the plugin under test is likely unsigned (RFC 0006)
     check(installed.notes.empty(), "installs with nothing to report");
     Control::LibraryQuery q; q.kind = "performance";
     const auto item = b.libraryQuery(q).items.at(0);

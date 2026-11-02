@@ -38,6 +38,7 @@ namespace oscairn::standalone
         bool asNew = false;    // SaveToLibrary, SaveSound: a new library item, not the next revision of the one it came from;
                                // ExportPerformance: with edited parts' Sounds; InstallArchive: as a locked library; AuditionStop: keep it
         std::vector<std::string> items; // InstallArchive from directory (the archive file): these items; none for all
+        bool acceptCode = false; // InstallArchive: the user said yes to plugin builds unsigned or by an unknown key (RFC 0006)
         std::string importPath; // Prepare from this .sfz or .wav instead of choice
         std::string format, version, platform; // AddPluginBuild: the plugin (with pluginId) and the build's platform; directory: the build
     };

@@ -1415,12 +1415,17 @@ std::string safeName(const std::string& id){std::string out;for(const char c:id)
 
 Control::Archive Session::archiveContents(const std::string& file) {
     const auto p=readPackage(file,{}); // the manifest only
-    Archive out{p.id,p.name,p.kind,{}};
+    Archive out{p.id,p.name,p.kind,{},{},judge("archive",p.signature.key.empty()?std::vector<signing::Signature>{}:std::vector<signing::Signature>{p.signature})};
     for(const auto& i:p.items){LibraryItem item;item.kind=i.kind;item.id=i.id;item.name=i.name;out.items.push_back(item);}
+    // The code it would add: each plugin build not already in the store. Apps join this when archives carry them (RFC 0022 step 2).
+    for(const auto& plugin:p.plugins){
+        const auto there=storedBuilds(plugin.format,plugin.id,plugin.version);
+        for(const auto& b:plugin.builds)if(!there.count(b.platform)){auto s=judge("plugin",b.signatures);s.name=plugin.name;s.version=plugin.version;s.platform=b.platform;out.code.push_back(s);}
+    }
     return out;
 }
 
-Control::Installed Session::installArchive(const std::string& file,bool asLibrary,const std::vector<std::string>& chosen) {
+Control::Installed Session::installArchive(const std::string& file,bool asLibrary,const std::vector<std::string>& chosen,bool acceptUnsignedCode) {
     auto& l=library();
     const auto into=unpackFolder();
     const auto p=readPackage(file,into);
@@ -1432,6 +1437,31 @@ Control::Installed Session::installArchive(const std::string& file,bool asLibrar
         auto manifest=[&](const Package::Item& i){return into/i.path/(i.kind=="sound"?"sound.json":"performance.json");};
         // Each item is what it says it is.
         for(const auto& i:items){const auto info=readInfo(manifest(i),"oscairn."+i.kind);if(info.id!=i.id)bad("the item "+i.name+" is not the one its archive lists");}
+        // The plugins they use, and who signed each build that would go into the store (RFC 0006),
+        // before anything is installed: code unsigned or by an unknown key only when the user said
+        // yes, a revoked key's never. Apps join this when archives carry them (RFC 0022 step 2).
+        std::set<std::tuple<std::string,std::string,std::string>> used;
+        for(const auto& i:items){
+            const auto bytes=state_files::read(manifest(i),4*1024*1024);
+            const std::unique_ptr<json_value_s,decltype(&std::free)> doc{json_parse(bytes.data(),bytes.size()),&std::free};
+            for(auto node:array(field(doc.get(),"nodes"),256)){const V plugin=field(node,"plugin");used.insert({text(field(plugin,"format")),text(field(plugin,"id")),text(field(plugin,"version"))});}
+        }
+        std::set<std::string> revoked; // build paths not installed
+        std::string unknown;
+        for(const auto& plugin:p.plugins){
+            if(!used.count({plugin.format,plugin.id,plugin.version}))continue;
+            const auto there=storedBuilds(plugin.format,plugin.id,plugin.version);
+            for(const auto& build:plugin.builds){
+                if(there.count(build.platform))continue;
+                auto s=judge("plugin",build.signatures);s.name=plugin.name;s.version=plugin.version;s.platform=build.platform;
+                const auto what=plugin.name+" "+plugin.version+" ("+build.platform+")";
+                if(s.status=="revoked"){revoked.insert(build.path);out.notes.push_back(what+" is signed by a revoked key ("+s.key+"); it was not installed");}
+                else if(s.status!="trusted")unknown+=(unknown.empty()?"":", ")+what+(s.status=="unsigned"?" unsigned":" by an unknown key "+s.key);
+                out.code.push_back(s);
+            }
+        }
+        if(!unknown.empty() && !acceptUnsignedCode)
+            bad("it runs code from an unknown source: "+unknown+"; install it accepting unsigned code to go ahead");
         // The samples they use, into the user's samples by their hash, so they stay when a library goes.
         for(const auto& i:items)for(const auto& ref:assetsOf(manifest(i))){
             const auto folder=into/"Assets"/ref.sha256.substr(0,16);
@@ -1440,13 +1470,7 @@ Control::Installed Session::installArchive(const std::string& file,bool asLibrar
             if(!found){auto copy=ref;try{assets_.resolve(copy);}catch(const std::exception&){out.notes.push_back(i.name+" uses a sample that is not in the archive or on this device: "+ref.path);}}
         }
         // The plugin builds they use, every platform's, into the store (RFC 0006), each whole or not
-        // at all; a different build already there is kept.
-        std::set<std::tuple<std::string,std::string,std::string>> used;
-        for(const auto& i:items){
-            const auto bytes=state_files::read(manifest(i),4*1024*1024);
-            const std::unique_ptr<json_value_s,decltype(&std::free)> doc{json_parse(bytes.data(),bytes.size()),&std::free};
-            for(auto node:array(field(doc.get(),"nodes"),256)){const V plugin=field(node,"plugin");used.insert({text(field(plugin,"format")),text(field(plugin,"id")),text(field(plugin,"version"))});}
-        }
+        // at all; a different build already there is kept, a revoked key's left out.
         for(const auto& plugin:p.plugins){
             if(!used.count({plugin.format,plugin.id,plugin.version}))continue;
             if(std::none_of(plugin.builds.begin(),plugin.builds.end(),[](const auto& b){return b.platform==platform();}))
@@ -1457,7 +1481,7 @@ Control::Installed Session::installArchive(const std::string& file,bool asLibrar
                     if(bundleDigest(at->second)!=build.sha256)out.notes.push_back("a different "+build.platform+" build of "+plugin.name+" "+plugin.version+" is already installed; it was kept");
                     continue;
                 }
-                storeBuild(plugin.format,plugin.id,plugin.version,plugin.name,build.platform,into/build.path,build.signatures);
+                if(!revoked.count(build.path))storeBuild(plugin.format,plugin.id,plugin.version,plugin.name,build.platform,into/build.path,build.signatures);
             }
         }
         if(asLibrary){

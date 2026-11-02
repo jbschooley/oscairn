@@ -227,15 +227,28 @@ namespace oscairn
         virtual std::string savePerformanceToLibrary(const std::string& name, bool asNew = false) = 0;
         virtual void loadPerformanceFromLibrary(const std::string& id) = 0;
         // Libraries (RFC 0021), from archives (package.h): a library or an exported Performance.
-        struct Archive { std::string id, name, kind; std::vector<LibraryItem> items; }; // items: kind, id, name
+        // Who signed a part of an archive (RFC 0006), as this device's trust store sees it: kind
+        // "plugin" (name, version and platform: its build's), "app" or "archive"; status "trusted"
+        // (by a key trusted for it), "unknown" (signed, by no key trusted for it), "unsigned" or
+        // "revoked"; key: the ID of the key that decided it (empty when unsigned) and keyName
+        // its name in the trust store.
+        struct Signer { std::string kind, name, version, platform, status, key, keyName; };
+        // code: each plugin build's signer (each app's, when archives carry apps); signer: the
+        // whole archive's. Signatures that do not verify refuse the archive.
+        struct Archive { std::string id, name, kind; std::vector<LibraryItem> items; std::vector<Signer> code; Signer signer; }; // items: kind, id, name
         virtual Archive archiveContents(const std::string& file) = 0;
         // Installs an archive, all of it or the chosen items (IDs), with the samples they use.
         // asLibrary: locked, under its name and its items' IDs; installing again puts back only
         // what is missing. Else into the user's own Performances and Sounds, under new IDs, a
         // Performance's parts pointing at the Sounds that came with it; an item whose copy is
         // still as imported is skipped, one edited or deleted since comes again as a new copy.
-        struct Installed { uint32_t added = 0, skipped = 0; std::vector<std::string> notes; };
-        virtual Installed installArchive(const std::string& file, bool asLibrary, const std::vector<std::string>& items = {}) = 0;
+        // Code (RFC 0006): when a plugin build the items use is unsigned or by an unknown key, the
+        // install is refused, listing them, unless acceptUnsignedCode (the user said yes, having
+        // seen archiveContents' code); a build by a revoked key is never installed (what uses it
+        // opens with a stand-in) and is noted. Data installs whether signed or not. code: the
+        // signer of each build installed or refused.
+        struct Installed { uint32_t added = 0, skipped = 0; std::vector<std::string> notes; std::vector<Signer> code; };
+        virtual Installed installArchive(const std::string& file, bool asLibrary, const std::vector<std::string>& items = {}, bool acceptUnsignedCode = false) = 0;
         struct InstalledLibrary { std::string id, name; uint32_t items = 0; };
         virtual std::vector<InstalledLibrary> libraries() = 0;
         virtual void uninstallLibrary(const std::string& library) = 0; // its items go; Performances keep their parts, copies, and samples

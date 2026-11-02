@@ -766,12 +766,26 @@ namespace oscairn::standalone
             struct Choose : juce::Component
             {
                 juce::ToggleButton own{"Into my Sounds and Performances, to edit"}, locked{"As a locked library"};
-                juce::Label heading{{}, "Items"};
+                juce::Label heading{{}, "Items"}, code; // code: plugin builds from an unknown source or a revoked key (RFC 0006)
                 juce::OwnedArray<juce::ToggleButton> items;
                 std::vector<std::string> ids;
                 juce::TextButton go{"Install"}, cancel{"Cancel"};
+                int codeLines = 0;
+                bool asks = false; // installing says yes to code from an unknown source
                 explicit Choose(const Control::Archive& a)
                 {
+                    juce::String unknown, revoked;
+                    for(const auto& c : a.code)
+                    {
+                        const auto what = text(c.name + " " + c.version + " (" + c.platform + ")");
+                        if(c.status == "revoked") { revoked << "\n  " << what; ++codeLines; }
+                        else if(c.status != "trusted") { unknown << "\n  " << what << (c.status == "unsigned" ? ", unsigned" : ", signed by unknown key " + text(c.key)); ++codeLines; asks = true; }
+                    }
+                    juce::String warning;
+                    if(asks) warning << "These plugins run code from an unknown source:" << unknown;
+                    if(revoked.isNotEmpty()) warning << (asks ? "\n" : "") << "Signed by a revoked key, so not installed:" << revoked;
+                    if(warning.isNotEmpty()) { code.setText(warning, juce::dontSendNotification); codeLines += asks + revoked.isNotEmpty(); addAndMakeVisible(code); }
+                    if(asks) go.setButtonText("Install anyway");
                     own.setRadioGroupId(1); locked.setRadioGroupId(1);
                     (a.kind == "library" ? locked : own).setToggleState(true, juce::dontSendNotification);
                     for(const auto& i : a.items)
@@ -780,7 +794,7 @@ namespace oscairn::standalone
                         b->setToggleState(true, juce::dontSendNotification); addAndMakeVisible(b); ids.push_back(i.id);
                     }
                     for(auto* c : std::initializer_list<juce::Component*>{&own, &locked, &heading, &go, &cancel}) addAndMakeVisible(c);
-                    setSize(420, std::min(600, int(a.items.size()) * 30 + 180));
+                    setSize(420, std::min(600, int(a.items.size()) * 30 + 180 + codeLines * 18));
                 }
                 void resized() override
                 {
@@ -788,7 +802,8 @@ namespace oscairn::standalone
                     own.setBounds(area.removeFromTop(30)); locked.setBounds(area.removeFromTop(30));
                     area.removeFromTop(6); heading.setBounds(area.removeFromTop(24));
                     auto bar = area.removeFromBottom(30);
-                    go.setBounds(bar.removeFromRight(100)); bar.removeFromRight(8); cancel.setBounds(bar.removeFromRight(100));
+                    if(codeLines) { area.removeFromBottom(6); code.setBounds(area.removeFromBottom(codeLines * 18)); }
+                    go.setBounds(bar.removeFromRight(120)); bar.removeFromRight(8); cancel.setBounds(bar.removeFromRight(100));
                     for(auto* b : items) b->setBounds(area.removeFromTop(30));
                 }
             };
@@ -799,7 +814,7 @@ namespace oscairn::standalone
             auto* dialog = options.launchAsync();
             content->cancel.onClick = [dialog] { dialog->exitModalState(0); };
             content->go.onClick = [safe, dialog, content, file] {
-                SoundAction install; install.kind = SoundAction::InstallArchive; install.directory = file; install.asNew = content->locked.getToggleState();
+                SoundAction install; install.kind = SoundAction::InstallArchive; install.directory = file; install.asNew = content->locked.getToggleState(); install.acceptCode = content->asks;
                 for(int i = 0; i < content->items.size(); ++i) if(content->items[i]->getToggleState()) install.items.push_back(content->ids[size_t(i)]);
                 if(install.items.empty()) { juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::InfoIcon, "Install", "Choose at least one item."); return; }
                 if(install.items.size() == content->ids.size()) install.items.clear(); // all of it
