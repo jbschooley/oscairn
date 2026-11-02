@@ -688,9 +688,7 @@ namespace oscairn::standalone
                 showExport(safe->engine_, safe.getComponent(), "Export " + file.getFileNameWithoutExtension(), item.kind == "performance",
                     [safe, id = item.id, path = file.getFullPathName().toStdString()](bool editedSounds, const std::string& key) {
                         if(!safe) return;
-                        // Only now: Cancel keeps the old archive (the engine refuses an existing file, so it goes just before the write).
-                        juce::File target{path};
-                        if(target.existsAsFile() && !target.deleteFile()) { safe->tell("Cannot replace " + text(path)); return; }
+                        // An existing file is replaced only once the new archive is written (Engine): Cancel, a refusal or a failed export keeps the old one.
                         SoundAction out; out.kind = SoundAction::ExportPerformance; out.libraryId = id; out.directory = path; out.asNew = editedSounds; out.signKey = key;
                         safe->engine_.soundAction(std::move(out));
                         safe->tell("Exporting..."); safe->stale_ = true; safe->awaiting_ = true;

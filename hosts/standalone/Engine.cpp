@@ -9,6 +9,7 @@
 #include <cstdlib>
 #include <cmath>
 #include <cstdio>
+#include <filesystem>
 #include <thread>
 #include <stdexcept>
 
@@ -223,6 +224,19 @@ namespace oscairn::standalone
         // A separate client belongs entirely to this worker; the UI's cached client
         // is not serviced until preparation finishes, keeping long RPC waits off the UI.
         soundJobKind_=action.kind;
+        // The engine refuses to write over a file: an export to one the musician chose to replace
+        // goes beside it first, and replaces it only once written (finishSounds), so a failed
+        // or refused export keeps the old archive.
+        if(action.kind==SoundAction::ExportPerformance && juce::File(action.directory).existsAsFile())
+        {
+            const juce::File target(action.directory);
+            const auto folder=target.getSiblingFile(".oscairn-export").getNonexistentSibling(false);
+            if(folder.createDirectory())
+            {
+                exportTarget_=action.directory;
+                action.directory=exportWritten_=folder.getChildFile(target.getFileName()).getFullPathName().toStdString(); // the same name: an unnamed Performance is named after it
+            }
+        }
         // What a job can change (the open Performance, the parts, the plugins' windows) reads
         // fresh once it is done; until then the reads answer from the cache above.
         takesRead_=metersRead_=wireMetersRead_=historyRead_=performanceRead_=windowsRead_=0;
@@ -243,6 +257,14 @@ namespace oscairn::standalone
     void Engine::finishSounds()
     {
         auto result=soundJob_.get();
+        if(!exportTarget_.empty())
+        {
+            std::error_code failed;
+            if(result.error.empty())std::filesystem::rename(exportWritten_,exportTarget_,failed);
+            if(failed)result.error="Cannot replace "+exportTarget_+": "+failed.message();
+            std::filesystem::remove_all(std::filesystem::path(exportWritten_).parent_path(),failed);
+            exportTarget_.clear();exportWritten_.clear();
+        }
         if(!result.error.empty())soundMessage_=result.error;else if(!result.message.empty())soundMessage_=result.message;
         for(const auto& [name,editor]:result.editors) {
             const auto old=editors_.find(name);

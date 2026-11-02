@@ -212,6 +212,7 @@ namespace oscairn::standalone
         SoundPickerState soundPicker_;
         std::map<std::string,Editor> editors_;
         std::string soundMessage_;
+        std::string exportTarget_, exportWritten_; // an export replacing a file: the file, and where it is written first
         uint32_t soundTicks_ = 0;
         std::deque<std::function<void()>> pendingControls_;
         std::unique_ptr<host::AudioEngine> audio_;

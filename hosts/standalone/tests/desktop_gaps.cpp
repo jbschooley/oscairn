@@ -399,6 +399,31 @@ int main(int argc, char** argv)
                 holdRequests = false;
                 check(wait([&] { return !engine.soundBusy() && !jobHeld.load() && engine.connected(); }), "the held job finished");
             }
+            // Exporting over a file the musician chose to replace: the old archive stays when the
+            // export is refused, and goes only once the new one is written.
+            {
+                const auto file = data.getChildFile("Again.olib");
+                file.replaceWithText("last week's");
+                standalone::SoundAction out; out.kind = standalone::SoundAction::ExportPerformance; out.directory = file.getFullPathName().toStdString();
+                holdRequests = true;
+                standalone::SoundAction prepare; prepare.kind = standalone::SoundAction::Prepare; prepare.directory = data.getChildFile("nothing").getFullPathName().toStdString();
+                engine.soundAction(std::move(prepare));
+                check(wait([&] { return engine.soundBusy() && !engine.controlReady() && jobHeld.load(); }), "a job holds the engine's thread");
+                engine.soundAction(out);
+                check(engine.soundMessage().find("busy") != std::string::npos && file.loadFileAsString() == "last week's", "an export refused while busy keeps the old file: " + engine.soundMessage());
+                holdRequests = false;
+                check(wait([&] { return !engine.soundBusy() && !jobHeld.load() && engine.connected(); }), "the held job finished");
+                engine.soundAction(out);
+                Control::Archive archive;
+                check(wait([&] { return !engine.soundBusy(); }) && engine.archiveContents(file.getFullPathName().toStdString(), archive).empty() && !archive.items.empty(),
+                      "an export over the file replaces it once written: " + engine.soundMessage());
+                juce::MemoryBlock written; file.loadFileAsData(written);
+                out.signKey = "no such key"; // the engine's export fails
+                engine.soundAction(out);
+                check(wait([&] { return !engine.soundBusy(); }) && !engine.soundMessage().empty() && engine.soundMessage().find("exported") == std::string::npos && [&] { juce::MemoryBlock now; file.loadFileAsData(now); return now == written; }(),
+                      "a failed export keeps the archive it would have replaced: " + engine.soundMessage());
+                check(data.findChildFiles(juce::File::findDirectories, false, ".oscairn-export*").isEmpty(), "and leaves nothing beside it");
+            }
             // A view rebuilt while a job runs asks whether each plugin has a window: one not yet
             // read answers no at once, rather than wait on the stalled socket.
             {
