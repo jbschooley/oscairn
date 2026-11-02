@@ -11,6 +11,7 @@
 using namespace oscairn;
 using kick::clap::Event;
 static void check(bool ok,const char* why){if(!ok)throw std::runtime_error(why);}
+static void check(bool ok,const std::string& why){if(!ok)throw std::runtime_error(why);}
 int main(int argc,char** argv){try{
     if(argc!=4)return 2;
     Graph graph(48000,512);
@@ -200,5 +201,22 @@ int main(int argc,char** argv){try{
         play({&up,1});play();play();
         check(g.idle(s,UINT64_MAX,UINT64_MAX),"asleep once released: idle without waiting for silence");
     }
-    std::cout<<"ok: route ownership, retirement, sustain, physical MIDI overflow, the steal fade, draining and retiring\n";
+    {
+        // Moving a part's MIDI out (ports or channel) while a key is down: the held note's
+        // release goes out with the OLD port and channel, not the new ones, so the synth the
+        // player was heard on stops sounding.
+        Graph t(48000,512);
+        auto tapOut=[&](std::span<const Event> events={}){
+            t.clearMidiOut();forbidAllocation=true;const bool ok=t.process(out,512,nullptr,events.data(),events.size());forbidAllocation=false;
+            check(ok,"allocation-free tap rendering");
+            std::vector<std::string> seen;for(const auto& m:t.midiOut())seen.push_back(std::to_string(m.bytes[0])+" "+std::to_string(m.ports));
+            return seen;};
+        const auto on=Event::midi(0x90,60,127),off=Event::midi(0x80,60,0);
+        t.setMidiTaps({{7,graphInput,{},2,1}});t.commit();
+        check(tapOut({&on,1})==std::vector<std::string>{"144 2"},"the tap sends a held note-on on its port and channel");
+        t.setMidiTaps({{7,graphInput,{},4,2}});t.commit();
+        check(tapOut()==std::vector<std::string>{"128 2"},"moving the tap releases the held note with the old port and channel");
+        check(tapOut({&off,1}).empty(),"and the release itself reaches only the new tap, which holds no note");
+    }
+    std::cout<<"ok: route ownership, retirement, sustain, physical MIDI overflow, the steal fade, draining, retiring and moving a tap\n";
 }catch(const std::exception& e){forbidAllocation=false;std::cerr<<e.what()<<'\n';return 1;}}

@@ -147,8 +147,9 @@ namespace oscairn
         /// outputs (notes, pressure and MIDI channel messages), or what enters at graphInput through
         /// `zones` (as a note connection's), to the outputs in `ports` (a bit per output number), on
         /// `channel` (1..16; 0 keeps each message's own). `key` is the caller's (a part's ID): a tap
-        /// kept under the same key and source keeps its held notes; a tap removed sends note offs
-        /// for them (and a sustain pedal's release). Replaces every tap; takes effect at commit().
+        /// kept under the same key, source, ports and channel keeps its held notes; a tap removed,
+        /// or one whose ports or channel moved, sends note offs for them (and a sustain pedal's
+        /// release) with the old settings. Replaces every tap; takes effect at commit().
         /// Throws std::invalid_argument for a source that sends no notes, bad zones or a channel past 16.
         struct MidiTap
         {
