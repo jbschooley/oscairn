@@ -117,50 +117,83 @@ Made 2026-11-01, for the first slice:
 
 ## Signatures
 
-Accepted 2026-11-01, not built. Hashes prove an archive is whole and as it was made; signatures add who
-made it. They answer two different questions, so there are two kinds:
+Accepted 2026-11-01; the owner's decisions of 2026-11-01 below change parts of the first design.
+Hashes prove an archive is whole and as it was made; signatures add who made it. Every
+signature is optional; what is signed is the publisher's choice.
 
-- **Who built this plugin?** Plugin code is what can harm a device, and its author is the only
-  one who can vouch for it. A **build signature** is the plugin publisher's signature over the
-  build's identity and digest: `oscairn-build-1\0` + format, ID, version, platform and digest,
-  each NUL-terminated. It sits in the archive manifest beside the build (`builds[].signatures`)
-  and in the store beside the build, and it travels unchanged: a friend re-exporting a
-  Performance carries the vendor's signature without being able to make one. The same build
-  re-signed by its vendor later (a new key) gets another entry; nothing in the bundle changes.
-- **Who put this archive together?** A sound designer's library, a manufacturer's factory
-  set, or your own export. The **archive signature** is over the manifest's exact bytes, which
-  already list every file's SHA-256 and every build's digest, so one signature covers it all:
-  `oscairn-archive-1\0` + manifest, in a `library.sig` entry (`{key, signature}`). An archive
-  with a signature that does not verify is refused like a hash mismatch.
+**Owner's decisions (2026-11-01):**
+
+1. **Signing data is the publisher's choice.** Sounds, Performances, samples and libraries are
+   signed only when their publisher chooses to sign them, or when they are published to an
+   Oscairn repository, which requires a signature. An install may keep a key of its own, but
+   signing an export is opt-in: nothing is signed automatically.
+2. **Signatures at two levels, both optional.** Each component can be signed: each item (a
+   Sound, a Performance), each plugin build and each app. And the whole package can be signed,
+   if the exporter chooses: a signature over the manifest.
+3. **Only plugins and apps warn when unsigned,** for now. Installing a plugin build or app that
+   is unsigned or signed by an unknown key asks first, listing them; unsigned data installs
+   silently. A product profile may still refuse unsigned code (the table below), as a profile
+   setting.
+4. **A signature that does not verify is refused like a hash mismatch,** at any level.
+
+The signatures, each Ed25519 over a domain-separated message so one kind is never taken for
+another, each `{key, signature}` (the signer's public key and the signature, in hex):
+
+- **Item signature: who made this Sound or Performance?** `oscairn-item-1\0` + the item's
+  content hash (the library's `hash`: its document without `info`, and its `nodes/` files), in
+  the manifest beside the item (`items[].signatures`). It covers what the item plays, not its
+  name or tags, so it stays true of a copy the user renames.
+- **Build signature: who built this plugin?** Plugin code is what can harm a device, and its
+  author is the only one who can vouch for it. The plugin publisher's signature over the build's
+  identity and digest: `oscairn-build-1\0` + format, ID, version, platform and digest, each
+  NUL-terminated. It sits in the archive manifest beside the build (`builds[].signatures`), and
+  beside the build as `<bundle>.sig` (a list of signatures) where the author put it and in the
+  store, and it travels unchanged: a friend re-exporting a Performance carries the vendor's
+  signature without being able to make one. The same build re-signed by its vendor later (a new
+  key) gets another entry; nothing in the bundle changes.
+- **App signature: who made this app?** Apps are not packaged yet
+  ([RFC 0022](0022-apps-and-requests.md) step 2). When they are, each app in the manifest
+  carries `signatures` over `oscairn-app-1\0` + its ID, version and digest, each NUL-terminated,
+  and is judged for install as a plugin build is, against keys trusted for `apps`. The install
+  check already takes each code component's kind, so an app is one more entry in it.
+- **Archive signature: who put this archive together?** A sound designer's library, a
+  manufacturer's factory set, or your own export, if you choose. Over the manifest's exact
+  bytes, which list every file's SHA-256 and every build's digest, so one signature covers it
+  all: `oscairn-archive-1\0` + manifest, in a `library.sig` entry (`{key, signature}`).
 
 **Algorithm:** Ed25519, small keys and signatures, fast to check on the device, deterministic,
 and no clock needed. Implementation: [Monocypher](https://monocypher.org) (BSD-2 or CC0, one C
-file, already the shape of the vendored miniz), not a TLS stack. A key is named by the first
-16 hex digits of its SHA-256, shown to people as its fingerprint.
+file and its optional Ed25519 file, vendored as miniz is), not a TLS stack. A key is named by
+the first 16 hex digits of the SHA-256 of its 32 bytes, shown to people as its fingerprint.
+
+**Keys:** a private key is a file only its user can read, `Keys/<name>.key` in the data folder,
+made on request (`keys.make`), or anywhere with `oscairn-sign key`. An export signs its items,
+the whole archive, or both, with the key the user chooses. A plugin author signs a build with
+`oscairn-sign build`, which writes `<bundle>.sig` beside it; an export carries it.
 
 **Trust store:** `trust.json` in the data folder, each key with a name, what it is trusted
-for (`plugins`, `content`, or both) and where it came from. A product ships its manufacturer's
-key and the Oscairn project's; system updates ([RFC 0028](0028-system-image-updates-boot-and-power.md))
-replace those entries and add revocations, so an offline device learns them with its next
-image. The user adds a key by installing a signed archive and saying yes to its fingerprint,
-or by pairing devices.
-
-**Your own devices:** each Oscairn install makes a key on first use and signs its exports with
-it. Pairing a desktop with an instrument (RFC 0012) trusts each other's keys for content, so
-moving your own Performances between your own machines is signed and silent. It is not trust
-for plugin code: a plugin from your desktop is still judged by its build signature.
+for (`plugins`, `apps`, `content`, any of them) and whether it is revoked; added, changed and
+removed through the control API (`trust.list`, `trust.set`, `trust.remove`). A product ships
+its manufacturer's key and the Oscairn project's; system updates
+([RFC 0028](0028-system-image-updates-boot-and-power.md)) replace those entries and add
+revocations, so an offline device learns them with its next image. The user adds a key by
+saying yes to its fingerprint. Pairing devices (RFC 0012) to trust each other's keys for content
+is a later step; it is never trust for plugin code.
 
 **Install policy**, per device profile (RFC 0024):
 
 | What the archive brings | Desktop default | A product may require |
 | --- | --- | --- |
-| Sounds, Performances, samples (data) | Install; an unknown or missing archive signature is shown, not blocking | Same |
-| A plugin build signed by a trusted publisher | Install | Install |
-| A plugin build unsigned, or by an unknown key | Ask, listing each plugin and that it runs code from an unknown source; the answer can trust the key | Refuse, keeping the items with stand-ins |
-| A revoked key, or a build digest on the revocation list | Refuse that build, with stand-ins | Refuse |
+| Sounds, Performances, samples (data), signed or not | Install silently; who signed it is reported | Same |
+| A plugin build or app signed by a key trusted for it | Install | Install |
+| A plugin build or app unsigned, or by an unknown key | Ask, listing each and that it runs code from an unknown source; installed only when the install says yes (`acceptUnsignedCode`), else refused with the list; the answer can trust the key | Refuse (a profile setting), keeping the items with stand-ins |
+| A revoked key | Refuse that build, with stand-ins | Refuse |
+| A signature that does not verify, at any level | Refuse the archive, like a hash mismatch | Same |
 
-A build already in the store is judged again when its key is revoked: it stays on disk but
-does not load, and what used it opens with a stand-in saying why.
+Reading an archive's contents (`library.contents`) reports each plugin build's signer
+(`trusted`, `unknown`, `unsigned` or `revoked`) and the archive's, so the install can ask before
+it starts. A build already in the store is to be judged again when its key is revoked: it stays
+on disk but does not load, and what used it opens with a stand-in saying why (not built yet).
 
 **No expiry:** instruments may have no clock (a MODX keeps none), so validity never depends on
 the date. Keys are retired by revocation and replaced by a new key signed by the old one, which
@@ -172,9 +205,10 @@ Platform signatures are separate and kept: a macOS bundle's own code signature i
 for byte, never rewritten, and Windows Authenticode the same. System images have their own
 signing (RFC 0028).
 
-**Order:** the trust store and Ed25519 checks; archive signatures with your own device's key;
-build signatures, including a tool for plugin authors to sign their builds (`oscairn-sign`),
-and the install policy table; revocation through system updates; pairing.
+**Order:** Ed25519 checks; archive version 3 with item, build and archive signatures; the trust
+store; signing on export and `oscairn-sign`; the install policy and the desktop's prompt;
+revocation through system updates and re-judging the store; repositories requiring signatures;
+pairing.
 
 ## Project manifest, lockfile and shared store
 
