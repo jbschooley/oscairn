@@ -231,7 +231,7 @@ namespace oscairn::standalone
         return out;
     }
 
-    void PlayView::select(uint32_t part) { selected_ = part; if(!part) partControls_ = false; page_ = 0; shape_.clear(); refresh(); repaint(); }
+    void PlayView::select(uint32_t part) { selected_ = part; if(!part) partControls_ = false; page_ = 0; refresh(); repaint(); }
     void PlayView::showPartControls(bool part) { partControls_ = part; page_ = 0; shape_.clear(); refresh(); }
 
     void PlayView::timerCallback()
@@ -263,8 +263,10 @@ namespace oscairn::standalone
         page_ %= banks;
         knobSlots_ = resolveControls(source_, {group}, owner, {uint32_t(page_)});
         pageButton_.setVisible(banks > 1);
+        // The switch between the Performance's controls and the part's shows while a part is selected.
+        if((selected_ != 0) != performanceControls_.isVisible()) { performanceControls_.setVisible(selected_ != 0); partControlsButton_.setVisible(selected_ != 0); resized(); }
         // Rebuilt when what shows changes, so a fader being moved survives the rest.
-        std::string shape = std::to_string(getWidth()) + "x" + std::to_string(getHeight()) + "/" + std::to_string(owner) + "/" + std::to_string(banks) + "/" + std::to_string(group.count) + "/" + std::to_string(selected_);
+        std::string shape = std::to_string(getWidth()) + "x" + std::to_string(getHeight()) + "/" + std::to_string(owner) + "/" + std::to_string(banks) + "/" + std::to_string(group.count);
         for(const auto* list : {&state_.parts, &state_.buses}) for(const auto& p : *list) shape += "," + std::to_string(p.id);
         if(shape != shape_) { shape_ = shape; rebuild(); }
         for(auto& s : strips_) for(const auto* list : {&state_.parts, &state_.buses}) for(const auto& p : *list) if(p.id == s->part()) s->set(p);
@@ -393,8 +395,6 @@ namespace oscairn::standalone
         strips_.clear();
         for(const auto* list : {&state_.parts, &state_.buses})
             for(const auto& p : *list) { strips_.push_back(std::make_unique<Strip>(*this, p.id)); stripRow_.addAndMakeVisible(*strips_.back()); }
-        const bool any = selected_ != 0;
-        performanceControls_.setVisible(any); partControlsButton_.setVisible(any);
         resized();
     }
 
