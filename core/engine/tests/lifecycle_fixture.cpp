@@ -23,6 +23,7 @@ namespace
         const clap_host_t* host;
         uint16_t laneSpace=0;
         std::atomic<int> mode{0},callbacks{0};
+        bool error=false; // latched by mode 4: every later block fails, like a dead worker
         static Plugin& get(const clap_plugin_t* p) { return *static_cast<Plugin*>(p->plugin_data); }
         static void events(const clap_plugin_t* p, const clap_input_events_t* in, const clap_output_events_t* out)
         {
@@ -58,6 +59,8 @@ namespace
                 auto& s=get(p);
                 s.host->request_callback(s.host);
                 const int mode=s.mode.exchange(0);
+                if(mode==4) {s.error=true;return CLAP_PROCESS_ERROR;} // latches: every later block fails too
+                if(s.error) return CLAP_PROCESS_ERROR;
                 if(mode==-2) {
                     oscairn_event_param_target_t value{};value.header={sizeof(value),0,s.laneSpace,OSCAIRN_EVENT_PARAM_TARGET,0};
                     value.note_id=7;value.key=60;value.value=.5;

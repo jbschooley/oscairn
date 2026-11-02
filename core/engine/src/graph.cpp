@@ -865,16 +865,22 @@ namespace oscairn
                 uint32_t sounding=0;for(const auto& source:step.noteSources)sounding+=source.route->sounding();
                 step.activity->sounding.store(sounding,std::memory_order_relaxed);
             }
-            if(processed && step.retiring && step.activity)
+            if(step.retiring && step.activity)
             {
                 // A retiring node: its notes still sounding, and how long it has been silent.
                 uint32_t sounding=0;for(const auto& source:step.noteSources)sounding+=source.route->sounding();
-                float loudest=0;for(uint32_t c=0;c<step.audioOutputs;++c)for(uint32_t i=0;i<frames;++i)loudest=std::max(loudest,std::abs(step.out[c][i]));
                 auto& a=*step.activity;
                 a.sounding.store(sounding,std::memory_order_relaxed);
-                a.quiet.store(loudest<1e-5f?a.quiet.load(std::memory_order_relaxed)+frames:0,std::memory_order_relaxed);
-                a.free.store(sounding?0:a.free.load(std::memory_order_relaxed)+frames,std::memory_order_relaxed);
-                a.asleep.store(step.host->asleep(),std::memory_order_relaxed);
+                if(processed)
+                {
+                    float loudest=0;for(uint32_t c=0;c<step.audioOutputs;++c)for(uint32_t i=0;i<frames;++i)loudest=std::max(loudest,std::abs(step.out[c][i]));
+                    a.quiet.store(loudest<1e-5f?a.quiet.load(std::memory_order_relaxed)+frames:0,std::memory_order_relaxed);
+                    a.free.store(sounding?0:a.free.load(std::memory_order_relaxed)+frames,std::memory_order_relaxed);
+                    a.asleep.store(step.host->asleep(),std::memory_order_relaxed);
+                }
+                // A block the plugin never rendered (a worker that died and did not restart) is
+                // as good as silence: it counts toward the limit, or such a node is never idle.
+                else a.free.store(sounding?0:a.free.load(std::memory_order_relaxed)+frames,std::memory_order_relaxed);
             }
             step.paramCount = 0;step.paramDrops=0;step.releaseCount=0;step.releaseOverflow=false;
             uint32_t endedCount=0;const auto* ended=step.host->outputEvents(endedCount);
