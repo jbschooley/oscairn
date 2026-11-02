@@ -64,22 +64,24 @@ namespace oscairn::standalone
     };
 
     /// The engine's disconnect notice and its Restart button (RFC 0030's desktop, which has no
-    /// Panel to show them): a strip across the top of a view, shown while the engine is gone,
-    /// offering a restart when one is possible. Tapping the button restarts the managed engine.
+    /// Panel to show them): a strip across the top of a view, shown while the engine is gone and
+    /// brought in front of the view's own controls, offering a restart when one is possible.
     class EngineRecovery : public juce::Component
     {
     public:
-        explicit EngineRecovery(Engine& engine) : engine_(engine) {}
+        explicit EngineRecovery(Engine& engine);
         void update();                              // says what is wrong, and whether Restart shows
+        void show(bool disconnected, bool canRestart);
         const juce::String& notice() const { return notice_; }
-        bool restartShown() const { return restart_; }
+        bool restartShown() const { return restart_.isVisible(); }
+        juce::TextButton& restartButton() { return restart_; }
+        std::function<void()> onRestart;            // Restart's click: restarts the managed engine
         void paint(juce::Graphics&) override;
-        void mouseDown(const juce::MouseEvent&) override;
+        void resized() override;
     private:
         Engine& engine_;
         juce::String notice_;
-        bool restart_ = false;
-        juce::Rectangle<int> button_;
+        juce::TextButton restart_{"Restart engine"};
     };
 
     /// Home (RFC 0030): the product's apps as tiles under the top bar, each with a line of its

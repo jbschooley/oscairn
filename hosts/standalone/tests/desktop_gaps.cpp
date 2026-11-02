@@ -599,6 +599,25 @@ int main(int argc, char** argv)
                 launcher.recovery().update();
                 check(launcher.recovery().isVisible() && launcher.recovery().notice().contains("Reconnecting"), "Home shows the disconnect notice");
                 check(!launcher.recovery().restartShown(), "no Restart while the engine may come back (this engine is not managed)");
+                // As after a managed engine's crash: Restart is a real button, in front of the
+                // view's own controls at its place, on Home and in the Performance app.
+                standalone::DesktopShell shell(engine, argv[2], standalone::InputMode::Mouse);
+                shell.setSize(1280, 800); shell.setVisible(true); launcher.setVisible(true);
+                for(auto* recovery : {&launcher.recovery(), &shell.recovery()})
+                {
+                    auto* view = recovery == &shell.recovery() ? static_cast<juce::Component*>(&shell) : &launcher;
+                    recovery->show(true, true);
+                    bool restarted = false;
+                    recovery->onRestart = [&] { restarted = true; };
+                    auto& button = recovery->restartButton();
+                    auto* hit = view->getComponentAt(view->getLocalPoint(&button, button.getLocalBounds().getCentre()));
+                    check(recovery->isVisible() && button.isVisible() && hit == &button,
+                          "Restart is what a click at its place reaches: " + std::string(hit ? typeid(*hit).name() : "nothing"));
+                    check(button.getWantsKeyboardFocus() && button.isAccessible(), "and it is reachable by keyboard and accessibility: " + std::to_string(button.getWantsKeyboardFocus()));
+                    button.triggerClick();
+                    check(wait([&] { return restarted; }), "a click on it restarts the engine");
+                    recovery->onRestart = {};
+                }
                 forcedHold = false;
                 for(int i = 0; i < 600 && !engine.connected(); ++i) juce::MessageManager::getInstance()->runDispatchLoopUntil(10); // the engine answers again
                 check(engine.connected(), "the client reconnects");

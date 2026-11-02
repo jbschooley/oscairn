@@ -134,37 +134,36 @@ namespace oscairn::standalone
         menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea(localAreaToGlobal(contextArea_)), [save = shell_.save](int chosen) { if(chosen > 0) save(chosen == 2); });
     }
 
-    void EngineRecovery::update()
+    EngineRecovery::EngineRecovery(Engine& engine) : engine_(engine)
     {
-        const bool disconnected = !engine_.connected();
-        restart_ = disconnected && engine_.canRestart();
+        onRestart = [this] { engine_.restart(); update(); };
+        restart_.setTooltip("Start the engine again, with a fresh session");
+        restart_.onClick = [this] { if(onRestart) onRestart(); };
+        addChildComponent(restart_);
+    }
+    void EngineRecovery::update() { show(!engine_.connected(), engine_.canRestart()); }
+    void EngineRecovery::show(bool disconnected, bool canRestart)
+    {
         notice_ = !disconnected ? juce::String()
-                : engine_.canRestart() ? "Engine stopped. Restart opens a fresh session." : "Engine disconnected. Reconnecting...";
+                : canRestart ? "Engine stopped. Restart opens a fresh session." : "Engine disconnected. Reconnecting...";
+        restart_.setVisible(disconnected && canRestart);
         setVisible(disconnected);
+        if(disconnected) toFront(false); // over the view's own controls, which would take Restart's clicks
         repaint();
+    }
+    void EngineRecovery::resized()
+    {
+        const int side = desktopMode(*this) == 2 ? 40 : 28;
+        restart_.setBounds(getLocalBounds().removeFromRight(170).reduced(8, std::max(0, (getHeight() - side) / 2)));
     }
     void EngineRecovery::paint(juce::Graphics& g)
     {
         g.setColour(ink(Ink::Danger));
         g.fillRoundedRectangle(getLocalBounds().toFloat(), 6.f);
         const int mode = std::max(1, desktopMode(*this));
-        const int side = mode == 2 ? 40 : 28;
-        button_ = restart_ ? getLocalBounds().removeFromRight(170).reduced(8, (getHeight() - side) / 2) : juce::Rectangle<int>{};
         g.setColour(ink(Ink::Danger).contrasting());
-        drawInked(g, notice_, getLocalBounds().reduced(12, 0).withRight(button_.isEmpty() ? getRight() - 8 : button_.getX() - 8),
+        drawInked(g, notice_, getLocalBounds().reduced(12, 0).withRight(restart_.isVisible() ? restart_.getX() - 8 : getRight() - 8),
                  juce::Font(juce::FontOptions(textSize(TextRole::Small, mode))), juce::Justification::centredLeft);
-        if(restart_)
-        {
-            g.setColour(ink(Ink::Danger).contrasting().withAlpha(.25f));
-            g.fillRoundedRectangle(button_.toFloat(), 5.f);
-            drawInked(g, "Restart engine", button_, juce::Font(juce::FontOptions(textSize(TextRole::Button, mode))), juce::Justification::centred);
-        }
-    }
-    void EngineRecovery::mouseDown(const juce::MouseEvent& e)
-    {
-        if(!restart_ || !button_.contains(e.getPosition())) return;
-        engine_.restart();
-        update();
     }
 
     Launcher::Launcher(Engine& engine, std::vector<App> apps, TopBar::Shell shell) : engine_(engine), apps_(std::move(apps)), states_(apps_.size()), recovery_(engine), bar_(engine, "Home", [&] {
