@@ -383,15 +383,46 @@ controls; physical knobs, faders, buttons, MIDI CC and sequencer lanes drive the
 - Each target has its own **start** and **end** (end below start reverses it, like the
   MODX's negative ratio) and **curve**: linear, exponential, logarithmic or S-shaped. A
   target is **absolute** (it sets the value) or **relative** (it moves the value around
-  the value it had when the control was last stored, the MODX's bipolar setting).
+  its base, the MODX's controller boxes).
 - Controls form a tree without loops: an assignment that would loop is refused.
-- When two controls drive the same one (a Super Knob and Assign 3's own knob both move
-  Assign 3), the control moved last sets it, as on the MODX.
+- **Several controls driving one parameter add up**, as the MODX sums the boxes of every
+  source assigned to one destination (the summing rule, below). When two controls drive the
+  same *control* (a Super Knob and Assign 3's own knob both move Assign 3), the control moved
+  last sets it, as on the MODX, whose Super Knob moves the Assign knobs.
 - Moving a control sets its targets through the ordinary parameter path, as sample-timed
   events. For sequencer lanes that must morph many parameters at an exact sample, the tree
   is flattened when the graph is committed into each lane's final targets with their
   combined ranges and curves (a later step).
 - Scenes store control values as they store part faders.
+
+**The summing rule** (decided 2026-11-01). A parameter, a part's level and a part's mute each
+have a **base**: their value with no control moving them, one per destination, kept on each
+of its targets (`base`). Each target on it contributes an **offset**, at its control's value
+`x`, from its point `p = start + (end − start) × curve(x)`:
+
+- a **relative** target offsets by `p − ½`: the middle of its range is no change, so
+  start 0.5 and end 0.9 add nothing at 0 and +0.4 at 1 (a unipolar box), and start 0.3 and
+  end 0.7 move ±0.2 (a bipolar one);
+- an **absolute** target offsets by `p − base`: alone it sets the value to `p`, as before;
+  beside others it adds how far `p` is from the base.
+
+The destination is `base + Σ offsets`, clamped to its range (0 to 1 of it; a mute is on at
+0.5 or more). A target that is off in the scene last selected adds nothing. Clamping is not
+kept: the base survives it, so the value comes back as the controls go back.
+
+- **A new destination's base** is its value when it gets its first target. Adding a target to a
+  destination some control already drives keeps its base, as does editing a control's other
+  targets.
+- **A direct edit moves the base, not the offsets.** Anything but the controls that moves the
+  value (the screen, a part's fader, undo, a scene's stored values, a glide or morph, the plugin
+  itself) is taken as where the musician wants it with the controls where they are: the next
+  time a control moves, the base becomes the value less the offsets, and the controls go on
+  from there. With exactly one absolute target the base does not count (that target sets the
+  value), so an edit lasts until it moves. The base may then lie outside 0 to 1, where the
+  offsets reach past the range.
+- **Scenes** store and restore the control values, then the parameter values and faders they
+  hold, which have the last word: a stored value plays as stored, and the controls offset
+  from it afterwards. Glides and morphs move them alike.
 - Any physical control on any device can be bound to any control, so a controller without
   a Super Knob gets one by binding a knob to the top of a tree. Pickup, relative encoders
   and feedback stay with the controller-mapping service.
@@ -402,7 +433,10 @@ last-moved wins; scenes store control values; saved in the Performance; `control
 control protocol; a **Controls** page in the Parts view; and panel layout knobs bound as
 `control:NAME`. `control-parts` checks a Super control driving an Assign control (with an
 exponential curve) that drives a gain and a reversed part level, a relative target, loops,
-scenes and saving. Not yet: flattening the tree for sample-accurate sequencer lanes,
+scenes and saving. The summing rule, 2026-11-01 (`Session::driveMacro`, Performance format
+version 11): `control-parts` checks two controls on one parameter adding up, the sum clamped,
+the base surviving the clamp, a direct edit moving the base under the offsets, and an absolute
+target beside a relative one. Not yet: flattening the tree for sample-accurate sequencer lanes,
 default Assign controls from each sound, MIDI CC learn, and part faders as direct gain
 updates rather than a new graph plan per move.
 

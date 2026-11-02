@@ -781,20 +781,28 @@ namespace oscairn
         editWires([&] { findPart(id).name = name; });
     }
 
-    double MacroTarget::map(double value) const
+    double MacroTarget::shape(double value) const
     {
         const double x = std::clamp(value, 0.0, 1.0);
-        double shaped = x;
         switch(curve)
         {
         case Curve::Linear: break;
-        case Curve::Exponential: shaped = (std::exp(4 * x) - 1) / (std::exp(4.0) - 1); break;
-        case Curve::Logarithmic: shaped = std::log1p((std::exp(4.0) - 1) * x) / 4; break;
-        case Curve::SCurve: shaped = x * x * (3 - 2 * x); break;
+        case Curve::Exponential: return (std::exp(4 * x) - 1) / (std::exp(4.0) - 1);
+        case Curve::Logarithmic: return std::log1p((std::exp(4.0) - 1) * x) / 4;
+        case Curve::SCurve: return x * x * (3 - 2 * x);
         }
-        if(relative) return std::clamp(base + (shaped - .5) * (end - start), 0.0, 1.0);
-        return std::clamp(start + (end - start) * shaped, 0.0, 1.0);
+        return x;
     }
+
+    // Its point in the range, start at 0 and end at 1. Relative: that point less a half, so the
+    // middle is no change. Absolute: how far that point is from the base, so alone it sets the value.
+    double MacroTarget::offset(double value) const
+    {
+        const double point = start + (end - start) * shape(value);
+        return point - (relative ? .5 : base);
+    }
+
+    double MacroTarget::map(double value) const { return std::clamp(base + offset(value), 0.0, 1.0); }
 
     Macro& Session::findMacro(uint32_t id)
     {
@@ -877,29 +885,82 @@ namespace oscairn
                 break;
             }
             }
-            // A relative target moves around its value when it became relative; one that already
-            // was keeps that base, so editing a control's other targets does not shift it.
-            if(t.relative)
+            // A destination's base is shared: a destination some control already drives keeps its
+            // base (taken again first if something else has moved it since), so editing a control's
+            // targets does not shift it; a new one starts from its value now.
+            if(t.sums())
             {
-                const auto& before = findMacro(id).targets;
-                const auto same = std::find_if(before.begin(), before.end(), [&](const MacroTarget& o) {
-                    return o.relative && o.kind == t.kind && o.node == t.node && o.param == t.param && o.part == t.part && o.macro == t.macro; });
-                t.base = same != before.end() ? same->base : currentFraction(t);
+                const MacroTarget* other = nullptr;
+                for(const auto& m : macros_) for(const auto& o : m.targets) if(!other && o.sameDestination(t)) other = &o;
+                const double now = currentFraction(t);
+                const auto w = written_.find(destination(t));
+                if(!other) t.base = now;
+                else if(w != written_.end() && std::abs(w->second - now) > 1e-6) t.base = contributions(t, 0, 0).baseFor(now, other->base);
+                else t.base = other->base;
+                written_[destination(t)] = now;
             }
         }
         findMacro(id).targets = std::move(targets);
+        for(const auto& t : findMacro(id).targets) if(t.sums()) setBase(t, t.base);
+    }
+
+    Session::Sum Session::contributions(const MacroTarget& t, uint32_t macro, double value) const
+    {
+        Sum sum;
+        for(const auto& m : macros_)
+            for(const auto& o : m.targets)
+                if(o.sameDestination(t) && !(mappingScene_ && std::find(o.offIn.begin(), o.offIn.end(), mappingScene_) != o.offIn.end()))
+                {
+                    const double v = m.id == macro ? value : m.value;
+                    sum.fixed += o.relative ? o.offset(v) : o.start + (o.end - o.start) * o.shape(v);
+                    sum.absolute += !o.relative;
+                }
+        return sum;
+    }
+
+    void Session::setBase(const MacroTarget& t, double base)
+    {
+        for(auto& m : macros_) for(auto& o : m.targets) if(o.sameDestination(t)) o.base = base;
+    }
+
+    void Session::noteBases()
+    {
+        written_.clear();
+        for(const auto& m : macros_)
+            for(const auto& t : m.targets)
+                if(t.sums() && !written_.count(destination(t)))
+                {
+                    setBase(t, t.base);
+                    try { written_[destination(t)] = currentFraction(t); } catch(const std::exception&) {}
+                }
     }
 
     // Sets a control and, through its targets, everything below it; part faders are rebuilt once.
     void Session::driveMacro(uint32_t id, double value, bool& faders)
     {
         auto& macro = findMacro(id);
-        macro.value = std::clamp(value, 0.0, 1.0);
+        const double was = macro.value;
+        value = std::clamp(value, 0.0, 1.0);
         const auto targets = macro.targets; // `macro` may move as children are driven
-        for(const auto& t : targets)
+        // Where each destination goes with this control at its new value: its base plus every
+        // control's offset, clamped. A destination something else has moved since the controls
+        // last set it (an edit, a scene, a glide) takes that as its base, less the offsets.
+        std::vector<double> to(targets.size());
+        for(size_t i = 0; i < targets.size(); ++i)
         {
+            auto t = targets[i];
+            if(!t.sums()) continue;
+            if(t.kind == MacroTarget::Kind::Parameter && !(graph_.contains(t.node) && hasParameter(t.node, t.param))) continue;
+            const double now = currentFraction(t);
+            if(const auto w = written_.find(destination(t)); w != written_.end() && std::abs(w->second - now) > 1e-6) { t.base = contributions(t, id, was).baseFor(now, t.base); setBase(t, t.base); }
+            to[i] = std::clamp(contributions(t, id, value).at(t.base), 0.0, 1.0);
+        }
+        findMacro(id).value = value;
+        for(size_t i = 0; i < targets.size(); ++i)
+        {
+            const auto& t = targets[i];
             if(mappingScene_ && std::find(t.offIn.begin(), t.offIn.end(), mappingScene_) != t.offIn.end()) continue; // off in this scene
-            const double v = t.map(macro.value);
+            const double v = t.sums() ? to[i] : t.map(value);
             switch(t.kind)
             {
             case MacroTarget::Kind::Parameter:
@@ -914,6 +975,7 @@ namespace oscairn
             case MacroTarget::Kind::Macro: driveMacro(t.macro, v, faders); break;
             case MacroTarget::Kind::Morph: morphScenes(t.sceneFrom, t.sceneTo, v); break;
             }
+            if(t.sums()) try { written_[destination(t)] = currentFraction(t); } catch(const std::exception&) {}
         }
     }
 

@@ -202,14 +202,21 @@ namespace oscairn
         uint32_t macro = 0;                  // Macro
         uint32_t sceneFrom = 0, sceneTo = 0; // Morph: the scenes the control moves between, from at 0 to at 1
         // The range the control's 0..1 covers, as fractions of the target's range; end below
-        // start reverses it. Relative targets move around `base` (the value when assigned) by
-        // half the range either way instead.
+        // start reverses it. Relative targets move around `base` by half the range either way.
         double start = 0, end = 1;
         bool relative = false;
+        // Parameters, part levels and mutes: the destination's value with no control moving it,
+        // the same on every target of that destination (RFC 0011's summing rule). Each target
+        // adds its offset around it, and the sum is clamped to the range.
         double base = 0;
         std::vector<uint32_t> offIn; // the scenes this mapping is off in (RFC 0011); on in every other
-        // What a control value does here, as a fraction of the target's range.
+        double shape(double value) const;  // the curve: 0..1 to 0..1
+        double offset(double value) const; // what a control value adds to the base
+        // What a control value does here alone, as a fraction of the target's range.
         double map(double value) const;
+        // Whether several controls' targets sum into this one's destination, and whether two share it.
+        bool sums() const { return kind == Kind::Parameter || kind == Kind::PartLevel || kind == Kind::PartMute; }
+        bool sameDestination(const MacroTarget& o) const { return sums() && o.kind == kind && o.node == node && o.param == param && o.part == part; }
         bool operator==(const MacroTarget&) const = default;
     };
     // A control belongs to the Performance, or to a part (RFC 0021): a part's controls target only

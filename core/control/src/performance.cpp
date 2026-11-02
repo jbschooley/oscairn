@@ -518,7 +518,7 @@ Control::PerformanceInfo Session::writeDocument(const std::string& directory,Per
                            :std::any_of(parts_.begin(),parts_.end(),[&](const Part& p){return p.id==t.id;});
             if(here)assigned.push_back("{\"control\":"+quote(o.control)+",\"kind\":"+quote(assignmentKinds[size_t(t.kind)])+",\"id\":"+std::to_string(t.id)+part+'}');}
         for(const auto& at:untouched_)if(keys.count(at.node))parameters.push_back("{\"node\":"+quote(keys.at(at.node))+",\"param\":"+std::to_string(at.param)+'}');
-        head="{\"format\":\"oscairn.performance\",\"version\":10,\"info\":";tail=",\"libraries\":"+join(named)+",\"transport\":{\"tempo\":"+numeric(tempo_.load())+",\"clockSource\":"+quote(clockSource_.load()==Transport::ClockSource::Internal?"internal":"midi")+"},\"audioInputs\":"+ports(graph.audioLayout.inputs)+",\"audioOutputs\":"+ports(graph.audioLayout.outputs)+",\"nodes\":"+join(nodes)+",\"wires\":"+join(wires)+",\"parts\":"+join(parts)+",\"mappings\":"+join(mappings)+",\"pads\":"+padsText(padMap_)+",\"key\":"+keyText(key_)+",\"scenes\":"+join(scenes)+",\"sceneUntouched\":"+join(parameters)+",\"scene\":"+std::to_string(scene_)+",\"controls\":"+join(controls)+",\"assignments\":"+join(assigned)+",\"lock\":"+lockText+"}\n";
+        head="{\"format\":\"oscairn.performance\",\"version\":11,\"info\":";tail=",\"libraries\":"+join(named)+",\"transport\":{\"tempo\":"+numeric(tempo_.load())+",\"clockSource\":"+quote(clockSource_.load()==Transport::ClockSource::Internal?"internal":"midi")+"},\"audioInputs\":"+ports(graph.audioLayout.inputs)+",\"audioOutputs\":"+ports(graph.audioLayout.outputs)+",\"nodes\":"+join(nodes)+",\"wires\":"+join(wires)+",\"parts\":"+join(parts)+",\"mappings\":"+join(mappings)+",\"pads\":"+padsText(padMap_)+",\"key\":"+keyText(key_)+",\"scenes\":"+join(scenes)+",\"sceneUntouched\":"+join(parameters)+",\"scene\":"+std::to_string(scene_)+",\"controls\":"+join(controls)+",\"assignments\":"+join(assigned)+",\"lock\":"+lockText+"}\n";
     }
     info.hash=contentHash(head+tail,bundle.temporary.path/"nodes");
     const auto out=head+infoText()+tail;
@@ -576,7 +576,7 @@ std::unique_ptr<Session::Prepared> Session::read(const fs::path& root) {
     validateTree(root);const auto doc=document(root);V d=doc.get();
     fields(d,{"format","version","info","libraries","transport","audioInputs","audioOutputs","nodes","wires","parts","mappings","pads","key","scenes","sceneUntouched","scene","controls","assignments","lock"});
     const auto pads=padsFrom(field(d,"pads"));const auto key=keyFrom(field(d,"key"));
-    if(text(field(d,"format"))!="oscairn.performance" || integer(field(d,"version"))!=10)bad("unsupported format version");
+    if(text(field(d,"format"))!="oscairn.performance" || integer(field(d,"version"))!=11)bad("unsupported format version");
     fields(field(d,"info"),{"id","name","description","tags","color","revision","parent","hash","origin"});const auto info=readInfo(root/"performance.json","oscairn.performance");
     auto lock=readLock(d);
     const auto transport=field(d,"transport");fields(transport,{"tempo","clockSource"});const double tempo=number(field(transport,"tempo"));
@@ -782,7 +782,7 @@ std::unique_ptr<Session::Prepared> Session::read(const fs::path& root) {
                 target.curve=curve=="linear"?MacroTarget::Curve::Linear:curve=="exponential"?MacroTarget::Curve::Exponential:curve=="logarithmic"?MacroTarget::Curve::Logarithmic:curve=="s-curve"?MacroTarget::Curve::SCurve:(bad("invalid curve"),MacroTarget::Curve::Linear);
                 target.start=number(field(t,"start"));target.end=number(field(t,"end"));target.relative=boolean(field(t,"relative"));target.base=number(field(t,"base"));
                 for(auto id:array(field(t,"offIn"),256)){target.offIn.push_back(integer(id));if(!sceneIds.count(target.offIn.back()))bad("a mapping off in an unknown scene");}
-                if(target.start<0 || target.start>1 || target.end<0 || target.end>1 || target.base<0 || target.base>1)bad("invalid control target range");
+                if(target.start<0 || target.start>1 || target.end<0 || target.end>1)bad("invalid control target range");
                 macro.targets.push_back(target);
             }
             nextMacro=std::max(nextMacro,macro.id+1);macros.push_back(std::move(macro));
@@ -848,6 +848,7 @@ void Session::open(Prepared& p,bool seamless) {
     info_=p.info;
     lock_=std::move(p.lock);
     clearHistory(); // undo does not reach back into another Performance
+    noteBases();
 }
 
 // A plugin into a lock being written: this platform's build by its digest (once per build) where
@@ -1057,6 +1058,7 @@ std::vector<std::string> Session::loadSoundInto(uint32_t partId,const fs::path& 
             id=same==arriving.end()?0:same->id;}
         for(auto& scene:scenes_)std::erase_if(scene.macros,[](const auto& v){return v.first==0;});
         macros_.insert(macros_.end(),arriving.begin(),arriving.end());
+        noteBases();
         std::erase_if(assignments_,[&](const AssignmentOverride& o){return o.part==partId;});
         assignments_.insert(assignments_.end(),owned.begin(),owned.end());
         auto& loaded=findPart(partId);loaded.name=info.name;
@@ -1130,7 +1132,7 @@ uint32_t Session::partFromSound(const std::string& id) {
 Control::PerformanceContents Session::performanceContents(const std::string& directory) {
     if(directory.empty() || directory.find('\0')!=std::string::npos)bad("invalid directory");
     const auto doc=document(fs::canonical(directory));V d=doc.get();
-    if(text(field(d,"format"))!="oscairn.performance" || integer(field(d,"version"))!=10)bad("unsupported format version");
+    if(text(field(d,"format"))!="oscairn.performance" || integer(field(d,"version"))!=11)bad("unsupported format version");
     PerformanceContents out;
     for(auto p:array(field(d,"parts"),256))out.parts.push_back({integer(field(p,"id")),text(field(p,"name")),text(field(field(p,"input"),"kind"))=="bus"});
     for(auto s:array(field(d,"scenes"),256))out.scenes.push_back({integer(field(s,"id")),text(field(s,"name"))});
@@ -1152,7 +1154,7 @@ Control::Imported Session::importPerformance(const std::string& directory,const 
     const auto root=fs::canonical(directory);validateTree(root);const auto doc=document(root);V d=doc.get();
     fields(d,{"format","version","info","libraries","transport","audioInputs","audioOutputs","nodes","wires","parts","mappings","pads","key","scenes","sceneUntouched","scene","controls","assignments","lock"});
     mergeLock(readLock(d));
-    if(text(field(d,"format"))!="oscairn.performance" || integer(field(d,"version"))!=10)bad("unsupported format version");
+    if(text(field(d,"format"))!="oscairn.performance" || integer(field(d,"version"))!=11)bad("unsupported format version");
     fields(field(d,"info"),{"id","name","description","tags","color","revision","parent","hash","origin"});
     // The parts that come: those chosen, and the buses they play through or send to, and theirs.
     const auto partList=array(field(d,"parts"),256);
@@ -1355,6 +1357,7 @@ Control::Imported Session::importPerformance(const std::string& directory,const 
     for(const auto& m:mappings)graph_.mapParamTarget(m.source,m.lane,m.target,m.param);
     for(const auto& m:macros)nextMacro_=std::max(nextMacro_,m.id+1);
     macros_.insert(macros_.end(),macros.begin(),macros.end());
+    noteBases();
     untouched_.insert(untouched_.end(),untouched.begin(),untouched.end());
     // This Performance's scenes keep what arrives as it arrives; the arriving scenes keep what was
     // here as it is now.

@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Oscairn Performance version 10",
+  "title": "Oscairn Performance version 11",
   "description": "performance.json inside a Performance folder. See performance-format.md for binary state, asset limits, plugin validation and transactional loading. Runtime node/context IDs and live voices are not persisted. Wires and parts (RFC 0011) define the graph's audio routes and note connections.",
   "type": "object",
   "properties": {
@@ -8,7 +8,7 @@
       "const": "oscairn.performance"
     },
     "version": {
-      "const": 10
+      "const": 11
     },
     "info": {
       "type": "object",
@@ -1487,8 +1487,7 @@
         },
         "base": {
           "type": "number",
-          "minimum": 0,
-          "maximum": 1
+          "description": "Parameters, part levels and mutes: the destination's base, the same on every target of it (RFC 0011's summing rule); outside 0..1 when a direct edit put the value where the offsets reach past the range"
         },
         "offIn": {
           "type": "array",

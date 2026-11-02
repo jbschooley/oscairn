@@ -16,6 +16,7 @@
 #include <set>
 #include <functional>
 #include <span>
+#include <tuple>
 
 struct json_value_s; // sheredom/json.h: the document readers' parsed values
 
@@ -377,6 +378,23 @@ namespace oscairn
         Scene& findScene(uint32_t id);
         Macro& findMacro(uint32_t id);
         double currentFraction(const MacroTarget& target) const;
+        // The summing rule (RFC 0011): every control's offset into t's destination, `macro` taken
+        // at `value`; the destination's base; and noting where the controls left each destination.
+        // The value is the base plus each relative target's offset plus each absolute target's point
+        // less the base: `fixed` + (1 - `absolute`) x base.
+        struct Sum
+        {
+            double fixed = 0; int absolute = 0;
+            double at(double base) const { return fixed + (1 - absolute) * base; }
+            // The base that gives `value`; with one absolute target the base does not count, and stays.
+            double baseFor(double value, double base) const { return absolute == 1 ? base : (value - fixed) / (1 - absolute); }
+        };
+        Sum contributions(const MacroTarget& t, uint32_t macro, double value) const;
+        void setBase(const MacroTarget& t, double base);
+        void noteBases(); // after controls arrive (a load, a Sound, an import): one base per destination, as it plays now
+        using Destination = std::tuple<int, NodeId, uint32_t, uint32_t>;
+        static Destination destination(const MacroTarget& t) { return {int(t.kind), t.node, t.param, t.part}; }
+        std::map<Destination, double> written_; // what the controls last set each destination to; anything else moving it since rebases it
         void driveMacro(uint32_t id, double value, bool& faders); // sets it and its targets
         void capture(Scene& scene) const;
         // Scenes moving (parts.cpp): applied at once, blended between two, a glide's steps and a morph.

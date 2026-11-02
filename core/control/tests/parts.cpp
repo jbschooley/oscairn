@@ -1501,6 +1501,44 @@ namespace
         s.removeMacro(assign); check(s.graphState().macros.size() == 1 && s.graphState().macros[0].targets.size() == 1, "removing a control drops it from the controls above it");
     }
 
+    // RFC 0011's summing rule: two controls on one parameter add their offsets to its base, clamped
+    // to its range; the base survives the clamp; a direct edit moves the base under the offsets.
+    void summing(const char* fixture)
+    {
+        Session s(48000, frames);
+        const auto a = s.add("a", fixture, "org.kick.test.synth");
+        s.setParameter(a, 7, .4);
+        const auto pa = s.addPart("A");
+        s.insertIntoPart(pa, 0, a); s.commit();
+        Audio x; x.run(s);
+        const auto wheel = s.addMacro("Wheel"), knob = s.addMacro("Knob");
+        MacroTarget up; up.node = a; up.param = 7; up.relative = true; up.start = .5; up.end = .9; // no change at 0, +.4 at 1
+        s.setMacroTargets(wheel, {up}); s.setMacroTargets(knob, {up});
+        auto gain = [&] { return s.parameter(a, 7); };
+        auto close = [](double v, double e) { return std::abs(v - e) < 1e-9; };
+        s.setMacro(wheel, 1);
+        check(close(gain(), .8), "one control: the base .4 and +.4: " + std::to_string(gain()));
+        s.setMacro(knob, .5);
+        check(close(gain(), 1), "two controls add up: .4 + .4 + .2: " + std::to_string(gain()));
+        s.note(true, 60, 1); x.run(s); x.run(s);
+        check(near(x.l[0], 1), "and play the sum: " + std::to_string(x.l[0]));
+        s.note(false, 60, 0); x.run(s);
+        s.setMacro(knob, 1);
+        check(close(gain(), 1), "the sum is clamped to the range: " + std::to_string(gain()));
+        s.setMacro(wheel, 0);
+        check(close(gain(), .8), "the base survives the clamp: .4 + .4: " + std::to_string(gain()));
+        s.setMacro(knob, .5);
+        s.setParameter(a, 7, .5);
+        s.setMacro(wheel, 1);
+        check(close(gain(), .9), "a direct edit to .5 sets the base under the knob's +.2, to .3: .3 + .2 + .4: " + std::to_string(gain()));
+        // An absolute target sets the value; a relative one beside it adds its offset.
+        MacroTarget set; set.node = a; set.param = 7;
+        s.setMacroTargets(knob, {set});
+        s.setMacro(knob, .25);
+        check(close(gain(), .25 + .4), "an absolute .25 and the wheel's +.4: " + std::to_string(gain()));
+        check(s.graphState().macros[0].targets[0].base == s.graphState().macros[1].targets[0].base, "one base per destination");
+    }
+
     // Parts, wires with owners and Mix settings, and flagged wires survive save and load, and play
     // the same; an earlier format version is refused.
     void persistence(const char* fixture, const char* audio, const char* delay, const fs::path& root)
@@ -1580,7 +1618,7 @@ namespace
         const auto old = root / "version-4";
         fs::copy(saved, old, fs::copy_options::recursive);
         auto text = std::string(first.begin(), first.end());
-        text.replace(text.find("\"version\":10"), 12, "\"version\":9");
+        text.replace(text.find("\"version\":11"), 12, "\"version\":10");
         state_files::write(old / "performance.json", text.data(), text.size());
         const auto before = describe(t);
         bool refused = false; try { t.loadPerformance(old.string()); } catch(const std::runtime_error& e) { refused = std::string(e.what()).find("unsupported format version") != std::string::npos; }
@@ -1618,6 +1656,7 @@ int main(int argc, char** argv)
         declaredMemory(argv[1], argv[3], temp.path);
         memoryClasses(argv[1], temp.path);
         controls(argv[1], temp.path);
+        summing(argv[1]);
         persistence(argv[1], argv[2], argv[3], temp.path);
     }
     catch(const std::exception& e) { forbidAllocation = false; std::fprintf(stderr, "FAIL: %s\n", e.what()); return 1; }

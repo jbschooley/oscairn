@@ -8351,8 +8351,7 @@
         },
         "base": {
           "type": "number",
-          "minimum": 0,
-          "maximum": 1
+          "description": "Parameters, part levels and mutes: the destination's base, the same on every target of it (RFC 0011's summing rule); outside 0..1 when a direct edit put the value where the offsets reach past the range"
         },
         "offIn": {
           "type": "array",
@@ -8475,8 +8474,7 @@
         },
         "base": {
           "type": "number",
-          "minimum": 0,
-          "maximum": 1
+          "description": "Parameters, part levels and mutes: the destination's base, the same on every target of it (RFC 0011's summing rule); outside 0..1 when a direct edit put the value where the offsets reach past the range"
         },
         "offIn": {
           "type": "array",

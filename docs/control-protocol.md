@@ -334,9 +334,13 @@ report the compiled per-channel routes.
 All of these stage edits like the other graph methods; `graph.commit` publishes them.
 
 **Controls** form RFC 0011's control tree: `graph.get` lists them (`controls`, each with
-its `value` and `targets`). A relative target moves its value around `base`, the value it
-had when it became relative, by half its range either way. Setting a control sets its
-targets as parameter events or part faders; a control target is set in turn. Assignments
+its `value` and `targets`). Several controls on one parameter, part level or mute add up
+([RFC 0011's summing rule](rfcs/0011-performance-ui-and-editors.md#the-control-tree)): each
+target adds an offset to the destination's `base`, the same on all its targets (a relative
+target its point in its range less a half, an absolute one its point less the base), clamped
+to the range; `base` is the host's and is ignored in `controls.targets`. Setting a control sets its
+targets as parameter events or part faders; a control target is set in turn, the one moved last
+setting it. Assignments
 that would loop are refused. Scenes store control values (`controls` in each scene).
 
 **Scenes** are states of the Performance for sections of a song (RFC 0011's full model).
