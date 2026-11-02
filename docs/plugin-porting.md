@@ -184,6 +184,8 @@ process with a 15-second timeout, and a listing for a loaded plugin reads them t
 same helper process (`oscairn-plugin-scan`, found beside the engine or the desktop app, or
 named by `OSCAIRN_PLUGIN_SCAN`). The listing, or its failure, is kept per plugin binary until
 the binary changes, so a provider that hangs costs one 15-second timeout, not one per listing.
+The helper runs off the caller's thread: until its listing is in, `presets.list` answers
+`Presets are being listed; ask again`.
 A plugin in a worker lists presets only through the helper: without one it lists none, and
 `presets.list` says why. Only a plugin hosted in the engine's own process with no helper
 configured has its provider run there, on the control thread, as the rest of that plugin

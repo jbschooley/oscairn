@@ -8,11 +8,13 @@
 #include <iomanip>
 #include <locale>
 #include <cctype>
+#include <chrono>
 #include <cmath>
 #include <fstream>
 #include <future>
 #include <map>
 #include <mutex>
+#include <thread>
 #include <unistd.h>
 #ifdef __APPLE__
 #include <libproc.h>
@@ -243,8 +245,9 @@ namespace oscairn
         // included: a hung provider costs one helper timeout, not one per caller or refresh.
         // shortcut: preset files added to a plugin's folders show once its binary changes or the engine restarts; key on the folders too if that matters.
         struct Listing { kick::clap::ScanResult result; std::string failure; };
-        static std::mutex mutex;
-        static std::map<std::pair<std::string, std::filesystem::file_time_type>, std::shared_future<Listing>> listings;
+        // Never destroyed: a listing's thread may still be running when the process exits.
+        static auto& mutex = *new std::mutex;
+        static auto& listings = *new std::map<std::pair<std::string, std::filesystem::file_time_type>, std::shared_future<Listing>>;
         const auto helper = placementPolicy().scan;
         if(helper.empty()) throw std::runtime_error("Presets not listed: no plugin scan helper is configured");
         std::error_code e;
@@ -261,12 +264,15 @@ namespace oscairn
             listing = slot;
         }
         if(run)
-        {
-            // The scan's own 15 s: a hung provider stalls the caller at most that long, once, and dies with the helper.
-            Listing l;
-            if(!kick::clap::indexPresetsWithHelper(helper, path, 15000, l.result, l.failure) && l.failure.empty()) l.failure = "Plugin scan failed";
-            promise.set_value(std::move(l));
-        }
+            // Off the caller's thread, which is the engine's control thread (presets.list) or the
+            // desktop's message thread: neither waits on a provider. The scan's own 15 s bounds the
+            // helper, and a hung provider dies with it.
+            std::thread([helper, path, promise = std::move(promise)]() mutable {
+                Listing l;
+                if(!kick::clap::indexPresetsWithHelper(helper, path, 15000, l.result, l.failure) && l.failure.empty()) l.failure = "Plugin scan failed";
+                promise.set_value(std::move(l));
+            }).detach();
+        if(listing.wait_for(std::chrono::seconds(0)) != std::future_status::ready) throw std::runtime_error("Presets are being listed; ask again");
         const auto& l = listing.get();
         if(!l.failure.empty()) throw std::runtime_error("Presets not listed: " + l.failure);
         std::vector<PresetInfo> presets;

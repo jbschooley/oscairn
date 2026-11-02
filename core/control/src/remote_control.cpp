@@ -499,7 +499,7 @@ namespace oscairn
         impl_->call("state.save","{\"node\":"+std::to_string(node)+",\"directory\":"+quote(directory)+'}',30000);
     }
     std::vector<PresetInfo> RemoteControl::presets(NodeId node) {
-        auto d=impl_->call("presets.list","{\"node\":"+std::to_string(node)+'}',20000);std::vector<PresetInfo> result; // a first listing waits for the scan helper, up to 15 s
+        auto d=impl_->call("presets.list","{\"node\":"+std::to_string(node)+'}');std::vector<PresetInfo> result; // the engine never waits for the scan helper: "ask again" until it is done
         for(auto v:array(field(field(d.get(),"result"),"presets")))result.push_back({string(field(v,"uri")),string(field(v,"name"))});
         return result;
     }

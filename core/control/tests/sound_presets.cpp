@@ -7,10 +7,12 @@
 #include "oscairn/json_rpc.h"
 #include "oscairn/session.h"
 #include <array>
+#include <chrono>
 #include <filesystem>
 #include <iomanip>
 #include <iostream>
 #include <sstream>
+#include <thread>
 #include <unistd.h>
 using namespace oscairn;
 namespace
@@ -38,7 +40,10 @@ int main(int argc, char** argv)
     {
         Fixture f(argv[1]);
         check(f.call("session.hello", "{}").find("\"sounds.presets\"") != std::string::npos, "session.hello offers native preset sounds");
-        const auto listed = f.call("presets.list", R"({"node":"synth"})");
+        // In a worker, the scan helper lists them off this thread: asked again until they are in.
+        auto listed = f.call("presets.list", R"({"node":"synth"})");
+        for(int tries = 0; listed.find("Presets are being listed; ask again") != std::string::npos && tries < 1500; ++tries)
+        { std::this_thread::sleep_for(std::chrono::milliseconds(20)); listed = f.call("presets.list", R"({"node":"synth"})"); }
         check(listed.find(R"({"uri":"clap-preset:1:#warm","name":"Warm"},{"uri":"clap-preset:1:#bright","name":"Bright"},{"uri":"clap-preset:1:#pressure-swell","name":"Pressure swell"})") != std::string::npos &&
               listed.find("Square vibrato") != std::string::npos, "the Basic Synth lists its factory presets: " + listed);
 

@@ -9,6 +9,7 @@
 #include <oscairn-clap/preset-discovery-plugin.hpp>
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -16,6 +17,7 @@
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include <thread>
 #include <unistd.h>
 
 using namespace oscairn;
@@ -101,7 +103,12 @@ int main(int argc, char** argv)
     try
     {
         auto host = loadPlugin(argv[1], "org.kick.test.midi", 48000, 128);
-        const auto presets = host->presets();
+        // A worker's plugin is listed by the scan helper off this thread: asked again until it is in.
+        const auto presets = [&] {
+            for(int tries = 0;; ++tries, std::this_thread::sleep_for(std::chrono::milliseconds(20)))
+                try { return host->presets(); }
+                catch(const std::runtime_error& e) { if(std::string(e.what()) != "Presets are being listed; ask again" || tries > 1500) throw; }
+        }();
         std::vector<std::string> names;
         for(const auto& p : presets) names.push_back(p.name);
         std::sort(names.begin(), names.end());

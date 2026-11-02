@@ -152,7 +152,8 @@ namespace oscairn
                                                    uint64_t memoryRoom = 0);
     // RFC 0005: one plugin's presets, read by the isolated scan helper the placement policy names
     // (its `scan`). The plugin's preset-provider code runs in that helper process (timeout, crash
-    // isolation, stderr), never in this one. One listing per binary and modification time, kept,
-    // failures included. Throws, saying why, where no helper is configured or its listing failed.
+    // isolation, stderr), never in this one, and off the caller's thread. One listing per binary
+    // and modification time, kept, failures included. Throws, saying why, where no helper is
+    // configured or its listing failed, and "Presets are being listed; ask again" until it is in.
     std::vector<PresetInfo> scanPluginPresets(const std::string& path, const std::string& pluginId);
 }

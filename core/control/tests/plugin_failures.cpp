@@ -63,8 +63,16 @@ int main(int argc, char** argv)
             const auto none = rpc.dispatch(R"({"jsonrpc":"2.0","id":2,"method":"presets.list","params":{"node":"listed"}})").value_or("");
             check(none.find("\"error\"") != std::string::npos && none.find("no plugin scan helper") != std::string::npos,
                   "without a scan helper, a worker's plugin lists no presets, saying why: " + none);
+            // The helper runs off the caller's thread: until its listing is in, a call answers at once
+            // that it is under way. Asked again until it is in, as the picker does on its next look.
+            auto settled = [&](auto n) {
+                for(const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);; std::this_thread::sleep_for(std::chrono::milliseconds(20)))
+                    try { return s.presets(n); }
+                    catch(const std::runtime_error& e) { if(std::string(e.what()) != "Presets are being listed; ask again" || std::chrono::steady_clock::now() > deadline) throw; }
+            };
             auto policy = placementPolicy(); policy.scan = argv[4]; setPlacementPolicy(policy);
-            check(names(s.presets(listed)) == "Quiet;Bright;", "with one, its presets come from the helper");
+            std::string first; try { first = names(settled(listed)); } catch(const std::runtime_error& e) { first = e.what(); }
+            check(first == "Quiet;Bright;", "with one, its presets come from the helper: " + first);
             const auto some = rpc.dispatch(R"({"jsonrpc":"2.0","id":3,"method":"presets.list","params":{"node":"listed"}})").value_or("");
             check(some.find("\"name\":\"Quiet\"") != std::string::npos, "and through the protocol: " + some);
             // A hung provider is asked once: the helper's timeout, then the failure is kept for that binary.
@@ -74,13 +82,19 @@ int main(int argc, char** argv)
             std::filesystem::copy(argv[3], copy, std::filesystem::copy_options::recursive);
             const auto hung = s.add("hung", copy.string(), "org.kick.test.midi"); s.commit();
             setenv("KICK_FIXTURE_PRESETS_HANG", "1", 1); setenv("KICK_FIXTURE_PRESETS_LOG", (directory / "asked").c_str(), 1);
+            // The caller (the engine's control thread, which presets.list runs on) never waits on it.
+            const auto asking = std::chrono::steady_clock::now();
+            const auto pending = rpc.dispatch(R"({"jsonrpc":"2.0","id":4,"method":"presets.list","params":{"node":"hung"}})").value_or("");
+            const auto waited = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - asking).count();
+            check(waited < 1000 && pending.find("Presets are being listed; ask again") != std::string::npos,
+                  "a listing under way answers at once that it is: " + std::to_string(waited) + " ms, " + pending);
             std::string why;
             const auto began = std::chrono::steady_clock::now();
-            for(int i = 0; i < 3; ++i) { why.clear(); try { s.presets(hung); } catch(const std::runtime_error& e) { why = e.what(); } }
+            for(int i = 0; i < 3; ++i) { why.clear(); try { settled(hung); } catch(const std::runtime_error& e) { why = e.what(); } }
             const auto took = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - began).count();
             unsetenv("KICK_FIXTURE_PRESETS_HANG"); unsetenv("KICK_FIXTURE_PRESETS_LOG");
             std::ifstream log(directory / "asked"); int asked = 0; for(std::string line; std::getline(log, line);) ++asked;
-            check(asked == 1 && took < 25, "a hanging provider is asked once for three listings: " + std::to_string(asked) + " times, " + std::to_string(took) + " s");
+            check(asked == 1 && took < 25, "a hanging provider is asked once for four listings: " + std::to_string(asked) + " times, " + std::to_string(took) + " s");
             check(why.find("Presets not listed: Plugin scan timed out") != std::string::npos, "and each listing says why: " + why);
             s.remove(hung); s.remove(listed); s.commit();
             std::filesystem::remove_all(directory);

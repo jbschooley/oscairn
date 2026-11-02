@@ -118,10 +118,12 @@ limits:
   `Plugin crashed or failed during scan`, …), and the plugin is listed without presets.
 - *For a loaded plugin* (`presets.list`), the process serving the call runs the same isolated
   scan helper on the plugin's binary (15 s timeout, crash isolation, and on Linux a 1 GiB
-  address-space limit): a preset provider that hangs or crashes stalls the listing at most
-  that long and takes neither the engine's control thread nor the plugin's worker down with
+  address-space limit), on a thread of its own: the caller never waits on it. Until the
+  listing is in, `presets.list` is an error, `Presets are being listed; ask again`, which the
+  desktop's picker shows as its preset problem until it asks again. A preset provider that
+  hangs or crashes takes neither the engine's control thread nor the plugin's worker down with
   it. The listing, or its failure, is kept per binary (its path and modification time), so a
-  hung provider stalls the control thread once, not on every refresh. A failed listing is a
+  hung provider costs one helper timeout, not one per refresh. A failed listing is a
   `presets.list` error saying why (`Presets not listed: Plugin scan timed out`, …). A plugin in
   a worker lists presets only this way: with no helper configured it lists none, saying so.
   Only a plugin hosted in the engine's own process with no helper (a host running plugins
@@ -133,9 +135,9 @@ limits:
   load keys up to 4096. A preset over a size limit is skipped; at the count or time limit the
   index stops. Either is noted (`Presets: stopped at 4096`, `Presets: stopped after 10 s`,
   `Presets: provider <id> did not initialize`) in the scan's failures.
-- *Rescans:* nothing is watched or cached. Each scan indexes again, and each `presets.list`
-  reads the plugin's locations again, so a preset file added or removed shows at the next
-  listing.
+- *Rescans:* nothing is watched. Each scan indexes again; a loaded plugin's listing is kept
+  per binary (above), so a preset file added or removed shows once the binary changes or the
+  engine restarts.
 
 **For a plugin author** the SDK does the protocol: `preset-discovery-plugin.hpp` implements
 the factory and a provider from two functions (where the presets are, and the presets in one
