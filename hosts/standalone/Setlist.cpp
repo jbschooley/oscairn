@@ -278,6 +278,7 @@ namespace oscairn::standalone
         if(setlist_.entries.empty()) return;
         index = std::clamp(index, 0, int(setlist_.entries.size()) - 1);
         if(engine_.soundBusy()) { say("Still opening the last one."); return; }
+        if(!engine_.connected()) { say("The engine is not answering; the entry did not open."); return; }
         const auto& entry = setlist_.entries[size_t(index)];
         if(shown_[size_t(index)].missing) { say(text(entry.name) + " is no longer in the library."); return; }
         SoundAction open; open.kind = SoundAction::LoadFromLibrary; open.libraryId = entry.id;

@@ -9,7 +9,6 @@
 // - Asking before an app opens (RFC 0025).
 //   oscairn_desktop_gaps_test PLUGIN_DIR SCANNER THEMES [SNAPSHOTS]
 #include "../DesktopShell.h"
-#include "../Launcher.h"
 #include "../LibraryPane.h"
 #include "../PartsView.h"
 #include "../Settings.h"
@@ -343,6 +342,27 @@ int main(int argc, char** argv)
                 pane.go(1);
                 check(pane.current() == 0 && pane.message().contains("no longer in the library"), "a gone entry is still marked: " + pane.message().toStdString());
                 check(wait([&] { return !engine.soundBusy(); }), "the staged setlist is done opening");
+            }
+            // A crash ends the desktop's every control with it; Home and the Performance app now
+            // show the Panel's notice (and Restart where a restart is possible), and a setlist
+            // entry does not pretend to be playing while the engine is gone.
+            {
+                // Stall the server from this thread: the engine's next periodic refresh cannot
+                // finish its handshake, and its timeout marks the engine disconnected.
+                forcedHold = true;
+                check(wait([&] { return engine.jobRunning(); }), "the next refresh starts against the stalled server");
+                check(wait([&] { return !engine.connected(); }), "its handshake times out; the engine reads as disconnected");
+                const auto folder = data.getChildFile("Setlists-staged");
+                standalone::Actions actions;
+                standalone::SetlistPane pane(engine, actions, folder);
+                check(pane.setlist().entries.size() == 2 && pane.current() == -1, "the staged setlist is open with nothing playing");
+                pane.go(0);
+                check(pane.current() == -1 && pane.message().contains("not answering"), "a setlist entry says it did not open: " + pane.message().toStdString());
+                pane.step(1);
+                check(pane.current() == -1, "and stepping does not move on from an entry that never opened");
+                forcedHold = false;
+                for(int i = 0; i < 600 && !engine.connected(); ++i) juce::MessageManager::getInstance()->runDispatchLoopUntil(10); // the engine answers again
+                check(engine.connected(), "the client reconnects");
             }
             juce::LookAndFeel::setDefaultLookAndFeel(nullptr);
             configuration.deleteRecursively();
