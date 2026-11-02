@@ -170,7 +170,8 @@ bool decodeScan(const std::string& source, ScanResult& result) {
 }
 #ifndef _WIN32
 // Runs the scanner helper on one binary (flag: --worker, or --presets to index presets too) with
-// a timeout, crash isolation and the last of its stderr; false with the reason in failure.
+// a timeout, crash isolation and the last of its stderr; false with the reason in failure, which
+// starts "Cannot " only when the helper never started (scanPluginPresets asks again after those).
 static bool runHelper(const fs::path& helper, const char* flag, const std::string& binary, uint32_t timeoutMs, const std::atomic<bool>* canceled,
                ScanResult& result, std::string& failure) {
     int pipes[2], errors[2];

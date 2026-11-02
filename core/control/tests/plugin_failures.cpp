@@ -70,9 +70,13 @@ int main(int argc, char** argv)
                     try { return s.presets(n); }
                     catch(const std::runtime_error& e) { if(std::string(e.what()) != "Presets are being listed; ask again" || std::chrono::steady_clock::now() > deadline) throw; }
             };
-            auto policy = placementPolicy(); policy.scan = argv[4]; setPlacementPolicy(policy);
+            // A helper that could not start is not kept as the binary's listing: the next ask runs one.
+            auto policy = placementPolicy(); policy.scan = "/nonexistent/oscairn-plugin-scan"; setPlacementPolicy(policy);
+            std::string unlaunched; try { settled(listed); } catch(const std::runtime_error& e) { unlaunched = e.what(); }
+            check(unlaunched.find("Cannot launch") != std::string::npos, "a helper that cannot start says so: " + unlaunched);
+            policy.scan = argv[4]; setPlacementPolicy(policy);
             std::string first; try { first = names(settled(listed)); } catch(const std::runtime_error& e) { first = e.what(); }
-            check(first == "Quiet;Bright;", "with one, its presets come from the helper: " + first);
+            check(first == "Quiet;Bright;", "with one, its presets come from the helper, the failed start not kept: " + first);
             const auto some = rpc.dispatch(R"({"jsonrpc":"2.0","id":3,"method":"presets.list","params":{"node":"listed"}})").value_or("");
             check(some.find("\"name\":\"Quiet\"") != std::string::npos, "and through the protocol: " + some);
             // A hung provider is asked once: the helper's timeout, then the failure is kept for that binary.

@@ -241,10 +241,11 @@ namespace oscairn
 
     std::vector<PresetInfo> scanPluginPresets(const std::string& path, const std::string& pluginId)
     {
-        // One listing per binary as it is now (its path and newest modification), the failures
-        // included: a hung provider costs one helper timeout, not one per caller or refresh.
+        // One listing per binary as it is now (its path and newest modification), the failures of a
+        // helper that ran included: a hung provider costs one helper timeout, not one per caller or
+        // refresh. A helper that could not be started (no pipe, no process, no thread) is not kept.
         // shortcut: preset files added to a plugin's folders show once its binary changes or the engine restarts; key on the folders too if that matters.
-        struct Listing { kick::clap::ScanResult result; std::string failure; };
+        struct Listing { kick::clap::ScanResult result; std::string failure; bool started = true; };
         // Never destroyed: a listing's thread may still be running when the process exits.
         static auto& mutex = *new std::mutex;
         static auto& listings = *new std::map<std::pair<std::string, std::filesystem::file_time_type>, std::shared_future<Listing>>;
@@ -254,12 +255,13 @@ namespace oscairn
         auto stamp = std::filesystem::last_write_time(path, e);
         if(std::filesystem::is_directory(path, e)) // a bundle: its binary may change inside it
             for(const auto& f : std::filesystem::recursive_directory_iterator(path, e)) stamp = std::max(stamp, f.last_write_time(e));
+        const auto key = std::pair{path, stamp};
         std::promise<Listing> promise;
         std::shared_future<Listing> listing;
         bool run = false;
         {
             std::lock_guard lock(mutex);
-            auto& slot = listings[{path, stamp}];
+            auto& slot = listings[key];
             if(!slot.valid()) { slot = promise.get_future().share(); run = true; }
             listing = slot;
         }
@@ -267,13 +269,24 @@ namespace oscairn
             // Off the caller's thread, which is the engine's control thread (presets.list) or the
             // desktop's message thread: neither waits on a provider. The scan's own 15 s bounds the
             // helper, and a hung provider dies with it.
-            std::thread([helper, path, promise = std::move(promise)]() mutable {
-                Listing l;
-                if(!kick::clap::indexPresetsWithHelper(helper, path, 15000, l.result, l.failure) && l.failure.empty()) l.failure = "Plugin scan failed";
-                promise.set_value(std::move(l));
-            }).detach();
+            try
+            {
+                std::thread([helper, key, promise = std::move(promise)]() mutable {
+                    Listing l;
+                    const bool ran = kick::clap::indexPresetsWithHelper(helper, key.first, 15000, l.result, l.failure);
+                    if(!ran && l.failure.empty()) l.failure = "Plugin scan failed";
+                    l.started = ran || !l.failure.starts_with("Cannot "); // runHelper's "Cannot ...": the helper never started
+                    promise.set_value(std::move(l));
+                }).detach();
+            }
+            catch(const std::system_error& error)
+            {
+                { std::lock_guard lock(mutex); listings.erase(key); }
+                throw std::runtime_error(std::string("Presets not listed: cannot start the listing: ") + error.what());
+            }
         if(listing.wait_for(std::chrono::seconds(0)) != std::future_status::ready) throw std::runtime_error("Presets are being listed; ask again");
         const auto& l = listing.get();
+        if(!l.started) { std::lock_guard lock(mutex); listings.erase(key); } // said once, then asked again
         if(!l.failure.empty()) throw std::runtime_error("Presets not listed: " + l.failure);
         std::vector<PresetInfo> presets;
         for(const auto& plugin : l.result.plugins)

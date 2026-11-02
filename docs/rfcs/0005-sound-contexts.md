@@ -123,8 +123,9 @@ limits:
   desktop's picker shows as its preset problem until it asks again. A preset provider that
   hangs or crashes takes neither the engine's control thread nor the plugin's worker down with
   it. The listing, or its failure, is kept per binary (its path and modification time), so a
-  hung provider costs one helper timeout, not one per refresh. A failed listing is a
-  `presets.list` error saying why (`Presets not listed: Plugin scan timed out`, …). A plugin in
+  hung provider costs one helper timeout, not one per refresh; a helper that could not be
+  started (no pipe, no process) is not kept, and the next call tries again. A failed listing
+  is a `presets.list` error saying why (`Presets not listed: Plugin scan timed out`, …). A plugin in
   a worker lists presets only this way: with no helper configured it lists none, saying so.
   Only a plugin hosted in the engine's own process with no helper (a host running plugins
   among its own code) has its provider run in-process, stopping new reads after 10 s; one

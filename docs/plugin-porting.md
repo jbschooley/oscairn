@@ -183,7 +183,8 @@ files per folder and 16 folder levels, names up to 255 bytes, locations and load
 process with a 15-second timeout, and a listing for a loaded plugin reads them through that
 same helper process (`oscairn-plugin-scan`, found beside the engine or the desktop app, or
 named by `OSCAIRN_PLUGIN_SCAN`). The listing, or its failure, is kept per plugin binary until
-the binary changes, so a provider that hangs costs one 15-second timeout, not one per listing.
+the binary changes, so a provider that hangs costs one 15-second timeout, not one per listing;
+a helper that could not be started is tried again at the next listing.
 The helper runs off the caller's thread: until its listing is in, `presets.list` answers
 `Presets are being listed; ask again`.
 A plugin in a worker lists presets only through the helper: without one it lists none, and
