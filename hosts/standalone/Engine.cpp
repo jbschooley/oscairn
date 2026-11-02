@@ -287,6 +287,7 @@ namespace oscairn::standalone
     std::string Engine::archiveContents(const std::string& file, Control::Archive& out) const
     {
         if(!connected()) return "The engine is not running.";
+        if(!controlReady()) return "The engine is busy; try again in a moment."; // a 30 s call would wait on the job
         try{out=control_->archiveContents(file);return {};}catch(const std::exception& e){return e.what();}
     }
     std::vector<Control::InstalledLibrary> Engine::libraries() const
@@ -378,16 +379,19 @@ namespace oscairn::standalone
     std::string Engine::deleteLibraryItem(const std::string& id)
     {
         if(!connected()) return "The engine is not running.";
+        if(!controlReady()) return "The engine is busy; try again in a moment."; // a 30 s call would wait on the job
         try{control_->deleteLibraryItem(id);return {};}catch(const std::exception& e){return e.what();}
     }
     std::string Engine::editLibraryItem(const std::string& id, const Control::PerformanceInfo& info)
     {
         if(!connected()) return "The engine is not running.";
+        if(!controlReady()) return "The engine is busy; try again in a moment."; // a 30 s call would wait on the job
         try{control_->libraryEdit(id,info);return {};}catch(const std::exception& e){return e.what();}
     }
     std::string Engine::copyLibraryItem(const std::string& id, std::string& copied)
     {
         if(!connected()) return "The engine is not running.";
+        if(!controlReady()) return "The engine is busy; try again in a moment."; // a 30 s call would wait on the job
         try{copied=control_->libraryCopy(id);return {};}catch(const std::exception& e){return e.what();}
     }
     std::vector<Control::InstalledPlugin> Engine::installedPlugins() const
@@ -403,6 +407,7 @@ namespace oscairn::standalone
     std::string Engine::makeSigningKey(const std::string& name, Control::SigningKey& made)
     {
         if(!connected()) return "The engine is not running.";
+        if(!controlReady()) return "The engine is busy; try again in a moment."; // a 30 s call would wait on the job
         try{made=control_->makeSigningKey(name);return {};}catch(const std::exception& e){return e.what();}
     }
     Control::Launch Engine::launchApp(const Control::AppMemory& app, bool dropNext)
@@ -423,6 +428,7 @@ namespace oscairn::standalone
     std::string Engine::uninstallLibrary(const std::string& id)
     {
         if(!connected()) return "The engine is not running.";
+        if(!controlReady()) return "The engine is busy; try again in a moment."; // a 30 s call would wait on the job
         try{control_->uninstallLibrary(id);return {};}catch(const std::exception& e){return e.what();}
     }
     std::optional<Control::PerformanceContents> Engine::performanceContents(const std::string& directory) const

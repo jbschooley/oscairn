@@ -414,6 +414,26 @@ int main(int argc, char** argv)
                 holdRequests = false;
                 check(wait([&] { return !engine.soundBusy() && !jobHeld.load() && engine.connected(); }), "the held job finished");
             }
+            // The library's edits, its archives and making a key wait up to 30 s on a call: while a
+            // job holds the engine they are refused at once, saying it is busy.
+            {
+                holdRequests = true;
+                standalone::SoundAction prepare; prepare.kind = standalone::SoundAction::Prepare; prepare.directory = data.getChildFile("nothing").getFullPathName().toStdString();
+                engine.soundAction(std::move(prepare));
+                check(wait([&] { return engine.soundBusy() && !engine.controlReady() && jobHeld.load(); }), "a job holds the engine's thread");
+                tap.reset();
+                const auto began = std::chrono::steady_clock::now();
+                std::string copied; Control::Archive archive; Control::SigningKey key;
+                const std::vector<std::string> said{engine.editLibraryItem("perf-x", {}), engine.copyLibraryItem("perf-x", copied), engine.deleteLibraryItem("perf-x"),
+                                                    engine.uninstallLibrary("lib-x"), engine.archiveContents("/nothing.olib", archive), engine.makeSigningKey("busy", key)};
+                const auto waited = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - began).count();
+                check(std::all_of(said.begin(), said.end(), [](const std::string& e) { return e.find("busy") != std::string::npos; }), "each is refused as busy: " + said[0]);
+                int asked = 0;
+                for(const char* m : {"library.edit", "library.copy", "library.delete", "library.uninstall", "library.contents", "keys.make"}) asked += tap.count(m);
+                check(asked == 0 && waited < 100 && engine.connected(), "and none waits on the engine: " + std::to_string(asked) + " calls, " + std::to_string(waited) + " ms");
+                holdRequests = false;
+                check(wait([&] { return !engine.soundBusy() && !jobHeld.load() && engine.connected(); }), "the held job finished");
+            }
             // While a job holds the engine's thread it cannot answer a launch ask either: the
             // shell admits at once, rather than freeze for the call's timeout and drop.
             {
