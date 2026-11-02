@@ -14,6 +14,13 @@
 #include <fstream>
 #include <memory>
 #include <optional>
+#ifdef __linux__
+#include <cerrno>
+#include <cstring>
+#include <fcntl.h>
+#include <poll.h>
+#include <unistd.h>
+#endif
 
 namespace oscairn
 {
@@ -171,6 +178,7 @@ namespace oscairn
         budget_ = budget;
         if(budget_.cpu > 0) loadMeasurements();
         if(memoryClasses()) evictOpportunistic();
+        if(memoryClasses() != (pressureFd_ >= 0)) armPressure(memoryClasses());
     }
 
     // Memory classes (RFC 0025, "Admission's arithmetic"). An app counts once, running or always available.
@@ -219,6 +227,48 @@ namespace oscairn
         if(preparedMemory() <= room) return;
         std::fprintf(stderr, "oscairn: let go of the next entry prepared to cut: its memory is needed\n");
         prepared_.reset(); preparedOpportunistic_ = false;
+    }
+
+    bool Session::memoryPressure()
+    {
+        if(!prepared_) return false;
+        std::fprintf(stderr, preparedOpportunistic_ ? "oscairn: memory short: let go of the next entry prepared to cut\n"
+                                                    : "oscairn: memory short, past the estimates: let go of the next entry prepared ahead; it loads when it is cued\n");
+        prepared_.reset(); preparedOpportunistic_ = false;
+        return true;
+    }
+
+    // Linux PSI: a trigger on the delegated subtree's memory.pressure (OSCAIRN_CGROUP), else the
+    // system's, firing when tasks stall on memory for 100 ms in a second (2 s windows, which an
+    // unprivileged process may ask for, when that is refused). It catches what admission cannot:
+    // an app growing past its reservation, or estimates that were wrong.
+    void Session::armPressure(bool on)
+    {
+#ifdef __linux__
+        if(pressureFd_ >= 0) { ::close(pressureFd_); pressureFd_ = -1; }
+        if(!on) return;
+        const char* root = std::getenv("OSCAIRN_CGROUP");
+        const auto file = root && *root ? fs::path(root) / "memory.pressure" : fs::path("/proc/pressure/memory");
+        for(const char* trigger : {"some 100000 1000000", "some 150000 2000000"})
+        {
+            const int fd = ::open(file.c_str(), O_RDWR | O_NONBLOCK | O_CLOEXEC);
+            if(fd < 0) break;
+            if(::write(fd, trigger, std::strlen(trigger) + 1) > 0) { pressureFd_ = fd; return; }
+            ::close(fd);
+        }
+        std::fprintf(stderr, "oscairn: no memory pressure trigger on %s (%s)\n", file.c_str(), std::strerror(errno));
+#else
+        (void)on; // shortcut: macOS's memory pressure notifications (DISPATCH_SOURCE_TYPE_MEMORYPRESSURE) are not read yet
+#endif
+    }
+
+    void Session::pollPressure()
+    {
+#ifdef __linux__
+        if(pressureFd_ < 0) return;
+        pollfd p{pressureFd_, POLLPRI, 0};
+        if(::poll(&p, 1, 0) > 0 && (p.revents & POLLPRI)) memoryPressure();
+#endif
     }
 
     void Session::setAlwaysAvailable(const std::vector<AppMemory>& apps)

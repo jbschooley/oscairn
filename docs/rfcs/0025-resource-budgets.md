@@ -1,7 +1,7 @@
 # RFC 0025: Resource budgets: knowing before loading whether it fits
 
-Status: in progress, 2026-11-01: steps 1–4 built ([status](#status)); memory classes
-proposed, steps 6–11 ([design](#memory-reserved-committed-and-opportunistic)). Required for
+Status: in progress, 2026-11-01: steps 1–4, 6 and 7 built, 8 to 10 in part ([status](#status));
+the memory classes' design is [below](#memory-reserved-committed-and-opportunistic). Required for
 every product Oscairn runs on. Builds on the
 voice budget ([RFC 0018](0018-voice-budget-and-stealing.md)), device profiles
 ([RFC 0024](0024-device-profiles.md)), packages' resource estimates
@@ -25,9 +25,13 @@ Checked when built and tested; the sections below say how.
       (a plugin holding more than it declared is counted at what it holds; its declaration is not yet distrusted at the next activation)
 - [ ] 8. Apps declare reservations in their manifests; running apps and the always-available set
       reserved; the shell admitting or refusing a launch, making room first
+      (the engine's admission and reservations are built; manifests, measuring apps and the shell asking are not)
 - [ ] 9. Opportunistic memory and its eviction order: the sample file cache, recently used items,
       entries prepared further ahead; on demand and on pressure (PSI; macOS memory pressure)
+      (built: a next entry prepared to cut, let go on demand and on Linux PSI, then a committed one under pressure; not: recent items, entries further ahead, macOS)
 - [ ] 10. Linux: cgroups for the engine, workers and apps, locked memory, the out-of-memory order
+      (built: a cgroup per worker with `memory.max` from its declaration and no swap, the engine in its own, locking and scores
+      for the engine and workers; not: the engine's `memory.min`, apps' cgroups, opportunistic workers first, the image's wiring)
 - [ ] 11. Tested: memory filled, apps launched up to the floor and a committed Performance
       loaded, with no out-of-memory kill, no running app starved and a launch past the floor
       refused with the reason (QEMU at 4 GiB, then the target)
@@ -150,6 +154,37 @@ launch asked through `launchApp`. **Bookkeeping:** apps run inside the desktop a
 step 1) and the desktop shell does not ask `launchApp` before opening one yet, so no app's
 reservation is enforced or measured; per-app limits wait for apps as processes (RFC 0022 step 2).
 
+**Linux** (step 10 in part, 2026-11-01; Linux only, guarded): with `OSCAIRN_CGROUP` naming a
+delegated cgroup v2 subtree, the engine moves itself into `engine/` at its first worker and puts
+each worker in `workers/<pid>` before it loads anything: `memory.max` the worker's limit,
+`memory.swap.max` 0, removed when the worker is reaped. A worker whose plugins all declare their
+memory is limited to the declarations (shared bytes once, each context's own) plus half again
+and 64 MiB, by the supervisor on every platform and by its cgroup on Linux, replacing RFC 0010's
+flat 4 GiB; one declaring nothing keeps the policy's limit. With `OSCAIRN_RELIABILITY`
+`instrument` or `pass-through` (the app sets it from its profile; workers inherit it), the engine
+and every worker call `mlockall(MCL_CURRENT | MCL_FUTURE)` at start and set `oom_score_adj`:
+the engine -999, a worker 300; what cannot be done (no `CAP_SYS_RESOURCE` to lower a score, too
+low an `RLIMIT_MEMLOCK`) is printed, not fatal. With memory classes, the session arms a PSI
+trigger ("some 100 ms in 1 s", or 2 s windows when refused) on the subtree's `memory.pressure`,
+else `/proc/pressure/memory`, polled at each service; each firing lets go of one more item
+(`memoryPressure`). Not built: the engine cgroup's `memory.min`, polling `memory.events`, apps'
+cgroups (apps are in-process), +1000 for workers holding only opportunistic plugins, zram, and
+the image's wiring (RFC 0028's design note: the session making the subtree and raising
+`RLIMIT_MEMLOCK` needs changes in `os/`, not made here).
+
+Checked in the `oscairn-ports-linux:local` container (Debian 13, arm64, Docker Desktop's Linux
+VM, kernel 6.10, `--privileged`), not on the QEMU image or hardware: `control-plugin-failures`
+finds a worker at instrument level at 300 with all its resident memory locked and the engine at
+-999 and locked, and with a delegated subtree its worker's `memory.max` at the declaration plus
+the margin; `control-parts` with a subtree raises `memory.high` pressure on itself and the PSI
+trigger lets the prepared entry go (it fails with the polling taken out). On macOS the same
+tests check the worker limit from the declaration: a plugin declaring 9 MiB and holding 200 more
+is stopped at 77 MB while one holding what it declared plays on (RFC test 4; it fails with the
+limit left at 4 GiB). In that container `worker-failures` fails on main as on this branch (block
+timing in the VM), and others fail now and then under `-j 6` (`control-archives` on main;
+`effect-contexts-workers` and `control-performance-workers` once on this branch, passing alone and
+on the next run).
+
 **Declared memory** (step 7, built 2026-11-01): `core/clap-ext/include/oscairn-clap/memory.h`.
 The CLAP host asks `estimate` at every activation, after the state is loaded and before
 `activate` (a load, a state load, a new effect context, a change of rate), in the engine or in a
@@ -187,7 +222,7 @@ through the protocol; `desktop-profile` the profile fields and their refusals.
 
 ## Memory: reserved, committed and opportunistic
 
-Proposed 2026-11-01, not built (steps 6–11).
+Proposed 2026-11-01; steps 6 and 7 built and 8 to 10 in part ([status](#status)).
 
 The goal: use all the memory a device has, never make an app unusable, and never run out. The
 budget above is one figure, 80% of the profile's memory (`Profile::memoryBudget`), with the rest

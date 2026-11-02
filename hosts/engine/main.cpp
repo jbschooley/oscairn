@@ -54,6 +54,8 @@ int main(int argc,char** argv)
     } catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 2;}
     if(socket.empty()){std::cerr<<"--socket is required; its parent must be a private directory owned by this user\n";return 2;}
     std::signal(SIGINT,[](int){stopping=1;});std::signal(SIGTERM,[](int){stopping=1;});
+    // RFC 0025: at instrument and above, locked and last in the out-of-memory order (not -1000: it may be the leak).
+    if(const auto missed=oscairn::applyMemoryPolicy(-999);!missed.empty() && std::getenv("OSCAIRN_RELIABILITY"))std::cerr<<"oscairn-engine: "<<missed<<'\n';
     juce::ScopedJuceInitialiser_GUI initialize; // JUCE event loop initialization; no GUI modules linked
     // RFC 0010: every plugin in a worker process, the worker found beside this program (in the app)
     // or where it was built. OSCAIRN_PLUGIN_WORKER overrides it; set but empty, plugins run in the engine.

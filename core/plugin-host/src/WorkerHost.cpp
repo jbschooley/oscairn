@@ -11,7 +11,9 @@
 #include <array>
 #include <cerrno>
 #include <csignal>
+#include <cstdio>
 #include <filesystem>
+#include <fstream>
 #include <fcntl.h>
 #include <cmath>
 #include <condition_variable>
@@ -89,8 +91,11 @@ namespace oscairn
             std::chrono::nanoseconds budget{}, hangLimit{};
             long replySeconds = 30; // how long a control request may take (a big preset load)
             uint32_t missLimit = UINT32_MAX;
-            uint64_t memoryLimit = 0; // bytes; 0: none
+            const uint64_t policyLimit; // the placement policy's, in bytes; 0: none
+            // What the supervisor holds it to: the policy's, or its plugins' declarations plus a margin (RFC 0025, fitLimit).
+            std::atomic<uint64_t> memoryLimit;
             uint64_t memoryRoom = 0;  // what the plugin may declare at its first activation (RFC 0025); a restart is not refused
+            std::filesystem::path cgroup; // Linux, with OSCAIRN_CGROUP: this worker's cgroup
             // The supervisor's latest reading of the worker, and the CPU time of the workers it replaced.
             std::atomic<uint64_t> memory{0};
             std::atomic<double> cpu{0}, cpuBefore{0};
@@ -115,7 +120,7 @@ namespace oscairn
             static inline std::atomic<uint32_t> counter{0};
 
             Process(std::string program_, std::string path_, std::string id_, double rate_, uint32_t frames_, ProcessingMode mode, uint64_t memoryLimit_)
-                : program(std::move(program_)), path(std::move(path_)), id(std::move(id_)), rate(rate_), frames(frames_), memoryLimit(memoryLimit_)
+                : program(std::move(program_)), path(std::move(path_)), id(std::move(id_)), rate(rate_), frames(frames_), policyLimit(memoryLimit_), memoryLimit(memoryLimit_)
             {
                 // Read here, on the creating thread: OSCAIRN_WORKER_REPLY_SECONDS shortens it for tests.
                 if(const char* s = std::getenv("OSCAIRN_WORKER_REPLY_SECONDS")) replySeconds = std::max(1L, std::atol(s));
@@ -156,6 +161,7 @@ namespace oscairn
                     if(waitpid(pid, &status, WNOHANG) == 0) { kill(pid, SIGKILL); waitpid(pid, &status, 0); }
                     reaped = true;
                 }
+                leaveCgroup();
                 std::error_code ignored;
                 std::filesystem::remove_all(records, ignored);
             }
@@ -173,13 +179,14 @@ namespace oscairn
                 socket = pair[0];
                 posix_spawn_file_actions_t actions; posix_spawn_file_actions_init(&actions);
                 posix_spawn_file_actions_adddup2(&actions, pair[1], 3);
-                // The memory limit also goes to the worker, which on Linux makes it a hard limit too.
-                std::string fd = "3", limit = std::to_string(memoryLimit); char* argv[]{program.data(), fd.data(), limit.data(), nullptr};
+                // The policy's memory limit also goes to the worker, which on Linux makes it an address-space backstop.
+                std::string fd = "3", limit = std::to_string(policyLimit); char* argv[]{program.data(), fd.data(), limit.data(), nullptr};
                 const int spawned = posix_spawn(&pid, program.c_str(), &actions, nullptr, argv, environ);
                 posix_spawn_file_actions_destroy(&actions);
                 close(pair[1]);
                 if(spawned != 0) { close(socket); socket = -1; pid = 0; throw std::runtime_error("Cannot start plugin worker " + program); }
                 reaped = false;
+                joinCgroup(); // before it loads anything, so the plugin is charged to its own cgroup
                 // Starting a worker gets the full 30 s, whatever the requests' timeout.
                 timeval start{std::max(30L, replySeconds), 0}; setsockopt(socket, SOL_SOCKET, SO_RCVTIMEO, &start, sizeof start);
                 auto reply = exchange(Writer().u8(uint8_t(Op::Init)).str(path).str(id).f64(rate).u32(frames).u64(memoryRoom).data);
@@ -243,6 +250,61 @@ namespace oscairn
 
             void supervise();
             void restart();
+            void fitLimit(); // under control
+
+            // RFC 0025, Linux: with a delegated cgroup v2 subtree (OSCAIRN_CGROUP, which the session
+            // makes, RFC 0028), each worker in a cgroup of its own whose memory.max is its limit,
+            // with no swap. Elsewhere, or without one, the supervisor's reading alone limits it.
+            void joinCgroup()
+            {
+#ifdef __linux__
+                leaveCgroup();
+                const auto workers = workerCgroups();
+                if(workers.empty()) return;
+                cgroup = workers / std::to_string(pid);
+                std::error_code e;
+                std::filesystem::create_directory(cgroup, e);
+                if(e || !put(cgroup / "cgroup.procs", std::to_string(pid))) { std::fprintf(stderr, "oscairn: worker %d not in its cgroup\n", int(pid)); cgroup.clear(); return; }
+                put(cgroup / "memory.swap.max", "0"); // absent without swap accounting
+                limitCgroup();
+#endif
+            }
+            void limitCgroup()
+            {
+#ifdef __linux__
+                if(!cgroup.empty()) put(cgroup / "memory.max", memoryLimit.load() ? std::to_string(memoryLimit.load()) : std::string("max"));
+#endif
+            }
+            void leaveCgroup() // once its process is reaped
+            {
+#ifdef __linux__
+                if(!cgroup.empty()) { std::error_code e; std::filesystem::remove(cgroup, e); cgroup.clear(); }
+#endif
+            }
+#ifdef __linux__
+            static bool put(const std::filesystem::path& file, const std::string& text) { std::ofstream out(file); out << text << std::flush; return bool(out); }
+            // The engine moves itself into engine/ first: cgroup v2 keeps processes out of a cgroup
+            // whose controllers are enabled for its children. Empty when there is no subtree.
+            static std::filesystem::path workerCgroups()
+            {
+                static const std::filesystem::path dir = [] {
+                    const char* root = std::getenv("OSCAIRN_CGROUP");
+                    if(!root || !*root) return std::filesystem::path();
+                    const std::filesystem::path r(root);
+                    std::error_code e;
+                    std::filesystem::create_directories(r / "engine", e);
+                    std::filesystem::create_directories(r / "workers", e);
+                    if(!put(r / "engine" / "cgroup.procs", std::to_string(getpid())) || !put(r / "cgroup.subtree_control", "+memory") ||
+                       !put(r / "workers" / "cgroup.subtree_control", "+memory"))
+                    {
+                        std::fprintf(stderr, "oscairn: OSCAIRN_CGROUP %s is not a delegated cgroup v2 subtree; workers have no cgroups\n", root);
+                        return std::filesystem::path();
+                    }
+                    return r / "workers";
+                }();
+                return dir;
+            }
+#endif
         };
 
         class WorkerHost final : public PluginHost
@@ -400,6 +462,7 @@ namespace oscairn
                 declared_.reset();
                 process_->exchange(header(Op::LoadState).str(directory).data);
                 record(Op::SaveState);
+                process_->fitLimit();
             }
             void saveSnapshot(const std::string& directory) override { request(Op::SaveSnapshot, Writer().str(directory)); }
             std::vector<PresetInfo> presets() override
@@ -429,13 +492,16 @@ namespace oscairn
                     for(const auto& c : contexts()) remember(c, allocate(c.id));
                 }
                 record(Op::SaveSnapshot);
+                process_->fitLimit();
             }
             std::shared_ptr<PluginHost> createEffectContext() override
             {
                 if(!effects_) throw std::runtime_error("Plugin has no native effect contexts");
                 std::lock_guard lock(controlFor());
                 Reader r = process_->exchange(header(Op::CreateEffectContext).data);
-                return std::make_shared<WorkerHost>(process_, r, false);
+                auto context = std::make_shared<WorkerHost>(process_, r, false);
+                process_->fitLimit();
+                return context;
             }
             std::optional<oscairn_effect_resources_t> effectResources() const override
             {
@@ -447,9 +513,14 @@ namespace oscairn
             // Asked of the worker once after each activation it may have caused, then kept.
             std::optional<oscairn_memory_t> declaredMemory() const override
             {
+                std::lock_guard lock(const_cast<WorkerHost*>(this)->controlFor());
+                return declaredLocked();
+            }
+            const std::optional<oscairn_memory_t>& declaredLocked() const // under control
+            {
                 if(!declared_)
                 {
-                    Reader r = const_cast<WorkerHost*>(this)->request(Op::Memory);
+                    Reader r = process_->exchange(header(Op::Memory).data);
                     std::optional<oscairn_memory_t> m;
                     if(r.u8()) { m.emplace(); r.bytes(&*m, sizeof *m); }
                     declared_ = m;
@@ -783,6 +854,27 @@ namespace oscairn
             size_t next_ = 0;
         };
 
+        // RFC 0025: when every node's plugin declares its memory (oscairn.memory), the worker's limit
+        // is what they declare (the engine's shared bytes once, each context's own) plus half again
+        // and 64 MiB for the worker itself, replacing the policy's flat limit (RFC 0010's 4 GiB),
+        // also as its cgroup's memory.max on Linux. A worker whose plugin declares nothing keeps it.
+        void Process::fitLimit()
+        {
+            uint64_t declared = 0;
+            {
+                std::lock_guard nodesLock(nodesMutex);
+                if(nodes.empty()) return;
+                for(auto* n : nodes)
+                {
+                    const auto& m = n->declaredLocked();
+                    if(!m) return;
+                    declared += (n->isRoot() ? m->shared_bytes : 0) + m->context_bytes + m->asset_bytes;
+                }
+            }
+            memoryLimit.store(declared + declared / 2 + (uint64_t(64) << 20));
+            limitCgroup();
+        }
+
         // Watches the worker: a crash, a block left unanswered past the hang limit, too many missed
         // blocks in a row, or memory over its limit stop it and silence its nodes until it is restarted.
         void Process::supervise()
@@ -880,6 +972,7 @@ namespace oscairn
             Reader r = process->start();
             process->root = r.data.substr(r.at + 4);
             host = std::make_shared<WorkerHost>(process, r, true);
+            process->fitLimit();
         }
         process->supervisor = std::thread([p = process.get()] { p->supervise(); });
         return host;

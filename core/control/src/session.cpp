@@ -24,7 +24,7 @@ namespace oscairn
         baseline_ = std::make_shared<const Model>( model() );
     }
 
-    Session::~Session() { graph_.setListener( nullptr ); if( budget_.cpu > 0 ) saveMeasurements(); }
+    Session::~Session() { graph_.setListener( nullptr ); if( budget_.cpu > 0 ) saveMeasurements(); armPressure( false ); }
 
     // With a budget (RFC 0025), a plugin that would take the Performance past it is refused and
     // unloaded again; what this process grew by while an in-process plugin loaded is its memory.
@@ -361,6 +361,7 @@ namespace oscairn
             recordRevision_ = revision_; recordWires_ = wires_;
         }
         measure();
+        pollPressure();
         if( !staged_ ) record(); // changes that need no commit (scenes, controls, pads) are steps too
         advanceScenes();
         for( const auto& [node,name] : nodes_ )

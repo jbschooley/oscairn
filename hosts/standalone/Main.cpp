@@ -774,6 +774,12 @@ namespace oscairn::standalone
                 std::string helper;
                 if(socket.isEmpty() && !args.contains("--in-process"))
                     helper=juce::File::getSpecialLocation(juce::File::currentExecutableFile).getSiblingFile("oscairn-engine").getFullPathName().toStdString();
+                // RFC 0025: the reliability level reaches the engine and its workers, which lock their
+                // memory and take their places in the out-of-memory order on Linux; this process when it is the engine.
+                setenv( "OSCAIRN_RELIABILITY", profile.reliability.c_str(), 1 );
+                if( socket.isEmpty() && helper.empty() )
+                    if( const auto missed = applyMemoryPolicy( -999 ); !missed.empty() && profile.reliability != "desktop" )
+                        std::fprintf( stderr, "oscairn: %s\n", missed.c_str() );
                 engine_ = std::make_unique<Engine>( dir.unquoted().toStdString(), socket.unquoted().toStdString(), helper, audio );
                 // RFC 0025: with the profile's memory classes, the device's memory less what is
                 // reserved; the shell's base (and an in-process engine's) is this process's memory now.

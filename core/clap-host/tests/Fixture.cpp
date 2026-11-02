@@ -84,7 +84,11 @@ struct Plugin {
         api.activate = [](const clap_plugin_t* p, double rate, uint32_t, uint32_t max) {
             auto& s = get(p); s.main(); if (s.kind == 6) return false;
             if (s.kind == 8 && s.shownMode != 0) ++threadErrors; // its info rescan must not restart it
-            if (s.kind == 13) { s.shared.assign(1u << 20, 1); s.context.assign(contextBytes(s.gain, rate), 1); }
+            if (s.kind == 13) {
+                // KICK_FIXTURE_MEMORY_EXTRA_MB: a wrong declaration, holding that much more than it declares.
+                const char* extra = std::getenv("KICK_FIXTURE_MEMORY_EXTRA_MB");
+                s.shared.assign((size_t(1) << 20) + (extra ? size_t(std::atoi(extra)) << 20 : 0), 1); s.context.assign(contextBytes(s.gain, rate), 1);
+            }
             s.active = true; s.maxFrames = max; return true;
         };
         api.deactivate = [](const clap_plugin_t* p) { auto& s = get(p); s.main(); if (s.processing) ++threadErrors; s.active = false; std::vector<char>().swap(s.shared); std::vector<char>().swap(s.context); };

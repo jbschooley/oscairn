@@ -230,6 +230,10 @@ namespace oscairn
         uint64_t droppedNotes() const noexcept { return droppedNotes_.load(); }
         double sampleRate() const noexcept { return sampleRate_; }
         size_t leaving() const noexcept { return leaving_.size(); } // the last Performance's plugins still ringing out
+        // RFC 0025: memory runs short (Linux PSI, polled at each service with memory classes):
+        // one more item let go in the eviction order, a next entry prepared to cut, then, since
+        // the estimates were wrong, a committed one. False when nothing was left to let go.
+        bool memoryPressure();
         size_t heldRemoved() const noexcept { return graph_.heldRemoved(); } // removed plugins not freed yet
         uint32_t maxFrames() const noexcept { return maxFrames_; }
 
@@ -287,6 +291,9 @@ namespace oscairn
         uint64_t preparedMemory() const;                                    // the prepared next entry's plugins
         uint64_t committedMemory() const;                                   // open, ringing, a committed next entry
         void evictOpportunistic();                                          // until it fits what reservations and commitments leave
+        int pressureFd_ = -1;                                               // Linux: a PSI trigger on memory pressure
+        void armPressure(bool on);
+        void pollPressure();
         uint32_t noteLimit(NodeId node) const; // its part's, or 0
         Estimate estimateOf(const std::vector<Cost>& plugins, const std::vector<Cost>& playing) const;
         std::string tooMuch(const Estimate& e) const;          // what does not fit, for a refusal

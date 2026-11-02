@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // oscairn-plugin-worker FD [MEMORY_LIMIT]: hosts one plugin for an engine connected on socket FD (RFC 0010).
 #include "Worker.h"
+#include "oscairn/plugin_host.h"
 #include <algorithm>
+#include <cstdio>
 #include <csignal>
 #include <cstdlib>
 #include <sys/resource.h>
@@ -28,5 +30,9 @@ int main(int argc, char** argv)
         rlimit r{space, space}; setrlimit(RLIMIT_AS, &r);
     }
 #endif
+    // RFC 0025: locked at instrument and above; a committed plugin's worker after the apps in the
+    // out-of-memory order, since RFC 0010 restarts it.
+    if(const auto missed = oscairn::applyMemoryPolicy(300); !missed.empty() && std::getenv("OSCAIRN_RELIABILITY"))
+        std::fprintf(stderr, "oscairn-plugin-worker: %s\n", missed.c_str());
     return oscairn::worker::run(std::atoi(argv[1]));
 }

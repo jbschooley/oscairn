@@ -11,8 +11,11 @@
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
+#include <filesystem>
+#include <fstream>
 #include <string>
 #include <thread>
+#include <unistd.h>
 
 using namespace oscairn;
 
@@ -62,7 +65,71 @@ int main(int argc, char** argv)
             try { loadPluginInWorker(argv[1], argv[3], "org.kick.test.memory", 48000, frames, ProcessingMode::Realtime, 0, 4u << 20); }
             catch(const std::exception& e) { why = e.what(); }
             check(why.find("9 MiB of memory where 4 MiB is left") != std::string::npos, "and is refused in its worker before activating: " + why);
+#ifdef __linux__
+            // With a delegated cgroup subtree, the worker's cgroup holds it to its plugin's declaration plus the margin.
+            if(const char* root = std::getenv("OSCAIRN_CGROUP"))
+            {
+                const uint64_t declared = 9u << 20, limit = declared + declared / 2 + (64u << 20);
+                bool found = false;
+                for(const auto& e : std::filesystem::directory_iterator(std::filesystem::path(root) / "workers"))
+                {
+                    std::ifstream in(e.path() / "memory.max"); uint64_t max = 0; in >> max;
+                    found = found || max == limit;
+                }
+                check(found, "its worker's cgroup memory.max is the declaration plus the margin, " + std::to_string(limit));
+            }
+#endif
         }
+        // RFC 0025 test 4, a wrong declaration: a plugin declaring 9 MiB and holding 200 more is
+        // stopped at its worker's limit (the declaration plus the margin, not the policy's 4 GiB),
+        // and nothing else is.
+        {
+            setenv("KICK_FIXTURE_MEMORY_EXTRA_MB", "200", 1);
+            const auto liar = loadPluginInWorker(argv[1], argv[3], "org.kick.test.memory", 48000, frames);
+            unsetenv("KICK_FIXTURE_MEMORY_EXTRA_MB");
+            const auto honest = loadPluginInWorker(argv[1], argv[3], "org.kick.test.memory", 48000, frames);
+            std::string why;
+            for(int i = 0; i < 300 && (why = liar->failure()).empty(); ++i) std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            // In its own cgroup the kernel may stop it first, at memory.max.
+            const bool killed = std::getenv("OSCAIRN_CGROUP") && why.find("Plugin worker crashed (signal 9)") != std::string::npos;
+            check((why.find("Plugin used too much memory") != std::string::npos && why.find("over its limit of 77 MB") != std::string::npos) || killed,
+                  "a plugin holding more than it declared is stopped at the declaration's limit: " + why);
+            check(honest->failure().empty(), "and a plugin holding what it declared is not");
+        }
+#ifdef __linux__
+        // RFC 0025 test 6, in part: at instrument level a worker locks its memory (VmLck its whole
+        // resident memory) and takes its place in the out-of-memory order; so does the engine, or
+        // says why not (lowering its order needs CAP_SYS_RESOURCE, locking a high RLIMIT_MEMLOCK).
+        {
+            setenv("OSCAIRN_RELIABILITY", "instrument", 1);
+            const auto missed = applyMemoryPolicy(-999);
+            const bool canLock = missed.find("not locked") == std::string::npos;
+            const auto locked = loadPluginInWorker(argv[1], argv[3], "org.kick.test.memory", 48000, frames); (void)locked;
+            auto status = [](const std::string& dir, const std::string& key) {
+                std::ifstream in(dir + "/status"); std::string line;
+                while(std::getline(in, line)) if(line.rfind(key + ":", 0) == 0) return std::strtoull(line.c_str() + key.size() + 1, nullptr, 10);
+                return 0ull;
+            };
+            auto read = [](const std::string& file) { std::ifstream in(file); std::string s; std::getline(in, s); return s; };
+            std::string worker;
+            for(const auto& e : std::filesystem::directory_iterator("/proc"))
+            {
+                const auto stat = read(e.path().string() + "/stat");
+                const auto close = stat.rfind(')');
+                if(stat.find("(oscairn-plugin") == std::string::npos || close == std::string::npos) continue;
+                unsigned long ppid = 0; char state = 0;
+                if(std::sscanf(stat.c_str() + close + 1, " %c %lu", &state, &ppid) == 2 && ppid == unsigned(getpid()) && read(e.path().string() + "/oom_score_adj") == "300")
+                    worker = e.path().string();
+            }
+            check(!worker.empty(), "a worker at instrument level is at 300 in the out-of-memory order");
+            const auto lockedKb = worker.empty() ? 0 : status(worker, "VmLck"), residentKb = worker.empty() ? 0 : status(worker, "VmRSS");
+            check(!canLock || (lockedKb > 0 && lockedKb + 64 >= residentKb), "and has its memory locked (" + std::to_string(lockedKb) + " of " + std::to_string(residentKb) + " kB)");
+            check(missed.empty() ? read("/proc/self/oom_score_adj") == "-999" && status("/proc/self", "VmLck") > 0 : missed.find("oom_score_adj") != std::string::npos || !canLock,
+                  "the engine locked and last in the out-of-memory order, or saying why not: " + (missed.empty() ? std::string("done") : missed));
+            std::printf("instrument level here: %s\n", missed.empty() ? "locked, oom_score_adj -999" : missed.c_str());
+            unsetenv("OSCAIRN_RELIABILITY");
+        }
+#endif
     }
     catch(const std::exception& e) { std::fprintf(stderr, "FAIL: %s\n", e.what()); return 1; }
     if(!failures) std::puts("ok: a failed plugin is named in the session status");

@@ -14,6 +14,11 @@
 #ifdef __APPLE__
 #include <libproc.h>
 #endif
+#ifdef __linux__
+#include <sys/mman.h>
+#endif
+#include <cerrno>
+#include <cstring>
 #include <cstdlib>
 #include <stdexcept>
 namespace oscairn
@@ -190,6 +195,24 @@ namespace oscairn
         uint64_t pages = 0, resident = 0;
         if(!(statm >> pages >> resident)) return 0;
         return resident * uint64_t(sysconf(_SC_PAGESIZE));
+#endif
+    }
+
+    std::string applyMemoryPolicy(int oomScoreAdj)
+    {
+        const char* level=std::getenv("OSCAIRN_RELIABILITY");
+        if(!level || (std::string(level)!="instrument" && std::string(level)!="pass-through"))return {};
+#ifdef __linux__
+        std::string missed;
+        // Faulted in when allocated, during preparation, never during a block; code pages stay resident too.
+        if(mlockall(MCL_CURRENT|MCL_FUTURE)!=0)missed+=std::string("memory not locked (")+std::strerror(errno)+"; RLIMIT_MEMLOCK too low?)";
+        // Lowering it below 0 needs CAP_SYS_RESOURCE; raising it does not.
+        std::ofstream adj("/proc/self/oom_score_adj");adj<<oomScoreAdj<<std::flush;
+        if(!adj)missed+=std::string(missed.empty()?"":"; ")+"oom_score_adj not set to "+std::to_string(oomScoreAdj);
+        return missed;
+#else
+        (void)oomScoreAdj;
+        return "memory locking and the out-of-memory order are Linux only";
 #endif
     }
 

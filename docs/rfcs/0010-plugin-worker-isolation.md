@@ -355,7 +355,10 @@ yet run on Linux or the device.
 Limits implemented 2026-11-01 in `WorkerHost.cpp` and `worker_main.cpp`; sandboxing not started:
 
 - **Memory limit:** `PlacementPolicy::memoryLimit`, 4 GiB per worker by default,
-  `OSCAIRN_WORKER_MEMORY_MB` to change it (0: none). The supervisor reads the worker's memory
+  `OSCAIRN_WORKER_MEMORY_MB` to change it (0: none). When every plugin in the worker declares its
+  memory (`oscairn.memory`, RFC 0025), the limit is what they declare plus half again and 64 MiB
+  instead (on Linux also its cgroup's `memory.max`, with a delegated subtree); the address-space
+  backstop stays at four times the policy's limit. The supervisor reads the worker's memory
   every 10 ms, its physical footprint on macOS (compressed pages included) and resident memory
   on Linux, and a worker over the limit is failed like a crash: "Plugin used too much memory:
   132 MB, over its limit of 128 MB", killed, restarted with its recovery record, and given up

@@ -111,6 +111,12 @@ namespace oscairn
     };
     // A process's resident memory in bytes (0: this one); 0 when it cannot be read.
     uint64_t residentBytes(long pid = 0);
+    // RFC 0025, Linux only: what the reliability level in OSCAIRN_RELIABILITY (set by the app from
+    // its profile; workers inherit it) asks of an Oscairn process at its start. At instrument and
+    // pass-through: every page locked, current and future (mlockall), and the process's place in
+    // the out-of-memory killer's order (oom_score_adj: the engine -999, a worker 300). Returns what
+    // could not be done, empty when everything asked was done or nothing was asked.
+    std::string applyMemoryPolicy(int oomScoreAdj);
     // CLAP module or LV2 bundle directory; pluginId is a CLAP ID or an LV2 URI.
     std::shared_ptr<PluginHost> loadPlugin(const std::string& path, const std::string& pluginId,
                                            double sampleRate, uint32_t maxFrames, ProcessingMode mode = ProcessingMode::Realtime, Lv2BufferLimits lv2Buffers = {},

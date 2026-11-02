@@ -66,6 +66,13 @@ The image also sets up memory for the engine (proposed in
 [RFC 0025](0025-resource-budgets.md#linux)): a cgroup v2 subtree delegated to it, a locked-memory
 limit (`RLIMIT_MEMLOCK`) high enough for the engine and its workers, their out-of-memory
 scores, and compressed swap (zram) that apps may use and the engine and workers may not.
+What the engine reads, built (RFC 0025 step 10, in part), not yet wired in `os/`: the session
+moves its own processes out of the subtree's root, enables the memory controller for it and
+passes its path in `OSCAIRN_CGROUP` (the engine then moves itself into `engine/` and puts each
+worker in `workers/<pid>`); the app passes the profile's reliability level in
+`OSCAIRN_RELIABILITY`, at which the engine and workers lock their memory and set their
+out-of-memory scores. `S95oscairn` and `oscairn-session` would set `RLIMIT_MEMLOCK` (unlimited)
+and make the subtree; zram is not set up.
 
 ## Power loss
 

@@ -80,8 +80,9 @@ Everything else is handled for you:
   Test your plugin both ways. In a worker, LV2 patch properties are not forwarded,
   a block that runs longer than half the block's time is silenced, and a plugin that keeps
   missing is restarted with its last loaded state and current parameter values. A worker may
-  use 4 GiB of memory (`OSCAIRN_WORKER_MEMORY_MB` changes it); past that it is stopped and
-  restarted the same way.
+  use 4 GiB of memory (`OSCAIRN_WORKER_MEMORY_MB` changes it), or, when its plugin declares its
+  memory (`oscairn.memory`, below), what it declares plus half again and 64 MiB; past that it is
+  stopped and restarted the same way. A plugin that holds more than it declares is stopped there.
 - **Instant sound switching** for plugins without native sound contexts uses a whole extra
   instance per prepared sound (up to eight), and only for instruments: note input, audio
   output, no audio input, no note output.

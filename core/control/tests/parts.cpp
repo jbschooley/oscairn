@@ -13,6 +13,11 @@
 #include <cstdlib>
 #include <functional>
 #include <regex>
+#include <cstring>
+#include <thread>
+#ifdef __linux__
+#include <unistd.h>
+#endif
 #include <string>
 
 using namespace oscairn;
@@ -1289,6 +1294,40 @@ namespace
         check(!offered.admitted && offered.offerNext, "a launch refused only for the committed next entry offers to let it go: " + offered.reason);
         check(launch("synth-editor", 27).offerNext && s.launchApp({"synth-editor", 27 * MiB}, true).admitted && !s.memoryState().nextPrepared,
               "letting it go opens the app");
+        // Memory short (PSI on Linux): one more item let go, the opportunistic first, then a committed next entry.
+        check(!s.memoryPressure(), "with nothing prepared, nothing to let go");
+        s.appClosed("synth-editor");
+        check(s.preparePerformance(a) && s.memoryPressure() && !s.memoryState().nextPrepared, "under pressure even a committed next entry goes, last");
+#ifdef __linux__
+        // Real pressure, with a delegated cgroup subtree (OSCAIRN_CGROUP): this process in its
+        // engine cgroup, memory.high just above what it holds, then allocating; the throttling
+        // stalls it, the PSI trigger fires at a service and the prepared entry is let go.
+        if(const char* cgroup = std::getenv("OSCAIRN_CGROUP"))
+        {
+            const fs::path group(cgroup);
+            fs::create_directories(group / "engine");
+            auto put = [](const fs::path& file, const std::string& text) { std::ofstream out(file); out << text << std::flush; return bool(out); };
+            check(put(group / "engine" / "cgroup.procs", std::to_string(getpid())), "this process in the subtree's engine cgroup");
+            Session p(48000, frames);
+            p.setBudget({.9, 0, 4096 * MiB, 0, 0, 0}); // memory classes on: the trigger armed
+            p.loadPerformance(a);
+            check(p.preparePerformance(b) && p.memoryState().nextPrepared, "a next entry prepared");
+            uint64_t current = 0; { std::ifstream in(group / "memory.current"); in >> current; }
+            put(group / "memory.high", std::to_string(current + 16 * MiB));
+            std::vector<std::unique_ptr<char[]>> hog; size_t allocated = 0;
+            const auto until = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+            while(p.memoryState().nextPrepared && std::chrono::steady_clock::now() < until && hog.size() < 256)
+            {
+                hog.emplace_back(new char[4 * MiB]); std::memset(hog.back().get(), 1, 4 * MiB); allocated += 4;
+                p.service();
+            }
+            for(int i = 0; i < 300 && p.memoryState().nextPrepared; ++i) { p.service(); std::this_thread::sleep_for(std::chrono::milliseconds(10)); }
+            const bool evicted = !p.memoryState().nextPrepared;
+            hog.clear();
+            put(group / "memory.high", "max");
+            check(evicted, "memory pressure (PSI) lets the prepared entry go, after " + std::to_string(allocated) + " MiB allocated");
+        }
+#endif
         ::setenv("OSCAIRN_DATA_HOME", (root / "budget-home").c_str(), 1);
     }
 
