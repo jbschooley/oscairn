@@ -23,7 +23,8 @@ Checked when built and tested; the sections below say how.
 - [x] 4. Control API and UI ([status](#step-4-status); drag into a Sampler, the drive's minutes left,
   the step's socket gate with a Sampler sound and an arm button per Mixer strip not yet)
 - [ ] 5. Inputs and multitrack
-- [ ] 6. MIDI journal ([below](#midi-journal-planned))
+- [ ] 6. MIDI kept since capture began, and Capture and keep recording ([below](#midi-since-capture-began-planned))
+- [ ] 7. MIDI journal app ([below](#midi-journal-app-planned))
 
 ## Problem
 
@@ -75,7 +76,8 @@ which is not usable while playing.
 
 From these, Oscairn borrows: capture without arming (Ableton, Logic), a recording that
 ignores the transport (Bitwig), and a pre-roll on the record key (Zoom). It extends the
-pre-roll from seconds to minutes and applies it to audio and notes alike. MPC-style
+pre-roll from seconds to minutes and applies it to audio and notes alike, keeps MIDI for the
+whole session, and leaves Jamcorder's keep-everything-for-good to an optional app. MPC-style
 retrospective recording was not checked against Akai's documentation, so nothing here
 relies on it.
 
@@ -290,7 +292,7 @@ that capture is on.
 **Length.** Set per device. Proposed defaults: 2 minutes on a 2 GB device of the i.MX8M Mini
 class, 10 minutes on a desktop. The notes ring keeps the last 65,536 events (about 2 MB at
 32 bytes an event). Aftertouch streams fill it fastest, so whether that is enough is measured
-in step 3.
+in step 3. Step 6 replaces this bound for MIDI ([below](#midi-since-capture-began-planned)).
 
 **Memory.** At 48 kHz, 32-bit float costs 11.52 MB per channel per minute.
 
@@ -311,46 +313,65 @@ than fits is refused with the reason.
 at 48 kHz; a post-fader part tap adds a multiply-add per channel and wire. This should be
 small next to the plugins, but it is unmeasured; step 3 measures it on the target.
 
-## MIDI journal (planned)
+## MIDI since capture began (planned)
 
-Retroactive capture keeps minutes in memory and saves only when asked. A **MIDI journal**
-keeps everything played, on disk, for good, as Jamcorder does: no button, nothing to arm,
-and an idea from last Tuesday is still there. MIDI is small enough for that (a busy hour of
-playing is a few megabytes), and unlike a microphone it records nothing but the player's own
-playing, so it can be on by default; the panel shows that it is on, and one setting turns it
-off and deletes the journal.
+Audio in the retroactive buffer is bounded by memory, so it holds minutes. MIDI is small (a
+busy hour of playing is a few megabytes), so it need not be: **capture keeps all MIDI since
+it began**, that is since the engine started or capture was switched on, not just the last
+65,536 events or the audio window. Capture of the last 30 seconds still saves 30 seconds of
+audio and notes; asking for longer than the audio holds saves the audio it has and all the
+notes back to the start asked for, and a **since capture began** length saves every note
+of the session.
 
-**What it records.** Every message from every MIDI input and the built-in keyboard and pads,
+**What it keeps.** Every message from every MIDI input and the built-in keyboard and pads,
 on all channels, with its source, before the graph's filtering: pedals, pitch bend, every
 controller, program changes and SysEx included, which today partly never reach the graph
 ([Notes and MIDI](#notes-and-midi)). Each event carries the sample time and the wall-clock
-time. The Performance and Sound in use, and their changes, are noted beside the events, so a
-session can be played back on the sounds it was played with.
+time, and the Performance and Sound changes are noted beside them, so saved notes can play
+back on the sounds they were played with.
 
-**Sessions.** The journal splits itself: a session starts at the first event after a silence
-and ends after a stretch with no notes (proposed: 2 minutes). Each session is one Standard
-MIDI File in the journal folder (`recordings/journal/2026-11-02/14-05-31.mid`) with a small
-sidecar naming the sounds used, its length and its bookmarks. A bookmark is an action that
-any control can be assigned, as other controls are ([RFC 0024](0024-device-profiles.md)),
-rather than a fixed key gesture.
+**Where it lives.** In memory up to a bound (proposed: 16 MB), then appended to a file in the
+engine's temporary folder by the writer thread, so a long session never grows memory and
+nothing on the audio thread waits on the disk. It is not kept: it is cleared when the engine
+quits or capture is switched off, and keeping MIDI for good is the journal app's job
+([below](#midi-journal-app-planned)). The bound is reserved from the memory budget like the
+audio rings.
 
-**Writing.** A writer thread appends events from a lock-free queue the audio and MIDI
-threads fill, as for takes; nothing on the audio thread waits on the disk. The file is
-written so that a power cut loses at most the last second (an append-only journal, repaired
-into a valid file at the next start, as step 1's journal repair does for takes).
+**Capture and keep recording.** A second button beside Capture: it saves the retroactive
+buffer as Capture does, and the take carries on recording until stopped, so playing that
+turned out well becomes a full take from before the press. It is `record.start` with
+`from: {"secondsAgo": s}` and `keepGoing`, which the service already supports; only the
+button is new. On a surface with one button, a long press could be this one; that is a
+profile choice ([RFC 0024](0024-device-profiles.md)).
 
-**Space.** A quota (proposed: 1 GB, years of playing) with the oldest sessions deleted
-first, never a bookmarked one; the drive's reserve wins over the journal.
+## MIDI journal app (planned)
 
-**Using it.** The Recordings app lists sessions by day with their length and sounds; a
-session plays back through its sounds or the current ones, exports as a MIDI file, or turns
-into a take by rendering it. Capture can reach back past the retroactive notes ring into the
-journal, so "save the last 30 seconds" and "that thing I played an hour ago" are the same
-gesture with a different length.
+For a player who wants everything they play kept for good, as Jamcorder does: an **optional
+app**, not installed by default and off until switched on in it. Installed from the package
+repository ([RFC 0031](0031-package-repository-and-distribution.md)), it asks the engine's
+recording service for an open-ended journal of the MIDI above, and the service writes it,
+so the files are written off the audio thread and repaired after a power cut, as takes are;
+the app is the settings, the browser and playback.
+
+- **Sessions.** The service splits the journal into sessions: one starts at the first event
+  after a silence and ends after a stretch with no notes (proposed: 2 minutes). Each session
+  is one Standard MIDI File in the journal folder (`recordings/journal/2026-11-02/14-05-31.mid`)
+  with a sidecar naming the sounds used, its length and its bookmarks. A bookmark is an action
+  any control can be assigned ([RFC 0024](0024-device-profiles.md)), not a fixed key gesture.
+- **Space.** A quota set in the app (proposed: 1 GB, years of playing), oldest sessions first,
+  never a bookmarked one; the drive's reserve wins over the journal.
+- **Safety.** An append-only file per session; a power cut loses at most the last second, and
+  the next start repairs it into a valid file.
+- **Using it.** Sessions by day with their length and sounds; play back through their sounds
+  or the current ones, export as MIDI, render into a take, or open in the Recordings app.
+- **Privacy.** Off until the player switches it on; the panel shows it is on; switching it
+  off offers to delete the journal.
+- **Service API.** `record.journal` (`on`, `folder`, `quota`, `silence`) and a `journal`
+  topic for new sessions; specified with step 7.
 
 **Not yet decided.** The silence that ends a session; whether the journal also keeps the
-graph's own note output (a sequencer, an arpeggiator), which can be re-created from the
-Performance; and whether journal sessions sync between devices.
+graph's own note output (a sequencer, an arpeggiator), which the Performance can re-create;
+whether sessions sync between devices.
 
 ## Sync
 
@@ -473,6 +494,8 @@ Example, saving the last 30 seconds of Main and the notes:
 - **A lick:** a **Capture** button saves the retroactive buffer: Main and the notes, the
   last 30 seconds by default, or as long as it holds. On any surface it is one press, and it
   can be bound to a physical button through RFC 0011's overrides.
+- **Capture and keep recording** (step 6): beside Capture, it saves the same and carries on
+  as a take until stopped.
 - **Desktop** ([RFC 0019](0019-adaptive-ui.md#desktop)): a record button and Capture in the
   toolbar beside the tempo; an arm button on each Mixer strip; a **Recordings** pane in the
   browser with takes, files, overruns and the drive's minutes left; dragging a file onto a
@@ -509,7 +532,8 @@ Kept to the minimum:
 | 3. Retroactive capture and sync | Retroactive rings in the memory budget; `secondsAgo`, bar lines past and next, lengths in bars, punch on the transport | On the i.MX8M Mini target, Capture during a heavy Performance adds no deadline misses (measured, with the copy cost reported); a take from the next bar starts on the bar line's exact sample in an offline render |
 | 4. Control API and UI | The methods and notifications above; Capture and record on the desktop and the panel; the Recordings pane; drag into the Sampler | Over the socket: capture the last 10 seconds, prepare a Sampler sound from the file and play it, with no file path typed |
 | 5. Inputs and multitrack | Device latency reports and loopback measurement; input offsets; input meters; drive throughput measurement and admission | A click played out and recorded back lines up with the internal click within a few samples; 16 inputs at 48 kHz, 24-bit, recorded for an hour to an SD card on the target with no overrun |
-| 6. MIDI journal | Raw MIDI events from every input into an append-only journal; sessions split on silence; sidecars with sounds and bookmarks; quota; repair at start; sessions in the Recordings app; Capture reaching into the journal | A day of played MIDI, the power cut mid-session, opens with at most the last second lost; every message sent from a test device, SysEx included, is in the session byte for byte; no allocation or wait on the audio thread |
+| 6. MIDI since capture began | Raw MIDI from every input, before the graph's filtering, kept from when capture began: in memory to a bound, then a temporary file; Capture lengths past the audio window and "since capture began"; the Capture and keep recording button | An hour of played MIDI, SysEx included, saves byte for byte with "since capture began", with memory staying at the bound; no allocation or wait on the audio thread |
+| 7. MIDI journal app | The service's journal (sessions split on silence, sidecars, quota, repair at start) and an optional app to switch it on, browse and play sessions | A day of played MIDI, the power cut mid-session, opens with at most the last second lost; a bookmarked session survives the quota |
 
 ### Step 1 status
 
