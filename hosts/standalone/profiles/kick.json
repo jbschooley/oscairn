@@ -18,6 +18,6 @@
   "midi": { "din": 1, "usbDevice": true, "usbHost": true },
   "network": { "wifi": true },
   "reliability": "instrument",
-  "apps": ["oscairn.groovebox", "oscairn.library", "oscairn.setlist"],
+  "apps": ["oscairn.performance", "oscairn.groovebox", "oscairn.library", "oscairn.setlist"],
   "estimated": ["platform", "compute", "audio", "controls", "midi", "network"]
 }

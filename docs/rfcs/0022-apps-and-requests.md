@@ -71,7 +71,8 @@ has to say *which*.
   so the host knows the offers without starting the app. It also declares the app's memory, a
   reservation and a maximum (proposed: [RFC 0025](0025-resource-budgets.md#declarations)). A
   running app keeps its reservation in front or behind, and a small always-available set
-  (by default the Performance app and the Library, a setting) is reserved even when closed.
+  (by default `oscairn.performance` and `oscairn.library`, a setting) is reserved even when
+  closed.
   Launching any other app is admitted only if its reservation fits; installed apps that are not
   running reserve nothing.
 - **The host** (the shell on the desktop, the system UI on a device) keeps the list, decides

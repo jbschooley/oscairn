@@ -138,8 +138,9 @@ instead.
   ([RFC 0022](0022-apps-and-requests.md#how-it-works)) for:
   - **every running app**, in front or in the background. A sequencer left running while the
     musician edits a sound keeps its reservation, so the sound editor can never starve it;
-  - **the always-available apps**, running or not: by default the Performance app and the
-    Library, a setting the musician can change (the profile gives the default, RFC 0024). These
+  - **the always-available apps**, running or not: by default the Performance app
+    (`oscairn.performance`) and the Library (`oscairn.library`), a setting the musician can
+    change (the profile gives the default, RFC 0024). These
     always open.
 
   Installed apps that are not running and not in that set reserve nothing. A reservation is a
@@ -169,7 +170,9 @@ cue is fast: 0.6 ms instead of 39 ms on the RFC 0021 bench.
 for every installed app; a launch that does not fit is refused, never made room for by closing a
 running app or touching committed memory; a next entry that will cut is still prepared, as
 opportunistic; compressed swap (zram) for apps, never for the engine; plugins declare memory in an
-extension of their own (`oscairn.memory`), not in effect contexts' `resources`. The margins per
+extension of their own (`oscairn.memory`), not in effect contexts' `resources`; a launch refused
+only because of the committed next entry offers to let that entry go; the Performance app's ID is
+`oscairn.performance`. The margins per
 reliability level are still open.
 
 ### Admission's arithmetic
@@ -201,7 +204,9 @@ The committed share moves as apps start and stop; the floor does not.
 
   Otherwise the shell refuses the launch with the reason and what closing would free. It never
   closes a running app or touches committed memory to make room. So any Performance up to the
-  floor always opens, whatever runs, and every running app keeps its reservation.
+  floor always opens, whatever runs, and every running app keeps its reservation. When the
+  launch is refused only because of the prepared next entry, the shell offers to let that entry
+  go: the app then opens, and the next change loads at the cue, slower but still seamless.
 - **Change the always-available set:** checked as a launch of the apps added.
 - **The profile** is refused when the OS, the always-available apps' declared reservations and
   the floor do not fit its memory.
@@ -457,8 +462,6 @@ On the QEMU image at 4 GiB, then on each product's hardware:
   rehearsal.
 - How long measurements stay valid across plugin and Oscairn updates.
 - Memory: the margin per reliability level, to be set from measurements on real hardware.
-- Whether a launch refused only because of the committed next entry may offer to let it go (a
-  slower, still seamless change) instead.
 
 ## Ruled out
 

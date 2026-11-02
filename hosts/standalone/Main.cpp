@@ -277,7 +277,7 @@ namespace oscairn::standalone
             // The apps this device has (its profile's).
             if(index==5){
                 menu.addItem(8003,"Home");menu.addSeparator();
-                menu.addItem(8004,"Performance");
+                if(profile_.offers("oscairn.performance"))menu.addItem(8004,"Performance");
                 if(profile_.offers("oscairn.groovebox"))menu.addItem(8000,"Groovebox");
                 if(profile_.offers("oscairn.library"))menu.addItem(8001,"Library");
                 if(profile_.offers("oscairn.setlist"))menu.addItem(8002,"Setlist");
@@ -403,11 +403,12 @@ namespace oscairn::standalone
             panel()->overlay( next.get() );
             switcher_ = std::move( next );
         }
-        // The apps Home offers: the Performance always, the rest as the profile has them.
+        // The apps Home offers: the profile's.
         std::vector<Launcher::App> launcherApps()
         {
             std::vector<Launcher::App> apps;
-            apps.push_back( { "Performance", "piano", [this] {
+            if( profile_.offers( "oscairn.performance" ) )
+                apps.push_back( { "Performance", "piano", [this] {
                 const auto info = engine_.performanceInfo();
                 return info ? juce::String::fromUTF8( info->name.empty() ? "Untitled" : info->name.c_str() ) + ": play or edit it" : juce::String(); },
                 [this] { openPerformance(); } } );

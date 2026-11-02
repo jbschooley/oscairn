@@ -281,7 +281,7 @@ namespace oscairn::standalone
         else { s.width = 1440; s.height = 900; }
         p.screens.push_back(s);
         p.reliability = "desktop";
-        p.apps = {"oscairn.groovebox", "oscairn.library", "oscairn.setlist"};
+        p.apps = {"oscairn.performance", "oscairn.groovebox", "oscairn.library", "oscairn.setlist"};
         return p;
     }
 

@@ -19,6 +19,6 @@
   "cv": { "outputs": 4 },
   "network": { "wifi": true },
   "reliability": "instrument",
-  "apps": ["oscairn.groovebox", "oscairn.library", "oscairn.setlist"],
+  "apps": ["oscairn.performance", "oscairn.groovebox", "oscairn.library", "oscairn.setlist"],
   "estimated": ["platform", "compute", "audio", "controls", "midi", "cv", "network"]
 }

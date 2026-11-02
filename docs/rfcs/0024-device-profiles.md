@@ -86,7 +86,7 @@ An illustrative profile (the values are an example, not a real product's):
   "network": { "ethernet": false, "wifi": true },
   "power": { "battery": false },
   "reliability": "instrument",
-  "apps": ["oscairn.library", "oscairn.setlist", "oscairn.groovebox"]
+  "apps": ["oscairn.performance", "oscairn.library", "oscairn.setlist", "oscairn.groovebox"]
 }
 ```
 
@@ -114,11 +114,14 @@ An illustrative profile (the values are an example, not a real product's):
 - **`midi`, `cv`, `network`:** what it can connect to; CV outputs mean the CV service of RFC 0004.
 - **`power`:** battery or mains, for power management (RFC 0028).
 - **`reliability`:** its level (RFC 0027): `desktop`, `instrument` or `pass-through`.
-- **`apps`:** the apps installed with it (RFC 0022); the user can add others.
+- **`apps`:** the apps installed with it (RFC 0022), by app ID; the user can add others. The
+  built-in ones are `oscairn.performance`, `oscairn.library`, `oscairn.setlist` and
+  `oscairn.groovebox`; Home offers the profile's, so a device that plays no Performances (a
+  recorder, a DJ deck) can leave `oscairn.performance` out.
 - **`alwaysAvailable`** (optional, proposed with RFC 0025 step 6): the app IDs whose memory is
   reserved whether they run or not, so they always open; each must be in `apps`. It is the
-  default of a setting the musician can change. Absent: the Performance app and the Library,
-  where `apps` lists them. The Performance app has no app ID in the profiles yet.
+  default of a setting the musician can change. Absent: `oscairn.performance` and
+  `oscairn.library`, where `apps` lists them.
 
 ### Control groups
 
