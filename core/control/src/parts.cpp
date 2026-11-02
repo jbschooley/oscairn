@@ -527,7 +527,7 @@ namespace oscairn
             });
             if(same == last) return;
             const double a = same->mute ? 0 : same->level, b = w->mute ? 0 : w->level;
-            if(a + b > 0) same->pan = (same->pan * a + w->pan * b) / (a + b);
+            if(a + b > 0) { same->pan = (same->pan * a + w->pan * b) / (a + b); same->share = (same->share * a + w->share * b) / (a + b); }
             same->level = same->mute == w->mute ? same->level + w->level : a + b;
             same->mute = same->mute && w->mute;
             same->via.insert(same->via.end(), w->via.begin(), w->via.end());
@@ -541,7 +541,7 @@ namespace oscairn
             for(const auto& d : destinations)
             {
                 auto* w = audioWire(e, d.node, d.port); w->fader = true; enter(w, e, d, part.level, mute, part.pan);
-                w->pan = std::clamp(part.pan + e.pan + d.pan, -1.0, 1.0); // the part's pan, with its lane's and the bus lane's
+                w->share = e.pan + d.pan; w->pan = std::clamp(part.pan + w->share, -1.0, 1.0); // the part's pan, with its lane's and the bus lane's
                 // Through empty buses its meter is at its own fader, before theirs.
                 if(!w->via.empty()) w->via.insert(w->via.begin(), WireVia{part.id, part.level * e.level, std::clamp(part.pan + e.pan, -1.0, 1.0), mute || e.mute});
                 merge(w);
@@ -1661,7 +1661,7 @@ namespace oscairn
                 {
                     p.level = was.level > 0 ? level * p.level / was.level : level;
                     if(mute != was.mute) p.mute = mute;
-                    p.pan = std::clamp(p.pan + pan - was.pan, -1.0, 1.0);
+                    p.pan = std::clamp(pan - was.share, -1.0, 1.0); // the unclamped share: a wire pinned at the edge still moves
                 }
                 buildParts();
             }

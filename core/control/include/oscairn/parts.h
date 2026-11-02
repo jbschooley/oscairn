@@ -47,6 +47,7 @@ namespace oscairn
         uint32_t send = 0;           // part wires: the bus this wire sends to, if it is a send
         uint32_t split = 0, lane = 0; // part wires: the split lane this wire joins from, or enters in a bus (its Mix), if any
         bool fader = false;          // part wires: where the part plays, carrying its level and mute
+        double share = 0;            // fader wires: the pan its lane and buses add to the part's, before the clamp
         std::vector<WireVia> via;    // part wires through empty buses: its part's fader (fader wires), then those buses, in order along each way
         bool connected = true; // false: kept, though it no longer fits (after a plugin replacement)
         bool enabled = true;   // false: off (scenes): a note wire takes no new notes, an audio wire is silent

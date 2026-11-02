@@ -811,6 +811,13 @@ namespace
         s.setMix(keysWire(0), .5, 0, false, false); s.commit(); x.run(s);
         double again = -1; for(const auto& w : s.wires()) if(w.part == keys && !w.send && w.to == graphOutput) again = w.level;
         check(near(again, .5), "asking again lands in the same place: " + std::to_string(again));
+        // A pan past the edge: the part's .8 and the bus's .5 sum past 1, so the wire shows 1. Asked
+        // .9, the part takes .4 at once, the wire's share of the bus kept.
+        s.setPartPan(keys, .8); s.setPartPan(room, .5); s.commit();
+        s.setMix(keysWire(0), .5, .9, false, false); s.commit();
+        double wirePan = -1; for(const auto& w : s.wires()) if(w.part == keys && !w.send && w.to == graphOutput) wirePan = w.pan;
+        check(near(wirePan, .9) && near(s.parts()[0].pan, .4), "a pan asked past a clamped sum lands at once: wire " + std::to_string(wirePan) + " part " + std::to_string(s.parts()[0].pan));
+        s.setPartPan(keys, 0); s.setPartPan(room, 0); s.commit();
         // A send wire's level: the send keeps its own share of the asked level, past its bus's fader.
         s.setPartLevel(hall, .5, false); s.setSend(keys, hall, 1); s.commit();
         s.setMix(keysWire(hall), .4, 0, false, false); s.commit(); x.run(s);
