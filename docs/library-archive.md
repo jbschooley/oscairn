@@ -50,7 +50,8 @@ nothing behind:
   is not plain (as `id` above says), or names an item whose folder or document is not there, or
   whose document's ID is not the one listed, or a plugin build not under `Plugins/`, not there,
   or for a platform other than `linux-arm64`, `linux-x86_64`, `macos-arm64`, `macos-x86_64` and
-  `windows-x86_64`;
+  `windows-x86_64`, or whose path is not a `.clap` or `.lv2` bundle (the store finds builds by
+  that extension);
 - a file whose SHA-256 is not the one `files` lists, a file `files` does not list or one it
   lists that is not there, and a plugin build whose digest is not its own;
 - a signature that does not verify, at any level, or a malformed one.
