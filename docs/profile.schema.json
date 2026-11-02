@@ -312,7 +312,7 @@
                   "momentary",
                   "latch"
                 ],
-                "description": "Buttons: momentary (each press toggles or selects) or latch (the controller keeps the state)"
+                "description": "Buttons and footswitches: momentary (each press toggles or selects) or latch (the controller keeps the state)"
               },
               "feedback": {
                 "type": "boolean",

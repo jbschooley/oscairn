@@ -179,6 +179,11 @@ int main()
         check(refused(replaced(smkJson, "\"absolute\", { \"increment\"", "\"gray\", { \"increment\"")), "an unknown encoding");
         check(refused(replaced(smkJson, "\"channel\": 1, \"cc\": [1]", "\"channel\": 1, \"cc\": [1], \"notes\": [1]")), "both a CC and a note");
         check(refused(replaced(smkJson, "\"channel\": 1, \"cc\": [68, 69, 70, 71]", "\"channel\": 1, \"cc\": [68, 69, 70, 71], \"button\": \"latch\"")), "faders that latch");
+        {
+            std::string modx; for(const auto& [id, text] : builtInProfiles()) if(id == "modx-m-usb") modx = text;
+            const auto latching = Profile::parse(replaced(modx, "\"cc\": [88] }", "\"cc\": [88], \"button\": \"latch\" }"));
+            check(latching.controls[14].kind == "footswitches" && latching.controls[14].midi.button == "latch", "a footswitch that latches");
+        }
         // Values back and a display: on what can take them.
         std::string usbJson; for(const auto& [id, text] : builtInProfiles()) if(id == "modx-m-usb") usbJson = text;
         const auto encoders = "\"cc\": [17, 18, 19, 20, 21, 22, 23, 24] }";

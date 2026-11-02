@@ -347,7 +347,7 @@ What turns a moved control into a value at its target, the same for a panel and 
   crosses it, then follows. Pickup state is per control, never per parameter, and is not saved.
 - **Relative encoders** add each step, 1/127 of the target's range per step and the step's size
   with acceleration, to the target's current value: no pickup is needed.
-- **Buttons:** a momentary button toggles a mute or selects a scene on each press; a latching
+- **Buttons and footswitches:** a momentary one toggles a mute or selects a scene on each press; a latching
   one sets the mute from its state, or selects a scene when it turns on.
 - **Passed through:** a control with a standard-controller function and nothing assigned does
   nothing in the service: its message reaches every part on its own as that controller.

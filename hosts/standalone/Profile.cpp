@@ -211,7 +211,7 @@ namespace oscairn::standalone
                         else for(int k = 0; k < c.count; ++k) one(encoding);
                         require(int(midi.encodings.size()) == c.count, "encoding is one, or one per control");
                     }
-                    if(mo.hasProperty("button")) { midi.button = text(mo, "button"); require(c.kind == "buttons" && (midi.button == "momentary" || midi.button == "latch"), "a button is momentary or latch"); }
+                    if(mo.hasProperty("button")) { midi.button = text(mo, "button"); require((c.kind == "buttons" || c.kind == "footswitches") && (midi.button == "momentary" || midi.button == "latch"), "a button or footswitch is momentary or latch"); }
                     midi.feedback = flag(mo, "feedback");
                     require(!midi.feedback || (!midi.cc.empty() && std::all_of(midi.encodings.begin(), midi.encodings.end(), [](const std::string& e) { return e == "absolute"; })),
                             "feedback is for controls sending absolute CCs");

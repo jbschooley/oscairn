@@ -29,7 +29,7 @@ namespace oscairn::standalone
         // (from 1), channel (1 to 16; 0: no MIDI described; given as a list, the first control's,
         // with `channels` one per control) and a CC or note per control (per control per row, for
         // rows whose switch changes the numbers), or pitch bend; each CC's encoding ("steps" for
-        // explicit increment and decrement values, in `steps`); how buttons send (momentary or latch).
+        // explicit increment and decrement values, in `steps`); how buttons and footswitches send (momentary or latch).
         struct ControlMidi
         {
             int port = 1, channel = 0; std::vector<int> channels, cc, notes; bool pitchBend = false, pressure = false;
