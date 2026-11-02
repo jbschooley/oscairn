@@ -180,6 +180,7 @@ namespace oscairn
         void setTempo( double bpm ) override;
         void setClockSource( Transport::ClockSource source ) override { clockSource_.store( source ); }
         Transport::ClockSource clockSource() const override { return clockSource_.load(); }
+        void setClockOutputs( const std::vector<DeviceRule>& devices ) override;
         TransportState transportState() const override;
         uint32_t recordStart( const std::vector<RecordTap>& taps = {}, const std::string& name = {} ) override;
         void recordStop( uint32_t take ) override;
@@ -238,6 +239,7 @@ namespace oscairn
         bool enqueue(const kick::clap::Event& event);
         void syncWires();
         std::vector<Graph::MidiTap> midiTaps(const Graph& graph, const std::vector<Part>& parts, const std::vector<Wire>& wires) const; // parts' MIDI out
+        void clock(const clap_event_transport_t& t, uint32_t frames) noexcept; // process(): clock out
         void dropNode(NodeId node);
         template<class Edit> void editWires(Edit&& edit);
         void buildPart(const Part& part);
@@ -457,6 +459,13 @@ namespace oscairn
         // MIDI for hardware outputs (midiOutput), audio thread.
         std::array<Graph::MidiMessage, Graph::maxMidiOut + 8> midiOut_{};
         uint32_t midiOutCount_ = 0;
+        // Clock out (setClockOutputs): its outputs, and on the audio thread whether the transport
+        // played at the last block, where that block ended, and the next pulse's number.
+        std::vector<DeviceRule> clockOutputs_;          // control thread
+        std::atomic<uint64_t> clockPorts_{ 0 };         // their outputs now, a bit each
+        bool clockPlaying_ = false;
+        double clockEnd_ = 0;
+        int64_t nextPulse_ = 0;
         std::array<kick::clap::Event, noteQueueCapacity + maxInputEvents + 1> merged_{};
         std::array<uint8_t, noteQueueCapacity + maxInputEvents + 1> mergedSources_{};
     };

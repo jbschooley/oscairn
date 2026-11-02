@@ -69,6 +69,7 @@ namespace oscairn
             bool   playing = false;
             double tempo = 120.0;
             double beat = 0.0;
+            std::vector<DeviceRule> clockOutputs; // RFC 0012 step 2: the MIDI outputs clock goes to (setClockOutputs)
         };
         struct DeviceChannel { uint32_t deviceChannel=0; std::string name; bool available=false; };
         struct SessionStatus
@@ -379,6 +380,10 @@ namespace oscairn
         virtual void setTempo( double bpm ) = 0;
         virtual void setClockSource( Transport::ClockSource source ) = 0;
         virtual Transport::ClockSource clockSource() const = 0;
+        // RFC 0012 step 2: MIDI clock (24 a beat), Start, Stop, Continue and Song Position from the
+        // transport to the outputs these rules choose (none: no clock), resolved against the
+        // session status's midiOutputs. The device's cabling: not saved with a Performance.
+        virtual void setClockOutputs( const std::vector<DeviceRule>& devices ) = 0;
         /// Last rendered block's transport. Fields are atomic telemetry, not a transaction.
         virtual TransportState transportState() const = 0;
 

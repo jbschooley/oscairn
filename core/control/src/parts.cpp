@@ -528,6 +528,14 @@ namespace oscairn
         editWires([&] { findPart(id).midiOut = midiOut; });
     }
 
+    void Session::setClockOutputs(const std::vector<DeviceRule>& devices)
+    {
+        if(devices.size() > 16 || std::any_of(devices.begin(), devices.end(), [](const DeviceRule& r) { return !r.valid(); }))
+            throw std::invalid_argument("invalid or too many device rules");
+        clockOutputs_ = devices;
+        clockPorts_.store(devices.empty() ? 0 : resolveDevices(devices, hostStatus_.midiOutputs) & ~uint64_t(1), std::memory_order_release);
+    }
+
     Part& Session::findBus(uint32_t id)
     {
         auto& bus = findPart(id);
@@ -1185,6 +1193,7 @@ namespace oscairn
         const bool moved = status.midiInputs != hostStatus_.midiInputs, outputs = status.midiOutputs != hostStatus_.midiOutputs;
         hostStatus_ = std::move(status);
         if(moved) ignoreMidiInputs(ignoredInputs_); // the ignored names' sources now
+        if(outputs) setClockOutputs(clockOutputs_);
         // Selectors resolve again: inputs' for parts choosing inputs or sending MIDI from their input, outputs' for parts sending MIDI.
         const bool sending = std::any_of(parts_.begin(), parts_.end(), [](const Part& p) { return !p.midiOut.devices.empty(); });
         if(!(moved && (sending || std::any_of(parts_.begin(), parts_.end(), [](const Part& p) { return !p.input.devices.empty(); }))) && !(outputs && sending)) return;

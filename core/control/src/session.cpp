@@ -144,7 +144,7 @@ namespace oscairn
 
     Control::TransportState Session::transportState() const
     {
-        return { statusPlaying_.load(), statusTempo_.load(), statusBeat_.load() };
+        return { statusPlaying_.load(), statusTempo_.load(), statusBeat_.load(), clockOutputs_ };
     }
 
     bool Session::note( bool on, int key, double velocity, int channel )
@@ -424,6 +424,47 @@ namespace oscairn
         }
     }
 
+    // RFC 0012 step 2: MIDI clock out from this block's transport. While it plays, a clock at each
+    // 24th of a beat, at its sample; Start when it starts from the top, else Song Position and
+    // Continue; Stop when it stops; a jump while playing (a rewind, another Performance, an external
+    // clock's song position) is Stop, Song Position and Continue. Nothing while stopped.
+    void Session::clock( const clap_event_transport_t& t, uint32_t frames ) noexcept
+    {
+        const auto ports = clockPorts_.load( std::memory_order_acquire );
+        auto send = [&]( uint32_t time, uint8_t status, uint8_t a = 0, uint8_t b = 0, uint8_t size = 1 ) {
+            if( !ports || midiOutCount_ == midiOut_.size() ) return;
+            midiOut_[midiOutCount_++] = { time, ports, size, { status, a, b } };
+        };
+        const bool playing = ( t.flags & CLAP_TRANSPORT_IS_PLAYING ) != 0;
+        const double beats = (double)t.song_pos_beats / (double)CLAP_BEATTIME_FACTOR;
+        const double samplesPerBeat = 60.0 * sampleRate_ / t.tempo;
+        auto position = [&] {
+            const auto sixteenths = (uint16_t)std::clamp<int64_t>( (int64_t)std::floor( beats * 4 + 1e-9 ), 0, 16383 );
+            send( 0, 0xF2, uint8_t( sixteenths & 0x7F ), uint8_t( sixteenths >> 7 ), 3 );
+        };
+        if( !playing )
+        {
+            if( clockPlaying_ ) send( 0, 0xFC );
+            clockPlaying_ = false;
+            return;
+        }
+        const bool jumped = clockPlaying_ && std::abs( beats - clockEnd_ ) > 1.0 / 24;
+        if( !clockPlaying_ || jumped )
+        {
+            if( jumped ) send( 0, 0xFC );
+            if( !jumped && beats < 1e-9 ) send( 0, 0xFA );
+            else { position(); send( 0, 0xFB ); }
+            nextPulse_ = (int64_t)std::ceil( beats * 24 - 1e-6 );
+        }
+        clockPlaying_ = true;
+        clockEnd_ = beats + frames / samplesPerBeat;
+        for( ; nextPulse_ / 24.0 < clockEnd_ - 1e-9; ++nextPulse_ )
+        {
+            const auto at = std::llround( std::max( 0.0, nextPulse_ / 24.0 - beats ) * samplesPerBeat );
+            send( (uint32_t)std::min<int64_t>( at, frames - 1 ), 0xF8 );
+        }
+    }
+
     bool Session::process( float* const* outputs, uint32_t frames,
                            std::span<const kick::clap::Event> events, std::span<const MidiClockEvent> clocks,
                            std::span<const uint8_t> sources ) noexcept
@@ -506,6 +547,7 @@ namespace oscairn
         std::copy( taps.begin(), taps.end(), midiOut_.begin() );
         midiOutCount_ = (uint32_t)taps.size();
         graph_.clearMidiOut();
+        clock( t, frames );
         // In time order, each source's own order kept (insertion sort: no allocation, nearly sorted).
         for( uint32_t i = 1; i < midiOutCount_; ++i )
             for( uint32_t j = i; j > 0 && midiOut_[j - 1].time > midiOut_[j].time; --j )

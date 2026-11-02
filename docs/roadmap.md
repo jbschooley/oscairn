@@ -479,7 +479,7 @@ drum module, a DJ unit, a Eurorack module, a DAW plugin). These are required of 
   configuration.
 - [ ] External MIDI and CV, clock and Link out, and setlists across several devices
   ([RFC 0012](rfcs/0012-sync-external-midi-and-multi-device.md)): needed by the Ignite and by
-  rigs of several Oscairn devices. Steps 1–2 (MIDI out, clock out) come first.
+  rigs of several Oscairn devices. Steps 1–2 (a part's MIDI out, clock out) are built, untried on hardware.
 
 - [ ] Map the existing logical audio endpoints onto each board's real inputs/outputs and
   validate simultaneous capture/playback, channel identities, isolation, clocking and

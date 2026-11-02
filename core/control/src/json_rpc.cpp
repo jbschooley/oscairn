@@ -124,12 +124,14 @@ namespace oscairn
             if( !c.hasParameter(n, id) ) throw Failure{ -32002, "Unknown parameter" };
             return id;
         }
+        std::string devicesJson( const std::vector<DeviceRule>& rules );
+        std::vector<DeviceRule> devicesFrom( Value v );
         std::string transport( Control& c )
         {
             const auto s = c.transportState();
             return std::string("{\"playing\":") + ( s.playing ? "true" : "false" ) + ",\"tempo\":" + encode(s.tempo) +
                 ",\"beat\":" + encode(s.beat) + ",\"clockSource\":" +
-                quote(c.clockSource() == Transport::ClockSource::Internal ? "internal" : "midi") + '}';
+                quote(c.clockSource() == Transport::ClockSource::Internal ? "internal" : "midi") + ",\"clockOutputs\":" + devicesJson(s.clockOutputs) + '}';
         }
         std::string status(Control& c)
         {
@@ -1187,9 +1189,10 @@ namespace oscairn
             if( method == "transport.get" ) { fields(p, {}); return transport(c); }
             if( method == "transport.set" )
             {
-                fields(p, {"playing","tempo","clockSource"});
-                const auto play = member(p,"playing"), tempo = member(p,"tempo"), source = member(p,"clockSource");
-                if( !play && !tempo && !source ) invalid("No transport fields supplied");
+                fields(p, {"playing","tempo","clockSource","clockOutputs"});
+                const auto play = member(p,"playing"), tempo = member(p,"tempo"), source = member(p,"clockSource"), outputs = member(p,"clockOutputs");
+                if( !play && !tempo && !source && !outputs ) invalid("No transport fields supplied");
+                const auto clockOutputs = outputs ? devicesFrom(outputs) : std::vector<DeviceRule>{};
                 const bool playing = play ? boolean(play) : false;
                 const double bpm = tempo ? number(tempo) : 120;
                 if( bpm < 1 || bpm > 1000 ) invalid("Tempo must be between 1 and 1000 BPM");
@@ -1198,6 +1201,7 @@ namespace oscairn
                 if( tempo ) c.setTempo(bpm);
                 if( play ) c.setPlaying(playing);
                 if( source ) c.setClockSource(clock == "internal" ? Transport::ClockSource::Internal : Transport::ClockSource::MidiClock);
+                if( outputs ) c.setClockOutputs(clockOutputs);
                 return R"({"accepted":true})";
             }
             if( method == "notes.panic" )

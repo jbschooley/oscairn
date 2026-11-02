@@ -111,8 +111,8 @@ request members.
 | `params.get` | `{"values":[{"node":"synth","param":3}]}` | `{"values":[{"node":1,"param":3,"value":0.5}]}` |
 | `params.set` | `{"values":[{"node":"synth","param":3,"value":0.7}]}` | same shape as `params.get`, with accepted plain values |
 | `params.text` | `{"node":"synth","param":3,"value":0.5}` | `{"text":"50%"}` |
-| `transport.get` | omitted or `{}` | `playing`, `tempo`, `beat`, `clockSource` |
-| `transport.set` | one or more of `playing` (boolean), `tempo` (1..1000), `clockSource` (`"internal"` or `"midi"`) | `{"accepted":true}` |
+| `transport.get` | omitted or `{}` | `playing`, `tempo`, `beat`, `clockSource`, `clockOutputs` |
+| `transport.set` | one or more of `playing` (boolean), `tempo` (1..1000), `clockSource` (`"internal"` or `"midi"`), `clockOutputs` (up to 16 device rules choosing MIDI outputs, as for a part's `devices`, replacing the last; empty, the default, sends no clock) | `{"accepted":true}` |
 | `params.gesture` | `node`, `param`, `begin` (boolean) | `{"accepted":true}` |
 | `subscribe`, `unsubscribe` | `topics` (1..4 of `params.changed`, `transport`, `graph.changed`, `status`), optional `allChanges` boolean | `{"accepted":true}` |
 | `graph.get` | omitted or `{}` | staged topology, names/plugin metadata/ports, each node's `enabled` and `ringing` (switched off and still sounding out), connections, mappings, parts, wires (each with `enabled`), `revision`, `staged`, numeric `input`/`output` endpoints |
@@ -412,6 +412,14 @@ last rendered block's playing/tempo/beat plus the requested clock source. Its fi
 individual telemetry readings, not a coherent snapshot. Commands become visible in
 rendered telemetry after processing; internal play/tempo commands are retained while
 following MIDI clock and take effect when switching back to internal clock.
+
+**Clock out** ([RFC 0012](rfcs/0012-sync-external-midi-and-multi-device.md#step-2-status)):
+`clockOutputs` chooses MIDI outputs by device rules, matched against `session.status`'s
+`midiOutputs` and resolved again as outputs come and go. While the transport plays, they get
+MIDI clock, 24 a beat, each at its sample; Start when it starts from the top, else Song
+Position and Continue; Stop when it stops; a jump while playing is Stop, Song Position and
+Continue. Nothing is sent while stopped. Clock follows the transport, internal or external.
+The outputs are the device's cabling: not saved with a Performance.
 
 Example:
 

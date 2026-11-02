@@ -198,6 +198,69 @@ namespace
                "switching to internal restores requested transport" );
     }
 
+    // RFC 0012 step 2: clock out, measured offline from the timestamps made. At 133 BPM a pulse
+    // falls every 902.26 samples, between samples; over blocks of uneven sizes each pulse lands
+    // within half a sample of its ideal time, so the jitter is the rounding alone and nothing
+    // drifts. Start from the top, Stop, Song Position and Continue; only to the outputs chosen.
+    void clockOut()
+    {
+        using namespace oscairn;
+        Session session( rate, block );
+        auto& control = session.control();
+        Control::SessionStatus status;
+        status.midiOutputs = { { MidiEndpoint::Kind::Usb, 3, "TR-8S" }, { MidiEndpoint::Kind::Usb, 4, "SMK-37 Elite -Master" } };
+        session.setHostStatus( status );
+        control.setClockOutputs( { { DeviceRule::Kind::UsbNamed, DeviceRule::Match::Contains, 0, "tr-8" } } );
+        check( control.transportState().clockOutputs.size() == 1, "the clock's outputs read back" );
+        control.setTempo( 133 );
+        control.setPlaying( true );
+        Audio audio;
+        struct Sent { int64_t time; std::array<uint8_t, 3> bytes; uint8_t size; };
+        std::vector<Sent> sent;
+        int64_t now = 0;
+        bool chosen = true;
+        auto run = [&]( uint32_t frames ) {
+            check( render( session, audio, frames ), "render with clock out" );
+            for( const auto& m : session.midiOutput() ) { sent.push_back( { now + m.time, m.bytes, m.size } ); chosen = chosen && m.ports == 1u << 3; }
+            now += frames;
+        };
+        for( uint32_t i = 0; i < 400; ++i ) run( 37 + ( i * 97 ) % 476 );
+        const double period = 60.0 * rate / ( 133 * 24 );
+        check( sent.size() > 2 && sent[0].bytes[0] == 0xFA && sent[0].time == 0 && sent[0].size == 1, "Start first, at the top" );
+        double worst = 0;
+        int64_t pulses = 0;
+        bool ordered = true;
+        for( size_t i = 1; i < sent.size(); ++i )
+        {
+            ordered = ordered && sent[i].bytes[0] == 0xF8 && sent[i].size == 1;
+            worst = std::max( worst, std::abs( (double)sent[i].time - pulses * period ) );
+            ++pulses;
+        }
+        check( ordered && chosen, "then only clock, to the TR-8S only" );
+        check( pulses == (int64_t)std::floor( ( now - 1 ) / period ) + 1, "24 pulses a beat, none missed or doubled" );
+        std::printf( "clock out: %lld pulses over %lld samples, worst %.3f samples from ideal\n", (long long)pulses, (long long)now, worst );
+        check( worst <= 0.5 + 1e-6, "each pulse within half a sample of its ideal time" );
+
+        sent.clear();
+        control.setPlaying( false );
+        run( 100 ); run( 100 );
+        check( sent.size() == 1 && sent[0].bytes[0] == 0xFC, "Stop once, then nothing while stopped" );
+        sent.clear();
+        const double beats = (double)( now - 200 ) / ( 60.0 * rate / 133 );
+        control.setPlaying( true );
+        run( 64 );
+        const auto sixteenths = (uint16_t)std::floor( beats * 4 );
+        check( sent.size() >= 2 && sent[0].bytes[0] == 0xF2 && sent[0].size == 3 && ( sent[0].bytes[1] | sent[0].bytes[2] << 7 ) == sixteenths && sent[1].bytes[0] == 0xFB,
+               "playing again from where it stopped: Song Position, then Continue" );
+        check( std::all_of( sent.begin() + 2, sent.end(), []( const Sent& m ) { return m.bytes[0] == 0xF8; } ), "then clock" );
+
+        sent.clear();
+        control.setClockOutputs( {} );
+        run( 512 );
+        check( sent.empty() && control.transportState().clockOutputs.empty(), "no outputs chosen: no clock" );
+        rejects( [&] { control.setClockOutputs( { { DeviceRule::Kind::UsbNamed, DeviceRule::Match::Regex, 0, "(" } } ); }, "an invalid pattern" );
+    }
+
     void concurrentControl( const char* synth )
     {
         oscairn::Session session( rate, block );
@@ -235,7 +298,8 @@ int main( int argc, char** argv )
     contract( argv[2] );
     referenceRender( argv[1], argv[2], argv[3] );
     midiClock();
+    clockOut();
     concurrentControl( argv[2] );
-    if( failures == 0 ) std::puts( "ok: control/session audio equivalence, pressure, clock, validation, overflow and concurrent rendering" );
+    if( failures == 0 ) std::puts( "ok: control/session audio equivalence, pressure, clock in and out, validation, overflow and concurrent rendering" );
     return failures ? 1 : 0;
 }

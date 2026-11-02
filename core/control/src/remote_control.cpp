@@ -100,7 +100,9 @@ namespace oscairn
         }
         void readTransport(V v)
         {
-            transport={boolean(field(v,"playing")),number(field(v,"tempo")),number(field(v,"beat"))};
+            transport={boolean(field(v,"playing")),number(field(v,"tempo")),number(field(v,"beat")),{}};
+            for(auto r:array(field(v,"clockOutputs")))transport.clockOutputs.push_back({DeviceRule::Kind(named(deviceRuleKinds,string(field(r,"kind")))),
+                DeviceRule::Match(named(deviceMatches,string(field(r,"match")))),static_cast<uint32_t>(integer(field(r,"port"))),string(field(r,"pattern"))});
             clock=string(field(v,"clockSource"))=="internal"?Transport::ClockSource::Internal:Transport::ClockSource::MidiClock;
         }
         // An enum from its name in one of parts.h's tables.
@@ -599,6 +601,8 @@ namespace oscairn
         const auto id=static_cast<uint32_t>(integer(field(field(reply.get(),"result"),"part")));impl_->refresh();return id;
     }
     void RemoteControl::setPartInput(uint32_t part,const PartInput& input){impl_->call("parts.input","{\"part\":"+std::to_string(part)+",\"input\":"+inputText(input)+'}');impl_->refresh();}
+    void RemoteControl::setClockOutputs(const std::vector<DeviceRule>& devices)
+    {impl_->call("transport.set","{\"clockOutputs\":"+devicesText(devices)+'}');auto state=impl_->call("transport.get");impl_->readTransport(field(state.get(),"result"));}
     void RemoteControl::setPartMidiOut(uint32_t part,const PartMidiOut& midiOut)
     {impl_->call("parts.midiOut","{\"part\":"+std::to_string(part)+",\"midiOut\":{\"devices\":"+devicesText(midiOut.devices)+",\"channel\":"+std::to_string(midiOut.channel)+"}}");impl_->refresh();}
     void RemoteControl::setPartOutput(uint32_t part,uint32_t bus,std::optional<uint32_t> port)

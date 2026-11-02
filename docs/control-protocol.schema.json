@@ -207,13 +207,22 @@
             "internal",
             "midi"
           ]
+        },
+        "clockOutputs": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "$ref": "#/$defs/DeviceRule"
+          },
+          "description": "The MIDI outputs clock goes to (RFC 0012 step 2); none: no clock"
         }
       },
       "required": [
         "playing",
         "tempo",
         "beat",
-        "clockSource"
+        "clockSource",
+        "clockOutputs"
       ],
       "additionalProperties": false
     },
@@ -580,6 +589,14 @@
                     "internal",
                     "midi"
                   ]
+                },
+                "clockOutputs": {
+                  "type": "array",
+                  "maxItems": 16,
+                  "items": {
+                    "$ref": "#/$defs/DeviceRule"
+                  },
+                  "description": "Rules choosing the MIDI outputs clock goes to (RFC 0012 step 2), replacing the last; empty: none"
                 }
               },
               "required": [],

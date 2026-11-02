@@ -16,7 +16,7 @@ Checked when built and tested; the sections below say how.
 
 - [x] Input device selectors on parts ([selectors](#choosing-devices-selectors))
 - [x] 1. MIDI out ([status](#step-1-status); output nodes, latency offsets and the loopback gate not yet)
-- [ ] 2. Clock out
+- [x] 2. Clock out ([status](#step-2-status); clock, Start, Stop, Continue and Song Position out; the gate's drum machine not yet)
 - [ ] 3. Link
 - [ ] 4. External instruments
 - [ ] 5. Setlist cues
@@ -170,6 +170,24 @@ Ableton Link is open source under GPL-2.0-or-later, which can be combined with O
 AGPL-3.0-or-later. Link joins the network permission rules in the
 [architecture](../architecture.md#packages-sound-packs-libraries-and-plugins): the host
 provides it, and plugins never open the network for it.
+
+### Step 2 status
+
+Built 2026-11-01: **clock out** from the transport (`Control::setClockOutputs`, `transport.set`'s
+`clockOutputs`), to the outputs chosen by device rules as parts' MIDI out chooses them, not saved
+with a Performance (it is cabling). While the transport plays, `Session` writes a clock each
+24th of a beat at its sample, computed afresh from each block's beat position and tempo, so it
+cannot drift; Start when it starts from the top, else Song Position (in sixteenths) and
+Continue; Stop when it stops; a jump while playing (another Performance, an external clock's
+song position) is Stop, Song Position and Continue. These join the parts' MIDI in time order
+and leave by step 1's path. `control-session` measures the timestamps offline: at 133 BPM (a
+pulse every 902.26 samples) over 400 blocks of uneven sizes, 121 pulses, none missed or
+doubled, each within half a sample (0.496 at worst) of its ideal time; Start first, Stop once,
+Song Position and Continue on playing again, only the chosen output, nothing with none chosen.
+No device was driven.
+
+Not yet: clock while stopped (some gear wants it to follow tempo before Start); the gate's drum
+machine over ten minutes; per-output choice of what to send (clock only, transport only).
 
 ## Multi-device setlists
 
