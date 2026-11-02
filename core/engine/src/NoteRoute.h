@@ -28,6 +28,7 @@ struct NoteRoute
     std::array<bool,16> clap{};
     uint32_t ports=0;
     uint32_t fadeFrames=0,fading=0; // a stolen note's fade, 0 to choke at once; notes fading
+    explicit NoteRoute(uint32_t ports):ports(ports) {} // a MIDI destination: MIDI's notes on every port
     explicit NoteRoute(const PluginHost& host,uint32_t fadeFrames=0):ports(host.noteInputPorts()),fadeFrames(fadeFrames) {for(uint32_t p=0;p<clap.size();++p)clap[p]=host.usesClapNotes(p);}
     void clear() noexcept {for(auto& n:notes)n.used=false;for(auto& p:pedal)p.fill(0);fading=0;}
     // Whether an event from `source` may release or shape a note: untagged events reach every note.

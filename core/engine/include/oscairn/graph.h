@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <map>
 #include <set>
+#include <span>
 #include <memory>
 #include <optional>
 #include <functional>
@@ -140,6 +141,32 @@ namespace oscairn
         /// the target does not have or cannot change, or source == target.
         void mapParamTarget( NodeId source, uint32_t lane, NodeId target, clap_id param );
         void unmapParamTarget( NodeId source, uint32_t lane );
+
+        /// RFC 0012 step 1: MIDI for external outputs. A tap copies what a node sends from its note
+        /// outputs (notes, pressure and MIDI channel messages), or what enters at graphInput through
+        /// `zones` (as a note connection's), to the outputs in `ports` (a bit per output number), on
+        /// `channel` (1..16; 0 keeps each message's own). `key` is the caller's (a part's ID): a tap
+        /// kept under the same key and source keeps its held notes; a tap removed sends note offs
+        /// for them (and a sustain pedal's release). Replaces every tap; takes effect at commit().
+        /// Throws std::invalid_argument for a source that sends no notes, bad zones or a channel past 16.
+        struct MidiTap
+        {
+            uint32_t key = 0;
+            NodeId from = graphInput;
+            std::vector<NoteZone> zones;
+            uint64_t ports = 0;
+            uint8_t channel = 0;
+            bool operator==(const MidiTap&) const = default;
+        };
+        void setMidiTaps( std::vector<MidiTap> taps );
+        std::vector<MidiTap> midiTaps() const;
+        /// One MIDI 1.0 message for external outputs, `time` samples into its block.
+        struct MidiMessage { uint32_t time = 0; uint64_t ports = 0; uint8_t size = 0; std::array<uint8_t, 3> bytes{}; };
+        static constexpr uint32_t maxMidiOut = 1024;
+        /// Audio thread: the taps' messages since clearMidiOut(), each tap's in time order; past
+        /// maxMidiOut they are dropped and counted in eventDrops().
+        std::span<const MidiMessage> midiOut() const noexcept { return { midiOut_.data(), midiOutCount_ }; }
+        void clearMidiOut() noexcept { midiOutCount_ = 0; }
 
         /// The node's plugin host. Its control API (parameters, service()) belongs to the
         /// main thread; setParameter is safe while the graph is processing.
@@ -283,6 +310,9 @@ namespace oscairn
         uint32_t nextNoteId_=0; // audio thread; IDs are never reused within this graph
         std::map<std::pair<NodeId, uint32_t>, std::pair<NodeId, clap_id>> paramTargets_; // (source, lane) -> (target, param)
 
+        std::vector<std::pair<MidiTap, std::shared_ptr<NoteRoute>>> taps_; // see setMidiTaps
+        std::array<MidiMessage, maxMidiOut> midiOut_{}; // audio thread
+        uint32_t midiOutCount_ = 0;
         std::atomic<Plan*> pending_{ nullptr };
         std::atomic<Listener*> listener_{ nullptr };
         bool panicInput_=false;

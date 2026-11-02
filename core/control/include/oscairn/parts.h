@@ -92,6 +92,18 @@ namespace oscairn
     // with its note limit.
     std::vector<NoteZone> inputZones(const PartInput& input, const std::vector<MidiEndpoint>& endpoints);
 
+    // RFC 0012 step 1: a part's MIDI to hardware outputs: the outputs its selector chooses (none:
+    // no output; rules as for inputs, matched against the host's MIDI outputs), on `channel` (1 to
+    // 16; 0 keeps each message's own). What goes is what the part's instruments are played with
+    // (its notes through its zones, a sequencer's or arpeggiator's notes, the controllers that
+    // reach them), or with no instrument, what leaves the end of its chain.
+    struct PartMidiOut
+    {
+        std::vector<DeviceRule> devices;
+        uint8_t channel = 0;
+        bool operator==(const PartMidiOut&) const = default;
+    };
+
     struct Send { uint32_t bus = 0; double level = 1; bool operator==(const Send&) const = default; }; // a copy of a part's sound into a shared bus
 
     // RFC 0011 step 3: a split divides a part's notes and sound into lanes, each its own chain,
@@ -154,6 +166,7 @@ namespace oscairn
         // they feed are heard.
         bool solo = false;
         PartSource from;
+        PartMidiOut midiOut;
         bool operator==(const Part&) const = default;
     };
     // A part's meter, after its fader and pan, linear: one value per channel of its sound (its last

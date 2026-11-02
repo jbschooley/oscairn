@@ -55,6 +55,8 @@ namespace oscairn::host
         session_->clearHistory(); // undo starts from the startup instrument
 
         openMidiInputs();
+        openMidiOutputs();
+        sender_.startThread();
         midiDevicesChanged_ = juce::MidiDeviceListConnection::make( [this] { midiDevicesDirty_ = true; } );
         devices_.addAudioCallback( this );
         service();
@@ -65,16 +67,18 @@ namespace oscairn::host
     {
         stopTimer();
         devices_.removeAudioCallback( this ); // waits for the callback to finish
+        sender_.stopThread( 1000 );
         for( auto& input : midiInputs_ )
             input->stop();
         midiInputs_.clear();
+        midiOutputs_.clear();
     }
 
     void AudioEngine::service()
     {
         session_->service();
         if( midiDevicesDirty_.exchange( false ) )
-            openMidiInputs();
+            { openMidiInputs(); openMidiOutputs(); }
         Control::SessionStatus status;
         if(auto* device = devices_.getCurrentAudioDevice())
         {
@@ -88,10 +92,76 @@ namespace oscairn::host
         }
         status.audioReady=started_.load();
         status.cpuLoad = devices_.getCpuUsage();
-        status.midiEventDrops=droppedMidi_.load();
+        status.midiEventDrops=droppedMidi_.load()+droppedOut_.load();
         // shortcut: every desktop input is reported as USB; port and network kinds need the device's own input table (RFC 0012).
         for(size_t i = 0; i < midiInputs_.size(); ++i) status.midiInputs.push_back({MidiEndpoint::Kind::Usb, midiSources_[i], midiInputs_[i]->getName().toStdString()});
+        for(size_t i = 0; i < midiOutputs_.size(); ++i) status.midiOutputs.push_back({MidiEndpoint::Kind::Usb, outputNumbers_[i], midiOutputs_[i]->getName().toStdString()});
         session_->setHostStatus(std::move(status));
+    }
+
+    void AudioEngine::openMidiOutputs()
+    {
+        std::vector<std::unique_ptr<juce::MidiOutput>> outputs;
+        std::vector<uint8_t> numbers;
+        for( const auto& info : juce::MidiOutput::getAvailableDevices() )
+        {
+            auto known = outputNumberOf_.find( info.identifier );
+            if( known == outputNumberOf_.end() )
+            {
+                std::set<uint8_t> used; // the lowest free number, 1 to 63; a device keeps its number while the app runs
+                for( const auto& [id, number] : outputNumberOf_ ) used.insert( number );
+                uint8_t number = 1;
+                while( number < maxSources && used.count( number ) ) ++number;
+                if( number == maxSources ) continue; // shortcut: past 63 outputs ever seen, new ones are not opened until the app restarts
+                known = outputNumberOf_.emplace( info.identifier, number ).first;
+            }
+            if( auto output = juce::MidiOutput::openDevice( info.identifier ) )
+            {
+                output->startBackgroundThread(); // sends each block's messages at their times
+                outputs.push_back( std::move( output ) );
+                numbers.push_back( known->second );
+            }
+        }
+        std::lock_guard lock( outputLock_ );
+        midiOutputs_.swap( outputs );
+        outputNumbers_ = std::move( numbers );
+    }
+
+    void AudioEngine::queueMidiOut( uint32_t offset, double seconds ) noexcept
+    {
+        const auto messages = session_->midiOutput();
+        if( messages.empty() ) return;
+        const auto scope = outFifo_.write( (int)messages.size() );
+        const auto written = size_t( scope.blockSize1 + scope.blockSize2 );
+        for( size_t i = 0; i < written; ++i )
+        {
+            const auto& m = messages[i];
+            auto& o = outgoing_[(size_t)( (int)i < scope.blockSize1 ? scope.startIndex1 + (int)i : scope.startIndex2 + (int)i - scope.blockSize1 )];
+            o = { seconds * 1000 + ( offset + m.time ) * 1000 / sampleRate_ + outputLatencyMs_, m.ports, m.size, { m.bytes[0], m.bytes[1], m.bytes[2] } };
+        }
+        droppedOut_ += messages.size() - written;
+    }
+
+    void AudioEngine::Sender::run()
+    {
+        while( !threadShouldExit() )
+        {
+            {
+                const auto scope = engine.outFifo_.read( engine.outFifo_.getNumReady() );
+                std::lock_guard lock( engine.outputLock_ );
+                auto send = [&]( int index ) {
+                    const auto& o = engine.outgoing_[(size_t)index];
+                    juce::MidiBuffer block;
+                    block.addEvent( o.bytes, o.size, 0 );
+                    for( size_t i = 0; i < engine.midiOutputs_.size(); ++i )
+                        if( engine.outputNumbers_[i] < 64 && ( o.ports >> engine.outputNumbers_[i] & 1 ) )
+                            engine.midiOutputs_[i]->sendBlockOfMessages( block, o.ms, engine.sampleRate_ );
+                };
+                for( int i = 0; i < scope.blockSize1; ++i ) send( scope.startIndex1 + i );
+                for( int i = 0; i < scope.blockSize2; ++i ) send( scope.startIndex2 + i );
+            }
+            wait( 1 ); // well inside the audio output's latency, which every message is due after
+        }
     }
 
     void AudioEngine::openMidiInputs()
@@ -177,6 +247,7 @@ namespace oscairn::host
         for(uint32_t i=0;i<ChannelMap::required(config.inputs);++i)valid=valid && inputMask[static_cast<int>(i)];
         const auto required=(!config.explicitOutputs && initialOutputs_.size()==1)?1:ChannelMap::required(config.outputs);
         for(uint32_t i=0;i<required;++i)valid=valid && outputMask[static_cast<int>(i)];
+        outputLatencyMs_=(device->getOutputLatencyInSamples()+device->getCurrentBufferSizeSamples())*1000.0/device->getCurrentSampleRate();
         started_=valid;
     }
 
@@ -220,8 +291,10 @@ namespace oscairn::host
         channelMap_.process(inputs,static_cast<uint32_t>(numInputs),outputs,static_cast<uint32_t>(numOutputs),static_cast<uint32_t>(numSamples),
             [&](const float* const* in,uint32_t ni,float* const* out,uint32_t no,uint32_t frames,uint32_t offset){
                 if(offset==0 && panic)session_->panicInput();
-                return session_->process(in,ni,out,no,frames,{notes_.events.data(),offset==0?notes_.count:0},{clocks_.data(),offset==0?clockCount:0},
+                const bool rendered=session_->process(in,ni,out,no,frames,{notes_.events.data(),offset==0?notes_.count:0},{clocks_.data(),offset==0?clockCount:0},
                     {notes_.sources.data(),offset==0?notes_.count:0});
+                queueMidiOut(offset,now);
+                return rendered;
             });
         blockSeconds_   = now;
         lastBlockStart_ = blockSample_;

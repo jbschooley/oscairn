@@ -259,7 +259,7 @@ namespace oscairn
         auto mains=[&](bool input){try{return old.mainAudioPorts(input);}catch(const std::exception&){return std::vector<uint32_t>{};}};
         const auto mainIn=mains(true),mainOut=mains(false);
         auto parts=parts_;auto wires=wires_;
-        try{graph_.replace(node,path,pluginId,preset,[&]{remapPorts(node,inputs,outputs,mainIn,mainOut);compileWires(graph_,wires_,disabled_,rungOut_,leaving_);});}
+        try{graph_.replace(node,path,pluginId,preset,[&]{remapPorts(node,inputs,outputs,mainIn,mainOut);compileWires(graph_,wires_,disabled_,rungOut_,leaving_);graph_.setMidiTaps(midiTaps(graph_,parts_,wires_));});}
         catch(...){parts_.swap(parts);wires_.swap(wires);throw;}
         if(disabled_.count(node))graph_.setRetiring(node,true); // the new plugin is off too
         for(auto it=pending_.begin();it!=pending_.end();)
@@ -501,6 +501,15 @@ namespace oscairn
         recorder_.graphEvents( merged_.data(), (uint32_t)count );
         const bool ok = graph_.process( inputs, ni, outputs, no, frames, &t, merged_.data(), (uint32_t)count, false, mergedSources_.data() );
         recorder_.end( graph_, outputs, no, frames );
+        // MIDI for hardware outputs: the parts', with any note offs a tap removed sent.
+        const auto taps = graph_.midiOut();
+        std::copy( taps.begin(), taps.end(), midiOut_.begin() );
+        midiOutCount_ = (uint32_t)taps.size();
+        graph_.clearMidiOut();
+        // In time order, each source's own order kept (insertion sort: no allocation, nearly sorted).
+        for( uint32_t i = 1; i < midiOutCount_; ++i )
+            for( uint32_t j = i; j > 0 && midiOut_[j - 1].time > midiOut_[j].time; --j )
+                std::swap( midiOut_[j - 1], midiOut_[j] );
         transport_.advance( frames );
         framesProcessed_.fetch_add( frames, std::memory_order_relaxed );
         blockFrames_.store( frames, std::memory_order_relaxed );

@@ -15,7 +15,7 @@ prepared sounds ([RFC 0005](0005-sound-contexts.md)) and the Parts views
 Checked when built and tested; the sections below say how.
 
 - [x] Input device selectors on parts ([selectors](#choosing-devices-selectors))
-- [ ] 1. MIDI out
+- [x] 1. MIDI out ([status](#step-1-status); output nodes, latency offsets and the loopback gate not yet)
 - [ ] 2. Clock out
 - [ ] 3. Link
 - [ ] 4. External instruments
@@ -126,6 +126,34 @@ devices by name, and a part matching nothing is shown "No device". Tested in `no
 desktop views. Not yet: learn, pattern entry in the Part page (patterns are set over the
 protocol), one sustain pedal per input (a pedal still holds every input's notes on its
 channel), and output selectors, which come with external destinations (step 1).
+
+### Step 1 status
+
+Built 2026-11-01 as a part's **MIDI out**, the smallest form of this section's model: a part
+(`Part::midiOut`, `parts.midiOut`) names the outputs its MIDI goes to by an output selector
+(the input rules above, matched against the host's MIDI outputs, which `session.status`
+lists as `midiOutputs`, numbered from 1 apart from the inputs and resolved again as they come
+and go) and a channel (1 to 16, or keep each message's own). What goes is what the part's
+instruments are played with: the note wires into them, with their zones (a part's notes and
+the controllers that reach it, or a Transpose's or sequencer's notes playing them); a part
+with no instrument sends what leaves its chain, its input if the chain is empty. The graph
+taps those connections (`Graph::setMidiTaps`), each with its own note ledger, and writes
+MIDI 1.0 messages at their samples, with no allocation on the audio thread; a tap removed
+(the output deselected, a plugin removed) sends note offs for what it holds and lifts its
+pedals. The desktop engine opens every MIDI output, queues each message with the time it is
+due (its sample, plus the audio output's latency, so it sounds with the block it belongs to)
+and hands it on a thread of its own to JUCE's timed output (`sendBlockOfMessages`). Saved in
+the Performance (version 9). Tested in `control-parts` (zones, controllers and pitch bend at
+their samples on a channel of their own, the right output only, a release when sending stops,
+a selector matching nothing, Transpose's notes, an output plugged in again, persistence on
+another machine) and `control-json-protocol` (the status's `midiOutputs`); no MIDI device was
+opened for any of it. Not tested: the release when a plugin is removed, the pedals lifted, and
+the desktop engine's sending, which needs a device (the gate's loopback).
+
+Not yet: MIDI output ports as graph nodes of their own (a part sending to several devices on
+different channels needs a part each); per-destination latency offsets (the output follows
+the audio's latency only); the gate's loopback measurement; external notes owned per channel
+across parts, and All Notes Off on owned channels; the Part page's control for it.
 
 ## Transport and clock
 

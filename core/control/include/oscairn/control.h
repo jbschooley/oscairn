@@ -87,6 +87,7 @@ namespace oscairn
             // Plugins in their own workers (RFC 0010): CPU time used in seconds, restarts included, and memory in bytes.
             struct WorkerUsage { NodeId node=0; std::string name; double cpu=0; uint64_t memory=0; bool operator==(const WorkerUsage&) const = default; };
             std::vector<WorkerUsage> workers;
+            std::vector<MidiEndpoint> midiOutputs; // its MIDI outputs, numbered from 1 apart from the inputs, for parts' MIDI out and clock
         };
         virtual SessionStatus sessionStatus() const = 0;
         struct GraphState
@@ -298,6 +299,7 @@ namespace oscairn
         virtual void removeLane( uint32_t part, uint32_t split, uint32_t lane ) = 0;
         virtual void setLane( uint32_t part, uint32_t split, uint32_t lane, const Lane& settings ) = 0;
         virtual void setPartInput( uint32_t part, const PartInput& input ) = 0;
+        virtual void setPartMidiOut( uint32_t part, const PartMidiOut& midiOut ) = 0; // RFC 0012 step 1 (parts.h)
         virtual void setPartOutput( uint32_t part, uint32_t bus, std::optional<uint32_t> port = {} ) = 0; // through a bus, or (bus 0) to a port
         virtual void setSend( uint32_t part, uint32_t bus, std::optional<double> level ) = 0;            // without a level, removes the send
         virtual void setPartLevel( uint32_t part, double level, bool mute ) = 0; // its fader, post-fader sends included

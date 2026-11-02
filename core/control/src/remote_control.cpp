@@ -118,11 +118,12 @@ namespace oscairn
             status.audioInputs=channels(field(v,"audioInputs"));status.audioOutputs=channels(field(v,"audioOutputs"));
             status.audioReady=boolean(field(v,"audioReady"));
             status.graphEventDrops=integer(field(v,"graphEventDrops"));status.midiEventDrops=integer(field(v,"midiEventDrops"));
-            status.deadlineMisses=integer(field(v,"deadlineMisses"));status.midiInputs.clear();status.failures.clear();status.workers.clear();
+            status.deadlineMisses=integer(field(v,"deadlineMisses"));status.midiInputs.clear();status.midiOutputs.clear();status.failures.clear();status.workers.clear();
             for(auto f:array(field(v,"failures")))status.failures.push_back({static_cast<NodeId>(integer(field(f,"node"))),string(field(f,"name")),string(field(f,"reason"))});
             for(auto w:array(field(v,"workers")))status.workers.push_back({static_cast<NodeId>(integer(field(w,"node"))),string(field(w,"name")),number(field(w,"cpu")),uint64_t(integer(field(w,"memory")))});
-            for(auto e:array(field(v,"midiInputs")))
-                status.midiInputs.push_back({MidiEndpoint::Kind(named(endpointKinds,string(field(e,"kind")))),uint8_t(integer(field(e,"source"))),string(field(e,"name")),static_cast<uint32_t>(integer(field(e,"port")))});
+            for(auto [list,key]:{std::pair{&status.midiInputs,"midiInputs"},{&status.midiOutputs,"midiOutputs"}})
+                for(auto e:array(field(v,key)))
+                    list->push_back({MidiEndpoint::Kind(named(endpointKinds,string(field(e,"kind")))),uint8_t(integer(field(e,"source"))),string(field(e,"name")),static_cast<uint32_t>(integer(field(e,"port")))});
         }
         void refresh()
         {
@@ -172,6 +173,9 @@ namespace oscairn
                 for(auto r:array(field(input,"devices")))part.input.devices.push_back({DeviceRule::Kind(named(deviceRuleKinds,string(field(r,"kind")))),
                     DeviceRule::Match(named(deviceMatches,string(field(r,"match")))),static_cast<uint32_t>(integer(field(r,"port"))),string(field(r,"pattern"))});
                 part.output=static_cast<uint32_t>(integer(field(p,"output")));
+                const auto midiOut=field(p,"midiOut");part.midiOut.channel=uint8_t(integer(field(midiOut,"channel")));
+                for(auto r:array(field(midiOut,"devices")))part.midiOut.devices.push_back({DeviceRule::Kind(named(deviceRuleKinds,string(field(r,"kind")))),
+                    DeviceRule::Match(named(deviceMatches,string(field(r,"match")))),static_cast<uint32_t>(integer(field(r,"port"))),string(field(r,"pattern"))});
                 auto chain=[](V list){std::vector<NodeId> result;for(auto n:array(list))result.push_back(n->type==json_type_object?splitMark|static_cast<NodeId>(integer(field(n,"split"))):static_cast<NodeId>(integer(n)));return result;};
                 part.chain=chain(field(p,"chain"));
                 for(auto s:array(field(p,"splits"))){
@@ -577,12 +581,16 @@ namespace oscairn
             for(const auto& z:zones){if(out.size()>1)out+=',';out+="{\"keys\":["+std::to_string(z.lowKey)+","+std::to_string(z.highKey)+"],\"velocities\":["+encode(z.lowVelocity)+","+encode(z.highVelocity)+"],\"channels\":"+std::to_string(z.channels)+",\"transpose\":"+std::to_string(z.transpose)+",\"curve\":"+encode(z.curve)+",\"fixedVelocity\":"+encode(z.fixedVelocity)+'}';}
             return out+']';
         }
+        std::string devicesText(const std::vector<DeviceRule>& rules)
+        {
+            std::string devices="[";
+            for(const auto& r:rules){if(devices.size()>1)devices+=',';devices+=std::string("{\"kind\":\"")+deviceRuleKinds[size_t(r.kind)]+"\",\"port\":"+std::to_string(r.port)+",\"pattern\":"+quote(r.pattern)+",\"match\":\""+deviceMatches[size_t(r.match)]+"\"}";}
+            return devices+']';
+        }
         std::string inputText(const PartInput& input)
         {
             const char* kind=input.kind==PartInput::Kind::Notes?"notes":input.kind==PartInput::Kind::Audio?"audio":input.kind==PartInput::Kind::Bus?"bus":"none";
-            std::string devices="[";
-            for(const auto& r:input.devices){if(devices.size()>1)devices+=',';devices+=std::string("{\"kind\":\"")+deviceRuleKinds[size_t(r.kind)]+"\",\"port\":"+std::to_string(r.port)+",\"pattern\":"+quote(r.pattern)+",\"match\":\""+deviceMatches[size_t(r.match)]+"\"}";}
-            return "{\"kind\":\""+std::string(kind)+"\",\"port\":"+std::to_string(input.port)+",\"zones\":"+zonesText(input.zones)+",\"devices\":"+devices+"],\"maxNotes\":"+std::to_string(input.maxNotes)+"}";
+            return "{\"kind\":\""+std::string(kind)+"\",\"port\":"+std::to_string(input.port)+",\"zones\":"+zonesText(input.zones)+",\"devices\":"+devicesText(input.devices)+",\"maxNotes\":"+std::to_string(input.maxNotes)+"}";
         }
     }
     uint32_t RemoteControl::addPart(const std::string& name,PartInput input,std::optional<uint32_t> output)
@@ -591,6 +599,8 @@ namespace oscairn
         const auto id=static_cast<uint32_t>(integer(field(field(reply.get(),"result"),"part")));impl_->refresh();return id;
     }
     void RemoteControl::setPartInput(uint32_t part,const PartInput& input){impl_->call("parts.input","{\"part\":"+std::to_string(part)+",\"input\":"+inputText(input)+'}');impl_->refresh();}
+    void RemoteControl::setPartMidiOut(uint32_t part,const PartMidiOut& midiOut)
+    {impl_->call("parts.midiOut","{\"part\":"+std::to_string(part)+",\"midiOut\":{\"devices\":"+devicesText(midiOut.devices)+",\"channel\":"+std::to_string(midiOut.channel)+"}}");impl_->refresh();}
     void RemoteControl::setPartOutput(uint32_t part,uint32_t bus,std::optional<uint32_t> port)
     {impl_->call("parts.output","{\"part\":"+std::to_string(part)+(bus?",\"bus\":"+std::to_string(bus):std::string{})+(port?",\"port\":"+std::to_string(*port):std::string{})+'}');impl_->refresh();}
     void RemoteControl::setSend(uint32_t part,uint32_t bus,std::optional<double> level)

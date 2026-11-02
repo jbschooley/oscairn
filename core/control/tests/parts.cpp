@@ -2,7 +2,7 @@
 //
 // RFC 0011 step 1: parts and wire ownership, implicit Mixes, port-level routes with channel
 // rules, plugin replacement and Performance persistence.
-//   oscairn-parts-test FIXTURE.clap AUDIO_FIXTURE.clap DELAY.clap
+//   oscairn-parts-test FIXTURE.clap AUDIO_FIXTURE.clap DELAY.clap SPLITTERS.clap TRANSPOSE.clap
 #include "oscairn/session.h"
 #include "AllocationGuard.h"
 #include "../../plugin-host/src/StateFiles.h"
@@ -261,6 +261,78 @@ namespace
         const auto off = kick::clap::Event::midi(0x80, 62, 0), other = kick::clap::Event::midi(0x90, 64, 127); const uint8_t five = 5;
         t.process(nullptr, 0, y.out, 2, frames, {&off, 1}, {}, {&nine, 1}); t.process(nullptr, 0, y.out, 2, frames, {&other, 1}, {}, {&five, 1});
         check(near(y.l[0], 0), "a device that does not match there plays nothing");
+    }
+
+    // RFC 0012 step 1: a part's MIDI to hardware outputs chosen by name: what its instrument is
+    // played with (through its zones), with controllers, on a channel of its own; a plugin's notes;
+    // note offs when it stops sending; outputs plugged in again; Performances keeping the selector.
+    void midiOut(const char* fixture, const char* transpose, const fs::path& root)
+    {
+        using K = DeviceRule::Kind; using M = DeviceRule::Match; using E = MidiEndpoint::Kind;
+        using Out = std::vector<std::array<uint32_t, 5>>; // time, ports, status, data 1, data 2
+        Session s(48000, frames);
+        Control::SessionStatus status; status.midiOutputs = {{E::Usb, 1, "SMK-37 Elite -Master"}, {E::Usb, 2, "volca keys"}}; s.setHostStatus(status);
+        const auto synth = s.add("synth", fixture, "org.kick.test.synth");
+        NoteZone upper; upper.lowKey = 60; upper.transpose = 12;
+        const auto keys = s.addPart("Keys", {PartInput::Kind::Notes, 0, {upper}});
+        s.insertIntoPart(keys, 0, synth);
+        s.setPartMidiOut(keys, {{{K::UsbNamed, M::Contains, 0, "volca"}}, 3});
+        s.commit();
+        Audio x;
+        auto run = [&](std::vector<kick::clap::Event> events) {
+            s.service(); forbidAllocation = true;
+            const bool ok = s.process(nullptr, 0, x.out, 2, frames, events);
+            forbidAllocation = false; check(ok, "render");
+            Out out;
+            for(const auto& m : s.midiOutput()) out.push_back({m.time, uint32_t(m.ports), m.bytes[0], m.size > 1 ? m.bytes[1] : 0u, m.size > 2 ? m.bytes[2] : 0u});
+            return out;
+        };
+        using kick::clap::Event;
+        auto shown = [](const Out& out) { std::string t; for(const auto& m : out) t += " " + std::to_string(m[0]) + ":" + std::to_string(m[1]) + ":" + std::to_string(m[2]) + "," + std::to_string(m[3]) + "," + std::to_string(m[4]); return t; };
+        auto out = run({Event::midi(0x90, 64, 100, 10), Event::midi(0x90, 40, 100, 12), Event::midi(0xB0, 1, 77, 20), Event::midi(0xE0, 0, 80, 30)});
+        check(out == Out{{10, 4, 0x92, 76, 100}, {20, 4, 0xB2, 1, 77}, {30, 4, 0xE2, 0, 80}},
+              "the part's notes through its zone, its controllers and pitch bend, at their samples, on channel 3, to the volca only:" + shown(out));
+        check(x.l[frames - 1] != 0, "the instrument plays too");
+        s.setPartMidiOut(keys, {}); s.commit();
+        out = run({});
+        check(out == Out{{0, 4, 0x82, 76, 0}}, "sending no more, the held note is released there:" + shown(out));
+        out = run({Event::midi(0x80, 64, 0, 3)}); check(out.empty(), "and nothing more is sent");
+        s.setPartMidiOut(keys, {{{K::UsbNamed, M::Contains, 0, "juno"}}, 0}); s.commit();
+        out = run({Event::midi(0x90, 64, 100, 0), Event::midi(0x80, 64, 0, 1)}); check(out.empty(), "a selector matching no output sends nothing");
+        bool refused = false;
+        try { s.setPartMidiOut(keys, {{{K::All}}, 17}); } catch(const std::invalid_argument&) { refused = true; }
+        check(refused, "channel 17 is refused");
+
+        // A plugin's notes: Transpose before the synth; what reaches the synth goes out, the part's
+        // own notes not again.
+        const auto tr = s.add("transpose", transpose);
+        s.insertIntoPart(keys, 0, tr); s.setParameter(tr, 1, 7);
+        s.setPartMidiOut(keys, {{{K::UsbNamed, M::Equals, 0, "SMK-37 Elite -Master"}}, 0}); s.commit();
+        run({});
+        out = run({Event::midi(0x90, 64, 100, 5)});
+        check(out == Out{{5, 2, 0x90, 83, 100}}, "Transpose's notes, on their own channel:" + shown(out));
+        // Plugged in again under another number: the selector follows it, no commit needed.
+        status.midiOutputs = {{E::Usb, 5, "SMK-37 Elite -Master"}}; s.setHostStatus(status);
+        out = run({Event::midi(0x80, 64, 0, 2)});
+        check(out == Out{{2, 1u << 5, 0x80, 83, 0}} && !s.graphState().staged, "the release goes to output 5 now:" + shown(out));
+
+        // Performances keep the selector and channel, resolved again where they open.
+        s.setPartMidiOut(keys, {{{K::UsbNamed, M::Contains, 0, "smk"}}, 16}); s.commit();
+        const auto saved = root / "midi-out";
+        s.savePerformance(saved.string());
+        Session t(48000, frames);
+        status.midiOutputs = {{E::Usb, 9, "SMK-37 Elite -Master"}}; t.setHostStatus(status);
+        t.loadPerformance(saved.string());
+        check(t.parts()[0].midiOut == s.parts()[0].midiOut, "MIDI out round-trips");
+        t.service(); forbidAllocation = true;
+        const auto on = Event::midi(0x90, 64, 100, 0);
+        const bool ok = t.process(nullptr, 0, x.out, 2, frames, {&on, 1});
+        forbidAllocation = false;
+        std::string seen; for(const auto& m : t.midiOutput()) seen += " " + std::to_string(m.ports) + ":" + std::to_string(m.bytes[0]) + "," + std::to_string(m.bytes[1]) + "," + std::to_string(m.bytes[2]);
+        // Transpose, newly loaded, first lifts its pedals (CC 64 0 on each channel, all on 16 here).
+        const auto sent = t.midiOutput();
+        check(ok && !sent.empty() && sent.back().bytes[0] == 0x9F && sent.back().bytes[1] == 83 && std::all_of(sent.begin(), sent.end(), [](const auto& m) { return m.ports == 1u << 9; }),
+              "opened elsewhere, it sends to that machine's output, on channel 16:" + seen);
     }
 
     // RFC 0011 step 3: splits. Lanes built with part edits render exactly as the same graph wired
@@ -1260,17 +1332,17 @@ namespace
         const auto old = root / "version-4";
         fs::copy(saved, old, fs::copy_options::recursive);
         auto text = std::string(first.begin(), first.end());
-        text.replace(text.find("\"version\":8"), 11, "\"version\":7");
+        text.replace(text.find("\"version\":9"), 11, "\"version\":8");
         state_files::write(old / "performance.json", text.data(), text.size());
         const auto before = describe(t);
         bool refused = false; try { t.loadPerformance(old.string()); } catch(const std::runtime_error& e) { refused = std::string(e.what()).find("unsupported format version") != std::string::npos; }
-        check(refused && describe(t) == before, "a version 7 Performance is refused and the session kept");
+        check(refused && describe(t) == before, "a version 8 Performance is refused and the session kept");
     }
 }
 
 int main(int argc, char** argv)
 {
-    if(argc < 5) { std::fprintf(stderr, "usage: %s FIXTURE AUDIO_FIXTURE DELAY SPLITTERS\n", argv[0]); return 2; }
+    if(argc < 6) { std::fprintf(stderr, "usage: %s FIXTURE AUDIO_FIXTURE DELAY SPLITTERS TRANSPOSE\n", argv[0]); return 2; }
     try
     {
         state_files::TemporaryDirectory temp;
@@ -1279,6 +1351,7 @@ int main(int argc, char** argv)
         replacement(argv[2], argv[3]);
         zones(argv[1]);
         devices(argv[1], temp.path);
+        midiOut(argv[1], argv[5], temp.path);
         splits(argv[1], argv[3], temp.path);
         soundSplits(argv[3], argv[4], temp.path);
         mixer(argv[1], argv[3], temp.path);
@@ -1297,6 +1370,6 @@ int main(int argc, char** argv)
         persistence(argv[1], argv[2], argv[3], temp.path);
     }
     catch(const std::exception& e) { forbidAllocation = false; std::fprintf(stderr, "FAIL: %s\n", e.what()); return 1; }
-    if(!failures) std::puts("ok: part and wire ownership, Mix, channel rules, replacement, devices and persistence");
+    if(!failures) std::puts("ok: part and wire ownership, Mix, channel rules, replacement, devices, MIDI out and persistence");
     return failures ? 1 : 0;
 }

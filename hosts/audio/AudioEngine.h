@@ -47,6 +47,8 @@ namespace oscairn::host
 
         void push( const juce::MidiMessage& message, const juce::MidiInput* input );
         void openMidiInputs();
+        void openMidiOutputs();
+        void queueMidiOut( uint32_t offset, double seconds ) noexcept; // audio thread: the session's MIDI out, for the sender
         void timerCallback() override { service(); }
 
         juce::AudioDeviceManager devices_;
@@ -90,6 +92,27 @@ namespace oscairn::host
         std::vector<uint8_t>                          midiSources_;
         std::map<juce::String, uint8_t>               sourceOf_; // by device identifier
         juce::MidiDeviceListConnection                midiDevicesChanged_;
+
+        // MIDI outputs (RFC 0012), each numbered by device like the inputs, apart from them. The
+        // audio thread queues each message with the wall-clock time it is due (its sample, plus the
+        // audio output's latency, so it sounds with the block it belongs to); the sender thread
+        // hands it to JUCE's output, which sends it then. The lock is the sender's and the main
+        // thread's (reopening), never the audio thread's.
+        struct Outgoing { double ms; uint64_t ports; uint8_t size; uint8_t bytes[3]; };
+        juce::AbstractFifo                            outFifo_{ 4096 };
+        std::array<Outgoing, 4096>                    outgoing_{};
+        std::atomic<uint64_t>                         droppedOut_{ 0 };
+        double                                        outputLatencyMs_ = 0; // set before the device starts
+        std::mutex                                    outputLock_;
+        std::vector<std::unique_ptr<juce::MidiOutput>> midiOutputs_; // started, each with its number
+        std::vector<uint8_t>                          outputNumbers_;
+        std::map<juce::String, uint8_t>               outputNumberOf_; // by device identifier
+        struct Sender : juce::Thread
+        {
+            explicit Sender( AudioEngine& e ) : juce::Thread( "oscairn MIDI out" ), engine( e ) {}
+            void run() override;
+            AudioEngine& engine;
+        } sender_{ *this };
         std::atomic<bool>                             midiDevicesDirty_{ false };
     };
 }

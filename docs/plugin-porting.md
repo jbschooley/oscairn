@@ -42,6 +42,10 @@ Everything else is handled for you:
   not reach plugins; physical-control mapping routes them. Clock, start, continue, stop and
   song position drive the transport. To hear pitch bend and the mod wheel, a plugin offers
   the MIDI dialect on its note port.
+- **Hardware MIDI output:** a part can send its MIDI to hardware outputs too ([RFC 0012](rfcs/0012-sync-external-midi-and-multi-device.md#step-1-status)).
+  A sequencer's or MIDI effect's note output reaches them as MIDI: notes, pressure (as
+  aftertouch) and its MIDI events' channel messages; parameter events and other CLAP events
+  stay inside.
 - **Audio:** 32-bit float buffers. CLAP requires every plugin and host to support 32-bit
   audio; 64-bit is optional (`CLAP_AUDIO_PORT_SUPPORTS_64BITS`) and Oscairn does not offer
   it, so no plugin is excluded by it.

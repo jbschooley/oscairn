@@ -99,7 +99,7 @@ request members.
 | --- | --- | --- |
 | `session.hello` | omitted or `{}` | `protocolVersion`, `server`, supported methods and optional features in `capabilities`, `limits` |
 | `engine.attach`, `engine.release` | `{}` | `{"accepted":true}`. A UI attaches when it connects to a managed engine and releases it when it quits normally; the managed engine stops once every attached client has released it. A client that disconnects while attached (a crash) keeps the engine running until a client attaches again, or the last attached client still connected releases it; clients that never attach (background jobs) do not count. Engines started without `--managed` ignore both |
-| `session.status` | omitted or `{}` | `audioDevice`, `midiInputs` (each `{"source","name","kind","port"}`, below), `sampleRate`, `bufferSize`, `cpuLoad`, `deadlineMisses`, `graphEventDrops`, `midiEventDrops`, `audioReady`, mapped `audioInputs`/`audioOutputs`, `failures`: each plugin that has failed and is silent (`node`, `name`, `reason`), and `workers`: each plugin in its own worker process with the CPU time it has used in seconds, restarts included, and its memory in bytes (`node`, `name`, `cpu`, `memory`) |
+| `session.status` | omitted or `{}` | `audioDevice`, `midiInputs` (each `{"source","name","kind","port"}`, below), `midiOutputs` (the same shape; `source` is the output's own number, from 1), `sampleRate`, `bufferSize`, `cpuLoad`, `deadlineMisses`, `graphEventDrops`, `midiEventDrops`, `audioReady`, mapped `audioInputs`/`audioOutputs`, `failures`: each plugin that has failed and is silent (`node`, `name`, `reason`), and `workers`: each plugin in its own worker process with the CPU time it has used in seconds, restarts included, and its memory in bytes (`node`, `name`, `cpu`, `memory`) |
 | `state.info` | `{"node":"synth"}` | `{"supported":true}` when opaque state export is available |
 | `state.save` | `{"node":"synth","directory":"/path/to/new-state"}` | `{"saved":true}` after publishing a new state directory |
 | `presets.list` | `{"node":"synth"}` | `{"presets":[{"uri":"urn:example:preset","name":"Warm"}]}` |
@@ -134,6 +134,7 @@ request members.
 | `parts.removeLane` | `part`, `split`, `lane`: its nodes leave the part; the last lane removes the split | `{"accepted":true}` |
 | `parts.lane` | `part`, `split`, `lane`; any of `zones`, `level`, `pan`, `mute`, `solo` (others keep their values) | `{"accepted":true}` |
 | `parts.input` | `part`, `input` (as for `parts.add`, with optional `zones`, `devices` and `maxNotes`, notes at once from 0 (no limit) to 128) | `{"accepted":true}` |
+| `parts.midiOut` | `part`, `midiOut`: `devices` (rules choosing MIDI outputs, as for inputs; none, the default, sends nothing) and `channel` (1–16; 0, the default, keeps each message's own) | `{"accepted":true}`: the part's MIDI goes to those outputs as well ([RFC 0012](rfcs/0012-sync-external-midi-and-multi-device.md#step-1-status)) |
 | `parts.output` | `part`, and `bus` (play through that bus) or optional `port` (a graph output) | `{"accepted":true}` |
 | `parts.send` | `part`, `bus`, optional `level` (without one, the send is removed) | `{"accepted":true}` |
 | `parts.level` | `part`, `level`, `mute`: its fader; sends are post-fader | `{"accepted":true}` |
@@ -310,6 +311,17 @@ report the compiled per-channel routes.
   0 is built in), a `name`, a `kind` (`builtIn`, `port`, `usb` or `network`) and its
   `port` number. The desktop app reports every input as `usb`; ports and network
   sessions need the device's own input table.
+- **MIDI out** ([RFC 0012](rfcs/0012-sync-external-midi-and-multi-device.md#step-1-status)):
+  a part's `midiOut` sends its MIDI to hardware outputs as well as to its instruments. Its
+  `devices` are rules as above, matched against `session.status`'s `midiOutputs` (numbered
+  from 1, apart from the inputs) and resolved again whenever that list changes; an empty
+  list, the default, sends nothing. `channel` 1–16 puts every message on that channel; 0
+  keeps each one's own. What goes is what the part's instruments are played with: its
+  notes through its zones and the controllers that reach them, or a sequencer's or MIDI
+  effect's notes when one plays them; a part with no instrument sends what leaves its
+  chain (with an empty chain, its own input). Each message leaves at its sample, timed to
+  sound with the audio it was rendered beside. Removing the output, or a plugin, sends
+  note offs for the notes it held there. `graph.get` shows each part's `midiOut`.
 - A wire a plugin replacement could not map stays with `connected: false`; port 4294967294
   is a main port awaiting one, 4294967295 none.
 

@@ -67,10 +67,47 @@ namespace oscairn
             bool draining=false;
         };
 
+        struct Tap { int step; std::shared_ptr<NoteRoute> route; NoteZones zones; uint64_t ports; uint8_t channel; }; // see setMidiTaps; step -1: the input
+        std::vector<Tap>               taps;
         std::vector<Step>              steps;
         std::vector<Key>               keys;
         std::vector<kick::clap::Event> merged;
     };
+
+    // A routed event as a MIDI 1.0 channel message on `channel` (1..16; 0: its own): notes,
+    // pressure, and MIDI events' own bytes. False for anything else.
+    static bool toMidi(const kick::clap::Event& e,uint8_t channel,Graph::MidiMessage& m) noexcept
+    {
+        const auto* h=e.header();
+        if(h->space_id!=CLAP_CORE_EVENT_SPACE_ID)return false;
+        auto on=[&](int own){return uint8_t(channel?channel-1:std::clamp(own,0,15));};
+        auto seven=[](double v){return uint8_t(std::lround(std::clamp(v,0.0,1.0)*127));};
+        if((h->type==CLAP_EVENT_NOTE_ON || h->type==CLAP_EVENT_NOTE_OFF || h->type==CLAP_EVENT_NOTE_CHOKE) && h->size==sizeof(clap_event_note_t))
+        {
+            const auto& n=*reinterpret_cast<const clap_event_note_t*>(h);
+            if(n.key<0 || n.key>127)return false;
+            const bool down=h->type==CLAP_EVENT_NOTE_ON;
+            m.bytes={uint8_t((down?0x90:0x80)|on(n.channel)),uint8_t(n.key),down?std::max<uint8_t>(seven(n.velocity),1):seven(n.velocity)};m.size=3;
+            return true;
+        }
+        if(h->type==CLAP_EVENT_NOTE_EXPRESSION && h->size==sizeof(clap_event_note_expression_t))
+        {
+            const auto& x=*reinterpret_cast<const clap_event_note_expression_t*>(h);
+            if(x.expression_id!=CLAP_NOTE_EXPRESSION_PRESSURE || x.key>127)return false;
+            if(x.key<0){m.bytes={uint8_t(0xd0|on(x.channel)),seven(x.value),0};m.size=2;}
+            else{m.bytes={uint8_t(0xa0|on(x.channel)),uint8_t(x.key),seven(x.value)};m.size=3;}
+            return true;
+        }
+        if(h->type==CLAP_EVENT_MIDI && h->size==sizeof(clap_event_midi_t))
+        {
+            const auto& x=*reinterpret_cast<const clap_event_midi_t*>(h);
+            const auto kind=x.data[0]&0xf0;
+            if(kind<0x80 || kind>=0xf0 || x.data[1]>127 || x.data[2]>127)return false;
+            m.bytes={uint8_t(kind|on(x.data[0]&15)),x.data[1],x.data[2]};m.size=kind==0xc0 || kind==0xd0?2:3;
+            return true;
+        }
+        return false;
+    }
 
     //==============================================================================
     void Graph::Retired::push( Plan* p ) noexcept
@@ -181,7 +218,7 @@ namespace oscairn
         onPublish(); // caller supplies a nonthrowing metadata/transport commit
         // A host carried over stays in use; listing it here too would keep it alive forever (collect() frees at one owner).
         for(const auto& [id,node]:nodes_)if(const auto kept=next.nodes_.find(id);kept==next.nodes_.end() || kept->second.host!=node.host)removedHosts_.push_back(node.host);
-        nodes_.swap(next.nodes_);audioRoutes_.swap(next.audioRoutes_);noteEdges_.swap(next.noteEdges_);noteZones_.swap(next.noteZones_);draining_.swap(next.draining_);paramTargets_.swap(next.paramTargets_);
+        nodes_.swap(next.nodes_);audioRoutes_.swap(next.audioRoutes_);noteEdges_.swap(next.noteEdges_);noteZones_.swap(next.noteZones_);draining_.swap(next.draining_);paramTargets_.swap(next.paramTargets_);taps_.swap(next.taps_);
         nextId_=next.nextId_;replacementSerial_=next.replacementSerial_;
         delete pending_.exchange(plan.release(),std::memory_order_acq_rel);
     }
@@ -357,6 +394,30 @@ namespace oscairn
         noteEdges_.erase({from,to});noteZones_.erase({from,to});draining_.erase({from,to});
     }
 
+    void Graph::setMidiTaps( std::vector<MidiTap> taps )
+    {
+        for(const auto& t:taps)
+        {
+            checkSource(t.from,false);
+            if(t.zones.size()>NoteZones::capacity || !std::all_of(t.zones.begin(),t.zones.end(),[](const NoteZone& z){return z.valid();}))
+                throw std::invalid_argument("invalid or too many note zones");
+            if(t.channel>16)throw std::invalid_argument("a MIDI channel is 1 to 16, or 0 for each message's own");
+        }
+        decltype(taps_) next;
+        for(auto& t:taps)
+        {
+            const auto kept=std::find_if(taps_.begin(),taps_.end(),[&](const auto& o){return o.first.key==t.key && o.first.from==t.from;});
+            auto route=kept!=taps_.end() && std::none_of(next.begin(),next.end(),[&](const auto& n){return n.second==kept->second;})?kept->second:std::make_shared<NoteRoute>(16u);
+            next.emplace_back(std::move(t),std::move(route));
+        }
+        taps_.swap(next);
+    }
+
+    std::vector<Graph::MidiTap> Graph::midiTaps() const
+    {
+        std::vector<MidiTap> out;for(const auto& [t,route]:taps_)out.push_back(t);return out;
+    }
+
     void Graph::setDraining( NodeId from, NodeId to, bool draining )
     {
         if(draining)draining_.insert({from,to});else draining_.erase({from,to});
@@ -497,6 +558,14 @@ namespace oscairn
             plan->steps[(size_t)stepOf[to]].noteSources.push_back({from == graphInput ? -1 : stepOf[from],state,zones,draining_.count(edge)!=0});
         }
 
+        for(const auto& [tap,route]:taps_)
+        {
+            if(tap.from!=graphInput && !nodes_.count(tap.from))continue; // removed since
+            Plan::Tap t{tap.from==graphInput?-1:stepOf.at(tap.from),route,{},tap.ports,tap.channel};
+            t.zones.count=tap.zones.size();std::copy(tap.zones.begin(),tap.zones.end(),t.zones.zones.begin());
+            plan->taps.push_back(std::move(t));
+        }
+
         for( const auto& [from, to] : paramTargets_ )
         {
             const auto& params = nodes_.at( to.first ).host->parameters();
@@ -569,6 +638,18 @@ namespace oscairn
                                     for(const auto& remaining:next.noteSources)value=std::max(value,remaining.route->pedal[port][channel]);
                                     return value;
                                 });
+                    // A tap gone: note offs for the notes it holds, and its pedals released.
+                    for(auto& old:current_->taps)
+                        if(std::none_of(plan->taps.begin(),plan->taps.end(),[&](const auto& t){return t.route==old.route;}))
+                        {
+                            auto send=[&](const kick::clap::Event& e){
+                                MidiMessage m;if(!toMidi(e,old.channel,m))return;
+                                if(midiOutCount_==maxMidiOut){eventDrops_.fetch_add(1,std::memory_order_relaxed);return;}
+                                m.ports=old.ports;midiOut_[midiOutCount_++]=m;};
+                            for(const auto& n:old.route->notes)if(n.used)send(old.route->release(n,0,false));
+                            for(int p=0;p<16;++p)for(int c=0;c<16;++c)if(old.route->pedal[p][c]>=64)send(kick::clap::Event::midi(uint8_t(0xb0|c),64,0));
+                            old.route->clear();
+                        }
                     retired_.push( current_ );
                 }
                 current_ = plan;
@@ -770,6 +851,19 @@ namespace oscairn
             }
         }
 
+        // MIDI for external outputs (setMidiTaps), from the input or a node's note outputs.
+        for(auto& tap:plan->taps)
+        {
+            const kick::clap::Event* list=events;uint32_t count=eventCount;
+            if(tap.step>=0)list=plan->steps[(size_t)tap.step].host->outputEvents(count);
+            auto emit=[&](const kick::clap::Event& e){
+                MidiMessage m;if(!toMidi(e,tap.channel,m))return true;
+                if(midiOutCount_==maxMidiOut){eventDrops_.fetch_add(1,std::memory_order_relaxed);return true;}
+                m.time=std::min(e.header()->time,frames-1);m.ports=tap.ports;midiOut_[midiOutCount_++]=m;return true;};
+            for(uint32_t i=0;i<count;++i)
+                if(list[i].header()->space_id==CLAP_CORE_EVENT_SPACE_ID && list[i].header()->type!=CLAP_EVENT_NOTE_END)
+                    tap.route->route(list[i],nextNoteId_,emit,&tap.zones,tap.step<0 && sources?sources[i]:untaggedSource);
+        }
         for(const auto& r:plan->outputRoutes)mix(r,outputs[r.to]);
         return ok;
     }

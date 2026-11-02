@@ -217,7 +217,34 @@ namespace oscairn
         }
     }
 
-    void Session::syncWires() { compileWires(graph_, wires_, disabled_, rungOut_, leaving_); staged_ = true; }
+    void Session::syncWires() { compileWires(graph_, wires_, disabled_, rungOut_, leaving_); graph_.setMidiTaps(midiTaps(graph_, parts_, wires_)); staged_ = true; }
+
+    // Each part's MIDI out (parts.h) as graph taps: the note wires into its instruments (plugins
+    // taking notes and sending none), or with none, the last plugin in its chain sending notes,
+    // else its input. Identical wires (layered lanes) send once.
+    std::vector<Graph::MidiTap> Session::midiTaps(const Graph& g, const std::vector<Part>& parts, const std::vector<Wire>& wires) const
+    {
+        std::vector<Graph::MidiTap> taps;
+        for(const auto& part : parts)
+        {
+            if(part.midiOut.devices.empty()) continue;
+            const auto ports = resolveDevices(part.midiOut.devices, hostStatus_.midiOutputs) & ~uint64_t(1); // outputs are numbered from 1
+            if(!ports) continue;
+            const auto first = taps.size();
+            auto add = [&](NodeId from, const std::vector<NoteZone>& zones) {
+                Graph::MidiTap t{part.id, from, zones, ports, part.midiOut.channel};
+                if(std::find(taps.begin() + long(first), taps.end(), t) == taps.end()) taps.push_back(std::move(t));
+            };
+            for(const auto& w : wires)
+                if(w.owner == WireOwner::Part && w.part == part.id && w.kind == WireKind::Notes && w.connected && takesNotes(g, w.to) && !g.host(w.to).noteOutputPorts())
+                    add(w.from, w.zones);
+            if(taps.size() > first) continue;
+            const auto last = std::find_if(part.chain.rbegin(), part.chain.rend(), [&](NodeId n) { return !isSplit(n) && n != graphInput && sendsNotes(g, n); });
+            if(last != part.chain.rend()) add(*last, {});
+            else if(part.input.kind == PartInput::Kind::Notes) add(graphInput, inputZones(part.input, hostStatus_.midiInputs));
+        }
+        return taps;
+    }
 
     void Session::enable(NodeId node, bool enabled)
     {
@@ -490,6 +517,15 @@ namespace oscairn
         const auto layout = graph_.describe().audioLayout;
         if(input.kind == PartInput::Kind::Audio && !channelsOf(graph_, layout, graphInput, input.port, false)) throw std::invalid_argument("no such graph input port");
         editWires([&] { findPart(id).input = input; buildParts(); });
+    }
+
+    void Session::setPartMidiOut(uint32_t id, const PartMidiOut& midiOut)
+    {
+        findPart(id);
+        if(midiOut.devices.size() > 16 || std::any_of(midiOut.devices.begin(), midiOut.devices.end(), [](const DeviceRule& r) { return !r.valid(); }))
+            throw std::invalid_argument("invalid or too many device rules");
+        if(midiOut.channel > 16) throw std::invalid_argument("a MIDI channel is 1 to 16, or 0 to keep each message's own");
+        editWires([&] { findPart(id).midiOut = midiOut; });
     }
 
     Part& Session::findBus(uint32_t id)
@@ -1146,10 +1182,12 @@ namespace oscairn
 
     void Session::setHostStatus(SessionStatus status)
     {
-        const bool moved = status.midiInputs != hostStatus_.midiInputs;
+        const bool moved = status.midiInputs != hostStatus_.midiInputs, outputs = status.midiOutputs != hostStatus_.midiOutputs;
         hostStatus_ = std::move(status);
         if(moved) ignoreMidiInputs(ignoredInputs_); // the ignored names' sources now
-        if(!moved || std::none_of(parts_.begin(), parts_.end(), [](const Part& p) { return !p.input.devices.empty(); })) return;
+        // Selectors resolve again: inputs' for parts choosing inputs or sending MIDI from their input, outputs' for parts sending MIDI.
+        const bool sending = std::any_of(parts_.begin(), parts_.end(), [](const Part& p) { return !p.midiOut.devices.empty(); });
+        if(!(moved && (sending || std::any_of(parts_.begin(), parts_.end(), [](const Part& p) { return !p.input.devices.empty(); }))) && !(outputs && sending)) return;
         const bool staged = staged_;
         Quiet devices(*this); // devices coming and going are not edits
         try { editWires([&] { buildParts(); }); if(!staged) commit(); }

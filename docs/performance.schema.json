@@ -8,7 +8,7 @@
       "const": "oscairn.performance"
     },
     "version": {
-      "const": 8
+      "const": 9
     },
     "info": {
       "type": "object",
@@ -834,6 +834,30 @@
           "type": "boolean",
           "description": "While any part is soloed, only soloed parts, the parts feeding them and the buses they feed are heard"
         },
+        "midiOut": {
+          "type": "object",
+          "properties": {
+            "devices": {
+              "type": "array",
+              "maxItems": 16,
+              "items": {
+                "$ref": "#/$defs/DeviceRule"
+              },
+              "description": "The MIDI outputs the part's MIDI goes to (RFC 0012 step 1), as selectors resolved on the device that opens it; none: no output"
+            },
+            "channel": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 16,
+              "description": "1 to 16; 0 keeps each message's own channel"
+            }
+          },
+          "required": [
+            "devices",
+            "channel"
+          ],
+          "additionalProperties": false
+        },
         "from": {
           "oneOf": [
             {
@@ -881,6 +905,7 @@
         "pan",
         "mute",
         "solo",
+        "midiOut",
         "from"
       ],
       "additionalProperties": false

@@ -115,6 +115,7 @@ namespace oscairn
         void removeLane(uint32_t part, uint32_t split, uint32_t lane) override;
         void setLane(uint32_t part, uint32_t split, uint32_t lane, const Lane& settings) override;
         void setPartInput(uint32_t part, const PartInput& input) override;
+        void setPartMidiOut(uint32_t part, const PartMidiOut& midiOut) override;
         void setPartOutput(uint32_t part, uint32_t bus, std::optional<uint32_t> port = {}) override; // bus 0: a graph output port
         void setSend(uint32_t part, uint32_t bus, std::optional<double> level) override;            // no level: remove the send
         void setPartLevel(uint32_t part, double level, bool mute) override;
@@ -216,6 +217,10 @@ namespace oscairn
                      uint32_t frames, std::span<const kick::clap::Event> events = {},
                      std::span<const MidiClockEvent> clocks = {}, std::span<const uint8_t> sources = {}) noexcept;
 
+        /// Audio thread, after process(): the block's MIDI for hardware outputs (RFC 0012), the
+        /// parts', in time order; each message's ports are the output numbers in the session
+        /// status's midiOutputs, a bit each.
+        std::span<const Graph::MidiMessage> midiOutput() const noexcept { return { midiOut_.data(), midiOutCount_ }; }
         void panicInput() noexcept { graph_.panicInput(); } // audio thread only
         uint64_t droppedNotes() const noexcept { return droppedNotes_.load(); }
         double sampleRate() const noexcept { return sampleRate_; }
@@ -232,6 +237,7 @@ namespace oscairn
         void ringOut();                          // service(): an off plugin that has rung out stops sounding
         bool enqueue(const kick::clap::Event& event);
         void syncWires();
+        std::vector<Graph::MidiTap> midiTaps(const Graph& graph, const std::vector<Part>& parts, const std::vector<Wire>& wires) const; // parts' MIDI out
         void dropNode(NodeId node);
         template<class Edit> void editWires(Edit&& edit);
         void buildPart(const Part& part);
@@ -448,6 +454,9 @@ namespace oscairn
         std::atomic<uint64_t> droppedNotes_{ 0 };
         std::vector<std::string> ignoredInputs_;      // control thread
         std::atomic<uint64_t> ignoredSources_{ 0 };   // their sources now, a bit each, for the audio thread
+        // MIDI for hardware outputs (midiOutput), audio thread.
+        std::array<Graph::MidiMessage, Graph::maxMidiOut + 8> midiOut_{};
+        uint32_t midiOutCount_ = 0;
         std::array<kick::clap::Event, noteQueueCapacity + maxInputEvents + 1> merged_{};
         std::array<uint8_t, noteQueueCapacity + maxInputEvents + 1> mergedSources_{};
     };

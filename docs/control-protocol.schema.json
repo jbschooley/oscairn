@@ -4278,6 +4278,61 @@
               "$ref": "#/$defs/Id"
             },
             "method": {
+              "const": "parts.midiOut"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "part": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 4294967295
+                },
+                "midiOut": {
+                  "type": "object",
+                  "properties": {
+                    "devices": {
+                      "type": "array",
+                      "maxItems": 16,
+                      "items": {
+                        "$ref": "#/$defs/DeviceRule"
+                      },
+                      "description": "The MIDI outputs the part's MIDI goes to (RFC 0012), matched against session.status's midiOutputs; none: no output"
+                    },
+                    "channel": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 16,
+                      "description": "1 to 16; 0 keeps each message's own channel"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "part",
+                "midiOut"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "params"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
               "const": "wires.zones"
             },
             "params": {
@@ -6231,6 +6286,12 @@
             "$ref": "#/$defs/MidiEndpoint"
           }
         },
+        "midiOutputs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/MidiEndpoint"
+          }
+        },
         "sampleRate": {
           "type": "number",
           "minimum": 0
@@ -6371,6 +6432,7 @@
       "required": [
         "audioDevice",
         "midiInputs",
+        "midiOutputs",
         "sampleRate",
         "bufferSize",
         "cpuLoad",
@@ -7120,6 +7182,31 @@
           "type": "boolean",
           "description": "While any part is soloed, only soloed parts, the parts feeding them and the buses they feed are heard"
         },
+        "midiOut": {
+          "type": "object",
+          "properties": {
+            "devices": {
+              "type": "array",
+              "maxItems": 16,
+              "items": {
+                "$ref": "#/$defs/DeviceRule"
+              },
+              "description": "The MIDI outputs the part's MIDI goes to (RFC 0012), matched against session.status's midiOutputs; none: no output"
+            },
+            "channel": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 16,
+              "description": "1 to 16; 0 keeps each message's own channel"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "devices",
+            "channel"
+          ],
+          "description": "Where the part's MIDI goes besides its instruments (RFC 0012 step 1)"
+        },
         "from": {
           "oneOf": [
             {
@@ -7167,6 +7254,7 @@
         "pan",
         "mute",
         "solo",
+        "midiOut",
         "from"
       ],
       "additionalProperties": false

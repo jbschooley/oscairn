@@ -41,7 +41,7 @@ try:
             rpc('sounds.select', {'node': 'synth', 'context': context, 'channel': i})
         rpc('performance.save', {'directory': str(saved)})
         manifest = json.loads((saved / 'performance.json').read_text())
-        assert manifest['format'] == 'oscairn.performance' and manifest['version'] == 8
+        assert manifest['format'] == 'oscairn.performance' and manifest['version'] == 9
         assert manifest['nodes'][0]['key'] == 'node-1'
         assert manifest['nodes'][0]['plugin']['id'] == 'org.oscairn.basic-synth'
         schema = Path(__file__).resolve().parents[3] / 'docs/performance.schema.json'
