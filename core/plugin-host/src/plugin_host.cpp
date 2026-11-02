@@ -90,9 +90,7 @@ namespace oscairn
             // plugin already runs in this process, and so does its index (within the index's budget).
             std::vector<PresetInfo> presets() override {
                 if(!placementPolicy().scan.empty())return scanPluginPresets(host.descriptor().path,host.descriptor().id);
-                std::vector<PresetInfo> r;
-                for(const auto& d:kick::clap::inspect(host.descriptor().path,true).plugins)if(d.id==host.descriptor().id)for(const auto& p:d.presets)r.push_back({presetUri(p),p.name});
-                return r;
+                std::vector<PresetInfo> r;for(const auto& p:host.presets())r.push_back({presetUri(p),p.name});return r;
             }
             void loadPreset(const std::string& uri) override {if(!host.loadPreset(presetFrom(uri)))throw std::runtime_error(host.error());}
             void setAssets(kick::clap::AssetResolver* assets) noexcept override {host.setAssets(assets);}

@@ -163,10 +163,11 @@ public:
     bool saveState(std::vector<uint8_t>& destination);
     bool loadState(const std::vector<uint8_t>& source);
     bool supportsState() const noexcept;
-    // Main thread. The presets this plugin's library offered (CLAP preset discovery): the index
-    // the Descriptor used to load carried, from a scan (RFC 0005). No plugin provider code runs
-    // here, so a slow or hung provider cannot block this process; a fresh reading of the
-    // plugin's locations runs the isolated scan helper (oscairn::scanPluginPresets).
+    // Main thread. The presets this plugin's library offers for it (CLAP preset discovery):
+    // those inside the plugin, and preset files of the declared types in the declared folders,
+    // within indexPresets' limits (Discovery.h). The provider runs in this process, on this
+    // thread, as the plugin does; a host with a scan helper lists through it instead
+    // (oscairn::scanPluginPresets, RFC 0005).
     std::vector<Preset> presets();
     // Main thread. Loads a preset (CLAP preset-load), never during process(); false with error().
     bool loadPreset(const Preset&);
