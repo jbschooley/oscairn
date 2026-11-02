@@ -1,4 +1,4 @@
-# Oscairn
+<h1><img src="branding/banner.png" alt="Oscairn: an open instrument platform for synths, samplers, effects and sequencers" width="100%"></h1>
 
 *Pronounced "OSS-cairn": **osc**illator + **cairn**, sound built up in layers.*
 
