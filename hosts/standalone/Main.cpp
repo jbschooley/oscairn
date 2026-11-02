@@ -854,6 +854,15 @@ namespace oscairn::standalone
                 // The engine starts, or is reached, off the message thread, so the splash stays
                 // drawn; an in-process engine opens its devices on the message thread, so it starts there.
                 const bool here = socket.isEmpty() && helper.empty();
+                // RFC 0005: as in the separate engine, a plugin's preset listing runs in the scan
+                // helper beside this program, not on this (the message) thread.
+                if( const auto scan = juce::File::getSpecialLocation( juce::File::currentExecutableFile ).getSiblingFile( "oscairn-plugin-scan" );
+                    here && placementPolicy().scan.empty() && scan.existsAsFile() )
+                {
+                    auto policy = placementPolicy();
+                    policy.scan = scan.getFullPathName().toStdString();
+                    setPlacementPolicy( policy );
+                }
                 starting_ = std::async( here ? std::launch::deferred : std::launch::async,
                     [this, plugins = dir.unquoted().toStdString(), path = socket.unquoted().toStdString(), helper, audio] {
                         struct Done { Application* app; ~Done() { juce::MessageManager::callAsync( [a = app] { a->started(); } ); } } done{ this };
