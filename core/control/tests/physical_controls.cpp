@@ -5,7 +5,8 @@
 // as wide as their group, on the KICK (four knobs paged), the MODX M (six screen knobs, four knobs
 // in six rows, eight faders in three modes) and an eight-knob device; overrides checked, undone,
 // saved and loaded.
-// Roles declared through oscairn.ui and from names, filling the Basic Synth's role banks.
+// Roles declared through oscairn.ui and from names, filling the Basic Synth's role banks; screen
+// knobs following an editor page.
 //   oscairn-physical-controls-test FIXTURE.clap DELAY.clap BASIC_SYNTH.clap
 #include "oscairn/physical_controls.h"
 #include "oscairn/session.h"
@@ -333,6 +334,31 @@ namespace
         banks = knobBanks(source(), other, 4);
         check(!banks.empty() && banks[0].name == "Assign 1\xE2\x80\x93" "4", "no roles either way: Assign from its first parameters");
     }
+
+    // Screen knobs (RFC 0011): Play's knob row, or an editor page's top parameters while one shows.
+    void screen(const char* fixture, const char* delay)
+    {
+        Session s(48000, frames, {}, stereoIn);
+        const auto synth = s.add("synth", fixture, "org.kick.test.synth"), fx = s.add("fx", delay);
+        const auto keys = s.addPart("Keys");
+        s.insertIntoPart(keys, 0, synth); s.insertIntoPart(keys, 1, fx); s.commit();
+        run(s);
+        auto source = assignmentSource(s.graphState(), s.assignments(), [&](NodeId n) { return s.parameters(n); });
+        using Role = ControlGroup::Role;
+        const std::vector<ControlGroup> modx{{Role::Screen, "knobs", 6}, {Role::Assign, "knobs", 4, {{"Assign 1", BankKind::Assign}}}};
+        auto resolved = resolveControls(source, modx, keys, {1, 0});
+        check(find(resolved, "screen:1").target == parameter(fx, 3) && find(resolved, "screen:1").bank == "Effects 1\xE2\x80\x93" "6" && groupPositions(source, modx[0], keys) == 2,
+              "in Play, screen knobs play the knob row's bank");
+        // The Delay's editor page, its parameters by priority: the screen knobs take the first six.
+        source.screen = {"Main", {parameter(fx, 1), parameter(fx, 3), parameter(fx, 2)}};
+        resolved = resolveControls(source, modx, keys, {1, 0});
+        check(find(resolved, "screen:1").target == parameter(fx, 1) && find(resolved, "screen:1").layer == AssignmentLayer::Editor && find(resolved, "screen:1").bank == "Main" &&
+              find(resolved, "screen:1").label == "fx: Delay beats" && find(resolved, "screen:3").target == parameter(fx, 2) && find(resolved, "screen:4").target.kind == Assignment::Kind::None &&
+              groupPositions(source, modx[0], keys) == 1, "an editor page shown: screen knobs play its top parameters");
+        check(find(resolved, "knob:1").target == parameter(synth, 7) && find(resolved, "knob:1").bank == "Assign 1", "assign knobs keep their banks");
+        source.screen = {};
+        check(find(resolveControls(source, modx, keys, {1, 0}), "screen:1").bank == "Effects 1\xE2\x80\x93" "6", "back in Play, the knob row again");
+    }
 }
 
 int main(int argc, char** argv)
@@ -344,6 +370,7 @@ int main(int argc, char** argv)
         layers(argv[1], argv[2], temp.path);
         controllers(argv[1], argv[2], temp.path);
         roles(argv[1], argv[2], argv[3]);
+        screen(argv[1], argv[2]);
     }
     catch(const std::exception& e) { std::fprintf(stderr, "FAIL: %s\n", e.what()); return 1; }
     if(!failures) std::puts("ok: physical controls resolve in layers and groups, by page, row and mode, and save");

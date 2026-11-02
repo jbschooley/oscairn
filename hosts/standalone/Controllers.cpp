@@ -88,6 +88,7 @@ namespace oscairn::standalone
             }
             catch(const std::exception&) { return; }
         }
+        source_.screen = engine_.screenPage(); // screen knobs play the editor page shown
         for(const auto& [port, in] : taken)
             for(const auto& action : mapping_.handle(source_, engine_.controlGroups(), engine_.knobPart(), engine_.positions(), port.first, port.second, in.bytes, 3,
                                                      [this](const Assignment& a) { return value(a); }))

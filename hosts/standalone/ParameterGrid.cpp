@@ -581,7 +581,18 @@ namespace oscairn::standalone
         return std::equal(a.begin(), a.end(), b.begin(), b.end(), [&](const auto& x, const auto& y) { return key(x) == key(y); });
     }
 
-    ParameterGrid::~ParameterGrid() { stopTimer(); engine_.setRow({}); }
+    ParameterGrid::~ParameterGrid() { stopTimer(); engine_.setRow({}); engine_.showScreenPage(published_, {}); }
+
+    void ParameterGrid::publishScreen()
+    {
+        // The tiles shown (the page, its tab, or a search's), by priority.
+        ScreenPage page{pageName(page_), {}};
+        std::vector<size_t> shown;
+        for(const auto& t : tiles_) shown.push_back(t.param);
+        byPriority(params_, shown);
+        for(const auto i : shown) { Assignment a; a.kind = Assignment::Kind::Parameter; a.node = node_; a.param = params_[i].id; page.params.push_back(a); }
+        engine_.showScreenPage(published_, isShowing() ? std::move(page) : ScreenPage{});
+    }
 
     void ParameterGrid::mouseDown(const juce::MouseEvent& e)
     {
@@ -987,6 +998,7 @@ namespace oscairn::standalone
         if(std::none_of(tiles_.begin(), tiles_.end(), [&](const Tile& t) { return inLine(t.bounds); }))
             line_ = tiles_.empty() ? -1 : this->columns() ? 0 : tiles_.front().bounds.getY();
         publishRow();
+        publishScreen();
         stale_ = !engine_.controlReady(); // the engine answers value texts only when it is free
         for(auto& t : tiles_) show(t, engine_.param(name_, params_[t.param].id));
         content_->repaint();
@@ -1025,6 +1037,7 @@ namespace oscairn::standalone
                 }
             }
             catch(const std::exception&) {}
+        publishScreen(); // shown or hidden with the app around it
         if(!panels_.empty()) content_->repaint(); // envelopes follow their parameters too
         if(!strip_.isEmpty()) repaint(strip_);
         // Values change from automation, scenes, controls and other clients: follow them.

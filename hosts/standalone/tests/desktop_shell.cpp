@@ -607,6 +607,22 @@ int main(int argc, char** argv)
                     };
                     count(grid);
                     check(knobs == 7, "the knobs it asks for: " + std::to_string(knobs));
+                    // Shown, the page is what a device's screen knobs play: its top parameters by
+                    // priority (RFC 0011); hidden, they go back to Play's knob row.
+                    check(engine.screenPage().params.empty(), "a page not on screen is not the screen knobs'");
+                    holder.addToDesktop(juce::ComponentPeer::windowIsTemporary); holder.setVisible(true);
+                    for(int i = 0; i < 10; ++i) juce::MessageManager::getInstance()->runDispatchLoopUntil(10);
+                    ControlGroup screenKnobs; screenKnobs.role = ControlGroup::Role::Screen; screenKnobs.kind = "knobs"; screenKnobs.count = 6;
+                    auto screenSource = assignmentSource(engine.graph(), engine.assignments(), [&](NodeId n) { return engine.parameters(n); });
+                    screenSource.screen = engine.screenPage();
+                    const auto onScreen = resolveControls(screenSource, {screenKnobs}, 0);
+                    check(engine.screenPage().params.size() == 10 && onScreen.size() == 6 && onScreen[0].layer == AssignmentLayer::Editor && onScreen[0].target.node == node &&
+                          onScreen[0].label == "Basic Synth: Brightness" && onScreen[1].label == "Basic Synth: Level" && onScreen[2].label == "Basic Synth: Oscillator",
+                          "shown, the screen knobs play the page's top parameters: " + (onScreen.empty() ? std::string() : onScreen[0].label));
+                    holder.setVisible(false);
+                    for(int i = 0; i < 20 && !engine.screenPage().params.empty(); ++i) juce::MessageManager::getInstance()->runDispatchLoopUntil(10);
+                    check(engine.screenPage().params.empty(), "hidden, the screen knobs go back to Play's knob row");
+                    holder.removeFromDesktop();
                 }
                 auto save = [&, name = name](const juce::String& suffix) {
                     for(int i = 0; i < 10; ++i) juce::MessageManager::getInstance()->runDispatchLoopUntil(10);
@@ -872,6 +888,18 @@ int main(int argc, char** argv)
                         std::vector<std::string> expected;
                         for(size_t k = 0; k < std::min<size_t>(4, top.size()); ++k) expected.push_back(params[top[k]].name);
                         check(compact->level() == Level::Parameters && compact->encoderNames() == expected, name + ": the encoders have " + pages[page].name + "'s top parameters");
+                        if(g == 0 && page == 0)
+                        {
+                            // Shown, the page is what a device's screen knobs play, by priority (RFC 0011); hidden, it is withdrawn.
+                            panel.addToDesktop(juce::ComponentPeer::windowIsTemporary); panel.setVisible(true);
+                            for(int i = 0; i < 30 && engine.screenPage().params.empty(); ++i) juce::MessageManager::getInstance()->runDispatchLoopUntil(10);
+                            const auto shown = engine.screenPage();
+                            check(shown.name == pages[page].name && shown.params.size() == top.size() && !top.empty() && shown.params[0].node == node && shown.params[0].param == params[top[0]].id,
+                                  name + ": the compact page shown is the screen knobs'");
+                            panel.setVisible(false); panel.removeFromDesktop();
+                            for(int i = 0; i < 30 && !engine.screenPage().params.empty(); ++i) juce::MessageManager::getInstance()->runDispatchLoopUntil(10);
+                            check(engine.screenPage().params.empty(), name + ": hidden, it is withdrawn");
+                        }
                         if(page == 0) snapshot(name + "-page");
                         for(int e = 0; e < int(expected.size()); ++e)
                         {

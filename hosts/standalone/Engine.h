@@ -89,6 +89,18 @@ namespace oscairn::standalone
         void setRowKnobs(int count, Edge edge) { rowKnobs_ = count; rowEdge_ = edge; }
         int rowKnobs() const { return rowKnobs_; }
         Edge rowEdge() const { return rowEdge_; }
+        // The generated editor page on screen (RFC 0011's screen knobs, RFC 0019): its parameters
+        // by priority, which a device's screen knobs play; none while Play shows, when they play
+        // its knob row. An editor shows `page` in place of the one it showed last (`published`),
+        // and an empty page withdraws its own. Main thread.
+        const ScreenPage& screenPage() const { return screenPage_; }
+        void showScreenPage(ScreenPage& published, ScreenPage page)
+        {
+            if(page == published) return;
+            if(screenPage_ == published) screenPage_ = {};
+            published = std::move(page);
+            if(!published.params.empty()) screenPage_ = published;
+        }
         int trackChannel()const;
         bool connected()const{return failure_.empty();}
         bool canRestart()const{return recoveryAvailable_;}
@@ -169,6 +181,7 @@ namespace oscairn::standalone
         Control* control_=nullptr;
         uint32_t sequenceTrack_=0;
         std::vector<RowParam> row_;
+        ScreenPage screenPage_;
         std::string touched_;
         uint32_t touches_=0;
         std::vector<ControlGroup> groups_;

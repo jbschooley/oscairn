@@ -27,7 +27,7 @@ namespace oscairn::standalone
         startTimer(100);
     }
 
-    CompactEditor::~CompactEditor() { stopTimer(); }
+    CompactEditor::~CompactEditor() { stopTimer(); engine_.showScreenPage(published_, {}); }
 
     std::vector<CompactEditor::Plugin> CompactEditor::plugins() const
     {
@@ -149,6 +149,14 @@ namespace oscairn::standalone
                 }
             }
             catch(const std::exception&) {}
+        // The page shown, for a device's screen knobs.
+        ScreenPage page;
+        if(level_ == Level::Parameters && isShowing())
+        {
+            page.name = pages_[page_].name;
+            for(const auto i : shown_) { Assignment a; a.kind = Assignment::Kind::Parameter; a.node = plugin_.node; a.param = params_[i].id; page.params.push_back(a); }
+        }
+        engine_.showScreenPage(published_, std::move(page));
         repaint(); // values follow the engine
     }
 

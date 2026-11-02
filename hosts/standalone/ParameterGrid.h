@@ -95,6 +95,8 @@ namespace oscairn::standalone
     private:
         class Choices;
         void publishRow();               // the selected line to the engine, for "row:N" knobs
+        void publishScreen();            // the page to the engine while it shows, for screen knobs
+        ScreenPage published_;
         bool columns() const;            // the knobs sit beside the screen: they play a column
         bool inLine(const juce::Rectangle<int>& tile) const { return (columns() ? tile.getX() : tile.getY()) == line_; }
         juce::Rectangle<int> strip_;     // names what each of the device's row knobs plays

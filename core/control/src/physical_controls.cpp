@@ -187,7 +187,7 @@ namespace oscairn
     {
         if(g.role != ControlGroup::Role::Screen && g.role != ControlGroup::Role::Assign) return 1;
         if(g.kind == "faders") return uint32_t(std::max<size_t>(1, g.modes.size()));
-        if(g.kind == "buttons" || !g.functions.empty()) return 1;
+        if(g.kind == "buttons" || !g.functions.empty() || (g.role == ControlGroup::Role::Screen && !s.screen.params.empty())) return 1;
         if(!g.rows.empty()) return uint32_t(g.rows.size());
         if(!g.paged && g.kind != "knobs" && g.kind != "encoders") return 1;
         return uint32_t(std::max<size_t>(1, knobBanks(s, part, g.count).size()));
@@ -225,7 +225,13 @@ namespace oscairn
                 for(size_t i = 0; i < group.count && i < parts.size(); ++i) std::tie(b.slots[i], b.labels[i]) = of(kind, parts[i]->id, parts[i]->name + suffix);
                 b.layer = AssignmentLayer::Convention;
             };
-            if(group.kind == "faders")
+            if(screen && !s.screen.params.empty())
+            {
+                // An editor page shown: its top parameters by priority.
+                for(size_t i = 0; i < group.count && i < s.screen.params.size(); ++i) { b.slots[i] = s.screen.params[i]; b.labels[i] = assignmentName(s, b.slots[i]); }
+                b.name = s.screen.name; b.layer = AssignmentLayer::Editor;
+            }
+            else if(group.kind == "faders")
             {
                 // 4. Faders by their mode: part levels, the part's Levels bank, or the audio parts' levels.
                 const auto mode = group.modes.empty() ? std::string("part") : group.modes[at % group.modes.size()];

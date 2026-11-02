@@ -25,16 +25,20 @@ namespace oscairn
     //   4. Performance conventions: faders play part levels (in their part mode), buttons part
     //      mutes, and with no part selected the knobs follow the Performance's own controls;
     //   5. the effects bank: the main control of each effect in the selected part, in chain order.
-    // A bank is as wide as the group playing it: a group of six gets banks of six.
-    enum class AssignmentLayer { None, Override, Sound, Role, Convention, Effects };
+    // A bank is as wide as the group playing it: a group of six gets banks of six. Screen knobs
+    // play what the screen shows instead: Play's knob row, or an editor page's top parameters.
+    enum class AssignmentLayer { None, Override, Sound, Role, Convention, Effects, Editor };
 
     // A parameter as resolution sees it: its role (empty: none declared) and oscairn.ui priority
     // (1 first; 0 none, after the numbered ones).
     struct AssignableParam { uint32_t id = 0; std::string name, role; uint32_t priority = 0; };
     struct AssignableNode { NodeId node = 0; std::string name; bool effect = false, instrument = false; std::vector<AssignableParam> params; }; // effect: audio in and out; instrument: audio out only
 
-    // What resolution reads: the Performance's parts, controls, scenes and overrides, and each
-    // part's nodes with their parameters.
+    // A generated editor's page on screen (RFC 0019): its name and its parameters by priority.
+    struct ScreenPage { std::string name; std::vector<Assignment> params; bool operator==(const ScreenPage&) const = default; };
+    // What resolution reads: the Performance's parts, controls, scenes and overrides, each part's
+    // nodes with their parameters, and the editor page shown (none: Play shows, and screen knobs
+    // play its knob row).
     struct AssignmentSource
     {
         std::vector<Part> parts;
@@ -42,6 +46,7 @@ namespace oscairn
         std::vector<std::pair<uint32_t, std::string>> scenes;
         std::map<NodeId, AssignableNode> nodes;
         std::vector<AssignmentOverride> overrides;
+        ScreenPage screen;
     };
     // From a graph state; `parameters` gives a node's parameters (Control::parameters, or a cache
     // of it), with the roles its plugin declares; a plugin declaring none gets roles from names.
@@ -120,7 +125,7 @@ namespace oscairn
     using GroupPositions = std::vector<uint32_t>;
     struct ResolvedControl
     {
-        std::string control;          // "knob:1"; "screen:1" for a screen knob, which is never overridden
+        std::string control;          // "knob:1"; "screen:1" for a screen knob, which is never overridden and plays the editor page shown, else Play's banks
         Assignment target;            // None: nothing
         AssignmentLayer layer = AssignmentLayer::None;
         std::string label, bank;      // what it plays, and the bank (or row, or mode) it is in

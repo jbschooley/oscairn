@@ -48,6 +48,7 @@ namespace oscairn::standalone
         std::vector<EditorPage> pages_;
         size_t chosen_ = 0, page_ = 0, first_ = 0; // the list's choice; the page shown and its first parameter on encoder 1
         std::vector<size_t> shown_;                // the page's parameters by priority
+        ScreenPage published_;                     // the page as the engine has it, for screen knobs
         unsigned ticks_ = 0;
     };
 }
