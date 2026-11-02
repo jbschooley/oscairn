@@ -32,6 +32,7 @@ namespace oscairn::standalone
             int port = 1, channel = 0; std::vector<int> channels, cc, notes; bool pitchBend = false;
             std::vector<std::string> encodings; std::vector<std::array<int, 2>> steps; // steps: one per control, {0, 0} for a named encoding
             std::string button = "momentary";
+            bool feedback = false; // the controller takes each control's value back on its CC (absolute CCs only); off unless confirmed
             int channelOf(size_t control) const { return control < channels.size() ? channels[control] : channel; }
         };
         // `target`: what an assign group plays by default (banks, partLevels, partMutes, scenes;
@@ -48,9 +49,11 @@ namespace oscairn::standalone
         struct Screen { int width = 0, height = 0; bool touch = false; std::string surface = "desktop", layout = "desktop"; };
         std::vector<Screen> screens;
         // A controller's ports: an input matches when its name contains `name`, ignoring case;
-        // `index` picks the Nth such input; `protocol` midi, or mackie (declared, not read yet);
-        // `ignore`: a duplicate of another port, whose messages the engine leaves out.
-        struct Port { std::string name; int index = 1; std::string protocol = "midi"; bool ignore = false; };
+        // `index` picks the Nth such input; `protocol` midi, or mackie (Mackie Control, read by
+        // control_surface.h); `ignore`: a duplicate of another port, whose messages the engine
+        // leaves out; `display`: a Mackie surface with scribble strips, which get the parts' names.
+        // The output of the same name and index takes what goes back to the controller.
+        struct Port { std::string name; int index = 1; std::string protocol = "midi"; bool ignore = false, display = false; };
         struct Midi { int din = 0; bool usbDevice = false, usbHost = false; std::vector<Port> ports; } midi;
         struct Cv { int inputs = 0, outputs = 0; } cv;
         struct Network { bool ethernet = false, wifi = false; } network;
@@ -85,12 +88,12 @@ namespace oscairn::standalone
     Profile loadProfile(const std::string& nameOrFile);
     // The built-in controllers' profiles, and those in `files`.
     std::vector<Profile> controllerProfiles(const std::vector<std::string>& files = {});
-    // Which MIDI inputs, by name in the system's order, are which controller's ports: for each
-    // match, the input's place, the profile's place and the port (from 1). Mackie and ignored
-    // ports are left out. An input two profiles match is the first's, in the order given
-    // (controllerProfiles sorts them by id).
+    // Which MIDI inputs (or outputs), by name in the system's order, are which controller's ports
+    // of a protocol (midi or mackie): for each match, the input's place, the profile's place and
+    // the port (from 1). Ignored ports are left out. An input two profiles match is the first's,
+    // in the order given (controllerProfiles sorts them by id).
     struct PortMatch { size_t input = 0, profile = 0; int port = 1; };
-    std::vector<PortMatch> matchPorts(const std::vector<Profile>& controllers, const std::vector<std::string>& inputs);
+    std::vector<PortMatch> matchPorts(const std::vector<Profile>& controllers, const std::vector<std::string>& inputs, const std::string& protocol = "midi");
     // The names of the inputs that are a controller's ignored ports: duplicates the engine leaves out.
     std::vector<std::string> ignoredInputs(const std::vector<Profile>& controllers, const std::vector<std::string>& inputs);
 }

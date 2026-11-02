@@ -23,8 +23,9 @@ Checked when built and tested; the sections below say how.
 - [ ] 6. External MIDI controllers: [controller profiles](#controllers) matched by port name,
       their controls joining the device's, each group's [default target](#default-targets)
       (parsing, defaults, resolution, encodings and pickup built; the SMK37 Elite's numbers
-      read with `oscairn-midi-monitor`, all but its buttons; choosing between profiles that
-      match one port not built)
+      read with `oscairn-midi-monitor`, all but its buttons; Mackie Control ports read and fed
+      back, and knob values sent back where a profile says so ([status](#mackie-control));
+      choosing between profiles that match one port not built)
 
 ## Problem
 
@@ -192,7 +193,8 @@ the same format, version 2, with three things a device profile does not have:
   that input as macOS names it); `index` (from 1) picks the Nth matching input, in
   the order the system lists them, for a device with several ports under one name (the MODX M's
   port 1 and port 2). `protocol` is `midi` (the default), or `mackie` for a Mackie Control port,
-  which is declared but not read yet (the next step, below). `ignore: true` names a port that
+  read by a parser of its own ([below](#mackie-control)); `display: true` says a Mackie
+  surface has scribble strips. `ignore: true` names a port that
   carries copies of another's messages (the SMK37 Elite's `-Private` repeats `-Master`): the
   app sends the matching inputs' names to the engine (the control API's `midi.ignore`, sent
   again when the engine restarts), which leaves out every message from them, so no key or pad
@@ -282,10 +284,41 @@ needed; whether Plugin mode takes CC 17 to 24 as input is unconfirmed. Estimated
 confirms them: the port names and order, the channel, whether the scene buttons latch, and
 whether the slider mode buttons change what Plugin mode sends.
 
-**Next: Mackie Control.** A `mackie` port is read by a parser of its own, mapping its fixed
-messages (channel strips' select, mute and solo, the transport, the jog wheel, the cursors) to
-part select, mute and solo, the transport and the screen's navigation, with no `midi` per group:
-Mackie Control fixes the messages.
+### Mackie Control
+
+Built 2026-11-01 (`oscairn/control_surface.h`, used by the app's `Controllers`). A `mackie`
+port is read by a parser of its own, with no `midi` per group, since Mackie Control fixes the
+messages: transport buttons, the cursors, each strip's select, mute, solo and record arm (notes),
+fader touch (notes 104 to 112), the faders (14-bit pitch bend, a channel per strip, the ninth the
+master), the V-pots (CC 16 to 23) and the jog wheel (CC 60), both relative with bit 6 the sign.
+Oscairn maps them: Play and Stop to the transport; the first eight parts, in order, to the strips,
+Select selecting a part for the surface (its own selection, apart from the screen's), Mute and
+Solo toggling the part's, the fader its level; the V-pots play the selected part's knob banks a
+step a detent (the Performance's controls with none selected); up, down and the jog wheel select
+the part before or after, left and right page the V-pots' banks. The engine leaves a Mackie
+port's input out, as it does an ignored port's, since its buttons are notes. Back, on the output
+matching the port's name and index: the mute, solo, select, Play and Stop LEDs, the faders'
+positions (not while a fader is touched; the level goes back on release) and, with `display`, the
+parts' names on the scribble strips' upper row (SysEx `F0 00 00 66 14 12`, six characters a
+strip); only what changed is sent.
+
+**Values back to knobs.** A group's `midi` may say `feedback: true` (absolute CCs only): the
+app then sends each control's target value on its CC and channel (the row's number, for rows),
+whenever it changes, to the output matching the port, so an endless knob that keeps a value of
+its own, as the MODX M's do, matches its target and needs no pickup. Off unless a profile says
+so; no built-in profile does, since whether the MODX M's Plugin mode takes CC 17 to 24 as input
+is unconfirmed.
+
+`control-surface` checks every message kind parsed, the mapping to the transport and parts, the
+feedback (everything at first, then only changes, a touched fader left alone, names only with a
+display) and knob values back (the row's numbers, nothing for a blank knob, a group without
+`feedback` or a relative one); `desktop-profile` checks the Mackie ports matched and the new
+fields and their refusals. No surface was connected: the SMK37's `-MCP` and the MODX M's port 2
+are unconfirmed as Mackie Control, and neither the parsing against real devices, the LEDs, the
+faders' feedback nor the knob values back has been seen on hardware. Not yet: banks of eight
+beyond the first eight parts, Record, Rewind and Fast Forward (the control API has no seek or
+record), the V-pots' LED rings, the lower scribble row (the V-pots' labels), the timecode
+display.
 
 ## Step 1 status## Step 1 status
 
@@ -347,7 +380,7 @@ wheel still reaching a part as CC 1 when a Sound or the Performance assigns it e
 engine passes CC 1 to every part; filtering it per part comes with the engine's input changes);
 a controller's mod wheel or pedal on a nonstandard CC passed on as its function; paging a
 controller's group that Play does not show, and Play following a row a controller switched;
-sending values back (motorized faders, rings, the MODX M's knobs); Mackie Control.
+Mackie Control's rings and banks beyond eight parts ([its status](#mackie-control)).
 
 ## Open questions
 

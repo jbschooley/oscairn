@@ -286,6 +286,10 @@
                   "latch"
                 ],
                 "description": "Buttons: momentary (each press toggles or selects) or latch (the controller keeps the state)"
+              },
+              "feedback": {
+                "type": "boolean",
+                "description": "The controller takes each control's value back on its CC, so an endless knob sending absolute values matches its target without pickup; absolute CCs only; off when absent, and until a unit confirms it"
               }
             },
             "required": [
@@ -549,11 +553,15 @@
                   "midi",
                   "mackie"
                 ],
-                "description": "midi (the default), or mackie: Mackie Control, declared but not read yet"
+                "description": "midi (the default), or mackie: Mackie Control (transport, the strips' select, mute, solo and faders, V-pots, cursors and jog wheel), with LEDs and faders sent back on the output of the same name"
               },
               "ignore": {
                 "type": "boolean",
                 "description": "A port that duplicates another's messages: the engine leaves its input out, so nothing plays twice. Has no protocol"
+              },
+              "display": {
+                "type": "boolean",
+                "description": "A Mackie surface with scribble strips: the parts' names are sent to them. Mackie ports only; false when absent"
               }
             },
             "required": [

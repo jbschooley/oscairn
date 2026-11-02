@@ -207,7 +207,7 @@ in the others.
      Compact test layout; modulation shown on knobs and the Modular grid remain)
    - [ ] plugin windows, then step 6's physical controls (default layers, banks as wide as
      each control group of the device's profile, overrides saved in the Performance format
-     (now version 8) and learn on a panel's knobs done; external MIDI controllers' groups,
+     (now version 9) and learn on a panel's knobs done; external MIDI controllers' groups,
      default targets per group and a Sound's own assignments, the mod wheel's among them, done;
      roles declared in `oscairn.ui` (or from names) filling the role banks, and screen knobs
      following the editor page shown, done;
@@ -398,7 +398,9 @@ Also open:
   into physical observations, accepted changes or both
   ([planned architecture](architecture.md#physical-controls-takeover-and-direct-position-access-planned));
   started: pickup, relative encodings and buttons for external controllers' profiles, in the app
-  ([RFC 0011](rfcs/0011-performance-ui-and-editors.md#the-controller-mapping-service))
+  ([RFC 0011](rfcs/0011-performance-ui-and-editors.md#the-controller-mapping-service)), values sent
+  back to knobs whose profile takes them, and Mackie Control's LEDs, faders and names
+  ([RFC 0024](rfcs/0024-device-profiles.md#mackie-control))
 - [ ] recording as an engine service: any graph input, output, part or bus and the notes
   played, to WAV/RF64 off the audio thread, with retroactive capture
   ([RFC 0020](rfcs/0020-recording.md)); started: takes of outputs, inputs, plugin ports, parts
@@ -432,7 +434,8 @@ drum module, a DJ unit, a Eurorack module, a DAW plugin). These are required of 
   Built: the schema, the desktop's, QEMU, KICK and Ignite profiles (the last two estimated),
   `--profile`, the app's surface, layout, apps and audio block following it, the engine's
   budget set from it, and external MIDI controllers' profiles matched by port name (the SMK37
-  Elite and the MODX M over USB, estimated) with `oscairn-midi-monitor` to read them
+  Elite and the MODX M over USB, estimated) with `oscairn-midi-monitor` to read them, and Mackie
+  Control ports read and fed back
 - [ ] **knowing before loading whether it fits:** CPU and memory measured on the device, and
   admission for loading, editing and seamless changes ([RFC 0025](rfcs/0025-resource-budgets.md#progress)).
   Built: measuring, estimates, refusing a Performance or plugin over the budget, and a change

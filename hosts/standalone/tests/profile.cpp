@@ -112,6 +112,13 @@ int main()
         check(ignoredInputs(controllers, {"IAC Bus 1", "SMK-37 Elite -Private", "SMK-37 Elite -Master"}) == std::vector<std::string>{"SMK-37 Elite -Private"} &&
               ignoredInputs(controllers, {"SMK-37 Elite -Master"}).empty(), "the duplicate port, by its input's name, when it is there");
         check(matchPorts(controllers, {"Keystation 49"}).empty(), "an unknown controller matches nothing");
+        matches = matchPorts(controllers, {"IAC Bus 1", "MODX M Port1", "SMK-37 Elite -Private", "smk-37 elite -master", "MODX M Port2", "SMK-37 Elite -MCP"}, "mackie");
+        check(matches.size() == 2 && matches[0].input == 4 && matches[0].profile == 0 && matches[0].port == 2 && matches[1].input == 5 && matches[1].profile == 1 && matches[1].port == 3,
+              "the Mackie ports, asked for: the MODX M's second, the SMK37's -MCP");
+        check(std::none_of(controllers.begin(), controllers.end(), [](const Profile& c) {
+                  return std::any_of(c.controls.begin(), c.controls.end(), [](const Profile::Control& g) { return g.midi.feedback; }) ||
+                         std::any_of(c.midi.ports.begin(), c.midi.ports.end(), [](const Profile::Port& p) { return p.display; }); }),
+              "no built-in controller takes values back or has a display: unconfirmed, so off");
 
         // Refused: each mistake in a controller's profile on its own.
         std::string smkJson; for(const auto& [id, text] : builtInProfiles()) if(id == "smk37-elite") smkJson = text;
@@ -134,6 +141,15 @@ int main()
         check(refused(replaced(smkJson, "\"absolute\", { \"increment\"", "\"gray\", { \"increment\"")), "an unknown encoding");
         check(refused(replaced(smkJson, "\"channel\": 1, \"cc\": [1]", "\"channel\": 1, \"cc\": [1], \"notes\": [1]")), "both a CC and a note");
         check(refused(replaced(smkJson, "\"channel\": 1, \"cc\": [68, 69, 70, 71]", "\"channel\": 1, \"cc\": [68, 69, 70, 71], \"button\": \"latch\"")), "faders that latch");
+        // Values back and a display: on what can take them.
+        std::string usbJson; for(const auto& [id, text] : builtInProfiles()) if(id == "modx-m-usb") usbJson = text;
+        const auto encoders = "\"cc\": [17, 18, 19, 20, 21, 22, 23, 24] }";
+        const auto back = Profile::parse(replaced(usbJson, encoders, "\"cc\": [17, 18, 19, 20, 21, 22, 23, 24], \"feedback\": true }"));
+        check(back.controls[4].midi.feedback && !back.controls[5].midi.feedback, "the MODX M's knobs told to take their values back");
+        check(refused(replaced(smkJson, "{ \"increment\": 69, \"decrement\": 1 }] }", "{ \"increment\": 69, \"decrement\": 1 }], \"feedback\": true }")), "feedback on knobs that step");
+        check(refused(replaced(smkJson, "\"pitchBend\": true }", "\"pitchBend\": true, \"feedback\": true }")), "feedback on pitch bend");
+        check(Profile::parse(replaced(smkJson, "\"protocol\": \"mackie\"", "\"protocol\": \"mackie\", \"display\": true")).midi.ports[2].display, "a Mackie port with a display");
+        check(refused(replaced(smkJson, "{ \"name\": \"SMK-37 Elite -Master\" }", "{ \"name\": \"SMK-37 Elite -Master\", \"display\": true }")), "a display on a midi port");
 
         // A profile's block reaches the engine as an audio option, and back.
         oscairn::host::AudioConfiguration audio;

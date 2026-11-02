@@ -119,6 +119,7 @@ namespace oscairn
             std::vector<Encoding> encodings;    // one per control (absolute when missing)
             std::vector<std::array<uint8_t, 2>> steps; // one per control: Steps' increment and decrement values
             bool latch = false;                 // buttons: the controller keeps their state
+            bool feedback = false;              // the controller takes each control's value back on its message (control_surface.h)
         } midi;
     };
     // Where each group is now: its page, its row, or its mode, by group, in the device's order.

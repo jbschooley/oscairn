@@ -2,6 +2,7 @@
 #pragma once
 #include "Engine.h"
 #include "Profile.h"
+#include "oscairn/control_surface.h"
 #include <juce_audio_devices/juce_audio_devices.h>
 #include <atomic>
 #include <map>
@@ -12,7 +13,10 @@ namespace oscairn::standalone
     /// External MIDI controllers (RFC 0024): opens the MIDI inputs whose names match a
     /// controller's profile, joins its control groups to the device's, and plays what its
     /// controls move through RFC 0011's controller-mapping service, as Play's knobs would. Notes
-    /// and the standard controllers still reach the parts through the engine's own inputs.
+    /// and the standard controllers still reach the parts through the engine's own inputs. A
+    /// Mackie Control port is read by MackieControl (control_surface.h), and the engine leaves it
+    /// out; its LEDs, faders and names, and the values of knobs whose profile takes them, go back
+    /// on the output of the port's name.
     class Controllers : private juce::MidiInputCallback, private juce::Timer
     {
     public:
@@ -25,6 +29,8 @@ namespace oscairn::standalone
         void timerCallback() override;
         double value(const Assignment&);
         void apply(const ControllerMapping::Action&);
+        void feedback(); // timer: what changed, back to the surfaces and knobs that take it
+        bool playing();
         std::vector<Control::ParamInfo> parametersOf(NodeId);
 
         Engine& engine_;
@@ -36,6 +42,7 @@ namespace oscairn::standalone
         std::vector<Incoming> queue_;
         std::vector<std::unique_ptr<juce::MidiInput>> inputs_; // message thread; read under the lock
         std::vector<std::pair<std::string, uint32_t>> ports_;  // each input's controller and port
+        std::vector<bool> mackie_;                             // each input: a Mackie port
         std::vector<std::string> ignored_;                     // message thread: the inputs the engine was told to leave out
         juce::MidiDeviceListConnection changed_;
         std::atomic<bool> dirty_{false};
@@ -46,5 +53,10 @@ namespace oscairn::standalone
         double sourceTime_ = -1;
         std::map<NodeId, std::pair<std::string, std::vector<Control::ParamInfo>>> parameters_;
         std::map<std::tuple<int, NodeId, uint32_t, uint32_t>, std::pair<double, double>> recent_; // value, when
+        // Message thread: each Mackie port's mapping and whether it has a display; outputs back to
+        // controllers, by controller and port; the knobs' values sent back.
+        std::map<std::pair<std::string, uint32_t>, std::pair<MackieControl, bool>> surfaces_;
+        std::map<std::pair<std::string, uint32_t>, std::unique_ptr<juce::MidiOutput>> outputs_;
+        KnobFeedback knobs_;
     };
 }

@@ -255,6 +255,7 @@ namespace oscairn::standalone
                 }
                 for(const auto& [up, down] : c.midi.steps) g.midi.steps.push_back({uint8_t(up), uint8_t(down)});
                 g.midi.latch = c.midi.button == "latch";
+                g.midi.feedback = c.midi.feedback;
             }
             out.push_back(std::move(g));
         }

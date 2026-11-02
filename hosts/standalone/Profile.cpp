@@ -160,7 +160,7 @@ namespace oscairn::standalone
                 if(const auto m = o.getProperty("midi"); !m.isVoid())
                 {
                     require(controller, "only a controller's controls say how they talk MIDI");
-                    const auto& mo = object(m, "a control's midi"); fields(mo, {"port", "channel", "cc", "notes", "pitchBend", "encoding", "button"}, "a control's midi");
+                    const auto& mo = object(m, "a control's midi"); fields(mo, {"port", "channel", "cc", "notes", "pitchBend", "encoding", "button", "feedback"}, "a control's midi");
                     auto& midi = c.midi;
                     midi.port = mo.hasProperty("port") ? count(mo, "port", 16) : 1;
                     if(mo.getProperty("channel").isArray())
@@ -199,6 +199,9 @@ namespace oscairn::standalone
                         require(int(midi.encodings.size()) == c.count, "encoding is one, or one per control");
                     }
                     if(mo.hasProperty("button")) { midi.button = text(mo, "button"); require(c.kind == "buttons" && (midi.button == "momentary" || midi.button == "latch"), "a button is momentary or latch"); }
+                    midi.feedback = flag(mo, "feedback");
+                    require(!midi.feedback || (!midi.cc.empty() && std::all_of(midi.encodings.begin(), midi.encodings.end(), [](const std::string& e) { return e == "absolute"; })),
+                            "feedback is for controls sending absolute CCs");
                 }
                 p.controls.push_back(c);
             }
@@ -225,11 +228,12 @@ namespace oscairn::standalone
                 require(ports.isArray() && ports.size() >= 1 && ports.size() <= 16, "ports must be a list of 1 to 16");
                 for(const auto& e : *ports.getArray())
                 {
-                    const auto& po = object(e, "a port"); fields(po, {"name", "index", "protocol", "ignore"}, "a port");
-                    Port port{text(po, "name"), po.hasProperty("index") ? count(po, "index", 64) : 1, po.hasProperty("protocol") ? text(po, "protocol") : std::string("midi"), flag(po, "ignore")};
+                    const auto& po = object(e, "a port"); fields(po, {"name", "index", "protocol", "ignore", "display"}, "a port");
+                    Port port{text(po, "name"), po.hasProperty("index") ? count(po, "index", 64) : 1, po.hasProperty("protocol") ? text(po, "protocol") : std::string("midi"), flag(po, "ignore"), flag(po, "display")};
                     require(!port.name.empty() && port.index >= 1, "a port has a name and an index from 1");
                     require(port.protocol == "midi" || port.protocol == "mackie", "a port's protocol is midi or mackie");
                     require(!port.ignore || !po.hasProperty("protocol"), "an ignored port has no protocol");
+                    require(!port.display || port.protocol == "mackie", "only a Mackie port has a display");
                     p.midi.ports.push_back(port);
                 }
             }
@@ -365,14 +369,14 @@ namespace oscairn::standalone
         }
     }
 
-    std::vector<PortMatch> matchPorts(const std::vector<Profile>& controllers, const std::vector<std::string>& inputs)
+    std::vector<PortMatch> matchPorts(const std::vector<Profile>& controllers, const std::vector<std::string>& inputs, const std::string& protocol)
     {
         std::vector<PortMatch> out;
         for(size_t c = 0; c < controllers.size(); ++c)
             for(size_t k = 0; k < controllers[c].midi.ports.size(); ++k)
             {
                 const auto& port = controllers[c].midi.ports[k];
-                if(port.protocol != "midi" || port.ignore) continue;
+                if(port.protocol != protocol || port.ignore) continue;
                 // An input is one controller's port at most: the first profile to claim it.
                 if(const auto i = inputOf(port, inputs); i < inputs.size() && std::none_of(out.begin(), out.end(), [&](const PortMatch& m) { return m.input == i; }))
                     out.push_back({i, c, int(k + 1)});
