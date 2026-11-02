@@ -1,0 +1,4 @@
+# What a pull request cannot change for itself: the workflows and the index builder it runs
+# need a maintainer's review (RFC 0031).
+/.github/ @jbschooley
+/scripts/ @jbschooley

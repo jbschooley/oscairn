@@ -108,7 +108,9 @@ build signed by the publisher's key, each claimed platform's build, that a packa
 publisher of its other releases and that publisher IDs do not nest, and no published version or
 publisher key changed. Each check RFC 0031 lists that is not built yet is its own step that says
 so with a warning. Changes outside `publishers/`, `packages/` and `revoked.json` need a
-maintainer's review: a pull request can change the workflows it runs under.
+maintainer's review: a pull request can change the workflows it runs under, so `CODEOWNERS`
+requires a maintainer for `.github/` and `scripts/`, and publish re-checks on `main` that no
+published release or publisher key changed, whatever the pull request's own check said.
 
 ### Keys
 

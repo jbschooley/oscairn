@@ -32,6 +32,13 @@ jobs:
         with:
           fetch-depth: 0 # the serial is the number of commits on main
 
+      - name: Check out the commit before this one
+        # Check's own job comes from the pull request's checkout, so a pull request could pass by
+        # changing it; here, on main, the published records are checked against main as it was.
+        run: |
+          mkdir .previous
+          git rev-parse --verify --quiet HEAD~1 > /dev/null && git archive HEAD~1 | tar --extract --directory .previous || true
+
       - id: tools
         uses: ./.github/actions/oscairn-sign
         with:
@@ -50,6 +57,7 @@ jobs:
           python3 -I scripts/build-index.py
           --oscairn-sign "${{ steps.tools.outputs.path }}"
           --cache "$RUNNER_TEMP/cache" --out site
+          --previous .previous
           --serial "$(git rev-list --count HEAD)"
 
       - name: Sign the root with the index key
