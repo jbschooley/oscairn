@@ -1,0 +1,49 @@
+name: oscairn-sign
+description: Builds oscairn-sign from the Oscairn repository at a pinned commit, cached by that commit.
+inputs:
+  repository:
+    description: The Oscairn source repository, owner/name
+    required: true
+  commit:
+    description: The full commit to build; it must have `oscairn-sign file`
+    required: true
+outputs:
+  path:
+    description: The built oscairn-sign
+    value: ${{ runner.temp }}/oscairn-tools/oscairn-sign
+runs:
+  using: composite
+  steps:
+    - name: Check the pinned commit
+      shell: bash
+      env:
+        COMMIT: ${{ inputs.commit }}
+      run: |
+        if ! [[ "$COMMIT" =~ ^[0-9a-f]{40}$ ]]; then
+          echo "::error::OSCAIRN_COMMIT is not set to a full commit of Oscairn (see README.md, Setting up)"
+          exit 1
+        fi
+
+    - name: Restore oscairn-sign
+      id: cache
+      uses: actions/cache@v4
+      with:
+        path: ${{ runner.temp }}/oscairn-tools
+        key: oscairn-sign-${{ runner.os }}-${{ inputs.commit }}
+
+    - name: Build oscairn-sign
+      if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        REPOSITORY: ${{ inputs.repository }}
+        COMMIT: ${{ inputs.commit }}
+      run: |
+        sudo apt-get update && sudo apt-get install -y ninja-build
+        git init -q "$RUNNER_TEMP/oscairn"
+        cd "$RUNNER_TEMP/oscairn"
+        git fetch -q --depth 1 "https://github.com/$REPOSITORY.git" "$COMMIT"
+        git checkout -q FETCH_HEAD
+        cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+        cmake --build build --target oscairn-sign
+        mkdir -p "$RUNNER_TEMP/oscairn-tools"
+        cp build/core/control/oscairn-sign "$RUNNER_TEMP/oscairn-tools/"

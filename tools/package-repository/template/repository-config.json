@@ -1,0 +1,8 @@
+{
+  "repository": "org.oscairn.main",
+  "name": "Oscairn",
+  "blobBase": "https://github.com/oscairn/packages/releases/download/blobs-",
+  "mirrors": [],
+  "rootKey": "",
+  "indexKey": { "key": "", "signature": "" }
+}

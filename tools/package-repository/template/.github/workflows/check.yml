@@ -1,0 +1,71 @@
+# Checks a submission (RFC 0031, "Checks"). Runs the checks that exist today; each one RFC 0031
+# lists that is not built yet is its own step that says so and passes nothing.
+name: Check
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  OSCAIRN_REPOSITORY: oscairn/oscairn # placeholder: the Oscairn source repository
+  OSCAIRN_COMMIT: "" # placeholder: a full commit of it that has `oscairn-sign file`
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check out the base branch
+        # The checks run main's scripts, so a pull request cannot change what checks it.
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: .base
+
+      - id: tools
+        uses: ./.github/actions/oscairn-sign
+        with:
+          repository: ${{ env.OSCAIRN_REPOSITORY }}
+          commit: ${{ env.OSCAIRN_COMMIT }}
+
+      - name: Schema, archive safety, signatures, platform builds and immutable versions
+        # Every record's schema; each archive fetched and checked against its SHA-256; archive
+        # safety and every signature through `oscairn-sign verify`; the archive and every build
+        # signed by the publisher's key; each claimed platform's build present; no published
+        # release or publisher key changed.
+        run: >
+          python3 -I .base/scripts/build-index.py --check
+          --oscairn-sign "${{ steps.tools.outputs.path }}"
+          --repo . --previous .base
+          --cache "$RUNNER_TEMP/cache" --out "$RUNNER_TEMP/site" --serial 0
+
+      - name: Publisher verification (not built yet)
+        run: echo "::warning::Not built yet. Will fetch each new publisher's verification address and check that it names the publisher's key. A maintainer checks it by hand until then."
+
+      - name: Schema of item documents and type manifests (not built yet)
+        run: echo "::warning::Not built yet. Will validate item documents and type manifests (RFC 0023). oscairn-sign verify checks the archive's manifest and each item's ID today."
+
+      - name: Platforms for first-party packages (not built yet)
+        run: echo "::warning::Not built yet. Will require a first-party package to have a build for every supported profile (RFC 0006)."
+
+      - name: Loading (not built yet)
+        run: echo "::warning::Not built yet. Will scan, instantiate, save and restore state and process silence for each plugin in a sandboxed worker per platform, with a timeout and memory limit, and record estimates."
+
+      - name: Validation (not built yet)
+        run: echo "::warning::Not built yet. Will run the developer kit's conformance and realtime-safety tests, as warnings at first."
+
+      - name: Dependencies (not built yet)
+        run: echo "::warning::Not built yet. Will check that every required package and version is in this repository or this pull request."
+
+      - name: Scanning (not built yet)
+        run: echo "::warning::Not built yet. Will scan every file with a malware scanner's signatures."
+
+      - name: Reproducibility (not built yet)
+        run: echo "::warning::Not built yet. Will rebuild a package that names its source and builder image and say whether it matched."
+
+      - name: Review needed (not built yet)
+        run: echo "::warning::Not built yet. Will label a first submission from a publisher, or a package newly adding plugin or app code, as needing a maintainer's review. Maintainers decide by hand until then."

@@ -1,0 +1,104 @@
+# Publishes the repository on every merge (RFC 0031, "Submitting, with no server"): builds the
+# index, signs the root with the index key, uploads new package files as release assets, and
+# deploys the signed index to GitHub Pages. Merges publish one at a time.
+name: Publish
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: publish
+  cancel-in-progress: false
+
+permissions:
+  contents: write # release assets
+  pages: write
+  id-token: write
+
+env:
+  OSCAIRN_REPOSITORY: oscairn/oscairn # placeholder: the Oscairn source repository
+  OSCAIRN_COMMIT: "" # placeholder: a full commit of it that has `oscairn-sign file`
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # the serial is the number of commits on main
+
+      - id: tools
+        uses: ./.github/actions/oscairn-sign
+        with:
+          repository: ${{ env.OSCAIRN_REPOSITORY }}
+          commit: ${{ env.OSCAIRN_COMMIT }}
+
+      - name: Restore fetched archives
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/cache
+          key: archives-${{ hashFiles('packages/**/*.json') }}
+          restore-keys: archives-
+
+      - name: Build the index
+        run: >
+          python3 -I scripts/build-index.py
+          --oscairn-sign "${{ steps.tools.outputs.path }}"
+          --cache "$RUNNER_TEMP/cache" --out site
+          --serial "$(git rev-list --count HEAD)"
+
+      - name: Sign the root with the index key
+        env:
+          OSCAIRN_INDEX_KEY: ${{ secrets.OSCAIRN_INDEX_KEY }}
+          SIGN: ${{ steps.tools.outputs.path }}
+        run: |
+          umask 077
+          printf '%s\n' "$OSCAIRN_INDEX_KEY" > "$RUNNER_TEMP/index.key"
+          "$SIGN" file "$RUNNER_TEMP/index.key" site/repository.json site/repository.sig
+          rm -f "$RUNNER_TEMP/index.key"
+          signer=$("$SIGN" verify-file site/repository.json site/repository.sig | awk '{print $3}')
+          expected=$(python3 -c 'import json; print(json.load(open("repository-config.json"))["indexKey"]["key"])')
+          if [ "$signer" != "$expected" ]; then
+            echo "::error::The OSCAIRN_INDEX_KEY secret is not the index key in repository-config.json"
+            exit 1
+          fi
+
+      - name: Upload new package files as release assets
+        # One release per first two hex digits of a file's SHA-256 (a release holds at most
+        # 1000 assets), each asset named by its SHA-256: <blobBase><2 digits>/<sha256>.
+        # Assets are never replaced.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          while read -r sha; do
+            tag="blobs-${sha:0:2}"
+            if ! gh release view "$tag" > /dev/null 2>&1; then
+              gh release create "$tag" --title "$tag" --notes "Package files named by SHA-256 (RFC 0031). Do not edit by hand."
+            fi
+            if gh release view "$tag" --json assets --jq '.assets[].name' | grep -qx "$sha"; then
+              continue
+            fi
+            gh release upload "$tag" "$RUNNER_TEMP/cache/$sha"
+          done < site/blobs.txt
+          rm site/blobs.txt
+
+      - name: Report release downloads
+        # GitHub may throttle file hosting that uses far more bandwidth than similar users;
+        # watch this and move package files to object storage before it matters.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          total=$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases" --jq '.[].assets[].download_count' | awk '{s+=$1} END {print s+0}')
+          echo "Release asset downloads, all time: $total" >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - id: deploy
+        uses: actions/deploy-pages@v4
