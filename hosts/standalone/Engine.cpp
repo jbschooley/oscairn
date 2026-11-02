@@ -62,6 +62,10 @@ namespace oscairn::standalone
     {
         if(!process_)return;
         try{client_->call("engine.attach");}catch(const std::exception& e){std::fprintf(stderr,"oscairn: engine.attach: %s\n",e.what());}
+        // A fresh engine kept neither the ignored ports nor Capture: resend both here, so a
+        // reconnect restores them as a restart does.
+        try{if(!ignoredInputs_.empty())control_->ignoreMidiInputs(ignoredInputs_);}catch(const std::exception& e){std::fprintf(stderr,"oscairn: ignored inputs: %s\n",e.what());}
+        if(captureSeconds_>0)try{control_->recordRetro(captureSeconds_);}catch(const std::exception& e){std::fprintf(stderr,"oscairn: capture: %s\n",e.what());}
     }
     bool Engine::hasParam(const std::string& n,uint32_t p)const
     {try{return control_->hasParameter(control_->nodeId(n),p);}catch(const std::invalid_argument&){return false;}}
@@ -447,9 +451,7 @@ namespace oscairn::standalone
             process_->connectOrStart(*client_);
             auto fresh=std::make_unique<RemoteControl>(*client_);
             remote_=std::move(fresh);control_=remote_.get();failure_.clear();textCache_.clear();recoveryAvailable_=false;refreshPads();
-            attach();
-            if(!ignoredInputs_.empty())control_->ignoreMidiInputs(ignoredInputs_);
-            if(captureSeconds_>0)try{control_->recordRetro(captureSeconds_);}catch(const std::exception& e){std::fprintf(stderr,"oscairn: capture: %s\n",e.what());}
+            attach(); // resends the ignored inputs and Capture, as any reconnect
         }
         catch(const std::exception& e){failed(e.what());}
     }
