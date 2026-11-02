@@ -9,7 +9,7 @@ path.
 | `mark-on-dark.svg` | On dark grounds: light waves, accent top |
 | `mark-on-light.svg` | On light grounds: dark waves, accent top |
 | `mark-mono.svg` | One color, from the context (`currentColor`): embossing, single-color print, icons that take a theme's color |
-| `mark-app-icon.svg`, `app-icon-1024.png` | The app icon: the mark on a dark rounded square |
+| `mark-app-icon.svg`, `app-icon-1024.png` | The app icon: the mark on a dark rounded square, on the macOS icon grid (an 824 px square in the 1024 px canvas, so it is the size of the system's icons) |
 | `banner.svg`, `banner.png` | The repository's title in README.md (1280 x 320) |
 | `social-preview.svg`, `social-preview.png` | GitHub's social preview (1280 x 640): set in the repository's Settings, General, Social preview |
 | `mark-hills-*` | An alternate kept for later: each wave centered on its crest |
