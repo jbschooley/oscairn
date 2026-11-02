@@ -4,6 +4,7 @@
 #include "JsonInput.h"
 #include "miniz/miniz.h"
 #include "oscairn/assets.h"
+#include "oscairn/library.h"
 #include <algorithm>
 #include <cstdlib>
 #include <memory>
@@ -97,21 +98,24 @@ namespace oscairn
     std::string manifestJson(const Package& package)
     {
         std::string items, plugins, files;
+        auto signatures = [](const std::vector<signing::Signature>& list) { std::string out; for(const auto& s : list) out += (out.empty() ? "" : ",") + signing::json(s); return "[" + out + "]"; };
         for(const auto& i : package.items)
-            items += std::string(items.empty() ? "" : ",") + "{\"kind\":" + detail::quote(i.kind) + ",\"id\":" + detail::quote(i.id) + ",\"name\":" + detail::quote(i.name) + ",\"path\":" + detail::quote(i.path) + '}';
+            items += std::string(items.empty() ? "" : ",") + "{\"kind\":" + detail::quote(i.kind) + ",\"id\":" + detail::quote(i.id) + ",\"name\":" + detail::quote(i.name) + ",\"path\":" + detail::quote(i.path) +
+                     ",\"signatures\":" + signatures(i.signatures) + '}';
         for(const auto& p : package.plugins)
         {
             std::string builds;
-            for(const auto& b : p.builds) builds += std::string(builds.empty() ? "" : ",") + "{\"platform\":" + detail::quote(b.platform) + ",\"path\":" + detail::quote(b.path) + ",\"sha256\":" + detail::quote(b.sha256) + '}';
+            for(const auto& b : p.builds) builds += std::string(builds.empty() ? "" : ",") + "{\"platform\":" + detail::quote(b.platform) + ",\"path\":" + detail::quote(b.path) + ",\"sha256\":" + detail::quote(b.sha256) +
+                                                    ",\"signatures\":" + signatures(b.signatures) + '}';
             plugins += std::string(plugins.empty() ? "" : ",") + "{\"format\":" + detail::quote(p.format) + ",\"id\":" + detail::quote(p.id) + ",\"version\":" + detail::quote(p.version) +
                        ",\"name\":" + detail::quote(p.name) + ",\"builds\":[" + builds + "]}";
         }
         for(const auto& [path, sha] : package.files) files += std::string(files.empty() ? "" : ",") + detail::quote(path) + ":" + detail::quote(sha);
-        return "{\"format\":\"oscairn.library\",\"version\":2,\"id\":" + detail::quote(package.id) + ",\"name\":" + detail::quote(package.name) +
+        return "{\"format\":\"oscairn.library\",\"version\":3,\"id\":" + detail::quote(package.id) + ",\"name\":" + detail::quote(package.name) +
                ",\"kind\":" + detail::quote(package.kind) + ",\"items\":[" + items + "],\"plugins\":[" + plugins + "],\"files\":{" + files + "}}\n";
     }
 
-    void writePackage(const fs::path& archive, const Package& package, const fs::path& root)
+    void writePackage(const fs::path& archive, const Package& package, const fs::path& root, const signing::Key* key)
     {
         if(fs::exists(archive)) throw std::runtime_error(archive.string() + " already exists");
         // Every file, and its SHA-256 for the manifest; hidden files are not packed.
@@ -133,6 +137,11 @@ namespace oscairn
             Zip z(false);
             if(!mz_zip_writer_init_file(&z.zip, temporary.string().c_str(), 0)) throw std::runtime_error("cannot write " + archive.string());
             if(!mz_zip_writer_add_mem(&z.zip, "library.json", manifest.data(), manifest.size(), MZ_DEFAULT_COMPRESSION)) throw std::runtime_error("cannot write the manifest");
+            if(key)
+            {
+                const auto sig = signing::json({key->publicKey, signing::sign(*key, signing::archiveMessage(manifest))}) + '\n';
+                if(!mz_zip_writer_add_mem(&z.zip, "library.sig", sig.data(), sig.size(), MZ_DEFAULT_COMPRESSION)) throw std::runtime_error("cannot write the archive's signature");
+            }
             for(const auto& f : files)
             {
                 const auto name = fs::relative(f, root).generic_string();
@@ -144,6 +153,21 @@ namespace oscairn
         }
         if(fs::exists(archive)) { fs::remove(temporary); throw std::runtime_error(archive.string() + " already exists"); }
         fs::rename(temporary, archive);
+    }
+
+    void signPackage(const fs::path& archive, const signing::Key& key)
+    {
+        const auto unpacked = archive.parent_path() / ("." + archive.filename().string() + ".signing");
+        const auto signedCopy = archive.parent_path() / ("." + archive.filename().string() + ".signed");
+        std::error_code ignored;
+        fs::remove_all(unpacked, ignored); fs::remove(signedCopy, ignored);
+        try
+        {
+            writePackage(signedCopy, readPackage(archive, unpacked), unpacked, &key);
+            fs::rename(signedCopy, archive);
+        }
+        catch(...) { fs::remove_all(unpacked, ignored); fs::remove(signedCopy, ignored); throw; }
+        fs::remove_all(unpacked, ignored);
     }
 
     Package readPackage(const fs::path& archive, const fs::path& into)
@@ -159,7 +183,7 @@ namespace oscairn
             if(count > maxEntries) bad("it holds too many files");
             std::set<std::string> names;
             uint64_t total = 0, nameBytes = 0;
-            std::string manifest;
+            std::string manifest, archiveSignature;
             for(mz_uint i = 0; i < count; ++i)
             {
                 mz_zip_archive_file_stat st;
@@ -169,7 +193,7 @@ namespace oscairn
                 if(directory && !name.empty() && name.back() == '/') name.pop_back();
                 if(!safe(name)) bad("an entry with an unsafe name: " + name);
                 const auto top = name.substr(0, name.find('/'));
-                if(name != "library.json" && !tops.count(top)) bad("an entry outside its folders: " + name);
+                if(name != "library.json" && name != "library.sig" && !tops.count(top)) bad("an entry outside its folders: " + name);
                 if(((st.m_external_attr >> 16) & S_IFMT) == S_IFLNK) bad("a link: " + name);
                 if((nameBytes += name.size()) > maxNameBytes) bad("its names are too long");
                 if(!names.insert(name).second) bad("an entry twice: " + name);
@@ -180,6 +204,13 @@ namespace oscairn
                     if(st.m_uncomp_size > maxManifestBytes) bad("the manifest is too large");
                     manifest.resize(size_t(st.m_uncomp_size));
                     if(!mz_zip_reader_extract_to_mem(&z.zip, i, manifest.data(), manifest.size(), 0)) bad("the manifest cannot be read");
+                    continue;
+                }
+                if(name == "library.sig")
+                {
+                    if(st.m_uncomp_size > 4096) bad("the archive's signature is too large");
+                    archiveSignature.resize(size_t(st.m_uncomp_size));
+                    if(!mz_zip_reader_extract_to_mem(&z.zip, i, archiveSignature.data(), archiveSignature.size(), 0)) bad("the archive's signature cannot be read");
                     continue;
                 }
                 if(!extract) continue;
@@ -194,9 +225,18 @@ namespace oscairn
             V d = doc.get();
             if(text(detail::member(d, "format")) != "oscairn.library") bad("it is not an Oscairn library");
             const V version = detail::member(d, "version");
-            if(!version || version->type != json_type_number || std::string(static_cast<const json_number_s*>(version->payload)->number, static_cast<const json_number_s*>(version->payload)->number_size) != "2")
-                bad("its version is not 2");
+            if(!version || version->type != json_type_number || std::string(static_cast<const json_number_s*>(version->payload)->number, static_cast<const json_number_s*>(version->payload)->number_size) != "3")
+                bad("its version is not 3");
             Package p;
+            // Signatures, each checked against what it signs; one that does not verify is refused like a wrong hash.
+            auto signatures = [](V list) { try { return signing::signatures(list); } catch(const std::runtime_error& e) { bad(e.what()); } };
+            if(!archiveSignature.empty())
+            {
+                if(!detail::jsonPreflight(archiveSignature, 2).empty()) bad("its signature is not valid JSON");
+                const std::unique_ptr<json_value_s, decltype(&std::free)> sig{json_parse(archiveSignature.data(), archiveSignature.size()), &std::free};
+                try { p.signature = signing::signatureFrom(sig.get()); } catch(const std::runtime_error& e) { bad(e.what()); }
+                if(!signing::verify(p.signature, signing::archiveMessage(manifest))) bad("its signature does not verify");
+            }
             p.id = text(detail::member(d, "id")); p.name = text(detail::member(d, "name")); p.kind = text(detail::member(d, "kind"));
             if(p.id.empty() || p.id.size() > 64 || (p.kind != "library" && p.kind != "performance" && p.kind != "sound")) bad("its ID or kind is wrong");
             const V items = detail::member(d, "items");
@@ -210,6 +250,7 @@ namespace oscairn
                 if(!safe(item.path) || item.path.substr(0, item.path.find('/')) != (sound ? "Sounds" : "Performances") || item.path.find('/', item.path.find('/') + 1) != std::string::npos ||
                    !names.count(item.path + (sound ? "/sound.json" : "/performance.json")))
                     bad("an item is not in the archive: " + item.path);
+                item.signatures = signatures(detail::member(e->value, "signatures"));
                 p.items.push_back(std::move(item));
             }
             // Plugins: each build in the archive, under Plugins/.
@@ -229,6 +270,9 @@ namespace oscairn
                     if(!safe(build.path) || build.path.rfind("Plugins/", 0) != 0 || !there || build.sha256.size() != 64)
                         bad("a plugin build is not in the archive: " + build.path);
                     if(!knownPlatform(build.platform)) bad("a plugin build for no known platform: " + build.platform);
+                    build.signatures = signatures(detail::member(b->value, "signatures"));
+                    for(const auto& s : build.signatures)
+                        if(!signing::verify(s, signing::buildMessage(plugin.format, plugin.id, plugin.version, build.platform, build.sha256))) bad("a plugin build's signature does not verify: " + build.path);
                     plugin.builds.push_back(std::move(build));
                 }
                 p.plugins.push_back(std::move(plugin));
@@ -254,6 +298,13 @@ namespace oscairn
                 for(const auto& plugin : p.plugins)
                     for(const auto& build : plugin.builds)
                         if(bundleDigest(into / build.path) != build.sha256) bad("a plugin build that is not what the manifest says: " + build.path);
+                for(const auto& item : p.items)
+                {
+                    if(item.signatures.empty()) continue;
+                    std::string hash;
+                    try { hash = contentHash(into / item.path / (item.kind == "sound" ? "sound.json" : "performance.json")); } catch(const std::runtime_error&) { bad("a signed item without its info: " + item.path); }
+                    for(const auto& s : item.signatures) if(!signing::verify(s, signing::itemMessage(hash))) bad("an item's signature does not verify: " + item.path);
+                }
             }
             return p;
         }

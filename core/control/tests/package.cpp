@@ -5,6 +5,7 @@
 // file that is not the one the manifest hashed refused, leaving nothing behind.
 #include "oscairn/package.h"
 #include "oscairn/assets.h"
+#include "oscairn/library.h"
 #include "miniz/miniz.h"
 #include <cstdio>
 #include <fstream>
@@ -21,7 +22,7 @@ namespace
     void check(bool ok, const std::string& what) { if(!ok) { std::fprintf(stderr, "FAIL: %s\n", what.c_str()); ++failures; } }
     void write(const fs::path& file, const std::string& text) { fs::create_directories(file.parent_path()); std::ofstream(file, std::ios::binary) << text; }
     // A manifest listing the one Sound, and `files` (each file's SHA-256 by its path).
-    std::string listing(const std::string& files) { return R"({"format":"oscairn.library","version":2,"id":"abc","name":"Pack","kind":"library","items":[{"kind":"sound","id":"s1","name":"Bass","path":"Sounds/Bass.osound"}],"plugins":[],"files":{)" + files + "}}"; }
+    std::string listing(const std::string& files) { return R"({"format":"oscairn.library","version":3,"id":"abc","name":"Pack","kind":"library","items":[{"kind":"sound","id":"s1","name":"Bass","path":"Sounds/Bass.osound"}],"plugins":[],"files":{)" + files + "}}"; }
     const std::string manifest = listing("\"Sounds/Bass.osound/sound.json\":\"" + assets::sha256("{}") + "\"");
 
     // An archive made by hand, entry by entry; attr: the entry's Unix mode (links).
@@ -141,6 +142,69 @@ int main()
         // A build's platform names a folder in the plugin store: one that climbs out would replace what is there.
         refuse("a plugin build for no known platform", {{"library.json", withBuild(bundleDigest(staged / build), "../../../Performances")}, sound, {binary, "code"}});
         check(!fs::exists(root / "escape.txt") && !fs::exists("/tmp/escape.txt"), "nothing escaped");
+        refuse("version 2", {{"library.json", std::string(manifest).replace(manifest.find("\"version\":3"), 11, "\"version\":2")}, sound});
+
+        // Signatures (RFC 0006): an item, a build and the whole archive, each verified on reading.
+        const auto mine = signing::makeKey(root / "mine.key"), other = signing::makeKey(root / "other.key");
+        const auto signedRoot = root / "signed";
+        const auto doc = signedRoot / "Sounds/Bass.osound/sound.json";
+        write(doc, R"({"format":"oscairn.sound","info":{"id":"s1","name":"Bass"},"nodes":[]})");
+        write(signedRoot / "Sounds/Bass.osound/nodes/node-1/state.bin", "state");
+        write(signedRoot / binary, "code");
+        auto itemSig = [&](const signing::Key& k) { return signing::Signature{k.publicKey, signing::sign(k, signing::itemMessage(contentHash(doc)))}; };
+        auto buildSig = [&](const signing::Key& k) { return signing::Signature{k.publicKey, signing::sign(k, signing::buildMessage("clap", "synth", "1", platform(), bundleDigest(signedRoot / build)))}; };
+        Package s; s.id = "abc"; s.name = "Pack";
+        s.items = {{"sound", "s1", "Bass", "Sounds/Bass.osound", {itemSig(mine)}}};
+        s.plugins = {{"clap", "synth", "1", "Synth", {{platform(), build, bundleDigest(signedRoot / build), {buildSig(mine)}}}}};
+        writePackage(root / "Signed.olib", s, signedRoot, &mine);
+        const auto got = readPackage(root / "Signed.olib", root / "signed-out");
+        check(got.signature.key == mine.publicKey && got.items.at(0).signatures.size() == 1 && got.items[0].signatures[0].key == mine.publicKey &&
+              got.plugins.at(0).builds.at(0).signatures.size() == 1 && got.plugins[0].builds[0].signatures[0].key == mine.publicKey, "item, build and archive signatures verify, and say who signed");
+        check(readPackage(root / "Signed.olib", {}).signature.key == mine.publicKey, "the archive's signature is checked from the manifest alone");
+        // The whole archive signed afterwards, as oscairn-sign does.
+        writePackage(root / "Later.olib", p, staged);
+        signPackage(root / "Later.olib", other);
+        check(readPackage(root / "Later.olib", {}).signature.key == other.publicKey, "an archive signed afterwards verifies");
+
+        // Each refused: entries of the signed archive rewritten as one who changed it would.
+        auto entries = [](const fs::path& archive) {
+            std::vector<std::pair<std::string, std::string>> out;
+            mz_zip_archive z{}; mz_zip_reader_init_file(&z, archive.string().c_str(), 0);
+            for(mz_uint i = 0; i < mz_zip_reader_get_num_files(&z); ++i)
+            {
+                mz_zip_archive_file_stat st; mz_zip_reader_file_stat(&z, i, &st);
+                if(mz_zip_reader_is_file_a_directory(&z, i)) continue;
+                std::string data(size_t(st.m_uncomp_size), '\0'); mz_zip_reader_extract_to_mem(&z, i, data.data(), data.size(), 0);
+                out.push_back({st.m_filename, data});
+            }
+            mz_zip_reader_end(&z);
+            return out;
+        };
+        auto edited = [&](const std::string& entry, const std::function<void(std::string&)>& change) {
+            auto all = entries(root / "Signed.olib");
+            for(auto& [name, data] : all) if(name == entry) change(data);
+            return all;
+        };
+        refuse("a manifest changed under the archive's signature", edited("library.json", [](std::string& m) { m.replace(m.find("\"Pack\""), 6, "\"Pick\""); }));
+        refuse("an archive signature by another key", edited("library.sig", [&](std::string& sig) { sig.replace(sig.find(mine.publicKey), 64, other.publicKey); }));
+        // An item or build changed, and the manifest's hashes made to match, without the archive's signature.
+        Package unsignedWhole = s;
+        write(signedRoot / "Sounds/Bass.osound/nodes/node-1/state.bin", "tampered");
+        writePackage(root / "TamperedItem.olib", unsignedWhole, signedRoot);
+        check(refused(root / "TamperedItem.olib", root / "tampered-item", "a tampered item"), "a tampered item is refused by its signature");
+        write(signedRoot / "Sounds/Bass.osound/nodes/node-1/state.bin", "state");
+        write(signedRoot / binary, "evil");
+        unsignedWhole.plugins[0].builds[0].sha256 = bundleDigest(signedRoot / build);
+        writePackage(root / "TamperedBuild.olib", unsignedWhole, signedRoot);
+        check(refused(root / "TamperedBuild.olib", {}, "a tampered build") && refused(root / "TamperedBuild.olib", root / "tampered-build", "a tampered build"), "a tampered build is refused by its signature");
+        write(signedRoot / binary, "code");
+        Package forged = s;
+        forged.items[0].signatures[0].key = other.publicKey;
+        writePackage(root / "OtherItemKey.olib", forged, signedRoot);
+        check(refused(root / "OtherItemKey.olib", root / "other-item", "an item signature by another key"), "an item signature by another key is refused");
+        forged = s; forged.plugins[0].builds[0].signatures[0].key = other.publicKey;
+        writePackage(root / "OtherBuildKey.olib", forged, signedRoot);
+        check(refused(root / "OtherBuildKey.olib", {}, "a build signature by another key"), "a build signature by another key is refused");
     }
     catch(const std::exception& e) { std::fprintf(stderr, "FAIL: %s\n", e.what()); ++failures; }
     fs::remove_all(root);

@@ -1,4 +1,4 @@
-# Library archive format, version 2
+# Library archive format, version 3
 
 A library, or an exported Performance, is one archive file
 ([RFC 0021](rfcs/0021-sounds-performances-and-library.md#libraries)): a zip holding
@@ -6,6 +6,7 @@ A library, or an exported Performance, is one archive file
 | Entry | What it is |
 | --- | --- |
 | `library.json` | The manifest (below) |
+| `library.sig` | Optional: the whole archive's signature, `{key, signature}` over `oscairn-archive-1\0` and the manifest's exact bytes ([signatures](#signatures)) |
 | `Performances/<folder>/` | Each Performance as the library keeps it: `performance.json` ([format](performance-format.md)) and `nodes/` |
 | `Sounds/<folder>/` | Each Sound the same way, `sound.json` and `nodes/` |
 | `Assets/<first 16 hex digits of the SHA-256>/<file>` | Each sample the items' plugins use, once |
@@ -15,12 +16,12 @@ The manifest:
 
 | Field | Meaning |
 | --- | --- |
-| `format`, `version` | Exactly `oscairn.library` and integer `2` |
+| `format`, `version` | Exactly `oscairn.library` and integer `3` |
 | `id` | The library's ID: its folder's name when installed as a library, and what imported copies record as their `origin` |
 | `name` | Its name |
 | `kind` | `library`, `performance` for an exported Performance or `sound` for an exported Sound (its ID and name are that item's) |
-| `items` | Each item's `kind` (`performance` or `sound`), `id`, `name` and `path`, its folder in the archive |
-| `plugins` | Each plugin's `format`, `id`, `version`, `name` and `builds`: each build's `platform` (such as `macos-arm64` or `linux-arm64`), `path` in the archive and `sha256`, its digest as a [Performance's lock](performance-format.md) gives it |
+| `items` | Each item's `kind` (`performance` or `sound`), `id`, `name`, `path`, its folder in the archive, and `signatures` (optional) |
+| `plugins` | Each plugin's `format`, `id`, `version`, `name` and `builds`: each build's `platform` (such as `macos-arm64` or `linux-arm64`), `path` in the archive, `sha256`, its digest as a [Performance's lock](performance-format.md) gives it, and `signatures` (optional) |
 | `files` | Every other entry's SHA-256, by its path |
 
 An export holds the Performance, the library Sound of each part that is still that Sound (the
@@ -45,15 +46,33 @@ nothing behind:
 - more than 1,048,576 entries or 64 MiB of their names, more than 8 GiB in all, an entry over 2 GiB or a manifest over
   64 MiB, as declared; and a
   file that extracts to another size than it declares;
-- a manifest that is not version 2, or names an item whose folder or document is not there, or
+- a manifest that is not version 3 (there is no reader for version 2), or names an item whose folder or document is not there, or
   whose document's ID is not the one listed, or a plugin build not under `Plugins/`, not there,
   or for a platform other than `linux-arm64`, `linux-x86_64`, `macos-arm64`, `macos-x86_64` and
   `windows-x86_64`;
 - a file whose SHA-256 is not the one `files` lists, a file `files` does not list or one it
-  lists that is not there, and a plugin build whose digest is not its own.
+  lists that is not there, and a plugin build whose digest is not its own;
+- a signature that does not verify, at any level, or a malformed one.
 
-Hashes say an archive is whole and as it was made, not who made it: signatures are planned
-(RFC 0006).
+Reading only the manifest (an archive's contents, before installing) checks the archive's and
+the builds' signatures; items' signatures are checked when the archive is extracted.
+
+## Signatures
+
+Every signature is optional, and what is signed is the publisher's choice
+([RFC 0006](rfcs/0006-packages-and-portability.md#signatures)). Each is `{key, signature}`:
+the signer's Ed25519 public key (64 hex digits) and the signature (128), over a message that
+says what it signs:
+
+| Where | Signs | Message |
+| --- | --- | --- |
+| `items[].signatures` | The item: a Sound or a Performance | `oscairn-item-1\0` and its content hash, the library's `hash` (its document without `info`, and its `nodes/` files) |
+| `plugins[].builds[].signatures` | A plugin build, by its publisher | `oscairn-build-1\0` and the plugin's format, ID, version, the build's platform and digest, each followed by `\0` |
+| `library.sig` | The whole archive | `oscairn-archive-1\0` and `library.json`'s exact bytes, which list every file's SHA-256 and every build's digest |
+
+A key is shown by its ID, the first 16 hex digits of the SHA-256 of its 32 bytes. A signature
+that does not verify is refused like a wrong hash. Who signed is reported; whether that is
+trusted is the installing device's [trust store](rfcs/0006-packages-and-portability.md#signatures).
 
 ## As a folder
 
@@ -97,5 +116,4 @@ Two items with one ID are listed once, the user's own first: so a Performance ex
 installed as a library on the device it came from shows the original, not the locked copy.
 Installed into the user's own storage (the default for an export) it is a new copy.
 
-Not yet: a Sound from a locked library exported as that library's item, signatures,
-and grouped cleanup of plugins nothing uses (RFC 0006).
+Not yet: a Sound from a locked library exported as that library's item, and grouped cleanup of plugins nothing uses (RFC 0006).

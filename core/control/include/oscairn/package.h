@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #pragma once
+#include "oscairn/signing.h"
 #include <filesystem>
 #include <map>
 #include <string>
@@ -11,20 +12,23 @@ namespace oscairn
     /// holding library.json, the manifest, its items' folders under Performances/ and Sounds/, as
     /// the library keeps them, the samples they use under Assets/, each named by its SHA-256, and
     /// the plugins they use under Plugins/, a build per platform. Every file's SHA-256 is in the
-    /// manifest and checked when it is extracted.
+    /// manifest and checked when it is extracted. Items, plugin builds and the whole archive can
+    /// each be signed (signing.h); every signature there must verify.
     struct Package
     {
-        // An item: kind "performance" or "sound", its ID and name, and its folder in the archive.
-        struct Item { std::string kind, id, name, path; };
-        // A plugin's build for one platform (platform()): its folder or file in the archive and
-        // its digest (bundleDigest).
-        struct Build { std::string platform, path, sha256; };
+        // An item: kind "performance" or "sound", its ID and name, its folder in the archive, and
+        // signatures over its content hash (signing::itemMessage).
+        struct Item { std::string kind, id, name, path; std::vector<signing::Signature> signatures = {}; };
+        // A plugin's build for one platform (platform()): its folder or file in the archive, its
+        // digest (bundleDigest) and its publishers' signatures (signing::buildMessage).
+        struct Build { std::string platform, path, sha256; std::vector<signing::Signature> signatures = {}; };
         struct Plugin { std::string format, id, version, name; std::vector<Build> builds; };
         std::string id, name;
         std::string kind = "library"; // "library", or "performance" for an exported Performance
         std::vector<Item> items;
         std::vector<Plugin> plugins;
         std::map<std::string, std::string> files; // each file's SHA-256 by its path; filled by writePackage
+        signing::Signature signature;              // library.sig, the whole archive's over the manifest; an empty key for none
     };
 
     // The largest manifest read, in an archive or an installed library. A library of thousands of
@@ -46,9 +50,12 @@ namespace oscairn
     std::string manifestJson(const Package& package);
 
     // Writes `root` (a folder holding Performances/, Sounds/, Assets/ and Plugins/) and the manifest
-    // into a new archive, every file's SHA-256 in it. Refuses an archive that exists; written
-    // beside it and moved in once complete.
-    void writePackage(const std::filesystem::path& archive, const Package& package, const std::filesystem::path& root);
+    // into a new archive, every file's SHA-256 in it; with `key`, library.sig, signing the whole
+    // archive. Refuses an archive that exists; written beside it and moved in once complete.
+    void writePackage(const std::filesystem::path& archive, const Package& package, const std::filesystem::path& root, const signing::Key* key = nullptr);
+    // Signs an archive whole: rewrites it with library.sig by `key`, replacing any there. The
+    // archive is read and checked first, so one whose hashes or signatures do not hold is refused.
+    void signPackage(const std::filesystem::path& archive, const signing::Key& key);
 
     // Extracts an archive into `into`, a folder that must not exist yet, and returns its manifest.
     // Untrusted input: refuses entries outside library.json, Performances/, Sounds/, Assets/ and
@@ -56,7 +63,9 @@ namespace oscairn
     // or 64 MiB of names, more than 8 GiB in all, an entry over 2 GiB or a manifest over maxManifestBytes (as declared; each file extracted must be the
     // size it declares), a file whose SHA-256 is not the manifest's or that the manifest does not
     // list, a plugin build whose digest is not its own, and a manifest whose items or builds are
-    // not in the archive or not for a knownPlatform. On refusal `into` is removed. With `into` empty, nothing is extracted:
-    // the same checks but the hashes, and the manifest.
+    // not in the archive or not for a knownPlatform, and a signature that does not verify (each
+    // build's over its listed digest, library.sig over the manifest, each item's over its content
+    // hash). On refusal `into` is removed. With `into` empty, nothing is extracted: the same
+    // checks but the hashes and the items' signatures (listed, unchecked), and the manifest.
     Package readPackage(const std::filesystem::path& archive, const std::filesystem::path& into);
 }
