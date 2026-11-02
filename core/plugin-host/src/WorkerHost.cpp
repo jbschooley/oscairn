@@ -260,7 +260,7 @@ namespace oscairn
 
             void supervise();
             void restart();
-            void fitLimit(); // under control
+            void fitLimit(bool fresh = false); // under control; fresh: a new process, held to its declarations at once
             // The limit for the nodes' declarations and one more node's (extra), or none where a node
             // declares nothing; ask: query a node whose declaration is not known (else none). Under control.
             std::optional<uint64_t> fitted(bool ask, const oscairn_memory_t* extra = nullptr);
@@ -947,14 +947,23 @@ namespace oscairn
             const uint64_t cap = policyLimit ? std::min(policyLimit, uint64_t(1) << 40) * 4 : uint64_t(1) << 40;
             if(sum(sum(m.shared_bytes, m.context_bytes), m.asset_bytes) > cap) throw std::runtime_error("Plugin's memory declaration is not credible");
         }
-        void Process::fitLimit()
+        // After an operation. A live plugin that just moved to a smaller mode may still hold the pages
+        // it let go (an allocator returns them late, a heap may keep them), so the limit is lowered
+        // no further than what the worker holds now plus its 64 MiB margin, and never raised by that:
+        // it still stops growth past either. A new process is held to its declarations at once.
+        void Process::fitLimit(bool fresh)
         {
-            if(const auto limit = fitted(true)) { memoryLimit.store(*limit); limitCgroup(); }
+            const auto limit = fitted(true);
+            if(!limit) return;
+            auto to = *limit;
+            if(const auto now = memoryLimit.load(); !fresh && to < now) to = std::min(now, std::max(to, usage(pid).memory + (uint64_t(64) << 20)));
+            memoryLimit.store(to); limitCgroup();
         }
-        // A node is about to activate: its limit is refit before the plugin allocates. A node the
-        // engine has (outside a restart) has its declaration replaced; a node being made (a load,
-        // an effect context, any node during a restart) only raises the limit, which the fitLimit
-        // after that operation then makes exact. The worker waits for the answer (RFC 0025).
+        // A node is about to activate: its limit is raised, if its declaration needs it, before the
+        // plugin allocates. A node the engine has (outside a restart) has its declaration replaced; a
+        // node being made (a load, an effect context, any node during a restart) is counted as one
+        // more. Never lowered here, while the plugin may still hold its old mode's memory: the
+        // fitLimit after the operation does that. The worker waits for the answer (RFC 0025).
         void Process::reserve(Reader& r)
         {
             const auto index = r.u32();
@@ -963,13 +972,9 @@ namespace oscairn
             if(m) credible(*m); // before it is kept: Failed, and the worker refuses the activation
             WorkerHost* known = nullptr;
             if(!restarting) { std::lock_guard nodesLock(nodesMutex); for(auto* n : nodes) if(n->workerNode() == index) known = n; }
-            if(known)
-            {
-                known->declare(m);
-                if(const auto limit = fitted(false)) { memoryLimit.store(*limit); limitCgroup(); }
-            }
-            else if(m)
-                if(const auto limit = fitted(false, &*m); limit && *limit > memoryLimit.load()) { memoryLimit.store(*limit); limitCgroup(); }
+            if(known) known->declare(m);
+            if(!known && !m) return;
+            if(const auto limit = known ? fitted(false) : fitted(false, &*m); limit && *limit > memoryLimit.load()) { memoryLimit.store(*limit); limitCgroup(); }
         }
 
         // Watches the worker: a crash, a block left unanswered past the hang limit, too many missed
@@ -1048,7 +1053,7 @@ namespace oscairn
                 for(auto* n : list) n->restore();
                 // What each node declares now, its restored state's (RFC 0025), not the old worker's.
                 for(auto* n : list) n->forget();
-                fitLimit();
+                fitLimit(true);
             }
             catch(const std::exception& e)
             {
@@ -1075,7 +1080,7 @@ namespace oscairn
             Reader r = process->start();
             process->root = r.data.substr(r.at + 4);
             host = std::make_shared<WorkerHost>(process, r, true);
-            process->fitLimit();
+            process->fitLimit(true);
         }
         process->supervisor = std::thread([p = process.get()] { p->supervise(); });
         return host;

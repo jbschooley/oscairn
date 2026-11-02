@@ -184,10 +184,15 @@ each worker in `workers/<pid>` before it loads anything: `memory.max` the worker
 memory is limited to the declarations (shared bytes once, each context's own) plus half again
 and 64 MiB, by the supervisor on every platform and by its cgroup on Linux, replacing RFC 0010's
 flat 4 GiB; one declaring nothing keeps the policy's limit. The limit, `memory.max` included, is
-refit before each activation: the worker sends the engine the plugin's new declaration in band
+checked before each activation: the worker sends the engine the plugin's new declaration in band
 (as it asks for a sound asset) and the plugin activates only once the engine has answered, so a
 mode change through a restart the plugin asked for is never stopped at its old limit, however
-long its allocation takes. A declaration no worker could hold (over four times the policy's
+long its allocation takes. Before an activation the limit is only raised; it is lowered after
+the operation (a state or snapshot load, a new effect context), and then no further than what
+the worker holds at that moment plus 64 MiB, so a move to a smaller mode is not stopped for
+pages its allocator has not returned yet. A new or restarted worker is held to its
+declarations at once; a restart the plugin asked for into a smaller mode keeps the higher limit
+until the next such operation. A declaration no worker could hold (over four times the policy's
 limit, which is the worker's address space on Linux, or over 1 TiB without one, or one whose
 sum overflows) is not taken as the limit: the engine answers "Plugin's memory declaration is
 not credible" and the plugin is not activated. With `OSCAIRN_RELIABILITY`

@@ -165,6 +165,19 @@ int main(int argc, char** argv)
             killed = killed || !self->failure().empty();
             check(shared == 201u << 20, "the engine re-read the declaration after the plugin's own restart: " + std::to_string(shared >> 20) + " MiB");
             check(!killed, "and the mode change did not kill the worker: " + self->failure());
+            // Back to the small mode through a state load: the fixture's allocator keeps the big
+            // mode's pages (as a heap does after many small frees), so its resident memory stays.
+            // The limit is not cut below that while the plugin moves; it is lowered after the load.
+            const auto small = loadPluginInWorker(argv[1], argv[3], "org.kick.test.memory", 48000, frames);
+            const auto state = std::filesystem::temp_directory_path() / ("oscairn-small-state-" + std::to_string(getpid()));
+            std::filesystem::remove_all(state);
+            small->saveState(state.string());
+            std::string why;
+            try { self->loadState(state.string()); } catch(const std::exception& e) { why = e.what(); }
+            std::filesystem::remove_all(state);
+            for(int i = 0; i < 50 && why.empty(); ++i) { std::this_thread::sleep_for(std::chrono::milliseconds(10)); why = self->failure(); }
+            const auto d = why.empty() ? self->declaredMemory() : std::nullopt;
+            check(why.empty() && d && d->shared_bytes == 1u << 20, "a move to a smaller mode is not killed for the memory it just let go: " + why);
         }
         // RFC 0025: an engine's shared bytes count toward its worker's limit while any node of it
         // lives, even after the root node the contexts were made from is removed (effect-contexts.h).

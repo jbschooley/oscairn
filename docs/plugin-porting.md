@@ -400,8 +400,9 @@ What changes for the plugin:
   every 10 ms as the physical footprint on macOS and resident memory on Linux. When every
   plugin in the worker declares its memory (`oscairn.memory`), the limit is what they declare
   plus half again and 64 MiB. Before each activation the worker sends the engine the new
-  declaration and waits while the engine refits the limit, so a mode that needs more (a restart
-  the plugin asked for included) is allowed it before it allocates. A declaration over four
+  declaration and waits while the engine raises the limit, so a mode that needs more (a restart
+  the plugin asked for included) is allowed it before it allocates. A smaller mode lowers it
+  after the operation, no further than what the worker then holds plus 64 MiB. A declaration over four
   times the flat limit (1 TiB with none) is refused before the plugin activates. Past the
   limit the worker is stopped like a crash. On Linux the worker also sets `RLIMIT_AS` to four times the flat limit, and with `OSCAIRN_CGROUP` the
   limit is the worker's cgroup `memory.max`.
