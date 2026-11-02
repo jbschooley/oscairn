@@ -22,7 +22,8 @@ jobs:
       - name: Check out the base branch
         # Only build-index.py comes from here; the job itself runs from the pull request's own
         # checkout, so a pull request can still replace this job. The real guard is publish.yml,
-        # which re-checks published releases never changed, plus CODEOWNERS on .github/ and scripts/.
+        # which re-checks against the last published commit that no published release changed,
+        # plus CODEOWNERS (with Code Owners review required on main) on what runs and the keys.
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.base.sha }}

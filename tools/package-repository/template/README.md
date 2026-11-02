@@ -109,8 +109,10 @@ publisher of its other releases and that publisher IDs do not nest, and no publi
 publisher key changed. Each check RFC 0031 lists that is not built yet is its own step that says
 so with a warning. Changes outside `publishers/`, `packages/` and `revoked.json` need a
 maintainer's review: a pull request can change the workflows it runs under, so `CODEOWNERS`
-requires a maintainer for `.github/` and `scripts/`, and publish re-checks on `main` that no
-published release or publisher key changed, whatever the pull request's own check said.
+requires a maintainer for `.github/`, `scripts/`, `revoked.json` and `repository-config.json`,
+and publish re-checks that no published release or publisher key changed since the commit
+tagged `published`, whatever the pull request's own check said. `CODEOWNERS` holds only while
+`main`'s branch protection requires review from Code Owners.
 
 ### Keys
 
@@ -135,4 +137,5 @@ new `index.key`; add the old one to `revoked.json`'s `keys`.
 
 ### Setting up
 
-See RFC 0031, "Hosting and cost".
+See RFC 0031, "Hosting and cost". Protect `main`: pull requests only, with review from Code
+Owners required, the Check workflow required, and no force pushes.

@@ -682,8 +682,9 @@ serial than one it has seen ([freshness](#signatures-and-freshness)).
 ### What the project sets up
 
 1. **The repository:** create `oscairn/packages` in the GitHub organization and copy in the
-   template. Protect `main`: pull requests only, the Check workflow required, no force pushes
-   (the serial is the number of commits on `main`).
+   template. Protect `main`: pull requests only, with review from Code Owners required (without
+   it `CODEOWNERS` blocks nothing), the Check workflow required, no force pushes (the serial is
+   the number of commits on `main`).
 2. **The pinned tools:** set `OSCAIRN_REPOSITORY` and `OSCAIRN_COMMIT` in both workflows to the
    Oscairn repository and a commit of it that has `oscairn-sign file`.
 3. **The Pages site:** Settings, Pages, Source: GitHub Actions. A custom domain is optional.

@@ -12,7 +12,7 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: write # release assets
+  contents: write # release assets, and the published tag
   pages: write
   id-token: write
 
@@ -30,14 +30,26 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # the serial is the number of commits on main
+          fetch-depth: 0 # the serial is the number of commits on main; all tags, `published` included
 
-      - name: Check out the commit before this one
+      - name: Check out what was last published
         # Check's own job comes from the pull request's checkout, so a pull request could pass by
-        # changing it; here, on main, the published records are checked against main as it was.
+        # changing it; here the records are checked against the last commit that was published
+        # (the `published` tag, moved after each deploy), not HEAD~1: a merge whose publish failed
+        # or was cancelled as pending, or an earlier commit of a rebase merge, is still compared.
+        # Only "nothing published yet" passes with nothing to compare against.
+        shell: bash
         run: |
           mkdir .previous
-          git rev-parse --verify --quiet HEAD~1 > /dev/null && git archive HEAD~1 | tar --extract --directory .previous || true
+          if ! git rev-parse --verify --quiet 'refs/tags/published^{commit}' > /dev/null; then
+            echo "::warning::No published tag yet: this first publish has nothing to compare against."
+            exit 0
+          fi
+          if ! git merge-base --is-ancestor refs/tags/published HEAD; then
+            echo "::error::The published tag is not an ancestor of this commit: an older commit is not published over a newer one."
+            exit 1
+          fi
+          git archive refs/tags/published | tar --extract --directory .previous
 
       - id: tools
         uses: ./.github/actions/oscairn-sign
@@ -110,3 +122,10 @@ jobs:
 
       - id: deploy
         uses: actions/deploy-pages@v4
+
+      - name: Mark this commit as published
+        # The next publish compares against it. A push with the job's token starts no workflow.
+        shell: bash
+        run: |
+          git tag --force published "$GITHUB_SHA"
+          git push --force origin refs/tags/published
