@@ -324,6 +324,7 @@ namespace oscairn
                 noteInputs_ = r.u32(); noteOutputs_ = r.u32();
                 for(uint32_t i = 0; i < noteInputs_; ++i) clapNotes_.push_back(r.u8());
                 state_ = r.u8(); contexts_ = r.u32(); effects_ = r.u8();
+                window_ = r.u8();
                 description_ = r.data.substr(at, r.at - at);
 
                 // Shared block, sized for the ports and maximum block, handed over as a descriptor.
@@ -410,6 +411,17 @@ namespace oscairn
                 for(size_t i = 0; i < values_.size(); ++i)
                     if(!(parameters_[i].flags & CLAP_PARAM_IS_READONLY) && shared_->parameterValues[i].load() != values_[i])
                         process_->exchange(header(Op::SetParameter).u32(parameters_[i].id).f64(values_[i]).data);
+                // The plugin's window, as the engine last asked; one that will not open does not stop the restart.
+                // shortcut: a window the person closed in the old worker opens again; the worker does not report closing.
+                if(!windowTitle_.empty()) try { process_->exchange(header(Op::Window).u8(1).str(windowTitle_).data); } catch(const std::exception&) {}
+            }
+            bool hasWindow() const override { return window_; }
+            void showWindow(bool show, const std::string& title) override
+            {
+                std::lock_guard lock(controlFor());
+                windowTitle_.clear();
+                process_->exchange(header(Op::Window).u8(show).str(title).data);
+                if(show) windowTitle_ = title.empty() ? descriptor_.name : title;
             }
 
             void capture() { values_.resize(parameters_.size()); for(size_t i = 0; i < values_.size(); ++i) values_[i] = shared_->parameterValues[i].load(); }
@@ -828,7 +840,8 @@ namespace oscairn
             std::vector<kick::clap::Port> inputs_, outputs_;
             uint32_t noteInputs_ = 0, noteOutputs_ = 0, contexts_ = 0;
             std::vector<uint8_t> clapNotes_;
-            bool state_ = false, effects_ = false;
+            bool state_ = false, effects_ = false, window_ = false;
+            std::string windowTitle_; // the window the engine last opened, for a restarted worker; under control
             int shm_ = -1;
             Shared* shared_ = nullptr; size_t bytes_ = 0;
             uint32_t capacity_ = 0;

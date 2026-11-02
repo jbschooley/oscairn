@@ -216,6 +216,12 @@ public:
     bool setParameter(clap_id id,double value) noexcept override {return selectedCall([&](auto& h){return h.setParameter(id,value);});}
     bool parameterGesture(clap_id id,bool begin) noexcept override {return selectedCall([&](auto& h){return h.parameterGesture(id,begin);});}
     bool supportsState() const noexcept override {return selected().supportsState();}
+    bool hasWindow() const override {return selected().hasWindow();}
+    // shortcut: the window is the instance playing when it opened; a sound selected later shows in it only once opened again.
+    void showWindow(bool show,const std::string& title) override {
+        if(show){selected().showWindow(true,title);return;}
+        for(const auto& s:desired_.instances)if(s)s->host->showWindow(false,{});
+    }
     void saveState(const std::string& path) override {selected().saveState(path);}
     void loadState(const std::string& path) override {selectSound(prepareSound("Restored",{},path,{},{},{},{}),-1);}
     std::vector<PresetInfo> presets() override {return selected().presets();}

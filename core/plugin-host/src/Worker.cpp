@@ -164,6 +164,7 @@ namespace oscairn::worker
             w.u32(host.noteInputPorts()).u32(host.noteOutputPorts());
             for(uint32_t i = 0; i < host.noteInputPorts(); ++i) w.u8(host.usesClapNotes(i));
             w.u8(host.supportsState()).u32(host.soundContextCapacity()).u8(host.effectResources().has_value());
+            w.u8(host.hasWindow());
         }
 
         // A crashing worker may take longer to exit than the hang limit (sanitizers report first), so
@@ -298,10 +299,13 @@ namespace oscairn::worker
             reply(socket, Writer{});
         };
         auto stopAll = [&] { for(auto& n : nodes) if(n) n->stop(); nodes.clear(); };
+        bool windows = false; // a plugin window opened here: from then on the platform's window events run between requests
         for(;;)
         {
             pollfd p{socket, POLLIN, 0};
-            const int ready = poll(&p, 1, 10);
+            int ready = poll(&p, 1, windows ? 0 : 10);
+            if(ready == 0 && windows && kick::clap::runWindowEvents(socket, 10)) ready = poll(&p, 1, 0);
+            else if(ready == 0 && windows) ready = poll(&p, 1, 10); // a platform whose plugins run their windows themselves
             // The plugin is serviced only when the engine asks, as in the engine; values are refreshed meanwhile.
             if(ready == 0) { for(const auto& n : nodes) if(n) n->publish(); continue; }
             if(ready < 0) { if(errno == EINTR) continue; break; }
@@ -396,6 +400,7 @@ namespace oscairn::worker
                     break;
                 }
                 case Op::SetMemoryRoom: host.setMemoryRoom(r.u64()); break;
+                case Op::Window: { const bool show = r.u8(); host.showWindow(show, r.str()); windows = windows || show; break; }
                 default: throw std::runtime_error("Unknown worker request");
                 }
                 reply(socket, w);

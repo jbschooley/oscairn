@@ -58,6 +58,11 @@ namespace oscairn
         virtual bool selectSound(uint32_t,int16_t=-1) { throw std::invalid_argument("Plugin has no sound contexts"); }
         virtual bool discardSound(uint32_t,bool=false) { throw std::invalid_argument("Plugin has no sound contexts"); }
         virtual bool supportsState() const noexcept { return false; }
+        // The plugin's own window (CLAP gui, RFC 0019), shown by the process hosting the plugin.
+        // Control thread. showWindow opens it titled `title`, or titles and raises it; false closes
+        // it. Throws where it cannot open. It also closes when the host goes.
+        virtual bool hasWindow() const { return false; }
+        virtual void showWindow(bool show, const std::string& /*title*/ = {}) { if(show) throw std::runtime_error("Plugin has no window"); }
         // Main thread. Sound assets (RFC 0009): where the plugin resolves them, and which it uses.
         virtual void setAssets(kick::clap::AssetResolver*) noexcept {}
         virtual std::vector<kick::clap::AssetReference> assetDependencies() const { return {}; }

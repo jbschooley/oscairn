@@ -158,10 +158,29 @@ void rescan(const std::string& worker, const std::string& fixture)
           "the rescan in the worker hides the Toggle on the engine's side, with a new revision");
 }
 
+// The plugin's own window (RFC 0019), shown by the worker: the fixture's effect floats one, so
+// nothing is drawn; the synth has none. The worker keeps answering while it is open.
+void window(const std::string& worker, const std::string& fixture)
+{
+    auto effect = oscairn::loadPluginInWorker(worker, fixture, "org.kick.test.effect", 48000, 64);
+    auto synth = oscairn::loadPluginInWorker(worker, fixture, "org.kick.test.synth", 48000, 64);
+    check(effect->hasWindow() && !synth->hasWindow(), "the effect has a window, the synth none");
+    bool refused = false;
+    try { synth->showWindow(true, "Synth"); } catch(const std::exception&) { refused = true; }
+    check(refused, "a plugin without a window refuses to show one");
+    effect->showWindow(true, "KICK effect · Lead");
+    effect->service();
+    check(effect->setParameter(7, .25) && effect->parameterValue(7) == .25, "the worker answers with the window open");
+    effect->showWindow(true, "KICK effect · Bass");
+    effect->showWindow(false);
+    effect->showWindow(true, "KICK effect");
+    effect.reset(); // the node goes, and its window with it
+}
+
 int main(int argc, char** argv)
 {
     if(argc < 3) { std::fprintf(stderr, "usage: %s WORKER PLUGIN...\n", argv[0]); return 2; }
-    try { sleeping(argv[1], argv[2]); rescan(argv[1], argv[2]); for(int i = 2; i < argc; ++i) compare(argv[1], argv[i]); }
+    try { sleeping(argv[1], argv[2]); rescan(argv[1], argv[2]); window(argv[1], argv[2]); for(int i = 2; i < argc; ++i) compare(argv[1], argv[i]); }
     catch(const std::exception& e) { std::fprintf(stderr, "FAIL: %s\n", e.what()); return 1; }
     return failures ? 1 : 0;
 }

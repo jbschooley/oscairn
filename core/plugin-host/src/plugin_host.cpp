@@ -77,6 +77,8 @@ namespace oscairn
             bool selectSound(uint32_t id,int16_t channel) override {return host.selectSound(id,channel);}
             bool discardSound(uint32_t id,bool) override {return host.discardSound(id);}
             bool supportsState() const noexcept override {return host.supportsState();}
+            bool hasWindow() const override {return host.hasGui();}
+            void showWindow(bool show,const std::string& title) override {if(!show)host.closeGui();else if(!host.showGui(title))throw std::runtime_error(host.error());}
             std::vector<PresetInfo> presets() override {std::vector<PresetInfo> r;for(const auto& p:host.presets())r.push_back({presetUri(p),p.name});return r;}
             void loadPreset(const std::string& uri) override {if(!host.loadPreset(presetFrom(uri)))throw std::runtime_error(host.error());}
             void setAssets(kick::clap::AssetResolver* assets) noexcept override {host.setAssets(assets);}
