@@ -223,7 +223,9 @@ namespace oscairn
 
         /// Compiles the current nodes and connections and hands them to the audio thread.
         /// Throws std::runtime_error if the connections form a cycle (nothing changes then).
-        void commit();
+        /// rampGains: a route in both plans ramps to its new gain over 5 ms instead of stepping,
+        /// for changes that are played (a control swept) rather than edited.
+        void commit(bool rampGains = false);
 
         /// Frees plans the audio thread has finished with.
         void collect();

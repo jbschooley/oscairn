@@ -451,6 +451,7 @@ namespace oscairn
         std::vector<AssignmentOverride> assignments_; // physical controls' overrides (physical_controls.cpp)
         uint32_t nextMacro_ = 1;
         bool staged_ = false;
+        bool rampGains_ = false; // the next commit is played (a control moved): its gains ramp
         PerformanceInfo info_; // the open Performance's; its ID is made at its first save
         std::unique_ptr<Library> library_; // made at first use, so a session without the library never reads the user's folders
         Library& library() {if(!library_)library_=std::make_unique<Library>();return *library_;}

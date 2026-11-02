@@ -1084,7 +1084,7 @@ namespace oscairn
         driveMacro(id, value, faders);
         // shortcut: part faders recompile the graph plan on every move; fine at knob rates on the
         // desktop, make them direct gain updates before devices sweep them continuously.
-        if(faders) { editWires([&] { buildParts(); }); commit(); }
+        if(faders) { editWires([&] { buildParts(); }); rampGains_ = true; commit(); } // swept fast, a level ramps rather than steps
     }
 
     Scene& Session::findScene(uint32_t id)

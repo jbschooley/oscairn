@@ -302,7 +302,7 @@ namespace oscairn
 
     void Session::commit()
     {
-        graph_.commit();
+        graph_.commit(std::exchange(rampGains_, false));
         staged_ = false;
         ++revision_;
         publish(ChangeKind::Graph);

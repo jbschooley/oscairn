@@ -1643,12 +1643,16 @@ namespace
         MacroTarget child; child.kind = MacroTarget::Kind::Macro; child.macro = assign; child.curve = MacroTarget::Curve::Exponential;
         MacroTarget around; around.node = b; around.param = 7; around.relative = true; // base: b's gain now, .5
         s.setMacroTargets(super, {child, around});
-        auto render = [&] { s.note(true, 60, 1); x.run(s); return x.l[0]; };
+        // A control moving a part level ramps it over 5 ms (four 64-frame blocks): read past the ramp.
+        auto render = [&] { s.note(true, 60, 1); for(int i = 0; i < 5; ++i) x.run(s); return x.l[0]; };
         const double e = (std::exp(2.0) - 1) / (std::exp(4.0) - 1); // the exponential curve at .5
         s.setMacro(super, .5);
         double expected = (.2 + .6 * e) * 1 + .5 * (1 - e);
         check(near(render(), expected), "Super at .5: A's gain " + std::to_string(.2 + .6 * e) + ", B at its gain .5 and level " + std::to_string(1 - e) + ": " + std::to_string(x.l[0]));
-        s.setMacro(super, 1);
+        // Swept from .5 to 1, B's level ramps down rather than stepping to 0: the first sample after the
+        // move still has nearly all of B's .5 * (1 - e) (A's gain is a plugin parameter, so it steps).
+        s.setMacro(super, 1); x.run(s);
+        check(x.l[0] > .8 + .45 * (1 - e), "a control moving a part level ramps it, not steps: " + std::to_string(x.l[0]));
         check(near(render(), .8 + 1.0 * 0), "Super at 1: A's gain .8, B's level 0: " + std::to_string(x.l[0]));
         s.setMacro(super, 0);
         check(near(render(), .2 + 0.0 * 1), "Super at 0: A's gain .2, B's gain 0 around its base: " + std::to_string(x.l[0]));

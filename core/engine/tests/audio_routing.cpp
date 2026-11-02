@@ -3,6 +3,7 @@
 #include "oscairn/json_rpc.h"
 #include "AllocationGuard.h"
 #include <array>
+#include <cmath>
 #include <atomic>
 #include <iostream>
 #include <thread>
@@ -38,6 +39,17 @@ int main(int argc,char** argv){try{
     // Deliberate stereo-to-mono fold: each channel gets an explicit half-gain route.
     g.connectAudio({{graphInput,11,0},{graphOutput,200,0},1,.5});g.connectAudio({{graphInput,11,1},{graphOutput,200,0},1,.5});g.commit();
     check(a.run(g),"explicit downmix");a.expect({31,62,12,0,3});
+    // A changed gain ramps over 5 ms (240 samples here) rather than stepping: a fader swept fast
+    // follows without a click. The cue's 12 heads for 6, and is there after four 64-frame blocks.
+    {
+        auto gain=[&](float v){g.connectAudio({{graphInput,11,0},{graphOutput,200,0},1,v});g.connectAudio({{graphInput,11,1},{graphOutput,200,0},1,v});g.commit(true);};
+        gain(.25f);check(a.run(g),"ramp render");
+        check(a.output[2][0]<12.f && a.output[2][0]>11.9f && a.output[2][63]>10.f && a.output[2][63]<a.output[2][0],"a changed gain starts ramping, not stepping");
+        for(int i=0;i<3;++i)check(a.run(g),"ramp render");
+        check(std::abs(a.output[2][63]-6.f)<1e-4f,"and reaches its new gain within 5 ms");
+        check(a.run(g),"ramp render");a.expect({31,62,6,0,3});
+        gain(.5f);for(int i=0;i<5;++i)check(a.run(g),"ramp render");a.expect({31,62,12,0,3});
+    }
     check(!g.process(a.in.data(),5,a.out.data(),2,64,nullptr),"missing cue outputs fail rather than reroute to master");
     for(auto v:a.output[0])check(v==0,"failed output layout silences master");
     // Same buffers for capture and playback: input is preserved before clearing outputs.

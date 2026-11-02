@@ -23,13 +23,16 @@ namespace oscairn
     struct Graph::Plan
     {
         uint64_t replacementSerial=0;
+        bool rampGains=false; // see commit()
         struct Harmony // see setHarmonies; events: this block's, at their times
         {
             std::shared_ptr<Graph::HeldKeys> held; NoteZones zones; bool input=false; uint8_t root=0; uint16_t scale=1;
             std::array<kick::clap::Event,32> events; uint32_t count=0;
         };
         std::vector<Harmony> harmonies;
-        struct AudioRoute { int source; uint32_t from, to; float gain; bool first=false; }; // -1: external input
+        // -1: external input. now, delta and left (audio thread only) ramp a gain that changed with a
+        // new plan from the old one to the new one over a few milliseconds, so a moved fader does not step.
+        struct AudioRoute { int source; uint32_t from, to; float gain; bool first=false; mutable float now=0, delta=0; mutable uint32_t left=0; };
         std::vector<AudioRoute> outputRoutes;
         std::vector<float> externalInputs;
         std::vector<uint32_t> silentOutputs;
@@ -572,7 +575,7 @@ namespace oscairn
         }
         auto route=[&](NodeId from,uint32_t source,NodeId to,uint32_t dest,float gain)
         {
-            Plan::AudioRoute r{from==graphInput?-1:stepOf.at(from),source,dest,gain};
+            Plan::AudioRoute r{from==graphInput?-1:stepOf.at(from),source,dest,gain};r.now=gain;
             if(to==graphOutput)plan->outputRoutes.push_back(r);
             else plan->steps[stepOf.at(to)].audioSources.push_back(r);
         };
@@ -641,9 +644,10 @@ namespace oscairn
         return plan.release();
     }
 
-    void Graph::commit()
+    void Graph::commit(bool rampGains)
     {
         Plan* plan = compile(); // throws on a cycle, before anything changes
+        plan->rampGains = rampGains;
         collect();
         delete pending_.exchange( plan, std::memory_order_acq_rel ); // a plan the audio thread never took
     }
@@ -691,6 +695,23 @@ namespace oscairn
                             for(int p=0;p<16;++p)for(int c=0;c<16;++c)if(old.route->pedal[p][c]>=64)send(kick::clap::Event::midi(uint8_t(0xb0|c),64,0));
                             old.route->clear();
                         }
+                    // A played change (commit(true)): a route in both plans ramps from the gain it has now to its new one.
+                    const auto ramp=std::max<uint32_t>(1,uint32_t(sampleRate_*.005));
+                    auto carry=[&](const std::vector<Plan::AudioRoute>& was,const std::vector<Plan::AudioRoute>& next){
+                        auto host=[](const Plan& p,int i){return i<0?nullptr:p.steps[size_t(i)].host.get();};
+                        for(auto& r:next)for(const auto& o:was)
+                            if(o.from==r.from && o.to==r.to && host(*current_,o.source)==host(*plan,r.source) && (o.source<0)==(r.source<0))
+                            {
+                                r.now=o.left?o.now:o.gain;
+                                if(r.now!=r.gain){r.left=ramp;r.delta=(r.gain-r.now)/float(ramp);}
+                                break;
+                            }
+                    };
+                    if(plan->rampGains)
+                    {
+                        carry(current_->outputRoutes,plan->outputRoutes);
+                        for(auto& next:plan->steps)for(const auto& old:current_->steps)if(old.host==next.host){carry(old.audioSources,next.audioSources);break;}
+                    }
                     retired_.push( current_ );
                 }
                 current_ = plan;
@@ -737,6 +758,15 @@ namespace oscairn
         auto mix=[&](const Plan::AudioRoute& r,float* dest)
         {
             const float* from=r.source<0?plan->externalInputs.data()+size_t(r.from)*maxFrames_:plan->steps[r.source].out[r.from];
+            if(r.left)
+            {
+                for(uint32_t i=0;i<frames;++i)
+                {
+                    if(r.left){r.now+=r.delta;if(--r.left==0)r.now=r.gain;}
+                    dest[i]=r.first?from[i]*r.now:dest[i]+from[i]*r.now;
+                }
+                return;
+            }
             if(r.first)
             {
                 if(r.gain==1.f)std::copy_n(from,frames,dest);
