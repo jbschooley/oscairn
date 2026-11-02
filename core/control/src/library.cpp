@@ -6,6 +6,7 @@
 #include "oscairn/package.h"
 #include <algorithm>
 #include <cctype>
+#include <cerrno>
 #include <cstdlib>
 #include <fstream>
 #include <map>
@@ -13,6 +14,8 @@
 #include <sstream>
 #include <stdexcept>
 #include <tuple>
+#include <fcntl.h>
+#include <unistd.h>
 
 namespace oscairn
 {
@@ -65,8 +68,23 @@ namespace oscairn
         namespace fs = std::filesystem;
         fs::create_directories(file.parent_path());
         const auto temporary = file.parent_path() / ("." + file.filename().string() + ".tmp");
-        { std::ofstream out(temporary, std::ios::binary | std::ios::trunc); out << text; if(!out) throw std::runtime_error("cannot write " + file.string()); }
-        fs::rename(temporary, file);
+        // On disk before the move, so a crash after it leaves the new file, not an empty one.
+        bool ok = false;
+        if(const int fd = ::open(temporary.c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0644); fd >= 0)
+        {
+            ok = true;
+            for(size_t at = 0; ok && at < text.size();)
+            {
+                const auto n = ::write(fd, text.data() + at, text.size() - at);
+                if(n > 0) at += size_t(n);
+                else ok = n < 0 && errno == EINTR;
+            }
+            ok = ok && ::fsync(fd) == 0;
+            ok = ::close(fd) == 0 && ok;
+        }
+        std::error_code error;
+        if(ok) fs::rename(temporary, file, error);
+        if(!ok || error) { std::error_code ignored; fs::remove(temporary, ignored); throw std::runtime_error("cannot write " + file.string()); }
     }
 
     fs::path dataHome()
@@ -334,7 +352,8 @@ namespace oscairn
         const auto& root = sound ? sounds_ : performances_;
         const std::string extension = sound ? ".osound" : ".oscairn";
         auto folder = root / (safe + extension);
-        for(int n = 2; fs::exists(folder); ++n) folder = root / (safe + " " + std::to_string(n) + extension);
+        // A dangling link counts as taken: an install's cleanup would remove it.
+        for(int n = 2; fs::exists(fs::symlink_status(folder)); ++n) folder = root / (safe + " " + std::to_string(n) + extension);
         return folder;
     }
 

@@ -472,8 +472,8 @@ int main(int argc, char** argv)
             check(l.libraries().empty() && !fs::exists(temp.path / "l" / "Libraries" / "com.example.pack"), "and it is uninstalled");
         }
         // An install cut short by a failed copy leaves nothing half behind: the item folders this
-        // call made come back out, as the unpacked folder does. The failing copy is deterministic:
-        // the second item's destination is a dangling symlink, so its folder cannot be created.
+        // call made come back out, as the unpacked folder does, and a library whose install never
+        // finished is not listed. What was there before stays, a link included.
         {
             device(temp.path / "m");
             const auto root = temp.path / "m-root";
@@ -491,27 +491,52 @@ int main(int argc, char** argv)
             const auto cut = temp.path / "Cut.olib";
             writePackage(cut, p, root);
             Session m(48000, 64);
-            fs::create_directories(temp.path / "m" / "Performances");
-            fs::create_symlink(temp.path / "nowhere", temp.path / "m" / "Performances" / "Two.oscairn");
-            bool threw = false;
-            try { m.installArchive(cut.string(), false); } catch(const std::exception&) { threw = true; }
-            check(threw && items(m, "sound").empty() && items(m, "performance").empty(),
-                  "an own-storage install cut short leaves no half-installed item behind");
-            std::error_code ignored; fs::remove(temp.path / "m" / "Performances" / "Two.oscairn", ignored);
-            // The same, as a library: the items copied before the failure do not stay with a
-            // library whose install never finished.
-            fs::create_directories(temp.path / "m" / "Libraries" / "m.cut" / "Performances");
-            fs::create_symlink(temp.path / "nowhere", temp.path / "m" / "Libraries" / "m.cut" / "Performances" / "two");
-            threw = false;
-            try { m.installArchive(cut.string(), true); } catch(const std::exception&) { threw = true; }
-            Control::LibraryQuery cutSource; cutSource.source = "m.cut";
-            check(threw && !fs::exists(temp.path / "m" / "Libraries" / "m.cut" / "Sounds" / "one" / "sound.json") &&
-                      m.libraryQuery(cutSource).total == 0,
-                  "a library install cut short rolls back the items it copied");
-            std::error_code cleared; fs::remove(temp.path / "m" / "Libraries" / "m.cut" / "Performances" / "two", cleared);
+            const auto home = temp.path / "m";
+            const auto library = home / "Libraries" / "m.cut";
+            // A copy that fails partway, as a full disk makes it: the item's folder is made, then
+            // nothing can be added to it (an inherited macOS ACL; root is not held by it).
+#ifdef __APPLE__
+            if(::geteuid() != 0)
+            {
+                auto failCopiesInto = [&](const fs::path& folder) { fs::create_directories(folder); return run("chmod +a 'everyone deny add_file,add_subdirectory,file_inherit,directory_inherit,only_inherit' " + shell(folder)).first == 0; };
+                auto clear = [&](const fs::path& folder) { run("chmod -N " + shell(folder)); };
+                check(failCopiesInto(home / "Sounds"), "an ACL makes copies into the user's Sounds fail");
+                bool threw = false;
+                try { m.installArchive(cut.string(), false); } catch(const std::exception&) { threw = true; }
+                check(threw && !fs::exists(home / "Sounds" / "One.osound") && items(m, "sound").empty() && items(m, "performance").empty(),
+                      "an own-storage install whose copy fails partway leaves no half-copied item behind");
+                clear(home / "Sounds");
+                // Into a library folder that is there already, so it is not removed whole.
+                check(failCopiesInto(library / "Sounds"), "an ACL makes copies into the library's Sounds fail");
+                threw = false;
+                try { m.installArchive(cut.string(), true); } catch(const std::exception&) { threw = true; }
+                check(threw && fs::is_directory(library) && !fs::exists(library / "Sounds" / "one") && !fs::exists(library / "library.json") && m.libraries().empty(),
+                      "a library install whose copy fails partway leaves no half-copied item and no listed library");
+                clear(library / "Sounds");
+            }
+            else std::puts("skipped: a copy that fails partway (an ACL does not hold root)");
+#else
+            std::puts("skipped: a copy that fails partway (made with a macOS ACL)");
+#endif
+            // A link where a new item would go is not overwritten, followed or removed.
+            fs::create_directories(home / "Performances");
+            fs::create_symlink(temp.path / "nowhere", home / "Performances" / "Two.oscairn");
+            check(m.installArchive(cut.string(), false).added == 2 && fs::is_symlink(home / "Performances" / "Two.oscairn") && items(m, "performance").size() == 1,
+                  "an own-storage install goes beside a dangling link, keeping it");
+            fs::create_directories(library / "Performances");
+            fs::create_symlink(temp.path / "nowhere", library / "Performances" / "two");
+            const auto linked = m.installArchive(cut.string(), true);
+            check(linked.added == 1 && linked.skipped == 1 && fs::is_symlink(library / "Performances" / "two") && m.libraries().size() == 1,
+                  "a library install keeps a link where an item goes, as what is there");
+            fs::remove(library / "Performances" / "two");
             const auto rest = m.installArchive(cut.string(), true); // once the way is clear, it installs whole
-            check(m.libraries().size() == 1 && m.libraries()[0].items == 2 && rest.added == 2,
-                  "and the same archive finishes once the way is clear");
+            check(m.libraries().size() == 1 && m.libraries()[0].items == 2 && rest.added == 1,
+                  "and the missing item comes back once the way is clear");
+            // A manifest whose move in fails leaves no temporary file behind.
+            fs::create_directories(home / "blocked" / "f.json" / "inside");
+            bool threw = false;
+            try { writeAtomically(home / "blocked" / "f.json", "{}"); } catch(const std::exception&) { threw = true; }
+            check(threw && !fs::exists(home / "blocked" / ".f.json.tmp"), "a failed atomic write removes its temporary file");
         }
         // A skipped Sound whose copy's ID is the archive's own (a copy edited by hand, or synced):
         // the part-pointer rewrite replaces a needle with itself and must still end.

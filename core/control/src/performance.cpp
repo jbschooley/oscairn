@@ -1531,12 +1531,14 @@ Control::Installed Session::installArchive(const std::string& file,bool asLibrar
             const auto root=l.libraries()/p.id; // readPackage: the ID is a plain name
             freshRoot=!fs::exists(root);
             fs::create_directories(root);
-            writeAtomically(root/"library.json",manifestJson(p));
             for(const auto& i:items){
                 const auto to=root/i.path;
-                if(fs::exists(to)){++out.skipped;continue;}
-                fs::create_directories(to.parent_path());fs::copy(into/i.path,to,fs::copy_options::recursive);created.push_back(to);++out.added;
+                if(fs::exists(fs::symlink_status(to))){++out.skipped;continue;} // a link there too: never followed or removed
+                // Recorded before the copy, so one that fails partway comes back out.
+                fs::create_directories(to.parent_path());created.push_back(to);fs::copy(into/i.path,to,fs::copy_options::recursive);++out.added;
             }
+            // Listed only once its items are all there.
+            writeAtomically(root/"library.json",manifestJson(p));
         }else{
             // The user's own, under new IDs: Sounds first, so the Performances that came with them point at their copies.
             std::map<std::string,std::string> ids; // the archive's item ID -> the copy's
@@ -1546,7 +1548,7 @@ Control::Installed Session::installArchive(const std::string& file,bool asLibrar
                 const auto copy=std::find_if(l.items().begin(),l.items().end(),[&](const LibraryItem& x){return x.library.empty() && x.origin.library==p.id && x.origin.item==i.id;});
                 if(copy!=l.items().end() && copy->hash==copy->origin.hash){ids[i.id]=copy->id;++out.skipped;continue;} // still as imported
                 const auto to=l.newFolder(i.name,i.kind);
-                fs::create_directories(to.parent_path());fs::copy(into/i.path,to,fs::copy_options::recursive);created.push_back(to);
+                fs::create_directories(to.parent_path());created.push_back(to);fs::copy(into/i.path,to,fs::copy_options::recursive);
                 const auto doc=to/(i.kind=="sound"?"sound.json":"performance.json");
                 if(i.kind=="performance"){
                     // Parts point at the Sounds' copies. The span comes from the needle itself: an
