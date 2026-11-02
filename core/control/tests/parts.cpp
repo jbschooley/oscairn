@@ -818,6 +818,15 @@ namespace
         for(const auto& p : s.parts()) if(p.id == keys) for(const auto& sd : p.sends) if(sd.bus == hall) sendLevel = sd.level;
         for(const auto& w : s.wires()) if(w.part == keys && w.send == hall) sendWire = w.level;
         check(near(sendLevel, .8) && near(sendWire, .4) && near(x.l[0], .225), "the send wire shows the asked .4 past the bus's half: send " + std::to_string(sendLevel) + " wire " + std::to_string(sendWire) + " l " + std::to_string(x.l[0]));
+        // Sound passing through an empty bus meters on the bus.
+        s.setSend(keys, hall, {}); s.setPartLevel(keys, 1, false); s.setPartLevel(room, 1, false); s.setPartLevel(hall, 1, false); s.commit();
+        auto meter = [&](uint32_t part) { for(const auto& m : s.partMeters()) if(m.part == part) return m.peak; return -1.0; };
+        for(int i = 0; i < 3; ++i) x.run(s);
+        check(std::abs(meter(keys) - .25) < 1e-6 && std::abs(meter(room) - .25) < 1e-6,
+              "the bus meters what plays through it: keys " + std::to_string(meter(keys)) + " room " + std::to_string(meter(room)));
+        s.setPartLevel(room, 1, true); s.commit();
+        for(int i = 0; i < 800; ++i) x.run(s);
+        check(meter(room) < 1e-3, "a muted empty bus meters nothing: " + std::to_string(meter(room)));
     }
 
     // Zones on a wire inside a part's chain (note limits after a note plugin) survive a rebuild

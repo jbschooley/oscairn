@@ -681,10 +681,30 @@ namespace oscairn
                 if(const auto compiled = pairs(graph_, layout, w, w.level))
                     for(const auto& p : *compiled)
                         if(p.from < bars.size() && offset + p.from < Graph::meterChannels) bars[p.from] = std::max(bars[p.from], double(peaks[w.from][offset + p.from]) * p.gain);
-            if(!w.fader || w.owner != WireOwner::Part) continue;
-            auto& part = parts[w.part];
-            part.resize(std::max(part.size(), bars.size()));
-            for(size_t c = 0; c < bars.size(); ++c) part[c] = std::max(part[c], bars[c]);
+            if(w.fader && w.owner == WireOwner::Part)
+            {
+                auto& part = parts[w.part];
+                part.resize(std::max(part.size(), bars.size()));
+                for(size_t c = 0; c < bars.size(); ++c) part[c] = std::max(part[c], bars[c]);
+            }
+            // Sound through an empty bus rides another part's wire, which already carries the
+            // bus's level, pan and mute: meter it on that bus, and on the empty buses beyond
+            // it, as busEntries routed the wire through.
+            if(w.owner == WireOwner::Part)
+                if(const uint32_t entered = w.send ? w.send : (w.fader ? findPart(w.part).bus : 0))
+                {
+                    std::function<void(uint32_t)> credit = [&](uint32_t id)
+                    {
+                        const auto& q = findPart(id);
+                        if(!q.chain.empty()) return; // a bus with a chain meters its own wires
+                        auto& via = parts[id];
+                        via.resize(std::max(via.size(), bars.size()));
+                        for(size_t c = 0; c < bars.size(); ++c) via[c] = std::max(via[c], bars[c]);
+                        if(q.bus) credit(q.bus);
+                        for(const auto& s : q.sends) credit(s.bus);
+                    };
+                    credit(entered);
+                }
         }
         auto hold = [](std::map<uint32_t, std::vector<double>>& held, std::map<uint32_t, std::vector<double>>& now) {
             for(auto& [id, bars] : now)
