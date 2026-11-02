@@ -245,10 +245,12 @@ namespace oscairn
                 for(auto w:array(field(s,"wires")))scene.wires.push_back({ref(w),number(field(w,"level")),number(field(w,"pan")),boolean(field(w,"mute")),boolean(field(w,"solo"))});
                 for(auto v:array(field(s,"values")))scene.values.push_back({{static_cast<NodeId>(integer(field(v,"node"))),static_cast<uint32_t>(integer(field(v,"param")))},number(field(v,"value"))});
                 for(auto m:array(field(s,"controls")))scene.macros.push_back({static_cast<uint32_t>(integer(field(m,"control"))),number(field(m,"value"))});
+                scene.masterLevel=number(field(field(s,"master"),"level"));scene.masterPan=number(field(field(s,"master"),"pan"));
                 next.scenes.push_back(std::move(scene));
             }
             for(auto at:array(field(root,"sceneUntouched")))next.untouched.push_back({static_cast<NodeId>(integer(field(at,"node"))),static_cast<uint32_t>(integer(field(at,"param")))});
             next.scene=static_cast<uint32_t>(integer(field(root,"scene")));
+            next.masterLevel=number(field(field(root,"master"),"level"));next.masterPan=number(field(field(root,"master"),"pan"));
             for(auto m:array(field(root,"controls")))
             {
                 Macro macro;macro.id=static_cast<uint32_t>(integer(field(m,"id")));macro.part=static_cast<uint32_t>(integer(field(m,"part")));macro.name=string(field(m,"name"));macro.value=number(field(m,"value"));
@@ -792,6 +794,7 @@ namespace oscairn
     }
     bool RemoteControl::undo(){const bool any=!history().undo.empty();impl_->call("edit.undo");impl_->refresh();return any;}
     bool RemoteControl::redo(){const bool any=!history().redo.empty();impl_->call("edit.redo");impl_->refresh();return any;}
+    void RemoteControl::setMaster(double level,double pan){impl_->call("master.set","{\"level\":"+encode(level)+",\"pan\":"+encode(pan)+'}');impl_->refresh();}
     void RemoteControl::setPartPan(uint32_t part,double pan){impl_->call("parts.pan","{\"part\":"+std::to_string(part)+",\"pan\":"+encode(pan)+'}');impl_->refresh();}
     void RemoteControl::setPartSolo(uint32_t part,bool solo){impl_->call("parts.solo","{\"part\":"+std::to_string(part)+",\"solo\":"+(solo?"true":"false")+'}');impl_->refresh();}
     std::vector<PartMeter> RemoteControl::partMeters() const

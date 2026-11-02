@@ -105,6 +105,7 @@ namespace oscairn
             std::vector<Macro> macros;
             std::set<NodeId> disabled; // plugins switched off (setNodeEnabled)
             std::set<NodeId> ringing;  // those of them still sounding out: notes held, a tail
+            double masterLevel = 1, masterPan = 0; // the Performance's main output (setMaster)
         };
         enum class ChangeKind { Value, GestureBegin, GestureEnd, Graph, Resync };
         struct Change
@@ -378,6 +379,9 @@ namespace oscairn
         virtual void setPartName( uint32_t part, const std::string& name ) = 0;
         virtual void setPartSolo( uint32_t part, bool solo ) = 0;
         virtual void setPartPan( uint32_t part, double pan ) = 0; // -1 left .. 1 right
+        // The Performance's level (0..2, a gain) and pan (-1 left .. 1 right, a balance) on its main
+        // output, the first audio output port: after every part, bus and user wire that plays there.
+        virtual void setMaster( double level, double pan ) = 0;
         // Undo (RFC 0011): edits to parts, wires, splits, Mix settings, scenes, controls and pads,
         // nodes added, removed or replaced, parameter mappings, and parameter values set through
         // this interface. Playing, switching scenes, moving controls and choosing sounds are not

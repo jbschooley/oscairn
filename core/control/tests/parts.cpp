@@ -1539,6 +1539,50 @@ namespace
         check(s.graphState().macros[0].targets[0].base == s.graphState().macros[1].targets[0].base, "one base per destination");
     }
 
+    // The Performance's level and pan on its main output: after every part, stored by scenes,
+    // undone, saved and loaded.
+    void master(const char* fixture, const fs::path& root)
+    {
+        Session s(48000, frames);
+        const auto a = s.add("a", fixture, "org.kick.test.synth");
+        s.setParameter(a, 7, .5);
+        const auto pa = s.addPart("A");
+        s.insertIntoPart(pa, 0, a); s.commit();
+        Audio x; x.run(s);
+        auto render = [&] { s.note(true, 60, 1); x.run(s); x.run(s); const std::pair<double, double> out{x.l[0], x.r[0]}; s.note(false, 60, 0); x.run(s); return out; };
+        const auto full = render();
+        check(near(full.first, .5) && near(full.second, .5), "at the master's defaults: " + std::to_string(full.first));
+        s.setMaster(.5, 0); s.commit();
+        auto out = render();
+        check(near(out.first, .25) && near(out.second, .25), "the master at half halves both sides: " + std::to_string(out.first));
+        s.setMaster(1, .5); s.commit();
+        out = render();
+        check(near(out.first, .25) && near(out.second, .5), "panned right: the left at half: " + std::to_string(out.first) + " " + std::to_string(out.second));
+        check(s.graphState().masterLevel == 1 && s.graphState().masterPan == .5, "the graph state shows it");
+        bool refused = false; try { s.setMaster(3, 0); } catch(const std::invalid_argument&) { refused = true; }
+        check(refused, "a level beyond 2 is refused");
+        // Scenes store it with the mix.
+        const auto loud = s.addScene("Loud");
+        s.setMaster(.25, 0); s.commit();
+        const auto quiet = s.addScene("Quiet");
+        s.selectScene(loud);
+        check(s.graphState().masterLevel == 1 && s.graphState().masterPan == .5, "a scene restores the master");
+        s.setSceneScope(quiet, Scene::Mutes);
+        s.selectScene(quiet);
+        check(s.graphState().masterLevel == 1, "a scene without the mix in its scope leaves it");
+        s.setMaster(.75, 0); s.commit();
+        check(s.history().undo == "Master" && s.undo() && s.graphState().masterLevel == 1, "an edit, undone: " + s.history().undo);
+        s.redo();
+        s.savePerformance((root / "master").string());
+        Session t(48000, frames);
+        t.loadPerformance((root / "master").string());
+        const auto g = t.graphState();
+        check(g.masterLevel == .75 && g.masterPan == 0 && g.scenes.size() == 2 && g.scenes[0].masterLevel == 1 && g.scenes[0].masterPan == .5 && g.scenes[1].masterLevel == .25,
+              "the master and the scenes' round-trip");
+        t.note(true, 60, 1); Audio y; y.run(t); y.run(t);
+        check(near(y.l[0], .5 * .75), "and the loaded master plays: " + std::to_string(y.l[0]));
+    }
+
     // Level curves: a part's fader in dB, and a power law; their numbers checked; saved and loaded.
     void levelCurves(const char* fixture, const fs::path& root)
     {
@@ -1695,6 +1739,7 @@ int main(int argc, char** argv)
         memoryClasses(argv[1], temp.path);
         controls(argv[1], temp.path);
         summing(argv[1]);
+        master(argv[1], temp.path);
         levelCurves(argv[1], temp.path);
         persistence(argv[1], argv[2], argv[3], temp.path);
     }

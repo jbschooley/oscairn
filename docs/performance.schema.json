@@ -222,6 +222,9 @@
     "key": {
       "$ref": "#/$defs/Key"
     },
+    "master": {
+      "$ref": "#/$defs/Master"
+    },
     "scenes": {
       "type": "array",
       "maxItems": 256,
@@ -391,6 +394,7 @@
     "mappings",
     "pads",
     "key",
+    "master",
     "scenes",
     "sceneUntouched",
     "scene",
@@ -1398,6 +1402,10 @@
             "bar"
           ],
           "description": "When selecting it takes effect while the transport plays"
+        },
+        "master": {
+          "$ref": "#/$defs/Master",
+          "description": "Mix: the Performance's level and pan"
         }
       },
       "required": [
@@ -1412,7 +1420,8 @@
         "controls",
         "glide",
         "curve",
-        "launch"
+        "launch",
+        "master"
       ],
       "additionalProperties": false
     },
@@ -1840,6 +1849,27 @@
         "split",
         "lane",
         "fader"
+      ],
+      "additionalProperties": false
+    },
+    "Master": {
+      "type": "object",
+      "description": "The Performance's level (a gain) and pan (a balance) on its main output, the first audio output port, after everything that plays there",
+      "properties": {
+        "level": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 2
+        },
+        "pan": {
+          "type": "number",
+          "minimum": -1,
+          "maximum": 1
+        }
+      },
+      "required": [
+        "level",
+        "pan"
       ],
       "additionalProperties": false
     }

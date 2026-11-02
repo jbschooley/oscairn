@@ -119,8 +119,20 @@ namespace oscairn::standalone
                 const auto id = part_; const double v = fader_.getValue(); const bool m = mute_.getToggleState(); view_.engine_.edit([id, v, m](Control& c) { c.setPartLevel(id, v, m); c.commit(); }); };
             solo_.onClick = [this] { const auto id = part_; const bool s = solo_.getToggleState(); view_.engine_.edit([id, s](Control& c) { c.setPartSolo(id, s); c.commit(); }); };
             for(auto* c : std::initializer_list<juce::Component*>{&fader_, &mute_, &solo_}) addAndMakeVisible(c);
+            if(part_) return;
+            // Part 0: the master, the Performance's level on its main output.
+            fader_.setRange(0, 2); fader_.setSkewFactorFromMidPoint(.5);
+            fader_.setTooltip("The Performance's level on its main output, after every part and bus");
+            fader_.onValueChange = [this] { const double v = fader_.getValue(), pan = pan_; view_.engine_.edit([v, pan](Control& c) { c.setMaster(v, pan); c.commit(); }); };
+            mute_.setVisible(false); solo_.setVisible(false);
+            name_ = "Master"; detail_ = "Performance";
         }
         uint32_t part() const { return part_; }
+        void setMaster(const Control::GraphState& g)
+        {
+            pan_ = g.masterPan;
+            if(!fader_.isMouseButtonDown()) fader_.setValue(g.masterLevel, juce::dontSendNotification);
+        }
         void set(const PartRow& p)
         {
             name_ = text(p.name);
@@ -142,6 +154,7 @@ namespace oscairn::standalone
             if(selected) drawEdge(g, getLocalBounds().toFloat().reduced(1), themeData().radius + 2, true);
             g.setColour(ink(Ink::Text).withAlpha(alpha_)); drawInked(g, name_, nameArea(), juce::Font(juce::FontOptions(textSize(TextRole::Body, m), juce::Font::bold)));
             g.setColour(ink(Ink::Muted).withAlpha(alpha_)); drawInked(g, detail_, detailArea(), juce::Font(juce::FontOptions(textSize(TextRole::Small, m))));
+            if(!part_) return; // the master has no meter of its own yet
             // A bar per channel of its sound, beside the fader.
             const auto it = view_.meters_.find(part_);
             const auto channels = it == view_.meters_.end() || it->second.empty() ? std::vector<double>{0.0} : it->second;
@@ -165,7 +178,7 @@ namespace oscairn::standalone
         }
         void mouseUp(const juce::MouseEvent& e) override
         {
-            if(e.mouseWasDraggedSinceMouseDown() || e.y >= detailArea().getBottom() + 4) return;
+            if(!part_ || e.mouseWasDraggedSinceMouseDown() || e.y >= detailArea().getBottom() + 4) return;
             if(view_.learning_ && view_.learnFrom_.isNotEmpty()) { Assignment t; t.kind = Assignment::Kind::PartLevel; t.id = part_; view_.learnTarget(t); return; }
             view_.select(view_.selected_ == part_ ? 0 : part_);
         }
@@ -177,6 +190,7 @@ namespace oscairn::standalone
         uint32_t part_;
         juce::String name_, detail_;
         float alpha_ = 1;
+        double pan_ = 0; // the master's, kept as its fader moves
         juce::Slider fader_;
         MarkButton mute_{"M", Ink::Danger, "Mute"}, solo_{"S", Ink::Accent, "Solo"};
         juce::Rectangle<int> meter_;
@@ -309,6 +323,7 @@ namespace oscairn::standalone
         for(const auto* list : {&state_.parts, &state_.buses}) for(const auto& p : *list) shape += "," + std::to_string(p.id);
         if(shape != shape_) { shape_ = shape; rebuild(); }
         for(auto& s : strips_) for(const auto* list : {&state_.parts, &state_.buses}) for(const auto& p : *list) if(p.id == s->part()) s->set(p);
+        for(auto& s : strips_) if(!s->part()) s->setMaster(graph_);
         for(size_t i = 0; i < knobs_.size() && i < knobSlots_.size(); ++i) knobs_[i]->set(knobSlots_[i]);
         const bool setlist = inSetlist && inSetlist();
         if(setlist != previous_.isVisible()) { previous_.setVisible(setlist); next_.setVisible(setlist); resized(); }
@@ -434,6 +449,7 @@ namespace oscairn::standalone
         strips_.clear();
         for(const auto* list : {&state_.parts, &state_.buses})
             for(const auto& p : *list) { strips_.push_back(std::make_unique<Strip>(*this, p.id)); stripRow_.addAndMakeVisible(*strips_.back()); }
+        if(!strips_.empty()) { strips_.push_back(std::make_unique<Strip>(*this, 0)); stripRow_.addAndMakeVisible(*strips_.back()); } // the master, after the parts and buses
         resized();
     }
 

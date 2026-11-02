@@ -30,6 +30,27 @@
     }
   ],
   "$defs": {
+    "Master": {
+      "type": "object",
+      "description": "The Performance's level (a gain) and pan (a balance) on its main output, the first audio output port, after everything that plays there",
+      "properties": {
+        "level": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 2
+        },
+        "pan": {
+          "type": "number",
+          "minimum": -1,
+          "maximum": 1
+        }
+      },
+      "required": [
+        "level",
+        "pan"
+      ],
+      "additionalProperties": false
+    },
     "Id": {
       "type": [
         "string",
@@ -5200,6 +5221,29 @@
               "$ref": "#/$defs/Id"
             },
             "method": {
+              "const": "master.set"
+            },
+            "params": {
+              "$ref": "#/$defs/Master"
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "params"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
               "const": "parts.pan"
             },
             "params": {
@@ -6453,6 +6497,9 @@
           "items": {
             "$ref": "#/$defs/ControlReply"
           }
+        },
+        "master": {
+          "$ref": "#/$defs/Master"
         }
       },
       "required": [
@@ -6470,7 +6517,8 @@
         "scenes",
         "sceneUntouched",
         "scene",
-        "controls"
+        "controls",
+        "master"
       ],
       "additionalProperties": false
     },
@@ -8292,6 +8340,9 @@
             "bar"
           ],
           "description": "When selecting it takes effect while the transport plays"
+        },
+        "master": {
+          "$ref": "#/$defs/Master"
         }
       },
       "required": [
@@ -8306,7 +8357,8 @@
         "controls",
         "glide",
         "curve",
-        "launch"
+        "launch",
+        "master"
       ],
       "additionalProperties": false
     },

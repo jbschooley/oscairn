@@ -166,9 +166,15 @@ namespace oscairn
     // wire connected or not. Off wires and wires into an off plugin carry no new notes (their
     // connection drains when no other wire on it is on) and no sound; sound from an off plugin goes
     // on until it has rung out, and its notes out drain too.
-    void Session::compileWires(Graph& g, std::vector<Wire>& wires, const std::set<NodeId>& off, const std::set<NodeId>& rungOut, const std::set<NodeId>& leaving)
+    void Session::compileWires(Graph& g, std::vector<Wire>& wires, const std::set<NodeId>& off, const std::set<NodeId>& rungOut, const std::set<NodeId>& leaving, double masterLevel, double masterPan)
     {
         const auto layout = g.describe().audioLayout;
+        // The Performance's level and pan, on whatever plays into its main output.
+        const auto master = [&](const Wire& w, const Pair& p) {
+            if(w.to != graphOutput || layout.outputs.empty() || w.toPort != layout.outputs.front().id) return p.gain;
+            const double balance = layout.outputs.front().channels == 2 ? (p.to ? std::min(1.0, 1 + masterPan) : std::min(1.0, 1 - masterPan)) : 1;
+            return p.gain * masterLevel * balance;
+        };
         using Key = std::tuple<NodeId, uint32_t, uint32_t, NodeId, uint32_t, uint32_t>;
         std::map<Key, double> audio;
         // Note connections and their zones: none when any wire on the connection passes every note.
@@ -194,7 +200,7 @@ namespace oscairn
             const auto compiled = pairs(g, layout, w, silent ? 0 : w.level);
             w.connected = compiled.has_value();
             if(!compiled || silent) continue;
-            for(const auto& p : *compiled) audio[{w.from, w.fromPort, p.from, w.to, w.toPort, p.to}] += p.gain;
+            for(const auto& p : *compiled) audio[{w.from, w.fromPort, p.from, w.to, w.toPort, p.to}] += master(w, p);
         }
         const auto present = g.describe();
         std::map<Key, double> existing;
@@ -217,7 +223,7 @@ namespace oscairn
         }
     }
 
-    void Session::syncWires() { compileWires(graph_, wires_, disabled_, rungOut_, leaving_); graph_.setMidiTaps(midiTaps(graph_, parts_, wires_)); graph_.setHarmonies(harmonies(parts_, key_)); staged_ = true; }
+    void Session::syncWires() { compileWires(graph_, wires_, disabled_, rungOut_, leaving_, masterLevel_, masterPan_); graph_.setMidiTaps(midiTaps(graph_, parts_, wires_)); graph_.setHarmonies(harmonies(parts_, key_)); staged_ = true; }
 
     // Each part's harmony (RFC 0033): its key or the Performance's, for every plugin in its chain
     // and lanes, with the chord held at its note input, through its zones.
@@ -319,7 +325,7 @@ namespace oscairn
             if(graph_.idle(*it, quiet, limit)) { graph_.remove(*it); it = leaving_.erase(it); done = true; }
             else ++it;
         if(!done) return;
-        compileWires(graph_, wires_, disabled_, rungOut_, leaving_);
+        compileWires(graph_, wires_, disabled_, rungOut_, leaving_, masterLevel_, masterPan_);
         graph_.commit();
         ++revision_; publish(ChangeKind::Graph);
     }
@@ -611,6 +617,12 @@ namespace oscairn
         findPart(id);
         if(!std::isfinite(pan) || pan < -1 || pan > 1) throw std::invalid_argument("pan is -1..1");
         editWires([&] { findPart(id).pan = pan; buildParts(); });
+    }
+
+    void Session::setMaster(double level, double pan)
+    {
+        if(!std::isfinite(level) || level < 0 || level > 2 || !std::isfinite(pan) || pan < -1 || pan > 1) throw std::invalid_argument("the master level is 0..2 and its pan -1..1");
+        editWires([&] { masterLevel_ = level; masterPan_ = pan; });
     }
 
     void Session::setPartSolo(uint32_t id, bool solo)
@@ -1039,6 +1051,7 @@ namespace oscairn
             for(const auto& p : parameters(node)) if(touched(node, p)) scene.values.push_back({{node, p.id}, parameter(node, p.id)});
         scene.macros.clear();
         for(const auto& m : macros_) scene.macros.push_back({m.id, m.value});
+        scene.masterLevel = masterLevel_; scene.masterPan = masterPan_;
     }
 
     uint32_t Session::addScene(const std::string& name)
@@ -1075,6 +1088,7 @@ namespace oscairn
                 if(on == (disabled_.count(node) != 0)) enable(node, on);
             }
         editWires([&] {
+            if(has(Scene::Mix)) { masterLevel_ = scene.masterLevel; masterPan_ = scene.masterPan; }
             for(const auto& state : scene.parts)
                 for(auto& p : parts_)
                 {
@@ -1217,6 +1231,7 @@ namespace oscairn
                 }
         for(auto& [macro, value] : mid.macros)
             for(const auto& [m, was] : from.macros) if(m == macro) value = mix(was, value);
+        mid.masterLevel = gain(from.masterLevel, to.masterLevel); mid.masterPan = mix(from.masterPan, to.masterPan);
         applyScene(mid, scope);
     }
 

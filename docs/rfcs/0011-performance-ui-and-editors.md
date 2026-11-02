@@ -566,7 +566,8 @@ What a scene can hold, all of it by default:
   note connections drain, so notes held on it play on until released, with their releases,
   expressions and pedal, and its tail rings out; new notes go to what the scene enables.
 - **Each part's mute and solo.**
-- **The mix:** each part's level and pan, each send's level, each wire's Mix row.
+- **The mix:** each part's level and pan, each send's level, each wire's Mix row, and the
+  Performance's master level and pan.
 - **Plugin parameters.**
 - **Control mappings:** which mappings are active, so a knob can drive the filter in the
   verse and the delay in the chorus.
@@ -654,6 +655,17 @@ rendering, not by clicking through.
 
 
 ## Step 3 status
+
+**The master** (2026-11-01, Performance format version 11): the Performance has a level (a gain,
+0 to 2) and a pan (a balance) on its main output, the first audio output port, applied to
+everything that plays there (each part's and bus's fader wire and each user wire into it) as
+route gains, like the parts' faders. Saved (`master`), set through `setMaster` (`master.set`),
+shown in `graph.get`, an edit undone like any other, and stored by scenes with the mix, gliding
+with them (by power on an equal-power glide). The Mixer and Play end with a **Master** strip: its
+fader and, in the Mixer, its pan and level in dB; it has no meter yet. `control-parts` checks the
+master halving the sound, a pan to the right, refusals, a scene restoring it and one without the
+mix leaving it, undo, and the round-trip with the scenes'; `control-performance-format` checks
+`master.set` and the saved `master` against both schemas and refuses a level past 2.
 
 **Splits** implemented 2026-10-31 (the first slice of step 3). A part's chain may hold a
 split: lanes, each its own chain with zones and a Mix (level, pan, mute, solo), joining

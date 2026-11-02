@@ -138,6 +138,7 @@ namespace oscairn
         void setPartName(uint32_t part, const std::string& name) override;
         void setPartSolo(uint32_t part, bool solo) override;
         void setPartPan(uint32_t part, double pan) override;
+        void setMaster(double level, double pan) override;
         History history() const override;
         bool undo() override;
         bool redo() override;
@@ -258,7 +259,7 @@ namespace oscairn
         static ParamInfo describe( const kick::clap::Parameter& param );
         // off: plugins switched off; rungOut: those of them whose notes and sound have ended.
         // leaving: the last Performance's plugins ringing out (RFC 0021); their routes are left alone.
-        static void compileWires(Graph& graph, std::vector<Wire>& wires, const std::set<NodeId>& off, const std::set<NodeId>& rungOut, const std::set<NodeId>& leaving);
+        static void compileWires(Graph& graph, std::vector<Wire>& wires, const std::set<NodeId>& off, const std::set<NodeId>& rungOut, const std::set<NodeId>& leaving, double masterLevel, double masterPan);
         void enable(NodeId node, bool enabled);  // the flags and the graph's retiring count; wires are the caller's
         void ringOut();                          // service(): an off plugin that has rung out stops sounding
         bool enqueue(const kick::clap::Event& event);
@@ -331,6 +332,7 @@ namespace oscairn
             std::map<NodeId, std::pair<std::string, Graph::Node>> nodes;
             std::set<NodeId> disabled;
             MusicalKey key;
+            std::pair<double, double> master{1, 0};
         };
         struct Step
         {
@@ -441,6 +443,7 @@ namespace oscairn
         uint32_t scene_ = 0, nextScene_ = 1;
         uint32_t mappingScene_ = 0; // the scene last selected that set the mappings: those off in it are off
         std::vector<Macro> macros_;
+        double masterLevel_ = 1, masterPan_ = 0; // the Performance's main output
         std::vector<AssignmentOverride> assignments_; // physical controls' overrides (physical_controls.cpp)
         uint32_t nextMacro_ = 1;
         bool staged_ = false;
@@ -483,6 +486,7 @@ namespace oscairn
             uint32_t nextMacro = 1;
             std::vector<AssignmentOverride> assignments;
             MusicalKey key;
+            double masterLevel = 1, masterPan = 0;
         };
         std::unique_ptr<Prepared> read(const std::filesystem::path& root);
         void open(Prepared& prepared, bool seamless);

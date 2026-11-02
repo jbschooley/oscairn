@@ -292,6 +292,7 @@ namespace oscairn
         std::vector<WireMix> wires;      // Mix: user wires' Mix rows
         std::vector<Value> values;       // Parameters
         std::vector<std::pair<uint32_t, double>> macros; // Parameters: each control's value
+        double masterLevel = 1, masterPan = 0; // Mix: the Performance's main output
         bool operator==(const Scene&) const = default;
     };
     inline constexpr std::array<const char*, 5> sceneKinds{"enabled", "mutes", "mix", "parameters", "mappings"}; // the scope's names, bit by bit

@@ -390,7 +390,7 @@ namespace oscairn::standalone
             auto area = getLocalBounds().reduced(16).withTrimmedTop(embedded_ ? 0 : header).withTrimmedBottom(28);
             std::vector<const PartRow*> rows;
             for(const auto* list : {&state_.parts, &state_.buses}) for(const auto& p : *list) rows.push_back(&p);
-            const int gap = sectionGap(8), busGap = state_.buses.empty() ? 0 : sectionGap(16), n = std::max(1, int(rows.size()));
+            const int gap = sectionGap(8), busGap = state_.buses.empty() ? 0 : sectionGap(16), n = int(rows.size()) + 1; // and the master
             const int width = std::clamp((area.getWidth() - busGap - gap * (n - 1)) / n, 72, 120);
             auto soloOf = [this](uint32_t id) { return [this, id] { const auto* p = part(id); return p && p->solo; }; };
             auto setSolo = [this](uint32_t id) { return [this, id](bool on) { edit([id, on](Control& c) { c.setPartSolo(id, on); c.commit(); }); }; };
@@ -461,6 +461,44 @@ namespace oscairn::standalone
                     for(auto* c : faded) c->setAlpha(alpha);
                 });
                 (*fade)(); updates.push_back(fade);
+            }
+            // The master: the Performance's level and pan on its main output, after everything.
+            {
+                area.removeFromLeft(busGap);
+                auto strip = area.removeFromLeft(width);
+                auto inner = strip.reduced(6);
+                auto name = std::make_unique<juce::Label>(juce::String(), "Master");
+                name->setFont(juce::FontOptions(14.0f * themeData().fontScale, juce::Font::bold)); name->setJustificationType(juce::Justification::centred);
+                name->setBounds(inner.removeFromTop(24)); addAndMakeVisible(*name); controls_.push_back(std::move(name));
+                for(size_t k = 0; k < state_.buses.size(); ++k) inner.removeFromBottom(36); // in line with the strips' faders
+                auto panRow = inner.removeFromBottom(36);
+                inner.removeFromBottom(6 + 28);
+                auto dbRow = inner.removeFromBottom(20);
+                inner.removeFromBottom(4);
+                auto label = std::make_unique<juce::Label>(juce::String(), "Pan");
+                label->setFont(juce::FontOptions(11.0f * themeData().fontScale)); label->setBounds(panRow.removeFromTop(14)); addAndMakeVisible(*label); controls_.push_back(std::move(label));
+                auto setMaster = [this](std::optional<double> level, std::optional<double> pan) {
+                    const double l = level.value_or(graph_.masterLevel), p = pan.value_or(graph_.masterPan);
+                    edit([l, p](Control& c) { c.setMaster(l, p); c.commit(); });
+                };
+                auto [pan, panUpdate] = slider(panRow.reduced(2, 0), -1, 1, [this] { return graph_.masterPan; }, [setMaster](double v) { setMaster({}, v); });
+                pan->getProperties().set("bipolar", true);
+                pan->setDoubleClickReturnValue(true, 0); pan->setTooltip("The Performance's pan on its main output");
+                updates.push_back(panUpdate);
+                auto db = std::make_unique<juce::Label>(); db->setJustificationType(juce::Justification::centred);
+                db->setFont(juce::FontOptions(12.0f * themeData().fontScale)); db->setBounds(dbRow); addAndMakeVisible(*db);
+                auto* dbRaw = db.get(); controls_.push_back(std::move(db));
+                auto showDb = std::make_shared<std::function<void()>>([this, dbRaw] {
+                    const double level = graph_.masterLevel;
+                    dbRaw->setText(level > 0 ? juce::String(20 * std::log10(level), 1) + " dB" : juce::String::fromUTF8("−∞ dB"), juce::dontSendNotification);
+                });
+                (*showDb)(); updates.push_back(showDb);
+                auto [fader, update] = slider(inner.withSizeKeepingCentre(std::min(inner.getWidth(), 28), inner.getHeight()), 0, 2, [this] { return graph_.masterLevel; }, [setMaster](double v) { setMaster(v, {}); });
+                fader->setSliderStyle(juce::Slider::LinearVertical);
+                fader->setSkewFactorFromMidPoint(.5);
+                fader->setTooltip("The Performance's level on its main output, after every part and bus");
+                updates.push_back(update);
+                strips_.push_back({0, strip, {}});
             }
         }
         else if(controlsShown)
@@ -1285,6 +1323,7 @@ namespace oscairn::standalone
             {
                 const auto* p = part(s.part);
                 drawSection(g, s.bounds, p && (p->mute || p->silenced) ? ink(Ink::Surface).withAlpha(.5f) : ink(Ink::Surface));
+                if(s.meter.isEmpty()) continue; // the master has no meter of its own yet
                 // A bar per channel of the part's sound (mono, stereo or more), side by side.
                 const auto it = peaks_.find(s.part);
                 const auto channels = it == peaks_.end() || it->second.empty() ? std::vector<double>{0.0} : it->second;

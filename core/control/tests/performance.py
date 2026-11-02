@@ -79,7 +79,11 @@ try:
                         {'kind': 'power'}, {'kind': 'db', 'min': -96, 'max': 0, 'exponent': 2}, 'square']:
                 rpc('controls.targets', {'control': control, 'targets': [{'kind': 'parameter', 'node': synth, 'param': 1, 'curve': bad}]}, True)
             rpc('graph.enable', {'node': synth, 'enabled': True})
+            rpc('master.set', {'level': 0.8, 'pan': 0.25})
+            rpc('master.set', {'level': 3, 'pan': 0}, True)
+            jsonschema.validate({'jsonrpc': '2.0', 'id': 1, 'method': 'master.set', 'params': {'level': 0.8, 'pan': 0.25}}, protocol)
             graph = rpc('graph.get')['result']
+            assert graph['master'] == {'level': 0.8, 'pan': 0.25} and graph['scenes'][0]['master'] == {'level': 1, 'pan': 0}
             assert graph['scenes'][0]['off'] == [synth] and graph['scenes'][0]['scope'] == ['enabled', 'mappings'] and graph['controls'][0]['targets'][0]['offIn'] == [scene]
             assert graph['controls'][0]['targets'][0]['curve'] == fader and graph['controls'][0]['targets'][1]['curve'] == power
             assert graph['parts'][0]['name'] == 'Check' and any(w['owner'] == 'part' for w in graph['wires'])
@@ -96,6 +100,8 @@ try:
             split_manifest = json.loads((Path(str(saved) + '-split') / 'performance.json').read_text())
             jsonschema.validate(split_manifest, json.loads(schema.read_text()))
             assert [t['curve'] for t in split_manifest['controls'][0]['targets']] == [fader, power]
+            assert split_manifest['master'] == {'level': 0.8, 'pan': 0.25}
+            rpc('master.set', {'level': 1, 'pan': 0})
             rpc('parts.remove', {'part': part})
         # The folder remains usable after the saving engine exits and the folder moves.
         p.stdin.close()
@@ -138,6 +144,8 @@ try:
         changed(lambda m: m['info'].update(color='#12345'))
         changed(lambda m: m['info'].pop('color'))
         changed(lambda m: m.update(unknown=True))
+        changed(lambda m: m['master'].update(level=3))
+        changed(lambda m: m.pop('master'))
         changed(lambda m: m['nodes'][0].update(key='../escape'))
         changed(lambda m: m['nodes'][0]['outputs'][0].update(channels=1))
         changed(lambda m: m['wires'].append({**m['wires'][0], 'owner': 'part', 'part': 99}))
