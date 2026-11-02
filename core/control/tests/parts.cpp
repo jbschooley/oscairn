@@ -1219,6 +1219,79 @@ namespace
         ::setenv("OSCAIRN_DATA_HOME", (root / "budget-home").c_str(), 1);
     }
 
+    // Memory classes (RFC 0025), simulated with the fixture's memory effect (1 MiB shared and its
+    // gain times 16 MiB, declared and allocated): reserved (the system, running and always-available
+    // apps), committed (the open Performance, what rings out, the prepared next entry) and
+    // opportunistic (a next entry prepared to cut). The main test of the RFC, in small: memory
+    // filled with opportunistic data, every app opened up to the floor, a committed Performance
+    // loaded; nothing refused that fits, nothing committed let go, a launch past the floor refused.
+    void memoryClasses(const char* fixture, const fs::path& root)
+    {
+        constexpr uint64_t MiB = 1ull << 20;
+        // Performances of the memory effect: A two at .5 (18 MiB), B one at .5 (9), C four at .9 (61.6).
+        auto save = [&](const std::string& name, int count, double gain) {
+            Session s(48000, frames);
+            std::vector<NodeId> nodes;
+            for(int i = 0; i < count; ++i) { nodes.push_back(s.add(name + std::to_string(i), fixture, "org.kick.test.memory")); s.setParameter(nodes.back(), 7, gain); }
+            s.commit();
+            Audio x; for(int i = 0; i < 4; ++i) x.run(s);
+            s.savePerformance((root / ("classes-" + name)).string());
+            return (root / ("classes-" + name)).string();
+        };
+        const auto a = save("a", 2, .5), b = save("b", 1, .5), c = save("c", 4, .9);
+        const auto home = root / "classes-home";
+        fs::create_directories(home);
+        ::setenv("OSCAIRN_DATA_HOME", home.c_str(), 1);
+        // Both modes measured at what they declare, so a Performance not open (which counts each
+        // build at its largest measurement) is estimated, not taken at the 32 MiB default.
+        const uint64_t half = MiB + uint64_t(.5 * (16 * MiB)), most = MiB + uint64_t(.9 * (16 * MiB));
+        std::ofstream(home / "measurements.json") << "{\"plugins\":{"
+            "\"org.kick.test.memory@1#" << half << "\":{\"cpu\":0.001,\"rest\":0.001,\"voice\":0,\"voices\":0,\"memory\":" << half << "},"
+            "\"org.kick.test.memory@1#" << most << "\":{\"cpu\":0.001,\"rest\":0.001,\"voice\":0,\"voices\":0,\"memory\":" << most << "}}}";
+        Session s(48000, frames);
+        // A 110 MiB device: 20 for the system, a floor of 40, a margin of 5; the Performance app (6) and the Library (4) always available.
+        s.setBudget({.9, 0, 110 * MiB, 20 * MiB, 40 * MiB, 5 * MiB});
+        s.setAlwaysAvailable({{"oscairn.performance", 6 * MiB}, {"oscairn.library", 4 * MiB}});
+        auto m = s.memoryState();
+        check(m.reserved == 30 * MiB && m.share == 75 * MiB, "reserved: the system and the always-available apps, running or not; the committed share what is left less the margin");
+        s.loadPerformance(a);
+        check(s.memoryState().committed == 18 * MiB, "the open Performance committed, at its plugins' declarations: " + std::to_string(s.memoryState().committed));
+        // Fill: C fits alone (61.6 of 75) but not beside A (79.6), so it is prepared to cut, as opportunistic data.
+        check(!s.preparePerformance(c), "C will cut");
+        m = s.memoryState();
+        check(m.nextPrepared && !m.nextCommitted && m.opportunistic > 61 * MiB && m.opportunistic < 62 * MiB, "and is prepared anyway, opportunistic: " + std::to_string(m.opportunistic));
+        // Every app, as the shell would ask before starting each.
+        auto launch = [&](const std::string& app, uint64_t reserve) { return s.launchApp({app, reserve * MiB}); };
+        check(launch("oscairn.performance", 0).admitted, "an always-available app always opens");
+        m = s.memoryState();
+        check(!m.nextPrepared && m.committed == 18 * MiB, "its share, filled with opportunistic data, is let go, the committed untouched");
+        check(launch("oscairn.library", 0).admitted && launch("oscairn.setlist", 6).admitted && launch("oscairn.groovebox", 10).admitted && launch("sound-editor", 9).admitted &&
+              launch("sequencer", 8).admitted, "every app that fits beside the floor opens");
+        const auto big = launch("third-party", 12);
+        check(!big.admitted && !big.offerNext && big.reason == "needs 12 MiB, 2 free for apps; close oscairn.groovebox (10)",
+              "a launch past the floor is refused, saying what closing would free: " + big.reason);
+        m = s.memoryState();
+        check(m.share == 42 * MiB && m.running.size() == 6, "the committed share shrank to what the apps leave: " + std::to_string(m.share >> 20));
+        // A committed next entry fits beside A within that share, and is kept through a refused launch.
+        check(s.preparePerformance(b), "B is prepared ahead, committed");
+        check(!launch("third-party", 12).admitted && s.memoryState().nextCommitted, "a refused launch lets nothing committed go");
+        // C no longer fits the share while those apps run: refused, naming what closing would free.
+        std::string why;
+        try { s.loadPerformance(c); } catch(const std::exception& e) { why = e.what(); }
+        check(why.find("closing oscairn.groovebox (10 MiB) and sound-editor (9 MiB) and sequencer (8 MiB) would free enough") != std::string::npos, "a Performance past the share names the apps to close: " + why);
+        s.loadPerformance(b);
+        check(s.leaving() == 2 && s.memoryState().committed == 27 * MiB, "the committed Performance loads, A rings out, both committed");
+        // Offered: a launch refused only because of the committed next entry.
+        s.appClosed("oscairn.groovebox"); s.appClosed("sound-editor"); s.appClosed("sequencer");
+        check(s.preparePerformance(a), "A prepared ahead beside B and A's tail");
+        m = s.memoryState();
+        const auto offered = launch("synth-editor", 27);
+        check(!offered.admitted && offered.offerNext, "a launch refused only for the committed next entry offers to let it go: " + offered.reason);
+        check(launch("synth-editor", 27).offerNext && s.launchApp({"synth-editor", 27 * MiB}, true).admitted && !s.memoryState().nextPrepared,
+              "letting it go opens the app");
+        ::setenv("OSCAIRN_DATA_HOME", (root / "budget-home").c_str(), 1);
+    }
+
     // Switching plugins and wires off and on (RFC 0011's full scene model): an off plugin takes
     // no new notes but plays out the ones it holds, then stops; an off effect in a chain is
     // passed around; an off note wire takes no new notes; undo and saving keep it.
@@ -1447,6 +1520,7 @@ int main(int argc, char** argv)
         sceneTransitions(argv[1], temp.path);
         budgets(argv[1], temp.path);
         declaredMemory(argv[1], argv[3], temp.path);
+        memoryClasses(argv[1], temp.path);
         controls(argv[1], temp.path);
         persistence(argv[1], argv[2], argv[3], temp.path);
     }

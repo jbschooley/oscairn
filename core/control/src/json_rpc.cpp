@@ -433,10 +433,31 @@ namespace oscairn
             }
             // Resource budgets (RFC 0025).
             if(method=="budget.set") {
-                fields(p,{"cpu","memory"});
+                fields(p,{"cpu","memory","device","system","floor","margin"});
                 Control::Budget b;b.cpu=number(member(p,"cpu"));if(member(p,"memory"))b.memory=uint64_t(integer(member(p,"memory")));
+                for(auto [key,to]:{std::pair{"device",&b.device},{"system",&b.system},{"floor",&b.floor},{"margin",&b.margin}})if(member(p,key))*to=uint64_t(integer(member(p,key)));
                 try{c.setBudget(b);}catch(const std::invalid_argument& e){throw Failure{-32602,e.what()};}
                 return R"({"accepted":true})";
+            }
+            // Memory classes (RFC 0025): apps' reservations and launches.
+            auto appMemory=[&](Value v){fields(v,{"app","reserve","dropNext"});return Control::AppMemory{std::string(string(member(v,"app"))),uint64_t(integer(member(v,"reserve")))};};
+            auto appList=[&](const std::vector<Control::AppMemory>& apps){std::vector<std::string> out;for(const auto& a:apps)out.push_back("{\"app\":"+quote(a.app)+",\"reserve\":"+std::to_string(a.reserve)+'}');return join(out);};
+            if(method=="memory.alwaysAvailable") {
+                fields(p,{"apps"});std::vector<Control::AppMemory> apps;for(auto a:array(member(p,"apps"),64))apps.push_back(appMemory(a));
+                try{c.setAlwaysAvailable(apps);}catch(const std::invalid_argument& e){throw Failure{-32005,e.what()};}
+                return R"({"accepted":true})";
+            }
+            if(method=="memory.launch") {
+                const auto app=appMemory(p);Control::Launch l;
+                try{l=c.launchApp(app,member(p,"dropNext") && boolean(member(p,"dropNext")));}catch(const std::invalid_argument& e){throw Failure{-32602,e.what()};}
+                return std::string("{\"admitted\":")+(l.admitted?"true":"false")+",\"offerNext\":"+(l.offerNext?"true":"false")+",\"reason\":"+quote(l.reason)+'}';
+            }
+            if(method=="memory.closed") {fields(p,{"app"});c.appClosed(std::string(string(member(p,"app"))));return R"({"closed":true})";}
+            if(method=="memory.state") {
+                fields(p,{});const auto m=c.memoryState();
+                return "{\"device\":"+std::to_string(m.device)+",\"reserved\":"+std::to_string(m.reserved)+",\"share\":"+std::to_string(m.share)+",\"floor\":"+std::to_string(m.floor)+
+                    ",\"margin\":"+std::to_string(m.margin)+",\"committed\":"+std::to_string(m.committed)+",\"opportunistic\":"+std::to_string(m.opportunistic)+
+                    ",\"running\":"+appList(m.running)+",\"alwaysAvailable\":"+appList(m.alwaysAvailable)+",\"nextPrepared\":"+(m.nextPrepared?"true":"false")+",\"nextCommitted\":"+(m.nextCommitted?"true":"false")+'}';
             }
             if(method=="budget.estimate") {
                 fields(p,{"directory"});

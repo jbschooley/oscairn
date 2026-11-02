@@ -3,6 +3,7 @@
 #include "ProfileData.h"
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <algorithm>
+#include <map>
 #include <set>
 #include <stdexcept>
 #include <tuple>
@@ -73,19 +74,27 @@ namespace oscairn::standalone
 
     bool Profile::offers(const std::string& app) const { return std::find(apps.begin(), apps.end(), app) != apps.end(); }
 
+    // shortcut: RFC 0025's illustrative figures, not measured; measure each app on each profile and read them from manifests (step 8).
+    int Profile::appMemory(const std::string& app)
+    {
+        static const std::map<std::string, int> own{{"oscairn.performance", 150}, {"oscairn.library", 120}, {"oscairn.setlist", 60}, {"oscairn.groovebox", 200}};
+        const auto it = own.find(app);
+        return it == own.end() ? 0 : it->second;
+    }
+
     Profile Profile::parse(const std::string& json)
     {
         require(json.size() <= maxProfileBytes, "larger than 64 KiB");
         juce::var value;
         require(juce::JSON::parse(juce::String::fromUTF8(json.data(), int(json.size())), value).wasOk(), "not valid JSON");
         const auto& root = object(value, "a profile");
-        fields(root, {"format", "version", "id", "name", "platform", "compute", "audio", "controls", "screens", "midi", "cv", "network", "power", "reliability", "apps", "estimated"}, "the profile");
+        fields(root, {"format", "version", "id", "name", "platform", "compute", "audio", "controls", "screens", "midi", "cv", "network", "power", "reliability", "apps", "alwaysAvailable", "estimated"}, "the profile");
         require(text(root, "format") == "oscairn.profile", "format must be oscairn.profile");
         require(root.getProperty("version").isInt() && int(root.getProperty("version")) == 2, "version must be 2");
         Profile p;
         // A controller's profile (it names ports) holds its controls and ports only.
         if(const auto m = root.getProperty("midi"); m.getDynamicObject() && m.getDynamicObject()->hasProperty("ports"))
-            for(const auto* key : {"platform", "compute", "audio", "screens", "cv", "network", "power", "reliability", "apps"})
+            for(const auto* key : {"platform", "compute", "audio", "screens", "cv", "network", "power", "reliability", "apps", "alwaysAvailable"})
                 require(!root.hasProperty(key), std::string("a controller's profile has no ") + key);
         const bool controller = root.getProperty("midi").getDynamicObject() && root.getProperty("midi").getDynamicObject()->hasProperty("ports");
         p.id = text(root, "id"); p.name = text(root, "name");
@@ -97,9 +106,12 @@ namespace oscairn::standalone
         }
         if(const auto v = root.getProperty("compute"); !v.isVoid())
         {
-            const auto& o = object(v, "compute"); fields(o, {"cores", "realtimeCores", "memory", "storage"}, "compute");
-            p.compute = {count(o, "cores", 1024), count(o, "realtimeCores", 1024), count(o, "memory", 1 << 24), count(o, "storage", 1 << 30)};
+            const auto& o = object(v, "compute"); fields(o, {"cores", "realtimeCores", "memory", "storage", "osMemory", "performanceMemory"}, "compute");
+            p.compute = {count(o, "cores", 1024), count(o, "realtimeCores", 1024), count(o, "memory", 1 << 24), count(o, "storage", 1 << 30),
+                         count(o, "osMemory", 1 << 24), count(o, "performanceMemory", 1 << 24)};
             require(p.compute.realtimeCores <= p.compute.cores, "more realtime cores than cores");
+            require(o.hasProperty("osMemory") == o.hasProperty("performanceMemory"), "osMemory and performanceMemory come together");
+            require(p.compute.osMemory || !o.hasProperty("osMemory"), "osMemory is more than 0");
         }
         if(const auto v = root.getProperty("audio"); !v.isVoid())
         {
@@ -272,6 +284,20 @@ namespace oscairn::standalone
         }
         else p.reliability.clear();
         p.apps = names(root, "apps");
+        if(root.hasProperty("alwaysAvailable"))
+        {
+            p.alwaysAvailable = names(root, "alwaysAvailable");
+            for(const auto& a : p.alwaysAvailable) require(p.offers(a), "alwaysAvailable names an app in apps: " + a);
+        }
+        else for(const auto* a : {"oscairn.performance", "oscairn.library"}) if(p.offers(a)) p.alwaysAvailable.push_back(a);
+        // RFC 0024: the OS, the floor and the always-available apps' reservations must fit its memory.
+        if(p.memoryClasses())
+        {
+            int64_t need = int64_t(p.compute.osMemory) + p.compute.performanceMemory;
+            for(const auto& a : p.alwaysAvailable) need += appMemory(a);
+            require(need <= p.compute.memory, "osMemory, performanceMemory and the always-available apps' reservations (" + std::to_string(need) +
+                                              " MiB) exceed memory (" + std::to_string(p.compute.memory) + " MiB)");
+        }
         p.estimated = names(root, "estimated");
         for(const auto& s : p.estimated) require(sections.contains(juce::String(s)), "estimated names a section: " + s);
         return p;
@@ -306,6 +332,7 @@ namespace oscairn::standalone
         p.screens.push_back(s);
         p.reliability = "desktop";
         p.apps = {"oscairn.performance", "oscairn.groovebox", "oscairn.library", "oscairn.setlist"};
+        p.alwaysAvailable = {"oscairn.performance", "oscairn.library"};
         return p;
     }
 

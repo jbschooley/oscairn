@@ -511,13 +511,13 @@ namespace {
 void Session::loadPerformance(const std::string& directory) {
     audition_.reset(); // opening a Performance keeps what an audition tried; auditionStart sets its own after
     const auto root=performanceRoot(directory);
-    // Prepared ahead (RFC 0021), the cue only publishes it; another one prepared is let go first.
-    auto prepared=std::move(prepared_);
-    if(prepared && (prepared->root!=root || prepared->stamp!=stamp(root)))prepared.reset();
-    // Over the budget it is refused, saying what does not fit (RFC 0025).
+    // Over the budget it is refused, saying what does not fit (RFC 0025), keeping what is prepared.
     bool seamless=true;
     if(budget_.cpu>0){const auto e=estimate(root.string());if(!e.fits)bad("this Performance "+tooMuch(e));seamless=e.seamless;
         if(!seamless)std::fprintf(stderr,"oscairn: opened at once: with the last Performance ringing out it would not fit\n");}
+    // Prepared ahead (RFC 0021), the cue only publishes it; another one prepared is let go first.
+    auto prepared=std::move(prepared_);preparedOpportunistic_=false;
+    if(prepared && (prepared->root!=root || prepared->stamp!=stamp(root)))prepared.reset();
     if(!prepared)prepared=read(root);
     open(*prepared,seamless);
 }
@@ -525,14 +525,20 @@ void Session::loadPerformance(const std::string& directory) {
 // Plays a Performance prepared ahead at the next loadPerformance of the same folder. One that
 // would not fit beside what plays now is not prepared (false): it loads at the cue, as a cut.
 bool Session::preparePerformance(const std::string& directory) {
-    prepared_.reset();
+    prepared_.reset();preparedOpportunistic_=false;
     if(directory.empty())return false;
     const auto root=performanceRoot(directory);
+    bool opportunistic=false;
     if(budget_.cpu>0){const auto e=estimate(root.string());if(!e.fits)bad("this Performance "+tooMuch(e));
-        if(!e.seamless){std::fprintf(stderr,"oscairn: not prepared: beside the open Performance it would not fit; it opens at the cue\n");return false;}}
-    prepared_=read(root);
+        if(!e.seamless){
+            // RFC 0025: with memory classes it is prepared anyway, as opportunistic data, when what
+            // neither running apps' reservations nor committed memory hold allows, so the cut is fast.
+            const auto used=memoryClasses()?reservedMemory(false)+budget_.margin+committedMemory():0;
+            if(!memoryClasses() || used+e.memory>budget_.device){std::fprintf(stderr,"oscairn: not prepared: beside the open Performance it would not fit; it opens at the cue\n");return false;}
+            opportunistic=true;}}
+    prepared_=read(root);preparedOpportunistic_=opportunistic;
     graph_.reserveIds(*prepared_->next); // so plugins added meanwhile cannot take its IDs
-    return true;
+    return !opportunistic;
 }
 
 // Reads a Performance and loads its plugins with their state into a replacement graph, without

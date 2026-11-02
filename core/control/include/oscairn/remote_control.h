@@ -15,6 +15,10 @@ namespace oscairn
         void service();
         void savePerformance(const std::string& directory) override;
         void setBudget(const Budget& budget) override;
+        void setAlwaysAvailable(const std::vector<AppMemory>& apps) override;
+        Launch launchApp(const AppMemory& app, bool dropNext = false) override;
+        void appClosed(const std::string& app) override;
+        MemoryState memoryState() override;
         Estimate estimate(const std::string& directory = {}) override;
         std::vector<std::string> exportPerformance(const std::string& file, bool editedSounds = false) override;
         void loadPerformance(const std::string& directory) override;

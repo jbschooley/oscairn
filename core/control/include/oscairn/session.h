@@ -42,6 +42,10 @@ namespace oscairn
         // staging area available for correction. Empty names address nodes by ID only.
         void savePerformance(const std::string& directory) override;
         void setBudget(const Budget& budget) override;
+        void setAlwaysAvailable(const std::vector<AppMemory>& apps) override;
+        Launch launchApp(const AppMemory& app, bool dropNext = false) override;
+        void appClosed(const std::string& app) override;
+        MemoryState memoryState() override;
         Estimate estimate(const std::string& directory = {}) override;
         std::vector<std::string> exportPerformance(const std::string& file, bool editedSounds = false) override;
         std::vector<std::string> exportLibraryItem(const std::string& id, const std::string& file, bool editedSounds = false) override;
@@ -274,6 +278,15 @@ namespace oscairn
         // What the memory budget leaves for one more plugin to declare beside these (0: no memory budget).
         uint64_t memoryRoom(const Graph& graph, const std::vector<NodeId>& beside) const;
         uint64_t memoryRoom() const;                            // beside the open Performance
+        // Memory classes (RFC 0025): the apps reserved, a next entry prepared only to cut, and the arithmetic.
+        std::vector<AppMemory> alwaysAvailable_, running_;
+        bool preparedOpportunistic_ = false;
+        bool memoryClasses() const { return budget_.cpu > 0 && budget_.device > 0; }
+        uint64_t reservedMemory(bool closedAlwaysAvailable = true) const; // system and apps; with or without closed always-available ones
+        uint64_t memoryCeiling() const;                                     // the committed share, or the flat memory budget
+        uint64_t preparedMemory() const;                                    // the prepared next entry's plugins
+        uint64_t committedMemory() const;                                   // open, ringing, a committed next entry
+        void evictOpportunistic();                                          // until it fits what reservations and commitments leave
         uint32_t noteLimit(NodeId node) const; // its part's, or 0
         Estimate estimateOf(const std::vector<Cost>& plugins, const std::vector<Cost>& playing) const;
         std::string tooMuch(const Estimate& e) const;          // what does not fit, for a refusal

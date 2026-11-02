@@ -297,7 +297,26 @@ namespace oscairn
         impl_->call("performance.save","{\"directory\":"+quote(directory)+'}',30000);
     }
     void RemoteControl::setBudget(const Budget& b) {
-        impl_->call("budget.set","{\"cpu\":"+encode(b.cpu)+",\"memory\":"+std::to_string(b.memory)+'}');
+        impl_->call("budget.set","{\"cpu\":"+encode(b.cpu)+",\"memory\":"+std::to_string(b.memory)+",\"device\":"+std::to_string(b.device)+",\"system\":"+std::to_string(b.system)+
+                    ",\"floor\":"+std::to_string(b.floor)+",\"margin\":"+std::to_string(b.margin)+'}');
+    }
+    void RemoteControl::setAlwaysAvailable(const std::vector<AppMemory>& apps) {
+        std::string list;for(const auto& a:apps)list+=(list.empty()?"":",")+std::string("{\"app\":")+quote(a.app)+",\"reserve\":"+std::to_string(a.reserve)+'}';
+        impl_->call("memory.alwaysAvailable","{\"apps\":["+list+"]}");
+    }
+    Control::Launch RemoteControl::launchApp(const AppMemory& app, bool dropNext) {
+        auto d=impl_->call("memory.launch","{\"app\":"+quote(app.app)+",\"reserve\":"+std::to_string(app.reserve)+",\"dropNext\":"+(dropNext?"true":"false")+'}');auto r=field(d.get(),"result");
+        return {boolean(field(r,"admitted")),boolean(field(r,"offerNext")),string(field(r,"reason"))};
+    }
+    void RemoteControl::appClosed(const std::string& app) { impl_->call("memory.closed","{\"app\":"+quote(app)+'}'); }
+    Control::MemoryState RemoteControl::memoryState() {
+        auto d=impl_->call("memory.state","{}");auto r=field(d.get(),"result");MemoryState m;
+        for(auto [key,to]:{std::pair{"device",&m.device},{"reserved",&m.reserved},{"share",&m.share},{"floor",&m.floor},{"margin",&m.margin},{"committed",&m.committed},{"opportunistic",&m.opportunistic}})
+            *to=uint64_t(integer(field(r,key)));
+        auto apps=[](V v){std::vector<AppMemory> out;for(auto a:array(v))out.push_back({string(field(a,"app")),uint64_t(integer(field(a,"reserve")))});return out;};
+        m.running=apps(field(r,"running"));m.alwaysAvailable=apps(field(r,"alwaysAvailable"));
+        m.nextPrepared=boolean(field(r,"nextPrepared"));m.nextCommitted=boolean(field(r,"nextCommitted"));
+        return m;
     }
     Control::Estimate RemoteControl::estimate(const std::string& directory) {
         auto d=impl_->call("budget.estimate",directory.empty()?std::string("{}"):"{\"directory\":"+quote(directory)+'}',30000);auto r=field(d.get(),"result");

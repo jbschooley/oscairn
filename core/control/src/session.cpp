@@ -44,6 +44,7 @@ namespace oscairn
                 dropNode(id);
                 throw std::invalid_argument( "adding " + (name.empty() ? plugin : name) + ": the Performance " + tooMuch(e) );
             }
+            evictOpportunistic(); // committed memory grew
         }
         for( const auto& p : graph_.host(id).parameters() ) observed_[{id,p.id}] = graph_.host(id).parameterValue(p.id);
         staged_ = true;

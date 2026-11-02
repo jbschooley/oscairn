@@ -18,8 +18,9 @@ Checked when built and tested; the sections below say how.
       (loading a Performance and adding a plugin are checked and refused with the reason; a warning instead of a refusal is not offered yet)
 - [x] 4. Seamless changes counted: the outgoing Performance's plugins until they ring out
 - [ ] 5. Estimates in packages and Sounds, checked at install and in the library
-- [ ] 6. Memory classes: reserved (OS, engine, shell, app reservations), committed and
+- [x] 6. Memory classes: reserved (OS, engine, shell, app reservations), committed and
       opportunistic; admission against what reservations leave ([design](#memory-reserved-committed-and-opportunistic))
+      (an audition's set-aside Performance is not counted as committed yet)
 - [x] 7. Plugins declare memory before activating (`oscairn.memory`), checked against measurement
       (a plugin holding more than it declared is counted at what it holds; its declaration is not yet distrusted at the next activation)
 - [ ] 8. Apps declare reservations in their manifests; running apps and the always-available set
@@ -117,6 +118,38 @@ never write the user's data folder.
   ahead (RFC 0021): `preparePerformance` returns false, and the Setlist app says it will open
   when cued.
 
+**Memory classes** (step 6, built 2026-11-01; `budget.cpp`): `Budget` takes the device's
+memory, the system's share (the OS, the engine's base and the shell), the floor and the margin;
+`setAlwaysAvailable`, `launchApp`, `appClosed` and `memoryState` (`memory.*` in the control
+protocol) keep the apps' reservations. With them the memory ceiling for opening, adding and
+preparing is the committed share, as "Admission's arithmetic" says: device less the system, the
+running and always-available apps' reservations (an app counted once) and the margin. Committed
+in use is the open Performance, what rings out and a next entry prepared beside it, each plugin
+at the larger of its declaration and its measurement. A launch is admitted when
+`reserved + its reservation + max(committed, floor) + margin` fits the device; otherwise it is
+refused with what is free for apps and which running apps' closing would free enough, or, when
+only the committed next entry stands in the way, offered with letting it go. An always-available
+app is always admitted. Changing the always-available set is checked as a launch of the apps
+added. A Performance over the share names the running apps whose closing would free enough. A
+next entry that fits alone but not beside the open one is prepared anyway, as opportunistic data,
+when memory not reserved by a running app nor committed allows (decided; before, it was not
+prepared); the change to it is still a cut. Opportunistic data is let go when a launch, a
+reservation or committed growth needs its room. The only opportunistic item built is that next
+entry (order 4): the sample file cache is the kernel's page cache, and recently used items and
+entries further ahead are not kept loaded yet. A refused Performance no longer lets the prepared
+next entry go.
+
+The desktop app sets the classes from a profile that gives `osMemory` and `performanceMemory`:
+the system's share is `osMemory` plus the app's own resident memory when it starts (the shell,
+and the engine when in-process; an engine in its own process is not counted yet), the margin 5%
+of memory (the RFC's illustrative figure; the margins per level are open), the always-available
+apps at its own apps' figures (illustrative, not measured, until manifests, step 8). No built-in
+profile gives them yet, so nothing changes on the desktop or the built-in devices. **What is
+enforced:** opening, adding and preparing Performances against the committed share, and an app
+launch asked through `launchApp`. **Bookkeeping:** apps run inside the desktop app (RFC 0022
+step 1) and the desktop shell does not ask `launchApp` before opening one yet, so no app's
+reservation is enforced or measured; per-app limits wait for apps as processes (RFC 0022 step 2).
+
 **Declared memory** (step 7, built 2026-11-01): `core/clap-ext/include/oscairn-clap/memory.h`.
 The CLAP host asks `estimate` at every activation, after the state is loaded and before
 `activate` (a load, a state load, a new effect context, a change of rate), in the engine or in a
@@ -143,6 +176,14 @@ activating; `control-parts` checks the default mode counted at its own measureme
 mode's, a third plugin refused before activating, a saved state refused at loading when only
 another mode's measurement made it look like it fits, and effect contexts counted from their
 resources; `control-plugin-failures` checks the declaration and the refusal through a worker.
+`control-parts` also runs the memory classes test below in small (simulated, in one process: the
+fixture's memory effect declares and allocates set sizes): opportunistic memory filled with a
+next entry prepared to cut and let go when an always-available app opens, every app admitted up
+to the floor and the one past it refused with the reason, a committed next entry kept through
+the refusal, a Performance past the share refused naming the apps to close, a committed
+Performance loaded with the last ringing out, and a launch refused only for the committed next
+entry offered and admitted by letting it go. `control-local-stream` checks the memory calls
+through the protocol; `desktop-profile` the profile fields and their refusals.
 
 ## Memory: reserved, committed and opportunistic
 

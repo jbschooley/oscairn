@@ -872,7 +872,23 @@ fader or name in the Performance, nor wires to or from the rest of the graph.
   `name`, `plugin`, `cpu`, `memory` and `measured`. For the open Performance, `fits` counts it
   alone and `seamless` adds the last Performance still ringing out. With a budget, opening a Performance over it,
   or adding a plugin that would take the open one over it, fails saying what does not fit; one
-  that fits only alone opens as a cut, without the last ringing out.
+  that fits only alone opens as a cut, without the last ringing out. A plugin whose
+  `oscairn.memory` declaration exceeds what the memory budget leaves is refused before it activates.
+  `budget.set` also takes optional memory classes in bytes ([RFC 0025](rfcs/0025-resource-budgets.md#memory-reserved-committed-and-opportunistic)):
+  `device`, `system` (the OS, the engine's base and the shell), `floor` (the Performances' floor)
+  and `margin`; with `device` the memory ceiling is the committed share (device less `system`,
+  the apps' reservations and the margin), and `budget.estimate`'s `budget.memory` reports it.
+  With them, a Performance that cannot be prepared beside the open one is still prepared, as
+  opportunistic data, when memory allows (`performance.prepare` still returns `{"prepared":false}`).
+- `memory.alwaysAvailable` takes `{apps:[{app,reserve}]}`: the apps reserved whether they run or
+  not; refused (-32005) when the apps added do not fit beside the floor. `memory.launch` takes
+  `{app,reserve}` and optional `dropNext`, asked before an app starts, and returns
+  `{admitted,offerNext,reason}`: refused with what closing would free, never closing a running
+  app or letting committed memory go; `offerNext` when only the committed next entry stands in
+  the way, and `dropNext` then lets it go and admits. `memory.closed` takes `{app}`.
+  `memory.state` (`{}`) returns `{device,reserved,share,floor,margin,committed,opportunistic,
+  running,alwaysAvailable,nextPrepared,nextCommitted}`. Apps run in the desktop app today, so a
+  reservation is counted, not enforced per app.
 - `performance.save` and `library.save` both keep each part's `from`.
 - `performance.export` takes `{file}` and optional `editedSounds`, and returns
   `{"exported":true,"notes":[...]}`: one [archive](library-archive.md) holding the open

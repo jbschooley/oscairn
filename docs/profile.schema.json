@@ -65,7 +65,27 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 1073741824
+        },
+        "osMemory": {
+          "type": "integer",
+          "description": "RFC 0025: what the operating system and everything beside Oscairn need at their peak; with performanceMemory or not at all",
+          "minimum": 0,
+          "maximum": 16777216
+        },
+        "performanceMemory": {
+          "type": "integer",
+          "description": "RFC 0025: the floor for Performances, committed memory no app launch may take; with osMemory or not at all",
+          "minimum": 0,
+          "maximum": 16777216
         }
+      },
+      "dependentRequired": {
+        "osMemory": [
+          "performanceMemory"
+        ],
+        "performanceMemory": [
+          "osMemory"
+        ]
       },
       "additionalProperties": false
     },
@@ -627,6 +647,16 @@
         "maxLength": 128
       }
     },
+    "alwaysAvailable": {
+      "type": "array",
+      "description": "RFC 0025: the apps reserved whether they run or not, each in apps; absent: oscairn.performance and oscairn.library where apps lists them",
+      "maxItems": 64,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 128
+      }
+    },
     "estimated": {
       "type": "array",
       "items": {
@@ -760,6 +790,11 @@
             {
               "required": [
                 "apps"
+              ]
+            },
+            {
+              "required": [
+                "alwaysAvailable"
               ]
             }
           ]

@@ -125,8 +125,38 @@ namespace oscairn
         // is the share of the audio thread's time (each block's duration) the plugins may take,
         // after the reliability level's margin; `memory` in bytes (0: not checked). Until a budget
         // is set nothing is checked and nothing is measured.
-        struct Budget { double cpu = 0; uint64_t memory = 0; };
+        // Memory classes (RFC 0025), in bytes; with `device` 0 they are off and `memory` is the
+        // ceiling. With them, the ceiling for committed memory (the open Performance, what rings
+        // out, the prepared next entry) is the committed share: device less what is reserved
+        // (`system`: the OS, the engine's base and the shell; the running and always-available
+        // apps' reservations) and the margin. `floor` (the profile's performanceMemory) is the
+        // committed memory no app launch may take.
+        struct Budget { double cpu = 0; uint64_t memory = 0; uint64_t device = 0, system = 0, floor = 0, margin = 0; };
         virtual void setBudget(const Budget& budget) = 0;
+        // An app's memory reservation (RFC 0025): what it needs to open and do its job.
+        struct AppMemory { std::string app; uint64_t reserve = 0; };
+        // The always-available apps, reserved whether they run or not, so they always open.
+        // Checked as a launch of the apps added; std::invalid_argument with the reason when they
+        // do not fit beside the floor or what is committed.
+        virtual void setAlwaysAvailable(const std::vector<AppMemory>& apps) = 0;
+        // Asked before an app starts. Admitted: its reservation counts while it runs, after
+        // opportunistic data is let go to make room. Refused: reason says what it needs, what is
+        // free for apps and which running apps' closing would free enough; nothing running is
+        // closed and nothing committed let go. offerNext: refused only because of the committed
+        // next entry, and asking again with dropNext lets that entry go and admits it. An
+        // always-available app is always admitted. Without memory classes, everything is admitted.
+        struct Launch { bool admitted = false, offerNext = false; std::string reason; };
+        virtual Launch launchApp(const AppMemory& app, bool dropNext = false) = 0;
+        virtual void appClosed(const std::string& app) = 0;
+        // The memory classes now: reserved, the committed share, committed in use (open, ringing
+        // and a committed next entry), opportunistic held (a next entry prepared to cut).
+        struct MemoryState
+        {
+            uint64_t device = 0, reserved = 0, share = 0, floor = 0, margin = 0, committed = 0, opportunistic = 0;
+            std::vector<AppMemory> running, alwaysAvailable;
+            bool nextPrepared = false, nextCommitted = false;
+        };
+        virtual MemoryState memoryState() = 0;
         // What a Performance needs: the open one (directory empty) or one in a folder, each plugin
         // at its cost measured on this device or at a default (measured false). fits: within the
         // budget; seamless: within it together with what plays now, so a change to it rings out.
@@ -146,7 +176,8 @@ namespace oscairn
         virtual void loadPerformance(const std::string& directory) = 0;
         // The next Performance, read and its plugins loaded off the audio thread while this one
         // plays (RFC 0021), so loading it then only publishes it. False: it would not fit beside
-        // what plays now (RFC 0025), and loads when loaded, as a cut. Empty: lets go of the
+        // what plays now (RFC 0025), and loads when loaded, as a cut; with memory classes it is
+        // still prepared, as opportunistic data let go first, when free memory allows. Empty: lets go of the
         // prepared one; preparing another or loading any other Performance does too.
         virtual bool preparePerformance(const std::string& directory) = 0;
         // The Performance's own details (format 3's info block, RFC 0021): saved with it, read

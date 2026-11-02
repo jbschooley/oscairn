@@ -94,7 +94,7 @@ An illustrative profile (the values are an example, not a real product's):
 
 - **`platform`:** what builds it needs (RFC 0006 selects packages by it).
 - **`compute`:** cores (and how many are reserved for audio), memory and storage: the budget's
-  ceiling (RFC 0025). The memory classes proposed there (RFC 0025 step 6, not built) add two
+  ceiling (RFC 0025). The memory classes there (RFC 0025 step 6, built 2026-11-01) add two
   optional fields, in MiB like `memory`:
   - `osMemory`: what the operating system and everything beside Oscairn need at their peak
     (kernel, init, drivers, the display server). Measured on the device later; the larger of the
@@ -106,7 +106,10 @@ An illustrative profile (the values are an example, not a real product's):
   Both or neither. Without them the budget stays 80% of `memory`, as built. With them, a profile
   is refused when `osMemory` + `performanceMemory`, plus the always-available apps' declared
   reservations, exceed `memory`. The margin per reliability level is not a profile field yet; its
-  values are open.
+  values are open, and the app keeps 5% of `memory` at every level meanwhile. Until apps declare
+  reservations in manifests, the app knows its own apps' (RFC 0025's illustrative figures:
+  Performance 150, Library 120, Setlist 60, Groovebox 200 MiB; not measured). None of the
+  built-in profiles sets them yet.
 - **`audio`:** its interface, the sample rates and the block size it runs at, headphones (a cue
   bus).
 - **`controls`:** every physical control, in groups (below). Default control mappings and the
@@ -120,7 +123,7 @@ An illustrative profile (the values are an example, not a real product's):
   built-in ones are `oscairn.performance`, `oscairn.library`, `oscairn.setlist` and
   `oscairn.groovebox`; Home offers the profile's, so a device that plays no Performances (a
   recorder, a DJ deck) can leave `oscairn.performance` out.
-- **`alwaysAvailable`** (optional, proposed with RFC 0025 step 6): the app IDs whose memory is
+- **`alwaysAvailable`** (optional, built with RFC 0025 step 6): the app IDs whose memory is
   reserved whether they run or not, so they always open; each must be in `apps`. It is the
   default of a setting the musician can change. Absent: `oscairn.performance` and
   `oscairn.library`, where `apps` lists them.

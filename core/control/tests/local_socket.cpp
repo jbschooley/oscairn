@@ -284,6 +284,16 @@ namespace
             LocalClient client;client.adopt(fd[1]);RemoteControl remote(client);
             const auto synth=remote.nodeId("synth");
             check(remote.hasParameter(synth,1) && remote.parameters(synth).size()==1,"remote metadata snapshot");
+            // RFC 0025's memory classes over the socket; with no CPU budget nothing is measured or refused.
+            remote.setBudget({0,0,1000,100,300,50});
+            remote.setAlwaysAvailable({{"oscairn.library",20}});
+            check(remote.launchApp({"oscairn.setlist",30}).admitted,"a launch crosses the socket");
+            auto memory=remote.memoryState();
+            check(memory.device==1000 && memory.floor==300 && memory.margin==50 && memory.running.size()==1 && memory.running[0].app=="oscairn.setlist" &&
+                  memory.running[0].reserve==30 && memory.alwaysAvailable.size()==1 && memory.alwaysAvailable[0].reserve==20,"the memory classes cross the socket");
+            remote.appClosed("oscairn.setlist");
+            check(remote.memoryState().running.empty(),"and an app closing");
+            remote.setBudget({});
             check(remote.sessionStatus().audioDevice=="Test device" && remote.sessionStatus().midiInputs==std::vector<MidiEndpoint>{{MidiEndpoint::Kind::Port,3,"Test MIDI",2}},"host status crosses socket");
             check(remote.sessionStatus().audioInputs[0].deviceChannel==2 && !remote.sessionStatus().audioReady && !remote.sessionStatus().audioOutputs[1].available,"device mapping and unavailable channels cross socket");
             const auto port=remote.graphState().topology.nodes[0].outputs[0].id;

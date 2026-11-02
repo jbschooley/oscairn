@@ -34,6 +34,7 @@
 #include "Setlist.h"
 
 #include <BinaryData.h>
+#include <oscairn/plugin_host.h>
 #include <juce_gui_extra/juce_gui_extra.h>
 
 #include <cstdio>
@@ -774,7 +775,25 @@ namespace oscairn::standalone
                 if(socket.isEmpty() && !args.contains("--in-process"))
                     helper=juce::File::getSpecialLocation(juce::File::currentExecutableFile).getSiblingFile("oscairn-engine").getFullPathName().toStdString();
                 engine_ = std::make_unique<Engine>( dir.unquoted().toStdString(), socket.unquoted().toStdString(), helper, audio );
-                engine_->edit( [budget = Control::Budget{ profile.cpuBudget(), profile.memoryBudget() }]( Control& c ) { c.setBudget( budget ); } );
+                // RFC 0025: with the profile's memory classes, the device's memory less what is
+                // reserved; the shell's base (and an in-process engine's) is this process's memory now.
+                Control::Budget budget{ profile.cpuBudget(), profile.memoryBudget() };
+                std::vector<Control::AppMemory> always;
+                if( profile.memoryClasses() )
+                {
+                    constexpr uint64_t MiB = 1ull << 20;
+                    budget.device = uint64_t( profile.compute.memory ) * MiB;
+                    budget.system = uint64_t( profile.compute.osMemory ) * MiB + residentBytes();
+                    budget.floor = uint64_t( profile.compute.performanceMemory ) * MiB;
+                    budget.margin = profile.memoryMargin();
+                    for( const auto& a : profile.alwaysAvailable ) always.push_back( { a, uint64_t( Profile::appMemory( a ) ) * MiB } );
+                    if( budget.system + budget.floor + budget.margin > budget.device )
+                    {
+                        std::fprintf( stderr, "oscairn: memory classes off: the OS, this app, the floor and the margin exceed the device's memory\n" );
+                        budget.device = budget.system = budget.floor = budget.margin = 0; always.clear();
+                    }
+                }
+                engine_->edit( [budget, always]( Control& c ) { c.setBudget( budget ); if( !always.empty() ) c.setAlwaysAvailable( always ); } );
 
                 auto layouts = builtInLayouts();
                 auto wanted  = argument( args, "--layout" );

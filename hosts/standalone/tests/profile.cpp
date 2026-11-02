@@ -77,6 +77,23 @@ int main()
         check(refused(replaced(kickJson, paged, paged + ", \"rows\": [{\"name\": \"A\", \"bank\": \"assign\"}]")), "with both");
         check(refused(replaced(kickJson, paged, "\"role\": \"assign\", \"rows\": [{\"name\": \"A\", \"bank\": \"tone\"}]")), "a row naming an unknown bank");
         check(refused(replaced(kickJson, paged, "\"role\": \"steer\"")), "an unknown role");
+        // Memory classes (RFC 0025): osMemory and performanceMemory together; always-available apps
+        // among its apps, by default the Performance app and the Library; all fitting its memory.
+        {
+            const std::string compute = "\"memory\": 2048, \"storage\": 16384";
+            check(!kick.memoryClasses() && kick.alwaysAvailable == std::vector<std::string>{"oscairn.performance", "oscairn.library"},
+                  "without them, no memory classes; the Performance app and the Library always available");
+            const auto classes = Profile::parse(replaced(kickJson, compute, "\"memory\": 2048, \"storage\": 16384, \"osMemory\": 300, \"performanceMemory\": 1200"));
+            check(classes.memoryClasses() && classes.compute.osMemory == 300 && classes.compute.performanceMemory == 1200 &&
+                  classes.memoryMargin() == 2048ull * 1024 * 1024 / 20, "osMemory and the floor read, the margin 5% of memory");
+            check(refused(replaced(kickJson, compute, compute + ", \"osMemory\": 300")), "osMemory without performanceMemory");
+            check(refused(replaced(kickJson, compute, compute + ", \"osMemory\": 0, \"performanceMemory\": 100")), "an osMemory of 0");
+            check(refused(replaced(kickJson, compute, compute + ", \"osMemory\": 600, \"performanceMemory\": 1200")),
+                  "the OS, the floor and the always-available apps (600 + 1200 + 150 + 120) past its 2048 MiB");
+            const auto fewer = replaced(replaced(kickJson, compute, compute + ", \"osMemory\": 600, \"performanceMemory\": 1200"), "\"apps\":", "\"alwaysAvailable\": [\"oscairn.performance\"], \"apps\":");
+            check(!refused(fewer) && Profile::parse(fewer).alwaysAvailable.size() == 1, "fitting with only the Performance app always available (600 + 1200 + 150)");
+            check(refused(replaced(kickJson, "\"apps\":", "\"alwaysAvailable\": [\"oscairn.recorder\"], \"apps\":")), "an always-available app it does not have");
+        }
         check(refused(replaced(kickJson, "\"role\": \"notes\"", "\"role\": \"assign\"")), "pads that do not play notes");
         check(refused(replaced(kickJson, paged, paged + ", \"modes\": [\"part\"]")), "modes on knobs");
         check(refused(replaced(kickJson, "[\"volume\", \"master\", \"recGain\"]", "[\"volume\"]")), "fewer functions than controls");
@@ -124,6 +141,7 @@ int main()
         std::string smkJson; for(const auto& [id, text] : builtInProfiles()) if(id == "smk37-elite") smkJson = text;
         check(!refused(smkJson), "the SMK37's profile parses as text");
         check(refused(replaced(smkJson, "\"midi\": { \"ports\"", "\"reliability\": \"desktop\", \"midi\": { \"ports\"")), "a controller has no reliability");
+        check(refused(replaced(smkJson, "\"midi\": { \"ports\"", "\"alwaysAvailable\": [], \"midi\": { \"ports\"")), "nor always-available apps");
         check(refused(replaced(smkJson, "\"protocol\": \"mackie\"", "\"protocol\": \"osc\"")), "an unknown protocol");
         check(refused(replaced(smkJson, "[68, 69, 70, 71]", "[68, 69, 70]")), "fewer CCs than controls");
         check(refused(replaced(smkJson, "[68, 69, 70, 71]", "[68, 69, 70, 70]")), "two controls sending the same message");

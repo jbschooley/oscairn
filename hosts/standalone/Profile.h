@@ -14,7 +14,9 @@ namespace oscairn::standalone
     {
         std::string id, name;
         struct Platform { std::string os, cpu, runtime, board; } platform;
-        struct Compute { int cores = 0, realtimeCores = 0, memory = 0, storage = 0; } compute; // memory and storage in MiB
+        // memory and storage in MiB; osMemory and performanceMemory (RFC 0025's memory classes, both
+        // or neither): what the OS and everything beside Oscairn need, and the floor for Performances.
+        struct Compute { int cores = 0, realtimeCores = 0, memory = 0, storage = 0, osMemory = 0, performanceMemory = 0; } compute;
         struct Audio { int inputs = 0, outputs = 2; std::vector<int> rates; int block = 0; bool headphones = false; } audio; // block 0: the build's default
         // A group of physical controls (RFC 0024, RFC 0011's physical controls): its kind and
         // count, and its role: notes (keys, pads), screen (following what the screen shows),
@@ -60,6 +62,9 @@ namespace oscairn::standalone
         bool battery = false;
         std::string reliability = "desktop"; // desktop, instrument or pass-through (RFC 0027)
         std::vector<std::string> apps;       // RFC 0022's apps installed with it
+        // RFC 0025: the apps reserved whether they run or not, each in apps; absent from the file,
+        // oscairn.performance and oscairn.library where apps lists them.
+        std::vector<std::string> alwaysAvailable;
         std::vector<std::string> estimated;  // sections whose values are estimates, not measured on a unit
 
         bool offers(const std::string& app) const;
@@ -70,6 +75,13 @@ namespace oscairn::standalone
         // checked when the profile does not say).
         double cpuBudget() const { return reliability == "pass-through" ? .6 : reliability == "instrument" ? .75 : .9; }
         uint64_t memoryBudget() const { return uint64_t(compute.memory) * (1ull << 20) * 8 / 10; }
+        // RFC 0025's memory classes, with osMemory: the margin kept free, 5% of memory at every
+        // level (the RFC's illustrative figure; the margins per level are open), in bytes.
+        bool memoryClasses() const { return compute.osMemory > 0; }
+        uint64_t memoryMargin() const { return uint64_t(compute.memory) * (1ull << 20) / 20; }
+        // The memory an app reserves, in MiB: Oscairn's own apps only, until apps declare it in
+        // their manifests (RFC 0025 step 8); 0 for any other.
+        static int appMemory(const std::string& app);
         // The screen the app draws on: the first; a headless profile has none and draws nothing.
         const Screen* screen() const { return screens.empty() ? nullptr : &screens.front(); }
 

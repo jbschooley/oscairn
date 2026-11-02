@@ -94,10 +94,11 @@ namespace oscairn
 
     uint64_t Session::memoryRoom(const Graph& graph, const std::vector<NodeId>& beside) const
     {
-        if(budget_.cpu <= 0 || !budget_.memory) return 0;
+        const auto ceiling = budget_.cpu > 0 ? memoryCeiling() : 0;
+        if(!ceiling) return 0;
         uint64_t used = 0;
         for(const auto n : beside) if(graph.contains(n)) used += nodeCost(graph, n).memory;
-        return used < budget_.memory ? budget_.memory - used : 1; // 1 byte: nothing that declares fits
+        return used < ceiling ? ceiling - used : 1; // 1 byte: nothing that declares fits
     }
 
     uint64_t Session::memoryRoom() const
@@ -165,8 +166,147 @@ namespace oscairn
     void Session::setBudget(const Budget& budget)
     {
         if(!std::isfinite(budget.cpu) || budget.cpu < 0 || budget.cpu > 64) throw std::invalid_argument("a budget's cpu is a share of the audio thread's time, 0 to 64");
+        if(budget.device && (budget.system > budget.device || budget.floor > budget.device - budget.system || budget.margin > budget.device - budget.system - budget.floor))
+            throw std::invalid_argument("a budget's system share, floor and margin must fit the device's memory");
         budget_ = budget;
         if(budget_.cpu > 0) loadMeasurements();
+        if(memoryClasses()) evictOpportunistic();
+    }
+
+    // Memory classes (RFC 0025, "Admission's arithmetic"). An app counts once, running or always available.
+    uint64_t Session::reservedMemory(bool closedAlwaysAvailable) const
+    {
+        uint64_t n = budget_.system;
+        for(const auto& a : running_) n += a.reserve;
+        if(closedAlwaysAvailable)
+            for(const auto& a : alwaysAvailable_)
+                if(std::none_of(running_.begin(), running_.end(), [&](const AppMemory& r) { return r.app == a.app; })) n += a.reserve;
+        return n;
+    }
+
+    uint64_t Session::memoryCeiling() const
+    {
+        if(!memoryClasses()) return budget_.memory;
+        const auto held = reservedMemory() + budget_.margin;
+        return held < budget_.device ? budget_.device - held : 1; // 1 byte: nothing fits
+    }
+
+    uint64_t Session::preparedMemory() const
+    {
+        uint64_t n = 0;
+        if(prepared_) for(const auto& [node, name] : prepared_->names) if(prepared_->next->contains(node)) n += nodeCost(*prepared_->next, node).memory;
+        return n;
+    }
+
+    uint64_t Session::committedMemory() const
+    {
+        uint64_t n = 0;
+        for(const auto& [node, name] : nodes_) n += nodeCost(graph_, node).memory;
+        for(const auto node : leaving_) if(graph_.contains(node)) n += nodeCost(graph_, node).memory;
+        if(prepared_ && !preparedOpportunistic_) n += preparedMemory();
+        return n;
+    }
+
+    // Opportunistic data fills what is neither reserved by a running app nor committed, up to the
+    // margin; the closed always-available apps' reservations included. Let go least likely needed
+    // first. shortcut: the only opportunistic item built is a next entry prepared to cut (order 4);
+    // the sample file cache is the kernel's, recently used Performances and entries further ahead are not kept yet.
+    void Session::evictOpportunistic()
+    {
+        if(!memoryClasses() || !prepared_ || !preparedOpportunistic_) return;
+        const auto used = reservedMemory(false) + budget_.margin + committedMemory();
+        const auto room = used < budget_.device ? budget_.device - used : 0;
+        if(preparedMemory() <= room) return;
+        std::fprintf(stderr, "oscairn: let go of the next entry prepared to cut: its memory is needed\n");
+        prepared_.reset(); preparedOpportunistic_ = false;
+    }
+
+    void Session::setAlwaysAvailable(const std::vector<AppMemory>& apps)
+    {
+        if(memoryClasses())
+        {
+            // The apps added must fit as a launch would: beside what is reserved, the floor or what is committed, and the margin.
+            uint64_t added = 0;
+            for(const auto& a : apps)
+                if(std::none_of(alwaysAvailable_.begin(), alwaysAvailable_.end(), [&](const AppMemory& x) { return x.app == a.app; }) &&
+                   std::none_of(running_.begin(), running_.end(), [&](const AppMemory& x) { return x.app == a.app; })) added += a.reserve;
+            const auto need = reservedMemory() + added + std::max(committedMemory(), budget_.floor) + budget_.margin;
+            if(added && need > budget_.device)
+                throw std::invalid_argument("the always-available apps need " + std::to_string(added >> 20) + " MiB more than this device has beside the Performances' floor and what is reserved");
+        }
+        alwaysAvailable_ = apps;
+        evictOpportunistic();
+    }
+
+    Control::Launch Session::launchApp(const AppMemory& app, bool dropNext)
+    {
+        if(app.app.empty()) throw std::invalid_argument("an app launch names the app");
+        Launch result;
+        auto same = [&](const AppMemory& a) { return a.app == app.app; };
+        if(std::any_of(running_.begin(), running_.end(), same)) { result.admitted = true; return result; } // already running
+        const bool always = std::any_of(alwaysAvailable_.begin(), alwaysAvailable_.end(), same);
+        if(!memoryClasses() || always)
+        {
+            // Reserved already: it always opens; opportunistic data in its share goes.
+            if(always) running_.push_back(*std::find_if(alwaysAvailable_.begin(), alwaysAvailable_.end(), same));
+            else running_.push_back(app);
+            evictOpportunistic();
+            result.admitted = true; return result;
+        }
+        const auto reserved = reservedMemory();
+        auto fits = [&](uint64_t committed) { return reserved + app.reserve + std::max(committed, budget_.floor) + budget_.margin <= budget_.device; };
+        const auto committed = committedMemory();
+        if(!fits(committed))
+        {
+            const auto next = prepared_ && !preparedOpportunistic_ ? preparedMemory() : 0;
+            if(next && fits(committed - next))
+            {
+                if(!dropNext)
+                {
+                    result.offerNext = true;
+                    result.reason = "needs " + std::to_string(app.reserve >> 20) + " MiB; letting the next entry, prepared ahead, go would make room (it then loads when you go to it)";
+                    return result;
+                }
+                prepared_.reset(); preparedOpportunistic_ = false;
+            }
+            else
+            {
+                // Free for apps: what neither the reservations, the floor (or what is committed) nor the margin hold.
+                const auto held = reserved + std::max(committed, budget_.floor) + budget_.margin;
+                const auto free = held < budget_.device ? budget_.device - held : 0;
+                const auto short_ = app.reserve - free;
+                std::vector<AppMemory> closable;
+                for(const auto& a : running_) if(std::none_of(alwaysAvailable_.begin(), alwaysAvailable_.end(), [&](const AppMemory& x) { return x.app == a.app; })) closable.push_back(a);
+                std::sort(closable.begin(), closable.end(), [](const AppMemory& a, const AppMemory& b) { return a.reserve < b.reserve; });
+                std::string names;
+                for(const auto& a : closable) if(a.reserve >= short_) names += (names.empty() ? "" : " or ") + a.app + " (" + std::to_string(a.reserve >> 20) + ")";
+                if(names.empty()) for(const auto& a : closable) names += (names.empty() ? "" : " and ") + a.app + " (" + std::to_string(a.reserve >> 20) + ")";
+                result.reason = "needs " + std::to_string(app.reserve >> 20) + " MiB, " + std::to_string(free >> 20) + " free for apps" + (names.empty() ? "" : "; close " + names);
+                return result;
+            }
+        }
+        running_.push_back(app);
+        evictOpportunistic();
+        result.admitted = true;
+        return result;
+    }
+
+    void Session::appClosed(const std::string& app)
+    {
+        std::erase_if(running_, [&](const AppMemory& a) { return a.app == app; });
+    }
+
+    Control::MemoryState Session::memoryState()
+    {
+        MemoryState m;
+        m.device = budget_.device; m.floor = budget_.floor; m.margin = budget_.margin;
+        m.reserved = memoryClasses() ? reservedMemory() : 0;
+        m.share = memoryCeiling();
+        m.committed = committedMemory();
+        m.opportunistic = prepared_ && preparedOpportunistic_ ? preparedMemory() : 0;
+        m.running = running_; m.alwaysAvailable = alwaysAvailable_;
+        m.nextPrepared = prepared_ != nullptr; m.nextCommitted = prepared_ && !preparedOpportunistic_;
+        return m;
     }
 
     // Each service tick, once a budget is set: every plugin's last block as a share of the block's
@@ -217,8 +357,9 @@ namespace oscairn
         if(budget_.cpu <= 0) return e;
         double cpu = e.cpu; uint64_t memory = e.memory;
         for(const auto& c : playing) { cpu += c.cpu; memory += c.memory; }
-        e.fits = e.cpu <= budget_.cpu && (!budget_.memory || e.memory <= budget_.memory);
-        e.seamless = e.fits && cpu <= budget_.cpu && (!budget_.memory || memory <= budget_.memory);
+        const auto ceiling = e.budget.memory = memoryCeiling();
+        e.fits = e.cpu <= budget_.cpu && (!ceiling || e.memory <= ceiling);
+        e.seamless = e.fits && cpu <= budget_.cpu && (!ceiling || memory <= ceiling);
         std::sort(e.plugins.begin(), e.plugins.end(), [](const Cost& a, const Cost& b) { return a.cpu > b.cpu; });
         return e;
     }
@@ -226,7 +367,19 @@ namespace oscairn
     std::string Session::tooMuch(const Estimate& e) const
     {
         std::string why = "needs " + percent(e.cpu) + " of the audio time where this device allows " + percent(budget_.cpu);
-        if(budget_.memory && e.memory > budget_.memory) why += ", and " + std::to_string(e.memory >> 20) + " MiB of memory where it allows " + std::to_string(budget_.memory >> 20);
+        const auto ceiling = memoryCeiling();
+        if(ceiling && e.memory > ceiling)
+        {
+            why += ", and " + std::to_string(e.memory >> 20) + " MiB of memory where it allows " + std::to_string(ceiling >> 20);
+            // With memory classes, the running apps (not always available) that hold the difference.
+            std::vector<AppMemory> closable;
+            if(memoryClasses())
+                for(const auto& a : running_) if(std::none_of(alwaysAvailable_.begin(), alwaysAvailable_.end(), [&](const AppMemory& x) { return x.app == a.app; })) closable.push_back(a);
+            std::sort(closable.begin(), closable.end(), [](const AppMemory& a, const AppMemory& b) { return a.reserve > b.reserve; });
+            uint64_t freed = 0; std::string names;
+            for(const auto& a : closable) if(ceiling + freed < e.memory) { freed += a.reserve; names += (names.empty() ? "" : " and ") + a.app + " (" + std::to_string(a.reserve >> 20) + " MiB)"; }
+            if(!names.empty() && ceiling + freed >= e.memory) why += "; closing " + names + " would free enough";
+        }
         std::string most;
         for(size_t i = 0; i < e.plugins.size() && i < 3; ++i)
             most += std::string(i ? ", " : "") + (e.plugins[i].name.empty() ? e.plugins[i].plugin : e.plugins[i].name) + " " + percent(e.plugins[i].cpu) + (e.plugins[i].measured ? "" : " (not yet measured)");
