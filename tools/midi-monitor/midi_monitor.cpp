@@ -4,10 +4,15 @@
 // each (port, channel, type, number, value), then, on Enter or Ctrl-C, a table with a row per
 // control: how often it sent, its lowest and highest value and the values it sent. Move each
 // control of a controller in turn and paste the table back to fill in its profile (RFC 0024).
-//   oscairn-midi-monitor [--list] [--self-test]
+// --seconds N listens for N seconds instead of waiting for Enter, for running it where there is no
+// keyboard input (a shell that runs one command and returns its output).
+//   oscairn-midi-monitor [--list | --seconds N | --self-test]
 #include <juce_audio_devices/juce_audio_devices.h>
 
 #include <csignal>
+#include <cstdlib>
+#include <chrono>
+#include <thread>
 #include <cstdio>
 #include <iostream>
 #include <map>
@@ -119,7 +124,9 @@ int main(int argc, char** argv)
 {
     const std::string option = argc > 1 ? argv[1] : "";
     if(option == "--self-test") return selfTest();
-    if(!option.empty() && option != "--list") { std::fprintf(stderr, "usage: %s [--list] [--self-test]\n", argv[0]); return 2; }
+    int seconds = 0;
+    if(option == "--seconds" && argc == 3) seconds = std::atoi(argv[2]);
+    if((!option.empty() && option != "--list" && seconds <= 0) || seconds > 3600) { std::fprintf(stderr, "usage: %s [--list | --seconds N | --self-test]\n", argv[0]); return 2; }
     juce::ScopedJuceInitialiser_GUI juce; // JUCE's message manager, which device lists may need
     const auto devices = juce::MidiInput::getAvailableDevices();
     std::printf("MIDI inputs:\n");
@@ -131,13 +138,14 @@ int main(int argc, char** argv)
     for(const auto& d : devices)
         if(auto input = juce::MidiInput::openDevice(d.identifier, &monitor)) { input->start(); inputs.push_back(std::move(input)); }
         else std::fprintf(stderr, "could not open %s\n", d.name.toRawUTF8());
-    std::printf("\nMove each control, one at a time; press Enter (or Ctrl-C) for the table.\n\n");
+    if(seconds) std::printf("\nMove each control, one at a time; the table comes in %d seconds.\n\n", seconds);
+    else std::printf("\nMove each control, one at a time; press Enter (or Ctrl-C) for the table.\n\n");
     std::fflush(stdout);
     struct sigaction action{};
     action.sa_handler = stop; // no SA_RESTART: Ctrl-C ends the wait below
     sigaction(SIGINT, &action, nullptr);
-    std::string ignored;
-    std::getline(std::cin, ignored);
+    if(seconds) std::this_thread::sleep_for(std::chrono::seconds(seconds)); // MIDI arrives on JUCE's own threads meanwhile
+    else { std::string ignored; std::getline(std::cin, ignored); }
     for(auto& input : inputs) input->stop();
     std::printf("\n%s", monitor.table().c_str());
     return 0;
