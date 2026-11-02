@@ -78,7 +78,7 @@ namespace oscairn::standalone
         try{if(!ignoredInputs_.empty())control_->ignoreMidiInputs(ignoredInputs_);}catch(const std::exception& e){std::fprintf(stderr,"oscairn: ignored inputs: %s\n",e.what());}
         // Only when the engine's length differs: setting it starts an empty buffer, and an engine
         // still running (a timeout, another window) keeps the last seconds to capture.
-        if(captureSeconds_>0)try{if(control_->recordRetroSeconds()!=captureSeconds_)control_->recordRetro(captureSeconds_);}catch(const std::exception& e){std::fprintf(stderr,"oscairn: capture: %s\n",e.what());}
+        if(captureSeconds_>0)try{if(std::abs(control_->recordRetroSeconds()-captureSeconds_)>1e-9)control_->recordRetro(captureSeconds_);}catch(const std::exception& e){std::fprintf(stderr,"oscairn: capture: %s\n",e.what());}
     }
     bool Engine::hasParam(const std::string& n,uint32_t p)const
     {try{return control_->hasParameter(control_->nodeId(n),p);}catch(const std::invalid_argument&){return false;}}
