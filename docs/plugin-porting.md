@@ -34,6 +34,14 @@ Everything else is handled for you:
 
 - **Notes:** the host offers CLAP notes, MIDI and MPE, and converts at the plugin's
   boundary. A plugin that only reads MIDI, or only CLAP notes, works.
+- **Hardware MIDI input:** from a keyboard or controller, a plugin gets notes, polyphonic
+  aftertouch and channel pressure (as CLAP notes and the pressure note expression, or as MIDI),
+  and, as MIDI, pitch bend and the performance controllers: CC 1 mod wheel, CC 2 breath,
+  CC 4 foot, CC 11 expression, CC 64–67 (sustain, portamento, sostenuto and soft pedals),
+  CC 120 all sound off and CC 123 all notes off. Other controllers and program changes do
+  not reach plugins; physical-control mapping routes them. Clock, start, continue, stop and
+  song position drive the transport. To hear pitch bend and the mod wheel, a plugin offers
+  the MIDI dialect on its note port.
 - **Audio:** 32-bit float buffers. CLAP requires every plugin and host to support 32-bit
   audio; 64-bit is optional (`CLAP_AUDIO_PORT_SUPPORTS_64BITS`) and Oscairn does not offer
   it, so no plugin is excluded by it.

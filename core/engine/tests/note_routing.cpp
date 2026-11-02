@@ -132,6 +132,9 @@ int main(int argc,char** argv){try{
     check(block.dropped==1,"physical block reports dropped release");
     graph.panicInput();run();check(voices()==0,"overflow recovery resets held notes and sustain");
     block.reset();block.append(release,sizeof(release));check(block.count==1 && !block.dropped,"next physical block recovers");
+    const uint8_t bend[]{0xe0,0,96},wheel[]{0xb0,1,64},volume[]{0xb0,7,64};block.append(bend,3);block.append(wheel,3);block.append(volume,3);
+    check(block.count==3,"physical input takes pitch bend and the mod wheel, not other controllers");
+    block.reset();
     run({&on,1});run({&off,1});tail();check(voices()==0,"overflow does not leave sustain engaged");
     {
         Graph lanes(48000,512);const auto source=lanes.add(argv[2]),target=lanes.add(argv[2]);

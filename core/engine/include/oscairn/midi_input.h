@@ -15,9 +15,11 @@ namespace oscairn
     /// - polyphonic aftertouch: pressure on that key (a CLAP pressure note expression, 0..1);
     /// - channel aftertouch: pressure on every note of that channel (the same expression with
     ///   CLAP's wildcard key);
-    /// - sustain (CC64), all sound off (CC120), and all notes off (CC123), as CLAP MIDI.
+    /// - pitch bend, and the performance controllers as CLAP MIDI: mod wheel (CC1), breath (CC2),
+    ///   foot (CC4), expression (CC11), the pedals (CC64-67: sustain, portamento, sostenuto,
+    ///   soft), all sound off (CC120) and all notes off (CC123).
     ///
     /// Returns false, leaving `out` alone, for messages it does not convert (other controllers,
-    /// pitch bend, system messages, and malformed ones).
+    /// program changes, system messages, and malformed ones).
     bool midiToClap( const uint8_t* bytes, size_t size, uint32_t time, kick::clap::Event& out, int16_t port = 0 ) noexcept;
 }

@@ -132,11 +132,12 @@ missing ones are silent, and both are reported in the take.
 number (note_zone.h), and the events a chosen node emits. Played notes and a sequencer's
 notes can be recorded side by side.
 
-**What reaches the graph today.** The desktop's MIDI input passes notes, CC 64, 120 and 123,
-polyphonic aftertouch, channel pressure, clock, start, continue, stop and song position, and
-drops everything else (`AudioEngine::handleIncomingMidiMessage` in
-`hosts/audio/AudioEngine.cpp`). Pitch bend, the mod wheel and other controllers therefore
-cannot be recorded. Passing them into the graph is separate work, and step 2 needs it.
+**What reaches the graph today.** The desktop's MIDI input passes notes, polyphonic
+aftertouch, channel pressure, pitch bend, CC 1, 2, 4, 11, 64–67, 120 and 123, clock, start,
+continue, stop and song position, and drops everything else
+(`AudioEngine::handleIncomingMidiMessage` in `hosts/audio/AudioEngine.cpp`, through
+`midiToClap`). Other controllers therefore cannot be recorded until controller mapping routes
+them.
 
 **File format.** A Standard MIDI File, type 1, at 960 ticks per quarter note, with the
 tempo map from the transport. It is not sample-exact: at 120 BPM one tick is about

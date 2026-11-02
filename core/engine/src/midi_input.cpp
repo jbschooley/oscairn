@@ -45,8 +45,10 @@ namespace oscairn
             return true;
         }
         case 0xB0:
-            if(bytes[1]!=64 && bytes[1]!=120 && bytes[1]!=123)return false;
-            out=kick::clap::Event::midi(bytes[0],bytes[1],bytes[2],time,port);return true;
+            // The performance controllers; the rest wait for controller mapping to route them.
+            if(bytes[1]!=1 && bytes[1]!=2 && bytes[1]!=4 && bytes[1]!=11 && (bytes[1]<64 || bytes[1]>67) && bytes[1]!=120 && bytes[1]!=123)return false;
+            [[fallthrough]];
+        case 0xE0: out=kick::clap::Event::midi(bytes[0],bytes[1],bytes[2],time,port);return true;
         case 0xA0: out = pressure( time, port, channel, bytes[1], bytes[2] ); return true;
         default: return false;
         }

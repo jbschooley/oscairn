@@ -143,7 +143,8 @@ namespace oscairn::host
 
     void AudioEngine::handleIncomingMidiMessage( juce::MidiInput* input, const juce::MidiMessage& message )
     {
-        if( message.isNoteOnOrOff() || (message.isController() && (message.getControllerNumber()==64 || message.getControllerNumber()==120 || message.getControllerNumber()==123)) || message.isAftertouch() || message.isChannelPressure() || message.isMidiClock() || message.isMidiStart() || message.isMidiContinue() || message.isMidiStop()
+        kick::clap::Event converted; // channel messages pass if the block will take them (midiToClap)
+        if( oscairn::midiToClap( message.getRawData(), (size_t)message.getRawDataSize(), 0, converted ) || message.isMidiClock() || message.isMidiStart() || message.isMidiContinue() || message.isMidiStop()
             || message.isSongPositionPointer() )
             push( message, input );
     }
@@ -205,7 +206,7 @@ namespace oscairn::host
                         clocks_[clockCount++] = { status, time, (uint16_t)( in.bytes[1] | ( in.bytes[2] << 7 ) ) };
                     return;
                 }
-                // Notes and aftertouch (as CLAP pressure).
+                // Notes, aftertouch (as CLAP pressure), pitch bend and the performance controllers.
                 notes_.append(in.bytes,in.size,in.source);
             };
             for( int i = 0; i < scope.blockSize1; ++i )

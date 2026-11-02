@@ -51,18 +51,21 @@ int main()
                && expression( e ).channel == 4 && std::abs( expression( e ).value - 64.0 / 127.0 ) < 1e-12,
            "channel aftertouch is pressure on every note of the channel" );
 
-    for(uint8_t cc:{64,120,123})
+    for(uint8_t cc:{1,2,4,11,64,65,66,67,120,123})
         check(convert({0xb3,cc,127},e,9) && e.header()->type==CLAP_EVENT_MIDI && e.header()->time==9 &&
-            reinterpret_cast<const clap_event_midi_t*>(e.header())->data[1]==cc,"sustain and emergency releases pass through");
+            reinterpret_cast<const clap_event_midi_t*>(e.header())->data[1]==cc,"the performance controllers, pedals and emergency releases pass through");
+    check(convert({0xe5,0x7f,0x7f},e,3) && e.header()->type==CLAP_EVENT_MIDI && e.header()->time==3 &&
+        reinterpret_cast<const clap_event_midi_t*>(e.header())->data[0]==0xe5 && reinterpret_cast<const clap_event_midi_t*>(e.header())->data[2]==0x7f,
+        "pitch bend passes through");
 
     kick::clap::Event untouched = kick::clap::Event::note( true, 1, 0.5 );
     e                           = untouched;
-    check( !convert( { 0xB0, 1, 64 }, e ) && e.bytes == untouched.bytes, "controllers are not converted, and leave the event alone" );
-    check( !convert( { 0xE0, 0, 64 }, e ), "pitch bend is not converted" );
+    check( !convert( { 0xB0, 7, 64 }, e ) && e.bytes == untouched.bytes, "other controllers are not converted, and leave the event alone" );
+    check( !convert( { 0xC0, 5 }, e ) && !convert( { 0xC0, 5, 0 }, e ), "program changes are not converted" );
     check( !convert( { 0xF8 }, e ), "system messages are not converted" );
     check( !convert( { 0x90, 200, 64 }, e ) && !convert( { 0x90, 60 }, e ) && !convert( { 0x40, 1, 2 }, e ), "malformed messages are rejected" );
 
     if( failures == 0 )
-        std::printf( "ok: notes, polyphonic and channel aftertouch converted; other messages left alone\n" );
+        std::printf( "ok: notes, aftertouch, pitch bend and performance controllers converted; other messages left alone\n" );
     return failures == 0 ? 0 : 1;
 }

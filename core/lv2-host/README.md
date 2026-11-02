@@ -70,8 +70,8 @@ connection helper retains stereo behavior; there is no surround/bus editor.
 - Atom Sequence ports: frame-timed MIDI input/output and `time:Position` input. Notes,
   poly pressure and channel pressure translate between the graph and MIDI 1.0.
   MIDI CC, program and pitch-bend messages can pass through the graph's raw MIDI events;
-  the physical desktop input currently forwards only its existing notes/pressure/clock
-  subset. Wildcard note-offs issue all-notes-off on the addressed channels/ports.
+  the physical desktop input forwards notes, pressure, pitch bend, the performance
+  controllers (CC 1, 2, 4, 11, 64–67, 120, 123) and clock. Wildcard note-offs issue all-notes-off on the addressed channels/ports.
 - Transport: play/stop speed, tempo, sample position, beat, bar and time signature.
   Positions are rebased when control changes split a block, including tempo increments,
   meter-beat units and the host's current bar origin. A tempo ramp is sampled at each
