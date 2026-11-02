@@ -3,6 +3,8 @@ juce_add_gui_app(oscairn_standalone
     PRODUCT_NAME "Oscairn"
     COMPANY_NAME "Oscairn"
     BUNDLE_ID org.oscairn.standalone
+    ICON_BIG "${CMAKE_CURRENT_SOURCE_DIR}/../../branding/app-icon-1024.png"
+    ICON_SMALL "${CMAKE_CURRENT_SOURCE_DIR}/../../branding/app-icon-1024.png"
     MICROPHONE_PERMISSION_ENABLED TRUE
     MICROPHONE_PERMISSION_TEXT "Oscairn uses selected audio inputs for live instruments, effects and routing.")
 
