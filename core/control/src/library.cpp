@@ -57,14 +57,16 @@ namespace oscairn
             return out + ']';
         }
         int64_t stamp(const fs::path& file) { return int64_t(fs::last_write_time(file).time_since_epoch().count()); }
-        void writeAtomically(const fs::path& file, const std::string& text)
-        {
-            fs::create_directories(file.parent_path());
-            const auto temporary = file.parent_path() / ("." + file.filename().string() + ".tmp");
-            { std::ofstream out(temporary, std::ios::binary | std::ios::trunc); out << text; if(!out) throw std::runtime_error("cannot write " + file.string()); }
-            fs::rename(temporary, file);
-        }
         std::string lower(std::string s) { for(auto& c : s) c = char(std::tolower(static_cast<unsigned char>(c))); return s; }
+    }
+
+    void writeAtomically(const std::filesystem::path& file, const std::string& text)
+    {
+        namespace fs = std::filesystem;
+        fs::create_directories(file.parent_path());
+        const auto temporary = file.parent_path() / ("." + file.filename().string() + ".tmp");
+        { std::ofstream out(temporary, std::ios::binary | std::ios::trunc); out << text; if(!out) throw std::runtime_error("cannot write " + file.string()); }
+        fs::rename(temporary, file);
     }
 
     fs::path dataHome()

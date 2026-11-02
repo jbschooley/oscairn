@@ -61,4 +61,7 @@ namespace oscairn
     std::string infoJson(const Control::PerformanceInfo& info);
     // Replaces a document's info block with this one, keeping the rest byte for byte.
     void writeInfo(const std::filesystem::path& file, const Control::PerformanceInfo& info);
+    // Writes a whole file through a temporary beside it, moved in once complete: a reader sees the
+    // old file or the new one, never half of either.
+    void writeAtomically(const std::filesystem::path& file, const std::string& text);
 }

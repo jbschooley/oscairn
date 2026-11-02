@@ -1468,6 +1468,8 @@ Control::Installed Session::installArchive(const std::string& file,bool asLibrar
     const auto into=unpackFolder();
     const auto p=readPackage(file,into);
     Installed out;
+    std::vector<fs::path> created; // item folders this call copies, undone if it fails
+    bool freshRoot=false;
     try{
         std::vector<Package::Item> items;
         for(const auto& id:chosen)if(std::none_of(p.items.begin(),p.items.end(),[&](const auto& i){return i.id==id;}))bad("no item "+id+" in that archive");
@@ -1525,12 +1527,13 @@ Control::Installed Session::installArchive(const std::string& file,bool asLibrar
         if(asLibrary){
             // Locked, in its own folder: what is there stays, what is missing comes back.
             const auto root=l.libraries()/p.id; // readPackage: the ID is a plain name
+            freshRoot=!fs::exists(root);
             fs::create_directories(root);
-            {std::ofstream m(root/"library.json",std::ios::binary|std::ios::trunc);m<<manifestJson(p);if(!m)bad("cannot write the library's manifest");}
+            writeAtomically(root/"library.json",manifestJson(p));
             for(const auto& i:items){
                 const auto to=root/i.path;
                 if(fs::exists(to)){++out.skipped;continue;}
-                fs::create_directories(to.parent_path());fs::copy(into/i.path,to,fs::copy_options::recursive);++out.added;
+                fs::create_directories(to.parent_path());fs::copy(into/i.path,to,fs::copy_options::recursive);created.push_back(to);++out.added;
             }
         }else{
             // The user's own, under new IDs: Sounds first, so the Performances that came with them point at their copies.
@@ -1541,7 +1544,7 @@ Control::Installed Session::installArchive(const std::string& file,bool asLibrar
                 const auto copy=std::find_if(l.items().begin(),l.items().end(),[&](const LibraryItem& x){return x.library.empty() && x.origin.library==p.id && x.origin.item==i.id;});
                 if(copy!=l.items().end() && copy->hash==copy->origin.hash){ids[i.id]=copy->id;++out.skipped;continue;} // still as imported
                 const auto to=l.newFolder(i.name,i.kind);
-                fs::create_directories(to.parent_path());fs::copy(into/i.path,to,fs::copy_options::recursive);
+                fs::create_directories(to.parent_path());fs::copy(into/i.path,to,fs::copy_options::recursive);created.push_back(to);
                 const auto doc=to/(i.kind=="sound"?"sound.json":"performance.json");
                 if(i.kind=="performance"){
                     // Parts point at the Sounds' copies. The span comes from the needle itself: an
@@ -1557,7 +1560,13 @@ Control::Installed Session::installArchive(const std::string& file,bool asLibrar
                 ids[i.id]=info.id;++out.added;
             }
         }
-    }catch(...){std::error_code ignored;fs::remove_all(into,ignored);l.rescan();throw;}
+    }catch(...){
+        // The unpacked folder, this call's item copies, and a library folder it made itself: nothing half stays.
+        std::error_code ignored;
+        for(const auto& made:created)fs::remove_all(made,ignored);
+        if(freshRoot)fs::remove_all(l.libraries()/p.id,ignored);
+        fs::remove_all(into,ignored);l.rescan();throw;
+    }
     std::error_code ignored;fs::remove_all(into,ignored);
     l.rescan();
     return out;

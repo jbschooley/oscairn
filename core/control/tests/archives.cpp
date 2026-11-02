@@ -454,6 +454,48 @@ int main(int argc, char** argv)
             l.uninstallLibrary("com.example.pack");
             check(l.libraries().empty() && !fs::exists(temp.path / "l" / "Libraries" / "com.example.pack"), "and it is uninstalled");
         }
+        // An install cut short by a failed copy leaves nothing half behind: the item folders this
+        // call made come back out, as the unpacked folder does. The failing copy is deterministic:
+        // the second item's destination is a dangling symlink, so its folder cannot be created.
+        {
+            device(temp.path / "m");
+            const auto root = temp.path / "m-root";
+            fs::create_directories(root / "Sounds" / "one");
+            fs::create_directories(root / "Performances" / "two");
+            std::ofstream(root / "Sounds" / "one" / "sound.json", std::ios::binary | std::ios::trunc)
+                << R"({"format":"oscairn.sound","version":7,"info":{"id":"one","name":"One","description":"","tags":[],"color":"","revision":"r","parent":"","origin":null,"hash":")"
+                << std::string(64, '0') << R"("},"nodes":[]})";
+            std::ofstream(root / "Performances" / "two" / "performance.json", std::ios::binary | std::ios::trunc)
+                << R"({"format":"oscairn.performance","version":11,"info":{"id":"two","name":"Two","description":"","tags":[],"color":"","revision":"r","parent":"","origin":null,"hash":")"
+                << std::string(64, '0') << R"("},"nodes":[]})";
+            Package p; p.id = "m.cut"; p.name = "Cut";
+            p.items.push_back({"sound", "one", "One", "Sounds/one", {}});
+            p.items.push_back({"performance", "two", "Two", "Performances/two", {}});
+            const auto cut = temp.path / "Cut.olib";
+            writePackage(cut, p, root);
+            Session m(48000, 64);
+            fs::create_directories(temp.path / "m" / "Performances");
+            fs::create_symlink(temp.path / "nowhere", temp.path / "m" / "Performances" / "Two.oscairn");
+            bool threw = false;
+            try { m.installArchive(cut.string(), false); } catch(const std::exception&) { threw = true; }
+            check(threw && items(m, "sound").empty() && items(m, "performance").empty(),
+                  "an own-storage install cut short leaves no half-installed item behind");
+            std::error_code ignored; fs::remove(temp.path / "m" / "Performances" / "Two.oscairn", ignored);
+            // The same, as a library: the items copied before the failure do not stay with a
+            // library whose install never finished.
+            fs::create_directories(temp.path / "m" / "Libraries" / "m.cut" / "Performances");
+            fs::create_symlink(temp.path / "nowhere", temp.path / "m" / "Libraries" / "m.cut" / "Performances" / "two");
+            threw = false;
+            try { m.installArchive(cut.string(), true); } catch(const std::exception&) { threw = true; }
+            Control::LibraryQuery cutSource; cutSource.source = "m.cut";
+            check(threw && !fs::exists(temp.path / "m" / "Libraries" / "m.cut" / "Sounds" / "one" / "sound.json") &&
+                      m.libraryQuery(cutSource).total == 0,
+                  "a library install cut short rolls back the items it copied");
+            std::error_code cleared; fs::remove(temp.path / "m" / "Libraries" / "m.cut" / "Performances" / "two", cleared);
+            const auto rest = m.installArchive(cut.string(), true); // once the way is clear, it installs whole
+            check(m.libraries().size() == 1 && m.libraries()[0].items == 2 && rest.added == 2,
+                  "and the same archive finishes once the way is clear");
+        }
     }
     catch(const std::exception& e) { std::fprintf(stderr, "FAIL: %s\n", e.what()); ++failures; }
     if(!failures) std::puts("ok: export, install as the user's own and as a library, reinstall, uninstall, chosen items and plugins from the store");
