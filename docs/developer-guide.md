@@ -101,7 +101,7 @@ Programs in `tools/`, and the ones built beside the tests, for plugin work:
 | `oscairn-render` | `build-dev/hosts/oscairn-render` | Render a chain of plugins offline to a WAV |
 | `oscairn-plugin-worker` | `build-dev/core/oscairn-plugin-worker` | The worker process that runs a plugin outside the engine |
 | `oscairn-plugin-check` | `build-dev/core/control/oscairn-plugin-check` | Check a plugin through the library, an archive and the plugin store ([below](#test-before-publishing-a-plugin)) |
-| `oscairn-sign` (`tools/oscairn-sign`) | `build-dev/core/control/oscairn-sign` | Make a signing key, sign a plugin build or an archive, verify an archive ([below](#signing-keys-and-plugin-builds)) |
+| `oscairn-sign` (`tools/oscairn-sign`) | `build-dev/core/control/oscairn-sign` | Make a signing key, sign a plugin build or an archive, verify an archive, sign and verify a package repository's files ([below](#signing-keys-and-plugin-builds)) |
 | `oscairn-midi-monitor` (`tools/midi-monitor`) | with `OSCAIRN_STANDALONE` or `OSCAIRN_ENGINE` | Print what a MIDI controller sends, for writing its profile |
 | `oscairn-handoff-bench` (`tools/worker-bench`) | `build-dev/core/oscairn-handoff-bench`, on Unix | Measure handing audio blocks to worker processes and back |
 
@@ -262,6 +262,16 @@ and hash in one and says who signed what. The app's own keys, for signing export
 `Keys/<name>.key` in the data folder (`keys.make`, `keys.list`); the keys a device trusts, and
 for what (`plugins`, `apps`, `content`), are its `trust.json` (`trust.list`, `trust.set`,
 `trust.remove`; [protocol](control-protocol.md)).
+
+### Publishing a package
+
+Oscairn's package repository takes submissions as pull requests to a GitHub repository, with no
+server ([RFC 0031](rfcs/0031-package-repository-and-distribution.md#hosting-and-cost)). Sign each
+plugin build and the archive as above, then follow the submission steps in the repository's
+README; its template is kept here, in
+[tools/package-repository/template](../tools/package-repository/template/README.md). Its CI
+checks archives with `oscairn-sign verify`; `oscairn-sign file` and `verify-file` sign and check
+the repository's root and index key.
 
 ### Planned
 

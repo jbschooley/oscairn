@@ -114,13 +114,15 @@ index/<sha256>.json.gz     the full index, named by its hash
 index/<sha256>.delta.gz    changes from one index to the next
 details/<sha256>.json      a package's long description, screenshots and previews
 revocations/<sha256>.json  the revocation list
-blobs/<sha256>             package files: manifests, items, samples, plugin builds
+blobs/<ab>/<sha256>        package files: manifests, items, samples, plugin builds
 ```
 
 - **Everything but the root is named by its SHA-256** and never changes. A CDN can cache it
   forever, and a mirror copies it once.
 - **The root is the only file that changes.** It is small (a few kilobytes) and names the
   current index, the deltas, the revocation list and the mirrors by hash and size.
+- **Blobs are kept by the first two hex digits of their hash** (`<ab>`), so no folder or
+  GitHub release holds too many: a blob is at the root's blob base, then `<ab>/<sha256>`.
 - **Compressed with deflate (gzip),** which the vendored miniz already reads. No new library.
 
 ### Package files
@@ -305,7 +307,16 @@ search:
 - **The root is signed** by the repository's **index key**. The root also lists the
   repository's **root key**, which signs the index key and is kept offline. A stolen index key
   is replaced by a new one signed by the root key, and the old one is revoked (as TUF does).
-  Ed25519, as in [RFC 0006](0006-packages-and-portability.md#signatures).
+  Ed25519, as in [RFC 0006](0006-packages-and-portability.md#signatures), over
+  `oscairn-index-1\0` and the signed file's exact bytes: `repository.json` for the root (its
+  signatures in `repository.sig`, a list of `{key, signature}`), and the index key's 64 hex
+  digits and a newline for the index key. `oscairn-sign file` signs either and
+  `oscairn-sign verify-file` checks it.
+- **The root's fields:** `format` (`oscairn.repository`), `version` (1), `repository`, `name`,
+  `serial`, `rootKey`, `indexKey` (`{key, signature}`, the root key's signature over it),
+  `index` and `revocations` (each `{path, sha256, size}`), `blobBase` and `mirrors`. Until step
+  1 stores a release in pieces, each version in the index also names its whole archive
+  (`archive`, `{sha256, size}`), a blob like any other.
 - Everything else is checked by its hash in the root.
 - **Rollback:** a device refuses a root with a lower serial than one it has seen, so a mirror
   cannot hand it an older index with a version that has since been revoked.
@@ -336,8 +347,9 @@ them. An unsigned archive can still be shared by hand and installed under RFC 00
 For the first version, the official repository takes submissions as **pull requests** to a Git
 repository of submission records:
 
-- `submissions/<publisher>/<package>/<version>.json` holds the signed manifest and where the
-  files are (a URL per blob, often the publisher's own release page, or a blob base).
+- `packages/<package>/<version>.json` holds where the signed archive is (a URL, often the
+  publisher's own release page, or the archive beside it) and its hash, with the index's
+  summary, license, tags, channel and claimed platforms.
 - **A publisher's first submission** also adds `publishers/<publisher>.json`: the publisher's
   ID, name and key. A reverse-DNS publisher ID is verified by a file at
   `https://<domain>/.well-known/oscairn-publisher.json` naming the key, as Flathub verifies
@@ -347,6 +359,9 @@ repository of submission records:
 - **On merge**, CI copies the blobs into storage (unless the package uses its own blob base),
   writes the new index and root, signs the root with the index key, and uploads. Merges are
   serialized, so serials never collide.
+- A template for the repository and its CI is kept in
+  [tools/package-repository/template](../../tools/package-repository/template/README.md)
+  ([hosting](#hosting-and-cost)).
 
 A third party running its own repository uses the same tool: `oscairn repo build` turns a
 folder of signed archives into a repository, ready to upload anywhere.
@@ -575,21 +590,121 @@ Accepted by Jacob on 2026-11-01 ([decided](#decided-2026-11-01)).
 
 ## Hosting and cost
 
-What the project runs for the first version:
+The design needs only static storage, a CDN, a Git repository and CI. No server-side code: no
+upload API, no accounts, no database. Nothing depends on one provider, because the signed root
+names the blob base and every file is checked by its hash.
 
-- **Static storage** for blobs, indexes and roots, behind a **CDN**. Any object store and CDN
-  will do; nothing depends on one provider.
-- **A Git repository** for submissions, publishers and policy, and **CI** to check, build the
-  index and sign it. The index key lives in CI's secrets; the root key stays offline with the
-  maintainers.
-- **Mirrors:** anyone can copy the static tree (rsync, or the CDN's own copy). The root lists
-  mirrors; devices try them in turn. Mirrors need no trust.
+### GitHub first
 
-No server-side code: no upload API, no accounts, no database. Costs are storage and outgoing
-bandwidth, most of it sample libraries. The official repository may host a few large sample
-libraries; the rest are hosted by their publishers through blob bases
-([decided](#decided-2026-11-01)). Sample deduplication and per-platform downloads keep the rest
-down.
+The owner's decision of 2026-11-01 ([decided](#decided-2026-11-01)): the official repository
+starts on GitHub, with no server.
+
+| Part | Where | What it holds |
+| --- | --- | --- |
+| Submissions | The `oscairn/packages` repository; a pull request is a submission | `publishers/`, `packages/`, `revoked.json`, `repository-config.json` and the scripts |
+| Checks and publishing | GitHub Actions: `check.yml` on pull requests, `publish.yml` on each merge to `main` | Builds `oscairn-sign` at a pinned commit, checks, builds the index, signs the root |
+| The signed root and index | GitHub Pages | `repository.json`, `repository.sig`, `index/`, `revocations/` |
+| Package files | GitHub Releases assets: a release `blobs-<ab>` per first two hex digits, each asset named by its SHA-256 | The blob base is `https://github.com/oscairn/packages/releases/download/blobs-`, so a blob is at `blobs-<ab>/<sha256>` under it |
+
+The template for the repository, its workflows and its index builder are in
+[tools/package-repository/template](../../tools/package-repository/template/README.md).
+Release downloads redirect to another GitHub host, so devices follow redirects; the hash is
+what they trust, not the host.
+
+GitHub's limits, as its documentation gives them (read 2026-11-01):
+
+- **Pages:** a published site may be no larger than 1 GB, and the page has given a soft
+  bandwidth limit of 100 GB a month; check the
+  [current Pages limits](https://docs.github.com/en/pages/getting-started-with-github-pages/github-pages-limits)
+  rather than treating that figure as fixed. Pages is not for running an online business,
+  e-commerce or SaaS, and for a site over quota GitHub suggests a CDN in front, Releases, or
+  another host. The index is small (the target is under 2 MB) and fits. Paid content, if ever
+  added ([decided](#decided-2026-11-01)), could not be sold through Pages.
+- **Releases:** each file must be under 2 GiB, with no limit on a release's total size or
+  bandwidth, and at most 1000 assets in a release
+  ([About releases](https://docs.github.com/en/repositories/releasing-projects-on-github/about-releases),
+  [About large files on GitHub](https://docs.github.com/en/repositories/working-with-files/managing-large-files/about-large-files-on-github)).
+  Users report failures near 2 GiB, so the index builder refuses an archive over 1,900 MiB. A
+  file in the repository itself must be under 100 MiB, so larger archives are linked from a
+  submission, not committed.
+- **Acceptable use:** bandwidth limits vary by feature, and usage significantly above similar
+  users' can lead GitHub to throttle file hosting or suspend the account until it drops
+  ([GitHub Acceptable Use Policies](https://docs.github.com/en/site-policy/acceptable-use-policies/github-acceptable-use-policies),
+  "Excessive Bandwidth Use"). That covers package files on Releases, not only Pages. The
+  publish job reports total release downloads in its summary, so the project sees growth
+  coming.
+- **Malware:** the same policies forbid using GitHub to deliver malware. A malicious plugin
+  that slips past the checks could get the repository's releases or the account disabled. That
+  is one more reason for [revocation and fast takedown](#takedown-and-revocation), and for
+  keeping the blob base movable.
+
+### Moving package files to object storage
+
+Package files move to object storage behind a CDN under a custom domain, such as Cloudflare
+R2, when the first of these comes:
+
+- a package file of 2 GiB or more that the official repository hosts (a large sample library);
+- Pages bandwidth near its soft limit, or release downloads growing toward what GitHub's
+  acceptable use allows;
+- more blobs than the releases hold comfortably (256 releases of 1000 assets), once releases
+  are stored in pieces.
+
+[R2](https://developers.cloudflare.com/r2/pricing/) charges no egress fees. Its free tier is
+10 GB-month of storage, 1 million Class A and 10 million Class B operations a month; beyond it,
+$0.015 per GB-month, and $4.50 and $0.36 per million Class A and Class B operations. Moving is a
+copy and one field: copy every blob to `blobs/<ab>/<sha256>` under the new domain, set
+`blobBase` in `repository-config.json`, and merge. The next signed root names the new base.
+Devices change nothing, because every file is checked by its hash. The root and index may stay
+on Pages or move too.
+
+### What costs what
+
+| Part | On GitHub | After the move |
+| --- | --- | --- |
+| Submissions and CI | Free for a public repository | The same |
+| Root and index | Pages, free within its limits | The same, or the CDN |
+| Package files | Releases, free, within GitHub's acceptable use | R2: storage past 10 GB-month and operations past the free tier; no egress fees |
+| A custom domain | Optional | A domain's yearly fee |
+
+Most bandwidth is sample libraries. The official repository may host a few; the rest are
+hosted by their publishers through blob bases ([decided](#decided-2026-11-01)). Sample
+deduplication and per-platform downloads keep the rest down.
+
+### Mirrors
+
+Anyone can mirror the repository by copying the static tree: the root, its signature, `index/`,
+`revocations/` and the blobs, with rsync, a download of the Pages site and the releases, or a
+CDN's own copy. The root lists mirrors and devices try them in turn. Mirrors need no trust: a
+device checks the root's signature and every file's hash, and refuses a root with a lower
+serial than one it has seen ([freshness](#signatures-and-freshness)).
+
+### What the project sets up
+
+1. **The repository:** create `oscairn/packages` in the GitHub organization and copy in the
+   template. Protect `main`: pull requests only, the Check workflow required, no force pushes
+   (the serial is the number of commits on `main`).
+2. **The pinned tools:** set `OSCAIRN_REPOSITORY` and `OSCAIRN_COMMIT` in both workflows to the
+   Oscairn repository and a commit of it that has `oscairn-sign file`.
+3. **The Pages site:** Settings, Pages, Source: GitHub Actions. A custom domain is optional.
+4. **The blob base:** nothing to create; the publish job makes each `blobs-<ab>` release on
+   first use, and `repository-config.json`'s `blobBase` names them.
+5. **The keys and the secret,** below.
+
+### Keys
+
+- **The root key** is made on an offline machine and stays offline with the maintainers, with a
+  backup. It signs only the index key. Devices trust the repository by its fingerprint.
+- **The index key** is made the same way and signed by the root key (`oscairn-sign file
+  root.key index-key.pub index-key.sig`, the file holding its 64 hex digits and a newline). It
+  is stored as the `OSCAIRN_INDEX_KEY` Actions secret, and the local copy deleted. The root
+  key, the index key and its signature go in `repository-config.json`. The publish job writes
+  the secret to a file only it can read, signs the root, deletes the file, and checks that the
+  signer is the index key the config names.
+- **Rotation:** a new index key is made and signed by the root key the same way, the secret and
+  the config are replaced, and the old key goes in `revoked.json`. A stolen index key is
+  rotated at once. Replacing the root key means devices trust a new fingerprint, through a
+  system image's trust store or by the user. Key replacement for publishers is not built yet,
+  so the checks refuse a changed publisher key.
 
 ## Build order and gates
 
@@ -610,7 +725,7 @@ step 8: nothing public without a way to stop it.
 
 ## Decided 2026-11-01
 
-Jacob's decisions on five of the open questions:
+Jacob's decisions on six of the open questions:
 
 - **Publisher trust:** a repository's listing counts as trust for content, not for code. Code is
   approved once per publisher on the device, then pinned to its key, as the
@@ -628,6 +743,12 @@ Jacob's decisions on five of the open questions:
   discouraged. The official repository stays one switch away in Settings, and the
   documentation and the profile schema flag hiding it as discouraged
   ([several repositories](#several-repositories)).
+- **Hosting:** GitHub first, with no server. Submissions are pull requests to
+  `oscairn/packages`; GitHub Actions checks them and, on merge, builds and signs the index with
+  the index key from Actions secrets, while the root key stays offline. The signed index is on
+  GitHub Pages and package files are Releases assets. Package files move to object storage
+  behind a CDN (Cloudflare R2) under a custom domain when files over 2 GiB or bandwidth require
+  it; devices do not change ([hosting](#hosting-and-cost)).
 
 ## Open questions
 
