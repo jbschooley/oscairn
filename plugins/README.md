@@ -6,9 +6,9 @@ for build commands and the contracts for a new plugin.
 
 | Plugin | Source | Demonstrates |
 | --- | --- | --- |
-| Basic Synth | [basic_synth.cpp](basic-synth/basic_synth.cpp) | Polyphonic instrument, sample-timed parameters/expression, native sound contexts, channel parts and per-voice output buses |
+| Basic Synth | [basic_synth.cpp](basic-synth/basic_synth.cpp) | Polyphonic instrument, sample-timed parameters/expression, native sound contexts, channel parts and per-voice output buses, pitch bend and the mod wheel, `oscairn.ui` hints with roles |
 | Step Sequencer | [step_sequencer.cpp](step-sequencer/step_sequencer.cpp) | Note-only source, transport timing, editable steps and parameter-lock lanes |
-| Delay | [delay.cpp](delay/delay.cpp) | Independent native effect contexts, parameter/state APIs, tails and tempo glide |
+| Delay | [delay.cpp](delay/delay.cpp) | Independent native effect contexts, parameter/state APIs, tails and tempo glide, a `mix` role |
 | Sampler | [oscairn/sampler](https://github.com/oscairn/sampler), its own repository, fetched at a pinned commit | One-region SFZ patches over preloaded WAV audio shared between sound contexts, with portable saved assets |
 | Modular | [modular.cpp](modular/src/modular.cpp), [README](modular/README.md) | chillbeast's patchable grid synth (imported engine) wrapped as a CLAP instrument; links JUCE, built with `OSCAIRN_MODULAR` or the desktop |
 | Split / Join | [splitters.cpp](splitters/splitters.cpp) | The nodes at either end of a part's left/right, mid/side and band lanes (RFC 0011 step 3): two plugins in one bundle, fixed ports, the mode a parameter; Linkwitz-Riley crossovers whose bands sum flat |
@@ -54,7 +54,8 @@ its level comparable to a single saw. A zero LFO rate or depth disables vibrato.
 Pitch bend applies per MIDI channel to held and released voices, smoothed over about 5 ms.
 The mod wheel adds vibrato through the pitch LFO: at full wheel, as much depth again as
 Pitch LFO depth, or 50 cents when that is 0, at the LFO's rate, or 5 Hz when that is 0.
-States saved before parameters 9 and 10 existed load with their defaults.
+Its state is `oscairn-synth-2`; version 1 states, saved before parameters 9 and 10 existed,
+are refused.
 Continuous parameters support sample-timed automation/modulation; oscillator mode is
 stepped. The envelope remains fixed: 2 ms attack, 250 ms exponential decay toward
 0.35 sustain, and a 120 ms release time constant. Stereo outputs carry the same signal.
