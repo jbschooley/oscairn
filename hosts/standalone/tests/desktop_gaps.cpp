@@ -395,6 +395,13 @@ int main(int argc, char** argv)
                 tap.reset();
                 engine.setParam(node, 4, 1); engine.note(true, 60, 1.f); engine.note(false, 60, 0);
                 check(tap.count("params.set") == 1 && tap.count("notes.send") == 2, "a fader move and a note go at once during a refresh: " + std::to_string(tap.count("params.set")) + " " + std::to_string(tap.count("notes.send")));
+                // The overrides of the physical controls are read at most four times a second, as Play and a controller ask.
+                check(wait([&] { return !engine.jobRunning(); }), "the refresh finished");
+                engine.assignments(); tap.reset();
+                const auto asked = juce::Time::getMillisecondCounter();
+                for(int i = 0; i < 20; ++i) engine.assignments();
+                const int most = int((juce::Time::getMillisecondCounter() - asked) / 250) + 1;
+                check(tap.count("assignments.get") <= most, "the assignments read at their own pace: " + std::to_string(tap.count("assignments.get")) + " of at most " + std::to_string(most));
             }
             // A Parts view not on screen (the one under Play, a background app's) polls nothing:
             // on the Mixer, shown, it would read the meters twenty times a second.

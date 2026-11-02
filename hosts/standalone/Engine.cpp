@@ -245,7 +245,7 @@ namespace oscairn::standalone
         }
         // What a job can change (the open Performance, the parts, the plugins' windows) reads
         // fresh once it is done; until then the reads answer from the cache above.
-        takesRead_=metersRead_=wireMetersRead_=historyRead_=performanceRead_=windowsRead_=0;
+        takesRead_=metersRead_=wireMetersRead_=historyRead_=performanceRead_=windowsRead_=assignmentsRead_=0;
         soundJob_=std::async(std::launch::async,[socket=socketPath_,request=std::move(action)] {
             SoundResult result;LocalClient client;
             try
@@ -480,8 +480,10 @@ namespace oscairn::standalone
     }
     const std::vector<AssignmentOverride>& Engine::assignments() const
     {
-        if(connected() && controlReady())
-            try{assignments_=control_->assignments();}catch(const std::exception&){}
+        // Read at most four times a second and kept while the engine is busy: Play and a controller ask several times a second.
+        const auto now=juce::Time::getMillisecondCounter();
+        if(connected() && controlReady() && (!assignmentsRead_ || now-assignmentsRead_>=250))
+            try{assignments_=control_->assignments();assignmentsRead_=std::max(1u,now);}catch(const std::exception&){}
         return assignments_;
     }
     Engine::Status Engine::status()const
@@ -495,8 +497,8 @@ namespace oscairn::standalone
         pendingControls_.clear();
         pendingSounds_.clear();
         // Nothing read before the drop shows as if live: meters at their last level, undo names.
-        meters_.clear();wireMeters_.clear();history_={};takes_.clear();windowCache_.clear();performance_.reset();
-        metersRead_=wireMetersRead_=historyRead_=performanceRead_=takesRead_=windowsRead_=0;
+        meters_.clear();wireMeters_.clear();history_={};takes_.clear();windowCache_.clear();performance_.reset();assignments_.clear();
+        metersRead_=wireMetersRead_=historyRead_=performanceRead_=takesRead_=windowsRead_=assignmentsRead_=0;
         failure_=message;std::fprintf(stderr,"oscairn: control connection: %s\n",message.c_str());
         if(client_)client_->disconnect();
     }

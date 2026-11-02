@@ -74,7 +74,7 @@ namespace oscairn::standalone
         void setControl(const std::string& name,double value);
         const std::vector<Macro>& controls() const {return macros_;}
         void setControl(uint32_t id,double value);
-        // Physical controls (RFC 0011): the Performance's overrides (the last read while the
+        // Physical controls (RFC 0011): the Performance's overrides (read at most four times a second, the last read while the
         // engine is busy), and the device's control moved last ("knob:2"), counted so each move
         // shows, for learn.
         const std::vector<AssignmentOverride>& assignments() const;
@@ -250,6 +250,6 @@ namespace oscairn::standalone
         mutable std::map<NodeId,bool> windowCache_; mutable uint32_t windowsRead_=0;
         double captureSeconds_=0;
         mutable std::map<std::pair<std::string,uint32_t>,std::map<uint64_t,std::string>> textCache_;
-        mutable std::vector<AssignmentOverride> assignments_;
+        mutable std::vector<AssignmentOverride> assignments_; mutable uint32_t assignmentsRead_=0;
     };
 }
