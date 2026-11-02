@@ -64,8 +64,8 @@ rest load after. Plugins are prepared in the order the Performance needs them; w
 
 The image also sets up memory for the engine (proposed in
 [RFC 0025](0025-resource-budgets.md#linux)): a cgroup v2 subtree delegated to it, a locked-memory
-limit (`RLIMIT_MEMLOCK`) high enough for the engine and its workers, and their out-of-memory
-scores.
+limit (`RLIMIT_MEMLOCK`) high enough for the engine and its workers, their out-of-memory
+scores, and compressed swap (zram) that apps may use and the engine and workers may not.
 
 ## Power loss
 

@@ -429,8 +429,8 @@ drum module, a DJ unit, a Eurorack module, a DAW plugin). These are required of 
   admission for loading, editing and seamless changes ([RFC 0025](rfcs/0025-resource-budgets.md#progress)).
   Built: measuring, estimates, refusing a Performance or plugin over the budget, and a change
   that would not fit beside the last Performance becoming a cut; CPU at rest and per voice,
-  counting a part's note limit. Proposed: memory as reserved (the OS, the engine, every app's
-  reservation), committed (what plays) and opportunistic (caches and entries prepared ahead,
+  counting a part's note limit. Proposed: memory as reserved (the OS, the engine, running and
+  always-available apps' reservations), committed (what plays) and opportunistic (caches and entries prepared ahead,
   evicted first), with plugins declaring memory before activating
   ([design](rfcs/0025-resource-budgets.md#memory-reserved-committed-and-opportunistic))
 - [ ] **builds for every device's platform:** first-party plugins and apps on Linux ARM64 beside

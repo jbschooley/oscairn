@@ -88,8 +88,19 @@ An illustrative profile (the values are an example, not a real product's):
 
 - **`platform`:** what builds it needs (RFC 0006 selects packages by it).
 - **`compute`:** cores (and how many are reserved for audio), memory and storage: the budget's
-  ceiling (RFC 0025). The memory classes proposed there would add the operating system's share
-  and a floor for Performances ([RFC 0025](0025-resource-budgets.md#admissions-arithmetic)).
+  ceiling (RFC 0025). The memory classes proposed there (RFC 0025 step 6, not built) add two
+  optional fields, in MiB like `memory`:
+  - `osMemory`: what the operating system and everything beside Oscairn need at their peak
+    (kernel, init, drivers, the display server). Measured on the device later; the larger of the
+    two counts.
+  - `performanceMemory`: the floor for Performances, committed memory that running apps can never
+    take. A launch that would leave less is refused
+    ([RFC 0025](0025-resource-budgets.md#admissions-arithmetic)).
+
+  Both or neither. Without them the budget stays 80% of `memory`, as built. With them, a profile
+  is refused when `osMemory` + `performanceMemory`, plus the always-available apps' declared
+  reservations, exceed `memory`. The margin per reliability level is not a profile field yet; its
+  values are open.
 - **`audio`:** its interface, the sample rates and the block size it runs at, headphones (a cue
   bus).
 - **`controls`:** every physical control, in groups (below). Default control mappings and the
@@ -100,6 +111,10 @@ An illustrative profile (the values are an example, not a real product's):
 - **`power`:** battery or mains, for power management (RFC 0028).
 - **`reliability`:** its level (RFC 0027): `desktop`, `instrument` or `pass-through`.
 - **`apps`:** the apps installed with it (RFC 0022); the user can add others.
+- **`alwaysAvailable`** (optional, proposed with RFC 0025 step 6): the app IDs whose memory is
+  reserved whether they run or not, so they always open; each must be in `apps`. It is the
+  default of a setting the musician can change. Absent: the Performance app and the Library,
+  where `apps` lists them. The Performance app has no app ID in the profiles yet.
 
 ### Control groups
 

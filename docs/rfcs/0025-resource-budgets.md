@@ -21,12 +21,14 @@ Checked when built and tested; the sections below say how.
 - [ ] 6. Memory classes: reserved (OS, engine, shell, app reservations), committed and
       opportunistic; admission against what reservations leave ([design](#memory-reserved-committed-and-opportunistic))
 - [ ] 7. Plugins declare memory before activating (`oscairn.memory`), checked against measurement
-- [ ] 8. Apps declare reservations in their manifests; installs checked, the shell making room before an app opens
+- [ ] 8. Apps declare reservations in their manifests; running apps and the always-available set
+      reserved; the shell admitting or refusing a launch, making room first
 - [ ] 9. Opportunistic memory and its eviction order: the sample file cache, recently used items,
       entries prepared further ahead; on demand and on pressure (PSI; macOS memory pressure)
 - [ ] 10. Linux: cgroups for the engine, workers and apps, locked memory, the out-of-memory order
-- [ ] 11. Tested: memory filled, every app opened and a committed Performance loaded, with no
-      out-of-memory kill and no app refused (QEMU at 4 GiB, then the target)
+- [ ] 11. Tested: memory filled, apps launched up to the floor and a committed Performance
+      loaded, with no out-of-memory kill, no running app starved and a launch past the floor
+      refused with the reason (QEMU at 4 GiB, then the target)
 
 ## Problem
 
@@ -132,10 +134,18 @@ instead.
 ### The classes
 
 - **Reserved:** the operating system, the engine's own base (its process, graph and control
-  thread, without plugins), the shell, and a **reservation for every installed app**
-  ([RFC 0022](0022-apps-and-requests.md#how-it-works)), running or not. Opening any app
-  therefore always works. A reservation is a promise, not an allocation: while an app is closed,
-  its share holds opportunistic data.
+  thread, without plugins), the shell, and app reservations
+  ([RFC 0022](0022-apps-and-requests.md#how-it-works)) for:
+  - **every running app**, in front or in the background. A sequencer left running while the
+    musician edits a sound keeps its reservation, so the sound editor can never starve it;
+  - **the always-available apps**, running or not: by default the Performance app and the
+    Library, a setting the musician can change (the profile gives the default, RFC 0024). These
+    always open.
+
+  Installed apps that are not running and not in that set reserve nothing. A reservation is a
+  promise, not an allocation. An always-available app that is closed has its share filled with
+  opportunistic data, evicted when it opens. A running app's unused share holds only the sample
+  file cache, which the kernel reclaims by itself the moment the app needs it (below).
 - **Committed:** what must not go while it sounds. The open Performance (its plugins, their
   voices, decoded samples and effect contexts); the outgoing one while its tails ring out
   (step 4: until idle, usually seconds, longer while a note is held across the change, [RFC 0021](0021-sounds-performances-and-library.md#seamless-switching));
@@ -152,56 +162,94 @@ opportunistic, when it fits beside the open one. Step 4 already refuses to prepa
 fit, so the room it needs is inside the committed share by construction; evicting it would turn a
 seamless change into a slower one for no gain. It is still evicted, last, if the estimates were
 wrong and memory runs short (below). A next entry that does *not* fit beside the open one is
-opportunistic: preparing it anyway (today it is not prepared at all) makes the cut at the cue
-fast, 0.6 ms instead of 39 ms on the RFC 0021 bench.
+prepared anyway as opportunistic (decided; today it is not prepared at all), so the cut at the
+cue is fast: 0.6 ms instead of 39 ms on the RFC 0021 bench.
+
+**Decided 2026-11-01** (Jacob): reservations for running apps and an always-available set, not
+for every installed app; a launch that does not fit is refused, never made room for by closing a
+running app or touching committed memory; a next entry that will cut is still prepared, as
+opportunistic; compressed swap (zram) for apps, never for the engine; plugins declare memory in an
+extension of their own (`oscairn.memory`), not in effect contexts' `resources`. The margins per
+reliability level are still open.
 
 ### Admission's arithmetic
 
 ```
+reserved        = OS + engine base + shell
+                  + reservations of the running apps and the always-available apps
 committed share = device memory − reserved − margin
-reserved        = OS + engine base + shell + every installed app's reservation
+floor           = the profile's memory for Performances (performanceMemory, RFC 0024)
 ```
 
+The committed share moves as apps start and stop; the floor does not.
+
 - **The margin** keeps the kernel off its low watermark and covers measurement error: a share of
-  device memory by reliability level (RFC 0027), as the CPU margin is.
+  device memory by reliability level (RFC 0027), as the CPU margin is. Its values are open, to be
+  set from measurements on real hardware.
 - **Open a Performance:** it alone must fit the committed share (as step 3, with a new ceiling).
+  When it fits the floor but not the share, the reason names the running apps that hold the
+  difference ("close the sound editor to free 250 MiB").
 - **Seamless change, prepare the next entry ahead:** the open one, what still rings out and the
-  next must fit together (as step 4). Otherwise the next is prepared only as opportunistic, if
-  free memory allows, and the change is a cut, said first.
-- **Install an app:** its reservation is added only if the committed share left is still at
-  least the profile's floor for Performances (a proposed `compute` field, RFC 0024). Otherwise
-  the install is refused, saying how much it needs.
-- **Opportunistic data** may fill everything not committed or in use, up to the margin,
-  reservations of closed apps included.
+  next must fit together (as step 4). Otherwise the next is prepared as opportunistic, if free
+  memory allows, and the change is a cut, said first.
+- **Launch an app** that is not always-available: admitted only if, after evicting
+  opportunistic data,
+
+  ```
+  reserved + its reservation + max(committed in use, floor) + margin ≤ device memory
+  ```
+
+  Otherwise the shell refuses the launch with the reason and what closing would free. It never
+  closes a running app or touches committed memory to make room. So any Performance up to the
+  floor always opens, whatever runs, and every running app keeps its reservation.
+- **Change the always-available set:** checked as a launch of the apps added.
+- **The profile** is refused when the OS, the always-available apps' declared reservations and
+  the floor do not fit its memory.
+- **Opportunistic data** may fill everything not committed or in use, up to the margin: the
+  reservations of always-available apps that are closed included. In the unused part of a
+  running app's reservation it is only the sample file cache, which the kernel reclaims at once.
 
 **Worked example** (figures illustrative, not measured): a device with 4 GiB (4,096 MiB).
 
 | | MiB |
 | --- | --- |
-| Operating system | 600 |
+| Operating system (`osMemory`) | 600 |
 | Engine base and shell | 250 |
-| App reservations: Library 120, Setlist 60, Groovebox 200, sound editor 250 | 630 |
-| **Reserved** | **1,480** |
-| Margin (5%) | 205 |
-| **Committed share** (4,096 − 1,480 − 205) | **2,411** |
+| Always-available: the Performance app 150, the Library 120 | 270 |
+| **Reserved at start** | **1,120** |
+| Margin (5%; the real figure is open) | 205 |
+| **Committed share at start** (4,096 − 1,120 − 205) | **2,771** |
+| Floor for Performances (`performanceMemory`) | 2,000 |
 | Performance A, playing: a 600 MiB piano and a 250 MiB string sampler, two synths, three Reverb 2 contexts at 14.5 MB each, delays, eight workers | 1,050 |
 | Performance B, the next entry, prepared ahead | 900 |
-| A and B together, against 2,411 | 1,950: fits, so B is prepared and committed |
+| A and B together, against 2,771 | 1,950: fits, so B is prepared and committed |
 
-With only the Setlist open, using 40 MiB of its 60, memory in use is 600 + 250 + 40 + 1,050 +
-900 = 2,840 MiB. That leaves 1,256 MiB, of which 1,051 above the margin is filled with
-opportunistic data. Opening the Groovebox and the sound editor needs 450 MiB: the engine evicts
-that much opportunistic data first, and both open. With every app open and using its whole
-reservation, the total is 600 + 250 + 630 + 1,950 = 3,430 MiB, still 461 below the margin, so no
-app was ever refused and nothing committed went.
+Memory in use is then 600 + 250 + 1,950, plus what the two apps use, say 100: 2,900 MiB. The
+1,196 MiB left, less the margin, is 991 MiB of opportunistic data.
 
-A third entry C of 1,500 MiB fits alone (1,500 ≤ 2,411) but not beside A (2,550): it is
-prepared only as opportunistic, if the free memory allows it, and its change is a cut, as today.
-An entry of 2,600 MiB does not fit at all and is refused when opened (step 3).
+The musician launches apps. Each is checked as reserved + its reservation + max(1,950, 2,000) +
+205 ≤ 4,096, evicting opportunistic data as needed:
+
+| Launch | Check | Result | Committed share after |
+| --- | --- | --- | --- |
+| Setlist, 60 | 1,120 + 60 + 2,000 + 205 = 3,385 | opens | 2,711 |
+| Groovebox, 200 | 1,180 + 200 + 2,000 + 205 = 3,585 | opens | 2,511 |
+| Sound editor, 250 | 1,380 + 250 + 2,000 + 205 = 3,835 | opens | 2,261 |
+| A third-party app, 400 | 1,630 + 400 + 2,000 + 205 = 4,235 | refused: "needs 400 MiB, 261 free for apps; close the Groovebox (200) or the sound editor (250)" | 2,261 |
+
+With every running app using its whole reservation, the total is 600 + 250 + 270 + 60 + 200 +
+250 + 1,950 = 3,580 MiB, 311 below the margin. Nothing was killed and nothing committed went.
+The Groovebox, in the background, still has its 200 MiB while the sound editor works.
+
+A third entry C of 1,500 MiB fits alone (1,500 ≤ 2,261) but not beside A (2,550): it is
+prepared as opportunistic, if the free memory allows it, and its change is a cut, as today.
+An entry of 2,600 MiB does not fit the share while those apps run: it is refused when opened,
+saying that closing the Groovebox and the sound editor would free enough (2,711). With only the
+always-available apps running it would open (2,600 ≤ 2,771).
 
 ### The order of eviction
 
-When an app opens, a committed load needs room, or memory runs short, the engine frees
+When an app launches, a committed load needs room, or memory runs short, the engine frees
 opportunistic data, least likely needed first:
 
 1. **The sample file cache.** Kept in the kernel's page cache (files read, not copied into the
@@ -217,9 +265,10 @@ Never evicted: the open Performance, tails still ringing, and an audition's set-
 Performance. These are committed and admission made room for them. A tail is not cut to make
 room.
 
-Opening an app does not wait on the kernel. The shell asks the engine to make room for the
-app's reservation before it starts the app (a proposed control API call), and the engine frees
-whole opportunistic items until the room is there. Freeing a prepared Performance destroys its
+Launching an app does not wait on the kernel. The shell asks the engine to admit the app's
+reservation before it starts the app (a proposed control API call). The engine checks the launch
+(above), frees whole opportunistic items until the room is there, and answers yes, or no with the
+reason, which the shell shows. Freeing a prepared Performance destroys its
 plugins, or stops their worker processes, on the control thread; that is not timed here.
 
 ### Locking
@@ -245,9 +294,9 @@ creates one cgroup v2 subtree, delegates it to the engine, and the engine manage
 
 | Cgroup | Settings |
 | --- | --- |
-| `engine` | `memory.min` = engine base + committed, so the kernel never reclaims it |
-| `workers/<plugin>` | `memory.max` from the plugin's estimate plus a margin, replacing RFC 0010's flat 4 GiB |
-| `apps/<app>` | `memory.low` = its reservation; `memory.max` = its declared maximum |
+| `engine` | `memory.min` = engine base + committed, so the kernel never reclaims it; no swap (`memory.swap.max` 0) |
+| `workers/<plugin>` | `memory.max` from the plugin's estimate plus a margin, replacing RFC 0010's flat 4 GiB; no swap |
+| `apps/<app>` | `memory.min` = its reservation while it runs; `memory.max` = its declared maximum; swap to zram allowed |
 | `shell` | `memory.low` = its share |
 
 - **Out-of-memory order** (`oom_score_adj`): if it ever comes to the kernel's killer, the order
@@ -262,6 +311,10 @@ creates one cgroup v2 subtree, delegates it to the engine, and the engine manage
 - **Apps run in-process today** (RFC 0022 step 1: the Library, Setlist and Groovebox are inside
   the desktop app). Until they are separate processes (RFC 0022 step 2), their reservations
   are counted but not enforced per app.
+- **Compressed swap (zram) for apps only** (decided): an app's cold pages may be compressed, so a
+  background app costs less than its reservation in practice. Admission still counts every
+  reservation in full, since the ratio is not known. The engine and workers never swap: their
+  cgroups allow none, and their memory is locked anyway.
 - **Overcommit stays heuristic.** Strict overcommit (`vm.overcommit_memory=2`) would count
   address space that workers reserve far beyond what they use: RFC 0010 step 6 saw 1.1 GB
   reserved with 6 MB resident. Locking gives committed memory the same guarantee: it is touched
@@ -358,35 +411,43 @@ typedef struct oscairn_plugin_memory {
 - **A prepared entry was evicted:** its ready mark goes. Going to it loads it at the cue (39 ms on
   the bench), and it is still seamless if it fits beside the open one.
 - **A Performance that does not fit at all:** refused, as now.
-- **An app:** always opens. One that passes its declared maximum is closed by its cgroup, and the
-  shell says "Groovebox used too much memory and was closed". Sound goes on.
-- **An install** whose reservation would leave too little for Performances is refused, saying
-  how much it needs.
+- **An always-available app** always opens, and a running app is never closed or starved to make
+  room for another.
+- **A launch that does not fit** is refused, with the reason and what closing would free ("needs
+  400 MiB, 261 free for apps; close the Groovebox (200) or the sound editor (250)").
+- **An app past its declared maximum** is closed by its cgroup, and the shell says "Groovebox used
+  too much memory and was closed". Sound goes on.
 
 ### Tests that would prove it
 
 On the QEMU image at 4 GiB, then on each product's hardware:
 
 1. **Fill, then claim:** fill every free byte with opportunistic data (recent Performances, extra
-   prepared entries, a fixture plugin that allocates a set size), then open every app (fixture
-   apps that allocate their whole reservation) and open a committed Performance at the committed
-   share. Pass: no out-of-memory kill (`memory.events` `oom_kill` 0 in every cgroup, nothing in
-   the kernel log), no app refused, no missed audio block, eviction in the stated order.
-2. **Seamless at the limit:** A and B that fit together: B stays prepared through test 1's
+   prepared entries, a fixture plugin that allocates a set size), then launch fixture apps that
+   allocate their whole reservation until the next would pass the floor, and open a committed
+   Performance at the committed share. Pass: no out-of-memory kill (`memory.events` `oom_kill` 0
+   in every cgroup, nothing in the kernel log), every admitted launch opens, the one past the
+   floor is refused with the reason, the always-available apps open, no missed audio block,
+   eviction in the stated order.
+2. **A background app not starved:** a fixture sequencer app in the background allocates up to
+   its reservation while the app in front allocates up to its own. Pass: the sequencer's
+   allocations all succeed and its cgroup shows no `high` or `oom` events. With zram on, the
+   engine's and workers' swap use (`VmSwap`) stays 0.
+3. **Seamless at the limit:** A and B that fit together: B stays prepared through test 1's
    claims, and the change rings out. A and C that do not: C is prepared as opportunistic, it is
    evicted first, and the change is a cut, said first.
-3. **A wrong declaration:** a plugin declaring 10 MB and allocating 200 MB. Its worker is failed
+4. **A wrong declaration:** a plugin declaring 10 MB and allocating 200 MB. Its worker is failed
    at its limit, its measurement raised, and nothing else is killed or evicted beyond
    opportunistic data.
-4. **An app past its reservation** into free memory: PSI or `memory.high` evicts opportunistic
+5. **An app past its reservation** into free memory: PSI or `memory.high` evicts opportunistic
    data before any kill. Past its maximum, only that app is closed.
-5. **Locking:** the engine's and workers' locked memory (`VmLck`) equals their resident memory,
+6. **Locking:** the engine's and workers' locked memory (`VmLck`) equals their resident memory,
    and no major page fault occurs in them while the page cache is flooded (a large file read in a
    loop) during playback.
-6. **Declarations:** activating Reverb 2 at 96 kHz where only the 48 kHz figure fits is refused
+7. **Declarations:** activating Reverb 2 at 96 kHz where only the 48 kHz figure fits is refused
    before it allocates (the process grows by less than the context), and `estimate` agrees with
    `current` after activation within a stated tolerance.
-7. **macOS:** a simulated memory pressure warning evicts opportunistic data (`memory_pressure
+8. **macOS:** a simulated memory pressure warning evicts opportunistic data (`memory_pressure
    -S -l warn`; whether this reaches the engine is not checked).
 
 ## Open questions
@@ -395,9 +456,9 @@ On the QEMU image at 4 GiB, then on each product's hardware:
 - Whether a Performance may opt into "load what fits" (parts beyond the budget left off) for
   rehearsal.
 - How long measurements stay valid across plugin and Oscairn updates.
-- Memory: whether every installed app is reserved, or only the profile's apps with others opened
-  as room allows; the margin per reliability level; whether compressed swap (zram) is allowed
-  for apps, never for the engine.
+- Memory: the margin per reliability level, to be set from measurements on real hardware.
+- Whether a launch refused only because of the committed next entry may offer to let it go (a
+  slower, still seamless change) instead.
 
 ## Ruled out
 

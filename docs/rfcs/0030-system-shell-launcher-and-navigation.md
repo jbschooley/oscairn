@@ -254,8 +254,10 @@ A profile (RFC 0024) adds:
   and how often.
 - How many apps may run at once on a small device, and which one goes when memory is short.
   Proposed in [RFC 0025](0025-resource-budgets.md#memory-reserved-committed-and-opportunistic):
-  every app has a reservation, so none has to go; the shell asks the engine to make room before
-  it opens an app.
+  none has to go. Every running app keeps its reservation, and the always-available apps are
+  reserved even when closed. Before launching any other app, the shell asks the engine to admit
+  its reservation. If it does not fit, the shell refuses the launch with the reason and what
+  closing would free; it never closes a running app to make room.
 - Whether the web UI (RFC 0026) shows the device's launcher or its own.
 
 ## Ruled out
