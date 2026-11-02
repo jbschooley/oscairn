@@ -112,6 +112,12 @@ Everything else is handled for you:
   ([RFC 0018](rfcs/0018-voice-budget-and-stealing.md)); a plugin that does neither clicks. An instrument built on the
   SDK's `sound-contexts-plugin.hpp` gets both: it multiplies each voice's samples by
   `amplitude(voice, offset)`, and a choked voice fades over 3 ms before it ends.
+- **Pitch bend and the mod wheel:** apply MIDI pitch bend per channel, to held and released
+  voices, without zipper noise. An instrument built on the SDK keeps both per channel; calling
+  `followControls(voice)` each sample moves the voice's `bend` (-1 to 1 of the instrument's
+  range) and `modWheel` (0 to 1) smoothly toward its channel's. The instrument sets the range
+  and what the wheel does; Basic Synth bends ±2 semitones by default and uses the wheel for
+  vibrato. Per-note bend (`CLAP_NOTE_EXPRESSION_TUNING`, MPE) is not applied by the SDK.
 - **Say when you are silent:** return `CLAP_PROCESS_SLEEP` from `process` when the plugin will
   make no sound until it gets input or events (an instrument with no voice playing, an effect
   whose tail has ended). A plugin switched off by a scene, or left behind by a Performance

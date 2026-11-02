@@ -109,6 +109,10 @@ add_executable(oscairn-pressure-test engine/tests/pressure.cpp)
 target_link_libraries(oscairn-pressure-test PRIVATE oscairn_engine)
 add_test(NAME pressure COMMAND oscairn-pressure-test $<TARGET_FILE:oscairn_basic_synth>)
 
+add_executable(oscairn-wheels-test engine/tests/wheels.cpp)
+target_link_libraries(oscairn-wheels-test PRIVATE oscairn_engine)
+add_test(NAME wheels COMMAND oscairn-wheels-test $<TARGET_FILE:oscairn_basic_synth>)
+
 if(OSCAIRN_LV2)
     add_subdirectory(lv2-host/tests)
 endif()

@@ -7,7 +7,8 @@
 // Brightness, Level, Pressure, oscillator mode, detune and pitch LFO settings belong
 // to each sound context. Continuous controls take values and modulation on their
 // exact sample. Pressure (CLAP's pressure note expression: polyphonic or, with a wildcard
-// key, channel aftertouch) applies per voice.
+// key, channel aftertouch) applies per voice. Pitch bend moves each voice by the sound's
+// Pitch bend range; the mod wheel adds vibrato through the pitch LFO unless the sound turns it off.
 // Events are applied on their exact sample, and the output does not depend on the
 // host's block size.
 
@@ -48,14 +49,19 @@ namespace
     // Stable parameter IDs are the table index + 1. Each with the control it wants and its
     // priority (oscairn.ui): the most played first, so physical knobs take them in that order.
     struct Parameter { const char* name; double maximum, initial; const char* unit; bool stepped=false; uint32_t widget=OSCAIRN_WIDGET_KNOB, priority=0, group=0; };
-    constexpr std::array<Parameter,8> parameters{{
+    constexpr std::array<Parameter,10> parameters{{
         {"Brightness",1,1,"%",false,OSCAIRN_WIDGET_KNOB,1}, {"Level",1,1,"%",false,OSCAIRN_WIDGET_KNOB,2}, {"Pressure",1,.5,"%",false,OSCAIRN_WIDGET_KNOB,5},
         {"Oscillator",2,0,"",true,OSCAIRN_WIDGET_BUTTONS,3}, {"Detune",50,7,"cents",false,OSCAIRN_WIDGET_KNOB,4},
         {"Pitch LFO rate",40,0,"Hz",false,OSCAIRN_WIDGET_KNOB,6,1}, {"Pitch LFO depth",200,0,"cents",false,OSCAIRN_WIDGET_KNOB,7,1}, // one LFO: drawn joined
-        {"Output bus",8,0,"",true,OSCAIRN_WIDGET_LIST,0}
+        {"Output bus",8,0,"",true,OSCAIRN_WIDGET_LIST,0},
+        {"Pitch bend range",24,2,"semitones"}, {"Mod wheel",1,0,"",true,OSCAIRN_WIDGET_BUTTONS,0}
     }};
     constexpr auto defaults=[] {std::array<double,parameters.size()> v{};for(size_t i=0;i<v.size();++i)v[i]=parameters[i].initial;return v;}();
     constexpr std::array<const char*,3> oscillators{"Saw","Detuned saws","Square"};
+    constexpr std::array<const char*,2> wheelTargets{"Vibrato","Off"};
+    // The mod wheel's vibrato at full wheel when the sound's pitch LFO has no rate or depth set.
+    constexpr double wheelRate = 5.0, wheelDepth = 50.0; // Hz, cents
+    constexpr size_t wheelFreeParameters = 8; // oscairn-synth-1 states saved before the wheel parameters
     constexpr double pressureCutoff = 6000.0; // Hz the filter opens at full pressure and amount
 
     enum class Stage
@@ -102,8 +108,12 @@ namespace
         bool writePatch(std::ostream& out,const Patch& patch){for(double value:patch.values)out<<' '<<value;return true;}
         bool readPatch(std::istream& in,Patch& patch)
         {
-            for(size_t i=0;i<parameters.size();++i){auto& v=patch.values[i];if(!(in>>v) || !std::isfinite(v) || v<0 || v>parameters[i].maximum || (parameters[i].stepped && v!=std::round(v)))return false;}
-            return true;
+            // The rest of the slot's line: every value, or an older state's first eight (the rest keep their defaults).
+            std::string line;std::getline(in,line);std::istringstream values(line);values.imbue(std::locale::classic());
+            size_t i=0;
+            for(double v;i<parameters.size() && values>>v;++i){if(!std::isfinite(v) || v<0 || v>parameters[i].maximum || (parameters[i].stepped && v!=std::round(v)))return false;patch.values[i]=v;}
+            values>>std::ws;
+            return (i==parameters.size() || i==wheelFreeParameters) && values.eof();
         }
         void restored(){for(size_t i=0;i<parameters.size();++i)values[i]=contexts[selected[0]].patch.values[i];}
     };
@@ -199,10 +209,14 @@ namespace
                 }
 
                 const auto& patch=settings[v.context];
+                s.followControls(v);
+                // The LFO's own depth, plus the mod wheel's: as much again, or 50 cents when the LFO has none.
+                const double depth=(patch[5]>0?patch[6]:0)+(patch[9]==0?v.modWheel*(patch[6]>0?patch[6]:wheelDepth):0);
+                const double octaves=v.bend*patch[8]/12+(depth>0?std::sin(2*pi*v.lfoPhase)*depth/1200:0);
                 double increment=v.increment;
-                if(patch[6]>0 && patch[5]>0)
-                    increment*=std::pow(2.0,std::sin(2*pi*v.lfoPhase)*patch[6]/1200.0);
-                v.lfoPhase+=patch[5]/s.sampleRate;v.lfoPhase-=std::floor(v.lfoPhase);
+                if(octaves!=0)
+                    increment*=std::pow(2.0,octaves);
+                v.lfoPhase+=(patch[5]>0?patch[5]:wheelRate)/s.sampleRate;v.lfoPhase-=std::floor(v.lfoPhase);
                 const auto mode=static_cast<int>(patch[3]);
                 const double dt=std::min(.49,mode==1?increment/detune[v.context]:increment);
                 double oscillator;
@@ -299,6 +313,7 @@ namespace
         if(id<1 || id>parameters.size() || !std::isfinite(value))return false;
         value=std::clamp(value,0.0,parameters[id-1].maximum);
         if(id==4)std::snprintf(text,size,"%s",oscillators[static_cast<size_t>(std::round(value))]);
+        else if(id==10)std::snprintf(text,size,"%s",wheelTargets[static_cast<size_t>(std::round(value))]);
         else if(id<=3)std::snprintf(text,size,"%.0f%%",value*100);
         else std::snprintf(text,size,"%.1f %s",value,parameters[id-1].unit);
         return true;
@@ -308,6 +323,7 @@ namespace
     {
         if(id<1 || id>parameters.size())return false;
         if(id==4)for(size_t i=0;i<oscillators.size();++i)if(std::strcmp(text,oscillators[i])==0){*value=i;return true;}
+        if(id==10)for(size_t i=0;i<wheelTargets.size();++i)if(std::strcmp(text,wheelTargets[i])==0){*value=i;return true;}
         char* end=nullptr;double parsed=std::strtod(text,&end);
         if(end==text || !std::isfinite(parsed))return false;
         while(*end==' ')++end;

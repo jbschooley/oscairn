@@ -21,6 +21,10 @@
 //   bool writePatch(std::ostream&, const Patch&); bool readPatch(std::istream&, Patch&)
 //   void restored()                                         after a snapshot load
 // and may provide snapshotLoading(bool), called around reading a snapshot's patches.
+//
+// MIDI pitch bend and the mod wheel (CC 1) are kept per channel; each voice follows its
+// channel's values smoothly in VoiceBase::bend and modWheel once render calls followControls(v)
+// every sample. The plugin chooses what they do (its bend range, the wheel's target).
 
 #pragma once
 #include <clap/clap.h>
@@ -29,6 +33,7 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <cmath>
 #include <cstring>
 #include <iomanip>
 #include <locale>
@@ -46,6 +51,8 @@ namespace oscairn::contexts
         double   velocity = 0.0;
         double   pressure = 0.0; // 0..1, from note expressions
         double   volume = 1.0;   // CLAP's per-note volume expression, linear 0..4
+        double   bend = 0.0;     // the channel's pitch bend, -1..1 of the plugin's range, smoothed
+        double   modWheel = 0.0; // the channel's mod wheel (CC 1), 0..1, smoothed
         uint32_t chokeLeft = 0, chokeLength = 0; // a choked voice fades out over chokeLength frames
         uint64_t started = 0;
     };
@@ -73,14 +80,29 @@ namespace oscairn::contexts
         std::array<Context, ContextCapacity> contexts;
         std::array<uint32_t, 16> selected{}; // audio thread
         std::array<bool, 16> sustainDown{};
+        // Per channel. MPE-style per-note bend (CLAP_NOTE_EXPRESSION_TUNING) is not applied.
+        std::array<double, 16> channelBend{}, channelModWheel{};
         struct Selection { uint32_t slot; int16_t channel; };
         std::array<Selection, selectionCapacity> selections{};
         std::atomic<uint32_t> selectionHead{0}, selectionTail{0};
         uint32_t nextContext = 1; // main thread, never reuse IDs
         uint32_t chokeFrames = 144; // 3 ms at 48 kHz; setSampleRate keeps it 3 ms
+        double controlGlide = 1.0 - std::exp(-1.0 / 240.0); // per sample: a 5 ms time constant at 48 kHz
 
         // From activate: a choke fades a voice out over 3 ms instead of cutting it (RFC 0018).
-        void setSampleRate(double rate) { chokeFrames = rate > 0 ? std::max<uint32_t>(1, uint32_t(rate * .003 + .5)) : 144; }
+        void setSampleRate(double rate)
+        {
+            chokeFrames = rate > 0 ? std::max<uint32_t>(1, uint32_t(rate * .003 + .5)) : 144;
+            controlGlide = rate > 0 ? 1.0 - std::exp(-1.0 / (rate * .005)) : 1.0 - std::exp(-1.0 / 240.0);
+        }
+        // Once per sample per voice: moves its bend and mod wheel toward its channel's, so a
+        // wheel's 7-bit steps do not zipper. Held and released voices alike.
+        void followControls(Voice& v) const
+        {
+            follow(v.bend, channelBend[v.channel]); follow(v.modWheel, channelModWheel[v.channel]);
+        }
+        void follow(double& value, double target) const
+        { value = std::abs(target - value) < 1e-9 ? target : value + (target - value) * controlGlide; } // arrives, never denormal
         // A voice's gain at `offset` frames into the segment being rendered: its volume expression,
         // and its choke fade. Multiply each of its samples by it; a voice that ignores it still
         // ends when its fade would have, but with a cut.
@@ -118,7 +140,7 @@ namespace oscairn::contexts
         void resetVoices()
         {
             for(auto& v : voices) finishVoice(v);
-            sustainDown.fill(false);
+            sustainDown.fill(false); channelBend.fill(0); channelModWheel.fill(0);
         }
         void noteOn(const clap_event_note_t& note)
         {
@@ -133,6 +155,7 @@ namespace oscairn::contexts
             *voice = Voice{};
             voice->active = voice->held = true; voice->key = note.key; voice->channel = note.channel; voice->noteId = note.note_id;
             voice->context = slot; voice->velocity = note.velocity; voice->started = ++notesStarted;
+            voice->bend = channelBend[note.channel]; voice->modWheel = channelModWheel[note.channel]; // no glide at the start
             c.users.fetch_add(1, std::memory_order_relaxed); c.voices.fetch_add(1, std::memory_order_relaxed);
             derived().start(*voice, c);
         }
@@ -191,8 +214,15 @@ namespace oscairn::contexts
                 pressure.note_id = -1; pressure.channel = channel; pressure.key = kind == 0xa0 ? e.data[1] : -1;
                 pressure.value = (kind == 0xa0 ? e.data[2] : e.data[1]) / 127.0; applyExpression(pressure); return;
             }
+            if(kind == 0xe0)
+            {
+                // 14 bits, center 8192; full up is exactly +1.
+                const int value = ((e.data[2] & 127) << 7 | (e.data[1] & 127)) - 8192;
+                channelBend[channel] = value / (value > 0 ? 8191.0 : 8192.0); return;
+            }
             if(kind != 0xb0) return;
-            if(e.data[1] == 64)
+            if(e.data[1] == 1) channelModWheel[channel] = (e.data[2] & 127) / 127.0;
+            else if(e.data[1] == 64)
             {
                 sustainDown[channel] = e.data[2] >= 64;
                 if(!sustainDown[channel]) for(auto& v : voices) if(v.active && v.channel == channel && !v.held) derived().release(v);

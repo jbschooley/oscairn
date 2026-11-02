@@ -32,7 +32,7 @@ since they drive it through Oscairn's host.
 ## Basic Synth sounds
 
 One instance shares 16 voices across up to eight prepared sound contexts (including
-Default) and 16 MIDI channel assignments. Each context owns all eight parameters;
+Default) and 16 MIDI channel assignments. Each context owns all ten parameters;
 held voices retain their context when new notes switch to another sound. Oscillator
 and sine pitch-LFO phases are per voice and restart at note-on.
 
@@ -46,9 +46,15 @@ and sine pitch-LFO phases are per voice and restart at note-on.
 | 6 | Pitch LFO rate | 0–40 Hz |
 | 7 | Pitch LFO depth | 0–200 cents either side of the note |
 | 8 | Output bus | 0 = Main, 1–8 = separate stereo sound buses; captured at note-on |
+| 9 | Pitch bend range | 0–24 semitones either way at full bend; default 2 |
+| 10 | Mod wheel | 0 = vibrato (default), 1 = off |
 
 The saw and square edges use PolyBLEP correction; the saw pair is averaged to keep
 its level comparable to a single saw. A zero LFO rate or depth disables vibrato.
+Pitch bend applies per MIDI channel to held and released voices, smoothed over about 5 ms.
+The mod wheel adds vibrato through the pitch LFO: at full wheel, as much depth again as
+Pitch LFO depth, or 50 cents when that is 0, at the LFO's rate, or 5 Hz when that is 0.
+States saved before parameters 9 and 10 existed load with their defaults.
 Continuous parameters support sample-timed automation/modulation; oscillator mode is
 stepped. The envelope remains fixed: 2 ms attack, 250 ms exponential decay toward
 0.35 sustain, and a 120 ms release time constant. Stereo outputs carry the same signal.

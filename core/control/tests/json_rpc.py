@@ -101,7 +101,7 @@ try:
     raw('!render')
     assert rpc('transport.get')['result']['tempo'] == 120  # rejected transport list changed nothing
     meta = rpc('params.list', {'node': 'synth'})['result']
-    assert meta['node'] == 1 and len(meta['parameters']) == 8
+    assert meta['node'] == 1 and len(meta['parameters']) == 10
     assert meta['parameters'][2]['name'] == 'Pressure' and meta['parameters'][2]['defaultValue'] == 0.5
     # The Basic Synth's oscairn.ui hints: knobs, the oscillator as buttons, brightness first.
     hints = {p['name']: (p['widget'], p['priority']) for p in meta['parameters']}

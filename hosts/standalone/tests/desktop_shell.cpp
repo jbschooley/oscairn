@@ -573,7 +573,7 @@ int main(int argc, char** argv)
                     // Its oscairn.ui hints: the most played first, knobs, the oscillator as buttons.
                     grid.showPage(0);
                     const auto names = grid.namesShown();
-                    check(names.size() == 8 && names[0] == "Brightness" && names[1] == "Level" && names[2] == "Oscillator" && names.back() == "Output bus", "tiles in the plugin's priority order");
+                    check(names.size() == 10 && names[0] == "Brightness" && names[1] == "Level" && names[2] == "Oscillator" && names[7] == "Output bus" && names.back() == "Mod wheel", "tiles in the plugin's priority order");
                     const auto rate = std::find(names.begin(), names.end(), "Pitch LFO rate");
                     check(grid.linkedShown() == 1 && rate != names.end() && rate + 1 != names.end() && *(rate + 1) == "Pitch LFO depth", "the plugin's linked LFO tiles, together");
                     int knobs = 0;
@@ -581,7 +581,7 @@ int main(int argc, char** argv)
                         for(auto* child : c.getChildren()) { if(auto* s = dynamic_cast<juce::Slider*>(child); s && s->isRotary()) ++knobs; count(*child); }
                     };
                     count(grid);
-                    check(knobs == 6, "the knobs it asks for: " + std::to_string(knobs));
+                    check(knobs == 7, "the knobs it asks for: " + std::to_string(knobs));
                 }
                 auto save = [&, name = name](const juce::String& suffix) {
                     for(int i = 0; i < 10; ++i) juce::MessageManager::getInstance()->runDispatchLoopUntil(10);
