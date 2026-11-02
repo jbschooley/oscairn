@@ -42,10 +42,13 @@ namespace oscairn::signing
 
     // The messages signed. A build: oscairn-build-1\0 and format, ID, version, platform and
     // digest, each NUL-terminated. An archive: oscairn-archive-1\0 and the manifest's exact bytes.
-    // An item: oscairn-item-1\0 and its content hash (library.h's contentHash).
+    // An item: oscairn-item-1\0 and its content hash (library.h's contentHash). A repository's
+    // file (RFC 0031: its root, or its index key as the root key vouches for it):
+    // oscairn-index-1\0 and the file's exact bytes.
     std::string buildMessage(const std::string& format, const std::string& id, const std::string& version, const std::string& platform, const std::string& digest);
     std::string archiveMessage(std::string_view manifest);
     std::string itemMessage(const std::string& contentHash);
+    std::string indexMessage(std::string_view file);
 
     // {"key":...,"signature":...}, and a list of them as a .sig file beside a plugin build holds
     // it. Reading a missing file gives none; a malformed one is refused.

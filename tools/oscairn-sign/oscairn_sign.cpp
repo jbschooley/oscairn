@@ -2,10 +2,12 @@
 //
 // oscairn-sign: package signatures (RFC 0006) for plugin authors and publishers. Makes a key,
 // signs a plugin build (a .sig beside it, which an export carries), signs an archive whole, and
-// checks an archive's signatures. A private key is never printed.
+// checks an archive's signatures, and signs and checks a repository's files (RFC 0031). A private
+// key is never printed.
 #include "oscairn/package.h"
 #include "oscairn/signing.h"
 #include <cstdio>
+#include <fstream>
 #include <random>
 #include <string>
 
@@ -24,7 +26,11 @@ namespace
                    "  oscairn-sign archive <key-file> <archive.olib>\n"
                    "      sign an archive whole (library.sig), replacing any signature over it\n"
                    "  oscairn-sign verify <archive.olib>\n"
-                   "      check every signature and hash in an archive and say who signed what\n", stderr);
+                   "      check every signature and hash in an archive and say who signed what\n"
+                   "  oscairn-sign file <key-file> <file> <signature-file>\n"
+                   "      sign a repository's file (its root, or its index key), writing <signature-file>\n"
+                   "  oscairn-sign verify-file <file> <signature-file>\n"
+                   "      check a repository file's signatures and say who signed it\n", stderr);
         return 2;
     }
     std::string signers(const std::vector<signing::Signature>& list)
@@ -33,6 +39,13 @@ namespace
         std::string out;
         for(const auto& s : list) out += (out.empty() ? "" : ",") + signing::keyId(s.key);
         return out;
+    }
+    // A repository's file, whole: a root or an index key is a few kilobytes.
+    std::string readFile(const fs::path& file)
+    {
+        if(!fs::is_regular_file(file) || fs::file_size(file) > 64 * 1024 * 1024) throw std::runtime_error("no file, or one over 64 MiB: " + file.string());
+        std::ifstream in(file, std::ios::binary);
+        return {std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
     }
 }
 
@@ -79,6 +92,23 @@ int main(int argc, char** argv)
             for(const auto& i : p.items) std::printf("item %s %s %s\n", i.kind.c_str(), i.id.c_str(), signers(i.signatures).c_str());
             for(const auto& plugin : p.plugins)
                 for(const auto& b : plugin.builds) std::printf("build %s %s %s %s %s\n", plugin.format.c_str(), plugin.id.c_str(), plugin.version.c_str(), b.platform.c_str(), signers(b.signatures).c_str());
+            return 0;
+        }
+        if(a.size() == 4 && a[0] == "file")
+        {
+            const auto k = signing::loadKey(a[1]);
+            signing::writeSignatures(a[3], {{k.publicKey, signing::sign(k, signing::indexMessage(readFile(a[2])))}});
+            std::printf("signed %s by %s\n", a[2].c_str(), signing::keyId(k.publicKey).c_str());
+            return 0;
+        }
+        if(a.size() == 3 && a[0] == "verify-file")
+        {
+            const auto message = signing::indexMessage(readFile(a[1]));
+            const auto list = signing::readSignatures(a[2]);
+            if(list.empty()) throw std::runtime_error("no signature in " + a[2]);
+            for(const auto& s : list)
+                if(!signing::verify(s, message)) throw std::runtime_error("a signature by " + signing::keyId(s.key) + " does not verify");
+            for(const auto& s : list) std::printf("file %s %s\n", signing::keyId(s.key).c_str(), s.key.c_str());
             return 0;
         }
         return usage();

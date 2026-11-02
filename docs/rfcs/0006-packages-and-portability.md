@@ -174,6 +174,11 @@ another, each `{key, signature}` (the signer's public key and the signature, in 
   manufacturer's factory set, or your own export, if you choose. Over the manifest's exact
   bytes, which list every file's SHA-256 and every build's digest, so one signature covers it
   all: `oscairn-archive-1\0` + manifest, in a `library.sig` entry (`{key, signature}`).
+- **Repository signature: is this the repository's?** A package repository's root file, signed
+  by its index key, and its index key, signed by its root key
+  ([RFC 0031](0031-package-repository-and-distribution.md#signatures-and-freshness)):
+  `oscairn-index-1\0` + the file's exact bytes, as a list of `{key, signature}` in a file beside
+  it. `oscairn-sign file` signs one and `oscairn-sign verify-file` checks it.
 
 **Algorithm:** Ed25519, small keys and signatures, fast to check on the device, deterministic,
 and no clock needed. Implementation: [Monocypher](https://monocypher.org) (BSD-2 or CC0, one C

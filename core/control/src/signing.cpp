@@ -126,6 +126,7 @@ namespace oscairn::signing
     }
     std::string archiveMessage(std::string_view manifest) { return std::string("oscairn-archive-1", 18) + std::string(manifest); }
     std::string itemMessage(const std::string& contentHash) { return std::string("oscairn-item-1", 15) + contentHash; }
+    std::string indexMessage(std::string_view file) { return std::string("oscairn-index-1", 16) + std::string(file); }
 
     std::string json(const Signature& s) { return "{\"key\":" + detail::quote(s.key) + ",\"signature\":" + detail::quote(s.signature) + '}'; }
 

@@ -53,9 +53,12 @@ int main()
         check(!signing::verify(s, signing::buildMessage("clap", "com.example.synth", "1.1", "macos-arm64", std::string(64, 'a'))), "not for another version");
         check(!signing::verify({k.publicKey, s.signature}, build), "not under another key");
         check(build.compare(0, 16, std::string("oscairn-build-1", 16)) == 0 && signing::archiveMessage("{}") == std::string("oscairn-archive-1\0{}", 20) &&
-              signing::itemMessage("ab") == std::string("oscairn-item-1\0ab", 17), "messages are domain-separated");
+              signing::itemMessage("ab") == std::string("oscairn-item-1\0ab", 17) &&
+              signing::indexMessage("{}") == std::string("oscairn-index-1\0{}", 18), "messages are domain-separated");
         const signing::Signature item{made.publicKey, signing::sign(made, signing::itemMessage(std::string(64, 'a')))};
         check(!signing::verify(item, signing::archiveMessage(std::string(64, 'a'))), "an item signature does not pass as an archive's");
+        const signing::Signature repositoryFile{made.publicKey, signing::sign(made, signing::indexMessage("{}"))};
+        check(!signing::verify(repositoryFile, signing::archiveMessage("{}")), "a repository file's signature does not pass as an archive's");
 
         // .sig files round-trip; a malformed one is refused.
         signing::writeSignatures(root / "Synth.clap.sig", {s, item});
