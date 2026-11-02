@@ -381,7 +381,8 @@ controls; physical knobs, faders, buttons, MIDI CC and sequencer lanes drive the
   level or mute) or **another control**, which makes a tree: a Super Knob drives Assign
   1–8, which drive whatever each is set to.
 - Each target has its own **start** and **end** (end below start reverses it, like the
-  MODX's negative ratio) and **curve**: linear, exponential, logarithmic or S-shaped. A
+  MODX's negative ratio) and **curve**: linear, exponential, logarithmic, S-shaped, a fader's
+  taper in decibels, or a power law (below). A
   target is **absolute** (it sets the value) or **relative** (it moves the value around
   its base, the MODX's controller boxes).
 - Controls form a tree without loops: an assignment that would loop is refused.
@@ -394,6 +395,18 @@ controls; physical knobs, faders, buttons, MIDI CC and sequencer lanes drive the
   is flattened when the graph is committed into each lane's final targets with their
   combined ranges and curves (a later step).
 - Scenes store control values as they store part faders.
+
+**Curves** take the control's 0 to 1, `x`, to 0 to 1, which the target's start and end scale:
+linear `x`; exponential `(e^4x − 1) / (e^4 − 1)`; logarithmic `ln(1 + (e^4 − 1)x) / 4`;
+S-shaped `x²(3 − 2x)`; and, for levels (2026-11-01):
+
+- **dB**, `{"kind": "db", "min": M, "max": X}` with −144 ≤ M < X ≤ 0: `x` moves evenly in
+  decibels from M to X, giving the gain `10^((M + (X − M)x) / 20)`, and silence (0) at `x` = 0,
+  as a fader's bottom is off. A part level is a gain, so with start 0 and end 1 a `partLevel`
+  target at `x` plays the part at that many dB (`{"kind": "db", "min": -96, "max": 0}`: −48 dB
+  at half way).
+- **power**, `{"kind": "power", "exponent": E}` with 0.1 ≤ E ≤ 10: `x^E`. A level that follows
+  a power law (E = 2: a square-law taper, −12 dB at half way).
 
 **The summing rule** (decided 2026-11-01). A parameter, a part's level and a part's mute each
 have a **base**: their value with no control moving them, one per destination, kept on each

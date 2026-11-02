@@ -1475,11 +1475,59 @@
           "maximum": 1
         },
         "curve": {
-          "enum": [
-            "linear",
-            "exponential",
-            "logarithmic",
-            "s-curve"
+          "oneOf": [
+            {
+              "enum": [
+                "linear",
+                "exponential",
+                "logarithmic",
+                "s-curve"
+              ]
+            },
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "const": "db"
+                },
+                "min": {
+                  "type": "number",
+                  "minimum": -144,
+                  "maximum": 0
+                },
+                "max": {
+                  "type": "number",
+                  "minimum": -144,
+                  "maximum": 0
+                }
+              },
+              "required": [
+                "kind",
+                "min",
+                "max"
+              ],
+              "additionalProperties": false,
+              "description": "Evenly in decibels from min at 0 to max at 1 (min below max), as a gain; 0 at 0"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "const": "power"
+                },
+                "exponent": {
+                  "type": "number",
+                  "minimum": 0.1,
+                  "maximum": 10
+                }
+              },
+              "required": [
+                "kind",
+                "exponent"
+              ],
+              "additionalProperties": false,
+              "description": "The control's value to the power exponent"
+            }
           ]
         },
         "relative": {

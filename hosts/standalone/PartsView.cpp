@@ -555,7 +555,7 @@ namespace oscairn::standalone
                         relative->onClick = [this, id, i, raw = relative.get()] { const bool on = raw->getToggleState(); setTargets(id, [i, on](auto& ts) { ts[i].relative = on; }); };
                         relative->setBounds(r.removeFromRight(110).withSizeKeepingCentre(106, buttonHeight)); addAndMakeVisible(*relative); controls_.push_back(std::move(relative));
                         auto curve = std::make_unique<juce::ComboBox>("Curve");
-                        for(const auto& [n, c] : {std::pair{"Linear", 1}, {"Exponential", 2}, {"Logarithmic", 3}, {"S-curve", 4}}) curve->addItem(n, c);
+                        for(const auto& [n, c] : {std::pair{"Linear", 1}, {"Exponential", 2}, {"Logarithmic", 3}, {"S-curve", 4}, {"Fader (dB)", 5}, {"Power", 6}}) curve->addItem(n, c);
                         curve->setSelectedId(int(t.curve) + 1, juce::dontSendNotification);
                         curve->onChange = [this, id, i, raw = curve.get()] { const auto c = MacroTarget::Curve(raw->getSelectedId() - 1); setTargets(id, [i, c](auto& ts) { ts[i].curve = c; }); };
                         curve->setBounds(r.removeFromRight(130).withSizeKeepingCentre(126, buttonHeight)); addAndMakeVisible(*curve); controls_.push_back(std::move(curve));

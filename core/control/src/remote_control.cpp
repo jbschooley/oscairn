@@ -3,6 +3,7 @@
 #include "PropertyWire.h"
 #include "sheredom/json.h"
 #include "JsonInput.h"
+#include "CurveJson.h"
 #include <algorithm>
 #include <charconv>
 #include <cmath>
@@ -253,9 +254,9 @@ namespace oscairn
                 Macro macro;macro.id=static_cast<uint32_t>(integer(field(m,"id")));macro.part=static_cast<uint32_t>(integer(field(m,"part")));macro.name=string(field(m,"name"));macro.value=number(field(m,"value"));
                 for(auto t:array(field(m,"targets")))
                 {
-                    MacroTarget target;const auto kind=string(field(t,"kind")),curve=string(field(t,"curve"));
+                    MacroTarget target;const auto kind=string(field(t,"kind"));
                     target.kind=kind=="parameter"?MacroTarget::Kind::Parameter:kind=="partLevel"?MacroTarget::Kind::PartLevel:kind=="partMute"?MacroTarget::Kind::PartMute:kind=="morph"?MacroTarget::Kind::Morph:MacroTarget::Kind::Macro;
-                    target.curve=curve=="exponential"?MacroTarget::Curve::Exponential:curve=="logarithmic"?MacroTarget::Curve::Logarithmic:curve=="s-curve"?MacroTarget::Curve::SCurve:MacroTarget::Curve::Linear;
+                    if(!detail::curveFrom(field(t,"curve"),target))throw std::runtime_error("Invalid RPC curve");
                     target.node=static_cast<NodeId>(integer(field(t,"node")));target.param=static_cast<uint32_t>(integer(field(t,"param")));
                     target.part=static_cast<uint32_t>(integer(field(t,"part")));target.macro=static_cast<uint32_t>(integer(field(t,"control")));
                     target.start=number(field(t,"start"));target.end=number(field(t,"end"));target.relative=boolean(field(t,"relative"));target.base=number(field(t,"base"));
@@ -710,9 +711,8 @@ namespace oscairn
         for(const auto& t:targets){
             if(list.size()>1)list+=',';
             const char* kind=t.kind==MacroTarget::Kind::Parameter?"parameter":t.kind==MacroTarget::Kind::PartLevel?"partLevel":t.kind==MacroTarget::Kind::PartMute?"partMute":t.kind==MacroTarget::Kind::Morph?"morph":"control";
-            const char* curve=t.curve==MacroTarget::Curve::Linear?"linear":t.curve==MacroTarget::Curve::Exponential?"exponential":t.curve==MacroTarget::Curve::Logarithmic?"logarithmic":"s-curve";
             list+=std::string("{\"kind\":\"")+kind+"\",\"node\":"+std::to_string(t.node)+",\"param\":"+std::to_string(t.param)+",\"part\":"+std::to_string(t.part)+",\"control\":"+std::to_string(t.macro)+",\"from\":"+std::to_string(t.sceneFrom)+",\"to\":"+std::to_string(t.sceneTo)+
-                ",\"start\":"+encode(t.start)+",\"end\":"+encode(t.end)+",\"curve\":\""+curve+"\",\"relative\":"+(t.relative?"true":"false")+",\"offIn\":[";
+                ",\"start\":"+encode(t.start)+",\"end\":"+encode(t.end)+",\"curve\":"+detail::curveJson(t,encode)+",\"relative\":"+(t.relative?"true":"false")+",\"offIn\":[";
             for(size_t i=0;i<t.offIn.size();++i)list+=(i?",":"")+std::to_string(t.offIn[i]);
             list+="]}";
         }

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #include "oscairn/json_rpc.h"
 #include "JsonInput.h"
+#include "CurveJson.h"
 #include "PropertyWire.h"
 #include "sheredom/json.h"
 
@@ -285,7 +286,6 @@ namespace oscairn
             return map;
         }
         const char* kindName( MacroTarget::Kind k ) { return k == MacroTarget::Kind::Parameter ? "parameter" : k == MacroTarget::Kind::PartLevel ? "partLevel" : k == MacroTarget::Kind::PartMute ? "partMute" : k == MacroTarget::Kind::Morph ? "morph" : "control"; }
-        const char* curveName( MacroTarget::Curve c ) { return c == MacroTarget::Curve::Linear ? "linear" : c == MacroTarget::Curve::Exponential ? "exponential" : c == MacroTarget::Curve::Logarithmic ? "logarithmic" : "s-curve"; }
         std::string macrosJson( const std::vector<Macro>& macros )
         {
             std::vector<std::string> out;
@@ -295,7 +295,7 @@ namespace oscairn
                 for( const auto& t : m.targets )
                     targets.push_back(std::string("{\"kind\":\"") + kindName(t.kind) + "\",\"node\":" + std::to_string(t.node) + ",\"param\":" + std::to_string(t.param) +
                         ",\"part\":" + std::to_string(t.part) + ",\"control\":" + std::to_string(t.macro) + ",\"from\":" + std::to_string(t.sceneFrom) + ",\"to\":" + std::to_string(t.sceneTo) + ",\"start\":" + encode(t.start) + ",\"end\":" + encode(t.end) +
-                        ",\"curve\":\"" + curveName(t.curve) + "\",\"relative\":" + (t.relative ? "true" : "false") + ",\"base\":" + encode(t.base) + ",\"offIn\":" + [&] {
+                        ",\"curve\":" + detail::curveJson(t, encode) + ",\"relative\":" + (t.relative ? "true" : "false") + ",\"base\":" + encode(t.base) + ",\"offIn\":" + [&] {
                             std::vector<std::string> ids; for( const auto id : t.offIn ) ids.push_back(std::to_string(id)); return join(ids); }() + '}');
                 out.push_back("{\"id\":" + std::to_string(m.id) + ",\"part\":" + std::to_string(m.part) + ",\"name\":" + quote(m.name) + ",\"value\":" + encode(m.value) + ",\"targets\":" + join(targets) + '}');
             }
@@ -317,11 +317,8 @@ namespace oscairn
                 if( t.kind == MacroTarget::Kind::Morph ) { t.sceneFrom = integer(member(e->value,"from")); t.sceneTo = integer(member(e->value,"to")); }
                 if( member(e->value,"start") ) t.start = number(member(e->value,"start"));
                 if( member(e->value,"end") ) t.end = number(member(e->value,"end"));
-                if( const auto curve = member(e->value,"curve") )
-                {
-                    const auto name = string(curve);
-                    t.curve = name == "linear" ? MacroTarget::Curve::Linear : name == "exponential" ? MacroTarget::Curve::Exponential : name == "logarithmic" ? MacroTarget::Curve::Logarithmic : name == "s-curve" ? MacroTarget::Curve::SCurve : (invalid("curve is linear, exponential, logarithmic or s-curve"), MacroTarget::Curve::Linear);
-                }
+                if( const auto curve = member(e->value,"curve"); curve && !detail::curveFrom(curve, t) )
+                    invalid("curve is linear, exponential, logarithmic, s-curve, {kind: db, min, max} (-144 <= min < max <= 0) or {kind: power, exponent} (0.1 to 10)");
                 if( member(e->value,"relative") ) t.relative = boolean(member(e->value,"relative"));
                 if( const auto off = member(e->value,"offIn") )
                 {

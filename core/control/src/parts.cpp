@@ -790,8 +790,17 @@ namespace oscairn
         case Curve::Exponential: return (std::exp(4 * x) - 1) / (std::exp(4.0) - 1);
         case Curve::Logarithmic: return std::log1p((std::exp(4.0) - 1) * x) / 4;
         case Curve::SCurve: return x * x * (3 - 2 * x);
+        case Curve::Db: return x > 0 ? std::pow(10.0, (low + (high - low) * x) / 20) : 0;
+        case Curve::Power: return std::pow(x, exponent);
         }
         return x;
+    }
+
+    bool MacroTarget::validCurve() const
+    {
+        if(curve == Curve::Db) return std::isfinite(low) && std::isfinite(high) && low >= -144 && low < high && high <= 0;
+        if(curve == Curve::Power) return std::isfinite(exponent) && exponent >= .1 && exponent <= 10;
+        return true;
     }
 
     // Its point in the range, start at 0 and end at 1. Relative: that point less a half, so the
@@ -855,6 +864,7 @@ namespace oscairn
         for(auto& t : targets)
         {
             if(!std::isfinite(t.start) || !std::isfinite(t.end) || t.start < 0 || t.start > 1 || t.end < 0 || t.end > 1) throw std::invalid_argument("a target's range is within 0..1");
+            if(!t.validCurve()) throw std::invalid_argument("a dB curve runs from -144 to 0 dB, low below high; a power curve's exponent is 0.1 to 10");
             switch(t.kind)
             {
             case MacroTarget::Kind::Parameter:

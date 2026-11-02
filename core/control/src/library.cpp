@@ -149,7 +149,7 @@ namespace oscairn
         V d = doc.get();
         if(!d || str(detail::member(d, "format")) != format) throw std::runtime_error("not a " + format);
         const V version = detail::member(d, "version");
-        if(!version || version->type != json_type_number || std::string(static_cast<const json_number_s*>(version->payload)->number, static_cast<const json_number_s*>(version->payload)->number_size) != (format == "oscairn.performance" ? "11" : "6"))
+        if(!version || version->type != json_type_number || std::string(static_cast<const json_number_s*>(version->payload)->number, static_cast<const json_number_s*>(version->payload)->number_size) != (format == "oscairn.performance" ? "11" : "7"))
             throw std::runtime_error("unsupported version");
         const V info = detail::member(d, "info");
         if(!info || info->type != json_type_object) throw std::runtime_error("no info block");

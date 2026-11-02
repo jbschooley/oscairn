@@ -196,7 +196,9 @@ namespace oscairn
     struct MacroTarget
     {
         enum class Kind { Parameter, PartLevel, PartMute, Macro, Morph } kind = Kind::Parameter;
-        enum class Curve { Linear, Exponential, Logarithmic, SCurve } curve = Curve::Linear;
+        // Db: evenly in decibels from `low` at 0 to `high` at 1, as a gain, and 0 at 0 (a fader's
+        // taper); Power: the value to the power `exponent`.
+        enum class Curve { Linear, Exponential, Logarithmic, SCurve, Db, Power } curve = Curve::Linear;
         NodeId node = 0; uint32_t param = 0; // Parameter
         uint32_t part = 0;                   // PartLevel, PartMute
         uint32_t macro = 0;                  // Macro
@@ -210,7 +212,10 @@ namespace oscairn
         // adds its offset around it, and the sum is clamped to the range.
         double base = 0;
         std::vector<uint32_t> offIn; // the scenes this mapping is off in (RFC 0011); on in every other
+        double low = -96, high = 0; // Db, in dB: -144 <= low < high <= 0
+        double exponent = 2;        // Power: 0.1 to 10
         double shape(double value) const;  // the curve: 0..1 to 0..1
+        bool validCurve() const;           // its numbers within their ranges
         double offset(double value) const; // what a control value adds to the base
         // What a control value does here alone, as a fraction of the target's range.
         double map(double value) const;
@@ -219,6 +224,7 @@ namespace oscairn
         bool sameDestination(const MacroTarget& o) const { return sums() && o.kind == kind && o.node == node && o.param == param && o.part == part; }
         bool operator==(const MacroTarget&) const = default;
     };
+    inline constexpr std::array<const char*, 6> curveKinds{"linear", "exponential", "logarithmic", "s-curve", "db", "power"}; // as files and the control protocol name them
     // A control belongs to the Performance, or to a part (RFC 0021): a part's controls target only
     // its plugins and its other controls, and go with it into a Sound.
     struct Macro { uint32_t id = 0; std::string name; double value = 0; std::vector<MacroTarget> targets; uint32_t part = 0; };

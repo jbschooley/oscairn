@@ -3,6 +3,7 @@
 #include "../../plugin-host/src/StateFiles.h"
 #include "sheredom/json.h"
 #include "JsonInput.h"
+#include "CurveJson.h"
 #include "oscairn/package.h"
 #include "oscairn/unavailable_plugin.h"
 #include <algorithm>
@@ -458,10 +459,10 @@ Control::PerformanceInfo Session::writeDocument(const std::string& directory,Per
         for(const auto& t:m.targets){
             if(t.kind==MacroTarget::Kind::Parameter && !keys.count(t.node))continue; // a plugin moved out of the part since
             const char* kind=t.kind==MacroTarget::Kind::Parameter?"parameter":t.kind==MacroTarget::Kind::PartLevel?"partLevel":t.kind==MacroTarget::Kind::PartMute?"partMute":t.kind==MacroTarget::Kind::Morph?"morph":"control";
-            const char* curve=t.curve==MacroTarget::Curve::Linear?"linear":t.curve==MacroTarget::Curve::Exponential?"exponential":t.curve==MacroTarget::Curve::Logarithmic?"logarithmic":"s-curve";
+            const auto curve=detail::curveJson(t,numeric);
             std::string at=t.kind==MacroTarget::Kind::Parameter?",\"node\":"+quote(keys.at(t.node))+",\"param\":"+std::to_string(t.param):t.kind==MacroTarget::Kind::Macro?",\"control\":"+std::to_string(t.macro):
                 t.kind==MacroTarget::Kind::Morph?",\"from\":"+std::to_string(t.sceneFrom)+",\"to\":"+std::to_string(t.sceneTo):",\"part\":"+std::to_string(t.part);
-            targets.push_back(std::string("{\"kind\":\"")+kind+"\""+at+",\"start\":"+numeric(t.start)+",\"end\":"+numeric(t.end)+",\"curve\":\""+curve+"\",\"relative\":"+(t.relative?"true":"false")+",\"base\":"+numeric(t.base)+",\"offIn\":"+offIn(t)+'}');
+            targets.push_back(std::string("{\"kind\":\"")+kind+"\""+at+",\"start\":"+numeric(t.start)+",\"end\":"+numeric(t.end)+",\"curve\":"+curve+",\"relative\":"+(t.relative?"true":"false")+",\"base\":"+numeric(t.base)+",\"offIn\":"+offIn(t)+'}');
         }
         controls.push_back("{\"id\":"+std::to_string(m.id)+",\"part\":"+std::to_string(m.part)+",\"name\":"+quote(m.name)+",\"value\":"+numeric(m.value)+",\"targets\":"+join(targets)+'}');
     }
@@ -485,7 +486,7 @@ Control::PerformanceInfo Session::writeDocument(const std::string& directory,Per
     if(sound)for(const auto& o:assignments_)if(o.part==sound->id){const auto& t=o.target;
         if(t.kind==Assignment::Kind::Parameter && keys.count(t.node))own.push_back("{\"control\":"+quote(o.control)+",\"kind\":\"parameter\",\"node\":"+quote(keys.at(t.node))+",\"param\":"+std::to_string(t.param)+'}');
         else if(t.kind==Assignment::Kind::Control && std::any_of(macros_.begin(),macros_.end(),[&](const Macro& m){return m.id==t.id && m.part==sound->id;}))own.push_back("{\"control\":"+quote(o.control)+",\"kind\":\"control\",\"id\":"+std::to_string(t.id)+'}');}
-    if(sound){head="{\"format\":\"oscairn.sound\",\"version\":6,\"info\":";tail=",\"libraries\":"+join(named)+",\"nodes\":"+join(nodes)+",\"wires\":"+join(wires)+",\"part\":{\"chain\":"+chainText(sound->chain)+",\"splits\":"+splitsText(*sound)+"},\"mappings\":"+join(mappings)+",\"controls\":"+join(controls)+",\"assignments\":"+join(own)+",\"lock\":"+lockText+"}\n";}
+    if(sound){head="{\"format\":\"oscairn.sound\",\"version\":7,\"info\":";tail=",\"libraries\":"+join(named)+",\"nodes\":"+join(nodes)+",\"wires\":"+join(wires)+",\"part\":{\"chain\":"+chainText(sound->chain)+",\"splits\":"+splitsText(*sound)+"},\"mappings\":"+join(mappings)+",\"controls\":"+join(controls)+",\"assignments\":"+join(own)+",\"lock\":"+lockText+"}\n";}
     else{
         // Scenes: all each holds (parts.h), its scope; the parameters scenes leave alone; and the scene last selected.
         auto ref=[&](const WireRef& r){return "\"kind\":"+std::string(r.kind==WireKind::Audio?"\"audio\"":"\"notes\"")+",\"part\":"+std::to_string(r.part)+",\"from\":"+quote(keys.at(r.from))+",\"to\":"+quote(keys.at(r.to))
@@ -768,7 +769,7 @@ std::unique_ptr<Session::Prepared> Session::read(const fs::path& root) {
             if(macro.part && std::none_of(parts.begin(),parts.end(),[&](const Part& p){return p.id==macro.part;}))bad("a control of an unknown part");
             if(macro.value<0 || macro.value>1)bad("invalid control value");
             for(auto t:array(field(m,"targets"),256)){
-                MacroTarget target;const auto kind=text(field(t,"kind")),curve=text(field(t,"curve"));
+                MacroTarget target;const auto kind=text(field(t,"kind"));
                 if(kind=="parameter"){fields(t,{"kind","node","param","start","end","curve","relative","base","offIn"});target.kind=MacroTarget::Kind::Parameter;target.node=node(field(t,"node"));target.param=integer(field(t,"param"));
                     if(target.node==graphInput || target.node==graphOutput)bad("invalid control target");const auto& all=next->host(target.node).parameters();
                     if(std::none_of(all.begin(),all.end(),[&](const auto& p){return p.id==target.param;}))bad("unknown control target parameter");}
@@ -779,7 +780,7 @@ std::unique_ptr<Session::Prepared> Session::read(const fs::path& root) {
                 else if(kind=="morph"){fields(t,{"kind","from","to","start","end","curve","relative","base","offIn"});target.kind=MacroTarget::Kind::Morph;target.sceneFrom=integer(field(t,"from"));target.sceneTo=integer(field(t,"to"));
                     if(macro.part || !sceneIds.count(target.sceneFrom) || !sceneIds.count(target.sceneTo) || target.sceneFrom==target.sceneTo)bad("a morph between unknown scenes");}
                 else bad("invalid control target kind");
-                target.curve=curve=="linear"?MacroTarget::Curve::Linear:curve=="exponential"?MacroTarget::Curve::Exponential:curve=="logarithmic"?MacroTarget::Curve::Logarithmic:curve=="s-curve"?MacroTarget::Curve::SCurve:(bad("invalid curve"),MacroTarget::Curve::Linear);
+                if(!detail::curveFrom(field(t,"curve"),target))bad("invalid curve");
                 target.start=number(field(t,"start"));target.end=number(field(t,"end"));target.relative=boolean(field(t,"relative"));target.base=number(field(t,"base"));
                 for(auto id:array(field(t,"offIn"),256)){target.offIn.push_back(integer(id));if(!sceneIds.count(target.offIn.back()))bad("a mapping off in an unknown scene");}
                 if(target.start<0 || target.start>1 || target.end<0 || target.end>1)bad("invalid control target range");
@@ -947,7 +948,7 @@ std::vector<std::string> Session::loadSoundInto(uint32_t partId,const fs::path& 
     V d=doc.get();if(!d)bad("invalid JSON");
     fields(d,{"format","version","info","libraries","nodes","wires","part","mappings","controls","assignments","lock"});
     mergeLock(readLock(d)); // its plugins' builds, for saving the Performance it joins
-    if(text(field(d,"format"))!="oscairn.sound" || integer(field(d,"version"))!=6)bad("not a version 6 Sound");
+    if(text(field(d,"format"))!="oscairn.sound" || integer(field(d,"version"))!=7)bad("not a version 7 Sound");
     fields(field(d,"info"),{"id","name","description","tags","color","revision","parent","hash","origin"});
     const auto info=readInfo(root/"sound.json","oscairn.sound");
     std::vector<NodeId> added;
@@ -992,11 +993,11 @@ std::vector<std::string> Session::loadSoundInto(uint32_t partId,const fs::path& 
             fields(m,{"id","part","name","value","targets"});Macro macro;macro.id=controlIds.at(integer(field(m,"id")));macro.part=partId;macro.name=text(field(m,"name"));macro.value=number(field(m,"value"));
             if(macro.value<0 || macro.value>1)bad("invalid control value");
             for(auto t:array(field(m,"targets"),256)){
-                MacroTarget target;const auto kind=text(field(t,"kind")),curve=text(field(t,"curve"));
+                MacroTarget target;const auto kind=text(field(t,"kind"));
                 if(kind=="parameter"){target.kind=MacroTarget::Kind::Parameter;target.node=node(field(t,"node"));target.param=integer(field(t,"param"));}
                 else if(kind=="control"){target.kind=MacroTarget::Kind::Macro;const auto it=controlIds.find(integer(field(t,"control")));if(it==controlIds.end())bad("control target of an unknown control");target.macro=it->second;}
                 else bad("a Sound's control targets only its own plugins and controls");
-                target.curve=curve=="linear"?MacroTarget::Curve::Linear:curve=="exponential"?MacroTarget::Curve::Exponential:curve=="logarithmic"?MacroTarget::Curve::Logarithmic:curve=="s-curve"?MacroTarget::Curve::SCurve:(bad("invalid curve"),MacroTarget::Curve::Linear);
+                if(!detail::curveFrom(field(t,"curve"),target))bad("invalid curve");
                 target.start=number(field(t,"start"));target.end=number(field(t,"end"));target.relative=boolean(field(t,"relative"));target.base=number(field(t,"base"));
                 macro.targets.push_back(target);
             }
@@ -1284,7 +1285,7 @@ Control::Imported Session::importPerformance(const std::string& directory,const 
             const auto name=text(field(m,"name"));macro.name=nextFree(name,takenName);
             if(macro.name!=name)notes.push_back("the control "+name+" is "+macro.name+" here");
             for(auto t:array(field(m,"targets"),256)){
-                MacroTarget target;const auto kind=text(field(t,"kind")),curve=text(field(t,"curve"));
+                MacroTarget target;const auto kind=text(field(t,"kind"));
                 if(kind=="parameter"){target.kind=MacroTarget::Kind::Parameter;target.node=node(field(t,"node"));target.param=integer(field(t,"param"));parameterOf(target.node,target.param);}
                 else if(kind=="partLevel" || kind=="partMute"){target.kind=kind=="partLevel"?MacroTarget::Kind::PartLevel:MacroTarget::Kind::PartMute;target.part=partIds.at(integer(field(t,"part")));}
                 else if(kind=="control"){target.kind=MacroTarget::Kind::Macro;target.macro=controlIds.at(integer(field(t,"control")));}
@@ -1294,7 +1295,7 @@ Control::Imported Session::importPerformance(const std::string& directory,const 
                     if(f==sceneIds.end() || g==sceneIds.end())continue;
                     target.kind=MacroTarget::Kind::Morph;target.sceneFrom=f->second;target.sceneTo=g->second;}
                 else bad("invalid control target kind");
-                target.curve=curve=="linear"?MacroTarget::Curve::Linear:curve=="exponential"?MacroTarget::Curve::Exponential:curve=="logarithmic"?MacroTarget::Curve::Logarithmic:curve=="s-curve"?MacroTarget::Curve::SCurve:(bad("invalid curve"),MacroTarget::Curve::Linear);
+                if(!detail::curveFrom(field(t,"curve"),target))bad("invalid curve");
                 target.start=number(field(t,"start"));target.end=number(field(t,"end"));target.relative=boolean(field(t,"relative"));target.base=number(field(t,"base"));
                 for(auto id:array(field(t,"offIn"),256))if(const auto it=sceneIds.find(integer(id));it!=sceneIds.end())target.offIn.push_back(it->second);
                 macro.targets.push_back(target);

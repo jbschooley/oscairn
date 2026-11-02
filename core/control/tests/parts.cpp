@@ -1539,6 +1539,44 @@ namespace
         check(s.graphState().macros[0].targets[0].base == s.graphState().macros[1].targets[0].base, "one base per destination");
     }
 
+    // Level curves: a part's fader in dB, and a power law; their numbers checked; saved and loaded.
+    void levelCurves(const char* fixture, const fs::path& root)
+    {
+        Session s(48000, frames);
+        const auto a = s.add("a", fixture, "org.kick.test.synth");
+        const auto pa = s.addPart("A"), pb = s.addPart("B");
+        s.insertIntoPart(pa, 0, a); s.commit();
+        const auto volume = s.addMacro("Volume");
+        MacroTarget db; db.kind = MacroTarget::Kind::PartLevel; db.part = pa; db.curve = MacroTarget::Curve::Db; db.low = -96; db.high = 0;
+        MacroTarget power = db; power.part = pb; power.curve = MacroTarget::Curve::Power; power.exponent = 2;
+        s.setMacroTargets(volume, {db, power});
+        auto level = [&](uint32_t part) { for(const auto& p : s.graphState().parts) if(p.id == part) return p.level; return -1.0; };
+        auto close = [](double v, double e) { return std::abs(v - e) < 1e-9; };
+        s.setMacro(volume, .5);
+        check(close(level(pa), std::pow(10.0, -48.0 / 20)), "dB: half way is -48 dB: " + std::to_string(level(pa)));
+        check(close(level(pb), .25), "power 2: half way is .25: " + std::to_string(level(pb)));
+        s.setMacro(volume, 1);
+        check(close(level(pa), 1) && close(level(pb), 1), "both at 0 dB at the top");
+        s.setMacro(volume, .75);
+        check(close(level(pa), std::pow(10.0, -24.0 / 20)), "dB: three quarters is -24 dB: " + std::to_string(level(pa)));
+        s.setMacro(volume, 0);
+        check(level(pa) == 0 && level(pb) == 0, "silence at the bottom");
+        for(auto [low, high, exponent] : {std::tuple{0.0, -6.0, 2.0}, {-200.0, 0.0, 2.0}, {-96.0, 6.0, 2.0}})
+        {
+            MacroTarget wrong = db; wrong.low = low; wrong.high = high; wrong.exponent = exponent;
+            bool refused = false; try { s.setMacroTargets(volume, {wrong}); } catch(const std::invalid_argument&) { refused = true; }
+            check(refused, "a dB curve from " + std::to_string(low) + " to " + std::to_string(high) + " is refused");
+        }
+        bool refused = false; try { MacroTarget wrong = power; wrong.exponent = 20; s.setMacroTargets(volume, {wrong}); } catch(const std::invalid_argument&) { refused = true; }
+        check(refused, "a power curve's exponent beyond 10 is refused");
+        s.savePerformance((root / "curves").string());
+        Session t(48000, frames);
+        t.loadPerformance((root / "curves").string());
+        const auto state = t.graphState(); const auto& loaded = state.macros.at(0).targets;
+        check(loaded.size() == 2 && loaded[0].curve == MacroTarget::Curve::Db && loaded[0].low == -96 && loaded[0].high == 0 &&
+              loaded[1].curve == MacroTarget::Curve::Power && loaded[1].exponent == 2, "both curves round-trip with their numbers");
+    }
+
     // Parts, wires with owners and Mix settings, and flagged wires survive save and load, and play
     // the same; an earlier format version is refused.
     void persistence(const char* fixture, const char* audio, const char* delay, const fs::path& root)
@@ -1657,6 +1695,7 @@ int main(int argc, char** argv)
         memoryClasses(argv[1], temp.path);
         controls(argv[1], temp.path);
         summing(argv[1]);
+        levelCurves(argv[1], temp.path);
         persistence(argv[1], argv[2], argv[3], temp.path);
     }
     catch(const std::exception& e) { forbidAllocation = false; std::fprintf(stderr, "FAIL: %s\n", e.what()); return 1; }
