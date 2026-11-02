@@ -24,7 +24,8 @@ Backward compatibility is required from the first public product release onward.
 | Isolated CLAP/LV2 browser, generic parameter/preset editor and atomic slot replacement; installable shared themes | Custom plugin pages, arbitrary graph editor and managed package installation |
 | Offline renderer; desktop app with live audio, MIDI input and panel layouts, starting at Home ([RFC 0030](rfcs/0030-system-shell-launcher-and-navigation.md)); device profiles and resource budgets, in part ([RFC 0024](rfcs/0024-device-profiles.md), [RFC 0025](rfcs/0025-resource-budgets.md)) | Hardware-services interface; the platform as a DAW plugin |
 | A Linux image (Buildroot) that boots into Oscairn, tested in QEMU | Images for real hardware |
-| | Packages: sound packs, libraries, installable plugins |
+| Plugins in worker processes, the desktop app's default, with restarts and memory limits ([RFC 0010](rfcs/0010-plugin-worker-isolation.md)); memory declared before activating (`oscairn.memory`, [RFC 0025](rfcs/0025-resource-budgets.md)) | LV2 in workers; sandboxing plugins |
+| Archives carrying every platform's CLAP builds into a plugin store, signatures and a trust store, stand-ins for missing plugins ([RFC 0006](rfcs/0006-packages-and-portability.md)) | Packages: sound packs, a repository, managed installs ([RFC 0031](rfcs/0031-package-repository-and-distribution.md)) |
 
 ## Core idea
 
@@ -352,6 +353,9 @@ would go over the memory budget, the plugins used longest ago are unloaded first
 - **Know the cost before loading.** Each plugin's memory is measured once it is loaded
   (exactly, when plugins run in their own worker processes, which also makes unloading
   return all of it) and remembered per plugin and Sound, so later loads are predicted.
+  A plugin can also declare what it will allocate before activating (`oscairn.memory`), and
+  the larger of its declaration and the measurement counts. (Measurement and declarations are
+  built.)
   Samples' sizes are known from their files, and streaming samplers can keep only the
   starts of samples in memory. A sound whose plugin has never been loaded is estimated
   with headroom.
@@ -380,6 +384,11 @@ worker outside the audio path, restore its state, reconnect it at an audio bound
 fade it in. The output core never waits for a failed worker; it mutes or bypasses the
 affected node. Retries are bounded. Restarting may lose held voices and tails: the promise
 is that the sound comes back automatically, not that recovery is inaudible.
+
+Built for plugin workers ([RFC 0010](rfcs/0010-plugin-worker-isolation.md)): a worker that
+crashes, hangs, keeps missing its deadline or goes over its memory limit is restarted, its
+plugins given back their last loaded state, prepared sounds and parameter values, and faded in;
+after three restarts within a minute it stays silent.
 
 ### USB audio and MIDI, both ways
 
@@ -865,8 +874,8 @@ does not establish package portability.
   strongly discouraged, and the library and catalogs point users to open alternatives.
   Oscairn cannot stop a vendor shipping a plugin with its own licensing, but it does not
   manage or bypass that activation. Such plugins are external dependencies; planned
-  sandboxing does not make their installation or licensing portable. Runtime plugin
-  isolation is not implemented yet. Packages
+  sandboxing does not make their installation or licensing portable. Plugins run in worker
+  processes, but are not sandboxed yet. Packages
   can be signed, which shows who published a package and that it has not been altered:
   authenticity, not copy protection. License terms ("do not redistribute") are stated in
   the manifest, not enforced. Paid packs are just files.
@@ -946,7 +955,8 @@ defaults.
 - **Installing code needs care.** A plugin is native code running in the engine. Installs
   show who signed the package and what it contains and ask before installing code; plugins
   will run in separate worker processes without network access by default (see engine
-  recovery).
+  recovery). Built: an install lists plugin builds that are unsigned or signed by a key the
+  device does not trust, and installs them only when the user agrees.
 
 ## Building and sharing plugins
 
@@ -961,7 +971,10 @@ share them, and not be able to break each other or the host.
   reproducible: anyone can rebuild a package from its source and check it matches.
 - **The `oscairn` tool:** create a plugin from a template, build, validate, package, sign
   (offline), and install to the desktop or to a device over USB or a paired connection. A
-  development mode loads a plugin straight from its build folder.
+  development mode loads a plugin straight from its build folder. Not built; what exists is
+  `oscairn-sign`, which makes keys and signs builds and archives, and `oscairn-plugin-check`,
+  which takes a plugin through the library, an archive and the plugin store
+  ([developer guide](developer-guide.md#tools)).
 - **Validation:** conformance and realtime-safety tests (no allocation or locking on the
   audio thread, meeting deadlines, state that saves and loads) before a plugin is installed
   or published.
