@@ -269,6 +269,11 @@ namespace oscairn
                     const bool there = names.count(build.path) || (inside != names.end() && inside->rfind(build.path + "/", 0) == 0);
                     if(!safe(build.path) || build.path.rfind("Plugins/", 0) != 0 || !there || build.sha256.size() != 64)
                         bad("a plugin build is not in the archive: " + build.path);
+                    // The store only finds .clap and .lv2 bundles; a bare library file installs but is never loaded.
+                    const std::string suffix = plugin.format == "lv2" ? ".lv2" : ".clap";
+                    const std::string leaf { build.path.substr(build.path.rfind('/') + 1) };
+                    if(leaf.size() < suffix.size() || leaf.compare(leaf.size() - suffix.size(), suffix.size(), suffix) != 0)
+                        bad("a plugin build is not a .clap or .lv2 bundle: " + build.path);
                     if(!knownPlatform(build.platform)) bad("a plugin build for no known platform: " + build.platform);
                     build.signatures = signatures(detail::member(b->value, "signatures"));
                     for(const auto& s : build.signatures)

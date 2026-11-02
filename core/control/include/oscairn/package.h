@@ -63,7 +63,8 @@ namespace oscairn
     // or 64 MiB of names, more than 8 GiB in all, an entry over 2 GiB or a manifest over maxManifestBytes (as declared; each file extracted must be the
     // size it declares), a file whose SHA-256 is not the manifest's or that the manifest does not
     // list, a plugin build whose digest is not its own, and a manifest whose items or builds are
-    // not in the archive or not for a knownPlatform, and a signature that does not verify (each
+    // not in the archive, not for a knownPlatform, or whose build is not a .clap or .lv2 bundle,
+    // and a signature that does not verify (each
     // build's over its listed digest, library.sig over the manifest, each item's over its content
     // hash). On refusal `into` is removed. With `into` empty, nothing is extracted: the same
     // checks but the hashes and the items' signatures (listed, unchecked), and the manifest.

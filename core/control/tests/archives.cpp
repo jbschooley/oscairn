@@ -21,6 +21,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <functional>
 #include <fstream>
 #include <sstream>
 #include <sys/stat.h>
@@ -45,6 +46,22 @@ namespace
         char buffer[4096];
         while(const auto n = std::fread(buffer, 1, sizeof buffer, p)) out.append(buffer, n);
         return {::pclose(p), out};
+    }
+    // A copy of an archive whose manifest each(a) rewrote; other entries are copied whole.
+    void rewriteArchive(const fs::path& from, const fs::path& to, const std::function<std::string(std::string)>& each)
+    {
+        mz_zip_archive in{}, out{};
+        mz_zip_reader_init_file(&in, from.c_str(), 0);
+        mz_zip_writer_init_file(&out, to.c_str(), 0);
+        for(mz_uint i = 0; i < mz_zip_reader_get_num_files(&in); ++i)
+        {
+            mz_zip_archive_file_stat st; mz_zip_reader_file_stat(&in, i, &st);
+            if(std::string(st.m_filename) != "library.json") { mz_zip_writer_add_from_zip_reader(&out, &in, i); continue; }
+            std::string m(size_t(st.m_uncomp_size), '\0'); mz_zip_reader_extract_to_mem(&in, i, m.data(), m.size(), 0);
+            m = each(m);
+            mz_zip_writer_add_mem(&out, "library.json", m.data(), m.size(), MZ_DEFAULT_COMPRESSION);
+        }
+        mz_zip_writer_finalize_archive(&out); mz_zip_writer_end(&out); mz_zip_reader_end(&in);
     }
 }
 
@@ -371,6 +388,21 @@ int main(int argc, char** argv)
             const auto installed = j.installArchive(signedArchive.string(), false, {}, true);
             check(installed.added == 1 && installed.code.at(0).status == "revoked" && installed.notes.size() == 1 && installed.notes[0].find("revoked") != std::string::npos &&
                   !fs::exists(temp.path / "j" / "Plugins"), "a revoked key's build is refused even with a yes, and noted");
+        }
+        // A build path without its .clap or .lv2: the store keeps bundles by extension, so such a
+        // build installs into the store and is never found again. readPackage refuses it.
+        {
+            const auto build = temp.path / "bare" / "Plugins" / "clap" / "x@1" / platform() / "x";
+            fs::create_directories(build.parent_path());
+            fs::copy_file(fixture, build);
+            Package p; p.id = "bare"; p.name = "Bare";
+            p.plugins.push_back({"clap", "x", "1", "X", {{platform(), "Plugins/clap/x@1/" + platform() + "/x", bundleDigest(build), {}}}});
+            const auto bare = temp.path / "Bare.olib";
+            writePackage(bare, p, temp.path / "bare");
+            std::string why;
+            try { readPackage(bare, temp.path / "bare-out"); } catch(const std::exception& e) { why = e.what(); }
+            check(why.find("not a .clap or .lv2 bundle") != std::string::npos && !fs::exists(temp.path / "bare-out"),
+                  "a build that is a bare file, not a .clap or .lv2 bundle, is refused: " + why);
         }
     }
     catch(const std::exception& e) { std::fprintf(stderr, "FAIL: %s\n", e.what()); ++failures; }
