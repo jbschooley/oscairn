@@ -2,10 +2,14 @@
 #include "oscairn/session.h"
 
 #include "oscairn/library.h"
+#include "sheredom/json.h"
+#include "JsonInput.h"
 
 #include <algorithm>
 #include <chrono>
 #include <cstring>
+#include <fstream>
+#include <optional>
 #include <ctime>
 #include <iterator>
 #include <cmath>
@@ -355,9 +359,10 @@ namespace oscairn
         meter();
         recorder_.service();
         // A recording's taps follow the wires: a fader moved, a plugin replaced, a Performance changed.
-        if( recorder_.recording() && ( revision_ != recordRevision_ || wires_ != recordWires_ ) )
+        if( ( recorder_.recording() || !retroTaps_.empty() ) && ( revision_ != recordRevision_ || wires_ != recordWires_ ) )
         {
-            recorder_.update( compileTaps( recordTaps_, false ) );
+            if( recorder_.recording() ) recorder_.update( compileTaps( recordTaps_, false ) );
+            if( !retroTaps_.empty() ) recorder_.updateRetro( compileTaps( retroTaps_, false ) );
             recordRevision_ = revision_; recordWires_ = wires_;
         }
         measure();
@@ -552,7 +557,7 @@ namespace oscairn
         statusPlaying_.store( ( t.flags & CLAP_TRANSPORT_IS_PLAYING ) != 0 );
         statusTempo_.store( t.tempo );
         statusBeat_.store( (double)t.song_pos_beats / (double)CLAP_BEATTIME_FACTOR );
-        recorder_.begin( framesProcessed_.load( std::memory_order_relaxed ), t.tempo, statusBeat_.load() );
+        recorder_.begin( framesProcessed_.load( std::memory_order_relaxed ), t );
         recorder_.graphEvents( merged_.data(), (uint32_t)count );
         const bool ok = graph_.process( inputs, ni, outputs, no, frames, &t, merged_.data(), (uint32_t)count, false, mergedSources_.data() );
         recorder_.end( graph_, outputs, no, frames );
@@ -572,14 +577,29 @@ namespace oscairn
         return ok;
     }
 
-    uint32_t Session::recordStart( const std::vector<RecordTap>& asked, const std::string& name )
+    // Main (the first output port) and the notes entering the graph: what a take records when
+    // none are named, and what the retroactive buffer keeps (RFC 0020).
+    std::vector<Control::RecordTap> Session::defaultTaps() const
     {
-        auto taps = asked;
-        if( taps.empty() )
-        {
-            if( graph_.audioLayout().outputs.empty() ) throw std::invalid_argument( "no graph output to record" );
-            taps = { { RecordTap::Kind::Output, graph_.audioLayout().outputs.front().id }, { RecordTap::Kind::Notes } };
-        }
+        if( graph_.audioLayout().outputs.empty() ) return { { RecordTap::Kind::Notes } };
+        return { { RecordTap::Kind::Output, graph_.audioLayout().outputs.front().id }, { RecordTap::Kind::Notes } };
+    }
+
+    // Recording memory comes from the budget (RFC 0025: committed memory); with none set, nothing is checked.
+    void Session::admitRecording( uint64_t adding, uint64_t freeing ) const
+    {
+        const auto ceiling = budget_.cpu > 0 ? memoryCeiling() : 0;
+        if( !ceiling ) return;
+        auto committed = committedMemory();
+        committed -= std::min( committed, freeing );
+        if( committed + adding > ceiling )
+            throw std::length_error( "recording needs " + std::to_string( adding >> 20 ) + " MiB of memory; " + std::to_string( ( ceiling - std::min( ceiling, committed ) ) >> 20 ) + " MiB is left beside the Performance" );
+    }
+
+    uint32_t Session::recordStart( const std::vector<RecordTap>& asked, const std::string& name, const RecordWhen& when )
+    {
+        const auto taps = asked.empty() ? defaultTaps() : asked;
+        if( !retroTaps_.empty() ) recorder_.updateRetro( compileTaps( retroTaps_, false ) ); // as current as the take's, so a tap they hold is found
         auto compiled = compileTaps( taps, true );
         // A folder per take, named by its local start time and the Performance (RFC 0020).
         const auto now = std::chrono::system_clock::to_time_t( std::chrono::system_clock::now() );
@@ -592,8 +612,8 @@ namespace oscairn
         const auto base = dataHome() / "recordings" / ( title.empty() ? std::string( stamp ) : std::string( stamp ) + " " + title );
         auto folder = base;
         for( int n = 2; std::filesystem::exists( folder ); ++n ) folder = base.string() + " " + std::to_string( n );
-        const auto take = recorder_.start( folder, compiled, title );
-        recordTaps_ = taps; recordWires_ = wires_; recordRevision_ = revision_;
+        const auto take = recorder_.start( folder, compiled, title, when );
+        if( recorder_.recording() == take ) { recordTaps_ = taps; recordWires_ = wires_; recordRevision_ = revision_; }
         return take;
     }
 
@@ -601,5 +621,140 @@ namespace oscairn
     {
         if( !take || take != recorder_.recording() ) throw std::invalid_argument( "that take is not recording" );
         recorder_.stop();
+    }
+
+    void Session::recordRetro( double seconds, const std::vector<RecordTap>& asked )
+    {
+        if( !std::isfinite( seconds ) || seconds < 0 || seconds > 3600 ) throw std::invalid_argument( "the retroactive buffer holds 0 to 3600 seconds" );
+        const auto taps = asked.empty() ? defaultTaps() : asked;
+        const auto compiled = seconds > 0 ? compileTaps( taps, true ) : Recorder::Taps{};
+        admitRecording( Recorder::retroBytes( seconds, compiled, sampleRate_, maxFrames_ ), recorder_.retroCommitted() );
+        recorder_.setRetro( seconds, compiled );
+        retroTaps_ = seconds > 0 ? taps : std::vector<RecordTap>{};
+    }
+
+    namespace
+    {
+        // A take's take.json, as the writer leaves it; nothing for a file that is not one.
+        std::optional<Control::Take> readTake( const std::filesystem::path& folder )
+        {
+            std::ifstream in( folder / "take.json", std::ios::binary );
+            const std::string text{ std::istreambuf_iterator<char>( in ), {} };
+            if( text.empty() || text.size() > ( 1u << 20 ) ) return {};
+            const std::unique_ptr<json_value_s, decltype( &std::free )> doc{ json_parse( text.data(), text.size() ), &std::free };
+            using detail::member;
+            const auto* format = member( doc.get(), "format" );
+            if( !format || format->type != json_type_string || std::string_view( static_cast<const json_string_s*>( format->payload )->string ) != "oscairn.take" ) return {};
+            auto number = [&]( const json_value_s* v ) { return v && v->type == json_type_number ? std::strtod( static_cast<const json_number_s*>( v->payload )->number, nullptr ) : 0.0; };
+            auto string = [&]( const json_value_s* v ) { return v && v->type == json_type_string ? std::string( static_cast<const json_string_s*>( v->payload )->string, static_cast<const json_string_s*>( v->payload )->string_size ) : std::string(); };
+            auto array = [&]( const json_value_s* v ) { return v && v->type == json_type_array ? static_cast<const json_array_s*>( v->payload )->start : nullptr; };
+            Control::Take t;
+            t.state = string( member( doc.get(), "state" ) );
+            t.error = string( member( doc.get(), "error" ) );
+            // Still open: the engine stopped before closing it (the journal and repair are not built yet).
+            if( t.state != "done" && t.state != "failed" ) { t.state = "failed"; if( t.error.empty() ) t.error = "not closed"; }
+            t.sampleRate = number( member( doc.get(), "sampleRate" ) );
+            t.start = uint64_t( std::max( 0.0, number( member( doc.get(), "start" ) ) ) );
+            t.frames = uint64_t( std::max( 0.0, number( member( doc.get(), "frames" ) ) ) );
+            t.droppedNotes = uint64_t( std::max( 0.0, number( member( doc.get(), "droppedNotes" ) ) ) );
+            for( auto* e = array( member( doc.get(), "files" ) ); e; e = e->next ) if( const auto f = string( member( e->value, "file" ) ); !f.empty() ) t.files.push_back( f );
+            for( auto* e = array( member( doc.get(), "overruns" ) ); e; e = e->next )
+                if( const auto* pair = array( e->value ); pair && pair->next ) t.overruns.push_back( { uint64_t( number( pair->value ) ), uint64_t( number( pair->next->value ) ) } );
+            return t;
+        }
+        bool live( const Control::Take& t ) { return t.state == "waiting" || t.state == "recording" || t.state == "finishing"; }
+    }
+
+    // This run's takes and those found in recordings/ (RFC 0020: the index is rebuilt by
+    // scanning), oldest first by their folders' names. A take of an earlier run, or one renamed,
+    // gets a number when it is first found. The scan is read again only when the folder changes.
+    std::vector<Control::Take> Session::recordTakes() const
+    {
+        namespace fs = std::filesystem;
+        const auto root = dataHome() / "recordings";
+        std::error_code ec;
+        const auto changed = fs::last_write_time( root, ec );
+        if( ec ) scanned_.clear();
+        else if( changed != scannedAt_ || scanned_.empty() )
+        {
+            scannedAt_ = changed;
+            scanned_.clear();
+            for( const auto& e : fs::directory_iterator( root, ec ) )
+                if( e.is_directory( ec ) )
+                    if( auto t = readTake( e.path() ) ) { t->folder = e.path().string(); scanned_.push_back( std::move( *t ) ); }
+        }
+        auto out = recorder_.takes();
+        std::erase_if( out, [&]( const Take& t ) { return !live( t ) && !fs::exists( t.folder ); } ); // deleted or renamed meanwhile
+        for( const auto& s : scanned_ )
+        {
+            if( std::any_of( out.begin(), out.end(), [&]( const Take& t ) { return t.folder == s.folder; } ) ) continue;
+            auto t = s;
+            auto& id = takeIds_[t.folder];
+            if( !id ) id = nextFound_++;
+            t.take = id;
+            out.push_back( std::move( t ) );
+        }
+        const auto playing = recorder_.playing();
+        for( auto& t : out ) t.playing = playing && t.take == playing;
+        std::sort( out.begin(), out.end(), []( const Take& a, const Take& b ) { return fs::path( a.folder ).filename() < fs::path( b.folder ).filename(); } );
+        return out;
+    }
+
+    // The closed take, and its folder checked to be one in recordings/ before anything changes it.
+    Control::Take Session::closedTake( uint32_t take ) const
+    {
+        const auto takes = recordTakes();
+        const auto it = std::find_if( takes.begin(), takes.end(), [&]( const Take& t ) { return t.take == take; } );
+        if( it == takes.end() ) throw std::invalid_argument( "no such take" );
+        if( live( *it ) ) throw std::logic_error( "that take is still being written" );
+        std::error_code ec;
+        const auto folder = std::filesystem::weakly_canonical( it->folder, ec ), root = std::filesystem::weakly_canonical( dataHome() / "recordings", ec );
+        if( ec || folder.parent_path() != root ) throw std::invalid_argument( "that take is not in the recordings folder" );
+        return *it;
+    }
+
+    void Session::recordDelete( uint32_t take )
+    {
+        const auto t = closedTake( take );
+        if( recorder_.playing() == take ) recorder_.play( 0, {} );
+        std::filesystem::remove_all( t.folder );
+        recorder_.forget( take );
+        takeIds_.erase( t.folder );
+    }
+
+    void Session::recordRename( uint32_t take, const std::string& name )
+    {
+        namespace fs = std::filesystem;
+        const auto t = closedTake( take );
+        std::string title = name;
+        for( auto& c : title ) if( static_cast<unsigned char>( c ) < 0x20 || std::strchr( "<>:\"/\\|?*", c ) ) c = '_';
+        while( !title.empty() && ( title.back() == ' ' || title.back() == '.' ) ) title.pop_back();
+        while( !title.empty() && title.front() == ' ' ) title.erase( 0, 1 );
+        if( title.empty() ) throw std::invalid_argument( "a take's name cannot be empty" );
+        // The time it was recorded stays first: the name follows it.
+        const fs::path from = t.folder;
+        const auto old = from.filename().string();
+        const bool stamped = old.size() >= 19 && old[4] == '-' && old[10] == ' ' && std::all_of( old.begin(), old.begin() + 19, []( char c ) { return std::isdigit( static_cast<unsigned char>( c ) ) || c == '-' || c == ' '; } );
+        const auto base = from.parent_path() / ( stamped ? old.substr( 0, 19 ) + " " + title : title );
+        auto to = base;
+        for( int n = 2; fs::exists( to ) && to != from; ++n ) to = base.string() + " " + std::to_string( n );
+        if( to == from ) return;
+        fs::rename( from, to );
+        recorder_.forget( take );
+        takeIds_.erase( t.folder );
+        takeIds_[to.string()] = take;
+    }
+
+    void Session::recordPlay( uint32_t take )
+    {
+        if( !take ) { recorder_.play( 0, {} ); return; }
+        const auto t = closedTake( take );
+        const auto wav = std::find_if( t.files.begin(), t.files.end(), []( const std::string& f ) { return f.size() > 4 && f.compare( f.size() - 4, 4, ".wav" ) == 0; } );
+        if( wav == t.files.end() ) throw std::invalid_argument( "that take has no audio to play" );
+        const auto file = std::filesystem::path( t.folder ) / *wav;
+        std::error_code ec;
+        const auto bytes = std::filesystem::file_size( file, ec );
+        admitRecording( ec ? 0 : bytes, 0 );
+        recorder_.play( take, file );
     }
 }

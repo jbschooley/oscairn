@@ -485,6 +485,10 @@ namespace oscairn
         // part receives (part) or a plugin sends (node), one track each in the take's MIDI file.
         // No taps: Main and the notes entering the graph. One take at a time: throws
         // std::invalid_argument for an unknown tap, std::logic_error while another records.
+        // `when` (RFC 0020 step 3): from now, seconds ago or a bar line (next or last; now with
+        // the transport stopped), for a length or until stopped. A start in the past reads the
+        // retroactive buffer and ends now unless keepGoing; std::out_of_range for a tap it does
+        // not hold. A take with an end (a capture, a length) records beside the one recording.
         struct RecordTap
         {
             enum class Kind { Output, Input, Part, Node, Notes } kind = Kind::Output;
@@ -493,8 +497,24 @@ namespace oscairn
             bool preFader = false; // parts
         };
         using Take = Recorder::Take;
-        virtual uint32_t recordStart( const std::vector<RecordTap>& taps = {}, const std::string& name = {} ) = 0;
-        virtual void recordStop( uint32_t take ) = 0; // the take ends at the next block; its files close after
-        virtual std::vector<Take> recordTakes() const = 0; // this session's, oldest first
+        using RecordWhen = Recorder::Start;
+        virtual uint32_t recordStart( const std::vector<RecordTap>& taps = {}, const std::string& name = {}, const RecordWhen& when = {} ) = 0;
+        virtual void recordStop( uint32_t take ) = 0; // the take ends now; its files close after
+        // This run's takes and the closed ones found in recordings/, oldest first; earlier runs'
+        // are numbered as found.
+        virtual std::vector<Take> recordTakes() const = 0;
+        // The retroactive buffer (RFC 0020 step 3): these taps (none: Main and the notes entering
+        // the graph) kept in memory for the last `seconds`, 0 for none. Its rings are committed
+        // memory (RFC 0025): std::length_error when they do not fit the budget beside the
+        // Performance, std::logic_error while a take recording reads them.
+        virtual void recordRetro( double seconds, const std::vector<RecordTap>& taps = {} ) = 0;
+        virtual double recordRetroSeconds() const = 0;
+        // A closed take: deleted with its folder; renamed (its folder, keeping the time it starts
+        // with); played back into the outputs from its first audio file, after the taps, so no
+        // take records it (0 stops). std::invalid_argument for no such take, std::logic_error
+        // while it is written, std::length_error when its audio does not fit the memory budget.
+        virtual void recordDelete( uint32_t take ) = 0;
+        virtual void recordRename( uint32_t take, const std::string& name ) = 0;
+        virtual void recordPlay( uint32_t take ) = 0;
     };
 }

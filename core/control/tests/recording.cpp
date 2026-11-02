@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
-// RFC 0020 steps 1 and 2: recording taps to files, checked against what the session rendered,
+// RFC 0020 steps 1 to 3: recording taps to files, and the retroactive rings, checked against what the session rendered,
 // sample for sample, with no audio device.
 //   oscairn-recording-test BASIC_SYNTH.clap
 #include "oscairn/session.h"
@@ -93,10 +93,10 @@ namespace
             if(keep) for(uint32_t i = 0; i < frames; ++i) { main.push_back(l[i]); main.push_back(r[i]); }
         }
     };
-    Session::Take finish(Session& s, uint32_t take, bool stop = true)
+    Session::Take finish(Session& s, uint32_t take, bool stop = true, Render* through = nullptr)
     {
         if(stop) s.recordStop(take);
-        Render(s, false).block(16); // the audio thread ends it at the next block
+        if(through) through->block(16); else Render(s, false).block(16); // the audio thread ends it at the next block
         for(int i = 0; i < 2000; ++i)
         {
             s.service();
@@ -306,14 +306,187 @@ namespace
         check(call(R"("method":"record.start","params":{"taps":[{"kind":"part","part":7}]})").find(R"("code":-32007)") != std::string::npos, "an unknown tap is -32007");
         check(call(R"("method":"record.start","params":{"taps":[{"kind":"output","port":0},{"kind":"part","part":)" + std::to_string(part) + R"(,"fader":"pre"},{"kind":"notes"}],"name":"Lick"})") == R"({"jsonrpc":"2.0","id":1,"result":{"take":1}})", "record.start");
         check(call(R"("method":"record.start","params":{})").find(R"("reason":"busy")") != std::string::npos, "a second take is refused as busy");
+        check(call(R"("method":"subscribe","params":{"topics":["params.changed","transport","graph.changed","status","record"]})").find(R"("accepted":true)") != std::string::npos, "the record topic, with the other four");
         Render render(s);
         for(int i = 0; i < 4; ++i) render.block(128);
-        check(call(R"("method":"record.get")").find(R"("recording":1,"takes":[{"take":1,"state":"recording")") != std::string::npos, "record.get reports the take recording");
+        auto notified = [&](uint64_t now, const std::string& what) { for(const auto& n : rpc.notifications(now)) if(n.find(R"("method":"record")") != std::string::npos && n.find(what) != std::string::npos) return true; return false; };
+        check(notified(1, R"({"take":1,"state":"recording")"), "the record topic sends the take recording");
+        check(!notified(2, R"("take":1)"), "at most 10 times a second");
+        const auto got = call(R"("method":"record.get")");
+        check(got.find(R"("recording":1,"retro":{"seconds":0},"takes":[)") != std::string::npos && got.find(R"({"take":1,"state":"recording")") != std::string::npos, "record.get reports the take recording, among the earlier tests' takes found on disk");
         check(call(R"("method":"record.stop","params":{"take":1})") == R"({"jsonrpc":"2.0","id":1,"result":{"accepted":true}})", "record.stop");
         const auto t = finish(s, 1, false);
+        check(notified(1000000000, R"({"take":1,"state":"done")"), "and once more when it is done");
+        check(!notified(2000000000, R"("take":1)"), "then no more");
         check(t.folder.find(" Lick") != std::string::npos && t.files.size() == 3, "the take's folder carries its name");
         const auto takes = call(R"("method":"record.takes")");
         check(takes.find(R"("state":"done")") != std::string::npos && takes.find(R"("frames":512)") != std::string::npos, "record.takes: " + takes);
+    }
+
+    // Step 3: the retroactive rings, armed outside any take. Capture saves the last seconds of
+    // Main as rendered, sample for sample, and the notes played in them; the rings' memory is
+    // fixed, counted as committed memory in the budget (RFC 0025), and a buffer past the budget
+    // is refused.
+    void retroactive(const char* synth)
+    {
+        constexpr uint32_t block = 128;
+        Session s(48000, block);
+        const auto node = s.add("synth", synth);
+        const auto part = s.addPart("Lead");
+        s.insertIntoPart(part, 0, node);
+        s.commit();
+        s.setBudget({0.9, 1ull << 30});
+        const auto before = s.memoryState().committed;
+        s.recordRetro(4); // Main and the notes entering the graph
+        const uint64_t rings = 2ull * 4 * (4 * 48000 + block) + Recorder::noteCapacity * 16;
+        check(s.recorder().committedBytes() == rings, "the retroactive rings are 4 s of stereo float, a block and the notes ring: " + std::to_string(s.recorder().committedBytes()));
+        check(s.memoryState().committed == before + rings, "and they are committed memory in the budget: " + std::to_string(s.memoryState().committed - before));
+        check(s.recordRetroSeconds() == 4, "the buffer's length reads back");
+        bool refused = false;
+        try { s.recordRetro(3000); } catch(const std::length_error&) { refused = true; }
+        check(refused && s.recorder().committedBytes() == rings && s.recordRetroSeconds() == 4, "a buffer past the budget is refused, the one there kept");
+        Render render(s);
+        // Six seconds, so the rings lap; a note every 0.32 s.
+        uint64_t total = 0;
+        for(int i = 0; total < 6 * 48000; ++i)
+        {
+            std::vector<kick::clap::Event> events;
+            if(i % 120 == 7) events.push_back(kick::clap::Event::note(true, 60 + i / 120, .8, 5));
+            if(i % 120 == 60) events.push_back(kick::clap::Event::note(false, 60 + i / 120, 0, 9));
+            render.block(block, events);
+            total += block;
+        }
+        check(s.recorder().committedBytes() == rings, "the memory stays the rings' while they lap");
+        Control::RecordWhen last2; last2.from = Control::RecordWhen::From::SecondsAgo; last2.seconds = 2;
+        const auto take = s.recordStart({}, "Capture", last2);
+        check(s.recorder().recording() == 0, "a capture ends by itself, so a take can record beside it");
+        const auto t = finish(s, take, false);
+        check(t.state == "done" && t.overruns.empty(), "the capture is done with no overrun: " + t.state + " " + t.error);
+        check(t.start == total - 96000 && t.frames == 96000, "it is the last 2 seconds: " + std::to_string(t.start) + "+" + std::to_string(t.frames));
+        const auto wav = readWav(fs::path(t.folder) / "Main.wav");
+        const std::vector<float> lastTwo(render.main.end() - 2 * 96000, render.main.end());
+        check(wav.valid && same(wav.samples, lastTwo), "Main.wav is the render's last 2 seconds, sample for sample");
+        // The notes in those 2 seconds, at the ticks their samples give (25 samples a tick at 120 BPM).
+        const auto midi = readMidi(fs::path(t.folder) / "Notes.mid");
+        size_t expected = 0;
+        std::vector<std::pair<uint32_t, uint8_t>> ticks; // the events the take should hold
+        for(uint64_t i = 0, at = 0; at < total; ++i, at += block)
+        {
+            if(i % 120 == 7 && at + 5 >= total - 96000) ticks.push_back({uint32_t(std::llround((at + 5 - (total - 96000)) / 25.0)), 0x90});
+            if(i % 120 == 60 && at + 9 >= total - 96000) ticks.push_back({uint32_t(std::llround((at + 9 - (total - 96000)) / 25.0)), 0x80});
+        }
+        expected = ticks.size();
+        check(midi.size() == 2 && midi[1].size() == expected, "the notes played in the last 2 seconds: " + std::to_string(midi.size() == 2 ? midi[1].size() : 0) + " of " + std::to_string(expected));
+        for(size_t i = 0; midi.size() == 2 && i < midi[1].size() && i < ticks.size(); ++i)
+            check(midi[1][i].tick == ticks[i].first && midi[1][i].bytes[0] == ticks[i].second, "note event " + std::to_string(i) + " at tick " + std::to_string(midi[1][i].tick));
+        check(s.recorder().committedBytes() == rings, "after the capture, only the rings");
+        // More than the buffer holds: as much as it holds, less what the writer needs to begin.
+        Control::RecordWhen all; all.from = Control::RecordWhen::From::SecondsAgo; all.seconds = 60;
+        const auto longest = finish(s, s.recordStart({}, {}, all), false);
+        check(longest.state == "done" && longest.overruns.empty() && longest.frames >= 2 * 48000 && longest.frames <= 4 * 48000, "a capture longer than the buffer is what it holds: " + std::to_string(longest.frames));
+        // A tap the buffer does not hold has no past.
+        refused = false;
+        try { s.recordStart({{Control::RecordTap::Kind::Part, 0, part}}, {}, last2); } catch(const std::out_of_range&) { refused = true; }
+        check(refused, "a capture of a tap the buffer does not hold is refused");
+        // Over the protocol: record.retro and its refusal, a capture with from, and record.get's retro.
+        JsonRpc rpc(s);
+        auto call = [&](const std::string& body) { return rpc.dispatch(R"({"jsonrpc":"2.0","id":1,)" + body + "}").value_or(""); };
+        check(call(R"("method":"record.retro","params":{"seconds":3000})").find(R"("reason":"memory")") != std::string::npos, "record.retro past the budget is -32007 memory");
+        check(call(R"("method":"record.get")").find(R"("retro":{"seconds":4})") != std::string::npos, "record.get reports the buffer");
+        const auto reply = call(R"("method":"record.start","params":{"from":{"secondsAgo":1},"name":"Over the socket"})");
+        check(reply.find(R"("take":)") != std::string::npos, "record.start from seconds ago: " + reply);
+        for(int i = 0; i < 400 && s.recorder().committedBytes() > rings; ++i) { s.service(); std::this_thread::sleep_for(std::chrono::milliseconds(5)); }
+        const auto on = s.memoryState().committed;
+        s.recordRetro(0);
+        for(int i = 0; i < 400 && s.recorder().committedBytes(); ++i) { s.service(); std::this_thread::sleep_for(std::chrono::milliseconds(5)); }
+        check(s.recorder().committedBytes() == 0 && on - s.memoryState().committed == rings, "turned off, the rings go and the budget no longer counts them");
+    }
+
+    // Step 3's gate, offline: a take from the next bar starts on the bar line's exact sample, and
+    // one from the last bar reads the retroactive rings back to it; both for a length in bars or
+    // seconds.
+    void bars(const char* synth)
+    {
+        constexpr uint32_t block = 128;
+        Session s(48000, block);
+        const auto node = s.add("synth", synth);
+        const auto part = s.addPart("Lead");
+        s.insertIntoPart(part, 0, node);
+        s.commit();
+        s.setTempo(120); s.setPlaying(true); // a bar of 4 beats is 96000 samples
+        s.recordRetro(4);
+        Render render(s);
+        render.block(block, {kick::clap::Event::note(true, 64, .9, 3)});
+        while(render.main.size() / 2 < 50000) render.block(block);
+        Control::RecordWhen next; next.from = Control::RecordWhen::From::NextBar; next.until = Control::RecordWhen::Until::Bars; next.length = 1;
+        const auto a = s.recordStart({{Control::RecordTap::Kind::Output, 0}}, "Next bar", next);
+        std::string state; for(const auto& x : s.recordTakes()) if(x.take == a) state = x.state;
+        check(state == "waiting", "it waits for the bar line: " + state);
+        while(render.main.size() / 2 < 2 * 96000 + 1000) render.block(block);
+        auto t = finish(s, a, false, &render);
+        check(t.state == "done" && t.start == 96000 && t.frames == 96000, "from the next bar for a bar: starts on its exact sample, " + std::to_string(t.start) + "+" + std::to_string(t.frames));
+        auto wav = readWav(fs::path(t.folder) / "Main.wav");
+        check(wav.valid && same(wav.samples, std::vector<float>(render.main.begin() + 2 * 96000, render.main.begin() + 4 * 96000)), "and holds that bar of the render");
+        // Just after the downbeat at 192000: from the last bar, half a second, out of the rings.
+        Control::RecordWhen last; last.from = Control::RecordWhen::From::LastBar; last.until = Control::RecordWhen::Until::Seconds; last.length = .5;
+        const auto b = s.recordStart({}, "Last bar", last);
+        while(render.main.size() / 2 < 2 * 96000 + 30000) render.block(block);
+        t = finish(s, b, false, &render);
+        check(t.state == "done" && t.start == 2 * 96000 && t.frames == 24000, "from the last bar: back to its exact sample, " + std::to_string(t.start) + "+" + std::to_string(t.frames));
+        wav = readWav(fs::path(t.folder) / "Main.wav");
+        check(wav.valid && same(wav.samples, std::vector<float>(render.main.begin() + 4 * 96000, render.main.begin() + 4 * 96000 + 2 * 24000)), "and holds the render from there");
+        // With the transport stopped, a bar line is now.
+        s.setPlaying(false);
+        render.block(block);
+        const auto now = render.main.size() / 2;
+        const auto c = s.recordStart({{Control::RecordTap::Kind::Output, 0}}, {}, next);
+        while(render.main.size() / 2 < now + 96000 + 512) render.block(block);
+        t = finish(s, c, false, &render);
+        check(t.start == now, "with the transport stopped, the next bar is now: " + std::to_string(t.start) + " for " + std::to_string(now));
+    }
+
+    // Takes of an earlier run are found by scanning recordings/; a take plays back into the
+    // outputs only when asked, offline, and is renamed and deleted.
+    void earlierTakes()
+    {
+        Session s(48000, 128); // no parts: what comes out is the playback alone
+        const auto takes = s.recordTakes();
+        check(takes.size() >= 5, "the takes of the sessions before are found: " + std::to_string(takes.size()));
+        const Control::Take* lick = nullptr;
+        for(const auto& t : takes) if(t.folder.ends_with(" Capture")) lick = &t;
+        check(lick && lick->state == "done" && lick->frames == 96000 && lick->sampleRate == 48000 && lick->files.size() == 2, "the capture is found with its length and files");
+        if(!lick) return;
+        const auto take = lick->take;
+        const auto wav = readWav(fs::path(lick->folder) / "Main.wav");
+        Render render(s);
+        render.block(128);
+        bool silent = true; for(auto v : render.main) silent = silent && v == 0;
+        check(silent && !lick->playing, "nothing plays until asked");
+        s.recordPlay(take);
+        render.main.clear();
+        while(render.main.size() < wav.samples.size() + 512) render.block(128);
+        s.service();
+        check(same(std::vector<float>(render.main.begin(), render.main.begin() + std::ptrdiff_t(wav.samples.size())), wav.samples), "played back, the outputs are the take's samples");
+        bool after = true; for(size_t i = wav.samples.size(); i < render.main.size(); ++i) after = after && render.main[i] == 0;
+        check(after, "and silence once it ends");
+        auto find = [&](uint32_t id) { for(const auto& t : s.recordTakes()) if(t.take == id) return t; return Control::Take{}; };
+        check(!find(take).playing, "it is no longer playing once it ended");
+        s.recordPlay(take); render.block(128);
+        check(find(take).playing, "playing while it plays");
+        s.recordPlay(0); s.service();
+        check(!find(take).playing, "and stopped when asked");
+        s.recordRename(take, "Best lick");
+        const auto renamed = find(take);
+        check(fs::path(renamed.folder).filename().string().ends_with(" Best lick") && fs::path(renamed.folder).filename().string().size() == 19 + 1 + 9 && fs::exists(renamed.folder),
+              "renamed, its folder keeps its time and takes the name: " + renamed.folder);
+        bool refused = false;
+        try { s.recordRename(take, "  "); } catch(const std::invalid_argument&) { refused = true; }
+        check(refused && fs::exists(renamed.folder), "an empty name is refused");
+        s.recordDelete(take);
+        check(find(take).take == 0 && !fs::exists(renamed.folder), "deleted, its folder goes");
+        refused = false;
+        try { s.recordDelete(take); } catch(const std::invalid_argument&) { refused = true; }
+        check(refused, "a take deleted is no longer found");
     }
 }
 
@@ -332,6 +505,9 @@ int main(int argc, char** argv)
         partsAndNotes(argv[1]);
         inputAndNode(argv[1]);
         protocol(argv[1]);
+        retroactive(argv[1]);
+        bars(argv[1]);
+        earlierTakes();
     }
     catch(const std::exception& e) { std::fprintf(stderr, "FAIL: %s\n", e.what()); ++failures; }
     fs::remove_all(home);

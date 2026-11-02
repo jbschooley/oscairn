@@ -42,5 +42,9 @@ namespace oscairn
         std::string lastTransportValue_;
         std::optional<uint64_t> lastStatus_;
         std::string lastStatusValue_;
+        bool record_ = false;
+        std::optional<uint64_t> lastRecord_;
+        std::string lastRecordValue_;
+        std::map<uint32_t, std::string> recordStates_; // takes notified, by their state then
     };
 }

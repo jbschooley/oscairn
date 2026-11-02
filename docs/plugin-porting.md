@@ -71,7 +71,8 @@ An `oscairn.ui` extension without `param_hint` is ignored, not refused.
   aftertouch) and its MIDI events' channel messages; parameter events and other CLAP events
   stay inside. MIDI clock out follows the transport; a plugin does nothing for it.
 - **Recording:** the engine records a plugin's output buffers and note events from outside
-  the plugin ([RFC 0020](rfcs/0020-recording.md)). The plugin is not told and needs nothing.
+  the plugin ([RFC 0020](rfcs/0020-recording.md)), in a take or in the retroactive buffer that is
+  always kept for Capture. The plugin is not told and needs nothing.
 - **Audio:** 32-bit float buffers. CLAP requires every plugin and host to support 32-bit
   audio; 64-bit is optional (`CLAP_AUDIO_PORT_SUPPORTS_64BITS`) and Oscairn does not offer
   it, so no plugin is excluded by it.

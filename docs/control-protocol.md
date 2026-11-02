@@ -116,7 +116,7 @@ request members.
 | `transport.get` | omitted or `{}` | `playing`, `tempo`, `beat`, `clockSource`, `clockOutputs` |
 | `transport.set` | one or more of `playing` (boolean), `tempo` (1..1000), `clockSource` (`"internal"` or `"midi"`), `clockOutputs` (up to 16 device rules choosing MIDI outputs, as for a part's `devices`, replacing the last; empty, the default, sends no clock) | `{"accepted":true}` |
 | `params.gesture` | `node`, `param`, `begin` (boolean) | `{"accepted":true}` |
-| `subscribe`, `unsubscribe` | `topics` (1..4 of `params.changed`, `transport`, `graph.changed`, `status`), optional `allChanges` boolean | `{"accepted":true}` |
+| `subscribe`, `unsubscribe` | `topics` (1..5 of `params.changed`, `transport`, `graph.changed`, `status`, `record`), optional `allChanges` boolean | `{"accepted":true}` |
 | `graph.get` | omitted or `{}` | staged topology, names/plugin metadata/ports, each node's `enabled` and `ringing` (switched off and still sounding out), connections, mappings, parts, wires (each with `enabled`), `revision`, `staged`, numeric `input`/`output` endpoints |
 | `graph.enable` | `node`, `enabled`: switches a plugin off or on, as scenes do. Off, it takes no new notes and no sound: notes it holds play on until released, its sound rings out and then stops (`ringing` until then). In a part's chain, what reached it passes around it, so an effect off is bypassed. An edit, staged until commit | `{"accepted":true}` |
 | `graph.add` | `path`, optional `name` and `pluginId` | numeric `node` |
@@ -751,7 +751,7 @@ because a disconnected request is not cancellation. The app runs them on its con
 
 ## Recording
 
-[RFC 0020](rfcs/0020-recording.md) steps 1 and 2. The engine records taps into a take: one
+[RFC 0020](rfcs/0020-recording.md) steps 1 to 3 and step 4's control API. The engine records taps into a take: one
 file per tap, all starting and ending on the same sample, in a folder of its own under the
 data folder's `recordings/` (`OSCAIRN_DATA_HOME/recordings`, beside `assets`), named by its
 local start time and the Performance or the given name: `2026-11-01 21-04-17 Open Road/`.
@@ -770,25 +770,48 @@ local start time and the Performance or the given name: `2026-11-01 21-04-17 Ope
   Without `taps`, Main (the first output port) and the notes entering the graph. Audio taps
   are 32-bit float WAV files named after the port, part or plugin (`Main.wav`, `Lead.wav`,
   `Lead pre-fader.wav`); note taps are tracks of one Standard MIDI File, `Notes.mid` (type 1,
-  960 ticks per quarter, track 0 the tempo map). The take starts at the next block. One take
-  records at a time. Refusals are `-32007` with `data.reason`: `unknownTap`, `busy` (a take is
-  recording) or `drive` (the folder could not be made).
+  960 ticks per quarter, track 0 the tempo map). Optional `from`: `"now"` (the default: the next
+  block), `{"secondsAgo":s}` (0 to 3600) or `{"bar":"next"}` / `{"bar":"last"}` (the transport's
+  bar line, exact with the internal clock; with the transport stopped, now); optional `until`:
+  `"stop"` (the default), `{"bars":n}` or `{"seconds":s}`; optional `keepGoing`. A start in the
+  past reads the retroactive buffer (`record.retro`) and ends now unless `keepGoing`; when the
+  buffer holds less, the take starts where it still holds it, less up to 2 seconds. One take
+  records until stopped at a time; a take with an end (a capture, a length) records beside it.
+  Refusals are `-32007` with `data.reason`: `unknownTap`, `retro` (a start in the past on a tap
+  the buffer does not hold), `busy` (a take is recording) or `drive` (the folder could not be
+  made).
+- `record.retro` takes `seconds` (0 to 3600; 0 turns it off) and optional `taps` (as for
+  `record.start`; without them, Main and the notes entering the graph) and returns
+  `{"accepted":true}`: those taps kept in memory for the last `seconds`, never written unless a
+  take asks. Its memory is committed memory in the budget (RFC 0025); past the budget it is
+  `-32007` `memory` and the buffer there is kept; `busy` while a take recording reads it.
 - `record.stop` takes `{take}` and returns `{"accepted":true}`; the take ends at the next block
   and its files close after. `-32602` for a take that is not recording.
-- `record.takes` (`{}`) returns `{takes}`, this engine run's takes, oldest first, each
-  `{take,state,folder,files,start,frames,overruns,droppedNotes,error}`. `state` is
-  `recording`, `finishing`, `done` or `failed`; `start` the first sample on the engine's
+- `record.takes` (`{}`) returns `{takes}`, this engine run's takes and the closed ones found in
+  `recordings/` (numbered as found), oldest first by folder name, each
+  `{take,state,folder,files,start,frames,sampleRate,overruns,droppedNotes,behind,playing,error}`.
+  `state` is `waiting` (for its start), `recording`, `finishing`, `done` or `failed` (a found
+  take left open is `failed`, `not closed`); `behind` the writer more than half a ring behind;
+  `playing` being played back; `start` the first sample on the engine's
   timeline; `frames` those written to each file so far; `overruns` each span the writer fell a
   whole ring behind, `{start,frames}` from the take's start, written as silence so the files
-  stay aligned; `droppedNotes` the events the notes ring had no room for or that have no MIDI
+  stay aligned; `droppedNotes` the events lapped in the notes ring or that have no MIDI
   form; `error` why a take failed (`diskFull` when the drive came within 64 MiB of full).
-- `record.get` (`{}`) returns `{recording,takes}`: the take recording, 0 for none, and the
-  same takes.
+- `record.get` (`{}`) returns `{recording,retro,takes}`: the take recording, 0 for none, the
+  retroactive buffer's `{seconds}`, and the same takes.
+- `record.delete` (`{take}`), `record.rename` (`{take,name}`: its folder renamed, keeping the time
+  it starts with) and `record.play` (`{take}`: its first WAV file played into the outputs once,
+  after the taps so no take records it; 0 stops) return `{"accepted":true}` for a closed take.
+  `-32602` for no such take or an empty name, `-32007` `busy` while it is written, `memory` when a
+  playback does not fit the budget.
+- The `record` topic sends `record` with `{takes}`, at most 10 times a second: the takes being
+  written and each whose state changed since the last, in the `record.takes` shape.
 
 Each take folder also holds `take.json`: its sample rate, start, frames, tempo and beat at the
 start, files, overruns, dropped notes and the first note's exact sample. Written when the take
 starts, with `state` `recording`, and again when it closes. The typed methods are
-`Control::recordStart`, `recordStop` and `recordTakes`.
+`Control::recordStart`, `recordStop`, `recordTakes`, `recordRetro`, `recordRetroSeconds`,
+`recordDelete`, `recordRename` and `recordPlay`.
 
 ## Library
 

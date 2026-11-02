@@ -156,9 +156,14 @@ namespace oscairn
         bool padPressure(uint32_t pad,double pressure) override;
         std::vector<AssignmentOverride> assignments() const override;
         void assign(const std::string& control,const Assignment& target,uint32_t part=0) override;
-        uint32_t recordStart(const std::vector<RecordTap>& taps={},const std::string& name={}) override;
+        uint32_t recordStart(const std::vector<RecordTap>& taps={},const std::string& name={},const RecordWhen& when={}) override;
         void recordStop(uint32_t take) override;
         std::vector<Take> recordTakes() const override;
+        void recordRetro(double seconds,const std::vector<RecordTap>& taps={}) override;
+        double recordRetroSeconds() const override;
+        void recordDelete(uint32_t take) override;
+        void recordRename(uint32_t take,const std::string& name) override;
+        void recordPlay(uint32_t take) override;
     private:
         struct Impl;
         std::unique_ptr<Impl> impl_;

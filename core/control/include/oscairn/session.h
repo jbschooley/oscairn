@@ -194,9 +194,14 @@ namespace oscairn
         Transport::ClockSource clockSource() const override { return clockSource_.load(); }
         void setClockOutputs( const std::vector<DeviceRule>& devices ) override;
         TransportState transportState() const override;
-        uint32_t recordStart( const std::vector<RecordTap>& taps = {}, const std::string& name = {} ) override;
+        uint32_t recordStart( const std::vector<RecordTap>& taps = {}, const std::string& name = {}, const RecordWhen& when = {} ) override;
         void recordStop( uint32_t take ) override;
-        std::vector<Take> recordTakes() const override { return recorder_.takes(); }
+        std::vector<Take> recordTakes() const override;
+        void recordRetro( double seconds, const std::vector<RecordTap>& taps = {} ) override;
+        double recordRetroSeconds() const override { return recorder_.retroSeconds(); }
+        void recordDelete( uint32_t take ) override;
+        void recordRename( uint32_t take, const std::string& name ) override;
+        void recordPlay( uint32_t take ) override;
         Recorder& recorder() noexcept { return recorder_; } // its ring length, disk reserve and test hooks
         bool note( bool on, int key, double velocity, int channel = 0 ) override;
         void allNotesOff() override { panic_.store( true, std::memory_order_release ); } // the queue overflow's emergency release
@@ -474,10 +479,18 @@ namespace oscairn
         Transport transport_; // audio thread after construction
         // Recording (RFC 0020): the taps asked for, compiled again when the wires change.
         Recorder recorder_;
-        std::vector<RecordTap> recordTaps_;
+        std::vector<RecordTap> recordTaps_, retroTaps_;
         std::vector<Wire> recordWires_;
         uint64_t recordRevision_ = 0;
         Recorder::Taps compileTaps( const std::vector<RecordTap>& taps, bool strict ); // parts.cpp; strict: an unknown tap throws
+        std::vector<RecordTap> defaultTaps() const;
+        void admitRecording( uint64_t adding, uint64_t freeing ) const; // std::length_error past the memory budget
+        Take closedTake( uint32_t take ) const;
+        // Takes found in recordings/, read again when the folder changes; numbers given to those found.
+        mutable std::vector<Take> scanned_;
+        mutable std::filesystem::file_time_type scannedAt_{};
+        mutable std::map<std::string, uint32_t> takeIds_;
+        mutable uint32_t nextFound_ = 1u << 24; // apart from this run's own numbers
         Transport::ClockSource following_ = Transport::ClockSource::Internal;
         std::atomic<bool> playing_{ false };
         std::atomic<double> tempo_{ 120.0 };

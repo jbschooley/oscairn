@@ -103,7 +103,7 @@ namespace oscairn
     {
         const auto ceiling = budget_.cpu > 0 ? memoryCeiling() : 0;
         if(!ceiling) return 0;
-        uint64_t used = 0;
+        uint64_t used = recorder_.committedBytes(); // recording's rings are committed (RFC 0025)
         for(const auto n : beside) if(graph.contains(n)) used += nodeCost(graph, n).memory;
         return used < ceiling ? ceiling - used : 1; // 1 byte: nothing that declares fits
     }
@@ -212,7 +212,7 @@ namespace oscairn
         for(const auto& [node, name] : nodes_) n += nodeCost(graph_, node).memory;
         for(const auto node : leaving_) if(graph_.contains(node)) n += nodeCost(graph_, node).memory;
         if(prepared_ && !preparedOpportunistic_) n += preparedMemory();
-        return n;
+        return n + recorder_.committedBytes(); // recording: the retroactive rings, a take's own and a playback (RFC 0020)
     }
 
     // Opportunistic data fills what is neither reserved by a running app nor committed, up to the
@@ -408,8 +408,9 @@ namespace oscairn
         double cpu = e.cpu; uint64_t memory = e.memory;
         for(const auto& c : playing) { cpu += c.cpu; memory += c.memory; }
         const auto ceiling = e.budget.memory = memoryCeiling();
-        e.fits = e.cpu <= budget_.cpu && (!ceiling || e.memory <= ceiling);
-        e.seamless = e.fits && cpu <= budget_.cpu && (!ceiling || memory <= ceiling);
+        const auto recording = recorder_.committedBytes(); // beside it, as committed
+        e.fits = e.cpu <= budget_.cpu && (!ceiling || e.memory + recording <= ceiling);
+        e.seamless = e.fits && cpu <= budget_.cpu && (!ceiling || memory + recording <= ceiling);
         std::sort(e.plugins.begin(), e.plugins.end(), [](const Cost& a, const Cost& b) { return a.cpu > b.cpu; });
         return e;
     }

@@ -144,6 +144,15 @@ namespace oscairn
                 ",\"beat\":" + encode(s.beat) + ",\"clockSource\":" +
                 quote(c.clockSource() == Transport::ClockSource::Internal ? "internal" : "midi") + ",\"clockOutputs\":" + devicesJson(s.clockOutputs) + '}';
         }
+        std::string takeJson(const Control::Take& t)
+        {
+            std::vector<std::string> files,overruns;
+            for(const auto& f:t.files)files.push_back(quote(f));
+            for(const auto& o:t.overruns)overruns.push_back("{\"start\":"+std::to_string(o.start)+",\"frames\":"+std::to_string(o.frames)+'}');
+            return "{\"take\":"+std::to_string(t.take)+",\"state\":"+quote(t.state)+",\"folder\":"+quote(t.folder)+",\"files\":"+join(files)+
+                ",\"start\":"+std::to_string(t.start)+",\"frames\":"+std::to_string(t.frames)+",\"sampleRate\":"+encode(t.sampleRate)+",\"overruns\":"+join(overruns)+
+                ",\"droppedNotes\":"+std::to_string(t.droppedNotes)+",\"behind\":"+(t.behind?"true":"false")+",\"playing\":"+(t.playing?"true":"false")+",\"error\":"+quote(t.error)+'}';
+        }
         std::string status(Control& c)
         {
             const auto s = c.sessionStatus();
@@ -412,7 +421,7 @@ namespace oscairn
             if( method == "session.hello" )
             {
                 fields(p, {});
-                return R"({"protocolVersion":1,"server":"oscairn","capabilities":["performance.save","performance.load","performance.prepare","performance.export","budget.set","budget.estimate","performance.info","performance.setInfo","library.query","library.favorite","library.tag","library.edit","library.copy","library.export","audition.start","audition.stop","audition.get","record.start","record.stop","record.get","record.takes","library.rescan","library.contents","library.install","library.libraries","library.uninstall","library.delete","library.save","library.load","parts.saveSound","parts.loadSound","parts.fromSound","performance.contents","performance.import","state.info","state.save","window.info","window.show","presets.list","properties.list","properties.get","properties.set","properties.request","sounds.get","sounds.prepare","sounds.select","sounds.discard","assets.register","assets.import","assets.libraries","session.status","engine.attach","engine.release","params.list","params.get","params.set","params.text","params.gesture","graph.audio-routing","graph.get","graph.add","effects.create","effects.resources","graph.remove","graph.replace","graph.connect","graph.disconnect","graph.map","graph.unmap","graph.commit","parts.add","parts.remove","parts.insert","parts.removeNode","parts.move","parts.addSplit","parts.removeSplit","parts.addLane","parts.removeLane","parts.lane","parts.input","parts.output","parts.send","parts.level","parts.name","parts.solo","parts.pan","parts.meters","wires.meters","edit.undo","edit.redo","edit.history","wires.connect","wires.disconnect","wires.enable","graph.enable","wires.mix","wires.zones","scenes.add","scenes.store","scenes.select","scenes.remove","scenes.name","scenes.scope","scenes.transition","scenes.untouched","controls.add","controls.remove","controls.name","controls.targets","controls.set","subscribe","unsubscribe","transport.get","transport.set","notes.send","notes.panic","midi.ignore","pads.get","pads.set","pads.play","pads.pressure","assignments.get","assignments.set","parts.midiOut","trust.list","trust.set","trust.remove","keys.list","keys.make"],"limits":{"messageBytes":65536,"depth":32,"batch":64,"parameterChanges":128}})";
+                return R"({"protocolVersion":1,"server":"oscairn","capabilities":["performance.save","performance.load","performance.prepare","performance.export","budget.set","budget.estimate","performance.info","performance.setInfo","library.query","library.favorite","library.tag","library.edit","library.copy","library.export","audition.start","audition.stop","audition.get","record.start","record.stop","record.get","record.takes","library.rescan","library.contents","library.install","library.libraries","library.uninstall","library.delete","library.save","library.load","parts.saveSound","parts.loadSound","parts.fromSound","performance.contents","performance.import","state.info","state.save","window.info","window.show","presets.list","properties.list","properties.get","properties.set","properties.request","sounds.get","sounds.prepare","sounds.select","sounds.discard","assets.register","assets.import","assets.libraries","session.status","engine.attach","engine.release","params.list","params.get","params.set","params.text","params.gesture","graph.audio-routing","graph.get","graph.add","effects.create","effects.resources","graph.remove","graph.replace","graph.connect","graph.disconnect","graph.map","graph.unmap","graph.commit","parts.add","parts.remove","parts.insert","parts.removeNode","parts.move","parts.addSplit","parts.removeSplit","parts.addLane","parts.removeLane","parts.lane","parts.input","parts.output","parts.send","parts.level","parts.name","parts.solo","parts.pan","parts.meters","wires.meters","edit.undo","edit.redo","edit.history","wires.connect","wires.disconnect","wires.enable","graph.enable","wires.mix","wires.zones","scenes.add","scenes.store","scenes.select","scenes.remove","scenes.name","scenes.scope","scenes.transition","scenes.untouched","controls.add","controls.remove","controls.name","controls.targets","controls.set","subscribe","unsubscribe","transport.get","transport.set","notes.send","notes.panic","midi.ignore","pads.get","pads.set","pads.play","pads.pressure","assignments.get","assignments.set","parts.midiOut","trust.list","trust.set","trust.remove","keys.list","keys.make","record.retro","record.delete","record.rename","record.play"],"limits":{"messageBytes":65536,"depth":32,"batch":64,"parameterChanges":128}})";
             }
             if( method == "engine.attach" || method == "engine.release" )
             {
@@ -423,10 +432,10 @@ namespace oscairn
             if( method == "subscribe" || method == "unsubscribe" )
             {
                 fields(p,{"topics","allChanges"});
-                const auto topics = array(member(p,"topics"),4);
+                const auto topics = array(member(p,"topics"),5);
                 const bool all = member(p,"allChanges") ? boolean(member(p,"allChanges")) : false;
                 for( auto topic : topics )
-                    if( string(topic) != "params.changed" && string(topic) != "transport" && string(topic) != "graph.changed" && string(topic) != "status" )
+                    if( string(topic) != "params.changed" && string(topic) != "transport" && string(topic) != "graph.changed" && string(topic) != "status" && string(topic) != "record" )
                         invalid("Unknown subscription topic");
                 for( auto topic : topics ) client.subscription(string(topic),method == "subscribe",all);
                 return R"({"accepted":true})";
@@ -503,8 +512,8 @@ namespace oscairn
                 return "{\"id\":"+quote(a.id)+",\"kind\":"+quote(a.kind)+",\"part\":"+std::to_string(a.part)+'}';
             }
             // RFC 0020: recording.
-            if(method=="record.start") {
-                fields(p,{"taps","name"});
+            if(method=="record.start" || method=="record.retro") {
+                if(method=="record.start")fields(p,{"taps","name","from","until","keepGoing"});else fields(p,{"seconds","taps"});
                 std::vector<Control::RecordTap> taps;
                 if(member(p,"taps"))for(auto v:array(member(p,"taps"),256,0)){
                     fields(v,{"kind","port","part","node","fader"});
@@ -519,7 +528,39 @@ namespace oscairn
                     taps.push_back(t);
                 }
                 const auto refused=[](const std::exception& e,const char* reason){return Failure{-32007,e.what(),std::string("{\"reason\":\"")+reason+"\"}"};};
-                try{return "{\"take\":"+std::to_string(c.recordStart(taps,member(p,"name")?std::string(string(member(p,"name"))):std::string()))+'}';}
+                if(method=="record.retro"){
+                    const auto seconds=number(member(p,"seconds"));
+                    if(!(seconds>=0 && seconds<=3600))invalid("seconds is 0 to 3600");
+                    try{c.recordRetro(seconds,taps);}
+                    catch(const std::length_error& e){throw refused(e,"memory");}
+                    catch(const std::invalid_argument& e){throw refused(e,"unknownTap");}
+                    catch(const std::logic_error& e){throw refused(e,"busy");}
+                    return R"({"accepted":true})";
+                }
+                // When (RFC 0020 step 3): from now, seconds ago or a bar line; for a length or until stopped.
+                Control::RecordWhen when;using When=Control::RecordWhen;
+                if(const auto f=member(p,"from")){
+                    if(f->type==json_type_string){if(string(f)!="now")invalid(R"(from is "now", {"secondsAgo":s} or {"bar":"next"|"last"})");}
+                    else{
+                        fields(f,{"secondsAgo","bar"});
+                        if(member(f,"secondsAgo")){when.from=When::From::SecondsAgo;when.seconds=number(member(f,"secondsAgo"));if(!(when.seconds>=0 && when.seconds<=3600))invalid("secondsAgo is 0 to 3600");}
+                        else if(member(f,"bar")){const auto b=string(member(f,"bar"));if(b!="next" && b!="last")invalid("bar is next or last");when.from=b=="next"?When::From::NextBar:When::From::LastBar;}
+                        else invalid(R"(from is "now", {"secondsAgo":s} or {"bar":"next"|"last"})");
+                    }
+                }
+                if(const auto u=member(p,"until")){
+                    if(u->type==json_type_string){if(string(u)!="stop")invalid(R"(until is "stop", {"bars":n} or {"seconds":s})");}
+                    else{
+                        fields(u,{"bars","seconds"});
+                        if(member(u,"bars")){when.until=When::Until::Bars;when.length=number(member(u,"bars"));}
+                        else if(member(u,"seconds")){when.until=When::Until::Seconds;when.length=number(member(u,"seconds"));}
+                        else invalid(R"(until is "stop", {"bars":n} or {"seconds":s})");
+                        if(!(when.length>0 && when.length<=86400))invalid("a take's length is more than 0 and at most a day");
+                    }
+                }
+                if(member(p,"keepGoing"))when.keepGoing=boolean(member(p,"keepGoing"));
+                try{return "{\"take\":"+std::to_string(c.recordStart(taps,member(p,"name")?std::string(string(member(p,"name"))):std::string(),when))+'}';}
+                catch(const std::out_of_range& e){throw refused(e,"retro");}
                 catch(const std::invalid_argument& e){throw refused(e,"unknownTap");}
                 catch(const std::logic_error& e){throw refused(e,"busy");}
                 catch(const std::exception& e){throw refused(e,"drive");}
@@ -534,14 +575,23 @@ namespace oscairn
                 std::vector<std::string> takes;uint32_t recording=0;
                 for(const auto& t:c.recordTakes()){
                     if(t.state=="recording")recording=t.take;
-                    std::vector<std::string> files,overruns;
-                    for(const auto& f:t.files)files.push_back(quote(f));
-                    for(const auto& o:t.overruns)overruns.push_back("{\"start\":"+std::to_string(o.start)+",\"frames\":"+std::to_string(o.frames)+'}');
-                    takes.push_back("{\"take\":"+std::to_string(t.take)+",\"state\":"+quote(t.state)+",\"folder\":"+quote(t.folder)+",\"files\":"+join(files)+
-                        ",\"start\":"+std::to_string(t.start)+",\"frames\":"+std::to_string(t.frames)+",\"overruns\":"+join(overruns)+
-                        ",\"droppedNotes\":"+std::to_string(t.droppedNotes)+",\"error\":"+quote(t.error)+'}');
+                    takes.push_back(takeJson(t));
                 }
-                return method=="record.get"?"{\"recording\":"+std::to_string(recording)+",\"takes\":"+join(takes)+'}':"{\"takes\":"+join(takes)+'}';
+                return method=="record.get"?"{\"recording\":"+std::to_string(recording)+",\"retro\":{\"seconds\":"+encode(c.recordRetroSeconds())+"},\"takes\":"+join(takes)+'}':"{\"takes\":"+join(takes)+'}';
+            }
+            if(method=="record.delete" || method=="record.rename" || method=="record.play") {
+                if(method=="record.rename")fields(p,{"take","name"});else fields(p,{"take"});
+                const auto take=integer(member(p,"take"));
+                try{
+                    if(method=="record.delete")c.recordDelete(take);
+                    else if(method=="record.rename")c.recordRename(take,std::string(string(member(p,"name"))));
+                    else c.recordPlay(take);
+                }
+                catch(const std::length_error& e){throw Failure{-32007,e.what(),R"({"reason":"memory"})"};}
+                catch(const std::invalid_argument& e){throw Failure{-32602,e.what()};}
+                catch(const std::logic_error& e){throw Failure{-32007,e.what(),R"({"reason":"busy"})"};}
+                catch(const std::exception& e){throw Failure{-32005,e.what()};}
+                return R"({"accepted":true})";
             }
             if(method=="library.export") {
                 fields(p,{"id","file","editedSounds","sign"});
@@ -1366,6 +1416,11 @@ namespace oscairn
             if(enabled && !status_) { lastStatus_.reset(); lastStatusValue_.clear(); }
             status_ = enabled;
         }
+        else if(topic == "record")
+        {
+            if(enabled && !record_) { lastRecord_.reset(); recordStates_.clear(); }
+            record_ = enabled;
+        }
         else throw std::invalid_argument("Unknown subscription topic");
     }
 
@@ -1421,6 +1476,24 @@ namespace oscairn
             auto value = status(control_);
             if(value != lastStatusValue_) { send("status",value); lastStatusValue_ = std::move(value); }
             lastStatus_ = now;
+        }
+        // Recording (RFC 0020): the takes being written and each whose state changed since, at most
+        // 10 times a second. Overruns, falling behind and errors are in each take, never dropped.
+        if(record_ && (!lastRecord_ || now < *lastRecord_ || now - *lastRecord_ >= 100000000))
+        {
+            std::vector<std::string> takes;
+            std::map<uint32_t,std::string> states;
+            for(const auto& t : control_.recordTakes())
+            {
+                const bool live = t.state == "waiting" || t.state == "recording" || t.state == "finishing";
+                const auto it = recordStates_.find(t.take);
+                if(live || (it != recordStates_.end() && it->second != t.state)) takes.push_back(takeJson(t));
+                if(live || it != recordStates_.end()) states[t.take] = t.state;
+            }
+            auto value = "{\"takes\":" + join(takes) + '}';
+            if(!takes.empty() && value != lastRecordValue_) { send("record",value); lastRecordValue_ = std::move(value); }
+            recordStates_ = std::move(states);
+            lastRecord_ = now;
         }
         if( graph_ )
         {

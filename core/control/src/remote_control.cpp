@@ -719,22 +719,40 @@ namespace oscairn
         auto reply=impl_->call("parts.addLane","{\"part\":"+std::to_string(part)+",\"split\":"+std::to_string(split)+'}');
         const auto lane=static_cast<uint32_t>(integer(field(field(reply.get(),"result"),"lane")));impl_->refresh();return lane;
     }
-    uint32_t RemoteControl::recordStart(const std::vector<RecordTap>& taps,const std::string& name)
+    namespace
     {
-        static const char* const kinds[]{"output","input","part","node","notes"};
-        std::string list;
-        for(const auto& t:taps)
+        std::string tapList(const std::vector<Control::RecordTap>& taps)
         {
-            list+=std::string(list.empty()?"":",")+"{\"kind\":\""+kinds[size_t(t.kind)]+"\"";
-            if(t.port)list+=",\"port\":"+std::to_string(t.port);
-            if(t.part)list+=",\"part\":"+std::to_string(t.part);
-            if(t.node)list+=",\"node\":"+std::to_string(t.node);
-            if(t.preFader)list+=",\"fader\":\"pre\"";
-            list+='}';
+            static const char* const kinds[]{"output","input","part","node","notes"};
+            std::string list;
+            for(const auto& t:taps)
+            {
+                list+=std::string(list.empty()?"":",")+"{\"kind\":\""+kinds[size_t(t.kind)]+"\"";
+                if(t.port)list+=",\"port\":"+std::to_string(t.port);
+                if(t.part)list+=",\"part\":"+std::to_string(t.part);
+                if(t.node)list+=",\"node\":"+std::to_string(t.node);
+                if(t.preFader)list+=",\"fader\":\"pre\"";
+                list+='}';
+            }
+            return "["+list+"]";
         }
-        auto d=impl_->call("record.start","{\"taps\":["+list+"],\"name\":"+quote(name)+'}',30000);
+    }
+    uint32_t RemoteControl::recordStart(const std::vector<RecordTap>& taps,const std::string& name,const RecordWhen& when)
+    {
+        using When=RecordWhen;
+        std::string extra;
+        if(when.from==When::From::SecondsAgo)extra+=",\"from\":{\"secondsAgo\":"+encode(when.seconds)+'}';
+        else if(when.from!=When::From::Now)extra+=std::string(",\"from\":{\"bar\":\"")+(when.from==When::From::NextBar?"next":"last")+"\"}";
+        if(when.until!=When::Until::Stop)extra+=std::string(",\"until\":{\"")+(when.until==When::Until::Bars?"bars":"seconds")+"\":"+encode(when.length)+'}';
+        if(when.keepGoing)extra+=",\"keepGoing\":true";
+        auto d=impl_->call("record.start","{\"taps\":"+tapList(taps)+",\"name\":"+quote(name)+extra+'}',30000);
         return static_cast<uint32_t>(integer(field(field(d.get(),"result"),"take")));
     }
+    void RemoteControl::recordRetro(double seconds,const std::vector<RecordTap>& taps){impl_->call("record.retro","{\"seconds\":"+encode(seconds)+",\"taps\":"+tapList(taps)+'}',30000);}
+    double RemoteControl::recordRetroSeconds() const{auto d=impl_->call("record.get");return number(field(field(field(d.get(),"result"),"retro"),"seconds"));}
+    void RemoteControl::recordDelete(uint32_t take){impl_->call("record.delete","{\"take\":"+std::to_string(take)+'}',30000);}
+    void RemoteControl::recordRename(uint32_t take,const std::string& name){impl_->call("record.rename","{\"take\":"+std::to_string(take)+",\"name\":"+quote(name)+'}',30000);}
+    void RemoteControl::recordPlay(uint32_t take){impl_->call("record.play","{\"take\":"+std::to_string(take)+'}',30000);}
     void RemoteControl::recordStop(uint32_t take){impl_->call("record.stop","{\"take\":"+std::to_string(take)+'}');}
     std::vector<Control::Take> RemoteControl::recordTakes() const
     {
@@ -742,7 +760,7 @@ namespace oscairn
         for(auto v:array(field(field(d.get(),"result"),"takes")))
         {
             Take t{static_cast<uint32_t>(integer(field(v,"take"))),string(field(v,"state")),string(field(v,"folder")),string(field(v,"error")),{},
-                   integer(field(v,"start")),integer(field(v,"frames")),{},integer(field(v,"droppedNotes"))};
+                   integer(field(v,"start")),integer(field(v,"frames")),{},integer(field(v,"droppedNotes")),number(field(v,"sampleRate")),boolean(field(v,"behind")),boolean(field(v,"playing"))};
             for(auto f:array(field(v,"files")))t.files.push_back(string(f));
             for(auto o:array(field(v,"overruns")))t.overruns.push_back({integer(field(o,"start")),integer(field(o,"frames"))});
             out.push_back(std::move(t));

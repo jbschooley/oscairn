@@ -1,7 +1,7 @@
 # RFC 0020: Recording
 
-Status: proposed, 2026-10-31; steps 1 and 2 built 2026-11-01, in part
-([step 1 status](#step-1-status), [step 2 status](#step-2-status)). Makes concrete the "bus recording" the
+Status: proposed, 2026-10-31; steps 1 to 3 built 2026-11-01, in part
+([step 1 status](#step-1-status), [step 2 status](#step-2-status), [step 3 status](#step-3-status)). Makes concrete the "bus recording" the
 [architecture](../architecture.md#layers) gives the host core, and the groovebox table's
 "the core records any bus; the UI decides where the result goes"
 ([architecture](../architecture.md#sounds-performances-and-projects)). Builds on the graph
@@ -14,10 +14,11 @@ and parts ([RFC 0011](0011-performance-ui-and-editors.md)), the event timeline o
 
 Checked when built and tested; the sections below say how.
 
-- [x] 1. Capture core ([status](#step-1-status); `bext`, RF64, cue points, journal repair and
-  notifications not yet)
+- [x] 1. Capture core ([status](#step-1-status); `bext`, RF64, cue points and journal repair
+  not yet)
 - [x] 2. Parts and notes ([status](#step-2-status); more MIDI messages into the graph not yet)
-- [ ] 3. Retroactive capture and sync
+- [x] 3. Retroactive capture and sync ([status](#step-3-status); punch on the transport, stopping on
+  a bar line and the measurements on the target not yet)
 - [ ] 4. Control API and UI
 - [ ] 5. Inputs and multitrack
 
@@ -388,8 +389,10 @@ Main, which this design covers.
 
 ## Control API
 
-`record.start`, `record.stop`, `record.get` and `record.takes` are built, in the subset the
-[control protocol](../control-protocol.md#recording) documents; the rest is proposed.
+`record.start`, `record.stop`, `record.get`, `record.takes`, `record.retro`, `record.delete` and
+the `record` topic are built, in the subset the [control protocol](../control-protocol.md#recording)
+documents, with `record.rename` and `record.play` added ([step 3 status](#step-3-status)); the rest
+is proposed.
 Capability `record`.
 
 | Method | `params` | `result` |
@@ -509,12 +512,11 @@ Decisions made while building it:
   allocated. **RFC 0025:** a budget should count `committedBytes()` while a take records, and
   reserve the retroactive rings (step 3) as a fixed amount: 46 MB for 2 minutes of stereo Main
   at 48 kHz, 230 MB for 10, plus 1 MiB of notes. Not wired to a budget yet.
-- **The takes list** is this engine run's. Finding earlier takes by scanning `recordings/`
-  comes with step 4's Recordings pane.
+- **The takes list** was this engine run's; step 4 adds the takes found by scanning
+  `recordings/`.
 
 Not built yet: the `bext` chunk, RF64 past 4 GiB (sizes saturate there today), cue points for
-overruns, the journal and header repair at startup, the "falling behind" and overrun
-notifications (the `record` topic), the drive's measured write rate, and a take's channel
+overruns, the journal and header repair at startup, the drive's measured write rate, and a take's channel
 counts reported when a replacement changes them (extra channels are dropped, missing ones
 silent, as the RFC says, but not reported).
 
@@ -553,6 +555,87 @@ Decisions made while building it:
 
 Not built yet: more MIDI messages into the graph (`midiToClap` still drops other controllers
 and program changes), the per-take tempo map with changes inside a block, and `record.notes`.
+
+### Step 3 status
+
+Built 2026-11-01 and checked offline by the `control-recording` test, with no audio device:
+
+- **The timeline.** Every ring now counts on the engine's timeline, not from a take's start: frame
+  t sits at t modulo the ring's length. A take is a span of the timeline, so the audio thread no
+  longer knows takes at all; it copies each tap in the tap table and publishes the last block's
+  time and transport (a sequence lock) after the rings. The writer reads a take's span from its
+  rings and reports overruns from the take's start, as before.
+- **The retroactive rings** (`Recorder::setRetro`, `Control::recordRetro`, `record.retro`): taps,
+  by default Main and the notes entering the graph, kept for the last N seconds outside any take,
+  never written unless a take asks. The notes ring now overwrites its oldest event rather than
+  dropping the newest; a reader that had not copied it counts it in `droppedNotes`. A take uses
+  the retroactive ring of each tap they hold (compared as compiled) and a ring of its own for any
+  other, which has no past: a start in the past on a tap they do not hold is refused
+  (`std::out_of_range`, `-32007` with `reason: "retro"`). Overrun handling is as in step 1.
+- **Memory** (RFC 0025): the rings are committed memory. `Session::committedMemory` adds
+  `Recorder::committedBytes()` (the retroactive rings, each live take's own and a playback), so a
+  Performance's admission, its estimate and an app launch all see them, and `memoryState` shows
+  them. `recordRetro` is refused past the budget beside the Performance (`std::length_error`,
+  `-32007` `memory`), keeping the buffer there. With no budget set nothing is checked, as for
+  plugins.
+- **Starts and lengths** (`Control::RecordWhen`; `from`, `until` and `keepGoing` on
+  `record.start`): now; seconds ago; the next or last bar line, from the last block's beat
+  position and tempo, exact with the internal clock (with the transport stopped, now); a length in
+  seconds or bars. A start in the past ends now unless `keepGoing`. A take with an end (a capture,
+  a length) records beside the one recording, so Capture works during a take.
+- The test checks: the retroactive rings' memory (4 s of stereo float, a block and the notes
+  ring), constant while they lap and counted in the budget's committed memory, and gone from it
+  when turned off; a buffer past the budget refused with the old one kept; a capture of the last 2
+  seconds equal to the render's last 2 seconds sample for sample, its notes on the ticks their
+  samples give; a capture longer than the buffer giving what it holds; a capture of a tap not
+  held refused; a take from the next bar starting on the bar line's exact sample (96000 at 120
+  BPM) for one bar, and one from the last bar reading the rings back to its exact sample; the next
+  bar with the transport stopped being now; `record.retro`, its refusal and `record.get`'s buffer
+  over JSON-RPC.
+
+Decisions made while building it:
+
+- **The writer's margin.** A capture asking for more than the rings hold starts where they still
+  hold it, plus up to 2 seconds (a quarter of a short ring) so the writer can begin before the
+  audio thread laps what it is reading. "As long as it holds" is therefore up to 2 seconds short.
+- **A take's start may move later**, never earlier: to when a ring of its own first has a block
+  (a take from now with no retroactive ring starts at the next block, as in step 1).
+- **The tempo map** of a capture starts with the last tempo noted before its start, or the tempo
+  when it was asked for.
+- **Retroactive taps follow edits** like a take's (`Session::service`), and changing the buffer
+  is refused while a take recording reads it.
+- **Defaults:** off in the engine; the desktop app turns it on (step 4).
+
+Not built yet: punch on the transport (`from: "play"`), stopping on a bar line (`at`), the copy
+cost and deadline misses measured on the i.MX8M Mini, and whether 65,536 notes is enough for
+aftertouch streams. `record.get` reports the buffer's `seconds`, not its taps.
+
+### Step 4 status
+
+The control API part, built 2026-11-01 and checked by the `control-recording` test:
+
+- **Takes from earlier runs.** `recordTakes` (`record.takes`, `record.get`) lists this run's takes
+  and the closed ones found in `recordings/` by their `take.json`, oldest first by folder name. A
+  take found there is numbered when first found (from 2^24, apart from this run's). The scan is
+  read again only when the folder changes. A `take.json` still marked open (the engine stopped
+  before closing it) is listed as `failed`, `not closed`: the journal and repair are not built.
+  Each take now also reports its `sampleRate`, `behind` and `playing`.
+- **`record.delete`**, **`record.rename`** (added: the take's folder renamed, keeping the time it
+  starts with; `take.json` keeps the name it was recorded under) and **`record.play`** (added:
+  the take's first WAV file played into the outputs once, from start to end, after the taps, so
+  no take or capture records it; 0 stops). Each works on a closed take whose folder is checked to
+  be in `recordings/`, and is refused while it is written. Playback holds the file in memory,
+  counted as committed memory and refused past the budget; only 32-bit float at the engine's rate.
+  Nothing yet refers to a recording from a Sound, so a delete is never refused for that.
+- **The `record` topic**: at most 10 times a second, the takes being written and each whose state
+  changed since the last, with their overruns, `behind` (the writer more than half a ring behind:
+  "falling behind", nothing lost yet) and errors. A take's overruns accumulate in it, so none is
+  coalesced away.
+- The test checks: a new session finding the earlier sessions' takes with their length and files;
+  nothing playing until asked; a take played back offline equal to its file sample for sample,
+  then silence, and stopped when asked; renamed with its time kept; an empty name refused; deleted
+  with its folder, and no longer found; the `record` topic sending the take recording, no more
+  than 10 times a second, once more when it is done, then nothing.
 
 ## Open questions
 

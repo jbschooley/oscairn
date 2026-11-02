@@ -251,8 +251,9 @@ instead.
   voices, decoded samples and effect contexts); the outgoing one while its tails ring out
   (step 4: until idle, usually seconds, longer while a note is held across the change, [RFC 0021](0021-sounds-performances-and-library.md#seamless-switching));
   the Performance an audition set aside
-  ([RFC 0021](0021-sounds-performances-and-library.md#audition)); and the **prepared next
-  entry when it fits beside the open one**. Admission checks committed memory against what the
+  ([RFC 0021](0021-sounds-performances-and-library.md#audition)); recording's rings and a take
+  played back ([RFC 0020](0020-recording.md#step-3-status), `Recorder::committedBytes()`, counted
+  since 2026-11-01); and the **prepared next entry when it fits beside the open one**. Admission checks committed memory against what the
   reservations leave.
 - **Opportunistic:** everything else that fills the rest: a cache of sample files, recently used
   Performances and Sounds kept loaded, entries further ahead in the setlist, and a next entry
