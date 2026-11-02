@@ -568,6 +568,12 @@ Each starts as an RFC:
   reviewed Git capability-profile catalog with authenticated offline snapshots and explicit
   verification status. Add multiple-device preparation/readiness and revision-aware editing
   round trips without silently merging opaque states or overwriting rehearsed setlists.
+- [ ] **The package repository** ([RFC 0031](rfcs/0031-package-repository-and-distribution.md#progress), proposed):
+  a static, signed index and package files that any web host, mirror, folder or USB drive can
+  serve; several repositories per device; publishing with signatures required, CI checks,
+  immutable versions and yanking; Get more in the Library and a Store app filtered by the
+  device's profile; updates that never move a Performance's lock on their own; revocation and
+  takedown; fetching for an offline instrument from a desktop, USB or a paired computer
 - [ ] **Keeping plugins loaded:** a memory budget, unloading the least recently used, setlist
   preparation options and a setlist check; CPU, memory and storage meters. Loaded items beyond
   the open Performance are opportunistic memory ([RFC 0025](rfcs/0025-resource-budgets.md#the-order-of-eviction)).

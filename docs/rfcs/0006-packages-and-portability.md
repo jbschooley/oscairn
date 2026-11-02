@@ -21,7 +21,8 @@ Checked when built and tested; the sections below say how.
 - [ ] 3. Cross-platform proof
 - [ ] 4. LV2, existing installs, VST3 and AU with their adapters
 - [ ] 5. DAW delivery proof
-- [ ] 6. Catalogs, multi-device preparation and distribution polish
+- [ ] 6. Catalogs, multi-device preparation and distribution polish (the package repository:
+      [RFC 0031](0031-package-repository-and-distribution.md))
 - [ ] Signatures: publisher-signed plugin builds, signed archives, the trust store and install
       policy ([design](#signatures))
 - [ ] Choosing what to import: chosen items with their dependencies, content as a locked
@@ -921,7 +922,8 @@ those workers exist.
    outside the Oscairn app, using the same state/assets; then the Oscairn graph container
    and optional standalone shell. Validate old DAW-session restore against the shared
    store without assuming the DAW understands package locks.
-6. **Distribution/UI polish:** published profile/package catalogs, multi-device preparation
+6. **Distribution/UI polish:** published profile/package catalogs (the package repository
+   is [RFC 0031](0031-package-repository-and-distribution.md)), multi-device preparation
    matrix, paired-device deltas, advanced storage views, migration tools and optional rendered
    alternatives use the same manifest and lock. Add online acquisition for offline requests
    and USB companion repair using the same bundle/import path. Prove revision-aware round
