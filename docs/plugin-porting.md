@@ -90,11 +90,12 @@ An `oscairn.ui` extension without `param_hint` is ignored, not refused.
   `oscairn.assets` and `oscairn.harmony`.
 - **Presets:** a plugin's library that offers CLAP preset discovery has its presets listed in
   Oscairn's sound lists: presets inside the plugin, and preset files of its declared types in
-  its declared folders (at most 10,000 per folder), each only for the plugins it names. One
-  is loaded with the plugin's preset-load extension, never during `process`, and can be
-  prepared as an instant-switch sound. Plugins that only offer presets in their own window
-  have none listed. Presets are tested with a fixture plugin (`clap-presets`); no
-  third-party plugin's presets have been tried yet.
+  its declared folders, each only for the plugins it names, within limits ([Presets](#presets)).
+  Each becomes an instant-switch sound: prepared in a native context, or loaded with the
+  plugin's preset-load extension into a spare instance, never during `process`. Plugins that
+  only offer presets in their own window have none listed. Presets are tested with a fixture
+  plugin (`clap-presets`) and the Basic Synth (`control-sound-presets`); no third-party
+  plugin's presets have been tried yet.
 
 ## Extensions to implement
 
@@ -131,6 +132,50 @@ the current headers.
 | Free-running beat (`beat.h`, event space `oscairn.beat`, [RFC 0032](rfcs/0032-arpeggiator.md#step-3-status)) | For arpeggiators and clocks: a beat position the same for every plugin in a block that runs at the tempo while the transport is stopped, so parts keep time and start together. Query the event space through CLAP's event registry; an event arrives at sample 0 of every block. | Test fixture (`follower_fixture.cpp`) |
 | Harmony (`harmony.h`, event space `oscairn.harmony` and host extension `oscairn.harmony/draft`, [RFC 0033](rfcs/0033-script-block.md#host-side-status)) | For harmonizers, chord memories and scripts: the part's key and scale, and the chord held on the part with its root, type, bass and keys. Query the event space for an event in the first block and at each change, at the sample of the note that made it; read the last on the main thread through the host extension. | Test fixture (`follower_fixture.cpp`) |
 | Sound assets (`assets.h`, [RFC 0009](rfcs/0009-sound-assets-and-dependencies.md)) | For samplers: the host resolves sample files, and Performances list their samples so they can be checked and moved between machines. | Sampler |
+
+### Presets
+
+Publish presets through CLAP preset discovery, and Oscairn lists them where sounds are picked
+and prepares any of them as an instant-switch sound ([RFC 0005](rfcs/0005-sound-contexts.md#presets)).
+A plugin provides:
+
+1. **The factory:** `clap_entry.get_factory(CLAP_PRESET_DISCOVERY_FACTORY_ID)` (the `draft-2`
+   compatibility ID also works) returning a factory with one provider or more.
+2. **A provider** that declares its locations in `init` (inside the plugin, or a file or
+   folder with the file types it reads) and reports each preset in `get_metadata` with
+   `begin_preset(name, load_key)` and `add_plugin_id` for the plugins it is for.
+3. **A load-key scheme.** A preset is its location kind, location and load key. Inside the
+   plugin, every preset needs a name and a load key; a file holding several presets names each
+   and gives each a load key; a file that is one preset may give neither (it is named after the
+   file).
+4. **Loading by that triple:** for native sound contexts, draft 5's `prepare_preset` (the
+   preset becomes a new context, from the plugin's defaults, while the playing sound plays
+   on); otherwise CLAP `preset-load`'s `from_location`, which Oscairn calls on a spare
+   instance. A native instrument without `prepare_preset` has its presets listed but refused.
+
+The SDK does the protocol for an instrument on `sound-contexts-plugin.hpp`:
+`preset-discovery-plugin.hpp` makes the factory and provider from `declare` (where the presets
+are: `d.inside("Factory")`, `d.files("Patches", folder, "fxp")`) and `list` (the presets in
+one location: `l.add(name, loadKey)`), and `Engine::preparePreset` implements `prepare_preset`
+from one hook, `readPreset(kind, location, loadKey, patch, error)`: read the preset into a
+`Patch`, which starts at the defaults. The Basic Synth is the reference: five factory presets
+inside the plugin, load keys their names in lower case and hyphenated. What each fork should
+provide (recommended; none is built yet):
+
+| Plugin | Locations | Load key |
+| --- | --- | --- |
+| Oscairn Organ (setBfree) | Inside the plugin: the 55 programs | The program number, `0` to `54` |
+| Oscairn Analog (Surge) | Files: the factory and user patch folders, type `fxp` | None: each file is one patch |
+| Octet (Dexed) | Files: the cartridge folders, type `syx` | The voice in the cartridge, `0` to `31`, each named from the cartridge |
+
+Limits: 4096 presets per plugin library, 64 locations and file types per provider, 10,000
+files per folder and 16 folder levels, names up to 255 bytes, locations and load keys up to
+4096; a preset over a size limit is skipped. A scan indexes presets in a separate helper
+process with a 15-second timeout; a loaded plugin's process indexes on each listing and stops
+reading after 10 seconds. `get_metadata` must be fast and never interactive, as CLAP says.
+Nothing watches preset folders: a listing reads them again. What a Sound saves is the plugin's
+own state (for native contexts, the snapshot of every prepared patch), never a reference to the
+preset, so it opens when the preset is gone.
 
 ### Editor hints and roles
 
@@ -403,7 +448,8 @@ plugin in a worker. See
 The bundled plugins are working references ([plugins](../plugins/README.md)):
 
 - **Basic Synth** (`plugins/basic-synth/basic_synth.cpp`): an instrument on the SDK's
-  `sound-contexts-plugin.hpp`. Native sound contexts with their snapshot as its state, CLAP
+  `sound-contexts-plugin.hpp`. Native sound contexts with their snapshot as its state, factory
+  presets through CLAP preset discovery prepared as contexts (`preset-discovery-plugin.hpp`), CLAP
   and MIDI note dialects, `oscairn.ui` hints with roles (Brightness is its cutoff, Level its
   level), pitch bend and the mod wheel through `followControls`, choke fades through
   `amplitude`.

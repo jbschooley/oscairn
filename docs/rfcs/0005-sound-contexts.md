@@ -17,8 +17,9 @@ Checked when built and tested; the sections below say how.
 - [x] A host-owned instance pool for ordinary CLAP and LV2 instruments
 - [x] The Sampler preparing SFZ patches
 - [x] Prepared sounds saved in Performances; the desktop sound picker
-- [ ] Native contexts prepared from the plugin's CLAP presets ([draft 5](#presets)), with the presets indexed
-      when plugins are scanned and listed in the desktop sound picker
+- [x] Native contexts prepared from the plugin's CLAP presets ([draft 5](#presets)), with the SDK's
+      discovery helper, the Basic Synth's factory presets and the presets indexed when plugins are scanned
+- [ ] Presets listed in the desktop sound picker for every instrument
 - [ ] Automatic effect-chain transitions (with [RFC 0007](0007-effect-contexts.md))
 - [ ] Sounds prepared in a playing instance across a Performance change, and parts sharing one
       instance ([RFC 0021, slices 2 and 3](0021-sounds-performances-and-library.md#fewer-instances-reusing-what-is-loaded))

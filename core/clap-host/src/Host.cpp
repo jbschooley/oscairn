@@ -1320,6 +1320,20 @@ uint32_t Host::prepareSound(const std::string& name,const std::vector<oscairn_so
     if(id==CLAP_INVALID_ID)throw std::runtime_error(message[0]?std::string("Sound preparation rejected: ")+message:"Sound preparation rejected: invalid patch or context capacity exhausted");
     return id;
 }
+uint32_t Host::prepareSound(const std::string& name,const Preset& preset) {
+    if(!impl->sounds)throw std::invalid_argument("Plugin has no native sound contexts");
+    if(!impl->sounds->prepare_preset)throw std::invalid_argument("Plugin cannot prepare sounds from presets");
+    if(name.size()>63 || name.find('\0')!=std::string::npos || preset.kind>CLAP_PRESET_DISCOVERY_LOCATION_PLUGIN ||
+       (preset.kind==CLAP_PRESET_DISCOVERY_LOCATION_PLUGIN)!=preset.location.empty() || preset.location.size()>maxPresetLocationBytes ||
+       preset.loadKey.size()>maxPresetLocationBytes || preset.location.find('\0')!=std::string::npos || preset.loadKey.find('\0')!=std::string::npos)
+        throw std::invalid_argument("Invalid sound preset");
+    char message[512]{};
+    const auto id=impl->sounds->prepare_preset(impl->plugin,name.c_str(),preset.kind,preset.location.empty()?nullptr:preset.location.c_str(),
+        preset.loadKey.empty()?nullptr:preset.loadKey.c_str(),message,sizeof(message));
+    message[sizeof(message)-1]=0;
+    if(id==CLAP_INVALID_ID)throw std::runtime_error(std::string("Preset not prepared: ")+(message[0]?message:"rejected, or no free sound context"));
+    return id;
+}
 bool Host::selectSound(uint32_t id,int16_t channel) {
     if(channel < -1 || channel>15)throw std::invalid_argument("Invalid sound channel");
     if(!impl->sounds)throw std::invalid_argument("Plugin has no native sound contexts");

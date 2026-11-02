@@ -10,9 +10,11 @@
 // key, channel aftertouch) applies per voice. Pitch bend moves each voice by the sound's
 // Pitch bend range; the mod wheel adds vibrato through the pitch LFO unless the sound turns it off.
 // Events are applied on their exact sample, and the output does not depend on the
-// host's block size.
+// host's block size. Its factory presets are listed through CLAP preset discovery and
+// prepared as sound contexts (oscairn.sound-contexts draft 5).
 
 #include <clap/clap.h>
+#include <oscairn-clap/preset-discovery-plugin.hpp>
 #include <oscairn-clap/sound-contexts-plugin.hpp>
 #include <oscairn-clap/ui.h>
 
@@ -60,6 +62,23 @@ namespace
     constexpr auto defaults=[] {std::array<double,parameters.size()> v{};for(size_t i=0;i<v.size();++i)v[i]=parameters[i].initial;return v;}();
     constexpr std::array<const char*,3> oscillators{"Saw","Detuned saws","Square"};
     constexpr std::array<const char*,2> wheelTargets{"Vibrato","Off"};
+    // Factory presets, inside the plugin: each sets these parameters (up to an ID of 0) over the defaults.
+    struct FactoryPreset { const char* name; const char* key; std::array<oscairn_sound_parameter_t,6> values; };
+    constexpr std::array<FactoryPreset,5> factoryPresets{{
+        {"Warm","warm",{{{1,.15},{2,.7},{3,.5}}}},
+        {"Bright","bright",{{{1,.9},{2,.7},{3,.5}}}},
+        {"Pressure swell","pressure-swell",{{{1,.05},{2,.7},{3,1.0}}}},
+        {"Detuned saws","detuned-saws",{{{1,.65},{2,.5},{3,.5},{4,1},{5,7}}}},
+        {"Square vibrato","square-vibrato",{{{1,.8},{2,.4},{3,.5},{4,2},{6,18},{7,70}}}}
+    }};
+    struct Presets
+    {
+        static constexpr clap_preset_discovery_provider_descriptor_t descriptor{CLAP_VERSION_INIT,"org.oscairn.basic-synth.presets","Basic Synth presets","Oscairn"};
+        static constexpr const char* pluginId="org.oscairn.basic-synth";
+        static void declare(oscairn::presets::Declarations& d){d.inside("Factory");}
+        static void list(uint32_t kind,const char*,oscairn::presets::Listing& l)
+        {if(kind==CLAP_PRESET_DISCOVERY_LOCATION_PLUGIN)for(const auto& p:factoryPresets)if(!l.add(p.name,p.key))return;}
+    };
     // The mod wheel's vibrato at full wheel when the sound's pitch LFO has no rate or depth set.
     constexpr double wheelRate = 5.0, wheelDepth = 50.0; // Hz, cents
     constexpr double pressureCutoff = 6000.0; // Hz the filter opens at full pressure and amount
@@ -114,6 +133,12 @@ namespace
             for(double v;i<parameters.size() && values>>v;++i){if(!std::isfinite(v) || v<0 || v>parameters[i].maximum || (parameters[i].stepped && v!=std::round(v)))return false;patch.values[i]=v;}
             values>>std::ws;
             return i==parameters.size() && values.eof();
+        }
+        bool readPreset(uint32_t kind,const char*,const char* key,Patch& patch,std::string& error)
+        {
+            for(const auto& preset:factoryPresets)if(kind==CLAP_PRESET_DISCOVERY_LOCATION_PLUGIN && key && std::strcmp(key,preset.key)==0)
+                {for(const auto& v:preset.values)if(v.id)patch.values[v.id-1]=v.value;return true;}
+            error="no such preset";return false;
         }
         void restored(){for(size_t i=0;i<parameters.size();++i)values[i]=contexts[selected[0]].patch.values[i];}
     };
@@ -366,7 +391,7 @@ namespace
     }
 
     const clap_plugin_state_t snapshot{Synth::saveSnapshot,Synth::loadSnapshot};
-    const oscairn_plugin_sound_contexts_t soundContexts{Synth::capacity,Synth::get,Synth::prepare,Synth::select,Synth::discard,&snapshot};
+    const oscairn_plugin_sound_contexts_t soundContexts{Synth::capacity,Synth::get,Synth::prepare,Synth::select,Synth::discard,&snapshot,Synth::preparePreset};
 
     const clap_plugin_t* create()
     {
@@ -419,5 +444,9 @@ extern "C" CLAP_EXPORT const clap_plugin_entry_t clap_entry = {
     CLAP_VERSION_INIT,
     []( const char* ) { return true; },
     []() {},
-    []( const char* id ) -> const void* { return std::strcmp( id, CLAP_PLUGIN_FACTORY_ID ) == 0 ? &factory : nullptr; },
+    []( const char* id ) -> const void* {
+        if( std::strcmp( id, CLAP_PRESET_DISCOVERY_FACTORY_ID ) == 0 || std::strcmp( id, CLAP_PRESET_DISCOVERY_FACTORY_ID_COMPAT ) == 0 )
+            return &oscairn::presets::Factory<Presets>::factory;
+        return std::strcmp( id, CLAP_PLUGIN_FACTORY_ID ) == 0 ? &factory : nullptr;
+    },
 };

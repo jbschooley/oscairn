@@ -1332,7 +1332,8 @@
                   "type": "string"
                 },
                 "preset": {
-                  "type": "string"
+                  "type": "string",
+                  "description": "A URI from presets.list: an LV2 preset or a clap-preset: URI (for a native instrument, the whole patch)"
                 },
                 "sfz": {
                   "type": "string"

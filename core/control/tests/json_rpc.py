@@ -40,7 +40,8 @@ try:
     assert 'sounds.prepare' in hello['capabilities']
     assert 'state.save' in hello['capabilities'] and 'properties.set' in hello['capabilities']
     assert rpc('state.info', {'node':'synth'})['result'] == {'supported':True}
-    assert rpc('presets.list', {'node':'synth'})['result'] == {'presets':[]}
+    presets = rpc('presets.list', {'node':'synth'})['result']['presets']  # the Basic Synth's factory presets (RFC 0005)
+    assert [p['name'] for p in presets] == ['Warm', 'Bright', 'Pressure swell', 'Detuned saws', 'Square vibrato'] and presets[0]['uri'] == 'clap-preset:1:#warm'
     assert rpc('properties.list', {'node':'synth'})['result'] == {'properties':[]}
     error(rpc('properties.get', {'node':'synth','uri':'unknown'}), -32602)
     error(rpc('properties.request', {'node':'synth','uri':'unknown'}), -32602)

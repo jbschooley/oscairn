@@ -597,11 +597,16 @@ A parameter patch starts from plugin defaults plus up to 128 numeric parameters.
 parameters select defaults. Names have at most 63 UTF-8 bytes (hosted names must be nonempty).
 Unknown, duplicate, nonfinite, out-of-range or read-only parameters reject preparation.
 For `instances`, `state` is an existing state-bundle directory on the **engine's** filesystem;
-`preset` is an LV2 preset URI. At most one may be nonempty. The host loads it on a fresh
+`preset` is a URI from `presets.list` (LV2, or a `clap-preset:` URI loaded with CLAP
+`preset-load`). At most one may be nonempty. The host loads it on a fresh
 instance and applies numeric overrides afterward. It rejects changes to port layout,
 note dialects or parameter metadata. Failed preparation leaves existing sounds unchanged.
-Native contexts currently accept numeric patches only; nonempty state/preset arguments
-are invalid. Preparation is synchronous on the control thread and may take time for samples;
+Native contexts accept numeric, SFZ or preset patches, never state. A native instrument with
+[RFC 0005 draft 5](rfcs/0005-sound-contexts.md#presets)'s `prepare_preset` prepares a
+`clap-preset:` URI from `presets.list` as the whole patch: `parameters`, `sfz` or `state` beside
+it are invalid (`-32602`), and so is a preset for a native instrument without it. A preset the
+plugin refuses returns `-32005` with its diagnostic, such as `Preset not prepared: no such
+preset`. `session.hello` lists the `sounds.presets` capability where native instruments take presets. Preparation is synchronous on the control thread and may take time for samples;
 it never blocks the audio thread, but other control requests wait for it to finish.
 
 The instance pool supports instruments with 1..16 note input ports, audio output, no audio
@@ -655,7 +660,10 @@ it refuses an existing destination and includes pending parameter edits, or repo
 if they cannot be delivered. It exports the channel-0 selected instance for pooled
 instruments. This is one plugin snapshot, not project/pool persistence. `state.info` may be
 false even when native numeric sound contexts work (currently Basic Synth). Preset enumeration
-currently exposes LV2 bundle presets; an empty list does not imply a plugin cannot load state.
+lists LV2 bundle presets and the presets a CLAP plugin publishes through preset discovery, as
+`clap-preset:KIND:LOCATION#LOAD_KEY` URIs (parts percent-encoded), within the limits in
+[RFC 0005](rfcs/0005-sound-contexts.md#presets) (at most 4096); each call reads the plugin's
+locations again. An empty list does not imply a plugin cannot load state.
 Use `sounds.prepare` with `state` or `preset`, then `sounds.select`, for eligible instruments.
 State export does not add an in-place restore command for effects.
 

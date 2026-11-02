@@ -20,7 +20,11 @@
 //   static constexpr const char* stateVersion; static constexpr size_t maxStateBytes
 //   bool writePatch(std::ostream&, const Patch&); bool readPatch(std::istream&, Patch&)
 //   void restored()                                         after a snapshot load
-// and may provide snapshotLoading(bool), called around reading a snapshot's patches, and
+// To prepare contexts from its CLAP presets (draft 5), it provides
+//   bool readPreset(uint32_t kind, const char* location, const char* loadKey, Patch&, std::string& error)
+// which reads the preset its preset discovery listed (preset-discovery-plugin.hpp) into a patch
+// that starts as Patch{}, and sets the table's prepare_preset to Engine::preparePreset.
+// It may provide snapshotLoading(bool), called around reading a snapshot's patches, and
 // voiceFinished(Voice&), called whenever a voice ends: released out, choked, stolen or reset.
 // A snapshot load resets every context's pins (users) and ends every voice: in
 // snapshotLoading(true), forget any pins the instrument holds itself, such as a ringing tail's.
@@ -31,12 +35,14 @@
 
 #pragma once
 #include <clap/clap.h>
+#include <clap/factory/preset-discovery.h>
 #include <oscairn-clap/sound-contexts.h>
 
 #include <algorithm>
 #include <array>
 #include <atomic>
 #include <cmath>
+#include <cstdio>
 #include <cstring>
 #include <iomanip>
 #include <locale>
@@ -301,6 +307,19 @@ namespace oscairn::contexts
         }
         uint32_t publish(Context& c, const char* name)
         { c.id = nextContext++; std::strcpy(c.name, name); c.prepared = true; return c.id; }
+        // prepare_preset: a context from the preset at (kind, location, loadKey), read by Derived::readPreset.
+        static uint32_t preparePreset(const clap_plugin_t* p, const char* name, uint32_t kind, const char* location, const char* loadKey, char* message, uint32_t capacity)
+        {
+            auto fail = [&](const char* why) { if(message && capacity) std::snprintf(message, capacity, "%s", why); return CLAP_INVALID_ID; };
+            if(!name || std::strlen(name) > 63) return fail("invalid sound name");
+            if(kind == CLAP_PRESET_DISCOVERY_LOCATION_PLUGIN ? location != nullptr : kind != CLAP_PRESET_DISCOVERY_LOCATION_FILE || !location)
+                return fail("invalid preset location");
+            auto& s = self(p); auto* c = s.freeSlot();
+            if(!c) return fail("no free sound context");
+            Patch patch{}; std::string error;
+            if(!s.readPreset(kind, location, loadKey, patch, error)) return fail(error.empty() ? "preset not read" : error.c_str());
+            c->patch = std::move(patch); return s.publish(*c, name);
+        }
 
         // The snapshot callbacks are called only with rendering excluded.
         static bool saveSnapshot(const clap_plugin_t* p, const clap_ostream_t* stream)
