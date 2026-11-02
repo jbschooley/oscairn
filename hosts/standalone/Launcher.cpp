@@ -212,6 +212,67 @@ namespace oscairn::standalone
         app_.setBounds(getLocalBounds().withTrimmedTop(TopBar::heightFor(*this)));
     }
 
+    LaunchNotice::LaunchNotice(const juce::String& name, const Control::Launch& refused) : title_(name + " did not open")
+    {
+        // The engine names apps by ID: Oscairn's own by their names here.
+        auto reason = juce::String::fromUTF8(refused.reason.c_str());
+        for(const auto& [id, shown] : {std::pair{"oscairn.performance", "Performance"}, {"oscairn.library", "Library"}, {"oscairn.setlist", "Setlist"}, {"oscairn.groovebox", "Groovebox"}, {"oscairn.recordings", "Recordings"}}) reason = reason.replace(id, shown);
+        message_ = "It " + reason + ".";
+        setTitle(title_);
+        ok.setButtonText(refused.offerNext ? "Cancel" : "OK");
+        addAndMakeVisible(ok);
+        addChildComponent(letGo);
+        letGo.setVisible(refused.offerNext);
+        letGo.setColour(juce::TextButton::buttonColourId, ink(Ink::Accent)); letGo.setColour(juce::TextButton::textColourOffId, ink(Ink::Accent).contrasting());
+        letGo.setTooltip("The next song then opens when you go to it, not at once");
+    }
+
+    void LaunchNotice::resized()
+    {
+        const int m = std::max(1, desktopMode(*this)), control = m == 2 ? 44 : 30;
+        card_ = getLocalBounds().withSizeKeepingCentre(std::min(560, getWidth() - 32), m == 2 ? 230 : 200);
+        auto bar = card_.reduced(20).removeFromBottom(control);
+        ok.setBounds(bar.removeFromRight(110)); bar.removeFromRight(8);
+        if(letGo.isVisible()) letGo.setBounds(bar.removeFromRight(200));
+    }
+
+    void LaunchNotice::paint(juce::Graphics& g)
+    {
+        g.fillAll(ink(Ink::Background).withAlpha(.7f));
+        drawSection(g, card_, ink(Ink::Surface));
+        const int m = std::max(1, desktopMode(*this));
+        const juce::Font title(juce::FontOptions(textSize(TextRole::Title, m), juce::Font::bold)), body(juce::FontOptions(textSize(TextRole::Body, m)));
+        auto r = card_.reduced(20);
+        g.setColour(ink(Ink::Text)); drawInked(g, title_, r.removeFromTop(int(title.getHeight()) + 10), title);
+        r.removeFromTop(6);
+        // The message, a line at a time, broken between words to fit.
+        g.setColour(ink(Ink::Muted));
+        juce::String line;
+        auto flush = [&] { drawInked(g, line, r.removeFromTop(int(body.getHeight()) + 6), body); line.clear(); };
+        for(const auto& word : juce::StringArray::fromTokens(message_, " ", ""))
+        {
+            const auto longer = line.isEmpty() ? word : line + " " + word;
+            if(line.isNotEmpty() && juce::GlyphArrangement::getStringWidthInt(body, longer) > r.getWidth()) { flush(); line = word; }
+            else line = longer;
+        }
+        if(line.isNotEmpty()) flush();
+    }
+
+    bool askToLaunch(Engine& engine, const Control::AppMemory& app, const juce::String& name, std::function<void()> retry, std::function<void(std::unique_ptr<LaunchNotice>)> show)
+    {
+        const auto launch = engine.launchApp(app);
+        if(launch.admitted) return true;
+        auto notice = std::make_unique<LaunchNotice>(name, launch);
+        notice->ok.onClick = [show] { juce::MessageManager::callAsync([show] { show(nullptr); }); }; // after the click is done with it
+        notice->letGo.onClick = [&engine, app, retry, show] {
+            engine.launchApp(app, true);
+            // Opening asks again: admitted now, it is running; refused still, it says why.
+            juce::MessageManager::callAsync([show, retry] { show(nullptr); if(retry) retry(); });
+        };
+        show(std::move(notice));
+        return false;
+    }
+
     AppSwitcher::AppSwitcher(Engine& engine, std::vector<Running> running, std::function<void(int)> open, std::function<void(int)> close, TopBar::Shell shell)
         : running_(std::move(running)), open_(std::move(open)), close_(std::move(close)), bar_(engine, "Running apps", [&] { shell.apps = {}; return shell; }())
     {

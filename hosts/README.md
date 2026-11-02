@@ -194,7 +194,11 @@ Selected, a part's knobs follow its banks: its own controls, then its instrument
 parameters, then each effect's main control, as many at a time as the device has screen knobs or assignable knobs (**Bank** pages them). On a device with
 knobs, **Learn** assigns one: move it, then touch a strip, its M, a scene or a knob.
 `--view Part|Mixer|Routing|Controls|Play` (desktop layout only) opens the Performance app on that
-view instead.
+view instead. Before an app opens, the shell asks the engine to admit it
+([RFC 0025](../docs/rfcs/0025-resource-budgets.md#memory-reserved-committed-and-opportunistic));
+refused, a notice says why and what closing would free, and offers **Let the next song go** when
+only the prepared next setlist entry is in the way. The desktop has no memory classes, so every
+app opens there.
 
 `-DOSCAIRN_STANDALONE=ON` builds both the desktop and helper. To build only the live
 engine, use `-DOSCAIRN_ENGINE=ON`. Both options default to OFF. JUCE is downloaded for

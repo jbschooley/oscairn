@@ -77,7 +77,7 @@ namespace oscairn::standalone
     // shortcut: RFC 0025's illustrative figures, not measured; measure each app on each profile and read them from manifests (step 8).
     int Profile::appMemory(const std::string& app)
     {
-        static const std::map<std::string, int> own{{"oscairn.performance", 150}, {"oscairn.library", 120}, {"oscairn.setlist", 60}, {"oscairn.groovebox", 200}};
+        static const std::map<std::string, int> own{{"oscairn.performance", 150}, {"oscairn.library", 120}, {"oscairn.setlist", 60}, {"oscairn.groovebox", 200}, {"oscairn.recordings", 100}};
         const auto it = own.find(app);
         return it == own.end() ? 0 : it->second;
     }

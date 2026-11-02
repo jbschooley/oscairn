@@ -155,6 +155,10 @@ namespace oscairn::standalone
         // key; none while the engine is busy. Making one gives the error, or empty.
         std::vector<Control::SigningKey> signingKeys() const;
         std::string makeSigningKey(const std::string& name, Control::SigningKey& made);
+        // Apps asked for before they open, and their closing (RFC 0025). Admitted when the engine
+        // cannot be asked, so the shell stays usable without it.
+        Control::Launch launchApp(const Control::AppMemory& app, bool dropNext = false);
+        void appClosed(const std::string& app);
         std::string removePlugin(const Control::InstalledPlugin& plugin);
         std::string pluginId(const std::string& node) const;
         void replacePlugin(const std::string& node,const std::string& path,const std::string& id,const std::string& preset={});

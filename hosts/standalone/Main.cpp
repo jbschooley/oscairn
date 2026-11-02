@@ -153,6 +153,7 @@ namespace oscairn::standalone
             pads_.reset();parts_.reset();
             // The last layout's Home and running apps, timers and all, once its panel lets go of them.
             if( auto* p = panel() ) p->overlay( nullptr );
+            for( const auto& r : running_ ) engine_.appClosed( appId( r.name ) );
             switcher_.reset(); running_.clear(); launcher_.reset();
             layout_ = layout;
             // Home first (RFC 0030): the window's content on the desktop, over a panel's screen.
@@ -187,6 +188,7 @@ namespace oscairn::standalone
         {
             DocumentWindow::resized();
             if( pads_ && getContentComponent() ) pads_->setBounds( getContentComponent()->getBounds() );
+            if( notice_ ) notice_->setBounds( getLocalBounds() );
             if( parts_ && parts_->getParentComponent() == this && getContentComponent() ) parts_->setBounds( getContentComponent()->getBounds() ); // a panel places its own
         }
 
@@ -222,6 +224,7 @@ namespace oscairn::standalone
             }
             auto* home = new Launcher( engine_, launcherApps(), barShell() );
             setDesktopMode( *home, inputMode_ == InputMode::Touch ? 2 : 1 );
+            if( shell() ) engine_.appClosed( "oscairn.performance" ); // Home replaces it
             setContentOwned( home, false );
         }
         // An app by name, as its tile opens it (--app): performance, library, setlist or groovebox.
@@ -243,6 +246,7 @@ namespace oscairn::standalone
         // The Performance app: playing the open Performance (Play, first) and editing it.
         void openPerformance()
         {
+            if( !admitted( "Performance", [this] { openPerformance(); } ) ) return;
             if( panel() ) { showPerformanceApp( false ); return; }
             auto* shell = new DesktopShell( engine_, scanner(), inputMode_ );
             followSetlist( shell->play() );
@@ -363,6 +367,22 @@ namespace oscairn::standalone
         }
 
     private:
+        // Oscairn's own apps by name, as RFC 0025's memory reservations name them.
+        static std::string appId( const juce::String& name ) { return "oscairn." + name.toLowerCase().toStdString(); }
+        // Asked of the engine before an app opens (RFC 0025), with its placeholder reservation;
+        // refused, a notice over the window says why, and may let the next song go and try again.
+        // shortcut: an app's window closed on the desktop hides it with its state, so its reservation stays; the desktop has no memory classes yet.
+        bool admitted( const juce::String& name, std::function<void()> retry )
+        {
+            const auto id = appId( name );
+            return askToLaunch( engine_, { id, uint64_t( Profile::appMemory( id ) ) << 20 }, name, std::move( retry ),
+                [this]( std::unique_ptr<LaunchNotice> notice ) {
+                    notice_ = std::move( notice );
+                    if( !notice_ ) return;
+                    setDesktopMode( *notice_, panel() || inputMode_ == InputMode::Touch ? 2 : 1 );
+                    addAndMakeVisible( *notice_ ); notice_->setBounds( getLocalBounds() );
+                } );
+        }
         // Settings: the signing keys, and the controllers' profiles where the app reads them.
         Settings* settingsPane()
         {
@@ -377,6 +397,7 @@ namespace oscairn::standalone
         // The Recordings app (RFC 0020): the takes, kept running with its state like the others.
         void showRecordings()
         {
+            if( !admitted( "Recordings", [this] { showRecordings(); } ) ) return;
             if( panel() )
             {
                 if( bringForward( "Recordings" ) ) return;
@@ -429,6 +450,7 @@ namespace oscairn::standalone
                 [this]( int i ) { if( size_t( i ) < running_.size() ) bringForward( running_[size_t( i )].name ); },
                 [this]( int i ) {
                     if( size_t( i ) >= running_.size() ) return;
+                    engine_.appClosed( appId( running_[size_t( i )].name ) );
                     running_.erase( running_.begin() + i ); // not shown: the switcher is in front
                     showSwitcher(); },
                 barShell() );
@@ -466,6 +488,7 @@ namespace oscairn::standalone
         }
         void showLibraryApp()
         {
+            if( !admitted( "Library", [this] { showLibraryApp(); } ) ) return;
             if( panel() )
             {
                 if( bringForward( "Library" ) ) return;
@@ -475,12 +498,14 @@ namespace oscairn::standalone
         }
         void showSetlist()
         {
+            if( !admitted( "Setlist", [this] { showSetlist(); } ) ) return;
             if( panel() ) { if( !bringForward( "Setlist" ) ) openOnScreen( "Setlist", "list-music", setlist(), nullptr ); return; }
             if( !setlist_ ) { setlist_ = std::make_unique<AppWindow>( "Setlist", nullptr, 700, 760 ); setlist_->setContentNonOwned( &setlist(), false ); }
             showApp( setlist_, "Setlist", nullptr, 0, 0 );
         }
         void openGroovebox()
         {
+            if( !admitted( "Groovebox", [this] { openGroovebox(); } ) ) return;
             if( panel() ) // a panel has Play and Stop
             {
                 if( bringForward( "Groovebox" ) ) return;
@@ -683,6 +708,7 @@ namespace oscairn::standalone
         // The Performance app on a panel's screen: Play, or its Edit (the parts views).
         void showPerformanceApp( bool editing )
         {
+            if( !admitted( "Performance", [this, editing] { showPerformanceApp( editing ); } ) ) return;
             if( !bringForward( "Performance" ) )
             {
                 auto view = std::make_unique<PerformanceApp>( engine_, scanner() );
@@ -749,6 +775,7 @@ namespace oscairn::standalone
         std::unique_ptr<AppWindow> groovebox_, libraryApp_, setlist_, picker_, recordings_;
         std::unique_ptr<AppWindow> settings_;
         Controllers* controllers_ = nullptr;
+        std::unique_ptr<LaunchNotice> notice_; // why an app did not open (RFC 0025)
         Actions::Answer pickerAnswer_;
         std::unique_ptr<PadEditor> pads_;
         std::unique_ptr<PartsView> parts_;

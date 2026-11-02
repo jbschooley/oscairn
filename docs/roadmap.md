@@ -457,9 +457,9 @@ drum module, a DJ unit, a Eurorack module, a DAW plugin). These are required of 
   always-available apps' reservations), committed (what plays) and opportunistic (a next entry
   prepared to cut, let go first), with launch admission against the Performances' floor, and
   plugins declaring memory before activating (`oscairn.memory`); on Linux, worker cgroups and
-  limits from declarations, locking and out-of-memory scores at instrument level, and PSI. Not yet:
-  apps' manifests and the shell asking, other opportunistic items, the image's wiring, testing on
-  the QEMU image and hardware
+  limits from declarations, locking and out-of-memory scores at instrument level, and PSI; the
+  shell asking before an app opens. Not yet: apps' manifests, other opportunistic items, the
+  image's wiring, testing on the QEMU image and hardware
   ([design](rfcs/0025-resource-budgets.md#memory-reserved-committed-and-opportunistic))
 - [ ] **builds for every device's platform:** first-party plugins and apps on Linux ARM64 beside
   the desktop; packages without a build install as unavailable, saying so

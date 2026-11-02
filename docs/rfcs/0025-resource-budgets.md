@@ -25,7 +25,7 @@ Checked when built and tested; the sections below say how.
       (a plugin holding more than it declared is counted at what it holds; its declaration is not yet distrusted at the next activation)
 - [ ] 8. Apps declare reservations in their manifests; running apps and the always-available set
       reserved; the shell admitting or refusing a launch, making room first
-      (the engine's admission and reservations are built; manifests, measuring apps and the shell asking are not)
+      (the engine's admission and reservations, and the desktop shell asking, are built; manifests and measuring apps are not)
 - [ ] 9. Opportunistic memory and its eviction order: the sample file cache, recently used items,
       entries prepared further ahead; on demand and on pressure (PSI; macOS memory pressure)
       (built: a next entry prepared to cut, let go on demand and on Linux PSI, then a committed one under pressure; not: recent items, entries further ahead, macOS)
@@ -150,9 +150,28 @@ of memory (the RFC's illustrative figure; the margins per level are open), the a
 apps at its own apps' figures (illustrative, not measured, until manifests, step 8). No built-in
 profile gives them yet, so nothing changes on the desktop or the built-in devices. **What is
 enforced:** opening, adding and preparing Performances against the committed share, and an app
-launch asked through `launchApp`. **Bookkeeping:** apps run inside the desktop app (RFC 0022
-step 1) and the desktop shell does not ask `launchApp` before opening one yet, so no app's
-reservation is enforced or measured; per-app limits wait for apps as processes (RFC 0022 step 2).
+launch asked through `launchApp`. Oscairn's own apps' placeholder reservations
+(`Profile::appMemory`, until their manifests declare them):
+
+| App | ID | Reservation |
+| --- | --- | --- |
+| Performance | `oscairn.performance` | 150 MiB |
+| Library | `oscairn.library` | 120 MiB |
+| Setlist | `oscairn.setlist` | 60 MiB |
+| Groovebox | `oscairn.groovebox` | 200 MiB |
+| Recordings | `oscairn.recordings` | 100 MiB |
+
+**The shell asks:** Home's tiles, the Apps menu and `--app`
+ask `launchApp` with the app's placeholder reservation before opening it, and closing one on a
+device's screen (the switcher's Close, another layout) or going Home from the desktop's
+Performance app tells `appClosed`. Refused, a notice over the screen gives the engine's reason,
+with what closing would free; when only the prepared next setlist entry is in the way, **Let
+the next song go** asks again with `dropNext` and opens the app (`desktop-gaps` tests the
+asking, the notice and letting the next entry go against a session with memory classes; the
+shell's own calls are not driven by a test). An app's own
+window closed on the desktop keeps its state, so its reservation stays. **Bookkeeping:** apps
+run inside the desktop app (RFC 0022 step 1), so a reservation is counted, not enforced or
+measured; per-app limits wait for apps as processes (RFC 0022 step 2).
 
 **Linux** (step 10 in part, 2026-11-01; Linux only, guarded): with `OSCAIRN_CGROUP` naming a
 delegated cgroup v2 subtree, the engine moves itself into `engine/` at its first worker and puts

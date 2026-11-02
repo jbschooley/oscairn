@@ -110,6 +110,27 @@ namespace oscairn::standalone
         TopBar bar_;
     };
 
+    /// Why an app did not open (RFC 0025), over the screen: what it needs and what closing would
+    /// free, as the engine said it; Let the next song go when only the prepared next setlist entry
+    /// is in the way.
+    class LaunchNotice : public juce::Component
+    {
+    public:
+        LaunchNotice(const juce::String& name, const Control::Launch& refused);
+        const juce::String& message() const { return message_; }
+        juce::TextButton letGo{"Let the next song go"}, ok{"OK"};
+        void paint(juce::Graphics&) override;
+        void resized() override;
+
+    private:
+        juce::String title_, message_;
+        juce::Rectangle<int> card_;
+    };
+    /// Asks the engine before an app opens (RFC 0025): true when it is admitted. Refused: false,
+    /// and `show` gets a notice to put over the screen (and nothing once it is done with); its Let
+    /// the next song go asks again, letting that entry go, then runs `retry`.
+    bool askToLaunch(Engine& engine, const Control::AppMemory& app, const juce::String& name, std::function<void()> retry, std::function<void(std::unique_ptr<LaunchNotice>)> show);
+
     /// The running apps (RFC 0030), on a device's screen: each kept with its state; a tap brings
     /// one forward, Close lets it go.
     class AppSwitcher : public juce::Component

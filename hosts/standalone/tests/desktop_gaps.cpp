@@ -6,8 +6,10 @@
 // - A part's MIDI out on the Part page, and clock out beside the transport (RFC 0012).
 // - Signing an export, its signer, and the keys in Settings (RFC 0006).
 // - Choosing a controller's profile (RFC 0024).
+// - Asking before an app opens (RFC 0025).
 //   oscairn_desktop_gaps_test PLUGIN_DIR SCANNER THEMES [SNAPSHOTS]
 #include "../DesktopShell.h"
+#include "../Launcher.h"
 #include "../LibraryPane.h"
 #include "../PartsView.h"
 #include "../Settings.h"
@@ -162,6 +164,54 @@ int main(int argc, char** argv)
                 if(auto* box = settings.profileBox(1)) box->setSelectedId(2, juce::sendNotificationSync);
                 check(kept["SMK-37 Elite -Master"] == "smk37-elite-custom", "choosing the custom profile keeps it for the port's name");
                 check(wait([&] { return profileName(1) == "SMK37 Elite (custom firmware)"; }), "and it is in use");
+            }
+            // Asking before an app opens (RFC 0025): with memory classes, a launch past what is
+            // free is refused with the reason; the prepared next entry in the way can go.
+            {
+                check(engine.launchApp({"oscairn.library", 120ull << 20}).admitted, "without memory classes every app opens");
+                engine.appClosed("oscairn.library");
+                // The protocol takes a reservation of at most 4 GiB, so a small device.
+                constexpr uint64_t MiB = 1ull << 20;
+                // The synth measured at 100 MiB, read when the budget is set, so the next song holds memory.
+                const std::string key = "org.oscairn.basic-synth@0.1.0"; // its ID and version: the graph over the socket does not carry the version
+                data.getChildFile("measurements.json").replaceWithText("{\"plugins\":{\"" + key + "\":{\"cpu\":0.01,\"rest\":0.01,\"voice\":0,\"voices\":0,\"memory\":" + std::to_string(100 * MiB) + "}}}");
+                engine.edit([](Control& c) { c.setBudget({.9, 0, 3072 * MiB, 256 * MiB, 0, 64 * MiB}); });
+                check(engine.launchApp({"oscairn.library", 120ull << 20}).admitted, "the Library fits");
+                std::string path;
+                engine.edit([&](Control& c) {
+                    c.savePerformanceToLibrary("Next song", true);
+                    Control::LibraryQuery q; q.text = "Next song";
+                    for(const auto& item : c.libraryQuery(q).items) path = item.path;
+                });
+                Control::MemoryState before, after;
+                engine.edit([&](Control& c) { before = c.memoryState(); c.preparePerformance(path); after = c.memoryState(); });
+                const auto next = after.committed - before.committed;
+                check(!path.empty() && after.nextCommitted && next > 0, "the next song prepared ahead, committed: " + std::to_string(after.committed) + "/" + std::to_string(before.committed) + " " + engine.editError());
+                // Just too big beside the next song, and small enough without it.
+                const uint64_t reserve = after.device - after.reserved - after.margin - after.committed + next / 2;
+                std::unique_ptr<standalone::LaunchNotice> notice;
+                bool retried = false;
+                auto show = [&](std::unique_ptr<standalone::LaunchNotice> n) { notice = std::move(n); };
+                check(!standalone::askToLaunch(engine, {"oscairn.groovebox", reserve}, "Groovebox", [&] { retried = true; }, show) && notice && notice->letGo.isVisible(),
+                      "refused, with Let the next song go offered");
+                if(notice)
+                {
+                    standalone::setDesktopMode(*notice, 2); notice->setSize(1024, 600);
+                    check(notice->message().contains("letting the next entry"), "it says why: " + notice->message().toStdString());
+                    snapshot(*notice, "launch-next-song");
+                    notice->letGo.onClick();
+                    check(wait([&] { return retried && !notice; }), "letting it go closes the notice and tries again");
+                }
+                Control::MemoryState now;
+                engine.edit([&](Control& c) { now = c.memoryState(); });
+                check(!now.nextPrepared && std::any_of(now.running.begin(), now.running.end(), [](const auto& a) { return a.app == "oscairn.groovebox"; }), "the next song let go, the Groovebox admitted");
+                check(!standalone::askToLaunch(engine, {"oscairn.setlist", 3500 * MiB}, "Setlist", {}, show) && notice && !notice->letGo.isVisible() &&
+                      notice->message().contains("close") && notice->message().contains("Library"), "refused past what closing frees, saying what to close: " + (notice ? notice->message().toStdString() : std::string()));
+                if(notice) { standalone::setDesktopMode(*notice, 1); notice->setSize(1024, 600); snapshot(*notice, "launch-refused"); notice->ok.onClick(); wait([&] { return !notice; }); }
+                engine.appClosed("oscairn.library");
+                engine.edit([&](Control& c) { now = c.memoryState(); });
+                check(std::none_of(now.running.begin(), now.running.end(), [](const auto& a) { return a.app == "oscairn.library"; }), "a closed app's reservation is let go");
+                engine.edit([](Control& c) { c.setBudget({}); });
             }
             juce::LookAndFeel::setDefaultLookAndFeel(nullptr);
             configuration.deleteRecursively();
