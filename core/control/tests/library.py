@@ -12,6 +12,8 @@ import tempfile
 try:
     import jsonschema
     protocol = json.loads((Path(__file__).resolve().parents[3] / 'docs/control-protocol.schema.json').read_text())
+    # Built once: compiling the schema for every request made the test take over a minute.
+    request_validator = jsonschema.Draft202012Validator({**protocol, '$ref': '#/$defs/Request'})
 except ImportError:
     jsonschema = None
     print('JSON Schema validator not installed; requests are not checked against the schema')
@@ -20,7 +22,7 @@ except ImportError:
 def rpc(method, params=None, expect_error=False):
     request = {'jsonrpc': '2.0', 'id': 1, 'method': method, 'params': params or {}}
     if jsonschema and not expect_error:
-        jsonschema.validate(request, {**protocol, '$ref': '#/$defs/Request'})
+        request_validator.validate(request)
     p.stdin.write(json.dumps(request) + '\n')
     p.stdin.flush()
     response = json.loads(p.stdout.readline())
