@@ -191,19 +191,28 @@ namespace oscairn
     {
         if(g.role != ControlGroup::Role::Screen && g.role != ControlGroup::Role::Assign) return 1;
         if(g.kind == "faders") return uint32_t(std::max<size_t>(1, g.modes.size()));
-        if(g.kind == "buttons") return 1;
+        if(g.kind == "buttons" || !g.functions.empty()) return 1;
         if(!g.rows.empty()) return uint32_t(g.rows.size());
+        if(!g.paged && g.kind != "knobs" && g.kind != "encoders") return 1;
         return uint32_t(std::max<size_t>(1, knobBanks(s, part, g.count).size()));
     }
 
     std::vector<ResolvedControl> resolveControls(const AssignmentSource& s, const std::vector<ControlGroup>& groups, uint32_t part, const GroupPositions& positions)
     {
         std::vector<ResolvedControl> out;
-        // 1. Overrides, where what they name is still there.
+        // 1. Overrides, where what they name is still there; 2. the selected part's Sound's own,
+        // or for a control with a function, each part's.
         auto overridden = [&](ResolvedControl& r) {
-            for(const auto& o : s.overrides)
-                if(o.control == r.control)
-                    if(const auto name = assignmentName(s, o.target); !name.empty()) { r.target = o.target; r.layer = AssignmentLayer::Override; r.label = name; r.bank.clear(); return; }
+            for(const auto layer : {AssignmentLayer::Override, AssignmentLayer::Sound})
+                for(const auto& o : s.overrides)
+                {
+                    if(o.control != r.control || (layer == AssignmentLayer::Override) != (o.part == 0) || (o.part && !partOf(s, o.part))) continue;
+                    const auto name = assignmentName(s, o.target);
+                    if(name.empty()) continue;
+                    if(layer == AssignmentLayer::Sound && !r.function.empty()) { r.parts.emplace_back(o.part, o.target); continue; }
+                    if(layer == AssignmentLayer::Sound && o.part != part) continue;
+                    r.target = o.target; r.layer = layer; r.label = name; r.bank.clear(); return;
+                }
         };
         std::map<std::string, uint32_t> numbers; // per identity, across groups
         const auto order = faderOrder(s);
@@ -234,7 +243,13 @@ namespace oscairn
                 else levels(order, Assignment::Kind::PartLevel, " level");
                 b.name = mode;
             }
+            else if(group.kind == "buttons" && group.scenes)
+            {
+                for(size_t i = 0; i < group.count && i < s.scenes.size(); ++i) std::tie(b.slots[i], b.labels[i]) = of(Assignment::Kind::Scene, s.scenes[i].first, s.scenes[i].second);
+                b.layer = AssignmentLayer::Convention;
+            }
             else if(group.kind == "buttons") levels(order, Assignment::Kind::PartMute, " mute");
+            else if(!group.functions.empty() || (group.rows.empty() && !group.paged && group.kind != "knobs" && group.kind != "encoders")) {} // passed through, or nothing until assigned
             else if(!group.rows.empty())
             {
                 // A hardware row: its bank, the Nth of its kind for the Nth row naming that kind.
@@ -248,7 +263,8 @@ namespace oscairn
             for(uint32_t i = 0; i < group.count; ++i)
             {
                 ResolvedControl r; r.control = name + ":" + std::to_string(++numbers[name]);
-                r.target = b.slots[i]; r.label = b.labels[i]; r.bank = b.name;
+                r.target = b.slots[i]; r.label = b.labels[i]; r.bank = b.name; r.group = g; r.index = i;
+                if(i < group.functions.size()) r.label = r.function = group.functions[i];
                 if(r.target.kind != Assignment::Kind::None) r.layer = b.layer;
                 if(!screen) overridden(r); // screen knobs play what the screen shows
                 out.push_back(std::move(r));
@@ -291,9 +307,17 @@ namespace oscairn
 
     std::vector<AssignmentOverride> Session::assignments() const { return assignments_; }
 
-    void Session::assign(const std::string& control, const Assignment& target)
+    void Session::assign(const std::string& control, const Assignment& target, uint32_t part)
     {
         if(!validPhysicalControl(control)) throw std::invalid_argument("a physical control is knob:N, fader:N, button:N, wheel:N, strip:N, jog:N, pedal:N or footswitch:N");
+        if(part)
+        {
+            // A Sound's own assignment plays only its own plugins and controls.
+            const auto in = nodesOf(findPart(part));
+            const bool own = target.kind == Assignment::Kind::None || (target.kind == Assignment::Kind::Parameter && in.count(target.node)) ||
+                             (target.kind == Assignment::Kind::Control && std::any_of(macros_.begin(), macros_.end(), [&](const Macro& m) { return m.id == target.id && m.part == part; }));
+            if(!own) throw std::invalid_argument("a Sound's assignment plays its own plugins and controls");
+        }
         switch(target.kind)
         {
         case Assignment::Kind::None: break;
@@ -308,7 +332,7 @@ namespace oscairn
         case Assignment::Kind::PartLevel: case Assignment::Kind::PartMute: findPart(target.id); break;
         case Assignment::Kind::Scene: if(std::none_of(scenes_.begin(), scenes_.end(), [&](const Scene& s) { return s.id == target.id; })) throw std::invalid_argument("unknown scene"); break;
         }
-        std::erase_if(assignments_, [&](const AssignmentOverride& o) { return o.control == control; });
-        if(target.kind != Assignment::Kind::None) assignments_.push_back({control, target});
+        std::erase_if(assignments_, [&](const AssignmentOverride& o) { return o.control == control && o.part == part; });
+        if(target.kind != Assignment::Kind::None) assignments_.push_back({control, target, part});
     }
 }

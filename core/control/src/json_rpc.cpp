@@ -821,12 +821,12 @@ namespace oscairn
                 std::vector<std::string> out;
                 for( const auto& o : c.assignments() )
                     out.push_back("{\"control\":" + quote(o.control) + ",\"kind\":\"" + assignmentKinds[size_t(o.target.kind)] + "\",\"node\":" + std::to_string(o.target.node) +
-                                  ",\"param\":" + std::to_string(o.target.param) + ",\"id\":" + std::to_string(o.target.id) + '}');
+                                  ",\"param\":" + std::to_string(o.target.param) + ",\"id\":" + std::to_string(o.target.id) + ",\"part\":" + std::to_string(o.part) + '}');
                 return "{\"assignments\":" + join(out) + '}';
             }
             if( method == "assignments.set" )
             {
-                fields(p,{"control","kind","node","param","id"});
+                fields(p,{"control","kind","node","param","id","part"});
                 Assignment t;
                 const auto kind = string(member(p,"kind"));
                 const auto at = std::find_if(assignmentKinds.begin(), assignmentKinds.end(), [&](const char* k) { return kind == k; });
@@ -834,7 +834,7 @@ namespace oscairn
                 t.kind = Assignment::Kind(at - assignmentKinds.begin());
                 if( t.kind == Assignment::Kind::Parameter ) { t.node = node(c,member(p,"node")); t.param = integer(member(p,"param")); }
                 else if( t.kind != Assignment::Kind::None ) t.id = integer(member(p,"id"));
-                try { c.assign(std::string(string(member(p,"control"))),t); }
+                try { c.assign(std::string(string(member(p,"control"))),t,member(p,"part") ? integer(member(p,"part")) : 0); }
                 catch( const std::invalid_argument& e ) { throw Failure{-32003,e.what()}; }
                 return R"({"accepted":true})";
             }

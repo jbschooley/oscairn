@@ -187,7 +187,7 @@ namespace oscairn
         bool pad( uint32_t pad, bool on, double velocity, int channel = 0 ) override;
         bool padPressure( uint32_t pad, double pressure ) override;
         std::vector<AssignmentOverride> assignments() const override;
-        void assign( const std::string& control, const Assignment& target ) override;
+        void assign( const std::string& control, const Assignment& target, uint32_t part = 0 ) override;
 
         struct MidiClockEvent
         {

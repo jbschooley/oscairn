@@ -504,13 +504,13 @@ namespace oscairn
         for(auto a:array(field(field(doc.get(),"result"),"assignments"))){
             AssignmentOverride o;o.control=string(field(a,"control"));const auto kind=string(field(a,"kind"));
             for(size_t k=0;k<assignmentKinds.size();++k)if(kind==assignmentKinds[k])o.target.kind=Assignment::Kind(k);
-            o.target.node=static_cast<NodeId>(integer(field(a,"node")));o.target.param=static_cast<uint32_t>(integer(field(a,"param")));o.target.id=static_cast<uint32_t>(integer(field(a,"id")));
+            o.target.node=static_cast<NodeId>(integer(field(a,"node")));o.target.param=static_cast<uint32_t>(integer(field(a,"param")));o.target.id=static_cast<uint32_t>(integer(field(a,"id")));o.part=static_cast<uint32_t>(integer(field(a,"part")));
             out.push_back(std::move(o));}
         return out;
     }
-    void RemoteControl::assign(const std::string& control,const Assignment& t)
+    void RemoteControl::assign(const std::string& control,const Assignment& t,uint32_t part)
     {
-        impl_->call("assignments.set","{\"control\":"+quote(control)+",\"kind\":\""+assignmentKinds[size_t(t.kind)]+"\",\"node\":"+std::to_string(t.node)+",\"param\":"+std::to_string(t.param)+",\"id\":"+std::to_string(t.id)+'}');impl_->refresh();
+        impl_->call("assignments.set","{\"control\":"+quote(control)+",\"kind\":\""+assignmentKinds[size_t(t.kind)]+"\",\"node\":"+std::to_string(t.node)+",\"param\":"+std::to_string(t.param)+",\"id\":"+std::to_string(t.id)+",\"part\":"+std::to_string(part)+'}');impl_->refresh();
     }
     PadMap RemoteControl::padMap() const
     {

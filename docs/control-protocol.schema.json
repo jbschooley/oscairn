@@ -4263,6 +4263,11 @@
                 "id": {
                   "type": "integer",
                   "minimum": 0
+                },
+                "part": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "0 or absent: the Performance's override; else that part's Sound's own assignment"
                 }
               },
               "required": [

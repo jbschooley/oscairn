@@ -745,13 +745,16 @@ Started 2026-11-01 (`core/control/include/oscairn/physical_controls.h`,
 group of the device ([RFC 0024](0024-device-profiles.md#control-groups)) in the layers above,
 each filling only what the ones above left empty:
 
-1. **Overrides**, saved in the Performance (format version 7, `assignments`) by the control's
+1. **Overrides**, saved in the Performance (format version 8, `assignments`) by the control's
    logical identity, numbered across the device's assign groups: `knob:N` (knobs and encoders),
    `fader:N`, `button:N`, `wheel:N`, `strip:N`, `jog:N`, `pedal:N`, `footswitch:N`. Each sets a
    parameter, a control, a part's level or mute, or a scene. Screen knobs are not overridden.
    An override whose target is gone falls through to the defaults and is left out at save.
    Assigning is an edit, undone like any other.
-2. **The sound's own assignments**: the selected part's controls, as Assign banks.
+2. **The sound's own assignments**: assignments with a `part`, saved with the Performance and
+   with the Sound (version 6, `assignments`), each to one of the part's plugins' parameters or
+   its controls; they play when their part is selected, and for a control with a function (the
+   mod wheel) in their part whenever it moves. Then the selected part's controls, as Assign banks.
 3. **Role banks**: Filter (cutoff, resonance, filter envelope, key tracking, then the filter
    envelope's stages), Amp EG (attack, decay, sustain, release, hold, velocity, key tracking,
    level), EQ (low, mid and high gain and frequencies, mid Q, output) and Levels (element,
@@ -759,8 +762,9 @@ each filling only what the ones above left empty:
    role the sound lacks is blank. With no roles and no controls, two Assign banks from the
    part's instrument's first parameters in `oscairn.ui` priority order.
 4. **Conventions**: faders play part levels (parts, then buses), the Levels bank or the audio
-   parts' levels by their mode; assign buttons play part mutes; with no part selected the
-   knobs follow the Performance's own controls.
+   parts' levels by their mode; assign buttons play part mutes, or scenes (`target: scenes`);
+   controls with `functions` (wheels, pedals) pass their standard controller to every part;
+   with no part selected the knobs follow the Performance's own controls.
 5. **The effects bank**: each effect's main control (its `mix` role, else its first parameter
    by priority) in chain order.
 
@@ -777,7 +781,17 @@ mute), a scene or a knob (its target); Default removes the override.
 Amp EG's sixth role), the KICK (four encoders paged, fixed knobs, wheel, pads, buttons and
 strip resolving nothing), the MODX M (six screen knobs, four knobs in six rows, eight faders in
 part, element and audio modes), an eight-knob device with assign buttons, overrides (and not on
-screen knobs), refusals, falling through, undo and redo, and saving and loading.
+screen knobs), refusals, falling through, undo and redo, and saving and loading. It also
+checks external controllers (2026-11-01): a controller's knobs numbered after a panel's and
+playing eight-wide banks, its faders part levels, its wheels passed through, scene and mute
+buttons; the mapping service (`ControllerMapping`) picking up an absolute knob at and across
+the value and losing it when the value moves elsewhere, a sign-magnitude knob stepping, a
+fader, a scene button on the press, a momentary mute toggling, a row's own numbers moving its
+group to that row, and messages from another device or channel ignored; each relative
+encoding decoded; and a Sound's own assignments (the mod wheel playing its part's parameter, a
+knob's when its part is selected, refusals of anything not its own, a Performance override
+over every part's, saving with the Performance). `control-sounds` checks the mod wheel's
+assignment saved with a Sound and replacing the part's own when it is loaded.
 `desktop-shell` checks Play's knobs through the layers, learn, and six screen knobs giving six
 tiles and a six-wide bank; `desktop-profile` checks the new profiles and the groups' refusals.
 Snapshots of Play with four and six knobs, and the app with `--profile modx-m` at 800 x 480,

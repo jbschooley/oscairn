@@ -207,7 +207,7 @@ in the others.
      Compact test layout; modulation shown on knobs and the Modular grid remain)
    - [ ] plugin windows, then step 6's physical controls (default layers, banks as wide as
      each control group of the device's profile, overrides saved in the Performance format
-     (now version 7) and learn on a panel's knobs done; [status](rfcs/0011-performance-ui-and-editors.md#step-6-status))
+     (now version 8) and learn on a panel's knobs done; [status](rfcs/0011-performance-ui-and-editors.md#step-6-status))
    - [x] Play, the Performance app's first view ([status](rfcs/0011-performance-ui-and-editors.md#play-status))
    - [x] the full scene model: blocks and wires enabled per scene, and what each scene saves
      (plugins and wires switched off and on, seamlessly, scenes recording all of it with a

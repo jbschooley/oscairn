@@ -82,6 +82,13 @@ namespace oscairn
     // rows, each a bank its row button picks directly, or is paged (by a button or the screen).
     // Faders may have modes: part (part levels), element (the part's Levels bank) and audio (the
     // levels of parts playing audio inputs).
+    // Buttons play part mutes, or with `scenes` the scenes in order. A group with `functions`
+    // (wheels, pedals, a ribbon: standard controllers such as "modulation") passes each control's
+    // controller to every part unless something is assigned to it. Other kinds than knobs and
+    // encoders play banks only when `paged` or with rows; else nothing until assigned.
+    // An external controller's group says how it talks MIDI (RFC 0024's controllers).
+    enum class Encoding { Absolute, TwosComplement, BinaryOffset, SignMagnitude };
+    inline constexpr std::array<const char*, 4> encodings{"absolute", "twosComplement", "binaryOffset", "signMagnitude"}; // as profiles name them
     struct ControlGroup
     {
         enum class Role { Notes, Screen, Assign, Fixed } role = Role::Assign;
@@ -90,6 +97,17 @@ namespace oscairn
         struct Row { std::string name; BankKind bank = BankKind::Assign; };
         std::vector<Row> rows;
         std::vector<std::string> modes;
+        bool scenes = false, paged = false;
+        std::vector<std::string> functions;
+        struct Midi
+        {
+            std::string device;                 // the controller's profile id; empty: not MIDI (a panel's own)
+            uint32_t port = 1, channel = 1;     // the profile's port, from 1; channel 1 to 16
+            enum class Message { CC, Note, PitchBend } message = Message::CC;
+            std::vector<uint8_t> numbers;       // CC or note per control, or per control per row
+            std::vector<Encoding> encodings;    // one per control (absolute when missing)
+            bool latch = false;                 // buttons: the controller keeps their state
+        } midi;
     };
     // Where each group is now: its page, its row, or its mode, by group, in the device's order.
     using GroupPositions = std::vector<uint32_t>;
@@ -99,14 +117,36 @@ namespace oscairn
         Assignment target;            // None: nothing
         AssignmentLayer layer = AssignmentLayer::None;
         std::string label, bank;      // what it plays, and the bank (or row, or mode) it is in
+        size_t group = 0; uint32_t index = 0; // its group, in the order given, and its place there
+        std::string function;         // a standard controller passed to every part when nothing is assigned ("modulation")
+        std::vector<std::pair<uint32_t, Assignment>> parts; // a control with a function: what each part's Sound assigns it to
     };
     // Every assignable control of the device (screen and assign groups, faders, assign buttons)
     // with what it plays now. Controls are numbered by identity across groups: assign knobs and
     // encoders "knob:N", faders "fader:N", buttons "button:N", wheels "wheel:N", touch strips
     // "strip:N", pedals "pedal:N". An override whose target is gone falls through to the defaults.
+    // Overrides with a part are that part's Sound's own (layer 2): they play when the part is
+    // selected, and for a control with a function, in that part whenever it moves.
     std::vector<ResolvedControl> resolveControls(const AssignmentSource&, const std::vector<ControlGroup>&, uint32_t part, const GroupPositions& = {});
     // How many positions a group has: its pages, rows or modes (1 for the rest).
     uint32_t groupPositions(const AssignmentSource&, const ControlGroup&, uint32_t part);
+    // RFC 0011's controller-mapping service: a MIDI message from a controller's port to values
+    // for what the control it comes from plays, 0 to 1 across each target's range. Absolute
+    // controls pick up (soft takeover); relative ones step from the current value; buttons
+    // toggle, latch or select. Pickup is per control. Not thread-safe: one caller.
+    int relativeSteps(Encoding, uint8_t value); // the signed step a relative value sends
+    class ControllerMapping
+    {
+    public:
+        struct Action { std::string control; Assignment target; double value = 0; };
+        // `positions` gains the row a message names; `value` reads a target's value, 0 to 1.
+        std::vector<Action> handle(const AssignmentSource&, const std::vector<ControlGroup>&, uint32_t part, GroupPositions& positions,
+                                   const std::string& device, uint32_t port, const uint8_t* bytes, size_t size,
+                                   const std::function<double(const Assignment&)>& value);
+    private:
+        struct Pickup { Assignment target; bool caught = false; double knob = -1; std::array<double, 32> sent{}; size_t sends = 0; };
+        std::map<std::string, Pickup> pickup_;
+    };
     // A target's name as the views show it ("Piano level", "Basic Synth: Cutoff"); empty when it is gone.
     std::string assignmentName(const AssignmentSource&, const Assignment&);
 }

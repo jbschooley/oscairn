@@ -8,7 +8,7 @@
       "const": "oscairn.performance"
     },
     "version": {
-      "const": 7
+      "const": 8
     },
     "info": {
       "type": "object",
@@ -250,7 +250,7 @@
     "assignments": {
       "type": "array",
       "maxItems": 4096,
-      "description": "Physical controls' overrides (RFC 0011), by the control's logical identity, numbered across a device's assign groups; each control at most once",
+      "description": "Physical controls' overrides (RFC 0011), by the control's logical identity, numbered across a device's assign groups (an external controller's after the device's own), and each part's Sound's own assignments; each control at most once per part (0 the Performance)",
       "items": {
         "oneOf": [
           {
@@ -269,13 +269,20 @@
                 "type": "integer",
                 "minimum": 0,
                 "maximum": 4294967295
+              },
+              "part": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 4294967295,
+                "description": "0: the Performance's override; else that part's Sound's own assignment (parameter or control kinds only)"
               }
             },
             "required": [
               "control",
               "kind",
               "node",
-              "param"
+              "param",
+              "part"
             ],
             "additionalProperties": false
           },
@@ -298,12 +305,19 @@
                 "minimum": 1,
                 "maximum": 4294967295,
                 "description": "The control, part or scene"
+              },
+              "part": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 4294967295,
+                "description": "0: the Performance's override; else that part's Sound's own assignment (parameter or control kinds only)"
               }
             },
             "required": [
               "control",
               "kind",
-              "id"
+              "id",
+              "part"
             ],
             "additionalProperties": false
           }

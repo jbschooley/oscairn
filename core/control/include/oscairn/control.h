@@ -382,6 +382,6 @@ namespace oscairn
         // Physical controls (RFC 0011, physical_controls.h): the Performance's overrides, by
         // the control's logical identity. Assigning Kind::None removes one; saved with it.
         virtual std::vector<AssignmentOverride> assignments() const = 0;
-        virtual void assign( const std::string& control, const Assignment& target ) = 0;
+        virtual void assign( const std::string& control, const Assignment& target, uint32_t part = 0 ) = 0; // part: that part's Sound's own assignment
     };
 }

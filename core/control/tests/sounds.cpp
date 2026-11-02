@@ -88,6 +88,9 @@ int main(int argc, char** argv)
         const auto part = keys(s, fixture, delay);
         const auto drums = s.addPart("Drums"), echo = s.add("Drums Echo", delay);
         s.insertIntoPart(drums, 0, echo); s.connectAudio(s.nodeId("High"), echo); s.commit();
+        // Its mod wheel assigned to the low layer's parameter, its own (RFC 0011).
+        Assignment lowGain; lowGain.kind = Assignment::Kind::Parameter; lowGain.node = s.nodeId("Low"); lowGain.param = 7;
+        s.assign("wheel:2", lowGain, part);
         const auto saved = s.savePartAsSound(part, "Split Keys");
         check(saved.left.size() == 1 && saved.left[0] == "High to Drums Echo", "the crossing wire is listed: " + (saved.left.empty() ? std::string() : saved.left[0]));
         const auto sound = std::filesystem::path(home.path) / "Sounds/Split Keys.osound/sound.json";
@@ -96,6 +99,8 @@ int main(int argc, char** argv)
         const std::string json(text.begin(), text.end());
         check(json.find("Drums") == std::string::npos && json.find("\"seat\"") == std::string::npos && json.find("\"level\":0.7") == std::string::npos,
               "nothing of the other part, and not the part's fader");
+        check(json.find("\"version\":6") != std::string::npos && json.find("\"assignments\":[{\"control\":\"wheel:2\",\"kind\":\"parameter\"") != std::string::npos,
+              "its mod wheel assignment is saved with it");
 
         // Into another Performance's part, which held something else and had controls on it.
         Session t(48000, frames);
@@ -106,8 +111,13 @@ int main(int argc, char** argv)
         MacroTarget onTone; onTone.kind = MacroTarget::Kind::Macro; onTone.macro = toneOld;
         const auto super = t.addMacro("Super"); t.setMacroTargets(super, {onTone});
         const auto other = t.addMacro("Other"); t.setMacroTargets(other, {oldTone, MacroTarget{MacroTarget::Kind::PartLevel, MacroTarget::Curve::Linear, 0, 0, seat}});
+        Assignment oldGain; oldGain.kind = Assignment::Kind::Parameter; oldGain.node = old; oldGain.param = 7;
+        t.assign("knob:1", oldGain, seat);
         const auto before = t.parts();
         const auto flagged = t.loadSound(seat, saved.id);
+        const auto wheel = t.assignments();
+        check(wheel.size() == 1 && wheel[0].control == "wheel:2" && wheel[0].part == seat && wheel[0].target.node == t.nodeId("Low") && wheel[0].target.param == 7,
+              "the Sound's mod wheel assignment comes with it, in place of the part's old one");
         check(std::find(flagged.begin(), flagged.end(), "Other: a target on the old plugins was removed") != flagged.end(), "a Performance control on the old plugins is flagged");
         const auto g = t.graphState();
         auto macro = [&](const std::string& name) { for(const auto& m : g.macros) if(m.name == name) return m; throw std::runtime_error("no control " + name); };

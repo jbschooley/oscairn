@@ -10,6 +10,9 @@
 #include "oscairn/session.h"
 #include "../../plugin-host/src/StateFiles.h"
 #include <array>
+#include <cmath>
+#include <map>
+#include <tuple>
 #include <cstdio>
 #include <string>
 
@@ -159,6 +162,114 @@ namespace
         u.loadPerformance((root / "removed").string());
         check(u.assignments().size() == 2 && u.assignments()[0].control == "knob:2", "an override to a removed plugin is left out");
     }
+
+    // External controllers (RFC 0024): their groups join the device's, numbered on; their messages
+    // played through the mapping service, with pickup, relative encodings, buttons and rows; the
+    // mod wheel passed through, or the Sound's own assignment.
+    void controllers(const char* fixture, const char* delay, const fs::path& root)
+    {
+        Session s(48000, frames, {}, stereoIn);
+        const auto synth = s.add("synth", fixture, "org.kick.test.synth"), fx = s.add("fx", delay), bass = s.add("bass", fixture, "org.kick.test.synth");
+        const auto keys = s.addPart("Keys"), lead = s.addPart("Lead");
+        s.insertIntoPart(keys, 0, synth); s.insertIntoPart(keys, 1, fx); s.insertIntoPart(lead, 0, bass); s.commit();
+        const auto super = s.addMacro("Super"), bright = s.addMacro("Brightness", lead);
+        const auto verse = s.addScene("Verse"); s.addScene("Chorus");
+        run(s);
+        auto source = [&] { return assignmentSource(s.graphState(), s.assignments(), [&](NodeId n) { return s.parameters(n); }); };
+        using Role = ControlGroup::Role; using Message = ControlGroup::Midi::Message;
+        auto midi = [](ControlGroup g, const std::string& device, Message m, std::vector<uint8_t> numbers, std::vector<Encoding> encodings = {}) {
+            g.midi.device = device; g.midi.message = m; g.midi.numbers = std::move(numbers); g.midi.encodings = std::move(encodings); return g; };
+        ControlGroup panel{Role::Assign, "encoders", 4}; panel.paged = true;
+        ControlGroup knobs{Role::Assign, "knobs", 8}; knobs.paged = true;
+        const auto abs = Encoding::Absolute, sm = Encoding::SignMagnitude;
+        knobs = midi(knobs, "smk", Message::CC, {74, 71, 76, 77, 93, 18, 19, 16}, {abs, abs, abs, abs, abs, abs, sm, sm});
+        ControlGroup bend{Role::Assign, "wheels", 1}; bend.functions = {"pitchBend"}; bend = midi(bend, "smk", Message::PitchBend, {});
+        ControlGroup mod{Role::Assign, "wheels", 1}; mod.functions = {"modulation"}; mod = midi(mod, "smk", Message::CC, {1});
+        ControlGroup scenes{Role::Assign, "buttons", 2}; scenes.scenes = true; scenes = midi(scenes, "smk", Message::CC, {25, 26});
+        ControlGroup mutes = midi({Role::Assign, "buttons", 1}, "smk", Message::CC, {30});
+        ControlGroup rows{Role::Assign, "knobs", 2, {{"Assign 1", BankKind::Assign}, {"Assign 2", BankKind::Assign}}}; rows = midi(rows, "modx", Message::CC, {17, 18, 21, 22});
+        const std::vector<ControlGroup> groups{panel, knobs, midi({Role::Assign, "faders", 4}, "smk", Message::CC, {73, 75, 79, 72}), bend, mod, scenes, mutes, rows};
+
+        auto resolved = resolveControls(source(), groups, keys, {});
+        check(find(resolved, "knob:1").group == 0 && find(resolved, "knob:5").group == 1 && find(resolved, "knob:5").index == 0 && find(resolved, "knob:5").target == parameter(synth, 7) &&
+              find(resolved, "knob:5").bank == "Assign 1\xE2\x80\x93" "8" && find(resolved, "knob:12").group == 1, "a controller's knobs are numbered after the panel's and play eight-wide banks");
+        check(find(resolved, "fader:1").target == target(Assignment::Kind::PartLevel, keys) && find(resolved, "fader:2").target == target(Assignment::Kind::PartLevel, lead), "its faders play part levels");
+        check(find(resolved, "wheel:1").function == "pitchBend" && find(resolved, "wheel:2").function == "modulation" && find(resolved, "wheel:2").target.kind == Assignment::Kind::None &&
+              find(resolved, "wheel:2").parts.empty(), "its wheels pass pitch bend and modulation through");
+        check(find(resolved, "button:1").target == target(Assignment::Kind::Scene, verse) && find(resolved, "button:1").label == "Verse" && find(resolved, "button:3").target == target(Assignment::Kind::PartMute, keys),
+              "buttons play scenes, or part mutes");
+
+        // Relative encodings, each scheme.
+        check(relativeSteps(Encoding::TwosComplement, 1) == 1 && relativeSteps(Encoding::TwosComplement, 127) == -1 && relativeSteps(Encoding::TwosComplement, 65) == -63 &&
+              relativeSteps(Encoding::BinaryOffset, 65) == 1 && relativeSteps(Encoding::BinaryOffset, 63) == -1 && relativeSteps(Encoding::BinaryOffset, 64) == 0 &&
+              relativeSteps(Encoding::SignMagnitude, 1) == 1 && relativeSteps(Encoding::SignMagnitude, 65) == -1 && relativeSteps(Encoding::SignMagnitude, 69) == -5 &&
+              relativeSteps(Encoding::Absolute, 100) == 0, "relative encodings decode");
+
+        // The mapping service, with values kept here as a host would.
+        std::map<std::tuple<int, NodeId, uint32_t, uint32_t>, double> values;
+        auto key = [](const Assignment& a) { return std::tuple{int(a.kind), a.node, a.param, a.id}; };
+        auto value = [&](const Assignment& a) { return values.count(key(a)) ? values[key(a)] : 0.0; };
+        ControllerMapping mapping;
+        GroupPositions positions;
+        auto send = [&](const std::string& device, std::vector<uint8_t> bytes) {
+            auto out = mapping.handle(source(), groups, keys, positions, device, 1, bytes.data(), bytes.size(), value);
+            for(const auto& a : out) values[key(a.target)] = a.value;
+            return out;
+        };
+        values[key(parameter(synth, 7))] = .5;
+        check(send("smk", {0xB0, 74, 0}).empty() && send("smk", {0xB0, 74, 30}).empty(), "an absolute knob away from the value waits to pick up");
+        auto out = send("smk", {0xB0, 74, 64});
+        check(out.size() == 1 && out[0].control == "knob:5" && out[0].target == parameter(synth, 7) && std::abs(out[0].value - 64 / 127.0) < 1e-9, "it picks up at the value");
+        out = send("smk", {0xB0, 74, 80});
+        check(out.size() == 1 && std::abs(out[0].value - 80 / 127.0) < 1e-9, "and follows");
+        values[key(parameter(synth, 7))] = .2; // moved from the screen
+        check(send("smk", {0xB0, 74, 81}).empty(), "moved elsewhere, it waits again");
+        out = send("smk", {0xB0, 74, 20});
+        check(out.size() == 1 && std::abs(out[0].value - 20 / 127.0) < 1e-9, "and picks up crossing the value");
+        check(send("other", {0xB0, 74, 21}).empty() && send("smk", {0xB1, 74, 21}).empty(), "another device or channel is not this knob");
+        s.assign("knob:11", target(Assignment::Kind::Control, super)); run(s);
+        values[key(target(Assignment::Kind::Control, super))] = .5;
+        out = send("smk", {0xB0, 19, 3});
+        check(out.size() == 1 && out[0].control == "knob:11" && std::abs(out[0].value - (.5 + 3 / 127.0)) < 1e-9, "a relative knob steps from the value, with no pickup");
+        out = send("smk", {0xB0, 19, 66});
+        check(out.size() == 1 && std::abs(out[0].value - (.5 + 1 / 127.0)) < 1e-9, "sign-magnitude 66 steps down two");
+        values[key(target(Assignment::Kind::PartLevel, keys))] = .7;
+        out = send("smk", {0xB0, 73, 89});
+        check(out.size() == 1 && out[0].target == target(Assignment::Kind::PartLevel, keys), "a fader picks up its part's level");
+        out = send("smk", {0xB0, 25, 127});
+        check(out.size() == 1 && out[0].target == target(Assignment::Kind::Scene, verse) && send("smk", {0xB0, 25, 0}).empty(), "a scene button selects its scene on the press");
+        out = send("smk", {0xB0, 30, 127}); send("smk", {0xB0, 30, 0});
+        const auto again = send("smk", {0xB0, 30, 127});
+        check(out.size() == 1 && out[0].value == 1 && again.size() == 1 && again[0].value == 0, "a momentary button toggles a mute");
+        out = send("modx", {0xB0, 21, 64});
+        check(positions.size() == 8 && positions[7] == 1 && out.empty(), "a row's own numbers move its group to that row (blank here)");
+        check(send("smk", {0xB0, 1, 64}).empty(), "the mod wheel with nothing assigned is passed through, not played here");
+
+        // The Sound's own assignments: the mod wheel to a parameter of its own, played in its part;
+        // a knob's when its part is selected. Only its own plugins and controls.
+        s.assign("wheel:2", parameter(bass, 7), lead);
+        s.assign("knob:5", target(Assignment::Kind::Control, bright), lead); run(s);
+        check(refused([&] { s.assign("wheel:2", parameter(synth, 7), lead); }) && refused([&] { s.assign("wheel:2", target(Assignment::Kind::PartLevel, keys), lead); }) &&
+              refused([&] { s.assign("wheel:2", target(Assignment::Kind::Control, super), lead); }), "a Sound's assignment plays only its own plugins and controls");
+        resolved = resolveControls(source(), groups, keys, {});
+        check(find(resolved, "wheel:2").parts.size() == 1 && find(resolved, "wheel:2").parts[0] == std::pair{lead, parameter(bass, 7)} && find(resolved, "wheel:2").target.kind == Assignment::Kind::None &&
+              find(resolved, "knob:5").layer != AssignmentLayer::Sound, "the wheel plays the Lead's assignment in the Lead; the knob is not the Lead's when Keys is selected");
+        const auto selected = resolveControls(source(), groups, lead, {});
+        check(find(selected, "knob:5").layer == AssignmentLayer::Sound && find(selected, "knob:5").label == "Brightness", "with the Lead selected, its knob assignment plays");
+        values[key(parameter(bass, 7))] = .5;
+        out = send("smk", {0xB0, 1, 64});
+        check(out.size() == 1 && out[0].target == parameter(bass, 7), "moving the mod wheel plays the Sound's target");
+        s.assign("wheel:2", target(Assignment::Kind::Control, super)); run(s);
+        check(find(resolveControls(source(), groups, keys, {}), "wheel:2").target == target(Assignment::Kind::Control, super), "a Performance override plays in place of every part's");
+
+        // Saved with the Performance, each with its part.
+        s.savePerformance((root / "controllers").string());
+        Session t(48000, frames, {}, stereoIn);
+        t.loadPerformance((root / "controllers").string());
+        size_t sounds = 0; for(const auto& o : t.assignments()) sounds += o.part == lead;
+        check(t.assignments().size() == 4 && sounds == 2, "a part's own assignments round-trip with the Performance");
+        (void)fx;
+    }
 }
 
 int main(int argc, char** argv)
@@ -168,6 +279,7 @@ int main(int argc, char** argv)
     {
         state_files::TemporaryDirectory temp;
         layers(argv[1], argv[2], temp.path);
+        controllers(argv[1], argv[2], temp.path);
     }
     catch(const std::exception& e) { std::fprintf(stderr, "FAIL: %s\n", e.what()); return 1; }
     if(!failures) std::puts("ok: physical controls resolve in layers and groups, by page, row and mode, and save");

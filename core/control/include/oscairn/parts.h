@@ -201,7 +201,7 @@ namespace oscairn
         bool operator==(const Assignment&) const = default;
     };
     inline constexpr std::array<const char*, 6> assignmentKinds{"none", "parameter", "control", "partLevel", "partMute", "scene"};
-    struct AssignmentOverride { std::string control; Assignment target; bool operator==(const AssignmentOverride&) const = default; };
+    struct AssignmentOverride { std::string control; Assignment target; uint32_t part = 0; bool operator==(const AssignmentOverride&) const = default; }; // part: a part's Sound's own; 0 the Performance's
     bool validPhysicalControl(const std::string& control); // knob, fader, button, wheel, strip, jog, pedal or footswitch, then a colon and 1 to 999
 
     // A scene: a state of the Performance for a section of a song (RFC 0011's full model). Storing
