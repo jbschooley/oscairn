@@ -551,7 +551,7 @@ namespace oscairn
         uint32_t midiOutCount_ = 0;
         // Clock out (setClockOutputs): its outputs, and on the audio thread whether the transport
         // played at the last block, where that block ended, the next pulse's number, and the
-        // outputs the last block went to (a change starts the new device).
+        // outputs the last block went to (one added is started, one dropped is stopped).
         std::vector<DeviceRule> clockOutputs_;          // control thread
         std::atomic<uint64_t> clockPorts_{ 0 };         // their outputs now, a bit each
         bool clockPlaying_ = false;

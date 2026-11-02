@@ -186,9 +186,9 @@ with a Performance (it is cabling). While the transport plays, `Session` writes 
 24th of a beat at its sample, computed afresh from each block's beat position and tempo, so it
 cannot drift; Start when it starts from the top, else Song Position (in sixteenths) and
 Continue; Stop when it stops; a jump while playing (another Performance, an external clock's
-song position) is Stop, Song Position and Continue; outputs chosen or swapped while playing
-get Song Position and Continue too, since the new device never saw a Start. These join the
-parts' MIDI in time order
+song position) is Stop, Song Position and Continue; an output chosen while playing gets Song
+Position and Continue, since its device never saw a Start, and one dropped gets Stop, while the
+outputs already running get only clock. These join the parts' MIDI in time order
 and leave by step 1's path. `control-session` measures the timestamps offline: at 133 BPM (a
 pulse every 902.26 samples) over 400 blocks of uneven sizes, 121 pulses, none missed or
 doubled, each within half a sample (0.496 at worst) of its ideal time; Start first, Stop once,

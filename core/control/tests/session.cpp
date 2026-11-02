@@ -257,7 +257,11 @@ namespace
         sent.clear();
         control.setClockOutputs( {} );
         run( 512 );
-        check( sent.empty() && control.transportState().clockOutputs.empty(), "no outputs chosen: no clock" );
+        check( sent.size() == 1 && sent[0].bytes[0] == 0xFC && sent[0].ports == 1u << 3 && control.transportState().clockOutputs.empty(),
+               "no outputs chosen: the device it left gets Stop, then no clock" );
+        sent.clear();
+        run( 512 );
+        check( sent.empty(), "and nothing after" );
         // Outputs chosen while the transport plays start the device: Song Position and Continue,
         // not bare pulses (RFC 0012 step 2).
         control.setClockOutputs( { { DeviceRule::Kind::UsbNamed, DeviceRule::Match::Contains, 0, "tr-8" } } );
@@ -270,9 +274,27 @@ namespace
         control.setClockOutputs( { { DeviceRule::Kind::UsbNamed, DeviceRule::Match::Contains, 0, "smk" } } );
         sent.clear();
         run( 64 );
-        check( sent.size() >= 2 && sent[0].bytes[0] == 0xF2 && sent[1].bytes[0] == 0xFB &&
-               std::all_of( sent.begin(), sent.end(), []( const Sent& m ) { return m.ports == 1u << 4; } ),
-               "the next device is started as well" );
+        // What went to the outputs in mask, other than clock pulses.
+        auto to = [&]( uint64_t mask ) {
+            std::vector<uint8_t> out;
+            for( const auto& m : sent ) if( ( m.ports & mask ) && m.bytes[0] != 0xF8 ) out.push_back( m.bytes[0] );
+            return out;
+        };
+        check( to( 1u << 4 ) == std::vector<uint8_t>{ 0xF2, 0xFB } && to( 1u << 3 ) == std::vector<uint8_t>{ 0xFC },
+               "the next device is started as well, and the one it left is stopped" );
+        // Adding a device while playing starts that one only: the one already running keeps its
+        // place and gets just clock. Removing a device stops that one only.
+        control.setClockOutputs( { { DeviceRule::Kind::UsbNamed, DeviceRule::Match::Contains, 0, "smk" },
+                                   { DeviceRule::Kind::UsbNamed, DeviceRule::Match::Contains, 0, "tr-8" } } );
+        sent.clear();
+        for( int i = 0; i < 8; ++i ) run( 256 );
+        check( to( 1u << 3 ) == std::vector<uint8_t>{ 0xF2, 0xFB } && to( 1u << 4 ).empty(), "a second device: Song Position and Continue to it alone" );
+        check( std::count_if( sent.begin(), sent.end(), []( const Sent& m ) { return m.bytes[0] == 0xF8 && m.ports == ( 1u << 3 | 1u << 4 ); } ) > 0,
+               "then clock to both" );
+        control.setClockOutputs( { { DeviceRule::Kind::UsbNamed, DeviceRule::Match::Contains, 0, "smk" } } );
+        sent.clear();
+        for( int i = 0; i < 8; ++i ) run( 256 );
+        check( to( 1u << 3 ) == std::vector<uint8_t>{ 0xFC } && to( 1u << 4 ).empty(), "a device removed: Stop to it alone" );
         rejects( [&] { control.setClockOutputs( { { DeviceRule::Kind::UsbNamed, DeviceRule::Match::Regex, 0, "(" } } ); }, "an invalid pattern" );
     }
 
