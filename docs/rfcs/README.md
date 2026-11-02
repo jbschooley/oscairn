@@ -20,7 +20,7 @@ tests it, with a note on what remains of a step that is partly done. The
 | [0009](0009-sound-assets-and-dependencies.md) | Sound assets and dependencies | steps 1–2 implemented; LV2 mapping and packages planned |
 | [0010](0010-plugin-worker-isolation.md) | Plugin worker isolation | in progress: steps 1–5 implemented on macOS |
 | [0011](0011-performance-ui-and-editors.md) | Performance UI, routing views and plugin editors | in progress: steps 1–4 and undo implemented |
-| [0012](0012-sync-external-midi-and-multi-device.md) | Sync, external MIDI devices and multi-device setlists | proposed; input device selectors implemented |
+| [0012](0012-sync-external-midi-and-multi-device.md) | Sync, external MIDI devices and multi-device setlists | in progress: input device selectors, MIDI out and clock out implemented |
 | [0013](0013-awm2-class-sample-engine.md) | An AWM2-class sample engine | proposed |
 | [0014](0014-fm-engine.md) | An 8-operator FM engine | proposed |
 | [0015](0015-analog-modeling-engine.md) | An analog-modeling engine | proposed |

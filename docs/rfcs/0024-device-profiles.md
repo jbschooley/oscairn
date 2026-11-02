@@ -323,7 +323,7 @@ beyond the first eight parts, Record, Rewind and Fast Forward (the control API h
 record), the V-pots' LED rings, the lower scribble row (the V-pots' labels), the timecode
 display.
 
-## Step 1 status## Step 1 status
+## Step 1 status
 
 Built 2026-11-01 (`hosts/standalone/Profile.h`, [schema](../profile.schema.json)). Profiles are
 strict JSON, as themes are: unknown fields, wrong types and impossible values (more realtime

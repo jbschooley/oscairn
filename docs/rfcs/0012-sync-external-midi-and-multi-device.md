@@ -1,7 +1,7 @@
 # RFC 0012: Sync, external MIDI devices and multi-device setlists
 
-Status: proposed, 2026-10-30. Input device selectors implemented (below); the build steps
-not started (see [Progress](#progress)). Covers two related needs:
+Status: in progress. Input device selectors implemented (below); steps 1 (MIDI out) and 2
+(clock out) built, the rest not started (see [Progress](#progress)). Covers two related needs:
 - the Ignite's role as a sequencer for external MIDI and CV instruments;
 - several Oscairn devices (and other gear) following one performance.
 
