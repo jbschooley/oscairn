@@ -247,9 +247,9 @@ namespace oscairn::assets
         std::error_code ec; const auto path = fs::canonical(directory, ec); if(ec) return false;
         for(const auto& [id, l] : libraries_)
         {
-            const fs::path base(l.path);
+            const auto base = fs::weakly_canonical(l.path, ec); // the path may pass through a link, as macOS's /var does
             const auto [end, at] = std::mismatch(base.begin(), base.end(), path.begin(), path.end());
-            if(end != base.end()) continue;
+            if(ec || end != base.end()) continue;
             library = id; relative = fs::relative(path, base).generic_string(); if(relative == ".") relative.clear();
             return true;
         }
@@ -264,8 +264,8 @@ namespace oscairn::assets
         const auto found = libraries_.find(ref.library);
         if(found != libraries_.end())
         {
-            const fs::path base(found->second.path); std::error_code ec;
-            const auto file = fs::canonical(base / ref.path, ec);
+            std::error_code ec; const auto base = fs::weakly_canonical(found->second.path, ec); // compared with a canonical file
+            const auto file = ec ? fs::path() : fs::canonical(base / ref.path, ec);
             if(!ec)
             {
                 const auto [end, at] = std::mismatch(base.begin(), base.end(), file.begin(), file.end());

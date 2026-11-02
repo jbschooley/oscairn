@@ -50,6 +50,16 @@ int main() { try {
     fs::remove_all(temp.path / "Downloads");
     { auto again = imported; check(store.resolve(again).filename() == "take 1.wav" && again.library == "user", "imported file resolves after the original is deleted"); }
 
+    // A data home reached through a link (macOS's /var is /private/var) still resolves.
+    {
+        fs::create_directories(temp.path / "real home");
+        fs::create_symlink(temp.path / "real home", temp.path / "linked");
+        assets::Store linked(temp.path / "linked");
+        write(temp.path / "take 2.wav", "take two");
+        auto ref = linked.import(temp.path / "take 2.wav");
+        check(linked.resolve(ref).filename() == "take 2.wav", "the user library resolves through a linked data home");
+    }
+
     // Registrations and indexes persist for a new store on the same root.
     assets::Store reopened(temp.path / "store");
     check(reopened.libraries().size() == 3, "libraries persist");
