@@ -9,6 +9,7 @@
 // - Asking before an app opens (RFC 0025).
 //   oscairn_desktop_gaps_test PLUGIN_DIR SCANNER THEMES [SNAPSHOTS]
 #include "../DesktopShell.h"
+#include "../Launcher.h"
 #include "../LibraryPane.h"
 #include "../PartsView.h"
 #include "../Settings.h"
@@ -360,9 +361,16 @@ int main(int argc, char** argv)
                 check(pane.current() == -1 && pane.message().contains("not answering"), "a setlist entry says it did not open: " + pane.message().toStdString());
                 pane.step(1);
                 check(pane.current() == -1, "and stepping does not move on from an entry that never opened");
+                standalone::Launcher launcher(engine, {}, {});
+                standalone::setDesktopMode(launcher, 1); launcher.setSize(900, 600); launcher.resized();
+                launcher.recovery().update();
+                check(launcher.recovery().isVisible() && launcher.recovery().notice().contains("Reconnecting"), "Home shows the disconnect notice");
+                check(!launcher.recovery().restartShown(), "no Restart while the engine may come back (this engine is not managed)");
                 forcedHold = false;
                 for(int i = 0; i < 600 && !engine.connected(); ++i) juce::MessageManager::getInstance()->runDispatchLoopUntil(10); // the engine answers again
                 check(engine.connected(), "the client reconnects");
+                launcher.recovery().update();
+                check(!launcher.recovery().isVisible(), "the notice goes when the engine is back");
             }
             juce::LookAndFeel::setDefaultLookAndFeel(nullptr);
             configuration.deleteRecursively();

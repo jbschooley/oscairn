@@ -134,12 +134,46 @@ namespace oscairn::standalone
         menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea(localAreaToGlobal(contextArea_)), [save = shell_.save](int chosen) { if(chosen > 0) save(chosen == 2); });
     }
 
-    Launcher::Launcher(Engine& engine, std::vector<App> apps, TopBar::Shell shell) : engine_(engine), apps_(std::move(apps)), states_(apps_.size()), bar_(engine, "Home", [&] {
+    void EngineRecovery::update()
+    {
+        const bool disconnected = !engine_.connected();
+        restart_ = disconnected && engine_.canRestart();
+        notice_ = !disconnected ? juce::String()
+                : engine_.canRestart() ? "Engine stopped. Restart opens a fresh session." : "Engine disconnected. Reconnecting...";
+        setVisible(disconnected);
+        repaint();
+    }
+    void EngineRecovery::paint(juce::Graphics& g)
+    {
+        g.setColour(ink(Ink::Danger));
+        g.fillRoundedRectangle(getLocalBounds().toFloat(), 6.f);
+        const int mode = std::max(1, desktopMode(*this));
+        const int side = mode == 2 ? 40 : 28;
+        button_ = restart_ ? getLocalBounds().removeFromRight(170).reduced(8, (getHeight() - side) / 2) : juce::Rectangle<int>{};
+        g.setColour(ink(Ink::Danger).contrasting());
+        drawInked(g, notice_, getLocalBounds().reduced(12, 0).withRight(button_.isEmpty() ? getRight() - 8 : button_.getX() - 8),
+                 juce::Font(juce::FontOptions(textSize(TextRole::Small, mode))), juce::Justification::centredLeft);
+        if(restart_)
+        {
+            g.setColour(ink(Ink::Danger).contrasting().withAlpha(.25f));
+            g.fillRoundedRectangle(button_.toFloat(), 5.f);
+            drawInked(g, "Restart engine", button_, juce::Font(juce::FontOptions(textSize(TextRole::Button, mode))), juce::Justification::centred);
+        }
+    }
+    void EngineRecovery::mouseDown(const juce::MouseEvent& e)
+    {
+        if(!restart_ || !button_.contains(e.getPosition())) return;
+        engine_.restart();
+        update();
+    }
+
+    Launcher::Launcher(Engine& engine, std::vector<App> apps, TopBar::Shell shell) : engine_(engine), apps_(std::move(apps)), states_(apps_.size()), recovery_(engine), bar_(engine, "Home", [&] {
         shell.home = {}; shell.back = {}; return shell; }()) // Home is here; nothing to go back to
     {
         setTitle("Home");
         bar_.showMark();
         addAndMakeVisible(bar_);
+        addChildComponent(recovery_); // the engine's notice and Restart, when it is gone
         timerCallback();
         startTimer(1000);
     }
@@ -147,6 +181,7 @@ namespace oscairn::standalone
     void Launcher::timerCallback()
     {
         for(size_t i = 0; i < apps_.size(); ++i) states_[i] = apps_[i].state ? apps_[i].state() : juce::String();
+        recovery_.update();
         repaint();
     }
 
@@ -159,6 +194,7 @@ namespace oscairn::standalone
     void Launcher::resized()
     {
         bar_.setBounds(getLocalBounds().removeFromTop(TopBar::heightFor(*this)));
+        recovery_.setBounds(getLocalBounds().withTrimmedTop(TopBar::heightFor(*this)).removeFromTop(36).reduced(8, 2));
         // Tiles in as many columns as fit at about 240 pixels, all of one size.
         const bool touch = mode() == 2 || desktopMode(*this) == 0;
         const int gap = touch ? 14 : 12, tileHeight = touch ? 150 : 132;

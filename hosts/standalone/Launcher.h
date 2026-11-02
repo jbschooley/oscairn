@@ -63,6 +63,25 @@ namespace oscairn::standalone
         juce::OwnedArray<juce::TextButton> buttons_;
     };
 
+    /// The engine's disconnect notice and its Restart button (RFC 0030's desktop, which has no
+    /// Panel to show them): a strip across the top of a view, shown while the engine is gone,
+    /// offering a restart when one is possible. Tapping the button restarts the managed engine.
+    class EngineRecovery : public juce::Component
+    {
+    public:
+        explicit EngineRecovery(Engine& engine) : engine_(engine) {}
+        void update();                              // says what is wrong, and whether Restart shows
+        const juce::String& notice() const { return notice_; }
+        bool restartShown() const { return restart_; }
+        void paint(juce::Graphics&) override;
+        void mouseDown(const juce::MouseEvent&) override;
+    private:
+        Engine& engine_;
+        juce::String notice_;
+        bool restart_ = false;
+        juce::Rectangle<int> button_;
+    };
+
     /// Home (RFC 0030): the product's apps as tiles under the top bar, each with a line of its
     /// state. In the design the launcher is an app answering oscairn.home, replaceable; until
     /// apps are packages (RFC 0022 step 2) this one is built in.
@@ -78,6 +97,7 @@ namespace oscairn::standalone
         };
         Launcher(Engine& engine, std::vector<App> apps, TopBar::Shell shell = {});
         int apps() const { return int(apps_.size()); }
+        EngineRecovery& recovery() { return recovery_; } // the engine's disconnect notice (RFC 0030)
         const juce::String& name(int app) const { return apps_[size_t(app)].name; }
         void open(int app); // after this click is done with the launcher: opening may replace it
 
@@ -93,6 +113,7 @@ namespace oscairn::standalone
         std::vector<App> apps_;
         std::vector<juce::Rectangle<int>> tiles_;
         std::vector<juce::String> states_;
+        EngineRecovery recovery_;
         TopBar bar_;
     };
 

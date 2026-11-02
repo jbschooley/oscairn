@@ -246,6 +246,7 @@ namespace oscairn::standalone
         };
         addAndMakeVisible(edit_);
         addChildComponent(play_);
+        addChildComponent(recovery_); // across the toolbar, when the engine is gone
         home_.onClick = [this] { if(onHome) juce::MessageManager::callAsync(onHome); }; // going Home replaces this view
         addChildComponent(home_);
         undo_.onClick = [this] { engine_.edit([](Control& c) { c.undo(); }); };
@@ -367,6 +368,7 @@ namespace oscairn::standalone
     void DesktopShell::timerCallback()
     {
         // Meters every tick; the rest five times a second.
+        recovery_.update(); // the disconnect notice and Restart: the desktop has no Panel to show them
         meters_.clear();
         for(const auto& m : engine_.meters()) meters_[m.part] = m.channels;
         if(++ticks_ % 4 == 0) refresh();
@@ -422,6 +424,8 @@ namespace oscairn::standalone
         const int mode = modeNumber(mode_);
         for(auto* l : {&tempoLabel_, &sceneLabel_, &status_}) l->setFont(juce::FontOptions(textSize(TextRole::Small, mode)));
         auto area = getLocalBounds();
+        recovery_.setBounds(area.removeFromTop(m.control + 2 * m.gap).reduced(m.gap * 2, m.gap).removeFromRight(getWidth() / 2 + 100));
+        area = getLocalBounds();
         auto bar = area.removeFromTop(m.control + 2 * m.gap).reduced(m.gap * 2, m.gap);
         // Undo and Redo first, so a narrow window shortens the status, never them.
         redo_.setBounds(bar.removeFromRight(m.control)); bar.removeFromRight(4);

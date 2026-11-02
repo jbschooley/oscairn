@@ -3,6 +3,7 @@
 
 #include "Engine.h"
 #include "Icons.h"
+#include "Launcher.h" // EngineRecovery
 #include "PartsModel.h"
 #include "PartsView.h"
 #include "PlayView.h"
@@ -58,6 +59,7 @@ namespace oscairn::standalone
         void showTab(Tab tab);
         uint32_t selectedPart() const { return selected_; } // the part the Part tab shows
         PlayView& play() { return play_; }
+        EngineRecovery& recovery() { return recovery_; } // the engine's disconnect notice (RFC 0030)
         void detach(Tab tab); // the tab's view in a window of its own, beside this one
         static bool tabNamed(const juce::String& name, Tab& tab);
 
@@ -81,6 +83,7 @@ namespace oscairn::standalone
         uint32_t selected_ = 0; // the part the Part tab shows
         PartsState state_;
         std::map<uint32_t, std::vector<double>> meters_; // per part, per channel
+        EngineRecovery recovery_{engine_}; // shown across the toolbar when the engine is gone
         std::vector<Scene> scenes_;
         uint32_t scene_ = 0;
         int ticks_ = 0;
