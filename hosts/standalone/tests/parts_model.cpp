@@ -109,7 +109,7 @@ int main(int argc, char** argv)
             const auto state = readParts(s.graphState());
             std::vector<std::string> labels;
             for(const auto& f : partFields(state.parts[1], state)) labels.push_back(f.label + (f.span ? "" : " (row)"));
-            const std::vector<std::string> expected{"Plays from", "Notes at once", "Keys and velocity (row)", "Transpose", "Plays to", "Level", "Send to Room"};
+            const std::vector<std::string> expected{"Plays from", "Notes at once", "Keys and velocity (row)", "Transpose", "Plays to", "MIDI out", "Level", "Send to Room"};
             check(labels == expected, "a part's fields, in order");
             const auto busFields = partFields(state.buses[0], state);
             check(busFields.size() == 2 && busFields[0].kind == PartField::Kind::Output && busFields[1].kind == PartField::Kind::Level, "a bus: where it plays and its level, no send to itself");
@@ -136,6 +136,14 @@ int main(int argc, char** argv)
         check(toggled(devices, ruleFor(keylab)) == std::vector<DeviceRule>{{DeviceRule::Kind::BuiltIn}}, "picking it again removes it");
         check(toggled(devices, {DeviceRule::Kind::All}).empty() && devicesName(toggled({}, ruleFor(din))) == "Port 2", "Any device clears; a DIN port by number");
         check(devicesName({{DeviceRule::Kind::UsbNamed, DeviceRule::Match::Contains, 0, "key"}, {DeviceRule::Kind::Network}}) == "“key” + Network", "patterns and kinds named");
+        // MIDI out from the Part page (RFC 0012 step 1): an output by name on a channel, then off.
+        const MidiEndpoint modx{MidiEndpoint::Kind::Usb, 0, "MODX M"};
+        check(midiOutName({}) == "Off" && readParts(s.graphState()).parts[1].midiOut == PartMidiOut{}, "MIDI out starts off");
+        setMidiOut(s, lead, {toggled({}, ruleFor(modx)), 3});
+        const auto sent = readParts(s.graphState()).parts[1].midiOut;
+        check(s.parts()[1].midiOut.channel == 3 && sent.channel == 3 && midiOutName(sent.devices) == "MODX M", "the lead sends to the MODX on channel 3: " + midiOutName(sent.devices));
+        setMidiOut(s, lead, {toggled(sent.devices, ruleFor(modx)), 3});
+        check(s.parts()[1].midiOut.devices.empty() && midiOutName(readParts(s.graphState()).parts[1].midiOut.devices) == "Off", "picking it again turns it off");
 
         // Splits from the Part page: a layer added in a second lane, its keys and level, then
         // removing the lane, and the split, take their plugins with them.

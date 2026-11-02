@@ -103,6 +103,8 @@ namespace oscairn::standalone
     void Engine::setTempo(double v){command([this,v]{control_->setTempo(v);});}
     void Engine::setFollowMidiClock(bool v){command([this,v]{control_->setClockSource(v?Transport::ClockSource::MidiClock:Transport::ClockSource::Internal);});}
     bool Engine::followsMidiClock()const{return control_->clockSource()==Transport::ClockSource::MidiClock;}
+    void Engine::setClockOutputs(std::vector<DeviceRule> v){command([this,v]{control_->setClockOutputs(v);});}
+    std::vector<DeviceRule> Engine::clockOutputs()const{return control_->transportState().clockOutputs;}
     int Engine::trackChannel()const{return static_cast<int>(param("sequencer",sequencer::channel(sequenceTrack_)));}
     void Engine::note(bool on,int key,float velocity)
     {
@@ -364,7 +366,7 @@ namespace oscairn::standalone
     {
         const auto transport=control_->transportState();const auto host=control_->sessionStatus();
         return {connected() && transport.playing,transport.tempo,connected() && transport.playing?static_cast<int>(param("sequencer",sequencer::playhead(sequenceTrack_))):-1,
-                failure_.empty()?(host.audioReady?host.audioDevice:"Audio unavailable: "+host.audioDevice):"Disconnected: "+failure_,host.midiInputs,host.failures,host.cpuLoad};
+                failure_.empty()?(host.audioReady?host.audioDevice:"Audio unavailable: "+host.audioDevice):"Disconnected: "+failure_,host.midiInputs,host.failures,host.cpuLoad,host.midiOutputs};
     }
     void Engine::failed(const std::string& message)
     {

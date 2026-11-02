@@ -104,7 +104,7 @@ namespace oscairn::standalone
         {
             graph_ = engine_.graph();
             state_ = readParts(graph_); routing_ = readRouting(graph_);
-            const auto status = engine_.status(); endpoints_ = status.midiInputs; failures_ = status.failures; scenes_ = graph_.scenes; untouched_ = graph_.untouched; scene_ = graph_.scene; macros_ = graph_.macros;
+            const auto status = engine_.status(); endpoints_ = status.midiInputs; outputs_ = status.midiOutputs; failures_ = status.failures; scenes_ = graph_.scenes; untouched_ = graph_.untouched; scene_ = graph_.scene; macros_ = graph_.macros;
         }
         catch(const std::exception&) { return; }
         if(page_ && page_ != controlsPage && page_ != mixerPage && page_ != routingPage && !part(page_)) { page_ = 0; shape_.clear(); }
@@ -131,7 +131,7 @@ namespace oscairn::standalone
                     for(const auto& l : b.lanes) { shape += "["; boxes(l.boxes); shape += "]"; }
                 }
             };
-            for(const auto& p : *list) { shape += "|" + std::to_string(p.id) + ":" + p.name + ":" + std::to_string(p.through) + ":" + devicesName(p.devices); boxes(p.chain); }
+            for(const auto& p : *list) { shape += "|" + std::to_string(p.id) + ":" + p.name + ":" + std::to_string(p.through) + ":" + devicesName(p.devices) + ">" + devicesName(p.midiOut.devices) + "/" + std::to_string(p.midiOut.channel); boxes(p.chain); }
         }
         shape += "|selected:" + std::to_string(selectedSplit_) + "/" + std::to_string(selectedLane_);
         if(page_ == routingPage)
@@ -810,6 +810,32 @@ namespace oscairn::standalone
                     out->setBounds(r.removeFromLeft(240).reduced(2)); addAndMakeVisible(*out); controls_.push_back(std::move(out));
                     break;
                 }
+                case K::MidiOut:
+                {
+                    // Which hardware outputs its MIDI goes to (RFC 0012 step 1), picked from a menu, and on which channel.
+                    const auto out = p->midiOut;
+                    auto* pick = button(r.removeFromLeft(220).reduced(2), text(midiOutName(out.devices) + (out.devices.empty() || resolveDevices(out.devices, outputs_) ? "" : " (not connected)")), {});
+                    pick->setTooltip("The MIDI outputs this part's notes and controllers also go to, for external instruments");
+                    pick->onClick = [this, id, pick] {
+                        const auto* q = part(id); if(!q) return;
+                        outputsMenu(q->midiOut.devices, outputs_, *pick, [safe = juce::Component::SafePointer<PartsView>(this), id](std::vector<DeviceRule> devices) {
+                            const auto* q = safe ? safe->part(id) : nullptr; if(!q) return;
+                            safe->edit([id, out = PartMidiOut{std::move(devices), q->midiOut.channel}](Control& c) { setMidiOut(c, id, out); });
+                        });
+                    };
+                    auto channel = std::make_unique<juce::ComboBox>("MIDI out channel");
+                    channel->addItem("Own channels", 1);
+                    for(int ch = 1; ch <= 16; ++ch) channel->addItem("Channel " + juce::String(ch), ch + 1);
+                    channel->setSelectedId(out.channel + 1, juce::dontSendNotification);
+                    channel->setEnabled(!out.devices.empty());
+                    channel->setTooltip("The channel it sends on; Own channels keeps each message's");
+                    channel->onChange = [this, id, raw = channel.get()] {
+                        const auto* q = part(id); if(!q) return;
+                        edit([id, out = PartMidiOut{q->midiOut.devices, uint8_t(raw->getSelectedId() - 1)}](Control& c) { setMidiOut(c, id, out); });
+                    };
+                    channel->setBounds(r.removeFromLeft(150).reduced(2)); addAndMakeVisible(*channel); controls_.push_back(std::move(channel));
+                    break;
+                }
                 case K::Level:
                     toggle(r.removeFromRight(34), "Mute", muteOf(id), setMute(id));
                     updates.push_back(slider(r.reduced(2, 10), 0, 1, levelOf(id), setLevel(id)).second);
@@ -1023,6 +1049,27 @@ namespace oscairn::standalone
             if(!safe || chosen <= 0 || size_t(chosen) > safe->plugins_.size()) return;
             const auto plugin = safe->plugins_[size_t(chosen) - 1];
             safe->edit([plugin](Control& c) { addLoose(c, plugin); });
+        });
+    }
+
+    void outputsMenu(const std::vector<DeviceRule>& rules, const std::vector<MidiEndpoint>& outputs, juce::Component& at, std::function<void(std::vector<DeviceRule>)> chosen)
+    {
+        std::vector<DeviceRule> choices;
+        juce::PopupMenu menu;
+        auto add = [&](const DeviceRule& r, const std::string& label) {
+            choices.push_back(r);
+            const bool ticked = r.kind == DeviceRule::Kind::All ? rules.empty() : std::find(rules.begin(), rules.end(), r) != rules.end();
+            menu.addItem(int(choices.size()), text(label), true, ticked);
+        };
+        add({DeviceRule::Kind::All}, "Off"); // toggled() clears the list for it
+        menu.addSectionHeader("Connected");
+        if(outputs.empty()) menu.addItem(-1, "No MIDI outputs", false);
+        for(const auto& e : outputs) add(ruleFor(e), e.kind == MidiEndpoint::Kind::Port ? devicesName({ruleFor(e)}) + " (" + e.name + ")" : e.name);
+        // Other rules (patterns, outputs not connected) stay listed, so they can be removed.
+        for(const auto& r : rules)
+            if(std::find(choices.begin(), choices.end(), r) == choices.end()) add(r, devicesName({r}) + (resolveDevices({r}, outputs) ? "" : " (not connected)"));
+        menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&at), [rules, choices, chosen = std::move(chosen)](int picked) {
+            if(picked > 0 && size_t(picked) <= choices.size()) chosen(toggled(rules, choices[size_t(picked) - 1]));
         });
     }
 

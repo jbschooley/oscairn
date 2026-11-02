@@ -10,6 +10,10 @@
 
 namespace oscairn::standalone
 {
+    /// A menu of MIDI outputs (RFC 0012): Off, then each connected output by name, and rules naming
+    /// outputs not connected; an item adds or removes its rule, and `chosen` gets the rules then.
+    void outputsMenu(const std::vector<DeviceRule>& rules, const std::vector<MidiEndpoint>& outputs, juce::Component& at, std::function<void(std::vector<DeviceRule>)> chosen);
+
     /// The Parts and Part views (RFC 0011). Parts lists every part (where it plays from, its
     /// chain, level, mute and sends) and the shared buses under them; tapping a part opens its
     /// chain, zone, output and sends. Every edit is heard at once; nothing needs wiring. Drawn
@@ -58,6 +62,7 @@ namespace oscairn::standalone
         std::vector<PluginChoice> plugins_;
         PartsState state_;
         std::vector<MidiEndpoint> endpoints_; // the host's MIDI inputs
+        std::vector<MidiEndpoint> outputs_;   // and its MIDI outputs, for MIDI out
         std::vector<Control::SessionStatus::PluginFailure> failures_; // plugins that failed and are silent
         bool failed(NodeId node) const { return std::any_of(failures_.begin(), failures_.end(), [&](const auto& f) { return f.node == node; }); }
         std::vector<Scene> scenes_;

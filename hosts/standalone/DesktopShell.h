@@ -29,12 +29,14 @@ namespace oscairn::standalone
     public:
         explicit SequencerPane(Engine& engine, bool transport = true); // transport: Play, Stop and clock on screen
         void refresh();
+        juce::Button& clockOut() { return clockOut_; }
         void resized() override;
     private:
         void timerCallback() override { refresh(); }
         Engine& engine_;
         juce::TextButton play_{"Play"}, stop_{"Stop"};
         juce::ToggleButton sync_{"Follow MIDI clock"};
+        juce::TextButton clockOut_; // the MIDI outputs clock goes to (RFC 0012 step 2)
         Screen screen_;
     };
 

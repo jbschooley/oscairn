@@ -70,7 +70,7 @@ namespace oscairn::standalone
             row.level = p.level; row.pan = p.pan; row.mute = p.mute; row.solo = p.solo; row.through = p.bus;
             // Its own mute, or someone else's solo: the wires where it plays are muted either way.
             row.silenced = !p.mute && std::any_of(g.wires.begin(), g.wires.end(), [&](const Wire& w) { return w.owner == WireOwner::Part && w.part == p.id && w.fader && w.mute; });
-            row.notes = p.input.kind == PartInput::Kind::Notes; row.devices = p.input.devices; row.maxNotes = p.input.maxNotes;
+            row.notes = p.input.kind == PartInput::Kind::Notes; row.devices = p.input.devices; row.maxNotes = p.input.maxNotes; row.midiOut = p.midiOut;
             for(const auto& s : p.sends) row.sends[s.bus] = s.level;
             if(!p.input.zones.empty())
             {
@@ -728,7 +728,9 @@ namespace oscairn::standalone
         std::vector<PartField> fields;
         // What plays it and how: only for a part that plays notes.
         if(p.notes) fields.insert(fields.end(), {{K::Devices, "Plays from"}, {K::NoteLimit, "Notes at once"}, {K::Zone, "Keys and velocity", 0}, {K::Transpose, "Transpose"}});
-        fields.insert(fields.end(), {{K::Output, "Plays to"}, {K::Level, "Level"}});
+        fields.push_back({K::Output, "Plays to"});
+        if(!p.bus) fields.push_back({K::MidiOut, "MIDI out"}); // a bus has no notes to send
+        fields.push_back({K::Level, "Level"});
         for(const auto& b : state.buses) if(b.id != p.id) fields.push_back({K::Send, "Send to " + b.name, 1, b.id});
         return fields;
     }
@@ -800,6 +802,14 @@ namespace oscairn::standalone
         auto input = found->input;
         input.devices = devices;
         c.setPartInput(part, input);
+        c.commit();
+    }
+
+    std::string midiOutName(const std::vector<DeviceRule>& rules) { return rules.empty() ? "Off" : devicesName(rules); }
+
+    void setMidiOut(Control& c, uint32_t part, const PartMidiOut& midiOut)
+    {
+        c.setPartMidiOut(part, midiOut);
         c.commit();
     }
 

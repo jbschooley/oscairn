@@ -31,8 +31,10 @@ namespace oscairn::standalone
         stop_.onClick = [this] { engine_.setPlaying(false); };
         sync_.setTooltip("Start, stop and follow tempo from an external MIDI clock");
         sync_.onClick = [this] { engine_.setFollowMidiClock(sync_.getToggleState()); };
-        for(auto* c : std::initializer_list<juce::Component*>{&play_, &stop_, &sync_}) addChildComponent(c);
-        for(auto* c : std::initializer_list<juce::Component*>{&play_, &stop_, &sync_}) c->setVisible(transport);
+        clockOut_.setTooltip("The MIDI outputs the tempo, Start and Stop go to, for drum machines and sequencers; kept with this device, not the Performance");
+        clockOut_.onClick = [this] { outputsMenu(engine_.clockOutputs(), engine_.status().midiOutputs, clockOut_, [this](std::vector<DeviceRule> outputs) { engine_.setClockOutputs(std::move(outputs)); }); };
+        for(auto* c : std::initializer_list<juce::Component*>{&play_, &stop_, &sync_, &clockOut_}) addChildComponent(c);
+        for(auto* c : std::initializer_list<juce::Component*>{&play_, &stop_, &sync_, &clockOut_}) c->setVisible(transport);
         addAndMakeVisible(screen_);
         refresh();
         startTimerHz(30); // as a panel's screen: a step clicked or dragged shows at once, the playhead moves smoothly
@@ -43,6 +45,7 @@ namespace oscairn::standalone
         play_.setColour(juce::TextButton::buttonColourId, playing ? ink(Ink::Positive) : ink(Ink::Raised));
         play_.setColour(juce::TextButton::textColourOffId, playing ? ink(Ink::Background) : ink(Ink::Text));
         sync_.setToggleState(engine_.followsMidiClock(), juce::dontSendNotification);
+        clockOut_.setButtonText("Clock out: " + juce::String::fromUTF8(midiOutName(engine_.clockOutputs()).c_str()));
         screen_.refresh();
     }
     void SequencerPane::resized()
@@ -54,7 +57,8 @@ namespace oscairn::standalone
             auto bar = area.removeFromTop(control);
             play_.setBounds(bar.removeFromLeft(88)); bar.removeFromLeft(6);
             stop_.setBounds(bar.removeFromLeft(88)); bar.removeFromLeft(16);
-            sync_.setBounds(bar.removeFromLeft(180));
+            sync_.setBounds(bar.removeFromLeft(180)); bar.removeFromLeft(6);
+            clockOut_.setBounds(bar.removeFromLeft(220));
             area.removeFromTop(12);
         }
         screen_.setBounds(area);

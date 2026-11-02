@@ -166,6 +166,12 @@ ready to paste into a profile. `--list` only lists the inputs. Where there is no
 (a shell that runs one command and shows its output), `--seconds 60` listens for a minute and then
 prints the table.
 
+A part sends its MIDI to hardware from the Part page's **MIDI out** tile
+([RFC 0012](../docs/rfcs/0012-sync-external-midi-and-multi-device.md#step-1-status)): the
+connected outputs by name, and the channel (Own channels keeps each message's). **Clock out**,
+beside Follow MIDI clock in the Groovebox, chooses the outputs the tempo, Start and Stop go to;
+it is the device's cabling, not saved with the Performance.
+
 The app starts at **Home** ([RFC 0030](../docs/rfcs/0030-system-shell-launcher-and-navigation.md)):
 a top bar and the apps as tiles, each with a line of its state: Performance, Library, Setlist
 and Groovebox, those the profile offers (the computer's and the KICK's offer all four). In the desktop layout, Home is the window's content: Performance opens in its place (its

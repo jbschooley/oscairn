@@ -15,8 +15,8 @@ prepared sounds ([RFC 0005](0005-sound-contexts.md)) and the Parts views
 Checked when built and tested; the sections below say how.
 
 - [x] Input device selectors on parts ([selectors](#choosing-devices-selectors))
-- [x] 1. MIDI out ([status](#step-1-status); output nodes, latency offsets and the loopback gate not yet)
-- [x] 2. Clock out ([status](#step-2-status); clock, Start, Stop, Continue and Song Position out; the gate's drum machine not yet)
+- [x] 1. MIDI out ([status](#step-1-status); the Part page's control built; output nodes, latency offsets and the loopback gate not yet)
+- [x] 2. Clock out ([status](#step-2-status); clock, Start, Stop, Continue and Song Position out, chosen beside the transport on the desktop; the gate's drum machine not yet)
 - [ ] 3. Link
 - [ ] 4. External instruments
 - [ ] 5. Setlist cues
@@ -150,10 +150,17 @@ another machine) and `control-json-protocol` (the status's `midiOutputs`); no MI
 opened for any of it. Not tested: the release when a plugin is removed, the pedals lifted, and
 the desktop engine's sending, which needs a device (the gate's loopback).
 
+On the desktop, the Part page has a **MIDI out** tile for every part but buses: a menu of the
+connected outputs by name (Off, then each output, ticked as chosen; a rule naming an output not
+connected stays listed, so it can be removed) and the channel (Own channels, or 1 to 16, which
+the engine applies to every message). `desktop-gaps` shows the output chosen on the tile and
+sets the channel from it, against a session told of an output, and `desktop-parts-model` sets
+and clears it through the model; no device was opened. The menu itself is not driven by a test.
+
 Not yet: MIDI output ports as graph nodes of their own (a part sending to several devices on
 different channels needs a part each); per-destination latency offsets (the output follows
 the audio's latency only); the gate's loopback measurement; external notes owned per channel
-across parts, and All Notes Off on owned channels; the Part page's control for it.
+across parts, and All Notes Off on owned channels.
 
 ## Transport and clock
 
@@ -184,7 +191,9 @@ and leave by step 1's path. `control-session` measures the timestamps offline: a
 pulse every 902.26 samples) over 400 blocks of uneven sizes, 121 pulses, none missed or
 doubled, each within half a sample (0.496 at worst) of its ideal time; Start first, Stop once,
 Song Position and Continue on playing again, only the chosen output, nothing with none chosen.
-No device was driven.
+No device was driven. On the desktop, **Clock out** sits beside Follow MIDI clock in the
+Groovebox's transport: the same menu of outputs as MIDI out, kept by the engine, not the
+Performance (`desktop-gaps` checks it shows the output chosen).
 
 Not yet: clock while stopped (some gear wants it to follow tempo before Start); the gate's drum
 machine over ten minutes; per-output choice of what to send (clock only, transport only).

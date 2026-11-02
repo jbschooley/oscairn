@@ -40,6 +40,7 @@ namespace oscairn::standalone
         std::string name, sound, input; // sound: the first instrument's plugin; input: "Any device · C3–C8"
         bool bus = false, notes = false; // notes: it plays from MIDI inputs and the panel
         std::vector<DeviceRule> devices; // which inputs (RFC 0012); none: any
+        PartMidiOut midiOut;             // the hardware outputs its MIDI goes to (RFC 0012 step 1); none: off
         int maxNotes = 0;                // notes at once (RFC 0018); 0: no limit
         int lowKey = 0, highKey = 127, transpose = 0; // the input's first zone, or all keys
         int lowVelocity = 0, highVelocity = 127;      // its velocities, as MIDI values
@@ -130,7 +131,7 @@ namespace oscairn::standalone
     // how many grid columns each takes (0: the whole row). Every surface lays out the same list.
     struct PartField
     {
-        enum class Kind { Devices, NoteLimit, Zone, Transpose, Output, Level, Send };
+        enum class Kind { Devices, NoteLimit, Zone, Transpose, Output, MidiOut, Level, Send };
         Kind kind;
         std::string label;
         int span = 1;
@@ -160,6 +161,9 @@ namespace oscairn::standalone
     DeviceRule ruleFor(const MidiEndpoint&);      // that device by name, or its port number
     std::vector<DeviceRule> toggled(std::vector<DeviceRule>, const DeviceRule&); // All clears the list
     void setDevices(Control&, uint32_t part, const std::vector<DeviceRule>&);
+    // MIDI out (RFC 0012 step 1): "Off" for no outputs, else the outputs as devicesName names them.
+    std::string midiOutName(const std::vector<DeviceRule>&);
+    void setMidiOut(Control&, uint32_t part, const PartMidiOut&);
     void setMaxNotes(Control&, uint32_t part, int maxNotes); // 0: no limit
     void setOutput(Control&, uint32_t part, uint32_t bus);                         // 0: Main
     void setSendLevel(Control&, uint32_t part, uint32_t bus, double level);        // 0 removes the send

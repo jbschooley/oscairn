@@ -34,6 +34,9 @@ namespace oscairn::standalone
         void setTempo(double bpm);
         void setFollowMidiClock(bool follow);
         bool followsMidiClock()const;
+        // Clock out (RFC 0012 step 2): the MIDI outputs the transport's clock goes to; cabling, not saved with a Performance.
+        void setClockOutputs(std::vector<DeviceRule> outputs);
+        std::vector<DeviceRule> clockOutputs()const;
         void note(bool on,int key,float velocity);
         // Pads play through the Performance's pad map (pads.h), on the selected track's MIDI
         // channel unless a pad has its own. The map is cached here and refreshed after a load.
@@ -118,6 +121,7 @@ namespace oscairn::standalone
             std::vector<MidiEndpoint> midiInputs;
             std::vector<Control::SessionStatus::PluginFailure> failures; // plugins that failed and are silent
             double load=0; // the audio thread's share of each block's time, 0..1
+            std::vector<MidiEndpoint> midiOutputs; // for parts' MIDI out and clock out (RFC 0012)
         };
         Status status()const;
         const SoundPickerState& soundPicker() const { return soundPicker_; }
