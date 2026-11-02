@@ -118,6 +118,7 @@ accepted queued selections. Load validates before replacing patches, reconstruct
 excludes voices/tails. Oscairn uses it in preference to ordinary CLAP state, which may describe only one patch. A native engine
 without a complete snapshot interface cannot be saved as a complete Performance.
 
-Basic Synth's `oscairn-synth-1` state stores eight slots (occupancy, quoted name, ten
-parameter values, or eight in states saved before the pitch bend range and mod wheel) followed by 16 selected slot indices. Numbers use the classic locale
+Basic Synth's `oscairn-synth-2` state stores eight slots (occupancy, quoted name, ten
+parameter values) followed by 16 selected slot indices. Version 1 (eight values, before the pitch
+bend range and mod wheel) is refused, not converted. Numbers use the classic locale
 and round-trip precision. Flush applies accepted selections before queued patch edits.

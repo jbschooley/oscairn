@@ -162,7 +162,7 @@ try:
         live = rpc('graph.get')['result']
         bad = root / 'bad-state'
         shutil.copytree(moved, bad)
-        (bad / 'nodes/node-1/state/state.clap').write_text('oscairn-synth-1\n1 "invalid" NaN')
+        (bad / 'nodes/node-1/state/state.clap').write_text('oscairn-synth-2\n1 "invalid" NaN')
         rpc('performance.load', {'directory': str(bad)}, True)
         assert rpc('graph.get')['result'] == live
         (bad / 'performance.json').write_bytes(b'{\"format\":\"\xff\"}')

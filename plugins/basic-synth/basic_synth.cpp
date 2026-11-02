@@ -61,7 +61,6 @@ namespace
     constexpr std::array<const char*,2> wheelTargets{"Vibrato","Off"};
     // The mod wheel's vibrato at full wheel when the sound's pitch LFO has no rate or depth set.
     constexpr double wheelRate = 5.0, wheelDepth = 50.0; // Hz, cents
-    constexpr size_t wheelFreeParameters = 8; // oscairn-synth-1 states saved before the wheel parameters
     constexpr double pressureCutoff = 6000.0; // Hz the filter opens at full pressure and amount
 
     enum class Stage
@@ -94,7 +93,7 @@ namespace
 
         // Values are atomic: the main thread reads them (get_value) while audio runs.
         std::array<std::atomic<double>,parameters.size()> values{};
-        static constexpr const char* stateVersion="oscairn-synth-1";
+        static constexpr const char* stateVersion="oscairn-synth-2";
         static constexpr size_t maxStateBytes=16384;
         Synth(){for(size_t i=0;i<values.size();++i)values[i]=defaults[i];}
 
@@ -108,12 +107,12 @@ namespace
         bool writePatch(std::ostream& out,const Patch& patch){for(double value:patch.values)out<<' '<<value;return true;}
         bool readPatch(std::istream& in,Patch& patch)
         {
-            // The rest of the slot's line: every value, or an older state's first eight (the rest keep their defaults).
+            // The rest of the slot's line: every value.
             std::string line;std::getline(in,line);std::istringstream values(line);values.imbue(std::locale::classic());
             size_t i=0;
             for(double v;i<parameters.size() && values>>v;++i){if(!std::isfinite(v) || v<0 || v>parameters[i].maximum || (parameters[i].stepped && v!=std::round(v)))return false;patch.values[i]=v;}
             values>>std::ws;
-            return (i==parameters.size() || i==wheelFreeParameters) && values.eof();
+            return i==parameters.size() && values.eof();
         }
         void restored(){for(size_t i=0;i<parameters.size();++i)values[i]=contexts[selected[0]].patch.values[i];}
     };

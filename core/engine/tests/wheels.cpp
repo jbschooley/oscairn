@@ -152,15 +152,14 @@ int main( int argc, char** argv )
         auto&          restored = other.host( other.add( synth ) );
         restored.loadState( dir.string() );
         check( restored.parameterValue( bendRangeParam ) == 7 && restored.parameterValue( wheelParam ) == 1, "the bend range and wheel target are saved" );
-        // Eight values per sound: a state saved before the wheel parameters.
-        auto state = [&]( const char* values ) {
-            std::ofstream( dir / "state.clap", std::ios::binary ) << "oscairn-synth-1\n1 \"Default\"" << values << "\n0\n0\n0\n0\n0\n0\n0\n0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n";
+        // The format is replaced, not read in its old form: a version 1 state, or a sound missing values, is refused.
+        auto state = [&]( const char* version, const char* values ) {
+            std::ofstream( dir / "state.clap", std::ios::binary ) << version << "\n1 \"Default\"" << values << "\n0\n0\n0\n0\n0\n0\n0\n0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n";
             try { restored.loadState( dir.string() ); return true; } catch( const std::runtime_error& ) { return false; }
         };
-        check( state( " 0.5 1 0.5 0 7 0 0 0" ) && restored.parameterValue( 1 ) == .5 && restored.parameterValue( bendRangeParam ) == 2
-                   && restored.parameterValue( wheelParam ) == 0,
-               "an older state loads, with the default bend range and wheel target" );
-        check( !state( " 0.5 1 0.5 0 7 0 0 0 3" ), "a sound with nine values is rejected" );
+        check( state( "oscairn-synth-2", " 0.5 1 0.5 0 7 0 0 0 4 1" ) && restored.parameterValue( bendRangeParam ) == 4, "a version 2 state loads" );
+        check( !state( "oscairn-synth-1", " 0.5 1 0.5 0 7 0 0 0" ), "a version 1 state is refused" );
+        check( !state( "oscairn-synth-2", " 0.5 1 0.5 0 7 0 0 0" ), "a sound with eight values is refused" );
         std::filesystem::remove_all( dir );
     }
     if( failures == 0 )
