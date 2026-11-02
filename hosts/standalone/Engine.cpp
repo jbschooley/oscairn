@@ -56,9 +56,13 @@ namespace oscairn::standalone
         // client stays alive until the call is done. engine.release goes on a fresh connection below.
         if(soundJob_.valid())
         {
-            if(soundJob_.wait_for(std::chrono::seconds(3))!=std::future_status::ready)
+            // Done within the wait: finished as any job, so an export over a file replaces it.
+            if(soundJob_.wait_for(std::chrono::seconds(3))==std::future_status::ready)finishSounds();
+            else
+            {
                 std::fprintf(stderr,"oscairn: quit while the engine still works; not waiting further\n");
-            std::thread([job=std::move(soundJob_)]{job.wait();}).detach();
+                std::thread([job=std::move(soundJob_)]{job.wait();}).detach();
+            }
         }
         // Quitting normally lets the managed engine stop once no other window keeps it; a crash
         // never gets here, so the engine plays on for the UI to come back to.

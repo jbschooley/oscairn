@@ -448,6 +448,23 @@ int main(int argc, char** argv)
                       "a failed export keeps the archive it would have replaced: " + engine.soundMessage());
                 check(data.findChildFiles(juce::File::findDirectories, false, ".oscairn-export*").isEmpty(), "and leaves nothing beside it");
             }
+            // Quitting right after an export over a file: written within the quit's wait, it
+            // replaces the file rather than stay in the hidden folder beside it.
+            {
+                const auto file = data.getChildFile("Quit.olib");
+                file.replaceWithText("last week's");
+                {
+                    standalone::Engine quitting(argv[1], tapPath);
+                    wait([&] { return !quitting.jobRunning(); });
+                    standalone::SoundAction out; out.kind = standalone::SoundAction::ExportPerformance; out.directory = file.getFullPathName().toStdString();
+                    quitting.soundAction(std::move(out));
+                    check(quitting.jobRunning(), "the export runs as the window quits");
+                }
+                Control::Archive archive;
+                check(file.loadFileAsString() != "last week's" && wait([&] { return engine.controlReady(); }) && engine.archiveContents(file.getFullPathName().toStdString(), archive).empty() && !archive.items.empty(),
+                      "an export done within the quit's wait replaces the file");
+                check(data.findChildFiles(juce::File::findDirectories, false, ".oscairn-export*").isEmpty(), "and leaves nothing beside it on quit");
+            }
             // A view rebuilt while a job runs asks whether each plugin has a window: one not yet
             // read answers no at once, rather than wait on the stalled socket.
             {
