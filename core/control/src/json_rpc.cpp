@@ -1526,7 +1526,9 @@ namespace oscairn
             if( state != lastTransportValue_ ) { send("transport",state); lastTransportValue_ = std::move(state); }
             lastTransport_ = now;
         }
-        if(status_ && due(lastStatus_))
+        // Status carries CPU and memory figures that change on every look: 4 times a second is
+        // enough for what it shows, and 60 cost every client tens of KB of JSON a second.
+        if(status_ && (!lastStatus_ || now < *lastStatus_ || now - *lastStatus_ >= 250000000))
         {
             auto value = status(control_);
             if(value != lastStatusValue_) { send("status",value); lastStatusValue_ = std::move(value); }

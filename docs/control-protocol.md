@@ -394,7 +394,7 @@ the first poll. Re-subscribing does not discard already unread changes.
   true` on a parameter subscription returns every retained change without throttling or
   coalescing. This is a control observation stream, not a sample-timestamped automation file.
 - `transport` carries the `transport.get` shape when it changes, at most 60 times per second.
-- `status` carries the `session.status` shape when it changes, at most 60 times per second.
+- `status` carries the `session.status` shape when it changes, at most 4 times per second.
   `cpuLoad` is the device callback load as a fraction (1 means the entire block budget),
   not whole-machine CPU usage. `deadlineMisses` sums plugin deadline misses for nodes
   currently in the staging graph; it is not an audio-device underrun counter and may
