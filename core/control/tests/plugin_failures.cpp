@@ -102,6 +102,27 @@ int main(int argc, char** argv)
             check(shared == 201u << 20, "the engine re-read the declaration after the plugin's own restart: " + std::to_string(shared >> 20) + " MiB");
             check(!killed, "and the mode change did not kill the worker: " + self->failure());
         }
+        // RFC 0025: an engine's shared bytes count toward its worker's limit while any node of it
+        // lives, even after the root node the contexts were made from is removed (effect-contexts.h).
+        {
+            setenv("KICK_FIXTURE_MEMORY_CONTEXTS", "1", 1);
+            setenv("KICK_FIXTURE_MEMORY_SHARED_MB", "300", 1);
+            auto root = loadPluginInWorker(argv[1], argv[3], "org.kick.test.memory", 48000, frames);
+            const auto context = root->createEffectContext();
+            const auto directory = std::filesystem::temp_directory_path() / ("oscairn-context-state-" + std::to_string(getpid()));
+            std::filesystem::remove_all(directory);
+            context->saveState(directory.string());
+            root = nullptr; // the instrument goes; the context keeps the engine and its 300 MiB alive
+            context->loadState(directory.string());
+            std::array<float, frames> m{}; float* out[1]{m.data()};
+            std::string why;
+            for(int i = 0; i < 100 && (why = context->failure()).empty(); ++i)
+            { context->process(nullptr, 0, out, 1, frames, nullptr, 0, nullptr); std::this_thread::sleep_for(std::chrono::milliseconds(10)); }
+            unsetenv("KICK_FIXTURE_MEMORY_SHARED_MB");
+            unsetenv("KICK_FIXTURE_MEMORY_CONTEXTS");
+            std::filesystem::remove_all(directory);
+            check(why.empty(), "the state load on the orphaned context kept the engine's shared bytes in the limit: " + why);
+        }
         // RFC 0025 test 4, a wrong declaration: a plugin declaring 9 MiB and holding 200 more is
         // stopped at its worker's limit (the declaration plus the margin, not the policy's 4 GiB),
         // and nothing else is.

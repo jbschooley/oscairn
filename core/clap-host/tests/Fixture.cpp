@@ -13,6 +13,7 @@
 #include <clap/factory/preset-discovery.h>
 #include <oscairn-clap/ui.h>
 #include <oscairn-clap/memory.h>
+#include <oscairn-clap/effect-contexts.h>
 #include <filesystem>
 #include <fstream>
 #include <string>
@@ -39,6 +40,7 @@ std::string guiTitle;
 // The memory fixture's engine bytes: one allocation per process (one engine per worker),
 // kept alive by every instance of it, as an engine outliving its first context must.
 std::shared_ptr<std::vector<char>> engineShared;
+std::atomic<int> memoryInstances{0}; // live memory-fixture instances: an engine's prepared contexts
 constexpr const char* ids[]{"org.kick.test.synth", "org.kick.test.effect", "org.kick.test.midi",
                             "org.kick.test.nan", "org.kick.test.error", "org.kick.test.sleep",
                             "org.kick.test.activate-failure", "org.kick.test.start-failure", "org.kick.test.stepped", "org.kick.test.no-state",
@@ -89,6 +91,7 @@ struct Plugin {
     void main() const { if (!check || !check->is_main_thread(host)) ++threadErrors; }
     void audio() const { if (!check || !check->is_audio_thread(host)) ++threadErrors; }
     Plugin(const clap_host_t* h, int k) : host(h), check(nullptr), kind(k) {
+        if (k == 13) ++memoryInstances;
         api.desc = &descriptors[k]; api.plugin_data = this;
         api.init = [](const clap_plugin_t* p) {
             auto& s = get(p);
@@ -99,7 +102,7 @@ struct Plugin {
                 timer->register_timer(s.host, 1, &s.timerId);
             return true;
         };
-        api.destroy = [](const clap_plugin_t* p) { auto& s = get(p); s.main(); if (s.active || s.processing || guiOwner == &s) ++threadErrors; delete &s; };
+        api.destroy = [](const clap_plugin_t* p) { auto& s = get(p); s.main(); if (s.kind == 13) --memoryInstances; if (s.active || s.processing || guiOwner == &s) ++threadErrors; delete &s; };
         api.activate = [](const clap_plugin_t* p, double rate, uint32_t, uint32_t max) {
             auto& s = get(p); s.main(); if (s.kind == 6) return false;
             if (s.kind == 8 && s.shownMode != 0) ++threadErrors; // its info rescan must not restart it
@@ -332,6 +335,20 @@ struct Plugin {
                 *out = {s.shared ? s.shared->size() : 0, s.context.size(), 0}; return true;
             }};
         if (!std::strcmp(id, OSCAIRN_EXT_MEMORY)) return get(plugin).kind == 13 ? &memory : nullptr;
+        // With KICK_FIXTURE_MEMORY_CONTEXTS, the memory fixture is also an engine: its effect
+        // contexts share the engine's bytes and keep them alive after the originating instance is
+        // destroyed (oscairn.effect-contexts). Gated: a host's effect-context accounting differs.
+        static const oscairn_plugin_effect_contexts_t contexts{
+            [](const clap_plugin_t* p, const clap_host_t* host) -> const clap_plugin_t* {
+                auto& parent = get(p); if (parent.kind != 13) return nullptr;
+                return &(new Plugin(host, 13))->api;
+            },
+            [](const clap_plugin_t* p, oscairn_effect_resources_t* out) {
+                auto& s = get(p); s.main();
+                *out = {sharedBytes(s.gain), s.context.size(), 4, unsigned(memoryInstances.load()), s.active}; return true;
+            }};
+        if (!std::strcmp(id, OSCAIRN_EXT_EFFECT_CONTEXTS))
+            return get(plugin).kind == 13 && std::getenv("KICK_FIXTURE_MEMORY_CONTEXTS") ? &contexts : nullptr;
         static const clap_plugin_gui_t gui{
             [](const clap_plugin_t*, const char*, bool floating) { return floating; },
             [](const clap_plugin_t*, const char**, bool*) { return false; },

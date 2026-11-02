@@ -905,7 +905,7 @@ namespace oscairn
         // also as its cgroup's memory.max on Linux. A worker whose plugin declares nothing keeps it.
         void Process::fitLimit()
         {
-            uint64_t declared = 0;
+            uint64_t declared = 0, shared = 0;
             {
                 std::lock_guard nodesLock(nodesMutex);
                 if(nodes.empty()) return;
@@ -916,9 +916,14 @@ namespace oscairn
                     // Every node of one engine reports the same shared bytes (memory.h), so the
                     // largest is the engine's: counted once even when its root node is gone and
                     // only its effect contexts remain, still holding those bytes.
-                    declared += (n->isRoot() ? m->shared_bytes : 0) + m->context_bytes + m->asset_bytes;
+                    // Every node of one engine reports the same shared bytes (memory.h), so the
+                    // largest is the engine's: counted once even when its root node is gone and
+                    // only its effect contexts remain, still holding those bytes.
+                    declared += m->context_bytes + m->asset_bytes;
+                    shared = std::max(shared, m->shared_bytes);
                 }
             }
+            declared += shared;
             memoryLimit.store(declared + declared / 2 + (uint64_t(64) << 20));
             limitCgroup();
         }
