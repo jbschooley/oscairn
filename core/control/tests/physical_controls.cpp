@@ -73,6 +73,18 @@ namespace
               "Assign from the sound's first parameters: " + banks[0].labels[0]);
         check(banks.size() == 2 && banks[1].layer == AssignmentLayer::Effects && banks[1].slots[0].node == fx && banks[1].slots[1].kind == Assignment::Kind::None,
               "the effects bank: the delay's main control");
+        {
+            // An effect whose first parameter is stepped (an EQ's Mode) and that names no mix: its first continuous one.
+            auto fxParams = s.parameters(fx);
+            const auto steppedFirst = assignmentSource(s.graphState(), s.assignments(), [&](NodeId n) {
+                auto params = s.parameters(n);
+                if(n == fx) for(auto& p : params) { p.role = 0; p.name = "Param " + std::to_string(p.id); } // no mix, declared or guessed
+                if(n == fx) params[0].stepped = true;
+                return params;
+            });
+            check(fxParams.size() > 1 && knobBanks(steppedFirst, keys, 4)[1].slots[0] == parameter(fx, fxParams[1].id),
+                  "the effects bank skips a stepped first parameter for the first continuous one");
+        }
         // Declared roles fill the role banks, taking as many roles as the group is wide: Amp EG's
         // fifth and sixth roles reach a group of six; a role it lacks is blank.
         auto roles = [&](NodeId n, const Control::ParamInfo& p) { return n == synth && p.id == 7 ? std::string("resonance") : n == synth && p.id == 99 ? std::string("velocity") : std::string(); };

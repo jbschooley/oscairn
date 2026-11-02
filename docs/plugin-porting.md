@@ -196,7 +196,8 @@ activation and after an info rescan):
   physical knobs: a device's screen knobs play an editor page's first parameters in this
   order; a part with no controls of its own whose roles fill no bank gets two Assign banks
   from its instrument's first parameters in this order; an effect without a `mix` role has its
-  first parameter as its knob in the Effects bank
+  first continuous parameter (not `CLAP_PARAM_IS_STEPPED`, such as an EQ's Mode) as its knob in
+  the Effects bank, or its first parameter where all are stepped
   ([RFC 0011](rfcs/0011-performance-ui-and-editors.md#step-6-status)).
 - **A group:** parameters of one module in the same group are drawn joined, edge to edge,
   and kept together on narrow screens.

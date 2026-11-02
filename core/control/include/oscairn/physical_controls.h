@@ -31,7 +31,7 @@ namespace oscairn
 
     // A parameter as resolution sees it: its role (empty: none declared) and oscairn.ui priority
     // (1 first; 0 none, after the numbered ones).
-    struct AssignableParam { uint32_t id = 0; std::string name, role; uint32_t priority = 0; };
+    struct AssignableParam { uint32_t id = 0; std::string name, role; uint32_t priority = 0; bool stepped = false; }; // stepped: CLAP_PARAM_IS_STEPPED
     struct AssignableNode { NodeId node = 0; std::string name; bool effect = false, instrument = false; std::vector<AssignableParam> params; }; // effect: audio in and out; instrument: audio out only
 
     // A generated editor's page on screen (RFC 0019): its name and its parameters by priority.

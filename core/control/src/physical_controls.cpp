@@ -121,14 +121,17 @@ namespace oscairn
                 if(first) for(const auto* p : byPriority(*first)) if(items.size() < 2 * width) items.push_back(parameter(*first, *p));
                 chunk(out.assign, "Assign", BankKind::Assign, AssignmentLayer::Role, items, width);
             }
-            // 5. The effects bank: each effect's main control, in chain order.
+            // 5. The effects bank: each effect's main control, in chain order: its mix role, else its
+            // first continuous parameter by priority (not a stepped one such as an EQ's Mode), else its first.
             std::vector<Item> effects;
             for(const auto* n : nodes)
             {
                 if(!n->effect || n->params.empty()) continue;
                 const AssignableParam* main = nullptr;
                 for(const auto& p : n->params) if(!main && p.role == mixRole) main = &p;
-                if(!main) main = byPriority(*n).front();
+                const auto ordered = byPriority(*n);
+                if(!main) for(const auto* p : ordered) if(!main && !p->stepped) main = p;
+                if(!main) main = ordered.front();
                 effects.push_back(parameter(*n, *main));
             }
             chunk(out.effects, "Effects", BankKind::Effects, AssignmentLayer::Effects, effects, width);
@@ -328,7 +331,7 @@ namespace oscairn
                 // Declared roles; a plugin declaring none, the roles its names suggest.
                 const auto params = parameters ? parameters(id) : std::vector<Control::ParamInfo>{};
                 const bool declared = std::any_of(params.begin(), params.end(), [](const Control::ParamInfo& p) { return p.role != 0; });
-                for(const auto& p : params) n.params.push_back({p.id, p.name, declared ? roleName(p.role) : roleFromName(p.name, p.module), p.priority});
+                for(const auto& p : params) n.params.push_back({p.id, p.name, declared ? roleName(p.role) : roleFromName(p.name, p.module), p.priority, p.stepped});
                 s.nodes.emplace(id, std::move(n));
             }
         }

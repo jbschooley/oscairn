@@ -855,7 +855,7 @@ each filling only what the ones above left empty:
    controls with `functions` (wheels, pedals) pass their standard controller to every part;
    with no part selected the knobs follow the Performance's own controls.
 5. **The effects bank**: each effect's main control (its `mix` role, else its first parameter
-   by priority) in chain order.
+   by priority that is not stepped, else its first) in chain order.
 
 **Screen knobs** play what the screen shows: Play's knob row, or, while a generated editor
 page shows (a Desktop or Panel `ParameterGrid`, or a Compact page), that page's first
