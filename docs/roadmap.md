@@ -606,6 +606,10 @@ Each starts as an RFC:
   - [x] **Smooth transitions:** parameter changes on a scene change glide over a set time
     instead of jumping ([status](rfcs/0011-performance-ui-and-editors.md#scenes-status)).
   - [ ] **Scripting:** user scripts that react to events and drive the graph and controls,
-    sandboxed like plugins; language and API to be decided in an RFC.
+    sandboxed like plugins. MIDI scripts in a part's chain are proposed in
+    [RFC 0033](rfcs/0033-script-block.md#progress): a Lua script block with an Oscairn API
+    (notes, scheduling, the part's scale and chord, parameter lanes, phrases for the
+    arpeggiator), a fixed memory arena, an instruction budget, captured errors and recycling.
+    Scripts that drive the UI, the library or graph edits are not covered yet.
 - [ ] **Developer kit:** the MIT SDK and templates, the builder image, the `oscairn` tool,
   the validator. (Plugin isolation in sandboxed workers moved up to Phase 3b, item 3.)
