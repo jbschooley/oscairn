@@ -346,6 +346,12 @@ namespace oscairn::standalone
                 else if(node != graphInput && node != graphOutput)
                     button(head.removeFromLeft(90).reduced(2), "Remove", [this, node] { routed_ = 0; edit([node](Control& c) { removeLoose(c, node); }); })
                         ->setTooltip("Remove this plugin; its sources are wired to its destinations");
+                if(node != graphInput && node != graphOutput && engine_.hasPluginWindow(node))
+                {
+                    const auto title = chosen->name + (chosen->part ? " · " + chosen->partName : std::string());
+                    button(head.removeFromLeft(170).reduced(2), "Open plugin window", [this, node, title] { engine_.openPluginWindow(node, title); })
+                        ->setTooltip("The plugin's own window, beside this one");
+                }
                 // Each input with sources: a Mix row per source.
                 for(const auto& input : inputsOf(graph_, node == graphOutput ? graphOutput : node))
                 {
@@ -643,6 +649,13 @@ namespace oscairn::standalone
                     auto* controls = button(actions.removeFromLeft(150).reduced(2), "Scene controls...", {});
                     controls->setTooltip("Which of this plugin's parameters scenes set: all it lets be automated, but those you untick");
                     controls->onClick = [this, node, controls] { sceneControlsMenu(node, *controls); };
+                    if(engine_.hasPluginWindow(node))
+                    {
+                        const auto* box = findBox(p->chain, node);
+                        const auto title = (box && !box->plugin.empty() ? box->plugin : graph_.names.at(node)) + " · " + p->name;
+                        button(actions.removeFromLeft(170).reduced(2), "Open plugin window", [this, node, title] { engine_.openPluginWindow(node, title); })
+                            ->setTooltip("The plugin's own window, beside this one");
+                    }
                 }
                 panel.removeFromTop(8);
                 // A selected plugin's parameters take the panel, as pages of tiles.

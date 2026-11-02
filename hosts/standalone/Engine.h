@@ -46,6 +46,10 @@ namespace oscairn::standalone
         // API in order; a failed edit is reported in editError().
         Control::GraphState graph() const {return control_->graphState();}
         std::vector<Control::ParamInfo> parameters(NodeId node) const {return control_->parameters(node);}
+        // The plugin's own window (RFC 0019), which its worker shows beside the app's; the title
+        // names the node and its part.
+        bool hasPluginWindow(NodeId node) const {try{return connected() && control_->hasPluginWindow(node);}catch(const std::exception&){return false;}}
+        void openPluginWindow(NodeId node,std::string title){command([this,node,title]{control_->showPluginWindow(node,true,title);});}
         std::vector<PartMeter> meters() const {try{return control_->partMeters();}catch(const std::exception&){return {};}}
         std::vector<WireMeter> wireMeters() const {try{return control_->wireMeters();}catch(const std::exception&){return {};}}
         Control::History history() const {try{return control_->history();}catch(const std::exception&){return {};}}

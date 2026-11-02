@@ -986,6 +986,30 @@ int main(int argc, char** argv)
                 };
                 check(mode(3, false), "mode 3 hides the Toggle on the Desktop and on Compact");
                 check(mode(0, true), "and mode 0 shows it again");
+                // The plugin's own window (RFC 0019): offered for the fixture's effect, which floats
+                // one from its worker without drawing anything, and not for the Basic Synth.
+                uint32_t part = 0; NodeId effect = 0, synth = 0;
+                engine.edit([&](Control& c) { part = standalone::addPart(c, "Windows", false); standalone::insertPlugin(c, part, 0, {"KICK effect", fixture, "org.kick.test.effect"}); });
+                auto found = [&] { for(const auto& [id, n] : engine.graph().names) { if(n == "KICK effect") effect = id; if(n == "Basic Synth") synth = id; } return effect != 0; };
+                for(int i = 0; i < 500 && !found(); ++i) juce::MessageManager::getInstance()->runDispatchLoopUntil(10);
+                standalone::PartsView view(engine, argv[2]);
+                standalone::setDesktopMode(view, 1); view.setEmbedded(true); view.setSize(1180, 820);
+                auto windowButton = [&]() -> juce::Button* { for(auto* c : view.getChildren()) if(auto* b = dynamic_cast<juce::TextButton*>(c); b && b->getButtonText() == "Open plugin window") return b; return nullptr; };
+                view.showPart(piano); view.selectBox(synth);
+                check(synth && !windowButton(), "no plugin window for the Basic Synth");
+                view.showPart(part); view.selectBox(effect);
+                auto* open = windowButton();
+                check(effect && open, "Open plugin window for the effect");
+                if(open) { open->triggerClick(); for(int i = 0; i < 20; ++i) juce::MessageManager::getInstance()->runDispatchLoopUntil(10); }
+                std::string failure = "not run";
+                engine.edit([&](Control& c) {
+                    try { c.showPluginWindow(effect, true, "KICK effect · Windows"); c.showPluginWindow(effect, false); failure.clear(); }
+                    catch(const std::exception& e) { failure = e.what(); }
+                });
+                check(failure.empty() && engine.connected(), "its window opens and closes: " + failure);
+                view.showRouting(effect);
+                check(windowButton() != nullptr, "and in Routing");
+                engine.edit([&](Control& c) { c.removePart(part); c.commit(); });
             }
             else std::puts("skipped: a mode that changes the controls (set OSCAIRN_TEST_FIXTURE to the test fixture)");
             // The preference: Automatic until one is saved, then what was saved.
