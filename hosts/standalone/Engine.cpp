@@ -88,11 +88,13 @@ namespace oscairn::standalone
     }
     std::string Engine::paramText(const std::string& n,uint32_t p,double v)const
     {
-        const auto key=std::make_pair(n,p);const auto it=textCache_.find(key);
-        const auto bits=std::bit_cast<uint64_t>(v); // reuse formatting only for the exact cached value
-        if(it!=textCache_.end() && it->second.first==bits)return it->second.second;
-        if(soundJob_.valid())return std::to_string(v);
-        try{auto text=tidyNumber(control_->parameterText(control_->nodeId(n),p,v));textCache_[key]={bits,text};return text;}
+        // One entry per (node, param, value): an editor asks for every value of a stepped
+        // parameter on each rebuild, and the engine answers only when it is free.
+        const auto key=std::make_pair(n,p);const auto bits=std::bit_cast<uint64_t>(v); // reuse formatting only for the exact cached value
+        if(const auto it=textCache_.find(key);it!=textCache_.end())
+            if(const auto at=it->second.find(bits);at!=it->second.end())return at->second;
+        if(soundJob_.valid() && soundJobKind_!=SoundAction::Refresh)return std::to_string(v);
+        try{auto text=tidyNumber(control_->parameterText(control_->nodeId(n),p,v));textCache_[key][bits]=text;return text;}
         catch(const std::exception&){return std::to_string(v);}
     }
     void Engine::setParam(const std::string& n,uint32_t p,double v)

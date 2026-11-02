@@ -247,7 +247,7 @@ namespace oscairn::standalone
         mutable std::optional<Control::PerformanceInfo> performance_; mutable uint32_t performanceRead_=0;
         mutable std::map<NodeId,bool> windowCache_; mutable uint32_t windowsRead_=0;
         double captureSeconds_=0;
-        mutable std::map<std::pair<std::string,uint32_t>,std::pair<uint64_t,std::string>> textCache_;
+        mutable std::map<std::pair<std::string,uint32_t>,std::map<uint64_t,std::string>> textCache_;
         mutable std::vector<AssignmentOverride> assignments_;
     };
 }

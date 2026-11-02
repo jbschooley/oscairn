@@ -293,6 +293,25 @@ int main(int argc, char** argv)
                 check(wait([&] { return !engine.soundBusy() && !jobHeld.load() && engine.connected(); }), "the held job finished");
                 engine.appClosed("oscairn.library");
             }
+            // An editor asks for every value of a stepped parameter on every rebuild: the texts
+            // are cached per value, so they answer while the next refresh round trips.
+            {
+                NodeId synth = 0;
+                for(const auto& [id, n] : engine.graph().names) if(n == "Basic Synth") synth = id;
+                const auto node = engine.graph().names.at(synth);
+                check(synth != 0, "the Lead's Basic Synth node");
+                check(wait([&] { return !engine.soundBusy(); }), "the engine is free to read texts");
+                const auto saw = engine.paramText(node, 4, 0), detuned = engine.paramText(node, 4, 1), square = engine.paramText(node, 4, 2);
+                check(saw == "Saw" && detuned == "Detuned saws" && square == "Square", "the oscillator names read once, every value kept");
+                holdRequests = true;
+                standalone::SoundAction prepare; prepare.kind = standalone::SoundAction::Prepare; prepare.directory = data.getChildFile("nothing").getFullPathName().toStdString();
+                engine.soundAction(std::move(prepare));
+                check(wait([&] { return engine.soundBusy() && !engine.controlReady() && jobHeld.load(); }), "a job runs while the editor rebuilds");
+                check(engine.paramText(node, 4, 0) == saw && engine.paramText(node, 4, 1) == detuned && engine.paramText(node, 4, 2) == square,
+                      "every value's text answers from the cache while the engine works");
+                holdRequests = false;
+                check(wait([&] { return !engine.soundBusy() && !jobHeld.load() && engine.connected(); }), "the job finished");
+            }
             juce::LookAndFeel::setDefaultLookAndFeel(nullptr);
             configuration.deleteRecursively();
         }
