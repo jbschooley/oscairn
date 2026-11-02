@@ -354,6 +354,7 @@ int main(int argc, char** argv)
                 });
                 check(wait([&] { return !probe.empty() && engine.editError().empty(); }), "a Performance to prepare: " + engine.editError());
                 check(wait([&] { return engine.performanceInfo().has_value() && !engine.history().undo.empty(); }), "the reads are primed");
+                wait([&] { return !engine.jobRunning(); }); // a refresh held too would time out: the job held is the one asked
                 holdRequests = true;
                 standalone::SoundAction prepare; prepare.kind = standalone::SoundAction::Prepare; prepare.directory = probe;
                 engine.soundAction(std::move(prepare));
@@ -389,6 +390,7 @@ int main(int argc, char** argv)
             // An action asked while a job runs is refused, and said: a dropped Save must not
             // look saved.
             {
+                wait([&] { return !engine.jobRunning(); }); // a refresh held too would time out: the job held is the one asked
                 holdRequests = true;
                 standalone::SoundAction prepare; prepare.kind = standalone::SoundAction::Prepare; prepare.directory = data.getChildFile("nothing").getFullPathName().toStdString();
                 engine.soundAction(std::move(prepare));
@@ -405,6 +407,7 @@ int main(int argc, char** argv)
                 const auto file = data.getChildFile("Again.olib");
                 file.replaceWithText("last week's");
                 standalone::SoundAction out; out.kind = standalone::SoundAction::ExportPerformance; out.directory = file.getFullPathName().toStdString();
+                wait([&] { return !engine.jobRunning(); }); // a refresh held too would time out: the job held is the one asked
                 holdRequests = true;
                 standalone::SoundAction prepare; prepare.kind = standalone::SoundAction::Prepare; prepare.directory = data.getChildFile("nothing").getFullPathName().toStdString();
                 engine.soundAction(std::move(prepare));
@@ -427,6 +430,7 @@ int main(int argc, char** argv)
             // A view rebuilt while a job runs asks whether each plugin has a window: one not yet
             // read answers no at once, rather than wait on the stalled socket.
             {
+                wait([&] { return !engine.jobRunning(); }); // a refresh held too would time out: the job held is the one asked
                 holdRequests = true;
                 standalone::SoundAction prepare; prepare.kind = standalone::SoundAction::Prepare; prepare.directory = data.getChildFile("nothing").getFullPathName().toStdString();
                 engine.soundAction(std::move(prepare));
@@ -442,6 +446,7 @@ int main(int argc, char** argv)
             // The library's edits, its archives and making a key wait up to 30 s on a call: while a
             // job holds the engine they are refused at once, saying it is busy.
             {
+                wait([&] { return !engine.jobRunning(); }); // a refresh held too would time out: the job held is the one asked
                 holdRequests = true;
                 standalone::SoundAction prepare; prepare.kind = standalone::SoundAction::Prepare; prepare.directory = data.getChildFile("nothing").getFullPathName().toStdString();
                 engine.soundAction(std::move(prepare));
@@ -462,6 +467,7 @@ int main(int argc, char** argv)
             // While a job holds the engine's thread it cannot answer a launch ask either: the
             // shell admits at once, rather than freeze for the call's timeout and drop.
             {
+                wait([&] { return !engine.jobRunning(); }); // a refresh held too would time out: the job held is the one asked
                 holdRequests = true;
                 standalone::SoundAction prepare; prepare.kind = standalone::SoundAction::Prepare; prepare.directory = data.getChildFile("nothing").getFullPathName().toStdString();
                 engine.soundAction(std::move(prepare));
@@ -485,6 +491,7 @@ int main(int argc, char** argv)
                 check(wait([&] { return !engine.soundBusy(); }), "the engine is free to read texts");
                 const auto saw = engine.paramText(node, 4, 0), detuned = engine.paramText(node, 4, 1), square = engine.paramText(node, 4, 2);
                 check(saw == "Saw" && detuned == "Detuned saws" && square == "Square", "the oscillator names read once, every value kept");
+                wait([&] { return !engine.jobRunning(); }); // a refresh held too would time out: the job held is the one asked
                 holdRequests = true;
                 standalone::SoundAction prepare; prepare.kind = standalone::SoundAction::Prepare; prepare.directory = data.getChildFile("nothing").getFullPathName().toStdString();
                 engine.soundAction(std::move(prepare));
