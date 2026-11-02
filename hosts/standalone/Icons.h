@@ -38,6 +38,23 @@ namespace oscairn::standalone
         copy->drawWithin(g, box, juce::RectanglePlacement::centred, 1.f);
     }
 
+    /// Oscairn's mark (branding/README.md): "mark" is the wave cairn, "mark-hills" the alternate
+    /// with each wave centered on its crest. Both are embedded, so this name alone switches them.
+    inline constexpr const char* markName = "mark";
+
+    /// The mark in its own colors, for a dark or a light ground: where the brand shows.
+    inline void drawBrandMark(juce::Graphics& g, juce::Rectangle<float> box, bool darkGround)
+    {
+        // None of its colors is black, so drawIcon's recoloring leaves them as they are.
+        drawIcon(g, (juce::String(markName) + (darkGround ? "-on-dark" : "-on-light")).toRawUTF8(), box, juce::Colours::black);
+    }
+
+    /// The mark in one color, for a glyph that follows the theme.
+    inline void drawMonoMark(juce::Graphics& g, juce::Rectangle<float> box, juce::Colour color)
+    {
+        drawIcon(g, (juce::String(markName) + "-mono").toRawUTF8(), box, color);
+    }
+
     /// A button that draws an icon rather than text, centered in its box, in the theme's text
     /// color. Give it a tooltip: the icon is its only label on screen.
     class IconButton : public juce::Button

@@ -85,6 +85,13 @@ lines, circles and rectangles are used, which JUCE's SVG reader draws faithfully
 copy the file unchanged from the same Lucide release, list it in the `oscairn_standalone_icons`
 target and record its hash in CREDITS. Themes do not carry icons (fonts and data only).
 
+Oscairn's own mark ([branding](../branding/README.md)) is built in the same way, from the
+SVGs `branding/logo.mjs` draws: `drawBrandMark` draws it in its colors for a dark or light
+ground, where the brand shows, and `drawMonoMark` in one ink, where it follows the theme like
+an icon (Home's header). `markName` in `Icons.h` names the mark shown; the alternate is
+embedded too, so switching to it is that name alone. The app bundle's icon is
+`branding/app-icon-1024.png`.
+
 ## Theme format, version 6
 
 A theme is a folder named after its ID, holding `theme.json` ([schema](theme.schema.json))

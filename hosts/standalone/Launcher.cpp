@@ -72,6 +72,7 @@ namespace oscairn::standalone
         const int side = touch ? 44 : 32, top = (getHeight() - side) / 2;
         auto r = getLocalBounds().reduced(6, 0);
         for(auto* b : {&home_, &back_, &apps_}) if(b->isVisible()) { b->setBounds(r.removeFromLeft(side).withY(top).withHeight(side)); r.removeFromLeft(2); }
+        markArea_ = mark_ ? r.removeFromLeft(side).withY(top).withHeight(side) : juce::Rectangle<int>();
         if(notesOff_.isVisible()) { notesOff_.setBounds(r.removeFromRight(side).withY(top).withHeight(side)); r.removeFromRight(6); }
         // The status, at the right, as wide as it needs.
         const juce::Font small{juce::FontOptions(textSize(TextRole::Small, mode()))};
@@ -102,6 +103,12 @@ namespace oscairn::standalone
         // Where.
         auto r = getLocalBounds().reduced(6, 0);
         for(auto* b : {&home_, &back_, &apps_}) if(b->isVisible()) r.setLeft(b->getRight() + 2);
+        if(!markArea_.isEmpty())
+        {
+            // In one color, as the bar's icons: it follows the theme.
+            drawMonoMark(g, markArea_.toFloat().withSizeKeepingCentre(markArea_.getHeight() * .7f, markArea_.getHeight() * .7f), ink(Ink::Text));
+            r.setLeft(markArea_.getRight());
+        }
         g.setColour(ink(Ink::Text));
         drawInked(g, where_, r.withTrimmedLeft(8).withRight(contextArea_.getX() - 4), body);
         // The Performance and scene, a pill to tap.
@@ -129,6 +136,7 @@ namespace oscairn::standalone
         shell.home = {}; shell.back = {}; return shell; }()) // Home is here; nothing to go back to
     {
         setTitle("Home");
+        bar_.showMark();
         addAndMakeVisible(bar_);
         timerCallback();
         startTimer(1000);

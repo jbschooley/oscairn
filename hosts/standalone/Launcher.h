@@ -25,6 +25,7 @@ namespace oscairn::standalone
         TopBar(Engine& engine, const juce::String& where, Shell shell);
         void setActions(std::vector<Action> actions); // the first main one in the accent; past three, in ⋮
         const juce::String& context() const { return context_; }
+        void showMark() { mark_ = true; resized(); } // Oscairn's mark before where: Home's header
 
         void paint(juce::Graphics&) override;
         void resized() override;
@@ -50,7 +51,8 @@ namespace oscairn::standalone
         Shell shell_;
         juce::String context_, scene_, status_;
         juce::Colour load_;
-        juce::Rectangle<int> contextArea_, statusArea_;
+        juce::Rectangle<int> contextArea_, statusArea_, markArea_;
+        bool mark_ = false;
         IconButton home_{IconButton::Glyph::Home, "Home"}, back_{IconButton::Glyph::Back, "Back"}, apps_{IconButton::Glyph::Apps, "Running apps"},
                    more_{IconButton::Glyph::More, "More"};
         HoldButton notesOff_{IconButton::Glyph::Panic, "All notes off"};

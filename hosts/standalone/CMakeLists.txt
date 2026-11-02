@@ -45,7 +45,14 @@ juce_add_binary_data(oscairn_standalone_icons HEADER_NAME IconData.h NAMESPACE I
     icons/layout-grid.svg
     icons/octagon-x.svg
     icons/ellipsis-vertical.svg
-    icons/layers.svg)
+    icons/layers.svg
+    # Oscairn's mark (branding/README.md) and its alternate; Icons.h names the one shown.
+    ../../branding/mark-on-dark.svg
+    ../../branding/mark-on-light.svg
+    ../../branding/mark-mono.svg
+    ../../branding/mark-hills-on-dark.svg
+    ../../branding/mark-hills-on-light.svg
+    ../../branding/mark-hills-mono.svg)
 
 target_sources(oscairn_standalone PRIVATE Main.cpp DesktopShell.cpp ParameterGrid.cpp CompactEditor.cpp ZoneEditor.cpp Engine.cpp Layout.cpp Panel.cpp Screen.cpp SoundPickerModel.cpp Theme.cpp PluginBrowser.cpp PadEditor.cpp PartsView.cpp PartsModel.cpp LibraryPane.cpp Setlist.cpp Profile.cpp Launcher.cpp PlayView.cpp Controllers.cpp)
 target_compile_definitions(oscairn_standalone PRIVATE
