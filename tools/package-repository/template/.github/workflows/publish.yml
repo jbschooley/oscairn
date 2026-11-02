@@ -37,13 +37,18 @@ jobs:
         # changing it; here the records are checked against the last commit that was published
         # (the `published` tag, moved after each deploy), not HEAD~1: a merge whose publish failed
         # or was cancelled as pending, or an earlier commit of a rebase merge, is still compared.
-        # Only "nothing published yet" passes with nothing to compare against. The records are
-        # read as raw blobs: `git archive` and a checkout both apply the tagged tree's
-        # `.gitattributes` (export-ignore, export-subst, filters), which could hide or rewrite them.
+        # Only "nothing published yet" (no release or publisher records) passes with no tag and
+        # nothing to compare against. The records are read as raw blobs: `git archive` and a
+        # checkout both apply the tagged tree's `.gitattributes` (export-ignore, export-subst,
+        # filters), which could hide or rewrite them.
         shell: bash
         run: |
           mkdir .previous
           if ! git rev-parse --verify --quiet 'refs/tags/published^{commit}' > /dev/null; then
+            if [ -n "$(git ls-files -- 'packages/*/*.json' 'publishers/*.json')" ]; then
+              echo "::error::No published tag, but releases or publishers are recorded: put the tag back on the last published commit."
+              exit 1
+            fi
             echo "::warning::No published tag yet: this first publish has nothing to compare against."
             exit 0
           fi

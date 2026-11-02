@@ -112,8 +112,10 @@ maintainer's review: a pull request can change the workflows it runs under, so `
 requires a maintainer for `.github/`, `scripts/`, `revoked.json`, `repository-config.json` and
 any `.gitattributes`, and publish re-checks that no published release or publisher key changed
 since the commit tagged `published`, whatever the pull request's own check said. It reads that
-commit's records as raw blobs, so no `.gitattributes` can hide or rewrite them. `CODEOWNERS`
-holds only while `main`'s branch protection requires review from Code Owners.
+commit's records as raw blobs, so no `.gitattributes` can hide or rewrite them, and fails when
+the tag is missing once any release or publisher is recorded: if the tag is lost, put it back on
+the last published commit. `CODEOWNERS` holds only while `main`'s branch protection requires
+review from Code Owners.
 
 ### Keys
 
