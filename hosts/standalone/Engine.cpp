@@ -9,6 +9,7 @@
 #include <cstdlib>
 #include <cmath>
 #include <cstdio>
+#include <thread>
 #include <stdexcept>
 
 namespace oscairn::standalone
@@ -46,7 +47,16 @@ namespace oscairn::standalone
     }
     Engine::~Engine()
     {
-        stopTimer();pendingSounds_.clear();if(soundJob_.valid()){soundJob_.wait();finishSounds();}
+        stopTimer();pendingSounds_.clear();
+        // A job may take minutes (an import registers assets); do not hold the window open for
+        // it. Its future waits on a thread of its own, so letting go does not block, and its
+        // client stays alive until the call is done. engine.release goes on a fresh connection below.
+        if(soundJob_.valid())
+        {
+            if(soundJob_.wait_for(std::chrono::seconds(3))!=std::future_status::ready)
+                std::fprintf(stderr,"oscairn: quit while the engine still works; not waiting further\n");
+            std::thread([job=std::move(soundJob_)]{job.wait();}).detach();
+        }
         // Quitting normally lets the managed engine stop once no other window keeps it; a crash
         // never gets here, so the engine plays on for the UI to come back to.
         if(process_ && client_)
