@@ -323,8 +323,9 @@ namespace oscairn::standalone
         if(connected() && controlReady() && (!windowsRead_ || now-windowsRead_>=250)) { windowCache_.clear(); windowsRead_=std::max(1u,now); }
         const auto at=windowCache_.find(node);
         if(at!=windowCache_.end())return at->second;
+        if(!connected() || !controlReady())return false; // not kept: asked again once the engine is free
         bool found=false;
-        try{found=connected() && control_->hasPluginWindow(node);}catch(const std::exception&){}
+        try{found=control_->hasPluginWindow(node);}catch(const std::exception&){}
         windowCache_[node]=found;return found;
     }
     uint32_t Engine::recordingTake() const

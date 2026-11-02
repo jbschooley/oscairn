@@ -399,6 +399,21 @@ int main(int argc, char** argv)
                 holdRequests = false;
                 check(wait([&] { return !engine.soundBusy() && !jobHeld.load() && engine.connected(); }), "the held job finished");
             }
+            // A view rebuilt while a job runs asks whether each plugin has a window: one not yet
+            // read answers no at once, rather than wait on the stalled socket.
+            {
+                holdRequests = true;
+                standalone::SoundAction prepare; prepare.kind = standalone::SoundAction::Prepare; prepare.directory = data.getChildFile("nothing").getFullPathName().toStdString();
+                engine.soundAction(std::move(prepare));
+                check(wait([&] { return engine.soundBusy() && !engine.controlReady() && jobHeld.load(); }), "a job holds the engine's thread");
+                tap.reset();
+                const auto began = std::chrono::steady_clock::now();
+                const bool window = engine.hasPluginWindow(987654);
+                const auto waited = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - began).count();
+                check(!window && tap.count("window.info") == 0 && waited < 100 && engine.connected(), "a plugin window not yet read is not asked for while busy: " + std::to_string(waited) + " ms");
+                holdRequests = false;
+                check(wait([&] { return !engine.soundBusy() && !jobHeld.load() && engine.connected(); }), "the held job finished");
+            }
             // While a job holds the engine's thread it cannot answer a launch ask either: the
             // shell admits at once, rather than freeze for the call's timeout and drop.
             {
