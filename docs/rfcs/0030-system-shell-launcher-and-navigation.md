@@ -15,7 +15,8 @@ Checked when built and tested; the sections below say how.
       (built 2026-11-01: Home first in every window. The top bar (`TopBar` in `Launcher.cpp`) on
       Home and every app on a panel: Home, Back and the running apps unless the layout binds a
       button to `home` or `back`, where the musician is, the open Performance and its scene (a
-      tap: Save, Save As New), the tempo and the engine's load, and All notes off (held half a
+      tap: Save, Save As New), Record and Capture beside the tempo ([RFC 0020](0020-recording.md#step-4-status)),
+      the tempo and the engine's load, and All notes off (held half a
       second; `notes.panic`) unless a button is bound to `panic`. Apps on a panel keep running
       with their state; the switcher brings one forward or closes it. Back goes Home for now.
       Not yet: apps putting their own actions in the bar, the clock, MIDI activity, quick

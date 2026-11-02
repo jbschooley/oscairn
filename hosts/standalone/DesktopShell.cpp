@@ -264,7 +264,7 @@ namespace oscairn::standalone
         status_.setJustificationType(juce::Justification::centredRight);
         addPart_.onClick = [this] { const auto n = state_.parts.size() + 1; engine_.edit([n](Control& c) { addPart(c, "Part " + std::to_string(n), false); }); };
         addBus_.onClick = [this] { const auto n = state_.buses.size(); engine_.edit([n](Control& c) { addPart(c, std::string("Bus ") + char('A' + n % 26), true); }); };
-        for(auto* c : std::initializer_list<juce::Component*>{&undo_, &redo_, &tempoLabel_, &tempo_, &sceneLabel_, &sceneBox_, &storeScene_, &status_, tabs_.get(), list_.get(), &addPart_, &addBus_})
+        for(auto* c : std::initializer_list<juce::Component*>{&undo_, &redo_, &tempoLabel_, &tempo_, &record_, &sceneLabel_, &sceneBox_, &storeScene_, &status_, tabs_.get(), list_.get(), &addPart_, &addBus_})
             addAndMakeVisible(c);
         addAndMakeVisible(parts_);
         parts_.setEmbedded(true);
@@ -434,7 +434,10 @@ namespace oscairn::standalone
             label.setBounds(bar.removeFromLeft(juce::GlyphArrangement::getStringWidthInt(label.getFont(), label.getText()) + 10));
             c.setBounds(bar.removeFromLeft(width));
         };
-        labeled(tempoLabel_, tempo_, touchSized(mode_) ? 150 : 120); bar.removeFromLeft(m.gap * 3);
+        labeled(tempoLabel_, tempo_, touchSized(mode_) ? 150 : 120); bar.removeFromLeft(m.gap * 2);
+        record_.setBounds(bar.getX(), bar.getCentreY() - m.control / 2, 0, m.control); // its height first: its width follows from it
+        record_.setSize(record_.preferredWidth(), m.control);
+        bar.removeFromLeft(record_.getWidth() + m.gap * 3);
         // The scene box narrows so Store still fits beside it.
         const int sceneRoom = bar.getWidth() - juce::GlyphArrangement::getStringWidthInt(sceneLabel_.getFont(), sceneLabel_.getText()) - 10 - 6 - (m.control * 2 + 8);
         labeled(sceneLabel_, sceneBox_, std::clamp(sceneRoom, 80, 160)); bar.removeFromLeft(6);

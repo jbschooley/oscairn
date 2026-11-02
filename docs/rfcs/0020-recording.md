@@ -1,7 +1,8 @@
 # RFC 0020: Recording
 
-Status: proposed, 2026-10-31; steps 1 to 3 built 2026-11-01, in part
-([step 1 status](#step-1-status), [step 2 status](#step-2-status), [step 3 status](#step-3-status)). Makes concrete the "bus recording" the
+Status: proposed, 2026-10-31; steps 1 to 4 built 2026-11-01, in part
+([step 1 status](#step-1-status), [step 2 status](#step-2-status), [step 3 status](#step-3-status),
+[step 4 status](#step-4-status)). Makes concrete the "bus recording" the
 [architecture](../architecture.md#layers) gives the host core, and the groovebox table's
 "the core records any bus; the UI decides where the result goes"
 ([architecture](../architecture.md#sounds-performances-and-projects)). Builds on the graph
@@ -19,7 +20,8 @@ Checked when built and tested; the sections below say how.
 - [x] 2. Parts and notes ([status](#step-2-status); more MIDI messages into the graph not yet)
 - [x] 3. Retroactive capture and sync ([status](#step-3-status); punch on the transport, stopping on
   a bar line and the measurements on the target not yet)
-- [ ] 4. Control API and UI
+- [x] 4. Control API and UI ([status](#step-4-status); drag into a Sampler, the drive's minutes left,
+  the step's socket gate with a Sampler sound and an arm button per Mixer strip not yet)
 - [ ] 5. Inputs and multitrack
 
 ## Problem
@@ -636,6 +638,32 @@ The control API part, built 2026-11-01 and checked by the `control-recording` te
   then silence, and stopped when asked; renamed with its time kept; an empty name refused; deleted
   with its folder, and no longer found; the `record` topic sending the take recording, no more
   than 10 times a second, once more when it is done, then nothing.
+
+The desktop app's part, built 2026-11-01 and checked by the `desktop-shell` test against a session
+over the control socket, with no audio device:
+
+- **Record and Capture** (`RecordButtons` in `hosts/standalone/Recording.cpp`), Lucide's `circle`
+  and `history`, beside the tempo: in the top bar of Home and every app on a panel (RFC 0030;
+  `TopBar::Shell::record`), and in the Desktop surface's toolbar (RFC 0019). Record starts a take
+  of Main and the notes and stops it; while it records, Record is filled in the danger color and
+  `REC m:ss` shows beside it (with "disk slow" while the writer is behind). Capture saves the last
+  30 seconds, or as much as the buffer holds, as a take named after the Performance and
+  "capture"; it is off, and says where to turn it on, while the buffer is off.
+- **The Recordings app** (`RecordingsPane`; a tile on Home, the Apps menu and `--app recordings`;
+  in the desktop profile's apps as `oscairn.recordings`), not a Library source: the Library lists
+  indexed items (RFC 0021) and recordings are not indexed as assets yet. It lists the takes newest
+  first with name (the folder's without its time), date and length, a failed take's reason and
+  overruns. Play plays the selected take only when pressed (Stop stops it; selecting plays
+  nothing); Rename and Delete (asked first) for closed takes; Show in Finder on the desktop. The
+  buffer's length is chosen there (off, 1, 2, 5 or 10 minutes), saved in the configuration
+  folder's `capture`; by default 2 minutes on a device with 2 GB or less, 10 minutes above, as
+  proposed under "Length", and sent again after an engine restart.
+- The test checks: the top bar's Record and Capture when the shell asks; Record starting a take
+  and the bar showing its time; Record stopping it; Capture saving a take; the app listing this
+  run's takes and one copied in as an earlier run's, with its name and date, newest first; a take
+  selected not playing, Play playing it and Stop stopping it; rename; delete with its folder.
+  Snapshots: the bar before, while and after recording, the desktop toolbar recording, and the app
+  with the mouse, playing and with touch.
 
 ## Open questions
 

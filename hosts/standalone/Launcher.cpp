@@ -31,6 +31,7 @@ namespace oscairn::standalone
         notesOff_.onHeld = shell_.notesOff;
         addChildComponent(notesOff_);
         notesOff_.setVisible(shell_.notesOff != nullptr);
+        if(shell_.record) { record_ = std::make_unique<RecordButtons>(engine_); addAndMakeVisible(*record_); }
         timerCallback();
         startTimerHz(4);
     }
@@ -77,6 +78,7 @@ namespace oscairn::standalone
         // The status, at the right, as wide as it needs.
         const juce::Font small{juce::FontOptions(textSize(TextRole::Small, mode()))};
         statusArea_ = r.removeFromRight(juce::GlyphArrangement::getStringWidthInt(small, status_) + 16);
+        if(record_) { record_->setBounds(r.removeFromRight(record_->preferredWidth()).withY(top).withHeight(side)); r.removeFromRight(6); } // beside the tempo
         if(more_.isVisible()) { more_.setBounds(r.removeFromRight(side).withY(top).withHeight(side)); }
         for(int i = buttons_.size(); --i >= 0;)
         {

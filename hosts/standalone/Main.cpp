@@ -5,7 +5,7 @@
 //
 //   oscairn-standalone [--profile NAME|path.json] [--controller path.json]... [--layout NAME|path.json] [--plugins DIR]
 //                      [--in-process | --connect SOCKET] [--play] [--input-mode automatic|mouse|touch]
-//                      [--app performance|library|setlist|groovebox]
+//                      [--app performance|library|setlist|groovebox|recordings]
 //                      [--snapshot out.png [--size WxH] [--play SECONDS] [--view TAB]]
 //
 // --profile names the device it runs on (RFC 0024): a built-in profile (qemu-aarch64, kick, ignite,
@@ -31,6 +31,7 @@
 #include "PartsView.h"
 #include "PerformanceColors.h"
 #include "PlayView.h"
+#include "Recording.h"
 #include "Setlist.h"
 #include "Splash.h"
 
@@ -228,12 +229,14 @@ namespace oscairn::standalone
             else if( name == "library" ) showLibraryApp();
             else if( name == "setlist" ) showSetlist();
             else if( name == "groovebox" ) openGroovebox();
-            else throw std::invalid_argument( "--app is performance, library, setlist or groovebox" );
+            else if( name == "recordings" ) showRecordings();
+            else throw std::invalid_argument( "--app is performance, library, setlist, groovebox or recordings" );
             // On the desktop those three open in windows of their own: --snapshot shows that window.
             if( !panel() )
                 snapshotView_ = name == "library" && libraryApp_ ? libraryApp_->getContentComponent()
                               : name == "setlist" ? static_cast<juce::Component*>( setlistPane_.get() )
-                              : name == "groovebox" && groovebox_ ? groovebox_->getContentComponent() : nullptr;
+                              : name == "groovebox" && groovebox_ ? groovebox_->getContentComponent()
+                              : name == "recordings" && recordings_ ? recordings_->getContentComponent() : nullptr;
         }
         // The Performance app: playing the open Performance (Play, first) and editing it.
         void openPerformance()
@@ -283,6 +286,7 @@ namespace oscairn::standalone
                 if(profile_.offers("oscairn.groovebox"))menu.addItem(8000,"Groovebox");
                 if(profile_.offers("oscairn.library"))menu.addItem(8001,"Library");
                 if(profile_.offers("oscairn.setlist"))menu.addItem(8002,"Setlist");
+                if(profile_.offers("oscairn.recordings"))menu.addItem(8005,"Recordings");
                 return menu;}
             if(index==4){themeItems_=theme_.installed();for(size_t i=0;i<themeItems_.size();++i)menu.addItem(3000+int(i),themeItems_[i].second,true,themeItems_[i].first==themeData().id);menu.addSeparator();menu.addItem(4000,"Manage themes...");return menu;}
             for( size_t i = 0; i < layouts_.size(); ++i )
@@ -326,6 +330,7 @@ namespace oscairn::standalone
             if(id==8002){showSetlist();return;}
             if(id==8003){showHome();return;}
             if(id==8004){openPerformance();return;}
+            if(id==8005){showRecordings();return;}
             if(id==5002 || id==5003){saveToLibrary(id==5003);return;}
             if(id==5004){importPerformance();return;}
             if(id==5005){exportPerformance();return;}
@@ -354,6 +359,16 @@ namespace oscairn::standalone
 
     private:
         void showGroovebox(){showApp(groovebox_,"Groovebox",[this]{return new SequencerPane(engine_);},1100,760);}
+        // The Recordings app (RFC 0020): the takes, kept running with its state like the others.
+        void showRecordings()
+        {
+            if( panel() )
+            {
+                if( bringForward( "Recordings" ) ) return;
+                auto pane = std::make_unique<RecordingsPane>( engine_, theme_.configuration(), false ); auto& app = *pane; openOnScreen( "Recordings", "audio-lines", app, std::move( pane ) ); return;
+            }
+            showApp( recordings_, "Recordings", [this] { return new RecordingsPane( engine_, theme_.configuration() ); }, 760, 600 );
+        }
         Panel* panel() const { return dynamic_cast<Panel*>( getContentComponent() ); }
         bool layoutBinds( const std::string& bind ) const
         {
@@ -370,6 +385,7 @@ namespace oscairn::standalone
             if( panel() ) shell.apps = [this] { showSwitcher(); };
             if( !layoutBinds( "panic" ) ) shell.notesOff = [this] { engine_.edit( []( Control& c ) { c.allNotesOff(); } ); };
             shell.save = [this]( bool asNew ) { saveToLibrary( asNew ); };
+            shell.record = true;
             return shell;
         }
         // A running app on a panel's screen brought forward, if it is running.
@@ -426,6 +442,11 @@ namespace oscairn::standalone
                 apps.push_back( { "Setlist", "list-music", [] { return juce::String( "Songs in order, for the stage" ); }, [this] { showSetlist(); } } );
             if( profile_.offers( "oscairn.groovebox" ) )
                 apps.push_back( { "Groovebox", "layout-grid", [] { return juce::String( "Patterns and steps" ); }, [this] { openGroovebox(); } } );
+            if( profile_.offers( "oscairn.recordings" ) )
+                apps.push_back( { "Recordings", "audio-lines", [this] {
+                    const auto n = int( engine_.takes().size() );
+                    return n ? juce::String( n ) + ( n == 1 ? " take" : " takes" ) : juce::String( "Takes and captures" ); },
+                    [this] { showRecordings(); } } );
             return apps;
         }
         void showLibraryApp()
@@ -713,7 +734,7 @@ namespace oscairn::standalone
         struct RunningApp { juce::String name; const char* icon; std::unique_ptr<juce::Component> owned; juce::Component* app; std::unique_ptr<AppFrame> frame; };
         std::vector<RunningApp> running_;
         std::unique_ptr<AppSwitcher> switcher_;
-        std::unique_ptr<AppWindow> groovebox_, libraryApp_, setlist_, picker_;
+        std::unique_ptr<AppWindow> groovebox_, libraryApp_, setlist_, picker_, recordings_;
         Actions::Answer pickerAnswer_;
         std::unique_ptr<PadEditor> pads_;
         std::unique_ptr<PartsView> parts_;
@@ -833,6 +854,10 @@ namespace oscairn::standalone
                     }
                 }
                 engine_->edit( [budget, always]( Control& c ) { c.setBudget( budget ); if( !always.empty() ) c.setAlwaysAvailable( always ); } );
+                // RFC 0020: the retroactive buffer Capture saves from, as long as was chosen (not for a snapshot).
+                if( !args.contains( "--snapshot" ) )
+                    if( const auto error = engine_->setCapture( readCaptureSeconds( theme_->configuration(), profile ) ); !error.empty() )
+                        std::fprintf( stderr, "oscairn: capture: %s\n", error.c_str() );
 
                 auto layouts = builtInLayouts();
                 auto wanted  = argument( args, "--layout" );

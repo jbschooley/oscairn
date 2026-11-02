@@ -13,6 +13,7 @@
 #include "../DesktopShell.h"
 #include "../LibraryPane.h"
 #include "../Launcher.h"
+#include "../Recording.h"
 #include "../Setlist.h"
 #include "../Panel.h"
 #include "../PlayView.h"
@@ -170,6 +171,82 @@ int main(int argc, char** argv)
                     standalone::AppSwitcher switcher(engine, {{"Performance", "piano"}, {"Library", "library-big"}}, [](int) {}, [](int) {}, {});
                     standalone::setDesktopMode(switcher, 2); switcher.setSize(1024, 600);
                     snapshot(switcher, "switcher");
+                }
+                // Recording (RFC 0020): Record and Capture in the top bar, beside the tempo, showing a
+                // take recording; the Recordings app's takes, earlier runs' found in recordings/,
+                // played back only when asked, renamed and deleted.
+                {
+                    check(engine.setCapture(40).empty() && engine.captureSeconds() == 40, "the retroactive buffer turns on");
+                    standalone::TopBar::Shell shell; shell.home = [] {}; shell.notesOff = [] {}; shell.record = true;
+                    standalone::TopBar bar(engine, "Performance", shell);
+                    standalone::setDesktopMode(bar, 2); bar.setSize(1024, 48);
+                    bar.setVisible(true); bar.addToDesktop(juce::ComponentPeer::windowIsTemporary); // showing: the buttons ask nothing while hidden
+                    standalone::RecordButtons* buttons = nullptr;
+                    for(auto* c : bar.getChildren()) if(auto* b = dynamic_cast<standalone::RecordButtons*>(c)) buttons = b;
+                    check(buttons && buttons->isVisible() && buttons->getWidth() > 0, "the top bar has Record and Capture when the shell asks");
+                    if(buttons)
+                    {
+                        snapshot(bar, "top-bar-record");
+                        buttons->record();
+                        check(wait([&] { engine.refreshTakes(); return engine.recordingTake() != 0; }) && buttons->recording(), "Record starts a take");
+                        const auto take = engine.recordingTake();
+                        check(wait([&] { for(int i = 0; i < 5; ++i) juce::MessageManager::getInstance()->runDispatchLoopUntil(60); return buttons->message().startsWith("REC 0:0") && buttons->message() != "REC 0:00"; }),
+                              "the top bar shows the take recording and its time: " + buttons->message().toStdString());
+                        snapshot(bar, "top-bar-recording");
+                        {
+                            standalone::DesktopShell recording(engine, argv[2], standalone::InputMode::Mouse);
+                            recording.setSize(1440, 900);
+                            recording.setVisible(true); recording.addToDesktop(juce::ComponentPeer::windowIsTemporary);
+                            for(int i = 0; i < 30; ++i) juce::MessageManager::getInstance()->runDispatchLoopUntil(10);
+                            snapshot(recording, "desktop-recording");
+                        }
+                        buttons->record();
+                        auto state = [&](uint32_t id) { engine.refreshTakes(); for(const auto& t : engine.takes()) if(t.take == id) return t.state; return std::string(); };
+                        check(wait([&] { return state(take) == "done"; }) && !buttons->recording(), "Record again stops it: " + state(take));
+                        buttons->capture();
+                        check(buttons->message() == "Captured to Recordings", "Capture saves what was just played: " + buttons->message().toStdString());
+                        snapshot(bar, "top-bar-captured");
+                    }
+                    bar.removeFromDesktop();
+                    // A take of an earlier run: a folder this run never made.
+                    engine.refreshTakes();
+                    check(wait([&] { engine.refreshTakes(); const auto& t = engine.takes(); return t.size() >= 2 && t.back().state == "done"; }), "the take and the capture are listed once written");
+                    const auto recordings = juce::File(data.getFullPathName()).getChildFile("recordings");
+                    const auto earlier = recordings.getChildFile("2026-10-31 20-15-00 Yesterday");
+                    check(juce::File(juce::String::fromUTF8(engine.takes().front().folder.c_str())).copyDirectoryTo(earlier), "an earlier run's take is put in recordings/");
+                    standalone::RecordingsPane pane(engine, configuration);
+                    standalone::setDesktopMode(pane, 1); pane.setSize(760, 600);
+                    pane.setVisible(true); pane.addToDesktop(juce::ComponentPeer::windowIsTemporary);
+                    check(wait([&] { engine.refreshTakes(); pane.refresh(); return pane.takes().size() == 3; }), "the Recordings app lists this run's takes and the earlier one: " + std::to_string(pane.takes().size()));
+                    int yesterday = -1, captured = -1;
+                    for(size_t i = 0; i < pane.takes().size(); ++i)
+                    {
+                        const auto& t = pane.takes()[i];
+                        if(standalone::RecordingsPane::nameOf(t) == "Yesterday") yesterday = int(i);
+                        else if(captured < 0 && t.files.size() == 2) captured = int(i);
+                    }
+                    check(yesterday >= 0 && standalone::RecordingsPane::dateOf(pane.takes()[size_t(yesterday)]) == "Oct 31, 2026, 20:15", "the earlier take with its name and date: " +
+                          (yesterday >= 0 ? standalone::RecordingsPane::dateOf(pane.takes()[size_t(yesterday)]).toStdString() : std::string("missing")));
+                    check(captured == 0 && standalone::RecordingsPane::nameOf(pane.takes()[0]) == "Untitled capture" && standalone::RecordingsPane::lengthOf(pane.takes()[0]) != "0:00", "newest first, the capture named so, with its length: " + (captured == 0 ? standalone::RecordingsPane::lengthOf(pane.takes()[0]).toStdString() : std::string()));
+                    pane.select(0);
+                    snapshot(pane, "recordings");
+                    // Selecting plays nothing; Play does, and Stop stops.
+                    auto playing = [&](int row) { engine.refreshTakes(); pane.refresh(); return pane.takes()[size_t(row)].playing; };
+                    check(!playing(0), "a take selected is not played");
+                    pane.play();
+                    check(wait([&] { return playing(0); }), "Play plays it back: " + pane.message().toStdString());
+                    snapshot(pane, "recordings-playing");
+                    pane.play();
+                    check(wait([&] { return !playing(0); }), "and Stop stops it");
+                    pane.rename("Morning lick");
+                    check(wait([&] { engine.refreshTakes(); pane.refresh(); return standalone::RecordingsPane::nameOf(pane.takes()[0]) == "Morning lick"; }), "renamed: " + pane.message().toStdString());
+                    for(size_t i = 0; i < pane.takes().size(); ++i) if(standalone::RecordingsPane::nameOf(pane.takes()[i]) == "Yesterday") pane.select(int(i));
+                    pane.remove();
+                    check(wait([&] { engine.refreshTakes(); pane.refresh(); return pane.takes().size() == 2; }) && !earlier.exists(), "deleted with its folder: " + pane.message().toStdString());
+                    standalone::setDesktopMode(pane, 2); pane.resized();
+                    snapshot(pane, "recordings-touch");
+                    pane.removeFromDesktop();
+                    check(engine.setCapture(0).empty(), "the buffer turns off");
                 }
                 // Play (RFC 0011), the Performance app's first view, on a device's screen under the top bar.
                 {

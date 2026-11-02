@@ -6,6 +6,7 @@
 #include "PartsModel.h"
 #include "PartsView.h"
 #include "PlayView.h"
+#include "Recording.h"
 #include "Screen.h"
 #include "Theme.h"
 
@@ -88,6 +89,7 @@ namespace oscairn::standalone
         juce::TextButton save_{"Save"}, edit_{"Edit"}; // Edit, or Play from Edit's views
         juce::Slider tempo_{juce::Slider::LinearBar, juce::Slider::TextBoxLeft};
         juce::Label tempoLabel_{{}, "Tempo"}, sceneLabel_{{}, "Scene"};
+        RecordButtons record_{engine_}; // beside the tempo (RFC 0020)
         juce::ComboBox sceneBox_;
         juce::TextButton storeScene_{"Store"};
         juce::Label status_;

@@ -71,7 +71,10 @@ authoritative.
   `layout-grid.svg` `9b4aaf142b53bb72cb0405a64486756ad96463555dd9d3ec5da4f7cef46b4345`,
   `octagon-x.svg` `0c4e88560562eae840120c3ec2465faa568a4b69dad62aadedd50927bb48edba`,
   `ellipsis-vertical.svg` `04875f5341ff6fb2ad54cb5a5efcb76f530521e4b800be42c20bcaf955fee8b6`,
-  `layers.svg` `ac5db701628c809cb3176bfaff319e7ceac602be902c3e3d0a7693e3e9bf417b`.
+  `layers.svg` `ac5db701628c809cb3176bfaff319e7ceac602be902c3e3d0a7693e3e9bf417b`,
+  `circle.svg` `fc932a39beca163d5641a904884259ea2c8e838940cfa226697024b17b5c544e`,
+  `history.svg` `bd6e284ca26e67a35dff106e519f74af7241bb38f0d60654c2f74be8fc2b1510`,
+  `audio-lines.svg` `d4ff831aee48c9d1fb7ace29409aa67b4989ce3b71b3bc119391a90235369a8a`.
 
 ## Sample decoding
 

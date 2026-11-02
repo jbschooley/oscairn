@@ -262,6 +262,52 @@ namespace oscairn::standalone
         if(!connected() || !controlReady()) return {};
         try{return control_->libraries();}catch(const std::exception& e){std::fprintf(stderr,"oscairn: libraries: %s\n",e.what());return {};}
     }
+    const std::vector<Control::Take>& Engine::takes() const
+    {
+        const auto now=juce::Time::getMillisecondCounter();
+        if(connected() && controlReady() && (!takesRead_ || now-takesRead_>=250))
+            try{takes_=control_->recordTakes();takesRead_=std::max(1u,now);}catch(const std::exception& e){std::fprintf(stderr,"oscairn: takes: %s\n",e.what());}
+        return takes_;
+    }
+    uint32_t Engine::recordingTake() const
+    {
+        for(const auto& t:takes())if(t.state=="recording" || t.state=="waiting")return t.take;
+        return 0;
+    }
+    namespace
+    {
+        // A recording call, while the engine is free: the error, or empty.
+        template<class F> std::string recordCall(bool ready,F&& f)
+        {
+            if(!ready)return "The engine is busy. Try again in a moment.";
+            try{f();return {};}catch(const std::exception& e){return e.what();}
+        }
+    }
+    std::string Engine::record(bool on)
+    {
+        const auto take=on?0:recordingTake();
+        auto error=recordCall(connected() && controlReady(),[&]{if(on)control_->recordStart();else if(take)control_->recordStop(take);});
+        refreshTakes();return error;
+    }
+    std::string Engine::capture(double seconds)
+    {
+        Control::RecordWhen when;when.from=Control::RecordWhen::From::SecondsAgo;when.seconds=seconds;
+        auto error=recordCall(connected() && controlReady(),[&]{
+            const auto name=control_->performanceInfo().name; // its folder says it is a capture
+            control_->recordStart({},(name.empty()?"Untitled":name)+" capture",when);});
+        refreshTakes();return error;
+    }
+    std::string Engine::setCapture(double seconds)
+    {
+        // While the engine is busy, after its job, as any command: a refusal then is only logged.
+        if(connected() && !controlReady()){captureSeconds_=seconds;command([this,seconds]{control_->recordRetro(seconds);});return {};}
+        auto error=recordCall(connected(),[&]{control_->recordRetro(seconds);});
+        if(error.empty())captureSeconds_=seconds;
+        return error;
+    }
+    std::string Engine::deleteTake(uint32_t take){auto e=recordCall(connected() && controlReady(),[&]{control_->recordDelete(take);});refreshTakes();return e;}
+    std::string Engine::renameTake(uint32_t take,const std::string& name){auto e=recordCall(connected() && controlReady(),[&]{control_->recordRename(take,name);});refreshTakes();return e;}
+    std::string Engine::playTake(uint32_t take){auto e=recordCall(connected() && controlReady(),[&]{control_->recordPlay(take);});refreshTakes();return e;}
     std::string Engine::deleteLibraryItem(const std::string& id)
     {
         if(!connected()) return "The engine is not running.";
@@ -337,6 +383,7 @@ namespace oscairn::standalone
             remote_=std::move(fresh);control_=remote_.get();failure_.clear();textCache_.clear();recoveryAvailable_=false;refreshPads();
             attach();
             if(!ignoredInputs_.empty())control_->ignoreMidiInputs(ignoredInputs_);
+            if(captureSeconds_>0)try{control_->recordRetro(captureSeconds_);}catch(const std::exception& e){std::fprintf(stderr,"oscairn: capture: %s\n",e.what());}
         }
         catch(const std::exception& e){failed(e.what());}
     }

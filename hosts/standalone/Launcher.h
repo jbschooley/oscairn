@@ -2,6 +2,7 @@
 #pragma once
 #include "Engine.h"
 #include "Icons.h"
+#include "Recording.h"
 #include <juce_gui_basics/juce_gui_basics.h>
 
 namespace oscairn::standalone
@@ -21,6 +22,7 @@ namespace oscairn::standalone
         {
             std::function<void()> home, back, apps, notesOff;
             std::function<void(bool asNew)> save;
+            bool record = false; // Record and Capture beside the tempo (RFC 0020), showing a take recording
         };
         TopBar(Engine& engine, const juce::String& where, Shell shell);
         void setActions(std::vector<Action> actions); // the first main one in the accent; past three, in ⋮
@@ -56,6 +58,7 @@ namespace oscairn::standalone
         IconButton home_{IconButton::Glyph::Home, "Home"}, back_{IconButton::Glyph::Back, "Back"}, apps_{IconButton::Glyph::Apps, "Running apps"},
                    more_{IconButton::Glyph::More, "More"};
         HoldButton notesOff_{IconButton::Glyph::Panic, "All notes off"};
+        std::unique_ptr<RecordButtons> record_;
         std::vector<Action> actions_;
         juce::OwnedArray<juce::TextButton> buttons_;
     };

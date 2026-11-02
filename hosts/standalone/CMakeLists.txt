@@ -46,6 +46,9 @@ juce_add_binary_data(oscairn_standalone_icons HEADER_NAME IconData.h NAMESPACE I
     icons/octagon-x.svg
     icons/ellipsis-vertical.svg
     icons/layers.svg
+    icons/circle.svg
+    icons/history.svg
+    icons/audio-lines.svg
     # Oscairn's mark (branding/README.md) and its alternate; Icons.h names the one shown.
     ../../branding/mark-on-dark.svg
     ../../branding/mark-on-light.svg
@@ -54,7 +57,7 @@ juce_add_binary_data(oscairn_standalone_icons HEADER_NAME IconData.h NAMESPACE I
     ../../branding/mark-hills-on-light.svg
     ../../branding/mark-hills-mono.svg)
 
-target_sources(oscairn_standalone PRIVATE Main.cpp DesktopShell.cpp ParameterGrid.cpp CompactEditor.cpp ZoneEditor.cpp Engine.cpp Layout.cpp Panel.cpp Screen.cpp SoundPickerModel.cpp Theme.cpp PluginBrowser.cpp PadEditor.cpp PartsView.cpp PartsModel.cpp LibraryPane.cpp Setlist.cpp Profile.cpp Launcher.cpp PlayView.cpp Controllers.cpp Splash.cpp)
+target_sources(oscairn_standalone PRIVATE Main.cpp DesktopShell.cpp ParameterGrid.cpp CompactEditor.cpp ZoneEditor.cpp Engine.cpp Layout.cpp Panel.cpp Screen.cpp SoundPickerModel.cpp Theme.cpp PluginBrowser.cpp PadEditor.cpp PartsView.cpp PartsModel.cpp LibraryPane.cpp Setlist.cpp Profile.cpp Launcher.cpp PlayView.cpp Controllers.cpp Splash.cpp Recording.cpp)
 target_compile_definitions(oscairn_standalone PRIVATE
     JUCE_WEB_BROWSER=0
     JUCE_USE_CURL=0
@@ -120,7 +123,7 @@ target_link_libraries(oscairn_pad_editor_test PRIVATE oscairn_standalone_icons o
 target_compile_definitions(oscairn_pad_editor_test PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_MODAL_LOOPS_PERMITTED=1)
 add_dependencies(oscairn_pad_editor_test oscairn_step_sequencer oscairn_basic_synth oscairn_delay oscairn_splitters oscairn-plugin-scan oscairn-plugin-worker)
 juce_add_console_app(oscairn_desktop_shell_test PRODUCT_NAME "Oscairn Desktop Shell Test")
-target_sources(oscairn_desktop_shell_test PRIVATE tests/desktop_shell.cpp DesktopShell.cpp PlayView.cpp Profile.cpp LibraryPane.cpp Launcher.cpp Setlist.cpp ParameterGrid.cpp CompactEditor.cpp ZoneEditor.cpp Screen.cpp Panel.cpp Layout.cpp PadEditor.cpp PartsView.cpp PartsModel.cpp Engine.cpp Theme.cpp SoundPickerModel.cpp)
+target_sources(oscairn_desktop_shell_test PRIVATE tests/desktop_shell.cpp DesktopShell.cpp PlayView.cpp Profile.cpp LibraryPane.cpp Launcher.cpp Recording.cpp Setlist.cpp ParameterGrid.cpp CompactEditor.cpp ZoneEditor.cpp Screen.cpp Panel.cpp Layout.cpp PadEditor.cpp PartsView.cpp PartsModel.cpp Engine.cpp Theme.cpp SoundPickerModel.cpp)
 target_link_libraries(oscairn_desktop_shell_test PRIVATE oscairn_standalone_icons oscairn_standalone_profiles oscairn_audio_host oscairn_host_process oscairn_control_socket juce::juce_audio_utils juce::juce_gui_extra juce::juce_recommended_config_flags)
 target_compile_definitions(oscairn_desktop_shell_test PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_MODAL_LOOPS_PERMITTED=1)
 add_dependencies(oscairn_desktop_shell_test oscairn_step_sequencer oscairn_basic_synth oscairn_delay oscairn_transpose oscairn_sampler oscairn_splitters oscairn-plugin-scan kick-clap-fixture-normal oscairn-plugin-worker)

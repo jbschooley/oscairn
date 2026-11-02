@@ -150,6 +150,19 @@ namespace oscairn::standalone
         std::string removePlugin(const Control::InstalledPlugin& plugin);
         std::string pluginId(const std::string& node) const;
         void replacePlugin(const std::string& node,const std::string& path,const std::string& id,const std::string& preset={});
+        // Recording (RFC 0020): the takes, this run's and those found in recordings/, read at most
+        // four times a second and kept while the engine is busy; the take recording, or 0. The
+        // rest give the error, or empty. setCapture's length is sent again after a restart.
+        const std::vector<Control::Take>& takes() const;
+        void refreshTakes() { takesRead_ = 0; }
+        uint32_t recordingTake() const;
+        std::string record(bool on);          // Main and the notes, until stopped
+        std::string capture(double seconds);  // the last seconds of the retroactive buffer, as a take
+        std::string setCapture(double seconds);
+        double captureSeconds() const { return captureSeconds_; }
+        std::string deleteTake(uint32_t take);
+        std::string renameTake(uint32_t take, const std::string& name);
+        std::string playTake(uint32_t take);  // 0 stops
         struct Editor { std::string name,id,path;std::vector<ParamInfo> parameters;std::vector<PresetInfo> presets; };
         const std::map<std::string,Editor>& editors() const {return editors_;}
 
@@ -202,6 +215,9 @@ namespace oscairn::standalone
         std::string socketPath_,failure_;
         uint32_t reconnectTicks_=0;
         bool recoveryAvailable_=false;
+        mutable std::vector<Control::Take> takes_;
+        mutable uint32_t takesRead_=0;
+        double captureSeconds_=0;
         mutable std::map<std::pair<std::string,uint32_t>,std::pair<uint64_t,std::string>> textCache_;
         mutable std::vector<AssignmentOverride> assignments_;
     };
