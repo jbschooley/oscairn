@@ -23,7 +23,7 @@ namespace
                                               "org.oscairn.step-sequencer",
                                               "Oscairn Step Sequencer",
                                               "Oscairn",
-                                              "https://github.com/jbschooley/oscairn",
+                                              "https://github.com/oscairn/oscairn",
                                               "",
                                               "",
                                               "0.2.0",

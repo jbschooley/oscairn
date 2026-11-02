@@ -10,7 +10,7 @@ config BR2_PACKAGE_OSCAIRN
 	  the first-party CLAP plugins (installed to /usr/lib/clap) and
 	  oscairn-render.
 
-	  https://github.com/jbschooley/oscairn
+	  https://github.com/oscairn/oscairn
 
 if BR2_PACKAGE_OSCAIRN
 

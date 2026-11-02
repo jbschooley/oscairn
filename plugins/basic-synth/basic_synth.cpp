@@ -40,7 +40,7 @@ namespace
         "org.oscairn.basic-synth",
         "Oscairn Basic Synth",
         "Oscairn",
-        "https://github.com/jbschooley/oscairn",
+        "https://github.com/oscairn/oscairn",
         "",
         "",
         "0.1.0",

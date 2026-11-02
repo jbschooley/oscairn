@@ -24,7 +24,7 @@ namespace
         "org.oscairn.modular",
         "Oscairn Modular",
         "Oscairn",
-        "https://github.com/jbschooley/oscairn",
+        "https://github.com/oscairn/oscairn",
         "",
         "",
         "0.1.0",

@@ -47,7 +47,7 @@ namespace
         "org.oscairn.delay",
         "Oscairn Delay",
         "Oscairn",
-        "https://github.com/jbschooley/oscairn",
+        "https://github.com/oscairn/oscairn",
         "",
         "",
         "0.1.0",

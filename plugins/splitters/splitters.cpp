@@ -39,9 +39,9 @@ namespace
     constexpr std::array<Parameter, 1> joinParameters{{{"Mode", 0, 2, 0, true}}};
 
     const char* const features[] = {CLAP_PLUGIN_FEATURE_AUDIO_EFFECT, CLAP_PLUGIN_FEATURE_UTILITY, CLAP_PLUGIN_FEATURE_STEREO, nullptr};
-    const clap_plugin_descriptor_t splitDescriptor{CLAP_VERSION_INIT, "org.oscairn.split", "Oscairn Split", "Oscairn", "https://github.com/jbschooley/oscairn", "", "", "0.1.0",
+    const clap_plugin_descriptor_t splitDescriptor{CLAP_VERSION_INIT, "org.oscairn.split", "Oscairn Split", "Oscairn", "https://github.com/oscairn/oscairn", "", "", "0.1.0",
                                                    "Divides stereo sound into left and right, mid and side, or frequency bands", features};
-    const clap_plugin_descriptor_t joinDescriptor{CLAP_VERSION_INIT, "org.oscairn.join", "Oscairn Join", "Oscairn", "https://github.com/jbschooley/oscairn", "", "", "0.1.0",
+    const clap_plugin_descriptor_t joinDescriptor{CLAP_VERSION_INIT, "org.oscairn.join", "Oscairn Join", "Oscairn", "https://github.com/oscairn/oscairn", "", "", "0.1.0",
                                                   "Joins lanes back into stereo: left and right, mid and side, or a sum", features};
 
     // A second-order section (RBJ cookbook), transposed direct form II.

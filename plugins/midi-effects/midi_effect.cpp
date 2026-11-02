@@ -22,7 +22,7 @@ constexpr const char* name="Oscairn Transpose";
 constexpr int defaultValue=0,minimum=-48,maximum=48;
 #endif
 const char* features[]{CLAP_PLUGIN_FEATURE_NOTE_EFFECT,nullptr};
-const clap_plugin_descriptor_t descriptor{CLAP_VERSION,id,name,"Oscairn","https://github.com/jbschooley/oscairn","","","0.1.0","Sample-timed note processor",features};
+const clap_plugin_descriptor_t descriptor{CLAP_VERSION,id,name,"Oscairn","https://github.com/oscairn/oscairn","","","0.1.0","Sample-timed note processor",features};
 struct Processor {
     struct Voice {
         clap_event_note_t input{};

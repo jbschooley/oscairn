@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 env:
-  OSCAIRN_REPOSITORY: jbschooley/oscairn # the Oscairn source repository
+  OSCAIRN_REPOSITORY: oscairn/oscairn # the Oscairn source repository
   OSCAIRN_COMMIT: "" # placeholder: a full commit of it that has `oscairn-sign file`
 
 jobs:

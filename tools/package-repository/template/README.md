@@ -1,7 +1,7 @@
 # Oscairn packages
 
 Submissions to Oscairn's official package repository
-([RFC 0031](https://github.com/jbschooley/oscairn/blob/main/docs/rfcs/0031-package-repository-and-distribution.md)).
+([RFC 0031](https://github.com/oscairn/oscairn/blob/main/docs/rfcs/0031-package-repository-and-distribution.md)).
 A pull request is a submission. GitHub Actions checks it, and on merge builds and signs the index,
 puts package files in this repository's releases and the signed index on GitHub Pages. There is
 no server.

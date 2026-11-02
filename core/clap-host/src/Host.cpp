@@ -463,7 +463,7 @@ struct Host::Impl {
     }
     Impl() {
         host.clap_version = CLAP_VERSION; host.host_data = this;
-        host.name = "Oscairn"; host.vendor = "Oscairn"; host.url = "https://github.com/jbschooley/oscairn"; host.version = "0.1.0";
+        host.name = "Oscairn"; host.vendor = "Oscairn"; host.url = "https://github.com/oscairn/oscairn"; host.version = "0.1.0";
         host.get_extension = extension; host.request_restart = requestRestart;
         host.request_process = requestProcess; host.request_callback = requestCallback;
     }

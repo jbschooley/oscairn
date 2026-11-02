@@ -311,7 +311,7 @@ PresetIndex indexPresets(const clap_plugin_entry_t* entry, const std::vector<std
     if (!factory || !factory->count || !factory->get_descriptor || !factory->create) return index;
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(budgetMs);
     Indexing data; data.plugins = &plugins; data.index = &index;
-    clap_preset_discovery_indexer_t indexer{CLAP_VERSION, "Oscairn", "Oscairn", "https://github.com/jbschooley/oscairn", "1", &data,
+    clap_preset_discovery_indexer_t indexer{CLAP_VERSION, "Oscairn", "Oscairn", "https://github.com/oscairn/oscairn", "1", &data,
         [](const clap_preset_discovery_indexer_t* i, const clap_preset_discovery_filetype_t* type) {
             if (!type || of(i).extensions.size() >= 64) return false;
             of(i).extensions.emplace_back(type->file_extension ? type->file_extension : ""); return true; },
