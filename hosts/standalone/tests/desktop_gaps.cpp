@@ -277,6 +277,22 @@ int main(int argc, char** argv)
                 holdRequests = false;
                 check(wait([&] { return !engine.soundBusy() && !jobHeld.load() && engine.connected(); }), "the held job finished");
             }
+            // While a job holds the engine's thread it cannot answer a launch ask either: the
+            // shell admits at once, rather than freeze for the call's timeout and drop.
+            {
+                holdRequests = true;
+                standalone::SoundAction prepare; prepare.kind = standalone::SoundAction::Prepare; prepare.directory = data.getChildFile("nothing").getFullPathName().toStdString();
+                engine.soundAction(std::move(prepare));
+                check(wait([&] { return engine.soundBusy() && !engine.controlReady() && jobHeld.load(); }), "a prepare of a missing folder holds the engine's thread");
+                const auto began = std::chrono::steady_clock::now();
+                const bool opened = standalone::askToLaunch(engine, {"oscairn.library", 120ull << 20}, "Library", {}, {});
+                const auto waited = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - began).count();
+                check(opened && engine.connected(), "an app opens at once while a job runs");
+                check(waited < 900, "the ask did not wait on the stalled socket: " + std::to_string(waited) + " ms");
+                holdRequests = false;
+                check(wait([&] { return !engine.soundBusy() && !jobHeld.load() && engine.connected(); }), "the held job finished");
+                engine.appClosed("oscairn.library");
+            }
             juce::LookAndFeel::setDefaultLookAndFeel(nullptr);
             configuration.deleteRecursively();
         }

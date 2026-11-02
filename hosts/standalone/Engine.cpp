@@ -383,6 +383,9 @@ namespace oscairn::standalone
     Control::Launch Engine::launchApp(const Control::AppMemory& app, bool dropNext)
     {
         if(!connected()) return {true, false, {}};
+        // While a job holds the engine's thread it cannot answer the ask anyway; wait on it
+        // only when it can, or the UI freezes for the call's timeout mid-set.
+        if(!controlReady()) return {true, false, {}};
         try{return control_->launchApp(app,dropNext);}catch(const std::exception& e){std::fprintf(stderr,"oscairn: launch: %s\n",e.what());return {true, false, {}};}
     }
     void Engine::appClosed(const std::string& app){command([this,app]{control_->appClosed(app);});}
