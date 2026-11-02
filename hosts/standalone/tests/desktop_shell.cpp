@@ -771,7 +771,25 @@ int main(int argc, char** argv)
                     {"type": "knob", "rect": [20, 620, 120, 120], "label": "K1", "bind": "row:1"}, {"type": "knob", "rect": [160, 620, 120, 120], "label": "K2", "bind": "row:2"},
                     {"type": "knob", "rect": [300, 620, 120, 120], "label": "K3", "bind": "row:3"}]})");
                 standalone::Panel panel(engine, layout);
+                panel.setSize(1024, 760);
                 check(engine.rowKnobs() == 3 && engine.rowEdge() == standalone::Engine::Edge::Bottom, "knobs under the screen");
+                // With no page showing, the row is empty; a knob still turns, so Learn hears it.
+                juce::Slider* k1 = nullptr;
+                std::function<void(juce::Component&)> knob = [&](juce::Component& c) {
+                    for(auto* child : c.getChildren()) { if(auto* s = dynamic_cast<juce::Slider*>(child); s && !k1 && s->getParentComponent()->getBounds().getTopLeft() == juce::Point<int>(20, 620)) k1 = s; knob(*child); }
+                };
+                knob(panel);
+                const auto touches = engine.touches();
+                if(k1)
+                {
+                    auto mouse = juce::Desktop::getInstance().getMainMouseSource();
+                    const auto at = k1->getLocalBounds().getCentre().toFloat(), to = at.translated(0, -40);
+                    const auto now = juce::Time::getCurrentTime();
+                    k1->mouseDown(juce::MouseEvent(mouse, at, juce::ModifierKeys::leftButtonModifier, 1, 0, 0, 0, 0, k1, k1, now, at, now, 1, false));
+                    k1->mouseDrag(juce::MouseEvent(mouse, to, juce::ModifierKeys::leftButtonModifier, 1, 0, 0, 0, 0, k1, k1, now, at, now, 1, true));
+                    k1->mouseUp(juce::MouseEvent(mouse, to, {}, 1, 0, 0, 0, 0, k1, k1, now, at, now, 1, true));
+                }
+                check(k1 && engine.touches() > touches && engine.lastTouched() == "knob:1", "an empty row knob turned is heard, for Learn: " + engine.lastTouched());
                 NodeId synth = 0;
                 for(const auto& [id, n] : engine.graph().names) if(n == "Basic Synth") synth = id;
                 standalone::ParameterGrid grid(engine, synth, "Basic Synth");

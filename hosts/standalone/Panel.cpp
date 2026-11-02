@@ -131,10 +131,11 @@ namespace oscairn::standalone
                 return;
             if( row_ )
             {
-                // Follow the row: a new parameter takes its range and name; none disables it.
+                // Follow the row: a new parameter takes its range and name. An empty slot still
+                // turns, so Learn hears the knob; the callbacks play nothing without a node.
                 const auto& row = engine_.row();
                 const auto* bound = size_t( row_ ) <= row.size() ? &row[size_t( row_ - 1 )] : nullptr;
-                if( !bound ) { node_.clear(); rowControl_ = 0; slider_.setEnabled( false ); slider_.updateText(); if( label_ != layoutLabel_ ) { label_ = layoutLabel_; repaint(); } return; }
+                if( !bound ) { node_.clear(); rowControl_ = 0; slider_.setEnabled( true ); slider_.updateText(); if( label_ != layoutLabel_ ) { label_ = layoutLabel_; repaint(); } return; }
                 // A control of the tree (Play's knobs) rather than a parameter.
                 if( bound->control )
                 {
@@ -157,7 +158,7 @@ namespace oscairn::standalone
                     }
                 }
                 const bool available = engine_.hasParam( node_, param_ );
-                slider_.setEnabled( available );
+                slider_.setEnabled( available || node_.empty() );
                 if( available ) { slider_.setValue( engine_.param( node_, param_ ), juce::dontSendNotification ); if( engine_.controlReady() ) slider_.updateText(); }
                 return;
             }
