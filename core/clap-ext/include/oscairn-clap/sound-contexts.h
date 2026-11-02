@@ -9,7 +9,8 @@ extern "C" {
 
 /* Native prepared sound contexts. Context-management methods run on the main thread
  * concurrently with process(), without stopping voices; state callbacks are exclusive.
- * Capacity is constant for the instance lifetime. Telemetry may change while read.
+ * Capacity is constant for the instance lifetime; Oscairn refuses a plugin reporting more
+ * than 256 or missing any function but state. Telemetry may change while read.
  * prepare builds an independent patch from plugin defaults plus supplied values, or
  * from patch text when the plugin defines one (the Oscairn Sampler takes SFZ). Asset
  * paths in that text are relative to base, a library folder whose files the plugin

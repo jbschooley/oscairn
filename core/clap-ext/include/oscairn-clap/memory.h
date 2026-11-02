@@ -8,8 +8,10 @@ extern "C" {
 /* Memory declared before it is allocated (docs/rfcs/0025-resource-budgets.md#declarations).
  * A plugin reports what activating would allocate, so a host near its memory limit can refuse
  * it before the allocation instead of after. The host still measures what the plugin holds and
- * counts the larger of the two; a plugin found holding more than it declared is no longer
- * trusted on that device.
+ * counts the larger of the two, so a plugin found holding more than it declared is counted at
+ * what it holds. (Oscairn: distrusting such a plugin's later declarations is planned. In a worker
+ * process, a declaration sets the worker's memory limit: what it declares plus half again and
+ * 64 MiB. A plugin offering one function without the other is refused.)
  *
  * Bytes are the plugin's own storage, excluding host and allocator overhead:
  *   shared_bytes:  once per instance (or per engine shared by effect contexts): tables,
@@ -33,7 +35,8 @@ typedef struct oscairn_plugin_memory {
      * loading another state. False: not known for this state; the host uses its measurement. */
     bool (CLAP_ABI *estimate)(const clap_plugin_t*, double sample_rate, uint32_t max_frames,
                               oscairn_memory_t* out);
-    /* Main thread, after activate: what the plugin holds now. False: not known. */
+    /* Main thread, after activate: what the plugin holds now. False: not known. (Oscairn does
+     * not use it for its budget yet; it counts its own measurement.) */
     bool (CLAP_ABI *current)(const clap_plugin_t*, oscairn_memory_t* out);
 } oscairn_plugin_memory_t;
 

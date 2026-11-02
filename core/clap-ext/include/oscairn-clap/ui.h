@@ -17,14 +17,16 @@ extern "C" {
  *
  * A parameter may also name its role (cutoff, attack, an effect's mix): what it does in terms
  * every instrument shares, so a host can put it on the same physical knob whatever the plugin
- * (Oscairn's role banks, RFC 0011). A plugin that names no role gets knobs by priority instead.
+ * (Oscairn's role banks, RFC 0011). Oscairn guesses roles from the parameters' names for a plugin
+ * that names none, and only then; where no role fills a bank, knobs go by priority.
  *
  * Hints only shape the editor; every parameter stays reachable whatever its hint. A host
  * that does not know this extension ignores it, and a parameter without a hint is drawn as
  * the host decides from its metadata (stepped values, ranges, module path).
  *
- * param_hint is main-thread; the host asks it when it reads parameter info (at load and
- * after a rescan of the parameters' info), so hints may change only with that info.
+ * param_hint is main-thread; the host asks it when it reads parameter info (at every activation
+ * and after a rescan of the parameters' info), so hints may change only with that info. Oscairn
+ * ignores this extension when param_hint is null.
  */
 static const char OSCAIRN_EXT_UI[] = "oscairn.ui/draft-3";
 

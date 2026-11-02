@@ -16,6 +16,8 @@ extern "C" {
  * Destruction deliberately cuts that context's tail. To preserve it, keep feeding
  * silence until tail_active is false. This is independent of shared-send routing.
  * No engine/instance addresses or physical slots are persistent identities.
+ * A host may count resources' bytes toward its memory budget; Oscairn does for a plugin
+ * without oscairn.memory (a context made from another counts its context_bytes).
  */
 static const char OSCAIRN_EXT_EFFECT_CONTEXTS[] = "oscairn.effect-contexts/draft";
 typedef struct oscairn_effect_resources {
