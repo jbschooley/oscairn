@@ -245,10 +245,15 @@ namespace oscairn::standalone
             {
                 using Message = ControlGroup::Midi::Message;
                 g.midi.device = profile.id; g.midi.port = uint32_t(c.midi.port); g.midi.channel = uint32_t(c.midi.channel);
+                g.midi.channels.assign(c.midi.channels.begin(), c.midi.channels.end());
                 g.midi.message = c.midi.pitchBend ? Message::PitchBend : c.midi.cc.empty() ? Message::Note : Message::CC;
                 for(const auto n : c.midi.cc.empty() ? c.midi.notes : c.midi.cc) g.midi.numbers.push_back(uint8_t(n));
                 for(const auto& e : c.midi.encodings)
-                    for(size_t k = 0; k < encodings.size(); ++k) if(e == encodings[k]) g.midi.encodings.push_back(Encoding(k));
+                {
+                    g.midi.encodings.push_back(Encoding::Steps); // "steps", unless it is one of the names
+                    for(size_t k = 0; k < encodings.size(); ++k) if(e == encodings[k]) g.midi.encodings.back() = Encoding(k);
+                }
+                for(const auto& [up, down] : c.midi.steps) g.midi.steps.push_back({uint8_t(up), uint8_t(down)});
                 g.midi.latch = c.midi.button == "latch";
             }
             out.push_back(std::move(g));

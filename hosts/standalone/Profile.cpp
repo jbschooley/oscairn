@@ -163,8 +163,14 @@ namespace oscairn::standalone
                     const auto& mo = object(m, "a control's midi"); fields(mo, {"port", "channel", "cc", "notes", "pitchBend", "encoding", "button"}, "a control's midi");
                     auto& midi = c.midi;
                     midi.port = mo.hasProperty("port") ? count(mo, "port", 16) : 1;
-                    midi.channel = count(mo, "channel", 16);
-                    require(midi.channel >= 1, "a control's MIDI channel is 1 to 16");
+                    if(mo.getProperty("channel").isArray())
+                    {
+                        midi.channels = numbers(mo, "channel", 16);
+                        require(int(midi.channels.size()) == c.count, "channel is one, or one per control");
+                        midi.channel = midi.channels.front();
+                    }
+                    else midi.channel = count(mo, "channel", 16);
+                    require(midi.channel >= 1 && std::all_of(midi.channels.begin(), midi.channels.end(), [](int n) { return n >= 1; }), "a control's MIDI channel is 1 to 16");
                     midi.cc = numbers(mo, "cc", 127); midi.notes = numbers(mo, "notes", 127); midi.pitchBend = flag(mo, "pitchBend");
                     const int kinds = int(!midi.cc.empty()) + int(!midi.notes.empty()) + int(midi.pitchBend);
                     require(kinds == 1 || (kinds == 0 && c.kind == "keys"), "a control's midi has one of cc, notes or pitchBend (keys only a channel)");
@@ -175,10 +181,22 @@ namespace oscairn::standalone
                     if(const auto encoding = mo.getProperty("encoding"); !encoding.isVoid())
                     {
                         require(!midi.cc.empty(), "only CCs have an encoding");
-                        if(encoding.isString()) midi.encodings.assign(size_t(c.count), encoding.toString().toStdString());
-                        else midi.encodings = names(mo, "encoding");
+                        // A name, or {increment, decrement}: the values for one step up and one down.
+                        auto one = [&](const juce::var& e) {
+                            if(e.isString())
+                            {
+                                require(encodingNames.contains(e.toString()), "an encoding is absolute, twosComplement, binaryOffset, signMagnitude or {increment, decrement}");
+                                midi.encodings.push_back(e.toString().toStdString()); midi.steps.push_back({0, 0}); return;
+                            }
+                            const auto& so = object(e, "an encoding"); fields(so, {"increment", "decrement"}, "an encoding");
+                            require(so.hasProperty("increment") && so.hasProperty("decrement"), "an encoding's steps have an increment and a decrement");
+                            const int up = count(so, "increment", 127), down = count(so, "decrement", 127);
+                            require(up != down, "an encoding's increment and decrement differ");
+                            midi.encodings.push_back("steps"); midi.steps.push_back({up, down});
+                        };
+                        if(encoding.isArray()) { require(encoding.size() <= 1024, "encoding must be a list"); for(const auto& e : *encoding.getArray()) one(e); }
+                        else for(int k = 0; k < c.count; ++k) one(encoding);
                         require(int(midi.encodings.size()) == c.count, "encoding is one, or one per control");
-                        for(const auto& name : midi.encodings) require(encodingNames.contains(juce::String(name)), "an encoding is absolute, twosComplement, binaryOffset or signMagnitude");
                     }
                     if(mo.hasProperty("button")) { midi.button = text(mo, "button"); require(c.kind == "buttons" && (midi.button == "momentary" || midi.button == "latch"), "a button is momentary or latch"); }
                 }
@@ -207,10 +225,11 @@ namespace oscairn::standalone
                 require(ports.isArray() && ports.size() >= 1 && ports.size() <= 16, "ports must be a list of 1 to 16");
                 for(const auto& e : *ports.getArray())
                 {
-                    const auto& po = object(e, "a port"); fields(po, {"name", "index", "protocol"}, "a port");
-                    Port port{text(po, "name"), po.hasProperty("index") ? count(po, "index", 64) : 1, po.hasProperty("protocol") ? text(po, "protocol") : std::string("midi")};
+                    const auto& po = object(e, "a port"); fields(po, {"name", "index", "protocol", "ignore"}, "a port");
+                    Port port{text(po, "name"), po.hasProperty("index") ? count(po, "index", 64) : 1, po.hasProperty("protocol") ? text(po, "protocol") : std::string("midi"), flag(po, "ignore")};
                     require(!port.name.empty() && port.index >= 1, "a port has a name and an index from 1");
                     require(port.protocol == "midi" || port.protocol == "mackie", "a port's protocol is midi or mackie");
+                    require(!port.ignore || !po.hasProperty("protocol"), "an ignored port has no protocol");
                     p.midi.ports.push_back(port);
                 }
             }
@@ -220,11 +239,12 @@ namespace oscairn::standalone
         for(const auto& c : p.controls)
         {
             if(!c.midi.channel) continue;
-            require(c.midi.port >= 1 && c.midi.port <= int(p.midi.ports.size()) && p.midi.ports[size_t(c.midi.port - 1)].protocol == "midi", "a control's port is one of the controller's midi ports");
-            auto add = [&](int kind, int number) { require(messages.insert({c.midi.port, c.midi.channel, kind, number}).second, "two controls send the same message"); };
-            for(const auto n : c.midi.cc) add(0, n);
-            if(c.role != "notes") for(const auto n : c.midi.notes) add(1, n);
-            if(c.midi.pitchBend) add(2, 0);
+            require(c.midi.port >= 1 && c.midi.port <= int(p.midi.ports.size()) && p.midi.ports[size_t(c.midi.port - 1)].protocol == "midi" && !p.midi.ports[size_t(c.midi.port - 1)].ignore,
+                    "a control's port is one of the controller's midi ports, not an ignored one");
+            auto add = [&](int kind, int number, size_t k) { require(messages.insert({c.midi.port, c.midi.channelOf(k % size_t(c.count)), kind, number}).second, "two controls send the same message"); };
+            for(size_t k = 0; k < c.midi.cc.size(); ++k) add(0, c.midi.cc[k], k);
+            if(c.role != "notes") for(size_t k = 0; k < c.midi.notes.size(); ++k) add(1, c.midi.notes[k], k);
+            if(c.midi.pitchBend) add(2, 0, 0);
         }
         if(const auto v = root.getProperty("cv"); !v.isVoid())
         {
@@ -333,6 +353,18 @@ namespace oscairn::standalone
         return out;
     }
 
+    namespace
+    {
+        // The input a port is: the Nth whose name contains the port's, or none (inputs.size()).
+        size_t inputOf(const Profile::Port& port, const std::vector<std::string>& inputs)
+        {
+            int seen = 0;
+            for(size_t i = 0; i < inputs.size(); ++i)
+                if(juce::String(inputs[i]).containsIgnoreCase(juce::String(port.name)) && ++seen == port.index) return i;
+            return inputs.size();
+        }
+    }
+
     std::vector<PortMatch> matchPorts(const std::vector<Profile>& controllers, const std::vector<std::string>& inputs)
     {
         std::vector<PortMatch> out;
@@ -340,16 +372,20 @@ namespace oscairn::standalone
             for(size_t k = 0; k < controllers[c].midi.ports.size(); ++k)
             {
                 const auto& port = controllers[c].midi.ports[k];
-                if(port.protocol != "midi") continue;
-                int seen = 0;
-                for(size_t i = 0; i < inputs.size(); ++i)
-                    if(juce::String(inputs[i]).containsIgnoreCase(juce::String(port.name)) && ++seen == port.index)
-                    {
-                        // An input is one controller's port at most: the first profile to claim it.
-                        if(std::none_of(out.begin(), out.end(), [&](const PortMatch& m) { return m.input == i; })) out.push_back({i, c, int(k + 1)});
-                        break;
-                    }
+                if(port.protocol != "midi" || port.ignore) continue;
+                // An input is one controller's port at most: the first profile to claim it.
+                if(const auto i = inputOf(port, inputs); i < inputs.size() && std::none_of(out.begin(), out.end(), [&](const PortMatch& m) { return m.input == i; }))
+                    out.push_back({i, c, int(k + 1)});
             }
+        return out;
+    }
+
+    std::vector<std::string> ignoredInputs(const std::vector<Profile>& controllers, const std::vector<std::string>& inputs)
+    {
+        std::vector<std::string> out;
+        for(const auto& c : controllers)
+            for(const auto& port : c.midi.ports)
+                if(const auto i = inputOf(port, inputs); port.ignore && i < inputs.size()) out.push_back(inputs[i]);
         return out;
     }
 }

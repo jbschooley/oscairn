@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #pragma once
+#include <array>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -22,10 +23,17 @@ namespace oscairn::standalone
         // screen) or `paging` (button or screen); faders may have `modes` (part, element, audio).
         struct Row { std::string name, bank; }; // bank: assign, filter, ampEG, eq, levels or effects
         // An external controller's group says how it talks MIDI (RFC 0024's controllers): its port
-        // (from 1), channel (1 to 16; 0: no MIDI described) and a CC or note per control (per
-        // control per row, for rows whose switch changes the numbers), or pitch bend; each CC's
-        // encoding; how buttons send (momentary or latch).
-        struct ControlMidi { int port = 1, channel = 0; std::vector<int> cc, notes; bool pitchBend = false; std::vector<std::string> encodings; std::string button = "momentary"; };
+        // (from 1), channel (1 to 16; 0: no MIDI described; given as a list, the first control's,
+        // with `channels` one per control) and a CC or note per control (per control per row, for
+        // rows whose switch changes the numbers), or pitch bend; each CC's encoding ("steps" for
+        // explicit increment and decrement values, in `steps`); how buttons send (momentary or latch).
+        struct ControlMidi
+        {
+            int port = 1, channel = 0; std::vector<int> channels, cc, notes; bool pitchBend = false;
+            std::vector<std::string> encodings; std::vector<std::array<int, 2>> steps; // steps: one per control, {0, 0} for a named encoding
+            std::string button = "momentary";
+            int channelOf(size_t control) const { return control < channels.size() ? channels[control] : channel; }
+        };
         // `target`: what an assign group plays by default (banks, partLevels, partMutes, scenes;
         // empty: its kind's default). `functions` on an assign group: standard controllers passed
         // to every part (pitchBend, modulation, sustain...).
@@ -40,8 +48,9 @@ namespace oscairn::standalone
         struct Screen { int width = 0, height = 0; bool touch = false; std::string surface = "desktop", layout = "desktop"; };
         std::vector<Screen> screens;
         // A controller's ports: an input matches when its name contains `name`, ignoring case;
-        // `index` picks the Nth such input; `protocol` midi, or mackie (declared, not read yet).
-        struct Port { std::string name; int index = 1; std::string protocol = "midi"; };
+        // `index` picks the Nth such input; `protocol` midi, or mackie (declared, not read yet);
+        // `ignore`: a duplicate of another port, whose messages the engine leaves out.
+        struct Port { std::string name; int index = 1; std::string protocol = "midi"; bool ignore = false; };
         struct Midi { int din = 0; bool usbDevice = false, usbHost = false; std::vector<Port> ports; } midi;
         struct Cv { int inputs = 0, outputs = 0; } cv;
         struct Network { bool ethernet = false, wifi = false; } network;
@@ -77,7 +86,11 @@ namespace oscairn::standalone
     // The built-in controllers' profiles, and those in `files`.
     std::vector<Profile> controllerProfiles(const std::vector<std::string>& files = {});
     // Which MIDI inputs, by name in the system's order, are which controller's ports: for each
-    // match, the input's place, the profile's place and the port (from 1). Mackie ports are left out.
+    // match, the input's place, the profile's place and the port (from 1). Mackie and ignored
+    // ports are left out. An input two profiles match is the first's, in the order given
+    // (controllerProfiles sorts them by id).
     struct PortMatch { size_t input = 0, profile = 0; int port = 1; };
     std::vector<PortMatch> matchPorts(const std::vector<Profile>& controllers, const std::vector<std::string>& inputs);
+    // The names of the inputs that are a controller's ignored ports: duplicates the engine leaves out.
+    std::vector<std::string> ignoredInputs(const std::vector<Profile>& controllers, const std::vector<std::string>& inputs);
 }

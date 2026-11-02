@@ -36,6 +36,7 @@ namespace oscairn::standalone
         std::vector<Incoming> queue_;
         std::vector<std::unique_ptr<juce::MidiInput>> inputs_; // message thread; read under the lock
         std::vector<std::pair<std::string, uint32_t>> ports_;  // each input's controller and port
+        std::vector<std::string> ignored_;                     // message thread: the inputs the engine was told to leave out
         juce::MidiDeviceListConnection changed_;
         std::atomic<bool> dirty_{false};
         // Message thread: the mapping, what it reads, and values it set lately (read back late).

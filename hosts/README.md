@@ -142,8 +142,11 @@ A panel profile fills the display with no title or menu bar and shows its screen
 layout for a run (on the desktop, `--profile kick` shows the KICK's screen, full screen).
 
 External MIDI controllers have profiles of their own ([RFC 0024](../docs/rfcs/0024-device-profiles.md#controllers)):
-`smk37-elite` and `modx-m-usb` are built in (both estimated), and `--controller FILE`, given as
-often as wanted, adds one or replaces the built-in of its id. While a MIDI input whose name
+`smk37-elite` (the SMK37 Elite with its stock firmware, read from a unit with the monitor below;
+its buttons not described yet) and `modx-m-usb` (estimated) are built in, and `--controller FILE`, given as
+often as wanted, adds one or replaces the built-in of its id; an input two profiles match is
+the first's by id. A port the profile marks `ignore` (a duplicate, like the SMK37's `-Private`)
+is left out by the engine, so its notes do not play twice. While a MIDI input whose name
 matches a controller's port is connected, the app opens it too and the controller's groups
 join the device's: its knobs play the banks of the part Play's knobs follow (and the page Play
 shows, when they are Play's knob row, as on the desktop; else the first), its faders part
@@ -152,7 +155,8 @@ encodings decoded; a control the Performance or a part's Sound assigns plays tha
 learn takes its moves. Notes reach the parts through the engine's own inputs, as pitch bend and
 the standard controllers (the mod wheel's CC 1, sustain) do where the engine's input filter passes
 them. Not with `--snapshot`. Plugging or unplugging a controller
-opens or closes it. None of this has been tried with a controller connected yet.
+opens or closes it. None of this has been tried with a controller connected yet: the SMK37's
+numbers were read with the monitor, not played through the app.
 
 To read what a controller sends, build `oscairn-midi-monitor` (with the app or the engine) and
 run it from the build folder, for example `build-app/hosts/oscairn_midi_monitor_artefacts/RelWithDebInfo/oscairn-midi-monitor`:

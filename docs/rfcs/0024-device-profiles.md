@@ -22,8 +22,9 @@ Checked when built and tested; the sections below say how.
 - [ ] 5. A second product's profile (a desktop module or pedal) built from the same image
 - [ ] 6. External MIDI controllers: [controller profiles](#controllers) matched by port name,
       their controls joining the device's, each group's [default target](#default-targets)
-      (parsing, defaults, resolution, encodings and pickup built; the SMK37 Elite's MIDI
-      numbers wait for a reading with `oscairn-midi-monitor`)
+      (parsing, defaults, resolution, encodings and pickup built; the SMK37 Elite's numbers
+      read with `oscairn-midi-monitor`, all but its buttons; choosing between profiles that
+      match one port not built)
 
 ## Problem
 
@@ -191,13 +192,19 @@ the same format, version 2, with three things a device profile does not have:
   that input as macOS names it); `index` (from 1) picks the Nth matching input, in
   the order the system lists them, for a device with several ports under one name (the MODX M's
   port 1 and port 2). `protocol` is `midi` (the default), or `mackie` for a Mackie Control port,
-  which is declared but not read yet (the next step, below). Matching by name works on every OS
+  which is declared but not read yet (the next step, below). `ignore: true` names a port that
+  carries copies of another's messages (the SMK37 Elite's `-Private` repeats `-Master`): the
+  app sends the matching inputs' names to the engine (the control API's `midi.ignore`, sent
+  again when the engine restarts), which leaves out every message from them, so no key or pad
+  plays twice; an ignored port has no `protocol` and no group's `midi` names it. Matching by name works on every OS
   and through every MIDI driver; USB vendor and product IDs are not visible to JUCE's MIDI
   inputs. A profile with `midi.ports` is a controller's: it holds `format`, `version`, `id`,
   `name`, `controls`, `midi` (only `ports`) and `estimated`, and nothing about a platform,
   screens or reliability.
 - **`midi` on each group:** how its controls talk MIDI: `port` (which of `midi.ports`, from 1;
-  the first by default, and a `midi` port), `channel` (1 to 16) and one of `cc` (a controller
+  the first by default, and a `midi` port), `channel` (1 to 16, for the group or as a list, one
+  per control, for a group whose controls send on different channels: the SMK37 Elite's knobs 1
+  to 6 on channel 6 and 7 and 8 on channel 1) and one of `cc` (a controller
   number per control, 0 to 127), `notes` (a note number per control, for pads and note buttons)
   or `pitchBend: true` (a group of one wheel). With `cc`, `encoding` says how the value is sent,
   for the whole group or as a list, one per control:
@@ -208,6 +215,7 @@ the same format, version 2, with three things a device profile does not have:
   | `twosComplement` | 1 to 63 up, 127 down to 65 for −1 to −63 | 1 up, 127 down |
   | `binaryOffset` | 64 plus the step: 65 up, 63 down | 65 up, 63 down |
   | `signMagnitude` | bit 6 the sign: 1 to 63 up, 65 to 127 for −1 to −63 | 1 up, 65 down |
+  | `{"increment": U, "decrement": D}` | U for one step up, D (another value) for one step down; any other value is no step | U up, D down |
 
   A step larger than one is the controller's acceleration and moves the value as far. Buttons
   say how they send with `button`: `momentary` (the default: a value of 64 or more, or a note
@@ -231,17 +239,29 @@ groups like any device's: the knobs play the banks, the faders part levels, the 
 pitch bend and modulation to every part. Several controllers join in the order of their
 profiles' ids. RFC 0011's controller-mapping service decodes the encodings and does pickup.
 
-Built in: `smk37-elite`, the owner's Arturia-style SMK37 Elite (37 keys, 16 pads as eight by
-two, pitch and mod wheels, eight endless knobs, four faders). On macOS it shows three inputs,
-`SMK-37 Elite -Private`, `-Master` and `-MCP` (listed 2026-11-01 with the monitor's `--list`);
-the profile takes `-Master` as the one its controls speak on and `-MCP` as Mackie Control, both
-guesses until the monitor shows which port each control's messages come from. Its MIDI numbers and channels are
-guessed (from the defaults such keyboards often ship with: knobs on CC 74, 71, 76, 77, 93, 18, 19 and 16,
-faders on CC 73, 75, 79 and 72, pads on notes 36 to 51 on channel 10), as is the encoding of
-knobs 7 and 8, which send something relative (taken as `signMagnitude`) where knobs 1 to 6 send
-absolute values. `oscairn-midi-monitor` (in `tools/`) prints every message from every input and
-a table per control, to fill in the real numbers; `--seconds N` listens for that long instead of
-waiting for Enter.
+**A profile describes one firmware.** What a controller sends is its firmware's choice, so a
+unit running custom firmware gets a profile of its own (its own id), beside the stock one.
+Today, when two profiles match one input, the first by id takes it (a `--controller FILE`
+replaces the built-in of its own id): deterministic, but silent. The intended behavior is that
+the musician chooses, in a setting that defaults to the stock firmware's profile; that setting
+is not built yet. Matching by the device's own identity (the firmware version in its reply to a
+MIDI Identity Request) is a possible later step, where the firmware reports it.
+
+Built in: `smk37-elite`, the owner's Arturia-style SMK37 Elite with its stock firmware (37 keys,
+16 pads as eight by two, pitch and mod wheels, eight endless knobs, four faders), read with
+`oscairn-midi-monitor` on 2026-11-01 by moving every control. On macOS it shows three inputs,
+`SMK-37 Elite -Private`, `-Master` and `-MCP`: `-Private` and `-Master` carry identical copies
+of every message, so the profile takes `-Master` for its controls and ignores `-Private`;
+`-MCP` sent nothing and is declared Mackie Control from its name, unconfirmed. The keys, pitch
+wheel (the full range), mod wheel (CC 1) and faders (CC 68 to 71, absolute) are on channel 1;
+knobs 1 to 6 send CC 48 to 53, absolute, on channel 6; knobs 7 and 8 send CC 38 and 37 on
+channel 1, a step a message: 69 clockwise and 1 counterclockwise (knob 7 checked turning
+clockwise only). The pads are on channel 2, notes 36, 37, 38, 40, 42, 43, 44, 45, 46, 47, 48,
+49, 51, 53, 54 and 55, with channel pressure as their aftertouch; the format has no field for a
+group's aftertouch, so the pads' `sensing` says so, and the pressure reaches the parts as every
+input's does (RFC 0012). No button was pressed, so the profile describes no buttons yet.
+`oscairn-midi-monitor` (in `tools/`) prints every message from every input and a table per
+control; `--seconds N` listens for that long instead of waiting for Enter.
 
 The second built-in controller is `modx-m-usb`, a MODX M played over USB in DAW Remote's Plugin
 mode (the DAW type Cubase, Logic or Live), apart from `modx-m`, the profile for running on that
@@ -312,7 +332,17 @@ resolution and the mapping service (RFC 0011's step 6 status); `midi-monitor` ch
 monitor's lines and table. No controller was connected for any of this: the matching and
 playing were checked with names and messages given in tests, not with hardware.
 
-Not yet: the SMK37 Elite's and the MODX M's real numbers (the monitor reads them); the mod
+Then (2026-11-01) the SMK37 Elite's real numbers from the monitor, and the format gaps they
+showed: a `channel` per control, the `{increment, decrement}` encoding, and ignored duplicate
+ports, left out by the engine (`midi.ignore`, `Session` dropping the inputs' messages before
+the graph). `desktop-profile` checks the new fields and their refusals (a channel list of the
+wrong length, an increment equal to its decrement, a control on an ignored port);
+`control-physical-controls` decodes 69 and 1 to +1 and −1 and matches by each control's
+channel; `control-parts` checks an ignored input's notes are not delivered; `desktop-shell`
+resolves the SMK37's CC 48 on channel 6, CC 38 on channel 1 and CC 70 to knob 1, knob 7 and
+fader 3. Still checked without hardware: the profile's numbers are the owner's readings.
+
+Not yet: the SMK37 Elite's buttons and the MODX M's real numbers (the monitor reads them); choosing between profiles that match one port; the mod
 wheel still reaching a part as CC 1 when a Sound or the Performance assigns it elsewhere (the
 engine passes CC 1 to every part; filtering it per part comes with the engine's input changes);
 a controller's mod wheel or pedal on a nonstandard CC passed on as its function; paging a

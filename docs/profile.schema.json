@@ -225,12 +225,22 @@
                 "type": "integer",
                 "minimum": 1,
                 "maximum": 16,
-                "description": "Which of midi.ports, from 1; a midi port"
+                "description": "Which of midi.ports, from 1; a midi port, not an ignored one"
               },
               "channel": {
-                "type": "integer",
-                "minimum": 1,
-                "maximum": 16
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/Channel"
+                  },
+                  {
+                    "type": "array",
+                    "maxItems": 1024,
+                    "items": {
+                      "$ref": "#/$defs/Channel"
+                    }
+                  }
+                ],
+                "description": "For the group, or one per control"
               },
               "cc": {
                 "type": "array",
@@ -540,6 +550,10 @@
                   "mackie"
                 ],
                 "description": "midi (the default), or mackie: Mackie Control, declared but not read yet"
+              },
+              "ignore": {
+                "type": "boolean",
+                "description": "A port that duplicates another's messages: the engine leaves its input out, so nothing plays twice. Has no protocol"
               }
             },
             "required": [
@@ -630,12 +644,42 @@
   ],
   "additionalProperties": false,
   "$defs": {
+    "Channel": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 16
+    },
     "Encoding": {
-      "enum": [
-        "absolute",
-        "twosComplement",
-        "binaryOffset",
-        "signMagnitude"
+      "anyOf": [
+        {
+          "enum": [
+            "absolute",
+            "twosComplement",
+            "binaryOffset",
+            "signMagnitude"
+          ]
+        },
+        {
+          "type": "object",
+          "description": "Explicit steps: the value sent for one step up and the value for one step down, which differ; any other value is no step",
+          "properties": {
+            "increment": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 127
+            },
+            "decrement": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 127
+            }
+          },
+          "required": [
+            "increment",
+            "decrement"
+          ],
+          "additionalProperties": false
+        }
       ]
     }
   },

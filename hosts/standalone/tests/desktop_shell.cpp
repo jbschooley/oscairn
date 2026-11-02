@@ -966,6 +966,23 @@ int main(int argc, char** argv)
     }
     std::filesystem::remove(socket);
     data.deleteRecursively();
+    {
+        // The SMK37 Elite's profile, as the monitor read it: knob 1 on channel 6, knob 7 on
+        // channel 1, fader 3; on the desktop its knobs are knob:1 to knob:8.
+        std::vector<standalone::Profile> smk;
+        for(const auto& p : standalone::controllerProfiles()) if(p.id == "smk37-elite") smk.push_back(p);
+        const auto groups = smk.empty() ? std::vector<ControlGroup>{} : standalone::controlGroups(smk.front());
+        const auto resolved = resolveControls({}, groups, 0);
+        auto control = [&](std::vector<uint8_t> bytes) {
+            const auto at = midiControl(groups, "smk37-elite", 1, bytes.data(), bytes.size());
+            if(at) for(const auto& r : resolved) if(r.group == at->group && r.index == at->index) return r.control;
+            return std::string();
+        };
+        check(control({0xB5, 48, 64}) == "knob:1" && control({0xB0, 38, 69}) == "knob:7" && control({0xB0, 37, 1}) == "knob:8" && control({0xB0, 70, 64}) == "fader:3",
+              "the SMK37: CC 48 on channel 6 is knob 1, CC 38 on channel 1 knob 7, CC 37 knob 8, CC 70 fader 3");
+        check(control({0xB0, 48, 64}).empty() && control({0xB5, 38, 69}).empty(), "and those numbers on the other channel are no control");
+        check(!groups.empty() && groups[4].midi.encodings[6] == Encoding::Steps && groups[4].midi.steps[6] == std::array<uint8_t, 2>{69, 1}, "knob 7 steps: 69 up, 1 down");
+    }
     if(!failures) std::puts("ok: the desktop window renders every tab in both input modes");
     return failures ? 1 : 0;
 }

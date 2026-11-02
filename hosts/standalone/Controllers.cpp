@@ -50,6 +50,8 @@ namespace oscairn::standalone
         auto groups = device_;
         for(size_t p = 0; p < profiles_.size(); ++p) if(joined[p]) for(auto& g : controlGroups(profiles_[p])) groups.push_back(std::move(g));
         engine_.setControlGroups(std::move(groups));
+        // A port that duplicates another's would play each note twice: the engine leaves it out.
+        if(auto ignored = ignoredInputs(profiles_, names); ignored != ignored_) { ignored_ = ignored; engine_.ignoreMidiInputs(std::move(ignored)); }
         engine_.positions().clear();
         { std::lock_guard lock(lock_); inputs_ = std::move(inputs); ports_ = std::move(ports); }
         for(auto& input : inputs_) input->start();

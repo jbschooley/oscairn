@@ -92,12 +92,13 @@ int main()
         const auto controllers = controllerProfiles();
         check(controllers.size() == 2 && controllers[0].id == "modx-m-usb" && controllers[1].id == "smk37-elite", "two built-in controllers, by id");
         const auto& smk = controllers[1];
-        check(smk.controller() && smk.reliability.empty() && !smk.screen() && smk.midi.ports.size() == 2 && smk.midi.ports[0].name == "SMK-37 Elite -Master" && smk.midi.ports[1].protocol == "mackie" &&
-              std::find(smk.estimated.begin(), smk.estimated.end(), "controls") != smk.estimated.end(), "the SMK37 Elite: a port by name, its MIDI estimated");
+        check(smk.controller() && smk.reliability.empty() && !smk.screen() && smk.midi.ports.size() == 3 && smk.midi.ports[0].name == "SMK-37 Elite -Master" && smk.midi.ports[1].ignore &&
+              smk.midi.ports[2].protocol == "mackie" && smk.estimated.empty(), "the SMK37 Elite: a port by name, its duplicate ignored, read from a unit");
         const auto* knobs = &smk.controls[4];
-        check(knobs->kind == "knobs" && knobs->count == 8 && knobs->target == "banks" && knobs->midi.channel == 1 && knobs->midi.cc.size() == 8 &&
-              knobs->midi.encodings[0] == "absolute" && knobs->midi.encodings[7] == "signMagnitude", "its eight knobs: absolute but for 7 and 8");
-        check(smk.controls[2].midi.pitchBend && smk.controls[3].midi.cc == std::vector<int>{1} && smk.controls[5].target == "partLevels" && smk.controls[1].midi.notes.size() == 16,
+        check(knobs->kind == "knobs" && knobs->count == 8 && knobs->target == "banks" && knobs->midi.channels == std::vector<int>{6, 6, 6, 6, 6, 6, 1, 1} &&
+              knobs->midi.cc.size() == 8 && knobs->midi.cc[6] == 38 && knobs->midi.encodings[0] == "absolute" && knobs->midi.encodings[6] == "steps" &&
+              knobs->midi.steps[6] == std::array<int, 2>{69, 1} && knobs->midi.steps[0] == std::array<int, 2>{0, 0}, "its eight knobs: 1 to 6 absolute on channel 6, 7 and 8 stepping on channel 1");
+        check(smk.controls[2].midi.pitchBend && smk.controls[3].midi.cc == std::vector<int>{1} && smk.controls[5].target == "partLevels" && smk.controls[1].midi.notes.size() == 16 && smk.controls[1].midi.channel == 2,
               "its wheels, faders and pads");
         const auto& usb = controllers[0];
         check(usb.midi.ports.size() == 2 && usb.midi.ports[1].protocol == "mackie" && usb.controls[4].rows.size() == 2 && usb.controls[4].midi.cc.size() == 8 &&
@@ -107,7 +108,9 @@ int main()
         // The SMK-37 Elite's inputs as macOS lists them (read 2026-11-01 with oscairn-midi-monitor --list).
         auto matches = matchPorts(controllers, {"IAC Bus 1", "MODX M Port1", "SMK-37 Elite -Private", "smk-37 elite -master", "MODX M Port2", "SMK-37 Elite -MCP"});
         check(matches.size() == 2 && matches[0].input == 1 && matches[0].profile == 0 && matches[0].port == 1 && matches[1].input == 3 && matches[1].profile == 1 && matches[1].port == 1,
-              "ports matched by name, ignoring case, the Nth by index; the Mackie port left out");
+              "ports matched by name, ignoring case, the Nth by index; the Mackie and ignored ports left out");
+        check(ignoredInputs(controllers, {"IAC Bus 1", "SMK-37 Elite -Private", "SMK-37 Elite -Master"}) == std::vector<std::string>{"SMK-37 Elite -Private"} &&
+              ignoredInputs(controllers, {"SMK-37 Elite -Master"}).empty(), "the duplicate port, by its input's name, when it is there");
         check(matchPorts(controllers, {"Keystation 49"}).empty(), "an unknown controller matches nothing");
 
         // Refused: each mistake in a controller's profile on its own.
@@ -115,13 +118,22 @@ int main()
         check(!refused(smkJson), "the SMK37's profile parses as text");
         check(refused(replaced(smkJson, "\"midi\": { \"ports\"", "\"reliability\": \"desktop\", \"midi\": { \"ports\"")), "a controller has no reliability");
         check(refused(replaced(smkJson, "\"protocol\": \"mackie\"", "\"protocol\": \"osc\"")), "an unknown protocol");
-        check(refused(replaced(smkJson, "[73, 75, 79, 72]", "[73, 75, 79]")), "fewer CCs than controls");
-        check(refused(replaced(smkJson, "[73, 75, 79, 72]", "[73, 75, 79, 74]")), "two controls sending the same message");
-        check(refused(replaced(smkJson, "\"channel\": 1, \"cc\": [73", "\"channel\": 17, \"cc\": [73")), "a channel past 16");
-        check(refused(replaced(smkJson, "\"channel\": 1, \"cc\": [73", "\"port\": 2, \"channel\": 1, \"cc\": [73")), "a port it does not have");
-        check(refused(replaced(smkJson, "\"signMagnitude\", \"signMagnitude\"", "\"signMagnitude\", \"gray\"")), "an unknown encoding");
+        check(refused(replaced(smkJson, "[68, 69, 70, 71]", "[68, 69, 70]")), "fewer CCs than controls");
+        check(refused(replaced(smkJson, "[68, 69, 70, 71]", "[68, 69, 70, 70]")), "two controls sending the same message");
+        check(refused(replaced(smkJson, "\"channel\": 1, \"cc\": [68", "\"channel\": 17, \"cc\": [68")), "a channel past 16");
+        check(refused(replaced(smkJson, "\"channel\": 1, \"cc\": [68", "\"port\": 4, \"channel\": 1, \"cc\": [68")), "a port it does not have");
+        check(refused(replaced(smkJson, "\"channel\": 1, \"cc\": [68", "\"port\": 2, \"channel\": 1, \"cc\": [68")), "a control on an ignored port");
+        check(refused(replaced(smkJson, "\"ignore\": true", "\"ignore\": true, \"protocol\": \"midi\"")), "an ignored port with a protocol");
+        check(refused(replaced(smkJson, "[6, 6, 6, 6, 6, 6, 1, 1]", "[6, 6, 6, 6, 6, 6, 1]")), "a channel list of the wrong length");
+        check(refused(replaced(smkJson, "[6, 6, 6, 6, 6, 6, 1, 1]", "[6, 6, 6, 6, 6, 6, 1, 0]")), "a channel 0 in the list");
+        check(refused(replaced(smkJson, "[48, 49, 50, 51, 52, 53, 38, 37]", "[48, 49, 50, 51, 52, 53, 38, 38]")), "two knobs on one channel sending the same CC");
+        check(!refused(replaced(smkJson, "[48, 49, 50, 51, 52, 53, 38, 37]", "[48, 49, 50, 51, 52, 53, 48, 37]")), "one CC on two channels is two messages");
+        check(refused(replaced(smkJson, "{ \"increment\": 69, \"decrement\": 1 }", "{ \"increment\": 1, \"decrement\": 1 }")), "an increment equal to its decrement");
+        check(refused(replaced(smkJson, "{ \"increment\": 69, \"decrement\": 1 }", "{ \"increment\": 69 }")), "an increment without a decrement");
+        check(refused(replaced(smkJson, "{ \"increment\": 69, \"decrement\": 1 }", "{ \"increment\": 69, \"decrement\": 128 }")), "a step value past 127");
+        check(refused(replaced(smkJson, "\"absolute\", { \"increment\"", "\"gray\", { \"increment\"")), "an unknown encoding");
         check(refused(replaced(smkJson, "\"channel\": 1, \"cc\": [1]", "\"channel\": 1, \"cc\": [1], \"notes\": [1]")), "both a CC and a note");
-        check(refused(replaced(smkJson, "\"channel\": 1, \"cc\": [73, 75, 79, 72]", "\"channel\": 1, \"cc\": [73, 75, 79, 72], \"button\": \"latch\"")), "faders that latch");
+        check(refused(replaced(smkJson, "\"channel\": 1, \"cc\": [68, 69, 70, 71]", "\"channel\": 1, \"cc\": [68, 69, 70, 71], \"button\": \"latch\"")), "faders that latch");
 
         // A profile's block reaches the engine as an audio option, and back.
         oscairn::host::AudioConfiguration audio;
