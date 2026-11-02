@@ -210,6 +210,9 @@ int main(int argc, char** argv)
                     check(play.knobs() == 6 && play.knobSlots().size() == 6 && play.knobSlots()[0].control == "screen:1" && play.knobSlots()[0].bank == "Assign 1\xE2\x80\x93" "6",
                           "six screen knobs: six tiles, a bank six wide: " + play.knobSlots()[0].bank);
                     snapshot(frame, "play-six");
+                    frame.setSize(800, 480); settle(); // the MODX M's screen: the strips keep room
+                    snapshot(frame, "play-six-800");
+                    frame.setSize(1024, 600);
                     engine.setControlGroups({}); play.showPartControls(false); play.select(piano); settle();
                     app.edit(true);
                     check(app.editing() && !play.isVisible(), "Edit shows the parts views");

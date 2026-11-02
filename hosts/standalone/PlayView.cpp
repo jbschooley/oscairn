@@ -77,12 +77,13 @@ namespace oscairn::standalone
                 g.setColour(ink(Ink::Muted)); drawInked(g, "No control", stacked() ? getLocalBounds() : r, small, just);
                 return;
             }
-            auto block = r.withSizeKeepingCentre(r.getWidth(), line * 3);
+            const bool value = r.getHeight() >= line * 3; // a short tile leaves out the value
+            auto block = r.withSizeKeepingCentre(r.getWidth(), line * (value ? 3 : 2));
             // Its bank, or Override, after the physical knob it follows on a device.
             const auto where = slot_.layer == AssignmentLayer::Override ? juce::String("Override") : text(slot_.bank);
             g.setColour(ink(Ink::Accent)); drawInked(g, view_.engine_.rowKnobs() > 0 ? juce::String(index_ + 1) + juce::String::fromUTF8(" · ") + where : where, block.removeFromTop(line), small.boldened(), just);
             g.setColour(ink(Ink::Text)); drawInked(g, stacked() ? text(slot_.label).fromLastOccurrenceOf(": ", false, false) : text(slot_.label), block.removeFromTop(line), body, just); // narrow: the parameter, not its plugin
-            g.setColour(ink(Ink::Muted)); drawInked(g, view_.describe(slot_.target, slider_.getValue()), block.removeFromTop(line), small, just);
+            if(value) { g.setColour(ink(Ink::Muted)); drawInked(g, view_.describe(slot_.target, slider_.getValue()), block.removeFromTop(line), small, just); }
         }
         void resized() override
         {
@@ -415,11 +416,12 @@ namespace oscairn::standalone
         for(int i = 0; i < sceneTiles; ++i) scenes_.push_back(row.removeFromLeft(sceneWidth)), row.removeFromLeft(sceneGap);
         area.removeFromTop(touch ? 12 : 10);
         // The knobs, and their switch and bank at the right.
-        // Taller when the tiles are too narrow for text beside the dial (six screen knobs and more).
+        // Taller when the tiles are too narrow for text beside the dial (six screen knobs and more),
+        // but at most a quarter of the view, leaving the strips room on a short screen.
         const int sideWidth = (performanceControls_.isVisible() || pageButton_.isVisible() ? (touch ? 150 : 130) + 8 : 0) + (performanceControls_.isVisible() && pageButton_.isVisible() ? (touch ? 110 : 96) + 8 : 0);
         const int tiles = std::max(1, int(knobs_.size()));
         const bool tall = (area.getWidth() - sideWidth - gap * (tiles - 1)) / tiles < Knob::narrow;
-        knobRow_ = area.removeFromTop(tall ? (touch ? 140 : 128) : touch ? 84 : 72);
+        knobRow_ = area.removeFromTop(tall ? std::min(touch ? 140 : 128, getHeight() / 4) : touch ? 84 : 72);
         auto knobs = knobRow_;
         const bool side = performanceControls_.isVisible() || pageButton_.isVisible();
         if(side)
@@ -443,9 +445,9 @@ namespace oscairn::standalone
             learnDefault_.setBounds(buttons.removeFromRight(touch ? 100 : 86));
             area.removeFromTop(touch ? 10 : 8);
         }
-        // The strips: at least six across; more scroll sideways.
+        // The strips: at least six across, six fitting an 800-wide screen; more scroll sideways.
         viewport_.setBounds(area);
-        const int count = std::max(1, int(strips_.size())), minWidth = touch ? 150 : 130;
+        const int count = std::max(1, int(strips_.size())), minWidth = touch ? 120 : 110;
         const int width = std::max(minWidth, (area.getWidth() - gap * (count - 1)) / std::max(count, 6));
         const int height = area.getHeight() - (count * (width + gap) - gap > area.getWidth() ? viewport_.getScrollBarThickness() : 0);
         stripRow_.setSize(std::max(area.getWidth(), count * (width + gap) - gap), height);
