@@ -185,7 +185,8 @@ memory is limited to the declarations (shared bytes once, each context's own) pl
 and 64 MiB, by the supervisor on every platform and by its cgroup on Linux, replacing RFC 0010's
 flat 4 GiB; one declaring nothing keeps the policy's limit. With `OSCAIRN_RELIABILITY`
 `instrument` or `pass-through` (the app sets it from its profile; workers inherit it), the engine
-and every worker call `mlockall(MCL_CURRENT | MCL_FUTURE)` at start and set `oom_score_adj`:
+and every worker call `mlockall(MCL_CURRENT | MCL_FUTURE)` at start (`MCL_FUTURE` only under
+an unlimited `RLIMIT_MEMLOCK`; see "Locking") and set `oom_score_adj`:
 the engine -999, a worker 300; what cannot be done (no `CAP_SYS_RESOURCE` to lower a score, too
 low an `RLIMIT_MEMLOCK`) is printed, not fatal. With memory classes, the session arms a PSI
 trigger ("some 100 ms in 1 s", or 2 s windows when refused) on the subtree's `memory.pressure`,
@@ -410,9 +411,14 @@ stay resident too, so a sampler or a reverb never takes a page fault from disk w
 - Everything an Oscairn process allocates is locked, opportunistic data included. That is
   deliberate: opportunistic data is evicted by freeing it, never by paging. That is why the
   engine evicts it before the kernel needs to.
+- `MCL_FUTURE` is set only when `RLIMIT_MEMLOCK` is unlimited. Under a finite limit it does
+  not fail at `mlockall`; every later mapping past the limit fails, so a plugin load or a
+  recorder ring would throw `std::bad_alloc` instead of printing a warning. With a finite
+  limit the process locks what it has and reports "future memory not locked: RLIMIT_MEMLOCK
+  is N".
 - The sample file cache is page cache, not mapped by a locked process, so it stays reclaimable.
 - The image raises `RLIMIT_MEMLOCK` for the engine and workers (RFC 0028). Desktop Linux usually
-  has a small default (not checked), and the `desktop` level does not lock.
+  has a small default, and the `desktop` level does not lock.
 - A future streaming sampler (RFC 0008 step 3) locks its stream buffers and leaves the rest of a
   library in the page cache, opportunistic.
 

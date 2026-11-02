@@ -16,6 +16,7 @@
 #endif
 #ifdef __linux__
 #include <sys/mman.h>
+#include <sys/resource.h>
 #endif
 #include <cerrno>
 #include <cstring>
@@ -209,7 +210,14 @@ namespace oscairn
 #ifdef __linux__
         std::string missed;
         // Faulted in when allocated, during preparation, never during a block; code pages stay resident too.
-        if(mlockall(MCL_CURRENT|MCL_FUTURE)!=0)missed+=std::string("memory not locked (")+std::strerror(errno)+"; RLIMIT_MEMLOCK too low?)";
+        // MCL_FUTURE past a finite RLIMIT_MEMLOCK does not fail here: every later mmap past the limit
+        // fails, so a plugin load or a recorder ring throws instead of a degraded lock. Lock the
+        // future only where the limit cannot be reached (the device image; RFC 0028).
+        rlimit memlock{};
+        const bool unlimited = getrlimit(RLIMIT_MEMLOCK, &memlock) == 0 && memlock.rlim_cur == RLIM_INFINITY;
+        const int flags = MCL_CURRENT | (unlimited ? MCL_FUTURE : 0);
+        if(mlockall(flags) != 0) missed += std::string("memory not locked (") + std::strerror(errno) + "; RLIMIT_MEMLOCK too low?)";
+        else if(!unlimited) missed += "future memory not locked: RLIMIT_MEMLOCK is " + std::to_string(uint64_t(memlock.rlim_cur));
         // Lowering it below 0 needs CAP_SYS_RESOURCE; raising it does not.
         std::ofstream adj("/proc/self/oom_score_adj");adj<<oomScoreAdj<<std::flush;
         if(!adj)missed+=std::string(missed.empty()?"":"; ")+"oom_score_adj not set to "+std::to_string(oomScoreAdj);
