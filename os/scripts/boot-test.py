@@ -6,6 +6,8 @@ kernel's dummy sound card. Passes when, within the time limit:
 - the session reports that Oscairn is running;
 - Oscairn has not exited;
 - the engine reports the audio device it opened;
+- the session raised the locked-memory limit (RLIMIT_MEMLOCK) to unlimited, for the engine
+  and its workers (RFC 0025);
 - the screen shows a picture (Home, RFC 0030; it starts there, so nothing has to move).
 Whether sound actually plays is what --record checks.
 Writes the console log and the screenshots to the output folder.
@@ -113,8 +115,9 @@ def main():
             lit = a.convert("L").getextrema()[1] > 64
             audio = "audio output" in text
             exited = "Oscairn exited" in text
-            print(f"screen {a.size[0]}x{a.size[1]}, has content: {lit}, audio device opened: {audio}, Oscairn exited: {exited}")
-            result = 0 if lit and audio and not exited else 1
+            memlock = "oscairn-session: locked memory: unlimited" in text
+            print(f"screen {a.size[0]}x{a.size[1]}, has content: {lit}, audio device opened: {audio}, Oscairn exited: {exited}, locked memory unlimited: {memlock}")
+            result = 0 if lit and audio and memlock and not exited else 1
             print("PASS" if result == 0 else "FAIL")
             if args.record > 0:
                 time.sleep(args.record)

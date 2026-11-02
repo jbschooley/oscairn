@@ -25,7 +25,8 @@ it (not tried yet). Its kernel is also configured for QEMU's `virt` machine. See
 - Oscairn: the core, the CLAP plugins in `/usr/lib/clap`, `oscairn-render`, and the
   desktop app as `/usr/bin/Oscairn`.
 - The session (`board/common/session-juce-x11`): at boot, `/etc/init.d/S95oscairn` starts
-  `/usr/libexec/oscairn-session`, which starts an X server and then Oscairn full screen,
+  `/usr/libexec/oscairn-session`, which raises the locked-memory limit (`RLIMIT_MEMLOCK`) to
+  unlimited for the engine and its workers, starts an X server and then Oscairn full screen,
   and restarts Oscairn if it exits. Its arguments are in `/etc/default/oscairn`
   (`--profile qemu-aarch64 --play`: the image's [device profile](../docs/rfcs/0024-device-profiles.md),
   which fills the screen with the KICK's screen layout, starting at Home, and asks for

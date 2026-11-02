@@ -9,6 +9,11 @@
 export DISPLAY=:0 HOME=/root
 say() { echo "oscairn-session: $*" > /dev/console; }
 
+# The engine and its workers, started by the app, lock their memory (RFC 0025) and lock future
+# mappings only under an unlimited RLIMIT_MEMLOCK; they inherit it from here.
+ulimit -l unlimited
+say "locked memory: $(ulimit -l)"
+
 Xorg :0 -nolisten tcp -nocursor > /var/log/oscairn-xorg.log 2>&1 &
 for i in $(seq 100); do
 	[ -S /tmp/.X11-unix/X0 ] && break

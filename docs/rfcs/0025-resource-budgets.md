@@ -197,8 +197,8 @@ trigger ("some 100 ms in 1 s", or 2 s windows when refused) on the subtree's `me
 else `/proc/pressure/memory`, polled at each service; each firing lets go of one more item
 (`memoryPressure`). Not built: the engine cgroup's `memory.min`, polling `memory.events`, apps'
 cgroups (apps are in-process), +1000 for workers holding only opportunistic plugins, zram, and
-the image's wiring (RFC 0028's design note: the session making the subtree and raising
-`RLIMIT_MEMLOCK` needs changes in `os/`, not made here).
+the image making the subtree (RFC 0028's design note; `oscairn-session` raises
+`RLIMIT_MEMLOCK`, below).
 
 Checked in the `oscairn-ports-linux:local` container (Debian 13, arm64, Docker Desktop's Linux
 VM, kernel 6.10, `--privileged`), not on the QEMU image or hardware: `control-plugin-failures`
@@ -421,7 +421,8 @@ stay resident too, so a sampler or a reverb never takes a page fault from disk w
   limit the process locks what it has and reports "future memory not locked: RLIMIT_MEMLOCK
   is N".
 - The sample file cache is page cache, not mapped by a locked process, so it stays reclaimable.
-- The image raises `RLIMIT_MEMLOCK` for the engine and workers (RFC 0028). Desktop Linux usually
+- The image raises `RLIMIT_MEMLOCK` to unlimited for the engine and workers: `oscairn-session`
+  sets it before starting the app, and they inherit it (RFC 0028). Desktop Linux usually
   has a small default, and the `desktop` level does not lock.
 - A future streaming sampler (RFC 0008 step 3) locks its stream buffers and leaves the rest of a
   library in the page cache, opportunistic.

@@ -71,8 +71,9 @@ moves its own processes out of the subtree's root, enables the memory controller
 passes its path in `OSCAIRN_CGROUP` (the engine then moves itself into `engine/` and puts each
 worker in `workers/<pid>`); the app passes the profile's reliability level in
 `OSCAIRN_RELIABILITY`, at which the engine and workers lock their memory and set their
-out-of-memory scores. `S95oscairn` and `oscairn-session` would set `RLIMIT_MEMLOCK` (unlimited)
-and make the subtree; zram is not set up.
+out-of-memory scores. `oscairn-session` sets `RLIMIT_MEMLOCK` to unlimited before it starts the
+app, so the engine and its workers inherit it, and reports it on the console, which the boot
+test checks; it would also make the subtree, not wired yet. zram is not set up.
 
 ## Power loss
 
