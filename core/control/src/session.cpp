@@ -359,10 +359,11 @@ namespace oscairn
         ringOut();
         meter();
         recorder_.service();
-        // A recording's taps follow the wires: a fader moved, a plugin replaced, a Performance changed.
-        if( ( recorder_.recording() || !retroTaps_.empty() ) && ( revision_ != recordRevision_ || wires_ != recordWires_ ) )
+        // Each live take's taps follow the wires: a fader moved, a plugin replaced, a Performance
+        // changed. A take that no longer feeds rings of its own is dropped from the list.
+        if( ( !recordTaps_.empty() || !retroTaps_.empty() ) && ( revision_ != recordRevision_ || wires_ != recordWires_ ) )
         {
-            if( recorder_.recording() ) recorder_.update( compileTaps( recordTaps_, false ) );
+            std::erase_if( recordTaps_, [&]( const auto& t ) { return !recorder_.update( t.first, compileTaps( t.second, false ) ); } );
             if( !retroTaps_.empty() ) recorder_.updateRetro( compileTaps( retroTaps_, false ) );
             recordRevision_ = revision_; recordWires_ = wires_;
         }
@@ -618,7 +619,9 @@ namespace oscairn
         auto folder = base;
         for( int n = 2; std::filesystem::exists( folder ); ++n ) folder = base.string() + " " + std::to_string( n );
         const auto take = recorder_.start( folder, compiled, title, when );
-        if( recorder_.recording() == take ) { recordTaps_ = taps; recordWires_ = wires_; recordRevision_ = revision_; }
+        // The wires seen are kept only when no other take follows them, so none misses an edit.
+        if( recordTaps_.empty() ) { recordWires_ = wires_; recordRevision_ = revision_; }
+        recordTaps_.emplace_back( take, taps );
         return take;
     }
 

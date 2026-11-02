@@ -504,7 +504,8 @@ Decisions made while building it:
 - **One take at a time.** A second `record.start` is refused (`busy`). Starting and stopping on a
   bar line, lengths and several takes at once come with step 3.
 - **Taps follow edits.** The session compiles the tap table again when its wires or graph
-  revision change, checked at each `service()`. Until then a part tap keeps the old gains: the
+  revision change, checked at each `service()`, for every live take with rings of its own: the
+  take recording and any capture of set length. Until then a part tap keeps the old gains: the
   graph takes a commit at its next block, the tap table at the block after the next
   `service()`. Exact when `service()` runs between the commit and the next block, as in the
   test; otherwise off for at most one service period.

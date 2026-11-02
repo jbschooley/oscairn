@@ -72,9 +72,12 @@ namespace oscairn
         /// std::invalid_argument for no taps, std::out_of_range for a start in the past on a tap not held.
         uint32_t start( const std::filesystem::path& folder, const Taps& taps, const std::string& description, const Start& when );
         uint32_t start( const std::filesystem::path& folder, const Taps& taps, const std::string& description = {} ) { return start( folder, taps, description, Start{} ); }
-        /// New sources for the take recording (after an edit). Names and channel counts stay as
-        /// the take started: extra channels are dropped and missing ones are silent.
-        void update( const Taps& taps );
+        /// New sources for a live take's rings of its own (after an edit): the take recording or a
+        /// capture of set length. Names and channel counts stay as the take started: extra
+        /// channels are dropped and missing ones are silent. False once the take no longer feeds
+        /// rings of its own (ended, or all its taps from the retroactive rings, which follow
+        /// updateRetro), when there is nothing to update.
+        bool update( uint32_t take, const Taps& taps );
         /// Ends the take recording now; the writer then closes its files.
         void stop();
         uint32_t recording() const noexcept { return recording_; } // the take with no end yet, or 0

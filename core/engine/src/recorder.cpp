@@ -576,16 +576,16 @@ namespace oscairn
         return nextTake_++;
     }
 
-    void Recorder::update(const Taps& taps)
+    bool Recorder::update(uint32_t take, const Taps& taps)
     {
-        if(!recording_) return;
-        const auto it = std::find_if(live_.begin(), live_.end(), [&](const auto& a) { return a->id == recording_; });
-        if(it == live_.end()) return;
+        const auto it = std::find_if(live_.begin(), live_.end(), [&](const auto& a) { return a->id == take; });
+        if(it == live_.end() || !(*it)->fed) return false;
         auto& a = **it;
         // Its own taps; the retroactive ones follow updateRetro.
         for(size_t j = 0; j < a.own.taps.audio.size(); ++j) if(a.ownOf[j] < taps.audio.size()) a.own.taps.audio[j].sources = taps.audio[a.ownOf[j]].sources;
         if(a.own.notes) for(size_t i = 0; i < a.own.taps.notes.size() && i < taps.notes.size(); ++i) a.own.taps.notes[i].nodes = taps.notes[i].nodes;
         publish();
+        return true;
     }
 
     void Recorder::stop()

@@ -430,6 +430,34 @@ namespace
         check(c.state == "done" && c.frames == 24000 && c.overruns.empty(), "the capture keeps its half second beside it: " + c.state + " " + std::to_string(c.frames));
     }
 
+    // A set-length capture follows edits as a take until stopped does: its part's fader moves
+    // halfway through, and what it records after its fader moves with it.
+    void captureFollowsEdits(const char* synth)
+    {
+        constexpr uint32_t block = 128;
+        Session s(48000, block);
+        const auto node = s.add("synth", synth);
+        const auto part = s.addPart("Lead");
+        s.insertIntoPart(part, 0, node);
+        s.setPartLevel(part, .5, false);
+        s.commit();
+        Render render(s, false);
+        using K = Control::RecordTap::Kind;
+        Control::RecordWhen cap; cap.until = Control::RecordWhen::Until::Seconds; cap.length = 0.25;
+        const auto capture = s.recordStart({{K::Part, 0, part}, {K::Part, 0, part, 0, true}}, "Edited", cap);
+        render.block(block, {kick::clap::Event::note(true, 60, 1, 0)});
+        for(int i = 0; i < 20; ++i) render.block(block);
+        s.setPartLevel(part, .25, false); s.commit(); // the fader moves during the capture
+        for(int i = 0; i < 100; ++i) render.block(block);
+        const auto c = finish(s, capture, false);
+        check(c.state == "done", "the capture is done: " + c.error);
+        const auto post = readWav(fs::path(c.folder) / "Lead.wav"), pre = readWav(fs::path(c.folder) / "Lead pre-fader.wav");
+        bool before = post.samples.size() == pre.samples.size() && post.samples.size() == 2 * 12000, after = before, sound = false;
+        for(size_t i = 0; before && i < 2 * 20 * block; ++i) before = post.samples[i] == pre.samples[i] * .5f;
+        for(size_t i = 2 * 40 * block; after && i < post.samples.size(); ++i) { after = post.samples[i] == pre.samples[i] * .25f; sound = sound || pre.samples[i] != 0; }
+        check(before && after && sound, "the capture's post-fader tap follows the fader move");
+    }
+
     // A capture reading the retroactive rings must not be killed by a change to that buffer
     // while it still reads it: the change is refused until the capture finishes.
     void retroChangeDuringCapture(const char* synth)
@@ -570,6 +598,7 @@ int main(int argc, char** argv)
         inputAndNode(argv[1]);
         protocol(argv[1]);
         stopDuringCapture(argv[1]);
+        captureFollowsEdits(argv[1]);
         retroChangeDuringCapture(argv[1]);
         retroactive(argv[1]);
         bars(argv[1]);

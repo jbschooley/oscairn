@@ -519,7 +519,8 @@ namespace oscairn
         Transport transport_; // audio thread after construction
         // Recording (RFC 0020): the taps asked for, compiled again when the wires change.
         Recorder recorder_;
-        std::vector<RecordTap> recordTaps_, retroTaps_;
+        std::vector<std::pair<uint32_t, std::vector<RecordTap>>> recordTaps_; // each live take's, by take
+        std::vector<RecordTap> retroTaps_;
         std::vector<Wire> recordWires_;
         uint64_t recordRevision_ = 0;
         Recorder::Taps compileTaps( const std::vector<RecordTap>& taps, bool strict ); // parts.cpp; strict: an unknown tap throws
