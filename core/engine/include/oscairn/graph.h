@@ -168,7 +168,9 @@ namespace oscairn
         /// gets oscairn.harmony events: the harmony at sample 0 of each block, and each change at
         /// the sample of the note that made it, before that note (its host passes on only
         /// changes, to plugins that asked). `key` is the caller's (a part's ID): a harmony kept
-        /// under the same key keeps the keys it holds. Replaces every harmony; takes effect at
+        /// under the same key keeps the keys it holds, unless its `input` or `zones` changed —
+        /// then its releases could be lost, and it starts with none. Replaces every harmony;
+        /// takes effect at
         /// commit(). Throws std::invalid_argument for bad zones, a root past 11 or a scale without
         /// its root.
         struct Harmony

@@ -137,6 +137,34 @@ namespace
         check(h.key_root == 2 && h.scale == dorian && h.chord_root == 2 && h.chord_type == OSCAIRN_CHORD_MINOR && h.chord_bass == 2 &&
               h.held[0] == keys.held[0] && h.held[1] == keys.held[1], where + "the main thread reads D Dorian, D minor, its keys");
     }
+
+    // Turning a part's input off (or moving its zones off the channel) while keys are down must
+    // not leave the harmony holding them: the releases never reach it, and every block would
+    // re-send a chord nobody holds.
+    void staleKeys(const std::string& fixture)
+    {
+        oscairn::setPlacementPolicy({"", oscairn::Placement::Worker});
+        constexpr double rate = 48000; constexpr uint32_t block = 256;
+        for(bool byZones : {false, true})
+        {
+            const std::string where = std::string(byZones ? "a zone change dropping the channel: " : "the input turned off: ");
+            oscairn::Graph g(rate, block, oscairn::ProcessingMode::Offline);
+            const auto f = g.add(fixture);
+            g.setHarmonies({{1, {f}, true, {}, 0, dorian}});
+            g.commit();
+            std::vector<float> left(block), right(block);
+            float* outputs[]{left.data(), right.data()};
+            std::vector<kick::clap::Event> keys{kick::clap::Event::note(true, 53, 1), kick::clap::Event::note(true, 57, 1), kick::clap::Event::note(true, 60, 1)};
+            check(g.process(outputs, block, nullptr, keys.data(), uint32_t(keys.size())), where + "process F A C");
+            const auto chord = [&](uint32_t at) { return g.audioOutput(f, 0)[at]; };
+            check(chord(block - 1) == code(OSCAIRN_CHORD_MAJOR, 5, 5), where + "F major from the held keys: " + std::to_string(chord(block - 1)));
+            oscairn::NoteZone otherChannel; otherChannel.channels = 0xFFFE;
+            if(byZones) g.setHarmonies({{1, {f}, true, {otherChannel}, 0, dorian}});
+            else g.setHarmonies({{1, {f}, false, {}, 0, dorian}});
+            g.commit();
+            check(g.process(outputs, block, nullptr) && chord(block - 1) == 0, where + "the chord is gone, not re-sent every block: " + std::to_string(chord(block - 1)));
+        }
+    }
 }
 
 int main(int argc, char** argv)
@@ -145,6 +173,7 @@ int main(int argc, char** argv)
     recognition();
     for(bool inWorker : {false, true})
         for(uint32_t block : {256u, 37u}) delivery(argv[1], argv[2], block, inWorker);
+    staleKeys(argv[2]);
     if(failures) return 1;
     std::printf("ok: common chords and inversions recognized; key, scale and chord changes reach a plugin at their samples, in the engine and a worker\n");
     return 0;

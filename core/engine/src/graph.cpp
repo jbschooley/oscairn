@@ -438,7 +438,10 @@ namespace oscairn
         for(auto& h:harmonies)
         {
             const auto kept=std::find_if(harmonies_.begin(),harmonies_.end(),[&](const auto& o){return o.first.key==h.key;});
-            next.emplace_back(std::move(h),kept!=harmonies_.end()?kept->second:std::make_shared<HeldKeys>());
+            // Held keys are routed through the old input and zones: if either changed, later
+            // releases may never reach them, so start fresh (a lost release is a lost chord).
+            const bool same=kept!=harmonies_.end() && kept->first.input==h.input && kept->first.zones==h.zones;
+            next.emplace_back(std::move(h),same?kept->second:std::make_shared<HeldKeys>());
         }
         harmonies_.swap(next);
     }
