@@ -187,7 +187,10 @@ flat 4 GiB; one declaring nothing keeps the policy's limit. The limit, `memory.m
 refit before each activation: the worker sends the engine the plugin's new declaration in band
 (as it asks for a sound asset) and the plugin activates only once the engine has answered, so a
 mode change through a restart the plugin asked for is never stopped at its old limit, however
-long its allocation takes. With `OSCAIRN_RELIABILITY`
+long its allocation takes. A declaration no worker could hold (over four times the policy's
+limit, which is the worker's address space on Linux, or over 1 TiB without one, or one whose
+sum overflows) is not taken as the limit: the engine answers "Plugin's memory declaration is
+not credible" and the plugin is not activated. With `OSCAIRN_RELIABILITY`
 `instrument` or `pass-through` (the app sets it from its profile; workers inherit it), the engine
 and every worker call `mlockall(MCL_CURRENT | MCL_FUTURE)` at start (`MCL_FUTURE` only under
 an unlimited `RLIMIT_MEMLOCK`; see "Locking") and set `oom_score_adj`:

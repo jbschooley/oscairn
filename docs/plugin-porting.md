@@ -48,6 +48,7 @@ A plugin that fails one of these is refused with the message shown.
 | If it has the state or audio-ports extension, all its functions | "Incomplete plugin state interface", "Incomplete CLAP audio-ports interface" |
 | If it has `oscairn.memory`, `oscairn.sound-contexts` or `oscairn.asset-dependencies`, all their functions; at most 256 sound contexts | "Incomplete memory interface", "Invalid sound-context interface", "Incomplete asset-dependency interface" |
 | With a memory budget, a declared size (`oscairn.memory`) that fits what is left | "Plugin needs N MiB of memory where M MiB is left" |
+| A declared size a worker could hold: its three parts add up without overflowing, and in a worker to at most four times the policy's memory limit (1 TiB with none) | "Plugin's memory declaration is not credible" |
 | Activates at the host's sample rate and maximum block size | "Plugin activation failed" |
 | An audio port layout that does not change while loaded (parameter and note-port changes need a restart request) | "CLAP audio port layout changed; reload this graph node before reconnecting audio" |
 | A build for the machine: macOS for the desktop, Linux ARM64 for the device | the scanner does not list it |
@@ -400,9 +401,9 @@ What changes for the plugin:
   plugin in the worker declares its memory (`oscairn.memory`), the limit is what they declare
   plus half again and 64 MiB. Before each activation the worker sends the engine the new
   declaration and waits while the engine refits the limit, so a mode that needs more (a restart
-  the plugin asked for included) is allowed it before it allocates. Past the limit the worker
-  is stopped like a crash. On Linux the
-  worker also sets `RLIMIT_AS` to four times the flat limit, and with `OSCAIRN_CGROUP` the
+  the plugin asked for included) is allowed it before it allocates. A declaration over four
+  times the flat limit (1 TiB with none) is refused before the plugin activates. Past the
+  limit the worker is stopped like a crash. On Linux the worker also sets `RLIMIT_AS` to four times the flat limit, and with `OSCAIRN_CGROUP` the
   limit is the worker's cgroup `memory.max`.
 - **Restart:** after a crash, hang, too many misses or too much memory, the worker is
   restarted. Each plugin gets back its state as last loaded, the sounds prepared since and

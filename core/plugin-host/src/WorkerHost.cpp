@@ -265,6 +265,8 @@ namespace oscairn
             // declares nothing; ask: query a node whose declaration is not known (else none). Under control.
             std::optional<uint64_t> fitted(bool ask, const oscairn_memory_t* extra = nullptr);
             void reserve(Reader&); // a node about to activate, with what it declares; under control
+            void credible(const oscairn_memory_t&) const; // throws for a declaration no worker could hold
+            static uint64_t sum(uint64_t, uint64_t);      // throws on overflow, as a declaration not credible
 
             // RFC 0025, Linux: with a delegated cgroup v2 subtree (OSCAIRN_CGROUP, which the session
             // makes, RFC 0028), each worker in a cgroup of its own whose memory.max is its limit,
@@ -915,7 +917,8 @@ namespace oscairn
                 // Every node of one engine reports the same shared bytes (memory.h), so the largest
                 // is the engine's: counted once even when its root node is gone and only its effect
                 // contexts remain, still holding those bytes.
-                declared += m.context_bytes + m.asset_bytes;
+                credible(m);
+                declared = sum(declared, m.context_bytes + m.asset_bytes);
                 shared = std::max(shared, m.shared_bytes);
             };
             for(auto* n : list)
@@ -925,8 +928,22 @@ namespace oscairn
                 add(**m);
             }
             if(extra) add(*extra);
-            declared += shared;
-            return declared + declared / 2 + (uint64_t(64) << 20);
+            declared = sum(declared, shared);
+            return sum(sum(declared, declared / 2), uint64_t(64) << 20);
+        }
+        uint64_t Process::sum(uint64_t a, uint64_t b)
+        {
+            uint64_t s = 0;
+            if(__builtin_add_overflow(a, b, &s)) throw std::runtime_error("Plugin's memory declaration is not credible");
+            return s;
+        }
+        // A declaration no worker could hold is refused before the plugin allocates, never taken as
+        // its limit: over four times the policy's limit (the worker's address space on Linux), over
+        // 1 TiB without one, or a sum that overflows.
+        void Process::credible(const oscairn_memory_t& m) const
+        {
+            const uint64_t cap = policyLimit ? std::min(policyLimit, uint64_t(1) << 40) * 4 : uint64_t(1) << 40;
+            if(sum(sum(m.shared_bytes, m.context_bytes), m.asset_bytes) > cap) throw std::runtime_error("Plugin's memory declaration is not credible");
         }
         void Process::fitLimit()
         {
@@ -941,6 +958,7 @@ namespace oscairn
             const auto index = r.u32();
             std::optional<oscairn_memory_t> m;
             if(r.u8()) { m.emplace(); r.bytes(&*m, sizeof *m); }
+            if(m) credible(*m); // before it is kept: Failed, and the worker refuses the activation
             WorkerHost* known = nullptr;
             if(!restarting) { std::lock_guard nodesLock(nodesMutex); for(auto* n : nodes) if(n->workerNode() == index) known = n; }
             if(known)

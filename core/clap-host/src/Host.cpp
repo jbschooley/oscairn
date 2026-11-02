@@ -693,7 +693,11 @@ struct Host::Impl {
         hasDeclared = false;
         if (memory && memory->estimate(plugin, sampleRate, maxFrames, &declared)) {
             hasDeclared = true;
-            const uint64_t bytes = (context ? 0 : declared.shared_bytes) + declared.context_bytes + declared.asset_bytes;
+            uint64_t bytes = 0;
+            for (const uint64_t part : {context ? 0 : declared.shared_bytes, declared.context_bytes, declared.asset_bytes}) {
+                if (part > UINT64_MAX - bytes) throw std::runtime_error("Plugin's memory declaration is not credible"); // a sum that wraps
+                bytes += part;
+            }
             if (memoryRoom && bytes > memoryRoom)
                 throw std::runtime_error("Plugin needs " + std::to_string((bytes + (1 << 20) - 1) >> 20) + " MiB of memory where " +
                                          std::to_string(memoryRoom >> 20) + " MiB is left");

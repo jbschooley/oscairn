@@ -113,6 +113,18 @@ int main(int argc, char** argv)
             try { loadPluginInWorker(argv[1], argv[3], "org.kick.test.memory", 48000, frames, ProcessingMode::Realtime, 0, 4u << 20); }
             catch(const std::exception& e) { why = e.what(); }
             check(why.find("9 MiB of memory where 4 MiB is left") != std::string::npos, "and is refused in its worker before activating: " + why);
+            // A declaration no worker could hold is refused before the plugin allocates, not taken
+            // as its limit: over 1 TiB with no policy limit, over four times the policy's limit with one.
+            for(const auto& [sharedMb, policyLimit] : {std::pair<const char*, uint64_t>{"2000000", 0}, {"600", uint64_t(128) << 20}})
+            {
+                setenv("KICK_FIXTURE_MEMORY_SHARED_MB", sharedMb, 1);
+                why.clear();
+                try { loadPluginInWorker(argv[1], argv[3], "org.kick.test.memory", 48000, frames, ProcessingMode::Realtime, policyLimit); }
+                catch(const std::exception& e) { why = e.what(); }
+                unsetenv("KICK_FIXTURE_MEMORY_SHARED_MB");
+                check(why.find("Plugin's memory declaration is not credible") != std::string::npos,
+                      "a declaration of " + std::string(sharedMb) + " MiB under a limit of " + std::to_string(policyLimit >> 20) + " MiB is refused: " + why);
+            }
 #ifdef __linux__
             // With a delegated cgroup subtree, the worker's cgroup holds it to its plugin's declaration plus the margin.
             if(const char* root = std::getenv("OSCAIRN_CGROUP"))
