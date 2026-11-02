@@ -17,7 +17,8 @@
     { "kind": "jog", "count": 1, "role": "fixed", "functions": ["data"] },
     { "kind": "buttons", "count": 8, "role": "fixed", "functions": ["scene1", "scene2", "scene3", "scene4", "scene5", "scene6", "scene7", "scene8"] },
     { "kind": "buttons", "count": 8, "role": "fixed", "functions": ["part1", "part2", "part3", "part4", "part5", "part6", "part7", "part8"] },
-    { "kind": "wheels", "count": 2, "role": "fixed", "functions": ["pitchBend", "modulation"] }
+    { "kind": "wheels", "count": 1, "role": "assign", "functions": ["pitchBend"] },
+    { "kind": "wheels", "count": 1, "role": "assign", "functions": ["modulation"] }
   ],
   "screens": [ { "width": 800, "height": 480, "touch": true, "surface": "panel", "layout": "modx-m-screen" } ],
   "midi": { "din": 1, "usbDevice": true, "usbHost": true },

@@ -19,7 +19,9 @@ juce_add_binary_data(oscairn_standalone_profiles HEADER_NAME ProfileData.h NAMES
     profiles/qemu-aarch64.json
     profiles/kick.json
     profiles/modx-m.json
-    profiles/ignite.json)
+    profiles/ignite.json
+    profiles/smk37-elite.json
+    profiles/modx-m-usb.json)
 
 # Icons (Lucide, ISC: icons/LICENSE).
 juce_add_binary_data(oscairn_standalone_icons HEADER_NAME IconData.h NAMESPACE IconData SOURCES
@@ -43,7 +45,7 @@ juce_add_binary_data(oscairn_standalone_icons HEADER_NAME IconData.h NAMESPACE I
     icons/ellipsis-vertical.svg
     icons/layers.svg)
 
-target_sources(oscairn_standalone PRIVATE Main.cpp DesktopShell.cpp ParameterGrid.cpp CompactEditor.cpp ZoneEditor.cpp Engine.cpp Layout.cpp Panel.cpp Screen.cpp SoundPickerModel.cpp Theme.cpp PluginBrowser.cpp PadEditor.cpp PartsView.cpp PartsModel.cpp LibraryPane.cpp Setlist.cpp Profile.cpp Launcher.cpp PlayView.cpp)
+target_sources(oscairn_standalone PRIVATE Main.cpp DesktopShell.cpp ParameterGrid.cpp CompactEditor.cpp ZoneEditor.cpp Engine.cpp Layout.cpp Panel.cpp Screen.cpp SoundPickerModel.cpp Theme.cpp PluginBrowser.cpp PadEditor.cpp PartsView.cpp PartsModel.cpp LibraryPane.cpp Setlist.cpp Profile.cpp Launcher.cpp PlayView.cpp Controllers.cpp)
 target_compile_definitions(oscairn_standalone PRIVATE
     JUCE_WEB_BROWSER=0
     JUCE_USE_CURL=0

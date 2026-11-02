@@ -207,7 +207,9 @@ in the others.
      Compact test layout; modulation shown on knobs and the Modular grid remain)
    - [ ] plugin windows, then step 6's physical controls (default layers, banks as wide as
      each control group of the device's profile, overrides saved in the Performance format
-     (now version 8) and learn on a panel's knobs done; [status](rfcs/0011-performance-ui-and-editors.md#step-6-status))
+     (now version 8) and learn on a panel's knobs done; external MIDI controllers' groups,
+     default targets per group and a Sound's own assignments, the mod wheel's among them, done;
+     [status](rfcs/0011-performance-ui-and-editors.md#step-6-status))
    - [x] Play, the Performance app's first view ([status](rfcs/0011-performance-ui-and-editors.md#play-status))
    - [x] the full scene model: blocks and wires enabled per scene, and what each scene saves
      (plugins and wires switched off and on, seamlessly, scenes recording all of it with a
@@ -392,7 +394,9 @@ Also open:
 - [ ] shared controller mappings with knob/slider pickup, direct position access,
   relative-encoder tracking and explicit feedback/ownership rules; plugins may opt
   into physical observations, accepted changes or both
-  ([planned architecture](architecture.md#physical-controls-takeover-and-direct-position-access-planned))
+  ([planned architecture](architecture.md#physical-controls-takeover-and-direct-position-access-planned));
+  started: pickup, relative encodings and buttons for external controllers' profiles, in the app
+  ([RFC 0011](rfcs/0011-performance-ui-and-editors.md#the-controller-mapping-service))
 - [ ] recording as an engine service: any graph input, output, part or bus and the notes
   played, to WAV/RF64 off the audio thread, with retroactive capture
   ([RFC 0020](rfcs/0020-recording.md), proposed)
@@ -423,8 +427,9 @@ drum module, a DJ unit, a Eurorack module, a DAW plugin). These are required of 
 - [ ] **device profiles:** one manifest per product that the image, engine, UI, mappings,
   packages and admission read instead of flags ([RFC 0024](rfcs/0024-device-profiles.md#progress)).
   Built: the schema, the desktop's, QEMU, KICK and Ignite profiles (the last two estimated),
-  `--profile`, the app's surface, layout, apps and audio block following it, and the engine's
-  budget set from it
+  `--profile`, the app's surface, layout, apps and audio block following it, the engine's
+  budget set from it, and external MIDI controllers' profiles matched by port name (the SMK37
+  Elite and the MODX M over USB, estimated) with `oscairn-midi-monitor` to read them
 - [ ] **knowing before loading whether it fits:** CPU and memory measured on the device, and
   admission for loading, editing and seamless changes ([RFC 0025](rfcs/0025-resource-budgets.md#progress)).
   Built: measuring, estimates, refusing a Performance or plugin over the budget, and a change

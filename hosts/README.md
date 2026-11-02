@@ -141,6 +141,25 @@ A panel profile fills the display with no title or menu bar and shows its screen
 `apps` decide Home's tiles and the Apps menu; its block is the audio request. `--layout` still overrides the
 layout for a run (on the desktop, `--profile kick` shows the KICK's screen, full screen).
 
+External MIDI controllers have profiles of their own ([RFC 0024](../docs/rfcs/0024-device-profiles.md#controllers)):
+`smk37-elite` and `modx-m-usb` are built in (both estimated), and `--controller FILE`, given as
+often as wanted, adds one or replaces the built-in of its id. While a MIDI input whose name
+matches a controller's port is connected, the app opens it too and the controller's groups
+join the device's: its knobs play the banks of the part Play's knobs follow (and the page Play
+shows, when they are Play's knob row, as on the desktop; else the first), its faders part
+levels, its scene buttons scenes, with pickup for absolute knobs and faders and the relative
+encodings decoded; a control the Performance or a part's Sound assigns plays that instead, and
+learn takes its moves. Notes reach the parts through the engine's own inputs, as pitch bend and
+the standard controllers (the mod wheel's CC 1, sustain) do where the engine's input filter passes
+them. Not with `--snapshot`. Plugging or unplugging a controller
+opens or closes it. None of this has been tried with a controller connected yet.
+
+To read what a controller sends, build `oscairn-midi-monitor` (with the app or the engine) and
+run it from the build folder, for example `build-app/hosts/oscairn_midi_monitor_artefacts/RelWithDebInfo/oscairn-midi-monitor`:
+it lists the MIDI inputs, prints every message (port, channel, type, number, value), and on Enter
+or Ctrl-C a table with a row per control (count, lowest and highest value, the values sent),
+ready to paste into a profile. `--list` only lists the inputs.
+
 The app starts at **Home** ([RFC 0030](../docs/rfcs/0030-system-shell-launcher-and-navigation.md)):
 a top bar and the apps as tiles, each with a line of its state. Performance is always there;
 Library, Setlist and Groovebox are there when the profile offers them (the computer's and the

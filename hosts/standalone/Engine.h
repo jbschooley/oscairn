@@ -71,6 +71,11 @@ namespace oscairn::standalone
         // The device's control groups, from its profile (RFC 0024); none on the desktop.
         void setControlGroups(std::vector<ControlGroup> groups){groups_=std::move(groups);}
         const std::vector<ControlGroup>& controlGroups() const {return groups_;}
+        // Where each group is (page, row or mode) and the part the knobs follow, as Play shows
+        // them, for the controller-mapping service (Controllers.h) to play the same.
+        GroupPositions& positions(){return positions_;}
+        void setKnobPart(uint32_t part){knobPart_=part;}
+        uint32_t knobPart() const {return knobPart_;}
         void selectTrack(uint32_t track){sequenceTrack_=std::min(track,1u);}
         // The row selected on screen (RFC 0019): the parameters a device's knobs bound "row:N"
         // play, in order, and how many such knobs the device has and on which edge of its
@@ -165,6 +170,8 @@ namespace oscairn::standalone
         std::string touched_;
         uint32_t touches_=0;
         std::vector<ControlGroup> groups_;
+        GroupPositions positions_;
+        uint32_t knobPart_=0;
         int rowKnobs_=0;
         Edge rowEdge_=Edge::Bottom;
         std::array<uint16_t,128> padChannels_{};

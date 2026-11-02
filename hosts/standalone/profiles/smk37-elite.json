@@ -1,0 +1,18 @@
+{
+  "format": "oscairn.profile",
+  "version": 2,
+  "id": "smk37-elite",
+  "name": "SMK37 Elite",
+  "controls": [
+    { "kind": "keys", "count": 37, "role": "notes", "sensing": "velocity", "midi": { "channel": 1 } },
+    { "kind": "pads", "count": 16, "role": "notes", "sensing": "velocity; eight by two", "midi": { "channel": 10, "notes": [36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51] } },
+    { "kind": "wheels", "count": 1, "role": "assign", "functions": ["pitchBend"], "midi": { "channel": 1, "pitchBend": true } },
+    { "kind": "wheels", "count": 1, "role": "assign", "functions": ["modulation"], "midi": { "channel": 1, "cc": [1] } },
+    { "kind": "knobs", "count": 8, "role": "assign", "paging": "screen", "target": "banks", "sensing": "endless; 1 to 6 send absolute values, 7 and 8 relative",
+      "midi": { "channel": 1, "cc": [74, 71, 76, 77, 93, 18, 19, 16],
+                "encoding": ["absolute", "absolute", "absolute", "absolute", "absolute", "absolute", "signMagnitude", "signMagnitude"] } },
+    { "kind": "faders", "count": 4, "role": "assign", "target": "partLevels", "midi": { "channel": 1, "cc": [73, 75, 79, 72] } }
+  ],
+  "midi": { "ports": [ { "name": "SMK-37 Elite -Master" }, { "name": "SMK-37 Elite -MCP", "protocol": "mackie" } ] },
+  "estimated": ["controls", "midi"]
+}

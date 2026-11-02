@@ -1,0 +1,26 @@
+{
+  "format": "oscairn.profile",
+  "version": 2,
+  "id": "modx-m-usb",
+  "name": "Yamaha MODX M over USB (DAW Remote, Plugin mode)",
+  "controls": [
+    { "kind": "keys", "count": 61, "role": "notes", "sensing": "velocity, channel aftertouch", "midi": { "channel": 1 } },
+    { "kind": "wheels", "count": 1, "role": "assign", "functions": ["pitchBend"], "midi": { "channel": 1, "pitchBend": true } },
+    { "kind": "wheels", "count": 1, "role": "assign", "functions": ["modulation"], "midi": { "channel": 1, "cc": [1] } },
+    { "kind": "knobs", "count": 6, "role": "screen", "sensing": "display knobs", "midi": { "channel": 1, "cc": [78, 79, 80, 81, 82, 83] } },
+    { "kind": "encoders", "count": 4, "role": "assign", "target": "banks", "sensing": "endless encoders sending absolute values; [ASSIGN] picks knobs 1 to 4 or 5 to 8",
+      "rows": [ { "name": "Assign 1", "bank": "assign" }, { "name": "Assign 2", "bank": "assign" } ],
+      "midi": { "channel": 1, "cc": [17, 18, 19, 20, 21, 22, 23, 24] } },
+    { "kind": "faders", "count": 8, "role": "assign", "target": "partLevels", "midi": { "channel": 1, "cc": [70, 71, 72, 73, 74, 75, 76, 77] } },
+    { "kind": "buttons", "count": 8, "role": "assign", "target": "scenes", "midi": { "channel": 1, "cc": [25, 26, 27, 28, 29, 30, 31, 85], "button": "momentary" } },
+    { "kind": "knobs", "count": 2, "role": "fixed", "functions": ["superKnob", "portamentoTime"], "midi": { "channel": 1, "cc": [95, 5] } },
+    { "kind": "buttons", "count": 4, "role": "fixed", "functions": ["assign1", "assign2", "mseqTrigger", "portamento"], "midi": { "channel": 1, "cc": [86, 87, 89, 65] } },
+    { "kind": "expression", "count": 1, "role": "assign", "functions": ["expression"], "sensing": "FC1", "midi": { "channel": 1, "cc": [11] } },
+    { "kind": "expression", "count": 1, "role": "assign", "sensing": "FC2; it sends CC 95, the Super Knob's number, so it is not told apart here" },
+    { "kind": "footswitches", "count": 1, "role": "assign", "functions": ["sustain"], "midi": { "channel": 1, "cc": [64] } },
+    { "kind": "footswitches", "count": 1, "role": "assign", "sensing": "assignable footswitch", "midi": { "channel": 1, "cc": [88] } },
+    { "kind": "touchstrip", "count": 1, "role": "assign", "sensing": "ribbon", "midi": { "channel": 1, "cc": [16] } }
+  ],
+  "midi": { "ports": [ { "name": "MODX M", "index": 1 }, { "name": "MODX M", "index": 2, "protocol": "mackie" } ] },
+  "estimated": ["controls", "midi"]
+}

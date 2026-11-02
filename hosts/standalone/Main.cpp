@@ -3,7 +3,7 @@
 // Oscairn standalone: the demo instrument in a desktop window, with a choice of panel
 // layouts (View menu, or --layout NAME|FILE.json). Every MIDI input plays it.
 //
-//   oscairn-standalone [--profile NAME|path.json] [--layout NAME|path.json] [--plugins DIR]
+//   oscairn-standalone [--profile NAME|path.json] [--controller path.json]... [--layout NAME|path.json] [--plugins DIR]
 //                      [--in-process | --connect SOCKET] [--play] [--input-mode automatic|mouse|touch]
 //                      [--app performance|library|setlist|groovebox]
 //                      [--snapshot out.png [--size WxH] [--play SECONDS] [--view TAB]]
@@ -14,8 +14,11 @@
 // audio options override it for a run. --play starts the sequencer at launch. --input-mode overrides the saved preference for this run. --snapshot
 // renders the window to a PNG and quits: at the layout's design size, or as in a window of
 // --size; with --play SECONDS, the sequencer plays for that long first; with --view, the
-// desktop shows that tab (Part, Mixer, Routing or Controls) or Play.
+// desktop shows that tab (Part, Mixer, Routing or Controls) or Play. External MIDI controllers
+// with a profile (built in: smk37-elite, modx-m-usb; or --controller FILE, as many as wanted) join
+// the device's controls when their MIDI ports are connected (RFC 0024); not with --snapshot.
 
+#include "Controllers.h"
 #include "DesktopShell.h"
 #include "Engine.h"
 #include "Layout.h"
@@ -739,7 +742,8 @@ namespace oscairn::standalone
                 theme_=std::make_unique<Theme>();
                 host::AudioConfiguration audio;
                 bool audioOptions=false;
-                const juce::StringArray valued{"--plugins","--connect","--profile","--layout","--snapshot","--size","--view","--input-mode","--app"};
+                const juce::StringArray valued{"--plugins","--connect","--profile","--controller","--layout","--snapshot","--size","--view","--input-mode","--app"};
+                std::vector<std::string> controllerFiles;
                 for(int i=0;i<args.size();++i)
                 {
                     const auto name=args[i].toStdString();
@@ -748,12 +752,14 @@ namespace oscairn::standalone
                         if(i+1==args.size() || args[i+1].startsWith("--"))throw std::invalid_argument("Missing value for "+name);
                         const auto value=args[++i].unquoted().toStdString();
                         if(host::AudioConfiguration::isOption(name)){audio.setOption(name,value);audioOptions=true;}
+                        if(name=="--controller")controllerFiles.push_back(value);
                     }
                     else if(name=="--play") {if(i+1<args.size() && !args[i+1].startsWith("--"))++i;}
                     else if(name!="--in-process")throw std::invalid_argument("Unknown argument: "+name);
                 }
                 // The device this runs on (RFC 0024): its block size for a new engine, unless given.
                 const auto profile=loadProfile(argument(args,"--profile").unquoted().toStdString());
+                const auto controllers=controllerProfiles(controllerFiles); // checked before anything opens
                 if(!args.contains("--connect") && !args.contains("--buffer-frames") && profile.audio.block>0)audio.bufferFrames=uint32_t(profile.audio.block);
                 audio.validate();
                 const auto socket = argument(args, "--connect");
@@ -793,6 +799,7 @@ namespace oscairn::standalone
                     else throw std::invalid_argument( "--input-mode must be automatic, mouse or touch" );
                 }
                 window_ = std::make_unique<Window>( *engine_, std::move( layouts ), Layout::parse( json ), profile,*theme_,juce::File(dir.unquoted()), mode );
+                if( !args.contains( "--snapshot" ) ) controllers_ = std::make_unique<Controllers>( *engine_, controlGroups( profile ), controllers );
                 if( const auto app = argument( args, "--app" ); app.isNotEmpty() ) window_->openApp( app.toLowerCase() );
                 if( const auto view = argument( args, "--view" ); view.isNotEmpty() )
                 {
@@ -827,6 +834,7 @@ namespace oscairn::standalone
                     [this,commandLine](int choice) {
                         if(choice==1)
                         {
+                            controllers_.reset();
                             window_.reset(); // the panel uses the engine
                             engine_.reset();
                             setApplicationReturnValue(0);
@@ -839,6 +847,7 @@ namespace oscairn::standalone
 
         void shutdown() override
         {
+            controllers_.reset(); // they play through the engine
             window_.reset(); // the panel uses the engine
             engine_.reset();
             theme_.reset();
@@ -866,6 +875,7 @@ namespace oscairn::standalone
         std::unique_ptr<Theme> theme_;
         std::unique_ptr<Engine> engine_;
         std::unique_ptr<Window> window_;
+        std::unique_ptr<Controllers> controllers_;
     };
 }
 

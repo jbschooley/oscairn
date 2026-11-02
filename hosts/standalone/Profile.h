@@ -21,16 +21,28 @@ namespace oscairn::standalone
         // An assign group of knobs has hardware `rows` (each a bank its row button picks, named on
         // screen) or `paging` (button or screen); faders may have `modes` (part, element, audio).
         struct Row { std::string name, bank; }; // bank: assign, filter, ampEG, eq, levels or effects
+        // An external controller's group says how it talks MIDI (RFC 0024's controllers): its port
+        // (from 1), channel (1 to 16; 0: no MIDI described) and a CC or note per control (per
+        // control per row, for rows whose switch changes the numbers), or pitch bend; each CC's
+        // encoding; how buttons send (momentary or latch).
+        struct ControlMidi { int port = 1, channel = 0; std::vector<int> cc, notes; bool pitchBend = false; std::vector<std::string> encodings; std::string button = "momentary"; };
+        // `target`: what an assign group plays by default (banks, partLevels, partMutes, scenes;
+        // empty: its kind's default). `functions` on an assign group: standard controllers passed
+        // to every part (pitchBend, modulation, sustain...).
         struct Control
         {
             std::string kind; int count = 0; std::string sensing, role;
             std::vector<Row> rows; std::string paging; std::vector<std::string> modes, functions;
+            std::string target; ControlMidi midi;
         };
         std::vector<Control> controls;
         // A screen: its size, touch, the surface drawn on it (RFC 0019) and that surface's layout.
         struct Screen { int width = 0, height = 0; bool touch = false; std::string surface = "desktop", layout = "desktop"; };
         std::vector<Screen> screens;
-        struct Midi { int din = 0; bool usbDevice = false, usbHost = false; } midi;
+        // A controller's ports: an input matches when its name contains `name`, ignoring case;
+        // `index` picks the Nth such input; `protocol` midi, or mackie (declared, not read yet).
+        struct Port { std::string name; int index = 1; std::string protocol = "midi"; };
+        struct Midi { int din = 0; bool usbDevice = false, usbHost = false; std::vector<Port> ports; } midi;
         struct Cv { int inputs = 0, outputs = 0; } cv;
         struct Network { bool ethernet = false, wifi = false; } network;
         bool battery = false;
@@ -39,6 +51,8 @@ namespace oscairn::standalone
         std::vector<std::string> estimated;  // sections whose values are estimates, not measured on a unit
 
         bool offers(const std::string& app) const;
+        // An external controller's profile: it has ports, and its controls join a device's while connected.
+        bool controller() const { return !midi.ports.empty(); }
         // The engine's budget (RFC 0025): one audio thread's time less the reliability level's
         // margin (desktop 90%, instrument 75%, pass-through 60%), and 80% of its memory (none
         // checked when the profile does not say).
@@ -54,8 +68,16 @@ namespace oscairn::standalone
         static Profile desktop();
     };
 
-    // The profiles that come with the app, by id: the QEMU image, the Behringer KICK, the Ignite, a MODX M (estimated).
+    // The profiles that come with the app, by id: the QEMU image, the Behringer KICK, the Ignite, a
+    // MODX M (estimated), and the controllers SMK37 Elite and MODX M over USB (estimated).
     std::vector<std::pair<std::string, std::string>> builtInProfiles(); // id, json
-    // A built-in profile by id, or a profile file by path; "desktop" (or nothing) makes the desktop's.
+    // A built-in device profile by id, or a profile file by path; "desktop" (or nothing) makes the
+    // desktop's. A controller's profile is refused here: it joins when its ports are connected.
     Profile loadProfile(const std::string& nameOrFile);
+    // The built-in controllers' profiles, and those in `files`.
+    std::vector<Profile> controllerProfiles(const std::vector<std::string>& files = {});
+    // Which MIDI inputs, by name in the system's order, are which controller's ports: for each
+    // match, the input's place, the profile's place and the port (from 1). Mackie ports are left out.
+    struct PortMatch { size_t input = 0, profile = 0; int port = 1; };
+    std::vector<PortMatch> matchPorts(const std::vector<Profile>& controllers, const std::vector<std::string>& inputs);
 }

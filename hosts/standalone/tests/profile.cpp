@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // Device profiles (RFC 0024): the built-in ones parse and say what the app uses (layout,
-// surface, block, apps); the desktop's is made from the computer; bad ones are refused; and a
-// profile's block reaches the engine as an audio option.
+// surface, block, apps); the desktop's is made from the computer; bad ones are refused; a
+// profile's block reaches the engine as an audio option; and controllers' profiles parse, match
+// their ports by name and index, and refuse what they must.
 #include "../Profile.h"
 #include "../../audio/AudioConfiguration.h"
 #include <juce_gui_basics/juce_gui_basics.h>
@@ -30,8 +31,10 @@ int main()
     juce::ScopedJuceInitialiser_GUI gui;
     try
     {
-        const auto all = builtInProfiles();
-        check(all.size() == 4, "four built-in profiles: " + std::to_string(all.size()));
+        auto all = builtInProfiles();
+        check(all.size() == 6, "six built-in profiles: " + std::to_string(all.size()));
+        std::erase_if(all, [](const auto& p) { return Profile::parse(p.second).controller(); }); // the devices'
+        check(all.size() == 4, "four of them devices'");
         for(const auto& [id, json] : all)
         {
             const auto p = Profile::parse(json);
@@ -77,6 +80,48 @@ int main()
         check(refused(replaced(kickJson, "\"role\": \"notes\"", "\"role\": \"assign\"")), "pads that do not play notes");
         check(refused(replaced(kickJson, paged, paged + ", \"modes\": [\"part\"]")), "modes on knobs");
         check(refused(replaced(kickJson, "[\"volume\", \"master\", \"recGain\"]", "[\"volume\"]")), "fewer functions than controls");
+
+        // Default targets: buttons playing scenes, wheels passing standard controllers through.
+        check(modx.controls[8].role == "assign" && modx.controls[8].functions == std::vector<std::string>{"pitchBend"} && modx.controls[9].functions.front() == "modulation",
+              "the MODX M's wheels pass pitch bend and modulation through, and can be reassigned");
+        check(refused(replaced(kickJson, paged, paged + ", \"target\": \"scenes\"")), "knobs cannot play scenes");
+        check(refused(replaced(kickJson, "\"role\": \"fixed\", \"functions\": [\"tempo\"]", "\"role\": \"assign\", \"functions\": [\"tempo\"]")), "an assign group's function is a standard controller");
+        check(refused(replaced(kickJson, paged, paged + ", \"midi\": {\"channel\": 1, \"cc\": [1, 2, 3, 4]}")), "a device's panel does not talk MIDI");
+
+        // Controllers: matched by port name, their controls with their MIDI.
+        const auto controllers = controllerProfiles();
+        check(controllers.size() == 2 && controllers[0].id == "modx-m-usb" && controllers[1].id == "smk37-elite", "two built-in controllers, by id");
+        const auto& smk = controllers[1];
+        check(smk.controller() && smk.reliability.empty() && !smk.screen() && smk.midi.ports.size() == 2 && smk.midi.ports[0].name == "SMK-37 Elite -Master" && smk.midi.ports[1].protocol == "mackie" &&
+              std::find(smk.estimated.begin(), smk.estimated.end(), "controls") != smk.estimated.end(), "the SMK37 Elite: a port by name, its MIDI estimated");
+        const auto* knobs = &smk.controls[4];
+        check(knobs->kind == "knobs" && knobs->count == 8 && knobs->target == "banks" && knobs->midi.channel == 1 && knobs->midi.cc.size() == 8 &&
+              knobs->midi.encodings[0] == "absolute" && knobs->midi.encodings[7] == "signMagnitude", "its eight knobs: absolute but for 7 and 8");
+        check(smk.controls[2].midi.pitchBend && smk.controls[3].midi.cc == std::vector<int>{1} && smk.controls[5].target == "partLevels" && smk.controls[1].midi.notes.size() == 16,
+              "its wheels, faders and pads");
+        const auto& usb = controllers[0];
+        check(usb.midi.ports.size() == 2 && usb.midi.ports[1].protocol == "mackie" && usb.controls[4].rows.size() == 2 && usb.controls[4].midi.cc.size() == 8 &&
+              usb.controls[6].target == "scenes", "the MODX M over USB: a Mackie port declared, knobs sending a number per row, scene buttons");
+        bool controllerRefused = false; try { loadProfile("smk37-elite"); } catch(const std::invalid_argument&) { controllerRefused = true; }
+        check(controllerRefused, "a controller's profile is not a device's");
+        // The SMK-37 Elite's inputs as macOS lists them (read 2026-11-01 with oscairn-midi-monitor --list).
+        auto matches = matchPorts(controllers, {"IAC Bus 1", "MODX M Port1", "SMK-37 Elite -Private", "smk-37 elite -master", "MODX M Port2", "SMK-37 Elite -MCP"});
+        check(matches.size() == 2 && matches[0].input == 1 && matches[0].profile == 0 && matches[0].port == 1 && matches[1].input == 3 && matches[1].profile == 1 && matches[1].port == 1,
+              "ports matched by name, ignoring case, the Nth by index; the Mackie port left out");
+        check(matchPorts(controllers, {"Keystation 49"}).empty(), "an unknown controller matches nothing");
+
+        // Refused: each mistake in a controller's profile on its own.
+        std::string smkJson; for(const auto& [id, text] : builtInProfiles()) if(id == "smk37-elite") smkJson = text;
+        check(!refused(smkJson), "the SMK37's profile parses as text");
+        check(refused(replaced(smkJson, "\"midi\": { \"ports\"", "\"reliability\": \"desktop\", \"midi\": { \"ports\"")), "a controller has no reliability");
+        check(refused(replaced(smkJson, "\"protocol\": \"mackie\"", "\"protocol\": \"osc\"")), "an unknown protocol");
+        check(refused(replaced(smkJson, "[73, 75, 79, 72]", "[73, 75, 79]")), "fewer CCs than controls");
+        check(refused(replaced(smkJson, "[73, 75, 79, 72]", "[73, 75, 79, 74]")), "two controls sending the same message");
+        check(refused(replaced(smkJson, "\"channel\": 1, \"cc\": [73", "\"channel\": 17, \"cc\": [73")), "a channel past 16");
+        check(refused(replaced(smkJson, "\"channel\": 1, \"cc\": [73", "\"port\": 2, \"channel\": 1, \"cc\": [73")), "a port it does not have");
+        check(refused(replaced(smkJson, "\"signMagnitude\", \"signMagnitude\"", "\"signMagnitude\", \"gray\"")), "an unknown encoding");
+        check(refused(replaced(smkJson, "\"channel\": 1, \"cc\": [1]", "\"channel\": 1, \"cc\": [1], \"notes\": [1]")), "both a CC and a note");
+        check(refused(replaced(smkJson, "\"channel\": 1, \"cc\": [73, 75, 79, 72]", "\"channel\": 1, \"cc\": [73, 75, 79, 72], \"button\": \"latch\"")), "faders that latch");
 
         // A profile's block reaches the engine as an audio option, and back.
         oscairn::host::AudioConfiguration audio;

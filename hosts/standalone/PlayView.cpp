@@ -208,11 +208,22 @@ namespace oscairn::standalone
 
     PlayView::~PlayView() { stopTimer(); }
 
+    namespace
+    {
+        // The group the knob row shows, by its place among the device's groups; none: past the end.
+        size_t knobGroupIndex(const std::vector<ControlGroup>& groups)
+        {
+            for(const auto role : {ControlGroup::Role::Screen, ControlGroup::Role::Assign})
+                for(size_t i = 0; i < groups.size(); ++i)
+                    if(groups[i].role == role && (groups[i].kind == "knobs" || groups[i].kind == "encoders")) return i;
+            return groups.size();
+        }
+    }
+
     ControlGroup PlayView::knobGroup() const
     {
         const auto& groups = engine_.controlGroups();
-        for(const auto role : {ControlGroup::Role::Screen, ControlGroup::Role::Assign})
-            for(const auto& g : groups) if(g.role == role && g.kind != "faders" && g.kind != "buttons") return g;
+        if(const auto i = knobGroupIndex(groups); i < groups.size()) return groups[i];
         ControlGroup g; g.kind = "knobs"; g.count = uint32_t(engine_.rowKnobs() > 0 ? engine_.rowKnobs() : 4);
         return g;
     }
@@ -227,6 +238,19 @@ namespace oscairn::standalone
             g.kind = c.kind; g.count = uint32_t(c.count); g.modes = c.modes;
             for(const auto& r : c.rows)
                 for(size_t k = 0; k < bankKinds.size(); ++k) if(r.bank == bankKinds[k]) g.rows.push_back({r.name, BankKind(k)});
+            // Its default target, and a controller's MIDI (RFC 0024).
+            g.scenes = c.target == "scenes"; g.paged = !c.paging.empty();
+            if(c.role != "fixed") g.functions = c.functions;
+            if(profile.controller() && c.midi.channel)
+            {
+                using Message = ControlGroup::Midi::Message;
+                g.midi.device = profile.id; g.midi.port = uint32_t(c.midi.port); g.midi.channel = uint32_t(c.midi.channel);
+                g.midi.message = c.midi.pitchBend ? Message::PitchBend : c.midi.cc.empty() ? Message::Note : Message::CC;
+                for(const auto n : c.midi.cc.empty() ? c.midi.notes : c.midi.cc) g.midi.numbers.push_back(uint8_t(n));
+                for(const auto& e : c.midi.encodings)
+                    for(size_t k = 0; k < encodings.size(); ++k) if(e == encodings[k]) g.midi.encodings.push_back(Encoding(k));
+                g.midi.latch = c.midi.button == "latch";
+            }
             out.push_back(std::move(g));
         }
         return out;
@@ -263,6 +287,14 @@ namespace oscairn::standalone
         const int banks = int(groupPositions(source_, group, owner));
         page_ %= banks;
         knobSlots_ = resolveControls(source_, {group}, owner, {uint32_t(page_)});
+        // A controller's knobs play the page and part shown.
+        if(const auto i = knobGroupIndex(engine_.controlGroups()); i < engine_.controlGroups().size())
+        {
+            auto& positions = engine_.positions();
+            if(positions.size() <= i) positions.resize(i + 1);
+            positions[i] = uint32_t(page_);
+        }
+        engine_.setKnobPart(owner);
         pageButton_.setVisible(banks > 1);
         // The switch between the Performance's controls and the part's shows while a part is selected.
         if((selected_ != 0) != performanceControls_.isVisible()) { performanceControls_.setVisible(selected_ != 0); partControlsButton_.setVisible(selected_ != 0); resized(); }

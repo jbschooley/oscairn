@@ -184,8 +184,8 @@ An external controller (a USB MIDI keyboard, a pad controller, a DJ controller) 
 the same format, version 2, with three things a device profile does not have:
 
 - **`midi.ports`:** the controller's MIDI input ports, each `{name, index, protocol}`. A port
-  matches an input whose name contains `name`, ignoring case (`"SMK37"` matches `SMK37 Elite`
-  on macOS and `SMK37 Elite MIDI 1` on Linux); `index` (from 1) picks the Nth matching input, in
+  matches an input whose name contains `name`, ignoring case (`"SMK-37 Elite -Master"` matches
+  that input as macOS names it); `index` (from 1) picks the Nth matching input, in
   the order the system lists them, for a device with several ports under one name (the MODX M's
   port 1 and port 2). `protocol` is `midi` (the default), or `mackie` for a Mackie Control port,
   which is declared but not read yet (the next step, below). Matching by name works on every OS
@@ -229,7 +229,10 @@ pitch bend and modulation to every part. Several controllers join in the order o
 profiles' ids. RFC 0011's controller-mapping service decodes the encodings and does pickup.
 
 Built in: `smk37-elite`, the owner's Arturia-style SMK37 Elite (37 keys, 16 pads as eight by
-two, pitch and mod wheels, eight endless knobs, four faders). Its MIDI numbers and channels are
+two, pitch and mod wheels, eight endless knobs, four faders). On macOS it shows three inputs,
+`SMK-37 Elite -Private`, `-Master` and `-MCP` (listed 2026-11-01 with the monitor's `--list`);
+the profile takes `-Master` as the one its controls speak on and `-MCP` as Mackie Control, both
+guesses until the monitor shows which port each control's messages come from. Its MIDI numbers and channels are
 guessed (from the defaults such keyboards often ship with: knobs on CC 74, 71, 76, 77, 93, 18, 19 and 16,
 faders on CC 73, 75, 79 and 72, pads on notes 36 to 51 on channel 10), as is the encoding of
 knobs 7 and 8, which send something relative (taken as `signMagnitude`) where knobs 1 to 6 send
@@ -285,6 +288,32 @@ wins). `desktop-profile` checks the built-in profiles, the desktop's, nine refus
 option; launching the app with `--profile kick` was checked by its snapshot (the KICK's screen at
 1024 x 600). The QEMU image, rebuilt with `--profile qemu-aarch64`, boots and passes its boot
 test (`os/build.sh test`: Oscairn running, the screen drawn and changing).
+
+## Step 6 status
+
+Built 2026-11-01 (`hosts/standalone/Profile.h`, `Controllers.h`; RFC 0011's
+`ControllerMapping` in `physical_controls.h`). Profiles take the fields above additively, still
+version 2: `target` and `functions` on assign groups, each controller group's `midi`, and
+`midi.ports`; the MODX M's wheels are now two assign groups, pitch bend and modulation. A
+controller's profile is refused as `--profile`; the app opens every MIDI input matching a
+built-in controller or a `--controller FILE`, joins its groups to the device's, and plays its
+messages through the mapping service, following the part Play's knobs follow (and Play's page
+when the controller's knobs are Play's knob row, as on the desktop); values are set
+through the control API like the screen's knobs. `desktop-profile` checks both built-in
+controllers, port matching by name and index (Mackie ports left out), and twelve refusals (a
+controller's reliability, an unknown protocol, port, encoding or channel, a CC missing or shared,
+a CC with a note, latching faders, MIDI on a device's panel, knobs playing scenes, an assign
+group's function that is not a standard controller); `control-physical-controls` checks the
+resolution and the mapping service (RFC 0011's step 6 status); `midi-monitor` checks the
+monitor's lines and table. No controller was connected for any of this: the matching and
+playing were checked with names and messages given in tests, not with hardware.
+
+Not yet: the SMK37 Elite's and the MODX M's real numbers (the monitor reads them); the mod
+wheel still reaching a part as CC 1 when a Sound or the Performance assigns it elsewhere (the
+engine passes CC 1 to every part; filtering it per part comes with the engine's input changes);
+a controller's mod wheel or pedal on a nonstandard CC passed on as its function; paging a
+controller's group that Play does not show, and Play following a row a controller switched;
+sending values back (motorized faders, rings, the MODX M's knobs); Mackie Control.
 
 ## Open questions
 

@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Oscairn device profile version 2",
-  "description": "One product Oscairn runs on (RFC 0024): read by the app and the engine instead of flags. Values in sections listed in estimated are estimates, not measured on a unit.",
+  "title": "Oscairn device and controller profile version 2",
+  "description": "One product Oscairn runs on (RFC 0024): read by the app and the engine instead of flags; or an external MIDI controller (it names midi.ports), whose controls join a device's while connected. Values in sections listed in estimated are estimates, not measured on a unit.",
   "type": "object",
   "properties": {
     "format": {
@@ -201,12 +201,87 @@
           "functions": {
             "type": "array",
             "maxItems": 64,
-            "description": "A fixed group: each control's function, one per control",
+            "description": "A fixed group: each control's function, one per control. An assign group of wheels, a touchstrip, pedals, expression pedals, footswitches or a jog: the standard controller each passes to every part when nothing is assigned",
             "items": {
               "type": "string",
               "minLength": 1,
               "maxLength": 128
             }
+          },
+          "target": {
+            "enum": [
+              "banks",
+              "partLevels",
+              "partMutes",
+              "scenes"
+            ],
+            "description": "An assign group's default target: banks for knobs and encoders, partLevels for faders, partMutes (the default) or scenes for buttons"
+          },
+          "midi": {
+            "type": "object",
+            "description": "A controller's control group: how it talks MIDI",
+            "properties": {
+              "port": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 16,
+                "description": "Which of midi.ports, from 1; a midi port"
+              },
+              "channel": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 16
+              },
+              "cc": {
+                "type": "array",
+                "maxItems": 1024,
+                "items": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 127
+                },
+                "description": "A controller number per control, or per control per row for rows whose switch changes the numbers"
+              },
+              "notes": {
+                "type": "array",
+                "maxItems": 1024,
+                "items": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 127
+                },
+                "description": "A note number per control"
+              },
+              "pitchBend": {
+                "type": "boolean",
+                "description": "A group of one wheel sending pitch bend"
+              },
+              "encoding": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/Encoding"
+                  },
+                  {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/$defs/Encoding"
+                    }
+                  }
+                ],
+                "description": "With cc: for the group, or one per control; absolute when absent"
+              },
+              "button": {
+                "enum": [
+                  "momentary",
+                  "latch"
+                ],
+                "description": "Buttons: momentary (each press toggles or selects) or latch (the controller keeps the state)"
+              }
+            },
+            "required": [
+              "channel"
+            ],
+            "additionalProperties": false
           }
         },
         "required": [
@@ -254,12 +329,10 @@
                   "const": "assign"
                 },
                 "kind": {
-                  "not": {
-                    "enum": [
-                      "faders",
-                      "buttons"
-                    ]
-                  }
+                  "enum": [
+                    "knobs",
+                    "encoders"
+                  ]
                 }
               }
             },
@@ -288,19 +361,44 @@
               ]
             },
             "else": {
-              "not": {
-                "anyOf": [
-                  {
-                    "required": [
-                      "rows"
-                    ]
+              "if": {
+                "properties": {
+                  "role": {
+                    "const": "assign"
                   },
-                  {
-                    "required": [
-                      "paging"
-                    ]
+                  "kind": {
+                    "not": {
+                      "enum": [
+                        "faders",
+                        "buttons"
+                      ]
+                    }
                   }
-                ]
+                }
+              },
+              "then": {
+                "not": {
+                  "required": [
+                    "rows",
+                    "paging"
+                  ]
+                }
+              },
+              "else": {
+                "not": {
+                  "anyOf": [
+                    {
+                      "required": [
+                        "rows"
+                      ]
+                    },
+                    {
+                      "required": [
+                        "paging"
+                      ]
+                    }
+                  ]
+                }
               }
             }
           },
@@ -324,11 +422,12 @@
           },
           {
             "if": {
-              "not": {
-                "properties": {
-                  "role": {
-                    "const": "fixed"
-                  }
+              "properties": {
+                "role": {
+                  "enum": [
+                    "notes",
+                    "screen"
+                  ]
                 }
               }
             },
@@ -336,6 +435,24 @@
               "not": {
                 "required": [
                   "functions"
+                ]
+              }
+            }
+          },
+          {
+            "if": {
+              "not": {
+                "properties": {
+                  "role": {
+                    "const": "assign"
+                  }
+                }
+              }
+            },
+            "then": {
+              "not": {
+                "required": [
+                  "target"
                 ]
               }
             }
@@ -396,6 +513,40 @@
         },
         "usbHost": {
           "type": "boolean"
+        },
+        "ports": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "description": "A controller's MIDI input ports; a profile with ports is a controller's",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256,
+                "description": "Matches an input whose name contains it, ignoring case"
+              },
+              "index": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 64,
+                "description": "The Nth matching input, in the system's order; 1 when absent"
+              },
+              "protocol": {
+                "enum": [
+                  "midi",
+                  "mackie"
+                ],
+                "description": "midi (the default), or mackie: Mackie Control, declared but not read yet"
+              }
+            },
+            "required": [
+              "name"
+            ],
+            "additionalProperties": false
+          }
         }
       },
       "additionalProperties": false
@@ -475,8 +626,98 @@
     "format",
     "version",
     "id",
-    "name",
-    "reliability"
+    "name"
   ],
-  "additionalProperties": false
+  "additionalProperties": false,
+  "$defs": {
+    "Encoding": {
+      "enum": [
+        "absolute",
+        "twosComplement",
+        "binaryOffset",
+        "signMagnitude"
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "midi": {
+            "required": [
+              "ports"
+            ]
+          }
+        },
+        "required": [
+          "midi"
+        ]
+      },
+      "then": {
+        "properties": {
+          "midi": {
+            "properties": {
+              "din": false,
+              "usbDevice": false,
+              "usbHost": false
+            }
+          }
+        },
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "platform"
+              ]
+            },
+            {
+              "required": [
+                "compute"
+              ]
+            },
+            {
+              "required": [
+                "audio"
+              ]
+            },
+            {
+              "required": [
+                "screens"
+              ]
+            },
+            {
+              "required": [
+                "cv"
+              ]
+            },
+            {
+              "required": [
+                "network"
+              ]
+            },
+            {
+              "required": [
+                "power"
+              ]
+            },
+            {
+              "required": [
+                "reliability"
+              ]
+            },
+            {
+              "required": [
+                "apps"
+              ]
+            }
+          ]
+        }
+      },
+      "else": {
+        "required": [
+          "reliability"
+        ]
+      }
+    }
+  ]
 }
