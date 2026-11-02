@@ -18,6 +18,7 @@ namespace oscairn::standalone
         bool importsSamples = false; // the instrument prepares SFZ/WAV files
         Control::Sounds sounds{};
         std::vector<SoundChoice> choices;
+        std::string presetProblem; // why the plugin's presets are not among the choices, if they could not be listed
         std::array<bool,2> canToggleBrightnessLocks{}, brightnessLocks{};
     };
     struct SoundAction

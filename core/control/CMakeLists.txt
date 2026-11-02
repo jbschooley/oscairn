@@ -146,8 +146,8 @@ set_tests_properties(control-import PROPERTIES TIMEOUT 60)
 
 add_executable(oscairn-plugin-failures-test tests/plugin_failures.cpp)
 target_link_libraries(oscairn-plugin-failures-test PRIVATE oscairn_control_json)
-add_test(NAME control-plugin-failures COMMAND oscairn-plugin-failures-test $<TARGET_FILE:oscairn-plugin-worker> $<TARGET_FILE:kick-clap-fixture-process_crash> $<TARGET_FILE:kick-clap-fixture-normal>)
-set_tests_properties(control-plugin-failures PROPERTIES TIMEOUT 60)
+add_test(NAME control-plugin-failures COMMAND oscairn-plugin-failures-test $<TARGET_FILE:oscairn-plugin-worker> $<TARGET_FILE:kick-clap-fixture-process_crash> $<TARGET_FILE:kick-clap-fixture-normal> $<TARGET_FILE:oscairn-plugin-scan>)
+set_tests_properties(control-plugin-failures PROPERTIES TIMEOUT 120) # a hung preset provider takes the scan helper's 15 s
 
 add_executable(oscairn-undo-test tests/undo.cpp)
 target_include_directories(oscairn-undo-test PRIVATE ../clap-host/tests)
@@ -199,7 +199,7 @@ foreach(entry IN LISTS control_worker_tests)
     string(REPLACE "|" ";" parts "${entry}")
     list(POP_FRONT parts name)
     add_test(NAME ${name}-workers COMMAND ${parts})
-    set_tests_properties(${name}-workers PROPERTIES TIMEOUT 120 ENVIRONMENT "OSCAIRN_PLUGIN_WORKER=$<TARGET_FILE:oscairn-plugin-worker>;OSCAIRN_WORKER_BUDGET_US=50000")
+    set_tests_properties(${name}-workers PROPERTIES TIMEOUT 120 ENVIRONMENT "OSCAIRN_PLUGIN_WORKER=$<TARGET_FILE:oscairn-plugin-worker>;OSCAIRN_PLUGIN_SCAN=$<TARGET_FILE:oscairn-plugin-scan>;OSCAIRN_WORKER_BUDGET_US=50000")
 endforeach()
 
 add_executable(oscairn-recording-test tests/recording.cpp)

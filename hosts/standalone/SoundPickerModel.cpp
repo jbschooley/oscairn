@@ -28,8 +28,12 @@ namespace oscairn::standalone
             // The plugin's defaults, and its presets (CLAP preset discovery or LV2), prepared in a
             // native context or a spare instance (RFC 0005).
             result.choices.push_back({"Default", {}, {}});
-            for(const auto& preset : control.presets(result.node))
-                result.choices.push_back({preset.name, preset.uri, {}});
+            try
+            {
+                for(const auto& preset : control.presets(result.node))
+                    result.choices.push_back({preset.name, preset.uri, {}});
+            }
+            catch(const std::runtime_error& e) { result.presetProblem = e.what(); }
         }
         if(result.pluginId == "org.oscairn.basic-synth")
         {

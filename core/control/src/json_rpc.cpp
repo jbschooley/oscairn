@@ -839,8 +839,10 @@ namespace oscairn
                 return show?R"({"shown":true})":R"({"shown":false})";
             }
             if(method=="presets.list") {
-                fields(p,{"node"});std::vector<std::string> values;
-                for(const auto& v:c.presets(node(c,member(p,"node"))))values.push_back("{\"uri\":"+quote(v.uri)+",\"name\":"+quote(v.name)+'}');
+                fields(p,{"node"});std::vector<std::string> values;const auto n=node(c,member(p,"node"));
+                std::vector<PresetInfo> listed;
+                try{listed=c.presets(n);}catch(const std::runtime_error& e){throw Failure{-32005,e.what()};} // why there are none
+                for(const auto& v:listed)values.push_back("{\"uri\":"+quote(v.uri)+",\"name\":"+quote(v.name)+'}');
                 return "{\"presets\":"+join(values)+'}';
             }
             if(method=="properties.list") {

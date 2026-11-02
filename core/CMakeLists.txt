@@ -303,5 +303,5 @@ foreach(entry IN LISTS worker_tests)
     add_test(NAME ${name}-workers COMMAND ${parts})
     # These check identical results, not timing; they render faster than real time on ordinary
     # threads, so each worker block may take up to 50 ms before it counts as missed.
-    set_tests_properties(${name}-workers PROPERTIES TIMEOUT 120 ENVIRONMENT "OSCAIRN_PLUGIN_WORKER=$<TARGET_FILE:oscairn-plugin-worker>;OSCAIRN_WORKER_BUDGET_US=50000")
+    set_tests_properties(${name}-workers PROPERTIES TIMEOUT 120 ENVIRONMENT "OSCAIRN_PLUGIN_WORKER=$<TARGET_FILE:oscairn-plugin-worker>;OSCAIRN_PLUGIN_SCAN=$<TARGET_FILE:oscairn-plugin-scan>;OSCAIRN_WORKER_BUDGET_US=50000")
 endforeach()

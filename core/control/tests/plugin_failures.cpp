@@ -3,7 +3,7 @@
 // A plugin whose worker fails is named in the session status, through the protocol too: its
 // node, name and why it is silent (the 2026-10-31 audit: nothing above the host said so). A
 // healthy plugin's worker is listed with the CPU time and memory it uses (RFC 0010 step 6).
-//   oscairn-plugin-failures-test WORKER PROCESS_CRASH NORMAL
+//   oscairn-plugin-failures-test WORKER PROCESS_CRASH NORMAL SCAN
 #include "oscairn/json_rpc.h"
 #include "oscairn/session.h"
 #include <algorithm>
@@ -21,7 +21,7 @@ using namespace oscairn;
 
 int main(int argc, char** argv)
 {
-    if(argc < 4) return 2;
+    if(argc < 5) return 2;
     setenv("OSCAIRN_PLUGIN_WORKER", argv[1], 1);
     int failures = 0;
     auto check = [&](bool ok, const std::string& what) { if(!ok) { std::fprintf(stderr, "FAIL: %s\n", what.c_str()); ++failures; } };
@@ -55,6 +55,36 @@ int main(int argc, char** argv)
               "and in the protocol's status: " + reply);
         check(reply.find("\"workers\":[") != std::string::npos && reply.find("{\"node\":" + std::to_string(healthy) + ",\"name\":\"healthy\",\"cpu\":") != std::string::npos,
               "the protocol's status lists the workers' usage: " + reply);
+        // RFC 0005: a worker's plugin lists its presets through the scan helper, never by running its
+        // provider in this process; without a helper it lists none and says why, in the protocol too.
+        {
+            const auto listed = s.add("listed", argv[3], "org.kick.test.midi"); s.commit();
+            auto names = [](const std::vector<PresetInfo>& p) { std::string all; for(const auto& x : p) all += x.name + ";"; return all; };
+            const auto none = rpc.dispatch(R"({"jsonrpc":"2.0","id":2,"method":"presets.list","params":{"node":"listed"}})").value_or("");
+            check(none.find("\"error\"") != std::string::npos && none.find("no plugin scan helper") != std::string::npos,
+                  "without a scan helper, a worker's plugin lists no presets, saying why: " + none);
+            auto policy = placementPolicy(); policy.scan = argv[4]; setPlacementPolicy(policy);
+            check(names(s.presets(listed)) == "Quiet;Bright;", "with one, its presets come from the helper");
+            const auto some = rpc.dispatch(R"({"jsonrpc":"2.0","id":3,"method":"presets.list","params":{"node":"listed"}})").value_or("");
+            check(some.find("\"name\":\"Quiet\"") != std::string::npos, "and through the protocol: " + some);
+            // A hung provider is asked once: the helper's timeout, then the failure is kept for that binary.
+            const auto directory = std::filesystem::temp_directory_path() / ("oscairn-presets-" + std::to_string(getpid()));
+            std::filesystem::remove_all(directory); std::filesystem::create_directories(directory);
+            const auto copy = directory / std::filesystem::path(argv[3]).filename();
+            std::filesystem::copy(argv[3], copy, std::filesystem::copy_options::recursive);
+            const auto hung = s.add("hung", copy.string(), "org.kick.test.midi"); s.commit();
+            setenv("KICK_FIXTURE_PRESETS_HANG", "1", 1); setenv("KICK_FIXTURE_PRESETS_LOG", (directory / "asked").c_str(), 1);
+            std::string why;
+            const auto began = std::chrono::steady_clock::now();
+            for(int i = 0; i < 3; ++i) { why.clear(); try { s.presets(hung); } catch(const std::runtime_error& e) { why = e.what(); } }
+            const auto took = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - began).count();
+            unsetenv("KICK_FIXTURE_PRESETS_HANG"); unsetenv("KICK_FIXTURE_PRESETS_LOG");
+            std::ifstream log(directory / "asked"); int asked = 0; for(std::string line; std::getline(log, line);) ++asked;
+            check(asked == 1 && took < 25, "a hanging provider is asked once for three listings: " + std::to_string(asked) + " times, " + std::to_string(took) + " s");
+            check(why.find("Presets not listed: Plugin scan timed out") != std::string::npos, "and each listing says why: " + why);
+            s.remove(hung); s.remove(listed); s.commit();
+            std::filesystem::remove_all(directory);
+        }
         // RFC 0025: a plugin in a worker declares its memory across the worker protocol, and is
         // refused in the worker before it activates when it declares more than the room given.
         {

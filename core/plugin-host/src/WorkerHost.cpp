@@ -494,8 +494,9 @@ namespace oscairn
                 process_->fitLimit();
             }
             void saveSnapshot(const std::string& directory) override { request(Op::SaveSnapshot, Writer().str(directory)); }
-            // The scan helper, in this process: the worker's plugin provider code never runs
-            // here, so a hung one cannot stall the worker or restart a playing instrument (RFC 0005).
+            // The scan helper's listing (RFC 0005): the plugin's provider never runs in the worker,
+            // where a hung one would restart a playing instrument, nor in this process. Without a
+            // helper, none, saying why.
             std::vector<PresetInfo> presets() override
             {
                 return scanPluginPresets(descriptor_.path, descriptor_.id);

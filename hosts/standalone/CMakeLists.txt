@@ -132,9 +132,9 @@ set_tests_properties(desktop-shell PROPERTIES TIMEOUT 120) # it covers most of t
 # A third-party plugin for RFC 0019's Compact gate, used where it is built (Odin 2 beside this
 # checkout by default); the test skips it otherwise.
 set(OSCAIRN_THIRD_PARTY_CLAP "${PROJECT_SOURCE_DIR}/../ports/odin2/build/Odin2_artefacts/Release/CLAP/Odin2.clap" CACHE FILEPATH "A third-party CLAP plugin for the desktop-shell test")
-# The app runs every plugin in a worker, so its tests do too (the budget allows for these
-# threads' ordinary scheduling, as in the other worker tests).
-set(worker_environment "OSCAIRN_PLUGIN_WORKER=$<TARGET_FILE:oscairn-plugin-worker>" "OSCAIRN_WORKER_BUDGET_US=50000")
+# The app runs every plugin in a worker, and lists their presets through the scan helper, so its
+# tests do too (the budget allows for these threads' ordinary scheduling, as in the other worker tests).
+set(worker_environment "OSCAIRN_PLUGIN_WORKER=$<TARGET_FILE:oscairn-plugin-worker>" "OSCAIRN_PLUGIN_SCAN=$<TARGET_FILE:oscairn-plugin-scan>" "OSCAIRN_WORKER_BUDGET_US=50000")
 # The test fixture's stepped plugin, whose mode hides a control, for editors that follow it.
 set(shell_environment "OSCAIRN_TEST_FIXTURE=$<TARGET_FILE:kick-clap-fixture-normal>" ${worker_environment})
 if(EXISTS "${OSCAIRN_THIRD_PARTY_CLAP}")

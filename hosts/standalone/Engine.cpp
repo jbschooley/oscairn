@@ -19,7 +19,9 @@ namespace oscairn::standalone
         std::map<std::string,Engine::Editor> result;const auto graph=control.graphState();
         for(const auto& node:graph.topology.nodes) {
             const auto& name=graph.names.at(node.id);if(name!="synth" && name!="delay")continue;
-            result[name]={node.plugin.name,node.plugin.id,node.plugin.path,control.parameters(node.id),control.presets(node.id)};
+            std::vector<PresetInfo> presets;
+            try{presets=control.presets(node.id);}catch(const std::runtime_error&){} // none listed; the picker says why
+            result[name]={node.plugin.name,node.plugin.id,node.plugin.path,control.parameters(node.id),std::move(presets)};
         }
         return result;
     }
@@ -216,7 +218,8 @@ namespace oscairn::standalone
     {
         if(socketPath_.empty())
         {
-            try{if(const auto m=applySoundAction(*control_,action);!m.empty())soundMessage_=m;soundPicker_=readSoundPicker(*control_);editors_=readEditors(*control_);}
+            try{if(const auto m=applySoundAction(*control_,action);!m.empty())soundMessage_=m;soundPicker_=readSoundPicker(*control_);editors_=readEditors(*control_);
+                if(soundMessage_.empty())soundMessage_=soundPicker_.presetProblem;}
             catch(const std::exception& e){soundMessage_=e.what();}
             return;
         }
@@ -265,6 +268,7 @@ namespace oscairn::standalone
             exportTarget_.clear();exportWritten_.clear();
         }
         if(!result.error.empty())soundMessage_=result.error;else if(!result.message.empty())soundMessage_=result.message;
+        else if(soundMessage_.empty())soundMessage_=result.state.presetProblem;
         for(const auto& [name,editor]:result.editors) {
             const auto old=editors_.find(name);
             if(old==editors_.end() || old->second.id!=editor.id || old->second.path!=editor.path)textCache_.clear();

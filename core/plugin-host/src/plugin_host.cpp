@@ -10,6 +10,9 @@
 #include <cctype>
 #include <cmath>
 #include <fstream>
+#include <future>
+#include <map>
+#include <mutex>
 #include <unistd.h>
 #ifdef __APPLE__
 #include <libproc.h>
@@ -83,10 +86,14 @@ namespace oscairn
             bool hasWindow() const override {return host.hasGui();}
             void showWindow(bool show,const std::string& title) override {if(!show)host.closeGui();else if(!host.showGui(title))throw std::runtime_error(host.error());}
             uint64_t activations() const noexcept override { return host.activations(); }
-            // RFC 0005: a fresh listing through the isolated scan helper (or, where no helper is
-            // configured, an in-process index within its budget); no provider code of the plugin's
-            // runs unbounded on this process's control thread.
-            std::vector<PresetInfo> presets() override { return scanPluginPresets(host.descriptor().path, host.descriptor().id); }
+            // RFC 0005: through the isolated scan helper where one is configured; without one, this
+            // plugin already runs in this process, and so does its index (within the index's budget).
+            std::vector<PresetInfo> presets() override {
+                if(!placementPolicy().scan.empty())return scanPluginPresets(host.descriptor().path,host.descriptor().id);
+                std::vector<PresetInfo> r;
+                for(const auto& d:kick::clap::inspect(host.descriptor().path,true).plugins)if(d.id==host.descriptor().id)for(const auto& p:d.presets)r.push_back({presetUri(p),p.name});
+                return r;
+            }
             void loadPreset(const std::string& uri) override {if(!host.loadPreset(presetFrom(uri)))throw std::runtime_error(host.error());}
             void setAssets(kick::clap::AssetResolver* assets) noexcept override {host.setAssets(assets);}
             std::vector<kick::clap::AssetReference> assetDependencies() const override {return host.assetDependencies();}
@@ -235,15 +242,38 @@ namespace oscairn
 
     std::vector<PresetInfo> scanPluginPresets(const std::string& path, const std::string& pluginId)
     {
-        // The scan's own 15 s, so a hung provider stalls this thread at most that long and dies
-        // with the helper process. Without a helper, index in this process within the index's
-        // own budget (hosts that run plugins among their own code).
-        kick::clap::ScanResult result;
-        const auto& helper = placementPolicy().scan;
-        if(!helper.empty()) { std::string failure; if(!kick::clap::indexPresetsWithHelper(helper, path, 15000, result, failure)) return {}; }
-        else result = kick::clap::inspect(path, true);
+        // One listing per binary as it is now (its path and newest modification), the failures
+        // included: a hung provider costs one helper timeout, not one per caller or refresh.
+        // shortcut: preset files added to a plugin's folders show once its binary changes or the engine restarts; key on the folders too if that matters.
+        struct Listing { kick::clap::ScanResult result; std::string failure; };
+        static std::mutex mutex;
+        static std::map<std::pair<std::string, std::filesystem::file_time_type>, std::shared_future<Listing>> listings;
+        const auto helper = placementPolicy().scan;
+        if(helper.empty()) throw std::runtime_error("Presets not listed: no plugin scan helper is configured");
+        std::error_code e;
+        auto stamp = std::filesystem::last_write_time(path, e);
+        if(std::filesystem::is_directory(path, e)) // a bundle: its binary may change inside it
+            for(const auto& f : std::filesystem::recursive_directory_iterator(path, e)) stamp = std::max(stamp, f.last_write_time(e));
+        std::promise<Listing> promise;
+        std::shared_future<Listing> listing;
+        bool run = false;
+        {
+            std::lock_guard lock(mutex);
+            auto& slot = listings[{path, stamp}];
+            if(!slot.valid()) { slot = promise.get_future().share(); run = true; }
+            listing = slot;
+        }
+        if(run)
+        {
+            // The scan's own 15 s: a hung provider stalls the caller at most that long, once, and dies with the helper.
+            Listing l;
+            if(!kick::clap::indexPresetsWithHelper(helper, path, 15000, l.result, l.failure) && l.failure.empty()) l.failure = "Plugin scan failed";
+            promise.set_value(std::move(l));
+        }
+        const auto& l = listing.get();
+        if(!l.failure.empty()) throw std::runtime_error("Presets not listed: " + l.failure);
         std::vector<PresetInfo> presets;
-        for(const auto& plugin : result.plugins)
+        for(const auto& plugin : l.result.plugins)
             if(plugin.id == pluginId) for(const auto& preset : plugin.presets) presets.push_back({presetUri(preset), preset.name});
         return presets;
     }
