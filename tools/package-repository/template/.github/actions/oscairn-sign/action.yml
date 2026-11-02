@@ -38,7 +38,7 @@ runs:
         REPOSITORY: ${{ inputs.repository }}
         COMMIT: ${{ inputs.commit }}
       run: |
-        sudo apt-get update && sudo apt-get install -y ninja-build
+        sudo apt-get update && sudo apt-get install -y ninja-build libsndfile1-dev # the configure needs the Sampler's dependency
         git init -q "$RUNNER_TEMP/oscairn"
         cd "$RUNNER_TEMP/oscairn"
         git fetch -q --depth 1 "https://github.com/$REPOSITORY.git" "$COMMIT"
