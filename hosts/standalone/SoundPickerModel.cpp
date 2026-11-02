@@ -103,17 +103,17 @@ namespace oscairn::standalone
         }
         if(action.kind == SoundAction::SaveToLibrary){control.savePerformanceToLibrary(action.choice.name,action.asNew);return {};}
         if(action.kind == SoundAction::LoadFromLibrary){
-            Control::LibraryQuery all; all.limit = 1000; all.kind = "performance";
+            Control::LibraryQuery one; one.id = action.libraryId; one.kind = "performance";
             bool seamless = true;
-            for(const auto& item : control.libraryQuery(all).items) if(item.id == action.libraryId) seamless = control.estimate(item.path).seamless;
+            for(const auto& item : control.libraryQuery(one).items) seamless = control.estimate(item.path).seamless;
             control.loadPerformanceFromLibrary(action.libraryId);
             return seamless ? std::string() : cut;
         }
         // The next one, loaded while this one plays (RFC 0021), so opening it only publishes it.
         if(action.kind == SoundAction::PrepareFromLibrary){
-            Control::LibraryQuery all; all.limit = 1000; all.kind = "performance";
-            for(const auto& item : control.libraryQuery(all).items)
-                if(item.id == action.libraryId && !control.preparePerformance(item.path)) return "Not prepared ahead: beside this Performance it would not fit this device. It opens when you go to it.";
+            Control::LibraryQuery one; one.id = action.libraryId; one.kind = "performance";
+            for(const auto& item : control.libraryQuery(one).items)
+                if(!control.preparePerformance(item.path)) return "Not prepared ahead: beside this Performance it would not fit this device. It opens when you go to it.";
             return {};
         }
         if(action.kind == SoundAction::SaveSound){control.savePartAsSound(action.part,action.choice.name,action.asNew);return {};}

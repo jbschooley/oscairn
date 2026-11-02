@@ -264,6 +264,7 @@ namespace oscairn
             if(!std::all_of(q.tags.begin(), q.tags.end(), [&](const std::string& t) { return std::find(item.tags.begin(), item.tags.end(), t) != item.tags.end(); })) continue;
             if(q.favorites && !item.favorite) continue;
             if(!q.kind.empty() && item.kind != q.kind) continue;
+            if(!q.id.empty() && item.id != q.id) continue;
             if(!q.source.empty() && item.library != (q.source == "mine" ? std::string() : q.source)) continue;
             if(q.recent && !item.recent) continue;
             if(!text.empty())

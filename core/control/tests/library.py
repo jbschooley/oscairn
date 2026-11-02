@@ -106,6 +106,8 @@ with tempfile.TemporaryDirectory(prefix='oscairn-library-') as temporary:
         twin = next(i for i in rpc('library.query')['items'] if i['id'] == duplicate)
         assert twin['name'] == 'Warm Pad copy' and twin['library'] == '' and twin['tags'] == ['pad', 'dark'] and twin['color'] == '#e8a33d'
         assert rpc('library.query', {'source': 'mine'})['total'] == 2 and rpc('library.query', {'source': 'nonesuch'})['total'] == 0
+        assert [i['id'] for i in rpc('library.query', {'id': duplicate, 'limit': 1})['items']] == [duplicate] and rpc('library.query', {'id': 'missing'})['total'] == 0
+        rpc('library.query', {'id': ''}, True)
         rpc('library.delete', {'id': duplicate})
         rpc('library.edit', {'id': 'missing', 'name': '', 'description': '', 'tags': []}, True)
         rpc('library.edit', {'id': pad, 'name': '', 'description': '', 'tags': ['']}, True)

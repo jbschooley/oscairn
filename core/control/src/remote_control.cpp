@@ -321,7 +321,7 @@ namespace oscairn
         impl_->call("performance.setInfo","{\"name\":"+quote(info.name)+",\"description\":"+quote(info.description)+",\"tags\":"+quoted(info.tags)+",\"color\":"+quote(info.color)+'}');
     }
     Control::LibraryResult RemoteControl::libraryQuery(const LibraryQuery& q) {
-        auto d=impl_->call("library.query","{\"text\":"+quote(q.text)+",\"tags\":"+quoted(q.tags)+",\"favorites\":"+(q.favorites?"true":"false")+",\"recent\":"+(q.recent?"true":"false")+",\"limit\":"+std::to_string(q.limit)+(q.kind.empty()?std::string():",\"kind\":"+quote(q.kind))+(q.source.empty()?std::string():",\"source\":"+quote(q.source))+'}');
+        auto d=impl_->call("library.query","{\"text\":"+quote(q.text)+",\"tags\":"+quoted(q.tags)+",\"favorites\":"+(q.favorites?"true":"false")+",\"recent\":"+(q.recent?"true":"false")+",\"limit\":"+std::to_string(q.limit)+(q.kind.empty()?std::string():",\"kind\":"+quote(q.kind))+(q.source.empty()?std::string():",\"source\":"+quote(q.source))+(q.id.empty()?std::string():",\"id\":"+quote(q.id))+'}');
         auto r=field(d.get(),"result");LibraryResult result;
         for(auto i:array(field(r,"items")))result.items.push_back({string(field(i,"id")),string(field(i,"kind")),string(field(i,"name")),string(field(i,"description")),string(field(i,"path")),strings(field(i,"tags")),boolean(field(i,"favorite")),static_cast<uint32_t>(integer(field(i,"recent"))),string(field(i,"color")),string(field(i,"revision")),string(field(i,"hash")),string(field(i,"library")),{}});
         for(auto t:array(field(r,"tags")))result.tags.emplace_back(string(field(t,"tag")),static_cast<uint32_t>(integer(field(t,"count"))));

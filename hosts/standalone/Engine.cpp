@@ -245,11 +245,10 @@ namespace oscairn::standalone
     }
     std::optional<Control::LibraryItem> Engine::libraryItem(const std::string& id) const
     {
-        // shortcut: looks among the first 1000 by name; give library.query an ID filter when libraries grow past that.
-        Control::LibraryQuery all;all.limit=1000;
-        const auto found=library(all);
+        Control::LibraryQuery one;one.id=id;
+        const auto found=library(one);
         if(!found)return {};
-        for(const auto& item:found->items)if(item.id==id)return item;
+        if(!found->items.empty())return found->items.front();
         return Control::LibraryItem{}; // not in the library: an empty ID
     }
     std::string Engine::archiveContents(const std::string& file, Control::Archive& out) const

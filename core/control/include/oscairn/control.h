@@ -145,8 +145,8 @@ namespace oscairn
         // library: the installed library it is in (its ID), locked; empty for the user's own.
         struct LibraryItem { std::string id, kind = "performance", name, description, path; std::vector<std::string> tags; bool favorite = false; uint32_t recent = 0; std::string color, revision, hash, library; Origin origin; };
         // kind: "performance" or "sound"; empty for both. source: "mine" for the user's own items, an
-        // installed library's ID for its items, empty for all.
-        struct LibraryQuery { std::string text; std::vector<std::string> tags; bool favorites = false, recent = false; uint32_t limit = 200; std::string kind, source; };
+        // installed library's ID for its items, empty for all. id: that item only, empty for any.
+        struct LibraryQuery { std::string text; std::vector<std::string> tags; bool favorites = false, recent = false; uint32_t limit = 200; std::string kind, source, id; };
         // tags: each tag over every match with its count, but those the user hid from the tag list;
         // tagColors: the colors the user gave tags; hiddenTags: every tag the user hid.
         struct LibraryResult { std::vector<LibraryItem> items; std::vector<std::pair<std::string, uint32_t>> tags; uint32_t total = 0;

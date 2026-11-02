@@ -485,7 +485,8 @@ namespace oscairn
                 return "{\"id\":"+quote(i.id)+",\"name\":"+quote(i.name)+",\"description\":"+quote(i.description)+",\"tags\":"+tags(i.tags)+",\"color\":"+quote(i.color)+'}';
             }
             if(method=="library.query") {
-                fields(p,{"text","tags","favorites","recent","limit","kind","source"});Control::LibraryQuery q;
+                fields(p,{"text","tags","favorites","recent","limit","kind","source","id"});Control::LibraryQuery q;
+                if(member(p,"id")){q.id=std::string(string(member(p,"id")));if(q.id.empty())invalid("Empty library ID");}
                 if(member(p,"source")){q.source=std::string(string(member(p,"source")));if(q.source.empty())invalid("Empty library source");}
                 if(member(p,"kind")){q.kind=std::string(string(member(p,"kind")));if(q.kind!="performance" && q.kind!="sound")invalid("Unknown library kind");}
                 if(member(p,"text"))q.text=std::string(string(member(p,"text")));
