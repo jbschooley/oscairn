@@ -9,6 +9,7 @@
 #include <clap/ext/latency.h>
 #include <clap/ext/preset-load.h>
 #include <clap/ext/gui.h>
+#include <clap/ext/render.h>
 #include <clap/factory/preset-discovery.h>
 #include <oscairn-clap/ui.h>
 #include <oscairn-clap/memory.h>
@@ -297,6 +298,17 @@ struct Plugin {
             return true;
         }};
         if (!std::strcmp(id, CLAP_EXT_PRESET_LOAD)) return &presets;
+        // clap.render: each mode the host sets is appended, as a line, to the file
+        // KICK_FIXTURE_RENDER_LOG names; KICK_FIXTURE_HARD_REALTIME: it must run in real time.
+        static const clap_plugin_render_t render{
+            [](const clap_plugin_t* p) { get(p).main(); return std::getenv("KICK_FIXTURE_HARD_REALTIME") != nullptr; },
+            [](const clap_plugin_t* p, clap_plugin_render_mode mode) {
+                auto& s = get(p); s.main(); if (s.processing) ++threadErrors;
+                if (const char* log = std::getenv("KICK_FIXTURE_RENDER_LOG"))
+                    std::ofstream(log, std::ios::app) << (mode == CLAP_RENDER_OFFLINE ? "offline" : "realtime") << '\n';
+                return true;
+            }};
+        if (!std::strcmp(id, CLAP_EXT_RENDER)) return &render;
         static const oscairn_plugin_memory_t memory{
             [](const clap_plugin_t* p, double rate, uint32_t, oscairn_memory_t* out) {
                 auto& s = get(p); s.main(); if (s.active) ++threadErrors;

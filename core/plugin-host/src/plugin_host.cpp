@@ -223,7 +223,6 @@ namespace oscairn
     std::shared_ptr<PluginHost> loadPlugin(const std::string& path,const std::string& id,double rate,uint32_t frames,ProcessingMode mode,Lv2BufferLimits lv2Buffers,uint64_t memoryRoom)
     {
         (void)lv2Buffers; // LV2-only resource policy.
-        (void)mode; // CLAP behavior is unchanged; LV2 uses the mode for Worker.
         if(path.find('\0')!=std::string::npos || id.find('\0')!=std::string::npos)
             throw std::invalid_argument("Plugin path and ID must not contain NUL bytes");
         auto source=std::filesystem::path(path).lexically_normal();
@@ -246,6 +245,7 @@ namespace oscairn
             throw std::runtime_error(scan.failures.empty()?"No matching CLAP plugin in "+path:scan.failures.front().message);
         auto host=std::make_shared<ClapHost>();
         host->host.setMemoryRoom(memoryRoom);
+        host->host.setOfflineRendering(mode==ProcessingMode::Offline);
         if(!host->host.load(*found,rate,frames))throw std::runtime_error("Cannot load "+found->id+": "+host->host.error());
         host->host.setMemoryRoom(0);
         host->host.lockAudioLayout();

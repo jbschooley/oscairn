@@ -9,6 +9,8 @@
 #include <cstring>
 #include <cstdio>
 #include <filesystem>
+#include <fstream>
+#include <sstream>
 #include <string>
 #include <vector>
 #include <unistd.h>
@@ -177,10 +179,33 @@ void window(const std::string& worker, const std::string& fixture)
     effect.reset(); // the node goes, and its window with it
 }
 
+// CLAP render: an offline render tells the plugin CLAP_RENDER_OFFLINE, in the engine and through a
+// worker; a realtime one, or a plugin that must run in real time, CLAP_RENDER_REALTIME.
+void renderMode(const std::string& worker, const std::string& fixture)
+{
+    const auto log = std::filesystem::temp_directory_path() / ("oscairn-render-mode-" + std::to_string(getpid()));
+    ::setenv("KICK_FIXTURE_RENDER_LOG", log.c_str(), 1);
+    auto told = [&](bool inWorker, oscairn::ProcessingMode mode) {
+        std::filesystem::remove(log);
+        if(inWorker) oscairn::loadPluginInWorker(worker, fixture, "org.kick.test.effect", 48000, 64, mode);
+        else oscairn::loadPlugin(fixture, "org.kick.test.effect", 48000, 64, mode);
+        std::ifstream in(log); std::stringstream text; text << in.rdbuf(); return text.str();
+    };
+    using M = oscairn::ProcessingMode;
+    check(told(false, M::Offline) == "offline\n", "offline in the engine");
+    check(told(false, M::Realtime) == "realtime\n", "realtime in the engine");
+    check(told(true, M::Offline) == "offline\n", "offline in a worker");
+    check(told(true, M::Realtime) == "realtime\n", "realtime in a worker");
+    ::setenv("KICK_FIXTURE_HARD_REALTIME", "1", 1);
+    check(told(false, M::Offline) == "realtime\n", "a plugin that must run in real time stays realtime");
+    ::unsetenv("KICK_FIXTURE_HARD_REALTIME"); ::unsetenv("KICK_FIXTURE_RENDER_LOG");
+    std::filesystem::remove(log);
+}
+
 int main(int argc, char** argv)
 {
     if(argc < 3) { std::fprintf(stderr, "usage: %s WORKER PLUGIN...\n", argv[0]); return 2; }
-    try { sleeping(argv[1], argv[2]); rescan(argv[1], argv[2]); window(argv[1], argv[2]); for(int i = 2; i < argc; ++i) compare(argv[1], argv[i]); }
+    try { renderMode(argv[1], argv[2]); sleeping(argv[1], argv[2]); rescan(argv[1], argv[2]); window(argv[1], argv[2]); for(int i = 2; i < argc; ++i) compare(argv[1], argv[i]); }
     catch(const std::exception& e) { std::fprintf(stderr, "FAIL: %s\n", e.what()); return 1; }
     return failures ? 1 : 0;
 }

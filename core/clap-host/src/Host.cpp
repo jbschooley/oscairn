@@ -16,6 +16,7 @@
 #include <clap/ext/event-registry.h>
 #include <clap/ext/preset-load.h>
 #include <clap/ext/gui.h>
+#include <clap/ext/render.h>
 #include <clap/factory/preset-discovery.h>
 #include <oscairn-clap/beat.h>
 #include <oscairn-clap/harmony.h>
@@ -175,6 +176,7 @@ struct Host::Impl {
     bool hasDeclared = false, context = false; // context: an effect context, costing its context bytes alone
     oscairn_memory_t declared{};
     uint64_t memoryRoom = 0;
+    bool offline = false; // clap.render: what the caller asked for, kept across loads
     Descriptor info;
     std::string message;
     std::string lastLoggedError; // main thread only: explains a following failed call
@@ -529,6 +531,10 @@ struct Host::Impl {
         s.memory = static_cast<const oscairn_plugin_memory_t*>(s.plugin->get_extension(s.plugin, OSCAIRN_EXT_MEMORY));
         if(s.memory && (!s.memory->estimate || !s.memory->current))throw std::runtime_error("Incomplete memory interface");
         s.findGui();
+        // Initialized and not yet processing, on the main thread, as clap.render asks.
+        const auto* render = static_cast<const clap_plugin_render_t*>(s.plugin->get_extension(s.plugin, CLAP_EXT_RENDER));
+        if (render && render->set)
+            render->set(s.plugin, s.offline && !(render->has_hard_realtime_requirement && render->has_hard_realtime_requirement(s.plugin)) ? CLAP_RENDER_OFFLINE : CLAP_RENDER_REALTIME);
         if (!bytes.empty()) {
             if (bytes.size() > maxStateBytes || !s.state || !s.state->load) throw std::runtime_error("Plugin cannot restore saved state");
             Stream stream; stream.bytes = bytes;
@@ -874,7 +880,7 @@ bool Host::loadEffectContext(const Host& source) {
     try {
         const auto* ext=static_cast<const oscairn_plugin_effect_contexts_t*>(parent.plugin->get_extension(parent.plugin,OSCAIRN_EXT_EFFECT_CONTEXTS));
         if(!ext || !ext->create || !ext->resources)throw std::runtime_error("Plugin has no native effect contexts");
-        s.library=parent.library;s.info=parent.info;s.context=true;s.memoryRoom=parent.memoryRoom;
+        s.library=parent.library;s.info=parent.info;s.context=true;s.memoryRoom=parent.memoryRoom;s.offline=parent.offline;
         s.plugin=ext->create(parent.plugin,&s.host);
         if(!s.plugin)throw std::runtime_error("Effect context capacity exhausted");
         s.initialize(parent.sampleRate,parent.maxFrames,{});
@@ -884,6 +890,7 @@ bool Host::loadEffectContext(const Host& source) {
     s.close();s.failed.store(true);return false;
 }
 void Host::setMemoryRoom(uint64_t bytes) noexcept { impl->memoryRoom = bytes; }
+void Host::setOfflineRendering(bool offline) noexcept { impl->offline = offline; }
 bool Host::declaredMemory(oscairn_memory_t& result) const {
     if (!impl->plugin || !impl->hasDeclared) return false;
     result = impl->declared; return true;

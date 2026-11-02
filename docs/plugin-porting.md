@@ -85,6 +85,13 @@ An `oscairn.ui` extension without `param_hint` is ignored, not refused.
   it, so no plugin is excluded by it.
 - **Blocks:** any length up to the maximum, with events at their sample offsets; at most 512
   events from the graph per block.
+- **Render mode:** a plugin that offers CLAP's `clap.render` is told the mode with `set` once
+  it is initialized, before it activates, on the main thread, at every load (a worker restart
+  included) and for each effect context made from it: `CLAP_RENDER_OFFLINE` in offline renders
+  (`oscairn-render`, a `Graph` or `Chain` made offline), `CLAP_RENDER_REALTIME` otherwise (the
+  app, `Session`, `oscairn-plugin-check`), in the engine or a worker. A plugin whose
+  `has_hard_realtime_requirement` returns true is told `CLAP_RENDER_REALTIME` in offline renders
+  too, and still renders faster than real time. The mode does not change while a plugin is loaded.
 - **Host extensions:** thread-check, timer support, POSIX file descriptors, tail, log,
   latency, event registry, params, state, audio ports, note ports, preset-load,
   `oscairn.assets` and `oscairn.harmony`.

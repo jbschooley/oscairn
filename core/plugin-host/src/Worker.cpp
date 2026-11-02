@@ -325,7 +325,8 @@ namespace oscairn::worker
                 {
                     if(!nodes.empty()) throw std::runtime_error("Plugin already loaded");
                     const auto path = r.str(), id = r.str(); const double rate = r.f64(); frames = r.u32(); const auto room = r.u64();
-                    attach(loadPlugin(path, id, rate, frames, ProcessingMode::Realtime, {}, room));
+                    const auto mode = r.u8() ? ProcessingMode::Offline : ProcessingMode::Realtime;
+                    attach(loadPlugin(path, id, rate, frames, mode, {}, room));
                     continue;
                 }
                 if(op == Op::Shutdown) { stopAll(); reply(socket, Writer{}); return 0; }

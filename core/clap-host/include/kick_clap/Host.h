@@ -139,6 +139,10 @@ public:
     // one declaring more is refused before it activates; 0, the default, sets no limit. An effect
     // context counts its context and asset bytes, an instance its shared bytes too.
     void setMemoryRoom(uint64_t bytes) noexcept;
+    // CLAP render (clap.render). Main thread, before a load: true tells a plugin with the extension
+    // CLAP_RENDER_OFFLINE when it next initializes (an effect context made from this one inherits
+    // it), unless it has a hard realtime requirement; otherwise it is told CLAP_RENDER_REALTIME.
+    void setOfflineRendering(bool offline) noexcept;
     // What the plugin declared at its last activation; false where it declares nothing.
     bool declaredMemory(oscairn_memory_t&) const;
     // What it holds now, as it says; false where it does not say or is not active.

@@ -94,6 +94,7 @@ namespace oscairn
             const uint64_t policyLimit; // the placement policy's, in bytes; 0: none
             // What the supervisor holds it to: the policy's, or its plugins' declarations plus a margin (RFC 0025, fitLimit).
             std::atomic<uint64_t> memoryLimit;
+            const ProcessingMode mode; // the plugin's clap.render mode, given it again at each restart
             uint64_t memoryRoom = 0;  // what the plugin may declare at its first activation (RFC 0025); a restart is not refused
             std::filesystem::path cgroup; // Linux, with OSCAIRN_CGROUP: this worker's cgroup
             // The supervisor's latest reading of the worker, and the CPU time of the workers it replaced.
@@ -120,7 +121,7 @@ namespace oscairn
             static inline std::atomic<uint32_t> counter{0};
 
             Process(std::string program_, std::string path_, std::string id_, double rate_, uint32_t frames_, ProcessingMode mode, uint64_t memoryLimit_)
-                : program(std::move(program_)), path(std::move(path_)), id(std::move(id_)), rate(rate_), frames(frames_), policyLimit(memoryLimit_), memoryLimit(memoryLimit_)
+                : program(std::move(program_)), path(std::move(path_)), id(std::move(id_)), rate(rate_), frames(frames_), policyLimit(memoryLimit_), memoryLimit(memoryLimit_), mode(mode)
             {
                 // Read here, on the creating thread: OSCAIRN_WORKER_REPLY_SECONDS shortens it for tests.
                 if(const char* s = std::getenv("OSCAIRN_WORKER_REPLY_SECONDS")) replySeconds = std::max(1L, std::atol(s));
@@ -189,7 +190,7 @@ namespace oscairn
                 joinCgroup(); // before it loads anything, so the plugin is charged to its own cgroup
                 // Starting a worker gets the full 30 s, whatever the requests' timeout.
                 timeval start{std::max(30L, replySeconds), 0}; setsockopt(socket, SOL_SOCKET, SO_RCVTIMEO, &start, sizeof start);
-                auto reply = exchange(Writer().u8(uint8_t(Op::Init)).str(path).str(id).f64(rate).u32(frames).u64(memoryRoom).data);
+                auto reply = exchange(Writer().u8(uint8_t(Op::Init)).str(path).str(id).f64(rate).u32(frames).u64(memoryRoom).u8(uint8_t(mode)).data);
                 memoryRoom = 0;
                 timeval t{replySeconds, 0}; setsockopt(socket, SOL_SOCKET, SO_RCVTIMEO, &t, sizeof t);
                 return reply;
