@@ -71,6 +71,7 @@ namespace oscairn::standalone
 
     void PartsView::timerCallback()
     {
+        if(!isShowing()) return; // hidden views (the one under Play, a background app) poll nothing, as Play and the top bar do
         if(scan_.valid() && scan_.wait_for(std::chrono::seconds(0)) == std::future_status::ready) plugins_ = scan_.get();
         // The Mixer's meters move at 20 frames a second; the other pages refresh more slowly.
         if(page_ == mixerPage) { peaks_.clear(); for(const auto& m : engine_.meters()) peaks_[m.part] = m.channels; }

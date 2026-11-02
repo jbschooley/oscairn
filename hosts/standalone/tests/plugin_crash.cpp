@@ -97,6 +97,7 @@ int main(int argc, char** argv)
             view.setSize(1024, 600);
             bool named = false;
             pump([&] {
+                view.refresh(); // hidden here: its own timer skips while it is not showing
                 for(auto* child : view.getChildren())
                     if(auto* label = dynamic_cast<juce::Label*>(child)) named |= label->getText().contains("is silent: Plugin worker crashed");
                 return named;
