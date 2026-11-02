@@ -86,13 +86,12 @@ int main(int argc, char** argv)
         {
             const auto self = loadPluginInWorker(argv[1], argv[3], "org.kick.test.memory", 48000, frames);
             std::array<float, frames> m{}; float* out[1]{m.data()};
-            const auto louder = kick::clap::Event::midi(0xB0, 7, 242); // gain .95: the fixture's big mode
             uint64_t shared = 0;
             bool killed = false;
             for(int i = 0; i < 100; ++i)
             {
-                self->setParameter(7, .95);
-                self->process(nullptr, 0, out, 1, frames, &louder, 1, nullptr);
+                self->setParameter(7, .95); // gain .95: the fixture's big mode, which restarts it
+                self->process(nullptr, 0, out, 1, frames, nullptr, 0, nullptr);
                 self->service();
                 try { if(const auto d = self->declaredMemory()) shared = d->shared_bytes; } catch(const std::exception&) {}
                 killed = !self->failure().empty();
