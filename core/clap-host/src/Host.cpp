@@ -99,6 +99,7 @@ bool validEvent(const clap_event_header_t* h) noexcept {
             size = sizeof(clap_event_param_gesture_t); break;
         case CLAP_EVENT_MIDI: size = sizeof(clap_event_midi_t); break;
         case CLAP_EVENT_MIDI2: size = sizeof(clap_event_midi2_t); break;
+        case CLAP_EVENT_MIDI_SYSEX: size = sizeof(clap_event_midi_sysex_t); break;
         default: return false;
     }
     if (h->size != size) return false;
@@ -119,8 +120,23 @@ bool validEvent(const clap_event_header_t* h) noexcept {
         const auto& m = *reinterpret_cast<const clap_event_midi_t*>(h);
         if (m.data[0] < 0x80 || m.data[0] == 0xf0 || m.data[0] == 0xf7 || m.data[1] > 127 || m.data[2] > 127) return false;
     }
+    if (h->type == CLAP_EVENT_MIDI_SYSEX) { // one whole message, F0 to F7; its data bytes are checked where a plugin sends it
+        const auto& x = *reinterpret_cast<const clap_event_midi_sysex_t*>(h);
+        if (!x.buffer || x.size < 2 || x.size > SysexPool::maxMessage || x.buffer[0] != 0xf0 || x.buffer[x.size - 1] != 0xf7) return false;
+    }
     return true;
 }
+}
+
+bool SysexPool::hold(Event& event) noexcept {
+    auto* h = reinterpret_cast<clap_event_header_t*>(event.bytes.data());
+    if (h->space_id != CLAP_CORE_EVENT_SPACE_ID || h->type != CLAP_EVENT_MIDI_SYSEX || h->size != sizeof(clap_event_midi_sysex_t)) return false;
+    auto& x = *reinterpret_cast<clap_event_midi_sysex_t*>(h);
+    if (!x.buffer || x.size > maxMessage || x.size > maxBlock - used) return false;
+    std::memcpy(bytes + used, x.buffer, x.size);
+    x.buffer = bytes + used;
+    used += x.size;
+    return true;
 }
 
 bool Event::valid() const noexcept { return validEvent(header()); }
@@ -189,6 +205,7 @@ struct Host::Impl {
     // inProcess is set and published to the caller when the call returns.
     std::array<Event, maxBlockEvents> blockOutput;
     uint32_t blockOutputCount = 0, publishedOutputCount = 0;
+    SysexPool sysexOutput; // the bytes of blockOutput's SysEx events
     bool inProcess = false;
     uint32_t chunkCount = 0;
     uint32_t outputFrameOffset = 0, currentProcessFrames = 1;
@@ -644,7 +661,10 @@ struct Host::Impl {
     }
     static bool CLAP_ABI outputPush(const clap_output_events_t* list, const clap_event_header_t* event) {
         auto& s = *static_cast<Impl*>(list->ctx);
-        if (!validEvent(event) || event->time >= s.currentProcessFrames) return false;
+        if (!validEvent(event) || event->time >= s.currentProcessFrames) {
+            if (event && event->space_id == CLAP_CORE_EVENT_SPACE_ID && event->type == CLAP_EVENT_MIDI_SYSEX) s.dropped.fetch_add(1); // over the limit: counted
+            return false;
+        }
         const bool core = event->space_id == CLAP_CORE_EVENT_SPACE_ID;
         if (core && event->type == CLAP_EVENT_PARAM_VALUE) {
             const auto* p = reinterpret_cast<const clap_event_param_value_t*>(event);
@@ -655,6 +675,13 @@ struct Host::Impl {
         }
         Event copy; std::memcpy(copy.bytes.data(), event, event->size);
         reinterpret_cast<clap_event_header_t*>(copy.bytes.data())->time += s.outputFrameOffset;
+        if (core && event->type == CLAP_EVENT_MIDI_SYSEX) {
+            // MIDI data bytes are 7-bit. The plugin's buffer is valid only during this call: copy it.
+            const auto& x = *reinterpret_cast<const clap_event_midi_sysex_t*>(event);
+            bool data = true;
+            for (uint32_t i = 1; i + 1 < x.size; ++i) data = data && x.buffer[i] < 0x80;
+            if (!data || !s.inProcess || !s.sysexOutput.hold(copy)) { s.dropped.fetch_add(1); return false; }
+        }
         // Parameter and gesture events go to the control thread. Everything else
         // (notes, MIDI, expressions) is kept for the caller of process(), which
         // routes it to the next plugin in the same block.
@@ -737,6 +764,10 @@ struct Host::Impl {
     bool accepts(const Event& event) const noexcept {
         const auto* h = event.header();
         if (h->type == CLAP_EVENT_NOTE_END) return false; // plugin-to-host only
+        if (h->type == CLAP_EVENT_MIDI_SYSEX) { // on a note port that takes MIDI, as CLAP's dialects say
+            const auto port = reinterpret_cast<const clap_event_midi_sysex_t*>(h)->port_index;
+            return port < noteInputs.size() && (noteInputs[port].supported_dialects & CLAP_NOTE_DIALECT_MIDI);
+        }
         if (h->type == CLAP_EVENT_PARAM_VALUE || h->type == CLAP_EVENT_PARAM_MOD ||
             h->type == CLAP_EVENT_PARAM_GESTURE_BEGIN || h->type == CLAP_EVENT_PARAM_GESTURE_END) {
             const auto id = h->type == CLAP_EVENT_PARAM_VALUE ? reinterpret_cast<const clap_event_param_value_t*>(h)->param_id :
@@ -1121,7 +1152,7 @@ bool Host::asleep() const noexcept { return impl->sleeping; }
 Statistics Host::statistics() const noexcept { auto& s = *impl; return {s.blocks.load(), s.dropped.load(), s.errors.load(), s.lastUs.load(), s.maxUs.load(), s.deadlineMisses.load(), s.controlSilences.load(), s.idleBlocks.load()}; }
 bool Host::enqueue(const Event& e) noexcept {
     auto& s = *impl;
-    if (!validEvent(e.header()) || e.header()->space_id != CLAP_CORE_EVENT_SPACE_ID) return false;
+    if (!validEvent(e.header()) || e.header()->space_id != CLAP_CORE_EVENT_SPACE_ID || e.header()->type == CLAP_EVENT_MIDI_SYSEX) return false;
     // Count before publishing, so process() never takes an event it has not counted.
     s.pendingCommands.fetch_add(1);
     if (s.commands.push(e)) { s.wake.store(true); return true; }
@@ -1153,7 +1184,7 @@ bool Host::process(const float* const* input, uint32_t ni, float* const* output,
         s.controlSilences.fetch_add(1); silence(); return false;
     }
     struct Release { std::atomic_flag& flag; ~Release() { flag.clear(std::memory_order_release); } } release{s.gate};
-    s.blockOutputCount = 0; s.inProcess = true;
+    s.blockOutputCount = 0; s.sysexOutput.used = 0; s.inProcess = true;
     struct Publish {
         Impl& s;
         ~Publish() { s.inProcess = false; s.publishedOutputCount = s.blockOutputCount; }

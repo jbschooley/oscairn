@@ -39,8 +39,9 @@ struct Port {
     uint32_t channels = 0, flags = 0;
 };
 
-// Owning, fixed-capacity event. Pointer-bearing events (SysEx) are deliberately
-// rejected: their data cannot safely outlive the caller in the command queue.
+// Owning, fixed-capacity event. A SysEx event (CLAP_EVENT_MIDI_SYSEX) points at bytes held
+// in a block's SysexPool, valid until that block's consumers have run; the command queue
+// refuses SysEx, whose bytes could not outlive the caller there.
 struct Event {
     // 64 bytes holds every event type the host accepts (the largest, parameter
     // value and modulation events, are 56 bytes).
@@ -60,6 +61,18 @@ struct Event {
                       uint16_t port = 0) noexcept;
     static Event note(bool on, int key, double velocity, uint32_t frame = 0,
                       int channel = 0, int port = 0, int noteId = -1) noexcept;
+};
+
+// The bytes of one block's SysEx events (RFC 0032): preallocated, emptied each block, never
+// grown, so an event's pointer stays valid until the block's consumers have run. A message
+// over maxMessage, or one that would take the block past maxBlock, is dropped, never truncated.
+struct SysexPool {
+    static constexpr uint32_t maxMessage = 64 * 1024, maxBlock = 256 * 1024;
+    uint32_t used = 0;
+    alignas(8) uint8_t bytes[maxBlock];
+    // Copies a SysEx event's bytes in and points the event at the copy. False when they do
+    // not fit, and for any other event. Audio thread: no allocation.
+    bool hold(Event& event) noexcept;
 };
 
 // A preset a plugin's library lists for it through CLAP preset discovery: inside the plugin

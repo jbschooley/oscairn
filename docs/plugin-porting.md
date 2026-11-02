@@ -70,6 +70,13 @@ An `oscairn.ui` extension without `param_hint` is ignored, not refused.
   A sequencer's or MIDI effect's note output reaches them as MIDI: notes, pressure (as
   aftertouch) and its MIDI events' channel messages; parameter events and other CLAP events
   stay inside. MIDI clock out follows the transport; a plugin does nothing for it.
+- **SysEx between plugins:** a plugin may send `CLAP_EVENT_MIDI_SYSEX` on a note output, and
+  receives it on a note input whose dialects include MIDI, at its sample and in order with the
+  block's other events ([RFC 0032](rfcs/0032-arpeggiator.md#step-1-status)). A message must
+  be whole (`F0` to `F7`, 7-bit data), at most 64 KiB, and a block carries at most 256 KiB:
+  past either, `try_push` returns false and the message is dropped, never truncated. The host
+  copies the bytes during `try_push`, so the plugin's buffer may be reused at once. SysEx does
+  not reach hardware MIDI outputs or LV2 plugins.
 - **Recording:** the engine records a plugin's output buffers and note events from outside
   the plugin ([RFC 0020](rfcs/0020-recording.md)), in a take or in the retroactive buffer that is
   always kept for Capture. The plugin is not told and needs nothing.

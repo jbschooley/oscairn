@@ -644,7 +644,7 @@ namespace oscairn
             kick::clap::Statistics statistics() const noexcept override
             {
                 kick::clap::Statistics s;
-                s.blocks = shared_->blocks.load(); s.droppedEvents = shared_->droppedEvents.load(); s.processErrors = shared_->processErrors.load();
+                s.blocks = shared_->blocks.load(); s.droppedEvents = shared_->droppedEvents.load() + sysexDrops_.load(std::memory_order_relaxed); s.processErrors = shared_->processErrors.load();
                 s.lastMicroseconds = shared_->lastMicroseconds.load(); s.maximumMicroseconds = shared_->maximumMicroseconds.load();
                 s.deadlineMisses = shared_->deadlineMisses.load() + workerMisses_.load(std::memory_order_relaxed);
                 s.controlSilences = shared_->controlSilences.load(); s.idleBlocks = shared_->idleBlocks.load();
@@ -655,7 +655,7 @@ namespace oscairn
             bool process(const float* const* inputs, uint32_t ni, float* const* outputs, uint32_t no, uint32_t frames,
                          const kick::clap::Event* events, uint32_t count, const clap_event_transport_t* transport) noexcept override
             {
-                outputCount_ = 0;
+                outputCount_ = 0; sysexOutput_->used = 0;
                 if(frames <= capacity_) return block(inputs, ni, outputs, no, frames, events, count, transport, 0);
                 // Larger than the shared buffer: split as the in-engine host does, rebasing events,
                 // transport and output event times.
@@ -788,8 +788,15 @@ namespace oscairn
                     if(inputs && c < ni && inputs[c]) std::copy_n(inputs[c], frames, s.input(c));
                     else std::fill_n(s.input(c), frames, 0.f);
                 }
-                std::copy_n(events, count, s.events);
-                s.frames = frames; s.eventCount = count; s.hasTransport = transport != nullptr;
+                uint32_t kept = 0;
+                s.inputBytes.used = 0;
+                for(uint32_t i = 0; i < count; ++i)
+                {
+                    s.events[kept] = events[i];
+                    if(share(s.events[kept], s.inputBytes)) ++kept;
+                    else sysexDrops_.fetch_add(1, std::memory_order_relaxed);
+                }
+                s.frames = frames; s.eventCount = kept; s.hasTransport = transport != nullptr;
                 if(transport) s.transport = *transport;
                 const auto sent = std::chrono::steady_clock::now();
                 requestedAt_.store(sent.time_since_epoch().count(), std::memory_order_release);
@@ -813,10 +820,16 @@ namespace oscairn
                     for(uint32_t f = 0; f < frames && faded_ + f < fadeFrames_; ++f) outputs[c][f] *= float(faded_ + f) / float(fadeFrames_);
                 }
                 faded_ = std::min(fadeFrames_, faded_ + frames);
-                const auto first = outputCount_, kept = std::min(s.outputCount, maxOutputEvents - first);
-                std::copy_n(s.outputs, kept, output_.data() + first);
-                for(uint32_t i = first; i < first + kept; ++i) reinterpret_cast<clap_event_header_t*>(output_[i].bytes.data())->time += offset;
-                outputCount_ = first + kept;
+                // SysEx bytes are copied out of the shared block: the next chunk reuses it, and the
+                // worker must not change them under the plugins that read them.
+                for(uint32_t i = 0; i < std::min(s.outputCount, maxOutputEvents) && outputCount_ < maxOutputEvents; ++i)
+                {
+                    auto& e = output_[outputCount_] = s.outputs[i];
+                    if(e.header()->space_id == CLAP_CORE_EVENT_SPACE_ID && e.header()->type == CLAP_EVENT_MIDI_SYSEX &&
+                       (!unshare(e, s.outputBytes) || !sysexOutput_->hold(e))) { sysexDrops_.fetch_add(1, std::memory_order_relaxed); continue; }
+                    reinterpret_cast<clap_event_header_t*>(e.bytes.data())->time += offset;
+                    ++outputCount_;
+                }
                 return s.ok;
             }
 
@@ -864,6 +877,8 @@ namespace oscairn
             uint32_t sequence_ = 0, outputCount_ = 0, consecutiveMisses_ = 0, generation_ = 0, faded_ = 0, fadeFrames_ = 0;
             std::array<kick::clap::Event, maxEvents> chunk_{};
             std::vector<kick::clap::Event> output_, pending_;
+            std::unique_ptr<kick::clap::SysexPool> sysexOutput_ = std::make_unique<kick::clap::SysexPool>(); // output_'s SysEx bytes
+            std::atomic<uint64_t> sysexDrops_{0}; // SysEx that did not fit a block's pool on the way in or out
             size_t next_ = 0;
         };
 

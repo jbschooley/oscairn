@@ -212,8 +212,10 @@ namespace oscairn::worker
                 if(next == seen) continue;
                 seen = next;
                 if(s.panic.exchange(0, std::memory_order_acq_rel)) host.panic();
+                uint32_t events = 0; // SysEx pointed at this process's mapping of the pool
+                for(uint32_t i = 0; i < std::min(s.eventCount, maxEvents); ++i) if(unshare(s.events[i], s.inputBytes)) s.events[events++] = s.events[i];
                 const bool ok = host.process(in.data(), s.inputChannels, out.data(), s.outputChannels, s.frames,
-                                             s.eventCount ? s.events : nullptr, s.eventCount, s.hasTransport ? &s.transport : nullptr);
+                                             events ? s.events : nullptr, events, s.hasTransport ? &s.transport : nullptr);
                 // Values the plugin reported while processing are published with the block, so the
                 // engine reads them right after it, as from a plugin in the engine.
                 if(const auto reports = host.parameterReports(); reports != reported)
@@ -222,8 +224,13 @@ namespace oscairn::worker
                     for(uint32_t i = 0; i < s.parameterCount; ++i) s.parameterValues[i].store(host.parameterValue(ids[i]), std::memory_order_relaxed);
                 }
                 uint32_t count = 0; const auto* emitted = host.outputEvents(count);
-                const auto kept = std::min(count, maxOutputEvents);
-                std::copy_n(emitted, kept, s.outputs);
+                uint32_t kept = 0;
+                s.outputBytes.used = 0;
+                for(uint32_t i = 0; i < count && kept < maxOutputEvents; ++i)
+                {
+                    s.outputs[kept] = emitted[i];
+                    if(share(s.outputs[kept], s.outputBytes)) ++kept;
+                }
                 s.outputCount = kept; s.ok = ok;
                 s.outputDrops.store(host.outputEventDrops() + (count - kept), std::memory_order_relaxed);
                 const auto st = host.statistics();

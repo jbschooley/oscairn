@@ -1,6 +1,6 @@
 # RFC 0032: The arpeggiator
 
-Status: proposed, 2026-11-01. Not implemented. The plugin is built in its own repository,
+Status: proposed, 2026-11-01. Step 1 built (below). The plugin is built in its own repository,
 `oscairn/arpeggiator` (MIT, private for now), from its plan (`doc/plan.md` there, read at
 commit d00c3b6 and again before this RFC was committed). This RFC is Oscairn's side: where the
 plugin sits, what the host must add for it, how conversion places it, and how it is tested.
@@ -16,7 +16,7 @@ measurement approach and IP rules of [RFC 0013](0013-awm2-class-sample-engine.md
 
 Checked when built and tested; the sections below say how.
 
-- [ ] 1. SysEx between plugins: the graph and workers carry `CLAP_EVENT_MIDI_SYSEX`
+- [x] 1. SysEx between plugins: the graph and workers carry `CLAP_EVENT_MIDI_SYSEX`
 - [ ] 2. The plugin in a part: phrase playback, state and push, hosted and tested in Oscairn
 - [ ] 3. A shared beat grid while the transport is stopped, so parts start together
 - [ ] 4. Conversion: each Part's arpeggio settings and phrases placed by the converter
@@ -145,6 +145,32 @@ The plan has the plugin parse a pushed phrase into a spare slot without allocati
 at the next event; its format document says the text is parsed on the main thread and takes
 over a few milliseconds later. Either way, a push never blocks the audio thread, and its
 latency is stated in the format document. Which one ships is open below.
+
+#### Step 1 status
+
+Built. A SysEx event (`CLAP_EVENT_MIDI_SYSEX`) is an `Event` like any other, pointing at bytes in
+a block's `SysexPool` (`core/clap-host/include/kick_clap/Host.h`): 256 KiB, preallocated and
+emptied each block, so nothing is allocated on the audio thread.
+
+- **From a plugin:** the host copies a message into its pool while the plugin pushes it, as
+  the plugin's buffer is valid only during the push. A message must be whole (`F0` … `F7`), at
+  most 64 KiB, with 7-bit data bytes. One over a limit, or past the block's 256 KiB, is refused
+  (`try_push` returns false) and counted in the host's dropped events, never truncated.
+- **To a plugin:** delivered among the block's other events in time order, at its sample, on a
+  note port whose dialects include MIDI (CLAP's rule for SysEx); refused on other ports. The
+  control queue refuses SysEx: its bytes could not outlive the caller there.
+- **Along note wires:** zones pass it unchanged, as other non-note events.
+- **Workers:** the shared block carries an input and an output pool of 256 KiB each, an event
+  holding its offset there; the engine copies a worker's output out of the shared block and
+  checks every offset, and counts a message that does not fit with the plugin's dropped events.
+- **Not built:** SysEx to hardware MIDI outputs (a part's MIDI out drops it), SysEx from
+  hardware MIDI inputs, and LV2 plugins (their host drops it).
+
+Tested in `sysex`: the fixture's 60 KiB message at sample 37 arrives at the next plugin at
+sample 37, byte for byte, in order with the notes and a second message at that sample, at 256-
+and 37-sample blocks, in the engine and with both plugins in workers; a message one byte over
+64 KiB and the fifth of five 60 KiB messages at one sample are dropped and counted; the engine
+allocates nothing while rendering. The test fails without the change.
 
 ### Conversion
 

@@ -236,6 +236,17 @@ add_test(NAME worker-host COMMAND oscairn-worker-host-test $<TARGET_FILE:oscairn
     $<TARGET_FILE:oscairn_midi_delay> $<TARGET_FILE:oscairn_step_sequencer> $<TARGET_FILE:oscairn_basic_synth>)
 set_tests_properties(worker-host PROPERTIES TIMEOUT 60)
 
+# RFC 0032 step 1: SysEx between plugins, in the engine and in workers.
+add_library(oscairn-sysex-fixture MODULE engine/tests/sysex_fixture.cpp)
+target_link_libraries(oscairn-sysex-fixture PRIVATE oscairn_clap_headers)
+set_target_properties(oscairn-sysex-fixture PROPERTIES PREFIX "" SUFFIX ".clap")
+add_executable(oscairn-sysex-test engine/tests/sysex.cpp)
+target_link_libraries(oscairn-sysex-test PRIVATE oscairn_engine)
+target_include_directories(oscairn-sysex-test PRIVATE clap-host/tests)
+add_dependencies(oscairn-sysex-test oscairn-sysex-fixture oscairn-plugin-worker)
+add_test(NAME sysex COMMAND oscairn-sysex-test $<TARGET_FILE:oscairn-plugin-worker> $<TARGET_FILE:oscairn-sysex-fixture>)
+set_tests_properties(sysex PROPERTIES TIMEOUT 60 ENVIRONMENT OSCAIRN_WORKER_BUDGET_US=50000)
+
 # Sanitizers slow rendering several times over; there the test checks containment, not timing.
 # CI's virtual machines cannot keep real time either (GitHub sets CI).
 if(KICK_CLAP_SANITIZE OR CMAKE_CXX_FLAGS MATCHES "-fsanitize" OR DEFINED ENV{CI})

@@ -35,10 +35,36 @@ namespace oscairn::worker
         kick::clap::Event events[maxEvents];
         kick::clap::Event outputs[maxOutputEvents];
         std::atomic<double> parameterValues[maxParameters];
+        kick::clap::SysexPool inputBytes, outputBytes; // events' and outputs' SysEx bytes (see share)
         float* input(uint32_t channel) noexcept { return reinterpret_cast<float*>(this + 1) + size_t(channel) * maxFrames; }
         float* output(uint32_t channel) noexcept { return input(inputChannels + channel); }
         static size_t bytes(uint32_t inputs, uint32_t outputs, uint32_t frames) { return sizeof(Shared) + sizeof(float) * size_t(inputs + outputs) * frames; }
     };
+    // SysEx bytes cross the shared block in its pools, where the event's buffer holds an offset:
+    // share copies them into the pool and stores the offset; unshare points the event at the
+    // pool in this process's mapping, false when the offset or size does not fit the pool (the
+    // other process wrote garbage). Other events pass unchanged; share is false when the bytes
+    // do not fit (the event is to be dropped).
+    inline bool share(kick::clap::Event& e, kick::clap::SysexPool& pool) noexcept
+    {
+        auto* h = reinterpret_cast<clap_event_header_t*>(e.bytes.data());
+        if(h->space_id != CLAP_CORE_EVENT_SPACE_ID || h->type != CLAP_EVENT_MIDI_SYSEX) return true;
+        if(!pool.hold(e)) return false;
+        auto& x = *reinterpret_cast<clap_event_midi_sysex_t*>(h);
+        x.buffer = reinterpret_cast<const uint8_t*>(uintptr_t(x.buffer - pool.bytes));
+        return true;
+    }
+    inline bool unshare(kick::clap::Event& e, const kick::clap::SysexPool& pool) noexcept
+    {
+        auto* h = reinterpret_cast<clap_event_header_t*>(e.bytes.data());
+        if(h->space_id != CLAP_CORE_EVENT_SPACE_ID || h->type != CLAP_EVENT_MIDI_SYSEX) return true;
+        if(h->size != sizeof(clap_event_midi_sysex_t)) return false;
+        auto& x = *reinterpret_cast<clap_event_midi_sysex_t*>(h);
+        const auto offset = uintptr_t(x.buffer);
+        if(offset > kick::clap::SysexPool::maxBlock || x.size > kick::clap::SysexPool::maxBlock - offset) return false;
+        x.buffer = pool.bytes + offset;
+        return true;
+    }
     static_assert(std::atomic<uint32_t>::is_always_lock_free && std::atomic<double>::is_always_lock_free && std::atomic<uint64_t>::is_always_lock_free);
 
     // Waits while word == value; false on timeout. Shared between processes.
