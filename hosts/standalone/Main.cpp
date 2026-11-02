@@ -203,6 +203,7 @@ namespace oscairn::standalone
         }
 
         const Layout& layout() const { return layout_; }
+        void setControllers( Controllers* controllers ) { controllers_ = controllers; } // for Settings' profile choices
         // What --snapshot renders: an app's own window when --app opened one, else this window.
         juce::Component* snapshotView() const { return snapshotView_ ? snapshotView_ : getContentComponent(); }
 
@@ -333,8 +334,8 @@ namespace oscairn::standalone
             if(id==8003){showHome();return;}
             if(id==8004){openPerformance();return;}
             if(id==8005){showRecordings();return;}
-            if(id==8006){showApp(settings_,"Settings",[this]{return new Settings(engine_);},640,560);
-                if(auto* s=dynamic_cast<Settings*>(settings_->getContentComponent()))s->refresh();return;} // the keys now
+            if(id==8006){showApp(settings_,"Settings",[this]{return settingsPane();},640,560);
+                if(auto* s=dynamic_cast<Settings*>(settings_->getContentComponent()))s->refresh();return;} // the ports and keys now
             if(id==5002 || id==5003){saveToLibrary(id==5003);return;}
             if(id==5004){importPerformance();return;}
             if(id==5005){exportPerformance();return;}
@@ -362,6 +363,16 @@ namespace oscairn::standalone
         }
 
     private:
+        // Settings: the signing keys, and the controllers' profiles where the app reads them.
+        Settings* settingsPane()
+        {
+            auto* pane = new Settings( engine_ );
+            if( auto* c = controllers_ )
+                pane->setControllers( { c->profiles(),
+                    [] { std::vector<std::string> names; for( const auto& d : juce::MidiInput::getAvailableDevices() ) names.push_back( d.name.toStdString() ); return names; }, // listed, not opened
+                    [c] { return c->choices(); }, [c]( const std::string& port, const std::string& profile ) { c->choose( port, profile ); } } );
+            return pane;
+        }
         void showGroovebox(){showApp(groovebox_,"Groovebox",[this]{return new SequencerPane(engine_);},1100,760);}
         // The Recordings app (RFC 0020): the takes, kept running with its state like the others.
         void showRecordings()
@@ -737,6 +748,7 @@ namespace oscairn::standalone
         std::unique_ptr<AppSwitcher> switcher_;
         std::unique_ptr<AppWindow> groovebox_, libraryApp_, setlist_, picker_, recordings_;
         std::unique_ptr<AppWindow> settings_;
+        Controllers* controllers_ = nullptr;
         Actions::Answer pickerAnswer_;
         std::unique_ptr<PadEditor> pads_;
         std::unique_ptr<PartsView> parts_;
@@ -885,7 +897,11 @@ namespace oscairn::standalone
                     else throw std::invalid_argument( "--input-mode must be automatic, mouse or touch" );
                 }
                 window_ = std::make_unique<Window>( *engine_, std::move( layouts ), Layout::parse( json ), profile,*theme_,juce::File(dir.unquoted()), mode );
-                if( !args.contains( "--snapshot" ) ) controllers_ = std::make_unique<Controllers>( *engine_, controlGroups( profile ), controllers );
+                if( !args.contains( "--snapshot" ) )
+                {
+                    controllers_ = std::make_unique<Controllers>( *engine_, controlGroups( profile ), controllers, theme_->configuration().getChildFile( "controller-profiles.json" ).getFullPathName().toStdString() );
+                    window_->setControllers( controllers_.get() );
+                }
                 if( const auto app = argument( args, "--app" ); app.isNotEmpty() ) window_->openApp( app.toLowerCase() );
                 if( const auto view = argument( args, "--view" ); view.isNotEmpty() )
                 {

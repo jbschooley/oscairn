@@ -41,9 +41,47 @@ namespace oscairn::standalone
         refresh();
     }
 
+    void Settings::setControllers(ControllerPorts ports)
+    {
+        controllers_ = std::move(ports);
+        refresh();
+    }
+
+    void Settings::readPorts()
+    {
+        ports_.clear(); boxes_.clear();
+        if(!controllers_.inputs) return;
+        const auto inputs = controllers_.inputs();
+        const auto choices = controllers_.choices ? controllers_.choices() : ProfileChoices{};
+        const auto& profiles = controllers_.profiles;
+        for(size_t i = 0; i < inputs.size(); ++i)
+        {
+            PortRow row{inputs[i], profilesFor(profiles, inputs, i), profileOf(profiles, inputs, i, choices), {}};
+            if(row.profiles.empty()) continue;
+            // What the profile in use does with this port: its port whose name the input carries.
+            for(const auto& p : profiles[row.chosen].midi.ports)
+                if(juce::String(inputs[i]).containsIgnoreCase(juce::String(p.name)))
+                    row.note = p.ignore ? "Ignored: a duplicate of another port" : p.protocol == "mackie" ? "Mackie Control" : "Its controls join";
+            auto box = std::make_unique<juce::ComboBox>("Profile for " + text(inputs[i]));
+            for(size_t k = 0; k < row.profiles.size(); ++k) box->addItem(text(profiles[row.profiles[k]].name), int(k) + 1);
+            box->setSelectedId(int(std::find(row.profiles.begin(), row.profiles.end(), row.chosen) - row.profiles.begin()) + 1, juce::dontSendNotification);
+            box->setEnabled(row.profiles.size() > 1);
+            box->setTooltip(row.profiles.size() > 1 ? "Several profiles fit this port: choose the one its firmware matches" : "The only profile that fits this port");
+            box->onChange = [this, port = inputs[i], candidates = row.profiles, raw = box.get()] {
+                const auto k = size_t(raw->getSelectedId() - 1);
+                if(k >= candidates.size() || !controllers_.choose) return;
+                controllers_.choose(port, controllers_.profiles[candidates[k]].id);
+                juce::MessageManager::callAsync([safe = juce::Component::SafePointer<Settings>(this)] { if(safe) safe->refresh(); }); // not while its box calls
+            };
+            addAndMakeVisible(*box);
+            ports_.push_back(std::move(row)); boxes_.push_back(std::move(box));
+        }
+    }
+
     void Settings::refresh()
     {
         keys_ = engine_.signingKeys();
+        readPorts();
         resized();
         repaint();
     }
@@ -56,6 +94,17 @@ namespace oscairn::standalone
         keysArea_ = area.removeFromTop(row * std::max<int>(1, int(keys_.size())));
         area.removeFromTop(12);
         makeKey_.setBounds(area.removeFromTop(control).removeFromLeft(160));
+        // The controllers: a heading and its line, then a row per port.
+        area.removeFromTop(28);
+        portsHeading_ = area.removeFromTop(int(textSize(TextRole::Title, m)) + 8 + int(textSize(TextRole::Small, m)) + 4 + 12);
+        portsArea_ = area.removeFromTop(row * std::max<int>(1, int(ports_.size())));
+        for(size_t i = 0; i < boxes_.size(); ++i)
+        {
+            auto r = portsArea_.withHeight(row).translated(0, int(i) * row).reduced(16, 0);
+            r.removeFromLeft(r.getWidth() * 2 / 5);
+            const int width = std::min(300, r.getWidth() * 3 / 5);
+            boxes_[i]->setBounds(r.removeFromLeft(width).withSizeKeepingCentre(width, control));
+        }
     }
 
     void Settings::paint(juce::Graphics& g)
@@ -76,6 +125,20 @@ namespace oscairn::standalone
             r = r.reduced(16, 0);
             g.setColour(ink(Ink::Text)); drawInked(g, text(keys_[i].name), r.removeFromLeft(r.getWidth() / 2), body);
             g.setColour(ink(Ink::Muted)); drawInked(g, fingerprint(keys_[i].id), r, small, juce::Justification::right);
+        }
+        auto heading = portsHeading_;
+        g.setColour(ink(Ink::Text)); drawInked(g, "MIDI controllers", heading.removeFromTop(int(title.getHeight()) + 8), title);
+        g.setColour(ink(Ink::Muted)); drawInked(g, "Each port a controller's profile fits. Where several fit, choose the one its firmware matches; it is kept for the port.", heading.removeFromTop(int(small.getHeight()) + 4), small);
+        drawSection(g, portsArea_, ink(Ink::Surface));
+        if(ports_.empty()) { g.setColour(ink(Ink::Muted)); drawInked(g, "No controller with a profile is connected", portsArea_.reduced(16, 0), small); }
+        for(size_t i = 0; i < ports_.size(); ++i)
+        {
+            auto r = portsArea_.withHeight(row).translated(0, int(i) * row);
+            if(i) { g.setColour(ink(Ink::Border).withAlpha(.35f)); g.fillRect(r.removeFromTop(1).reduced(12, 0)); }
+            r = r.reduced(16, 0);
+            g.setColour(ink(Ink::Text)); drawInked(g, text(ports_[i].port), r.removeFromLeft(r.getWidth() * 2 / 5).withTrimmedRight(12), body);
+            r.removeFromLeft(std::min(300, r.getWidth() * 3 / 5) + 12); // its profile's box
+            g.setColour(ports_[i].note.startsWith("Ignored") ? ink(Ink::Danger) : ink(Ink::Muted)); drawInked(g, ports_[i].note, r, small, juce::Justification::right);
         }
     }
 }

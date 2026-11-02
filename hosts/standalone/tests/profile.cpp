@@ -129,6 +129,26 @@ int main()
         check(ignoredInputs(controllers, {"IAC Bus 1", "SMK-37 Elite -Private", "SMK-37 Elite -Master"}) == std::vector<std::string>{"SMK-37 Elite -Private"} &&
               ignoredInputs(controllers, {"SMK-37 Elite -Master"}).empty(), "the duplicate port, by its input's name, when it is there");
         check(matchPorts(controllers, {"Keystation 49"}).empty(), "an unknown controller matches nothing");
+        // Two profiles for one unit (stock and custom firmware): the first by id until the musician
+        // chooses, per port name (RFC 0024); a choice that no longer matches falls back.
+        {
+            std::string stock; for(const auto& [id, text] : builtInProfiles()) if(id == "smk37-elite") stock = text;
+            auto custom = Profile::parse(replaced(replaced(stock, "\"id\": \"smk37-elite\"", "\"id\": \"smk37-elite-custom\""), "\"ignore\": true", "\"ignore\": false"));
+            const std::vector<Profile> both{smk, custom};
+            const std::vector<std::string> inputs{"SMK-37 Elite -Private", "SMK-37 Elite -Master"};
+            check(profilesFor(both, inputs, 1) == std::vector<size_t>{0, 1} && profileOf(both, inputs, 1) == 0 && matchPorts(both, inputs).size() == 1 && matchPorts(both, inputs)[0].profile == 0,
+                  "two profiles match the port: the first by id takes it");
+            ProfileChoices chosen{{"SMK-37 Elite -Master", "smk37-elite-custom"}, {"SMK-37 Elite -Private", "smk37-elite-custom"}};
+            const auto taken = matchPorts(both, inputs, "midi", chosen);
+            check(profileOf(both, inputs, 1, chosen) == 1 && taken.size() == 2 && taken[0].profile == 1 && taken[1].profile == 1, "the chosen profile takes the ports chosen for it");
+            check(ignoredInputs(both, inputs) == std::vector<std::string>{"SMK-37 Elite -Private"} && ignoredInputs(both, inputs, chosen).empty(), "and its ports are not ignored where the stock profile's are");
+            check(profileOf(both, inputs, 1, {{"SMK-37 Elite -Master", "nonesuch"}}) == 0, "a choice that matches no longer falls back to the first");
+            const auto file = juce::File::createTempFile(".json");
+            check(readProfileChoices(file.getFullPathName().toStdString()).empty(), "no choices saved: none");
+            writeProfileChoices(file.getFullPathName().toStdString(), chosen);
+            check(readProfileChoices(file.getFullPathName().toStdString()) == chosen, "the choices saved read back");
+            file.deleteFile();
+        }
         matches = matchPorts(controllers, {"IAC Bus 1", "MODX M Port1", "SMK-37 Elite -Private", "smk-37 elite -master", "MODX M Port2", "SMK-37 Elite -MCP"}, "mackie");
         check(matches.size() == 2 && matches[0].input == 4 && matches[0].profile == 0 && matches[0].port == 2 && matches[1].input == 5 && matches[1].profile == 1 && matches[1].port == 3,
               "the Mackie ports, asked for: the MODX M's second, the SMK37's -MCP");

@@ -151,9 +151,10 @@ trusts the key.
 External MIDI controllers have profiles of their own ([RFC 0024](../docs/rfcs/0024-device-profiles.md#controllers)):
 `smk37-elite` (the SMK37 Elite with its stock firmware, read from a unit with the monitor below;
 its buttons not described yet) and `modx-m-usb` (estimated) are built in, and `--controller FILE`, given as
-often as wanted, adds one or replaces the built-in of its id; an input two profiles match is
-the first's by id. A port the profile marks `ignore` (a duplicate, like the SMK37's `-Private`)
-is left out by the engine, so its notes do not play twice. While a MIDI input whose name
+often as wanted, adds one or replaces the built-in of its id. Where two profiles match an input,
+**Settings** chooses between them, kept per port name; until then the first by id takes it.
+A port the profile marks `ignore` (a duplicate, like the SMK37's `-Private`) is left out by
+the engine, so its notes do not play twice. While a MIDI input whose name
 matches a controller's port is connected, the app opens it too and the controller's groups
 join the device's: its knobs play the banks of the part Play's knobs follow (and the page Play
 shows, when they are Play's knob row, as on the desktop; else the first), its faders part

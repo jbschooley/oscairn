@@ -12,9 +12,10 @@ namespace oscairn::standalone
         auto key(const Assignment& a) { return std::tuple{int(a.kind), a.node, a.param, a.id}; }
     }
 
-    Controllers::Controllers(Engine& engine, std::vector<ControlGroup> device, std::vector<Profile> profiles)
-        : engine_(engine), device_(std::move(device)), profiles_(std::move(profiles))
+    Controllers::Controllers(Engine& engine, std::vector<ControlGroup> device, std::vector<Profile> profiles, std::string choices)
+        : engine_(engine), device_(std::move(device)), profiles_(std::move(profiles)), choicesFile_(std::move(choices))
     {
+        if(!choicesFile_.empty()) choices_ = readProfileChoices(choicesFile_);
         open();
         changed_ = juce::MidiDeviceListConnection::make([this] { dirty_ = true; });
         startTimer(10);
@@ -24,6 +25,13 @@ namespace oscairn::standalone
     {
         stopTimer();
         for(auto& input : inputs_) input->stop();
+    }
+
+    void Controllers::choose(const std::string& port, const std::string& profile)
+    {
+        choices_[port] = profile;
+        if(!choicesFile_.empty()) writeProfileChoices(choicesFile_, choices_);
+        dirty_ = true; // opened again at the next tick
     }
 
     void Controllers::open()
@@ -43,7 +51,7 @@ namespace oscairn::standalone
         std::vector<std::string> surfaceInputs;
         surfaces_.clear(); outputs_.clear(); knobs_.reset();
         for(const auto* protocol : {"midi", "mackie"})
-            for(const auto& m : matchPorts(profiles_, names, protocol))
+            for(const auto& m : matchPorts(profiles_, names, protocol, choices_))
                 if(auto input = juce::MidiInput::openDevice(available[int(m.input)].identifier, this))
                 {
                     std::fprintf(stderr, "oscairn: MIDI input \"%s\" is %s's port %d (%s)\n", names[m.input].c_str(), profiles_[m.profile].name.c_str(), m.port, protocol);
@@ -60,7 +68,7 @@ namespace oscairn::standalone
         std::vector<std::string> outputNames;
         for(const auto& info : outputDevices) outputNames.push_back(info.name.toStdString());
         for(const auto* protocol : {"midi", "mackie"})
-            for(const auto& m : matchPorts(profiles_, outputNames, protocol))
+            for(const auto& m : matchPorts(profiles_, outputNames, protocol, choices_))
             {
                 const auto& p = profiles_[m.profile];
                 const std::pair<std::string, uint32_t> key{p.id, uint32_t(m.port)};
@@ -79,7 +87,7 @@ namespace oscairn::standalone
         engine_.setControlGroups(std::move(groups));
         // A port that duplicates another's would play each note twice, and a Mackie port's buttons
         // are notes: the engine leaves them out.
-        auto ignored = ignoredInputs(profiles_, names);
+        auto ignored = ignoredInputs(profiles_, names, choices_);
         ignored.insert(ignored.end(), surfaceInputs.begin(), surfaceInputs.end());
         if(ignored != ignored_) { ignored_ = ignored; engine_.ignoreMidiInputs(std::move(ignored)); }
         engine_.positions().clear();

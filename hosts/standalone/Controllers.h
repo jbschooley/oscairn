@@ -20,8 +20,12 @@ namespace oscairn::standalone
     class Controllers : private juce::MidiInputCallback, private juce::Timer
     {
     public:
-        Controllers(Engine& engine, std::vector<ControlGroup> device, std::vector<Profile> profiles);
+        // choices: the file the musician's choices of profile per port are kept in (RFC 0024).
+        Controllers(Engine& engine, std::vector<ControlGroup> device, std::vector<Profile> profiles, std::string choices = {});
         ~Controllers() override;
+        const std::vector<Profile>& profiles() const { return profiles_; }
+        const ProfileChoices& choices() const { return choices_; }
+        void choose(const std::string& port, const std::string& profile); // kept, and the ports opened again
 
     private:
         void open();
@@ -36,6 +40,8 @@ namespace oscairn::standalone
         Engine& engine_;
         std::vector<ControlGroup> device_;
         std::vector<Profile> profiles_;
+        std::string choicesFile_;
+        ProfileChoices choices_;
         // MIDI input threads queue messages under the lock; the message thread takes them.
         struct Incoming { const juce::MidiInput* input; uint8_t bytes[3]; };
         std::mutex lock_;

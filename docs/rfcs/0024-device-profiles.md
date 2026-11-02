@@ -25,7 +25,7 @@ Checked when built and tested; the sections below say how.
       (parsing, defaults, resolution, encodings and pickup built; the SMK37 Elite's numbers
       read with `oscairn-midi-monitor`, all but its buttons; Mackie Control ports read and fed
       back, and knob values sent back where a profile says so ([status](#mackie-control));
-      choosing between profiles that match one port not built)
+      choosing between profiles that match one port built in Settings)
 
 ## Problem
 
@@ -246,10 +246,13 @@ profiles' ids. RFC 0011's controller-mapping service decodes the encodings and d
 
 **A profile describes one firmware.** What a controller sends is its firmware's choice, so a
 unit running custom firmware gets a profile of its own (its own id), beside the stock one.
-Today, when two profiles match one input, the first by id takes it (a `--controller FILE`
-replaces the built-in of its own id): deterministic, but silent. The intended behavior is that
-the musician chooses, in a setting that defaults to the stock firmware's profile; that setting
-is not built yet. Matching by the device's own identity (the firmware version in its reply to a
+When two profiles match one input, the musician chooses (a `--controller FILE` still replaces
+the built-in of its own id): the desktop's **Settings** lists each connected port a profile
+fits, the profile in use and the others that fit, and whether the port is ignored as a
+duplicate or read as Mackie Control. Until a choice is made, or when the chosen profile no
+longer fits, the first by id takes it. The choice is kept per port name in the app's
+settings (`controller-profiles.json` in its configuration folder), and the ports open again
+with it (`desktop-profile` and `desktop-gaps` test it, with port names only). Matching by the device's own identity (the firmware version in its reply to a
 MIDI Identity Request) is a possible later step, where the firmware reports it.
 
 Built in: `smk37-elite`, the owner's Arturia-style SMK37 Elite with its stock firmware (37 keys,

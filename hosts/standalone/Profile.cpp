@@ -396,7 +396,44 @@ namespace oscairn::standalone
         }
     }
 
-    std::vector<PortMatch> matchPorts(const std::vector<Profile>& controllers, const std::vector<std::string>& inputs, const std::string& protocol)
+    ProfileChoices readProfileChoices(const std::string& file)
+    {
+        ProfileChoices out;
+        const auto root = juce::JSON::parse(juce::File(juce::String::fromUTF8(file.c_str())).loadFileAsString()); // kept: the object lives in it
+        if(const auto* o = root.getDynamicObject())
+            for(const auto& p : o->getProperties())
+                if(p.value.isString()) out[p.name.toString().toStdString()] = p.value.toString().toStdString();
+        return out;
+    }
+
+    void writeProfileChoices(const std::string& file, const ProfileChoices& choices)
+    {
+        auto* o = new juce::DynamicObject();
+        const juce::var root(o);
+        for(const auto& [port, profile] : choices) o->setProperty(juce::String::fromUTF8(port.c_str()), juce::String::fromUTF8(profile.c_str()));
+        const juce::File f(juce::String::fromUTF8(file.c_str()));
+        f.getParentDirectory().createDirectory();
+        f.replaceWithText(juce::JSON::toString(root));
+    }
+
+    std::vector<size_t> profilesFor(const std::vector<Profile>& controllers, const std::vector<std::string>& inputs, size_t input)
+    {
+        std::vector<size_t> out;
+        for(size_t c = 0; c < controllers.size(); ++c)
+            if(std::any_of(controllers[c].midi.ports.begin(), controllers[c].midi.ports.end(), [&](const Profile::Port& p) { return inputOf(p, inputs) == input; })) out.push_back(c);
+        return out;
+    }
+
+    size_t profileOf(const std::vector<Profile>& controllers, const std::vector<std::string>& inputs, size_t input, const ProfileChoices& choices)
+    {
+        const auto found = profilesFor(controllers, inputs, input);
+        if(found.empty()) return controllers.size();
+        if(const auto chosen = choices.find(inputs[input]); chosen != choices.end())
+            for(const auto c : found) if(controllers[c].id == chosen->second) return c;
+        return found.front();
+    }
+
+    std::vector<PortMatch> matchPorts(const std::vector<Profile>& controllers, const std::vector<std::string>& inputs, const std::string& protocol, const ProfileChoices& choices)
     {
         std::vector<PortMatch> out;
         for(size_t c = 0; c < controllers.size(); ++c)
@@ -404,19 +441,19 @@ namespace oscairn::standalone
             {
                 const auto& port = controllers[c].midi.ports[k];
                 if(port.protocol != protocol || port.ignore) continue;
-                // An input is one controller's port at most: the first profile to claim it.
-                if(const auto i = inputOf(port, inputs); i < inputs.size() && std::none_of(out.begin(), out.end(), [&](const PortMatch& m) { return m.input == i; }))
+                // An input is one controller's port at most: the profile it is, its first port to claim it.
+                if(const auto i = inputOf(port, inputs); i < inputs.size() && profileOf(controllers, inputs, i, choices) == c && std::none_of(out.begin(), out.end(), [&](const PortMatch& m) { return m.input == i; }))
                     out.push_back({i, c, int(k + 1)});
             }
         return out;
     }
 
-    std::vector<std::string> ignoredInputs(const std::vector<Profile>& controllers, const std::vector<std::string>& inputs)
+    std::vector<std::string> ignoredInputs(const std::vector<Profile>& controllers, const std::vector<std::string>& inputs, const ProfileChoices& choices)
     {
         std::vector<std::string> out;
-        for(const auto& c : controllers)
-            for(const auto& port : c.midi.ports)
-                if(const auto i = inputOf(port, inputs); port.ignore && i < inputs.size()) out.push_back(inputs[i]);
+        for(size_t c = 0; c < controllers.size(); ++c)
+            for(const auto& port : controllers[c].midi.ports)
+                if(const auto i = inputOf(port, inputs); port.ignore && i < inputs.size() && profileOf(controllers, inputs, i, choices) == c) out.push_back(inputs[i]);
         return out;
     }
 }

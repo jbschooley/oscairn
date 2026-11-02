@@ -2,6 +2,7 @@
 #pragma once
 #include <array>
 #include <cstdint>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -100,12 +101,23 @@ namespace oscairn::standalone
     Profile loadProfile(const std::string& nameOrFile);
     // The built-in controllers' profiles, and those in `files`.
     std::vector<Profile> controllerProfiles(const std::vector<std::string>& files = {});
+    // The musician's choice where several profiles match one port (RFC 0024): a profile's id by
+    // the port's name, kept in the app's settings (controller-profiles.json in its configuration
+    // folder; none when it is missing or unreadable).
+    using ProfileChoices = std::map<std::string, std::string>;
+    ProfileChoices readProfileChoices(const std::string& file);
+    void writeProfileChoices(const std::string& file, const ProfileChoices& choices);
+    // The profiles (their places) with a port that is the input at `input`, in the order given.
+    std::vector<size_t> profilesFor(const std::vector<Profile>& controllers, const std::vector<std::string>& inputs, size_t input);
+    // The profile an input is: the one chosen for its name if that one matches it, else the first
+    // that does (controllerProfiles sorts them by id); controllers.size() for none.
+    size_t profileOf(const std::vector<Profile>& controllers, const std::vector<std::string>& inputs, size_t input, const ProfileChoices& choices = {});
     // Which MIDI inputs (or outputs), by name in the system's order, are which controller's ports
     // of a protocol (midi or mackie): for each match, the input's place, the profile's place and
-    // the port (from 1). Ignored ports are left out. An input two profiles match is the first's,
-    // in the order given (controllerProfiles sorts them by id).
+    // the port (from 1). Ignored ports are left out. An input several profiles match is profileOf's.
     struct PortMatch { size_t input = 0, profile = 0; int port = 1; };
-    std::vector<PortMatch> matchPorts(const std::vector<Profile>& controllers, const std::vector<std::string>& inputs, const std::string& protocol = "midi");
-    // The names of the inputs that are a controller's ignored ports: duplicates the engine leaves out.
-    std::vector<std::string> ignoredInputs(const std::vector<Profile>& controllers, const std::vector<std::string>& inputs);
+    std::vector<PortMatch> matchPorts(const std::vector<Profile>& controllers, const std::vector<std::string>& inputs, const std::string& protocol = "midi", const ProfileChoices& choices = {});
+    // The names of the inputs that are a controller's ignored ports (of the profile each input is):
+    // duplicates the engine leaves out.
+    std::vector<std::string> ignoredInputs(const std::vector<Profile>& controllers, const std::vector<std::string>& inputs, const ProfileChoices& choices = {});
 }
