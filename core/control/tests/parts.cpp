@@ -848,6 +848,25 @@ namespace
         check(near6(meter(room), .25), "a bus whose box takes no sound meters what passes it: " + std::to_string(meter(room)));
         s.removeFromPart(room, pad); s.commit();
 
+        // The Routing view sends a row's own pan and mute with each level drag: the bus's share in
+        // them stays the bus's.
+        auto dry = [&]() -> const Wire& { for(const auto& w : s.wires()) if(w.part == keys && w.from == synth && w.to == graphOutput && !w.send) return w; throw std::runtime_error("no keys wire"); };
+        auto drag = [&](double level) { const auto w = dry(); s.setMix(w.id, level, w.pan, w.mute, w.solo); s.commit(); };
+        s.setPartPan(room, .5); s.commit();
+        drag(.8); drag(.6);
+        check(near(dry().pan, .5) && near(s.parts()[0].pan, 0), "level drags keep the bus's pan out of the part: wire " + std::to_string(dry().pan) + " part " + std::to_string(s.parts()[0].pan));
+        { const auto w = dry(); s.setMix(w.id, w.level, 0, w.mute, w.solo); s.commit(); }
+        check(near(dry().pan, 0) && near(s.parts()[0].pan, -.5), "a pan asked of the wire lands on it: wire " + std::to_string(dry().pan) + " part " + std::to_string(s.parts()[0].pan));
+        s.setPartPan(keys, 0); s.setPartPan(room, 0); s.setPartLevel(room, 1, true); s.commit();
+        drag(.8);
+        check(!s.parts()[0].mute && dry().mute, "a level drag through a muted bus leaves the part unmuted");
+        s.setPartLevel(room, 1, false); s.commit();
+        check(!dry().mute, "and it plays again with the bus");
+        { const auto w = dry(); s.setMix(w.id, w.level, w.pan, true, w.solo); s.commit(); }
+        check(s.parts()[0].mute, "muting the wire itself mutes the part");
+        { const auto w = dry(); s.setMix(w.id, w.level, w.pan, false, w.solo); s.commit(); }
+        check(!s.parts()[0].mute, "and unmuting it unmutes the part");
+
     }
 
     // Zones on a wire inside a part's chain (note limits after a note plugin) survive a rebuild
