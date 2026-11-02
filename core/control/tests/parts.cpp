@@ -784,6 +784,28 @@ namespace
         s.setPartLevel(room, .5, true); s.commit(); x.run(s); check(near(x.l[0], 0), "and is muted with it");
     }
 
+    // Zones on a wire inside a part's chain (note limits after a note plugin) survive a rebuild
+    // of the part's wires and a save and reload; a wire the rebuild drops takes its zones along.
+    void innerZones(const char* fixture, const char* transpose, const char* delay, const fs::path& root)
+    {
+        Session s(48000, frames);
+        const auto tr = s.add("transpose", transpose), synth = s.add("synth", fixture, "org.kick.test.synth"), fx = s.add("fx", delay);
+        const auto keys = s.addPart("Keys");
+        s.insertIntoPart(keys, 0, tr); s.insertIntoPart(keys, 1, synth);
+        NoteZone high; high.lowKey = 60;
+        s.setZones(wire(s, tr, synth, WireKind::Notes).id, {high});
+        auto kept = [&](const Session& t) { const auto& z = wire(t, t.parts()[0].chain[0], t.parts()[0].chain[1], WireKind::Notes).zones; return z.size() == 1 && z[0] == high; };
+        s.setPartPan(keys, .5); check(kept(s), "a part setting keeps them");
+        s.insertIntoPart(keys, 2, fx); s.commit(); check(kept(s), "inserting a node keeps them");
+        const auto saved = root / "inner-zones";
+        s.savePerformance(saved.string());
+        Session t(48000, frames); t.loadPerformance(saved.string());
+        check(kept(t), "saved and opened again");
+        t.setPartPan(t.parts()[0].id, 0); check(kept(t), "and kept by an edit there");
+        s.movePartNode(keys, 1, 0); s.movePartNode(keys, 0, 1);
+        check(wire(s, tr, synth, WireKind::Notes).zones.empty(), "a wire the chain lost comes back without them");
+    }
+
     // Scenes: part faders and scene parameters, switched while a note is held without a gap,
     // and saved with the Performance.
     void scenes(const char* fixture, const fs::path& root)
@@ -1799,6 +1821,7 @@ int main(int argc, char** argv)
         noteLimits(argv[1], temp.path);
         buses(argv[1], argv[3]);
         emptyBus(argv[1]);
+        innerZones(argv[1], argv[5], argv[3], temp.path);
         scenes(argv[1], temp.path);
         sceneSwitching(argv[1], temp.path);
         onOff(argv[1], temp.path);

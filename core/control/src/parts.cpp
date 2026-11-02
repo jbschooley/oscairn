@@ -388,18 +388,19 @@ namespace oscairn
 
     // Rebuilds one part's own wires: its input into the first box, box to box, through each
     // split's lanes and joining after them, the last boxes to its output or bus, and its sends.
-    // A rebuilt wire keeps the Mix settings of the one it replaces; a wire joining from a lane
-    // takes the lane's, and the part's fader and sends set theirs.
+    // A rebuilt wire keeps the Mix settings of the one it replaces, and a note wire its zones
+    // unless the part's input or a lane sets them; a wire joining from a lane takes the lane's
+    // Mix, and the part's fader and sends set theirs.
     void Session::buildPart(const Part& part)
     {
         const auto layout = graph_.describe().audioLayout;
         std::vector<Wire> previous;
         std::erase_if(wires_, [&](const Wire& w) { const bool own = w.owner == WireOwner::Part && w.part == part.id; if(own) previous.push_back(w); return own; });
-        auto add = [&](Wire w) {
+        auto add = [&](Wire w, bool keepZones = false) {
             w.owner = WireOwner::Part; w.part = part.id; w.id = nextWire_++;
             for(const auto& p : previous)
                 if(p.kind == w.kind && p.from == w.from && p.to == w.to && p.fromPort == w.fromPort && p.toPort == w.toPort)
-                    { w.level = p.level; w.pan = p.pan; w.mute = p.mute; w.solo = p.solo; w.enabled = p.enabled; break; }
+                    { w.level = p.level; w.pan = p.pan; w.mute = p.mute; w.solo = p.solo; w.enabled = p.enabled; if(keepZones) w.zones = p.zones; break; }
             wires_.push_back(std::move(w));
             return &wires_.back();
         };
@@ -411,6 +412,7 @@ namespace oscairn
             bool audio = false, notes = false;
             uint32_t port = 0;
             std::vector<NoteZone> zones;
+            bool zoned = false; // its zones come from the part's input or a lane, not the wire
             double level = 1, pan = 0;
             bool mute = false;
             uint32_t split = 0, lane = 0;
@@ -425,7 +427,7 @@ namespace oscairn
             for(const auto& e : ends)
             {
                 if(e.audio && takesAudio(graph_, layout, node)) audioWire(e, node, mainPort(graph_, layout, node, true));
-                if(e.notes && takesNotes(graph_, node)) { Wire w; w.kind = WireKind::Notes; w.from = e.node; w.to = node; w.zones = e.zones; add(w); }
+                if(e.notes && takesNotes(graph_, node)) { Wire w; w.kind = WireKind::Notes; w.from = e.node; w.to = node; w.zones = e.zones; add(w, !e.zoned); }
             }
             End next; next.node = node; next.audio = sendsAudio(graph_, layout, node); next.notes = sendsNotes(graph_, node);
             if(next.audio) next.port = mainPort(graph_, layout, node, false);
@@ -449,6 +451,7 @@ namespace oscairn
                     auto in = ends;
                     for(auto& e : in)
                     {
+                        e.zoned = true;
                         if(split.splitter) e.audio = false;
                         if(e.notes && !lane.zones.empty())
                         {
@@ -481,7 +484,7 @@ namespace oscairn
             }
             return ends;
         };
-        End input; input.audio = part.input.kind == PartInput::Kind::Audio; input.notes = part.input.kind == PartInput::Kind::Notes;
+        End input; input.audio = part.input.kind == PartInput::Kind::Audio; input.notes = part.input.kind == PartInput::Kind::Notes; input.zoned = true;
         input.port = part.input.port; input.zones = inputZones(part.input, hostStatus_.midiInputs);
         // A wire into a bus's lane also takes that lane's Mix.
         auto enter = [](Wire* w, const End& e, const BusEntry& d, double level, bool mute) {
