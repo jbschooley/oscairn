@@ -42,19 +42,22 @@ Oscairn sets out to solve both. How, and how much of it is built today:
   [documented format](docs/performance-format.md); each plugin's state inside is that
   plugin's own data. A library, or a Performance with its Sounds and samples, exports to and
   installs from one [archive file](docs/library-archive.md).
-- **Sounds that move between devices** (mostly planned). Packages that carry what a sound
-  needs, plugins and samples at exact versions, to another device are proposed
-  ([RFC 0006](docs/rfcs/0006-packages-and-portability.md)). Built so far: device profiles
-  that describe each product's screen, controls, audio, CPU and memory, which the app and
-  engine follow in part ([RFC 0024](docs/rfcs/0024-device-profiles.md)). A plugin still
-  needs a build for each device's CPU and operating system.
+- **Sounds that move between devices** (in part). An exported Performance or Sound carries
+  its samples and every build of each CLAP plugin it uses that the exporting machine has,
+  hashed and optionally signed; installing it puts the builds in a plugin store, and a plugin
+  that is missing opens as a stand-in that keeps its state
+  ([RFC 0006](docs/rfcs/0006-packages-and-portability.md)). Device profiles describe each
+  product's screen, controls, audio, CPU and memory, which the app and engine follow in part
+  ([RFC 0024](docs/rfcs/0024-device-profiles.md)). A plugin still needs a build for each
+  device's CPU and operating system; LV2 plugins are not carried, and a package repository is
+  planned ([RFC 0031](docs/rfcs/0031-package-repository-and-distribution.md)).
 - **Knowing before loading whether it fits.** Oscairn measures each plugin's CPU and memory
   on the device, and refuses a Performance or plugin that would not fit, saying why, instead
   of failing while it plays ([RFC 0025](docs/rfcs/0025-resource-budgets.md), in progress).
-- **A crashing plugin silences only itself.** Plugins can run in separate worker processes:
-  a crash, hang or overrun stays in that plugin, which restarts with its sounds
-  ([RFC 0010](docs/rfcs/0010-plugin-worker-isolation.md)). Built and tested on macOS; not yet
-  the app's default, and not yet for LV2.
+- **A crashing plugin silences only itself.** The desktop app runs each CLAP plugin in a
+  worker process of its own: a crash, hang or overrun stays in that plugin, which restarts
+  with its sounds ([RFC 0010](docs/rfcs/0010-plugin-worker-isolation.md)). Tested on macOS
+  and in a Linux arm64 VM; not yet for LV2.
 - **Engines that also run in a DAW.** Oscairn hosts CLAP plugins, and LV2 as a build option.
   Its own engines and effects are CLAP plugins, so a DAW that hosts CLAP can load them (not
   tested in a DAW yet). VST3 and AU hosting, and Oscairn itself as a DAW plugin, are planned.
@@ -66,8 +69,8 @@ here only to describe compatibility.
 > **Status:** early, and moving quickly (November 2026). What runs today:
 >
 > - a graph of CLAP plugins, with optional LV2, played sample-accurately live or rendered
->   offline, following its own tempo or an external MIDI clock, with plugins optionally
->   isolated in worker processes on macOS;
+>   offline, following its own tempo or an external MIDI clock, with CLAP plugins isolated
+>   in worker processes in the desktop app;
 > - **Performances** of parts and buses (splits, layers, sends, scenes with transitions,
 >   controls such as Super Knobs, undo), saved as [folders](docs/performance-format.md) and
 >   changed seamlessly while notes and tails ring out;
@@ -287,6 +290,7 @@ The design the code is built towards; parts of it are not built yet. In full:
 | `core/` | Graph, transport and clock, event routing, plugin hosting, the control API and the Sounds and Performances library. A library. |
 | `hosts/` | Programs built on the core: headless (render to file, for CI), desktop, later device and plugin builds. |
 | `plugins/` | First-party plugins: step sequencer, basic synth, delay, split and join, MIDI effects, the Modular wrapper; arpeggiator (not built yet). |
+| `tools/` | Developer tools: `oscairn-sign` (signing keys and plugin builds), the MIDI monitor and the worker hand-off bench ([developer guide](docs/developer-guide.md#tools)). |
 | `docs/` | [Architecture](docs/architecture.md), [roadmap](docs/roadmap.md), and design decisions in [`rfcs/`](docs/rfcs/README.md). |
 
 ## License
