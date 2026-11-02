@@ -14,7 +14,7 @@ namespace {
 using kick::clap::Event;
 using kick::clap::Parameter;
 using kick::clap::Port;
-constexpr size_t capacity=8, eventCapacity=kick::clap::Host::maxBlockEvents;
+constexpr size_t capacity=8, eventCapacity=kick::clap::Host::maxProcessEvents; // a graph block's notes plus its beat and harmony
 
 // Only Graph constructs this host: its input ledger supplies unique note IDs,
 // including FIFO ownership for repeated MIDI keys across instance changes.

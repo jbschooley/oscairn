@@ -634,7 +634,7 @@ namespace oscairn
             for(uint32_t c=0;c<step.audioOutputs;++c)step.out.push_back(step.outputBuffer.data()+size_t(c)*maxFrames_);
         }
         plan->keys.reserve( 2 * kick::clap::Host::maxBlockEvents ); // releases, then the beat and harmony, never reallocating
-        plan->merged.resize( kick::clap::Host::maxBlockEvents );
+        plan->merged.resize( kick::clap::Host::maxProcessEvents ); // maxBlockEvents notes, plus the beat and up to 32 harmony changes
         return plan.release();
     }
 
@@ -792,9 +792,11 @@ namespace oscairn
             }
             uint64_t totalEvents=step.paramCount+step.paramDrops+step.releaseCount;
             bool overflow=step.paramDrops!=0 || step.releaseOverflow || inputRecovery;
+            // The beat and the part's harmony ride with the notes in their own room (see
+            // maxProcessEvents): a block that fills all maxBlockEvents note slots still fits.
             for(uint32_t i=0;i<step.releaseCount;++i)plan->keys.push_back({0,order++,&step.releases[i]});
             for( uint32_t i = 0; i < step.paramCount; ++i ) {
-                if(plan->keys.size()<kick::clap::Host::maxBlockEvents)
+                if(plan->keys.size()<plan->merged.size())
                     plan->keys.push_back( { step.paramIn[i].header()->time, order++, &step.paramIn[i],step.paramNotes[i],step.paramNotes[i]!=nullptr } );
                 else overflow=true;
             }
@@ -809,7 +811,7 @@ namespace oscairn
                     if( list[i].header()->space_id == CLAP_CORE_EVENT_SPACE_ID && list[i].header()->type != CLAP_EVENT_NOTE_END ) // note ends belong to their destination
                     {
                         ++totalEvents;
-                        if(plan->keys.size()<kick::clap::Host::maxBlockEvents)
+                        if(plan->keys.size()<plan->merged.size())
                             plan->keys.push_back( { list[i].header()->time, order++, &list[i],connection.route.get(),false,&connection.zones,
                                                     source<0 && sources?sources[i]:untaggedSource,connection.draining } );
                         else overflow=true;

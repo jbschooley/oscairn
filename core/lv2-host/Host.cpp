@@ -112,7 +112,7 @@ class Lv2Host final : public PluginHost
     // One control producer, one audio consumer; graph callers share this contract.
     std::array<Event,kick::clap::Host::maxEvents> commands_{};
     std::atomic<size_t> head_{0},tail_{0};
-    std::array<Timed,2*maxEvents> ordered_{}; // Separate budgets for queued controls and graph events.
+    std::array<Timed,maxEvents+kick::clap::Host::maxProcessEvents> ordered_{}; // Separate budgets for queued controls and graph events (their block's beat and harmony included).
     std::array<Event,maxEvents> emitted_{};
     uint32_t emittedCount_=0;
     bool inputPanic_=false,outputPanic_=false;
@@ -633,7 +633,7 @@ public:
         emittedCount_=0;outputPanic_=false;
         auto silence=[&]{if(outputs)for(uint32_t c=0;c<no;++c)if(outputs[c])std::fill_n(outputs[c],frames,0.f);};
         if(!frames)return true;
-        if(frames>maxFrames_ || (no && !outputs) || (count && !events) || count>maxEvents){silence();++errors_;return false;}
+        if(frames>maxFrames_ || (no && !outputs) || (count && !events) || count>kick::clap::Host::maxProcessEvents){silence();++errors_;return false;} // maxProcessEvents: the block's beat and harmony ride with its notes
         auto releaseOutputs=[&]{if(noteOutputs_)emitted_[emittedCount_++]=Event::note(false,-1,0,0,-1,-1);};
         if(stateBusy_.load() || gate_.test_and_set(std::memory_order_acquire)){silence();releaseOutputs();resumePanic_=true;++stateSilences_;return true;}
         struct Release {std::atomic_flag& gate;~Release(){gate.clear(std::memory_order_release);}} release{gate_};

@@ -397,7 +397,8 @@ the first poll. Re-subscribing does not discard already unread changes.
   decrease when nodes are removed. Without device I/O, names are empty and the session
   reports its configured sample rate and maximum block size. `graphEventDrops` counts
   destination events discarded by graph merge or note-ownership overflow. If a destination
-  exceeds its 512-event budget, the graph discards that destination's entire burst and
+  exceeds its 512-note budget (its block's beat and harmony events have their own room), the
+  graph discards that destination's entire burst and
   requests format-specific panic/reset, including sustain recovery. This can cut voices
   from other sources on that destination, but prevents a lost note-off leaving stuck notes.
   `midiEventDrops` counts physical MIDI FIFO rejections and note/pressure events discarded

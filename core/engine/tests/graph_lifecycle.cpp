@@ -14,13 +14,13 @@ int main(int argc,char** argv){try{
     if(argc!=2)return 2;
     for(bool parameters:{false,true})
     {
-        Graph g(48000,64);auto early=g.add(argv[1]),late=g.add(argv[1]),sink=g.add(argv[1]);
-        if(parameters)g.mapParamTarget(early,0,sink,2);else g.connectNotes(early,sink);
+        Graph g(48000,64);auto early=g.add(argv[1]),early2=g.add(argv[1]),late=g.add(argv[1]),sink=g.add(argv[1]);
+        if(parameters)g.mapParamTarget(early,0,sink,2),g.mapParamTarget(early2,0,sink,2);else g.connectNotes(early,sink),g.connectNotes(early2,sink);
         g.connectNotes(late,sink);g.connectAudio(sink,graphOutput);g.commit();Audio a;
         g.host(late).setParameter(1,1);check(a.run(g) && a.left[0]==1,"held note before overflow");
-        g.host(early).setParameter(1,parameters?-512:512);g.host(late).setParameter(1,-1);
-        check(a.run(g) && a.left[0]==0,"late note-off survives saturated earlier source via emergency release");
-        check(g.eventDrops()==513,"discarded burst is counted");
+        g.host(early).setParameter(1,parameters?-512:512);g.host(early2).setParameter(1,parameters?-512:512);g.host(late).setParameter(1,-1);
+        check(a.run(g) && a.left[0]==0,"late note-off survives saturated earlier sources via emergency release");
+        check(g.eventDrops()==1025,"discarded burst is counted");
         g.host(late).setParameter(1,1);check(a.run(g) && a.left[0]==1,"new notes play after overflow");
     }
     Session s(48000,64);auto removed=s.add("removed",argv[1]);s.connectAudio(removed,graphOutput);s.commit();Audio a;

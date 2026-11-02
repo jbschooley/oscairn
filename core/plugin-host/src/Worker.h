@@ -13,7 +13,7 @@
 
 namespace oscairn::worker
 {
-    constexpr uint32_t maxEvents = kick::clap::Host::maxBlockEvents;
+    constexpr uint32_t maxEvents = kick::clap::Host::maxProcessEvents; // a graph block's notes plus its beat and harmony (see maxProcessEvents)
     constexpr uint32_t maxOutputEvents = 1024;
     constexpr uint32_t maxParameters = 4096;
 

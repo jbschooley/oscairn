@@ -174,8 +174,9 @@ and read-only parameters accurately. Do not change an ID's meaning between prese
 - Keep the audio layout stable while loaded in a graph. The CLAP adapter rejects
   structural port rescans that invalidate compiled routes. A state/preset prepared for
   an instance pool must also preserve port layout, note dialects and parameter metadata.
-- Keep output events bounded and valid. The shared CLAP host permits 512 direct graph
-  input events per call and a separate bounded control queue; overflow can invoke panic.
+- Keep output events bounded and valid. The shared CLAP host permits 512 note events from
+  the graph per call (a few more with the block's beat and harmony events) and a separate
+  bounded control queue; overflow can invoke panic.
   The graph does not promise arbitrary event counts or unlimited polyphony.
 
 The graph gives each note destination its own IDs, tracks ownership across source routes,

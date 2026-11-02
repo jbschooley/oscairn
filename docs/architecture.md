@@ -121,7 +121,8 @@ sustain/half-pedal handling. On route retirement, CC64 returns to the highest va
 by the remaining routes on that port/channel (zero if none). Pedal control is channel-wide;
 individual native voices can still be choked by their route-owned IDs.
 
-There are 512 tracked voices per connection and 512 merged destination events per block.
+There are 512 tracked voices per connection and 512 merged note events per block per
+destination, plus room for that block's beat and harmony events.
 Exhaustion discards the burst and panics that destination, including sustain. The desktop
 also recovers from physical MIDI FIFO and callback-buffer overflow and reports
 `midiEventDrops`. A panic can cut other sources sharing that destination. Destination IDs

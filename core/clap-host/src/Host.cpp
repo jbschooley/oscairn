@@ -1224,10 +1224,10 @@ bool Host::process(const float* const* input, uint32_t ni, float* const* output,
         Event event;
         for (uint32_t i = 0; i < s.carryCount; ++i) append(s.carryEvents[i]);
         s.carryCount = 0;
-        const uint32_t direct = std::min(count, maxBlockEvents);
+        const uint32_t direct = std::min(count, maxProcessEvents);
         while (acknowledged.count < maxBlockEvents && s.commands.pop(event)) { ++acknowledged.count; append(event); }
         for (uint32_t i = 0; i < direct; ++i) append(incoming[i]);
-        if (count > maxBlockEvents) { s.dropped.fetch_add(count - maxBlockEvents); s.panic.store(true); }
+        if (count > maxProcessEvents) { s.dropped.fetch_add(count - maxProcessEvents); s.panic.store(true); }
         if (s.panic.exchange(false)) {
             // Never leave a stuck gate after an event overflow. Reset is an
             // audio-thread operation and covers every note channel and port.

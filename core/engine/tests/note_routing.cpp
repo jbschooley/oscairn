@@ -218,5 +218,18 @@ int main(int argc,char** argv){try{
         check(tapOut()==std::vector<std::string>{"128 2"},"moving the tap releases the held note with the old port and channel");
         check(tapOut({&off,1}).empty(),"and the release itself reaches only the new tap, which holds no note");
     }
+    {
+        // A block that fills every event slot: 512 notes (kick::clap::Host::maxBlockEvents) must
+        // all reach the plugin. The block's free-running beat rides along with them and gets its
+        // own room; without it the 512th note overflows and panics the destination.
+        Graph f(48000,512);
+        const auto s=f.add(argv[1]);f.connectNotes(graphInput,s);f.connectAudio(s,graphOutput);f.commit();
+        std::vector<Event> notes;for(int k=0;k<512;++k)notes.push_back(Event::note(true,k%128,1));
+        forbidAllocation=true;const bool full=f.process(out,512,nullptr,notes.data(),512);forbidAllocation=false;
+        check(full && f.eventDrops()==0,"a full block of 512 notes reaches the plugin without drops");
+        std::vector<Event> releases;for(int k=0;k<512;++k)releases.push_back(Event::note(false,k%128,0));
+        forbidAllocation=true;const bool offBlock=f.process(out,512,nullptr,releases.data(),512);forbidAllocation=false;
+        check(offBlock && f.eventDrops()==0,"a full block of releases does too");
+    }
     std::cout<<"ok: route ownership, retirement, sustain, physical MIDI overflow, the steal fade, draining, retiring and moving a tap\n";
 }catch(const std::exception& e){forbidAllocation=false;std::cerr<<e.what()<<'\n';return 1;}}
