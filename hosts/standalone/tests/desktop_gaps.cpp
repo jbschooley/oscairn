@@ -23,6 +23,7 @@
 #include <chrono>
 #include <cstdio>
 #include <filesystem>
+#include <functional>
 #include <map>
 #include <mutex>
 #include <thread>
@@ -57,6 +58,8 @@ namespace
         }
         int count(const std::string& method) const { std::lock_guard lock(mutex_); const auto at = counts_.find(method); return at == counts_.end() ? 0 : at->second; }
         void reset() { std::lock_guard lock(mutex_); counts_.clear(); }
+        // Answer a method with an error from here on, as the engine refuses it; empty passes it on again.
+        void refuse(const std::string& method, const std::string& message) { std::lock_guard lock(mutex_); if(message.empty()) refusals_.erase(method); else refusals_[method] = message; }
         void drop() { dropping_ = true; while(dropping_) std::this_thread::sleep_for(std::chrono::milliseconds(1)); }
 
     private:
@@ -66,29 +69,42 @@ namespace
             sockaddr_un a{}; a.sun_family = AF_UNIX; std::snprintf(a.sun_path, sizeof a.sun_path, "%s", path.c_str()); return a;
         }
         static void quiet(int fd) { int yes = 1; ::setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &yes, sizeof yes); }
+        static bool writeAll(int to, const std::string& bytes)
+        {
+            for(size_t done = 0; done < bytes.size();) { const auto w = ::write(to, bytes.data() + done, bytes.size() - done); if(w <= 0) return false; done += size_t(w); }
+            return true;
+        }
+        static std::string field(const std::string& line, const std::string& key, char end)
+        {
+            const auto at = line.find(key);
+            if(at == std::string::npos) return {};
+            const auto stop = line.find(end, at + key.size());
+            return stop == std::string::npos ? std::string() : line.substr(at + key.size(), stop - at - key.size());
+        }
         bool pass(int from, int to) // false once either side is gone
         {
             char buffer[65536];
             const auto n = ::read(from, buffer, sizeof buffer);
-            if(n <= 0) return false;
-            for(ssize_t done = 0; done < n;) { const auto w = ::write(to, buffer + done, size_t(n - done)); if(w <= 0) return false; done += w; }
-            read_.assign(buffer, size_t(n));
-            return true;
+            return n > 0 && writeAll(to, std::string(buffer, size_t(n)));
         }
-        void counted(Pair& p)
+        // The client's requests, by line: counted, and passed on, or answered with the error
+        // refuse() set for the method.
+        bool forward(Pair& p)
         {
-            p.sent += read_;
-            static const std::string key = "\"method\":\"";
-            size_t at = 0, keep = std::string::npos; // keep: where a request cut in two starts
-            for(size_t found; (found = p.sent.find(key, at)) != std::string::npos;)
+            char buffer[65536];
+            const auto n = ::read(p.client, buffer, sizeof buffer);
+            if(n <= 0) return false;
+            p.sent.append(buffer, size_t(n));
+            for(size_t end; (end = p.sent.find('\n')) != std::string::npos; p.sent.erase(0, end + 1))
             {
-                const auto end = p.sent.find('"', found + key.size());
-                if(end == std::string::npos) { keep = found; break; }
-                { std::lock_guard lock(mutex_); ++counts_[p.sent.substr(found + key.size(), end - found - key.size())]; }
-                at = end + 1;
+                const auto line = p.sent.substr(0, end + 1);
+                const auto method = field(line, "\"method\":\"", '"'), id = field(line, "\"id\":", ',');
+                std::string refusal;
+                { std::lock_guard lock(mutex_); ++counts_[method]; if(const auto at = refusals_.find(method); at != refusals_.end()) refusal = at->second; }
+                const bool refused = !refusal.empty() && !id.empty();
+                if(!writeAll(refused ? p.client : p.server, refused ? "{\"jsonrpc\":\"2.0\",\"id\":" + id + ",\"error\":{\"code\":-32005,\"message\":\"" + refusal + "\"}}\n" : line)) return false;
             }
-            if(keep == std::string::npos) keep = std::max(at, p.sent.size() > key.size() ? p.sent.size() - key.size() : 0); // the key itself may be cut
-            p.sent.erase(0, keep);
+            return true;
         }
         void run()
         {
@@ -112,7 +128,7 @@ namespace
                 {
                     auto& p = pairs_[i];
                     bool alive = true;
-                    if(fds[1 + 2 * i].revents & (POLLIN | POLLHUP | POLLERR)) { alive = pass(p.client, p.server); if(alive) counted(p); }
+                    if(fds[1 + 2 * i].revents & (POLLIN | POLLHUP | POLLERR)) alive = forward(p);
                     if(alive && (fds[2 + 2 * i].revents & (POLLIN | POLLHUP | POLLERR))) alive = pass(p.server, p.client);
                     if(!alive) gone.push_back(i);
                 }
@@ -125,8 +141,32 @@ namespace
         std::atomic<bool> running_ = true, dropping_ = false;
         mutable std::mutex mutex_;
         std::map<std::string, int> counts_;
-        std::string read_; // the last bytes passed on, on the tap's thread
+        std::map<std::string, std::string> refusals_; // method: the error it is answered with
         std::thread thread_;
+    };
+
+    // An engine session of its own, served on a socket from a thread, as the engine process does.
+    struct Served
+    {
+        std::unique_ptr<Session> session = std::make_unique<Session>(48000, 128);
+        std::unique_ptr<LocalServer> server = std::make_unique<LocalServer>(*session);
+        std::atomic<bool> running = true;
+        std::thread thread;
+        Served(const std::string& path, const std::function<void(Session&)>& setUp = {})
+        {
+            if(setUp) setUp(*session);
+            server->listen(path);
+            thread = std::thread([this] {
+                std::array<float, 128> l{}, r{}; float* out[2]{l.data(), r.data()};
+                while(running)
+                {
+                    server->poll(uint64_t(std::chrono::steady_clock::now().time_since_epoch().count()));
+                    session->service(); session->process(nullptr, 0, out, 2, 128);
+                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                }
+            });
+        }
+        ~Served() { running = false; thread.join(); server.reset(); session.reset(); }
     };
 }
 
@@ -699,6 +739,28 @@ int main(int argc, char** argv)
         }
         running = false;
         control.join();
+    }
+    auto wait = [](auto done) { for(int i = 0; i < 1000 && !done(); ++i) juce::MessageManager::getInstance()->runDispatchLoopUntil(10); return done(); };
+    // A plugin's presets still being listed (the engine answers at once and lists them meanwhile):
+    // the picker says so, and a later refresh shows the presets and drops the message.
+    {
+        const auto path = socket.string() + "-presets", tapped = path + "-tap";
+        Served served(path, [&](Session& s) {
+            const auto synth = s.add("synth", (std::filesystem::path(argv[1]) / "oscairn-basic-synth.clap").string());
+            s.connectNotes(graphInput, synth); s.connectAudio(synth, graphOutput); s.commit();
+        });
+        SocketTap tap(tapped, path);
+        tap.refuse("presets.list", "Presets are being listed; ask again");
+        {
+            standalone::Engine engine(argv[1], tapped);
+            check(wait([&] { return engine.soundPicker().presetProblem.find("being listed") != std::string::npos && engine.soundMessage().find("being listed") != std::string::npos; }),
+                  "the picker says the presets are being listed: " + engine.soundPicker().presetProblem + " / " + engine.soundMessage());
+            check(engine.connected(), "and the engine is still connected");
+            tap.refuse("presets.list", {});
+            check(wait([&] { return engine.soundPicker().presetProblem.find("being listed") == std::string::npos && engine.soundMessage().find("being listed") == std::string::npos; }),
+                  "a later refresh lists them and the message goes: " + engine.soundPicker().presetProblem + " / " + engine.soundMessage());
+        }
+        std::filesystem::remove(path);
     }
     std::filesystem::remove(socket);
     data.deleteRecursively();

@@ -222,8 +222,9 @@ namespace oscairn::standalone
     {
         if(socketPath_.empty())
         {
-            try{if(const auto m=applySoundAction(*control_,action);!m.empty())soundMessage_=m;soundPicker_=readSoundPicker(*control_);editors_=readEditors(*control_);
-                if(soundMessage_.empty())soundMessage_=soundPicker_.presetProblem;}
+            // A preset problem shown last goes once a later read lists them ("Presets are being listed; ask again").
+            try{const auto shown=soundPicker_.presetProblem;if(const auto m=applySoundAction(*control_,action);!m.empty())soundMessage_=m;soundPicker_=readSoundPicker(*control_);editors_=readEditors(*control_);
+                if(soundMessage_.empty() || soundMessage_==shown)soundMessage_=soundPicker_.presetProblem;}
             catch(const std::exception& e){soundMessage_=e.what();}
             return;
         }
@@ -272,7 +273,7 @@ namespace oscairn::standalone
             exportTarget_.clear();exportWritten_.clear();
         }
         if(!result.error.empty())soundMessage_=result.error;else if(!result.message.empty())soundMessage_=result.message;
-        else if(soundMessage_.empty())soundMessage_=result.state.presetProblem;
+        else if(soundMessage_.empty() || soundMessage_==soundPicker_.presetProblem)soundMessage_=result.state.presetProblem; // the last shown goes once listed
         for(const auto& [name,editor]:result.editors) {
             const auto old=editors_.find(name);
             if(old==editors_.end() || old->second.id!=editor.id || old->second.path!=editor.path)textCache_.clear();
