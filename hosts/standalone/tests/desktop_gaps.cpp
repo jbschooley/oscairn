@@ -264,6 +264,19 @@ int main(int argc, char** argv)
                 engine.edit([](Control& c) { c.addMacro("Cache probe control"); });
                 check(wait([&] { return engine.history().undo.find("Cache probe control") != std::string::npos && engine.connected(); }), "the cache follows the engine again once free");
             }
+            // An action asked while a job runs is refused, and said: a dropped Save must not
+            // look saved.
+            {
+                holdRequests = true;
+                standalone::SoundAction prepare; prepare.kind = standalone::SoundAction::Prepare; prepare.directory = data.getChildFile("nothing").getFullPathName().toStdString();
+                engine.soundAction(std::move(prepare));
+                check(wait([&] { return engine.soundBusy() && !engine.controlReady() && jobHeld.load(); }), "a prepare of a missing folder holds the engine's thread");
+                standalone::SoundAction save; save.kind = standalone::SoundAction::SaveToLibrary;
+                engine.soundAction(std::move(save));
+                check(engine.soundMessage().find("busy") != std::string::npos, "a Save dropped while busy says so: " + engine.soundMessage());
+                holdRequests = false;
+                check(wait([&] { return !engine.soundBusy() && !jobHeld.load() && engine.connected(); }), "the held job finished");
+            }
             juce::LookAndFeel::setDefaultLookAndFeel(nullptr);
             configuration.deleteRecursively();
         }

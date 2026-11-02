@@ -168,7 +168,10 @@ namespace oscairn::standalone
     }
     void Engine::soundAction(SoundAction action)
     {
-        if(!connected() || (soundBusy() && action.kind!=SoundAction::PrepareFromLibrary))return; // a preparation ahead waits its turn
+        // A preparation ahead waits its turn; anything else asked while a job runs is refused,
+        // and said: a dropped Save must not look saved.
+        if(soundBusy() && action.kind!=SoundAction::PrepareFromLibrary){soundMessage_="The engine is busy; try again in a moment.";return;}
+        if(!connected())return;
         if((action.kind==SoundAction::Prepare || action.kind==SoundAction::PrepareFromLibrary || action.kind==SoundAction::Replace || action.kind==SoundAction::SavePerformance || action.kind==SoundAction::LoadPerformance || action.kind==SoundAction::SaveToLibrary || action.kind==SoundAction::LoadFromLibrary || action.kind==SoundAction::SaveSound || action.kind==SoundAction::LoadSound || action.kind==SoundAction::PartFromSound || action.kind==SoundAction::ImportPerformance ||
             action.kind==SoundAction::ExportPerformance || action.kind==SoundAction::InstallArchive || action.kind==SoundAction::AuditionStart || action.kind==SoundAction::AuditionStop) && !canPrepareSounds())
         {

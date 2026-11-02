@@ -667,7 +667,7 @@ namespace oscairn::standalone
         void saveToLibrary(bool asNew)
         {
             const auto info=engine_.performanceInfo();
-            if(!info)return;
+            if(!info){juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,"Not saved","The engine is not answering. Try again in a moment.");return;}
             if(!asNew && !info->id.empty()){SoundAction save;save.kind=SoundAction::SaveToLibrary;engine_.soundAction(std::move(save));return;}
             auto* w=new juce::AlertWindow(asNew?"Save As New":"Save","The Performance's name:",juce::MessageBoxIconType::NoIcon,this);
             w->addTextEditor("name",juce::String::fromUTF8(info->name.c_str()),"Name");
