@@ -100,7 +100,6 @@ namespace oscairn
             // The supervisor's latest reading of the worker, and the CPU time of the workers it replaced.
             std::atomic<uint64_t> memory{0};
             std::atomic<double> cpu{0}, cpuBefore{0};
-            int overLimit = 0; // supervisor thread: consecutive samples over the limit before the kill
             std::mutex control;
             int socket = -1; pid_t pid = 0; bool reaped = true;
             std::string root; // the root plugin's description, which a restarted worker must repeat
@@ -113,6 +112,7 @@ namespace oscairn
             mutable std::mutex failureMutex;
             std::string failureText, reason; // reason: supervisor thread
             bool gaveUp = false, stopping = false;
+            bool restarting = false; // under control: the nodes' worker indexes are the old worker's
             std::vector<std::chrono::steady_clock::time_point> restarts;
             std::filesystem::path records; // recovery records of this worker's nodes
             uint32_t saves = 0;
@@ -210,7 +210,7 @@ namespace oscairn
                 throw std::runtime_error(why);
             }
 
-            // One request and its reply, answering the worker's asset requests in between. Under control.
+            // One request and its reply, answering the worker's asset and memory requests in between. Under control.
             Reader exchange(const std::string& message)
             {
                 send(socket, message);
@@ -218,6 +218,14 @@ namespace oscairn
                 {
                     std::string reply;
                     try { reply = receive(socket); } catch(const WorkerTimeout& e) { lost(e); }
+                    if(!reply.empty() && reply[0] == Reserve)
+                    {
+                        Reader r; r.data = std::move(reply); r.at = 1;
+                        std::string answer(1, Done);
+                        try { reserve(r); } catch(const std::exception& e) { answer = std::string(1, Failed) + e.what(); }
+                        send(socket, answer);
+                        continue;
+                    }
                     if(reply.empty() || reply[0] != ResolveAsset) return expect(std::move(reply));
                     Reader r; r.data = std::move(reply); r.at = 1;
                     const auto library = r.str(), file = r.str(); auto sha256 = r.str();
@@ -253,6 +261,10 @@ namespace oscairn
             void supervise();
             void restart();
             void fitLimit(); // under control
+            // The limit for the nodes' declarations and one more node's (extra), or none where a node
+            // declares nothing; ask: query a node whose declaration is not known (else none). Under control.
+            std::optional<uint64_t> fitted(bool ask, const oscairn_memory_t* extra = nullptr);
+            void reserve(Reader&); // a node about to activate, with what it declares; under control
 
             // RFC 0025, Linux: with a delegated cgroup v2 subtree (OSCAIRN_CGROUP, which the session
             // makes, RFC 0028), each worker in a cgroup of its own whose memory.max is its limit,
@@ -377,7 +389,6 @@ namespace oscairn
             void reconnect(Reader& reply)
             {
                 node_ = reply.u32();
-                activations_ = 0; // the new worker has not reported yet
                 if(reply.data.substr(reply.at) != description_) throw std::runtime_error("the plugin changed");
                 auto& s = *shared_;
                 s.stop.store(0); s.panic.store(0); s.crashed.store(0);
@@ -391,7 +402,6 @@ namespace oscairn
             void restore()
             {
                 if(!record_.empty()) process_->exchange(header(snapshotRecord_ ? Op::LoadSnapshot : Op::LoadState).str(record_.string()).data);
-                if(!record_.empty()) { declared_.reset(); process_->fitLimit(); } // the restored state's declaration, not the old one's
                 if(contexts_)
                 {
                     const auto present = contexts();
@@ -455,24 +465,13 @@ namespace oscairn
                 try { r = request(Op::Service); } catch(const std::exception&) { return; }
                 pending_.clear(); next_ = 0;
                 for(auto n = r.u32(); n--;) { kick::clap::Event e; r.bytes(e.bytes.data(), e.bytes.size()); pending_.push_back(e); }
-                const bool rescanned = r.u8();
-                std::vector<kick::clap::Parameter> fresh;
-                try { if(rescanned) fresh = readParameters(r); } catch(const std::exception&) { return; }
-                // A re-activation, a plugin's own restart included: what it declares for its memory
-                // can differ (its mode changed), so forget it and fit the worker's limit anew (RFC 0025).
-                try
-                {
-                    const auto activations = r.u64();
-                    std::lock_guard lock(controlFor());
-                    if(activations != activations_) { activations_ = activations; declared_.reset(); process_->fitLimit(); }
-                }
-                catch(const std::exception&) {}
-                if(fresh.empty()) return;
+                if(!r.u8()) return;
                 // An info rescan (names, flags, hints) keeps the parameters and their order, which the
                 // shared block's values and index_ rely on. Under control: a restart reads the flags.
                 // shortcut: other changes are ignored until the plugin is loaded again; a restarted worker's own info shows only after its next rescan.
                 try
                 {
+                    auto fresh = readParameters(r);
                     std::lock_guard lock(controlFor());
                     if(!std::equal(fresh.begin(), fresh.end(), parameters_.begin(), parameters_.end(), [](const auto& a, const auto& b) { return a.id == b.id; })) return;
                     parameters_ = std::move(fresh);
@@ -481,8 +480,6 @@ namespace oscairn
                 catch(const std::exception&) {}
             }
             uint64_t parameterRevision() const noexcept override { return revision_.load(std::memory_order_relaxed); }
-            // The worker's activation count as its last service reply reported it (control thread).
-            uint64_t activations() const noexcept override { return activations_; }
             bool supportsState() const noexcept override { return state_; }
             void saveState(const std::string& directory) override { request(Op::SaveState, Writer().str(directory)); }
             void loadState(const std::string& directory) override
@@ -539,7 +536,8 @@ namespace oscairn
                 if(!r.u8()) return {};
                 oscairn_effect_resources_t res{}; r.bytes(&res, sizeof res); return res;
             }
-            // Asked of the worker once after each activation it may have caused, then kept.
+            // What the worker said the plugin declared as it last activated (reserve), or asked of
+            // it once after an operation that may have activated it, then kept.
             std::optional<oscairn_memory_t> declaredMemory() const override
             {
                 std::lock_guard lock(const_cast<WorkerHost*>(this)->controlFor());
@@ -556,6 +554,11 @@ namespace oscairn
                 }
                 return *declared_;
             }
+            // The declaration as known without asking the worker; null where it is not. Under control.
+            const std::optional<oscairn_memory_t>* knownDeclaration() const { return declared_ ? &*declared_ : nullptr; }
+            void declare(std::optional<oscairn_memory_t> m) { declared_ = m; } // under control
+            void forget() { declared_.reset(); }                                // under control
+            uint32_t workerNode() const { return node_; }                      // under control
             void setMemoryRoom(uint64_t bytes) override { request(Op::SetMemoryRoom, Writer().u64(bytes)); }
             uint32_t soundContextCapacity() const noexcept override { return contexts_; }
             std::vector<oscairn_sound_context_info_t> soundContexts() const override
@@ -860,8 +863,7 @@ namespace oscairn
 
             std::shared_ptr<Process> process_;
             mutable std::atomic<uint64_t> resident_{0}; // the last reading of residentBytes
-            mutable std::optional<std::optional<oscairn_memory_t>> declared_; // declaredMemory's answer, until a state load or re-activation
-            uint64_t activations_ = 0; // the worker's activation count as its last service reply reported it
+            mutable std::optional<std::optional<oscairn_memory_t>> declared_; // what it declared at its last activation, as far as known
             bool root_;
             uint32_t node_ = 0; // the worker's index for this node; under control
             std::string description_;
@@ -904,29 +906,50 @@ namespace oscairn
         // is what they declare (the engine's shared bytes once, each context's own) plus half again
         // and 64 MiB for the worker itself, replacing the policy's flat limit (RFC 0010's 4 GiB),
         // also as its cgroup's memory.max on Linux. A worker whose plugin declares nothing keeps it.
+        std::optional<uint64_t> Process::fitted(bool ask, const oscairn_memory_t* extra)
+        {
+            const auto list = [&] { std::lock_guard nodesLock(nodesMutex); return nodes; }(); // nodes change only under control
+            if(list.empty() && !extra) return {};
+            uint64_t declared = 0, shared = 0;
+            auto add = [&](const oscairn_memory_t& m) {
+                // Every node of one engine reports the same shared bytes (memory.h), so the largest
+                // is the engine's: counted once even when its root node is gone and only its effect
+                // contexts remain, still holding those bytes.
+                declared += m.context_bytes + m.asset_bytes;
+                shared = std::max(shared, m.shared_bytes);
+            };
+            for(auto* n : list)
+            {
+                const auto* m = ask ? &n->declaredLocked() : n->knownDeclaration();
+                if(!m || !*m) return {};
+                add(**m);
+            }
+            if(extra) add(*extra);
+            declared += shared;
+            return declared + declared / 2 + (uint64_t(64) << 20);
+        }
         void Process::fitLimit()
         {
-            uint64_t declared = 0, shared = 0;
+            if(const auto limit = fitted(true)) { memoryLimit.store(*limit); limitCgroup(); }
+        }
+        // A node is about to activate: its limit is refit before the plugin allocates. A node the
+        // engine has (outside a restart) has its declaration replaced; a node being made (a load,
+        // an effect context, any node during a restart) only raises the limit, which the fitLimit
+        // after that operation then makes exact. The worker waits for the answer (RFC 0025).
+        void Process::reserve(Reader& r)
+        {
+            const auto index = r.u32();
+            std::optional<oscairn_memory_t> m;
+            if(r.u8()) { m.emplace(); r.bytes(&*m, sizeof *m); }
+            WorkerHost* known = nullptr;
+            if(!restarting) { std::lock_guard nodesLock(nodesMutex); for(auto* n : nodes) if(n->workerNode() == index) known = n; }
+            if(known)
             {
-                std::lock_guard nodesLock(nodesMutex);
-                if(nodes.empty()) return;
-                for(auto* n : nodes)
-                {
-                    const auto& m = n->declaredLocked();
-                    if(!m) return;
-                    // Every node of one engine reports the same shared bytes (memory.h), so the
-                    // largest is the engine's: counted once even when its root node is gone and
-                    // only its effect contexts remain, still holding those bytes.
-                    // Every node of one engine reports the same shared bytes (memory.h), so the
-                    // largest is the engine's: counted once even when its root node is gone and
-                    // only its effect contexts remain, still holding those bytes.
-                    declared += m->context_bytes + m->asset_bytes;
-                    shared = std::max(shared, m->shared_bytes);
-                }
+                known->declare(m);
+                if(const auto limit = fitted(false)) { memoryLimit.store(*limit); limitCgroup(); }
             }
-            declared += shared;
-            memoryLimit.store(declared + declared / 2 + (uint64_t(64) << 20));
-            limitCgroup();
+            else if(m)
+                if(const auto limit = fitted(false, &*m); limit && *limit > memoryLimit.load()) { memoryLimit.store(*limit); limitCgroup(); }
         }
 
         // Watches the worker: a crash, a block left unanswered past the hang limit, too many missed
@@ -950,18 +973,11 @@ namespace oscairn
                 if(const auto u = usage(pid); u.memory)
                 {
                     memory.store(u.memory); cpu.store(u.cpu);
-                    // A worker re-activating (a restart it asked for) refits its limit through
-                    // the control socket; kill only what is still over at the next sample, so
-                    // that refit always lands first.
                     if(memoryLimit && u.memory > memoryLimit)
                     {
-                        if(overLimit++)
-                        {
-                            fail("Plugin used too much memory: " + std::to_string(u.memory >> 20) + " MB, over its limit of " + std::to_string(memoryLimit >> 20) + " MB");
-                            continue;
-                        }
+                        fail("Plugin used too much memory: " + std::to_string(u.memory >> 20) + " MB, over its limit of " + std::to_string(memoryLimit >> 20) + " MB");
+                        continue;
                     }
-                    else overLimit = 0;
                 }
                 const auto now = std::chrono::steady_clock::now().time_since_epoch().count();
                 std::string why;
@@ -994,6 +1010,8 @@ namespace oscairn
                 if(pid > 0 && !reaped) { kill(pid, SIGKILL); int status = 0; waitpid(pid, &status, 0); reaped = true; }
                 if(socket >= 0) { close(socket); socket = -1; }
                 cpuBefore.store(cpuBefore.load() + cpu.exchange(0)); memory.store(0);
+                restarting = true;
+                struct Restarting { bool& flag; ~Restarting() { flag = false; } } guard{restarting};
                 Reader r = start();
                 const auto rootNode = std::find_if(list.begin(), list.end(), [](auto* n) { return n->isRoot(); });
                 if(rootNode != list.end()) (*rootNode)->reconnect(r);
@@ -1006,7 +1024,11 @@ namespace oscairn
                 }
                 for(auto* n : list) if(!n->isRoot()) { Reader c = exchange(Writer().u8(uint8_t(Op::CreateEffectContext)).u32(0).data); n->reconnect(c); }
                 if(rootNode == list.end()) exchange(Writer().u8(uint8_t(Op::DestroyNode)).u32(0).data);
+                restarting = false;
                 for(auto* n : list) n->restore();
+                // What each node declares now, its restored state's (RFC 0025), not the old worker's.
+                for(auto* n : list) n->forget();
+                fitLimit();
             }
             catch(const std::exception& e)
             {

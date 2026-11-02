@@ -83,8 +83,9 @@ namespace oscairn::worker
         Window // the plugin's own window: shown (with its title) or closed
     };
     // First byte of every message from the worker: a reply, or a request to the engine made while
-    // the worker serves one (the plugin resolving a sound asset).
-    enum Reply : char { Failed = 0, Done = 1, ResolveAsset = 2, Invalid = 4 /* std::invalid_argument */ };
+    // the worker serves one (the plugin resolving a sound asset; a node about to activate, with
+    // what it declares, for the engine to refit the worker's memory limit before it allocates).
+    enum Reply : char { Failed = 0, Done = 1, ResolveAsset = 2, Reserve = 3, Invalid = 4 /* std::invalid_argument */ };
 
     // Length-prefixed messages over a stream socket.
     struct Writer

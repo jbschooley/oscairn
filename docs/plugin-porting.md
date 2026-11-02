@@ -229,7 +229,8 @@ draft 2 must rebuild.
 other:
 
 - `estimate(rate, max_frames)`, called after the state loads and before every activation (a
-  load, a state load, a new effect context), says what activating would allocate: shared
+  load, a state load, a new effect context, a new sample rate or block size, and a restart the
+  plugin asks for), says what activating would allocate: shared
   bytes (once per instance or engine), bytes per context (an instance without contexts is
   one) and decoded asset bytes for the current state. A new effect context costs its context
   and asset bytes. With a memory budget, the host refuses to activate a plugin declaring more
@@ -389,7 +390,10 @@ What changes for the plugin:
 - **Memory limit:** 4 GiB by default (`OSCAIRN_WORKER_MEMORY_MB` changes it; 0 is none), read
   every 10 ms as the physical footprint on macOS and resident memory on Linux. When every
   plugin in the worker declares its memory (`oscairn.memory`), the limit is what they declare
-  plus half again and 64 MiB. Past the limit the worker is stopped like a crash. On Linux the
+  plus half again and 64 MiB. Before each activation the worker sends the engine the new
+  declaration and waits while the engine refits the limit, so a mode that needs more (a restart
+  the plugin asked for included) is allowed it before it allocates. Past the limit the worker
+  is stopped like a crash. On Linux the
   worker also sets `RLIMIT_AS` to four times the flat limit, and with `OSCAIRN_CGROUP` the
   limit is the worker's cgroup `memory.max`.
 - **Restart:** after a crash, hang, too many misses or too much memory, the worker is

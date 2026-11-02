@@ -47,10 +47,6 @@ namespace oscairn
         // an effect context made from it); one declaring more is refused before it activates. 0: no limit.
         virtual std::optional<oscairn_memory_t> declaredMemory() const { return {}; }
         virtual void setMemoryRoom(uint64_t) {}
-        // How many times the plugin has activated (a load, a reconfigure, and each restart the
-        // plugin itself asked for, which can change its oscairn.memory declaration). A worker's
-        // engine re-reads declaredMemory and refits the worker's limit when this moves.
-        virtual uint64_t activations() const noexcept { return 0; }
         // Control thread. Save to a NEW directory; restore from a saved directory.
         // Raw adapters may silence/reset during restore. Graph-pooled instruments instead
         // prepare/select a spare; state export still snapshots the selected channel-0 instance.

@@ -183,7 +183,11 @@ each worker in `workers/<pid>` before it loads anything: `memory.max` the worker
 `memory.swap.max` 0, removed when the worker is reaped. A worker whose plugins all declare their
 memory is limited to the declarations (shared bytes once, each context's own) plus half again
 and 64 MiB, by the supervisor on every platform and by its cgroup on Linux, replacing RFC 0010's
-flat 4 GiB; one declaring nothing keeps the policy's limit. With `OSCAIRN_RELIABILITY`
+flat 4 GiB; one declaring nothing keeps the policy's limit. The limit, `memory.max` included, is
+refit before each activation: the worker sends the engine the plugin's new declaration in band
+(as it asks for a sound asset) and the plugin activates only once the engine has answered, so a
+mode change through a restart the plugin asked for is never stopped at its old limit, however
+long its allocation takes. With `OSCAIRN_RELIABILITY`
 `instrument` or `pass-through` (the app sets it from its profile; workers inherit it), the engine
 and every worker call `mlockall(MCL_CURRENT | MCL_FUTURE)` at start (`MCL_FUTURE` only under
 an unlimited `RLIMIT_MEMLOCK`; see "Locking") and set `oom_score_adj`:

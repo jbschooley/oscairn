@@ -192,6 +192,26 @@ namespace oscairn::worker
             }
         };
 
+        // Before a node activates (RFC 0025), what it declares goes to the engine, which refits the
+        // worker's memory limit (its cgroup's memory.max included) and answers before the plugin
+        // allocates. Activations happen only while a request is served, within its exchange; the
+        // node is the request's, or the next index for one being made (Init, an effect context).
+        struct Reservations
+        {
+            int socket = -1;
+            uint32_t node = UINT32_MAX; // the node the request being served activates; UINT32_MAX: none
+            static void activating(void* context, const oscairn_memory_t* declared)
+            {
+                auto& self = *static_cast<Reservations*>(context);
+                if(self.node == UINT32_MAX) return;
+                Writer w; w.u32(self.node).u8(declared != nullptr);
+                if(declared) w.bytes(declared, sizeof *declared);
+                send(self.socket, std::string(1, Reserve) + w.data);
+                const auto answer = receive(self.socket);
+                if(answer.empty() || answer[0] != Done) throw std::runtime_error(answer.empty() ? "No answer from the engine" : answer.substr(1));
+            }
+        };
+
         // The worker's audio thread: one plugin block per request.
         void audio(PluginHost& host, Shared& s, uint32_t blockFrames)
         {
@@ -276,6 +296,8 @@ namespace oscairn::worker
         };
         std::vector<std::unique_ptr<Node>> nodes; // by index; null once destroyed
         EngineAssets assets; assets.socket = socket;
+        Reservations reservations; reservations.socket = socket;
+        kick::clap::Host::observeActivations(&Reservations::activating, &reservations);
         uint32_t frames = 0;
         auto node = [&](uint32_t i) -> Node& { if(i >= nodes.size() || !nodes[i]) throw std::runtime_error("No such plugin node"); return *nodes[i]; };
         // Replies with the node's index and description, then maps the shared block the engine
@@ -318,6 +340,7 @@ namespace oscairn::worker
             if(ready < 0) { if(errno == EINTR) continue; break; }
             Reader r;
             try { r.data = receive(socket); } catch(const std::exception&) { break; }
+            struct Served { uint32_t& node; ~Served() { node = UINT32_MAX; } } served{reservations.node}; // this request only
             try
             {
                 const auto op = Op(r.u8());
@@ -326,6 +349,7 @@ namespace oscairn::worker
                     if(!nodes.empty()) throw std::runtime_error("Plugin already loaded");
                     const auto path = r.str(), id = r.str(); const double rate = r.f64(); frames = r.u32(); const auto room = r.u64();
                     const auto mode = r.u8() ? ProcessingMode::Offline : ProcessingMode::Realtime;
+                    reservations.node = 0;
                     attach(loadPlugin(path, id, rate, frames, mode, {}, room));
                     continue;
                 }
@@ -333,6 +357,7 @@ namespace oscairn::worker
                 const auto index = r.u32();
                 auto& n = node(index);
                 auto& host = *n.host;
+                reservations.node = op == Op::CreateEffectContext ? uint32_t(nodes.size()) : index;
                 Writer w;
                 switch(op)
                 {
@@ -347,9 +372,6 @@ namespace oscairn::worker
                     const auto revision = host.parameterRevision();
                     w.u8(revision != n.revision);
                     if(revision != n.revision) { putParameters(w, host.parameters()); n.revision = revision; }
-                    // The activation count, so the engine re-reads the memory declaration after a
-                    // restart the plugin asked for (its mode, and what it allocates, may have changed).
-                    w.u64(host.activations());
                     break;
                 }
                 // Published at once, so the engine reads the new value right after setting it, as in the engine.
@@ -415,6 +437,7 @@ namespace oscairn::worker
             catch(const std::exception& e) { try { fail(socket, Failed, e.what()); } catch(const std::exception&) { break; } }
         }
         stopAll();
+        kick::clap::Host::observeActivations(nullptr, nullptr);
         return 0;
     }
 }

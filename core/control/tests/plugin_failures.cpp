@@ -111,10 +111,13 @@ int main(int argc, char** argv)
 #endif
         }
         // RFC 0025: a plugin that restarts itself into a mode holding far more memory must not be
-        // killed for its old declaration: the engine re-reads it once the plugin's own restart
-        // activated it again, and refits the worker's limit before the supervisor acts.
+        // killed for its old declaration: the worker tells the engine what it declares before it
+        // activates again, and the engine refits the worker's limit before the plugin allocates,
+        // however long the allocation takes (here 400 ms, many of the supervisor's samples).
         {
+            setenv("KICK_FIXTURE_MEMORY_SLOW_MS", "400", 1);
             const auto self = loadPluginInWorker(argv[1], argv[3], "org.kick.test.memory", 48000, frames);
+            unsetenv("KICK_FIXTURE_MEMORY_SLOW_MS");
             std::array<float, frames> m{}; float* out[1]{m.data()};
             uint64_t shared = 0;
             bool killed = false;
@@ -128,6 +131,8 @@ int main(int argc, char** argv)
                 if(shared > (uint64_t(100) << 20) || killed) break;
                 std::this_thread::sleep_for(std::chrono::milliseconds(10));
             }
+            std::this_thread::sleep_for(std::chrono::milliseconds(100)); // the supervisor's samples since
+            killed = killed || !self->failure().empty();
             check(shared == 201u << 20, "the engine re-read the declaration after the plugin's own restart: " + std::to_string(shared >> 20) + " MiB");
             check(!killed, "and the mode change did not kill the worker: " + self->failure());
         }

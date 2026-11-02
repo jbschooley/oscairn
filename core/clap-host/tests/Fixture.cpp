@@ -110,7 +110,16 @@ struct Plugin {
                 // KICK_FIXTURE_MEMORY_EXTRA_MB: a wrong declaration, holding that much more than it declares.
                 const char* extra = std::getenv("KICK_FIXTURE_MEMORY_EXTRA_MB");
                 if (!engineShared) engineShared = std::make_shared<std::vector<char>>();
-                engineShared->assign(sharedBytes(s.gain) + (extra ? size_t(std::atoi(extra)) << 20 : 0), 1);
+                const size_t bytes = sharedBytes(s.gain) + (extra ? size_t(std::atoi(extra)) << 20 : 0);
+                // KICK_FIXTURE_MEMORY_SLOW_MS: the shared bytes allocated over that long, in 8 MiB steps, as a sampler loading.
+                if (const char* slow = std::getenv("KICK_FIXTURE_MEMORY_SLOW_MS")) {
+                    engineShared->clear(); engineShared->reserve(bytes);
+                    const size_t step = size_t(8) << 20, steps = (bytes + step - 1) / step;
+                    while (engineShared->size() < bytes) {
+                        engineShared->insert(engineShared->end(), std::min(step, bytes - engineShared->size()), char(1));
+                        std::this_thread::sleep_for(std::chrono::milliseconds(std::atoi(slow) / int(steps)));
+                    }
+                } else engineShared->assign(bytes, 1);
                 s.shared = engineShared; s.context.assign(contextBytes(s.gain, rate), 1);
             }
             s.active = true; s.maxFrames = max; return true;

@@ -151,10 +151,13 @@ public:
     bool declaredMemory(oscairn_memory_t&) const;
     // What it holds now, as it says; false where it does not say or is not active.
     bool currentMemory(oscairn_memory_t&) const;
-    // How many times the plugin has activated: the load, each reconfigure, and each restart the
-    // plugin itself asked for. A worker's engine re-reads its memory declaration when it moves
-    // (oscairn.memory, RFC 0025: a mode can change what activating allocates).
-    uint64_t activations() const noexcept;
+    // oscairn.memory (RFC 0025). Called on the main thread at every activation (a load, a state
+    // load, a reconfigure, an effect context, a restart the plugin asked for), after the plugin
+    // declares and before it activates and allocates, with what it declared (nullptr: nothing),
+    // so the process hosting it can make room first: a worker's engine refits its limit. Throwing
+    // refuses the activation. Process-wide; set once, before any plugin loads. Null: none.
+    using ActivationObserver = void (*)(void* context, const oscairn_memory_t* declared);
+    static void observeActivations(ActivationObserver, void* context) noexcept;
     void unload();
     bool reconfigure(double sampleRate, uint32_t maxFrames);
     // Main thread: reject later port ID/order/channel-count changes under the render gate.
