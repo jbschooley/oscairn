@@ -45,6 +45,12 @@ try:
     error(rpc('properties.get', {'node':'synth','uri':'unknown'}), -32602)
     error(rpc('properties.request', {'node':'synth','uri':'unknown'}), -32602)
     error(rpc('state.info', {'node':'synth','extra':True}), -32602)
+    # The Basic Synth has no window of its own (RFC 0019): none to show, closing is harmless.
+    assert 'window.show' in hello['capabilities']
+    assert rpc('window.info', {'node':'synth'})['result'] == {'available':False}
+    error(rpc('window.show', {'node':'synth','show':True,'title':'Basic Synth'}), -32005)
+    assert rpc('window.show', {'node':'synth','show':False})['result'] == {'shown':False}
+    error(rpc('window.show', {'node':'synth'}), -32602)
     error(rpc('state.save', {'node':'synth','directory':''}), -32602)
     sounds = rpc('sounds.get' , {'node':'synth'})['result']
     assert sounds['mode'] == 'native'

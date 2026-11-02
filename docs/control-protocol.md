@@ -102,6 +102,8 @@ request members.
 | `session.status` | omitted or `{}` | `audioDevice`, `midiInputs` (each `{"source","name","kind","port"}`, below), `midiOutputs` (the same shape; `source` is the output's own number, from 1), `sampleRate`, `bufferSize`, `cpuLoad`, `deadlineMisses`, `graphEventDrops`, `midiEventDrops`, `audioReady`, mapped `audioInputs`/`audioOutputs`, `failures`: each plugin that has failed and is silent (`node`, `name`, `reason`), and `workers`: each plugin in its own worker process with the CPU time it has used in seconds, restarts included, and its memory in bytes (`node`, `name`, `cpu`, `memory`) |
 | `state.info` | `{"node":"synth"}` | `{"supported":true}` when opaque state export is available |
 | `state.save` | `{"node":"synth","directory":"/path/to/new-state"}` | `{"saved":true}` after publishing a new state directory |
+| `window.info` | `{"node":"synth"}` | `{"available":true}` when the plugin has a window of its own (CLAP's GUI extension) that this engine can show |
+| `window.show` | `node`, `show`, optional `title`: opens the plugin's own window titled `title`, or titles and raises it if open; `show` false closes it. The process hosting the plugin shows it (its worker, as a window of its own); it closes when the node goes away ([RFC 0019](rfcs/0019-adaptive-ui.md#plugin-windows)). `-32005` when the plugin cannot open it | `{"shown":true}` or `{"shown":false}` |
 | `presets.list` | `{"node":"synth"}` | `{"presets":[{"uri":"urn:example:preset","name":"Warm"}]}` |
 | `properties.list` | `{"node":"sampler"}` | `properties` entries: `uri`, `name`, `type`, `readable`, `writable` |
 | `properties.get` | `{"node":"sampler","uri":"…"}` | `{"value":null}` or a typed plugin-confirmed value |

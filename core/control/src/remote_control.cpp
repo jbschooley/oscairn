@@ -470,6 +470,12 @@ namespace oscairn
     bool RemoteControl::supportsState(NodeId node) const {
         auto d=impl_->call("state.info","{\"node\":"+std::to_string(node)+'}');return boolean(field(field(d.get(),"result"),"supported"));
     }
+    bool RemoteControl::hasPluginWindow(NodeId node) const {
+        auto d=impl_->call("window.info","{\"node\":"+std::to_string(node)+'}');return boolean(field(field(d.get(),"result"),"available"));
+    }
+    void RemoteControl::showPluginWindow(NodeId node,bool show,const std::string& title) {
+        impl_->call("window.show","{\"node\":"+std::to_string(node)+",\"show\":"+(show?"true":"false")+",\"title\":"+quote(title)+'}',10000);
+    }
     void RemoteControl::saveState(NodeId node,const std::string& directory) {
         impl_->call("state.save","{\"node\":"+std::to_string(node)+",\"directory\":"+quote(directory)+'}',30000);
     }

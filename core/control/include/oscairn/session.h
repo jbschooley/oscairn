@@ -85,6 +85,8 @@ namespace oscairn
         Imported importPerformance(const std::string& directory, const std::vector<uint32_t>& parts = {}, const std::vector<uint32_t>& scenes = {}) override;
         bool supportsState(NodeId node) const override {return graph_.host(node).supportsState();}
         void saveState(NodeId node,const std::string& directory) override;
+        bool hasPluginWindow(NodeId node) const override {return graph_.host(node).hasWindow();}
+        void showPluginWindow(NodeId node,bool show,const std::string& title = {}) override {graph_.host(node).showWindow(show,title);}
         std::vector<PresetInfo> presets(NodeId node) override {return graph_.host(node).presets();}
         std::vector<PropertyInfo> properties(NodeId node) const override {return graph_.host(node).properties();}
         bool setProperty(NodeId node,const std::string& uri,const PropertyValue& value) override {return graph_.host(node).setProperty(uri,value);}

@@ -57,6 +57,8 @@ namespace oscairn
         Imported importPerformance(const std::string& directory, const std::vector<uint32_t>& parts = {}, const std::vector<uint32_t>& scenes = {}) override;
         bool supportsState(NodeId node) const override;
         void saveState(NodeId node,const std::string& directory) override;
+        bool hasPluginWindow(NodeId node) const override;
+        void showPluginWindow(NodeId node,bool show,const std::string& title = {}) override;
         std::vector<PresetInfo> presets(NodeId node) override;
         std::vector<PropertyInfo> properties(NodeId node) const override;
         bool setProperty(NodeId node,const std::string& uri,const PropertyValue& value) override;

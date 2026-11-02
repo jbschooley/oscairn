@@ -309,6 +309,10 @@ namespace oscairn
         // Per-node export saves the selected channel-0 instance of a hosted pool.
         virtual bool supportsState(NodeId node) const = 0;
         virtual void saveState(NodeId node,const std::string& directory) = 0;
+        // The plugin's own window (RFC 0019), shown by the process hosting the plugin: whether it
+        // has one, and opening it titled (or titling and raising it) or closing it.
+        virtual bool hasPluginWindow(NodeId node) const = 0;
+        virtual void showPluginWindow(NodeId node,bool show,const std::string& title = {}) = 0;
         virtual std::vector<PresetInfo> presets(NodeId node) = 0;
         virtual std::vector<PropertyInfo> properties(NodeId node) const = 0;
         // Acceptance queues a request; propertyValue is last plugin-confirmed state.
