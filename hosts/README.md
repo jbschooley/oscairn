@@ -55,9 +55,10 @@ this milestone yet.
 ## Desktop sound picker
 
 Every panel display now has a picker for the loaded `synth` instrument. **Prepare...**
-adds a ready sound without changing playback. The Basic Synth offers Warm, Bright and
-Pressure swell, Detuned saws and Square vibrato variations; other prepared instruments expose their default and advertised
-presets (including LV2 presets). Choose a prepared sound, then **Use sound** to send new
+adds a ready sound without changing playback. Every prepared instrument offers its default and
+the presets it publishes (CLAP preset discovery, or LV2 presets): the Basic Synth's are Warm,
+Bright, Pressure swell, Detuned saws and Square vibrato, prepared as native sound contexts
+([RFC 0005](../docs/rfcs/0005-sound-contexts.md#presets)). Choose a prepared sound, then **Use sound** to send new
 notes on the selected sequencer track’s MIDI channel to it. On-screen pads follow that
 track too; physical MIDI retains its incoming channel. The Playing label reflects engine readback; browsing alone
 does not switch sounds. Held notes, sustain and releases retain their existing ownership.

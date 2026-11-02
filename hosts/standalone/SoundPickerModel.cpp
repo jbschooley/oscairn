@@ -21,15 +21,18 @@ namespace oscairn::standalone
                 result.instrument = node.plugin.name;
             }
         result.sounds = control.sounds(result.node);
+        if(result.pluginId == "org.oscairn.sampler")
+            result.importsSamples = true;
+        else if(result.sounds.capacity)
+        {
+            // The plugin's defaults, and its presets (CLAP preset discovery or LV2), prepared in a
+            // native context or a spare instance (RFC 0005).
+            result.choices.push_back({"Default", {}, {}});
+            for(const auto& preset : control.presets(result.node))
+                result.choices.push_back({preset.name, preset.uri, {}});
+        }
         if(result.pluginId == "org.oscairn.basic-synth")
         {
-            result.choices = {
-                {"Warm", {}, {{1, .15}, {2, .7}, {3, .5}}},
-                {"Bright", {}, {{1, .9}, {2, .7}, {3, .5}}},
-                {"Pressure swell", {}, {{1, .05}, {2, .7}, {3, 1.0}}},
-                {"Detuned saws", {}, {{1, .65}, {2, .5}, {3, .5}, {4, 1}, {5, 7}}},
-                {"Square vibrato", {}, {{1, .8}, {2, .4}, {3, .5}, {4, 2}, {6, 18}, {7, 70}}}
-            };
             for(const auto& node : graph.topology.nodes)
                 if(node.plugin.id == "org.oscairn.step-sequencer" && graph.names.at(node.id) == "sequencer")
                 {
@@ -41,14 +44,6 @@ namespace oscairn::standalone
                             result.canToggleBrightnessLocks[mapping.lane] = result.brightnessLocks[mapping.lane];
                         }
                 }
-        }
-        else if(result.pluginId == "org.oscairn.sampler")
-            result.importsSamples = true;
-        else if(result.sounds.capacity)
-        {
-            result.choices.push_back({"Default", {}, {}});
-            for(const auto& preset : control.presets(result.node))
-                result.choices.push_back({preset.name, preset.uri, {}});
         }
         return result;
     }

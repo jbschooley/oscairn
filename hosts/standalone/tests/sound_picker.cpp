@@ -111,7 +111,7 @@ void sequencedSounds(const char* synth,const char* sequencer)
     };
     for(bool locks:{false,true})
     {
-        const auto warm=render(0,locks),bright=render(1,locks);
+        const auto warm=render(1,locks),bright=render(2,locks); // after Default, the Basic Synth's presets
         for(size_t phase=0;phase<2;++phase)
         {
             double difference=0;
@@ -162,7 +162,7 @@ int main(int argc,char** argv)
         {
             Fixture parts(argv[1]);const auto seq=parts.session.add("sequencer",argv[2]);parts.session.commit();parts.tick();
             auto state=readSoundPicker(parts.session);SoundAction action;action.node=state.node;action.pluginId=state.pluginId;
-            action.kind=SoundAction::Prepare;action.choice=state.choices[3];applySoundAction(parts.session,action);
+            action.kind=SoundAction::Prepare;action.choice=state.choices[4];applySoundAction(parts.session,action);
             action.kind=SoundAction::Select;action.context=readSoundPicker(parts.session).sounds.contexts.back().id;action.channel=1;
             parts.remote([&](Control& c){applySoundAction(c,action);});parts.tick();state=readSoundPicker(parts.session);
             check(state.sounds.contexts[0].selectedChannels==65533 && state.sounds.contexts[1].selectedChannels==2,"track selection changes only its MIDI channel");
@@ -175,11 +175,12 @@ int main(int argc,char** argv)
         }
         Fixture f(argv[1]);
         auto state=f.remote([](Control& c){return readSoundPicker(c);});
-        check(state.choices.size()==5 && state.sounds.contexts.size()==1,"initial choices/default");
+        check(state.choices.size()==6 && state.choices[0].name=="Default" && state.choices[1].name=="Warm" && state.choices[1].preset=="clap-preset:1:#warm" &&
+              state.sounds.contexts.size()==1,"Default and the Basic Synth's presets, from the plugin");
         const auto node=state.node;
         f.session.note(true,60,.7);f.tick();
         SoundAction prepare;prepare.kind=SoundAction::Prepare;prepare.node=node;
-        prepare.pluginId=state.pluginId;prepare.choice=state.choices[0];
+        prepare.pluginId=state.pluginId;prepare.choice=state.choices[1];
         state=f.remote([&](Control& c){applySoundAction(c,prepare);return readSoundPicker(c);});
         check(state.sounds.contexts.size()==2 && state.sounds.contexts[0].selectedChannels==65535,"preparing must not select");
         const auto warm=state.sounds.contexts[1].id;
@@ -201,7 +202,7 @@ int main(int argc,char** argv)
         check(f.remote([&](Control& c){try{applySoundAction(c,prepare);return false;}catch(const std::exception&){return true;}}),"bad preparation refused");
         state=f.remote([](Control& c){return readSoundPicker(c);});
         check(state.sounds.contexts.size()==1 && state.sounds.contexts[0].selectedChannels==65535,"failed prepare preserves current sound");
-        prepare.choice=state.choices[1];
+        prepare.choice=state.choices[2];
         for(uint32_t i=1;i<state.sounds.capacity;++i)f.remote([&](Control& c){applySoundAction(c,prepare);});
         check(f.remote([&](Control& c){try{applySoundAction(c,prepare);return false;}catch(const std::exception&){return true;}}),"capacity exhaustion reported");
         state=f.remote([](Control& c){return readSoundPicker(c);});

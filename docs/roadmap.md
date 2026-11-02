@@ -96,6 +96,10 @@ Goal: something new running "on the device" before anyone has the device.
 - [x] initial native sound contexts in the Basic Synth: prepared patches, independent channel
   selection, held-voice preservation, note-ID/FIFO ownership, sustain and safe retirement;
   typed/JSON/remote controls and concurrent reference-audio tests ([RFC 0005](rfcs/0005-sound-contexts.md)).
+- [x] native sounds from a plugin's CLAP presets (draft 5): presets published through CLAP preset
+  discovery, indexed at scan in their own process and within limits, prepared as native contexts
+  with the SDK's helpers, the Basic Synth's factory presets, listed in the desktop sound picker
+  ([RFC 0005](rfcs/0005-sound-contexts.md#presets)).
 
 - [x] prepared-instance switching for ordinary CLAP/LV2 instruments: defaults, state/preset
   preparation, independent channel parts, held-note ownership and explicit tail retirement;

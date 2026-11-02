@@ -60,8 +60,10 @@ Continuous parameters support sample-timed automation/modulation; oscillator mod
 stepped. The envelope remains fixed: 2 ms attack, 250 ms exponential decay toward
 0.35 sustain, and a 120 ms release time constant. Stereo outputs carry the same signal.
 
-The desktop picker includes **Detuned saws** (±7 cents) and **Square vibrato**
-(18 Hz, ±70 cents), alongside Warm, Bright and Pressure swell. Choose a prepared sound
+Its factory presets, published through CLAP preset discovery and prepared as sound contexts
+([RFC 0005](../docs/rfcs/0005-sound-contexts.md#presets)), include **Detuned saws** (±7 cents)
+and **Square vibrato** (18 Hz, ±70 cents), alongside Warm, Bright and Pressure swell; the
+desktop picker lists them after Default. Choose a prepared sound
 and press **Use sound**. Per-channel assignments are available through `sounds.select`;
 the picker switches all channels together. These sounds still share the basic filter
 and envelope; there is no general modulation matrix, sample playback or FM synthesis.

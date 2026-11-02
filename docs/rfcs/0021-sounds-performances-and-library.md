@@ -771,8 +771,8 @@ other requests do not wait the way `assets.register` does today.
 | 6. Panel | The Library tab at 1024 × 600 with knob bindings | `desktop-pad-editor` renders it; a test finds and loads a Sound using only the row knobs and taps |
 | 7. Compact test layout | The list form at 320 × 240 with four encoders | Recent, one tag and a load reached with encoders only |
 
-`SoundPickerModel`'s hard-coded Basic Synth patches and its `synth`-only lookup go when step
-3 lands; its prepare, select and discard logic becomes the preset and transition path.
+`SoundPickerModel`'s `synth`-only lookup goes when step 3 lands (its hard-coded Basic Synth
+patches are now the plugin's own presets, [RFC 0005](0005-sound-contexts.md#presets)); its prepare, select and discard logic becomes the preset and transition path.
 
 ## Open questions
 
