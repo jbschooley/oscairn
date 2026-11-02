@@ -131,7 +131,7 @@ An illustrative profile (the values are an example, not a real product's):
 ### Control groups
 
 A group is controls of one kind that do one job: `kind` (keys, pads, knobs, encoders, faders,
-buttons, wheels, jog, touchstrip, pedal, expression, footswitches), `count`, what they can sense
+buttons, wheels, jog, touchstrip, pedal, expression, footswitches, aftertouch, breath), `count`, what they can sense
 (`sensing`, free text), and `role`:
 
 | Role | The controls | Group fields |
@@ -149,8 +149,18 @@ Every group can say what it does by default (below), so a stage keyboard needs n
 | --- | --- | --- |
 | knobs, encoders | the banks (rows or pages, as above) | `target`: `banks` (the default) |
 | faders | part levels, parts then buses; their `modes` add element and audio levels | `target`: `partLevels` (the default) |
-| buttons | part mutes, or scenes (button N selects scene N) | `target`: `partMutes` (the default) or `scenes` |
-| wheels, touchstrip, pedal, expression, footswitches, jog | a standard controller each, sent to every part, so each part's plugin does its own thing with it (the mod wheel's vibrato) | `functions`, one per control: `pitchBend`, `modulation` (CC 1), `breath` (CC 2), `foot` (CC 4), `expression` (CC 11), `sustain` (CC 64), `portamento` (CC 65), `sostenuto` (CC 66), `soft` (CC 67) |
+| buttons | part mutes, or scenes (button N selects scene N), or nothing until assigned (assignable switches) | `target`: `partMutes` (the default), `scenes` or `switches` |
+| wheels, touchstrip, pedal, expression, footswitches, jog, aftertouch, breath | a standard controller each, sent to every part, so each part's plugin does its own thing with it (the mod wheel's vibrato) | `functions`, one per control: `pitchBend`, `modulation` (CC 1), `breath` (CC 2), `foot` (CC 4), `expression` (CC 11), `sustain` (CC 64), `portamento` (CC 65), `sostenuto` (CC 66), `soft` (CC 67), `aftertouch` (channel pressure) |
+
+**Control identities** (what overrides name, [RFC 0011](0011-performance-ui-and-editors.md#step-6-status)):
+`knob:N` (knobs and encoders), `fader:N`, `wheel:N`, `strip:N`, `jog:N`, `pedal:N` (pedal and
+expression), `footswitch:N`, `aftertouch:N` and `breath:N`, numbered from 1 across the device's
+groups of that identity, then its controllers'. Buttons are numbered in two ranges so a switch's
+number never depends on the other buttons: assignable switches (`target: switches`) are
+`button:1` up, and every other assign button (scenes, part mutes) `button:101` up. A device with
+fewer switches than an override names leaves that override unplayed and keeps it. Aftertouch is
+usually the keys' channel pressure, given as a group of its own (`kind: aftertouch`, a group of
+one); a breath controller is `kind: breath`, sending CC 2.
 
 `target` is only on assign groups and only with a value its kind allows. `functions` on an
 assign group names standard controllers only; a `fixed` group keeps free names (`volume`,
@@ -210,8 +220,9 @@ the same format, version 2, with three things a device profile does not have:
   the first by default, and a `midi` port), `channel` (1 to 16, for the group or as a list, one
   per control, for a group whose controls send on different channels: the SMK37 Elite's knobs 1
   to 6 on channel 6 and 7 and 8 on channel 1) and one of `cc` (a controller
-  number per control, 0 to 127), `notes` (a note number per control, for pads and note buttons)
-  or `pitchBend: true` (a group of one wheel). With `cc`, `encoding` says how the value is sent,
+  number per control, 0 to 127), `notes` (a note number per control, for pads and note buttons),
+  `pitchBend: true` (a group of one wheel) or `pressure: true` (channel pressure, a group of one
+  aftertouch). With `cc`, `encoding` says how the value is sent,
   for the whole group or as a list, one per control:
 
   | Encoding | Values | Step |

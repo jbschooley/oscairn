@@ -4810,7 +4810,7 @@
               "properties": {
                 "control": {
                   "type": "string",
-                  "pattern": "^(knob|fader|button|wheel|strip|jog|pedal|footswitch):[1-9][0-9]{0,2}$"
+                  "pattern": "^(knob|fader|button|wheel|strip|jog|pedal|footswitch|aftertouch|breath):[1-9][0-9]{0,2}$"
                 },
                 "kind": {
                   "enum": [

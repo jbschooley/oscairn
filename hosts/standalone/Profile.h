@@ -32,7 +32,7 @@ namespace oscairn::standalone
         // explicit increment and decrement values, in `steps`); how buttons send (momentary or latch).
         struct ControlMidi
         {
-            int port = 1, channel = 0; std::vector<int> channels, cc, notes; bool pitchBend = false;
+            int port = 1, channel = 0; std::vector<int> channels, cc, notes; bool pitchBend = false, pressure = false;
             std::vector<std::string> encodings; std::vector<std::array<int, 2>> steps; // steps: one per control, {0, 0} for a named encoding
             std::string button = "momentary";
             bool feedback = false; // the controller takes each control's value back on its CC (absolute CCs only); off unless confirmed

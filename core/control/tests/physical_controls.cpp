@@ -126,16 +126,16 @@ namespace
         resolved = resolveControls(source(), eight, keys, {0, 0});
         check(find(resolved, "knob:1").target == parameter(synth, 7) && find(resolved, "knob:2").target == parameter(synth, 99) && find(resolved, "knob:1").bank == "Assign 1\xE2\x80\x93" "8" &&
               groupPositions(source(), eight[0], keys) == 2, "eight knobs: Assign 1–8, then Effects");
-        check(find(resolved, "button:2").target == target(Assignment::Kind::PartMute, lead) && find(resolved, "button:1").layer == AssignmentLayer::Convention, "assignable buttons play part mutes");
+        check(find(resolved, "button:102").target == target(Assignment::Kind::PartMute, lead) && find(resolved, "button:101").layer == AssignmentLayer::Convention, "assignable buttons play part mutes");
 
         // Overrides come first, on any assignable control but a screen knob, and are checked.
         s.assign("knob:2", target(Assignment::Kind::Control, super));
         s.assign("fader:1", parameter(fx, s.parameters(fx).front().id));
-        s.assign("button:2", target(Assignment::Kind::Scene, verse));
+        s.assign("button:102", target(Assignment::Kind::Scene, verse));
         resolved = resolveControls(source(), modx, keys, {0, 0, 0});
         check(find(resolved, "knob:2").target == target(Assignment::Kind::Control, super) && find(resolved, "knob:2").layer == AssignmentLayer::Override && find(resolved, "knob:2").label == "Super" &&
               find(resolved, "knob:1").layer == AssignmentLayer::Role && find(resolved, "screen:2").layer == AssignmentLayer::Role, "an override takes its knob, not the screen knob of the same number");
-        check(find(resolved, "fader:1").target.node == fx && find(resolveControls(source(), eight, keys, {0, 0}), "button:2").label == "Verse", "on faders and buttons too");
+        check(find(resolved, "fader:1").target.node == fx && find(resolveControls(source(), eight, keys, {0, 0}), "button:102").label == "Verse", "on faders and buttons too");
         check(refused([&] { s.assign("slider:1", target(Assignment::Kind::Control, super)); }) && refused([&] { s.assign("knob:0", target(Assignment::Kind::Control, super)); }) &&
               refused([&] { s.assign("screen:1", target(Assignment::Kind::Control, super)); }) &&
               refused([&] { s.assign("knob:1", target(Assignment::Kind::Control, 999)); }) && refused([&] { s.assign("knob:1", parameter(synth, 12345)); }) &&
@@ -161,7 +161,7 @@ namespace
         auto named = [&](const AssignmentOverride& o) { return o.target.kind == Assignment::Kind::Parameter ? names.at(o.target.node) : std::string(); };
         check(loaded.size() == 3 && loaded[0].control == "knob:2" && loaded[0].target == target(Assignment::Kind::Control, super) &&
               loaded[1].control == "fader:1" && loaded[1].target.kind == Assignment::Kind::Parameter && named(loaded[1]) == "fx" &&
-              loaded[2].control == "button:2" && loaded[2].target == target(Assignment::Kind::Scene, verse), "overrides round-trip with the Performance");
+              loaded[2].control == "button:102" && loaded[2].target == target(Assignment::Kind::Scene, verse), "overrides round-trip with the Performance");
         // An override to a plugin since removed is not saved.
         s.removeFromPart(keys, fx); s.remove(fx); s.commit();
         s.savePerformance((root / "removed").string());
@@ -203,7 +203,7 @@ namespace
         check(find(resolved, "fader:1").target == target(Assignment::Kind::PartLevel, keys) && find(resolved, "fader:2").target == target(Assignment::Kind::PartLevel, lead), "its faders play part levels");
         check(find(resolved, "wheel:1").function == "pitchBend" && find(resolved, "wheel:2").function == "modulation" && find(resolved, "wheel:2").target.kind == Assignment::Kind::None &&
               find(resolved, "wheel:2").parts.empty(), "its wheels pass pitch bend and modulation through");
-        check(find(resolved, "button:1").target == target(Assignment::Kind::Scene, verse) && find(resolved, "button:1").label == "Verse" && find(resolved, "button:3").target == target(Assignment::Kind::PartMute, keys),
+        check(find(resolved, "button:101").target == target(Assignment::Kind::Scene, verse) && find(resolved, "button:101").label == "Verse" && find(resolved, "button:103").target == target(Assignment::Kind::PartMute, keys),
               "buttons play scenes, or part mutes");
 
         // Relative encodings, each scheme.
@@ -269,6 +269,49 @@ namespace
         out = send("modx", {0xB0, 21, 64});
         check(positions.size() == 8 && positions[7] == 1 && out.empty(), "a row's own numbers move its group to that row (blank here)");
         check(send("smk", {0xB0, 1, 64}).empty(), "the mod wheel with nothing assigned is passed through, not played here");
+
+        // Aftertouch (channel pressure) and breath (CC 2) are sources like the wheels: passed
+        // through, or assigned by identity. Assignable switches are button:1 up whatever other
+        // buttons a device has; its scene and mute buttons count on from 101.
+        {
+            ControlGroup touch{Role::Assign, "aftertouch", 1}; touch.functions = {"aftertouch"}; touch = midi(touch, "smk", Message::Pressure, {});
+            ControlGroup breath{Role::Assign, "breath", 1}; breath.functions = {"breath"}; breath = midi(breath, "smk", Message::CC, {2});
+            ControlGroup switches{Role::Assign, "buttons", 2}; switches.switches = true; switches = midi(switches, "smk", Message::CC, {86, 87});
+            const std::vector<ControlGroup> expressive{scenes, touch, breath, switches};
+            auto r = resolveControls(source(), expressive, keys, {});
+            check(find(r, "aftertouch:1").function == "aftertouch" && find(r, "aftertouch:1").target.kind == Assignment::Kind::None && find(r, "breath:1").function == "breath",
+                  "aftertouch and breath pass through with nothing assigned");
+            check(find(r, "button:1").group == 3 && find(r, "button:2").index == 1 && find(r, "button:1").target.kind == Assignment::Kind::None &&
+                  find(r, "button:101").target == target(Assignment::Kind::Scene, verse), "switches are button:1 and button:2, nothing until assigned; scene buttons count from 101");
+            const auto fewer = resolveControls(source(), {scenes}, keys, {});
+            check(std::none_of(fewer.begin(), fewer.end(), [](const ResolvedControl& c) { return c.control == "button:1"; }) && find(fewer, "button:101").label == "Verse",
+                  "a device without switches has no button:1; its scene buttons keep their numbers");
+            s.assign("aftertouch:1", parameter(synth, 7)); s.assign("breath:1", target(Assignment::Kind::Control, super)); s.assign("button:1", target(Assignment::Kind::PartMute, lead)); run(s);
+            check(find(resolveControls(source(), {scenes}, keys, {}), "button:101").target == target(Assignment::Kind::Scene, verse), "a switch override on a device without switches plays nothing else");
+            ControllerMapping m; GroupPositions at;
+            auto play = [&](std::vector<uint8_t> bytes) {
+                auto o = m.handle(source(), expressive, keys, at, "smk", 1, bytes.data(), bytes.size(), value);
+                for(const auto& a : o) values[key(a.target)] = a.value;
+                return o;
+            };
+            values[key(parameter(synth, 7))] = 0;
+            play({0xD0, 0});
+            auto o = play({0xD0, 64});
+            check(o.size() == 1 && o[0].control == "aftertouch:1" && o[0].target == parameter(synth, 7) && std::abs(o[0].value - 64 / 127.0) < 1e-9, "channel pressure, two bytes, plays aftertouch's target");
+            check(play({0xD1, 70}).empty(), "pressure on another channel is not it");
+            values[key(target(Assignment::Kind::Control, super))] = 64 / 127.0;
+            o = play({0xB0, 2, 64}); o = play({0xB0, 2, 100});
+            check(o.size() == 1 && o[0].control == "breath:1" && std::abs(o[0].value - 100 / 127.0) < 1e-9, "CC 2 plays breath's target");
+            values[key(target(Assignment::Kind::PartMute, lead))] = 0;
+            o = play({0xB0, 86, 127});
+            check(o.size() == 1 && o[0].control == "button:1" && o[0].target == target(Assignment::Kind::PartMute, lead) && o[0].value == 1, "switch 1 toggles what it is assigned");
+            s.savePerformance((root / "expressive").string());
+            Session e(48000, frames, {}, stereoIn);
+            e.loadPerformance((root / "expressive").string());
+            size_t found = 0; for(const auto& a : e.assignments()) found += a.control == "aftertouch:1" || a.control == "breath:1" || a.control == "button:1";
+            check(found == 3, "aftertouch, breath and switch overrides round-trip with the Performance");
+            s.assign("aftertouch:1", {}); s.assign("breath:1", {}); s.assign("button:1", {}); run(s);
+        }
 
         // The Sound's own assignments: the mod wheel to a parameter of its own, played in its part;
         // a knob's when its part is selected. Only its own plugins and controls.

@@ -91,8 +91,9 @@ namespace oscairn
     // rows, each a bank its row button picks directly, or is paged (by a button or the screen).
     // Faders may have modes: part (part levels), element (the part's Levels bank) and audio (the
     // levels of parts playing audio inputs).
-    // Buttons play part mutes, or with `scenes` the scenes in order. A group with `functions`
-    // (wheels, pedals, a ribbon: standard controllers such as "modulation") passes each control's
+    // Buttons play part mutes, or with `scenes` the scenes in order, or with `switches` nothing
+    // until assigned (assignable switches, numbered apart). A group with `functions`
+    // (wheels, pedals, a ribbon, aftertouch, breath: standard controllers such as "modulation") passes each control's
     // controller to every part unless something is assigned to it. Other kinds than knobs and
     // encoders play banks only when `paged` or with rows; else nothing until assigned.
     // An external controller's group says how it talks MIDI (RFC 0024's controllers).
@@ -107,14 +108,14 @@ namespace oscairn
         struct Row { std::string name; BankKind bank = BankKind::Assign; };
         std::vector<Row> rows;
         std::vector<std::string> modes;
-        bool scenes = false, paged = false;
+        bool scenes = false, paged = false, switches = false;
         std::vector<std::string> functions;
         struct Midi
         {
             std::string device;                 // the controller's profile id; empty: not MIDI (a panel's own)
             uint32_t port = 1, channel = 1;     // the profile's port, from 1; channel 1 to 16
             std::vector<uint32_t> channels;     // one per control, when they differ (then `channel` is unused)
-            enum class Message { CC, Note, PitchBend } message = Message::CC;
+            enum class Message { CC, Note, PitchBend, Pressure } message = Message::CC; // Pressure: channel pressure, a group of one
             std::vector<uint8_t> numbers;       // CC or note per control, or per control per row
             std::vector<Encoding> encodings;    // one per control (absolute when missing)
             std::vector<std::array<uint8_t, 2>> steps; // one per control: Steps' increment and decrement values
@@ -136,10 +137,14 @@ namespace oscairn
     };
     // Every assignable control of the device (screen and assign groups, faders, assign buttons)
     // with what it plays now. Controls are numbered by identity across groups: assign knobs and
-    // encoders "knob:N", faders "fader:N", buttons "button:N", wheels "wheel:N", touch strips
-    // "strip:N", pedals "pedal:N". An override whose target is gone falls through to the defaults.
+    // encoders "knob:N", faders "fader:N", wheels "wheel:N", touch strips "strip:N", pedals
+    // "pedal:N", aftertouch "aftertouch:N" and breath controllers "breath:N". Buttons: assignable
+    // switches are "button:1" up, the same on every device, and the other assign buttons (scenes,
+    // part mutes) "button:101" up (firstConventionButton); an override for a switch the device
+    // lacks plays nothing and is kept. An override whose target is gone falls through to the defaults.
     // Overrides with a part are that part's Sound's own (layer 2): they play when the part is
     // selected, and for a control with a function, in that part whenever it moves.
+    inline constexpr uint32_t firstConventionButton = 101;
     std::vector<ResolvedControl> resolveControls(const AssignmentSource&, const std::vector<ControlGroup>&, uint32_t part, const GroupPositions& = {});
     // How many positions a group has: its pages, rows or modes (1 for the rest).
     uint32_t groupPositions(const AssignmentSource&, const ControlGroup&, uint32_t part);

@@ -97,9 +97,9 @@ namespace oscairn::standalone
 
     void Controllers::handleIncomingMidiMessage(juce::MidiInput* input, const juce::MidiMessage& message)
     {
-        if(!message.isController() && !message.isNoteOnOrOff() && !message.isPitchWheel()) return;
+        if(!message.isController() && !message.isNoteOnOrOff() && !message.isPitchWheel() && !message.isChannelPressure()) return;
         Incoming in{input, {}};
-        std::copy_n(message.getRawData(), 3, in.bytes);
+        std::copy_n(message.getRawData(), std::min(3, message.getRawDataSize()), in.bytes); // channel pressure has two bytes; the third stays 0
         std::lock_guard lock(lock_);
         if(queue_.size() < 1024) queue_.push_back(in); // shortcut: a mutex on the MIDI thread; the app's, not the audio thread's
     }

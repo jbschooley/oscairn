@@ -18,7 +18,7 @@ namespace oscairn
         const auto colon = control.find(':');
         if(colon == std::string::npos) return false;
         const auto kind = control.substr(0, colon), number = control.substr(colon + 1);
-        static const std::set<std::string> kinds{"knob", "fader", "button", "wheel", "strip", "jog", "pedal", "footswitch"};
+        static const std::set<std::string> kinds{"knob", "fader", "button", "wheel", "strip", "jog", "pedal", "footswitch", "aftertouch", "breath"};
         if(!kinds.count(kind)) return false;
         return !number.empty() && number.size() <= 3 && number[0] != '0' && std::all_of(number.begin(), number.end(), [](char c) { return c >= '0' && c <= '9'; });
     }
@@ -138,7 +138,8 @@ namespace oscairn
         std::string identity(const std::string& kind)
         {
             static const std::map<std::string, std::string> names{{"knobs", "knob"}, {"encoders", "knob"}, {"faders", "fader"}, {"buttons", "button"}, {"wheels", "wheel"},
-                                                                 {"touchstrip", "strip"}, {"jog", "jog"}, {"pedal", "pedal"}, {"expression", "pedal"}, {"footswitches", "footswitch"}};
+                                                                 {"touchstrip", "strip"}, {"jog", "jog"}, {"pedal", "pedal"}, {"expression", "pedal"}, {"footswitches", "footswitch"},
+                                                                 {"aftertouch", "aftertouch"}, {"breath", "breath"}};
             const auto it = names.find(kind);
             return it == names.end() ? std::string() : it->second;
         }
@@ -250,6 +251,7 @@ namespace oscairn
                 for(size_t i = 0; i < group.count && i < s.scenes.size(); ++i) std::tie(b.slots[i], b.labels[i]) = of(Assignment::Kind::Scene, s.scenes[i].first, s.scenes[i].second);
                 b.layer = AssignmentLayer::Convention;
             }
+            else if(group.kind == "buttons" && group.switches) {} // assignable switches: nothing until assigned
             else if(group.kind == "buttons") levels(order, Assignment::Kind::PartMute, " mute");
             else if(!group.functions.empty() || (group.rows.empty() && !group.paged && group.kind != "knobs" && group.kind != "encoders")) {} // passed through, or nothing until assigned
             else if(!group.rows.empty())
@@ -264,7 +266,9 @@ namespace oscairn
             else if(const auto banks = knobBanks(s, part, group.count); !banks.empty()) b = banks[at % banks.size()];
             for(uint32_t i = 0; i < group.count; ++i)
             {
-                ResolvedControl r; r.control = name + ":" + std::to_string(++numbers[name]);
+                // Switches are button:1 up on every device; the other buttons count on from 101, so a switch's number never depends on them.
+                const bool convention = name == "button" && !group.switches;
+                ResolvedControl r; r.control = name + ":" + std::to_string(convention ? firstConventionButton - 1 + ++numbers["button>"] : ++numbers[name]);
                 r.target = b.slots[i]; r.label = b.labels[i]; r.bank = b.name; r.group = g; r.index = i;
                 if(i < group.functions.size()) r.label = r.function = group.functions[i];
                 if(r.target.kind != Assignment::Kind::None) r.layer = b.layer;
@@ -335,7 +339,7 @@ namespace oscairn
 
     void Session::assign(const std::string& control, const Assignment& target, uint32_t part)
     {
-        if(!validPhysicalControl(control)) throw std::invalid_argument("a physical control is knob:N, fader:N, button:N, wheel:N, strip:N, jog:N, pedal:N or footswitch:N");
+        if(!validPhysicalControl(control)) throw std::invalid_argument("a physical control is knob:N, fader:N, button:N, wheel:N, strip:N, jog:N, pedal:N, footswitch:N, aftertouch:N or breath:N");
         if(part)
         {
             // A Sound's own assignment plays only its own plugins and controls.

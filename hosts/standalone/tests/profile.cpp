@@ -118,8 +118,8 @@ int main()
         check(smk.controls[2].midi.pitchBend && smk.controls[3].midi.cc == std::vector<int>{1} && smk.controls[5].target == "partLevels" && smk.controls[1].midi.notes.size() == 16 && smk.controls[1].midi.channel == 2,
               "its wheels, faders and pads");
         const auto& usb = controllers[0];
-        check(usb.midi.ports.size() == 2 && usb.midi.ports[1].protocol == "mackie" && usb.controls[4].rows.size() == 2 && usb.controls[4].midi.cc.size() == 8 &&
-              usb.controls[6].target == "scenes", "the MODX M over USB: a Mackie port declared, knobs sending a number per row, scene buttons");
+        check(usb.midi.ports.size() == 2 && usb.midi.ports[1].protocol == "mackie" && usb.controls[5].rows.size() == 2 && usb.controls[5].midi.cc.size() == 8 &&
+              usb.controls[7].target == "scenes", "the MODX M over USB: a Mackie port declared, knobs sending a number per row, scene buttons");
         bool controllerRefused = false; try { loadProfile("smk37-elite"); } catch(const std::invalid_argument&) { controllerRefused = true; }
         check(controllerRefused, "a controller's profile is not a device's");
         // The SMK-37 Elite's inputs as macOS lists them (read 2026-11-01 with oscairn-midi-monitor --list).
@@ -183,7 +183,14 @@ int main()
         std::string usbJson; for(const auto& [id, text] : builtInProfiles()) if(id == "modx-m-usb") usbJson = text;
         const auto encoders = "\"cc\": [17, 18, 19, 20, 21, 22, 23, 24] }";
         const auto back = Profile::parse(replaced(usbJson, encoders, "\"cc\": [17, 18, 19, 20, 21, 22, 23, 24], \"feedback\": true }"));
-        check(back.controls[4].midi.feedback && !back.controls[5].midi.feedback, "the MODX M's knobs told to take their values back");
+        check(back.controls[5].midi.feedback && !back.controls[6].midi.feedback, "the MODX M's knobs told to take their values back");
+        // Aftertouch as channel pressure, and the ASSIGN switches (RFC 0024's control identities).
+        check(usb.controls[3].kind == "aftertouch" && usb.controls[3].midi.pressure && usb.controls[3].functions == std::vector<std::string>{"aftertouch"},
+              "the MODX M's aftertouch is channel pressure");
+        check(usb.controls[9].target == "switches" && usb.controls[9].count == 2 && usb.controls[7].target == "scenes", "its ASSIGN 1 and 2 are switches, beside the scene buttons");
+        check(refused(replaced(usbJson, "\"pressure\": true", "\"pitchBend\": true")), "pitch bend from an aftertouch group");
+        check(refused(replaced(smkJson, "\"pitchBend\": true }", "\"pressure\": true }")), "pressure from a wheel");
+        check(refused(replaced(usbJson, "\"target\": \"switches\"", "\"target\": \"banks\"")), "a buttons group's target is never banks");
         check(refused(replaced(smkJson, "{ \"increment\": 69, \"decrement\": 1 }] }", "{ \"increment\": 69, \"decrement\": 1 }], \"feedback\": true }")), "feedback on knobs that step");
         check(refused(replaced(smkJson, "\"pitchBend\": true }", "\"pitchBend\": true, \"feedback\": true }")), "feedback on pitch bend");
         check(Profile::parse(replaced(smkJson, "\"protocol\": \"mackie\"", "\"protocol\": \"mackie\", \"display\": true")).midi.ports[2].display, "a Mackie port with a display");

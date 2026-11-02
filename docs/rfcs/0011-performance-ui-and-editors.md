@@ -796,7 +796,14 @@ each filling only what the ones above left empty:
 
 1. **Overrides**, saved in the Performance (format version 8, `assignments`) by the control's
    logical identity, numbered across the device's assign groups: `knob:N` (knobs and encoders),
-   `fader:N`, `button:N`, `wheel:N`, `strip:N`, `jog:N`, `pedal:N`, `footswitch:N`. Each sets a
+   `fader:N`, `button:N`, `wheel:N`, `strip:N`, `jog:N`, `pedal:N`, `footswitch:N`, and (format
+   version 11) `aftertouch:N` (channel pressure) and `breath:N` (CC 2), sources like the wheels:
+   passed to every part as their standard controller until something is assigned. **Buttons**
+   (version 11): the assignable switches (a buttons group with `target: switches`, the MODX's
+   ASSIGN 1 and 2) are `button:1` up, in group order, the same whatever other buttons a device
+   has, and play nothing until assigned; the scene and mute buttons count on from `button:101`.
+   On a device with fewer switches, an override of `button:N` beyond them plays nothing and is
+   kept, so it plays again on a device or controller that has that switch. Each sets a
    parameter, a control, a part's level or mute, or a scene. Screen knobs are not overridden.
    An override whose target is gone falls through to the defaults and is left out at save.
    Assigning is an edit, undone like any other.
@@ -872,6 +879,12 @@ its cutoff and Level as its level, and the Delay its Wet as `mix`; Split, Join, 
 Step Sequencer have no parameter that fits a role, and the Sampler (its own repository) has
 none yet to declare. A panel layout's own `row:N` knobs still play the line selected in an
 editor (the first by default, which is its top parameters in priority order), as before.
+
+Aftertouch, breath and switches, 2026-11-01: `control-physical-controls` checks aftertouch and
+breath passing through with nothing assigned, switches numbered `button:1` and `button:2` beside
+scene buttons from `button:101`, a device without switches having no `button:1`, channel pressure
+(two bytes), CC 2 and a switch playing their overrides, and those overrides round-tripping. The
+`modx-m` and `modx-m-usb` profiles gain the keys' aftertouch and the ASSIGN 1 and 2 switches.
 
 Not yet: name matching beyond exact names (per-oscillator levels, other spellings); the
 Sampler's roles; no panel layout binds faders, buttons or a row-switching group, so

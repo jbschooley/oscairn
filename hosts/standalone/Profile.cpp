@@ -53,13 +53,13 @@ namespace oscairn::standalone
             for(const auto& e : *v.getArray()) { require(e.isString() && e.toString().isNotEmpty() && e.toString().length() <= 128, std::string(key) + " holds names"); out.push_back(e.toString().toStdString()); }
             return out;
         }
-        const juce::StringArray controlKinds{"keys", "pads", "encoders", "knobs", "faders", "buttons", "pedal", "footswitches", "expression", "jog", "touchstrip", "wheels"};
+        const juce::StringArray controlKinds{"keys", "pads", "encoders", "knobs", "faders", "buttons", "pedal", "footswitches", "expression", "jog", "touchstrip", "wheels", "aftertouch", "breath"};
         const juce::StringArray controlRoles{"notes", "screen", "assign", "fixed"};
         const juce::StringArray banks{"assign", "filter", "ampEG", "eq", "levels", "effects"};
         const juce::StringArray surfaces{"desktop", "panel", "compact"};
         const juce::StringArray reliabilities{"desktop", "instrument", "pass-through"};
         const juce::StringArray sections{"platform", "compute", "audio", "controls", "screens", "midi", "cv", "network", "power"};
-        const juce::StringArray standardControllers{"pitchBend", "modulation", "breath", "foot", "expression", "sustain", "portamento", "sostenuto", "soft"};
+        const juce::StringArray standardControllers{"pitchBend", "modulation", "breath", "foot", "expression", "sustain", "portamento", "sostenuto", "soft", "aftertouch"};
         const juce::StringArray encodingNames{"absolute", "twosComplement", "binaryOffset", "signMagnitude"};
         std::vector<int> numbers(const juce::DynamicObject& o, const char* key, int high)
         {
@@ -167,12 +167,12 @@ namespace oscairn::standalone
                     for(const auto& f : c.functions) require(standardControllers.contains(juce::String(f)), "an assign group's function is a standard controller: " + f);
                 }
                 if(!c.target.empty())
-                    require(assign && ((knobs && c.target == "banks") || (c.kind == "faders" && c.target == "partLevels") || (c.kind == "buttons" && (c.target == "partMutes" || c.target == "scenes"))),
-                            "target is banks for knobs, partLevels for faders, partMutes or scenes for buttons, in an assign group");
+                    require(assign && ((knobs && c.target == "banks") || (c.kind == "faders" && c.target == "partLevels") || (c.kind == "buttons" && (c.target == "partMutes" || c.target == "scenes" || c.target == "switches"))),
+                            "target is banks for knobs, partLevels for faders, partMutes, scenes or switches for buttons, in an assign group");
                 if(const auto m = o.getProperty("midi"); !m.isVoid())
                 {
                     require(controller, "only a controller's controls say how they talk MIDI");
-                    const auto& mo = object(m, "a control's midi"); fields(mo, {"port", "channel", "cc", "notes", "pitchBend", "encoding", "button", "feedback"}, "a control's midi");
+                    const auto& mo = object(m, "a control's midi"); fields(mo, {"port", "channel", "cc", "notes", "pitchBend", "pressure", "encoding", "button", "feedback"}, "a control's midi");
                     auto& midi = c.midi;
                     midi.port = mo.hasProperty("port") ? count(mo, "port", 16) : 1;
                     if(mo.getProperty("channel").isArray())
@@ -183,9 +183,10 @@ namespace oscairn::standalone
                     }
                     else midi.channel = count(mo, "channel", 16);
                     require(midi.channel >= 1 && std::all_of(midi.channels.begin(), midi.channels.end(), [](int n) { return n >= 1; }), "a control's MIDI channel is 1 to 16");
-                    midi.cc = numbers(mo, "cc", 127); midi.notes = numbers(mo, "notes", 127); midi.pitchBend = flag(mo, "pitchBend");
-                    const int kinds = int(!midi.cc.empty()) + int(!midi.notes.empty()) + int(midi.pitchBend);
-                    require(kinds == 1 || (kinds == 0 && c.kind == "keys"), "a control's midi has one of cc, notes or pitchBend (keys only a channel)");
+                    midi.cc = numbers(mo, "cc", 127); midi.notes = numbers(mo, "notes", 127); midi.pitchBend = flag(mo, "pitchBend"); midi.pressure = flag(mo, "pressure");
+                    const int kinds = int(!midi.cc.empty()) + int(!midi.notes.empty()) + int(midi.pitchBend) + int(midi.pressure);
+                    require(kinds == 1 || (kinds == 0 && c.kind == "keys"), "a control's midi has one of cc, notes, pitchBend or pressure (keys only a channel)");
+                    require(!midi.pressure || (c.kind == "aftertouch" && c.count == 1), "pressure is a group of one aftertouch");
                     const auto perRow = c.count * int(std::max<size_t>(1, c.rows.size()));
                     require(midi.cc.empty() || int(midi.cc.size()) == c.count || (!c.rows.empty() && int(midi.cc.size()) == perRow), "cc has a number per control, or per control per row");
                     require(midi.notes.empty() || int(midi.notes.size()) == c.count, "notes has a number per control");

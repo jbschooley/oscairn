@@ -148,7 +148,9 @@
               "expression",
               "jog",
               "touchstrip",
-              "wheels"
+              "wheels",
+              "aftertouch",
+              "breath"
             ]
           },
           "count": {
@@ -233,9 +235,10 @@
               "banks",
               "partLevels",
               "partMutes",
-              "scenes"
+              "scenes",
+              "switches"
             ],
-            "description": "An assign group's default target: banks for knobs and encoders, partLevels for faders, partMutes (the default) or scenes for buttons"
+            "description": "An assign group's default target: banks for knobs and encoders, partLevels for faders, partMutes (the default), scenes or switches (assignable switches, button:1 up, nothing until assigned) for buttons"
           },
           "midi": {
             "type": "object",
@@ -285,6 +288,10 @@
               "pitchBend": {
                 "type": "boolean",
                 "description": "A group of one wheel sending pitch bend"
+              },
+              "pressure": {
+                "type": "boolean",
+                "description": "A group of one aftertouch sending channel pressure"
               },
               "encoding": {
                 "anyOf": [

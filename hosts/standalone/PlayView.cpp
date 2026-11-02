@@ -239,14 +239,14 @@ namespace oscairn::standalone
             for(const auto& r : c.rows)
                 for(size_t k = 0; k < bankKinds.size(); ++k) if(r.bank == bankKinds[k]) g.rows.push_back({r.name, BankKind(k)});
             // Its default target, and a controller's MIDI (RFC 0024).
-            g.scenes = c.target == "scenes"; g.paged = !c.paging.empty();
+            g.scenes = c.target == "scenes"; g.switches = c.target == "switches"; g.paged = !c.paging.empty();
             if(c.role != "fixed") g.functions = c.functions;
             if(profile.controller() && c.midi.channel)
             {
                 using Message = ControlGroup::Midi::Message;
                 g.midi.device = profile.id; g.midi.port = uint32_t(c.midi.port); g.midi.channel = uint32_t(c.midi.channel);
                 g.midi.channels.assign(c.midi.channels.begin(), c.midi.channels.end());
-                g.midi.message = c.midi.pitchBend ? Message::PitchBend : c.midi.cc.empty() ? Message::Note : Message::CC;
+                g.midi.message = c.midi.pitchBend ? Message::PitchBend : c.midi.pressure ? Message::Pressure : c.midi.cc.empty() ? Message::Note : Message::CC;
                 for(const auto n : c.midi.cc.empty() ? c.midi.notes : c.midi.cc) g.midi.numbers.push_back(uint8_t(n));
                 for(const auto& e : c.midi.encodings)
                 {
