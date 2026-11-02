@@ -480,7 +480,7 @@ namespace oscairn
     void Recorder::setRetro(double seconds, const Taps& taps)
     {
         for(const auto& a : live_)
-            if(a->end.load() == unset && ((a->notes && a->notes == retro_.notes) || std::any_of(a->rings.begin(), a->rings.end(), [&](const auto& r) { return std::count(retro_.rings.begin(), retro_.rings.end(), r) != 0; })))
+            if(!a->done.load() && ((a->notes && a->notes == retro_.notes) || std::any_of(a->rings.begin(), a->rings.end(), [&](const auto& r) { return std::count(retro_.rings.begin(), retro_.rings.end(), r) != 0; })))
                 throw std::logic_error("a take recording reads the retroactive rings");
         for(const auto& t : taps.audio) if(!t.channels || t.channels > Graph::maxAudioChannels) throw std::invalid_argument("a tap needs 1 to 256 channels");
         Set next;

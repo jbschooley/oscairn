@@ -397,7 +397,8 @@ namespace
         check(reply.find(R"("take":)") != std::string::npos, "record.start from seconds ago: " + reply);
         for(int i = 0; i < 400 && s.recorder().committedBytes() > rings; ++i) { s.service(); std::this_thread::sleep_for(std::chrono::milliseconds(5)); }
         const auto on = s.memoryState().committed;
-        s.recordRetro(0);
+        for(int i = 0; i < 400; ++i) // refused while the capture over the socket still reads the rings
+            try { s.recordRetro(0); break; } catch(const std::logic_error&) { s.service(); std::this_thread::sleep_for(std::chrono::milliseconds(5)); }
         for(int i = 0; i < 400 && s.recorder().committedBytes(); ++i) { s.service(); std::this_thread::sleep_for(std::chrono::milliseconds(5)); }
         check(s.recorder().committedBytes() == 0 && on - s.memoryState().committed == rings, "turned off, the rings go and the budget no longer counts them");
     }
@@ -427,6 +428,42 @@ namespace
         check(t.frames == stopped - before, "the take holds every frame up to the stop: " + std::to_string(t.frames) + " for " + std::to_string(stopped - before));
         const auto c = finish(s, capture, false);
         check(c.state == "done" && c.frames == 24000 && c.overruns.empty(), "the capture keeps its half second beside it: " + c.state + " " + std::to_string(c.frames));
+    }
+
+    // A capture reading the retroactive rings must not be killed by a change to that buffer
+    // while it still reads it: the change is refused until the capture finishes.
+    void retroChangeDuringCapture(const char* synth)
+    {
+        constexpr uint32_t block = 128;
+        Session s(48000, block);
+        const auto node = s.add("synth", synth);
+        const auto part = s.addPart("Lead");
+        s.insertIntoPart(part, 0, node);
+        s.commit();
+        s.recordRetro(2);
+        Render render(s);
+        while(render.main.size() / 2 < 96000) render.block(block); // enough past for the capture's start
+        Control::RecordWhen cap;
+        cap.from = Control::RecordWhen::From::SecondsAgo; cap.seconds = 0.1;
+        cap.until = Control::RecordWhen::Until::Seconds; cap.length = 2; // ends 1.9 s in the future
+        const auto start = render.main.size() / 2;
+        const auto capture = s.recordStart({}, "Spans the change", cap);
+        bool settled = false; // the writer has fixed its start, so its end is set
+        for(int i = 0; i < 400 && !settled; ++i)
+        {
+            render.block(block);
+            for(const auto& t : s.recordTakes()) if(t.take == capture && t.frames > 0) settled = true;
+        }
+        check(settled, "the capture's writer fixed its start");
+        bool refused = false;
+        try { s.recordRetro(0); } catch(const std::logic_error&) { refused = true; }
+        check(!refused || s.recordRetroSeconds() == 2, "the buffer's change waits for the capture, refused or kept feeding its rings");
+        while(render.main.size() / 2 < start + 96000 + block) render.block(block);
+        const auto t = finish(s, capture, false);
+        check(t.state == "done" && t.frames == 96000 && t.overruns.empty(), "the 2 s capture finishes: " + t.state + " " + std::to_string(t.frames));
+        s.recordRetro(0); // once the take is done, the change goes through
+        for(int i = 0; i < 400 && s.recorder().committedBytes(); ++i) { s.service(); std::this_thread::sleep_for(std::chrono::milliseconds(5)); }
+        check(s.recorder().committedBytes() == 0, "and the rings go after");
     }
 
     // Step 3's gate, offline: a take from the next bar starts on the bar line's exact sample, and
@@ -533,6 +570,7 @@ int main(int argc, char** argv)
         inputAndNode(argv[1]);
         protocol(argv[1]);
         stopDuringCapture(argv[1]);
+        retroChangeDuringCapture(argv[1]);
         retroactive(argv[1]);
         bars(argv[1]);
         earlierTakes();
