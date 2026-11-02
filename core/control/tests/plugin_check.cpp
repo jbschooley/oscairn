@@ -214,6 +214,8 @@ int main(int argc, char** argv)
             const auto again = render(a, synth);
             check(values(a, a.graphState().topology.nodes.at(0).id) == savedValues, "opened again, every parameter as saved");
             std::printf("reopened render differs by rms %g (0: identical)\n", difference(saved, again));
+            // Every parameter matched, so what differs is state the plugin keeps but doesn't save.
+            if(difference(saved, again) > 0) std::printf("  not a failure: state that isn't saved (an LFO's or rotor's phase, a delay line, randomness) makes reopened renders differ\n");
             for(const auto& [platform, path] : builds) a.addPluginBuild("clap", id, a.graphState().topology.nodes.at(0).plugin.version, platform, path);
             const auto notes = a.exportPerformance(archive.string());
             if(lv2)
