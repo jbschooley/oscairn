@@ -20,7 +20,10 @@
 //   static constexpr const char* stateVersion; static constexpr size_t maxStateBytes
 //   bool writePatch(std::ostream&, const Patch&); bool readPatch(std::istream&, Patch&)
 //   void restored()                                         after a snapshot load
-// and may provide snapshotLoading(bool), called around reading a snapshot's patches.
+// and may provide snapshotLoading(bool), called around reading a snapshot's patches, and
+// voiceFinished(Voice&), called whenever a voice ends: released out, choked, stolen or reset.
+// A snapshot load resets every context's pins (users) and ends every voice: in
+// snapshotLoading(true), forget any pins the instrument holds itself, such as a ringing tail's.
 //
 // MIDI pitch bend and the mod wheel (CC 1) are kept per channel; each voice follows its
 // channel's values smoothly in VoiceBase::bend and modWheel once render calls followControls(v)
@@ -130,6 +133,7 @@ namespace oscairn::contexts
         void finishVoice(Voice& v)
         {
             if(!v.active) return;
+            derived().voiceFinished(v);
             endNote(v.noteId, v.channel, v.key);
             v.active = false;
             auto& c = contexts[v.context];
@@ -403,5 +407,6 @@ namespace oscairn::contexts
         // Main thread, after a context is unpinned and discarded.
         void discarded(Context&) {}
         void snapshotLoading(bool) {}
+        void voiceFinished(Voice&) {}
     };
 }
