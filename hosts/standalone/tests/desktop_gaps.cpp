@@ -448,6 +448,12 @@ int main(int argc, char** argv)
                       "every value's text answers from the cache while the engine works");
                 holdRequests = false;
                 check(wait([&] { return !engine.soundBusy() && !jobHeld.load() && engine.connected(); }), "the job finished");
+                // A continuous knob dragged asks for a new value's text on every move: a
+                // parameter keeps a few hundred, then starts again, so the first is asked anew.
+                for(int i = 0; i < 300; ++i) engine.paramText(node, 4, i / 1000.0);
+                tap.reset();
+                engine.paramText(node, 4, 0);
+                check(tap.count("params.text") == 1, "a parameter's texts are capped, the oldest asked for again: " + std::to_string(tap.count("params.text")));
             }
             // A setlist marks entries "not in the library" once the mixed Sound+Performance read
             // of 1000 items passes them: entries are Performances, and the read asks for that

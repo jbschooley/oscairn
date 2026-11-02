@@ -110,7 +110,13 @@ namespace oscairn::standalone
         if(const auto it=textCache_.find(key);it!=textCache_.end())
             if(const auto at=it->second.find(bits);at!=it->second.end())return at->second;
         if(soundJob_.valid() && soundJobKind_!=SoundAction::Refresh)return std::to_string(v);
-        try{auto text=tidyNumber(control_->parameterText(control_->nodeId(n),p,v));textCache_[key][bits]=text;return text;}
+        try
+        {
+            auto text=tidyNumber(control_->parameterText(control_->nodeId(n),p,v));
+            auto& values=textCache_[key];
+            if(values.size()>=256)values.clear(); // a continuous knob dragged asks for a new value every move
+            values[bits]=text;return text;
+        }
         catch(const std::exception&){return std::to_string(v);}
     }
     void Engine::setParam(const std::string& n,uint32_t p,double v)
