@@ -1,0 +1,14 @@
+{
+  "repository": "https://github.com/LoupVaillant/Monocypher",
+  "snapshot_source": "https://monocypher.org/download/monocypher-4.0.2.tar.gz",
+  "sha256": "38d07179738c0c90677dba3ceb7a7b8496bcfea758ba1a53e803fed30ae0879c",
+  "license": "BSD-2-Clause or CC0-1.0, either (LICENCE.md), by Loup Vaillant, Michael Savage, Fabio Scotoni and the Monocypher contributors",
+  "files": {
+    "monocypher.c": "src/monocypher.c",
+    "monocypher.h": "src/monocypher.h",
+    "monocypher-ed25519.c": "src/optional/monocypher-ed25519.c",
+    "monocypher-ed25519.h": "src/optional/monocypher-ed25519.h",
+    "LICENCE.md": "LICENCE.md"
+  },
+  "note": "Unmodified files from the 4.0.2 release tarball (the same bytes as the GitHub release's). Ed25519 (SHA-512) is the optional monocypher-ed25519 pair; monocypher.c's own EdDSA uses BLAKE2b and is not used. Package signatures (RFC 0006)."
+}

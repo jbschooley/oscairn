@@ -91,6 +91,21 @@ authoritative.
   (RFC 0021), with their [license](core/control/third_party/miniz/LICENSE) and
   [pinned provenance](core/control/third_party/miniz/upstream.json).
 
+## Signatures
+
+- **Monocypher:** Loup Vaillant, Michael Savage, Fabio Scotoni and the Monocypher contributors
+  ([monocypher.org](https://monocypher.org), BSD-2-Clause or CC0-1.0, either). The unmodified
+  4.0.2 `monocypher.c` and `monocypher.h`, and the optional `monocypher-ed25519.c` and
+  `monocypher-ed25519.h` (Ed25519 with SHA-512; Monocypher's own EdDSA uses BLAKE2b), are
+  vendored to sign and check packages (RFC 0006), with their
+  [license](core/control/third_party/monocypher/LICENCE.md) and
+  [pinned provenance](core/control/third_party/monocypher/upstream.json). Release tarball
+  `monocypher-4.0.2.tar.gz` SHA-256 `38d07179738c0c90677dba3ceb7a7b8496bcfea758ba1a53e803fed30ae0879c`;
+  `monocypher.c` `afe2b098c8569577a84488e0b98d276d1fba6506adea68bb9241a52111734c59`,
+  `monocypher.h` `f78bb31255cfb7beba66afd2137f5194c8a025cf40488b6cc1e295234d43f374`,
+  `monocypher-ed25519.c` `7c9b16056cbd27521919e8a6f56a228808b9e718afc42e3d33f28c08e5abdee2`,
+  `monocypher-ed25519.h` `bd546edcd468d64e28caa3dbf4b1d6bfad7435c0ce994723fd81aae26405121b`.
+
 ## LV2 host reference work
 
 The [LV2 audit](core/lv2-host/AUDIT.md) records pinned revisions, source files and
