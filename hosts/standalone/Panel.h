@@ -2,6 +2,7 @@
 #pragma once
 
 #include "Engine.h"
+#include "Launcher.h" // EngineRecovery
 #include "Layout.h"
 #include "Screen.h"
 
@@ -42,7 +43,6 @@ namespace oscairn::standalone
         juce::Component*       overlay_ = nullptr;
         Engine&                engine_;
         std::unique_ptr<Board> board_;
-        juce::Label connectionNotice_;
-        juce::TextButton restartButton_{"Restart engine"};
+        EngineRecovery recovery_{engine_}; // the engine's notice and Restart, when it is gone
     };
 }

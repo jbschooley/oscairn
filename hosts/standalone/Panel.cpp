@@ -488,8 +488,7 @@ namespace oscairn::standalone
         engine_.setRowKnobs( screen.isEmpty() ? 0 : rowKnobs, edge );
         board_ = std::make_unique<Board>( engine, layout_ );
         addAndMakeVisible( *board_ );
-        addChildComponent(connectionNotice_);addChildComponent(restartButton_);
-        restartButton_.onClick=[this]{engine_.restart();timerCallback();};
+        addChildComponent(recovery_);
         board_->refresh();
         startTimerHz( 30 );
     }
@@ -510,9 +509,7 @@ namespace oscairn::standalone
 
     void Panel::resized()
     {
-        auto banner=getLocalBounds().removeFromTop(44).reduced(4);
-        restartButton_.setBounds(banner.removeFromRight(150));
-        connectionNotice_.setBounds(banner);
+        recovery_.setBounds(getLocalBounds().removeFromTop(44).reduced(4));
         // Scale the board to fit the tighter dimension. A stretching layout takes the
         // space left in the other; otherwise the board is centred in it.
         const auto scale = juce::jmin( getWidth() / (float)layout_.width, getHeight() / (float)layout_.height );
@@ -533,11 +530,6 @@ namespace oscairn::standalone
         board_->refresh();
         const auto disconnected=!engine_.connected();
         board_->setEnabled(!disconnected && !engine_.soundBusy());
-        connectionNotice_.setColour(juce::Label::backgroundColourId,ink(Ink::Danger));
-        connectionNotice_.setColour(juce::Label::textColourId,ink(Ink::Danger).contrasting());
-        connectionNotice_.setVisible(disconnected);
-        restartButton_.setVisible(disconnected && engine_.canRestart());
-        connectionNotice_.setText(engine_.canRestart()?"Engine stopped. Restart opens a fresh session.":"Engine disconnected. Reconnecting...",juce::dontSendNotification);
-        if(disconnected){connectionNotice_.toFront(false);restartButton_.toFront(false);}
+        recovery_.update();
     }
 }

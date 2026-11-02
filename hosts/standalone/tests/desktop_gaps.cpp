@@ -11,6 +11,7 @@
 #include "../DesktopShell.h"
 #include "../Launcher.h"
 #include "../LibraryPane.h"
+#include "../Panel.h"
 #include "../PartsView.h"
 #include "../Settings.h"
 #include "../Setlist.h"
@@ -660,6 +661,14 @@ int main(int argc, char** argv)
                 launcher.recovery().update();
                 check(launcher.recovery().isVisible() && launcher.recovery().notice().contains("Reconnecting"), "Home shows the disconnect notice");
                 check(!launcher.recovery().restartShown(), "no Restart while the engine may come back (this engine is not managed)");
+                // A device's Panel shows the same notice.
+                {
+                    standalone::Panel panel(engine, standalone::Layout::parse(R"({"name": "Notice test", "size": [1024, 600], "controls": [{"type": "screen", "rect": [0, 0, 1024, 600]}]})"));
+                    panel.setSize(1024, 600);
+                    standalone::EngineRecovery* strip = nullptr;
+                    check(wait([&] { for(auto* c : panel.getChildren()) if(auto* r = dynamic_cast<standalone::EngineRecovery*>(c)) strip = r; return strip && strip->isVisible(); }) && strip->notice().contains("Reconnecting"),
+                          "a Panel shows the engine's notice with EngineRecovery");
+                }
                 // As after a managed engine's crash: Restart is a real button, in front of the
                 // view's own controls at its place, on Home and in the Performance app.
                 standalone::DesktopShell shell(engine, argv[2], standalone::InputMode::Mouse);
