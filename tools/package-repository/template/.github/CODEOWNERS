@@ -1,7 +1,8 @@
 # What a pull request cannot change for itself: the workflows and the index builder it runs, the
-# revocations and the repository's keys need a maintainer's review (RFC 0031). This holds only
-# while main's protection requires review from Code Owners.
+# revocations, the repository's keys and git attributes (at any level) need a maintainer's review
+# (RFC 0031). This holds only while main's protection requires review from Code Owners.
 /.github/ @jbschooley
+.gitattributes @jbschooley
 /scripts/ @jbschooley
 /revoked.json @jbschooley
 /repository-config.json @jbschooley

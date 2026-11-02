@@ -109,10 +109,11 @@ publisher of its other releases and that publisher IDs do not nest, and no publi
 publisher key changed. Each check RFC 0031 lists that is not built yet is its own step that says
 so with a warning. Changes outside `publishers/`, `packages/` and `revoked.json` need a
 maintainer's review: a pull request can change the workflows it runs under, so `CODEOWNERS`
-requires a maintainer for `.github/`, `scripts/`, `revoked.json` and `repository-config.json`,
-and publish re-checks that no published release or publisher key changed since the commit
-tagged `published`, whatever the pull request's own check said. `CODEOWNERS` holds only while
-`main`'s branch protection requires review from Code Owners.
+requires a maintainer for `.github/`, `scripts/`, `revoked.json`, `repository-config.json` and
+any `.gitattributes`, and publish re-checks that no published release or publisher key changed
+since the commit tagged `published`, whatever the pull request's own check said. It reads that
+commit's records as raw blobs, so no `.gitattributes` can hide or rewrite them. `CODEOWNERS`
+holds only while `main`'s branch protection requires review from Code Owners.
 
 ### Keys
 

@@ -37,7 +37,9 @@ jobs:
         # changing it; here the records are checked against the last commit that was published
         # (the `published` tag, moved after each deploy), not HEAD~1: a merge whose publish failed
         # or was cancelled as pending, or an earlier commit of a rebase merge, is still compared.
-        # Only "nothing published yet" passes with nothing to compare against.
+        # Only "nothing published yet" passes with nothing to compare against. The records are
+        # read as raw blobs: `git archive` and a checkout both apply the tagged tree's
+        # `.gitattributes` (export-ignore, export-subst, filters), which could hide or rewrite them.
         shell: bash
         run: |
           mkdir .previous
@@ -49,7 +51,15 @@ jobs:
             echo "::error::The published tag is not an ancestor of this commit: an older commit is not published over a newer one."
             exit 1
           fi
-          git archive refs/tags/published | tar --extract --directory .previous
+          git ls-tree -r -z refs/tags/published -- packages publishers |
+            while IFS= read -r -d '' entry; do
+              read -r mode type object <<< "${entry%%$'\t'*}"
+              path=${entry#*$'\t'}
+              case "/$path/" in */../*) continue ;; esac
+              [ "$type" = blob ] || continue
+              mkdir -p ".previous/${path%/*}"
+              git cat-file blob "$object" > ".previous/$path"
+            done
 
       - id: tools
         uses: ./.github/actions/oscairn-sign
