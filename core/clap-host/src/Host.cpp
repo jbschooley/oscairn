@@ -237,6 +237,7 @@ struct Host::Impl {
     std::atomic<uint64_t> blocks{0}, dropped{0}, errors{0};
     std::atomic<double> lastUs{0}, maxUs{0};
     std::atomic<uint64_t> deadlineMisses{0}, controlSilences{0}, idleBlocks{0};
+    std::atomic<uint64_t> activations{0}; // activate() calls; a restart the plugin asked for moves it
     detail::Queue<Event, maxEvents> commands, emitted;
     std::atomic<uint64_t> outputDrops{0};
     struct TimedEvent { Event event; uint32_t order = 0; };
@@ -698,6 +699,7 @@ struct Host::Impl {
         }
         if (!plugin->activate(plugin, sampleRate, 1, maxFrames)) throw std::runtime_error("Plugin activation failed");
         active = true;
+        activations.fetch_add(1, std::memory_order_relaxed);
         transportObserved = false; haveHarmony = false;
         latencyFrames.store(pluginLatency && pluginLatency->get ? pluginLatency->get(plugin) : 0);
         return true;
@@ -901,6 +903,7 @@ bool Host::currentMemory(oscairn_memory_t& result) const {
     auto& s = *impl;
     return s.main() && s.plugin && s.memory && s.active && s.memory->current(s.plugin, &result);
 }
+uint64_t Host::activations() const noexcept { return impl->activations.load(std::memory_order_relaxed); }
 bool Host::effectResources(oscairn_effect_resources_t& result) const {
     if(!impl->plugin)return false;
     const auto* ext=static_cast<const oscairn_plugin_effect_contexts_t*>(impl->plugin->get_extension(impl->plugin,OSCAIRN_EXT_EFFECT_CONTEXTS));

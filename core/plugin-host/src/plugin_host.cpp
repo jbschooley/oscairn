@@ -82,6 +82,7 @@ namespace oscairn
             bool supportsState() const noexcept override {return host.supportsState();}
             bool hasWindow() const override {return host.hasGui();}
             void showWindow(bool show,const std::string& title) override {if(!show)host.closeGui();else if(!host.showGui(title))throw std::runtime_error(host.error());}
+            uint64_t activations() const noexcept override { return host.activations(); }
             // RFC 0005: a fresh listing through the isolated scan helper (or, where no helper is
             // configured, an in-process index within its budget); no provider code of the plugin's
             // runs unbounded on this process's control thread.

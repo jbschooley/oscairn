@@ -80,6 +80,28 @@ int main(int argc, char** argv)
             }
 #endif
         }
+        // RFC 0025: a plugin that restarts itself into a mode holding far more memory must not be
+        // killed for its old declaration: the engine re-reads it once the plugin's own restart
+        // activated it again, and refits the worker's limit before the supervisor acts.
+        {
+            const auto self = loadPluginInWorker(argv[1], argv[3], "org.kick.test.memory", 48000, frames);
+            std::array<float, frames> m{}; float* out[1]{m.data()};
+            const auto louder = kick::clap::Event::midi(0xB0, 7, 242); // gain .95: the fixture's big mode
+            uint64_t shared = 0;
+            bool killed = false;
+            for(int i = 0; i < 100; ++i)
+            {
+                self->setParameter(7, .95);
+                self->process(nullptr, 0, out, 1, frames, &louder, 1, nullptr);
+                self->service();
+                try { if(const auto d = self->declaredMemory()) shared = d->shared_bytes; } catch(const std::exception&) {}
+                killed = !self->failure().empty();
+                if(shared > (uint64_t(100) << 20) || killed) break;
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            }
+            check(shared == 201u << 20, "the engine re-read the declaration after the plugin's own restart: " + std::to_string(shared >> 20) + " MiB");
+            check(!killed, "and the mode change did not kill the worker: " + self->failure());
+        }
         // RFC 0025 test 4, a wrong declaration: a plugin declaring 9 MiB and holding 200 more is
         // stopped at its worker's limit (the declaration plus the margin, not the policy's 4 GiB),
         // and nothing else is.

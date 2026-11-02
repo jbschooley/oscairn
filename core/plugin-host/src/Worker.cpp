@@ -347,6 +347,9 @@ namespace oscairn::worker
                     const auto revision = host.parameterRevision();
                     w.u8(revision != n.revision);
                     if(revision != n.revision) { putParameters(w, host.parameters()); n.revision = revision; }
+                    // The activation count, so the engine re-reads the memory declaration after a
+                    // restart the plugin asked for (its mode, and what it allocates, may have changed).
+                    w.u64(host.activations());
                     break;
                 }
                 // Published at once, so the engine reads the new value right after setting it, as in the engine.

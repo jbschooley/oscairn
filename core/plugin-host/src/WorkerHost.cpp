@@ -377,6 +377,7 @@ namespace oscairn
             void reconnect(Reader& reply)
             {
                 node_ = reply.u32();
+                activations_ = 0; // the new worker has not reported yet
                 if(reply.data.substr(reply.at) != description_) throw std::runtime_error("the plugin changed");
                 auto& s = *shared_;
                 s.stop.store(0); s.panic.store(0); s.crashed.store(0);
@@ -390,6 +391,7 @@ namespace oscairn
             void restore()
             {
                 if(!record_.empty()) process_->exchange(header(snapshotRecord_ ? Op::LoadSnapshot : Op::LoadState).str(record_.string()).data);
+                if(!record_.empty()) { declared_.reset(); process_->fitLimit(); } // the restored state's declaration, not the old one's
                 if(contexts_)
                 {
                     const auto present = contexts();
@@ -453,13 +455,24 @@ namespace oscairn
                 try { r = request(Op::Service); } catch(const std::exception&) { return; }
                 pending_.clear(); next_ = 0;
                 for(auto n = r.u32(); n--;) { kick::clap::Event e; r.bytes(e.bytes.data(), e.bytes.size()); pending_.push_back(e); }
-                if(!r.u8()) return;
+                const bool rescanned = r.u8();
+                std::vector<kick::clap::Parameter> fresh;
+                try { if(rescanned) fresh = readParameters(r); } catch(const std::exception&) { return; }
+                // A re-activation, a plugin's own restart included: what it declares for its memory
+                // can differ (its mode changed), so forget it and fit the worker's limit anew (RFC 0025).
+                try
+                {
+                    const auto activations = r.u64();
+                    std::lock_guard lock(controlFor());
+                    if(activations != activations_) { activations_ = activations; declared_.reset(); process_->fitLimit(); }
+                }
+                catch(const std::exception&) {}
+                if(fresh.empty()) return;
                 // An info rescan (names, flags, hints) keeps the parameters and their order, which the
                 // shared block's values and index_ rely on. Under control: a restart reads the flags.
                 // shortcut: other changes are ignored until the plugin is loaded again; a restarted worker's own info shows only after its next rescan.
                 try
                 {
-                    auto fresh = readParameters(r);
                     std::lock_guard lock(controlFor());
                     if(!std::equal(fresh.begin(), fresh.end(), parameters_.begin(), parameters_.end(), [](const auto& a, const auto& b) { return a.id == b.id; })) return;
                     parameters_ = std::move(fresh);
@@ -468,6 +481,8 @@ namespace oscairn
                 catch(const std::exception&) {}
             }
             uint64_t parameterRevision() const noexcept override { return revision_.load(std::memory_order_relaxed); }
+            // The worker's activation count as its last service reply reported it (control thread).
+            uint64_t activations() const noexcept override { return activations_; }
             bool supportsState() const noexcept override { return state_; }
             void saveState(const std::string& directory) override { request(Op::SaveState, Writer().str(directory)); }
             void loadState(const std::string& directory) override
@@ -844,7 +859,8 @@ namespace oscairn
 
             std::shared_ptr<Process> process_;
             mutable std::atomic<uint64_t> resident_{0}; // the last reading of residentBytes
-            mutable std::optional<std::optional<oscairn_memory_t>> declared_; // declaredMemory's answer, until a state load
+            mutable std::optional<std::optional<oscairn_memory_t>> declared_; // declaredMemory's answer, until a state load or re-activation
+            uint64_t activations_ = 0; // the worker's activation count as its last service reply reported it
             bool root_;
             uint32_t node_ = 0; // the worker's index for this node; under control
             std::string description_;

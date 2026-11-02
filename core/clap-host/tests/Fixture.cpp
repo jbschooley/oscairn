@@ -36,6 +36,9 @@ struct Plugin;
 Plugin* guiOwner = nullptr;
 bool guiShown = false;
 std::string guiTitle;
+// The memory fixture's engine bytes: one allocation per process (one engine per worker),
+// kept alive by every instance of it, as an engine outliving its first context must.
+std::shared_ptr<std::vector<char>> engineShared;
 constexpr const char* ids[]{"org.kick.test.synth", "org.kick.test.effect", "org.kick.test.midi",
                             "org.kick.test.nan", "org.kick.test.error", "org.kick.test.sleep",
                             "org.kick.test.activate-failure", "org.kick.test.start-failure", "org.kick.test.stepped", "org.kick.test.no-state",
@@ -70,9 +73,17 @@ struct Plugin {
     clap_id timerId = CLAP_INVALID_ID;
     uint32_t maxFrames = 0, tailFrames=0;
     clap_event_note_t tailNote{};
-    std::vector<char> shared, context; // the memory fixture's, allocated when it activates
+    std::shared_ptr<std::vector<char>> shared; std::vector<char> context; // the memory fixture's, allocated when it activates
     // The memory fixture declares 1 MiB shared and, per context, its gain (from its state) times
     // 16 MiB at 48 kHz, more at higher rates, as a reverb's buffers grow with the rate and mode.
+    // KICK_FIXTURE_MEMORY_SHARED_MB makes its engine's shared bytes bigger as a sampler's samples.
+    // Its effect contexts share them: one engine, one allocation, held while any context lives.
+    // A gain above .9 (which its preset-load and the host's restart hook use) switches it to a
+    // mode allocating 200 MiB more, as a reverb whose long mode restarts the plugin.
+    static uint64_t sharedBytes(double gain) {
+        const char* extra = std::getenv("KICK_FIXTURE_MEMORY_SHARED_MB");
+        return (size_t(1) << 20) + (extra ? size_t(std::atoi(extra)) << 20 : 0) + (gain > .9 ? size_t(200) << 20 : 0);
+    }
     static uint64_t contextBytes(double gain, double rate) { return uint64_t(gain * (16u << 20) * rate / 48000); }
     static Plugin& get(const clap_plugin_t* p) { return *static_cast<Plugin*>(p->plugin_data); }
     void main() const { if (!check || !check->is_main_thread(host)) ++threadErrors; }
@@ -95,11 +106,13 @@ struct Plugin {
             if (s.kind == 13) {
                 // KICK_FIXTURE_MEMORY_EXTRA_MB: a wrong declaration, holding that much more than it declares.
                 const char* extra = std::getenv("KICK_FIXTURE_MEMORY_EXTRA_MB");
-                s.shared.assign((size_t(1) << 20) + (extra ? size_t(std::atoi(extra)) << 20 : 0), 1); s.context.assign(contextBytes(s.gain, rate), 1);
+                if (!engineShared) engineShared = std::make_shared<std::vector<char>>();
+                engineShared->assign(sharedBytes(s.gain) + (extra ? size_t(std::atoi(extra)) << 20 : 0), 1);
+                s.shared = engineShared; s.context.assign(contextBytes(s.gain, rate), 1);
             }
             s.active = true; s.maxFrames = max; return true;
         };
-        api.deactivate = [](const clap_plugin_t* p) { auto& s = get(p); s.main(); if (s.processing) ++threadErrors; s.active = false; std::vector<char>().swap(s.shared); std::vector<char>().swap(s.context); };
+        api.deactivate = [](const clap_plugin_t* p) { auto& s = get(p); s.main(); if (s.processing) ++threadErrors; s.active = false; s.shared.reset(); std::vector<char>().swap(s.context); };
         api.start_processing = [](const clap_plugin_t* p) { auto& s = get(p); s.audio(); if (!s.active) ++threadErrors; if (s.kind == 7) return false; s.processing = true; return true; };
         api.stop_processing = [](const clap_plugin_t* p) { auto& s = get(p); s.audio(); if (!s.processing) ++threadErrors; s.processing = false; };
         api.reset = [](const clap_plugin_t* p) { auto& s = get(p); s.audio(); s.gate = s.held = s.sustain = false;s.tailFrames=0; };
@@ -312,11 +325,11 @@ struct Plugin {
         static const oscairn_plugin_memory_t memory{
             [](const clap_plugin_t* p, double rate, uint32_t, oscairn_memory_t* out) {
                 auto& s = get(p); s.main(); if (s.active) ++threadErrors;
-                *out = {1u << 20, contextBytes(s.gain, rate), 0}; return true;
+                *out = {sharedBytes(s.gain), contextBytes(s.gain, rate), 0}; return true;
             },
             [](const clap_plugin_t* p, oscairn_memory_t* out) {
                 auto& s = get(p); s.main(); if (!s.active) return false;
-                *out = {s.shared.size(), s.context.size(), 0}; return true;
+                *out = {s.shared ? s.shared->size() : 0, s.context.size(), 0}; return true;
             }};
         if (!std::strcmp(id, OSCAIRN_EXT_MEMORY)) return get(plugin).kind == 13 ? &memory : nullptr;
         static const clap_plugin_gui_t gui{
