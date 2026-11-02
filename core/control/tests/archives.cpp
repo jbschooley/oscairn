@@ -493,6 +493,19 @@ int main(int argc, char** argv)
             check(fs::is_directory(temp.path / "l" / "Libraries" / "com.example.pack"), "the folder is the ID, dots and all");
             l.uninstallLibrary("com.example.pack");
             check(l.libraries().empty() && !fs::exists(temp.path / "l" / "Libraries" / "com.example.pack"), "and it is uninstalled");
+            // An ID that differs only in case: on a case-insensitive file system (macOS, Windows)
+            // it names the same folder, so it is refused there, never mixed into the other library.
+            check(l.installArchive(dotted.string(), true).added == 1, "the dotted library installs again");
+            Package upper = p; upper.id = "Com.Example.Pack";
+            const auto cased = temp.path / "Cased.olib";
+            writePackage(cased, upper, root);
+            std::string why; try { l.installArchive(cased.string(), true); } catch(const std::exception& e) { why = e.what(); }
+            const auto listed = l.libraries();
+            check(std::any_of(listed.begin(), listed.end(), [](const auto& x) { return x.id == "com.example.pack" && x.items == 1; })
+                      && (why.find("another library") != std::string::npos || listed.size() == 2),
+                  "an ID differing only in case is refused or installed apart, the first library still listed: " + why + ", "
+                      + std::to_string(listed.size()) + " listed");
+            l.uninstallLibrary("com.example.pack");
         }
         // An install cut short by a failed copy leaves nothing half behind: the item folders this
         // call made come back out, as the unpacked folder does, and a library whose install never

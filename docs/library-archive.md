@@ -96,7 +96,10 @@ its contents at once.
 
 - **As a library:** locked, in `Libraries/<id>/` in the data folder with its manifest. Items
   keep their IDs. Installing again copies only the items that are missing. Uninstalling removes
-  the folder; deleting an item removes its folder, and installing again brings it back.
+  the folder; deleting an item removes its folder, and installing again brings it back. An ID
+  that differs from an installed library's only in letter case names the same folder on a
+  case-insensitive file system (macOS's and Windows's by default), so there it is refused: two
+  libraries never share a folder.
 - **Into the user's own storage:** each item is copied into `Performances/` or `Sounds/` under a
   new ID and a new revision, its info's `origin` recording the archive's ID, the item's ID there
   and the copy's content hash. A Performance's parts that came from a Sound in the archive point

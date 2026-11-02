@@ -1476,6 +1476,10 @@ Control::Installed Session::installArchive(const std::string& file,bool asLibrar
         std::vector<Package::Item> items;
         for(const auto& id:chosen)if(std::none_of(p.items.begin(),p.items.end(),[&](const auto& i){return i.id==id;}))bad("no item "+id+" in that archive");
         for(const auto& i:p.items)if(chosen.empty() || std::find(chosen.begin(),chosen.end(),i.id)!=chosen.end())items.push_back(i);
+        // On a case-insensitive file system an ID differing only in case names another library's
+        // folder: never two libraries in one, which rescan would list as neither.
+        if(asLibrary){std::error_code e;for(const auto& entry:fs::directory_iterator(l.libraries(),e))
+            if(entry.path().filename()!=p.id && fs::equivalent(entry.path(),l.libraries()/p.id,e))bad("another library is installed in that folder: "+entry.path().filename().string());}
         auto manifest=[&](const Package::Item& i){return into/i.path/(i.kind=="sound"?"sound.json":"performance.json");};
         // Each item is what it says it is.
         for(const auto& i:items){const auto info=readInfo(manifest(i),"oscairn."+i.kind);if(info.id!=i.id)bad("the item "+i.name+" is not the one its archive lists");}
