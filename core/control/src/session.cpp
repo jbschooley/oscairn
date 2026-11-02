@@ -444,10 +444,11 @@ namespace oscairn
         }
     }
 
-    // RFC 0012 step 2: MIDI clock out from this block's transport. While it plays, a clock at each
+    // RFC 0012 step 2: clock out from this block's transport. While it plays, a clock at each
     // 24th of a beat, at its sample; Start when it starts from the top, else Song Position and
     // Continue; Stop when it stops; a jump while playing (a rewind, another Performance, an external
-    // clock's song position) is Stop, Song Position and Continue. Nothing while stopped.
+    // clock's song position) is Stop, Song Position and Continue. Nothing while stopped. Outputs
+    // chosen or swapped while playing get Song Position and Continue: the new device never saw a Start.
     void Session::clock( const clap_event_transport_t& t, uint32_t frames ) noexcept
     {
         const auto ports = clockPorts_.load( std::memory_order_acquire );
@@ -466,10 +467,16 @@ namespace oscairn
         {
             if( clockPlaying_ ) send( 0, 0xFC );
             clockPlaying_ = false;
+            lastClockPorts_ = ports;
             return;
         }
-        const bool jumped = clockPlaying_ && std::abs( beats - clockEnd_ ) > 1.0 / 24;
-        if( !clockPlaying_ || jumped )
+        // With no outputs nothing is heard, and the machine stops: outputs that appear later
+        // find it not playing and start the device they reach.
+        if( !ports ) clockPlaying_ = false;
+        const bool switched = ports != lastClockPorts_;
+        lastClockPorts_ = ports;
+        const bool jumped = clockPlaying_ && !switched && std::abs( beats - clockEnd_ ) > 1.0 / 24;
+        if( !clockPlaying_ || switched || jumped )
         {
             if( jumped ) send( 0, 0xFC );
             if( !jumped && beats < 1e-9 ) send( 0, 0xFA );

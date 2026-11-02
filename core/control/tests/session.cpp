@@ -215,13 +215,13 @@ namespace
         control.setTempo( 133 );
         control.setPlaying( true );
         Audio audio;
-        struct Sent { int64_t time; std::array<uint8_t, 3> bytes; uint8_t size; };
+        struct Sent { int64_t time; std::array<uint8_t, 3> bytes; uint8_t size; uint64_t ports = 0; };
         std::vector<Sent> sent;
         int64_t now = 0;
         bool chosen = true;
         auto run = [&]( uint32_t frames ) {
             check( render( session, audio, frames ), "render with clock out" );
-            for( const auto& m : session.midiOutput() ) { sent.push_back( { now + m.time, m.bytes, m.size } ); chosen = chosen && m.ports == 1u << 3; }
+            for( const auto& m : session.midiOutput() ) { sent.push_back( { now + m.time, m.bytes, m.size, m.ports } ); chosen = chosen && m.ports == 1u << 3; }
             now += frames;
         };
         for( uint32_t i = 0; i < 400; ++i ) run( 37 + ( i * 97 ) % 476 );
@@ -258,6 +258,21 @@ namespace
         control.setClockOutputs( {} );
         run( 512 );
         check( sent.empty() && control.transportState().clockOutputs.empty(), "no outputs chosen: no clock" );
+        // Outputs chosen while the transport plays start the device: Song Position and Continue,
+        // not bare pulses (RFC 0012 step 2).
+        control.setClockOutputs( { { DeviceRule::Kind::UsbNamed, DeviceRule::Match::Contains, 0, "tr-8" } } );
+        run( 64 );
+        check( sent.size() >= 2 && sent[0].bytes[0] == 0xF2 && sent[0].size == 3 && sent[1].bytes[0] == 0xFB &&
+               std::all_of( sent.begin(), sent.end(), []( const Sent& m ) { return m.ports == 1u << 3; } ),
+               "an output picked mid-song gets Song Position, then Continue" );
+        check( std::all_of( sent.begin() + 2, sent.end(), []( const Sent& m ) { return m.bytes[0] == 0xF8; } ), "then clock to the new output" );
+        // Switching to another device while playing starts that one too.
+        control.setClockOutputs( { { DeviceRule::Kind::UsbNamed, DeviceRule::Match::Contains, 0, "smk" } } );
+        sent.clear();
+        run( 64 );
+        check( sent.size() >= 2 && sent[0].bytes[0] == 0xF2 && sent[1].bytes[0] == 0xFB &&
+               std::all_of( sent.begin(), sent.end(), []( const Sent& m ) { return m.ports == 1u << 4; } ),
+               "the next device is started as well" );
         rejects( [&] { control.setClockOutputs( { { DeviceRule::Kind::UsbNamed, DeviceRule::Match::Regex, 0, "(" } } ); }, "an invalid pattern" );
     }
 

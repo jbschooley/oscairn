@@ -550,10 +550,12 @@ namespace oscairn
         std::array<Graph::MidiMessage, Graph::maxMidiOut + 8> midiOut_{};
         uint32_t midiOutCount_ = 0;
         // Clock out (setClockOutputs): its outputs, and on the audio thread whether the transport
-        // played at the last block, where that block ended, and the next pulse's number.
+        // played at the last block, where that block ended, the next pulse's number, and the
+        // outputs the last block went to (a change starts the new device).
         std::vector<DeviceRule> clockOutputs_;          // control thread
         std::atomic<uint64_t> clockPorts_{ 0 };         // their outputs now, a bit each
         bool clockPlaying_ = false;
+        uint64_t lastClockPorts_ = 0;
         double clockEnd_ = 0;
         int64_t nextPulse_ = 0;
         std::array<kick::clap::Event, noteQueueCapacity + maxInputEvents + 1> merged_{};
