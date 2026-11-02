@@ -247,9 +247,13 @@ and 85; Assign 1, Assign 2 and MSEQ Trigger on CC 86, 87 and 89; portamento swit
 and 5; FC1 on CC 11, FC2 on CC 95 (the Super Knob's), the footswitch on CC 88, sustain on CC 64 and
 the ribbon on CC 16. Port 2 is DAW Remote as Mackie Control (part select, mute and solo, transport,
 the jog dial and the cursors), declared `mackie`; ports 3 (a thru to the 5-pin jacks) and 4 (ESP)
-are not used. Estimated until a unit confirms them: the port names and order, the channel, whether
-knobs 1 to 8 are endless or pots (taken as absolute pots, as the Data List's 7-bit values suggest),
-whether the scene buttons latch, and whether the slider mode buttons change what Plugin mode sends.
+are not used. Knobs 1 to 8 are endless encoders (confirmed by the owner) that still send absolute
+7-bit values in Plugin mode, since the MODX keeps a value per knob and sends that: the profile's
+group is `encoders` with the `absolute` encoding, and they pick up like pots. Oscairn could send
+each knob's value back on its CC, so the MODX's value matches the target's and no pickup is
+needed; whether Plugin mode takes CC 17 to 24 as input is unconfirmed. Estimated until a unit
+confirms them: the port names and order, the channel, whether the scene buttons latch, and
+whether the slider mode buttons change what Plugin mode sends.
 
 **Next: Mackie Control.** A `mackie` port is read by a parser of its own, mapping its fixed
 messages (channel strips' select, mute and solo, the transport, the jog wheel, the cursors) to
