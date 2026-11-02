@@ -10,6 +10,9 @@ an implemented capability.
 | Build and run Oscairn | [Project README](../README.md) |
 | Write an instrument, effect or sequencer | [Developer guide](developer-guide.md), [reference plugins](../plugins/README.md) |
 | Bring an existing CLAP plugin to Oscairn | [Porting a plugin](plugin-porting.md) |
+| Test a plugin as built, through the library, an archive and the plugin store | [Test before publishing a plugin](developer-guide.md#test-before-publishing-a-plugin) |
+| Sign plugin builds and archives | [Signing keys and plugin builds](developer-guide.md#signing-keys-and-plugin-builds), [signatures in archives](library-archive.md#signatures) |
+| Run plugins in worker processes, or set their memory limits | [In a worker process](plugin-porting.md#in-a-worker-process), [environment variables](developer-guide.md#environment-variables), [RFC 0010](rfcs/0010-plugin-worker-isolation.md) |
 | Use the C++ graph or embed the engine | [Core](../core/README.md), [Session and Control](../core/control/README.md) |
 | Write a UI, editor, script or controller | [Control protocol](control-protocol.md), [JSON Schema](control-protocol.schema.json) |
 | Load CLAP plugins and measure them | [CLAP host](../core/clap-host/README.md) |
@@ -32,7 +35,8 @@ an implemented capability.
 | Describe a device, or check whether a Performance fits its CPU and memory | [Device profiles](rfcs/0024-device-profiles.md), [profile schema](profile.schema.json), [resource budgets](rfcs/0025-resource-budgets.md) (both in progress) |
 | Understand Home, the top bar and how screens flow | [System shell RFC](rfcs/0030-system-shell-launcher-and-navigation.md) (proposed; Home built) |
 | Use native plugins in other DAWs or standalone | [Planned delivery contract](rfcs/0006-packages-and-portability.md#native-plugins-in-daws-and-standalone-applications) |
-| Plan installer-free transfers and shared plugin dependencies | [Packages and cross-device portability](rfcs/0006-packages-and-portability.md) (proposed) |
+| Plan installer-free transfers and shared plugin dependencies | [Packages and cross-device portability](rfcs/0006-packages-and-portability.md) (in part: archives carry signed plugin builds into a plugin store), [package repository](rfcs/0031-package-repository-and-distribution.md) (proposed) |
+| Plan an arpeggiator or a script block | [Arpeggiator](rfcs/0032-arpeggiator.md), [script block](rfcs/0033-script-block.md) (both proposed) |
 | Understand hardware acceleration and timestamped I/O plans | [Hardware-services proposal](rfcs/0004-hardware-services.md) |
 | Understand the overall design and priorities | [Architecture](architecture.md), [roadmap](roadmap.md), [RFC index](rfcs/README.md) |
 
