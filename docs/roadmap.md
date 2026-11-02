@@ -421,7 +421,8 @@ Also open:
   and notes to float WAV and a MIDI file, over the control API (steps 1 and 2); the retroactive
   buffer in the memory budget, Capture, starts on bar lines and lengths (step 3); takes from
   earlier runs, delete, rename, playback and the `record` topic, and Record, Capture and a
-  Recordings app on the desktop and panels (step 4, in part)
+  Recordings app on the desktop and panels (step 4, in part); planned: an always-on MIDI
+  journal of everything played, kept on disk (step 6)
 
 Plugins and apps (sequencers, instruments, the UI) must stay separate components, each in
 its own folder with its own build target and depending only on Oscairn's public headers, so
