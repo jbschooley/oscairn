@@ -308,12 +308,7 @@ namespace oscairn::standalone
         page_ %= banks;
         knobSlots_ = resolveControls(source_, {group}, owner, {uint32_t(page_)});
         // A controller's knobs play the page and part shown.
-        if(const auto i = knobGroupIndex(engine_.controlGroups()); i < engine_.controlGroups().size())
-        {
-            auto& positions = engine_.positions();
-            if(positions.size() <= i) positions.resize(i + 1);
-            positions[i] = uint32_t(page_);
-        }
+        if(const auto i = knobGroupIndex(engine_.controlGroups()); i < engine_.controlGroups().size()) engine_.setControlPosition(uint32_t(i), uint32_t(page_));
         engine_.setKnobPart(owner);
         pageButton_.setVisible(banks > 1);
         // The switch between the Performance's controls and the part's shows while a part is selected.

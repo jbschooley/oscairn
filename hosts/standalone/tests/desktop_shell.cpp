@@ -289,7 +289,7 @@ int main(int argc, char** argv)
                     // A device with six screen knobs (the MODX M's): six tiles, banks six wide.
                     ControlGroup screenKnobs; screenKnobs.role = ControlGroup::Role::Screen; screenKnobs.kind = "knobs"; screenKnobs.count = 6;
                     ControlGroup rowKnobs; rowKnobs.kind = "knobs"; rowKnobs.count = 4; rowKnobs.rows = {{"Assign 1", BankKind::Assign}};
-                    engine.setControlGroups({screenKnobs, rowKnobs});
+                    engine.setControllers({screenKnobs, rowKnobs}, {});
                     play.select(bass); play.showPartControls(true); settle();
                     check(play.knobs() == 6 && play.knobSlots().size() == 6 && play.knobSlots()[0].control == "screen:1" && play.knobSlots()[0].bank == "Filter",
                           "six screen knobs: six tiles, a bank six wide: " + play.knobSlots()[0].bank);
@@ -297,7 +297,7 @@ int main(int argc, char** argv)
                     frame.setSize(800, 480); settle(); // the MODX M's screen: the strips keep room
                     snapshot(frame, "play-six-800");
                     frame.setSize(1024, 600);
-                    engine.setControlGroups({}); play.showPartControls(false); play.select(piano); settle();
+                    engine.setControllers({}, {}); play.showPartControls(false); play.select(piano); settle();
                     app.edit(true);
                     check(app.editing() && !play.isVisible(), "Edit shows the parts views");
                     app.edit(false);

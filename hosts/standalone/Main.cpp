@@ -119,7 +119,7 @@ namespace oscairn::standalone
             if( !fullScreen ) // a device's screen has no menu bar
                 setMenuBar( this );
 #endif
-            engine_.setControlGroups( controlGroups( profile_ ) );
+            engine_.setControllers( controlGroups( profile_ ), {} );
             engine_.openBrowser=[this]{showLibrary();};
             engine_.openPads=[this]{showPads();};
             engine_.openParts=[this]{showParts();};

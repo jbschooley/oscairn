@@ -95,6 +95,50 @@ namespace oscairn
             if( result.ec != std::errc{} ) throw std::runtime_error( "Cannot encode number" );
             return { buffer, result.ptr };
         }
+        // A control group of controllers.set (RFC 0024's control groups, as the app resolves them).
+        template<class Names> size_t named( const Names& names, std::string_view name, const char* message )
+        {
+            const auto at = std::find_if( names.begin(), names.end(), [&]( const char* n ) { return name == n; } );
+            if( at == names.end() ) invalid( message );
+            return size_t( at - names.begin() );
+        }
+        ControlGroup controlGroup( Value v )
+        {
+            fields( v, {"role","kind","count","rows","modes","functions","scenes","paged","switches","midi"} );
+            ControlGroup g;
+            static constexpr std::array<const char*, 4> roles{"notes","screen","assign","fixed"};
+            g.role = ControlGroup::Role( named( roles, string( member( v, "role" ) ), "a group's role is notes, screen, assign or fixed" ) );
+            g.kind = std::string( string( member( v, "kind" ) ) );
+            g.count = integer( member( v, "count" ), 512 );
+            if( const auto rows = member( v, "rows" ) )
+                for( auto r : array( rows, 64, 0 ) ) { fields( r, {"name","bank"} ); g.rows.push_back( {std::string( string( member( r, "name" ) ) ), BankKind( named( bankKinds, string( member( r, "bank" ) ), "unknown bank" ) )} ); }
+            if( const auto modes = member( v, "modes" ) ) for( auto m : array( modes, 16, 0 ) ) g.modes.push_back( std::string( string( m ) ) );
+            if( const auto functions = member( v, "functions" ) ) for( auto f : array( functions, 512, 0 ) ) g.functions.push_back( std::string( string( f ) ) );
+            g.scenes = member( v, "scenes" ) && boolean( member( v, "scenes" ) );
+            g.paged = member( v, "paged" ) && boolean( member( v, "paged" ) );
+            g.switches = member( v, "switches" ) && boolean( member( v, "switches" ) );
+            if( const auto m = member( v, "midi" ) )
+            {
+                fields( m, {"device","port","channel","channels","message","numbers","encodings","steps","latch","feedback"} );
+                auto& x = g.midi;
+                x.device = std::string( string( member( m, "device" ) ) );
+                if( member( m, "port" ) ) { x.port = integer( member( m, "port" ) ); if( !x.port ) invalid( "ports count from 1" ); }
+                auto channel = [&]( Value c ) { const auto n = integer( c, 16 ); if( !n ) invalid( "channels are 1 to 16" ); return n; };
+                if( member( m, "channel" ) ) x.channel = channel( member( m, "channel" ) );
+                if( const auto list = member( m, "channels" ) ) for( auto c : array( list, 512, 0 ) ) x.channels.push_back( channel( c ) );
+                static constexpr std::array<const char*, 4> messages{"cc","note","pitchBend","pressure"};
+                if( member( m, "message" ) ) x.message = ControlGroup::Midi::Message( named( messages, string( member( m, "message" ) ), "a group's message is cc, note, pitchBend or pressure" ) );
+                if( const auto numbers = member( m, "numbers" ) ) for( auto n : array( numbers, 4096, 0 ) ) x.numbers.push_back( uint8_t( integer( n, 127 ) ) );
+                if( const auto list = member( m, "encodings" ) )
+                    for( auto e : array( list, 512, 0 ) )
+                        x.encodings.push_back( string( e ) == "steps" ? Encoding::Steps : Encoding( named( encodings, string( e ), "unknown encoding" ) ) );
+                if( const auto list = member( m, "steps" ) )
+                    for( auto s : array( list, 512, 0 ) ) { const auto pair = array( s, 2, 2 ); x.steps.push_back( {uint8_t( integer( pair[0], 127 ) ), uint8_t( integer( pair[1], 127 ) )} ); }
+                x.latch = member( m, "latch" ) && boolean( member( m, "latch" ) );
+                x.feedback = member( m, "feedback" ) && boolean( member( m, "feedback" ) );
+            }
+            return g;
+        }
         // An export's optional sign: {key, items, archive} (RFC 0006).
         Control::ExportSigning exportSigning( Value v )
         {
@@ -138,6 +182,13 @@ namespace oscairn
         }
         std::string devicesJson( const std::vector<DeviceRule>& rules );
         std::vector<DeviceRule> devicesFrom( Value v );
+        std::string controllers( Control& c )
+        {
+            const auto s = c.controllerState();
+            std::vector<std::string> positions;
+            for( const auto p : s.positions ) positions.push_back( std::to_string( p ) );
+            return "{\"positions\":" + join( positions ) + ",\"touched\":" + quote( s.touched ) + ",\"touches\":" + std::to_string( s.touches ) + '}';
+        }
         std::string transport( Control& c )
         {
             const auto s = c.transportState();
@@ -451,7 +502,7 @@ namespace oscairn
             if( method == "session.hello" )
             {
                 fields(p, {});
-                return R"({"protocolVersion":1,"server":"oscairn","capabilities":["performance.save","performance.load","performance.prepare","performance.export","budget.set","budget.estimate","performance.info","performance.setInfo","library.query","library.favorite","library.tag","library.edit","library.copy","library.export","audition.start","audition.stop","audition.get","record.start","record.stop","record.get","record.takes","library.rescan","library.contents","library.install","library.libraries","library.uninstall","library.delete","library.save","library.load","parts.saveSound","parts.loadSound","parts.fromSound","performance.contents","performance.import","state.info","state.save","window.info","window.show","presets.list","properties.list","properties.get","properties.set","properties.request","sounds.get","sounds.prepare","sounds.select","sounds.discard","sounds.presets","assets.register","assets.import","assets.libraries","session.status","engine.attach","engine.release","params.list","params.get","params.set","params.text","params.gesture","graph.audio-routing","graph.get","graph.add","effects.create","effects.resources","graph.remove","graph.replace","graph.connect","graph.disconnect","graph.map","graph.unmap","graph.commit","parts.add","parts.remove","parts.insert","parts.removeNode","parts.move","parts.addSplit","parts.removeSplit","parts.addLane","parts.removeLane","parts.lane","parts.input","parts.output","parts.send","parts.level","parts.name","parts.solo","parts.pan","master.set","graph.role","parts.meters","wires.meters","edit.undo","edit.redo","edit.history","wires.connect","wires.disconnect","wires.enable","graph.enable","wires.mix","wires.zones","scenes.add","scenes.store","scenes.select","scenes.remove","scenes.name","scenes.scope","scenes.transition","scenes.untouched","controls.add","controls.remove","controls.name","controls.targets","controls.set","subscribe","unsubscribe","transport.get","transport.set","notes.send","notes.panic","midi.ignore","pads.get","pads.set","pads.play","pads.pressure","assignments.get","assignments.set","parts.midiOut","trust.list","trust.set","trust.remove","keys.list","keys.make","record.retro","record.delete","record.rename","record.play","harmony.get","harmony.set"],"limits":{"messageBytes":65536,"depth":32,"batch":64,"parameterChanges":128}})";
+                return R"({"protocolVersion":1,"server":"oscairn","capabilities":["performance.save","performance.load","performance.prepare","performance.export","budget.set","budget.estimate","performance.info","performance.setInfo","library.query","library.favorite","library.tag","library.edit","library.copy","library.export","audition.start","audition.stop","audition.get","record.start","record.stop","record.get","record.takes","library.rescan","library.contents","library.install","library.libraries","library.uninstall","library.delete","library.save","library.load","parts.saveSound","parts.loadSound","parts.fromSound","performance.contents","performance.import","state.info","state.save","window.info","window.show","presets.list","properties.list","properties.get","properties.set","properties.request","sounds.get","sounds.prepare","sounds.select","sounds.discard","sounds.presets","assets.register","assets.import","assets.libraries","session.status","engine.attach","engine.release","params.list","params.get","params.set","params.text","params.gesture","graph.audio-routing","graph.get","graph.add","effects.create","effects.resources","graph.remove","graph.replace","graph.connect","graph.disconnect","graph.map","graph.unmap","graph.commit","parts.add","parts.remove","parts.insert","parts.removeNode","parts.move","parts.addSplit","parts.removeSplit","parts.addLane","parts.removeLane","parts.lane","parts.input","parts.output","parts.send","parts.level","parts.name","parts.solo","parts.pan","master.set","graph.role","parts.meters","wires.meters","edit.undo","edit.redo","edit.history","wires.connect","wires.disconnect","wires.enable","graph.enable","wires.mix","wires.zones","scenes.add","scenes.store","scenes.select","scenes.remove","scenes.name","scenes.scope","scenes.transition","scenes.untouched","controls.add","controls.remove","controls.name","controls.targets","controls.set","subscribe","unsubscribe","transport.get","transport.set","notes.send","notes.panic","midi.ignore","controllers.set","controllers.view","controllers.get","pads.get","pads.set","pads.play","pads.pressure","assignments.get","assignments.set","parts.midiOut","trust.list","trust.set","trust.remove","keys.list","keys.make","record.retro","record.delete","record.rename","record.play","harmony.get","harmony.set"],"limits":{"messageBytes":65536,"depth":32,"batch":64,"parameterChanges":128}})";
             }
             if( method == "engine.attach" || method == "engine.release" )
             {
@@ -462,10 +513,10 @@ namespace oscairn
             if( method == "subscribe" || method == "unsubscribe" )
             {
                 fields(p,{"topics","allChanges"});
-                const auto topics = array(member(p,"topics"),5);
+                const auto topics = array(member(p,"topics"),6);
                 const bool all = member(p,"allChanges") ? boolean(member(p,"allChanges")) : false;
                 for( auto topic : topics )
-                    if( string(topic) != "params.changed" && string(topic) != "transport" && string(topic) != "graph.changed" && string(topic) != "status" && string(topic) != "record" )
+                    if( string(topic) != "params.changed" && string(topic) != "transport" && string(topic) != "graph.changed" && string(topic) != "status" && string(topic) != "record" && string(topic) != "controllers" )
                         invalid("Unknown subscription topic");
                 for( auto topic : topics ) client.subscription(string(topic),method == "subscribe",all);
                 return R"({"accepted":true})";
@@ -1400,6 +1451,48 @@ namespace oscairn
                 c.ignoreMidiInputs(names);
                 return R"({"accepted":true})";
             }
+            if( method == "controllers.set" )
+            {
+                fields(p, {"groups","ports"});
+                std::vector<ControlGroup> groups;
+                for(auto g:array(member(p,"groups"),64,0))groups.push_back(controlGroup(g));
+                std::vector<Control::ControllerPort> ports;
+                for(auto x:array(member(p,"ports"),64,0))
+                {
+                    fields(x, {"input","device","port"});
+                    const auto port = integer(member(x,"port"));
+                    if(!port) invalid("ports count from 1");
+                    ports.push_back({std::string(string(member(x,"input"))),std::string(string(member(x,"device"))),port});
+                }
+                c.setControllers(groups, ports);
+                return R"({"accepted":true})";
+            }
+            if( method == "controllers.view" )
+            {
+                fields(p, {"part","screen","positions"});
+                Control::ControlView view;
+                if(member(p,"part"))view.part = integer(member(p,"part"));
+                if(const auto s = member(p,"screen"))
+                {
+                    fields(s, {"name","params"});
+                    ScreenPage page; page.name = std::string(string(member(s,"name")));
+                    for(auto a:array(member(s,"params"),64,0))
+                    {
+                        fields(a, {"kind","node","param","id"});
+                        Assignment t;
+                        t.kind = Assignment::Kind(named(assignmentKinds, string(member(a,"kind")), "kind is parameter, control, partLevel, partMute or scene"));
+                        if( t.kind == Assignment::Kind::Parameter ) { t.node = node(c,member(a,"node")); t.param = integer(member(a,"param")); }
+                        else if( t.kind != Assignment::Kind::None ) t.id = integer(member(a,"id"));
+                        page.params.push_back(t);
+                    }
+                    view.screen = std::move(page);
+                }
+                if(const auto list = member(p,"positions"))
+                    for(auto x:array(list,64,0)) { fields(x, {"group","position"}); view.positions.push_back({integer(member(x,"group")), integer(member(x,"position"))}); }
+                try { c.setControlView(view); } catch( const std::invalid_argument& e ) { throw Failure{-32003,e.what()}; }
+                return R"({"accepted":true})";
+            }
+            if( method == "controllers.get" ) { fields(p, {}); return controllers(c); }
             if( method == "notes.send" )
             {
                 fields(p, {"on","key","velocity","channel"});
@@ -1476,6 +1569,11 @@ namespace oscairn
             if(enabled && !record_) { lastRecord_.reset(); recordStates_.clear(); }
             record_ = enabled;
         }
+        else if(topic == "controllers")
+        {
+            if(enabled && !controllers_) { lastControllers_.reset(); lastControllersValue_.clear(); }
+            controllers_ = enabled;
+        }
         else throw std::invalid_argument("Unknown subscription topic");
     }
 
@@ -1525,6 +1623,13 @@ namespace oscairn
             auto state = transport(control_);
             if( state != lastTransportValue_ ) { send("transport",state); lastTransportValue_ = std::move(state); }
             lastTransport_ = now;
+        }
+        // Controllers (RFC 0011's instant controls): positions and the control moved last, for learn.
+        if( controllers_ && due(lastControllers_) )
+        {
+            auto state = controllers(control_);
+            if( state != lastControllersValue_ ) { send("controllers",state); lastControllersValue_ = std::move(state); }
+            lastControllers_ = now;
         }
         // Status carries CPU and memory figures that change on every look: 4 times a second is
         // enough for what it shows, and 60 cost every client tens of KB of JSON a second.

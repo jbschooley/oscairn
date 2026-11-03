@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #include "oscairn/session.h"
+#include "oscairn/controller_input.h"
 
 #include "oscairn/library.h"
 #include "sheredom/json.h"
@@ -24,6 +25,7 @@ namespace oscairn
             throw std::invalid_argument( "session needs a positive sample rate and block size" );
         graph_.setAssets( &assets_ );
         graph_.setListener( &recorder_ );
+        controllers_ = std::make_unique<ControllerInput>( *this );
         transport_.setPlaying( false );
         baseline_ = std::make_shared<const Model>( model() );
     }
@@ -304,7 +306,6 @@ namespace oscairn
     {
         // Only levels and mutes changed since the last commit: their live gains have them already.
         if( !std::exchange( liveEdit_, false ) || staged_ ) graph_.commit(std::exchange(rampGains_, false));
-        writeLiveGains();
         staged_ = false;
         ++revision_;
         publish(ChangeKind::Graph);
@@ -354,8 +355,20 @@ namespace oscairn
         return queue(node,param,begin ? ChangeKind::GestureBegin : ChangeKind::GestureEnd,0);
     }
 
+    void Session::setControllers( const std::vector<ControlGroup>& groups, const std::vector<ControllerPort>& ports )
+    {
+        if( groups.size() > 64 || ports.size() > 64 ) throw std::invalid_argument( "at most 64 control groups and 64 ports" );
+        controllers_->set( groups, ports );
+    }
+    void Session::setControlView( const ControlView& view ) { controllers_->view( view ); }
+    Control::ControllerState Session::controllerState() const { return controllers_->state(); }
+    void Session::controllerMidi( uint8_t source, const uint8_t* bytes, size_t size ) noexcept { controllers_->midi( source, bytes, size ); }
+    void Session::setControllerWake( std::function<void()> wake ) { controllers_->setWake( std::move( wake ) ); }
+    void Session::serviceControllers() { controllers_->service(); sendParameters(); }
+
     void Session::service()
     {
+        controllers_->service(); // first: what the controls played reaches the model before anything reads it
         graph_.service();
         if( prepared_ ) prepared_->next->service(); // its plugins' main-thread callbacks while it waits
         ringOut();
@@ -417,6 +430,12 @@ namespace oscairn
                 observed_[address] = value;
             }
         }
+        sendParameters();
+    }
+
+    // The parameter values and gestures waiting, to their plugins: what each takes now.
+    void Session::sendParameters()
+    {
         for( auto it = pending_.begin(); it != pending_.end(); )
         {
             const auto [node,param] = it->first;

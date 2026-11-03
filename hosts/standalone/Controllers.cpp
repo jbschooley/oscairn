@@ -50,19 +50,23 @@ namespace oscairn::standalone
         std::vector<bool> joined(profiles_.size()), mackie;
         std::vector<std::string> surfaceInputs;
         surfaces_.clear(); outputs_.clear(); knobs_.reset();
-        for(const auto* protocol : {"midi", "mackie"})
-            for(const auto& m : matchPorts(profiles_, names, protocol, choices_))
-                if(auto input = juce::MidiInput::openDevice(available[int(m.input)].identifier, this))
-                {
-                    std::fprintf(stderr, "oscairn: MIDI input \"%s\" is %s's port %d (%s)\n", names[m.input].c_str(), profiles_[m.profile].name.c_str(), m.port, protocol);
-                    inputs.push_back(std::move(input)); ports.push_back({profiles_[m.profile].id, uint32_t(m.port)}); joined[m.profile] = true;
-                    mackie.push_back(std::string(protocol) == "mackie");
-                    if(mackie.back())
-                    {
-                        surfaceInputs.push_back(names[m.input]);
-                        surfaces_[ports.back()].second = profiles_[m.profile].midi.ports[size_t(m.port - 1)].display;
-                    }
-                }
+        // A controller's midi ports are the engine's to read (RFC 0011's instant controls): it is
+        // told which input is which; a Mackie Control port is read here.
+        std::vector<Control::ControllerPort> bound;
+        for(const auto& m : matchPorts(profiles_, names, "midi", choices_))
+        {
+            std::fprintf(stderr, "oscairn: MIDI input \"%s\" is %s's port %d, played by the engine\n", names[m.input].c_str(), profiles_[m.profile].name.c_str(), m.port);
+            bound.push_back({names[m.input], profiles_[m.profile].id, uint32_t(m.port)}); joined[m.profile] = true;
+        }
+        for(const auto& m : matchPorts(profiles_, names, "mackie", choices_))
+            if(auto input = juce::MidiInput::openDevice(available[int(m.input)].identifier, this))
+            {
+                std::fprintf(stderr, "oscairn: MIDI input \"%s\" is %s's port %d (mackie)\n", names[m.input].c_str(), profiles_[m.profile].name.c_str(), m.port);
+                inputs.push_back(std::move(input)); ports.push_back({profiles_[m.profile].id, uint32_t(m.port)}); joined[m.profile] = true;
+                mackie.push_back(true);
+                surfaceInputs.push_back(names[m.input]);
+                surfaces_[ports.back()].second = profiles_[m.profile].midi.ports[size_t(m.port - 1)].display;
+            }
         // Back to a controller: a Mackie port's output, and a midi port's when a group on it takes values back.
         const auto outputDevices = juce::MidiOutput::getAvailableDevices();
         std::vector<std::string> outputNames;
@@ -84,13 +88,12 @@ namespace oscairn::standalone
         // The connected controllers' groups join the device's, after them (RFC 0024).
         auto groups = device_;
         for(size_t p = 0; p < profiles_.size(); ++p) if(joined[p]) for(auto& g : controlGroups(profiles_[p])) groups.push_back(std::move(g));
-        engine_.setControlGroups(std::move(groups));
+        engine_.setControllers(std::move(groups), std::move(bound));
         // A port that duplicates another's would play each note twice, and a Mackie port's buttons
         // are notes: the engine leaves them out.
         auto ignored = ignoredInputs(profiles_, names, choices_);
         ignored.insert(ignored.end(), surfaceInputs.begin(), surfaceInputs.end());
         if(ignored != ignored_) { ignored_ = ignored; engine_.ignoreMidiInputs(std::move(ignored)); }
-        engine_.positions().clear();
         { std::lock_guard lock(lock_); inputs_ = std::move(inputs); ports_ = std::move(ports); mackie_ = std::move(mackie); }
         for(auto& input : inputs_) input->start();
     }
@@ -148,9 +151,6 @@ namespace oscairn::standalone
                     }
                 continue;
             }
-            for(const auto& action : mapping_.handle(source_, engine_.controlGroups(), engine_.knobPart(), engine_.positions(), port.first, port.second, in.bytes, 3,
-                                                     [this](const Assignment& a) { return value(a); }))
-                keep(action);
         }
         for(const auto& action : ControllerMapping::latest(std::move(actions))) apply(action);
         if(fresh || !taken.empty()) feedback();

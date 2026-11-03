@@ -3,6 +3,7 @@
 
 #include "oscairn/graph.h"
 #include "oscairn/parts.h"
+#include "oscairn/control_groups.h"
 #include "oscairn/pads.h"
 #include "oscairn/recorder.h"
 #include "oscairn/transport.h"
@@ -10,6 +11,7 @@
 
 #include <string>
 #include <map>
+#include <optional>
 #include <vector>
 
 namespace oscairn
@@ -492,6 +494,19 @@ namespace oscairn
         // the control's logical identity. Assigning Kind::None removes one; saved with it.
         virtual std::vector<AssignmentOverride> assignments() const = 0;
         virtual void assign( const std::string& control, const Assignment& target, uint32_t part = 0 ) = 0; // part: that part's Sound's own assignment
+
+        // Physical controls played by the engine (RFC 0011's instant controls): the joined control
+        // groups and which MIDI input (by name, as the session status lists it) is which
+        // controller profile's port (replacing the last set); what the screen shows, which the
+        // controls follow (the part the knobs follow, the editor page shown, a group's position;
+        // what is not given stays); and each group's position, the control moved last and how
+        // many moves so far (for learn).
+        struct ControllerPort { std::string input, device; uint32_t port = 1; bool operator==( const ControllerPort& ) const = default; };
+        virtual void setControllers( const std::vector<ControlGroup>& groups, const std::vector<ControllerPort>& ports ) = 0;
+        struct ControlView { std::optional<uint32_t> part; std::optional<ScreenPage> screen; std::vector<std::pair<uint32_t, uint32_t>> positions; };
+        virtual void setControlView( const ControlView& view ) = 0;
+        struct ControllerState { GroupPositions positions; std::string touched; uint64_t touches = 0; bool operator==( const ControllerState& ) const = default; };
+        virtual ControllerState controllerState() const = 0;
 
         // Recording (RFC 0020): a take records taps, each to its own file in a folder of its own
         // under the data folder's recordings/, from the next block until it is stopped. Taps:

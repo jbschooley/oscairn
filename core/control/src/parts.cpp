@@ -299,13 +299,23 @@ namespace oscairn
 
     // A change of levels and mutes only: the wires the views read are built again, the slots
     // written, and no plan compiled (Session::commit leaves it out).
-    template<class Edit> void Session::editFaders(Edit&& edit)
+    template<class Edit> void Session::editFaders(Edit&& edit, bool live)
     {
         auto parts = parts_; auto wires = wires_;
         try { edit(); buildParts(); }
         catch(...) { parts_.swap(parts); wires_.swap(wires); throw; }
-        writeLiveGains();
+        if(live) writeLiveGains();
         liveEdit_ = true;
+    }
+
+    void Session::playPartLevel(uint32_t id, double level, bool mute)
+    {
+        findPart(id);
+        if(!std::isfinite(level) || level < 0) throw std::invalid_argument("invalid part level");
+        auto change = [&] { auto& p = findPart(id); p.level = level; p.mute = mute; };
+        if(liveFader(id)) editFaders(change, false);
+        else editWires([&] { change(); buildParts(); });
+        commit();
     }
 
     // Each part's harmony (RFC 0033): its key or the Performance's, for every plugin in its chain
@@ -1110,12 +1120,13 @@ namespace oscairn
         for(const auto& t : findMacro(id).targets) if(t.sums()) setBase(t, t.base);
     }
 
-    Session::Sum Session::contributions(const MacroTarget& t, uint32_t macro, double value) const
+    Session::Sum Session::contributions(const MacroTarget& t, uint32_t macro, double value) const { return contributions(macros_, mappingScene_, t, macro, value); }
+    Session::Sum Session::contributions(const std::vector<Macro>& macros, uint32_t mappingScene, const MacroTarget& t, uint32_t macro, double value)
     {
         Sum sum;
-        for(const auto& m : macros_)
+        for(const auto& m : macros)
             for(const auto& o : m.targets)
-                if(o.sameDestination(t) && !(mappingScene_ && std::find(o.offIn.begin(), o.offIn.end(), mappingScene_) != o.offIn.end()))
+                if(o.sameDestination(t) && !(mappingScene && std::find(o.offIn.begin(), o.offIn.end(), mappingScene) != o.offIn.end()))
                 {
                     const double v = m.id == macro ? value : m.value;
                     sum.fixed += o.relative ? o.offset(v) : o.start + (o.end - o.start) * o.shape(v);
@@ -1124,9 +1135,10 @@ namespace oscairn
         return sum;
     }
 
-    void Session::setBase(const MacroTarget& t, double base)
+    void Session::setBase(const MacroTarget& t, double base) { setBase(macros_, t, base); }
+    void Session::setBase(std::vector<Macro>& macros, const MacroTarget& t, double base)
     {
-        for(auto& m : macros_) for(auto& o : m.targets) if(o.sameDestination(t)) o.base = base;
+        for(auto& m : macros) for(auto& o : m.targets) if(o.sameDestination(t)) o.base = base;
     }
 
     void Session::noteBases()
@@ -1144,29 +1156,11 @@ namespace oscairn
     // Sets a control and, through its targets, everything below it; part faders are rebuilt once.
     void Session::driveMacro(uint32_t id, double value, bool& faders)
     {
-        auto& macro = findMacro(id);
-        const double was = macro.value;
-        value = std::clamp(value, 0.0, 1.0);
-        const auto targets = macro.targets; // `macro` may move as children are driven
-        // Where each destination goes with this control at its new value: its base plus every
-        // control's offset, clamped. A destination something else has moved since the controls
-        // last set it (an edit, a scene, a glide) takes that as its base, less the offsets.
-        std::vector<double> to(targets.size());
-        for(size_t i = 0; i < targets.size(); ++i)
-        {
-            auto t = targets[i];
-            if(!t.sums()) continue;
-            if(t.kind == MacroTarget::Kind::Parameter && !(graph_.contains(t.node) && hasParameter(t.node, t.param))) continue;
-            const double now = currentFraction(t);
-            if(const auto w = written_.find(destination(t)); w != written_.end() && std::abs(w->second - now) > 1e-6) { t.base = contributions(t, id, was).baseFor(now, t.base); setBase(t, t.base); }
-            to[i] = std::clamp(contributions(t, id, value).at(t.base), 0.0, 1.0);
-        }
-        findMacro(id).value = value;
-        for(size_t i = 0; i < targets.size(); ++i)
-        {
-            const auto& t = targets[i];
-            if(mappingScene_ && std::find(t.offIn.begin(), t.offIn.end(), mappingScene_) != t.offIn.end()) continue; // off in this scene
-            const double v = t.sums() ? to[i] : t.map(value);
+        auto current = [&](const MacroTarget& t) -> std::optional<double> {
+            if(t.kind == MacroTarget::Kind::Parameter && !(graph_.contains(t.node) && hasParameter(t.node, t.param))) return {};
+            try { return currentFraction(t); } catch(const std::exception&) { return {}; }
+        };
+        drive(macros_, written_, mappingScene_, id, value, current, [&](const MacroTarget& t, double v) {
             switch(t.kind)
             {
             case MacroTarget::Kind::Parameter:
@@ -1178,14 +1172,51 @@ namespace oscairn
                 break;
             case MacroTarget::Kind::PartLevel: for(auto& p : parts_) if(p.id == t.part) { p.level = v; faders = true; } break;
             case MacroTarget::Kind::PartMute: for(auto& p : parts_) if(p.id == t.part) { p.mute = v >= .5; faders = true; } break;
-            case MacroTarget::Kind::Macro: driveMacro(t.macro, v, faders); break;
             case MacroTarget::Kind::Morph: morphScenes(t.sceneFrom, t.sceneTo, v); break;
+            case MacroTarget::Kind::Macro: break; // drive's own
             }
-            if(t.sums()) try { written_[destination(t)] = currentFraction(t); } catch(const std::exception&) {}
+        });
+    }
+
+    void Session::drive(std::vector<Macro>& macros, std::map<Destination, double>& written, uint32_t mappingScene, uint32_t id, double value, const MacroCurrent& current, const MacroApply& apply)
+    {
+        auto find = [&](uint32_t m) -> Macro& {
+            const auto it = std::find_if(macros.begin(), macros.end(), [&](const Macro& x) { return x.id == m; });
+            if(it == macros.end()) throw std::invalid_argument("unknown control");
+            return *it;
+        };
+        auto& macro = find(id);
+        const double was = macro.value;
+        value = std::clamp(value, 0.0, 1.0);
+        const auto targets = macro.targets; // `macro` may move as children are driven
+        // Where each destination goes with this control at its new value: its base plus every
+        // control's offset, clamped. A destination something else has moved since the controls
+        // last set it (an edit, a scene, a glide) takes that as its base, less the offsets.
+        std::vector<double> to(targets.size());
+        for(size_t i = 0; i < targets.size(); ++i)
+        {
+            auto t = targets[i];
+            if(!t.sums()) continue;
+            const auto now = current(t);
+            if(!now) continue;
+            if(const auto w = written.find(destination(t)); w != written.end() && std::abs(w->second - *now) > 1e-6) { t.base = contributions(macros, mappingScene, t, id, was).baseFor(*now, t.base); setBase(macros, t, t.base); }
+            to[i] = std::clamp(contributions(macros, mappingScene, t, id, value).at(t.base), 0.0, 1.0);
+        }
+        find(id).value = value;
+        for(size_t i = 0; i < targets.size(); ++i)
+        {
+            const auto& t = targets[i];
+            if(mappingScene && std::find(t.offIn.begin(), t.offIn.end(), mappingScene) != t.offIn.end()) continue; // off in this scene
+            const double v = t.sums() ? to[i] : t.map(value);
+            if(t.kind == MacroTarget::Kind::Macro) drive(macros, written, mappingScene, t.macro, v, current, apply);
+            else apply(t, v);
+            if(t.sums()) if(const auto now = current(t)) written[destination(t)] = *now;
         }
     }
 
-    void Session::setMacro(uint32_t id, double value)
+    void Session::setMacro(uint32_t id, double value) { playMacro(id, value, true); }
+
+    void Session::playMacro(uint32_t id, double value, bool liveGains)
     {
         if(!std::isfinite(value)) throw std::invalid_argument("a control's value is 0..1");
         findMacro(id);
@@ -1198,7 +1229,7 @@ namespace oscairn
         const auto after = faderLevels();
         bool live = true;
         for(size_t i = 0; i < parts_.size() && i < before.size(); ++i) if(before[i] != after[i] && !liveFader(parts_[i].id)) live = false;
-        if(live) { buildParts(); writeLiveGains(); ++revision_; publish(ChangeKind::Graph); }
+        if(live) { buildParts(); if(liveGains) writeLiveGains(); ++revision_; publish(ChangeKind::Graph); }
         else { editWires([&] { buildParts(); }); rampGains_ = true; commit(); }
     }
 

@@ -19,7 +19,7 @@ Checked when built and tested; the sections below say how.
       grid remain
 - [ ] 6. Physical controls: default layers, overrides, learn, banks (layers, banks, overrides saved, learn on a panel's knobs, plugin roles and screen knobs following the editor page done; [status](#step-6-status))
   - [x] [instant controls](#instant-controls): live gains for part levels, mutes and the master ([status](#live-gains-status))
-  - [ ] the controller-mapping service in the engine, on its MIDI input threads
+  - [x] the controller-mapping service in the engine, on its MIDI input threads ([status](#engine-mapping-status))
   - [ ] the latency measured in a test, against one block
 - [ ] 7. Groups, pedal view, move, copy and share
 - [x] Play: the Performance app's view for the stage ([design](#play-the-performance-apps-first-view), [status](#play-status))
@@ -453,6 +453,34 @@ multiplied with the part's, a loaded Performance's faders, all with no plan comp
 (`Graph::plansCompiled`), and a pan compiling one. Checks elsewhere that read a level right
 after a move now read the block's last sample, since the move ramps across the block. Not yet:
 scene glides still compile a plan per step; a part's pan and a send's level are not live.
+
+#### Engine mapping status
+
+Built 2026-11-02 (`oscairn/controller_input.h`; `controllers.set`, `controllers.view`,
+`controllers.get` and the `controllers` topic). The engine's `AudioEngine` hands each controller
+message from its MIDI input threads to the Session's `ControllerInput`, which maps it with
+`ControllerMapping` against its snapshot and wakes the control thread (`juce::AsyncUpdater`,
+`Session::serviceControllers`: the moves to the model and the parameters to their plugins, and
+nothing else of `service()`). The control's evaluation is `Session::drive`, the summing rule
+taken out of `driveMacro` so the Session and the controller input share it. The snapshot keeps,
+over the model's, only the values a MIDI thread set since the control thread last took the moves,
+so a value changed elsewhere (on screen, a scene) is picked up again as before. The app's
+`Controllers` keeps matching ports, Mackie Control and the values sent back; it sends the engine
+the joined groups and the ports (`Engine::setControllers`), and Play's part and page and the
+editor page shown (`setKnobPart`, `setControlPosition`, `showScreenPage`); the engine's positions
+and the control moved last come back for learn (`Engine::readControllers`).
+
+`control-controller-input` checks, with MIDI given to the Session as the MIDI thread would: a
+fader picked up at its value and then heard at the next block before the control thread runs
+(the model catching up when it does), learn's control, another input's message ignored, pickup
+waiting after a move on screen until the fader crosses the new value, the mod wheel's control
+setting a part's level by its logarithmic curve at the next block and the control's value in the
+model, a latching button muting and unmuting at the next block, a momentary one toggling on its
+presses only, no plan compiled for any of it, a relative knob stepping a parameter up three and
+down two, a row's number moving its group, the screen moving it back, and a missing group
+refused. `control-physical-controls` still checks `ControllerMapping` itself, unchanged.
+Not yet: Mackie Control in the engine; nothing checks the app's `Controllers` against a real
+device, and the latency on hardware is unmeasured.
 
 ### Pads
 

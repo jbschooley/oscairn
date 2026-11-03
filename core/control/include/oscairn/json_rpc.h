@@ -46,5 +46,8 @@ namespace oscairn
         std::optional<uint64_t> lastRecord_;
         std::string lastRecordValue_;
         std::map<uint32_t, std::string> recordStates_; // takes notified, by their state then
+        bool controllers_ = false;
+        std::optional<uint64_t> lastControllers_;
+        std::string lastControllersValue_;
     };
 }

@@ -88,6 +88,46 @@ namespace oscairn::standalone
         // Only when the engine's length differs: setting it starts an empty buffer, and an engine
         // still running (a timeout, another window) keeps the last seconds to capture.
         if(captureSeconds_>0)try{if(std::abs(control_->recordRetroSeconds()-captureSeconds_)>1e-9)control_->recordRetro(captureSeconds_);}catch(const std::exception& e){std::fprintf(stderr,"oscairn: capture: %s\n",e.what());}
+        // The controllers and what the screen shows, which a fresh engine has not heard.
+        try{if(!groups_.empty() || !ports_.empty())control_->setControllers(groups_,ports_);}catch(const std::exception& e){std::fprintf(stderr,"oscairn: controllers: %s\n",e.what());}
+        engineTouches_=0;
+        std::vector<std::pair<uint32_t,uint32_t>> positions;
+        for(uint32_t g=0;g<positions_.size() && g<groups_.size();++g)positions.push_back({g,positions_[g]});
+        sendView(true,true,std::move(positions));
+    }
+    void Engine::setControllers(std::vector<ControlGroup> groups,std::vector<Control::ControllerPort> ports)
+    {
+        groups_=std::move(groups);ports_=std::move(ports);positions_.assign(groups_.size(),0);
+        command([this]{control_->setControllers(groups_,ports_);});
+        sendView(true,true,{});
+    }
+    void Engine::setControlPosition(uint32_t group,uint32_t position)
+    {
+        if(group>=groups_.size() || (group<positions_.size() && positions_[group]==position))return;
+        if(positions_.size()<=group)positions_.resize(group+1);
+        positions_[group]=position;
+        sendView(false,false,{{group,position}});
+    }
+    void Engine::setKnobPart(uint32_t part){if(part==knobPart_)return;knobPart_=part;sendView(true,false,{});}
+    void Engine::sendView(bool part,bool screen,std::vector<std::pair<uint32_t,uint32_t>> positions)
+    {
+        Control::ControlView view;
+        if(part)view.part=knobPart_;
+        if(screen)view.screen=screenPage_;
+        view.positions=std::move(positions);
+        command([this,view]{control_->setControlView(view);});
+    }
+    void Engine::readControllers()
+    {
+        if(!connected())return;
+        try
+        {
+            const auto state=control_->controllerState();
+            if(state.positions.size()==groups_.size())positions_=state.positions;
+            // A control the engine heard moved, for learn: each move shows, as the screen's own do.
+            if(state.touches!=engineTouches_){if(state.touches>engineTouches_ && !state.touched.empty())touched(state.touched);engineTouches_=state.touches;}
+        }
+        catch(const std::exception&){}
     }
     bool Engine::hasParam(const std::string& n,uint32_t p)const
     {try{return control_->hasParameter(control_->nodeId(n),p);}catch(const std::invalid_argument&){return false;}}
@@ -528,6 +568,7 @@ namespace oscairn::standalone
     void Engine::timerCallback()
     {
         try{if(connected())macros_=control_->graphState().macros;}catch(const std::exception&){}
+        readControllers();
         if(restarting_.valid() && restarting_.wait_for(std::chrono::seconds(0))==std::future_status::ready)restarted();
         if(soundJob_.valid())
         {

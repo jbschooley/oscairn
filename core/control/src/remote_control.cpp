@@ -126,6 +126,13 @@ namespace oscairn
             if(at==names.end())throw std::runtime_error("Unknown name: "+name);
             return size_t(at-names.begin());
         }
+        Control::ControllerState controllers;
+        void readControllers(V v)
+        {
+            controllers.positions.clear();
+            for(auto p:array(field(v,"positions")))controllers.positions.push_back(static_cast<uint32_t>(integer(p)));
+            controllers.touched=string(field(v,"touched"));controllers.touches=integer(field(v,"touches"));
+        }
         void readStatus(V v)
         {
             status.audioDevice=string(field(v,"audioDevice"));status.sampleRate=number(field(v,"sampleRate"));
@@ -303,7 +310,8 @@ namespace oscairn
     RemoteControl::RemoteControl(LocalClient& client):impl_(std::make_unique<Impl>(client))
     {
         auto hello=impl_->call("session.hello");if(integer(field(field(hello.get(),"result"),"protocolVersion"))!=1)throw std::runtime_error("Unsupported control protocol version");
-        impl_->call("subscribe",R"({"topics":["params.changed","transport","graph.changed","status"],"allChanges":true})");
+        impl_->call("subscribe",R"({"topics":["params.changed","transport","graph.changed","status","controllers"],"allChanges":true})");
+        {auto state=impl_->call("controllers.get");impl_->readControllers(field(state.get(),"result"));}
         impl_->refresh();auto state=impl_->call("transport.get");impl_->readTransport(field(state.get(),"result"));
         auto status=impl_->call("session.status");impl_->readStatus(field(status.get(),"result"));
         // Keep interleaved notifications: another client may have changed a value
@@ -575,6 +583,48 @@ namespace oscairn
         for(const auto& n : names) inputs += (inputs.empty() ? "" : ",") + quote(n);
         impl_->call("midi.ignore", "{\"inputs\":[" + inputs + "]}");
     }
+    void RemoteControl::setControllers(const std::vector<ControlGroup>& groups,const std::vector<ControllerPort>& ports)
+    {
+        static constexpr std::array<const char*,4> roles{"notes","screen","assign","fixed"},messages{"cc","note","pitchBend","pressure"};
+        auto list=[](const auto& items,auto text){std::string out;for(const auto& i:items)out+=(out.empty()?"":",")+text(i);return '['+out+']';};
+        auto number=[](auto n){return std::to_string(n);};
+        std::string text;
+        for(const auto& g:groups)
+        {
+            const auto& m=g.midi;
+            text+=(text.empty()?"":",")+std::string("{\"role\":")+quote(roles[size_t(g.role)])+",\"kind\":"+quote(g.kind)+",\"count\":"+std::to_string(g.count)
+                +",\"rows\":"+list(g.rows,[](const ControlGroup::Row& r){return "{\"name\":"+quote(r.name)+",\"bank\":"+quote(bankKinds[size_t(r.bank)])+'}';})
+                +",\"modes\":"+list(g.modes,quote)+",\"functions\":"+list(g.functions,quote)
+                +",\"scenes\":"+(g.scenes?"true":"false")+",\"paged\":"+(g.paged?"true":"false")+",\"switches\":"+(g.switches?"true":"false");
+            if(!m.device.empty())
+                text+=",\"midi\":{\"device\":"+quote(m.device)+",\"port\":"+std::to_string(m.port)+",\"channel\":"+std::to_string(m.channel)+",\"channels\":"+list(m.channels,number)
+                    +",\"message\":"+quote(messages[size_t(m.message)])+",\"numbers\":"+list(m.numbers,[](uint8_t n){return std::to_string(n);})
+                    +",\"encodings\":"+list(m.encodings,[](Encoding e){return quote(e==Encoding::Steps?"steps":encodings[size_t(e)]);})
+                    +",\"steps\":"+list(m.steps,[](const std::array<uint8_t,2>& s){return '['+std::to_string(s[0])+','+std::to_string(s[1])+']';})
+                    +",\"latch\":"+(m.latch?"true":"false")+",\"feedback\":"+(m.feedback?"true":"false")+'}';
+            text+='}';
+        }
+        impl_->call("controllers.set","{\"groups\":["+text+"],\"ports\":"+list(ports,[](const ControllerPort& p){return "{\"input\":"+quote(p.input)+",\"device\":"+quote(p.device)+",\"port\":"+std::to_string(p.port)+'}';})+'}');
+    }
+    void RemoteControl::setControlView(const ControlView& view)
+    {
+        std::string text;
+        if(view.part)text+="\"part\":"+std::to_string(*view.part);
+        if(view.screen)
+        {
+            std::string params;
+            for(const auto& t:view.screen->params)params+=(params.empty()?"":",")+std::string("{\"kind\":\"")+assignmentKinds[size_t(t.kind)]+"\",\"node\":"+std::to_string(t.node)+",\"param\":"+std::to_string(t.param)+",\"id\":"+std::to_string(t.id)+'}';
+            text+=(text.empty()?"":",")+std::string("\"screen\":{\"name\":")+quote(view.screen->name)+",\"params\":["+params+"]}";
+        }
+        if(!view.positions.empty())
+        {
+            std::string positions;
+            for(const auto& [g,p]:view.positions)positions+=(positions.empty()?"":",")+std::string("{\"group\":")+std::to_string(g)+",\"position\":"+std::to_string(p)+'}';
+            text+=(text.empty()?"":",")+std::string("\"positions\":[")+positions+']';
+        }
+        impl_->call("controllers.view",'{'+text+'}');
+    }
+    Control::ControllerState RemoteControl::controllerState() const { return impl_->controllers; }
     bool RemoteControl::note(bool on,int key,double velocity,int channel)
     {try{impl_->call("notes.send",std::string("{\"on\":")+(on?"true":"false")+",\"key\":"+std::to_string(key)+",\"velocity\":"+encode(velocity)+",\"channel\":"+std::to_string(channel)+'}');return true;}catch(const RpcError& e){if(e.code==-32005)return false;throw;}}
     std::vector<AssignmentOverride> RemoteControl::assignments() const
@@ -878,6 +928,7 @@ namespace oscairn
             auto doc=parse(message);const auto method=string(field(doc.get(),"method"));auto params=field(doc.get(),"params");
             if(method=="transport")impl_->readTransport(params);
             else if(method=="status")impl_->readStatus(params);
+            else if(method=="controllers")impl_->readControllers(params);
             else if(method=="graph.changed"){refresh=true;impl_->publish({0,ChangeKind::Graph});}
             else if(method=="session.resync"){refresh=resync=true;impl_->publish({0,ChangeKind::Resync});}
             else if(method=="params.changed")for(auto c:array(field(params,"changes")))
@@ -895,6 +946,7 @@ namespace oscairn
             // Transport and status notifications are sent only on change; reread any that were lost.
             auto state=impl_->call("transport.get");impl_->readTransport(field(state.get(),"result"));
             auto status=impl_->call("session.status");impl_->readStatus(field(status.get(),"result"));
+            auto controllers=impl_->call("controllers.get");impl_->readControllers(field(controllers.get(),"result"));
         }
     }
 }

@@ -10,13 +10,12 @@
 
 namespace oscairn::standalone
 {
-    /// External MIDI controllers (RFC 0024): opens the MIDI inputs whose names match a
-    /// controller's profile, joins its control groups to the device's, and plays what its
-    /// controls move through RFC 0011's controller-mapping service, as Play's knobs would. Notes
-    /// and the standard controllers still reach the parts through the engine's own inputs. A
-    /// Mackie Control port is read by MackieControl (control_surface.h), and the engine leaves it
-    /// out; its LEDs, faders and names, and the values of knobs whose profile takes them, go back
-    /// on the output of the port's name.
+    /// External MIDI controllers (RFC 0024): matches the MIDI inputs whose names match a
+    /// controller's profile, joins its control groups to the device's, and tells the engine,
+    /// which plays what the controls move through RFC 0011's controller-mapping service on its
+    /// own MIDI inputs (instant controls). A Mackie Control port is read here by MackieControl
+    /// (control_surface.h), and the engine leaves it out; its LEDs, faders and names, and the
+    /// values of knobs whose profile takes them, go back on the output of the port's name.
     class Controllers : private juce::MidiInputCallback, private juce::Timer
     {
     public:
@@ -52,8 +51,7 @@ namespace oscairn::standalone
         std::vector<std::string> ignored_;                     // message thread: the inputs the engine was told to leave out
         juce::MidiDeviceListConnection changed_;
         std::atomic<bool> dirty_{false};
-        // Message thread: the mapping, what it reads, and values it set lately (read back late).
-        ControllerMapping mapping_;
+        // Message thread: what the surfaces and feedback read, and values set lately (read back late).
         Control::GraphState graph_;
         AssignmentSource source_;
         double sourceTime_ = -1;

@@ -54,6 +54,8 @@ namespace oscairn::host
         session_->commit();
         session_->clearHistory(); // undo starts from the startup instrument
 
+        // RFC 0011's instant controls: a control's move that waits for the control thread wakes it.
+        session_->setControllerWake( [this] { triggerAsyncUpdate(); } );
         openMidiInputs();
         openMidiOutputs();
         sender_.startThread();
@@ -66,6 +68,8 @@ namespace oscairn::host
     AudioEngine::~AudioEngine()
     {
         stopTimer();
+        session_->setControllerWake( {} );
+        cancelPendingUpdate();
         devices_.removeAudioCallback( this ); // waits for the callback to finish
         sender_.stopThread( 1000 );
         for( auto& input : midiInputs_ )
@@ -216,10 +220,15 @@ namespace oscairn::host
         kick::clap::Event converted; // channel messages pass if the block will take them (midiToClap)
         if( oscairn::midiToClap( message.getRawData(), (size_t)message.getRawDataSize(), 0, converted ) || message.isMidiClock() || message.isMidiStart() || message.isMidiContinue() || message.isMidiStop()
             || message.isSongPositionPointer() )
-            push( message, input );
+        {
+            const auto source = push( message, input );
+            // A controller's control (RFC 0011's instant controls), mapped here on the MIDI thread.
+            if( message.isController() || message.isNoteOnOrOff() || message.isPitchWheel() || message.isChannelPressure() )
+                session_->controllerMidi( source, message.getRawData(), (size_t)message.getRawDataSize() );
+        }
     }
 
-    void AudioEngine::push( const juce::MidiMessage& message, const juce::MidiInput* input )
+    uint8_t AudioEngine::push( const juce::MidiMessage& message, const juce::MidiInput* input )
     {
         Incoming in{};
         const auto size = std::min( message.getRawDataSize(), 3 );
@@ -236,6 +245,7 @@ namespace oscairn::host
             {++droppedMidi_;midiOverflow_.store(true,std::memory_order_release);}
         else
             incoming_[(size_t)( scope.blockSize1 > 0 ? scope.startIndex1 : scope.startIndex2 )] = in;
+        return in.source;
     }
 
     void AudioEngine::audioDeviceAboutToStart( juce::AudioIODevice* device )

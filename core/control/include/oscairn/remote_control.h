@@ -155,6 +155,9 @@ namespace oscairn
         bool note(bool on,int key,double velocity,int channel=0) override;
         void allNotesOff() override;
         void ignoreMidiInputs(const std::vector<std::string>& names) override;
+        void setControllers(const std::vector<ControlGroup>& groups, const std::vector<ControllerPort>& ports) override;
+        void setControlView(const ControlView& view) override;
+        ControllerState controllerState() const override; // as the last notification said
         PadMap padMap() const override;
         void setPadMap(const PadMap& map) override;
         bool pad(uint32_t pad,bool on,double velocity,int channel=0) override;

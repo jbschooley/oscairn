@@ -22,7 +22,7 @@ namespace oscairn::host
     ///
     /// Device ownership shared by the standalone in-process mode and engine helper.
     /// The UI and socket adapter reach the session through Control.
-    class AudioEngine : private juce::AudioIODeviceCallback, private juce::MidiInputCallback, private juce::Timer
+    class AudioEngine : private juce::AudioIODeviceCallback, private juce::MidiInputCallback, private juce::Timer, private juce::AsyncUpdater
     {
     public:
         /// Loads the plugins from `pluginDir` and opens the default audio output.
@@ -45,7 +45,8 @@ namespace oscairn::host
         // MIDI input threads
         void handleIncomingMidiMessage( juce::MidiInput*, const juce::MidiMessage& ) override;
 
-        void push( const juce::MidiMessage& message, const juce::MidiInput* input );
+        uint8_t push( const juce::MidiMessage& message, const juce::MidiInput* input ); // the input's source number
+        void handleAsyncUpdate() override { session_->serviceControllers(); } // a control moved: its model, at once
         void openMidiInputs();
         void openMidiOutputs();
         void queueMidiOut( uint32_t offset, double seconds ) noexcept; // audio thread: the session's MIDI out, for the sender

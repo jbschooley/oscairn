@@ -81,13 +81,17 @@ namespace oscairn::standalone
         void touched(const std::string& control){touched_=control;++touches_;}
         const std::string& lastTouched() const {return touched_;}
         uint32_t touches() const {return touches_;}
-        // The device's control groups, from its profile (RFC 0024); none on the desktop.
-        void setControlGroups(std::vector<ControlGroup> groups){groups_=std::move(groups);}
+        // The device's control groups, from its profile (RFC 0024), joined by the connected
+        // controllers' (none on the desktop without one), and which MIDI inputs are which
+        // controller's ports: the engine plays them (RFC 0011's instant controls). Sent again
+        // after a restart.
+        void setControllers(std::vector<ControlGroup> groups, std::vector<Control::ControllerPort> ports);
         const std::vector<ControlGroup>& controlGroups() const {return groups_;}
-        // Where each group is (page, row or mode) and the part the knobs follow, as Play shows
-        // them, for the controller-mapping service (Controllers.h) to play the same.
-        GroupPositions& positions(){return positions_;}
-        void setKnobPart(uint32_t part){knobPart_=part;}
+        // Where each group is (page, row or mode), as the engine last said (a row button moves
+        // one), and the part the knobs follow: Play's, sent to the engine when they change.
+        const GroupPositions& positions() const {return positions_;}
+        void setControlPosition(uint32_t group, uint32_t position);
+        void setKnobPart(uint32_t part);
         uint32_t knobPart() const {return knobPart_;}
         void selectTrack(uint32_t track){sequenceTrack_=std::min(track,1u);}
         // The row selected on screen (RFC 0019): the parameters a device's knobs bound "row:N"
@@ -108,9 +112,11 @@ namespace oscairn::standalone
         void showScreenPage(ScreenPage& published, ScreenPage page)
         {
             if(page == published) return;
+            const auto shown = screenPage_;
             if(screenPage_ == published) screenPage_ = {};
             published = std::move(page);
             if(!published.params.empty()) screenPage_ = published;
+            if(screenPage_ != shown) sendView(false, true, {});
         }
         int trackChannel()const;
         bool connected()const{return failure_.empty();}
@@ -209,6 +215,8 @@ namespace oscairn::standalone
             }
         }
         void failed(const std::string& message);
+        void sendView(bool part, bool screen, std::vector<std::pair<uint32_t, uint32_t>> positions); // to the engine
+        void readControllers(); // timer: positions and the control moved last, from the engine
         void refreshSounds(SoundAction action = {});
         void finishSounds();
         struct SoundResult { std::map<std::string,Editor> editors;SoundPickerState state; std::string error, message; bool disconnected = false; };
@@ -233,7 +241,9 @@ namespace oscairn::standalone
         std::string touched_;
         uint32_t touches_=0;
         std::vector<ControlGroup> groups_;
+        std::vector<Control::ControllerPort> ports_;
         GroupPositions positions_;
+        uint64_t engineTouches_=0;
         uint32_t knobPart_=0;
         int rowKnobs_=0;
         Edge rowEdge_=Edge::Bottom;

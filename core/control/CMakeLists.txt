@@ -1,4 +1,4 @@
-add_library(oscairn_control STATIC src/session.cpp src/performance.cpp src/parts.cpp src/pads.cpp src/physical_controls.cpp src/controller_mapping.cpp src/control_surface.cpp src/undo.cpp src/library.cpp src/package.cpp src/budget.cpp src/audition.cpp src/signing.cpp src/trust.cpp third_party/miniz/miniz.c third_party/monocypher/monocypher.c third_party/monocypher/monocypher-ed25519.c)
+add_library(oscairn_control STATIC src/session.cpp src/performance.cpp src/parts.cpp src/pads.cpp src/physical_controls.cpp src/controller_mapping.cpp src/controller_input.cpp src/control_surface.cpp src/undo.cpp src/library.cpp src/package.cpp src/budget.cpp src/audition.cpp src/signing.cpp src/trust.cpp third_party/miniz/miniz.c third_party/monocypher/monocypher.c third_party/monocypher/monocypher-ed25519.c)
 set_source_files_properties(third_party/miniz/miniz.c third_party/monocypher/monocypher.c third_party/monocypher/monocypher-ed25519.c PROPERTIES COMPILE_OPTIONS "-w") # vendored, unmodified
 target_include_directories(oscairn_control SYSTEM PRIVATE third_party)
 target_include_directories(oscairn_control PUBLIC include)
@@ -122,6 +122,12 @@ target_link_libraries(oscairn-parts-test PRIVATE oscairn_control)
 add_test(NAME control-parts COMMAND oscairn-parts-test
     $<TARGET_FILE:kick-clap-fixture-normal> $<TARGET_FILE:oscairn-audio-fixture> $<TARGET_FILE:oscairn_delay> $<TARGET_FILE:oscairn_splitters> $<TARGET_FILE:oscairn_transpose> $<TARGET_FILE:oscairn-follower-fixture>)
 set_tests_properties(control-parts PROPERTIES TIMEOUT 60)
+
+add_executable(oscairn-controller-input-test tests/controller_input.cpp)
+target_include_directories(oscairn-controller-input-test PRIVATE ../clap-host/tests)
+target_link_libraries(oscairn-controller-input-test PRIVATE oscairn_control)
+add_test(NAME control-controller-input COMMAND oscairn-controller-input-test $<TARGET_FILE:kick-clap-fixture-normal>)
+set_tests_properties(control-controller-input PROPERTIES TIMEOUT 60)
 
 add_executable(oscairn-physical-controls-test tests/physical_controls.cpp)
 target_link_libraries(oscairn-physical-controls-test PRIVATE oscairn_control)

@@ -411,8 +411,9 @@ Also open:
   relative-encoder tracking and explicit feedback/ownership rules; plugins may opt
   into physical observations, accepted changes or both
   ([planned architecture](architecture.md#physical-controls-takeover-and-direct-position-access-planned));
-  started: pickup, relative encodings and buttons for external controllers' profiles, in the app
-  ([RFC 0011](rfcs/0011-performance-ui-and-editors.md#the-controller-mapping-service)), values sent
+  started: pickup, relative encodings and buttons for external controllers' profiles, played
+  in the engine on its MIDI input threads, with part levels, mutes and the master as live gains
+  ([RFC 0011](rfcs/0011-performance-ui-and-editors.md#instant-controls)), values sent
   back to knobs whose profile takes them, and Mackie Control's LEDs, faders and names
   ([RFC 0024](rfcs/0024-device-profiles.md#mackie-control))
 - [ ] recording as an engine service: any graph input, output, part or bus and the notes

@@ -26,7 +26,7 @@ Checked when built and tested; the sections below say how.
       read with `oscairn-midi-monitor`, all but its buttons; Mackie Control ports read and fed
       back, and knob values sent back where a profile says so ([status](#mackie-control));
       choosing between profiles that match one port built in Settings)
-  - [ ] the mapping played by the engine, from the groups and ports the app sends it
+  - [x] the mapping played by the engine, from the groups and ports the app sends it
         ([where the mapping runs](#where-the-mapping-runs))
   - [ ] [identical controllers](#identical-controllers): every same-named input opens, told
         apart by MIDI channel

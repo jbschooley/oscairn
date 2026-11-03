@@ -23,6 +23,7 @@ struct json_value_s; // sheredom/json.h: the document readers' parsed values
 namespace oscairn
 {
     struct Package; // package.h
+    class ControllerInput; // controller_input.h
     /// Device-independent graph session. Construct/configure/service/destroy on the
     /// control thread. One audio thread calls process(); stop it before destruction.
     /// The caller owns audio I/O, MIDI capture, clocks, output buffers and scheduling.
@@ -217,6 +218,15 @@ namespace oscairn
         bool pad( uint32_t pad, bool on, double velocity, int channel = 0 ) override;
         bool padPressure( uint32_t pad, double pressure ) override;
         std::vector<AssignmentOverride> assignments() const override;
+        void setControllers( const std::vector<ControlGroup>& groups, const std::vector<ControllerPort>& ports ) override;
+        void setControlView( const ControlView& view ) override;
+        ControllerState controllerState() const override;
+        /// RFC 0011's instant controls (controller_input.h). A MIDI input thread's message from the
+        /// input numbered `source`; never the audio thread. `wake` is called on a MIDI thread when a
+        /// move waits for the control thread, which should then call service().
+        void controllerMidi( uint8_t source, const uint8_t* bytes, size_t size ) noexcept;
+        void setControllerWake( std::function<void()> wake );
+        void serviceControllers(); // the control thread, woken: the moves to the model and the parameters to their plugins, and no more of service()
         void assign( const std::string& control, const Assignment& target, uint32_t part = 0 ) override;
 
         struct MidiClockEvent
@@ -277,7 +287,7 @@ namespace oscairn
         void assignSlots();
         void writeLiveGains();                   // the slots from the parts' levels and mutes and the master
         bool liveFader(uint32_t part) const { return faderSlots_.count(part) && !staticFaders_.count(part); }
-        template<class Edit> void editFaders(Edit&& edit); // levels and mutes only: the wires the views read, and the slots
+        template<class Edit> void editFaders(Edit&& edit, bool live = true); // levels and mutes only: the wires the views read, and the slots (live)
         void enable(NodeId node, bool enabled);  // the flags and the graph's retiring count; wires are the caller's
         void ringOut();                          // service(): an off plugin that has rung out stops sounding
         bool enqueue(const kick::clap::Event& event);
@@ -417,6 +427,20 @@ namespace oscairn
         static Destination destination(const MacroTarget& t) { return {int(t.kind), t.node, t.param, t.part}; }
         std::map<Destination, double> written_; // what the controls last set each destination to; anything else moving it since rebases it
         void driveMacro(uint32_t id, double value, bool& faders); // sets it and its targets
+        // The summing rule on any copy of the controls (the controller input's too): drives control
+        // `id` to `value` and the controls it targets, reading each destination with `current`
+        // (nothing: it is gone, and left alone) and setting it with `apply`.
+        using MacroCurrent = std::function<std::optional<double>(const MacroTarget&)>;
+        using MacroApply = std::function<void(const MacroTarget&, double)>;
+        static void drive(std::vector<Macro>& macros, std::map<Destination, double>& written, uint32_t mappingScene, uint32_t id, double value, const MacroCurrent& current, const MacroApply& apply);
+        static Sum contributions(const std::vector<Macro>& macros, uint32_t mappingScene, const MacroTarget& t, uint32_t macro, double value);
+        static void setBase(std::vector<Macro>& macros, const MacroTarget& t, double base);
+        // Played by the controller input: a control, and a part's fader; live: write the live
+        // gains (false: the controller input wrote them already).
+        void playMacro(uint32_t id, double value, bool live);
+        void playPartLevel(uint32_t id, double level, bool mute);
+        friend class ControllerInput;
+        std::unique_ptr<ControllerInput> controllers_;
         void capture(Scene& scene) const;
         // Scenes moving (parts.cpp): applied at once, blended between two, a glide's steps and a morph.
         void applyScene(const Scene& scene, uint32_t scope);
@@ -440,6 +464,7 @@ namespace oscairn
         // bounded: refused once commandCapacity commands wait. A scene's values are not: each parameter
         // keeps at most one waiting value, so they never outnumber the parameters.
         bool queue( NodeId node, uint32_t param, ChangeKind kind, double value, bool bounded = true );
+        void sendParameters(); // service(): the commands waiting, to their plugins
         void publish( ChangeKind kind, NodeId node = 0, uint32_t param = 0, double value = 0, bool plugin = false );
 
         double sampleRate_;
