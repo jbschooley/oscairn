@@ -130,6 +130,9 @@ namespace oscairn::standalone
         }
         source_.screen = engine_.screenPage(); // screen knobs play the editor page shown
         std::vector<ControllerMapping::Action> actions;
+        // Applied once per target below, but read back at once: pickup compares each message with the
+        // target's value, so it must see the one before it, not the last tick's.
+        auto keep = [&](ControllerMapping::Action a) { recent_[key(a.target)] = {a.value, now()}; actions.push_back(std::move(a)); };
         for(const auto& [port, in, mackie] : taken)
         {
             if(mackie)
@@ -138,7 +141,7 @@ namespace oscairn::standalone
                 for(const auto& a : surfaces_[port].first.handle(state, source_, in.bytes, 3, [this](const Assignment& t) { return value(t); }))
                     switch(a.kind)
                     {
-                    case MackieControl::Action::Kind::Set: actions.push_back({{}, a.target, a.value}); break;
+                    case MackieControl::Action::Kind::Set: keep({{}, a.target, a.value}); break;
                     case MackieControl::Action::Kind::Play: engine_.setPlaying(true); break;
                     case MackieControl::Action::Kind::Stop: engine_.setPlaying(false); break;
                     case MackieControl::Action::Kind::Solo: { const auto id = a.part; const bool on = a.on; engine_.edit([id, on](Control& c) { c.setPartSolo(id, on); c.commit(); }); break; }
@@ -147,7 +150,7 @@ namespace oscairn::standalone
             }
             for(const auto& action : mapping_.handle(source_, engine_.controlGroups(), engine_.knobPart(), engine_.positions(), port.first, port.second, in.bytes, 3,
                                                      [this](const Assignment& a) { return value(a); }))
-                actions.push_back(action);
+                keep(action);
         }
         for(const auto& action : ControllerMapping::latest(std::move(actions))) apply(action);
         if(fresh || !taken.empty()) feedback();
