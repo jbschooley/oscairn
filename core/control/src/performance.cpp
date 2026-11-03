@@ -860,6 +860,16 @@ void Session::open(Prepared& p,bool seamless) {
         tempo_.store(p.tempo);clockSource_.store(p.clock);playing_.store(false);
         ++revision_;++sequence_;history_.swap(history);
     });
+    // Its parts' faders as live gains (RFC 0011's instant controls): the wires are built again
+    // aside to work out which faders scale each, the wires read from the file keep everything
+    // else, and they are compiled again with the slots.
+    try{
+        auto read=wires_;const auto next=nextWire_;buildParts();
+        for(auto& w:read)for(const auto& b:wires_)
+            if(w.owner==WireOwner::Part && b.owner==WireOwner::Part && w.part==b.part && w.kind==b.kind && w.from==b.from && w.to==b.to && w.fromPort==b.fromPort && w.toPort==b.toPort &&
+               w.send==b.send && w.split==b.split && w.lane==b.lane && w.fader==b.fader){w.faders=b.faders;w.fixed=b.fixed;w.fixedMute=b.fixedMute;w.live=b.live;break;}
+        wires_.swap(read);nextWire_=next;syncWires();graph_.commit();staged_=false;
+    }catch(const std::exception&){}
     info_=p.info;
     lock_=std::move(p.lock);
     clearHistory(); // undo does not reach back into another Performance

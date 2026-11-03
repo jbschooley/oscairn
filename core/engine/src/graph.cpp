@@ -32,7 +32,7 @@ namespace oscairn
         std::vector<Harmony> harmonies;
         // -1: external input. now, delta and left (audio thread only) ramp a gain that changed with a
         // new plan from the old one to the new one over a few milliseconds, so a moved fader does not step.
-        struct AudioRoute { int source; uint32_t from, to; float gain; bool first=false; mutable float now=0, delta=0; mutable uint32_t left=0; };
+        struct AudioRoute { int source; uint32_t from, to; float gain; bool first=false; mutable float now=0, delta=0; mutable uint32_t left=0; std::array<uint8_t,4> live{}; }; // live: see setLiveGain
         std::vector<AudioRoute> outputRoutes;
         std::vector<float> externalInputs;
         std::vector<uint32_t> silentOutputs;
@@ -165,6 +165,8 @@ namespace oscairn
         if(!std::isfinite(sampleRate) || sampleRate<=0 || !maxFrames || maxFrames>1048576)
             throw std::invalid_argument("Invalid graph sample rate or block size");
         inputChannels_=countChannels(audioLayout_.inputs);outputChannels_=countChannels(audioLayout_.outputs);
+        for(auto& g:liveTarget_)g.store(1.f,std::memory_order_relaxed);
+        liveFrom_.fill(1.f);liveTo_.fill(1.f);
     }
 
     Graph::~Graph()
@@ -220,7 +222,10 @@ namespace oscairn
     void Graph::carryOver(const Graph& current,const std::set<NodeId>& ids) {
         for(const auto id:ids){if(nodes_.count(id))throw std::logic_error("a carried-over node ID is taken");auto node=current.nodes_.at(id);node.retiring=false;nodes_[id]=std::move(node);setRetiring(id,true);}
         nextId_=std::max(nextId_,current.nextId_); // a replacement prepared ahead: the current graph may have added since
-        for(const auto& r:current.audioRoutes_)if(ids.count(r.from.node) && (ids.count(r.to.node) || r.to.node==graphOutput))audioRoutes_.push_back(r);
+        // Their live gains are frozen at what they are now: the slots are the next Performance's.
+        for(auto r:current.audioRoutes_)if(ids.count(r.from.node) && (ids.count(r.to.node) || r.to.node==graphOutput)){
+            for(auto& slot:r.live){r.gain*=current.liveGain(slot);slot=0;}
+            audioRoutes_.push_back(r);}
         for(const auto& [edge,route]:current.noteEdges_)if(ids.count(edge.second) && (ids.count(edge.first) || edge.first==graphInput)){
             noteEdges_.emplace(edge,route);draining_.insert(edge);
             if(const auto z=current.noteZones_.find(edge);z!=current.noteZones_.end())noteZones_[edge]=z->second;}
@@ -230,6 +235,7 @@ namespace oscairn
             throw std::invalid_argument("Replacement device layout mismatch");
         next.replacementSerial_=replacementSerial_+1;
         std::unique_ptr<Plan> plan(next.compile());
+        ++plansCompiled_;
         removedHosts_.reserve(removedHosts_.size()+nodes_.size());
         onPublish(); // caller supplies a nonthrowing metadata/transport commit
         // A host carried over stays in use; listing it here too would keep it alive forever (collect() frees at one owner).
@@ -365,7 +371,7 @@ namespace oscairn
             {
                 AudioConnection channel=c;channel.channels=1;channel.from.channel+=i;channel.to.channel+=i;
                 auto existing=std::find_if(next.begin(),next.end(),[&](const auto& r){return r.from==channel.from && r.to==channel.to;});
-                if(existing!=next.end())existing->gain=c.gain;
+                if(existing!=next.end()){existing->gain=c.gain;existing->live=c.live;}
                 else
                 {
                     if(next.size()==maxAudioConnections)throw std::invalid_argument("Audio connection limit exceeded");
@@ -573,16 +579,16 @@ namespace oscairn
             stepOf[id]        = (int)plan->steps.size();
             plan->steps.push_back( std::move( step ) );
         }
-        auto route=[&](NodeId from,uint32_t source,NodeId to,uint32_t dest,float gain)
+        auto route=[&](NodeId from,uint32_t source,NodeId to,uint32_t dest,float gain,const std::array<uint8_t,4>& live)
         {
-            Plan::AudioRoute r{from==graphInput?-1:stepOf.at(from),source,dest,gain};r.now=gain;
+            Plan::AudioRoute r{from==graphInput?-1:stepOf.at(from),source,dest,gain};r.now=gain;r.live=live;
             if(to==graphOutput)plan->outputRoutes.push_back(r);
             else plan->steps[stepOf.at(to)].audioSources.push_back(r);
         };
         for(const auto& c:audioRoutes_)
         {
             const auto from=resolve(c.from,true,c.channels),to=resolve(c.to,false,c.channels);
-            for(uint32_t i=0;i<c.channels;++i)route(c.from.node,from+i,c.to.node,to+i,static_cast<float>(c.gain));
+            for(uint32_t i=0;i<c.channels;++i)route(c.from.node,from+i,c.to.node,to+i,static_cast<float>(c.gain),c.live);
         }
         for( const auto& [edge,state] : noteEdges_ )
         {
@@ -647,6 +653,7 @@ namespace oscairn
     void Graph::commit(bool rampGains)
     {
         Plan* plan = compile(); // throws on a cycle, before anything changes
+        ++plansCompiled_;
         plan->rampGains = rampGains;
         collect();
         delete pending_.exchange( plan, std::memory_order_acq_rel ); // a plan the audio thread never took
@@ -746,6 +753,13 @@ namespace oscairn
 
         const bool panicInput=std::exchange(panicInput_,false);
         auto* const listener=listener_.load(std::memory_order_acquire);
+        // Live gains for this block: each slot ramps from where the last block left it.
+        for(uint32_t i=1;i<liveGains;++i)
+        {
+            const bool jump=liveJump_[i].load(std::memory_order_relaxed) && liveJump_[i].exchange(false,std::memory_order_acquire);
+            const float to=liveTarget_[i].load(std::memory_order_relaxed);
+            liveFrom_[i]=jump?to:liveTo_[i];liveTo_[i]=to;
+        }
         Plan* plan = current_;
         if(!plan){clear();return true;}
         for(uint32_t c=0;c<inputChannels_;++c)
@@ -758,6 +772,27 @@ namespace oscairn
         auto mix=[&](const Plan::AudioRoute& r,float* dest)
         {
             const float* from=r.source<0?plan->externalInputs.data()+size_t(r.from)*maxFrames_:plan->steps[r.source].out[r.from];
+            if(r.live[0])
+            {
+                // Scaled by its live gains, ramped across the block from the last block's product.
+                float start=1,end=1;
+                for(const auto slot:r.live)if(slot){start*=liveFrom_[slot];end*=liveTo_[slot];}
+                if(start!=end || r.left)
+                {
+                    const float step=(end-start)/float(frames);
+                    for(uint32_t i=0;i<frames;++i)
+                    {
+                        if(r.left){r.now+=r.delta;if(--r.left==0)r.now=r.gain;}
+                        const float g=r.now*(start+step*float(i+1));
+                        dest[i]=r.first?from[i]*g:dest[i]+from[i]*g;
+                    }
+                    return;
+                }
+                const float g=r.gain*end;
+                if(r.first)for(uint32_t i=0;i<frames;++i)dest[i]=from[i]*g;
+                else for(uint32_t i=0;i<frames;++i)dest[i]+=from[i]*g;
+                return;
+            }
             if(r.left)
             {
                 for(uint32_t i=0;i<frames;++i)

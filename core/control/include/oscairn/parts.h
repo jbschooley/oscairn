@@ -51,6 +51,14 @@ namespace oscairn
         std::vector<WireVia> via;    // part wires through empty buses: its part's fader (fader wires), then those buses, in order along each way
         bool connected = true; // false: kept, though it no longer fits (after a plugin replacement)
         bool enabled = true;   // false: off (scenes): a note wire takes no new notes, an audio wire is silent
+        // Live gains (RFC 0011's instant controls), worked out when the part's wires are built and
+        // not saved: the parts whose fader (level and mute) scales this wire (its own part's, for
+        // fader and send wires, then the empty buses it passes), and its level and mute with those
+        // faders at unity and unmuted. live: those hold (false for two ways through different
+        // buses merged into one wire, whose faders then move it by compiling a plan).
+        std::vector<uint32_t> faders;
+        double fixed = 1;
+        bool fixedMute = false, live = false;
         bool operator==(const Wire&) const = default;
     };
 

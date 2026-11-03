@@ -38,6 +38,8 @@ namespace oscairn
         AudioEndpoint from, to;
         uint32_t channels = 1; // contiguous range, contained in each selected port
         double gain = 1;
+        // Live gains (Graph::setLiveGain) whose product scales it each block, by slot; 0: none.
+        std::array<uint8_t, 4> live{};
         bool operator==(const AudioConnection&) const = default;
     };
     struct AudioLayout
@@ -227,6 +229,28 @@ namespace oscairn
         /// for changes that are played (a control swept) rather than edited.
         void commit(bool rampGains = false);
 
+        /// Plans compiled so far (commit() and publishReplacement()), for tests.
+        uint64_t plansCompiled() const noexcept { return plansCompiled_; }
+
+        /// Live gains: a fixed table of gains the audio thread reads once per block, so a fader
+        /// moves without compiling a plan. A route naming slots (AudioConnection::live) is scaled
+        /// by their product, ramped across each block from the last block's. Slot 0 is none;
+        /// every slot starts at 1. Any thread; never waits. The table belongs to this graph and
+        /// stays across publishReplacement().
+        static constexpr uint32_t liveGains = 256;
+        /// ramp false: the next block starts at the new gain (a slot just given to a part).
+        void setLiveGain( uint32_t slot, float gain, bool ramp = true ) noexcept
+        {
+            if( !slot || slot >= liveGains ) return;
+            liveTarget_[slot].store( gain, std::memory_order_relaxed );
+            if( !ramp ) liveJump_[slot].store( true, std::memory_order_release );
+        }
+        float liveGain( uint32_t slot ) const noexcept { return slot < liveGains ? liveTarget_[slot].load( std::memory_order_relaxed ) : 1.f; }
+        /// Audio thread, during or after process(): a slot's gain at this block's start and end, as
+        /// routes ramp it (a recording's post-fader tap follows the same ramp).
+        float liveGainFrom( uint32_t slot ) const noexcept { return slot < liveGains ? liveFrom_[slot] : 1.f; }
+        float liveGainTo( uint32_t slot ) const noexcept { return slot < liveGains ? liveTo_[slot] : 1.f; }
+
         /// Frees plans the audio thread has finished with.
         void collect();
         /// Removed plugins not freed yet: those an audio plan or undo still owns (control thread).
@@ -352,5 +376,9 @@ namespace oscairn
         double freeBeats_ = 0; // audio thread: oscairn.beat's position at the next block's start
         Plan*              current_ = nullptr; // audio thread only
         Retired            retired_;
+        uint64_t plansCompiled_ = 0; // control thread
+        std::array<std::atomic<float>, liveGains> liveTarget_; // see setLiveGain; set to 1 by the constructor
+        std::array<std::atomic<bool>, liveGains> liveJump_{};  // see setLiveGain's ramp
+        std::array<float, liveGains> liveFrom_{}, liveTo_{};    // audio thread: each slot at the last block's start and this one's
     };
 }

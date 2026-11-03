@@ -789,6 +789,16 @@ namespace oscairn
                     const float* from = s.node == graphOutput ? (outputs && s.channel < outputChannels ? outputs[s.channel] : nullptr) : graph.audioOutput(s.node, s.channel);
                     if(!from) continue;
                     auto* to = ring.block.data() + size_t(s.to) * maxFrames_;
+                    if(s.live[0])
+                    {
+                        // As Graph::process ramps a route's live gains, so the tap matches what plays.
+                        float start = 1, end = 1;
+                        for(const auto slot : s.live) if(slot) { start *= graph.liveGainFrom(slot); end *= graph.liveGainTo(slot); }
+                        const float step = (end - start) / float(frames);
+                        if(start != end) for(uint32_t k = 0; k < frames; ++k) { const float g = s.gain * (start + step * float(k + 1)); to[k] += from[k] * g; }
+                        else { const float g = s.gain * end; for(uint32_t k = 0; k < frames; ++k) to[k] += from[k] * g; }
+                        continue;
+                    }
                     for(uint32_t k = 0; k < frames; ++k) to[k] += from[k] * s.gain;
                 }
                 for(uint32_t k = 0; k < frames; ++k)

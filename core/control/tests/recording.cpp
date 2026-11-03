@@ -238,7 +238,7 @@ namespace
         // Within one rounding: the graph's mix may fuse its multiply-adds.
         for(size_t i = 0; sums && i < main.samples.size(); ++i) sums = std::abs(leadPost.samples[i] + padPost.samples[i] - main.samples[i]) <= std::abs(main.samples[i]) * 1.2e-7f + 1e-30f;
         check(sums, "the post-fader taps of the parts playing to Main sum to Main, through a fader move and a mute");
-        bool muted = true; for(size_t i = 2 * 42 * block; i < padPost.samples.size(); ++i) muted = muted && padPost.samples[i] == 0;
+        bool muted = true; for(size_t i = 2 * 43 * block; i < padPost.samples.size(); ++i) muted = muted && padPost.samples[i] == 0; // the mute ramps across block 42
         check(muted, "a muted part records silence after its fader");
         bool pre = leadPre.samples.size() == main.samples.size(), sound = false;
         for(size_t i = 0; pre && i < 2 * 22 * block; ++i) { pre = leadPost.samples[i] == leadPre.samples[i] * .5f; sound = sound || leadPre.samples[i] != 0; }

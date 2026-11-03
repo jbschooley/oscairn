@@ -254,13 +254,30 @@ namespace oscairn
         // the estimates were wrong, a committed one. False when nothing was left to let go.
         bool memoryPressure();
         size_t heldRemoved() const noexcept { return graph_.heldRemoved(); } // removed plugins not freed yet
+        uint64_t plansCompiled() const noexcept { return graph_.plansCompiled(); } // for tests: a fader moved live compiles none
         uint32_t maxFrames() const noexcept { return maxFrames_; }
 
     private:
         static ParamInfo describe( const kick::clap::Parameter& param );
         // off: plugins switched off; rungOut: those of them whose notes and sound have ended.
         // leaving: the last Performance's plugins ringing out (RFC 0021); their routes are left alone.
-        static void compileWires(Graph& graph, std::vector<Wire>& wires, const std::set<NodeId>& off, const std::set<NodeId>& rungOut, const std::set<NodeId>& leaving, double masterLevel, double masterPan);
+        // live: the parts' live gain slots (faderSlots_), and what could not be live, out; null: every
+        // gain baked into the routes, as for a Performance not yet open.
+        struct Live { const std::map<uint32_t, uint8_t>* slots = nullptr; std::set<uint32_t> staticFaders; bool staticMaster = false; };
+        static void compileWires(Graph& graph, std::vector<Wire>& wires, const std::set<NodeId>& off, const std::set<NodeId>& rungOut, const std::set<NodeId>& leaving, double masterLevel, double masterPan, Live* live = nullptr);
+        void compileWires(); // the open Performance's, live
+        // Live gains (RFC 0011's instant controls): each part's slot in the graph's table (from
+        // firstPartSlot; the master's left and right are 1 and 2), the parts whose wires could not
+        // be live and whether the master could not, and a fader edit applied without a plan.
+        static constexpr uint8_t masterSlots[2] = {1, 2}, firstPartSlot = 3;
+        std::map<uint32_t, uint8_t> faderSlots_;
+        std::set<uint8_t> freshSlots_;           // given since they were last written: they start at their value, not ramp to it
+        std::set<uint32_t> staticFaders_;
+        bool staticMaster_ = true, liveEdit_ = false;
+        void assignSlots();
+        void writeLiveGains();                   // the slots from the parts' levels and mutes and the master
+        bool liveFader(uint32_t part) const { return faderSlots_.count(part) && !staticFaders_.count(part); }
+        template<class Edit> void editFaders(Edit&& edit); // levels and mutes only: the wires the views read, and the slots
         void enable(NodeId node, bool enabled);  // the flags and the graph's retiring count; wires are the caller's
         void ringOut();                          // service(): an off plugin that has rung out stops sounding
         bool enqueue(const kick::clap::Event& event);
@@ -272,7 +289,7 @@ namespace oscairn
         template<class Edit> void editWires(Edit&& edit);
         void buildPart(const Part& part);
         void buildParts();
-        struct BusEntry { NodeId node = 0; uint32_t port = 0; double level = 1, pan = 0; bool mute = false; uint32_t split = 0, lane = 0; bool fader = false; std::vector<WireVia> via{}; }; // fader: passes an empty bus's fader; via: the empty buses on the way
+        struct BusEntry { NodeId node = 0; uint32_t port = 0; double level = 1, pan = 0; bool mute = false; uint32_t split = 0, lane = 0; bool fader = false; std::vector<WireVia> via{}; double fixed = 1; bool fixedMute = false; std::vector<uint32_t> faders{}; }; // fader: passes an empty bus's fader; via: the empty buses on the way; fixed, fixedMute, faders: as Wire's
         std::vector<BusEntry> busEntries(uint32_t bus);
         bool splitNode(NodeId node) const;       // a split's Split or Join node
         bool heard(const Part& part);            // not silenced by another part's solo

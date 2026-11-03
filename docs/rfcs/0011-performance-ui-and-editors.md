@@ -18,7 +18,7 @@ Checked when built and tested; the sections below say how.
       generated editors ([status](#step-5-status)); what modulates each knob and the Modular
       grid remain
 - [ ] 6. Physical controls: default layers, overrides, learn, banks (layers, banks, overrides saved, learn on a panel's knobs, plugin roles and screen knobs following the editor page done; [status](#step-6-status))
-  - [ ] [instant controls](#instant-controls): live gains for part levels, mutes and the master
+  - [x] [instant controls](#instant-controls): live gains for part levels, mutes and the master ([status](#live-gains-status))
   - [ ] the controller-mapping service in the engine, on its MIDI input threads
   - [ ] the latency measured in a test, against one block
 - [ ] 7. Groups, pedal view, move, copy and share
@@ -435,6 +435,24 @@ now also runs the controller-mapping service on its MIDI input threads:
 Pickup, latching and momentary buttons, relative encoders, groups with pages, rows and modes,
 the part the knobs follow, screen knobs and a Sound's own assignments behave as before: the
 engine runs the same `ControllerMapping` and `resolveControls`.
+
+#### Live gains status
+
+Built 2026-11-02 (`Graph::setLiveGain`, `AudioConnection::live`; the Session's `faderSlots_`,
+`Wire::faders`, `fixed` and `live`). Moving a part's fader (`parts.level`), muting it, the master
+(`master.set`) and a control whose targets are part levels or mutes write live gains and compile
+no plan; `graph.commit` after them compiles none unless other edits are staged. A slot just given
+to a part starts at its value rather than ramping to it. A recording's post-fader tap follows the
+same ramp (`Recorder::Source::live`), so the parts' taps still sum to Main. A Performance loaded
+works out its wires' faders from them built again aside, keeping the wires read, so saving it
+again gives the same file. `control-parts` (`liveGains`) checks a logarithmic control on a part's
+level (as "Drifting"'s mod wheel) reaching the level by the end of the next block for five
+moves, each block's samples ramping from the last level to the new one, the model's level for
+the views, a fader, a mute and the master through the control API, an empty bus's fader
+multiplied with the part's, a loaded Performance's faders, all with no plan compiled
+(`Graph::plansCompiled`), and a pan compiling one. Checks elsewhere that read a level right
+after a move now read the block's last sample, since the move ramps across the block. Not yet:
+scene glides still compile a plan per step; a part's pan and a send's level are not live.
 
 ### Pads
 

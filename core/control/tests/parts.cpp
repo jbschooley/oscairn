@@ -33,6 +33,7 @@ namespace
     constexpr uint32_t frames = 64;
     const AudioLayout stereoIn{{{0, "In", 2, 0}}, {{0, "Main", 2, 0}}};
 
+    // A fader moved with live gains ramps across the next block: a check after one reads the block's last sample.
     struct Audio
     {
         std::array<float, frames> inL{}, inR{}, l{}, r{};
@@ -178,11 +179,11 @@ namespace
         s.note(false, 40, 0); x.run(s); check(near(x.l[0], 0), "and releases both");
         // A part's fader and mute.
         s.setPartLevel(bass, .5, false); s.commit();
-        s.note(true, 20, 1); x.run(s); check(near(x.l[0], .125), "the bass part at half level: " + std::to_string(x.l[0]));
-        s.setPartLevel(bass, .5, true); s.commit(); x.run(s); check(near(x.l[0], 0), "muted");
+        s.note(true, 20, 1); x.run(s); check(near(x.l[frames - 1], .125), "the bass part at half level: " + std::to_string(x.l[frames - 1]));
+        s.setPartLevel(bass, .5, true); s.commit(); x.run(s); check(near(x.l[frames - 1], 0), "muted");
         for(const auto& w : s.wires()) if(w.fader && w.part == bass) s.setMix(w.id, 1, 0, false, false);
         s.commit(); x.run(s);
-        check(near(x.l[0], .25) && s.parts()[0].level == 1 && !s.parts()[0].mute, "the output wire's Mix sets the part's fader");
+        check(near(x.l[frames - 1], .25) && s.parts()[0].level == 1 && !s.parts()[0].mute, "the output wire's Mix sets the part's fader");
         s.note(false, 20, 0); x.run(s);
         s.setPartName(bass, "Low end"); check(s.parts()[0].name == "Low end", "renamed");
         bool refused = false; NoteZone bad; bad.curve = 0;
@@ -241,10 +242,10 @@ namespace
         play(false, 62, 7); play(true, 62, 5); check(near(x.l[0], 0), "its old number no longer does");
         play(false, 62, 5);
         // With edits staged, the new devices wait for their commit.
-        s.setPartLevel(ext, .5, false);
+        s.setPartLevel(ext, .5, false); s.setPartPan(ext, 0); // the level is live; the pan is an edit to commit
         status.midiInputs = {{E::Usb, 8, "Arturia KeyLab 61"}}; s.setHostStatus(status);
         check(s.graphState().staged, "staged edits stay staged");
-        s.commit(); play(true, 62, 8); check(near(x.l[0], .25), "committed together: source 8 at half level");
+        s.commit(); play(true, 62, 8); check(near(x.l[frames - 1], .25), "committed together: source 8 at half level");
         play(false, 62, 8);
         // Unplugged: the part hears nothing, and keeps its selector.
         status.midiInputs = {}; s.setHostStatus(status);
@@ -789,11 +790,11 @@ namespace
         s.setPartPan(room, -1); s.commit(); x.run(s); check(x.r[0] < x.l[0], "panned left with it");
         s.setPartPan(room, 0); s.setSend(keys, room, {}); s.setPartOutput(keys, room); s.commit(); x.run(s);
         check(near(x.l[0], .125), "a part playing into it plays at its level: " + std::to_string(x.l[0]));
-        s.setMaster(.5, 0); s.commit(); x.run(s); check(near(x.l[0], .0625), "the master level applies once after it: " + std::to_string(x.l[0]));
-        s.setPartLevel(room, .5, true); s.commit(); x.run(s); check(near(x.l[0], 0), "and is muted with it");
+        s.setMaster(.5, 0); s.commit(); x.run(s); check(near(x.l[frames - 1], .0625), "the master level applies once after it: " + std::to_string(x.l[frames - 1]));
+        s.setPartLevel(room, .5, true); s.commit(); x.run(s); check(near(x.l[frames - 1], 0), "and is muted with it");
         // Its own sends carry too: an empty bus sends what plays into it, after its level and mute.
         s.setMaster(1, 0); s.setPartLevel(room, 1, false); s.commit(); x.run(s);
-        check(near(x.l[0], .25), "the keys play through the bus at unity: " + std::to_string(x.l[0]));
+        check(near(x.l[frames - 1], .25), "the keys play through the bus at unity: " + std::to_string(x.l[frames - 1]));
         const auto hall = s.addPart("Hall", {PartInput::Kind::Bus});
         s.setSend(room, hall, 1); s.commit(); x.run(s);
         check(near(x.l[0], .5), "the bus's own send plays beside it: " + std::to_string(x.l[0]));
@@ -807,7 +808,7 @@ namespace
         auto keysWire = [&](uint32_t send) { for(const auto& w : s.wires()) if(w.part == keys && w.from == synth && w.to == graphOutput && w.send == send) return w.id; throw std::runtime_error("no keys wire"); };
         s.setMix(keysWire(0), .5, 0, false, false); s.commit(); x.run(s);
         double dryLevel = -1; for(const auto& w : s.wires()) if(w.part == keys && !w.send && w.to == graphOutput) dryLevel = w.level;
-        check(near(dryLevel, .5) && near(s.parts()[0].level, 1) && near(x.l[0], .125), "asked .5 past the bus's half: the wire shows .5: " + std::to_string(dryLevel));
+        check(near(dryLevel, .5) && near(s.parts()[0].level, 1) && near(x.l[frames - 1], .125), "asked .5 past the bus's half: the wire shows .5: " + std::to_string(dryLevel));
         s.setMix(keysWire(0), .5, 0, false, false); s.commit(); x.run(s);
         double again = -1; for(const auto& w : s.wires()) if(w.part == keys && !w.send && w.to == graphOutput) again = w.level;
         check(near(again, .5), "asking again lands in the same place: " + std::to_string(again));
@@ -931,18 +932,18 @@ namespace
         s.note(true, 60, 1); x.run(s);
         check(near(x.l[0], .125), "chorus: A at half, B muted: " + std::to_string(x.l[0]));
         s.selectScene(verse); x.run(s);
-        check(near(x.l[0], .75), "verse: both at full, B's gain back to .5 (every automatable parameter): " + std::to_string(x.l[0]));
+        check(near(x.l[frames - 1], .75), "verse: both at full, B's gain back to .5 (every automatable parameter): " + std::to_string(x.l[frames - 1]));
         // Switching back and forth while the note is held never goes silent.
         bool gap = false;
         for(int i = 0; i < 6; ++i) { s.selectScene(i % 2 ? verse : chorus); for(int k = 0; k < 3; ++k) { x.run(s); gap = gap || x.l[0] <= 0; } }
         check(!gap, "the held note sounds through every scene change");
         s.selectScene(chorus); x.run(s);
         s.setPartLevel(pb, 1, false); s.commit(); x.run(s);
-        check(near(x.l[0], .125 + .75), "B unmuted with the chorus gain: " + std::to_string(x.l[0]));
+        check(near(x.l[frames - 1], .125 + .75), "B unmuted with the chorus gain: " + std::to_string(x.l[frames - 1]));
         // A parameter set aside: no scene touches it; taken back, it gets its current value in every scene.
         s.setSceneUntouched({{b, 7}});
         s.selectScene(verse); x.run(s);
-        check(near(s.parameter(b, 7), .75) && near(x.l[0], .25 + .75), "B's gain left alone by the verse: " + std::to_string(x.l[0]));
+        check(near(s.parameter(b, 7), .75) && near(x.l[frames - 1], .25 + .75), "B's gain left alone by the verse: " + std::to_string(x.l[frames - 1]));
         s.setSceneUntouched({});
         for(const auto& sc : s.graphState().scenes)
             check(std::any_of(sc.values.begin(), sc.values.end(), [&](const Scene::Value& v) { return v.at == SceneParameter{b, 7} && near(v.value, .75); }), "taken back at its current value in " + sc.name);
@@ -952,7 +953,7 @@ namespace
         s.selectScene(verse); s.setParameter(b, 7, .5); s.storeScene(verse);
         s.setSceneScope(chorus, Scene::Mutes);
         s.selectScene(chorus); x.run(s);
-        check(near(x.l[0], .25), "the chorus mutes B, A stays at full: " + std::to_string(x.l[0]));
+        check(near(x.l[frames - 1], .25), "the chorus mutes B, A stays at full: " + std::to_string(x.l[frames - 1]));
         refused = false; try { s.setSceneScope(chorus, 64); } catch(const std::invalid_argument&) { refused = true; }
         check(refused, "an unknown kind is refused");
         s.setSceneScope(chorus, Scene::Everything);
@@ -1855,6 +1856,63 @@ namespace
               loaded[1].curve == MacroTarget::Curve::Power && loaded[1].exponent == 2, "both curves round-trip with their numbers");
     }
 
+    // Live gains (RFC 0011's instant controls): a control playing a part's level (as "Drifting"'s
+    // mod wheel does), a fader, a mute, the master and an empty bus's fader reach the sound in the
+    // next block, ramped across it, and compile no plan; an edit of the structure still does.
+    void liveGains(const char* fixture, const fs::path& root)
+    {
+        Session s(48000, frames);
+        const auto a = s.add("a", fixture, "org.kick.test.synth"); s.setParameter(a, 7, .5);
+        const auto part = s.addPart("A"); s.insertIntoPart(part, 0, a); s.commit();
+        const auto wheel = s.addMacro("Mod Wheel");
+        MacroTarget t; t.kind = MacroTarget::Kind::PartLevel; t.part = part; t.curve = MacroTarget::Curve::Logarithmic; t.start = .707; t.end = .0021;
+        s.setMacroTargets(wheel, {t}); s.setMacro(wheel, 0); s.commit();
+        Audio x; s.note(true, 60, 1); x.run(s); x.run(s);
+        check(near(x.l[frames - 1], .5 * .707), "the wheel at 0: the part at .707: " + std::to_string(x.l[frames - 1]));
+        const auto plans = s.plansCompiled();
+        bool levels = true, ramps = true;
+        for(const double v : {.25, .5, 1.0, .1, 0.0})
+        {
+            const float before = x.l[frames - 1];
+            s.setMacro(wheel, v); x.run(s);
+            const double expected = .5 * (t.start + (t.end - t.start) * t.shape(v));
+            levels = levels && near(x.l[frames - 1], expected);
+            // Each sample on the way from the last block's level to the new one, never past it.
+            for(uint32_t i = 0; i < frames; ++i) ramps = ramps && x.l[i] >= std::min<double>(before, expected) - 1e-6 && x.l[i] <= std::max<double>(before, expected) + 1e-6;
+            ramps = ramps && (before == float(expected) || x.l[0] != float(expected));
+        }
+        check(levels, "each move of the wheel is the part's level by the end of the next block");
+        check(ramps, "ramped across that block, from the last level to the new");
+        check(s.plansCompiled() == plans, "and no plan compiled: " + std::to_string(s.plansCompiled() - plans));
+        check(std::abs(s.parts()[0].level - t.map(0)) < 1e-9, "the part's level in the model, for the views");
+        s.setPartLevel(part, .25, false); s.commit(); x.run(s);
+        check(near(x.l[frames - 1], .125), "a fader through the control API, committed: " + std::to_string(x.l[frames - 1]));
+        s.setPartLevel(part, .25, true); s.commit(); x.run(s);
+        check(near(x.l[frames - 1], 0), "muted");
+        s.setPartLevel(part, 1, false); s.setMaster(.5, 0); s.commit(); x.run(s);
+        check(near(x.l[frames - 1], .25), "unmuted, the master at half: " + std::to_string(x.l[frames - 1]));
+        check(s.plansCompiled() == plans, "none of them compiled a plan");
+        for(const auto& w : s.wires()) if(w.fader) check(w.level == 1 && !w.mute, "the fader wire shows the level, for the views");
+        s.setPartPan(part, -.5); s.commit();
+        check(s.plansCompiled() == plans + 1, "a pan, an edit of the structure, compiles one");
+        // Through an empty bus: its fader is a live gain too, multiplied with the part's.
+        const auto bus = s.addPart("Bus", {PartInput::Kind::Bus}); s.setPartOutput(part, bus); s.commit(); x.run(s);
+        const auto through = s.plansCompiled();
+        s.setPartLevel(bus, .5, false); s.commit(); x.run(s);
+        check(near(x.l[frames - 1], .125), "the empty bus's fader: " + std::to_string(x.l[frames - 1]));
+        s.setPartLevel(part, .5, false); s.commit(); x.run(s);
+        check(near(x.l[frames - 1], .0625) && s.plansCompiled() == through, "with the part's, and no plan: " + std::to_string(x.l[frames - 1]));
+        // A Performance loaded: its faders are live from the start.
+        s.savePerformance((root / "live").string());
+        Session u(48000, frames);
+        u.loadPerformance((root / "live").string());
+        Audio y; u.note(true, 60, 1); y.run(u); y.run(u);
+        check(near(y.l[frames - 1], .0625), "loaded, it plays the same: " + std::to_string(y.l[frames - 1]));
+        const auto loaded = u.plansCompiled();
+        u.setPartLevel(part, 1, false); u.commit(); y.run(u);
+        check(near(y.l[frames - 1], .125) && u.plansCompiled() == loaded, "and its faders move without a plan: " + std::to_string(y.l[frames - 1]));
+    }
+
     // Parts, wires with owners and Mix settings, and flagged wires survive save and load, and play
     // the same; an earlier format version is refused.
     void persistence(const char* fixture, const char* audio, const char* delay, const fs::path& root)
@@ -1980,6 +2038,7 @@ int main(int argc, char** argv)
         roles(argv[1], temp.path);
         optionalAssets(argv[1], temp.path);
         levelCurves(argv[1], temp.path);
+        liveGains(argv[1], temp.path);
         persistence(argv[1], argv[2], argv[3], temp.path);
     }
     catch(const std::exception& e) { forbidAllocation = false; std::fprintf(stderr, "FAIL: %s\n", e.what()); return 1; }

@@ -27,8 +27,8 @@ namespace oscairn
     public:
         /// Channel `to` of the tap gets channel `channel` of `node`'s audio outputs (port order;
         /// graphInput: an external input channel, graphOutput: an output channel), times gain,
-        /// summed.
-        struct Source { NodeId node = 0; uint32_t channel = 0, to = 0; float gain = 1; bool operator==( const Source& ) const = default; };
+        /// summed; and by the graph's live gains in `live` (Graph::setLiveGain), ramped as the graph ramps them.
+        struct Source { NodeId node = 0; uint32_t channel = 0, to = 0; float gain = 1; std::array<uint8_t, 4> live{}; bool operator==( const Source& ) const = default; };
         struct AudioTap { std::string name; uint32_t channels = 0; std::vector<Source> sources; bool operator==( const AudioTap& ) const = default; }; // one WAV file
         /// One track of the take's MIDI file: the events these nodes receive (emitted: send).
         /// graphInput: the events entering the graph, which the session hands over itself.

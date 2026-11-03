@@ -166,17 +166,23 @@ namespace oscairn
     // wire connected or not. Off wires and wires into an off plugin carry no new notes (their
     // connection drains when no other wire on it is on) and no sound; sound from an off plugin goes
     // on until it has rung out, and its notes out drain too.
-    void Session::compileWires(Graph& g, std::vector<Wire>& wires, const std::set<NodeId>& off, const std::set<NodeId>& rungOut, const std::set<NodeId>& leaving, double masterLevel, double masterPan)
+    void Session::compileWires(Graph& g, std::vector<Wire>& wires, const std::set<NodeId>& off, const std::set<NodeId>& rungOut, const std::set<NodeId>& leaving, double masterLevel, double masterPan, Live* liveGains)
     {
         const auto layout = g.describe().audioLayout;
-        // The Performance's level and pan, on whatever plays into its main output.
+        // The Performance's level and pan, on whatever plays into its main output: baked, or with
+        // live gains its slot (left, or right on a stereo output).
+        const auto mainOut = [&](const Wire& w) { return w.to == graphOutput && !layout.outputs.empty() && w.toPort == layout.outputs.front().id; };
         const auto master = [&](const Wire& w, const Pair& p) {
-            if(w.to != graphOutput || layout.outputs.empty() || w.toPort != layout.outputs.front().id) return p.gain;
+            if(!mainOut(w)) return p.gain;
             const double balance = layout.outputs.front().channels == 2 ? (p.to ? std::min(1.0, 1 + masterPan) : std::min(1.0, 1 - masterPan)) : 1;
             return p.gain * masterLevel * balance;
         };
         using Key = std::tuple<NodeId, uint32_t, uint32_t, NodeId, uint32_t, uint32_t>;
-        std::map<Key, double> audio;
+        using Slots = std::array<uint8_t, 4>;
+        // Each route: its gain and live slots, and its gain all baked, for routes whose ways do not
+        // share their slots (then baked, and their faders compile plans).
+        struct Route { double gain = 0; Slots slots{}; double baked = 0; bool mixed = false; std::vector<uint32_t> faders; bool started = false; };
+        std::map<Key, Route> audio;
         // Note connections and their zones: none when any wire on the connection passes every note.
         std::map<std::pair<NodeId, NodeId>, std::vector<NoteZone>> notes;
         std::set<std::pair<NodeId, NodeId>> passAll, live; // live: a connection with a wire that takes new notes
@@ -196,22 +202,53 @@ namespace oscairn
                 else zones.insert(zones.end(), w.zones.begin(), w.zones.end());
                 continue;
             }
-            const bool silent = w.mute || (soloed.count({w.to, w.toPort}) && !w.solo) || !w.enabled || off.count(w.to) || rungOut.count(w.from);
-            const auto compiled = pairs(g, layout, w, silent ? 0 : w.level);
+            // With live gains a wire's own faders do not silence it: their slots do.
+            Slots slots{};
+            size_t used = 0;
+            bool liveWire = liveGains && liveGains->slots && w.live && !w.faders.empty();
+            if(liveWire)
+                for(const auto part : w.faders)
+                {
+                    const auto slot = liveGains->slots->find(part);
+                    if(slot == liveGains->slots->end() || used == slots.size() - 1) { liveWire = false; break; } // one left for the master
+                    slots[used++] = slot->second;
+                }
+            if(!liveWire) { slots = {}; used = 0; }
+            const bool structural = (soloed.count({w.to, w.toPort}) && !w.solo) || !w.enabled || off.count(w.to) || rungOut.count(w.from);
+            const bool silent = structural || (liveWire ? w.fixedMute : w.mute);
+            const auto compiled = pairs(g, layout, w, 1);
             w.connected = compiled.has_value();
             if(!compiled || silent) continue;
-            for(const auto& p : *compiled) audio[{w.from, w.fromPort, p.from, w.to, w.toPort, p.to}] += master(w, p);
+            const bool liveMaster = liveGains && liveGains->slots && mainOut(w);
+            for(const auto& p : *compiled)
+            {
+                auto& r = audio[{w.from, w.fromPort, p.from, w.to, w.toPort, p.to}];
+                Slots s = slots;
+                if(liveMaster) s[used] = masterSlots[layout.outputs.front().channels == 2 && p.to ? 1 : 0];
+                if(!r.started) { r.slots = s; r.started = true; }
+                else if(r.slots != s) r.mixed = true;
+                r.gain += (liveWire ? w.fixed : w.level) * p.gain * (liveMaster ? 1 : master(w, Pair{p.from, p.to, 1}));
+                r.baked += (w.mute ? 0 : w.level) * master(w, p);
+                r.faders.insert(r.faders.end(), w.faders.begin(), w.faders.end());
+            }
+            if(liveGains && !liveWire) liveGains->staticFaders.insert(w.faders.begin(), w.faders.end());
         }
+        for(auto& [k, r] : audio)
+            if(r.mixed)
+            {
+                r.gain = r.baked; r.slots = {};
+                if(liveGains) { liveGains->staticFaders.insert(r.faders.begin(), r.faders.end()); if(std::get<3>(k) == graphOutput && !layout.outputs.empty() && std::get<4>(k) == layout.outputs.front().id) liveGains->staticMaster = true; }
+            }
         const auto present = g.describe();
-        std::map<Key, double> existing;
+        std::map<Key, std::pair<double, Slots>> existing;
         for(const auto& r : present.audioRoutes)
             if(!leaving.count(r.from.node) && !leaving.count(r.to.node))
-            for(uint32_t i = 0; i < r.channels; ++i) existing[{r.from.node, r.from.port, r.from.channel + i, r.to.node, r.to.port, r.to.channel + i}] = r.gain;
-        auto connection = [](const Key& k, double gain) {
-            return AudioConnection{{std::get<0>(k), std::get<1>(k), std::get<2>(k)}, {std::get<3>(k), std::get<4>(k), std::get<5>(k)}, 1, gain};
+            for(uint32_t i = 0; i < r.channels; ++i) existing[{r.from.node, r.from.port, r.from.channel + i, r.to.node, r.to.port, r.to.channel + i}] = {r.gain, r.live};
+        auto connection = [](const Key& k, double gain, const Slots& slots) {
+            return AudioConnection{{std::get<0>(k), std::get<1>(k), std::get<2>(k)}, {std::get<3>(k), std::get<4>(k), std::get<5>(k)}, 1, gain, slots};
         };
-        for(const auto& [k, gain] : existing) if(!audio.count(k)) g.disconnectAudio(connection(k, gain));
-        for(const auto& [k, gain] : audio) if(auto e = existing.find(k); e == existing.end() || e->second != gain) g.connectAudio(connection(k, gain));
+        for(const auto& [k, e] : existing) if(!audio.count(k)) g.disconnectAudio(connection(k, e.first, e.second));
+        for(const auto& [k, r] : audio) if(auto e = existing.find(k); e == existing.end() || e->second != std::pair{r.gain, r.slots}) g.connectAudio(connection(k, r.gain, r.slots));
         for(auto& [e, zones] : notes) if(passAll.count(e)) zones.clear();
         for(const auto& e : present.notes) if(!notes.count(e) && !leaving.count(e.first) && !leaving.count(e.second)) g.disconnectNotes(e.first, e.second);
         for(const auto& [e, zones] : notes)
@@ -223,7 +260,53 @@ namespace oscairn
         }
     }
 
-    void Session::syncWires() { compileWires(graph_, wires_, disabled_, rungOut_, leaving_, masterLevel_, masterPan_); graph_.setMidiTaps(midiTaps(graph_, parts_, wires_)); graph_.setHarmonies(harmonies(parts_, key_)); staged_ = true; }
+    void Session::syncWires() { compileWires(); graph_.setMidiTaps(midiTaps(graph_, parts_, wires_)); graph_.setHarmonies(harmonies(parts_, key_)); staged_ = true; }
+
+    // The open Performance's wires, with each part's fader and the master as live gains.
+    void Session::compileWires()
+    {
+        assignSlots();
+        Live live{&faderSlots_};
+        compileWires(graph_, wires_, disabled_, rungOut_, leaving_, masterLevel_, masterPan_, &live);
+        staticFaders_ = std::move(live.staticFaders); staticMaster_ = live.staticMaster;
+        writeLiveGains(); // the plan playing names the same slots, so they apply at once
+    }
+
+    void Session::assignSlots()
+    {
+        std::erase_if(faderSlots_, [&](const auto& s) { return std::none_of(parts_.begin(), parts_.end(), [&](const Part& p) { return p.id == s.first; }); });
+        std::set<uint8_t> used;
+        for(const auto& [part, slot] : faderSlots_) used.insert(slot);
+        uint32_t next = firstPartSlot;
+        for(const auto& p : parts_)
+        {
+            if(faderSlots_.count(p.id)) continue;
+            while(next < Graph::liveGains && used.count(uint8_t(next))) ++next;
+            if(next == Graph::liveGains) break; // past 253 parts the rest are baked, and compile plans when moved
+            faderSlots_[p.id] = uint8_t(next); used.insert(uint8_t(next)); freshSlots_.insert(uint8_t(next));
+        }
+    }
+
+    void Session::writeLiveGains()
+    {
+        const auto& outputs = graph_.audioLayout().outputs;
+        const bool stereo = !outputs.empty() && outputs.front().channels == 2;
+        graph_.setLiveGain(masterSlots[0], float(masterLevel_ * (stereo ? std::min(1.0, 1 - masterPan_) : 1)));
+        graph_.setLiveGain(masterSlots[1], float(masterLevel_ * std::min(1.0, 1 + masterPan_)));
+        for(const auto& p : parts_) if(const auto s = faderSlots_.find(p.id); s != faderSlots_.end()) graph_.setLiveGain(s->second, p.mute ? 0.f : float(p.level), !freshSlots_.count(s->second));
+        freshSlots_.clear();
+    }
+
+    // A change of levels and mutes only: the wires the views read are built again, the slots
+    // written, and no plan compiled (Session::commit leaves it out).
+    template<class Edit> void Session::editFaders(Edit&& edit)
+    {
+        auto parts = parts_; auto wires = wires_;
+        try { edit(); buildParts(); }
+        catch(...) { parts_.swap(parts); wires_.swap(wires); throw; }
+        writeLiveGains();
+        liveEdit_ = true;
+    }
 
     // Each part's harmony (RFC 0033): its key or the Performance's, for every plugin in its chain
     // and lanes, with the chord held at its note input, through its zones.
@@ -328,7 +411,7 @@ namespace oscairn
             if(graph_.idle(*it, quiet, limit)) { graph_.remove(*it); it = leaving_.erase(it); done = true; }
             else ++it;
         if(!done) return;
-        compileWires(graph_, wires_, disabled_, rungOut_, leaving_, masterLevel_, masterPan_);
+        compileWires();
         graph_.commit();
         ++revision_; publish(ChangeKind::Graph);
     }
@@ -370,6 +453,7 @@ namespace oscairn
                     {
                         x.level *= lane.level; x.pan = std::clamp(x.pan + lane.pan, -1.0, 1.0);
                         x.mute = x.mute || lane.mute || (solo && !lane.solo);
+                        x.fixed *= lane.level; x.fixedMute = x.fixedMute || lane.mute || (solo && !lane.solo);
                         for(auto& v : x.via) { v.level *= lane.level; v.pan = std::clamp(v.pan + lane.pan, -1.0, 1.0); v.mute = v.mute || lane.mute || (solo && !lane.solo); }
                         if(!x.split) { x.split = split.id; x.lane = k; }
                         out.push_back(x);
@@ -386,6 +470,7 @@ namespace oscairn
             for(auto& x : out)
             {
                 x.level *= bus.level; x.pan = std::clamp(x.pan + bus.pan, -1.0, 1.0); x.mute = x.mute || mute; x.fader = true;
+                x.fixedMute = x.fixedMute || !heard(bus); x.faders.insert(x.faders.begin(), id); // its level and mute are its live gain's
                 for(auto& v : x.via) { v.level *= bus.level; v.pan = std::clamp(v.pan + bus.pan, -1.0, 1.0); v.mute = v.mute || mute; }
                 x.via.insert(x.via.begin(), here);
             }
@@ -393,6 +478,7 @@ namespace oscairn
                 for(auto x : busEntries(send.bus))
                 {
                     x.level *= bus.level * send.level; x.mute = x.mute || mute; x.fader = true;
+                    x.fixed *= send.level; x.fixedMute = x.fixedMute || !heard(bus); x.faders.insert(x.faders.begin(), id);
                     for(auto& v : x.via) { v.level *= bus.level * send.level; v.mute = v.mute || mute; }
                     x.via.insert(x.via.begin(), here);
                     out.push_back(x);
@@ -420,7 +506,7 @@ namespace oscairn
             w.owner = WireOwner::Part; w.part = part.id; w.id = nextWire_++;
             for(const auto& p : previous)
                 if(p.kind == w.kind && p.from == w.from && p.to == w.to && p.fromPort == w.fromPort && p.toPort == w.toPort)
-                    { w.level = p.level; w.pan = p.pan; w.mute = p.mute; w.solo = p.solo; w.enabled = p.enabled; if(keepZones) w.zones = p.zones; break; }
+                    { w.level = p.level; w.pan = p.pan; w.mute = p.mute; w.solo = p.solo; w.enabled = p.enabled; w.connected = p.connected; if(keepZones) w.zones = p.zones; break; }
             wires_.push_back(std::move(w));
             return &wires_.back();
         };
@@ -508,8 +594,12 @@ namespace oscairn
         input.port = part.input.port; input.zones = inputZones(part.input, hostStatus_.midiInputs);
         // A wire into a bus's lane also takes that lane's Mix.
         // pan: the part's, which its fader wires carry, for the empty buses' meters on the way.
-        auto enter = [](Wire* w, const End& e, const BusEntry& d, double level, bool mute, double pan) {
+        // fixed: its level apart from the faders (a send's own level), for the live gains.
+        const bool unheard = !heard(part);
+        auto enter = [&](Wire* w, const End& e, const BusEntry& d, double level, bool mute, double pan, double fixed = 1) {
             w->level = level * e.level * d.level; w->mute = mute || e.mute || d.mute;
+            w->fixed = fixed * e.level * d.fixed; w->fixedMute = unheard || e.mute || d.fixedMute; w->live = true;
+            w->faders = d.faders; w->faders.insert(w->faders.begin(), part.id);
             if(d.split || d.fader) w->pan = std::clamp(e.pan + d.pan, -1.0, 1.0);
             if(d.split && !e.split) { w->split = d.split; w->lane = d.lane; }
             w->via = d.via;
@@ -530,6 +620,18 @@ namespace oscairn
             if(a + b > 0) { same->pan = (same->pan * a + w->pan * b) / (a + b); same->share = (same->share * a + w->share * b) / (a + b); }
             same->level = same->mute == w->mute ? same->level + w->level : a + b;
             same->mute = same->mute && w->mute;
+            if(same->live && w->live && same->faders == w->faders)
+            {
+                const double x = same->fixedMute ? 0 : same->fixed, y = w->fixedMute ? 0 : w->fixed;
+                same->fixed = same->fixedMute == w->fixedMute ? same->fixed + w->fixed : x + y;
+                same->fixedMute = same->fixedMute && w->fixedMute;
+            }
+            else
+            {
+                // Two ways through different faders cannot share one live gain: baked, and those faders compile plans.
+                same->live = false;
+                for(const auto f : w->faders) if(std::find(same->faders.begin(), same->faders.end(), f) == same->faders.end()) same->faders.push_back(f);
+            }
             same->via.insert(same->via.end(), w->via.begin(), w->via.end());
             wires_.pop_back();
         };
@@ -550,7 +652,7 @@ namespace oscairn
                 for(const auto& d : busEntries(send.bus))
                 {
                     auto* s = audioWire(e, d.node, d.port);
-                    s->send = send.bus; enter(s, e, d, send.level * part.level, mute, 0); // post-fader
+                    s->send = send.bus; enter(s, e, d, send.level * part.level, mute, 0, send.level); // post-fader
                     merge(s);
                 }
         }
@@ -674,6 +776,7 @@ namespace oscairn
     void Session::setMaster(double level, double pan)
     {
         if(!std::isfinite(level) || level < 0 || level > 2 || !std::isfinite(pan) || pan < -1 || pan > 1) throw std::invalid_argument("the master level is 0..2 and its pan -1..1");
+        if(!staticMaster_) { masterLevel_ = level; masterPan_ = pan; writeLiveGains(); liveEdit_ = true; return; }
         editWires([&] { masterLevel_ = level; masterPan_ = pan; });
     }
 
@@ -803,20 +906,25 @@ namespace oscairn
                 }
                 std::set<std::pair<NodeId, uint32_t>> soloed;
                 for(const auto& w : wires) if(w.kind == WireKind::Audio && w.solo) soloed.insert({w.to, w.toPort});
-                std::map<std::tuple<NodeId, uint32_t, uint32_t>, double> gains;
+                std::map<std::tuple<NodeId, uint32_t, uint32_t, std::array<uint8_t, 4>>, double> gains;
                 Recorder::AudioTap tap{part->name.empty() ? "Part " + std::to_string(part->id) : part->name, 0, {}};
                 if(t.preFader) tap.name += " pre-fader";
                 for(const auto& w : wires)
                 {
                     if(w.kind != WireKind::Audio || w.owner != WireOwner::Part || w.part != part->id || !w.fader) continue;
                     if(const auto m = channelsOf(graph_, layout, w.to, w.toPort, true)) tap.channels = std::max(tap.channels, *m);
-                    const bool silent = w.mute || (soloed.count({w.to, w.toPort}) && !w.solo) || !w.enabled || disabled_.count(w.to) || rungOut_.count(w.from);
+                    // Post-fader, a live wire follows its faders' live gains, as the graph plays it.
+                    std::array<uint8_t, 4> slots{};
+                    bool live = !t.preFader && w.live && w.faders.size() <= slots.size();
+                    for(size_t i = 0; live && i < w.faders.size(); ++i) if(const auto s = faderSlots_.find(w.faders[i]); s != faderSlots_.end()) slots[i] = s->second; else live = false;
+                    if(!live) slots = {};
+                    const bool silent = (live ? w.fixedMute : w.mute) || (soloed.count({w.to, w.toPort}) && !w.solo) || !w.enabled || disabled_.count(w.to) || rungOut_.count(w.from);
                     const auto at = first(w.from, w.fromPort, false);
-                    const auto compiled = pairs(graph_, layout, w, w.level);
+                    const auto compiled = pairs(graph_, layout, w, live ? w.fixed : w.level);
                     if(silent || !at || !compiled) continue;
-                    for(const auto& p : *compiled) gains[{w.from, at->first + p.from, p.to}] += p.gain;
+                    for(const auto& p : *compiled) gains[{w.from, at->first + p.from, p.to, slots}] += p.gain;
                 }
-                for(const auto& [k, gain] : gains) tap.sources.push_back({std::get<0>(k), std::get<1>(k), std::get<2>(k), float(gain)});
+                for(const auto& [k, gain] : gains) tap.sources.push_back({std::get<0>(k), std::get<1>(k), std::get<2>(k), float(gain), std::get<3>(k)});
                 if(!tap.channels) tap.channels = 2; // plays nowhere now: silent
                 out.audio.push_back(std::move(tap));
             }
@@ -858,7 +966,9 @@ namespace oscairn
     {
         findPart(id);
         if(!std::isfinite(level) || level < 0) throw std::invalid_argument("invalid part level");
-        editWires([&] { auto& p = findPart(id); p.level = level; p.mute = mute; buildParts(); });
+        auto change = [&] { auto& p = findPart(id); p.level = level; p.mute = mute; };
+        if(liveFader(id)) editFaders(change);
+        else editWires([&] { change(); buildParts(); });
     }
 
     void Session::setPartName(uint32_t id, const std::string& name)
@@ -1081,10 +1191,15 @@ namespace oscairn
         findMacro(id);
         Quiet playing(*this); // moving a control is playing, not editing
         bool faders = false;
+        const auto before = faderLevels();
         driveMacro(id, value, faders);
-        // shortcut: part faders recompile the graph plan on every move; fine at knob rates on the
-        // desktop, make them direct gain updates before devices sweep them continuously.
-        if(faders) { editWires([&] { buildParts(); }); rampGains_ = true; commit(); } // swept fast, a level ramps rather than steps
+        if(!faders) return;
+        // Faders with live gains move without a plan; any other compiles one, its gains ramping.
+        const auto after = faderLevels();
+        bool live = true;
+        for(size_t i = 0; i < parts_.size() && i < before.size(); ++i) if(before[i] != after[i] && !liveFader(parts_[i].id)) live = false;
+        if(live) { buildParts(); writeLiveGains(); ++revision_; publish(ChangeKind::Graph); }
+        else { editWires([&] { buildParts(); }); rampGains_ = true; commit(); }
     }
 
     Scene& Session::findScene(uint32_t id)
