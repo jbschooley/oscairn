@@ -16,7 +16,7 @@ namespace oscairn::standalone
     /// top, a row of knobs following the Performance's controls (or, switched, the selected part's
     /// own), and a strip per part and bus with its level, meters, mute and solo. Everything is
     /// one touch. Drawn in the theme's styles for sections, sliders, knobs and marks.
-    class PlayView : public juce::Component, private juce::Timer
+    class PlayView : public juce::Component, private juce::Timer, private juce::ChangeListener
     {
     public:
         explicit PlayView(Engine& engine);
@@ -53,6 +53,7 @@ namespace oscairn::standalone
         class Knob;
         class Strip;
         void timerCallback() override;
+        void changeListenerCallback(juce::ChangeBroadcaster*) override; // the engine changed: the values at once
         void refresh();
         void rebuild();
         void publishRow();

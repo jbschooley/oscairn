@@ -65,9 +65,12 @@ namespace oscairn::standalone
         scan_ = std::async(std::launch::async, [dir = engine.pluginDir(), scanner] { try { return bundledPlugins(dir, scanner); } catch(const std::exception&) { return std::vector<PluginChoice>{}; } });
         refresh();
         startTimer(200);
+        engine_.addChangeListener(this);
     }
 
-    PartsView::~PartsView() { stopTimer(); if(scan_.valid()) scan_.wait(); }
+    PartsView::~PartsView() { engine_.removeChangeListener(this); stopTimer(); if(scan_.valid()) scan_.wait(); }
+
+    void PartsView::changeListenerCallback(juce::ChangeBroadcaster*) { if(isShowing()) refresh(); }
 
     void PartsView::timerCallback()
     {

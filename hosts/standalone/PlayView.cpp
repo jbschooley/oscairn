@@ -218,9 +218,16 @@ namespace oscairn::standalone
         addAndMakeVisible(viewport_);
         refresh();
         startTimer(16); // a display frame: values the controls move show at once
+        engine_.addChangeListener(this);
     }
 
-    PlayView::~PlayView() { stopTimer(); }
+    PlayView::~PlayView() { engine_.removeChangeListener(this); stopTimer(); }
+
+    void PlayView::changeListenerCallback(juce::ChangeBroadcaster*)
+    {
+        if(!isShowing()) return;
+        if(auto values = engine_.liveValues(); values != values_) { values_ = std::move(values); showValues(); }
+    }
 
     namespace
     {

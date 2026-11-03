@@ -464,7 +464,9 @@ the old value for a moment; a refusal is said as the edit's error, and the graph
 place of what the cache showed. A `graph.commit` after only such edits is sent the same way and
 reads nothing back; a commit after any other edit still reads the graph, so `graphState()` is
 current on return for structural edits. A mute is still a `graph.changed`, read once for the
-views' wires.
+views' wires. The app's `Engine` broadcasts a change after each edit and whenever the engine
+changes the graph or the live values; the parts list, the Mixer and Play redraw at once (the
+Mixer and Play when on screen), in every window showing them, rather than at their timers.
 **Target:** the views show the move within one display frame (16 ms), and the UI thread does
 not wait on the socket for it.
 
@@ -496,8 +498,11 @@ answers and pushes; a mute reads the graph once and a level not at all; a drag o
 reads no graph and ends where it was left; a refused move shows until the refusal arrives, which
 then shows as the edit's error with the engine's level back. Measured on the development Mac
 (ten runs, the test's engine polling its socket every millisecond rather than every 5 ms): the
-state 16 to 24 µs after the edit, the engine's `controls.changed` 0.3 to 1.7 ms after it. Not
-yet: a mute's `graph.changed` still reads the whole graph and every plugin's parameters on the
+state 16 to 24 µs after the edit, the engine's `controls.changed` 0.3 to 1.7 ms after it. The
+desktop's parts list, drawn off screen, shows a mute made elsewhere within 5 ms of message
+loop, four times running (`Engine` is a `juce::ChangeBroadcaster`; `DesktopShell`, `PartsView`
+and `PlayView` listen). The Mixer and Play listen only while on screen, which no headless test
+reaches, so their redraw is unchecked. Not yet: a mute's `graph.changed` still reads the whole graph and every plugin's parameters on the
 UI thread, after the mute shows.
 
 #### Engine mapping status

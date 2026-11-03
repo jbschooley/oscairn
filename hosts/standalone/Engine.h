@@ -17,7 +17,9 @@ namespace oscairn::standalone
 {
     std::string tidyNumber(const std::string& valueText); // "0.0100000" -> "0.01"; other text unchanged
     /// UI facade over either an in-process Control or a remote engine's cached Control.
-    class Engine : private juce::Timer
+    /// Broadcasts a change (async, coalesced) after each edit and whenever the engine changed the
+    /// graph or the live values, so every view showing them redraws at once, not at its timer.
+    class Engine : public juce::ChangeBroadcaster, private juce::Timer
     {
     public:
         /// helperExecutable selects managed mode; empty helper + empty socket is in-process.

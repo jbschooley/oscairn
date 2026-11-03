@@ -18,7 +18,7 @@ namespace oscairn::standalone
     /// chain, level, mute and sends) and the shared buses under them; tapping a part opens its
     /// chain, zone, output and sends. Every edit is heard at once; nothing needs wiring. Drawn
     /// over the main window, so it works on a device's single screen too.
-    class PartsView : public juce::Component, private juce::Timer
+    class PartsView : public juce::Component, private juce::Timer, private juce::ChangeListener
     {
     public:
         explicit PartsView(Engine& engine, const std::string& scanner);
@@ -42,6 +42,7 @@ namespace oscairn::standalone
 
     private:
         void timerCallback() override;
+        void changeListenerCallback(juce::ChangeBroadcaster*) override; // the engine changed: shown at once
         void rebuild();           // the controls for the current page and state
         const PartRow* part(uint32_t id) const;
         juce::Rectangle<int> rowBounds(size_t row) const;

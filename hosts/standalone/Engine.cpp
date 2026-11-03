@@ -226,6 +226,7 @@ namespace oscairn::standalone
         command([this,change=std::move(change)]{
             try{change(*control_);editError_.clear();}
             catch(const std::invalid_argument& e){editError_=e.what();}
+            sendChangeMessage();
         });
     }
     void Engine::ignoreMidiInputs(std::vector<std::string> names){ignoredInputs_=std::move(names);command([this]{control_->ignoreMidiInputs(ignoredInputs_);});}
@@ -583,7 +584,14 @@ namespace oscairn::standalone
         }
         if(failure_.empty())
         {
-            try{remote_->service();if(auto refused=remote_->takeError();!refused.empty())editError_=std::move(refused);}catch(const std::exception& e){failed(e.what());}
+            try
+            {
+                const auto values=remote_->liveValues();const auto revision=remote_->graphState().revision;
+                remote_->service();
+                if(auto refused=remote_->takeError();!refused.empty())editError_=std::move(refused);
+                if(remote_->liveValues()!=values || remote_->graphState().revision!=revision)sendChangeMessage();
+            }
+            catch(const std::exception& e){failed(e.what());}
             if(failure_.empty() && ++soundTicks_>=30){soundTicks_=0;refreshSounds();}
         }
         else if(!restarting_.valid() && ++reconnectTicks_>=60)

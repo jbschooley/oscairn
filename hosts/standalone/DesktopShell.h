@@ -45,7 +45,7 @@ namespace oscairn::standalone
     /// panel. A toolbar with the tempo, scenes and undo; Play (RFC 0011) under it, first; and
     /// Edit's: the parts and buses down the left with their meters, and tabs for the selected
     /// part, the Mixer, Routing and Controls, each of which can also open in a window of its own.
-    class DesktopShell : public juce::Component, private juce::Timer
+    class DesktopShell : public juce::Component, private juce::Timer, private juce::ChangeListener
     {
     public:
         enum class Tab { Part, Mixer, Routing, Controls, Play }; // Play is not one of Edit's tabs
@@ -72,6 +72,7 @@ namespace oscairn::standalone
         struct Metrics { int control, row, gap; };
         Metrics metrics() const;
         void timerCallback() override;
+        void changeListenerCallback(juce::ChangeBroadcaster*) override; // the engine changed: the rows at once
         void refresh();
         void select(uint32_t part);
         std::unique_ptr<juce::Component> viewFor(Tab tab); // a fresh view, for a window of its own

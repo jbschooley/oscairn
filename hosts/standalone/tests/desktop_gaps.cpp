@@ -509,6 +509,23 @@ int main(int argc, char** argv)
                 check(wait([&] { return engine.editError() == "no such fader"; }) && wait([&] { return std::abs(part().level - 59 / 60.0) < 1e-9; }), "then its refusal is said and the engine's level shown: " + engine.editError());
                 tap.refuse("parts.level", "");
                 level(1, false); settle();
+                // A window showing the part (the desktop's parts list) redraws a mute edited
+                // elsewhere at once, not at its next timer (every 200 ms): drawn off screen.
+                standalone::DesktopShell shell(engine, argv[2], standalone::InputMode::Mouse);
+                shell.setSize(1280, 800); shell.showTab(standalone::DesktopShell::Tab::Mixer); settle(); // Edit: the parts list shows
+                auto drawn = [&] { return shell.createComponentSnapshot(shell.getLocalBounds()); };
+                auto same = [](const juce::Image& a, const juce::Image& b) {
+                    for(int y = 0; y < a.getHeight(); ++y) for(int x = 0; x < a.getWidth(); ++x) if(a.getPixelAt(x, y) != b.getPixelAt(x, y)) return false;
+                    return true;
+                };
+                for(const bool muted : {true, false, true, false})
+                {
+                    const auto before = drawn();
+                    level(1, muted);
+                    juce::MessageManager::getInstance()->runDispatchLoopUntil(5);
+                    check(!same(before, drawn()), std::string("the parts list shows the part ") + (muted ? "muted" : "unmuted") + " within a frame");
+                }
+                settle();
             }
             // The Library reads the library again after a job that may change it, not after the
             // periodic refresh, which changes nothing.

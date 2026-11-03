@@ -276,9 +276,12 @@ namespace oscairn::standalone
         refresh();
         showTab(Tab::Play); // the Performance app opens in Play
         startTimer(50);
+        engine_.addChangeListener(this);
     }
 
-    DesktopShell::~DesktopShell() { stopTimer(); windows_.clear(); }
+    DesktopShell::~DesktopShell() { engine_.removeChangeListener(this); stopTimer(); windows_.clear(); }
+
+    void DesktopShell::changeListenerCallback(juce::ChangeBroadcaster*) { refresh(); list_->repaint(); }
 
     DesktopShell::Metrics DesktopShell::metrics() const { return touchSized(mode_) ? Metrics{44, 64, 10} : Metrics{30, 50, 8}; }
 
