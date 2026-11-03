@@ -168,7 +168,9 @@ namespace oscairn
     void ControllerInput::refresh(bool moved)
     {
         const auto& inputs = session_.hostStatus_.midiInputs;
-        if(!moved && !dirty_ && session_.sequence_ == sequence_ && session_.revision_ == revision_ && inputs == inputs_) return;
+        auto live = session_.liveValues();
+        if(!moved && !dirty_ && session_.sequence_ == sequence_ && session_.revision_ == revision_ && inputs == inputs_ && live == liveSeen_) return;
+        liveSeen_ = std::move(live);
         std::vector<Control::ControllerPort> ports;
         { std::lock_guard lock(lock_); ports = ports_; }
         // shortcut: compiled whole on every change of the Session (a parameter turned on screen too); compile only what changed if this shows in the control thread's load.

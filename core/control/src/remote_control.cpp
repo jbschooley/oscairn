@@ -310,7 +310,7 @@ namespace oscairn
     RemoteControl::RemoteControl(LocalClient& client):impl_(std::make_unique<Impl>(client))
     {
         auto hello=impl_->call("session.hello");if(integer(field(field(hello.get(),"result"),"protocolVersion"))!=1)throw std::runtime_error("Unsupported control protocol version");
-        impl_->call("subscribe",R"({"topics":["params.changed","transport","graph.changed","status","controllers"],"allChanges":true})");
+        impl_->call("subscribe",R"({"topics":["params.changed","transport","graph.changed","status","controllers","controls.changed"],"allChanges":true})");
         {auto state=impl_->call("controllers.get");impl_->readControllers(field(state.get(),"result"));}
         impl_->refresh();auto state=impl_->call("transport.get");impl_->readTransport(field(state.get(),"result"));
         auto status=impl_->call("session.status");impl_->readStatus(field(status.get(),"result"));
@@ -625,6 +625,14 @@ namespace oscairn
         impl_->call("controllers.view",'{'+text+'}');
     }
     Control::ControllerState RemoteControl::controllerState() const { return impl_->controllers; }
+    Control::LiveValues RemoteControl::liveValues() const
+    {
+        LiveValues v;const auto& g=impl_->graph;
+        for(const auto& m:g.macros)v.controls.push_back({m.id,m.value});
+        for(const auto& p:g.parts)v.parts.push_back({p.id,p.level,p.mute});
+        v.masterLevel=g.masterLevel;v.masterPan=g.masterPan;
+        return v;
+    }
     bool RemoteControl::note(bool on,int key,double velocity,int channel)
     {try{impl_->call("notes.send",std::string("{\"on\":")+(on?"true":"false")+",\"key\":"+std::to_string(key)+",\"velocity\":"+encode(velocity)+",\"channel\":"+std::to_string(channel)+'}');return true;}catch(const RpcError& e){if(e.code==-32005)return false;throw;}}
     std::vector<AssignmentOverride> RemoteControl::assignments() const
@@ -929,6 +937,15 @@ namespace oscairn
             if(method=="transport")impl_->readTransport(params);
             else if(method=="status")impl_->readStatus(params);
             else if(method=="controllers")impl_->readControllers(params);
+            else if(method=="controls.changed")
+            {
+                // Values pushed as they change: the cached graph takes them, with no graph read.
+                auto& g=impl_->graph;
+                for(auto c:array(field(params,"controls"))){const auto id=static_cast<uint32_t>(integer(field(c,"control")));for(auto& m:g.macros)if(m.id==id)m.value=number(field(c,"value"));}
+                for(auto f:array(field(params,"parts"))){const auto id=static_cast<uint32_t>(integer(field(f,"part")));for(auto& p:g.parts)if(p.id==id){p.level=number(field(f,"level"));p.mute=boolean(field(f,"mute"));}}
+                V master=nullptr;try{master=field(params,"master");}catch(const std::runtime_error&){}
+                if(master){g.masterLevel=number(field(master,"level"));g.masterPan=number(field(master,"pan"));}
+            }
             else if(method=="graph.changed"){refresh=true;impl_->publish({0,ChangeKind::Graph});}
             else if(method=="session.resync"){refresh=resync=true;impl_->publish({0,ChangeKind::Resync});}
             else if(method=="params.changed")for(auto c:array(field(params,"changes")))

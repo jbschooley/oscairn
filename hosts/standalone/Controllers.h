@@ -53,6 +53,7 @@ namespace oscairn::standalone
         std::atomic<bool> dirty_{false};
         // Message thread: what the surfaces and feedback read, and values set lately (read back late).
         Control::GraphState graph_;
+        Control::LiveValues values_; // as last seen: a change is read and sent back at once
         AssignmentSource source_;
         double sourceTime_ = -1;
         std::map<NodeId, std::pair<std::string, std::vector<Control::ParamInfo>>> parameters_;

@@ -125,7 +125,7 @@ set_tests_properties(control-parts PROPERTIES TIMEOUT 60)
 
 add_executable(oscairn-controller-input-test tests/controller_input.cpp)
 target_include_directories(oscairn-controller-input-test PRIVATE ../clap-host/tests)
-target_link_libraries(oscairn-controller-input-test PRIVATE oscairn_control)
+target_link_libraries(oscairn-controller-input-test PRIVATE oscairn_control_socket)
 add_test(NAME control-controller-input COMMAND oscairn-controller-input-test $<TARGET_FILE:kick-clap-fixture-normal>)
 set_tests_properties(control-controller-input PROPERTIES TIMEOUT 60)
 

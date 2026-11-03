@@ -1394,14 +1394,15 @@
                 "topics": {
                   "type": "array",
                   "minItems": 1,
-                  "maxItems": 5,
+                  "maxItems": 6,
                   "items": {
                     "enum": [
                       "params.changed",
                       "transport",
                       "graph.changed",
                       "status",
-                      "controllers"
+                      "controllers",
+                      "controls.changed"
                     ]
                   }
                 },
@@ -1440,14 +1441,15 @@
                 "topics": {
                   "type": "array",
                   "minItems": 1,
-                  "maxItems": 5,
+                  "maxItems": 6,
                   "items": {
                     "enum": [
                       "params.changed",
                       "transport",
                       "graph.changed",
                       "status",
-                      "controllers"
+                      "controllers",
+                      "controls.changed"
                     ]
                   }
                 },
@@ -7140,6 +7142,101 @@
             },
             "params": {
               "$ref": "#/$defs/ControllerState"
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "params"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "method": {
+              "const": "controls.changed",
+              "description": "Values controls and faders play, those that changed since the last (RFC 0011's instant controls)"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "controls": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "control": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "value": {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 1
+                      }
+                    },
+                    "required": [
+                      "control",
+                      "value"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "parts": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "part": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "level": {
+                        "type": "number",
+                        "minimum": 0
+                      },
+                      "mute": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "part",
+                      "level",
+                      "mute"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "master": {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 2
+                    },
+                    "pan": {
+                      "type": "number",
+                      "minimum": -1,
+                      "maximum": 1
+                    }
+                  },
+                  "required": [
+                    "level",
+                    "pan"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "controls",
+                "parts"
+              ],
+              "additionalProperties": false
             }
           },
           "required": [

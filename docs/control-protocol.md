@@ -116,7 +116,7 @@ request members.
 | `transport.get` | omitted or `{}` | `playing`, `tempo`, `beat`, `clockSource`, `clockOutputs` |
 | `transport.set` | one or more of `playing` (boolean), `tempo` (1..1000), `clockSource` (`"internal"` or `"midi"`), `clockOutputs` (up to 16 device rules choosing MIDI outputs, as for a part's `devices`, replacing the last; empty, the default, sends no clock) | `{"accepted":true}` |
 | `params.gesture` | `node`, `param`, `begin` (boolean) | `{"accepted":true}` |
-| `subscribe`, `unsubscribe` | `topics` (1..6 of `params.changed`, `transport`, `graph.changed`, `status`, `record`, `controllers`), optional `allChanges` boolean | `{"accepted":true}` |
+| `subscribe`, `unsubscribe` | `topics` (1..7 of `params.changed`, `transport`, `graph.changed`, `status`, `record`, `controllers`, `controls.changed`), optional `allChanges` boolean | `{"accepted":true}` |
 | `graph.get` | omitted or `{}` | staged topology, names/plugin metadata/ports, each node's `enabled` and `ringing` (switched off and still sounding out), connections, mappings, parts, wires (each with `enabled`), `revision`, `staged`, numeric `input`/`output` endpoints |
 | `graph.role` | `node`, `role`: one of `insertion-a`, `insertion-b`, `part-eq`, `reverb`, `variation`, `master-effect`, `master-eq`, `arpeggiator` ([RFC 0016's node roles](rfcs/0016-effects-suite.md#where-the-effects-go)), or `null` for none; `graph.get` gives each node's `role` (or `null`). An edit, saved with the node | `{"accepted":true}`; an unknown role or node is refused |
 | `graph.enable` | `node`, `enabled`: switches a plugin off or on, as scenes do. Off, it takes no new notes and no sound: notes it holds play on until released, its sound rings out and then stops (`ringing` until then). In a part's chain, what reached it passes around it, so an effect off is bypassed. An edit, staged until commit | `{"accepted":true}` |
@@ -408,6 +408,15 @@ the first poll. Re-subscribing does not discard already unread changes.
 - `transport` carries the `transport.get` shape when it changes, at most 60 times per second.
 - `controllers` carries the `controllers.get` shape when it changes (a control moved, a
   row button, a page), at most 60 times per second.
+- `controls.changed` carries the values controls and faders play, only those that changed
+  since the last one: `controls` (each `{control, value}`), `parts` (each `{part, level,
+  mute}`) and, when it changed, `master` (`{level, pan}`); everything on the first after
+  subscribing. At most 60 times per second, the interval counted from the last one sent, so
+  a move after a pause goes out at the next poll. A part's level or the master moved live
+  ([RFC 0011](rfcs/0011-performance-ui-and-editors.md#instant-controls): `parts.level`,
+  `master.set`, a control or a controller) reaches clients only this way: it is no
+  `graph.changed`, so a client keeping values up to date needs this topic, and reads no graph
+  for a move. A mute changed live is a `graph.changed` as well (the views' wires show it).
 - `status` carries the `session.status` shape when it changes, at most 4 times per second.
   `cpuLoad` is the device callback load as a fraction (1 means the entire block budget),
   not whole-machine CPU usage. `deadlineMisses` sums plugin deadline misses for nodes

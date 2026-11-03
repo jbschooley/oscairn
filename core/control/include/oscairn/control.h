@@ -507,6 +507,18 @@ namespace oscairn
         virtual void setControlView( const ControlView& view ) = 0;
         struct ControllerState { GroupPositions positions; std::string touched; uint64_t touches = 0; bool operator==( const ControllerState& ) const = default; };
         virtual ControllerState controllerState() const = 0;
+        // The values controls and faders play, as they are now: each control's value, each part's
+        // level and mute, the master. Cheap (no graph read), for clients showing them or sending
+        // them back to devices; the `controls.changed` topic pushes what changes.
+        struct LiveValues
+        {
+            struct Fader { uint32_t part = 0; double level = 1; bool mute = false; bool operator==( const Fader& ) const = default; };
+            std::vector<std::pair<uint32_t, double>> controls; // control, value
+            std::vector<Fader> parts;
+            double masterLevel = 1, masterPan = 0;
+            bool operator==( const LiveValues& ) const = default;
+        };
+        virtual LiveValues liveValues() const = 0;
 
         // Recording (RFC 0020): a take records taps, each to its own file in a folder of its own
         // under the data folder's recordings/, from the next block until it is stopped. Taps:

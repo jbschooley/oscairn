@@ -158,6 +158,7 @@ namespace oscairn
         void setControllers(const std::vector<ControlGroup>& groups, const std::vector<ControllerPort>& ports) override;
         void setControlView(const ControlView& view) override;
         ControllerState controllerState() const override; // as the last notification said
+        LiveValues liveValues() const override;           // the cached graph's, kept up by controls.changed
         PadMap padMap() const override;
         void setPadMap(const PadMap& map) override;
         bool pad(uint32_t pad,bool on,double velocity,int channel=0) override;

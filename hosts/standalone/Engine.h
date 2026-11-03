@@ -48,6 +48,9 @@ namespace oscairn::standalone
         // The Parts views (RFC 0011): the graph with its parts, and edits made through the control
         // API in order; a failed edit is reported in editError().
         Control::GraphState graph() const {return control_->graphState();}
+        // Controls' values, part levels and mutes and the master, as they are now: an engine's are
+        // pushed to its cache as they change (controls.changed), so reading them waits on nothing.
+        Control::LiveValues liveValues() const {try{return connected()?control_->liveValues():Control::LiveValues{};}catch(const std::exception&){return {};}}
         std::vector<Control::ParamInfo> parameters(NodeId node) const {return control_->parameters(node);}
         // The plugin's own window (RFC 0019), which its worker shows beside the app's; the title
         // names the node and its part. Read at most four times a second per node and kept while

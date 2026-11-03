@@ -80,5 +80,6 @@ namespace oscairn
         uint64_t sequence_ = ~0ull, revision_ = ~0ull;
         bool dirty_ = true;
         std::vector<MidiEndpoint> inputs_;
+        Control::LiveValues liveSeen_;           // the model's, as the snapshot read them: a fader moved on screen changes them
     };
 }

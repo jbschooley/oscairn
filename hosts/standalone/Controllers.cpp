@@ -119,8 +119,12 @@ namespace oscairn::standalone
         }
         if(taken.empty() && outputs_.empty()) return;
         // What the controls play, read again at most five times a second while they move, and ten
-        // times a second for what goes back.
-        const bool fresh = now() - sourceTime_ > (taken.empty() ? .1 : .2);
+        // times a second for what goes back; and whenever a value changed (a control the engine
+        // played), which costs no graph read from an engine, so motor faders and knobs follow at once.
+        auto values = engine_.liveValues();
+        const bool moved = values != values_;
+        values_ = std::move(values);
+        const bool fresh = moved || now() - sourceTime_ > (taken.empty() ? .1 : .2);
         if(fresh)
         {
             try

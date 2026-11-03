@@ -3,14 +3,25 @@
 // RFC 0011's instant controls: a controller's MIDI into the engine moves what its control plays
 // within one block, with no control thread, socket or plan compile on the way; and pickup,
 // latching and momentary buttons, relative encoders and groups' rows behave as the app's
-// mapping did.
+// mapping did; and, measured against the clock, how long a move takes to be heard (MIDI to the
+// rendered level, paced like an audio device) and to reach a client's cached values over the
+// socket (what a UI shows), with the engine's threads as they run.
 #include "oscairn/session.h"
+#include "oscairn/local_socket.h"
+#include "oscairn/remote_control.h"
 #include "AllocationGuard.h"
 
+#include <algorithm>
 #include <array>
+#include <atomic>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <fcntl.h>
+#include <random>
 #include <string>
+#include <sys/socket.h>
+#include <thread>
 #include <vector>
 
 using namespace oscairn;
@@ -135,12 +146,136 @@ namespace
         bool refused = false; view.positions = {{6, 0}}; try { s.setControlView(view); } catch(const std::invalid_argument&) { refused = true; }
         check(refused, "a group that is not there is refused");
     }
+
+    using Clock = std::chrono::steady_clock;
+    double ms(Clock::duration d) { return std::chrono::duration<double, std::milli>(d).count(); }
+    struct Spread { double median = 0, worst = 0; };
+    Spread spread(std::vector<double> v) { std::sort(v.begin(), v.end()); return v.empty() ? Spread{} : Spread{v[v.size() / 2], v.back()}; }
+
+    // The engine's threads as they run, with an audio device's pacing (128 frames at 48 kHz),
+    // its control thread (the socket polled and service() every 5 ms, woken at once by a
+    // control's move), a MIDI thread and a client over the socket. A move of the mod wheel plays
+    // a control whose target is a part's level, as on "Drifting". Measured: from the MIDI thread
+    // handing the message over to the end of the first block whose output has the new level
+    // (heard), and to the client's cached value having it (what a UI shows at its next frame).
+    void latency(const char* fixture)
+    {
+        constexpr uint32_t block = 128;
+        constexpr double rate = 48000, period = block / rate;
+        Session s(rate, block);
+        const auto a = s.add("a", fixture, "org.kick.test.synth"); s.setParameter(a, 7, 1);
+        const auto pa = s.addPart("A"); s.insertIntoPart(pa, 0, a); s.commit();
+        const auto wheel = s.addMacro("Mod Wheel");
+        MacroTarget t; t.kind = MacroTarget::Kind::PartLevel; t.part = pa; t.curve = MacroTarget::Curve::Logarithmic; t.start = .707; t.end = .0021;
+        s.setMacroTargets(wheel, {t});
+        s.assign("wheel:1", {Assignment::Kind::Control, 0, 0, wheel});
+        Control::SessionStatus status; status.midiInputs = {{MidiEndpoint::Kind::Usb, smk, "SMK-37 Elite -Master"}};
+        s.setHostStatus(status);
+        std::atomic<bool> woken{false}, stop{false};
+        s.setControllerWake([&] { woken = true; });
+        LocalServer server(s);
+        std::array<int, 2> fds{};
+        check(socketpair(AF_UNIX, SOCK_STREAM, 0, fds.data()) == 0, "socketpair");
+        for(auto fd : fds) fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK);
+        server.adopt(fds[0]);
+        s.note(true, 60, 1);
+
+        // Audio thread: a block every period, its last sample kept with when it was rendered.
+        std::atomic<float> heard{0};
+        std::atomic<int64_t> heardAt{0};
+        std::thread audio([&] {
+            std::array<float, block> l{}, r{};
+            float* out[2]{l.data(), r.data()};
+            auto next = Clock::now();
+            while(!stop)
+            {
+                forbidAllocation = true;
+                s.process(nullptr, 0, out, 2, block);
+                forbidAllocation = false;
+                heard = l[block - 1]; heardAt = Clock::now().time_since_epoch().count();
+                next += std::chrono::nanoseconds(int64_t(period * 1e9));
+                std::this_thread::sleep_until(next);
+            }
+        });
+        // The client: the controllers set over the socket, then its cache watched.
+        std::atomic<bool> ready{false};
+        std::atomic<double> shown{-1};
+        std::atomic<int64_t> shownAt{0};
+        std::thread client([&] {
+            try
+            {
+                LocalClient c; c.adopt(fds[1]); RemoteControl remote(c);
+                auto mod = group(Role::Assign, "wheels", 1, {1}); mod.functions = {"modulation"};
+                remote.setControllers({mod}, {{"SMK-37 Elite -Master", "smk", 1}});
+                ready = true;
+                while(!stop)
+                {
+                    remote.service();
+                    for(const auto& p : remote.liveValues().parts) if(p.part == pa && p.level != shown) { shown = p.level; shownAt = Clock::now().time_since_epoch().count(); }
+                    std::this_thread::sleep_for(std::chrono::microseconds(200));
+                }
+            }
+            catch(const std::exception& e) { check(false, std::string("client: ") + e.what()); ready = true; }
+        });
+        // The MIDI thread: moves a while apart, at times that fall anywhere in a block.
+        std::vector<double> toSound, toClient;
+        std::atomic<bool> done{false};
+        std::thread midi([&] {
+            while(!ready) std::this_thread::yield();
+            std::this_thread::sleep_for(std::chrono::milliseconds(100)); // the controllers in the snapshot
+            cc(s, 1, 0); std::this_thread::sleep_for(std::chrono::milliseconds(50)); // picked up
+            std::mt19937 random(7);
+            for(int i = 0; i < 60; ++i)
+            {
+                std::this_thread::sleep_for(std::chrono::microseconds(40000 + random() % 3000));
+                const uint8_t value = i % 2 ? 0 : 127;
+                const double level = t.start + (t.end - t.start) * t.shape(value / 127.0);
+                const auto sent = Clock::now();
+                cc(s, 1, value);
+                const auto since = sent.time_since_epoch().count();
+                const auto deadline = sent + std::chrono::milliseconds(35);
+                bool sound = false, ui = false;
+                while(Clock::now() < deadline && (!sound || !ui))
+                {
+                    if(!sound && heardAt > since && std::abs(heard - level) < 1e-4) { sound = true; toSound.push_back(ms(Clock::duration(heardAt - since))); }
+                    if(!ui && shownAt > since && std::abs(shown - level) < 1e-9) { ui = true; toClient.push_back(ms(Clock::duration(shownAt - since))); }
+                    std::this_thread::yield();
+                }
+                check(sound && ui, "move " + std::to_string(i) + " heard and shown within 35 ms");
+            }
+            done = true;
+        });
+        // The control thread.
+        auto tick = Clock::now();
+        while(!done)
+        {
+            if(woken.exchange(false)) s.serviceControllers();
+            if(Clock::now() >= tick)
+            {
+                server.poll(uint64_t(Clock::now().time_since_epoch().count()));
+                s.service();
+                tick += std::chrono::milliseconds(5);
+            }
+            std::this_thread::sleep_for(std::chrono::microseconds(100));
+        }
+        stop = true;
+        midi.join(); client.join(); audio.join();
+        s.setControllerWake({});
+        const auto sound = spread(toSound), ui = spread(toClient);
+        std::printf("latency: MIDI to the rendered level, median %.2f ms, worst %.2f ms (a block is %.2f ms), over %zu moves\n", sound.median, sound.worst, period * 1000, toSound.size());
+        std::printf("latency: MIDI to a client's cached value, median %.2f ms, worst %.2f ms (a display frame is 16.67 ms), over %zu moves\n", ui.median, ui.worst, toClient.size());
+        // Within about one block (a move landing just after a block starts waits for the next);
+        // generous on the worst, for a loaded test machine.
+        check(sound.median <= 2 * period * 1000 + 1, "heard within about a block (median)");
+        check(sound.worst <= 10, "heard within 10 ms, every move");
+        check(ui.worst <= 1000 / 60.0, "a client has it within a display frame, every move");
+    }
 }
 
 int main(int argc, char** argv)
 {
     if(argc < 2) { std::fprintf(stderr, "usage: %s FIXTURE\n", argv[0]); return 2; }
-    try { mapping(argv[1]); }
+    try { mapping(argv[1]); latency(argv[1]); }
     catch(const std::exception& e) { forbidAllocation = false; std::fprintf(stderr, "FAIL: %s\n", e.what()); return 1; }
     if(!failures) std::puts("ok: a controller's MIDI into the engine moves its controls' targets within one block");
     return failures ? 1 : 0;

@@ -82,6 +82,8 @@ namespace oscairn::standalone
         juce::TextButton learnDefault_{"Default"}, learnDone_{"Done"};
         juce::Rectangle<int> banner_;
         int page_ = 0, ticks_ = 0;
+        Control::LiveValues values_; // as last shown: a change shows at the next tick, a display frame
+        void showValues();
         std::string shape_;
         juce::TextButton previous_{"Previous"}, next_{"Next"}, performanceControls_{"Performance"}, partControlsButton_, pageButton_;
         std::vector<juce::Rectangle<int>> scenes_; // eight tiles

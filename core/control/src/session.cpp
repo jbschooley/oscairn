@@ -305,10 +305,12 @@ namespace oscairn
     void Session::commit()
     {
         // Only levels and mutes changed since the last commit: their live gains have them already.
-        if( !std::exchange( liveEdit_, false ) || staged_ ) graph_.commit(std::exchange(rampGains_, false));
+        const bool live = std::exchange( liveEdit_, false ) && !staged_, mute = std::exchange( liveMute_, false );
+        if( !live ) graph_.commit(std::exchange(rampGains_, false));
         staged_ = false;
-        ++revision_;
-        publish(ChangeKind::Graph);
+        // Levels moved live reach clients as values (controls.changed), with no graph to read
+        // again; a mute changes what the views show of the wires, so it is a graph change.
+        if( !live || mute ) { ++revision_; publish(ChangeKind::Graph); }
         record(); // the edits up to a commit are one step
     }
 
@@ -362,6 +364,14 @@ namespace oscairn
     }
     void Session::setControlView( const ControlView& view ) { controllers_->view( view ); }
     Control::ControllerState Session::controllerState() const { return controllers_->state(); }
+    Control::LiveValues Session::liveValues() const
+    {
+        LiveValues v;
+        for( const auto& m : macros_ ) v.controls.push_back( {m.id, m.value} );
+        for( const auto& p : parts_ ) v.parts.push_back( {p.id, p.level, p.mute} );
+        v.masterLevel = masterLevel_; v.masterPan = masterPan_;
+        return v;
+    }
     void Session::controllerMidi( uint8_t source, const uint8_t* bytes, size_t size ) noexcept { controllers_->midi( source, bytes, size ); }
     void Session::setControllerWake( std::function<void()> wake ) { controllers_->setWake( std::move( wake ) ); }
     void Session::serviceControllers() { controllers_->service(); sendParameters(); }

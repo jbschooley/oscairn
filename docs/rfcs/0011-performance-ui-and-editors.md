@@ -20,7 +20,8 @@ Checked when built and tested; the sections below say how.
 - [ ] 6. Physical controls: default layers, overrides, learn, banks (layers, banks, overrides saved, learn on a panel's knobs, plugin roles and screen knobs following the editor page done; [status](#step-6-status))
   - [x] [instant controls](#instant-controls): live gains for part levels, mutes and the master ([status](#live-gains-status))
   - [x] the controller-mapping service in the engine, on its MIDI input threads ([status](#engine-mapping-status))
-  - [ ] the latency measured in a test, against one block
+  - [x] the latency measured in a test, against one block ([status](#latency-status))
+  - [x] values pushed to clients (`controls.changed`), so the UI and devices follow without reading the graph ([status](#latency-status))
 - [ ] 7. Groups, pedal view, move, copy and share
 - [x] Play: the Performance app's view for the stage ([design](#play-the-performance-apps-first-view), [status](#play-status))
 - [x] The full scene model (blocks and wires enabled per scene, what each scene saves),
@@ -425,9 +426,9 @@ now also runs the controller-mapping service on its MIDI input threads:
 - The pickup state, the groups' positions (pages and rows) and the control touched last (for
   learn) are the engine's; `controllers.get` reads them, and the engine notifies clients when
   they change.
-- The app keeps the UI: it shows values from the graph as now, learn reads the control touched
-  last from the engine, and values go back to devices (knob values, Mackie Control's LEDs,
-  faders and names) from the app, as now. **Mackie Control stays in the app** for this step: its
+- The app keeps the UI: it shows the values, learn reads the control touched last from the
+  engine, and values go back to devices (knob values, Mackie Control's LEDs, faders and names)
+  from the app, as now. **Mackie Control stays in the app** for this step: its
   surface selection, touch state and feedback are one object; its faders become live gains like
   any fader, so they no longer compile plans, but still take the app's timer and the socket.
   Moving it into the engine is a later step.
@@ -435,6 +436,19 @@ now also runs the controller-mapping service on its MIDI input threads:
 Pickup, latching and momentary buttons, relative encoders, groups with pages, rows and modes,
 the part the knobs follow, screen knobs and a Sound's own assignments behave as before: the
 engine runs the same `ControllerMapping` and `resolveControls`.
+
+**Values back to the UI and devices.** The UI lagged behind the wheel as well: the app learned a
+control's new value from `graph.changed` and then read the whole graph again (`graph.get`), a
+blocking round trip on its UI thread for every move. Now the engine pushes the values that
+changed, and nothing else: each control's value, each part's level and mute, the master
+(`controls.changed`, at most 60 times a second, the interval counted from the last one sent).
+A level moved live is no graph change, so no client reads the graph for it (a mute still is,
+since the views' wires show it). The app's cached graph takes the pushed values (no round trip);
+Play shows them at its next tick, a display frame (16 ms); motor faders and knob values going
+back to devices follow the same values, read as they change rather than five times a second.
+**Target:** a client holds a move's value within one display frame (16.7 ms) of the engine
+receiving the message, so the UI shows it by the frame after; measured in the same test as the
+sound.
 
 #### Live gains status
 
@@ -481,6 +495,25 @@ down two, a row's number moving its group, the screen moving it back, and a miss
 refused. `control-physical-controls` still checks `ControllerMapping` itself, unchanged.
 Not yet: Mackie Control in the engine; nothing checks the app's `Controllers` against a real
 device, and the latency on hardware is unmeasured.
+
+#### Latency status
+
+Measured 2026-11-02 by `control-controller-input` (`latency`), on the development Mac with the
+release build: the engine's threads as they run (an audio thread rendering 128 frames at 48 kHz
+paced by the clock, the control thread polling the socket and servicing every 5 ms and woken at
+once by a move, a MIDI thread, and a `RemoteControl` client over a socket pair), 60 moves of the
+mod wheel 40 to 43 ms apart, each playing a control whose target is a part's level
+(logarithmic, .707 to .0021, as on "Drifting"). From the MIDI thread handing the message over:
+to the end of the first block whose output has the new level, median 1.45 ms, worst 3.20 ms (a
+block is 2.67 ms); to the client's cached value, median 2.90 ms, worst 5.21 ms. The test fails
+past a median of two blocks or a worst of 10 ms for the sound, and past one display frame for
+the client. Before this work the same move took 28 to 70 ms to be heard in the running app.
+The figures leave out the MIDI driver before the engine and the audio device's output latency
+after the block; they vary run to run with the machine's load (an earlier run: 1.62 and 3.05
+ms). `Engine::liveValues` gives the app the pushed values; Play checks them each 16 ms tick and
+shows a change without resolving the knobs again, and `Controllers` sends knob values and
+Mackie faders back whenever they change. Not measured: the app's own frame on screen, a sweep's
+values coalesced at 60 a second, and anything on hardware.
 
 ### Pads
 

@@ -513,10 +513,10 @@ namespace oscairn
             if( method == "subscribe" || method == "unsubscribe" )
             {
                 fields(p,{"topics","allChanges"});
-                const auto topics = array(member(p,"topics"),6);
+                const auto topics = array(member(p,"topics"),7);
                 const bool all = member(p,"allChanges") ? boolean(member(p,"allChanges")) : false;
                 for( auto topic : topics )
-                    if( string(topic) != "params.changed" && string(topic) != "transport" && string(topic) != "graph.changed" && string(topic) != "status" && string(topic) != "record" && string(topic) != "controllers" )
+                    if( string(topic) != "params.changed" && string(topic) != "transport" && string(topic) != "graph.changed" && string(topic) != "status" && string(topic) != "record" && string(topic) != "controllers" && string(topic) != "controls.changed" )
                         invalid("Unknown subscription topic");
                 for( auto topic : topics ) client.subscription(string(topic),method == "subscribe",all);
                 return R"({"accepted":true})";
@@ -1569,6 +1569,11 @@ namespace oscairn
             if(enabled && !record_) { lastRecord_.reset(); recordStates_.clear(); }
             record_ = enabled;
         }
+        else if(topic == "controls.changed")
+        {
+            if(enabled && !values_) { lastValues_.reset(); valuesSent_.reset(); }
+            values_ = enabled;
+        }
         else if(topic == "controllers")
         {
             if(enabled && !controllers_) { lastControllers_.reset(); lastControllersValue_.clear(); }
@@ -1624,12 +1629,34 @@ namespace oscairn
             if( state != lastTransportValue_ ) { send("transport",state); lastTransportValue_ = std::move(state); }
             lastTransport_ = now;
         }
+        // Values controls and faders play (RFC 0011's instant controls), only those that changed,
+        // at most 60 times a second: what the views show and devices get back, with no graph read.
+        if( values_ && due(lastValues_) )
+        {
+            const auto v = control_.liveValues();
+            const auto* was = valuesSent_ ? &*valuesSent_ : nullptr;
+            std::vector<std::string> controls, parts;
+            for( const auto& [id, value] : v.controls )
+                if( !was || std::find(was->controls.begin(), was->controls.end(), std::pair{id, value}) == was->controls.end() )
+                    controls.push_back("{\"control\":" + std::to_string(id) + ",\"value\":" + encode(value) + '}');
+            for( const auto& f : v.parts )
+                if( !was || std::find(was->parts.begin(), was->parts.end(), f) == was->parts.end() )
+                    parts.push_back("{\"part\":" + std::to_string(f.part) + ",\"level\":" + encode(f.level) + ",\"mute\":" + (f.mute ? "true" : "false") + '}');
+            const bool master = !was || was->masterLevel != v.masterLevel || was->masterPan != v.masterPan;
+            // The interval runs from the last one sent, so a move after a pause goes at the next poll.
+            if( !controls.empty() || !parts.empty() || master )
+            {
+                send("controls.changed", "{\"controls\":" + join(controls) + ",\"parts\":" + join(parts) +
+                     (master ? ",\"master\":{\"level\":" + encode(v.masterLevel) + ",\"pan\":" + encode(v.masterPan) + '}' : std::string()) + '}');
+                lastValues_ = now;
+            }
+            valuesSent_ = v;
+        }
         // Controllers (RFC 0011's instant controls): positions and the control moved last, for learn.
         if( controllers_ && due(lastControllers_) )
         {
             auto state = controllers(control_);
-            if( state != lastControllersValue_ ) { send("controllers",state); lastControllersValue_ = std::move(state); }
-            lastControllers_ = now;
+            if( state != lastControllersValue_ ) { send("controllers",state); lastControllersValue_ = std::move(state); lastControllers_ = now; }
         }
         // Status carries CPU and memory figures that change on every look: 4 times a second is
         // enough for what it shows, and 60 cost every client tens of KB of JSON a second.

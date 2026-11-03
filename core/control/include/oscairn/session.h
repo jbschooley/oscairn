@@ -221,6 +221,7 @@ namespace oscairn
         void setControllers( const std::vector<ControlGroup>& groups, const std::vector<ControllerPort>& ports ) override;
         void setControlView( const ControlView& view ) override;
         ControllerState controllerState() const override;
+        LiveValues liveValues() const override;
         /// RFC 0011's instant controls (controller_input.h). A MIDI input thread's message from the
         /// input numbered `source`; never the audio thread. `wake` is called on a MIDI thread when a
         /// move waits for the control thread, which should then call service().
@@ -283,7 +284,7 @@ namespace oscairn
         std::map<uint32_t, uint8_t> faderSlots_;
         std::set<uint8_t> freshSlots_;           // given since they were last written: they start at their value, not ramp to it
         std::set<uint32_t> staticFaders_;
-        bool staticMaster_ = true, liveEdit_ = false;
+        bool staticMaster_ = true, liveEdit_ = false, liveMute_ = false; // liveMute_: a live edit changed a mute (the views' wires show it)
         void assignSlots();
         void writeLiveGains();                   // the slots from the parts' levels and mutes and the master
         bool liveFader(uint32_t part) const { return faderSlots_.count(part) && !staticFaders_.count(part); }

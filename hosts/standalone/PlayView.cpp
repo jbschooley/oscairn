@@ -217,7 +217,7 @@ namespace oscairn::standalone
         viewport_.setScrollBarsShown(false, true);
         addAndMakeVisible(viewport_);
         refresh();
-        startTimer(50);
+        startTimer(16); // a display frame: values the controls move show at once
     }
 
     PlayView::~PlayView() { stopTimer(); }
@@ -287,10 +287,25 @@ namespace oscairn::standalone
             touches_ = engine_.touches(); learnFrom_ = text(engine_.lastTouched());
             learnDefault_.setVisible(true); for(auto& k : knobs_) k->repaint(); repaint();
         }
-        meters_.clear();
-        for(const auto& m : engine_.meters()) meters_[m.part] = m.channels;
-        for(auto& s : strips_) s->repaint();
-        if(++ticks_ % 4 == 0) refresh();
+        ++ticks_;
+        if(ticks_ % 3 == 0)
+        {
+            meters_.clear();
+            for(const auto& m : engine_.meters()) meters_[m.part] = m.channels;
+            for(auto& s : strips_) s->repaint();
+        }
+        if(ticks_ % 12 == 0) { refresh(); return; }
+        if(auto values = engine_.liveValues(); values != values_) { values_ = std::move(values); showValues(); }
+    }
+
+    // The faders' and knobs' values, as the engine has them now, without resolving the knobs again.
+    void PlayView::showValues()
+    {
+        try { graph_ = engine_.graph(); } catch(const std::exception&) { return; }
+        state_ = readParts(graph_);
+        for(auto& s : strips_) for(const auto* list : {&state_.parts, &state_.buses}) for(const auto& p : *list) if(p.id == s->part()) s->set(p);
+        for(auto& s : strips_) if(!s->part()) s->setMaster(graph_);
+        for(size_t i = 0; i < knobs_.size() && i < knobSlots_.size(); ++i) knobs_[i]->set(knobSlots_[i]);
     }
 
     void PlayView::refresh()

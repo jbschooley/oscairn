@@ -306,6 +306,7 @@ namespace oscairn
         catch(...) { parts_.swap(parts); wires_.swap(wires); throw; }
         if(live) writeLiveGains();
         liveEdit_ = true;
+        for(size_t i = 0; i < parts.size() && i < parts_.size(); ++i) liveMute_ = liveMute_ || parts[i].mute != parts_[i].mute;
     }
 
     void Session::playPartLevel(uint32_t id, double level, bool mute)
@@ -1229,7 +1230,9 @@ namespace oscairn
         const auto after = faderLevels();
         bool live = true;
         for(size_t i = 0; i < parts_.size() && i < before.size(); ++i) if(before[i] != after[i] && !liveFader(parts_[i].id)) live = false;
-        if(live) { buildParts(); if(liveGains) writeLiveGains(); ++revision_; publish(ChangeKind::Graph); }
+        bool muted = false;
+        for(size_t i = 0; i < before.size() && i < after.size(); ++i) muted = muted || before[i].second != after[i].second;
+        if(live) { buildParts(); if(liveGains) writeLiveGains(); if(muted) { ++revision_; publish(ChangeKind::Graph); } } // levels go out as values
         else { editWires([&] { buildParts(); }); rampGains_ = true; commit(); }
     }
 
