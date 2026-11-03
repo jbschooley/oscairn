@@ -58,19 +58,24 @@ namespace oscairn::standalone
         {
             PortRow row{inputs[i], profilesFor(profiles, inputs, i), profileOf(profiles, inputs, i, choices), {}};
             if(row.profiles.empty()) continue;
+            row.all = row.profiles.size() > 1 && profilesOf(profiles, inputs, i, choices).size() == row.profiles.size();
             // What the profile in use does with this port: its port whose name the input carries.
             for(const auto& p : profiles[row.chosen].midi.ports)
                 if(juce::String(inputs[i]).containsIgnoreCase(juce::String(p.name)))
                     row.note = p.ignore ? "Ignored: a duplicate of another port" : p.protocol == "mackie" ? "Mackie Control" : "Its controls join";
             auto box = std::make_unique<juce::ComboBox>("Profile for " + text(inputs[i]));
             for(size_t k = 0; k < row.profiles.size(); ++k) box->addItem(text(profiles[row.profiles[k]].name), int(k) + 1);
-            box->setSelectedId(int(std::find(row.profiles.begin(), row.profiles.end(), row.chosen) - row.profiles.begin()) + 1, juce::dontSendNotification);
+            // Identical controllers on one port name, each set to its own channels, a profile each.
+            if(row.profiles.size() > 1) box->addItem("Each of these, by MIDI channel", int(row.profiles.size()) + 1);
+            box->setSelectedId(row.all ? int(row.profiles.size()) + 1 : int(std::find(row.profiles.begin(), row.profiles.end(), row.chosen) - row.profiles.begin()) + 1, juce::dontSendNotification);
             box->setEnabled(row.profiles.size() > 1);
-            box->setTooltip(row.profiles.size() > 1 ? "Several profiles fit this port: choose the one its firmware matches" : "The only profile that fits this port");
+            box->setTooltip(row.profiles.size() > 1 ? "Several profiles fit this port: choose the one its firmware matches, or each for identical controllers on their own channels" : "The only profile that fits this port");
             box->onChange = [this, port = inputs[i], candidates = row.profiles, raw = box.get()] {
                 const auto k = size_t(raw->getSelectedId() - 1);
-                if(k >= candidates.size() || !controllers_.choose) return;
-                controllers_.choose(port, controllers_.profiles[candidates[k]].id);
+                if(k > candidates.size() || !controllers_.choose) return;
+                std::vector<std::string> ids;
+                for(size_t c = 0; c < candidates.size(); ++c) if(c == k || k == candidates.size()) ids.push_back(controllers_.profiles[candidates[c]].id);
+                controllers_.choose(port, ids);
                 juce::MessageManager::callAsync([safe = juce::Component::SafePointer<Settings>(this)] { if(safe) safe->refresh(); }); // not while its box calls
             };
             addAndMakeVisible(*box);

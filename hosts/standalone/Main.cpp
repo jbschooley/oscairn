@@ -390,7 +390,7 @@ namespace oscairn::standalone
             if( auto* c = controllers_ )
                 pane->setControllers( { c->profiles(),
                     [] { std::vector<std::string> names; for( const auto& d : juce::MidiInput::getAvailableDevices() ) names.push_back( d.name.toStdString() ); return names; }, // listed, not opened
-                    [c] { return c->choices(); }, [c]( const std::string& port, const std::string& profile ) { c->choose( port, profile ); } } );
+                    [c] { return c->choices(); }, [c]( const std::string& port, const std::vector<std::string>& profiles ) { c->choose( port, profiles ); } } );
             return pane;
         }
         void showGroovebox(){showApp(groovebox_,"Groovebox",[this]{return new SequencerPane(engine_);},1100,760);}

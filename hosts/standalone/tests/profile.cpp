@@ -138,16 +138,49 @@ int main()
             const std::vector<std::string> inputs{"SMK-37 Elite -Private", "SMK-37 Elite -Master"};
             check(profilesFor(both, inputs, 1) == std::vector<size_t>{0, 1} && profileOf(both, inputs, 1) == 0 && matchPorts(both, inputs).size() == 1 && matchPorts(both, inputs)[0].profile == 0,
                   "two profiles match the port: the first by id takes it");
-            ProfileChoices chosen{{"SMK-37 Elite -Master", "smk37-elite-custom"}, {"SMK-37 Elite -Private", "smk37-elite-custom"}};
+            ProfileChoices chosen{{"SMK-37 Elite -Master", {"smk37-elite-custom"}}, {"SMK-37 Elite -Private", {"smk37-elite-custom"}}};
             const auto taken = matchPorts(both, inputs, "midi", chosen);
             check(profileOf(both, inputs, 1, chosen) == 1 && taken.size() == 2 && taken[0].profile == 1 && taken[1].profile == 1, "the chosen profile takes the ports chosen for it");
             check(ignoredInputs(both, inputs) == std::vector<std::string>{"SMK-37 Elite -Private"} && ignoredInputs(both, inputs, chosen).empty(), "and its ports are not ignored where the stock profile's are");
-            check(profileOf(both, inputs, 1, {{"SMK-37 Elite -Master", "nonesuch"}}) == 0, "a choice that matches no longer falls back to the first");
+            check(profileOf(both, inputs, 1, {{"SMK-37 Elite -Master", {"nonesuch"}}}) == 0, "a choice that matches no longer falls back to the first");
             const auto file = juce::File::createTempFile(".json");
             check(readProfileChoices(file.getFullPathName().toStdString()).empty(), "no choices saved: none");
             writeProfileChoices(file.getFullPathName().toStdString(), chosen);
             check(readProfileChoices(file.getFullPathName().toStdString()) == chosen, "the choices saved read back");
             file.deleteFile();
+        }
+        // Identical controllers (RFC 0024): every input of a port's name is that port, any number
+        // of them; told apart by MIDI channel, a profile each, both chosen for the name.
+        {
+            const std::vector<std::string> two{"SMK-37 Elite -Private", "SMK-37 Elite -Master", "SMK-37 Elite -MCP", "SMK-37 Elite -Private", "SMK-37 Elite -Master", "SMK-37 Elite -MCP"};
+            auto midi = matchPorts({smk}, two), mackie = matchPorts({smk}, two, "mackie");
+            check(midi.size() == 2 && midi[0].input == 1 && midi[1].input == 4 && midi[0].port == midi[1].port && midi[0].profile == 0 && midi[1].profile == 0,
+                  "two SMK37s: both -Master inputs are its port, neither dropped");
+            check(mackie.size() == 2 && mackie[0].input == 2 && mackie[1].input == 5, "both -MCP inputs read as Mackie Control");
+            check(ignoredInputs({smk}, two) == std::vector<std::string>{"SMK-37 Elite -Private", "SMK-37 Elite -Private"}, "both duplicates ignored");
+            std::vector<std::string> many;
+            for(int i = 0; i < 5; ++i) many.push_back("SMK-37 Elite -Master");
+            check(matchPorts({smk}, many).size() == 5, "any number of them");
+            // A MODX M's two ports under one name: two units give each index twice, in turn.
+            const auto& modx = controllers[0];
+            const std::vector<std::string> modxes{"MODX M Port1", "MODX M Port2", "MODX M Port1", "MODX M Port2"};
+            const auto ports = matchPorts({modx}, modxes), surfaces = matchPorts({modx}, modxes, "mackie");
+            check(ports.size() == 2 && ports[0].input == 0 && ports[1].input == 2 && surfaces.size() == 2 && surfaces[0].input == 1 && surfaces[1].input == 3,
+                  "two MODX Ms: each takes port 1 and port 2 in turn");
+            // The second set to channel 2: a profile of its own with those channels.
+            std::string stock; for(const auto& [id, text] : builtInProfiles()) if(id == "smk37-elite") stock = text;
+            auto second = Profile::parse(replaced(stock, "\"id\": \"smk37-elite\"", "\"id\": \"smk37-elite-2\""));
+            for(auto& c : second.controls) { if(c.midi.channel) c.midi.channel = 2; for(auto& ch : c.midi.channels) ch = 2; }
+            const std::vector<Profile> pair{smk, second};
+            const ProfileChoices each{{"SMK-37 Elite -Master", {"smk37-elite", "smk37-elite-2"}}};
+            const auto bound = matchPorts(pair, two, "midi", each);
+            check(bound.size() == 4 && bound[0].input == 1 && bound[0].profile == 0 && bound[1].input == 1 && bound[1].profile == 1 && bound[2].input == 4 && bound[3].input == 4,
+                  "chosen together for the port's name, each -Master input is both profiles' port");
+            // A port renamed (Audio MIDI Setup): the profile chosen for the new name plays it.
+            const std::vector<std::string> renamed{"Left keyboard"};
+            const auto taken = matchPorts({smk}, renamed, "midi", {{"Left keyboard", {"smk37-elite"}}});
+            check(matchPorts({smk}, renamed).empty() && taken.size() == 1 && smk.midi.ports[size_t(taken[0].port - 1)].protocol == "midi" && !smk.midi.ports[size_t(taken[0].port - 1)].ignore,
+                  "a renamed port plays as the profile chosen for its name (its midi port)");
         }
         matches = matchPorts(controllers, {"IAC Bus 1", "MODX M Port1", "SMK-37 Elite -Private", "smk-37 elite -master", "MODX M Port2", "SMK-37 Elite -MCP"}, "mackie");
         check(matches.size() == 2 && matches[0].input == 4 && matches[0].profile == 0 && matches[0].port == 2 && matches[1].input == 5 && matches[1].profile == 1 && matches[1].port == 3,

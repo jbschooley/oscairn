@@ -30,12 +30,12 @@ namespace oscairn::standalone
             std::vector<Profile> profiles;
             std::function<std::vector<std::string>()> inputs;
             std::function<ProfileChoices()> choices;
-            std::function<void(const std::string& port, const std::string& profile)> choose;
+            std::function<void(const std::string& port, const std::vector<std::string>& profiles)> choose; // several: identical controllers by channel
         };
         void setControllers(ControllerPorts ports);
         // A port a profile matches: the profiles that do (their places), the one in use, and what
         // it does with the port.
-        struct PortRow { std::string port; std::vector<size_t> profiles; size_t chosen = 0; juce::String note; };
+        struct PortRow { std::string port; std::vector<size_t> profiles; size_t chosen = 0; juce::String note; bool all = false; }; // all: every profile that fits, by channel
         const std::vector<PortRow>& ports() const { return ports_; }
         juce::ComboBox* profileBox(size_t row) { return row < boxes_.size() ? boxes_[row].get() : nullptr; }
 

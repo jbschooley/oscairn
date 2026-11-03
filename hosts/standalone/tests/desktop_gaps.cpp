@@ -311,7 +311,7 @@ int main(int argc, char** argv)
                 standalone::ProfileChoices kept;
                 standalone::Settings settings(engine);
                 standalone::setDesktopMode(settings, 1); settings.setSize(760, 640);
-                settings.setControllers({profiles, [&] { return inputs; }, [&] { return kept; }, [&](const std::string& port, const std::string& id) { kept[port] = id; }});
+                settings.setControllers({profiles, [&] { return inputs; }, [&] { return kept; }, [&](const std::string& port, const std::vector<std::string>& ids) { kept[port] = ids; }});
                 const auto& rows = settings.ports();
                 auto profileName = [&](size_t row) { return rows.size() > row ? profiles[rows[row].chosen].name : std::string(); };
                 check(rows.size() == 3 && rows[1].port == "SMK-37 Elite -Master" && rows[1].profiles.size() == 2 && profileName(1) == "SMK37 Elite (stock firmware)" && settings.profileBox(1)->isEnabled(),
@@ -320,8 +320,12 @@ int main(int argc, char** argv)
                       "the duplicate port shown as ignored");
                 snapshot(settings, "settings-controllers");
                 if(auto* box = settings.profileBox(1)) box->setSelectedId(2, juce::sendNotificationSync);
-                check(kept["SMK-37 Elite -Master"] == "smk37-elite-custom", "choosing the custom profile keeps it for the port's name");
+                check(kept["SMK-37 Elite -Master"] == std::vector<std::string>{"smk37-elite-custom"}, "choosing the custom profile keeps it for the port's name");
                 check(wait([&] { return profileName(1) == "SMK37 Elite (custom firmware)"; }), "and it is in use");
+                // Identical controllers told apart by channel: each profile that fits, together.
+                if(auto* box = settings.profileBox(1)) box->setSelectedId(3, juce::sendNotificationSync);
+                check(kept["SMK-37 Elite -Master"] == std::vector<std::string>{"smk37-elite", "smk37-elite-custom"}, "each of them, by MIDI channel, keeps both for the port's name");
+                check(wait([&] { return rows.size() > 1 && rows[1].all; }), "and the port shows both in use");
             }
             // Asking before an app opens (RFC 0025): with memory classes, a launch past what is
             // free is refused with the reason; the prepared next entry in the way can go.

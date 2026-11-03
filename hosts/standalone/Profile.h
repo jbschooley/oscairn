@@ -52,7 +52,8 @@ namespace oscairn::standalone
         struct Screen { int width = 0, height = 0; bool touch = false; std::string surface = "desktop", layout = "desktop"; };
         std::vector<Screen> screens;
         // A controller's ports: an input matches when its name contains `name`, ignoring case;
-        // `index` picks the Nth such input; `protocol` midi, or mackie (Mackie Control, read by
+        // `index`: its turn among the inputs of that name, counted round, so identical devices
+        // each give every index (RFC 0024); `protocol` midi, or mackie (Mackie Control, read by
         // control_surface.h); `ignore`: a duplicate of another port, whose messages the engine
         // leaves out; `display`: a Mackie surface with scribble strips, which get the parts' names.
         // The output of the same name and index takes what goes back to the controller.
@@ -101,20 +102,29 @@ namespace oscairn::standalone
     Profile loadProfile(const std::string& nameOrFile);
     // The built-in controllers' profiles, and those in `files`.
     std::vector<Profile> controllerProfiles(const std::vector<std::string>& files = {});
-    // The musician's choice where several profiles match one port (RFC 0024): a profile's id by
-    // the port's name, kept in the app's settings (controller-profiles.json in its configuration
-    // folder; none when it is missing or unreadable).
-    using ProfileChoices = std::map<std::string, std::string>;
+    // The musician's choice of profiles for a port (RFC 0024): the profiles' ids by the port's
+    // name, kept in the app's settings (controller-profiles.json in its configuration folder, an
+    // array of ids per name; none when it is missing or unreadable). Several: identical
+    // controllers told apart by MIDI channel, each profile with its own channels
+    // ([identical controllers](../../docs/rfcs/0024-device-profiles.md#identical-controllers)).
+    using ProfileChoices = std::map<std::string, std::vector<std::string>>;
     ProfileChoices readProfileChoices(const std::string& file);
     void writeProfileChoices(const std::string& file, const ProfileChoices& choices);
     // The profiles (their places) with a port that is the input at `input`, in the order given.
+    // Every input whose name carries a port's name is that port: inputs with one name take a
+    // profile's ports of that name (their `index`) in turn, so two devices of one model give
+    // each port twice.
     std::vector<size_t> profilesFor(const std::vector<Profile>& controllers, const std::vector<std::string>& inputs, size_t input);
-    // The profile an input is: the one chosen for its name if that one matches it, else the first
-    // that does (controllerProfiles sorts them by id); controllers.size() for none.
+    // The profiles an input is: those chosen for its name (whether or not the name carries their
+    // port's, for a port renamed), else the first that fits (controllerProfiles sorts them by id);
+    // none for none. profileOf: the first of them, or controllers.size().
+    std::vector<size_t> profilesOf(const std::vector<Profile>& controllers, const std::vector<std::string>& inputs, size_t input, const ProfileChoices& choices = {});
     size_t profileOf(const std::vector<Profile>& controllers, const std::vector<std::string>& inputs, size_t input, const ProfileChoices& choices = {});
     // Which MIDI inputs (or outputs), by name in the system's order, are which controller's ports
     // of a protocol (midi or mackie): for each match, the input's place, the profile's place and
-    // the port (from 1). Ignored ports are left out. An input several profiles match is profileOf's.
+    // the port (from 1), in the inputs' order. Ignored ports are left out. An input is a port of
+    // each of profilesOf's profiles: its port of that name, or for a profile chosen for a name it
+    // does not carry, its first midi port.
     struct PortMatch { size_t input = 0, profile = 0; int port = 1; };
     std::vector<PortMatch> matchPorts(const std::vector<Profile>& controllers, const std::vector<std::string>& inputs, const std::string& protocol = "midi", const ProfileChoices& choices = {});
     // The names of the inputs that are a controller's ignored ports (of the profile each input is):

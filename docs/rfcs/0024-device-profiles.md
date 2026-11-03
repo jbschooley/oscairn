@@ -28,8 +28,8 @@ Checked when built and tested; the sections below say how.
       choosing between profiles that match one port built in Settings)
   - [x] the mapping played by the engine, from the groups and ports the app sends it
         ([where the mapping runs](#where-the-mapping-runs))
-  - [ ] [identical controllers](#identical-controllers): every same-named input opens, told
-        apart by MIDI channel
+  - [x] [identical controllers](#identical-controllers): every same-named input opens, told
+        apart by MIDI channel ([status](#identical-controllers-status))
 
 ## Problem
 
@@ -207,9 +207,10 @@ the same format, version 2, with three things a device profile does not have:
 
 - **`midi.ports`:** the controller's MIDI input ports, each `{name, index, protocol}`. A port
   matches an input whose name contains `name`, ignoring case (`"SMK-37 Elite -Master"` matches
-  that input as macOS names it); `index` (from 1) picks the Nth matching input, in
-  the order the system lists them, for a device with several ports under one name (the MODX M's
-  port 1 and port 2). `protocol` is `midi` (the default), or `mackie` for a Mackie Control port,
+  that input as macOS names it); `index` (from 1) is a port's turn among the
+  inputs of its name, in the order the system lists them, for a device with several ports under
+  one name (the MODX M's port 1 and port 2); every matching input is a port, so two such
+  devices give each index twice ([identical controllers](#identical-controllers)). `protocol` is `midi` (the default), or `mackie` for a Mackie Control port,
   read by a parser of its own ([below](#mackie-control)); `display: true` says a Mackie
   surface has scribble strips. `ignore: true` names a port that
   carries copies of another's messages (the SMK37 Elite's `-Private` repeats `-Master`): the
@@ -330,7 +331,7 @@ the order the system lists them, so two such devices give each index twice.
 second SMK37 set to send on channel 2 is described by a profile of its own with those
 channels (the per-control `channel` lists above): a `--controller` file with its own id, a copy
 of the first with other channels. Both profiles fit the same port name; the musician chooses
-both for it in Settings, so the choice per port name is a list of profiles, not one. Each
+both for it in Settings, so the choice per port name is a list of profiles, not one (Settings' **Each of these, by MIDI channel**). Each
 message is matched by its channel to the profile whose controls send on it, so the second
 device's controls are a controller of their own: they join after the first's and are numbered
 on (`knob:9` to `knob:16` beside the first's `knob:1` to `knob:8`), and so take assignments of
@@ -348,6 +349,24 @@ on the device and travels with it.
 made for its name: the profile chosen for a name applies to it whether or not the name contains
 the profile's port name, so a renamed port still plays as the profile chosen for it (its first
 `midi` port, for a profile with several).
+
+#### Identical controllers status
+
+Built 2026-11-02 (`hosts/standalone/Profile.h`: `matchPorts`, `profilesOf`; `Settings`). Every
+input whose name carries a port's name is that port, the inputs of one name taking a profile's
+ports of that name in turn; `ignoredInputs` and the Mackie ports follow the same rule, and the
+app sends values back to every output of a port's name. The choices file
+(`controller-profiles.json`) now holds an array of profile ids per port name; a file of the
+earlier form (one id per name) is not read, and its ports fall back to the first profile that
+fits until chosen again. The engine binds by input name, so every input of a name plays.
+`desktop-profile` checks two SMK37s (both `-Master` inputs bound, both `-MCP` read as Mackie,
+both `-Private` ignored), five of one name, two MODX Ms taking ports 1 and 2 in turn, a profile
+copy on channel 2 chosen with the stock one binding each `-Master` input twice, and a renamed
+port playing as the profile chosen for its name; `desktop-gaps` checks Settings' **Each of
+these, by MIDI channel** keeping both profiles for the port. `control-controller-input`
+(`identical`) checks two inputs of one name both moving the same fader, and, with a second
+profile on channel 2, its fader being a control of its own (`fader:3`) playing its own
+assignment while channel 1 still plays the first's. No two identical devices were connected.
 
 ### Mackie Control
 

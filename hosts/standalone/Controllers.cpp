@@ -27,9 +27,9 @@ namespace oscairn::standalone
         for(auto& input : inputs_) input->stop();
     }
 
-    void Controllers::choose(const std::string& port, const std::string& profile)
+    void Controllers::choose(const std::string& port, const std::vector<std::string>& profiles)
     {
-        choices_[port] = profile;
+        choices_[port] = profiles;
         if(!choicesFile_.empty()) writeProfileChoices(choicesFile_, choices_);
         dirty_ = true; // opened again at the next tick
     }
@@ -78,11 +78,11 @@ namespace oscairn::standalone
                 const std::pair<std::string, uint32_t> key{p.id, uint32_t(m.port)};
                 const bool wanted = std::string(protocol) == "mackie" ? surfaces_.count(key) != 0
                     : joined[m.profile] && std::any_of(p.controls.begin(), p.controls.end(), [&](const Profile::Control& c) { return c.midi.feedback && c.midi.port == m.port; });
-                if(!wanted || outputs_.count(key)) continue;
+                if(!wanted) continue;
                 if(auto output = juce::MidiOutput::openDevice(outputDevices[int(m.input)].identifier))
                 {
                     std::fprintf(stderr, "oscairn: MIDI output \"%s\" takes %s's port %d back\n", outputNames[m.input].c_str(), p.name.c_str(), m.port);
-                    outputs_[key] = std::move(output);
+                    outputs_[key].push_back(std::move(output));
                 }
             }
         // The connected controllers' groups join the device's, after them (RFC 0024).
@@ -169,7 +169,7 @@ namespace oscairn::standalone
     {
         if(outputs_.empty() || sourceTime_ < 0) return;
         auto send = [&](const std::pair<std::string, uint32_t>& port, const uint8_t* bytes, size_t size) {
-            if(const auto out = outputs_.find(port); out != outputs_.end()) out->second->sendMessageNow(juce::MidiMessage(bytes, int(size)));
+            if(const auto out = outputs_.find(port); out != outputs_.end()) for(auto& o : out->second) o->sendMessageNow(juce::MidiMessage(bytes, int(size)));
         };
         const MackieControl::State state{graph_.parts, playing()};
         for(auto& [port, surface] : surfaces_)

@@ -24,7 +24,7 @@ namespace oscairn::standalone
         ~Controllers() override;
         const std::vector<Profile>& profiles() const { return profiles_; }
         const ProfileChoices& choices() const { return choices_; }
-        void choose(const std::string& port, const std::string& profile); // kept, and the ports opened again
+        void choose(const std::string& port, const std::vector<std::string>& profiles); // kept, and the ports opened again
 
     private:
         void open();
@@ -61,7 +61,7 @@ namespace oscairn::standalone
         // Message thread: each Mackie port's mapping and whether it has a display; outputs back to
         // controllers, by controller and port; the knobs' values sent back.
         std::map<std::pair<std::string, uint32_t>, std::pair<MackieControl, bool>> surfaces_;
-        std::map<std::pair<std::string, uint32_t>, std::unique_ptr<juce::MidiOutput>> outputs_;
+        std::map<std::pair<std::string, uint32_t>, std::vector<std::unique_ptr<juce::MidiOutput>>> outputs_; // every output of the port's name: identical devices each get it
         KnobFeedback knobs_;
     };
 }

@@ -147,6 +147,44 @@ namespace
         check(refused, "a group that is not there is refused");
     }
 
+    // Identical controllers (RFC 0024): two inputs with one name are both the controller's port and
+    // both play; set to another channel, the second is a profile of its own, with controls of its
+    // own (numbered on) and so assignments of its own.
+    void identical(const char* fixture)
+    {
+        Session s(48000, frames);
+        const auto a = s.add("a", fixture, "org.kick.test.synth"), b = s.add("b", fixture, "org.kick.test.synth");
+        s.setParameter(a, 7, .5); s.setParameter(b, 7, .25);
+        const auto pa = s.addPart("A"), pb = s.addPart("B");
+        s.insertIntoPart(pa, 0, a); s.insertIntoPart(pb, 0, b); s.commit();
+        constexpr uint8_t again = 7; // the second input of the same name
+        auto first = group(Role::Assign, "faders", 2, {68, 69}), second = first;
+        second.midi.device = "smk-2"; second.midi.channel = 2;
+        const std::string name = "SMK-37 Elite -Master";
+        Control::SessionStatus status; status.midiInputs = {{MidiEndpoint::Kind::Usb, smk, name}, {MidiEndpoint::Kind::Usb, again, name}};
+        s.setHostStatus(status);
+        // One channel: one device, both inputs playing the same controls.
+        s.setControllers({first}, {{name, "smk", 1}});
+        s.service();
+        s.note(true, 60, 1); render(s);
+        cc(s, 68, 127, smk); cc(s, 68, 64, smk);
+        check(near(render(s), .5 * 64 / 127.0 + .25), "the first input's fader moves A");
+        cc(s, 68, 32, again);
+        check(near(render(s), .5 * 32 / 127.0 + .25) && s.controllerState().touched == "fader:1", "the second input of that name moves the same fader");
+        // Two channels: two profiles chosen for the name, the second's faders numbered on.
+        s.setControllers({first, second}, {{name, "smk", 1}, {name, "smk-2", 1}});
+        s.assign("fader:3", {Assignment::Kind::PartLevel, 0, 0, pb});
+        s.service();
+        const uint8_t onTwo[3]{0xB1, 68, 0};
+        s.controllerMidi(again, onTwo, 3); // B is at 1: picked up only at its value
+        const uint8_t up[3]{0xB1, 68, 127}, half[3]{0xB1, 68, 64};
+        s.controllerMidi(again, up, 3); s.controllerMidi(again, half, 3);
+        check(near(render(s), .5 * 32 / 127.0 + .25 * 64 / 127.0) && s.controllerState().touched == "fader:3",
+              "on channel 2, the second device's fader is its own control, with its own assignment: B");
+        cc(s, 68, 32, again);
+        check(near(render(s), .5 * 32 / 127.0 + .25 * 64 / 127.0), "and on channel 1 the first's still plays A, from either input");
+    }
+
     using Clock = std::chrono::steady_clock;
     double ms(Clock::duration d) { return std::chrono::duration<double, std::milli>(d).count(); }
     struct Spread { double median = 0, worst = 0; };
@@ -275,7 +313,7 @@ namespace
 int main(int argc, char** argv)
 {
     if(argc < 2) { std::fprintf(stderr, "usage: %s FIXTURE\n", argv[0]); return 2; }
-    try { mapping(argv[1]); latency(argv[1]); }
+    try { mapping(argv[1]); identical(argv[1]); latency(argv[1]); }
     catch(const std::exception& e) { forbidAllocation = false; std::fprintf(stderr, "FAIL: %s\n", e.what()); return 1; }
     if(!failures) std::puts("ok: a controller's MIDI into the engine moves its controls' targets within one block");
     return failures ? 1 : 0;

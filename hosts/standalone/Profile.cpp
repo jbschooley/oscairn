@@ -387,13 +387,23 @@ namespace oscairn::standalone
 
     namespace
     {
-        // The input a port is: the Nth whose name contains the port's, or none (inputs.size()).
-        size_t inputOf(const Profile::Port& port, const std::vector<std::string>& inputs)
+        bool carries(const std::string& input, const Profile::Port& port) { return juce::String(input).containsIgnoreCase(juce::String(port.name)); }
+        // The port (its place among the profile's) that the input at `input` is: of the ports whose
+        // name it carries, the one whose index is its turn among the inputs carrying that name,
+        // counted round the indexes, so any number of devices with one name each give every
+        // index; ports.size(): none. Not by system IDs or order across devices: RFC 0024.
+        size_t portOf(const Profile& p, const std::vector<std::string>& inputs, size_t input)
         {
-            int seen = 0;
-            for(size_t i = 0; i < inputs.size(); ++i)
-                if(juce::String(inputs[i]).containsIgnoreCase(juce::String(port.name)) && ++seen == port.index) return i;
-            return inputs.size();
+            const auto& ports = p.midi.ports;
+            for(size_t k = 0; k < ports.size(); ++k)
+            {
+                if(!carries(inputs[input], ports[k])) continue;
+                int indexes = 1, turn = 0;
+                for(const auto& q : ports) if(q.name == ports[k].name) indexes = std::max(indexes, q.index);
+                for(size_t i = 0; i < input; ++i) turn += carries(inputs[i], ports[k]);
+                if(ports[k].index == turn % indexes + 1) return k;
+            }
+            return ports.size();
         }
     }
 
@@ -403,7 +413,12 @@ namespace oscairn::standalone
         const auto root = juce::JSON::parse(juce::File(juce::String::fromUTF8(file.c_str())).loadFileAsString()); // kept: the object lives in it
         if(const auto* o = root.getDynamicObject())
             for(const auto& p : o->getProperties())
-                if(p.value.isString()) out[p.name.toString().toStdString()] = p.value.toString().toStdString();
+                if(const auto* ids = p.value.getArray())
+                {
+                    std::vector<std::string> list;
+                    for(const auto& id : *ids) if(id.isString()) list.push_back(id.toString().toStdString());
+                    if(!list.empty()) out[p.name.toString().toStdString()] = std::move(list);
+                }
         return out;
     }
 
@@ -411,7 +426,12 @@ namespace oscairn::standalone
     {
         auto* o = new juce::DynamicObject();
         const juce::var root(o);
-        for(const auto& [port, profile] : choices) o->setProperty(juce::String::fromUTF8(port.c_str()), juce::String::fromUTF8(profile.c_str()));
+        for(const auto& [port, profiles] : choices)
+        {
+            juce::Array<juce::var> ids;
+            for(const auto& id : profiles) ids.add(juce::String::fromUTF8(id.c_str()));
+            o->setProperty(juce::String::fromUTF8(port.c_str()), ids);
+        }
         const juce::File f(juce::String::fromUTF8(file.c_str()));
         f.getParentDirectory().createDirectory();
         f.replaceWithText(juce::JSON::toString(root));
@@ -420,41 +440,57 @@ namespace oscairn::standalone
     std::vector<size_t> profilesFor(const std::vector<Profile>& controllers, const std::vector<std::string>& inputs, size_t input)
     {
         std::vector<size_t> out;
-        for(size_t c = 0; c < controllers.size(); ++c)
-            if(std::any_of(controllers[c].midi.ports.begin(), controllers[c].midi.ports.end(), [&](const Profile::Port& p) { return inputOf(p, inputs) == input; })) out.push_back(c);
+        for(size_t c = 0; c < controllers.size(); ++c) if(portOf(controllers[c], inputs, input) < controllers[c].midi.ports.size()) out.push_back(c);
         return out;
+    }
+
+    std::vector<size_t> profilesOf(const std::vector<Profile>& controllers, const std::vector<std::string>& inputs, size_t input, const ProfileChoices& choices)
+    {
+        if(const auto chosen = choices.find(inputs[input]); chosen != choices.end())
+        {
+            std::vector<size_t> out;
+            for(const auto& id : chosen->second)
+                for(size_t c = 0; c < controllers.size(); ++c) if(controllers[c].id == id && std::find(out.begin(), out.end(), c) == out.end()) out.push_back(c);
+            if(!out.empty()) return out;
+        }
+        const auto found = profilesFor(controllers, inputs, input);
+        return found.empty() ? std::vector<size_t>{} : std::vector<size_t>{found.front()};
     }
 
     size_t profileOf(const std::vector<Profile>& controllers, const std::vector<std::string>& inputs, size_t input, const ProfileChoices& choices)
     {
-        const auto found = profilesFor(controllers, inputs, input);
-        if(found.empty()) return controllers.size();
-        if(const auto chosen = choices.find(inputs[input]); chosen != choices.end())
-            for(const auto c : found) if(controllers[c].id == chosen->second) return c;
-        return found.front();
+        const auto all = profilesOf(controllers, inputs, input, choices);
+        return all.empty() ? controllers.size() : all.front();
+    }
+
+    namespace
+    {
+        // The port an input is of a profile it is: the port of its name, or for a profile chosen for
+        // a name it does not carry (a port renamed), its first midi port; ports.size(): none.
+        size_t portIn(const Profile& p, const std::vector<std::string>& inputs, size_t input)
+        {
+            if(const auto k = portOf(p, inputs, input); k < p.midi.ports.size()) return k;
+            for(size_t k = 0; k < p.midi.ports.size(); ++k) if(p.midi.ports[k].protocol == "midi" && !p.midi.ports[k].ignore) return k;
+            return p.midi.ports.size();
+        }
     }
 
     std::vector<PortMatch> matchPorts(const std::vector<Profile>& controllers, const std::vector<std::string>& inputs, const std::string& protocol, const ProfileChoices& choices)
     {
         std::vector<PortMatch> out;
-        for(size_t c = 0; c < controllers.size(); ++c)
-            for(size_t k = 0; k < controllers[c].midi.ports.size(); ++k)
-            {
-                const auto& port = controllers[c].midi.ports[k];
-                if(port.protocol != protocol || port.ignore) continue;
-                // An input is one controller's port at most: the profile it is, its first port to claim it.
-                if(const auto i = inputOf(port, inputs); i < inputs.size() && profileOf(controllers, inputs, i, choices) == c && std::none_of(out.begin(), out.end(), [&](const PortMatch& m) { return m.input == i; }))
-                    out.push_back({i, c, int(k + 1)});
-            }
+        for(size_t i = 0; i < inputs.size(); ++i)
+            for(const auto c : profilesOf(controllers, inputs, i, choices))
+                if(const auto k = portIn(controllers[c], inputs, i); k < controllers[c].midi.ports.size())
+                    if(const auto& port = controllers[c].midi.ports[k]; port.protocol == protocol && !port.ignore) out.push_back({i, c, int(k + 1)});
         return out;
     }
 
     std::vector<std::string> ignoredInputs(const std::vector<Profile>& controllers, const std::vector<std::string>& inputs, const ProfileChoices& choices)
     {
         std::vector<std::string> out;
-        for(size_t c = 0; c < controllers.size(); ++c)
-            for(const auto& port : controllers[c].midi.ports)
-                if(const auto i = inputOf(port, inputs); port.ignore && i < inputs.size() && profileOf(controllers, inputs, i, choices) == c) out.push_back(inputs[i]);
+        for(size_t i = 0; i < inputs.size(); ++i)
+            if(const auto c = profileOf(controllers, inputs, i, choices); c < controllers.size())
+                if(const auto k = portIn(controllers[c], inputs, i); k < controllers[c].midi.ports.size() && controllers[c].midi.ports[k].ignore) out.push_back(inputs[i]);
         return out;
     }
 }
