@@ -583,7 +583,7 @@ namespace oscairn::standalone
         }
         if(failure_.empty())
         {
-            try{remote_->service();}catch(const std::exception& e){failed(e.what());}
+            try{remote_->service();if(auto refused=remote_->takeError();!refused.empty())editError_=std::move(refused);}catch(const std::exception& e){failed(e.what());}
             if(failure_.empty() && ++soundTicks_>=30){soundTicks_=0;refreshSounds();}
         }
         else if(!restarting_.valid() && ++reconnectTicks_>=60)

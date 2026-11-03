@@ -22,6 +22,7 @@ Checked when built and tested; the sections below say how.
   - [x] the controller-mapping service in the engine, on its MIDI input threads ([status](#engine-mapping-status))
   - [x] the latency measured in a test, against one block ([status](#latency-status))
   - [x] values pushed to clients (`controls.changed`), so the UI and devices follow without reading the graph ([status](#latency-status))
+  - [x] faders and mutes edited on screen shown at once and sent without waiting ([status](#screen-edits-status))
 - [ ] 7. Groups, pedal view, move, copy and share
 - [x] Play: the Performance app's view for the stage ([design](#play-the-performance-apps-first-view), [status](#play-status))
 - [x] The full scene model (blocks and wires enabled per scene, what each scene saves),
@@ -450,6 +451,23 @@ back to devices follow the same values, read as they change rather than five tim
 receiving the message, so the UI shows it by the frame after; measured in the same test as the
 sound.
 
+**Edits on screen.** A mute clicked or a fader dragged in the app took about a second to show
+(measured 2026-11-02 on a converted Performance of three or four parts): each edit was
+`parts.level` and `graph.commit`, each waited for its reply on the UI thread and then read the
+whole graph and every plugin's parameters again, and the views showed the result at their next
+timer, up to 200 ms later. The engine took 5 to 7 ms per call. Now the app's cache takes a part's
+level and mute, and the master, the moment they are edited, and the requests go without waiting
+for their replies (`LocalClient::send`): the server answers a client's requests in order, so a
+later move never lands before an earlier one. The values sent stay over the cache until the
+engine has answered them, so a `controls.changed` sent before the engine had them cannot show
+the old value for a moment; a refusal is said as the edit's error, and the graph read again in
+place of what the cache showed. A `graph.commit` after only such edits is sent the same way and
+reads nothing back; a commit after any other edit still reads the graph, so `graphState()` is
+current on return for structural edits. A mute is still a `graph.changed`, read once for the
+views' wires.
+**Target:** the views show the move within one display frame (16 ms), and the UI thread does
+not wait on the socket for it.
+
 #### Live gains status
 
 Built 2026-11-02 (`Graph::setLiveGain`, `AudioConnection::live`; the Session's `faderSlots_`,
@@ -467,6 +485,20 @@ multiplied with the part's, a loaded Performance's faders, all with no plan comp
 (`Graph::plansCompiled`), and a pan compiling one. Checks elsewhere that read a level right
 after a move now read the block's last sample, since the move ramps across the block. Not yet:
 scene glides still compile a plan per step; a part's pan and a send's level are not live.
+
+#### Screen edits status
+
+Built 2026-11-02 (`LocalClient::send` and `wait`; `RemoteControl::setPartLevel`, `setMaster`
+and `commit`, `takeError`). `desktop-gaps` checks, through a tap that counts the requests and
+can hold a method's: a level and a mute edited with `parts.level`'s reply held return at once
+and show in `Engine::graph()` and `liveValues()` before any reply, and stay after the engine's
+answers and pushes; a mute reads the graph once and a level not at all; a drag of 60 moves
+reads no graph and ends where it was left; a refused move shows until the refusal arrives, which
+then shows as the edit's error with the engine's level back. Measured on the development Mac
+(ten runs, the test's engine polling its socket every millisecond rather than every 5 ms): the
+state 16 to 24 µs after the edit, the engine's `controls.changed` 0.3 to 1.7 ms after it. Not
+yet: a mute's `graph.changed` still reads the whole graph and every plugin's parameters on the
+UI thread, after the mute shows.
 
 #### Engine mapping status
 

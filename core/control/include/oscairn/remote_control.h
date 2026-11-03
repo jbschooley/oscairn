@@ -6,13 +6,18 @@ namespace oscairn
 {
     /// Cached Control client. Construct after connecting LocalClient; service regularly
     /// on the same UI/control thread. Reads use snapshots except plugin text formatting.
-    /// Mutations use bounded RPC calls and never retry implicitly after a disconnect.
+    /// Mutations use bounded RPC calls and never retry implicitly after a disconnect. Live
+    /// edits (setPartLevel, setMaster, and a commit after only those) are sent without waiting:
+    /// the cache shows them at once and the engine's pushes confirm them; the rest read back.
     class RemoteControl final : public Control
     {
     public:
         explicit RemoteControl(LocalClient& client);
         ~RemoteControl() override;
         void service();
+        /// A live edit (part level or mute, master) the engine refused since the last ask, or
+        /// empty: those are sent without waiting, so a refusal arrives with service().
+        std::string takeError();
         void savePerformance(const std::string& directory) override;
         void setBudget(const Budget& budget) override;
         void setAlwaysAvailable(const std::vector<AppMemory>& apps) override;

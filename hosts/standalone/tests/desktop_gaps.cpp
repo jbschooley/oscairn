@@ -27,6 +27,8 @@
 #include <functional>
 #include <map>
 #include <mutex>
+#include <optional>
+#include <set>
 #include <thread>
 #include <poll.h>
 #include <sys/socket.h>
@@ -59,13 +61,20 @@ namespace
             ::close(listener_); ::unlink(path_.c_str());
         }
         int count(const std::string& method) const { std::lock_guard lock(mutex_); const auto at = counts_.find(method); return at == counts_.end() ? 0 : at->second; }
-        void reset() { std::lock_guard lock(mutex_); counts_.clear(); }
+        void reset() { std::lock_guard lock(mutex_); counts_.clear(); kept_.clear(); pushed_.reset(); ++epoch_; }
+        // The requests on connections open since before reset(), leaving out the new ones a job opens.
+        int countKept(const std::string& method) const { std::lock_guard lock(mutex_); const auto at = kept_.find(method); return at == kept_.end() ? 0 : at->second; }
+        // When the engine's first controls.changed since reset() passed, if one has.
+        std::optional<std::chrono::steady_clock::time_point> pushed() const { std::lock_guard lock(mutex_); return pushed_; }
         // Answer a method with an error from here on, as the engine refuses it; empty passes it on again.
         void refuse(const std::string& method, const std::string& message) { std::lock_guard lock(mutex_); if(message.empty()) refusals_.erase(method); else refusals_[method] = message; }
+        // Hold a method's requests, and every request after one, until stall(method, false): its
+        // reply waits, as an engine busy with it does, and nothing overtakes it.
+        void stall(const std::string& method, bool on) { std::lock_guard lock(mutex_); if(on) stalls_.insert(method); else stalls_.erase(method); }
         void drop() { dropping_ = true; while(dropping_) std::this_thread::sleep_for(std::chrono::milliseconds(1)); }
 
     private:
-        struct Pair { int client, server; std::string sent; };
+        struct Pair { int client, server; std::string sent, held; int epoch = 0; };
         static sockaddr_un addressOf(const std::string& path)
         {
             sockaddr_un a{}; a.sun_family = AF_UNIX; std::snprintf(a.sun_path, sizeof a.sun_path, "%s", path.c_str()); return a;
@@ -87,6 +96,8 @@ namespace
         {
             char buffer[65536];
             const auto n = ::read(from, buffer, sizeof buffer);
+            if(n > 0 && std::string_view(buffer, size_t(n)).find("\"method\":\"controls.changed\"") != std::string_view::npos)
+                { std::lock_guard lock(mutex_); if(!pushed_) pushed_ = std::chrono::steady_clock::now(); }
             return n > 0 && writeAll(to, std::string(buffer, size_t(n)));
         }
         // The client's requests, by line: counted, and passed on, or answered with the error
@@ -102,7 +113,9 @@ namespace
                 const auto line = p.sent.substr(0, end + 1);
                 const auto method = field(line, "\"method\":\"", '"'), id = field(line, "\"id\":", ',');
                 std::string refusal;
-                { std::lock_guard lock(mutex_); ++counts_[method]; if(const auto at = refusals_.find(method); at != refusals_.end()) refusal = at->second; }
+                bool hold = false;
+                { std::lock_guard lock(mutex_); ++counts_[method]; if(p.epoch < epoch_) ++kept_[method]; if(const auto at = refusals_.find(method); at != refusals_.end()) refusal = at->second; hold = !p.held.empty() || stalls_.count(method); }
+                if(hold) { p.held += line; continue; }
                 const bool refused = !refusal.empty() && !id.empty();
                 if(!writeAll(refused ? p.client : p.server, refused ? "{\"jsonrpc\":\"2.0\",\"id\":" + id + ",\"error\":{\"code\":-32005,\"message\":\"" + refusal + "\"}}\n" : line)) return false;
             }
@@ -113,6 +126,7 @@ namespace
             while(running_)
             {
                 if(dropping_) { for(auto& p : pairs_) { ::close(p.client); ::close(p.server); } pairs_.clear(); dropping_ = false; }
+                if(std::lock_guard lock(mutex_); stalls_.empty()) for(auto& p : pairs_) if(!p.held.empty()) { writeAll(p.server, p.held); p.held.clear(); }
                 std::vector<pollfd> fds{{listener_, POLLIN, 0}};
                 for(const auto& p : pairs_) { fds.push_back({p.client, POLLIN, 0}); fds.push_back({p.server, POLLIN, 0}); }
                 if(::poll(fds.data(), nfds_t(fds.size()), 5) <= 0) continue;
@@ -122,7 +136,7 @@ namespace
                     const int client = ::accept(listener_, nullptr, nullptr);
                     const int server = ::socket(AF_UNIX, SOCK_STREAM, 0);
                     const auto address = addressOf(server_);
-                    if(client >= 0 && server >= 0 && ::connect(server, reinterpret_cast<const sockaddr*>(&address), sizeof address) == 0) { quiet(client); quiet(server); pairs_.push_back({client, server, {}}); }
+                    if(client >= 0 && server >= 0 && ::connect(server, reinterpret_cast<const sockaddr*>(&address), sizeof address) == 0) { quiet(client); quiet(server); { std::lock_guard lock(mutex_); pairs_.push_back({client, server, {}, {}, epoch_}); } }
                     else { if(client >= 0) ::close(client); if(server >= 0) ::close(server); }
                 }
                 std::vector<size_t> gone;
@@ -142,8 +156,11 @@ namespace
         std::vector<Pair> pairs_;
         std::atomic<bool> running_ = true, dropping_ = false;
         mutable std::mutex mutex_;
-        std::map<std::string, int> counts_;
+        std::map<std::string, int> counts_, kept_;
+        int epoch_ = 0;
         std::map<std::string, std::string> refusals_; // method: the error it is answered with
+        std::set<std::string> stalls_;
+        std::optional<std::chrono::steady_clock::time_point> pushed_;
         std::thread thread_;
     };
 
@@ -449,6 +466,49 @@ int main(int argc, char** argv)
                 for(int i = 0; i < 20; ++i) engine.assignments();
                 const int most = int((juce::Time::getMillisecondCounter() - asked) / 250) + 1;
                 check(tap.count("assignments.get") <= most, "the assignments read at their own pace: " + std::to_string(tap.count("assignments.get")) + " of at most " + std::to_string(most));
+            }
+            // A fader or a mute (RFC 0011's instant controls) shows in the Engine's state at once,
+            // before the engine answers, and the edit never waits on the socket: a stalled reply
+            // does not hold it, and a drag reads no graph back.
+            {
+                check(wait([&] { return !engine.jobRunning() && !engine.soundBusy(); }), "the engine is free for the faders");
+                auto part = [&] { for(const auto& p : engine.graph().parts) if(p.id == lead) return p; return Part{}; };
+                auto level = [&](double v, bool m) { engine.edit([&, v, m](Control& c) { c.setPartLevel(lead, v, m); c.commit(); }); };
+                auto micros = [](auto since) { return std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - since).count(); };
+                tap.reset(); tap.stall("parts.level", true);
+                auto began = std::chrono::steady_clock::now();
+                level(.3, false);
+                const auto edited = micros(began);
+                const auto shown = part();
+                const auto read = micros(began);
+                check(edited < 20000 && engine.connected(), "a level edit with its reply stalled returns at once: " + std::to_string(edited) + " us");
+                check(std::abs(shown.level - .3) < 1e-9 && [&] { for(const auto& f : engine.liveValues().parts) if(f.part == lead) return std::abs(f.level - .3) < 1e-9; return false; }(), "and the state shows it before any reply, " + std::to_string(read) + " us after the edit");
+                began = std::chrono::steady_clock::now();
+                level(.3, true);
+                check(micros(began) < 20000 && part().mute, "a mute shows at once too, its reply stalled: " + std::to_string(micros(began)) + " us");
+                tap.stall("parts.level", false);
+                settle();
+                check(engine.connected() && part().mute && std::abs(part().level - .3) < 1e-9 && engine.editError().empty(), "and stays after the engine's answers and pushes");
+                check(tap.countKept("graph.get") <= 1, "a mute reads the graph once, for its wires, and a level not at all: " + std::to_string(tap.countKept("graph.get")));
+                level(1, false); settle();
+                tap.reset(); began = std::chrono::steady_clock::now();
+                level(.4, false);
+                const bool moved = std::abs(part().level - .4) < 1e-9; const auto state = micros(began);
+                check(moved && wait([&] { return tap.pushed().has_value(); }), "the engine pushes the level it took");
+                if(const auto at = tap.pushed()) std::printf("instant controls: the state %lld us after the edit, the engine's push %lld us\n", (long long)state,
+                                                             (long long)std::chrono::duration_cast<std::chrono::microseconds>(*at - began).count());
+                settle(); tap.reset();
+                for(int i = 0; i < 60; ++i) { level(i / 60.0, false); juce::MessageManager::getInstance()->runDispatchLoopUntil(1); }
+                settle();
+                check(tap.count("parts.level") == 60 && tap.countKept("graph.get") == 0, "a drag of 60 moves reads no graph: " + std::to_string(tap.count("parts.level")) + " " + std::to_string(tap.countKept("graph.get")));
+                check(std::abs(part().level - 59 / 60.0) < 1e-9 && engine.connected(), "and ends where the drag left it: " + std::to_string(part().level));
+                // A refusal is said, and the engine's value shown again.
+                tap.refuse("parts.level", "no such fader");
+                level(.5, false);
+                check(std::abs(part().level - .5) < 1e-9, "a refused edit shows until the engine answers");
+                check(wait([&] { return engine.editError() == "no such fader"; }) && wait([&] { return std::abs(part().level - 59 / 60.0) < 1e-9; }), "then its refusal is said and the engine's level shown: " + engine.editError());
+                tap.refuse("parts.level", "");
+                level(1, false); settle();
             }
             // The Library reads the library again after a job that may change it, not after the
             // periodic refresh, which changes nothing.

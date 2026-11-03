@@ -10,6 +10,8 @@
 #include <cstdlib>
 #include <deque>
 #include <locale>
+#include <map>
+#include <optional>
 #include <sstream>
 #include <stdexcept>
 
@@ -95,9 +97,25 @@ namespace oscairn
         std::map<std::pair<NodeId,uint32_t>,double> values;
         std::deque<Change> history;uint64_t sequence=0;
         explicit Impl(LocalClient& c):client(c){}
-        Doc call(std::string_view method,std::string_view params="{}",unsigned timeout=1000)
+        // Live edits (RFC 0011's instant controls) go without waiting for their replies: the
+        // cache shows them at once, and the values sent stay over it until the engine has
+        // answered, so a controls.changed sent before it had them does not show the old value.
+        struct Sent { uint64_t id; double level, pan; bool mute; };
+        std::map<uint32_t,Sent> sentParts; std::optional<Sent> sentMaster;
+        bool live=false;              // a live edit sent since the last commit
+        std::string failure;          // a live edit the engine refused, for takeError()
+        void answered(uint64_t id)    // every request up to id is answered
         {
-            auto doc=parse(client.call(method,params,timeout));
+            std::erase_if(sentParts,[&](const auto& s){return s.second.id<=id;});
+            if(sentMaster && sentMaster->id<=id)sentMaster.reset();
+        }
+        void overlay()
+        {
+            for(const auto& [id,s]:sentParts)for(auto& p:graph.parts)if(p.id==id){p.level=s.level;p.mute=s.mute;}
+            if(sentMaster){graph.masterLevel=sentMaster->level;graph.masterPan=sentMaster->pan;}
+        }
+        static void check(const Doc& doc)
+        {
             V error=nullptr;try{error=field(doc.get(),"error");}catch(const std::runtime_error&){}
             if(error)
             {
@@ -106,7 +124,12 @@ namespace oscairn
                 if(code==-32602 || code==-32001 || code==-32002)throw std::invalid_argument(message);
                 throw RpcError(code,message);
             }
-            field(doc.get(),"result");return doc;
+            field(doc.get(),"result");
+        }
+        Doc call(std::string_view method,std::string_view params="{}",unsigned timeout=1000)
+        {
+            const auto id=client.send(method,params,timeout);
+            auto doc=parse(client.wait(id,timeout));answered(id);check(doc);return doc;
         }
         void publish(Change change)
         {
@@ -737,8 +760,12 @@ namespace oscairn
     {impl_->call("parts.output","{\"part\":"+std::to_string(part)+(bus?",\"bus\":"+std::to_string(bus):std::string{})+(port?",\"port\":"+std::to_string(*port):std::string{})+'}');impl_->refresh();}
     void RemoteControl::setSend(uint32_t part,uint32_t bus,std::optional<double> level)
     {impl_->call("parts.send","{\"part\":"+std::to_string(part)+",\"bus\":"+std::to_string(bus)+(level?",\"level\":"+encode(*level):std::string{})+'}');impl_->refresh();}
+    // Live (RFC 0011's instant controls): shown in the cache at once, sent without waiting.
     void RemoteControl::setPartLevel(uint32_t part,double level,bool mute)
-    {impl_->call("parts.level","{\"part\":"+std::to_string(part)+",\"level\":"+encode(level)+",\"mute\":"+(mute?"true":"false")+'}');impl_->refresh();}
+    {
+        const auto id=impl_->client.send("parts.level","{\"part\":"+std::to_string(part)+",\"level\":"+encode(level)+",\"mute\":"+(mute?"true":"false")+'}');
+        impl_->sentParts[part]={id,level,0,mute};impl_->live=true;impl_->overlay();
+    }
     void RemoteControl::setPartName(uint32_t part,const std::string& name)
     {impl_->call("parts.name","{\"part\":"+std::to_string(part)+",\"name\":"+quote(name)+'}');impl_->refresh();}
     uint32_t RemoteControl::addScene(const std::string& name)
@@ -864,7 +891,11 @@ namespace oscairn
     bool RemoteControl::undo(){const bool any=!history().undo.empty();impl_->call("edit.undo");impl_->refresh();return any;}
     bool RemoteControl::redo(){const bool any=!history().redo.empty();impl_->call("edit.redo");impl_->refresh();return any;}
     void RemoteControl::setNodeRole(NodeId node,const std::string& role){impl_->call("graph.role","{\"node\":"+std::to_string(node)+",\"role\":"+(role.empty()?std::string("null"):quote(role))+'}');impl_->refresh();}
-    void RemoteControl::setMaster(double level,double pan){impl_->call("master.set","{\"level\":"+encode(level)+",\"pan\":"+encode(pan)+'}');impl_->refresh();}
+    void RemoteControl::setMaster(double level,double pan)
+    {
+        const auto id=impl_->client.send("master.set","{\"level\":"+encode(level)+",\"pan\":"+encode(pan)+'}');
+        impl_->sentMaster=Impl::Sent{id,level,pan,false};impl_->live=true;impl_->overlay();
+    }
     void RemoteControl::setPartPan(uint32_t part,double pan){impl_->call("parts.pan","{\"part\":"+std::to_string(part)+",\"pan\":"+encode(pan)+'}');impl_->refresh();}
     void RemoteControl::setPartSolo(uint32_t part,bool solo){impl_->call("parts.solo","{\"part\":"+std::to_string(part)+",\"solo\":"+(solo?"true":"false")+'}');impl_->refresh();}
     std::vector<PartMeter> RemoteControl::partMeters() const
@@ -924,7 +955,16 @@ namespace oscairn
     void RemoteControl::mapParameter(NodeId a,uint32_t lane,NodeId b,uint32_t param)
     {impl_->call("graph.map","{\"from\":"+std::to_string(a)+",\"lane\":"+std::to_string(lane)+",\"to\":"+std::to_string(b)+",\"param\":"+std::to_string(param)+'}');impl_->refresh();}
     void RemoteControl::unmapParameter(NodeId a,uint32_t lane){impl_->call("graph.unmap","{\"from\":"+std::to_string(a)+",\"lane\":"+std::to_string(lane)+'}');impl_->refresh();}
-    void RemoteControl::commit(){impl_->call("graph.commit");impl_->refresh();}
+    void RemoteControl::commit()
+    {
+        // After live edits alone the engine compiles nothing; what changes reaches the cache as
+        // controls.changed, or graph.changed (a mute), so it is sent without waiting or reading.
+        // Other edits read the graph back, so staged says whether any wait for this commit.
+        const bool live=std::exchange(impl_->live,false) && !impl_->graph.staged;
+        if(live){impl_->client.send("graph.commit");return;}
+        impl_->call("graph.commit");impl_->refresh();
+    }
+    std::string RemoteControl::takeError(){return std::exchange(impl_->failure,{});}
     uint64_t RemoteControl::changeSequence()const{return impl_->sequence;}
     Control::Changes RemoteControl::changesAfter(uint64_t seq)const
     {Changes result{impl_->sequence,seq>impl_->sequence||(!impl_->history.empty()&&seq<impl_->history.front().sequence-1),{}};for(const auto& event:impl_->history)if(event.sequence>seq)result.events.push_back(event);return result;}
@@ -933,7 +973,16 @@ namespace oscairn
         impl_->client.poll();bool refresh=false,resync=false;
         for(const auto& message:impl_->client.takeNotifications())
         {
-            auto doc=parse(message);const auto method=string(field(doc.get(),"method"));auto params=field(doc.get(),"params");
+            auto doc=parse(message);
+            if(const auto id=detail::member(doc.get(),"id"))
+            {
+                // The reply to a live edit sent without waiting: a refusal is said, and the
+                // engine's state read again in place of what the cache showed.
+                impl_->answered(integer(id));
+                try{Impl::check(doc);}catch(const std::exception& e){impl_->failure=e.what();refresh=true;}
+                continue;
+            }
+            const auto method=string(field(doc.get(),"method"));auto params=field(doc.get(),"params");
             if(method=="transport")impl_->readTransport(params);
             else if(method=="status")impl_->readStatus(params);
             else if(method=="controllers")impl_->readControllers(params);
@@ -945,6 +994,7 @@ namespace oscairn
                 for(auto f:array(field(params,"parts"))){const auto id=static_cast<uint32_t>(integer(field(f,"part")));for(auto& p:g.parts)if(p.id==id){p.level=number(field(f,"level"));p.mute=boolean(field(f,"mute"));}}
                 V master=nullptr;try{master=field(params,"master");}catch(const std::runtime_error&){}
                 if(master){g.masterLevel=number(field(master,"level"));g.masterPan=number(field(master,"pan"));}
+                impl_->overlay();
             }
             else if(method=="graph.changed"){refresh=true;impl_->publish({0,ChangeKind::Graph});}
             else if(method=="session.resync"){refresh=resync=true;impl_->publish({0,ChangeKind::Resync});}
