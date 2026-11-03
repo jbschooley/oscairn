@@ -437,10 +437,15 @@ the first poll. Re-subscribing does not discard already unread changes.
   history wrapped, plugin control output overflowed, or pending commands were invalidated
   by a rescan. Refresh graph/parameter snapshots. `allChanges` cannot promise lossless
   recording if the client falls behind; gaps are explicit.
-- The C++ `LocalClient` keeps at most 128 unread messages. When a busy client fills that
-  queue, it discards its queued notifications and inserts a local `session.resync` with
+- The C++ `LocalClient` keeps at most 128 unread notifications. When a busy client fills
+  that queue, it discards its queued notifications and inserts a local `session.resync` with
   `topic: "all"` instead of disconnecting; replies are never discarded. `RemoteControl`
   then rereads the graph, parameters, transport and status.
+- `LocalClient::send` writes a request without waiting for its reply; `wait` takes that
+  reply later, and `call` is the two together. The server answers a client's requests in
+  order, so a request sent later is never applied before one sent earlier. A reply nobody
+  waits for comes out of `takeNotifications` among the notifications, in the order it
+  arrived, and counts only against the byte bound.
 
 Each client's cursor is independent; reading one client's notifications never consumes
 another's. A stopped/slow client cannot grow the history indefinitely. Subscriptions may

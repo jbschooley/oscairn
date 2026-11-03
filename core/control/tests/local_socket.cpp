@@ -4,6 +4,7 @@
 #include "oscairn/remote_control.h"
 #include "oscairn/wav_file.h"
 #include "AllocationGuard.h"
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <chrono>
@@ -264,6 +265,23 @@ namespace
         try{reply=client.call("session.hello");}catch(...){failure=std::current_exception();}
         finalReply.join();if(failure)std::rethrow_exception(failure);
         check(reply.find("\"ok\":true")!=std::string::npos,"final response survives simultaneous EOF");
+        {
+            // Requests sent without waiting: a later call's wait leaves their replies queued, in
+            // order, for takeNotifications, and more of them than the notification bound is no overflow.
+            auto sockets=pair();LocalClient pipelined;pipelined.adopt(sockets[0]);
+            std::thread peer([&]{
+                std::string got;
+                while(std::count(got.begin(),got.end(),'\n')<201){got+=read(sockets[1]);std::this_thread::yield();}
+                std::string replies;for(int id=1;id<=201;++id)replies+="{\"jsonrpc\":\"2.0\",\"id\":"+std::to_string(id)+",\"result\":{\"n\":"+std::to_string(id)+"}}\n";
+                for(size_t sent=0;sent<replies.size();){const auto n=send(sockets[1],std::string_view(replies).substr(sent));if(n>0)sent+=size_t(n);else std::this_thread::yield();}
+            });
+            for(int i=0;i<200;++i)check(pipelined.send("transport.get")==uint64_t(i+1),"a request sent without waiting has the next ID");
+            const auto last=pipelined.call("session.hello");peer.join();
+            const auto queued=pipelined.takeNotifications();
+            check(last.find("\"n\":201")!=std::string::npos && queued.size()==200 && queued.front().find("\"n\":1}")!=std::string::npos && queued.back().find("\"n\":200}")!=std::string::npos && pipelined.connected(),
+                  "replies not waited for stay queued in order, beyond the notification bound");
+            ::close(sockets[1]);
+        }
         for(const auto* invalid : {
             R"({"jsonrpc":"1.0","id":1,"result":{}})",
             R"({"jsonrpc":"2.0","id":1,"result":{},"error":{}})",

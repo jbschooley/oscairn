@@ -60,6 +60,12 @@ namespace oscairn
         /// including RPC errors. Timeout/disconnect throws and closes the connection:
         /// a sent mutation may have applied, so callers must refresh, never replay it.
         std::string call(std::string_view method, std::string_view params = "{}", unsigned timeoutMs = 1000);
+        /// call() in two halves. send() writes the request without waiting for its reply and
+        /// returns its ID; wait() gives that reply. The server answers in order, so a request
+        /// sent later never overtakes one sent earlier. A reply nobody waits for comes out of
+        /// takeNotifications() with the notifications, in the order it arrived.
+        uint64_t send(std::string_view method, std::string_view params = "{}", unsigned timeoutMs = 1000);
+        std::string wait(uint64_t id, unsigned timeoutMs = 1000);
         /// Receive subscribed notifications without waiting. A bounded notification
         /// queue overflows by disconnecting, never by silently dropping updates.
         void poll();

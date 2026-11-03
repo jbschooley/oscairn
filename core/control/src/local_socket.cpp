@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <array>
 #include <cerrno>
+#include <charconv>
 #include <chrono>
 #include <cstdlib>
 #include <cstdio>
@@ -268,7 +269,16 @@ namespace oscairn
         std::unique_ptr<Stream> stream;
         uint64_t nextId=1;
         std::deque<std::string> messages;
-        size_t messageBytes=0;
+        size_t messageBytes=0,notices=0; // notices: the notifications among messages
+        std::set<uint64_t> unanswered;   // requests sent whose replies have not arrived
+        static uint64_t idOf(const json_value_s* id)
+        {
+            if(id->type!=json_type_number)throw std::runtime_error("Unexpected RPC response ID");
+            const auto* n=static_cast<const json_number_s*>(id->payload);uint64_t result=0;
+            const auto parsed=std::from_chars(n->number,n->number+n->number_size,result);
+            if(parsed.ec!=std::errc{} || parsed.ptr!=n->number+n->number_size)throw std::runtime_error("Unexpected RPC response ID");
+            return result;
+        }
         void receive()
         {
             if(!stream)throw std::runtime_error("Local RPC is not connected");
@@ -278,18 +288,21 @@ namespace oscairn
             {
                 if(stream->line(line))
                 {
-                    const bool notification=!member(frame(line).get(),"id");
-                    if(messages.size()>=128 || line.size()>LocalServer::maxQueuedBytes-messageBytes)
+                    const auto doc=frame(line);const auto* id=member(doc.get(),"id");
+                    if(id && !unanswered.erase(idOf(id)))throw std::runtime_error("Mismatched RPC response ID");
+                    // Replies to requests sent without waiting count only against the byte bound.
+                    if((!id && notices>=128) || line.size()>LocalServer::maxQueuedBytes-messageBytes)
                     {
                         // A reader that falls behind loses intermediate state, not its connection:
                         // queued notifications collapse into one resync; replies are never dropped.
                         static const std::string resync=R"({"jsonrpc":"2.0","method":"session.resync","params":{"topic":"all"}})";
                         std::erase_if(messages,[&](const std::string& m){const bool drop=!member(frame(m).get(),"id");if(drop)messageBytes-=m.size();return drop;});
-                        messageBytes+=resync.size();messages.push_back(resync);
-                        if(notification)continue;
-                        if(messages.size()>=128 || line.size()>LocalServer::maxQueuedBytes-messageBytes)
+                        messageBytes+=resync.size();messages.push_back(resync);notices=1;
+                        if(!id)continue;
+                        if(line.size()>LocalServer::maxQueuedBytes-messageBytes)
                             throw std::runtime_error("Local RPC receive queue full");
                     }
+                    if(!id)++notices;
                     messageBytes+=line.size();messages.push_back(std::move(line));
                 }
                 else if(reads++>=16 || !stream->read(LocalServer::maxQueuedBytes))break;
@@ -299,7 +312,7 @@ namespace oscairn
     };
     LocalClient::LocalClient():impl_(std::make_unique<Impl>()){}
     LocalClient::~LocalClient()=default;
-    void LocalClient::disconnect()noexcept{impl_->stream.reset();impl_->messages.clear();impl_->messageBytes=0;}
+    void LocalClient::disconnect()noexcept{impl_->stream.reset();impl_->messages.clear();impl_->messageBytes=impl_->notices=0;impl_->unanswered.clear();}
     bool LocalClient::connected()const{return impl_->stream && !impl_->stream->eof;}
     void LocalClient::adopt(int fd){disconnect();impl_->stream=std::make_unique<Stream>(fd);}
     void LocalClient::connect(const std::string& path,unsigned timeoutMs)
@@ -331,39 +344,49 @@ namespace oscairn
         {
             result.push_back(std::move(impl_->messages.front()));impl_->messages.pop_front();
         }
-        impl_->messageBytes=0;return result;
+        impl_->messageBytes=impl_->notices=0;return result;
     }
     std::string LocalClient::call(std::string_view method,std::string_view params,unsigned timeoutMs)
+    {
+        const auto deadline=Clock::now()+std::chrono::milliseconds(timeoutMs);
+        const auto id=send(method,params,timeoutMs);
+        return wait(id,unsigned(std::max<int64_t>(0,std::chrono::duration_cast<std::chrono::milliseconds>(deadline-Clock::now()).count())));
+    }
+    uint64_t LocalClient::send(std::string_view method,std::string_view params,unsigned timeoutMs)
     {
         if(!impl_->stream)throw std::runtime_error("Local RPC is not connected");
         // Bound and frame params here; the server performs full JSON validation.
         if(params.size()>JsonRpc::maxMessageBytes || params.find('\n')!=std::string_view::npos || params.find('\r')!=std::string_view::npos)
             throw std::invalid_argument("Local RPC params must be a bounded single-line JSON object");
         // The server performs full JSON validation; this transport never rewrites params.
-        const auto id=std::to_string(impl_->nextId++);
-        const auto request="{\"jsonrpc\":\"2.0\",\"id\":"+id+",\"method\":"+quote(method)+",\"params\":"+std::string(params)+'}';
+        const auto id=impl_->nextId++;
+        const auto request="{\"jsonrpc\":\"2.0\",\"id\":"+std::to_string(id)+",\"method\":"+quote(method)+",\"params\":"+std::string(params)+'}';
         if(request.size()>JsonRpc::maxMessageBytes)throw std::invalid_argument("Local RPC request too large");
         const auto deadline=Clock::now()+std::chrono::milliseconds(timeoutMs);
         try
         {
-            auto& stream=*impl_->stream;stream.queue(request);
+            auto& stream=*impl_->stream;stream.queue(request);impl_->unanswered.insert(id);
             while(!stream.output.empty()){stream.flush();if(!stream.output.empty())waitFor(stream.fd,POLLOUT,deadline);}
+            return id;
+        }
+        catch(...){disconnect();throw;}
+    }
+    std::string LocalClient::wait(uint64_t id,unsigned timeoutMs)
+    {
+        if(!impl_->stream)throw std::runtime_error("Local RPC is not connected");
+        const auto deadline=Clock::now()+std::chrono::milliseconds(timeoutMs);
+        try
+        {
             for(;;)
             {
                 impl_->receive();
+                // Replies to earlier requests sent without waiting stay queued, in order.
                 for(auto it=impl_->messages.begin();it!=impl_->messages.end();++it)
-                {
-                    auto doc=frame(*it);
-                    if(const auto* responseId=member(doc.get(),"id"))
+                    if(const auto doc=frame(*it); member(doc.get(),"id") && Impl::idOf(member(doc.get(),"id"))==id)
                     {
-                        if(responseId->type!=json_type_number)throw std::runtime_error("Unexpected RPC response ID");
-                        const auto* n=static_cast<const json_number_s*>(responseId->payload);
-                        if(std::string_view(n->number,n->number_size)!=id)throw std::runtime_error("Mismatched RPC response ID");
                         auto result=std::move(*it);impl_->messageBytes-=result.size();impl_->messages.erase(it);return result;
                     }
-                    if(!member(doc.get(),"method"))throw std::runtime_error("Malformed local RPC notification");
-                }
-                waitFor(stream.fd,POLLIN,deadline);
+                waitFor(impl_->stream->fd,POLLIN,deadline);
             }
         }
         catch(...){disconnect();throw;}
