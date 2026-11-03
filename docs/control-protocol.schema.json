@@ -30,6 +30,186 @@
     }
   ],
   "$defs": {
+    "ControlGroup": {
+      "type": "object",
+      "description": "A control group as the app resolves it from a profile (RFC 0024)",
+      "properties": {
+        "role": {
+          "enum": [
+            "notes",
+            "screen",
+            "assign",
+            "fixed"
+          ]
+        },
+        "kind": {
+          "type": "string"
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 512
+        },
+        "rows": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "bank": {
+                "enum": [
+                  "assign",
+                  "filter",
+                  "ampEG",
+                  "eq",
+                  "levels",
+                  "effects"
+                ]
+              }
+            },
+            "required": [
+              "name",
+              "bank"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "modes": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "type": "string"
+          }
+        },
+        "functions": {
+          "type": "array",
+          "maxItems": 512,
+          "items": {
+            "type": "string"
+          }
+        },
+        "scenes": {
+          "type": "boolean"
+        },
+        "paged": {
+          "type": "boolean"
+        },
+        "switches": {
+          "type": "boolean"
+        },
+        "midi": {
+          "type": "object",
+          "properties": {
+            "device": {
+              "type": "string"
+            },
+            "port": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "channel": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 16
+            },
+            "channels": {
+              "type": "array",
+              "maxItems": 512,
+              "items": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 16
+              }
+            },
+            "message": {
+              "enum": [
+                "cc",
+                "note",
+                "pitchBend",
+                "pressure"
+              ]
+            },
+            "numbers": {
+              "type": "array",
+              "maxItems": 4096,
+              "items": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 127
+              }
+            },
+            "encodings": {
+              "type": "array",
+              "maxItems": 512,
+              "items": {
+                "enum": [
+                  "absolute",
+                  "twosComplement",
+                  "binaryOffset",
+                  "signMagnitude",
+                  "steps"
+                ]
+              }
+            },
+            "steps": {
+              "type": "array",
+              "maxItems": 512,
+              "items": {
+                "type": "array",
+                "minItems": 2,
+                "maxItems": 2,
+                "items": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 127
+                }
+              }
+            },
+            "latch": {
+              "type": "boolean"
+            },
+            "feedback": {
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "role",
+        "kind",
+        "count"
+      ],
+      "additionalProperties": false
+    },
+    "ControllerState": {
+      "type": "object",
+      "properties": {
+        "positions": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "touched": {
+          "type": "string"
+        },
+        "touches": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "positions",
+        "touched",
+        "touches"
+      ],
+      "additionalProperties": false
+    },
     "NodeRole": {
       "enum": [
         "insertion-a",
@@ -1214,13 +1394,14 @@
                 "topics": {
                   "type": "array",
                   "minItems": 1,
-                  "maxItems": 4,
+                  "maxItems": 5,
                   "items": {
                     "enum": [
                       "params.changed",
                       "transport",
                       "graph.changed",
-                      "status"
+                      "status",
+                      "controllers"
                     ]
                   }
                 },
@@ -1259,13 +1440,14 @@
                 "topics": {
                   "type": "array",
                   "minItems": 1,
-                  "maxItems": 4,
+                  "maxItems": 5,
                   "items": {
                     "enum": [
                       "params.changed",
                       "transport",
                       "graph.changed",
-                      "status"
+                      "status",
+                      "controllers"
                     ]
                   }
                 },
@@ -2890,6 +3072,197 @@
             "jsonrpc",
             "method",
             "params"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
+              "const": "controllers.set",
+              "description": "The control groups and which MIDI inputs are which controller's ports; the engine plays them (RFC 0011's instant controls); replaces the last set"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "groups": {
+                  "type": "array",
+                  "maxItems": 64,
+                  "items": {
+                    "$ref": "#/$defs/ControlGroup"
+                  }
+                },
+                "ports": {
+                  "type": "array",
+                  "maxItems": 64,
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "input": {
+                        "type": "string"
+                      },
+                      "device": {
+                        "type": "string"
+                      },
+                      "port": {
+                        "type": "integer",
+                        "minimum": 1
+                      }
+                    },
+                    "required": [
+                      "input",
+                      "device",
+                      "port"
+                    ],
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "required": [
+                "groups",
+                "ports"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "params"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
+              "const": "controllers.view",
+              "description": "What the screen shows, which the controls follow: the part the knobs follow, the editor page shown, groups' positions"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "part": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "screen": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "params": {
+                      "type": "array",
+                      "maxItems": 64,
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "enum": [
+                              "parameter",
+                              "control",
+                              "partLevel",
+                              "partMute",
+                              "scene"
+                            ]
+                          },
+                          "node": {
+                            "type": [
+                              "integer",
+                              "string"
+                            ]
+                          },
+                          "param": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "id": {
+                            "type": "integer",
+                            "minimum": 0
+                          }
+                        },
+                        "required": [
+                          "kind"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "params"
+                  ],
+                  "additionalProperties": false
+                },
+                "positions": {
+                  "type": "array",
+                  "maxItems": 64,
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "group": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "position": {
+                        "type": "integer",
+                        "minimum": 0
+                      }
+                    },
+                    "required": [
+                      "group",
+                      "position"
+                    ],
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "params"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
+              "const": "controllers.get",
+              "description": "Each group's position, the control moved last and how many moves so far"
+            },
+            "params": {
+              "type": "object",
+              "properties": {},
+              "required": [],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method"
           ],
           "additionalProperties": true
         },
@@ -6747,6 +7120,26 @@
             },
             "params": {
               "$ref": "#/$defs/Transport"
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "params"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "method": {
+              "const": "controllers"
+            },
+            "params": {
+              "$ref": "#/$defs/ControllerState"
             }
           },
           "required": [

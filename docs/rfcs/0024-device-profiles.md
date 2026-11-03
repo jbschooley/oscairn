@@ -26,6 +26,10 @@ Checked when built and tested; the sections below say how.
       read with `oscairn-midi-monitor`, all but its buttons; Mackie Control ports read and fed
       back, and knob values sent back where a profile says so ([status](#mackie-control));
       choosing between profiles that match one port built in Settings)
+  - [ ] the mapping played by the engine, from the groups and ports the app sends it
+        ([where the mapping runs](#where-the-mapping-runs))
+  - [ ] [identical controllers](#identical-controllers): every same-named input opens, told
+        apart by MIDI channel
 
 ## Problem
 
@@ -300,6 +304,50 @@ each knob's value back on its CC, so the MODX's value matches the target's and n
 needed; whether Plugin mode takes CC 17 to 24 as input is unconfirmed. Estimated until a unit
 confirms them: the port names and order, the channel, whether the scene buttons latch, and
 whether the slider mode buttons change what Plugin mode sends.
+
+### Where the mapping runs
+
+The app reads the profiles and the musician's choices and matches ports, and the engine plays
+the controls (RFC 0011's [instant controls](0011-performance-ui-and-editors.md#instant-controls)).
+Whenever the connected controllers or the choices change, the app sends the engine the joined
+groups (the device's, then each controller's, with their `midi`) and which MIDI input, by name,
+is which profile's port (`controllers.set`, sent again when the engine restarts). The engine
+opens every input itself, as it does for notes, and maps each message from a bound input on
+its MIDI input thread. The app keeps only Mackie Control ports (read and fed back by the app,
+[below](#mackie-control)) and the outputs that take values back. Profiles stay the app's: the
+engine needs only what they resolve to, and a profile file never crosses the socket.
+
+### Identical controllers
+
+Two controllers of one model (two SMK37 Elites) show the same input names. **Every input whose
+name matches a profile's port is that profile's port**: none is dropped because another has
+the name. Inputs with one name and the same MIDI channels act as one device: both play, both
+move the same controls, and nothing breaks with any number of them. Where a profile has
+several ports under one name (`index`), the inputs with that name take the indexes in turn, in
+the order the system lists them, so two such devices give each index twice.
+
+**Identical devices are told apart by MIDI channel**, which the musician sets on the device. A
+second SMK37 set to send on channel 2 is described by a profile of its own with those
+channels (the per-control `channel` lists above): a `--controller` file with its own id, a copy
+of the first with other channels. Both profiles fit the same port name; the musician chooses
+both for it in Settings, so the choice per port name is a list of profiles, not one. Each
+message is matched by its channel to the profile whose controls send on it, so the second
+device's controls are a controller of their own: they join after the first's and are numbered
+on (`knob:9` to `knob:16` beside the first's `knob:1` to `knob:8`), and so take assignments of
+their own. Notes from both reach the parts as every input's do; a part chooses between them by
+channel with RFC 0012's selectors.
+
+Neither the order the system lists inputs nor their system IDs tell identical devices apart:
+the order changes with the order they are plugged in and the USB ports they use, and JUCE's
+identifiers (CoreMIDI's unique IDs on macOS, ALSA's client numbers on Linux) are given out per
+connection and need not survive a reconnect, another USB port or another computer. An
+assignment saved with a Performance would then find the other device, or none. A channel is set
+on the device and travels with it.
+
+**A renamed port** (Audio MIDI Setup lets the musician rename one) is matched through the choice
+made for its name: the profile chosen for a name applies to it whether or not the name contains
+the profile's port name, so a renamed port still plays as the profile chosen for it (its first
+`midi` port, for a profile with several).
 
 ### Mackie Control
 

@@ -116,7 +116,7 @@ request members.
 | `transport.get` | omitted or `{}` | `playing`, `tempo`, `beat`, `clockSource`, `clockOutputs` |
 | `transport.set` | one or more of `playing` (boolean), `tempo` (1..1000), `clockSource` (`"internal"` or `"midi"`), `clockOutputs` (up to 16 device rules choosing MIDI outputs, as for a part's `devices`, replacing the last; empty, the default, sends no clock) | `{"accepted":true}` |
 | `params.gesture` | `node`, `param`, `begin` (boolean) | `{"accepted":true}` |
-| `subscribe`, `unsubscribe` | `topics` (1..5 of `params.changed`, `transport`, `graph.changed`, `status`, `record`), optional `allChanges` boolean | `{"accepted":true}` |
+| `subscribe`, `unsubscribe` | `topics` (1..6 of `params.changed`, `transport`, `graph.changed`, `status`, `record`, `controllers`), optional `allChanges` boolean | `{"accepted":true}` |
 | `graph.get` | omitted or `{}` | staged topology, names/plugin metadata/ports, each node's `enabled` and `ringing` (switched off and still sounding out), connections, mappings, parts, wires (each with `enabled`), `revision`, `staged`, numeric `input`/`output` endpoints |
 | `graph.role` | `node`, `role`: one of `insertion-a`, `insertion-b`, `part-eq`, `reverb`, `variation`, `master-effect`, `master-eq`, `arpeggiator` ([RFC 0016's node roles](rfcs/0016-effects-suite.md#where-the-effects-go)), or `null` for none; `graph.get` gives each node's `role` (or `null`). An edit, saved with the node | `{"accepted":true}`; an unknown role or node is refused |
 | `graph.enable` | `node`, `enabled`: switches a plugin off or on, as scenes do. Off, it takes no new notes and no sound: notes it holds play on until released, its sound rings out and then stops (`ringing` until then). In a part's chain, what reached it passes around it, so an effect off is bypassed. An edit, staged until commit | `{"accepted":true}` |
@@ -176,6 +176,18 @@ request members.
 | `notes.send` | `on` (boolean), `key` (0..127), optional `velocity` (0..1), optional `channel` (0..15) | `{"accepted":true}` |
 | `notes.panic` | `{}` | `{"accepted":true}`: all notes off. Every note played from the keys, MIDI inputs and `notes.send` is released at the next block |
 | `midi.ignore` | `inputs`: up to 64 MIDI input names, as `session.status` lists them (may be empty) | `{"accepted":true}`: the engine leaves out every message from those inputs, replacing the last list, until it exits. For a controller's port that duplicates another's ([RFC 0024](rfcs/0024-device-profiles.md#controllers)); a name not connected now applies when it appears |
+| `controllers.set` | `groups`: up to 64 control groups (below), the device's then each connected controller's; `ports`: up to 64 `{input, device, port}`, each MIDI input (by name, as `session.status` lists it) that is a controller profile's port (`device` its profile's id, `port` from 1) | `{"accepted":true}`: replaces the last set. The engine maps every message from a bound input through RFC 0011's [controller-mapping service](rfcs/0011-performance-ui-and-editors.md#instant-controls) on its MIDI input thread; a name not connected now applies when it appears. Not saved: the app sends it again when the engine restarts |
+| `controllers.view` | optional `part` (the part the knobs follow; 0 the Performance's controls), `screen` (the editor page shown: `name` and `params`, assignment targets as `assignments.get` writes them; empty `params`: Play's knob row) and `positions` (up to 64 `{group, position}`: a group's page, row or mode, by its place in `groups`) | `{"accepted":true}`: what the screen shows, which the controls follow; groups not listed keep their positions |
+| `controllers.get` | omitted or `{}` | `positions` (each group's page, row or mode, in `groups` order), `touched` (the control moved last, `knob:3`; empty: none yet) and `touches` (how many moves so far, so each shows, for learn) |
+
+A control group in `controllers.set` (RFC 0024's [control groups](rfcs/0024-device-profiles.md#control-groups), as
+the app resolves them from profiles): `role` (`notes`, `screen`, `assign`, `fixed`), `kind`, `count`,
+optional `rows` (`{name, bank}`, bank one of `assign`, `filter`, `ampEG`, `eq`, `levels`, `effects`),
+`modes`, `functions`, `scenes`, `paged`, `switches`, and `midi` for a controller's: `device` (its
+profile's id), `port`, `channel`, `channels` (one per control), `message` (`cc`, `note`,
+`pitchBend`, `pressure`), `numbers` (a CC or note per control, or per control per row),
+`encodings` (one per control: `absolute`, `twosComplement`, `binaryOffset`, `signMagnitude` or
+`steps`), `steps` (one `[increment, decrement]` per control), `latch` and `feedback`.
 
 `graph.add` accepts a CLAP module or, in an LV2-enabled engine, a `.lv2` bundle directory.
 For LV2, `pluginId` is the plugin URI and is required when the bundle has multiple plugins.
@@ -394,6 +406,8 @@ the first poll. Re-subscribing does not discard already unread changes.
   true` on a parameter subscription returns every retained change without throttling or
   coalescing. This is a control observation stream, not a sample-timestamped automation file.
 - `transport` carries the `transport.get` shape when it changes, at most 60 times per second.
+- `controllers` carries the `controllers.get` shape when it changes (a control moved, a
+  row button, a page), at most 60 times per second.
 - `status` carries the `session.status` shape when it changes, at most 4 times per second.
   `cpuLoad` is the device callback load as a fraction (1 means the entire block budget),
   not whole-machine CPU usage. `deadlineMisses` sums plugin deadline misses for nodes

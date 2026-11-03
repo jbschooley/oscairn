@@ -18,6 +18,9 @@ Checked when built and tested; the sections below say how.
       generated editors ([status](#step-5-status)); what modulates each knob and the Modular
       grid remain
 - [ ] 6. Physical controls: default layers, overrides, learn, banks (layers, banks, overrides saved, learn on a panel's knobs, plugin roles and screen knobs following the editor page done; [status](#step-6-status))
+  - [ ] [instant controls](#instant-controls): live gains for part levels, mutes and the master
+  - [ ] the controller-mapping service in the engine, on its MIDI input threads
+  - [ ] the latency measured in a test, against one block
 - [ ] 7. Groups, pedal view, move, copy and share
 - [x] Play: the Performance app's view for the stage ([design](#play-the-performance-apps-first-view), [status](#play-status))
 - [x] The full scene model (blocks and wires enabled per scene, what each scene saves),
@@ -353,8 +356,85 @@ What turns a moved control into a value at its target, the same for a panel and 
   nothing in the service: its message reaches every part on its own as that controller.
 
 Built first in the app, where the profiles and the groups are, applying values through the
-control API like the screen's knobs; moving it beside the engine's direct event path (RFC 0004)
-comes with the panel's hardware service.
+control API like the screen's knobs. That was too slow to play (below), so it moves into the
+engine.
+
+### Instant controls
+
+**The problem, measured (2026-11-02).** On the converted Performance "Drifting", the mod wheel
+plays control 1 ("Mod Wheel"), whose one target is a part's level (logarithmic, 0.707 down to
+0.0021). Driven over a virtual MIDI port in the running app, the part's level settled 28 to 70 ms
+after the last CC. A message took this path: the app's MIDI thread queued it; a 10 ms timer on
+the app's UI thread ran the mapping; `controls.set` and a `graph.get` read-back went over the
+socket to the engine, which answers requests from a 5 ms timer; there `setMacro` rebuilt every
+part's wires and compiled a new graph plan, which the audio thread adopted at its next block
+(with a 5 ms ramp). Each stage waits for a timer, and the plan compile grows with the
+Performance.
+
+**The target.** A control's move reaches the sound within about one audio block (2.7 ms at 128
+frames and 48 kHz) after the engine receives the message, ramped across that block so a sweep
+does not zipper, with no UI thread, socket round trip or plan compile on the way. It is
+measured in a test that feeds MIDI into the engine's controller input with a timestamp, renders
+blocks paced like an audio device, and reports the time to the first block whose output has the
+new level (the median and worst over many moves, against one block). The figure covers the
+engine; the MIDI driver's own delay before the engine sees the message is outside it.
+
+**Live gains.** Part levels and mutes, and the Performance's master level and pan, are not baked
+into the plan's route gains. The graph keeps a fixed table of live gains (256 slots, each an
+atomic target the audio thread reads once per block); a route names up to four slots whose
+product scales it, and the audio thread ramps each route from the product at the last block to
+the new one across the block. The Session gives each part a slot (the master two, left and
+right) and compiles a part's fader wires with the part's level at unity and unmuted, naming the
+slots of its own fader and of the empty buses it passes; a slot's value is the part's level, or
+0 while muted. Moving a fader then writes a slot and never compiles a plan; the wires the views
+read are rebuilt with the new levels on the control thread. Edits of the structure (a plugin
+added, a wire, a solo, a send's level) still compile plans, and a scene or undo writes the slots
+with its compile. Where a wire cannot be live (two ways to one place through different empty
+buses, merged into one wire, or more than four slots), it keeps its baked gain and a move of
+those faders compiles a plan as before. A Performance's plugins ringing out after a change keep
+the gains they had (their routes are frozen when they are carried over).
+
+**The mapping runs in the engine.** The engine already opens every MIDI input for notes; it
+now also runs the controller-mapping service on its MIDI input threads:
+
+- The app resolves the profiles, the musician's choices of profile per port and the device's
+  own groups (RFC 0024), as it does now, and sends the engine the result when it changes: the
+  joined control groups with their MIDI, and which input (by name) is which profile's port
+  (`controllers.set`). Profiles stay the app's: the engine needs only what they resolve to.
+  The Performance's assignments and controls are the engine's already.
+- The app also sends what the screen shows when it changes: the part the knobs follow, the
+  knob group's page, and the editor page shown for screen knobs (`controllers.view`).
+- On the control thread the engine compiles a snapshot of what the mapping reads (the
+  assignment source of the open Performance, the groups, each input's binding, the parts' live
+  slots, the controls' targets with their bases) whenever the Performance or those settings
+  change. A MIDI input thread maps a message against it under a lock that only the MIDI threads
+  and the control thread's short snapshot swaps take, never the audio thread.
+- What a message plays is applied at once where that is lock-free: a part's level or mute (on
+  its own, or as a control's target, as the mod wheel's control above) is written to the live
+  gain slot, which the audio thread reads at its next block. The MIDI thread evaluates a
+  control's targets with the same summing rule the Session uses, from the snapshot.
+- Everything else waits for the control thread, which the MIDI thread wakes at once rather
+  than at its next tick: parameter targets (a plugin's parameters are set on the control thread,
+  through its host, which for a plugin in a worker is a request to the worker), scenes, morphs,
+  and faders that are not live. These skip the UI and the socket, but not the control thread.
+- The control thread then applies the moves to the Session's model, as the latest value per
+  target: control values, part levels and mutes (for the views, scenes, saving and undo, as
+  playing a control is today), without writing the live slots again (a newer move may be on its
+  way), unless the model's value differs from what the MIDI thread wrote and no newer move has
+  come (a control rebased by something else moving its destination).
+- The pickup state, the groups' positions (pages and rows) and the control touched last (for
+  learn) are the engine's; `controllers.get` reads them, and the engine notifies clients when
+  they change.
+- The app keeps the UI: it shows values from the graph as now, learn reads the control touched
+  last from the engine, and values go back to devices (knob values, Mackie Control's LEDs,
+  faders and names) from the app, as now. **Mackie Control stays in the app** for this step: its
+  surface selection, touch state and feedback are one object; its faders become live gains like
+  any fader, so they no longer compile plans, but still take the app's timer and the socket.
+  Moving it into the engine is a later step.
+
+Pickup, latching and momentary buttons, relative encoders, groups with pages, rows and modes,
+the part the knobs follow, screen knobs and a Sound's own assignments behave as before: the
+engine runs the same `ControllerMapping` and `resolveControls`.
 
 ### Pads
 
