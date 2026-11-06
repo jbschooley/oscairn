@@ -20,11 +20,11 @@ extern "C" {
  * sounds from one pool of voices (one instance, several contexts) gets each context's limit,
  * reserve and priority, and whether its part plays mono or legato, and chooses among its voices
  * accordingly (the order below). A plugin without sound contexts reads context 0's settings.
- * (Oscairn: within one Performance every part has its own instance, so today several contexts
- * share an instance's pool only during a Performance change, the outgoing sounds ringing out
- * beside the incoming ones, and the host sends one entry, for the selected contexts, with the
- * part's reserve and priority and no mode flags, since parts have no mono or legato mode yet;
- * per-part reserves inside one instance take effect once parts share an instance, RFC 0021.)
+ * (Oscairn: parts sharing one instance, RFC 0021, get an entry each, for the sound their channel
+ * selects, with the part's reserve and priority; an instance one part plays alone gets one entry,
+ * for the selected contexts, which also covers a Performance change, the outgoing sounds ringing
+ * out beside the incoming ones. No mode flags, since parts have no mono or legato mode yet, and
+ * no limit of a context's own: the host keeps each part's note limit itself, RFC 0018 step 2.)
  *
  * Calls, all optional to act on but required in the table (no null entries):
  *

@@ -205,6 +205,12 @@ if(Python3_Interpreter_FOUND)
     set_tests_properties(control-library PROPERTIES TIMEOUT 30)
 endif()
 
+add_executable(oscairn-shared-parts-test tests/shared_parts.cpp)
+target_include_directories(oscairn-shared-parts-test PRIVATE ../clap-host/tests)
+target_link_libraries(oscairn-shared-parts-test PRIVATE oscairn_control_json)
+add_test(NAME control-shared-parts COMMAND oscairn-shared-parts-test $<TARGET_FILE:oscairn_basic_synth>)
+set_tests_properties(control-shared-parts PROPERTIES TIMEOUT ${switch_timeout})
+
 add_executable(oscairn-sound-presets-test tests/sound_presets.cpp)
 target_link_libraries(oscairn-sound-presets-test PRIVATE oscairn_control_json)
 add_test(NAME control-sound-presets COMMAND oscairn-sound-presets-test $<TARGET_FILE:oscairn_basic_synth>)
@@ -212,6 +218,7 @@ add_test(NAME control-sound-presets COMMAND oscairn-sound-presets-test $<TARGET_
 # Sessions, native sounds and effects and Performances again with every CLAP plugin in a worker (RFC 0010 step 5).
 set(control_worker_tests
     "control-sound-presets|oscairn-sound-presets-test|$<TARGET_FILE:oscairn_basic_synth>"
+    "control-shared-parts|oscairn-shared-parts-test|$<TARGET_FILE:oscairn_basic_synth>"
     "control-json-audio|oscairn-json-rpc-test|$<TARGET_FILE:oscairn_basic_synth>"
     "control-performance|oscairn-performance-test|$<TARGET_FILE:oscairn_basic_synth>|$<TARGET_FILE:oscairn_delay>|$<TARGET_FILE:oscairn_step_sequencer>|$<TARGET_FILE:kick-clap-fixture-normal>"
     "control-performance-switch|oscairn-performance-switch-test|$<TARGET_FILE:oscairn_basic_synth>|$<TARGET_FILE:oscairn_sampler>|$<TARGET_FILE:oscairn_delay>|$<TARGET_FILE:kick-clap-fixture-normal>")

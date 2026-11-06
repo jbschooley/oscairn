@@ -212,6 +212,7 @@ namespace oscairn
                 if(!boolean(field(n,"enabled")))next.disabled.insert(node.id);
                 if(boolean(field(n,"ringing")))next.ringing.insert(node.id);
                 if(const auto role=field(n,"role");role->type!=json_type_null)next.roles[node.id]=string(role);
+                if(const auto s=field(n,"shared");s->type!=json_type_null)next.shared[node.id]={static_cast<NodeId>(integer(field(s,"engine"))),static_cast<uint16_t>(integer(field(s,"channel"))),static_cast<uint32_t>(integer(field(s,"bus")))};
                 next.parameterRevisions[node.id]=integer(field(n,"parameterRevision"));
                 next.topology.nodes.push_back(std::move(node));
             }
@@ -859,6 +860,8 @@ namespace oscairn
     {auto doc=impl_->call("graph.add","{\"name\":"+quote(name)+",\"path\":"+quote(path)+",\"pluginId\":"+quote(plugin)+'}');const auto id=static_cast<NodeId>(integer(field(field(doc.get(),"result"),"node")));impl_->refresh();return id;}
     NodeId RemoteControl::addEffectContext(const std::string& name,NodeId source)
     {auto doc=impl_->call("effects.create","{\"name\":"+quote(name)+",\"source\":"+std::to_string(source)+'}');const auto id=static_cast<NodeId>(integer(field(field(doc.get(),"result"),"node")));impl_->refresh();return id;}
+    NodeId RemoteControl::shareInstrument(const std::string& name,NodeId source)
+    {auto doc=impl_->call("instruments.share","{\"name\":"+quote(name)+",\"source\":"+std::to_string(source)+'}',30000);const auto id=static_cast<NodeId>(integer(field(field(doc.get(),"result"),"node")));impl_->refresh();return id;}
     std::optional<oscairn_effect_resources_t> RemoteControl::effectResources(NodeId n) const
     {
         auto doc=impl_->call("effects.resources","{\"node\":"+std::to_string(n)+'}');const auto* r=field(doc.get(),"result");

@@ -117,7 +117,7 @@ request members.
 | `transport.set` | one or more of `playing` (boolean), `tempo` (1..1000), `clockSource` (`"internal"` or `"midi"`), `clockOutputs` (up to 16 device rules choosing MIDI outputs, as for a part's `devices`, replacing the last; empty, the default, sends no clock) | `{"accepted":true}` |
 | `params.gesture` | `node`, `param`, `begin` (boolean) | `{"accepted":true}` |
 | `subscribe`, `unsubscribe` | `topics` (1..7 of `params.changed`, `transport`, `graph.changed`, `status`, `record`, `controllers`, `controls.changed`), optional `allChanges` boolean | `{"accepted":true}` |
-| `graph.get` | omitted or `{}` | staged topology, names/plugin metadata/ports, each node's `enabled`, `ringing` (switched off and still sounding out) and `parameterRevision` (another whenever its plugin or that plugin's `params.list` info changes; counted from the clock, so never one an earlier engine gave), connections, mappings, parts, wires (each with `enabled`), `revision`, `staged`, numeric `input`/`output` endpoints |
+| `graph.get` | omitted or `{}` | staged topology, names/plugin metadata/ports, each node's `enabled`, `ringing` (switched off and still sounding out), `shared` (a node playing one sound of an instance other nodes share: `{engine, channel, bus}`, [below](#parts-sharing-one-instance); `null` otherwise) and `parameterRevision` (another whenever its plugin or that plugin's `params.list` info changes; counted from the clock, so never one an earlier engine gave), connections, mappings, parts, wires (each with `enabled`), `revision`, `staged`, numeric `input`/`output` endpoints |
 | `graph.role` | `node`, `role`: one of `insertion-a`, `insertion-b`, `part-eq`, `reverb`, `variation`, `master-effect`, `master-eq`, `arpeggiator` ([RFC 0016's node roles](rfcs/0016-effects-suite.md#where-the-effects-go)), or `null` for none; `graph.get` gives each node's `role` (or `null`). An edit, saved with the node | `{"accepted":true}`; an unknown role or node is refused |
 | `graph.enable` | `node`, `enabled`: switches a plugin off or on, as scenes do. Off, it takes no new notes and no sound: notes it holds play on until released, its sound rings out and then stops (`ringing` until then). In a part's chain, what reached it passes around it, so an effect off is bypassed. An edit, staged until commit | `{"accepted":true}` |
 | `graph.add` | `path`, optional `name` and `pluginId` | numeric `node` |
@@ -826,6 +826,26 @@ stereo ports with matching IDs). Voices capture the bus at note-on through susta
 changing sounds or Output bus cannot move held notes. Routed voices are excluded from Main.
 Buses are permanent destinations, not sound-context IDs; assigning two sounds to one bus
 intentionally combines them before the effects. Allocate different buses for different chains.
+
+## Parts sharing one instance
+
+`instruments.share` accepts `source` (existing node name/ID) and optional unique `name`, and
+returns a new numeric `node` ([RFC 0021](rfcs/0021-sounds-performances-and-library.md#parts-sharing-one-engine)):
+a part's instrument on the instance `source` plays, with a new sound of its own (the plugin's
+defaults) on its own MIDI channel and output bus. The node is staged like `graph.add`; put it in
+a part and commit as usual. Its one audio output is its bus; its parameters are its sound's
+(edits reach the instance on its channel; its output bus parameter keeps its bus);
+`sounds.prepare` and `sounds.select` on it prepare a sound on its bus and select it on its
+channel. A `source` with an instance of its own becomes the engine's first node, on channel 0
+(MIDI channel 1) and the main output it plays to already, its sound and wires unchanged. When
+that instance has no free sound, channel or bus, the node goes on another instance of the plugin
+this Performance shares that has room, else on a new one (the spill), the first node of an engine
+of its own. Only a plugin with native sound contexts, their snapshot, and a stepped parameter
+with oscairn.ui's `outputBus` role (the Basic Synth's Output bus; not the Sampler, which has one
+output) can share; others return -32004. `graph.get` lists each such node's `shared`: `engine`,
+the engine's first node, and its `channel` and `bus`; a saved Performance keeps them
+([format](performance-format.md)). Undo takes a share back like any added node; one that made
+`source` the first node puts back `source`'s own instance.
 
 ## Performance persistence
 

@@ -456,10 +456,10 @@ int main(int argc, char** argv)
             fs::create_directories(root / "Sounds" / "esc");
             fs::create_directories(root / "Performances" / "esc-perf");
             std::ofstream(root / "Sounds" / "esc" / "sound.json", std::ios::binary | std::ios::trunc)
-                << R"({"format":"oscairn.sound","version":7,"info":{"id":"ab\"cd","name":"Bass","description":"","tags":[],"color":"","revision":"r","parent":"","origin":null,"hash":")"
+                << R"({"format":"oscairn.sound","version":8,"info":{"id":"ab\"cd","name":"Bass","description":"","tags":[],"color":"","revision":"r","parent":"","origin":null,"hash":")"
                 << std::string(64, '0') << R"("},"nodes":[]})";
             std::ofstream(root / "Performances" / "esc-perf" / "performance.json", std::ios::binary | std::ios::trunc)
-                << R"({"format":"oscairn.performance","version":11,"info":{"id":"perf","name":"Set","description":"","tags":[],"color":"","revision":"r","parent":"","origin":null,"hash":")"
+                << R"({"format":"oscairn.performance","version":12,"info":{"id":"perf","name":"Set","description":"","tags":[],"color":"","revision":"r","parent":"","origin":null,"hash":")"
                 << std::string(64, '0') << R"("},"nodes":[{"key":"n1","plugin":{"format":"clap","id":"x","version":"1","path":"p"},"sound":"ab\"cd"}]})";
             Package p; p.id = "k.esc"; p.name = "Escaped";
             p.items.push_back({"sound", "ab\"cd", "Bass", "Sounds/esc", {}});
@@ -478,7 +478,7 @@ int main(int argc, char** argv)
             const auto root = temp.path / "l-root";
             fs::create_directories(root / "Sounds" / "tone");
             std::ofstream(root / "Sounds" / "tone" / "sound.json", std::ios::binary | std::ios::trunc)
-                << R"({"format":"oscairn.sound","version":7,"info":{"id":"tone","name":"Tone","description":"","tags":[],"color":"","revision":"r","parent":"","origin":null,"hash":")"
+                << R"({"format":"oscairn.sound","version":8,"info":{"id":"tone","name":"Tone","description":"","tags":[],"color":"","revision":"r","parent":"","origin":null,"hash":")"
                 << std::string(64, '0') << R"("},"nodes":[]})";
             Package p; p.id = "com.example.pack"; p.name = "Dotted";
             p.items.push_back({"sound", "tone", "Tone", "Sounds/tone", {}});
@@ -519,10 +519,10 @@ int main(int argc, char** argv)
             fs::create_directories(root / "Sounds" / "one");
             fs::create_directories(root / "Performances" / "two");
             std::ofstream(root / "Sounds" / "one" / "sound.json", std::ios::binary | std::ios::trunc)
-                << R"({"format":"oscairn.sound","version":7,"info":{"id":"one","name":"One","description":"","tags":[],"color":"","revision":"r","parent":"","origin":null,"hash":")"
+                << R"({"format":"oscairn.sound","version":8,"info":{"id":"one","name":"One","description":"","tags":[],"color":"","revision":"r","parent":"","origin":null,"hash":")"
                 << std::string(64, '0') << R"("},"nodes":[]})";
             std::ofstream(root / "Performances" / "two" / "performance.json", std::ios::binary | std::ios::trunc)
-                << R"({"format":"oscairn.performance","version":11,"info":{"id":"two","name":"Two","description":"","tags":[],"color":"","revision":"r","parent":"","origin":null,"hash":")"
+                << R"({"format":"oscairn.performance","version":12,"info":{"id":"two","name":"Two","description":"","tags":[],"color":"","revision":"r","parent":"","origin":null,"hash":")"
                 << std::string(64, '0') << R"("},"nodes":[]})";
             Package p; p.id = "m.cut"; p.name = "Cut";
             p.items.push_back({"sound", "one", "One", "Sounds/one", {}});
@@ -586,9 +586,9 @@ int main(int argc, char** argv)
             fs::create_directories(root / "Performances" / "set");
             const std::string zeros(64, '0');
             std::ofstream(root / "Sounds" / "same" / "sound.json", std::ios::binary | std::ios::trunc)
-                << R"({"format":"oscairn.sound","version":7,"info":{"id":"same","name":"Same","description":"","tags":[],"color":"","revision":"r","parent":"","origin":null,"hash":")" << zeros << R"("},"nodes":[]})";
+                << R"({"format":"oscairn.sound","version":8,"info":{"id":"same","name":"Same","description":"","tags":[],"color":"","revision":"r","parent":"","origin":null,"hash":")" << zeros << R"("},"nodes":[]})";
             std::ofstream(root / "Performances" / "set" / "performance.json", std::ios::binary | std::ios::trunc)
-                << R"({"format":"oscairn.performance","version":11,"info":{"id":"set","name":"Set","description":"","tags":[],"color":"","revision":"r","parent":"","origin":null,"hash":")" << zeros
+                << R"({"format":"oscairn.performance","version":12,"info":{"id":"set","name":"Set","description":"","tags":[],"color":"","revision":"r","parent":"","origin":null,"hash":")" << zeros
                 << R"("},"nodes":[{"key":"n1","plugin":{"format":"clap","id":"x","version":"1","path":"p"},"sound":"same"}]})";
             Package p; p.id = "n.same"; p.name = "Same";
             p.items.push_back({"sound", "same", "Same", "Sounds/same", {}});
@@ -597,7 +597,7 @@ int main(int argc, char** argv)
             writePackage(same, p, root);
             fs::create_directories(temp.path / "n" / "Sounds" / "Same.osound");
             std::ofstream(temp.path / "n" / "Sounds" / "Same.osound" / "sound.json", std::ios::binary | std::ios::trunc)
-                << R"({"format":"oscairn.sound","version":7,"info":{"id":"same","name":"Same","description":"","tags":[],"color":"","revision":"r","parent":"","origin":{"library":"n.same","item":"same","hash":")" << zeros
+                << R"({"format":"oscairn.sound","version":8,"info":{"id":"same","name":"Same","description":"","tags":[],"color":"","revision":"r","parent":"","origin":{"library":"n.same","item":"same","hash":")" << zeros
                 << R"("},"hash":")" << zeros << R"("},"nodes":[]})";
             Session n(48000, 64);
             check(items(n, "sound").size() == 1 && items(n, "sound")[0].id == "same", "the user's own copy is there under the archive's ID");

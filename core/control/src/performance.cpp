@@ -6,6 +6,7 @@
 #include "CurveJson.h"
 #include "oscairn/package.h"
 #include "oscairn/unavailable_plugin.h"
+#include "oscairn/sound_context.h"
 #include <algorithm>
 #include <charconv>
 #include <cmath>
@@ -232,6 +233,29 @@ std::shared_ptr<PluginHost> standIn(V node,const fs::path& snapshot,const std::s
     p.reason=p.descriptor.id+" "+p.descriptor.version+" is not here ("+reason+"); its place and saved state are kept";
     return unavailablePlugin(std::move(p));
 }
+// RFC 0021 slice 3: a saved node's place in a shared engine, its `sound`: its MIDI channel and
+// output bus; none for a node with an instance of its own.
+std::optional<std::pair<uint16_t,uint32_t>> soundOf(V node){
+    const V s=field(node,"sound");if(s->type==json_type_null)return std::nullopt;
+    fields(s,{"channel","bus"});return std::pair{uint16_t(integer(field(s,"channel"),15)),integer(field(s,"bus"),31)};}
+// The sound a node sharing an engine plays, as saved: the engine's first node, on the instance
+// loaded for it, given the engine's state (the folder's `engine`); or another, on `first`'s engine.
+// The sound is the one its channel selects; its own snapshot is the values it shows.
+std::shared_ptr<SoundContext> savedSound(V node,const fs::path& folder,const std::shared_ptr<PluginHost>& instance,const PluginHost* first){
+    const auto [channel,bus]=*soundOf(node);
+    std::shared_ptr<SoundContext::Engine> engine;
+    if(first){const auto* c=dynamic_cast<const SoundContext*>(first);if(!c)throw std::runtime_error("its shared engine is not here");engine=c->engine();}
+    else{
+        const auto parameter=SoundContext::busParameter(*instance);
+        if(parameter==CLAP_INVALID_ID)bad("the plugin cannot share its instance");
+        instance->loadSnapshot((folder/"engine").string());
+        engine=std::make_shared<SoundContext::Engine>();engine->host=instance;engine->busParameter=parameter;}
+    std::optional<uint32_t> sound;
+    for(const auto& c:engine->host->soundContexts())if(c.selected_channels>>channel&1)sound=c.id;
+    if(!sound)bad("no sound is selected on a shared engine's channel");
+    auto context=std::make_shared<SoundContext>(engine,channel,bus,*sound);
+    context->loadSnapshot(folder.string());
+    return context;}
 // A plugin refused before activating because it declared more memory than the budget left
 // (kick::clap::Host's reason, which reaches here as text, also from a worker): not a stand-in.
 bool memoryRefusal(const std::exception& e){return std::string(e.what()).find(" MiB of memory where ")!=std::string::npos;}
@@ -428,13 +452,21 @@ Control::PerformanceInfo Session::writeDocument(const std::string& directory,Per
     std::vector<LockEntry> lock; // RFC 0006: each plugin build it uses, by its digest, per platform
     for(const auto& n:graph.nodes){if(!kept(n.id))continue;const auto& key=keys.at(n.id);auto& h=graph_.host(n.id);
         if(!keys.count(graph_.effectSource(n.id,leaving_)))bad(nodes_.at(n.id)+" shares its engine with a plugin outside the part");
+        // RFC 0021 slice 3: a node sharing an engine saves its values, and the engine's first node the
+        // engine's state too; a Sound holds a whole engine or none of it.
+        const auto* shared=dynamic_cast<const SoundContext*>(&h);
+        if(shared && sound)for(const auto& m:graph.nodes)if(!leaving_.count(m.id) && !inside.count(m.id) && graph_.effectSource(m.id,leaving_)==graph_.effectSource(n.id,leaving_))
+            bad(nodes_.at(n.id)+" shares its instance with a plugin outside the part");
         // Sound assets are dependencies (RFC 0009): record references, never the files.
         std::vector<std::string> assets;
         for(const auto& a:h.assetDependencies()){libraries.insert(a.library);assets.push_back("{\"library\":"+quote(a.library)+",\"path\":"+quote(a.path)+",\"sha256\":"+quote(a.sha256)+(a.optional?",\"optional\":true":"")+'}');}
-        try{h.saveSnapshot((bundle.temporary.path/"nodes"/key).string());}catch(const std::exception& e){bad("cannot save "+nodes_.at(n.id)+" ("+n.plugin.id+"): "+e.what());}
+        try{h.saveSnapshot((bundle.temporary.path/"nodes"/key).string());
+            if(shared && graph_.effectSource(n.id,leaving_)==n.id)shared->engine()->host->saveSnapshot((bundle.temporary.path/"nodes"/key/"engine").string());}
+        catch(const std::exception& e){bad("cannot save "+nodes_.at(n.id)+" ("+n.plugin.id+"): "+e.what());}
         const bool lv2=lv2Path(n.plugin.path);
         lockPlugin(lock,lv2?"lv2":"clap",n.plugin.id,n.plugin.version,n.plugin.path,!h.failure().empty());
-        nodes.push_back("{\"key\":"+quote(key)+",\"name\":"+quote(nodes_.at(n.id))+",\"plugin\":{\"format\":"+quote(lv2?"lv2":"clap")+",\"id\":"+quote(n.plugin.id)+",\"version\":"+quote(n.plugin.version)+",\"pathHint\":"+quote(n.plugin.path)+"},\"engine\":"+quote(keys.at(graph_.effectSource(n.id,leaving_)))+",\"inputs\":"+ports(n.inputs)+",\"outputs\":"+ports(n.outputs)+",\"noteInputs\":"+std::to_string(n.noteInputs)+",\"noteOutputs\":"+std::to_string(n.noteOutputs)+",\"assets\":"+join(assets)+",\"enabled\":"+(disabled_.count(n.id)?"false":"true")+(roles_.count(n.id)?",\"role\":"+quote(roles_.at(n.id)):std::string())+'}');
+        nodes.push_back("{\"key\":"+quote(key)+",\"name\":"+quote(nodes_.at(n.id))+",\"plugin\":{\"format\":"+quote(lv2?"lv2":"clap")+",\"id\":"+quote(n.plugin.id)+",\"version\":"+quote(n.plugin.version)+",\"pathHint\":"+quote(n.plugin.path)+"},\"engine\":"+quote(keys.at(graph_.effectSource(n.id,leaving_)))+",\"inputs\":"+ports(n.inputs)+",\"outputs\":"+ports(n.outputs)+",\"noteInputs\":"+std::to_string(n.noteInputs)+",\"noteOutputs\":"+std::to_string(n.noteOutputs)+",\"assets\":"+join(assets)+",\"enabled\":"+(disabled_.count(n.id)?"false":"true")+(roles_.count(n.id)?",\"role\":"+quote(roles_.at(n.id)):std::string())
+            +",\"sound\":"+(shared?"{\"channel\":"+std::to_string(shared->channel())+",\"bus\":"+std::to_string(shared->bus())+'}':std::string("null"))+'}');
     }
     // RFC 0011: wires with their owners and Mix settings, and the parts; graph routes follow from them.
     if(wires_.size()>Graph::maxAudioConnections || parts_.size()>256)bad("wires or parts exceed Performance limits");
@@ -504,7 +536,7 @@ Control::PerformanceInfo Session::writeDocument(const std::string& directory,Per
     if(sound)for(const auto& o:assignments_)if(o.part==sound->id){const auto& t=o.target;
         if(t.kind==Assignment::Kind::Parameter && keys.count(t.node))own.push_back("{\"control\":"+quote(o.control)+",\"kind\":\"parameter\",\"node\":"+quote(keys.at(t.node))+",\"param\":"+std::to_string(t.param)+'}');
         else if(t.kind==Assignment::Kind::Control && std::any_of(macros_.begin(),macros_.end(),[&](const Macro& m){return m.id==t.id && m.part==sound->id;}))own.push_back("{\"control\":"+quote(o.control)+",\"kind\":\"control\",\"id\":"+std::to_string(t.id)+'}');}
-    if(sound){head="{\"format\":\"oscairn.sound\",\"version\":7,\"info\":";tail=",\"libraries\":"+join(named)+",\"nodes\":"+join(nodes)+",\"wires\":"+join(wires)+",\"part\":{\"chain\":"+chainText(sound->chain)+",\"splits\":"+splitsText(*sound)+"},\"mappings\":"+join(mappings)+",\"controls\":"+join(controls)+",\"assignments\":"+join(own)+",\"lock\":"+lockText+"}\n";}
+    if(sound){head="{\"format\":\"oscairn.sound\",\"version\":8,\"info\":";tail=",\"libraries\":"+join(named)+",\"nodes\":"+join(nodes)+",\"wires\":"+join(wires)+",\"part\":{\"chain\":"+chainText(sound->chain)+",\"splits\":"+splitsText(*sound)+"},\"mappings\":"+join(mappings)+",\"controls\":"+join(controls)+",\"assignments\":"+join(own)+",\"lock\":"+lockText+"}\n";}
     else{
         // Scenes: all each holds (parts.h), its scope; the parameters scenes leave alone; and the scene last selected.
         auto ref=[&](const WireRef& r){return "\"kind\":"+std::string(r.kind==WireKind::Audio?"\"audio\"":"\"notes\"")+",\"part\":"+std::to_string(r.part)+",\"from\":"+quote(keys.at(r.from))+",\"to\":"+quote(keys.at(r.to))
@@ -538,7 +570,7 @@ Control::PerformanceInfo Session::writeDocument(const std::string& directory,Per
                            :std::any_of(parts_.begin(),parts_.end(),[&](const Part& p){return p.id==t.id;});
             if(here)assigned.push_back("{\"control\":"+quote(o.control)+",\"kind\":"+quote(assignmentKinds[size_t(t.kind)])+",\"id\":"+std::to_string(t.id)+part+'}');}
         for(const auto& at:untouched_)if(keys.count(at.node))parameters.push_back("{\"node\":"+quote(keys.at(at.node))+",\"param\":"+std::to_string(at.param)+'}');
-        head="{\"format\":\"oscairn.performance\",\"version\":11,\"info\":";tail=",\"libraries\":"+join(named)+",\"transport\":{\"tempo\":"+numeric(tempo_.load())+",\"clockSource\":"+quote(clockSource_.load()==Transport::ClockSource::Internal?"internal":"midi")+"},\"audioInputs\":"+ports(graph.audioLayout.inputs)+",\"audioOutputs\":"+ports(graph.audioLayout.outputs)+",\"nodes\":"+join(nodes)+",\"wires\":"+join(wires)+",\"parts\":"+join(parts)+",\"mappings\":"+join(mappings)+",\"pads\":"+padsText(padMap_)+",\"key\":"+keyText(key_)+",\"master\":"+masterText(masterLevel_,masterPan_)+",\"scenes\":"+join(scenes)+",\"sceneUntouched\":"+join(parameters)+",\"scene\":"+std::to_string(scene_)+",\"controls\":"+join(controls)+",\"assignments\":"+join(assigned)+",\"lock\":"+lockText+"}\n";
+        head="{\"format\":\"oscairn.performance\",\"version\":12,\"info\":";tail=",\"libraries\":"+join(named)+",\"transport\":{\"tempo\":"+numeric(tempo_.load())+",\"clockSource\":"+quote(clockSource_.load()==Transport::ClockSource::Internal?"internal":"midi")+"},\"audioInputs\":"+ports(graph.audioLayout.inputs)+",\"audioOutputs\":"+ports(graph.audioLayout.outputs)+",\"nodes\":"+join(nodes)+",\"wires\":"+join(wires)+",\"parts\":"+join(parts)+",\"mappings\":"+join(mappings)+",\"pads\":"+padsText(padMap_)+",\"key\":"+keyText(key_)+",\"master\":"+masterText(masterLevel_,masterPan_)+",\"scenes\":"+join(scenes)+",\"sceneUntouched\":"+join(parameters)+",\"scene\":"+std::to_string(scene_)+",\"controls\":"+join(controls)+",\"assignments\":"+join(assigned)+",\"lock\":"+lockText+"}\n";
     }
     info.hash=contentHash(head+tail,bundle.temporary.path/"nodes");
     const auto out=head+infoText()+tail;
@@ -690,7 +722,7 @@ std::unique_ptr<Session::Prepared> Session::read(const fs::path& root,std::vecto
     validateTree(root);const auto doc=document(root);V d=doc.get();
     fields(d,{"format","version","info","libraries","transport","audioInputs","audioOutputs","nodes","wires","parts","mappings","pads","key","master","scenes","sceneUntouched","scene","controls","assignments","lock"});
     const auto pads=padsFrom(field(d,"pads"));const auto key=keyFrom(field(d,"key"));const auto master=masterFrom(field(d,"master"));
-    if(text(field(d,"format"))!="oscairn.performance" || integer(field(d,"version"))!=11)bad("unsupported format version");
+    if(text(field(d,"format"))!="oscairn.performance" || integer(field(d,"version"))!=12)bad("unsupported format version");
     fields(field(d,"info"),{"id","name","description","tags","color","revision","parent","hash","origin"});const auto info=readInfo(root/"performance.json","oscairn.performance");
     auto lock=readLock(d);
     const auto transport=field(d,"transport");fields(transport,{"tempo","clockSource"});const double tempo=number(field(transport,"tempo"));
@@ -720,7 +752,7 @@ std::unique_ptr<Session::Prepared> Session::read(const fs::path& root,std::vecto
     std::map<NodeId,std::string> roles; // RFC 0016
     auto next=graph_.prepareReplacement();std::map<std::string,NodeId> ids{{"input",graphInput},{"output",graphOutput}};std::map<NodeId,std::string> names;std::set<std::string> usedNames;
     std::map<std::string,V> definitions;const auto nodes=array(field(d,"nodes"),256);
-    for(auto node:nodes){fields(node,{"key","name","plugin","engine","inputs","outputs","noteInputs","noteOutputs","assets","enabled","role"});const auto key=text(field(node,"key"));
+    for(auto node:nodes){fields(node,{"key","name","plugin","engine","inputs","outputs","noteInputs","noteOutputs","assets","enabled","role","sound"});const auto key=text(field(node,"key"));
         if(key.size()<6 || key.size()>12 || key.substr(0,5)!="node-" || !std::all_of(key.begin()+5,key.end(),[](char c){return c>='0' && c<='9';}) || !definitions.emplace(key,node).second)bad("invalid or duplicate node key");
         const auto name=text(field(node,"name"));if(!name.empty() && !usedNames.insert(name).second)bad("duplicate node name");}
     // RFC 0021: the nodes sharing one engine become contexts of an engine of that plugin playing
@@ -829,12 +861,24 @@ std::unique_ptr<Session::Prepared> Session::read(const fs::path& root,std::vecto
             auto context=[&](PluginHost& source,const std::function<NodeId()>& make){
                 if(room)source.setMemoryRoom(room);
                 try{const auto n=make();if(room)source.setMemoryRoom(0);return n;}catch(...){if(room)source.setMemoryRoom(0);throw;}};
+            const auto shared=soundOf(node); // RFC 0021 slice 3
             if(siblings){if(!definitions.contains(engine) || text(field(definitions.at(engine),"engine"))!=engine || !ids.contains(engine))bad("missing shared engine root");
                 const auto& source=next->host(ids.at(engine)).descriptor();if(source.id!=id || source.path!=path)bad("incompatible shared engine identity");
-                try{runtime=context(next->host(ids.at(engine)),[&]{return next->addEffectContext(ids.at(engine));});}
+                try{
+                    if(shared){runtime=next->add(savedSound(node,root/"nodes"/key,nullptr,&next->host(ids.at(engine))));restored=true;}
+                    else runtime=context(next->host(ids.at(engine)),[&]{return next->addEffectContext(ids.at(engine));});}
                 catch(const std::exception& e){
                     if(memoryRefusal(e))throw;
-                    runtime=next->add(standIn(node,root/"nodes"/key,refs[key],std::string("its shared engine is not here: ")+e.what()));}}
+                    runtime=next->add(standIn(node,root/"nodes"/key,refs[key],std::string("its shared engine is not here: ")+e.what()));restored=false;}}
+            else if(shared){
+                runtime=resolvePlugin(node,root/"nodes"/key,refs[key],[&](const std::string& p,const std::string& i){return next->add(p,i,room);},[&](NodeId n){next->remove(n);},
+                                      [&](NodeId n){return next->host(n).descriptor().version;},[&](std::shared_ptr<PluginHost> h){return next->add(std::move(h));});
+                const auto host=next->node(runtime).host;
+                if(SoundContext::busParameter(*host)!=CLAP_INVALID_ID){ // else a stand-in, restored as saved
+                    if(room)host->setMemoryRoom(room);
+                    try{next->share(runtime,savedSound(node,root/"nodes"/key,host,nullptr));}catch(...){if(room)host->setMemoryRoom(0);throw;}
+                    if(room)host->setMemoryRoom(0);
+                    restored=true;}}
             else if(const auto b=group[key]==1?claim(node,plugin,key):std::nullopt){runtime=*b;++reused;restored=true;}
             else if(const auto engine=playing(id,path,text(field(plugin,"version")),group[key])){runtime=context(graph_.host(*engine),[&]{return next->addEffectContext(graph_,*engine);});++reused;}
             else if(const auto f=group[key]==1?take(plugin,key):std::nullopt){
@@ -846,6 +890,8 @@ std::unique_ptr<Session::Prepared> Session::read(const fs::path& root,std::vecto
                 // What another Performance may take over later: a plugin of its own, loaded (not a stand-in).
                 if(group[key]==1 && next->host(runtime).failure().empty())origins[runtime]={buildDigest(next->host(runtime).descriptor().path),source(key)};}
             if(!restored)restore(runtime,node,room);
+            else if(shared){auto& h=next->host(runtime);checkPorts(field(node,"inputs"),h.inputPorts());checkPorts(field(node,"outputs"),h.outputPorts());
+                if(integer(field(node,"noteInputs"),16)!=h.noteInputPorts() || integer(field(node,"noteOutputs"),16)!=h.noteOutputPorts())bad("note port layout changed");}
             ids.emplace(key,runtime);names.emplace(runtime,name);
             if(!boolean(field(node,"enabled")))disabled.insert(runtime);
             if(const auto role=roleFrom(node);!role.empty())roles[runtime]=role;
@@ -1158,26 +1204,31 @@ std::map<std::string,NodeId> Session::addNodes(const json_value_s* document,cons
     try{
         for(bool siblings:{false,true})for(auto node:nodes){
             if(!wanted(node))continue;
-            fields(node,{"key","name","plugin","engine","inputs","outputs","noteInputs","noteOutputs","assets","enabled","role"});
+            fields(node,{"key","name","plugin","engine","inputs","outputs","noteInputs","noteOutputs","assets","enabled","role","sound"});
             const auto key=text(field(node,"key")),engine=text(field(node,"engine"));if((key!=engine)!=siblings)continue;
             if(key.size()<6 || key.size()>12 || key.substr(0,5)!="node-" || ids.count(key))bad("invalid or duplicate node key");
             const auto plugin=field(node,"plugin");fields(plugin,{"format","id","version","pathHint"});
             const auto id=text(field(plugin,"id")),name=text(field(node,"name"));
             NodeId runtime;
             const auto snapshot=root/"nodes"/key;
+            const auto shared=soundOf(node); // RFC 0021 slice 3
             if(siblings){if(!ids.count(engine))bad("missing shared engine root");
-                try{runtime=addEffectContext(unique(name),ids.at(engine));}
+                try{runtime=shared?adopt(unique(name),savedSound(node,snapshot,nullptr,&graph_.host(ids.at(engine)))):addEffectContext(unique(name),ids.at(engine));}
                 catch(const std::exception& e){if(memoryRefusal(e))throw;runtime=adopt(unique(name),standIn(node,snapshot,refs[key],std::string("its shared engine is not here: ")+e.what()));}}
             else runtime=resolvePlugin(node,snapshot,refs[key],[&](const std::string& p,const std::string& i){return add(unique(name),p,i);},[&](NodeId n){dropNode(n);},
                                        [&](NodeId n){return graph_.host(n).descriptor().version;},[&](std::shared_ptr<PluginHost> h){return adopt(unique(name),std::move(h));});
             added.push_back(runtime);
-            auto& h=graph_.host(runtime);
-            if(h.descriptor().id!=id)bad("saved plugin does not match the loaded plugin: "+name);
+            if(graph_.host(runtime).descriptor().id!=id)bad("saved plugin does not match the loaded plugin: "+name);
             std::vector<NodeId> others;for(const auto& [n,x]:nodes_)if(n!=runtime)others.push_back(n);
             const auto room=memoryRoom(graph_,others); // RFC 0025: its saved state may declare what the budget leaves
-            if(room)h.setMemoryRoom(room);
-            h.loadSnapshot((root/"nodes"/key).string());
-            if(room)h.setMemoryRoom(0);
+            const auto host=graph_.node(runtime).host;
+            if(room)host->setMemoryRoom(room);
+            try{
+                if(!shared || (!dynamic_cast<const SoundContext*>(host.get()) && SoundContext::busParameter(*host)==CLAP_INVALID_ID))host->loadSnapshot((root/"nodes"/key).string()); // a stand-in, as saved
+                else if(!siblings)graph_.share(runtime,savedSound(node,snapshot,host,nullptr));
+            }catch(...){if(room)host->setMemoryRoom(0);throw;}
+            if(room)host->setMemoryRoom(0);
+            auto& h=graph_.host(runtime);
             checkPorts(field(node,"inputs"),h.inputPorts());checkPorts(field(node,"outputs"),h.outputPorts());
             if(integer(field(node,"noteInputs"),16)!=h.noteInputPorts() || integer(field(node,"noteOutputs"),16)!=h.noteOutputPorts())bad("note port layout changed: "+name);
             for(const auto& p:h.parameters())observed_[{runtime,p.id}]=h.parameterValue(p.id);
@@ -1205,7 +1256,7 @@ std::vector<std::string> Session::loadSoundInto(uint32_t partId,const fs::path& 
     V d=doc.get();if(!d)bad("invalid JSON");
     fields(d,{"format","version","info","libraries","nodes","wires","part","mappings","controls","assignments","lock"});
     mergeLock(readLock(d)); // its plugins' builds, for saving the Performance it joins
-    if(text(field(d,"format"))!="oscairn.sound" || integer(field(d,"version"))!=7)bad("not a version 7 Sound");
+    if(text(field(d,"format"))!="oscairn.sound" || integer(field(d,"version"))!=8)bad("not a version 8 Sound");
     fields(field(d,"info"),{"id","name","description","tags","color","revision","parent","hash","origin"});
     const auto info=readInfo(root/"sound.json","oscairn.sound");
     std::vector<NodeId> added;
@@ -1390,7 +1441,7 @@ uint32_t Session::partFromSound(const std::string& id) {
 Control::PerformanceContents Session::performanceContents(const std::string& directory) {
     if(directory.empty() || directory.find('\0')!=std::string::npos)bad("invalid directory");
     const auto doc=document(fs::canonical(directory));V d=doc.get();
-    if(text(field(d,"format"))!="oscairn.performance" || integer(field(d,"version"))!=11)bad("unsupported format version");
+    if(text(field(d,"format"))!="oscairn.performance" || integer(field(d,"version"))!=12)bad("unsupported format version");
     PerformanceContents out;
     for(auto p:array(field(d,"parts"),256))out.parts.push_back({integer(field(p,"id")),text(field(p,"name")),text(field(field(p,"input"),"kind"))=="bus"});
     for(auto s:array(field(d,"scenes"),256))out.scenes.push_back({integer(field(s,"id")),text(field(s,"name"))});
@@ -1412,7 +1463,7 @@ Control::Imported Session::importPerformance(const std::string& directory,const 
     const auto root=fs::canonical(directory);validateTree(root);const auto doc=document(root);V d=doc.get();
     fields(d,{"format","version","info","libraries","transport","audioInputs","audioOutputs","nodes","wires","parts","mappings","pads","key","master","scenes","sceneUntouched","scene","controls","assignments","lock"});
     mergeLock(readLock(d));
-    if(text(field(d,"format"))!="oscairn.performance" || integer(field(d,"version"))!=11)bad("unsupported format version");
+    if(text(field(d,"format"))!="oscairn.performance" || integer(field(d,"version"))!=12)bad("unsupported format version");
     fields(field(d,"info"),{"id","name","description","tags","color","revision","parent","hash","origin"});
     // The parts that come: those chosen, and the buses they play through or send to, and theirs.
     const auto partList=array(field(d,"parts"),256);

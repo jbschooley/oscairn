@@ -1,4 +1,4 @@
-# Performance format, version 11
+# Performance format, version 12
 
 A Performance saves the graph, all prepared sounds and their MIDI-channel assignments,
 plugin settings/state, its wires and parts ([RFC 0011](rfcs/0011-performance-ui-and-editors.md)),
@@ -30,6 +30,12 @@ My Performance/
       snapshot               # parameters, or a prepared-instance pool index
       0/state/...            # each prepared hosted instrument has its own snapshot
       1/state/...
+    node-3/                  # the first node of an engine parts share (RFC 0021)
+      snapshot               # its own values, as parameters
+      engine/snapshot        # the shared instance's whole snapshot
+      engine/state/...
+    node-4/
+      snapshot               # another node on node-3's engine: its own values
 ```
 
 LV2 state directories contain `state.ttl` and materialized assets. CLAP state is preserved
@@ -44,11 +50,11 @@ Required top-level fields:
 
 | Field | Meaning |
 | --- | --- |
-| `format`, `version` | Exactly `oscairn.performance` and integer `11` (version 6 added `assignments`; version 7 names controls by their device groups, `fader:N` replacing `slider:N`; version 8 adds each assignment's `part`, for a Sound's own; version 9 adds each part's `midiOut`; version 10 adds the `key` and each part's `key`; version 11 sums controls on one destination around its `base`, adds the `db` and `power` curves, the `aftertouch:N` and `breath:N` controls, the switches' fixed `button:N`, the `master` level and pan, each node's optional `role`, an asset's `optional`, and the `panic` assignment; earlier versions are refused) |
+| `format`, `version` | Exactly `oscairn.performance` and integer `12` (version 6 added `assignments`; version 7 names controls by their device groups, `fader:N` replacing `slider:N`; version 8 adds each assignment's `part`, for a Sound's own; version 9 adds each part's `midiOut`; version 10 adds the `key` and each part's `key`; version 11 sums controls on one destination around its `base`, adds the `db` and `power` curves, the `aftertouch:N` and `breath:N` controls, the switches' fixed `button:N`, the `master` level and pan, each node's optional `role`, an asset's `optional`, and the `panic` assignment; version 12 adds each node's `sound`; earlier versions are refused) |
 | `info` | What the library shows ([RFC 0021](rfcs/0021-sounds-performances-and-library.md)): `id` (made at the first save, kept by every later one), `name` (the folder's name when none is set), `description`, up to 32 free `tags`, `color` (`#rrggbb`, or empty for none), and `revision` (made at every save) and `parent` (the revision it was saved over; empty for the first), and `hash`: SHA-256 of the contents, over the document without its info block followed by each file under `nodes/` by path with its own SHA-256, in path order. Names, tags and revisions are not contents. Equal hashes mean equal contents; the ID stays the identifier. `origin`: for an item imported into the user's own storage from a [library archive](library-archive.md), the archive's ID, the item's ID there and this copy's content hash as imported; `null` otherwise |
 | `transport` | Tempo and `internal` or `midi` clock source |
 | `audioInputs`, `audioOutputs` | Required logical graph ports: ID, channels, flags |
-| `nodes` | Local key, display name, plugin identity/version, path hint, shared engine key, expected audio/note ports, and `enabled` (false: switched off, as scenes do; it takes no notes and no sound, and a part passes what reaches it around it), and optionally its `role` ([RFC 0016's node roles](rfcs/0016-effects-suite.md#where-the-effects-go): `insertion-a`, `insertion-b`, `part-eq`, `reverb`, `variation`, `master-effect`, `master-eq` or `arpeggiator`; absent: none), in a Sound too |
+| `nodes` | Local key, display name, plugin identity/version, path hint, shared engine key, expected audio/note ports, and `enabled` (false: switched off, as scenes do; it takes no notes and no sound, and a part passes what reaches it around it), and optionally its `role` ([RFC 0016's node roles](rfcs/0016-effects-suite.md#where-the-effects-go): `insertion-a`, `insertion-b`, `part-eq`, `reverb`, `variation`, `master-effect`, `master-eq` or `arpeggiator`; absent: none), and its `sound` (below: `null`, or its `channel` and `bus` on a shared instance), in a Sound too |
 | `wires` | Audio and note wires: owner (`part`, with its part ID, or `user`), source and destination node and audio port, explicit channel pairs or none (the channel rules), the source's level, pan, mute and solo in the destination's Mix, a note wire's zones, and `enabled` (false: switched off; a note wire takes no new notes, an audio wire is silent) |
 | `parts` | ID, name, input (`notes` with its zones, device rules (selectors, resolved against the devices of the machine that opens it), `maxNotes`, `reserve` and `priority` ([RFC 0018](rfcs/0018-voice-budget-and-stealing.md#step-2-status)), `audio` with a graph input port, `none`, or `bus` for a shared bus), the chain of node keys and `{"split":id}` entries, its `splits` (kind, the keys of its Split and Join nodes or null, and each lane with its chain, zones, level, pan, mute and solo), the graph output port or the `bus` it plays through, its `sends` to buses with their levels, its `level`, `pan`, `mute` and `solo`, and its `midiOut` ([RFC 0012](rfcs/0012-sync-external-midi-and-multi-device.md#step-1-status)): `devices`, rules choosing the hardware MIDI outputs its MIDI goes to (resolved, like the input's, on the machine that opens it; none: no output), and `channel` (1 to 16, or 0 to keep each message's own). Its `key`: null to follow the Performance's, or its own, as `key` below ([RFC 0033](rfcs/0033-script-block.md#the-parts-scale-and-chord)). Not in a Sound |
 | `parts[].from` | Where the part came from (RFC 0021): `{sound, revision, name, modified}`, the library Sound and revision loaded into it, its name then, and whether the part has been edited since; `null` when none. Kept wherever the Performance is saved, to the library or to a folder (an export). The part never needs the Sound: it is a copy. Planned: an export brings every asset and the Sounds of unedited parts, and optionally of edited ones ([RFC 0021](rfcs/0021-sounds-performances-and-library.md#exporting-a-performance)) |
@@ -67,6 +73,20 @@ node/context references after `graph.changed`. A node's `engine` references itse
 root node for shared native effect contexts. Roots are restored first, then siblings with
 independent state. If the original root interface was removed before saving, a surviving
 sibling becomes the saved root. No history buffers or pointers cross this boundary.
+
+Parts sharing one instance ([RFC 0021](rfcs/0021-sounds-performances-and-library.md#parts-sharing-one-engine)):
+a part's instrument is an engine plus a sound. Each part keeps its own node; the nodes playing
+sounds of one instance share an `engine` (the first of them, as effect contexts do), and each
+has a `sound`, `{"channel":C,"bus":B}`: the MIDI channel (0 to 15) whose selection is its sound,
+on which its notes and parameters reach the instance, and the output bus its sound plays on (the
+index of the instance's output port, 0 its main one), which is the node's one audio output. A
+node with an instance of its own has `"sound":null`. The engine's first node's folder holds its
+own values (a `parameters` snapshot) and, in `engine/`, the instance's whole snapshot, every
+sound and all 16 selections; each other node's folder holds its values only. Reading restores
+the instance from `engine/`, then gives each node the sound its channel selects there; another
+node whose channel or bus is taken, or whose channel selects nothing, opens as a stand-in. A Sound
+holds an engine whole or none of it: a part whose instrument shares an instance with another
+part is not saved as a Sound.
 
 The graph's channel routes and note connections are compiled from the wires on load, as
 during editing. A wire port of 4294967294 or 4294967295 marks an end a plugin replacement
@@ -129,7 +149,7 @@ Unknown versions are rejected, preserving the current session and original folde
 
 A Sound ([RFC 0021](rfcs/0021-sounds-performances-and-library.md)) is a part saved without its
 seat, in a folder with the same layout: `sound.json` and `nodes/`. It uses the same objects
-and limits as a Performance, with `format` `oscairn.sound` and version 7 (version 6 added `assignments`; version 7 sums controls and adds the `db` and `power` curves, as a Performance's version 11; earlier versions are refused):
+and limits as a Performance, with `format` `oscairn.sound` and version 8 (version 6 added `assignments`; version 7 sums controls and adds the `db` and `power` curves, as a Performance's version 11; version 8 adds each node's `sound`, as version 12; earlier versions are refused):
 
 | Field | Meaning |
 | --- | --- |

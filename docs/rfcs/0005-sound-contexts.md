@@ -29,7 +29,9 @@ Checked when built and tested; the sections below say how.
       by the SDK and the Basic Synth, routed through the outgoing Performance's effects and level
 - [x] Only one change's tail carries over: at a second change the older tail is choked, fading out
       through its own chain, and the buffer goes to the newer one (`oscairn.sound-snapshots/draft-3`)
-- [ ] Parts sharing one instance ([RFC 0021, slice 3](0021-sounds-performances-and-library.md#fewer-instances-reusing-what-is-loaded))
+- [x] Parts sharing one instance ([RFC 0021, slice 3](0021-sounds-performances-and-library.md#parts-sharing-one-engine)):
+      each part's node plays one sound on its own channel and output bus, the plugin naming its
+      output bus parameter with oscairn.ui's `OSCAIRN_ROLE_OUTPUT_BUS`
 
 ## Contract
 
@@ -324,7 +326,9 @@ selected contexts for a global event). Unselected outgoing patches retain their 
 Queued selection runs before parameter events at the same processing boundary, so a
 parameter edit in that call affects the newly selected sound. Global selection emits
 parameter-value feedback for the selected patch. Per-channel parts have distinct values;
-the ordinary selected-patch parameter view is not a complete editor for all parts.
+the ordinary selected-patch parameter view is not a complete editor for all parts. Parts sharing
+one instance ([RFC 0021, slice 3](0021-sounds-performances-and-library.md#parts-sharing-one-engine))
+each have a node whose parameter events carry its channel, so each edits its own sound.
 
 Each context sums and saturates its voices independently; the context outputs then sum.
 This preserves the sound of each patch while several patches play. Default single-context

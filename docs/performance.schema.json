@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Oscairn Performance version 11",
+  "title": "Oscairn Performance version 12",
   "description": "performance.json inside a Performance folder. See performance-format.md for binary state, asset limits, plugin validation and transactional loading. Runtime node/context IDs and live voices are not persisted. Wires and parts (RFC 0011) define the graph's audio routes and note connections.",
   "type": "object",
   "properties": {
@@ -8,7 +8,7 @@
       "const": "oscairn.performance"
     },
     "version": {
-      "const": 11
+      "const": 12
     },
     "info": {
       "type": "object",
@@ -587,6 +587,34 @@
         "role": {
           "$ref": "#/$defs/NodeRole",
           "description": "Optional; absent: none"
+        },
+        "sound": {
+          "description": "RFC 0021 slice 3: null for a node with an instance of its own; for a node playing one sound of an instance it shares with the other nodes of its engine, its MIDI channel there (0 to 15, the one that selects its sound) and the output bus its sound plays on (the index of the instance's output port, 0 the main one). The engine's first node's folder also holds the instance's state, in engine/",
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "channel": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 15
+                },
+                "bus": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 31
+                }
+              },
+              "required": [
+                "channel",
+                "bus"
+              ],
+              "additionalProperties": false
+            }
+          ]
         }
       },
       "required": [
@@ -598,7 +626,8 @@
         "outputs",
         "noteInputs",
         "noteOutputs",
-        "enabled"
+        "enabled",
+        "sound"
       ],
       "additionalProperties": false
     },

@@ -198,11 +198,12 @@ time), `voiceCost()`, and `static constexpr bool volumeExpressions = true` when 
 multiplies by `amplitude()`. The Engine also uses this order when its pool is full, with or
 without the extension.
 
-Today every part has its own instance within a Performance, so several contexts share one
-pool only during a Performance change (the outgoing sounds ringing out beside the incoming
-ones), and the host sends one entry, for the selected contexts, with the part's reserve and
-priority and no mode flags (parts have no mono or legato mode yet). Per-part reserves inside one
-instance take effect once parts share an instance (RFC 0021). The host supports the extension
+Parts sharing one instance ([below](#parts-sharing-one-instance)) get an entry each, for the
+sound their channel selects, with the part's reserve and priority, so one pool across parts
+keeps each part's reserve. An instance one part plays alone gets one entry, for the selected
+contexts, which also covers a Performance change (the outgoing sounds ringing out beside the
+incoming ones). No entry carries a limit of its own (the host keeps a part's note limit itself)
+or mode flags (parts have no mono or legato mode yet). The host supports the extension
 for plugins in the engine's process; a plugin in a worker process (RFC 0010) is budgeted as one
 without it.
 
@@ -259,6 +260,23 @@ over) rings out until it is idle, but no longer than 30 seconds after the change
 held through it, or 2 minutes with one held; a panic ends it at once
 ([RFC 0021](rfcs/0021-sounds-performances-and-library.md)). A voice it never ends is cut there,
 with the instance.
+
+### Parts sharing one instance
+
+Parts whose instruments are the same plugin can share one instance, each with its own sound,
+MIDI channel and output bus ([RFC 0021](rfcs/0021-sounds-performances-and-library.md#parts-sharing-one-engine)):
+the host sends a part's notes and its parameter edits on its channel, and takes its sound from
+its output port. A plugin offers this with native sound contexts and their snapshot (above), more
+than one output port, no audio input and no note output, and one stepped parameter, from 0,
+whose value is the output port a sound plays on by the port's index (0 the main port), tagged
+with oscairn.ui's `OSCAIRN_ROLE_OUTPUT_BUS` ([below](#editor-hints-and-roles)). The host sets it
+per sound, with a parameter event on the part's channel, so it must follow per-channel parameter
+events like any other (`sound-contexts-plugin.hpp`'s Engine does: a parameter event with a
+channel edits the sound that channel selects). Voices keep the port they started on. An instance
+holds as many parts as it has sounds, ports and channels; the host takes another instance past
+that. The Basic Synth (eight sounds, its Default one of them; eight sound buses beside its main
+output) does all of it; the Sampler has one output, so each Sampler part keeps its own instance,
+as every plugin without native contexts does. Per-part voice budgets follow ([above](#voice-budget)).
 
 ### Presets
 
@@ -335,8 +353,8 @@ activation and after an info rescan):
   and the filter envelope's stages; attack, decay, sustain, release, hold, velocity, amp key
   tracking and level; the EQ's gains, frequencies, mid Q and output; levels 1 to 8 (elements,
   operators, oscillators); `mix`, an effect's main control; pan; and `OSCAIRN_ROLE_OUTPUT_BUS`,
-  the parameter choosing the output port a sound plays on (a stepped parameter from 0, the port's
-  index), which fills no bank. Roles put a parameter on
+  the parameter choosing the output port a sound plays on, which lets parts share the instance
+  ([above](#parts-sharing-one-instance)) and fills no bank. Roles put a parameter on
   the same knob in every instrument's role banks (Filter, Amp EG, EQ, Levels); a role the
   plugin lacks is a blank knob. Only instruments fill role banks; an effect's `mix` goes to
   the Effects bank. The banks serve every set of physical knobs: a controller profile's knob

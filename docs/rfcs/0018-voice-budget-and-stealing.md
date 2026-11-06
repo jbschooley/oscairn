@@ -337,12 +337,18 @@ plugin implements.
   notes go as any plugin's. A held note of a plugin that says it honors volume expressions is
   faded before one of a plugin that does not. A plugin in a worker process is budgeted as one
   without the extension (the worker protocol does not carry it yet), and so is an LV2 plugin.
-- **Within one Performance** every part has its own instance (RFC 0021's slice 3, parts sharing
-  an engine instance, is not built), so several contexts share one pool only during a
-  Performance change: the outgoing sounds ringing out beside the incoming ones, with at most one
-  carried-over tail. The host's one entry is the playing part's; per-part reserves inside one
-  instance take effect once slice 3 is built. Parts have no mono or legato mode yet, so the host
-  sends no flags; a plugin that knows its own sound is mono says so through `mono(context)`.
+- **Parts sharing one instance** ([RFC 0021's slice 3](0021-sounds-performances-and-library.md#parts-sharing-one-engine)):
+  the host sends an entry per part, naming the sound its channel selects, with that part's
+  reserve and priority, so one pool across parts keeps each part's reserve (built 2026-11-06).
+  An instance a part plays alone gets the one `OSCAIRN_VOICE_BUDGET_SELECTED` entry, which also
+  covers a Performance change: the outgoing sounds ringing out beside the incoming ones, with at
+  most one carried-over tail. No entry sets a limit of its own (0): the host keeps each part's
+  note limit itself (step 2), and a voice limit beside it would give up a second voice for the
+  same note. Parts have no mono or legato mode yet, so the host sends no flags; a plugin that
+  knows its own sound is mono says so through `mono(context)`. `shared-engine` checks the entries
+  a Basic Synth shared by two parts is given (two, each its part's sound, reserve and priority,
+  then the new sound once one is selected on a part); with one entry for the instance, it fails
+  "an entry per part: 1".
 
 Decided (the open questions this step settled):
 

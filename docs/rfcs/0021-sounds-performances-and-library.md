@@ -70,6 +70,9 @@ Checked when built and tested; the sections below say how.
       outgoing ones in the playing instance, selected at the cue ([design](#native-sound-contexts-across-a-change))
 - [x] The outgoing sounds of a switched native instrument ring out through the outgoing chain ([design](#ringing-out-through-the-outgoing-chain))
 - [x] A library click prepares the Performance, then switches to it once it is ready ([design](#native-sound-contexts-across-a-change))
+- [x] Parts sharing one instance of a native instrument, each its own sound, channel and output
+      bus, spilling to another instance when it is full; asked for, not yet formed on their own
+      ([design](#parts-sharing-one-engine))
 - [x] Audition of a Sound in a part and of a Performance in place of the open one, put back as
       it was or kept, from the Library app ([status](#audition))
 - [ ] 5. Seamless loading into a part (part transitions on RFC 0007's chain preparation)
@@ -685,8 +688,9 @@ keeps audio that several sounds use once), the Delay several effects
 Slice 1 is built first: it needs no contract change and makes the cross-graph sharing that
 slices 2 and 3 also need. Slice 2 is designed in
 [its own section](#native-sound-contexts-across-a-change), more simply than above: one node,
-one instance, and the outgoing sounds ring out through the incoming node's chain. Slice 3 is not
-built.
+one instance, and the outgoing sounds ring out through the incoming node's chain. Slice 3 is built
+in part, as [its own section](#parts-sharing-one-engine) says: a node per part, the nodes sharing
+an engine, and sharing asked for rather than formed on its own.
 
 Slice 1 built 2026-11-01, for every Performance opened or prepared (`Graph::addEffectContext`
 from another graph; `Session::read`). Admission still counts the next Performance's plugins at
@@ -697,6 +701,101 @@ output identical to a fresh load once the old ones have gone, and an engine with
 contexts spilling the group to a new instance. The saving is the engine instance: for the Delay
 little memory in the engine's process (RFC 0007 measured 24 bytes between two contexts and two
 engines), more when plugins run in workers, where each instance is a process.
+
+#### Parts sharing one engine
+
+Built 2026-11-06, in part. The sketch above has one node in several parts. The code has a node
+per part's instrument, and (node, parameter) pairs everywhere: controls, scenes, physical
+control assignments, parameter mappings, meters, MIDI recording taps, undo and Sounds all name a
+parameter by node. One node in several parts would make each of those ambiguous (which part's
+sound does a scene's Brightness belong to?). So **a part's instrument is an engine plus a sound,
+as nodes:** each part keeps its own node, and the nodes playing sounds of one instance share an
+engine, as effect contexts already do (the saved `engine` key, `Graph::effectSource`).
+
+**A node on a shared instance** (`SoundContext`, a host of its own wrapping the instance) has a
+MIDI channel, whose selection is its sound, and an output bus, the instance's output port its
+sound plays on, which is the node's only audio output, so its part's wires start there. The graph
+renders the instance once a block, in one step for all its nodes: each node's note connections
+keep their own ledgers, zones, note limits and part (RFC 0018), and every event through them,
+releases and fades included, goes to the instance on the node's channel; so do the node's
+parameter edits (queued by its host, or `Graph::queueParameter`) and a mapping's lane events
+into it. Each node meters its own bus, counts its own notes, silence and age (so a node of an
+outgoing Performance rings out and goes like any other), and hears its own channel's events, as
+a MIDI recording tap reads them. The budget measures the instance once, at rest and per note,
+and its voice-budget entries are per node ([RFC 0018](0018-voice-budget-and-stealing.md#step-4-status)):
+each the sound the node's channel selects, with its part's reserve and priority.
+
+**What the plugin offers:** native sound contexts and their snapshot, more than one output port,
+no audio input and no note output, and a stepped parameter whose value is the output port a sound
+plays on, tagged with oscairn.ui's new `OSCAIRN_ROLE_OUTPUT_BUS`; the host sets it on each sound,
+on the node's channel. The Basic Synth tags its Output bus (eight sound buses beside Main, eight
+sounds with its Default). The Sampler has one output, so its parts keep an instance each, as do
+ordinary CLAP instruments (no native contexts). An instance takes as many nodes as it has free
+sounds, output ports (up to the bus parameter's maximum) and channels; a fresh Basic Synth holds
+its own sound and seven more.
+
+**How sharing is made:** `Control::shareInstrument(name, source)`, `instruments.share` in the
+protocol: a new node with a new sound (the plugin's defaults) on the next free channel and bus of
+the instance `source` plays. A `source` playing alone becomes the engine's first node, on
+channel 0 and the main output it plays to already, so its sound and wires stay. With no room it
+spills: to another instance of the plugin in the Performance that has room, else to a new
+instance, the first node of an engine of its own. Saving keeps the layout (format version 12:
+each node's `sound`, the instance's snapshot in the engine's first node's folder), and reading
+restores it: one instance, its snapshot, then each node the sound its channel selects. Undo and
+redo treat a shared node as any added or removed node: a step holds its host, so its channel and
+bus stay its own while a step can put it back; undoing a share that made `source` the first node
+gives `source` back its own instance.
+
+Not built (each recorded as a shortcut where the code takes it):
+
+- **Forming engines on their own.** A Performance saved with an instance per part opens so, and
+  adding a plugin adds an instance. Merging them when a Performance is read, or a plugin added,
+  would take those Basic Synths out of slice 2's claims, which work per instance: an engine
+  claimed across a change (its next snapshot prepared beside, its channels re-selected at the cue)
+  is the piece to build with it.
+- **A shared node's parameter view** shows the values it set or saved, starting from the
+  instance's values when it was made: the contract reads no context's values. A sound selected
+  on the node (the sound picker) keeps the old values on show until edited. Its output bus
+  parameter keeps its bus; setting another is refused.
+- **Spilling as a Performance is read:** the instance's saved snapshot loads whole, so a saved
+  engine never spills; a node whose channel or bus is taken opens as a stand-in. A stand-in
+  engine saves its nodes as plugins of their own, losing the sharing until the plugin is back.
+- **Per part, under a shared instance:** a part's harmony (RFC 0033) reaches the instance once,
+  the last part's; notes the budget gave up and its cost per note count on the instance, so the
+  Mixer's stolen counts show none for those parts; MIDI recorded from such a part carries its
+  node's channel. RFC 0025's estimates still count each shared node as an instance of its own
+  (an overestimate), and the instance's figures (deadline misses, a worker's memory and CPU)
+  are reported once, on its node with the lowest channel.
+- **A removed shared node's sound** stays prepared in the instance (its channel and bus held
+  while undo can put the node back), and is saved in the instance's snapshot.
+- **Sounds:** a part whose instrument shares an instance with another part is not saved as a
+  Sound (its sound lives in the instance's snapshot with the others'); an engine wholly inside
+  the part is.
+
+Tests. `shared-engine` (graph): two parts on one Basic Synth, each its sound, channel and bus,
+render what two instances render, sample for sample, with a pitch bend on the keyboard's channel
+and a Brightness edit on one part; each node meters its own bus and hears its own notes; a
+channel taken is refused; with a budget the instance is given two entries, each its part's sound,
+reserve and priority, and the new sound once one is selected on a part. Shown failing: without
+the channel on notes, "each node meters its own bus" (the second part played the first's sound);
+without it on parameters, the same; with one budget entry, "an entry per part: 1"; with the
+events heard by the engine's first node, "each node hears its own notes: 3 and 0".
+`control-shared-parts` (and `-workers`, every plugin in a worker), through the Session: three
+Basic Synth parts on one instance load one instance and sound as three instances (largest
+difference 0), saved with three `sound`s and the engine's state in node-1, reopened and saved
+again the same; nine shares of one Basic Synth spill the eighth to a second instance, the ninth
+joining it, and reopen on two instances; adding a sharing part and undoing it, then redoing;
+undoing a share that made its source the first node, the source back on its own instance and
+sounding as before;
+removing a sharing part and its node, then undoing, sounding as before; a change from three
+instances to the shared layout and back, each sounding as opened fresh, the outgoing nodes rung
+out and gone; `instruments.share` and `graph.get`'s `shared` over JSON-RPC. Shown failing:
+without `sound` saved, "three nodes, one engine, each its sound"; without the engine's state,
+"the engine's state with its first node"; reading shared nodes as before, "three parts on one
+instance sound as three instances" (0.357); without the spill, the ninth share throws "no room";
+without each shared node counting its own notes and silence, "and out of it, the shared nodes
+rung out and gone". The undo checks needed no code of their own (a shared node is held by a step
+as any node), so they were not shown failing apart from the sharing itself.
 
 #### Free instances across a change, and instances kept warm
 

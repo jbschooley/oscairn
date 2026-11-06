@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #include "oscairn/session.h"
 #include "oscairn/controller_input.h"
+#include "oscairn/sound_context.h"
 
 #include "oscairn/library.h"
 #include "sheredom/json.h"
@@ -76,6 +77,50 @@ namespace oscairn
                 throw std::invalid_argument( "adding " + (name.empty() ? graph_.host(source).descriptor().name : name) + ": the Performance " + tooMuch(e) );
             }
         for( const auto& p : graph_.host(id).parameters() ) observed_[{id,p.id}] = graph_.host(id).parameterValue(p.id);
+        staged_ = true;
+        return id;
+    }
+
+    // RFC 0021 slice 3: a part's instrument on an instance another part plays, with a sound, MIDI
+    // channel and output bus of its own. A source playing alone becomes the engine's first node: its
+    // sound on channel 1 and on the main output, where it plays already, so its wires stay. With no
+    // room, another engine of the plugin's in this Performance that has some, else a new instance,
+    // the first node of an engine of its own (the spill).
+    NodeId Session::shareInstrument(const std::string& name,NodeId source)
+    {
+        if( !name.empty() && std::any_of(nodes_.begin(),nodes_.end(),[&](const auto& n){ return n.second == name; }) )
+            throw std::invalid_argument( "duplicate node name: " + name );
+        if( !hasNode(source) ) throw std::invalid_argument( "no node " + std::to_string(source) );
+        auto first = [&](NodeId node) {
+            const auto host = graph_.node(node).host;
+            if( dynamic_cast<const SoundContext*>(host.get()) ) return;
+            const auto bus = SoundContext::busParameter(*host);
+            if( bus == CLAP_INVALID_ID || !host->failure().empty() )
+                throw std::runtime_error( host->descriptor().name + " cannot share its instance: it needs native sound contexts and an output bus parameter" );
+            auto engine = std::make_shared<SoundContext::Engine>(); engine->host = host; engine->busParameter = bus;
+            graph_.share(node, std::make_shared<SoundContext>(engine, 0, 0, std::nullopt)); // its sound as its channel 1 selects it
+            loaded_.erase(node); // no longer an instance another Performance may take over
+            staged_ = true;
+        };
+        first(source);
+        const auto& plugin = graph_.host(source).descriptor();
+        auto engine = dynamic_cast<const SoundContext&>(graph_.host(source)).engine();
+        if( !SoundContext::room(*engine) )
+        {
+            engine = nullptr;
+            for( const auto& [n, x] : nodes_ )
+                if( const auto* c = dynamic_cast<const SoundContext*>(&graph_.host(n)); c && !leaving_.count(n) && c->descriptor().id == plugin.id && c->descriptor().path == plugin.path && SoundContext::room(*c->engine()) )
+                    { engine = c->engine(); break; }
+        }
+        if( !engine ) { const auto id = add(name, plugin.path, plugin.id); first(id); return id; }
+        uint16_t channel = 0; while( engine->channels >> channel & 1 ) ++channel;
+        uint32_t bus = 0; while( engine->buses >> bus & 1 ) ++bus;
+        const auto sound = engine->host->prepareSound(name.empty() ? plugin.name : name, {{engine->busParameter, double(bus)}});
+        std::shared_ptr<SoundContext> context;
+        try { context = std::make_shared<SoundContext>(engine, channel, bus, sound); } catch(...) { engine->host->discardSound(sound); throw; }
+        const auto id = graph_.add(context);
+        nodes_.emplace( id, name );
+        for( const auto& p : context->parameters() ) observed_[{id,p.id}] = context->parameterValue(p.id);
         staged_ = true;
         return id;
     }
@@ -240,7 +285,10 @@ namespace oscairn
             revisions[n.id] = known.revision;
         }
         std::erase_if(infoRevisions_, [&](const auto& k) { return !revisions.count(k.first); });
-        return {topology,nodes_,revision_,staged_,parts_,wires_,scenes_,untouched_,scene_,macros_,disabled_,ringing,masterLevel_,masterPan_,roles_,std::move(revisions)};
+        std::map<NodeId,GraphState::Shared> shared;
+        for(const auto& n : topology.nodes)
+            if(const auto* c = dynamic_cast<const SoundContext*>(&graph_.host(n.id))) shared[n.id] = {graph_.effectSource(n.id, leaving_), c->channel(), c->bus()};
+        return {topology,nodes_,revision_,staged_,parts_,wires_,scenes_,untouched_,scene_,macros_,disabled_,ringing,masterLevel_,masterPan_,roles_,std::move(revisions),std::move(shared)};
     }
 
     void Session::saveState(NodeId node,const std::string& directory)

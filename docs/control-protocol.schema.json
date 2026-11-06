@@ -2089,6 +2089,41 @@
               "$ref": "#/$defs/Id"
             },
             "method": {
+              "const": "instruments.share"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "source": {
+                  "$ref": "#/$defs/Node"
+                },
+                "name": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "source"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "params"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "id": {
+              "$ref": "#/$defs/Id"
+            },
+            "method": {
               "const": "effects.resources"
             },
             "params": {
@@ -6729,6 +6764,40 @@
           ],
           "description": "Its role (graph.role), or null for none"
         },
+        "shared": {
+          "description": "RFC 0021 slice 3: for a node playing one sound of an instance other nodes share (instruments.share), the engine's first node, the node's MIDI channel there (0 to 15) and the output bus its sound plays on (the instance's output port index); null for a node with an instance of its own",
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "engine": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 4294967295
+                },
+                "channel": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 15
+                },
+                "bus": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 31
+                }
+              },
+              "required": [
+                "engine",
+                "channel",
+                "bus"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        },
         "parameterRevision": {
           "type": "integer",
           "minimum": 0,
@@ -6745,6 +6814,7 @@
         "noteOutputs",
         "enabled",
         "ringing",
+        "shared",
         "parameterRevision"
       ],
       "additionalProperties": false

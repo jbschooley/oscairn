@@ -113,6 +113,10 @@ namespace oscairn
             double masterLevel = 1, masterPan = 0; // the Performance's main output (setMaster)
             std::map<NodeId,std::string> roles; // nodes' roles (setNodeRole); a node without one is not listed
             std::map<NodeId,uint64_t> parameterRevisions; // each node's parameter info's: another when its plugin or that info changes
+            // RFC 0021 slice 3: the nodes playing sounds of a shared instance: its first node (the
+            // engine, as a saved Performance names it), and each node's MIDI channel and output bus on it.
+            struct Shared { NodeId engine = 0; uint16_t channel = 0; uint32_t bus = 0; bool operator==(const Shared&) const = default; };
+            std::map<NodeId,Shared> shared;
         };
         enum class ChangeKind { Value, GestureBegin, GestureEnd, Graph, Resync };
         struct Change
@@ -348,6 +352,11 @@ namespace oscairn
         virtual GraphState graphState() const = 0;
         virtual NodeId add( const std::string& name, const std::string& path, const std::string& pluginId = {} ) = 0;
         virtual NodeId addEffectContext(const std::string& name,NodeId source) = 0;
+        // RFC 0021 slice 3: a new node playing a new sound (the plugin's defaults) of the instance
+        // `source` plays, on a MIDI channel and output bus of its own; another instance of the plugin
+        // when that one has no room (its own new engine). The plugin needs native sound contexts and
+        // an output bus parameter (oscairn.ui's OSCAIRN_ROLE_OUTPUT_BUS).
+        virtual NodeId shareInstrument(const std::string& name,NodeId source) = 0;
         virtual std::optional<oscairn_effect_resources_t> effectResources(NodeId node) const = 0;
         virtual void replace(NodeId node,const std::string& path,const std::string& pluginId,const std::string& preset = {}) = 0;
         virtual void remove( NodeId node ) = 0;

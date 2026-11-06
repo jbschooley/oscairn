@@ -742,7 +742,7 @@ int main(int argc, char** argv)
                     const auto at = lib.getChildFile(kind).getChildFile(folder);
                     at.createDirectory();
                     at.getChildFile(std::string(kind == "Sounds" ? "sound" : "performance") + ".json").replaceWithText(
-                        "{\"format\":\"oscairn." + std::string(kind == "Sounds" ? "sound" : "performance") + "\",\"version\":" + std::string(kind == "Sounds" ? "7" : "11") +
+                        "{\"format\":\"oscairn." + std::string(kind == "Sounds" ? "sound" : "performance") + "\",\"version\":" + std::string(kind == "Sounds" ? "8" : "12") +
                         ",\"info\":{\"id\":\"" + id + "\",\"name\":\"" + name + "\",\"description\":\"\",\"tags\":[],\"color\":\"\",\"revision\":\"r\",\"parent\":\"\",\"hash\":\"h\",\"origin\":null}}");
                 };
                 for(int i = 0; i < 999; ++i) writeItem("Sounds", "Sound " + std::to_string(i), "sound-" + std::to_string(i), "Sound " + std::to_string(i));
