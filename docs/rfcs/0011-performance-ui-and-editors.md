@@ -515,6 +515,15 @@ controller still waits for the control thread, which a load can hold up: the MID
 have to enqueue to the plugin's host itself, whose queue has one producer, whose parameter list
 the main thread may rewrite, and which for a plugin in a worker is a request to the worker.
 
+The wires follow over the socket (2026-11-06). The Routing view's Mix rows showed a part's
+fader wires as the last graph read left them, since a live move reaches clients as
+`controls.changed` alone. `graph.get` now gives each live wire its `faders`, `fixed`, `fixedMute`
+and `share`, and `RemoteControl` works the wires' level, mute and pan out again from the parts'
+pushed levels, mutes and pans, as `buildParts` does. `control-remote-parts` moves a part's level
+and pan from another client and checks the fader wire follows with no graph read (it does not
+without this). Not yet, as the code reads (no test shows it): a send's level a scene's glide moves is in no push, so the Mixer's send
+and its wire keep the last read's until the next graph change.
+
 #### Screen edits status
 
 Built 2026-11-02 (`LocalClient::send` and `wait`; `RemoteControl::setPartLevel`, `setMaster`

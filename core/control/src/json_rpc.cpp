@@ -421,13 +421,15 @@ namespace oscairn
         }
         std::string wireJson( const Wire& w )
         {
-            std::vector<std::string> pairs;
+            std::vector<std::string> pairs, faders;
             for( const auto& [a,b] : w.channels ) pairs.push_back("[" + std::to_string(a) + "," + std::to_string(b) + "]");
+            if( w.live ) for( const auto f : w.faders ) faders.push_back(std::to_string(f));
             return "{\"id\":" + std::to_string(w.id) + ",\"kind\":" + (w.kind == WireKind::Audio ? "\"audio\"" : "\"notes\"") +
                 ",\"owner\":" + (w.owner == WireOwner::Part ? "\"part\",\"part\":" + std::to_string(w.part) : std::string("\"user\"")) +
                 ",\"from\":" + std::to_string(w.from) + ",\"to\":" + std::to_string(w.to) + ",\"fromPort\":" + std::to_string(w.fromPort) +
                 ",\"toPort\":" + std::to_string(w.toPort) + ",\"channels\":" + join(pairs) + ",\"level\":" + encode(w.level) + ",\"pan\":" + encode(w.pan) +
-                ",\"mute\":" + (w.mute ? "true" : "false") + ",\"solo\":" + (w.solo ? "true" : "false") + ",\"zones\":" + zonesJson(w.zones) + ",\"send\":" + std::to_string(w.send) + ",\"split\":" + std::to_string(w.split) + ",\"lane\":" + std::to_string(w.lane) + ",\"fader\":" + (w.fader ? "true" : "false") + ",\"connected\":" + (w.connected ? "true" : "false") + ",\"enabled\":" + (w.enabled ? "true" : "false") + '}';
+                ",\"mute\":" + (w.mute ? "true" : "false") + ",\"solo\":" + (w.solo ? "true" : "false") + ",\"zones\":" + zonesJson(w.zones) + ",\"send\":" + std::to_string(w.send) + ",\"split\":" + std::to_string(w.split) + ",\"lane\":" + std::to_string(w.lane) + ",\"fader\":" + (w.fader ? "true" : "false") + ",\"connected\":" + (w.connected ? "true" : "false") + ",\"enabled\":" + (w.enabled ? "true" : "false") +
+                ",\"faders\":" + join(faders) + ",\"fixed\":" + encode(w.fixed) + ",\"fixedMute\":" + (w.fixedMute ? "true" : "false") + ",\"share\":" + encode(w.share) + '}';
         }
         const char* inputKind( PartInput::Kind k ) { return k == PartInput::Kind::Notes ? "notes" : k == PartInput::Kind::Audio ? "audio" : k == PartInput::Kind::Bus ? "bus" : "none"; }
         // A chain's entries: node IDs, and {"split":id} for a split.

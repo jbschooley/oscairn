@@ -8095,6 +8095,27 @@
         "enabled": {
           "type": "boolean",
           "description": "false: switched off (wires.enable): a note wire takes no new notes, an audio wire is silent"
+        },
+        "faders": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 4294967295
+          },
+          "description": "The parts whose faders move this wire live (its own, then the empty buses it passes), or none"
+        },
+        "fixed": {
+          "type": "number",
+          "description": "Its level with those faders at unity: level is fixed times their levels"
+        },
+        "fixedMute": {
+          "type": "boolean",
+          "description": "Muted with those faders unmuted: mute is this or any of them muted"
+        },
+        "share": {
+          "type": "number",
+          "description": "Fader wires: the pan its lane and buses add to its part's (pan is the two summed, clamped)"
         }
       },
       "required": [
@@ -8116,7 +8137,11 @@
         "split",
         "lane",
         "fader",
-        "enabled"
+        "enabled",
+        "faders",
+        "fixed",
+        "fixedMute",
+        "share"
       ],
       "if": {
         "properties": {

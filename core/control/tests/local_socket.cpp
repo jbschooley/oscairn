@@ -597,7 +597,7 @@ namespace
 // RFC 0011 parts and wires through the remote client and JSON-RPC.
 void partsClient(const char* plugin,const char* delay)
 {
-    Fixture f(plugin);auto fd=pair();f.server.adopt(fd[0]);
+    Fixture f(plugin);auto fd=pair(),fd2=pair();f.server.adopt(fd[0]);f.server.adopt(fd2[0]);
     const auto fx=f.session.add("fx",delay);f.session.commit();
     clientWhileRendering(f,[&]{
         LocalClient client;client.adopt(fd[1]);RemoteControl remote(client);
@@ -676,6 +676,19 @@ void partsClient(const char* plugin,const char* delay)
         remote.setPartSolo(part,false);
         remote.removeSplit(part,sp);
         check(remote.graphState().parts[0].chain==std::vector<NodeId>{synth,fx} && remote.graphState().parts[0].splits.empty(),"the split removed over the socket");
+        // A part's fader and pan moved elsewhere (another client, a scene's glide, a controller)
+        // reach this client as controls.changed alone: the wires the Mix rows show follow them.
+        {
+            for(int quiet=0;quiet<50;){remote.service();quiet=remote.reading()?0:quiet+1;std::this_thread::sleep_for(std::chrono::milliseconds(1));} // the reads its own edits pushed
+            LocalClient other;other.adopt(fd2[1]);
+            other.call("parts.level","{\"part\":"+std::to_string(part)+",\"level\":0.25,\"mute\":false}");
+            other.call("parts.pan","{\"part\":"+std::to_string(part)+",\"pan\":-0.5}");
+            bool read=false;
+            for(int i=0;i<2000 && !(remote.graphState().parts[0].level==.25 && remote.graphState().parts[0].pan==-.5);++i){read=remote.service() || read;std::this_thread::sleep_for(std::chrono::milliseconds(1));}
+            check(!read && remote.graphState().parts[0].level==.25 && remote.graphState().parts[0].pan==-.5,"a fader and pan moved elsewhere arrive with no graph read");
+            Wire w;for(const auto& x:remote.graphState().wires)if(x.owner==WireOwner::Part && x.part==part && x.fader)w=x;
+            check(w.fader && std::abs(w.level-.25)<1e-12 && w.pan==-.5 && !w.mute,"and the part's fader wire, as its Mix row shows it, follows them");
+        }
         bool refused=false;try{remote.insertIntoPart(99,0,synth);}catch(const std::exception&){refused=true;}
         check(refused,"an unknown part is refused over the socket");
         remote.movePartNode(part,1,0);remote.removeFromPart(part,fx);remote.disconnectWire(id);

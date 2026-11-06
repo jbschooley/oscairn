@@ -259,7 +259,11 @@ The graph's audio routes and note connections are compiled from wires
 ([RFC 0011](rfcs/0011-performance-ui-and-editors.md#step-1-status)). `graph.get` lists them
 under `wires`: each has an `id`, `kind`, `owner` (`part` with its `part` ID, or `user`), `from`
 and `to` node IDs, audio `fromPort`/`toPort`, explicit `channels` pairs or none, the source's
-Mix `level`, `pan`, `mute` and `solo`, and whether it is `connected`. `connections` still
+Mix `level`, `pan`, `mute` and `solo`, and whether it is `connected`. A part's wire its
+faders move live lists those parts in `faders` (its own, then the empty buses it passes; none
+otherwise): its `level` is then `fixed` times their levels, its `mute` `fixedMute` or any of them muted, and a fader wire's `pan` its part's
+plus `share`, clamped, so a client given their levels and pans by `controls.changed` keeps the
+wires' up to date without reading the graph (`RemoteControl` does). `connections` still
 report the compiled per-channel routes.
 
 - `graph.connect` and `graph.disconnect` make and remove user wires; `wires.connect` makes

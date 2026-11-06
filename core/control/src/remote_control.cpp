@@ -123,6 +123,16 @@ namespace oscairn
         void refused(uint64_t id){std::erase_if(confirmed,[&](const Sent& s){return s.id==id;});}
         void pushed(const std::string& key){std::erase_if(confirmed,[&](const Sent& s){return s.key==key;});}
         static void overlay(GraphState& g,const std::vector<Sent>& list){for(const auto& s:list)s.apply(g);}
+        // The wires faders move live follow the parts' levels, mutes and pans, as the engine's own do.
+        static void follow(GraphState& g)
+        {
+            for(auto& w:g.wires)
+            {
+                if(w.faders.empty())continue;
+                w.level=w.fixed;w.mute=w.fixedMute;
+                for(const auto f:w.faders)for(const auto& p:g.parts)if(p.id==f){w.level*=p.level;w.mute=w.mute || p.mute;if(w.fader && f==w.part)w.pan=std::clamp(p.pan+w.share,-1.0,1.0);}
+            }
+        }
         void overlay(){overlay(graph,sent);}
         // Sends a live edit and shows it; one sent for the same key before it is over it now.
         void liveEdit(std::string_view method,const std::string& params,std::string key,std::function<void(GraphState&)> apply,bool commits=true)
@@ -266,6 +276,8 @@ namespace oscairn
                 wire.level=number(field(w,"level"));wire.pan=number(field(w,"pan"));
                 wire.mute=boolean(field(w,"mute"));wire.solo=boolean(field(w,"solo"));wire.zones=zones(field(w,"zones"));wire.send=static_cast<uint32_t>(integer(field(w,"send")));
                 wire.split=static_cast<uint32_t>(integer(field(w,"split")));wire.lane=static_cast<uint32_t>(integer(field(w,"lane")));wire.fader=boolean(field(w,"fader"));wire.connected=boolean(field(w,"connected"));wire.enabled=boolean(field(w,"enabled"));
+                for(auto f:array(field(w,"faders")))wire.faders.push_back(static_cast<uint32_t>(integer(f)));
+                wire.fixed=number(field(w,"fixed"));wire.fixedMute=boolean(field(w,"fixedMute"));wire.share=number(field(w,"share"));
                 next.wires.push_back(std::move(wire));
             }
             auto ref=[&](V r){const auto kind=string(field(r,"kind"));
@@ -1173,8 +1185,8 @@ namespace oscairn
                 };
                 for(auto f:array(field(params,"parts"))){const auto part=std::to_string(integer(field(f,"part")));impl_->pushed("level:"+part);impl_->pushed("pan:"+part);}
                 if(detail::member(params,"master"))impl_->pushed("master");
-                take(impl_->graph);if(impl_->reading && impl_->reading->graphRead)take(impl_->reading->next);
-                impl_->overlay();
+                take(impl_->graph);if(impl_->reading && impl_->reading->graphRead){take(impl_->reading->next);Impl::follow(impl_->reading->next);}
+                impl_->overlay();Impl::follow(impl_->graph);
             }
             else if(method=="graph.changed"){refresh=true;impl_->publish({0,ChangeKind::Graph});}
             else if(method=="session.resync"){refresh=resync=true;impl_->publish({0,ChangeKind::Resync});}
