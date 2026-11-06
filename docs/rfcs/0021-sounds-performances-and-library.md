@@ -68,6 +68,7 @@ Checked when built and tested; the sections below say how.
 - [x] A failed load puts back the state of the playing instances it took over ([design](#free-instances-across-a-change-and-instances-kept-warm))
 - [x] Native sound contexts across a change: the incoming node's sounds prepared beside the
       outgoing ones in the playing instance, selected at the cue ([design](#native-sound-contexts-across-a-change))
+- [ ] The outgoing sounds of a switched native instrument ring out through the outgoing chain ([design](#ringing-out-through-the-outgoing-chain))
 - [x] A library click prepares the Performance, then switches to it once it is ready ([design](#native-sound-contexts-across-a-change))
 - [x] Audition of a Sound in a part and of a Performance in place of the open one, put back as
       it was or kept, from the Library app ([status](#audition))
@@ -977,10 +978,10 @@ prepared, the outgoing node's, are retired at the cue. Each time the Session is 
 plugin to discard them; the contract's own lifetime rule refuses while a sound is selected, queued,
 sounding or ringing, so each goes once its tails have finished. A retired sound the plugin no longer
 lists (a later snapshot replaced them all) is forgotten. The Default (ID 0) can never be discarded:
-it stays, unselected, holding the first sound it had. The outgoing sounds ring out through the
-incoming node's place in the graph, its effects, part level and outputs, not the outgoing
-node's: one instance has one place. Per-sound output buses would keep the outgoing chain; that is
-not built, and a change of effects behind a shared instrument changes its tail too.
+it stays, unselected, holding the first sound it had. With a plugin that offers a ring-out
+buffer they ring out through the outgoing node's chain ([below](#ringing-out-through-the-outgoing-chain));
+without one, through the incoming node's place in the graph, its effects, part level and
+outputs: one instance has one place.
 
 **When it fails.** A Performance that fails to read after an instance was claimed, or one prepared
 ahead and then let go, discards the sounds it prepared; nothing selected them, so they go at once,
@@ -1036,6 +1037,48 @@ Neither sfizz nor Octet offers `oscairn.sound-snapshots` yet, so the real Perfor
 above are unchanged; each needs the table and `get_extension` line
 ([the porting guide](../plugin-porting.md#instant-performance-changes)), and a sfizz that shares
 samples between its contexts to skip loading them again.
+
+##### Ringing out through the outgoing chain
+
+Proposed 2026-11-05. The problem: a switched instance has one output, so the outgoing sound's tail
+played through the incoming Performance's effects and part level, a dry tail suddenly wet or the
+other way round. Decided by the owner: a hidden ring-out buffer. The plugin renders its retiring
+sounds into it ([RFC 0005](0005-sound-contexts.md#ringing-out-through-the-outgoing-chain):
+`oscairn.sound-snapshots/draft-2`'s `ring_out`, how the buffer is passed, what counts as retiring,
+and why the move is click-free), and the host routes it through the outgoing chain.
+
+**In the graph** the buffer is a hidden output port of the node, `Graph::ringOutPort`, two
+channels after the plugin's own, present only for a plugin that offers `ring_out`. At the cue,
+on the prepared replacement after `carryOver` and `takeNotes`, `Graph::ringOut(current, was, now)`
+copies the outgoing graph's routes from the outgoing node's main output port as routes from the
+incoming node's ring-out port: to the outgoing Performance's nodes carried over (its effects,
+ringing out as in any seamless change) and to the outputs, with their live gains frozen as
+`carryOver` freezes the carried routes' (the part's level as it was at the cue). An outgoing part
+with no effects therefore has its tail go straight to where it played, at its level. All or
+nothing: when a route goes to a node the incoming Performance took over (it is no longer the
+outgoing chain), none is made and the tail plays as before. A cut makes none either.
+
+These routes are internal. They live among the graph's routes so that compiling, carrying over,
+removing a node and the next change treat them as any route, but `Graph::describe()` leaves them
+out, so `graph.get`, Routing, the Mixer, the Session's wires and saved Performances never see
+them, and recompiling the wires never removes them. `Session::ringOutRoutes()` counts them, for
+tests. A plan gives a node's step the two extra channels only while it has a ring-out route; the
+plugin host then passes the buffer, and otherwise null, so a sound unselected by hand at any other
+time rings out in the main output as before.
+
+**Removal.** `Session::retireSounds` already discards the outgoing sounds as each goes idle. Once
+all are discarded and no unselected sound of the instance still sounds (the Default may hold a
+tail), it removes the node's ring-out routes and commits. They also go with the carried-over
+effects when those are removed, and with the node at the next change.
+
+**Limits.** The ring-out buffer carries the retiring sounds' main output only; their other output
+ports (the Basic Synth's sound buses) stay on the instance's ports. One buffer per instance: a
+second change while the first's tail rings moves that tail to the second outgoing chain (RFC 0005).
+A carried-over effect fed only by a ring-out route still goes once 30 seconds pass without a note
+through it (the ring-out rule above, which counts notes through the effect, and it takes none):
+a note held through the change for longer than that loses the outgoing effects, and its tail
+moves back to the main output. A sound the user unselects on the incoming node while a ring-out
+route exists rings out through the outgoing chain too.
 
 **A library click** prepares the Performance first, as the Setlist does ahead
 (`performance.prepare`), and opens it (`library.load`) once that is done, both in the app's job off

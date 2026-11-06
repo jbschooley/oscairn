@@ -24,6 +24,9 @@ Checked when built and tested; the sections below say how.
 - [x] A snapshot's sounds prepared beside the playing ones (`oscairn.sound-snapshots/draft-1`,
       [below](#preparing-a-snapshot-beside)), by the SDK and the Basic Synth, and used across a
       Performance change ([RFC 0021](0021-sounds-performances-and-library.md#native-sound-contexts-across-a-change))
+- [ ] Ringing out through the outgoing chain: the retiring sounds rendered into a hidden ring-out
+      buffer (`oscairn.sound-snapshots/draft-2`, [below](#ringing-out-through-the-outgoing-chain)),
+      by the SDK and the Basic Synth, routed through the outgoing Performance's effects and level
 - [ ] Parts sharing one instance ([RFC 0021, slice 3](0021-sounds-performances-and-library.md#fewer-instances-reusing-what-is-loaded))
 
 ## Contract
@@ -189,6 +192,71 @@ The Default can never be discarded, so after a switch it stays, unselected, with
 it had; a snapshot of that instance saves it, and one sound more than a fresh load. Capacity counts
 it: the Basic Synth's eight slots hold the Default and seven others, so a one-sound node prepared
 beside needs two free.
+
+## Ringing out through the outgoing chain
+
+A switched instance has one output and one place in the graph, so without more the outgoing
+sounds' tails play through the incoming Performance's effects and part level. Draft 2 of
+`oscairn.sound-snapshots` adds a second, optional call that gives the plugin a hidden ring-out
+buffer, which the host routes through the outgoing chain:
+
+```c
+static const char OSCAIRN_EXT_SOUND_SNAPSHOTS[] = "oscairn.sound-snapshots/draft-2";
+typedef struct oscairn_plugin_sound_snapshots {
+    bool (CLAP_ABI *prepare)(...);                       /* as above */
+    void (CLAP_ABI *ring_out)(const clap_plugin_t*, const clap_audio_buffer_t* buffer); /* optional */
+} oscairn_plugin_sound_snapshots_t;
+```
+
+**How the buffer is passed.** The host calls `ring_out` on the audio thread immediately before
+every `process()` call, with a stereo buffer (two `data32` channels) of that call's
+`frames_count`, already zeroed, or with null when there is no ring-out for that call. The pointer
+is valid only until that `process()` returns; a `process()` not preceded by a call has none. The
+plugin only stores the pointer: nothing allocates, locks or blocks. It is not a CLAP audio port:
+the plugin's ports, the host's Routing and Mixer, and saved Performances never show it. The host
+gives a buffer only while it routes it somewhere; otherwise the plugin renders as before.
+`ring_out` may be null, and draft 1 is gone (formats are replaced outright): a plugin built
+against draft 1 must rebuild against draft 2, and without `ring_out` its tails play through the
+incoming chain as before.
+
+**What goes into it.** A context is *retiring* while no MIDI channel selects it and it still has
+voices or a tail. During a `process()` given a buffer, the plugin renders every retiring
+context's main-port output into the buffer, adding to it, instead of into its main output port;
+everything else, and retiring contexts' other ports, as usual. Selections apply at the start of a
+`process()` call, before its notes, so the outgoing sound becomes retiring at sample 0 of the
+block whose selection leaves it unselected: the move from main to ring-out is sample-accurate,
+at a block boundary.
+
+**Without a click.** The host makes the ring-out route reach exactly what the instance's main
+output reached in the outgoing plan: the same effect instances, carried over and ringing out as
+in any seamless change, and the same gains (the part's level frozen as it was at the cue). The
+selections are queued just before the new plan is published, so they apply in the plan's first
+block, where the ring-out route already exists; or in the old plan's last block, where there is
+no buffer and the main output still feeds the outgoing chain, and the next block moves it to the
+ring-out buffer, into the same chain. Either way the tail's samples reach the same inputs without
+a gap or a step.
+
+**In a worker** the shared block holds two more output channels after the plugin's, sized when
+the worker is set up for a plugin that offers `ring_out`, and a per-block flag saying whether the
+engine wants them; the worker's host then calls `ring_out` with them, as in the engine. Nothing
+else crosses: the buffer is part of the block's audio, like the outputs.
+
+**Cost.** Memory: two channels of the maximum block in the plugin host's scratch, for every
+instance whose plugin offers `ring_out` (8 KB at 1024 frames), two in a worker's shared block, and
+two in the plan for a node with a ring-out route. CPU: while a tail rings, the outgoing chain's
+effects run, as in a seamless change between Performances that share nothing, where the whole
+outgoing instance runs as well; the instrument renders no more voices than before. The bench
+figures are in [RFC 0021](0021-sounds-performances-and-library.md#native-sound-contexts-across-a-change).
+
+**Overlapping changes.** One ring-out buffer per instance, not one per retiring generation. A
+second change while a first change's tail still rings sends both outgoing sounds through the
+second outgoing chain: the older tail moves from the first chain to the second at the cue. That
+keeps the contract to one buffer; per-generation buffers can come as a draft 3 if it matters.
+
+**In the SDK**, `Engine` keeps the buffer `ring_out` gives (`Engine::ringOut`, cleared when
+`process()` returns) and `Engine::retiring(context)` says whether a context renders into it; an
+instrument's `render` writes a retiring context's main output to `ringOut` instead of its main
+port. The table becomes `{Engine::prepareSnapshot, Engine::setRingOut}`.
 
 ## Basic Synth and Sampler
 
