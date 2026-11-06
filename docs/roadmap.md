@@ -383,16 +383,18 @@ Also open:
   SysEx between plugins for pushed phrases, a beat grid shared while the transport is stopped,
   conversion of each Part's arpeggio, measurement against the reference, user phrases in the
   library and a phrase editor drawn by Oscairn
-- [ ] sounds spilling over to another instance when an engine's slots are full, and parts
-  sharing one engine (each part has its own instance today), so a Performance or setlist uses
-  as few instances as its sounds need. The goal: as little memory as possible, with switching
-  as instant as possible, above all from one setlist entry to the next ([RFC 0005](rfcs/0005-sound-contexts.md),
-  [RFC 0007](rfcs/0007-effect-contexts.md)). Designed in three slices
-  ([RFC 0021](rfcs/0021-sounds-performances-and-library.md#fewer-instances-reusing-what-is-loaded));
-  built: the next Performance's effects as contexts of a playing engine, spilling when it is full;
-  parts sharing one instance of a native instrument, each its own sound, channel and output bus, spilling to another
-  instance when it is full (asked for with `instruments.share`; Performances are not yet merged
-  onto shared instances on their own)
+- [x] sounds spilling over to another instance when an engine's slots are full, and parts
+  sharing one engine, so a Performance or setlist uses as few instances as its sounds need. The
+  goal: as little memory as possible, with switching as instant as possible, above all from one
+  setlist entry to the next ([RFC 0005](rfcs/0005-sound-contexts.md),
+  [RFC 0007](rfcs/0007-effect-contexts.md)). Built in three slices
+  ([RFC 0021](rfcs/0021-sounds-performances-and-library.md#fewer-instances-reusing-what-is-loaded)):
+  the next Performance's effects as contexts of a playing engine, spilling when it is full; a
+  native instrument's next sounds prepared beside in its playing instance; parts sharing one
+  instance of a native instrument, each its own sound, channel and output bus, formed on their own
+  as a Performance is read or a plugin added, spilling to another instance when it is full, and
+  claimed across a change (the next Performance's sounds prepared beside in the playing shared
+  instance and selected at the cue). The Sampler, with one output, keeps an instance per part
 - [ ] automatic Sound/effect-chain preparation and retirement, and asset-bearing native
   patches (Setlist and library persistence are done: item 7)
 - [ ] stable format/plugin identities and state provenance in persistent library data,

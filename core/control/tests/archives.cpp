@@ -459,7 +459,7 @@ int main(int argc, char** argv)
                 << R"({"format":"oscairn.sound","version":8,"info":{"id":"ab\"cd","name":"Bass","description":"","tags":[],"color":"","revision":"r","parent":"","origin":null,"hash":")"
                 << std::string(64, '0') << R"("},"nodes":[]})";
             std::ofstream(root / "Performances" / "esc-perf" / "performance.json", std::ios::binary | std::ios::trunc)
-                << R"({"format":"oscairn.performance","version":12,"info":{"id":"perf","name":"Set","description":"","tags":[],"color":"","revision":"r","parent":"","origin":null,"hash":")"
+                << R"({"format":"oscairn.performance","version":13,"info":{"id":"perf","name":"Set","description":"","tags":[],"color":"","revision":"r","parent":"","origin":null,"hash":")"
                 << std::string(64, '0') << R"("},"nodes":[{"key":"n1","plugin":{"format":"clap","id":"x","version":"1","path":"p"},"sound":"ab\"cd"}]})";
             Package p; p.id = "k.esc"; p.name = "Escaped";
             p.items.push_back({"sound", "ab\"cd", "Bass", "Sounds/esc", {}});
@@ -522,7 +522,7 @@ int main(int argc, char** argv)
                 << R"({"format":"oscairn.sound","version":8,"info":{"id":"one","name":"One","description":"","tags":[],"color":"","revision":"r","parent":"","origin":null,"hash":")"
                 << std::string(64, '0') << R"("},"nodes":[]})";
             std::ofstream(root / "Performances" / "two" / "performance.json", std::ios::binary | std::ios::trunc)
-                << R"({"format":"oscairn.performance","version":12,"info":{"id":"two","name":"Two","description":"","tags":[],"color":"","revision":"r","parent":"","origin":null,"hash":")"
+                << R"({"format":"oscairn.performance","version":13,"info":{"id":"two","name":"Two","description":"","tags":[],"color":"","revision":"r","parent":"","origin":null,"hash":")"
                 << std::string(64, '0') << R"("},"nodes":[]})";
             Package p; p.id = "m.cut"; p.name = "Cut";
             p.items.push_back({"sound", "one", "One", "Sounds/one", {}});
@@ -588,7 +588,7 @@ int main(int argc, char** argv)
             std::ofstream(root / "Sounds" / "same" / "sound.json", std::ios::binary | std::ios::trunc)
                 << R"({"format":"oscairn.sound","version":8,"info":{"id":"same","name":"Same","description":"","tags":[],"color":"","revision":"r","parent":"","origin":null,"hash":")" << zeros << R"("},"nodes":[]})";
             std::ofstream(root / "Performances" / "set" / "performance.json", std::ios::binary | std::ios::trunc)
-                << R"({"format":"oscairn.performance","version":12,"info":{"id":"set","name":"Set","description":"","tags":[],"color":"","revision":"r","parent":"","origin":null,"hash":")" << zeros
+                << R"({"format":"oscairn.performance","version":13,"info":{"id":"set","name":"Set","description":"","tags":[],"color":"","revision":"r","parent":"","origin":null,"hash":")" << zeros
                 << R"("},"nodes":[{"key":"n1","plugin":{"format":"clap","id":"x","version":"1","path":"p"},"sound":"same"}]})";
             Package p; p.id = "n.same"; p.name = "Same";
             p.items.push_back({"sound", "same", "Same", "Sounds/same", {}});

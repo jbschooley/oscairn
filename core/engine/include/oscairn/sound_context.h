@@ -7,6 +7,7 @@
 #include <atomic>
 #include <map>
 #include <memory>
+#include <set>
 
 namespace oscairn
 {
@@ -19,7 +20,8 @@ namespace oscairn
     ///
     /// Parameters are the node's sound's: setting one queues it for the instance addressed to the
     /// node's channel (the graph hands it over at the next block), and the node keeps the values it
-    /// set, since the contract reads no context's values. Its sound's own output bus is fixed.
+    /// set, starting from the sound's own as the plugin gives them (sound-snapshots draft 4) before
+    /// it is selected. Its sound's own output bus is fixed.
     /// The instance's state is the engine's (saveEngine); the node's own snapshot is its values.
     /// Control thread, except where said.
     class SoundContext final : public PluginHost
@@ -32,17 +34,27 @@ namespace oscairn
             clap_id busParameter = CLAP_INVALID_ID;
             uint32_t channels = 0, buses = 0; // bit masks: a channel, an output port index, taken
             std::shared_ptr<char> group = std::make_shared<char>(); // the graph's effect group: one engine
+            std::string build; // the plugin build it was loaded from (the Session's bundle digest), for a later change to claim it
         };
         /// The parameter choosing a sound's output bus, or CLAP_INVALID_ID where the plugin cannot
-        /// share: native sound contexts, a snapshot of them, notes in, no notes out, no audio in and
-        /// more than one output port.
+        /// share: native sound contexts, a snapshot of them, notes in, no notes out, no audio in,
+        /// more than one output port, and one sound saved on its own and its values read
+        /// (sound-snapshots draft 4).
         static clap_id busParameter(const PluginHost& host);
         /// How many more contexts the engine takes: its free channels and buses, and its free sounds.
         static uint32_t room(const Engine& engine);
+        /// An engine around a plain instance that can share, has not failed and plays one sound on
+        /// every MIDI channel (so its node on one channel sounds as it did); else none.
+        static std::shared_ptr<Engine> lead(const std::shared_ptr<PluginHost>& host);
         /// A context on `channel` and output port index `bus`, both free, selecting `sound` there, or
         /// with none keeping what the channel selects (a node that played alone, whose selection may
-        /// still be queued). Its sound is put on the bus by a parameter event on its channel.
-        SoundContext(std::shared_ptr<Engine> engine, uint16_t channel, uint32_t bus, std::optional<uint32_t> sound);
+        /// still be queued). Its sound is put on the bus by a parameter event on its channel. With
+        /// `later`, the sound is selected only by select() (RFC 0021: at the cue of a change).
+        SoundContext(std::shared_ptr<Engine> engine, uint16_t channel, uint32_t bus, std::optional<uint32_t> sound, bool later = false);
+        /// The selection `later` held back, queued now; false when the plugin's queue is full.
+        bool select();
+        /// The sound the context was made for or last selected, whatever its channel selects now.
+        uint32_t own() const noexcept { return own_; }
         ~SoundContext() override;
         SoundContext(const SoundContext&) = delete;
         SoundContext& operator=(const SoundContext&) = delete;
@@ -73,11 +85,16 @@ namespace oscairn
         void setMemoryRoom(uint64_t bytes) override { engine_->host->setMemoryRoom(bytes); }
         const char* soundContextMode() const noexcept override { return engine_->host->soundContextMode(); }
         uint32_t soundContextCapacity() const noexcept override { return engine_->host->soundContextCapacity(); }
-        std::vector<oscairn_sound_context_info_t> soundContexts() const override { return engine_->host->soundContexts(); }
+        // The node's own sounds (those it played or prepared), each selected on every channel when its
+        // channel selects it, as a plain instance's would be: the sound picker shows no other part's.
+        std::vector<oscairn_sound_context_info_t> soundContexts() const override;
         uint32_t prepareSound(const std::string& name, const std::vector<oscairn_sound_parameter_t>& parameters, const std::string& state = {}, const std::string& preset = {},
                               const std::string& sfz = {}, const std::string& library = {}, const std::string& directory = {}) override;
         bool selectSound(uint32_t id, int16_t channel = -1) override; // on the node's channel, whatever `channel` says
-        bool discardSound(uint32_t id, bool cutTail = false) override { return engine_->host->discardSound(id, cutTail); }
+        bool discardSound(uint32_t id, bool cutTail = false) override;
+        bool savesSounds() const noexcept override { return engine_->host->savesSounds(); }
+        void saveSound(uint32_t id, const std::string& directory) override { engine_->host->saveSound(id, directory); }
+        std::vector<oscairn_sound_parameter_t> soundValues(uint32_t id) const override { return engine_->host->soundValues(id); }
         bool voiceBudget() const noexcept override { return engine_->host->voiceBudget(); }
         bool honorsVolume() const noexcept override { return engine_->host->honorsVolume(); }
         void setAssets(kick::clap::AssetResolver* assets) noexcept override { engine_->host->setAssets(assets); }
@@ -111,8 +128,11 @@ namespace oscairn
         bool lead() const noexcept { return !(engine_->channels & ((1u << channel_) - 1)); }
         std::shared_ptr<Engine> engine_;
         uint16_t channel_ = 0;
-        uint32_t bus_ = 0;
+        uint32_t bus_ = 0, own_ = 0;
+        bool later_ = false; // selected only by select()
+        std::set<uint32_t> mine_; // soundContexts()
         std::atomic<uint32_t> sound_{0};
+        void showValues(uint32_t sound); // the sound's own values, where the plugin gives them
         std::vector<kick::clap::Port> port_, none_;
         std::map<clap_id, double> values_;
         std::array<kick::clap::Event, 256> queue_{}; // control thread to audio thread

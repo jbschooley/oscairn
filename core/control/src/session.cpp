@@ -33,9 +33,48 @@ namespace oscairn
 
     Session::~Session() { graph_.setListener( nullptr ); if( budget_.cpu > 0 ) saveMeasurements(); armPressure( false ); }
 
+    // RFC 0021: an instrument whose plugin plays in this Performance already, on an instance it can
+    // share that has room, plays a new sound of that instance instead of loading one.
+    NodeId Session::add( const std::string& name, const std::string& path, const std::string& pluginId )
+    {
+        if( const auto source = sharingSource(path, pluginId) ) return shareInstrument(name, *source);
+        return addInstance(name, path, pluginId);
+    }
+
+    // shortcut: an empty pluginId matches any plugin of the bundle at path (a bundle's first is the one loaded); compare with the bundle's first plugin if a shareable plugin ever comes in a bundle of several.
+    std::optional<NodeId> Session::sharingSource( const std::string& path, const std::string& pluginId ) const
+    {
+        std::error_code e;
+        for( const auto& [n, name] : nodes_ )
+        {
+            const auto host = graph_.node(n).host;
+            const auto& d = host->descriptor();
+            if( (!pluginId.empty() && d.id != pluginId) || (d.path != path && !std::filesystem::equivalent(d.path, path, e)) ) continue;
+            if( const auto* c = dynamic_cast<const SoundContext*>(host.get()) ) { if( SoundContext::room(*c->engine()) ) return n; }
+            else if( const auto engine = SoundContext::lead(host); engine && SoundContext::room(*engine) ) return n;
+        }
+        return std::nullopt;
+    }
+
+    // The engine a node plays on: its own, or, for a plain instance that can share, a new one with
+    // the node as its first node on channel 1 and the main output, where it plays already, so its
+    // wires stay. None where it cannot share.
+    std::shared_ptr<SoundContext::Engine> Session::lead( NodeId node )
+    {
+        const auto host = graph_.node(node).host;
+        if( const auto* c = dynamic_cast<const SoundContext*>(host.get()) ) return c->engine();
+        auto engine = SoundContext::lead(host);
+        if( !engine ) return nullptr;
+        if( const auto l = loaded_.find(node); l != loaded_.end() ) engine->build = l->second.build;
+        graph_.share(node, std::make_shared<SoundContext>(engine, 0, 0, std::nullopt)); // its sound as its channel 1 selects it
+        loaded_.erase(node); // no longer an instance another Performance may take over
+        staged_ = true;
+        return engine;
+    }
+
     // With a budget (RFC 0025), a plugin that would take the Performance past it is refused and
     // unloaded again; what this process grew by while an in-process plugin loaded is its memory.
-    NodeId Session::add( const std::string& name, const std::string& path, const std::string& pluginId )
+    NodeId Session::addInstance( const std::string& name, const std::string& path, const std::string& pluginId )
     {
         if( !name.empty() && std::any_of(nodes_.begin(),nodes_.end(),[&](const auto& n){ return n.second == name; }) )
             throw std::invalid_argument( "duplicate node name: " + name );
@@ -92,15 +131,8 @@ namespace oscairn
             throw std::invalid_argument( "duplicate node name: " + name );
         if( !hasNode(source) ) throw std::invalid_argument( "no node " + std::to_string(source) );
         auto first = [&](NodeId node) {
-            const auto host = graph_.node(node).host;
-            if( dynamic_cast<const SoundContext*>(host.get()) ) return;
-            const auto bus = SoundContext::busParameter(*host);
-            if( bus == CLAP_INVALID_ID || !host->failure().empty() )
-                throw std::runtime_error( host->descriptor().name + " cannot share its instance: it needs native sound contexts and an output bus parameter" );
-            auto engine = std::make_shared<SoundContext::Engine>(); engine->host = host; engine->busParameter = bus;
-            graph_.share(node, std::make_shared<SoundContext>(engine, 0, 0, std::nullopt)); // its sound as its channel 1 selects it
-            loaded_.erase(node); // no longer an instance another Performance may take over
-            staged_ = true;
+            if( !lead(node) )
+                throw std::runtime_error( graph_.host(node).descriptor().name + " cannot share its instance: it needs native sound contexts, an output bus parameter, sounds saved on their own and one sound on every channel" );
         };
         first(source);
         const auto& plugin = graph_.host(source).descriptor();
@@ -112,7 +144,7 @@ namespace oscairn
                 if( const auto* c = dynamic_cast<const SoundContext*>(&graph_.host(n)); c && !leaving_.count(n) && c->descriptor().id == plugin.id && c->descriptor().path == plugin.path && SoundContext::room(*c->engine()) )
                     { engine = c->engine(); break; }
         }
-        if( !engine ) { const auto id = add(name, plugin.path, plugin.id); first(id); return id; }
+        if( !engine ) { const auto id = addInstance(name, plugin.path, plugin.id); first(id); return id; }
         uint16_t channel = 0; while( engine->channels >> channel & 1 ) ++channel;
         uint32_t bus = 0; while( engine->buses >> bus & 1 ) ++bus;
         const auto sound = engine->host->prepareSound(name.empty() ? plugin.name : name, {{engine->busParameter, double(bus)}});

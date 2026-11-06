@@ -2214,7 +2214,7 @@ namespace
         const auto old = root / "version-4";
         fs::copy(saved, old, fs::copy_options::recursive);
         auto text = std::string(first.begin(), first.end());
-        text.replace(text.find("\"version\":12"), 12, "\"version\":11");
+        text.replace(text.find("\"version\":13"), 12, "\"version\":12");
         state_files::write(old / "performance.json", text.data(), text.size());
         const auto before = describe(t);
         bool refused = false; try { t.loadPerformance(old.string()); } catch(const std::runtime_error& e) { refused = std::string(e.what()).find("unsupported format version") != std::string::npos; }

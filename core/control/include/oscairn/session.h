@@ -6,6 +6,7 @@
 #include "oscairn/parts.h"
 #include "oscairn/library.h"
 #include "oscairn/signing.h"
+#include "oscairn/sound_context.h"
 
 #include <array>
 #include <chrono>
@@ -532,6 +533,15 @@ namespace oscairn
         // A document's nodes (a Performance's or a Sound's), each its saved plugin or, not here, its stand-in.
         std::map<std::string,NodeId> addNodes(const ::json_value_s* document,const std::filesystem::path& root,std::vector<NodeId>& added,const std::set<std::string>* only); // only: these keys (and their engines); null: all
         NodeId adopt(const std::string& name, std::shared_ptr<PluginHost> host); // a stand-in (RFC 0006), with no budget check
+        // RFC 0021: an instance of its own (add without sharing); a node of this Performance whose
+        // instance a new instrument of that plugin could share; a node's engine, making a plain
+        // instance that can share its first node (null where it cannot).
+        NodeId addInstance(const std::string& name, const std::string& path, const std::string& pluginId);
+        std::optional<NodeId> sharingSource(const std::string& path, const std::string& pluginId) const;
+        std::shared_ptr<SoundContext::Engine> lead(NodeId node);
+        // An outgoing node of a shared engine that goes while its engine plays on: its channel selects
+        // the Default and its sound is discarded once idle (retireSounds).
+        void retireShared(const SoundContext& node);
     public:
         // A plugin build a document was saved with (RFC 0006), for one platform.
         struct LockEntry { std::string format, id, version, platform, sha256; bool operator==(const LockEntry&) const = default; };
@@ -561,6 +571,18 @@ namespace oscairn
             Beside(const Beside&) = delete;
             Beside& operator=(const Beside&) = delete;
             ~Beside();
+        };
+        // RFC 0021 slice 3: an incoming Performance's nodes on the playing Performance's shared engines,
+        // their sounds prepared beside the playing ones and selected at the cue (SoundContext::select).
+        // Never opened, every sound it prepared there is discarded.
+        struct Claimed
+        {
+            std::vector<std::shared_ptr<SoundContext>> contexts;
+            std::vector<std::pair<std::shared_ptr<PluginHost>, uint32_t>> sounds;
+            Claimed() = default;
+            Claimed(Claimed&&) = default;
+            Claimed& operator=(Claimed&&) = default;
+            ~Claimed();
         };
         // A Performance read and its plugins loaded with their state, not playing yet (RFC 0021).
         struct Prepared
@@ -593,6 +615,7 @@ namespace oscairn
             std::map<NodeId,Loaded> loaded; // what each instance it may give up again was loaded from
             uint64_t reused = 0, kept = 0;        // its nodes opened in an instance already loaded; of them, holding their state already
             std::vector<std::unique_ptr<Beside>> beside; // its nodes whose sounds were prepared in a playing instance
+            Claimed claimed;                      // its nodes on the playing Performance's shared engines
         };
         // A loaded instance a Performance being read may take over: kept warm (node 0), or a free one
         // of the playing graph (its node), whose state is loaded last.

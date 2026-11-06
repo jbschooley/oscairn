@@ -239,7 +239,10 @@ Even an unchanged commit produces a new revision. A successful commit publishes 
 plan for the audio thread to adopt at a block boundary; it does not wait for adoption.
 
 `graph.add` loads a native CLAP plugin in the engine process. Its optional name must be unique
-when nonempty; unnamed nodes use their numeric IDs. IDs are not reused. Audio ports include
+when nonempty; unnamed nodes use their numeric IDs. A plugin that can share its instance between
+parts (the Basic Synth), where this Performance plays one with room, is not loaded again: the new
+node plays a new sound of that instance, as `instruments.share` makes one
+([below](#parts-sharing-one-instance)); `graph.get` lists it `shared`. IDs are not reused. Audio ports include
 IDs, names, channel counts and flags; note ports are currently represented by counts, matching
 the graph's whole-node routing. The `input` endpoint accepts external notes and `output`
 collects audio. Connections use node names or numeric IDs; the endpoints use the numeric
@@ -833,19 +836,32 @@ intentionally combines them before the effects. Allocate different buses for dif
 returns a new numeric `node` ([RFC 0021](rfcs/0021-sounds-performances-and-library.md#parts-sharing-one-engine)):
 a part's instrument on the instance `source` plays, with a new sound of its own (the plugin's
 defaults) on its own MIDI channel and output bus. The node is staged like `graph.add`; put it in
-a part and commit as usual. Its one audio output is its bus; its parameters are its sound's
-(edits reach the instance on its channel; its output bus parameter keeps its bus);
-`sounds.prepare` and `sounds.select` on it prepare a sound on its bus and select it on its
-channel. A `source` with an instance of its own becomes the engine's first node, on channel 0
+a part and commit as usual. Its one audio output is its bus, under the instance's main port's ID
+whatever the bus, so its wires hold wherever it plays; its parameters are its sound's, shown as
+the plugin gives them (edits reach the instance on its channel; its output bus parameter keeps
+its bus); `sounds.get` lists its own sounds only, the one its channel selects as selected on
+every channel, and `sounds.prepare`, `sounds.select` and `sounds.discard` on it prepare a sound on
+its bus, select it on its channel and discard one of its own. A `source` with an instance of its
+own (playing one sound on every channel) becomes the engine's first node, on channel 0
 (MIDI channel 1) and the main output it plays to already, its sound and wires unchanged. When
 that instance has no free sound, channel or bus, the node goes on another instance of the plugin
 this Performance shares that has room, else on a new one (the spill), the first node of an engine
-of its own. Only a plugin with native sound contexts, their snapshot, and a stepped parameter
-with oscairn.ui's `outputBus` role (the Basic Synth's Output bus; not the Sampler, which has one
-output) can share; others return -32004. `graph.get` lists each such node's `shared`: `engine`,
-the engine's first node, and its `channel` and `bus`; a saved Performance keeps them
+of its own. Only a plugin with native sound contexts, their snapshot, oscairn.sound-snapshots'
+draft 4 (one sound saved on its own, a sound's values) and a stepped parameter with oscairn.ui's
+`outputBus` role (the Basic Synth's Output bus; not the Sampler, which has one output) can share;
+others return -32004. `graph.get` lists each such node's `shared`: `engine`, the engine's first
+node, and its `channel` and `bus`; a saved Performance keeps them
 ([format](performance-format.md)). Undo takes a share back like any added node; one that made
 `source` the first node puts back `source`'s own instance.
+
+Sharing is also formed on its own: `graph.add` of such a plugin joins an instance with room, as
+above; opening, preparing or importing a Performance, or loading a Sound, puts nodes saved with an
+instance of their own (and wired from their main output only) into an instance with room, the
+Performance's own or, at a Performance change, the playing one's, whose incoming sounds are
+prepared beside the playing ones and selected at the cue (no instance loaded); several such nodes
+with none to join start an instance the next ones join; one alone keeps its own. There is no way
+to give a node an instance of its own while another node of the plugin has room: a part saved as
+a Sound saves its sound on its own, and `parts.saveSound` no longer refuses one that shares.
 
 ## Performance persistence
 

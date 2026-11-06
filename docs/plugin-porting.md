@@ -265,11 +265,19 @@ with the instance.
 
 ### Parts sharing one instance
 
-Parts whose instruments are the same plugin can share one instance, each with its own sound,
-MIDI channel and output bus ([RFC 0021](rfcs/0021-sounds-performances-and-library.md#parts-sharing-one-engine)):
-the host sends a part's notes and its parameter edits on its channel, and takes its sound from
+Parts whose instruments are the same plugin share one instance, on their own, each with its own
+sound, MIDI channel and output bus ([RFC 0021](rfcs/0021-sounds-performances-and-library.md#parts-sharing-one-engine)):
+adding the plugin where an instance of it has room, opening a Performance, or changing to one
+(whose sounds are then prepared beside the playing ones, as above, and selected at the cue on
+channels of their own) all put a part's sound into an instance that has room; a part alone keeps
+an instance of its own.
+The host sends a part's notes and its parameter edits on its channel, and takes its sound from
 its output port. A plugin offers this with native sound contexts and their snapshot (above), more
-than one output port, no audio input and no note output, and one stepped parameter, from 0,
+than one output port, no audio input and no note output, draft 4's `save_sound` and
+`sound_values` (a part's sound saved as a snapshot of its own, for a Sound, and the values its
+part shows; on the SDK, the instrument's `alone(Patch&)`, which puts a patch on the main output,
+and `patchValues`, which lists a patch's values; [RFC 0005](rfcs/0005-sound-contexts.md#one-sound-on-its-own)),
+and one stepped parameter, from 0,
 whose value is the output port a sound plays on by the port's index (0 the main port), tagged
 with oscairn.ui's `OSCAIRN_ROLE_OUTPUT_BUS` ([below](#editor-hints-and-roles)). The host sets it
 per sound, with a parameter event on the part's channel, so it must follow per-channel parameter
@@ -279,6 +287,9 @@ holds as many parts as it has sounds, ports and channels; the host takes another
 that. The Basic Synth (eight sounds, its Default one of them; eight sound buses beside its main
 output) does all of it; the Sampler has one output, so each Sampler part keeps its own instance,
 as every plugin without native contexts does. Per-part voice budgets follow ([above](#voice-budget)).
+What its users hear differently: the parts sharing an instance share its voice pool (the Basic
+Synth's sixteen), so many notes across them steal sooner than separate instances would; a plugin
+meant to share should have a pool sized for several parts.
 
 ### Presets
 

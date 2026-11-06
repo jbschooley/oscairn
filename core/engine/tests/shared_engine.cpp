@@ -41,6 +41,8 @@ struct Recording final : PluginHost
     bool honorsVolume() const noexcept override {return p->honorsVolume();}
     uint32_t voiceReport(double& c,const oscairn_voice_budget_note_t*& n,uint32_t& k) const noexcept override {return p->voiceReport(c,n,k);}
     bool supportsState() const noexcept override {return p->supportsState();}
+    bool savesSounds() const noexcept override {return p->savesSounds();}
+    std::vector<oscairn_sound_parameter_t> soundValues(uint32_t id) const override {return p->soundValues(id);}
     const kick::clap::Descriptor& descriptor() const noexcept override {return p->descriptor();}
     const std::vector<kick::clap::Parameter>& parameters() const noexcept override {return p->parameters();}
     const std::vector<kick::clap::Port>& inputPorts() const noexcept override {return p->inputPorts();}
@@ -108,7 +110,8 @@ int main(int argc,char** argv){try{
         check(refused,"a channel taken is refused");
         const auto a=g.add(ca),b=g.add(cb);
         check(g.effectSource(b)==a,"the two nodes are one engine, as effect contexts are");
-        check(g.host(a).outputPorts().size()==1 && g.host(a).outputPorts()[0].id==1 && g.host(b).outputPorts()[0].id==2,"each node's one output is its bus");
+        check(g.host(a).outputPorts().size()==1 && g.host(a).outputPorts()[0].id==0 && g.host(b).outputPorts()[0].id==0 && ca->bus()==1 && cb->bus()==2,
+              "each node's one output is its bus, under the main port's ID");
         g.connectNotes(graphInput,a,{keys(0,63,2,3,1)});g.connectNotes(graphInput,b,{keys(64,127,1,7,2)});g.connectAudio(a,graphOutput);g.connectAudio(b,graphOutput);g.commit();
         g.setVoiceBudget(1e6); // so the plugin is told its voices
         Heard heard;g.setListener(&heard);

@@ -256,6 +256,28 @@ std::shared_ptr<SoundContext> savedSound(V node,const fs::path& folder,const std
     auto context=std::make_shared<SoundContext>(engine,channel,bus,*sound);
     context->loadSnapshot(folder.string());
     return context;}
+// RFC 0021: the first free channel and bus of a shared engine.
+std::pair<uint16_t,uint32_t> freePlace(const SoundContext::Engine& e){
+    uint16_t channel=0;while(e.channels>>channel&1)++channel;
+    uint32_t bus=0;while(e.buses>>bus&1)++bus;
+    return {channel,bus};}
+// A node saved with an instance of its own playing a sound of shared engine `e` instead: its snapshot
+// prepared beside the engine's sounds, on the engine's first free channel and bus, its sound selected
+// there now or, with `later`, at the cue. None where the engine has no room (channels, buses, sounds)
+// or the snapshot plays more than one sound (one node has one channel); nothing is left prepared then.
+std::shared_ptr<SoundContext> joinEngine(const std::shared_ptr<SoundContext::Engine>& e,const fs::path& folder,bool later){
+    if(!SoundContext::room(*e))return nullptr;
+    auto& h=*e->host;std::set<uint32_t> before;for(const auto& c:h.soundContexts())before.insert(c.id);
+    std::array<uint32_t,16> selected;
+    try{selected=h.prepareSnapshot(folder.string());}catch(const std::exception&){return nullptr;}
+    const bool one=std::all_of(selected.begin(),selected.end(),[&](uint32_t id){return id==selected[0];});
+    for(const auto& c:h.soundContexts())if(!before.count(c.id) && (!one || c.id!=selected[0]))h.discardSound(c.id); // never selected: they go at once
+    if(!one)return nullptr;
+    const auto [channel,bus]=freePlace(*e);
+    try{return std::make_shared<SoundContext>(e,channel,bus,selected[0],later);}catch(...){h.discardSound(selected[0]);throw;}}
+// Whether a shared engine's instance is the plugin a document's node names.
+bool sameKind(const SoundContext::Engine& e,const std::string& id,const std::string& path,const std::string& version){
+    const auto& d=e.host->descriptor();return d.id==id && d.path==path && d.version==version;}
 // A plugin refused before activating because it declared more memory than the budget left
 // (kick::clap::Host's reason, which reaches here as text, also from a worker): not a stand-in.
 bool memoryRefusal(const std::exception& e){return std::string(e.what()).find(" MiB of memory where ")!=std::string::npos;}
@@ -451,22 +473,23 @@ Control::PerformanceInfo Session::writeDocument(const std::string& directory,Per
     std::vector<std::string> nodes,wires,parts,mappings;std::set<std::string> libraries;
     std::vector<LockEntry> lock; // RFC 0006: each plugin build it uses, by its digest, per platform
     for(const auto& n:graph.nodes){if(!kept(n.id))continue;const auto& key=keys.at(n.id);auto& h=graph_.host(n.id);
-        if(!keys.count(graph_.effectSource(n.id,leaving_)))bad(nodes_.at(n.id)+" shares its engine with a plugin outside the part");
         // RFC 0021 slice 3: a node sharing an engine saves its values, and the engine's first node the
-        // engine's state too; a Sound holds a whole engine or none of it.
+        // engine's state too. In a Sound each saves its sound on its own instead, as an instance
+        // holding it alone (sound-snapshots draft 4), which joins an engine again when it is loaded.
         const auto* shared=dynamic_cast<const SoundContext*>(&h);
-        if(shared && sound)for(const auto& m:graph.nodes)if(!leaving_.count(m.id) && !inside.count(m.id) && graph_.effectSource(m.id,leaving_)==graph_.effectSource(n.id,leaving_))
-            bad(nodes_.at(n.id)+" shares its instance with a plugin outside the part");
+        const bool alone=shared && sound;
+        if(!alone && !keys.count(graph_.effectSource(n.id,leaving_)))bad(nodes_.at(n.id)+" shares its engine with a plugin outside the part");
         // Sound assets are dependencies (RFC 0009): record references, never the files.
         std::vector<std::string> assets;
         for(const auto& a:h.assetDependencies()){libraries.insert(a.library);assets.push_back("{\"library\":"+quote(a.library)+",\"path\":"+quote(a.path)+",\"sha256\":"+quote(a.sha256)+(a.optional?",\"optional\":true":"")+'}');}
-        try{h.saveSnapshot((bundle.temporary.path/"nodes"/key).string());
-            if(shared && graph_.effectSource(n.id,leaving_)==n.id)shared->engine()->host->saveSnapshot((bundle.temporary.path/"nodes"/key/"engine").string());}
+        try{if(alone)h.saveSound(shared->own(),(bundle.temporary.path/"nodes"/key).string());
+            else h.saveSnapshot((bundle.temporary.path/"nodes"/key).string());
+            if(shared && !alone && graph_.effectSource(n.id,leaving_)==n.id)shared->engine()->host->saveSnapshot((bundle.temporary.path/"nodes"/key/"engine").string());}
         catch(const std::exception& e){bad("cannot save "+nodes_.at(n.id)+" ("+n.plugin.id+"): "+e.what());}
         const bool lv2=lv2Path(n.plugin.path);
         lockPlugin(lock,lv2?"lv2":"clap",n.plugin.id,n.plugin.version,n.plugin.path,!h.failure().empty());
-        nodes.push_back("{\"key\":"+quote(key)+",\"name\":"+quote(nodes_.at(n.id))+",\"plugin\":{\"format\":"+quote(lv2?"lv2":"clap")+",\"id\":"+quote(n.plugin.id)+",\"version\":"+quote(n.plugin.version)+",\"pathHint\":"+quote(n.plugin.path)+"},\"engine\":"+quote(keys.at(graph_.effectSource(n.id,leaving_)))+",\"inputs\":"+ports(n.inputs)+",\"outputs\":"+ports(n.outputs)+",\"noteInputs\":"+std::to_string(n.noteInputs)+",\"noteOutputs\":"+std::to_string(n.noteOutputs)+",\"assets\":"+join(assets)+",\"enabled\":"+(disabled_.count(n.id)?"false":"true")+(roles_.count(n.id)?",\"role\":"+quote(roles_.at(n.id)):std::string())
-            +",\"sound\":"+(shared?"{\"channel\":"+std::to_string(shared->channel())+",\"bus\":"+std::to_string(shared->bus())+'}':std::string("null"))+'}');
+        nodes.push_back("{\"key\":"+quote(key)+",\"name\":"+quote(nodes_.at(n.id))+",\"plugin\":{\"format\":"+quote(lv2?"lv2":"clap")+",\"id\":"+quote(n.plugin.id)+",\"version\":"+quote(n.plugin.version)+",\"pathHint\":"+quote(n.plugin.path)+"},\"engine\":"+quote(alone?key:keys.at(graph_.effectSource(n.id,leaving_)))+",\"inputs\":"+ports(n.inputs)+",\"outputs\":"+ports(alone?shared->engine()->host->outputPorts():n.outputs)+",\"noteInputs\":"+std::to_string(n.noteInputs)+",\"noteOutputs\":"+std::to_string(n.noteOutputs)+",\"assets\":"+join(assets)+",\"enabled\":"+(disabled_.count(n.id)?"false":"true")+(roles_.count(n.id)?",\"role\":"+quote(roles_.at(n.id)):std::string())
+            +",\"sound\":"+(shared && !alone?"{\"channel\":"+std::to_string(shared->channel())+",\"bus\":"+std::to_string(shared->bus())+'}':std::string("null"))+'}');
     }
     // RFC 0011: wires with their owners and Mix settings, and the parts; graph routes follow from them.
     if(wires_.size()>Graph::maxAudioConnections || parts_.size()>256)bad("wires or parts exceed Performance limits");
@@ -570,7 +593,7 @@ Control::PerformanceInfo Session::writeDocument(const std::string& directory,Per
                            :std::any_of(parts_.begin(),parts_.end(),[&](const Part& p){return p.id==t.id;});
             if(here)assigned.push_back("{\"control\":"+quote(o.control)+",\"kind\":"+quote(assignmentKinds[size_t(t.kind)])+",\"id\":"+std::to_string(t.id)+part+'}');}
         for(const auto& at:untouched_)if(keys.count(at.node))parameters.push_back("{\"node\":"+quote(keys.at(at.node))+",\"param\":"+std::to_string(at.param)+'}');
-        head="{\"format\":\"oscairn.performance\",\"version\":12,\"info\":";tail=",\"libraries\":"+join(named)+",\"transport\":{\"tempo\":"+numeric(tempo_.load())+",\"clockSource\":"+quote(clockSource_.load()==Transport::ClockSource::Internal?"internal":"midi")+"},\"audioInputs\":"+ports(graph.audioLayout.inputs)+",\"audioOutputs\":"+ports(graph.audioLayout.outputs)+",\"nodes\":"+join(nodes)+",\"wires\":"+join(wires)+",\"parts\":"+join(parts)+",\"mappings\":"+join(mappings)+",\"pads\":"+padsText(padMap_)+",\"key\":"+keyText(key_)+",\"master\":"+masterText(masterLevel_,masterPan_)+",\"scenes\":"+join(scenes)+",\"sceneUntouched\":"+join(parameters)+",\"scene\":"+std::to_string(scene_)+",\"controls\":"+join(controls)+",\"assignments\":"+join(assigned)+",\"lock\":"+lockText+"}\n";
+        head="{\"format\":\"oscairn.performance\",\"version\":13,\"info\":";tail=",\"libraries\":"+join(named)+",\"transport\":{\"tempo\":"+numeric(tempo_.load())+",\"clockSource\":"+quote(clockSource_.load()==Transport::ClockSource::Internal?"internal":"midi")+"},\"audioInputs\":"+ports(graph.audioLayout.inputs)+",\"audioOutputs\":"+ports(graph.audioLayout.outputs)+",\"nodes\":"+join(nodes)+",\"wires\":"+join(wires)+",\"parts\":"+join(parts)+",\"mappings\":"+join(mappings)+",\"pads\":"+padsText(padMap_)+",\"key\":"+keyText(key_)+",\"master\":"+masterText(masterLevel_,masterPan_)+",\"scenes\":"+join(scenes)+",\"sceneUntouched\":"+join(parameters)+",\"scene\":"+std::to_string(scene_)+",\"controls\":"+join(controls)+",\"assignments\":"+join(assigned)+",\"lock\":"+lockText+"}\n";
     }
     info.hash=contentHash(head+tail,bundle.temporary.path/"nodes");
     const auto out=head+infoText()+tail;
@@ -722,7 +745,7 @@ std::unique_ptr<Session::Prepared> Session::read(const fs::path& root,std::vecto
     validateTree(root);const auto doc=document(root);V d=doc.get();
     fields(d,{"format","version","info","libraries","transport","audioInputs","audioOutputs","nodes","wires","parts","mappings","pads","key","master","scenes","sceneUntouched","scene","controls","assignments","lock"});
     const auto pads=padsFrom(field(d,"pads"));const auto key=keyFrom(field(d,"key"));const auto master=masterFrom(field(d,"master"));
-    if(text(field(d,"format"))!="oscairn.performance" || integer(field(d,"version"))!=12)bad("unsupported format version");
+    if(text(field(d,"format"))!="oscairn.performance" || integer(field(d,"version"))!=13)bad("unsupported format version");
     fields(field(d,"info"),{"id","name","description","tags","color","revision","parent","hash","origin"});const auto info=readInfo(root/"performance.json","oscairn.performance");
     auto lock=readLock(d);
     const auto transport=field(d,"transport");fields(transport,{"tempo","clockSource"});const double tempo=number(field(transport,"tempo"));
@@ -817,6 +840,47 @@ std::unique_ptr<Session::Prepared> Session::read(const fs::path& root,std::vecto
             taken.push_back(n);beside.push_back(std::move(b));
             return beside.back()->now;}
         return std::nullopt;};
+    // RFC 0021 slice 3, formed on their own: a node alone on its engine whose plugin can share its
+    // instance (and whose wires leave its main output only) plays a sound of a shared engine with room:
+    // first this Performance's, then, its sounds prepared beside and selected at the cue, the playing
+    // one's. Failing that, one of several such nodes of a plugin loads an instance of its own that the
+    // next may share. A saved engine goes whole into a playing engine with room, else into its own.
+    std::vector<std::shared_ptr<SoundContext::Engine>> engines; // this Performance's, as they form
+    Claimed onPlaying;
+    std::map<std::string,std::pair<std::shared_ptr<SoundContext::Engine>,std::array<uint32_t,16>>> claimedEngines; // a saved engine's: the playing engine, the sound each saved channel selects
+    std::set<std::string> offMain; // nodes with an audio wire from another of their outputs than the main one
+    for(auto w:array(field(d,"wires"),Graph::maxAudioConnections)){
+        if(text(field(w,"kind"))!="audio")continue;const auto from=text(field(w,"from"));const auto port=integer(field(w,"fromPort"));
+        if(!definitions.contains(from))continue;
+        for(auto p:array(field(definitions.at(from),"outputs"),Graph::maxAudioChannels))if(integer(field(p,"id"))==port && !(integer(field(p,"flags"))&CLAP_AUDIO_PORT_IS_MAIN))offMain.insert(from);}
+    auto kind=[&](V plugin){return text(field(plugin,"id"))+'\n'+text(field(plugin,"version"))+'\n'+text(field(plugin,"pathHint"));};
+    auto formable=[&](V node,const std::string& key){return text(field(node,"engine"))==key && group[key]==1 && !soundOf(node) && !offMain.count(key);};
+    std::map<std::string,size_t> kinds;for(auto node:nodes)if(formable(node,text(field(node,"key"))))++kinds[kind(field(node,"plugin"))];
+    // The playing Performance's engines of the plugin, build and placement a node would load; none in an audition.
+    auto playingEngines=[&](V plugin){
+        std::vector<std::shared_ptr<SoundContext::Engine>> out;if(keepInstances_)return out;
+        std::optional<Want> w;
+        for(const auto& [n,name]:nodes_)if(const auto* c=dynamic_cast<const SoundContext*>(&graph_.host(n))){
+            const auto& e=c->engine();if(std::find(out.begin(),out.end(),e)!=out.end())continue;
+            if(!w && !(w=want(plugin)))return out;
+            if(same(*w,*e->host,Loaded{e->build,{}}))out.push_back(e);}
+        return out;};
+    // A node of a saved engine claimed into a playing one: its saved channel's sound, on a free channel and bus.
+    auto claimedSound=[&](V node,const std::string& engine){
+        const auto& [e,selected]=claimedEngines.at(engine);const auto [channel,bus]=freePlace(*e);
+        auto context=std::make_shared<SoundContext>(e,channel,bus,selected[soundOf(node)->first],true);
+        onPlaying.contexts.push_back(context);return context;};
+    // A saved engine's sounds (its state, the first node's `engine`) prepared beside a playing engine
+    // with room for all its nodes, the sounds no node plays discarded once every node is read.
+    auto claimEngine=[&](V plugin,const std::string& key){
+        for(const auto& e:playingEngines(plugin)){
+            if(SoundContext::room(*e)<group[key])continue;
+            std::set<uint32_t> before;for(const auto& c:e->host->soundContexts())before.insert(c.id);
+            std::array<uint32_t,16> selected;
+            try{selected=e->host->prepareSnapshot((root/"nodes"/key/"engine").string());}catch(const std::exception&){continue;}
+            for(const auto& c:e->host->soundContexts())if(!before.count(c.id))onPlaying.sounds.push_back({e->host,c.id});
+            claimedEngines[key]={e,selected};return true;}
+        return false;};
     auto restore=[&](NodeId runtime,V node,uint64_t room){
         auto& h=next->host(runtime);const auto key=text(field(node,"key"));
         if(room)h.setMemoryRoom(room);
@@ -864,41 +928,65 @@ std::unique_ptr<Session::Prepared> Session::read(const fs::path& root,std::vecto
                 if(room)source.setMemoryRoom(room);
                 try{const auto n=make();if(room)source.setMemoryRoom(0);return n;}catch(...){if(room)source.setMemoryRoom(0);throw;}};
             const auto shared=soundOf(node); // RFC 0021 slice 3
+            std::shared_ptr<SoundContext> joined;bool first=false; // formed on their own
+            if(!siblings && !shared && formable(node,key)){
+                const auto version=text(field(plugin,"version"));
+                for(const auto& e:engines)if(sameKind(*e,id,path,version) && (joined=joinEngine(e,root/"nodes"/key,false)))break;
+                if(!joined)for(const auto& e:playingEngines(plugin))if((joined=joinEngine(e,root/"nodes"/key,true))){onPlaying.contexts.push_back(joined);onPlaying.sounds.push_back({e->host,joined->own()});++reused;break;}
+                first=!joined && kinds[kind(plugin)]>1;}
             if(siblings){if(!definitions.contains(engine) || text(field(definitions.at(engine),"engine"))!=engine || !ids.contains(engine))bad("missing shared engine root");
                 const auto& source=next->host(ids.at(engine)).descriptor();if(source.id!=id || source.path!=path)bad("incompatible shared engine identity");
                 try{
-                    if(shared){runtime=next->add(savedSound(node,root/"nodes"/key,nullptr,&next->host(ids.at(engine))));restored=true;}
+                    if(shared){runtime=next->add(claimedEngines.contains(engine)?claimedSound(node,engine):savedSound(node,root/"nodes"/key,nullptr,&next->host(ids.at(engine))));restored=true;if(claimedEngines.contains(engine))++reused;}
                     else runtime=context(next->host(ids.at(engine)),[&]{return next->addEffectContext(ids.at(engine));});}
                 catch(const std::exception& e){
                     if(memoryRefusal(e))throw;
                     runtime=next->add(standIn(node,root/"nodes"/key,refs[key],std::string("its shared engine is not here: ")+e.what()));restored=false;}}
+            else if(shared && claimEngine(plugin,key)){runtime=next->add(claimedSound(node,key));restored=true;++reused;}
             else if(shared){
                 runtime=resolvePlugin(node,root/"nodes"/key,refs[key],[&](const std::string& p,const std::string& i){return next->add(p,i,room);},[&](NodeId n){next->remove(n);},
                                       [&](NodeId n){return next->host(n).descriptor().version;},[&](std::shared_ptr<PluginHost> h){return next->add(std::move(h));});
                 const auto host=next->node(runtime).host;
                 if(SoundContext::busParameter(*host)!=CLAP_INVALID_ID){ // else a stand-in, restored as saved
                     if(room)host->setMemoryRoom(room);
-                    try{next->share(runtime,savedSound(node,root/"nodes"/key,host,nullptr));}catch(...){if(room)host->setMemoryRoom(0);throw;}
+                    std::shared_ptr<SoundContext> context;
+                    try{context=savedSound(node,root/"nodes"/key,host,nullptr);next->share(runtime,context);}catch(...){if(room)host->setMemoryRoom(0);throw;}
                     if(room)host->setMemoryRoom(0);
+                    context->engine()->build=buildDigest(host->descriptor().path);engines.push_back(context->engine());
                     restored=true;}}
-            else if(const auto b=group[key]==1?claim(node,plugin,key):std::nullopt){runtime=*b;++reused;restored=true;}
+            else if(joined){runtime=next->add(joined);restored=true;}
+            else if(const auto b=group[key]==1?claim(node,plugin,key):std::nullopt){runtime=*b;++reused;restored=true;first=false;} // one instance, its sounds selected at the cue
             else if(const auto engine=playing(id,path,text(field(plugin,"version")),group[key])){runtime=context(graph_.host(*engine),[&]{return next->addEffectContext(graph_,*engine);});++reused;}
             else if(const auto f=group[key]==1?take(plugin,key):std::nullopt){
                 runtime=next->add(free[*f].host);origins[runtime]={free[*f].loaded.build,source(key)};++reused;restored=true;
-                if(free[*f].node){taken.push_back(free[*f].node);later.push_back({runtime,key,*f});}else{warm.push_back(free[*f].host.get());restoreTaken(runtime,node,room,*f);}
+                if(free[*f].node){taken.push_back(free[*f].node);later.push_back({runtime,key,*f});first=false;}else{warm.push_back(free[*f].host.get());restoreTaken(runtime,node,room,*f);}
                 free[*f].host.reset();}
             else{runtime=resolvePlugin(node,root/"nodes"/key,refs[key],[&](const std::string& p,const std::string& i){return next->add(p,i,room);},[&](NodeId n){next->remove(n);},
                                        [&](NodeId n){return next->host(n).descriptor().version;},[&](std::shared_ptr<PluginHost> h){return next->add(std::move(h));});
                 // What another Performance may take over later: a plugin of its own, loaded (not a stand-in).
                 if(group[key]==1 && next->host(runtime).failure().empty())origins[runtime]={buildDigest(next->host(runtime).descriptor().path),source(key)};}
             if(!restored)restore(runtime,node,room);
-            else if(shared){auto& h=next->host(runtime);checkPorts(field(node,"inputs"),h.inputPorts());checkPorts(field(node,"outputs"),h.outputPorts());
+            else if(shared || joined){auto& h=joined?*joined->engine()->host:next->host(runtime); // a node saved alone, as its plugin's ports
+                checkPorts(field(node,"inputs"),h.inputPorts());checkPorts(field(node,"outputs"),h.outputPorts());
                 if(integer(field(node,"noteInputs"),16)!=h.noteInputPorts() || integer(field(node,"noteOutputs"),16)!=h.noteOutputPorts())bad("note port layout changed");}
+            if(first)if(const auto e=SoundContext::lead(next->node(runtime).host)){ // loaded with its state, now or kept warm; a stand-in stays as saved
+                e->build=buildDigest(next->host(runtime).descriptor().path);next->share(runtime,std::make_shared<SoundContext>(e,0,0,std::nullopt));engines.push_back(e);origins.erase(runtime);}
             ids.emplace(key,runtime);names.emplace(runtime,name);
             if(!boolean(field(node,"enabled")))disabled.insert(runtime);
             if(const auto role=roleFrom(node);!role.empty())roles[runtime]=role;
         }catch(const std::exception& e){bad("cannot restore "+name+" ("+id+"): "+e.what());}
     }
+    // This Performance's own engines keep the sounds its nodes play: one a channel no node has selects
+    // stays, and the rest go (prepared and not selected when saved, as the next Setlist entry's were).
+    for(const auto& e:engines){
+        std::set<uint32_t> played;
+        for(const auto& [k,n]:ids)if(n!=graphInput && n!=graphOutput)if(const auto* c=dynamic_cast<const SoundContext*>(&next->host(n));c && c->engine()==e)played.insert(c->own());
+        for(const auto& c:e->host->soundContexts())if(c.id && !c.selected_channels && !played.count(c.id))e->host->discardSound(c.id);}
+    // The sounds of saved engines claimed into playing ones that no node plays (never selected: at once).
+    std::erase_if(onPlaying.sounds,[&](const auto& s){
+        if(std::any_of(onPlaying.contexts.begin(),onPlaying.contexts.end(),[&](const auto& c){return c->engine()->host==s.first && c->own()==s.second;}))return false;
+        try{s.first->discardSound(s.second);}catch(const std::exception&){}
+        return true;});
     auto node=[&](V v){const auto key=text(v);const auto it=ids.find(key);if(it==ids.end())bad("unknown node reference "+key);return it->second;};
     std::vector<Wire> wires;std::vector<Part> parts;uint32_t nextPart=1;
     {
@@ -1079,8 +1167,25 @@ std::unique_ptr<Session::Prepared> Session::read(const fs::path& root,std::vecto
     for(const auto& s:saved)if(std::find(taken.begin(),taken.end(),s.node)==taken.end())putBack(s); // let go for a fresh one: it plays on
     auto prepared=std::make_unique<Prepared>(Prepared{root,stamp(root),std::move(next),pads,info,std::move(lock),tempo,clock=="internal"?Transport::ClockSource::Internal:Transport::ClockSource::MidiClock,
         std::move(disabled),std::move(names),std::move(wires),std::move(parts),nextPart,nextWire,std::move(scenes),std::move(untouched),nextScene,selectedScene,mappingScene,std::move(macros),nextMacro,std::move(assignments),key,master.first,master.second,std::move(roles),std::move(notices),std::move(taken),std::move(warm),std::move(origins),reused,kept,{}});
-    prepared->beside=std::move(beside);
+    prepared->beside=std::move(beside);prepared->claimed.contexts.swap(onPlaying.contexts);prepared->claimed.sounds.swap(onPlaying.sounds);
     return prepared;
+}
+
+Session::Claimed::~Claimed() {
+    // Prepared and never selected: nothing pins them, so they go at once.
+    for(const auto& [host,id]:sounds)try{host->discardSound(id);}catch(const std::exception&){}
+}
+
+void Session::retireShared(const SoundContext& node) {
+    const auto& host=node.engine()->host;
+    if(!node.own())return; // the Default, or retired already
+    // The Default on its channel and on any other selecting its sound (no other node's: each selects its
+    // own; a first node that played alone selected its sound on every channel), so nothing pins it.
+    try{uint32_t channels=0;
+        for(const auto& c:host->soundContexts())if(c.id==node.own())channels|=c.selected_channels;
+        for(int16_t ch=0;ch<16;++ch)if((channels>>ch&1) && !(node.engine()->channels>>ch&1 && ch!=node.channel()))host->selectSound(0,ch);}
+    catch(const std::exception&){}
+    retiringSounds_.push_back({host,{node.own()},0});
 }
 
 // Publishes a read Performance in place of the open one.
@@ -1106,6 +1211,12 @@ void Session::open(Prepared& p,bool seamless) {
     // Its outgoing sounds ring out through the outgoing chain, by the plugin's ring-out buffer.
     // Only one change's tail carries over: one still ringing out of it is cut at the cue (chokes).
     if(seamless)for(const auto& b:p.beside){next->takeNotes(graph_,b->was,b->now);next->ringOut(graph_,b->was,b->now);b->chokes=graph_.ringOutRoutes(b->was)!=0;}
+    // The outgoing nodes of shared engines it claimed select the Default at the cue, so new notes never
+    // reach their sounds, which go once idle: their held notes keep their voices, and a cut drops them (RFC 0021).
+    std::vector<std::shared_ptr<PluginHost>> outgoingShared;
+    {std::set<NodeId> outgoing(leaving_);for(const auto& [id,name]:nodes_)outgoing.insert(id);
+        for(const auto n:outgoing)if(const auto c=std::dynamic_pointer_cast<SoundContext>(graph_.node(n).host))
+            if(std::any_of(p.claimed.contexts.begin(),p.claimed.contexts.end(),[&](const auto& x){return x->engine()==c->engine();}))outgoingShared.push_back(c);}
     std::map<Address,double> observed;for(const auto& [id,name]:p.names)for(const auto& q:next->host(id).parameters())observed[{id,q.id}]=next->host(id).parameterValue(q.id);
     // Compilation and all allocating preparation precede publication. The audio thread
     // adopts at one boundary; old plans and their hosts are reclaimed by service().
@@ -1122,6 +1233,10 @@ void Session::open(Prepared& p,bool seamless) {
                 else for(int16_t ch=0;ch<16;++ch)b->host->selectSound(sel[size_t(ch)],ch);}
             catch(const std::exception& e){std::fprintf(stderr,"oscairn: incoming sounds not selected: %s\n",e.what());}
             b->fresh.clear();}
+        // Its nodes on the playing shared engines select their sounds on their own channels (RFC 0021).
+        for(auto& c:p.claimed.contexts)try{if(!c->select())std::fprintf(stderr,"oscairn: an incoming shared sound not selected: the plugin's queue is full\n");}
+            catch(const std::exception& e){std::fprintf(stderr,"oscairn: an incoming shared sound not selected: %s\n",e.what());}
+        p.claimed.sounds.clear();
         nodes_.swap(p.names);observed_.swap(observed);parts_.swap(p.parts);wires_.swap(wires);disabled_.swap(disabled);rungOut_.swap(rungOut);leaving_.swap(leaving);nextPart_=p.nextPart;nextWire_=p.nextWire;padMap_=p.pads;key_=p.key;masterLevel_=p.masterLevel;masterPan_=p.masterPan;roles_.swap(p.roles);notices_.swap(p.notices);heldPads_={};scenes_.swap(p.scenes);untouched_.swap(p.untouched);scene_=p.selectedScene;mappingScene_=p.mappingScene;transition_.reset();pendingScene_.reset();nextScene_=p.nextScene;macros_.swap(p.macros);assignments_.swap(p.assignments);nextMacro_=p.nextMacro;pending_.clear();commandCount_=0;outputDrops_.clear();parameterRevisions_.clear();staged_=false;
         tempo_.store(p.tempo);clockSource_.store(p.clock);playing_.store(false);loaded_.swap(loaded);reused_+=p.reused;keptStates_+=p.kept;
         ++revision_;++sequence_;history_.swap(history);
@@ -1132,6 +1247,7 @@ void Session::open(Prepared& p,bool seamless) {
     for(auto& b:p.beside)if(b->chokes)for(auto& r:retiringSounds_)if(r.node==b->was){if(r.older)r.node=0;else{r.node=b->now;r.older=true;}}
     for(auto& b:p.beside)if(!b->old.empty() || graph_.ringOutRoutes(b->now))retiringSounds_.push_back({b->host,std::move(b->old),b->now});
     beside_+=p.beside.size();
+    for(const auto& c:outgoingShared)retireShared(dynamic_cast<const SoundContext&>(*c));
     // Its levels start at its own, as in a new Session, not ramp from the last Performance's (whose
     // routes ringing out have theirs frozen): every slot given afresh, the master's too.
     faderSlots_.clear();panSlots_.clear();sendSlots_.clear();freshSlots_.insert(std::begin(masterSlots),std::end(masterSlots));
@@ -1205,6 +1321,12 @@ std::map<std::string,NodeId> Session::addNodes(const json_value_s* document,cons
             if(member(a,"optional") && boolean(field(a,"optional"))){notices_.push_back(text(field(node,"name"))+": optional "+ref.path+" unavailable, so it plays without it: "+e.what());continue;}
             bad("missing sound asset: "+std::string(e.what()));}}
     std::map<std::string,NodeId> ids;
+    const auto wireList=array(field(document,"wires"),Graph::maxAudioConnections);
+    auto offMain=[&](V node,const std::string& key){ // an audio wire from another of its outputs than the main one
+        const auto outs=array(field(node,"outputs"),Graph::maxAudioChannels);
+        for(auto w:wireList)if(text(field(w,"kind"))=="audio" && text(field(w,"from"))==key &&
+            std::none_of(outs.begin(),outs.end(),[&](V p){return integer(field(p,"id"))==integer(field(w,"fromPort")) && (integer(field(p,"flags"))&CLAP_AUDIO_PORT_IS_MAIN);}))return true;
+        return false;};
     auto unique=[&](const std::string& name){return name.empty()?name:nextFree(name,[&](const std::string& n){return std::any_of(nodes_.begin(),nodes_.end(),[&](const auto& x){return x.second==n;});});};
     try{
         for(bool siblings:{false,true})for(auto node:nodes){
@@ -1217,10 +1339,20 @@ std::map<std::string,NodeId> Session::addNodes(const json_value_s* document,cons
             NodeId runtime;
             const auto snapshot=root/"nodes"/key;
             const auto shared=soundOf(node); // RFC 0021 slice 3
+            // Formed on their own: a node saved alone whose plugin plays here on an instance that can
+            // share plays a sound of it (one playing alone becomes its engine's first node).
+            std::shared_ptr<SoundContext> joined;
+            if(!siblings && !shared && std::none_of(nodes.begin(),nodes.end(),[&](V n){return text(field(n,"key"))!=key && text(field(n,"engine"))==key;}) && !offMain(node,key))
+                for(const auto& [n,x]:nodes_){
+                    const auto host=graph_.node(n).host;const auto* c=dynamic_cast<const SoundContext*>(host.get());
+                    const auto& d=host->descriptor();if(d.id!=id || d.path!=text(field(plugin,"pathHint")) || d.version!=text(field(plugin,"version")))continue;
+                    const auto e=c?c->engine():[&]{const auto t=SoundContext::lead(host);return t && SoundContext::room(*t)?lead(n):nullptr;}();
+                    if(e && (joined=joinEngine(e,snapshot,false)))break;}
             if(siblings){if(!ids.count(engine))bad("missing shared engine root");
                 try{runtime=shared?adopt(unique(name),savedSound(node,snapshot,nullptr,&graph_.host(ids.at(engine)))):addEffectContext(unique(name),ids.at(engine));}
                 catch(const std::exception& e){if(memoryRefusal(e))throw;runtime=adopt(unique(name),standIn(node,snapshot,refs[key],std::string("its shared engine is not here: ")+e.what()));}}
-            else runtime=resolvePlugin(node,snapshot,refs[key],[&](const std::string& p,const std::string& i){return add(unique(name),p,i);},[&](NodeId n){dropNode(n);},
+            else if(joined)runtime=adopt(unique(name),joined);
+            else runtime=resolvePlugin(node,snapshot,refs[key],[&](const std::string& p,const std::string& i){return addInstance(unique(name),p,i);},[&](NodeId n){dropNode(n);},
                                        [&](NodeId n){return graph_.host(n).descriptor().version;},[&](std::shared_ptr<PluginHost> h){return adopt(unique(name),std::move(h));});
             added.push_back(runtime);
             if(graph_.host(runtime).descriptor().id!=id)bad("saved plugin does not match the loaded plugin: "+name);
@@ -1229,14 +1361,15 @@ std::map<std::string,NodeId> Session::addNodes(const json_value_s* document,cons
             const auto host=graph_.node(runtime).host;
             if(room)host->setMemoryRoom(room);
             try{
-                if(!shared || (!dynamic_cast<const SoundContext*>(host.get()) && SoundContext::busParameter(*host)==CLAP_INVALID_ID))host->loadSnapshot((root/"nodes"/key).string()); // a stand-in, as saved
+                if(joined){}
+                else if(!shared || (!dynamic_cast<const SoundContext*>(host.get()) && SoundContext::busParameter(*host)==CLAP_INVALID_ID))host->loadSnapshot((root/"nodes"/key).string()); // a stand-in, as saved
                 else if(!siblings)graph_.share(runtime,savedSound(node,snapshot,host,nullptr));
             }catch(...){if(room)host->setMemoryRoom(0);throw;}
             if(room)host->setMemoryRoom(0);
-            auto& h=graph_.host(runtime);
+            auto& h=joined?*joined->engine()->host:graph_.host(runtime); // a node saved alone: its plugin's ports
             checkPorts(field(node,"inputs"),h.inputPorts());checkPorts(field(node,"outputs"),h.outputPorts());
             if(integer(field(node,"noteInputs"),16)!=h.noteInputPorts() || integer(field(node,"noteOutputs"),16)!=h.noteOutputPorts())bad("note port layout changed: "+name);
-            for(const auto& p:h.parameters())observed_[{runtime,p.id}]=h.parameterValue(p.id);
+            for(const auto& p:graph_.host(runtime).parameters())observed_[{runtime,p.id}]=graph_.host(runtime).parameterValue(p.id);
             if(!boolean(field(node,"enabled"))){disabled_.insert(runtime);rungOut_.insert(runtime);} // off, and never sounded here
             if(const auto role=roleFrom(node);!role.empty())roles_[runtime]=role;
             ids.emplace(key,runtime);
@@ -1446,7 +1579,7 @@ uint32_t Session::partFromSound(const std::string& id) {
 Control::PerformanceContents Session::performanceContents(const std::string& directory) {
     if(directory.empty() || directory.find('\0')!=std::string::npos)bad("invalid directory");
     const auto doc=document(fs::canonical(directory));V d=doc.get();
-    if(text(field(d,"format"))!="oscairn.performance" || integer(field(d,"version"))!=12)bad("unsupported format version");
+    if(text(field(d,"format"))!="oscairn.performance" || integer(field(d,"version"))!=13)bad("unsupported format version");
     PerformanceContents out;
     for(auto p:array(field(d,"parts"),256))out.parts.push_back({integer(field(p,"id")),text(field(p,"name")),text(field(field(p,"input"),"kind"))=="bus"});
     for(auto s:array(field(d,"scenes"),256))out.scenes.push_back({integer(field(s,"id")),text(field(s,"name"))});
@@ -1468,7 +1601,7 @@ Control::Imported Session::importPerformance(const std::string& directory,const 
     const auto root=fs::canonical(directory);validateTree(root);const auto doc=document(root);V d=doc.get();
     fields(d,{"format","version","info","libraries","transport","audioInputs","audioOutputs","nodes","wires","parts","mappings","pads","key","master","scenes","sceneUntouched","scene","controls","assignments","lock"});
     mergeLock(readLock(d));
-    if(text(field(d,"format"))!="oscairn.performance" || integer(field(d,"version"))!=12)bad("unsupported format version");
+    if(text(field(d,"format"))!="oscairn.performance" || integer(field(d,"version"))!=13)bad("unsupported format version");
     fields(field(d,"info"),{"id","name","description","tags","color","revision","parent","hash","origin"});
     // The parts that come: those chosen, and the buses they play through or send to, and theirs.
     const auto partList=array(field(d,"parts"),256);

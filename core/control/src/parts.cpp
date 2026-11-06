@@ -486,6 +486,8 @@ namespace oscairn
         for(auto it = leaving_.begin(); it != leaving_.end(); )
             if(panic || graph_.idle(*it, quiet, limit, held))
             {
+                // A node of a shared engine: its sound goes, the instance plays on for the others (RFC 0021).
+                if(const auto* c = dynamic_cast<const SoundContext*>(&graph_.host(*it))) retireShared(*c);
                 if(graph_.silent(*it, quiet)) keepWarm(*it); else graph_.remove(*it);
                 it = leaving_.erase(it); done = true;
             }

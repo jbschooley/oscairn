@@ -6765,7 +6765,7 @@
           "description": "Its role (graph.role), or null for none"
         },
         "shared": {
-          "description": "RFC 0021 slice 3: for a node playing one sound of an instance other nodes share (instruments.share), the engine's first node, the node's MIDI channel there (0 to 15) and the output bus its sound plays on (the instance's output port index); null for a node with an instance of its own",
+          "description": "RFC 0021 slice 3: for a node playing one sound of an instance other nodes share (formed on its own, or by instruments.share), the engine's first node, the node's MIDI channel there (0 to 15) and the output bus its sound plays on (the instance's output port index); null for a node with an instance of its own",
           "anyOf": [
             {
               "type": "null"

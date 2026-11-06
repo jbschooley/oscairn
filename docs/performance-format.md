@@ -1,4 +1,4 @@
-# Performance format, version 12
+# Performance format, version 13
 
 A Performance saves the graph, all prepared sounds and their MIDI-channel assignments,
 plugin settings/state, its wires and parts ([RFC 0011](rfcs/0011-performance-ui-and-editors.md)),
@@ -50,7 +50,7 @@ Required top-level fields:
 
 | Field | Meaning |
 | --- | --- |
-| `format`, `version` | Exactly `oscairn.performance` and integer `12` (version 6 added `assignments`; version 7 names controls by their device groups, `fader:N` replacing `slider:N`; version 8 adds each assignment's `part`, for a Sound's own; version 9 adds each part's `midiOut`; version 10 adds the `key` and each part's `key`; version 11 sums controls on one destination around its `base`, adds the `db` and `power` curves, the `aftertouch:N` and `breath:N` controls, the switches' fixed `button:N`, the `master` level and pan, each node's optional `role`, an asset's `optional`, and the `panic` assignment; version 12 adds each node's `sound`; earlier versions are refused) |
+| `format`, `version` | Exactly `oscairn.performance` and integer `13` (version 6 added `assignments`; version 7 names controls by their device groups, `fader:N` replacing `slider:N`; version 8 adds each assignment's `part`, for a Sound's own; version 9 adds each part's `midiOut`; version 10 adds the `key` and each part's `key`; version 11 sums controls on one destination around its `base`, adds the `db` and `power` curves, the `aftertouch:N` and `breath:N` controls, the switches' fixed `button:N`, the `master` level and pan, each node's optional `role`, an asset's `optional`, and the `panic` assignment; version 12 adds each node's `sound`; version 13 gives a node sharing an instance its instance's main output port's ID whatever its bus, and lets a node saved with `"sound":null` share an instance as it is read; earlier versions are refused) |
 | `info` | What the library shows ([RFC 0021](rfcs/0021-sounds-performances-and-library.md)): `id` (made at the first save, kept by every later one), `name` (the folder's name when none is set), `description`, up to 32 free `tags`, `color` (`#rrggbb`, or empty for none), and `revision` (made at every save) and `parent` (the revision it was saved over; empty for the first), and `hash`: SHA-256 of the contents, over the document without its info block followed by each file under `nodes/` by path with its own SHA-256, in path order. Names, tags and revisions are not contents. Equal hashes mean equal contents; the ID stays the identifier. `origin`: for an item imported into the user's own storage from a [library archive](library-archive.md), the archive's ID, the item's ID there and this copy's content hash as imported; `null` otherwise |
 | `transport` | Tempo and `internal` or `midi` clock source |
 | `audioInputs`, `audioOutputs` | Required logical graph ports: ID, channels, flags |
@@ -79,14 +79,32 @@ a part's instrument is an engine plus a sound. Each part keeps its own node; the
 sounds of one instance share an `engine` (the first of them, as effect contexts do), and each
 has a `sound`, `{"channel":C,"bus":B}`: the MIDI channel (0 to 15) whose selection is its sound,
 on which its notes and parameters reach the instance, and the output bus its sound plays on (the
-index of the instance's output port, 0 its main one), which is the node's one audio output. A
-node with an instance of its own has `"sound":null`. The engine's first node's folder holds its
-own values (a `parameters` snapshot) and, in `engine/`, the instance's whole snapshot, every
-sound and all 16 selections; each other node's folder holds its values only. Reading restores
-the instance from `engine/`, then gives each node the sound its channel selects there; another
-node whose channel or bus is taken, or whose channel selects nothing, opens as a stand-in. A Sound
-holds an engine whole or none of it: a part whose instrument shares an instance with another
-part is not saved as a Sound.
+index of the instance's output port, 0 its main one), which is the node's one audio output,
+saved under the ID of the instance's main output port whatever the bus (so the node's `outputs`
+list that one port, and its wires name it). A node with an instance of its own has
+`"sound":null`. The engine's first node's folder holds its own values (a `parameters` snapshot)
+and, in `engine/`, the instance's whole snapshot, every sound and all 16 selections; each other
+node's folder holds its values only. Reading restores the instance from `engine/`, then gives
+each node the sound its channel selects there; another node whose channel or bus is taken, or
+whose channel selects nothing, opens as a stand-in. At a Performance change a saved engine whose
+sounds fit beside a playing engine of the same plugin build goes into it whole, each node on a
+free channel and bus of that instance; otherwise it loads its own.
+
+Sharing is formed as a document is read, too: a node with `"sound":null` alone on its `engine`,
+whose plugin can share an instance (the Basic Synth), whose saved snapshot selects one sound on
+every channel and whose wires leave only its main output, plays its sound in an instance of the
+plugin with room, the Performance's own or the playing one's; failing that, one of several such
+nodes loads an instance of its own, with its state, that the next ones join, and so
+on, spilling to another instance when one has no free sound, channel or bus; one such node alone
+keeps an instance of its own. Saved again, those nodes have their `sound`s. Reading keeps, in the
+Performance's own shared instances, only the sounds its nodes play (and any a channel no node has
+still selects): sounds prepared and not selected, a joining node's included, are discarded. A converter writing
+an instance per part may therefore write each Basic Synth node plainly, with its own snapshot.
+
+A Sound holds each sharing part's sound on its own: a node sharing an instance is saved with
+`"sound":null`, as its own `engine`, its folder holding a snapshot of an instance holding that
+sound alone on its main output (oscairn.sound-snapshots draft 4) and its `outputs` the
+instance's, so loading it joins an instance where it fits, as above.
 
 The graph's channel routes and note connections are compiled from the wires on load, as
 during editing. A wire port of 4294967294 or 4294967295 marks an end a plugin replacement
@@ -154,7 +172,7 @@ and limits as a Performance, with `format` `oscairn.sound` and version 8 (versio
 | Field | Meaning |
 | --- | --- |
 | `format`, `version`, `info`, `libraries`, `lock` | As in a Performance |
-| `nodes` | The part's plugins only, keyed `node-1` onwards; none may share an engine with a plugin outside the part |
+| `nodes` | The part's plugins only, keyed `node-1` onwards; none may share an engine of effect contexts with a plugin outside the part; an instrument sharing an instance is saved on its own (above) |
 | `wires` | The wires with both ends among those nodes: user wires, and the part's own wires for their Mix (the part's wires are rebuilt from its chain on load, taking those settings) |
 | `part` | `chain` and `splits`, as in a Performance's part; no ID, name, input, output, fader or sends |
 | `mappings` | Those with both ends among the nodes |

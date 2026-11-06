@@ -97,6 +97,7 @@ namespace oscairn
             };
             std::vector<Context> contexts;
             std::vector<kick::clap::Event> contextIn; // this block's parameter events for its contexts, on their channels
+            std::vector<int16_t> heardOn; // each merged event's channel as it came (-1: as sent), so a listener hears it so
         };
 
         struct Key // orders merged notes: by time, then by source and position
@@ -774,6 +775,7 @@ namespace oscairn
                     stepOf[other] = int( plan->steps.size() );
                 }
                 step.contextIn.resize( kick::clap::Host::maxBlockEvents );
+                step.heardOn.resize( kick::clap::Host::maxProcessEvents );
             }
             // The ring-out buffer's four channels, after the node's own, while it is routed.
             step.ringOut      = std::any_of(audioRoutes_.begin(),audioRoutes_.end(),[&](const auto& r){return r.from.node==id && r.from.port==ringOutPort;});
@@ -1161,7 +1163,7 @@ namespace oscairn
             } );
             uint32_t merged=0;
             int16_t channel=-1; // the connection's into a shared engine's context, whose channel its events take
-            auto emit=[&](const auto& e){if(merged==step.merged.size())return false;step.merged[merged++]=channel<0?e:onChannel(e,channel);return true;};
+            auto emit=[&](const auto& e){if(merged==step.merged.size())return false;if(!step.heardOn.empty())step.heardOn[merged]=int16_t(channel<0?-1:channelOf(e));step.merged[merged++]=channel<0?e:onChannel(e,channel);return true;};
             // Stolen notes' fade steps go in among the events, at their times.
             auto fades=[&](uint32_t until){bool ok=true;for(auto& source:step.noteSources){channel=source.channel;ok=source.route->fade(until,emit) && ok;}channel=-1;return ok;};
             if(!overflow)for(const auto& key:plan->keys)
@@ -1212,8 +1214,12 @@ namespace oscairn
         auto finish=[&](Plan::Step& step)
         {
             if(listener && step.contexts.empty())listener->events(step.id,step.merged.data(),step.mergedCount,false);
-            else if(listener)for(const auto& c:step.contexts)for(uint32_t i=0;i<step.mergedCount;++i) // a shared engine's: each node what came on its channel
-                if(const int channel=channelOf(step.merged[i]);channel<0 || channel==c.channel)listener->events(c.id,&step.merged[i],1,false);
+            else if(listener)for(const auto& c:step.contexts)for(uint32_t i=0;i<step.mergedCount;++i) // a shared engine's: each node what came on its channel, as it came
+                if(const int channel=channelOf(step.merged[i]);channel<0 || channel==c.channel)
+                {
+                    if(step.heardOn[i]<0){listener->events(c.id,&step.merged[i],1,false);continue;}
+                    const auto heard=onChannel(step.merged[i],step.heardOn[i]);listener->events(c.id,&heard,1,false);
+                }
             const bool processed=step.processed;
             if(!processed) {
                 // A busy control gate can discard a release; reset when rendering resumes.
