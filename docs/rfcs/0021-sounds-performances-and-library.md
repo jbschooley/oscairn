@@ -66,6 +66,9 @@ Checked when built and tested; the sections below say how.
 - [x] Instances kept warm once rung out, bounded and evicted under pressure ([design](#free-instances-across-a-change-and-instances-kept-warm))
 - [x] The middle rule: a playing instance taken over only where keeping it warm would not fit ([design](#free-instances-across-a-change-and-instances-kept-warm))
 - [x] A failed load puts back the state of the playing instances it took over ([design](#free-instances-across-a-change-and-instances-kept-warm))
+- [ ] Native sound contexts across a change: the incoming node's sounds prepared beside the
+      outgoing ones in the playing instance, selected at the cue ([design](#native-sound-contexts-across-a-change))
+- [ ] A library click prepares the Performance, then switches to it once it is ready ([design](#native-sound-contexts-across-a-change))
 - [x] Audition of a Sound in a part and of a Performance in place of the open one, put back as
       it was or kept, from the Library app ([status](#audition))
 - [ ] 5. Seamless loading into a part (part transitions on RFC 0007's chain preparation)
@@ -669,7 +672,10 @@ keeps audio that several sounds use once), the Delay several effects
    instance has spills to a second instance, and so on.
 
 Slice 1 is built first: it needs no contract change and makes the cross-graph sharing that
-slices 2 and 3 also need. Slices 2 and 3 are not built.
+slices 2 and 3 also need. Slice 2 is designed in
+[its own section](#native-sound-contexts-across-a-change), more simply than above: one node,
+one instance, and the outgoing sounds ring out through the incoming node's chain. Slice 3 is not
+built.
 
 Slice 1 built 2026-11-01, for every Performance opened or prepared (`Graph::addEffectContext`
 from another graph; `Session::read`). Admission still counts the next Performance's plugins at
@@ -902,6 +908,104 @@ block 3.
 
 **Load preset** on a node is seamless where `sounds.prepare` accepts it (native contexts and
 pooled instruments) and an interrupting state load otherwise, as today.
+
+#### Native sound contexts across a change
+
+Proposed 2026-11-05. Measured first: a switch between two Performances of the same two Basic
+Synths (native contexts) uses none of them. The first switch loads two new instances, the middle
+rule keeping the outgoing two warm; switching back takes the warm ones, which hold their state and
+are reset. A note held through the first switch keeps its whole instance ringing out beside the new
+one. Every instrument with native contexts goes this way, sfizz and Octet included (both
+draft 5): a node is a whole instance, given a whole snapshot, and sfizz loads its samples again
+for every snapshot given to an instance.
+
+Slice 2, simply: **an incoming node whose plugin is playing in the outgoing Performance, with
+native contexts, takes over that instance and has its sounds prepared in it, beside the sounds
+playing there.** No instance and no process is started, no state is loaded, and the outgoing
+sounds keep playing and ring out in the same instance. One node is still one instance: at the cue
+the incoming node owns it, and the outgoing node's sounds are retired.
+
+**What becomes the prepared sound.** A node's saved state is its plugin's whole snapshot: every
+prepared sound (Default included) and which one each MIDI channel selects
+([RFC 0005](0005-sound-contexts.md#exclusive-snapshots)). All of it is prepared: each sound in the
+snapshot becomes a new context of the playing instance, with an ID of the instance's choosing, and
+the snapshot's 16 selections become the selections made at the cue. That needs the plugin to read
+its own snapshot without replacing what plays, a call of its own:
+[`oscairn.sound-snapshots`](0005-sound-contexts.md#preparing-a-snapshot-beside). A plugin without it
+falls back to the rules above.
+
+**Claiming an instance.** Before slice 1's contexts and before free instances, an incoming node
+claims a playing instance when all of these hold:
+
+- the node is its own engine's only node, and the instance is a plugin of its own (no effect
+  contexts, not a stand-in, not failed) with native sound contexts and `oscairn.sound-snapshots`;
+- it plays in the open Performance (not one still ringing out), as a node no other incoming node
+  claimed or took over;
+- the same plugin, build and placement, as for taking over a free instance (ID, version, path,
+  bundle digest, engine or worker);
+- the same ports: the instance's audio and note ports are the node's saved ones, checked before
+  anything is prepared;
+- the plugin prepares the snapshot. Preparing is all or nothing; a plugin with too few free
+  contexts, or refusing the snapshot, adds none, and the node goes on to the rules above (slice 1,
+  then an instance kept warm or free, then a fresh one).
+
+Sounding or silent does not matter: the outgoing sounds keep playing while the incoming ones are
+prepared beside them, and that is the point. Incoming nodes go in document order, each claiming
+the first playing node that fits. It applies to a load at the cue, to a cut, and to a Performance
+prepared ahead; not to an audition, which takes over nothing set aside.
+
+**With the middle rule and instances kept warm.** A claimed instance is neither kept warm nor
+offered as a free instance; the outgoing node it belonged to does not ring out on its own, since
+its instance plays on as the incoming node. Instances kept warm are left alone: a node that
+claims nothing goes on as before, an instance holding its state first. So switching back and forth
+between two Performances on the same native instruments keeps one instance per node, holding the
+sounds of whichever plays and, for a while, of the one before.
+
+**At the cue.** The instance leaves the outgoing graph and joins the incoming one under the node's
+new ID, as a taken-over instance does. Unlike one, its note connections come with it: the keyboard's
+connection to the outgoing node, and those from outgoing nodes ringing out (an arpeggiator), carry
+on as the incoming node's, the same ledger of held notes, so a held note keeps its voice and its
+sound and still gets its release, expressions and pedal (on a seamless change; a cut releases them,
+as a cut does). Just before the new graph is published each MIDI channel selects its incoming sound
+(all channels at once when they agree, so the plugin reports the new values), at the plugin's next
+block: the cue's block, or in a worker the one after. New notes then play the incoming sounds; the
+outgoing sounds play only the notes they already hold.
+
+**Ringing out and discarding.** The sounds the instance held before the incoming ones were
+prepared, the outgoing node's, are retired at the cue. Each time the Session is serviced it asks the
+plugin to discard them; the contract's own lifetime rule refuses while a sound is selected, queued,
+sounding or ringing, so each goes once its tails have finished. A retired sound the plugin no longer
+lists (a later snapshot replaced them all) is forgotten. The Default (ID 0) can never be discarded:
+it stays, unselected, holding the first sound it had. The outgoing sounds ring out through the
+incoming node's place in the graph, its effects, part level and outputs, not the outgoing
+node's: one instance has one place. Per-sound output buses would keep the outgoing chain; that is
+not built, and a change of effects behind a shared instrument changes its tail too.
+
+**When it fails.** A Performance that fails to read after an instance was claimed, or one prepared
+ahead and then let go, discards the sounds it prepared; nothing selected them, so they go at once,
+and what plays is untouched. Nothing playing is ever given a state.
+
+**Undo, save and editing.** Undo does not reach across a change, as before. Once the incoming node
+plays, its edits go to the instance's selected sounds, which are its own (ordinary parameter events
+edit the selected contexts); while it waits prepared ahead, edits to the playing node go to the
+outgoing sounds, which it still selects. A save writes the instance's whole snapshot. While the
+outgoing sounds still ring out they are written too, unselected; and the Default keeps the first
+sound it had, unselected. So a switched instance saves one more sound than a fresh load of the same
+Performance (a shortcut: the snapshot format requires the Default), and the same sound plays.
+Reopened, that file prepares beside an instance as any other.
+
+**Workers.** The snapshot prepared beside becomes the worker's recovery record (a copy): a worker
+restarted after a crash restores the incoming sounds and selections only. A crash loses its voices
+anyway; one between preparing ahead and the cue restores the incoming sounds early.
+
+**A library click** prepares the Performance first, as the Setlist does ahead
+(`performance.prepare`), and opens it (`library.load`) once that is done, both in the app's job off
+the interface thread; the engine answers the views between the two, and the open only publishes.
+A click while one is still being prepared replaces the open waiting behind it, so the last one
+clicked is the one opened. A Performance that would not fit beside the open one is not prepared
+first: it opens at the cue as a cut, as before. No protocol change: the two calls exist. The
+engine's control thread is still held while it reads a Performance; with native contexts that read
+loads no plugin and no state.
 
 ### Desktop
 

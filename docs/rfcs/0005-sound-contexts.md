@@ -21,10 +21,10 @@ Checked when built and tested; the sections below say how.
       discovery helper, the Basic Synth's factory presets and the presets indexed when plugins are scanned
 - [x] Presets listed in the desktop sound picker for every instrument
 - [ ] Automatic effect-chain transitions (with [RFC 0007](0007-effect-contexts.md))
-- [ ] Sounds prepared in a playing instance across a Performance change, and parts sharing one
-      instance ([RFC 0021, slices 2 and 3](0021-sounds-performances-and-library.md#fewer-instances-reusing-what-is-loaded))
-      (a free instance of a native engine is taken over whole, its snapshot loaded:
-      [RFC 0021](0021-sounds-performances-and-library.md#free-instances-across-a-change-and-instances-kept-warm))
+- [ ] A snapshot's sounds prepared beside the playing ones (`oscairn.sound-snapshots/draft-1`,
+      [below](#preparing-a-snapshot-beside)), by the SDK and the Basic Synth, and used across a
+      Performance change ([RFC 0021](0021-sounds-performances-and-library.md#native-sound-contexts-across-a-change))
+- [ ] Parts sharing one instance ([RFC 0021, slice 3](0021-sounds-performances-and-library.md#fewer-instances-reusing-what-is-loaded))
 
 ## Contract
 
@@ -148,6 +148,47 @@ location), and `sound-contexts-plugin.hpp`'s `Engine::preparePreset` implements
 `prepare_preset` from one hook, `readPreset(kind, location, loadKey, patch, error)`: read
 preset X into my Patch. [Plugin porting](../plugin-porting.md#presets) lists what each kind of
 plugin provides.
+
+## Preparing a snapshot beside
+
+Opening a Performance whose instrument already plays should not load that instrument again: its
+sounds are prepared in the playing instance, beside the playing ones, and selected at the cue
+([RFC 0021](0021-sounds-performances-and-library.md#native-sound-contexts-across-a-change)). The
+Performance holds the instrument's exclusive snapshot, in the plugin's own format, so only the
+plugin can read it. A second, optional extension, `oscairn.sound-snapshots/draft-1`, has the one
+call that needs, in [sound-contexts.h](../../core/clap-ext/include/oscairn-clap/sound-contexts.h):
+
+```c
+bool prepare(const clap_plugin_t*, const clap_istream_t* snapshot, uint32_t* selected,
+             char* message, uint32_t message_capacity);
+```
+
+- `snapshot` is a whole snapshot as the plugin's sound-contexts `state->save` writes it.
+- It runs as `prepare` does: on the main thread, concurrently with rendering, may read files, and
+  never touches a playing sound, a selection or a voice. It is not exclusive like `state->load`.
+- It validates the whole snapshot first, then prepares every sound in it, the snapshot's Default
+  included, as a new context with a fresh ID. All or nothing: with too few free contexts, or
+  anything invalid, it adds none, writes why into `message`, and returns false. It never steals.
+- `selected` (16 entries) receives, for each MIDI channel, the new ID that channel selects in the
+  snapshot. It selects nothing; the host selects them when it wants (at the cue).
+
+It is a separate extension, not a draft 6 of `oscairn.sound-contexts`, so draft-5 instruments
+built before it keep working unchanged; they are taken over whole instead (their snapshot loaded
+into a free instance). A plugin offers it only beside `oscairn.sound-contexts` with its `state`.
+The host retires the outgoing contexts afterwards with `discard`, which succeeds once each is idle.
+
+**In the SDK**, `sound-contexts-plugin.hpp`'s `Engine::prepareSnapshot` implements the call from
+the same `readPatch` the snapshot load uses, then `buildPreset` for each context, as for a preset.
+`readPatch` must therefore be safe on the main thread while rendering (it fills a patch that is not
+yet published). An instrument adds one table, `{Engine::prepareSnapshot}`, and returns it from
+`get_extension` for `OSCAIRN_EXT_SOUND_SNAPSHOTS`. To be fast, `buildPreset` should share what the
+contexts already hold: a sampler finding a sample another context loaded uses it instead of
+loading it again.
+
+The Default can never be discarded, so after a switch it stays, unselected, with the first sound
+it had; a snapshot of that instance saves it, and one sound more than a fresh load. Capacity counts
+it: the Basic Synth's eight slots hold the Default and seven others, so a one-sound node prepared
+beside needs two free.
 
 ## Basic Synth and Sampler
 
