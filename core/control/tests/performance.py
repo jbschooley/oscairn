@@ -56,11 +56,12 @@ try:
             jsonschema.validate(manifest, json.loads(schema.read_text()))
             protocol = json.loads((schema.parent / 'control-protocol.schema.json').read_text())
             jsonschema.Draft202012Validator.check_schema(protocol)
+            protocol_validator = jsonschema.Draft202012Validator(protocol)  # once: jsonschema.validate rechecks the whole schema each call
             for method in ['performance.save', 'performance.load', 'performance.prepare']:
-                jsonschema.validate({'jsonrpc':'2.0','id':1,'method':method,
-                                     'params':{'directory':'/tmp/example'}}, protocol)
+                protocol_validator.validate({'jsonrpc':'2.0','id':1,'method':method,
+                                             'params':{'directory':'/tmp/example'}})
             for key in ['saved', 'loaded', 'prepared']:
-                jsonschema.validate({'jsonrpc':'2.0','id':1,'result':{key:True}}, protocol)
+                protocol_validator.validate({'jsonrpc':'2.0','id':1,'result':{key:True}})
             # A live graph.get with a part and its wires (RFC 0011).
             part = rpc('parts.add', {'name': 'Check'})['result']['part']
             split = rpc('parts.addSplit', {'part': part, 'index': 0})['result']['split']
@@ -82,9 +83,9 @@ try:
             rpc('master.set', {'level': 0.8, 'pan': 0.25})
             rpc('graph.role', {'node': synth, 'role': 'insertion-a'})
             rpc('graph.role', {'node': synth, 'role': 'chorus'}, True)
-            jsonschema.validate({'jsonrpc': '2.0', 'id': 1, 'method': 'graph.role', 'params': {'node': synth, 'role': None}}, protocol)
+            protocol_validator.validate({'jsonrpc': '2.0', 'id': 1, 'method': 'graph.role', 'params': {'node': synth, 'role': None}})
             rpc('master.set', {'level': 3, 'pan': 0}, True)
-            jsonschema.validate({'jsonrpc': '2.0', 'id': 1, 'method': 'master.set', 'params': {'level': 0.8, 'pan': 0.25}}, protocol)
+            protocol_validator.validate({'jsonrpc': '2.0', 'id': 1, 'method': 'master.set', 'params': {'level': 0.8, 'pan': 0.25}})
             graph = rpc('graph.get')['result']
             assert graph['master'] == {'level': 0.8, 'pan': 0.25} and graph['scenes'][0]['master'] == {'level': 1, 'pan': 0}
             assert next(n for n in graph['nodes'] if n['id'] == synth)['role'] == "insertion-a"
@@ -92,12 +93,12 @@ try:
             assert graph['controls'][0]['targets'][0]['curve'] == fader and graph['controls'][0]['targets'][1]['curve'] == power
             assert graph['parts'][0]['name'] == 'Check' and any(w['owner'] == 'part' for w in graph['wires'])
             assert graph['parts'][0]['chain'] == [{'split': split}] and graph['parts'][0]['splits'][0]['lanes'][1]['level'] == 0.5
-            jsonschema.validate({'jsonrpc':'2.0','id':1,'result':graph}, protocol)
+            protocol_validator.validate({'jsonrpc':'2.0','id':1,'result':graph})
             for method, params in [('parts.addSplit', {'part': part, 'index': 0}), ('parts.lane', {'part': part, 'split': split, 'lane': 0, 'mute': True}),
                                    ('parts.addLane', {'part': part, 'split': split}), ('parts.removeLane', {'part': part, 'split': split, 'lane': 0}),
                                    ('parts.removeSplit', {'part': part, 'split': split})]:
-                jsonschema.validate({'jsonrpc':'2.0','id':1,'method':method,'params':params}, protocol)
-            jsonschema.validate({'jsonrpc':'2.0','id':1,'result':{'split':1}}, protocol)
+                protocol_validator.validate({'jsonrpc':'2.0','id':1,'method':method,'params':params})
+            protocol_validator.validate({'jsonrpc':'2.0','id':1,'result':{'split':1}})
             # Saved with the split, the manifest matches the file schema.
             rpc('graph.commit')
             rpc('performance.save', {'directory': str(saved) + '-split'})
