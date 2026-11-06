@@ -230,7 +230,7 @@ namespace
 
         // Audio thread: a block every period, its last sample kept with when it was rendered.
         std::atomic<float> heard{0};
-        std::atomic<int64_t> heardAt{0};
+        std::atomic<int64_t> heardAt{0}, longestGap{0}; // the longest time between two blocks' ends
         std::thread audio([&] {
             std::array<float, block> l{}, r{};
             float* out[2]{l.data(), r.data()};
@@ -240,7 +240,9 @@ namespace
                 forbidAllocation = true;
                 s.process(nullptr, 0, out, 2, block);
                 forbidAllocation = false;
-                heard = l[block - 1]; heardAt = Clock::now().time_since_epoch().count();
+                const auto now = Clock::now().time_since_epoch().count();
+                if(heardAt) longestGap = std::max<int64_t>(longestGap, now - heardAt);
+                heard = l[block - 1]; heardAt = now;
                 next += std::chrono::nanoseconds(int64_t(period * 1e9));
                 std::this_thread::sleep_until(next);
             }
@@ -311,6 +313,9 @@ namespace
         s.setControllerWake({});
         const auto sound = spread(toSound), ui = spread(toClient);
         std::printf("latency: MIDI to the rendered level, median %.2f ms, worst %.2f ms (a block is %.2f ms), over %zu moves\n", sound.median, sound.worst, period * 1000, toSound.size());
+        std::string slow;
+        for(size_t i = 0; i < toSound.size(); ++i) if(toSound[i] > 10) { char x[32]; std::snprintf(x, sizeof x, " %zu: %.2f ms;", i, toSound[i]); slow += x; }
+        std::printf("latency: the longest time between blocks %.2f ms; heard after 10 ms:%s\n", ms(Clock::duration(longestGap.load())), slow.empty() ? " none" : slow.c_str());
         std::printf("latency: MIDI to a client's cached value, median %.2f ms, worst %.2f ms (a display frame is 16.67 ms), over %zu moves\n", ui.median, ui.worst, toClient.size());
         // Within about one block (a move landing just after a block starts waits for the next);
         // generous on the worst, for a loaded test machine.
