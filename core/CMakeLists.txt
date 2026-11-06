@@ -32,6 +32,7 @@ target_include_directories(oscairn_clap_headers INTERFACE clap-host/third_party/
 add_library(oscairn_engine STATIC
     engine/src/chain.cpp
     engine/src/graph.cpp
+    engine/src/sound_context.cpp
     engine/src/AudioHelpers.cpp
     engine/src/harmony.cpp
     engine/src/PreparedInstrument.cpp
@@ -296,6 +297,11 @@ add_test(NAME voice-budget-workers COMMAND oscairn-voice-budget-test $<TARGET_FI
 set_tests_properties(voice-budget-workers PROPERTIES TIMEOUT 120 ENVIRONMENT "OSCAIRN_FIXTURE_VOICE_US=60;OSCAIRN_PLUGIN_WORKER=$<TARGET_FILE:oscairn-plugin-worker>;OSCAIRN_WORKER_BUDGET_US=50000")
 # RFC 0018 step 4: oscairn.voice-budget, the Basic Synth's one pool across sounds and the
 # fixture's layered elements (it sets its own environment).
+add_executable(oscairn-shared-engine-test engine/tests/shared_engine.cpp)
+target_link_libraries(oscairn-shared-engine-test PRIVATE oscairn_engine)
+target_include_directories(oscairn-shared-engine-test PRIVATE clap-host/tests)
+add_test(NAME shared-engine COMMAND oscairn-shared-engine-test $<TARGET_FILE:oscairn_basic_synth>)
+set_tests_properties(shared-engine PROPERTIES TIMEOUT 60)
 add_executable(oscairn-voice-extension-test engine/tests/voice_extension.cpp)
 target_link_libraries(oscairn-voice-extension-test PRIVATE oscairn_engine)
 target_include_directories(oscairn-voice-extension-test PRIVATE clap-host/tests)

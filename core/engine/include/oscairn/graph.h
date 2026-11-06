@@ -91,8 +91,12 @@ namespace oscairn
         /// still using it holds it too, and its last owner frees it on the main thread.
         std::shared_ptr<PluginHost> release( NodeId node );
         NodeId addEffectContext(NodeId source);
-        /// A host already made, such as a plugin's stand-in when it is not here (RFC 0006).
+        /// A host already made, such as a plugin's stand-in when it is not here (RFC 0006), or a
+        /// SoundContext (sound_context.h): a node playing one sound of an engine several share.
         NodeId add( std::shared_ptr<PluginHost> host );
+        /// RFC 0021 slice 3: `node` plays a SoundContext of the instance it held (it was the
+        /// engine's first node); its routes from ports the context does not have go. At commit().
+        void share( NodeId node, std::shared_ptr<PluginHost> context );
         /// A context of another graph's engine (a replacement taking over a playing engine, RFC 0021).
         NodeId addEffectContext(const Graph& graph, NodeId source);
         /// The first node sharing this one's engine, not counting `except`.
@@ -456,6 +460,8 @@ namespace oscairn
         uint64_t replacementSerial_=0;
 
         std::map<NodeId, Node>                nodes_;
+        // RFC 0021 slice 3: each shared engine's cost as the budget measures it, kept across plans.
+        mutable std::map<const PluginHost*, std::shared_ptr<Activity>> engineCosts_;
         std::map<std::pair<NodeId, NodeId>,std::shared_ptr<NoteRoute>> noteEdges_;
         std::map<std::pair<NodeId, NodeId>,std::vector<NoteZone>> noteZones_;
         std::set<std::pair<NodeId, NodeId>> draining_;
