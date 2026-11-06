@@ -50,7 +50,8 @@ struct Recorder : Graph::Listener {
         count=0;
     }
 };
-struct Run { std::array<NodeId,3> nodes{};std::vector<float> totals,resting;uint64_t misses=0;std::array<Graph::NoteCost,3> costs{};Recorder recorder; };
+// decided: each node's notes given up (stolen or choked), as the engine counts them deciding, after each block.
+struct Run { std::array<NodeId,3> nodes{};std::vector<float> totals,resting;uint64_t misses=0;std::array<Graph::NoteCost,3> costs{};std::array<std::vector<uint64_t>,3> decided;Recorder recorder; };
 
 void play(const char* plugin,uint32_t n,double budget,Run& run){
     Graph g(48000,frames);
@@ -80,6 +81,7 @@ void play(const char* plugin,uint32_t n,double budget,Run& run){
         forbidAllocation=false;
         check(ok,"rendered");
         run.recorder.drain(block);
+        for(uint32_t p=0;p<3;++p){const auto c=g.noteCost(node[p]);run.decided[p].push_back(c.stolen+c.hardChokes);}
         float total=0;for(const auto id:node)total+=float(g.host(id).statistics().lastMicroseconds);
         if(block>=first)run.totals.push_back(total);
         if(block>=5 && block<20)run.resting.push_back(total);
@@ -114,14 +116,24 @@ int main(int argc,char** argv){try{
     // higher priority, loses the fewest and keeps its reserve.
     int lastQuiet=-1,firstLoud=-1;std::array<size_t,3> lost{};size_t cut=0;std::string order;
     uint32_t loudAt=UINT32_MAX;bool passedOver=false; // a released or quiet note sounding when a loud held one was given up, given up only later
+    // A plugin hears a note given up when its step next runs: a part's notes given up for a later
+    // part's note, or choked after the block, reach it in the next block, where a choke can replace
+    // a fade not yet begun. So a note heard given up in a block may have been decided before it: at
+    // the earliest, when the first of its node's notes not yet heard given up was.
+    auto decidedFrom=[&](size_t p,uint32_t heard){
+        size_t before=0;for(const auto& t:held.recorder.steals)before+=t.node==held.nodes[p] && t.block<heard;
+        uint32_t b=0;while(b<heard && held.decided[p][b]<=before)++b;
+        return b;
+    };
     for(size_t i=0;i<held.recorder.steals.size();++i){
         const auto& s=held.recorder.steals[i];
         const auto note=held.recorder.notes.at({s.node,s.id});
         const bool loud=!note.released && note.velocity>=.5;
         cut+=s.hard;order+=s.hard?(loud?'L':'Q'):(loud?'l':'q');for(size_t p=0;p<3;++p)if(s.node==held.nodes[p])order+="abc"[p];order+=' ';
-        for(size_t p=0;p<3;++p)lost[p]+=s.node==held.nodes[p];
+        size_t part=0;for(size_t p=0;p<3;++p)if(s.node==held.nodes[p])part=p;
+        ++lost[part];
         if(loud){if(firstLoud<0)firstLoud=int(i);loudAt=std::min(loudAt,s.block);}
-        else{lastQuiet=int(i);passedOver|=note.block<loudAt && s.block>loudAt;}
+        else{lastQuiet=int(i);passedOver|=note.block<loudAt && decidedFrom(part,s.block)>loudAt;}
     }
     std::printf("given up: %zu (A %zu, B %zu, C %zu), %zu of them choked before any fade; the last released or quiet one at %d, the first loud held one at %d\n",held.recorder.steals.size(),lost[0],lost[1],lost[2],cut,lastQuiet,firstLoud);
     std::printf("in order (q released or quiet, l loud, then the part; capitals choked before any fade): %s\n",order.c_str());
