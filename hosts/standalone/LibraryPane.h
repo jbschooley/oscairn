@@ -31,6 +31,28 @@ namespace oscairn::standalone
     };
     /// The export's choices in a dialog over `over`; `start` gets them when Export is pressed.
     void showExport(Engine& engine, juce::Component* over, const juce::String& title, bool performance, std::function<void(bool editedSounds, const std::string& key)> start);
+    /// An archive's install choices: locked or as the user's own, and which items, all ticked; who
+    /// signed it and any plugin builds from an unknown source or a revoked key (RFC 0006). The
+    /// items scroll; the options above and the buttons below stay in view.
+    class InstallChoices : public juce::Component
+    {
+    public:
+        explicit InstallChoices(const Control::Archive& archive);
+        juce::ToggleButton own{"Into my Sounds and Performances, to edit"}, locked{"As a locked library"};
+        juce::Label heading{{}, "Items"}, code; // code: plugin builds from an unknown source or a revoked key
+        juce::Viewport view;                    // holds list, the items' column
+        juce::Component list;
+        juce::OwnedArray<juce::ToggleButton> items;
+        std::vector<std::string> ids;
+        juce::TextButton go{"Install"}, cancel{"Cancel"};
+        bool asks = false; // installing says yes to code from an unknown source
+        void paint(juce::Graphics&) override;
+        void resized() override;
+
+    private:
+        juce::String signer_; juce::Rectangle<int> signerArea_;
+        int codeLines_ = 0;
+    };
     /// Who signed an archive (RFC 0006), as the install dialog says it.
     juce::String describeSigner(const Control::Signer& signer);
 

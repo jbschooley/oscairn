@@ -90,6 +90,7 @@ namespace oscairn::standalone
         juce::DialogWindow::LaunchOptions options;
         options.dialogTitle = title;
         options.content.setOwned(content); options.componentToCentreAround = over; options.useNativeTitleBar = true; options.resizable = false;
+        options.dialogBackgroundColour = ink(Ink::Background); // JUCE's default is light grey, under the theme's text
         auto* dialog = options.launchAsync();
         content->cancel.onClick = [dialog] { dialog->exitModalState(0); };
         content->go.onClick = [dialog, content, then = std::move(start)] {
@@ -97,6 +98,56 @@ namespace oscairn::standalone
             dialog->exitModalState(0);
             then(edited, key);
         };
+    }
+
+    InstallChoices::InstallChoices(const Control::Archive& a)
+    {
+        juce::String unknown, revoked;
+        for(const auto& c : a.code)
+        {
+            const auto what = text(c.name + " " + c.version + " (" + c.platform + ")");
+            if(c.status == "revoked") { revoked << "\n  " << what; ++codeLines_; }
+            else if(c.status != "trusted") { unknown << "\n  " << what << (c.status == "unsigned" ? ", unsigned" : ", signed by unknown key " + text(c.key)); ++codeLines_; asks = true; }
+        }
+        juce::String warning;
+        if(asks) warning << "These plugins run code from an unknown source:" << unknown;
+        if(revoked.isNotEmpty()) warning << (asks ? "\n" : "") << "Signed by a revoked key, so not installed:" << revoked;
+        if(warning.isNotEmpty()) { code.setText(warning, juce::dontSendNotification); codeLines_ += asks + revoked.isNotEmpty(); addAndMakeVisible(code); }
+        if(asks) go.setButtonText("Install anyway");
+        signer_ = describeSigner(a.signer);
+        own.setRadioGroupId(1); locked.setRadioGroupId(1);
+        (a.kind == "library" ? locked : own).setToggleState(true, juce::dontSendNotification);
+        for(const auto& i : a.items)
+        {
+            auto* b = items.add(new juce::ToggleButton(text(i.name.empty() ? "Untitled" : i.name) + (i.kind == "sound" ? "  (Sound)" : "  (Performance)")));
+            b->setToggleState(true, juce::dontSendNotification); list.addAndMakeVisible(b); ids.push_back(i.id);
+        }
+        view.setViewedComponent(&list, false);
+        view.setScrollBarsShown(true, false);
+        for(auto* c : std::initializer_list<juce::Component*>{&own, &locked, &heading, &view, &go, &cancel}) addAndMakeVisible(c);
+        setSize(420, std::min(630, int(a.items.size()) * 30 + 210 + codeLines_ * 18));
+    }
+
+    void InstallChoices::resized()
+    {
+        auto area = getLocalBounds().reduced(16, 12);
+        signerArea_ = area.removeFromTop(30);
+        own.setBounds(area.removeFromTop(30)); locked.setBounds(area.removeFromTop(30));
+        area.removeFromTop(6); heading.setBounds(area.removeFromTop(24));
+        auto bar = area.removeFromBottom(30);
+        if(codeLines_) { area.removeFromBottom(6); code.setBounds(area.removeFromBottom(codeLines_ * 18)); }
+        go.setBounds(bar.removeFromRight(120)); bar.removeFromRight(8); cancel.setBounds(bar.removeFromRight(100));
+        view.setBounds(area);
+        const bool scrolls = items.size() * 30 > area.getHeight();
+        list.setSize(area.getWidth() - (scrolls ? view.getScrollBarThickness() : 0), items.size() * 30);
+        for(int i = 0; i < items.size(); ++i) items[i]->setBounds(0, i * 30, list.getWidth(), 30);
+    }
+
+    void InstallChoices::paint(juce::Graphics& g)
+    {
+        g.fillAll(ink(Ink::Background));
+        g.setColour(ink(Ink::Muted));
+        drawInked(g, signer_, signerArea_, juce::Font(juce::FontOptions(textSize(TextRole::Body, std::max(1, desktopMode(*this))))));
     }
 
     juce::String describeSigner(const Control::Signer& s)
@@ -839,62 +890,11 @@ namespace oscairn::standalone
                 juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon, "Not installed", text(error));
                 return;
             }
-            struct Choose : juce::Component
-            {
-                juce::ToggleButton own{"Into my Sounds and Performances, to edit"}, locked{"As a locked library"};
-                juce::Label heading{{}, "Items"}, code; // code: plugin builds from an unknown source or a revoked key (RFC 0006)
-                juce::String signer; juce::Rectangle<int> signerArea; // who signed the archive (RFC 0006)
-                juce::OwnedArray<juce::ToggleButton> items;
-                std::vector<std::string> ids;
-                juce::TextButton go{"Install"}, cancel{"Cancel"};
-                int codeLines = 0;
-                bool asks = false; // installing says yes to code from an unknown source
-                explicit Choose(const Control::Archive& a)
-                {
-                    juce::String unknown, revoked;
-                    for(const auto& c : a.code)
-                    {
-                        const auto what = text(c.name + " " + c.version + " (" + c.platform + ")");
-                        if(c.status == "revoked") { revoked << "\n  " << what; ++codeLines; }
-                        else if(c.status != "trusted") { unknown << "\n  " << what << (c.status == "unsigned" ? ", unsigned" : ", signed by unknown key " + text(c.key)); ++codeLines; asks = true; }
-                    }
-                    juce::String warning;
-                    if(asks) warning << "These plugins run code from an unknown source:" << unknown;
-                    if(revoked.isNotEmpty()) warning << (asks ? "\n" : "") << "Signed by a revoked key, so not installed:" << revoked;
-                    if(warning.isNotEmpty()) { code.setText(warning, juce::dontSendNotification); codeLines += asks + revoked.isNotEmpty(); addAndMakeVisible(code); }
-                    if(asks) go.setButtonText("Install anyway");
-                    signer = describeSigner(a.signer);
-                    own.setRadioGroupId(1); locked.setRadioGroupId(1);
-                    (a.kind == "library" ? locked : own).setToggleState(true, juce::dontSendNotification);
-                    for(const auto& i : a.items)
-                    {
-                        auto* b = items.add(new juce::ToggleButton(text(i.name.empty() ? "Untitled" : i.name) + (i.kind == "sound" ? "  (Sound)" : "  (Performance)")));
-                        b->setToggleState(true, juce::dontSendNotification); addAndMakeVisible(b); ids.push_back(i.id);
-                    }
-                    for(auto* c : std::initializer_list<juce::Component*>{&own, &locked, &heading, &go, &cancel}) addAndMakeVisible(c);
-                    setSize(420, std::min(630, int(a.items.size()) * 30 + 210 + codeLines * 18));
-                }
-                void resized() override
-                {
-                    auto area = getLocalBounds().reduced(16, 12);
-                    signerArea = area.removeFromTop(30);
-                    own.setBounds(area.removeFromTop(30)); locked.setBounds(area.removeFromTop(30));
-                    area.removeFromTop(6); heading.setBounds(area.removeFromTop(24));
-                    auto bar = area.removeFromBottom(30);
-                    if(codeLines) { area.removeFromBottom(6); code.setBounds(area.removeFromBottom(codeLines * 18)); }
-                    go.setBounds(bar.removeFromRight(120)); bar.removeFromRight(8); cancel.setBounds(bar.removeFromRight(100));
-                    for(auto* b : items) b->setBounds(area.removeFromTop(30));
-                }
-                void paint(juce::Graphics& g) override
-                {
-                    g.setColour(ink(Ink::Muted));
-                    drawInked(g, signer, signerArea, juce::Font(juce::FontOptions(textSize(TextRole::Body, std::max(1, desktopMode(*this))))));
-                }
-            };
-            auto* content = new Choose(archive);
+            auto* content = new InstallChoices(archive);
             juce::DialogWindow::LaunchOptions options;
             options.dialogTitle = "Install " + text(archive.name);
             options.content.setOwned(content); options.componentToCentreAround = safe.getComponent(); options.useNativeTitleBar = true; options.resizable = false;
+            options.dialogBackgroundColour = ink(Ink::Background); // JUCE's default is light grey, under the theme's text
             auto* dialog = options.launchAsync();
             content->cancel.onClick = [dialog] { dialog->exitModalState(0); };
             content->go.onClick = [safe, dialog, content, file] {

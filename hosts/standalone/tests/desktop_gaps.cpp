@@ -310,6 +310,27 @@ int main(int argc, char** argv)
                       "signed with the key chosen: " + signedArchive.signer.status + " " + engine.soundMessage());
                 const auto said = standalone::describeSigner(signedArchive.signer);
                 check(said.contains(standalone::fingerprint(made.id)) && said.contains("not a key you trust"), "the install dialog names its signer by fingerprint: " + said.toStdString());
+                // A large archive's install dialog: the theme's background, the items scrolling in a
+                // viewport between the options and the buttons, every row full height.
+                {
+                    Control::Archive big = signedArchive;
+                    big.items.clear();
+                    for(int i = 0; i < 40; ++i) { Control::LibraryItem item; item.id = "item-" + std::to_string(i); item.kind = "sound"; item.name = "Sound " + std::to_string(i); big.items.push_back(item); }
+                    Control::Signer build; build.name = "Synth"; build.version = "1.0"; build.platform = "macos-arm64"; build.status = "unsigned";
+                    big.code = {build};
+                    standalone::InstallChoices install(big);
+                    standalone::setDesktopMode(install, 1); install.resized();
+                    const auto view = install.view.getBoundsInParent(), go = install.go.getBoundsInParent(), cancel = install.cancel.getBoundsInParent(), code = install.code.getBoundsInParent();
+                    bool inList = install.items.size() == 40, fullRows = true;
+                    for(auto* b : install.items) { inList = inList && b->getParentComponent() == &install.list; fullRows = fullRows && b->getHeight() == 30; }
+                    check(install.getHeight() <= 630 && install.view.getViewedComponent() == &install.list && inList && fullRows && install.list.getHeight() == 40 * 30 && view.getHeight() < install.list.getHeight(),
+                          "the items scroll in a viewport, every row full height");
+                    check(install.getLocalBounds().contains(go) && install.getLocalBounds().contains(cancel) && view.getBottom() <= code.getY() && code.getBottom() <= go.getY() && install.go.getButtonText() == "Install anyway",
+                          "the warning and the buttons stay in view below the items");
+                    const auto image = install.createComponentSnapshot(install.getLocalBounds());
+                    check(image.getPixelAt(2, 2) == standalone::ink(standalone::Ink::Background), "the dialog paints the theme's background");
+                    snapshot(install, "install-many");
+                }
                 // The keys in Settings: names and fingerprints, never a private key.
                 standalone::Settings settings(engine);
                 standalone::setDesktopMode(settings, 1); settings.setSize(640, 560);
