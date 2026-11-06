@@ -70,6 +70,12 @@ namespace oscairn
         // RFC 0005 (choke_retiring): at the next block, before the selections made after this call, the
         // sounds retiring then fade out over the choke time into the buffer's last two channels. Control thread.
         virtual bool chokeRetiring() { return false; }
+        // oscairn.voice-budget (RFC 0018): the plugin gives up its own voices within a limit; the
+        // calls as kick::clap::Host's. A host without it (a plugin in a worker, LV2) has none.
+        virtual bool voiceBudget() const noexcept { return false; }
+        virtual bool honorsVolume() const noexcept { return false; }
+        virtual void setVoiceLimits(uint32_t, const oscairn_voice_budget_context_t*, uint32_t) noexcept {}
+        virtual uint32_t voiceReport(double& voiceCost, const oscairn_voice_budget_note_t*& notes, uint32_t& count) const noexcept { voiceCost = 0; notes = nullptr; count = 0; return 0; }
         virtual bool supportsState() const noexcept { return false; }
         // The plugin's own window (CLAP gui, RFC 0019), shown by the process hosting the plugin.
         // Control thread. showWindow opens it titled `title`, or titles and raises it; false closes

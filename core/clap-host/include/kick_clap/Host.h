@@ -6,6 +6,7 @@
 #include <oscairn-clap/effect-contexts.h>
 #include <oscairn-clap/assets.h>
 #include <oscairn-clap/memory.h>
+#include <oscairn-clap/voice-budget.h>
 #include <array>
 #include <cstdint>
 #include <cstring>
@@ -204,6 +205,16 @@ public:
     // Its choke_retiring, queued before the selections made after it: the sounds retiring then fade
     // out into the buffer's last two channels. False when the plugin does not ring out or its queue is full.
     bool chokeRetiringSounds();
+    // oscairn.voice-budget (RFC 0018): the plugin gives up its own voices within a limit; and
+    // whether it said every voice follows CLAP's volume expression. Any thread.
+    bool voiceBudget() const noexcept;
+    bool honorsVolume() const noexcept;
+    // Audio thread, between process() calls: the limit and contexts the next process() gives the
+    // plugin first (set_limits), copied; up to OSCAIRN_VOICE_BUDGET_MAX_CONTEXTS.
+    void setVoiceLimits(uint32_t limit, const oscairn_voice_budget_context_t* contexts, uint32_t count) noexcept;
+    // Audio thread, after process(): the voices the plugin said were sounding, its estimate of one
+    // voice's cost, and its notes' loudness, as its last process() left them; 0 without the extension.
+    uint32_t voiceReport(double& voiceCost, const oscairn_voice_budget_note_t*& notes, uint32_t& count) const noexcept;
     bool loaded() const noexcept;
     bool faulted() const noexcept;
     const std::string& error() const noexcept;

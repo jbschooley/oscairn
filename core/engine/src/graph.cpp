@@ -80,6 +80,7 @@ namespace oscairn
             bool processed = false, started = false;
             float cost = 0; // the microseconds its last rendering took in this process (whether a wave is worth the helpers)
             bool budgeted = false; // its notes are in the shared budget (VoiceBudget), which measures its cost per note
+            oscairn_voice_budget_context_t voiceLimits{}; uint32_t voiceLimit = 0; // audio thread: what set_limits last gave the plugin (oscairn.voice-budget)
         };
 
         struct Key // orders merged notes: by time, then by source and position
@@ -1067,6 +1068,21 @@ namespace oscairn
             }
             step.mergedCount=merged;
         };
+        // oscairn.voice-budget (RFC 0018 step 4): a plugin that gives up its own voices gets, between
+        // blocks, the voices the budget leaves it, with its part's reserve and priority for the
+        // contexts it plays (one entry, for the selected ones), when any of it changed.
+        auto limitVoices=[&](Plan::Step& step)
+        {
+            if(!step.budgeted || !step.activity->ownVoices)return;
+            double cost;const oscairn_voice_budget_note_t* notes;uint32_t count;
+            const uint32_t voices=step.host->voiceReport(cost,notes,count);
+            oscairn_voice_budget_context_t part{};part.context=OSCAIRN_VOICE_BUDGET_SELECTED;
+            for(const auto& source:step.noteSources)if(!source.draining && source.zones.count){part.reserve=source.zones.zones[0].reserve;part.priority=source.zones.zones[0].priority;break;}
+            const uint32_t limit=plan->budget.voiceLimit(*step.activity,voices);
+            if(limit==step.voiceLimit && !std::memcmp(&part,&step.voiceLimits,sizeof part))return;
+            step.voiceLimit=limit;step.voiceLimits=part;step.activity->voiceLimit=limit;
+            step.host->setVoiceLimits(limit,&part,1);
+        };
         auto start=[&](Plan::Step& step){return step.host->startProcess(step.in.data(),step.audioInputs,step.out.data(),step.audioOutputs,frames,step.merged.data(),step.mergedCount,transport);};
         auto render=[&](Plan::Step& step){step.processed=step.host->process(step.in.data(),step.audioInputs,step.out.data(),step.audioOutputs,frames,step.merged.data(),step.mergedCount,transport);};
         // The shared budget (RFC 0018): its limit for this block, and what the plugins took.
@@ -1113,7 +1129,25 @@ namespace oscairn
                 const float took=float(step.host->statistics().lastMicroseconds);
                 budgetTotal+=took;
                 if(!step.budgeted)budgetOthers+=took;
-                else if(processed){uint32_t live=0;for(const auto& source:step.noteSources)live+=source.route->live();step.activity->observe(took,live);}
+                else if(processed)
+                {
+                    uint32_t live=0;for(const auto& source:step.noteSources)live+=source.route->live();
+                    auto& a=*step.activity;
+                    double each;const oscairn_voice_budget_note_t* notes;uint32_t count;
+                    const uint32_t voices=step.host->voiceReport(each,notes,count);
+                    a.ownVoices=step.host->voiceBudget();a.honorsVolume=step.host->honorsVolume();
+                    if(!a.ownVoices)a.observe(took,live);
+                    else
+                    {
+                        // Its voices, each costed alike, a note at its share of them, and each note's
+                        // loudness in place of its velocity (by its ID, else its channel and key).
+                        if(each>0 && a.perNote.load(std::memory_order_relaxed)<0)a.seedNote.store(float(each),std::memory_order_relaxed);
+                        a.observe(took,voices);a.perNoteScale=live?std::max(1.f,float(voices)/float(live)):1.f;
+                        a.overLimit=a.voiceLimit && voices>a.voiceLimit?a.overLimit+1:0;
+                        for(uint32_t i=0;i<count;++i)for(auto& source:step.noteSources)for(auto& slot:source.route->notes)
+                            if(slot.used && (notes[i].note_id>=0?slot.id==notes[i].note_id:slot.address.channel==notes[i].channel && slot.key==notes[i].key))slot.velocity=notes[i].loudness;
+                    }
+                }
             }
             step.paramCount = 0;step.paramDrops=0;step.releaseCount=0;step.releaseOverflow=false;
             uint32_t endedCount=0;const auto* ended=step.host->outputEvents(endedCount);
@@ -1171,13 +1205,13 @@ namespace oscairn
             }
         };
         if(!parallel_.load(std::memory_order_relaxed))
-            for(auto& step:plan->steps){prepare(step);render(step);finish(step);}
+            for(auto& step:plan->steps){prepare(step);limitVoices(step);render(step);finish(step);}
         else for(uint32_t first=0;const auto end:plan->waves)
         {
             // A wave: each plugin in a worker starts as soon as its inputs are ready; the others
             // render meanwhile, here and on the audio helpers; then every one finishes, in plan order.
             uint32_t locals=0;
-            for(uint32_t i=first;i<end;++i){auto& step=plan->steps[i];prepare(step);step.started=start(step);if(!step.started)plan->local[locals++]=i;}
+            for(uint32_t i=first;i<end;++i){auto& step=plan->steps[i];prepare(step);limitVoices(step);step.started=start(step);if(!step.started)plan->local[locals++]=i;}
             struct Job
             {
                 Plan* plan;uint32_t frames;const clap_event_transport_t* transport;

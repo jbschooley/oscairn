@@ -148,11 +148,63 @@ the current headers.
 | Declared memory (`memory.h`, `oscairn.memory/draft`, [RFC 0025](rfcs/0025-resource-budgets.md#declarations)) | Lets a device near its memory limit refuse the plugin before its large allocation, and sets a tighter worker memory limit. Details [below](#declared-memory). | KICK memory test fixture |
 | Native sound contexts (`sound-contexts.h`, [RFC 0005](rfcs/0005-sound-contexts.md)) | Multitimbral playing: up to 8 prepared sounds in one instance, each MIDI channel choosing one, held notes keeping theirs, without an extra instance per sound. New native Oscairn instruments implement it. | Basic Synth, Sampler |
 | Snapshots prepared beside (`sound-contexts.h`, `oscairn.sound-snapshots/draft-3`, [RFC 0005](rfcs/0005-sound-contexts.md#preparing-a-snapshot-beside)) | Instant Performance changes: the next Performance's sounds for an instrument already playing are prepared in that instance, beside the playing ones, and selected at the cue, instead of loading its whole snapshot into an instance. Without it a native instrument is taken over whole, its snapshot loaded (for a sampler, its samples again). With its optional `ring_out` and `choke_retiring`, the outgoing sounds ring out through the outgoing Performance's effects and level instead of the incoming one's. Details [below](#instant-performance-changes). | Basic Synth |
+| Voice budget (`voice-budget.h`, `oscairn.voice-budget/draft-1`, [RFC 0018](rfcs/0018-voice-budget-and-stealing.md#step-4-status)) | For instruments that can give up one voice of a note (a layer, an element, a unison copy): the host gives the instance a voice limit from the shared CPU budget, and each sound context its part's reserve and priority, and the instrument chooses which of its voices to give up, instead of the host fading whole notes. Details [below](#voice-budget). | Basic Synth; test fixture (`voice_fixture.cpp`, layered) |
 | Native effect contexts (`effect-contexts.h`, [RFC 0007](rfcs/0007-effect-contexts.md)) | Many independent effect slots sharing one engine's memory, with tails reported. The next Performance's effects become new contexts of an engine already playing while the old ones ring out, so an engine outlives its first context and must refuse `create` past its capacity. Without `oscairn.memory`, the bytes its `resources` call reports are counted toward the memory budget. | Delay |
 | Parameter-target lanes (`param-target.h`, [RFC 0002](rfcs/0002-param-target.md)) | For sequencers and modulators: change other plugins' parameters at an exact sample in the same block (parameter locks). | Step Sequencer |
 | Free-running beat (`beat.h`, event space `oscairn.beat`, [RFC 0032](rfcs/0032-arpeggiator.md#step-3-status)) | For arpeggiators and clocks: a beat position the same for every plugin in a block that runs at the tempo while the transport is stopped, so parts keep time and start together. Query the event space through CLAP's event registry; an event arrives at sample 0 of every block. | Test fixture (`follower_fixture.cpp`) |
 | Harmony (`harmony.h`, event space `oscairn.harmony` and host extension `oscairn.harmony/draft`, [RFC 0033](rfcs/0033-script-block.md#host-side-status)) | For harmonizers, chord memories and scripts: the part's key and scale, and the chord held on the part with its root, type, bass and keys. Query the event space for an event in the first block and at each change, at the sample of the note that made it; read the last on the main thread through the host extension. | Test fixture (`follower_fixture.cpp`) |
 | Sound assets (`assets.h`, [RFC 0009](rfcs/0009-sound-assets-and-dependencies.md)) | For samplers: the host resolves sample files, and Performances list their samples so they can be checked and moved between machines. `oscairn.asset-dependencies/draft-2` adds `optional(index)`: an asset the plugin can do without (a fallback it embeds) does not stop a Performance loading when missing; the plugin's resolve of it fails and the host shows a notice. The host still accepts draft 1, every asset required. | Sampler |
+
+### Voice budget
+
+With a CPU budget set, the host shares it among every plugin by measured cost (RFC 0018): for a
+plugin without this extension it fades out and chokes whole notes, released and quiet ones
+first. A plugin with `oscairn.voice-budget/draft-1` (`voice-budget.h`) gives up its own voices
+instead, within a limit the host sets between blocks. What it implements, in
+`oscairn_plugin_voice_budget_t` (every entry required):
+
+- `honors_volume` (main thread): true when every voice follows `CLAP_NOTE_EXPRESSION_VOLUME`.
+  Under pressure the host fades a held note of a plugin that says so before one that does not.
+- `set_limits(limit, contexts, count)` (audio thread, never during `process`): keep at most
+  `limit` voices from the next block (0: the whole pool), and per sound context its own `limit`,
+  `reserve` (voices never taken for another context's), `priority` (0 to 10, lower gives way
+  first) and `flags` (`OSCAIRN_VOICE_BUDGET_MONO`, `_LEGATO`). An entry for
+  `OSCAIRN_VOICE_BUDGET_SELECTED` covers every context a MIDI channel selects; a context named by
+  none has no limit or reserve and priority 0. Copy what you need; at the next block's start,
+  fade out voices past a lowered limit; a new note past it takes a voice the same way. Fade what
+  you give up (2 to 5 ms); cut only when the pool has no free slot, a voice already fading first.
+- `active_voices(&cost)` (audio thread, after `process`): the voices sounding, fading ones
+  included, and your estimate of one voice's cost in microseconds a block (0: none). The host
+  measures your block's time either way and shares it per voice.
+- `notes(out, capacity)` (audio thread, after `process`): each note still sounding, by the
+  address the host gave it (note ID, port, channel, key), with its voices and its loudness now:
+  the largest of its voices' gains, linear, 1 at full level (envelope, velocity and volume
+  expression; not the patch's output level). The host compares notes across plugins by it.
+- Send `NOTE_END` when a note's last voice ends, not each voice's.
+
+The order to give voices up in: never a held voice of a context marked mono or legato, nor one
+of a context at or under its reserve unless the new voice is that context's; released voices
+before held ones; the new voice's own context first; lower priority first; the quietest, then
+the oldest. `voice-budget-plugin.hpp` (MIT) implements it: keep a `voices::Limits`, describe
+each voice as a `voices::Candidate` (context, selected, held, fading, mono, loudness, age) and
+call `voices::victim`, which returns the voice to give up or -1; `voices::Report` collects
+`notes`. An engine playing several regions or elements a note (a sfizz-style sampler) gives
+each its own `Candidate` and loudness, so a quiet element goes before another note's only one.
+An instrument built on `sound-contexts-plugin.hpp` gets all of it from its `Engine`: return
+`oscairn_plugin_voice_budget_t{Engine::honorsVolume, Engine::setLimits, Engine::activeVoices,
+Engine::voiceNotes}` from `get_extension`, and optionally provide `loudness(voice)` (default:
+velocity, volume expression and choke fade), `mono(context)` (a sound that plays one note at a
+time), `voiceCost()`, and `static constexpr bool volumeExpressions = true` when `render`
+multiplies by `amplitude()`. The Engine also uses this order when its pool is full, with or
+without the extension.
+
+Today every part has its own instance within a Performance, so several contexts share one
+pool only during a Performance change (the outgoing sounds ringing out beside the incoming
+ones), and the host sends one entry, for the selected contexts, with the part's reserve and
+priority and no mode flags (parts have no mono or legato mode yet). Per-part reserves inside one
+instance take effect once parts share an instance (RFC 0021). The host supports the extension
+for plugins in the engine's process; a plugin in a worker process (RFC 0010) is budgeted as one
+without it.
 
 ### Instant Performance changes
 

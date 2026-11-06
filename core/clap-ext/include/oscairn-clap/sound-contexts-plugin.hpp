@@ -42,6 +42,17 @@
 // restored(), forget any pins the instrument holds itself, such as a ringing tail's. A refused
 // load changes nothing and doesn't call restored(), so do not forget them in snapshotLoading(true).
 //
+// oscairn.voice-budget (voice-budget.h, RFC 0018): building an oscairn_plugin_voice_budget_t
+// {Engine::honorsVolume, Engine::setLimits, Engine::activeVoices, Engine::voiceNotes} and returning
+// it from get_extension, the instrument keeps within the voices the host gives it and each
+// context's limit, reserve, priority and mode, giving voices up in that header's order (from
+// voice-budget-plugin.hpp): a voice past a limit fades out over the choke time; one is cut only when
+// the pool has no free slot, a voice already fading first. It may provide
+//   double loudness(const Voice&)  the voice's level now, linear (default: velocity, volume and choke fade)
+//   bool mono(const Context&)      the sound plays one note at a time (default: false)
+//   double voiceCost()             microseconds a voice costs a block (default: 0, no estimate)
+//   static constexpr bool volumeExpressions = true;   when render multiplies by amplitude()
+//
 // MIDI pitch bend and the mod wheel (CC 1) are kept per channel; each voice follows its
 // channel's values smoothly in VoiceBase::bend and modWheel once render calls followControls(v)
 // every sample. The plugin chooses what they do (its bend range, the wheel's target).
@@ -50,6 +61,7 @@
 #include <clap/clap.h>
 #include <clap/factory/preset-discovery.h>
 #include <oscairn-clap/sound-contexts.h>
+#include <oscairn-clap/voice-budget-plugin.hpp>
 
 #include <algorithm>
 #include <array>
@@ -112,6 +124,7 @@ namespace oscairn::contexts
         std::atomic<uint32_t> selectionHead{0}, selectionTail{0};
         uint32_t nextContext = 1; // main thread, never reuse IDs
         uint32_t chokeFrames = 144; // 3 ms at 48 kHz; setSampleRate keeps it 3 ms
+        oscairn::voices::Limits voiceLimits; // audio thread: oscairn.voice-budget's, as set_limits gave them
         double controlGlide = 1.0 - std::exp(-1.0 / 240.0); // per sample: a 5 ms time constant at 48 kHz
 
         // From activate: a choke fades a voice out over 3 ms instead of cutting it (RFC 0018).
@@ -175,15 +188,76 @@ namespace oscairn::contexts
             auto& c = contexts[slot];
             // A note that starts no voice still ends, so the host can release its route.
             if(!derived().accepts(c.patch, note)) { endNote(note.note_id, note.channel, note.key); return; }
+            // Within the host's limits: past the context's own, or the instance's, a voice fades out.
+            const auto settings = voiceLimits.of(c.id, c.selected.load(std::memory_order_relaxed) != 0);
+            if(settings.limit && sounding(slot) >= settings.limit) fadeOut(voiceVictim(c.id, c.id));
+            if(voiceLimits.limit && sounding() >= voiceLimits.limit) fadeOut(voiceVictim(c.id));
             Voice* voice = nullptr;
             for(auto& v : voices) if(!v.active) { voice = &v; break; }
-            if(!voice) { voice = &voices[0]; for(auto& v : voices) if(v.started < voice->started) voice = &v; finishVoice(*voice); }
+            if(!voice)
+            {
+                // The pool is full: cut a voice, one already fading out (the furthest gone) first.
+                for(auto& v : voices) if(v.chokeLength && (!voice || v.chokeLeft < voice->chokeLeft)) voice = &v;
+                if(!voice) if(const int i = voiceVictim(c.id); i >= 0) voice = &voices[size_t(i)];
+                if(!voice) { voice = &voices[0]; for(auto& v : voices) if(v.started < voice->started) voice = &v; }
+                finishVoice(*voice);
+            }
             *voice = Voice{};
             voice->active = voice->held = true; voice->key = note.key; voice->channel = note.channel; voice->noteId = note.note_id;
             voice->context = slot; voice->velocity = note.velocity; voice->started = ++notesStarted;
             voice->bend = channelBend[note.channel]; voice->modWheel = channelModWheel[note.channel]; // no glide at the start
             c.users.fetch_add(1, std::memory_order_relaxed); c.voices.fetch_add(1, std::memory_order_relaxed);
             derived().start(*voice, c);
+        }
+        // oscairn.voice-budget: the voices sounding and not fading out, in one context's slot or all.
+        uint32_t sounding(uint32_t slot = contextCapacity) const
+        { uint32_t n = 0; for(const auto& v : voices) n += v.active && !v.chokeLength && (slot == contextCapacity || v.context == slot); return n; }
+        // The voice to give up, by voice-budget.h's order, for a new one in context `incoming` (an ID,
+        // or oscairn::voices::none), from context `only` alone unless none; -1: none may go.
+        int voiceVictim(uint32_t incoming, uint32_t only = oscairn::voices::none)
+        {
+            std::array<oscairn::voices::Candidate, VoiceCount> candidates{};
+            for(size_t i = 0; i < VoiceCount; ++i) if(const auto& v = voices[i]; v.active)
+            {
+                const auto& c = contexts[v.context];
+                candidates[i] = {c.id, c.selected.load(std::memory_order_relaxed) != 0, v.held, v.chokeLength != 0, derived().mono(c), derived().loudness(v), v.started};
+            }
+            return oscairn::voices::victim(VoiceCount, [&](size_t i) { return voices[i].active ? &candidates[i] : nullptr; }, voiceLimits, incoming, only);
+        }
+        void fadeOut(int i)
+        {
+            if(i < 0) return;
+            auto& v = voices[size_t(i)]; v.held = false;
+            if(!v.chokeLength) v.chokeLength = v.chokeLeft = chokeFrames;
+        }
+        // At a block's start: past a limit set_limits lowered, voices fade out.
+        void keepWithinLimits()
+        {
+            for(uint32_t slot = 0; slot < ContextCapacity; ++slot)
+            {
+                const auto& c = contexts[slot]; if(!c.prepared) continue;
+                const auto settings = voiceLimits.of(c.id, c.selected.load(std::memory_order_relaxed) != 0);
+                while(settings.limit && sounding(slot) > settings.limit) { const int i = voiceVictim(oscairn::voices::none, c.id); if(i < 0) break; fadeOut(i); }
+            }
+            while(voiceLimits.limit && sounding() > voiceLimits.limit) { const int i = voiceVictim(oscairn::voices::none); if(i < 0) break; fadeOut(i); }
+        }
+        double loudness(const Voice& v) const { return v.velocity * amplitude(v, 0); }
+        bool mono(const Context&) const { return false; }
+        double voiceCost() const { return 0; }
+        static constexpr bool volumeExpressions = false;
+        static bool honorsVolume(const clap_plugin_t*) { return Derived::volumeExpressions; }
+        static void setLimits(const clap_plugin_t* p, uint32_t limit, const oscairn_voice_budget_context_t* list, uint32_t count)
+        { self(p).voiceLimits.set(limit, list, count); }
+        static uint32_t activeVoices(const clap_plugin_t* p, double* cost)
+        {
+            auto& s = self(p); if(cost) *cost = s.derived().voiceCost();
+            uint32_t n = 0; for(const auto& v : s.voices) n += v.active; return n;
+        }
+        static uint32_t voiceNotes(const clap_plugin_t* p, oscairn_voice_budget_note_t* notes, uint32_t capacity)
+        {
+            auto& s = self(p); oscairn::voices::Report<VoiceCount> report;
+            for(const auto& v : s.voices) if(v.active) report.add(v.noteId, 0, v.channel, v.key, s.derived().loudness(v));
+            return report.write(notes, capacity);
         }
         static bool matches(const Voice& v, int32_t id, int16_t key, int16_t channel)
         { return v.active && (id < 0 || v.noteId == id) && (key < 0 || v.key == key) && (channel < 0 || v.channel == channel); }
@@ -295,6 +369,7 @@ namespace oscairn::contexts
             s.output = process->out_events; s.eventTime = 0;
             struct ClearOutput { Engine& s; ~ClearOutput() { s.output = nullptr; s.ringOut = nullptr; } } clearOutput{s}; // ring_out gives one process() its buffer
             s.applySelections(process->out_events);
+            s.keepWithinLimits();
             const uint32_t frames = process->frames_count;
             const uint32_t count = process->in_events->size(process->in_events);
             uint32_t done = 0;

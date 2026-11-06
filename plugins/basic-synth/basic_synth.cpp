@@ -13,6 +13,8 @@
 // host's block size. Its factory presets are listed through CLAP preset discovery and
 // prepared as sound contexts (oscairn.sound-contexts draft 5). Sounds no channel selects any more
 // ring out into the host's ring-out buffer when it gives one (oscairn.sound-snapshots draft 3).
+// Within the voices the host gives it (oscairn.voice-budget draft 1) it gives voices up itself,
+// released and quiet ones first, and reports each note's level from its envelope.
 
 #include <clap/clap.h>
 #include <oscairn-clap/preset-discovery-plugin.hpp>
@@ -121,6 +123,8 @@ namespace
         bool accepts(const Patch&,const clap_event_note_t&){return true;}
         void start(Voice& v,Context& c){v.increment=440.0*std::pow(2.0,(v.key-69)/12.0)/sampleRate;v.outputBus=static_cast<uint32_t>(c.patch.values[7]);}
         void release(Voice& v){v.stage=Stage::Release;}
+        static constexpr bool volumeExpressions=true; // render multiplies by amplitude()
+        double loudness(const Voice& v) const{return v.level*v.velocity*amplitude(v,0);}
         void selectedGlobally(Context& next,const clap_output_events_t* out);
         void applyParam(const clap_event_header_t* header);
         void render(const clap_process_t* process,uint32_t from,uint32_t to);
@@ -398,6 +402,7 @@ namespace
     const clap_plugin_state_t snapshot{Synth::saveSnapshot,Synth::loadSnapshot};
     const oscairn_plugin_sound_contexts_t soundContexts{Synth::capacity,Synth::get,Synth::prepare,Synth::select,Synth::discard,&snapshot,Synth::preparePreset};
     const oscairn_plugin_sound_snapshots_t soundSnapshots{Synth::prepareSnapshot,Synth::setRingOut,Synth::chokeRetiring};
+    const oscairn_plugin_voice_budget_t voiceBudget{Synth::honorsVolume,Synth::setLimits,Synth::activeVoices,Synth::voiceNotes};
 
     const clap_plugin_t* create()
     {
@@ -424,6 +429,7 @@ namespace
         s->plugin.get_extension    = []( const clap_plugin_t*, const char* id ) -> const void* {
             if(std::strcmp(id,OSCAIRN_EXT_SOUND_CONTEXTS)==0)return &soundContexts;
             if(std::strcmp(id,OSCAIRN_EXT_SOUND_SNAPSHOTS)==0)return &soundSnapshots;
+            if(std::strcmp(id,OSCAIRN_EXT_VOICE_BUDGET)==0)return &voiceBudget;
             if( std::strcmp( id, CLAP_EXT_AUDIO_PORTS ) == 0 )
                 return &audioPorts;
             if( std::strcmp( id, CLAP_EXT_NOTE_PORTS ) == 0 )

@@ -88,6 +88,10 @@ namespace oscairn
             bool preparesSnapshots() const noexcept override {return host.preparesSoundSnapshots();}
             bool ringsOut() const noexcept override {return host.ringsOut();}
             bool chokeRetiring() override {return host.chokeRetiringSounds();}
+            bool voiceBudget() const noexcept override {return host.voiceBudget();}
+            bool honorsVolume() const noexcept override {return host.honorsVolume();}
+            void setVoiceLimits(uint32_t limit,const oscairn_voice_budget_context_t* contexts,uint32_t count) noexcept override {host.setVoiceLimits(limit,contexts,count);}
+            uint32_t voiceReport(double& voiceCost,const oscairn_voice_budget_note_t*& notes,uint32_t& count) const noexcept override {return host.voiceReport(voiceCost,notes,count);}
             std::array<uint32_t,16> prepareSnapshot(const std::string& directory) override {
                 // What saveSnapshot wrote for a native engine: "state 1" and its state bundle.
                 const auto path=std::filesystem::path(directory);

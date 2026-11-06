@@ -38,6 +38,10 @@ struct VoiceBudget
     // the one before, notes are choked from the next block's start until the estimate, scaled to
     // the measurement, fits.
     void measured(float measured) noexcept;
+    // oscairn.voice-budget (step 4): the voices a node that gives up its own may keep from the next
+    // block, `voices` sounding now: those and what the soft limit leaves at its cost per voice, at
+    // most a quarter fewer; 0 for no limit (no budget, or no cost measured).
+    uint32_t voiceLimit(const Graph::Activity& node,uint32_t voices) const noexcept;
 private:
     struct Victim { const Entry* entry=nullptr; size_t slot=0; };
     enum Counting { Kept, Fading, Ending }; // the notes counted: not given up; and those fading; and those choked, until they end
@@ -45,7 +49,7 @@ private:
     Victim choose(bool reserved) noexcept;
     Victim fadingNote() const noexcept;
     float reserves() noexcept;
-    void choke(float scale,float extra,const NoteRoute* self,uint32_t time,bool reserved) noexcept;
+    void choke(float scale,float extra,const NoteRoute* self,uint32_t time,bool atNoteOn) noexcept;
 };
 
 // One audio-thread ledger per connection; shared by successive compiled plans.
@@ -62,7 +66,7 @@ struct NoteRoute
     struct Note { clap_event_note_t address{}; int32_t id=-1; bool used=false,held=false,midi=false,stolen=false; int16_t key=-1; int8_t zone=-1; uint8_t source=untaggedSource;
         double volume=1; int32_t fadeAt=-1; uint8_t faded=0;
         bool voiceEnded=false; // its voice ended (NOTE_END) while the key was held
-        float velocity=0; }; // as it was sent on, for the budget's quietest first
+        float velocity=0; }; // as it was sent on, or the plugin's report of its loudness (oscairn.voice-budget), for the budget's quietest first
     static constexpr uint8_t fadeSteps=8;
     std::array<Note,kick::clap::Host::maxBlockEvents> notes{};
     std::array<std::array<uint8_t,16>,16> pedal{};
@@ -311,17 +315,22 @@ inline float VoiceBudget::estimate(Counting counting) const noexcept
 }
 // The next note to give up, in RFC 0018's order: released notes, then held notes beyond their
 // part's reserve, its highest and lowest held keys last; within each, the part of lower priority
-// first, then the quietest, then the oldest. reserved: held notes within a reserve may go too.
+// first, a plugin's that says it honors the volume expression the fade lowers before one's that
+// does not, then the quietest (by the plugin's report of each note's loudness where it gives one,
+// else velocity), then the oldest. reserved: held notes within a reserve may go too. A plugin
+// that gives up its own voices (step 4) is left to its voice limit while it keeps within it.
 // Only notes the plugin takes as CLAP notes, which a choke can address, of nodes whose notes cost.
 inline VoiceBudget::Victim VoiceBudget::choose(bool reserved) noexcept
 {
     for(auto& g:groups)g={};
     for(const auto& e:entries)for(const auto& slot:e.route->notes)if(slot.used && !slot.stolen && slot.held)
     {auto& g=groups[e.group];++g.held;g.low=std::min(g.low,slot.key);g.high=std::max(g.high,slot.key);}
-    Victim best;int bestRank=0;uint8_t bestPriority=0;const NoteRoute::Note* chosen=nullptr;
+    Victim best;int bestRank=0;uint8_t bestPriority=0;bool bestHonors=false;const NoteRoute::Note* chosen=nullptr;
     for(const auto& e:entries)
     {
         if(e.cost->noteNow()<=0)continue; // giving its notes up frees nothing measured
+        if(e.cost->ownVoices && e.cost->overLimit<=Graph::Activity::overLimitBlocks)continue;
+        const bool honors=e.cost->honorsVolume;
         const auto& g=groups[e.group];
         const NoteZone* z=e.zones && e.zones->count?&e.zones->zones[0]:nullptr;
         const uint16_t reserve=z?z->reserve:0;const uint8_t priority=z?z->priority:0;
@@ -336,8 +345,8 @@ inline VoiceBudget::Victim VoiceBudget::choose(bool reserved) noexcept
                 rank=g.held>2 && (slot.key==g.low || slot.key==g.high)?2:1;
             }
             const bool better=!chosen || (rank!=bestRank?rank<bestRank:priority!=bestPriority?priority<bestPriority:
-                slot.velocity!=chosen->velocity?slot.velocity<chosen->velocity:slot.id<chosen->id);
-            if(better){best={&e,i};chosen=&slot;bestRank=rank;bestPriority=priority;}
+                rank && honors!=bestHonors?honors:slot.velocity!=chosen->velocity?slot.velocity<chosen->velocity:slot.id<chosen->id);
+            if(better){best={&e,i};chosen=&slot;bestRank=rank;bestPriority=priority;bestHonors=honors;}
         }
     }
     return best;
@@ -372,13 +381,15 @@ inline VoiceBudget::Victim VoiceBudget::fadingNote() const noexcept
     return best;
 }
 // Past the hard limit: notes choked without a fade, fading ones first; a note not yet fading counted.
-inline void VoiceBudget::choke(float scale,float extra,const NoteRoute* self,uint32_t time,bool reserved) noexcept
+// At note-on a reserve goes only when reserves alone pass the limit; after a block (measured),
+// never a reserve.
+inline void VoiceBudget::choke(float scale,float extra,const NoteRoute* self,uint32_t time,bool atNoteOn) noexcept
 {
     while(estimate(Fading)*scale+extra>limit)
     {
         auto v=fadingNote();
         if(!v.entry)v=choose(false);
-        if(!v.entry && reserved && reserves()*scale+extra>limit)v=choose(true); // reserves alone pass the hard limit
+        if(!v.entry && atNoteOn && reserves()*scale+extra>limit)v=choose(true); // reserves alone pass the hard limit
         if(!v.entry)return;
         auto& note=v.entry->route->notes[v.slot];
         if(!note.stolen)v.entry->cost->hardChokes.fetch_add(1,std::memory_order_relaxed); // a fading note was counted when it was stolen
@@ -391,7 +402,8 @@ inline void VoiceBudget::admit(NoteRoute& self,uint32_t time) noexcept
     const Entry* mine=nullptr;
     for(const auto& e:entries)if(e.route==&self){mine=&e;break;}
     if(!mine)return;
-    const float cost=mine->cost->noteNow();
+    // A plugin that gives up its own voices keeps the new note within its limit itself.
+    const float cost=mine->cost->ownVoices?0:mine->cost->noteNow();
     while(estimate(Kept)+cost>soft*limit)
     {
         const auto v=choose(false);
@@ -400,6 +412,15 @@ inline void VoiceBudget::admit(NoteRoute& self,uint32_t time) noexcept
         v.entry->cost->stolen.fetch_add(1,std::memory_order_relaxed);
     }
     choke(1,cost,&self,time,true);
+}
+inline uint32_t VoiceBudget::voiceLimit(const Graph::Activity& node,uint32_t voices) const noexcept
+{
+    const float each=node.noteNow()/node.perNoteScale;
+    if(limit<=0 || each<=0)return 0;
+    const float room=(soft*limit-estimate(Kept))/each;
+    // At most a quarter fewer a block: one block's estimate, a measurement held up from outside
+    // in it, should not take a sound down to its loudest voices.
+    return uint32_t(std::max({1.f,std::floor(float(voices)*.75f),float(voices)+std::floor(room)}));
 }
 inline void VoiceBudget::measured(float total) noexcept
 {

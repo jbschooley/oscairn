@@ -294,6 +294,14 @@ add_test(NAME voice-budget-parallel COMMAND oscairn-voice-budget-test $<TARGET_F
 set_tests_properties(voice-budget-parallel PROPERTIES TIMEOUT 120 ENVIRONMENT "OSCAIRN_FIXTURE_VOICE_US=60;OSCAIRN_AUDIO_HELPERS=3;OSCAIRN_HELPERS_WORTH_US=0")
 add_test(NAME voice-budget-workers COMMAND oscairn-voice-budget-test $<TARGET_FILE:oscairn-voice-fixture>)
 set_tests_properties(voice-budget-workers PROPERTIES TIMEOUT 120 ENVIRONMENT "OSCAIRN_FIXTURE_VOICE_US=60;OSCAIRN_PLUGIN_WORKER=$<TARGET_FILE:oscairn-plugin-worker>;OSCAIRN_WORKER_BUDGET_US=50000")
+# RFC 0018 step 4: oscairn.voice-budget, the Basic Synth's one pool across sounds and the
+# fixture's layered elements (it sets its own environment).
+add_executable(oscairn-voice-extension-test engine/tests/voice_extension.cpp)
+target_link_libraries(oscairn-voice-extension-test PRIVATE oscairn_engine)
+target_include_directories(oscairn-voice-extension-test PRIVATE clap-host/tests)
+add_dependencies(oscairn-voice-extension-test oscairn-voice-fixture)
+add_test(NAME voice-extension COMMAND oscairn-voice-extension-test $<TARGET_FILE:oscairn_basic_synth> $<TARGET_FILE:oscairn-voice-fixture>)
+set_tests_properties(voice-extension PROPERTIES TIMEOUT 120)
 
 # Sanitizers slow rendering several times over; there the test checks containment, not timing.
 # CI's virtual machines cannot keep real time either (GitHub sets CI).

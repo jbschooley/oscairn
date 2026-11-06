@@ -375,8 +375,18 @@ namespace oscairn
             // stand in until then), and the notes it gave up: faded out, and choked at the hard limit.
             std::atomic<float> rest{-1}, perNote{-1}, seedRest{-1}, seedNote{-1};
             std::atomic<uint64_t> stolen{0}, hardChokes{0};
+            // Audio thread, from a plugin with oscairn.voice-budget (step 4): it gives up its own
+            // voices, so perNote is per voice and a note costs perNoteScale of them (its voices per
+            // note); and whether it said it honors the volume expression the host's fade uses.
+            // overLimit: the blocks running it has sounded more voices than its limit; past
+            // overLimitBlocks (a fade's time and more) it is not keeping within it, and the host
+            // gives up its notes as any plugin's.
+            bool ownVoices = false, honorsVolume = false;
+            float perNoteScale = 1;
+            uint32_t voiceLimit = 0, overLimit = 0;
+            static constexpr uint32_t overLimitBlocks = 16;
             float restNow() const noexcept { const float r = rest.load(std::memory_order_relaxed); return r >= 0 ? r : std::max(0.f, seedRest.load(std::memory_order_relaxed)); }
-            float noteNow() const noexcept { const float n = perNote.load(std::memory_order_relaxed); return n >= 0 ? n : std::max(0.f, seedNote.load(std::memory_order_relaxed)); }
+            float noteNow() const noexcept { const float n = perNote.load(std::memory_order_relaxed); return perNoteScale * (n >= 0 ? n : std::max(0.f, seedNote.load(std::memory_order_relaxed))); }
             // A block took `microseconds` with `notes` live: with none, its cost at rest; with some,
             // the time above rest shared among them. A block held up from outside (the thread
             // preempted) says nothing of the plugin: a sample counts at most four times the

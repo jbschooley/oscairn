@@ -1,6 +1,6 @@
 # RFC 0018: Voice budget and stealing
 
-Status: proposed, 2026-10-31. Steps 1 to 3 implemented (below; step 3's device gate unverified). When a Performance asks for more than the
+Status: proposed, 2026-10-31. Steps 1 to 4 implemented (below; step 3's device gate and step 4's AWM2-class gate unverified). When a Performance asks for more than the
 processor can play, Oscairn gives up the least audible notes across every part, without
 clicks, rather than missing the audio deadline. The host does this with notes (option B),
 and plugins that opt in do it with their own voices (option C).
@@ -12,7 +12,7 @@ Checked when built and tested; the sections below say how.
 - [x] 1. Fade and choke ([status](#step-1-status))
 - [x] 2. Part limits ([status](#step-2-status))
 - [x] 3. Shared budget ([status](#step-3-status); the gate on the device unverified)
-- [ ] 4. The `oscairn.voice-budget` extension
+- [x] 4. The `oscairn.voice-budget` extension ([status](#step-4-status); the Sampler, and the gate on an AWM2-class sound, not yet)
 
 ## Problem
 
@@ -302,6 +302,84 @@ device with none, stealing only quiet or released notes) is **unverified**: it n
 device. Not yet: the plugin's own voice count refining the estimate (step 4's extension),
 splitting a note's cost by key or velocity, and effects' tails giving way.
 
+## Step 4 status
+
+`oscairn.voice-budget/draft-1`, 2026-11-06: the header `voice-budget.h` (MIT, in
+`core/clap-ext/include/oscairn-clap/`), the SDK's `voice-budget-plugin.hpp` (the order and the
+report, for any engine) and its use in `sound-contexts-plugin.hpp`'s Engine, host support, and
+the Basic Synth. The porting guide's [Voice budget](../plugin-porting.md#voice-budget) says what a
+plugin implements.
+
+- **The API:** `honors_volume` (main thread); `set_limits(limit, contexts, count)` (audio
+  thread, between blocks): the instance's voices, and per sound context (one per part) its own
+  limit, reserve, priority and mono or legato flag, an entry for `OSCAIRN_VOICE_BUDGET_SELECTED`
+  covering every context a channel selects; `active_voices(&cost)` and `notes(out, capacity)`
+  (audio thread, after `process`): the voices sounding and the plugin's cost per voice, and each
+  note's voices and loudness.
+- **The plugin's order,** for a new voice, or at a block's start past a lowered limit: never a
+  held voice of a mono or legato context, nor one of a context at or under its reserve unless
+  the new voice is that context's; released before held; the new voice's own context first;
+  lower priority first; the quietest, then the oldest. A voice given up fades over the choke
+  time; one is cut only when the pool has no free slot, a fading one first. This is what Octet's
+  shared pool needs (released and quiet voices before held ones, never a held mono key, the same
+  sound's voices first, each part's reserve), so the forks can adopt it in place of their own
+  cross-sound stealing. The Engine uses this order when its pool is full whether or not the
+  host uses the extension (it used to cut the oldest voice).
+- **The host:** `kick::clap::Host` gives the plugin new limits at the start of its next
+  `process` and reads its report after it; `PluginHost` forwards them (for a plugin with no
+  native contexts wrapped for prepared sounds, to the instance channel 1 plays). With a budget,
+  the graph treats such a plugin's time as per voice (a note costing its share of voices), sets
+  its limit before each block to its voices now plus what the soft limit leaves at that cost, at
+  most a quarter fewer a block, with its part's reserve and priority under
+  `OSCAIRN_VOICE_BUDGET_SELECTED`, sends 0 (no limit) when the budget goes, and takes each note's
+  reported loudness in place of its velocity for ordering notes. It does not fade or choke that
+  plugin's notes while the plugin keeps within its limit; after 16 blocks running over it, its
+  notes go as any plugin's. A held note of a plugin that says it honors volume expressions is
+  faded before one of a plugin that does not. A plugin in a worker process is budgeted as one
+  without the extension (the worker protocol does not carry it yet), and so is an LV2 plugin.
+- **Within one Performance** every part has its own instance (RFC 0021's slice 3, parts sharing
+  an engine instance, is not built), so several contexts share one pool only during a
+  Performance change: the outgoing sounds ringing out beside the incoming ones, with at most one
+  carried-over tail. The host's one entry is the playing part's; per-part reserves inside one
+  instance take effect once slice 3 is built. Parts have no mono or legato mode yet, so the host
+  sends no flags; a plugin that knows its own sound is mono says so through `mono(context)`.
+
+Decided (the open questions this step settled):
+
+- **Loudness per note,** not per voice: the host addresses notes, and compares them across
+  plugins; the plugin chooses among its own voices with per-voice levels it keeps itself. A note's
+  loudness is the largest of its voices' gains now (envelope, velocity, volume expression), with
+  its voice count.
+- **How often:** the host reads `active_voices` and `notes` after every `process` of a plugin
+  with the extension while a budget is set, and calls `set_limits` between blocks only when the
+  limit or the part's settings changed.
+- **The limit is in voices,** the plugin's own unit, not microseconds; the host converts with
+  its measured cost per voice (the plugin's `active_voices` estimate seeds it).
+- **Per context,** with the selected contexts as one entry, so today's host needs one and slice
+  3 can name each part's context without changing the API.
+
+Tests: `voice-extension` renders offline. One pool across sounds, the Basic Synth: an outgoing
+sound holds a soft mono key and rings three loud released notes; an incoming sound, selected on
+every channel, plays quiet notes under an instance limit of six, the outgoing sound marked mono.
+Three more incoming notes take the released voices, though they are the loudest (the outgoing
+sound keeps its one held key, the incoming sound all five notes); a seventh takes the incoming
+sound's own; a limit of four then takes two more of the incoming sound's, not the quieter mono
+key; the report gives four notes, a voice each, with their levels. Elements before notes, the
+voice fixture with four voices a note, each half as loud as the one before (an AWM2-class
+sound's elements imitated), through the graph with a 600 µs budget at 30 µs a voice: of eight
+notes' 32 voices, 16 or 17 stayed, every note still sounding with its loudest element, and the
+host faded and choked none of its notes. Shown failing: without the mono rule, "within four, the
+held mono key stays: 0 and 4"; without released-first and own-sound-first, "the outgoing sound's
+released voices gave way ...: 4"; with oldest in place of quietest, "every note still sounds:
+5"; with the graph sending no limit, the host choked four of its notes and four sounded.
+
+Not yet: the Sampler, which lives in its own repository (`oscairn/sampler`) and needs its
+`get_extension` to return the Engine's table and its own `loudness`; the gate, a layered
+AWM2-class sound under pressure dropping quiet elements before whole notes, is **unverified**
+(RFC 0013's engine is not started; the fixture imitates its layers, and the converter session's
+sfizz-based sampler in the forks is to test it); carrying the extension through a worker
+process; and part modes (mono, legato) to send.
+
 ## Build order and gates
 
 | Step | Deliverable | Gate |
@@ -325,7 +403,8 @@ budget among the rest.
   playback costs vary.
 - Whether effects with long tails (reverbs) should give way too, by shortening tails, or
   only instruments.
-- Whether C's loudness report should be per note or per voice, and how often it is sent.
+- ~~Whether C's loudness report should be per note or per voice, and how often it is sent.~~
+  Per note, read after every block while a budget is set ([step 4](#step-4-status)).
 - What CLAP's own work on voice management offers. Following it, and proposing the
   extension upstream, is better than a permanent private one.
 

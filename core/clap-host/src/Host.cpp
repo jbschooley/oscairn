@@ -167,6 +167,14 @@ struct Host::Impl {
     bool exclusiveState=false;
     const oscairn_plugin_sound_contexts_t* sounds = nullptr;
     const oscairn_plugin_sound_snapshots_t* soundSnapshots = nullptr; // with sounds and their state only
+    // oscairn.voice-budget (RFC 0018). Audio thread: the limits waiting for the next process(), and
+    // what the last one reported.
+    const oscairn_plugin_voice_budget_t* voiceBudget = nullptr;
+    bool honorsVolume = false, limitsWaiting = false;
+    uint32_t voiceLimit = 0, voiceContextCount = 0, activeVoices = 0, voiceNoteCount = 0;
+    std::array<oscairn_voice_budget_context_t, OSCAIRN_VOICE_BUDGET_MAX_CONTEXTS> voiceContexts{};
+    double voiceCost = 0;
+    std::array<oscairn_voice_budget_note_t, Host::maxBlockEvents> voiceNotes{};
     const oscairn_plugin_asset_dependencies_t* assetDependencies = nullptr;
     bool assetOptional = false; // draft 2: it says which assets are optional
     AssetResolver* assets = nullptr;
@@ -527,6 +535,9 @@ struct Host::Impl {
         if(s.exclusiveState)s.state=s.sounds->state;
         if(s.exclusiveState)s.soundSnapshots = static_cast<const oscairn_plugin_sound_snapshots_t*>(s.plugin->get_extension(s.plugin,OSCAIRN_EXT_SOUND_SNAPSHOTS));
         if(s.soundSnapshots && (!s.soundSnapshots->prepare || !s.soundSnapshots->ring_out!=!s.soundSnapshots->choke_retiring))throw std::runtime_error("Invalid sound-snapshot interface");
+        s.voiceBudget = static_cast<const oscairn_plugin_voice_budget_t*>(s.plugin->get_extension(s.plugin,OSCAIRN_EXT_VOICE_BUDGET));
+        if(s.voiceBudget && (!s.voiceBudget->honors_volume || !s.voiceBudget->set_limits || !s.voiceBudget->active_voices || !s.voiceBudget->notes))throw std::runtime_error("Invalid voice-budget interface");
+        s.honorsVolume = s.voiceBudget && s.voiceBudget->honors_volume(s.plugin);
         if(s.state && (!s.state->save || !s.state->load))throw std::runtime_error("Incomplete plugin state interface");
         s.assetDependencies = static_cast<const oscairn_plugin_asset_dependencies_t*>(s.plugin->get_extension(s.plugin, OSCAIRN_EXT_ASSET_DEPENDENCIES));
         s.assetOptional = s.assetDependencies != nullptr;
@@ -1265,6 +1276,8 @@ bool Host::process(const float* const* input, uint32_t ni, float* const* output,
             s.processing = true;
         }
         if (s.flush.exchange(false)) s.flushParameters();
+        // oscairn.voice-budget: new limits before the block (an audio-thread call outside process()).
+        if (s.voiceBudget && s.limitsWaiting) { s.voiceBudget->set_limits(s.plugin, s.voiceLimit, s.voiceContexts.data(), s.voiceContextCount); s.limitsWaiting = false; }
         uint32_t next = 0;
         for (uint32_t done = 0; done < frames;) {
             const auto n = std::min(s.maxFrames, frames - done);
@@ -1317,6 +1330,10 @@ bool Host::process(const float* const* input, uint32_t ni, float* const* output,
             }
             s.sleeping = status == CLAP_PROCESS_SLEEP;
             s.steadyTime += n; done += n;
+        }
+        if (s.voiceBudget) {
+            s.activeVoices = s.voiceBudget->active_voices(s.plugin, &s.voiceCost);
+            s.voiceNoteCount = std::min<uint32_t>(s.voiceBudget->notes(s.plugin, s.voiceNotes.data(), uint32_t(s.voiceNotes.size())), uint32_t(s.voiceNotes.size()));
         }
         s.blocks.fetch_add(1);
         const auto us = std::chrono::duration<double, std::micro>(std::chrono::steady_clock::now() - start).count();
@@ -1374,6 +1391,17 @@ bool Host::selectSound(uint32_t id,int16_t channel) {
 }
 bool Host::preparesSoundSnapshots() const noexcept {return impl->soundSnapshots!=nullptr;}
 bool Host::ringsOut() const noexcept {return impl->ringOutChannels!=0;}
+bool Host::voiceBudget() const noexcept {return impl->voiceBudget!=nullptr;}
+bool Host::honorsVolume() const noexcept {return impl->honorsVolume;}
+void Host::setVoiceLimits(uint32_t limit,const oscairn_voice_budget_context_t* contexts,uint32_t count) noexcept {
+    auto& s=*impl;if(!s.voiceBudget)return;
+    s.voiceLimit=limit;s.voiceContextCount=contexts?std::min<uint32_t>(count,OSCAIRN_VOICE_BUDGET_MAX_CONTEXTS):0;
+    for(uint32_t i=0;i<s.voiceContextCount;++i)s.voiceContexts[i]=contexts[i];
+    s.limitsWaiting=true;
+}
+uint32_t Host::voiceReport(double& voiceCost,const oscairn_voice_budget_note_t*& notes,uint32_t& count) const noexcept {
+    const auto& s=*impl;voiceCost=s.voiceCost;notes=s.voiceNotes.data();count=s.voiceBudget?s.voiceNoteCount:0;return s.voiceBudget?s.activeVoices:0;
+}
 bool Host::chokeRetiringSounds() {
     if(!impl->ringOutChannels)return false;
     const bool queued=impl->soundSnapshots->choke_retiring(impl->plugin);
