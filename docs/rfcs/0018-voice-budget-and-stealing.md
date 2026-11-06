@@ -248,7 +248,8 @@ limit 85% of it. Until a budget is set, nothing is stolen.
   (RFC 0034) or in workers, so the budget's state is that thread's alone; the per-node counters
   and costs are atomics, read by the control thread. The ledger is the fixed array it was;
   choosing a victim is a scan of it, with no allocation.
-- **Counted:** each node counts the notes it gave up, faded and hard-choked; `parts.meters`
+- **Counted:** each node counts the notes it gave up, faded and hard-choked (choked before any
+  fade; a fading note choked early counts once, as faded); `parts.meters`
   sums them per part (`stolen`, `hardChokes`), and the desktop's Parts list shows them after the
   part's instrument ("12 stolen, 1 cut").
 - A stolen note in another node's connection fades from that node's block start: this block's,
@@ -269,7 +270,9 @@ plugins stay under it"); without the order's released-first rank and priority, "
 quiet notes before any loud held note (of those sounding then)"; without priority alone, "the part of higher priority
 loses the fewest". `control-parts` sets a CPU budget on a Session with two such parts, B giving
 way first but reserving four of its six notes, and checks the parts' meters: A gives notes up,
-B keeps its reserve (the first failed with the budget never set, both with reserves ignored). The three `voice-budget` runs pass under ThreadSanitizer with no reports.
+B keeps its reserve (the first failed with the budget never set, both with reserves ignored). The three `voice-budget` runs and `control-parts` pass under ThreadSanitizer with no reports
+(`control-parts` once failed there, "B keeps its reserve: 3", when a fading note choked early
+counted as stolen and hard-choked both; it counts once now).
 
 Mac measurements, 2026-11-06 (development Mac, load average about 50 to 120 from other work;
 offline rendering, 64-frame blocks at 48 kHz, a block's deadline 1333 µs; no audio device):

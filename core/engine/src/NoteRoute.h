@@ -371,7 +371,7 @@ inline VoiceBudget::Victim VoiceBudget::fadingNote() const noexcept
     }
     return best;
 }
-// Past the hard limit: notes choked without a fade, fading ones first, counted.
+// Past the hard limit: notes choked without a fade, fading ones first; a note not yet fading counted.
 inline void VoiceBudget::choke(float scale,float extra,const NoteRoute* self,uint32_t time,bool reserved) noexcept
 {
     while(estimate(Fading)*scale+extra>limit)
@@ -380,8 +380,9 @@ inline void VoiceBudget::choke(float scale,float extra,const NoteRoute* self,uin
         if(!v.entry)v=choose(false);
         if(!v.entry && reserved && reserves()*scale+extra>limit)v=choose(true); // reserves alone pass the hard limit
         if(!v.entry)return;
-        v.entry->route->choke(v.entry->route->notes[v.slot],v.entry->route==self?time:0);
-        v.entry->cost->hardChokes.fetch_add(1,std::memory_order_relaxed);
+        auto& note=v.entry->route->notes[v.slot];
+        if(!note.stolen)v.entry->cost->hardChokes.fetch_add(1,std::memory_order_relaxed); // a fading note was counted when it was stolen
+        v.entry->route->choke(note,v.entry->route==self?time:0);
     }
 }
 inline void VoiceBudget::admit(NoteRoute& self,uint32_t time) noexcept
