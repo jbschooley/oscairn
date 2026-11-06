@@ -776,6 +776,26 @@ namespace
 
     // A bus with no box still applies its fader: sends and parts into it play at its level,
     // muted with it, panned with it.
+    // A part whose wire is baked into the plan (merged ways through different faders: C into an
+    // empty bus that plays to Main and sends to another empty bus on Main) comes back when unmuted.
+    void unmuteBaked(const char* fixture)
+    {
+        Session s(48000, frames);
+        const auto synth = s.add("synth", fixture, "org.kick.test.synth");
+        s.setParameter(synth, 7, .25);
+        const auto c = s.addPart("C"), e1 = s.addPart("E1", {PartInput::Kind::Bus}), e2 = s.addPart("E2", {PartInput::Kind::Bus});
+        s.insertIntoPart(c, 0, synth);
+        s.setPartOutput(c, e1); s.setSend(e1, e2, 1); s.commit();
+        Audio x;
+        s.note(true, 60, 1); for(int i = 0; i < 5; ++i) x.run(s);
+        const float before = x.l[frames - 1];
+        check(before > .4f, "C plays through E1 and E2: " + std::to_string(before));
+        s.setPartLevel(c, 1, true); s.commit(); for(int i = 0; i < 5; ++i) x.run(s);
+        check(x.l[frames - 1] == 0, "muted, C is silent: " + std::to_string(x.l[frames - 1]));
+        s.setPartLevel(c, 1, false); s.commit(); for(int i = 0; i < 5; ++i) x.run(s);
+        check(near(x.l[frames - 1], before), "unmuted, C plays again: " + std::to_string(x.l[frames - 1]) + " for " + std::to_string(before));
+    }
+
     void emptyBus(const char* fixture)
     {
         Session s(48000, frames);
@@ -2018,6 +2038,7 @@ int main(int argc, char** argv)
         channels(argv[2]);
         replacement(argv[2], argv[3]);
         zones(argv[1]);
+        unmuteBaked(argv[1]);
         devices(argv[1], temp.path);
         midiOut(argv[1], argv[5], temp.path);
         harmonyKeys(argv[1], argv[6], temp.path);

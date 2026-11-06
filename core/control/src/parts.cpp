@@ -218,6 +218,9 @@ namespace oscairn
             const bool silent = structural || (liveWire ? w.fixedMute : w.mute);
             const auto compiled = pairs(g, layout, w, 1);
             w.connected = compiled.has_value();
+            // A baked wire's faders stay static while it is silent too: unmuting it must compile the
+            // route back, not only write a live gain it has none of.
+            if(compiled && liveGains && !liveWire) liveGains->staticFaders.insert(w.faders.begin(), w.faders.end());
             if(!compiled || silent) continue;
             const bool liveMaster = liveGains && liveGains->slots && mainOut(w);
             for(const auto& p : *compiled)
@@ -231,7 +234,6 @@ namespace oscairn
                 r.baked += (w.mute ? 0 : w.level) * master(w, p);
                 r.faders.insert(r.faders.end(), w.faders.begin(), w.faders.end());
             }
-            if(liveGains && !liveWire) liveGains->staticFaders.insert(w.faders.begin(), w.faders.end());
         }
         for(auto& [k, r] : audio)
             if(r.mixed)
