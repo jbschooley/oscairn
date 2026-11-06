@@ -227,7 +227,8 @@ namespace oscairn::standalone
         void readControllers(); // timer: positions and the control moved last, from the engine
         void refreshSounds(SoundAction action = {});
         void finishSounds();
-        struct SoundResult { std::map<std::string,Editor> editors;SoundPickerState state; std::string error, message; bool disconnected = false; };
+        struct SoundResult { std::map<std::string,Editor> editors;SoundPickerState state; std::string error, message; bool disconnected = false; RemoteControl::KnownParameters known; };
+        RemoteControl::KnownParameters known_; // the last job's: the next lists only the plugins whose parameters changed
         std::future<SoundResult> soundJob_;
         SoundAction::Kind soundJobKind_=SoundAction::Refresh;
         std::deque<SoundAction> pendingSounds_; // after the job running, in order

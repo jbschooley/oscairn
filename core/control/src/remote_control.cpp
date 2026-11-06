@@ -202,6 +202,7 @@ namespace oscairn
                 if(!boolean(field(n,"enabled")))next.disabled.insert(node.id);
                 if(boolean(field(n,"ringing")))next.ringing.insert(node.id);
                 if(const auto role=field(n,"role");role->type!=json_type_null)next.roles[node.id]=string(role);
+                next.parameterRevisions[node.id]=integer(field(n,"parameterRevision"));
                 next.topology.nodes.push_back(std::move(node));
             }
             for(auto c:array(field(root,"connections")))
@@ -317,8 +318,8 @@ namespace oscairn
             for(auto m:array(field(root,"mappings")))next.topology.mappings.push_back({static_cast<NodeId>(integer(field(m,"from"))),static_cast<uint32_t>(integer(field(m,"lane"))),static_cast<NodeId>(integer(field(m,"to"))),static_cast<uint32_t>(integer(field(m,"param")))});
             return next;
         }
-        // A read of the graph and every node's parameters: graph.get, then each node's params.list,
-        // then the values, several requests out at once (the engine answers up to 16 a client each
+        // A read of the graph and every node's parameters: graph.get, then the params.list of each
+        // node whose parameterRevision is not the cache's, then every value, several requests out at once (the engine answers up to 16 a client each
         // tick of its timer), so a read takes a few ticks rather than one per node.
         struct GraphRead
         {
@@ -330,6 +331,7 @@ namespace oscairn
             bool graphRead=false; // its graph.get answered: values pushed after it are newer than it
             bool done()const{return queued.empty() && sent.empty();}
             void values(){if(count)queued.push_back({Step::Values,"params.get","{\"values\":["+batch+"]}"});batch.clear();count=0;}
+            void value(NodeId node,uint32_t param){if(count)batch+=',';batch+='{'+address(node,param)+'}';if(++count==128)values();}
         };
         size_t largest=0;                 // the longest params.list reply seen: how many fit in the engine's 1 MB queue at once
         std::optional<GraphRead> reading; // the read service() started, taken as its replies come
@@ -350,7 +352,14 @@ namespace oscairn
             if(step==Step::Graph)
             {
                 r.next=readGraph(result);r.graphRead=true;
-                for(const auto& n:r.next.topology.nodes){r.nodes.push_back(n.id);r.queued.push_back({Step::List,"params.list","{\"node\":"+std::to_string(n.id)+'}'});}
+                for(const auto& n:r.next.topology.nodes)
+                {
+                    // Its info as the cache has it, unless its plugin or that info changed since.
+                    if(const auto known=graph.parameterRevisions.find(n.id);known!=graph.parameterRevisions.end() && known->second==r.next.parameterRevisions.at(n.id) && info.contains(n.id))
+                    {const auto& list=r.metadata[n.id]=info.at(n.id);for(const auto& p:list)r.value(n.id,p.id);continue;}
+                    r.nodes.push_back(n.id);r.queued.push_back({Step::List,"params.list","{\"node\":"+std::to_string(n.id)+'}'});
+                }
+                if(r.nodes.empty())r.values();
             }
             else if(step==Step::List)
             {
@@ -363,7 +372,7 @@ namespace oscairn
                     if(param.widget==OSCAIRN_WIDGET_RANGE)param.rangeHigh=static_cast<uint32_t>(integer(field(p,"rangeHigh")));
                     param.group=static_cast<uint32_t>(integer(field(p,"group")));
                     if(V role=detail::member(p,"role"))param.role=roleNamed(string(role));
-                    list.push_back(param);if(r.count)r.batch+=',';r.batch+='{'+address(node,param.id)+'}';if(++r.count==128)r.values();
+                    list.push_back(param);r.value(node,param.id);
                 }
                 if(r.listed==r.nodes.size())r.values();
             }
@@ -431,8 +440,9 @@ namespace oscairn
         void edge(std::string_view method,const char* kind,NodeId from,NodeId to)
         {call(method,"{\"kind\":"+quote(kind)+",\"from\":"+std::to_string(from)+",\"to\":"+std::to_string(to)+'}');refresh();}
     };
-    RemoteControl::RemoteControl(LocalClient& client):impl_(std::make_unique<Impl>(client))
+    RemoteControl::RemoteControl(LocalClient& client,const KnownParameters& known):impl_(std::make_unique<Impl>(client))
     {
+        for(const auto& [node,k]:known){impl_->graph.parameterRevisions[node]=k.first;impl_->info[node]=k.second;}
         auto hello=impl_->call("session.hello");if(integer(field(field(hello.get(),"result"),"protocolVersion"))!=1)throw std::runtime_error("Unsupported control protocol version");
         // The rest at once, the graph read behind them: the server answers in order, so the
         // snapshots are read after subscribing, and the reads take a few ticks, not one each.
@@ -448,6 +458,8 @@ namespace oscairn
         // after its snapshot was read. service() drains them in server order.
     }
     RemoteControl::~RemoteControl()=default;
+    RemoteControl::KnownParameters RemoteControl::knownParameters()const
+    {KnownParameters known;for(const auto& [node,list]:impl_->info)if(const auto r=impl_->graph.parameterRevisions.find(node);r!=impl_->graph.parameterRevisions.end())known[node]={r->second,list};return known;}
     Control::GraphState RemoteControl::graphState()const{return impl_->graph;}
     Control::SessionStatus RemoteControl::sessionStatus()const{return impl_->status;}
     void RemoteControl::savePerformance(const std::string& directory) {

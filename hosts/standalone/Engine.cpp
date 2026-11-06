@@ -310,14 +310,15 @@ namespace oscairn::standalone
                 action.directory=exportWritten_=folder.getChildFile(target.getFileName()).getFullPathName().toStdString(); // the same name: an unnamed Performance is named after it
             }
         }
-        soundJob_=std::async(std::launch::async,[socket=socketPath_,request=std::move(action)] {
+        soundJob_=std::async(std::launch::async,[socket=socketPath_,request=std::move(action),known=known_] {
             SoundResult result;LocalClient client;
             try
             {
-                client.connect(socket);RemoteControl control(client);
+                client.connect(socket);RemoteControl control(client,known);
                 try{result.message=applySoundAction(control,request);}catch(const std::exception& e){result.error=e.what();}
                 result.state=readSoundPicker(control);
                 result.editors=readEditors(control);
+                result.known=control.knownParameters();
             }
             catch(const std::exception& e){result.error=e.what();result.disconnected=!client.connected();}
             return result;
@@ -342,6 +343,7 @@ namespace oscairn::standalone
             if(old==editors_.end() || old->second.id!=editor.id || old->second.path!=editor.path)textCache_.clear();
         }
         soundPicker_=std::move(result.state);editors_=std::move(result.editors);
+        if(!result.known.empty())known_=std::move(result.known);
         // What a job can change (the open Performance, the parts, the plugins' windows) is read
         // fresh once it is done, not from replies to reads sent before it; until then the reads
         // answer from the cache above. A refresh changes nothing.

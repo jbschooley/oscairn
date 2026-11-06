@@ -117,7 +117,7 @@ request members.
 | `transport.set` | one or more of `playing` (boolean), `tempo` (1..1000), `clockSource` (`"internal"` or `"midi"`), `clockOutputs` (up to 16 device rules choosing MIDI outputs, as for a part's `devices`, replacing the last; empty, the default, sends no clock) | `{"accepted":true}` |
 | `params.gesture` | `node`, `param`, `begin` (boolean) | `{"accepted":true}` |
 | `subscribe`, `unsubscribe` | `topics` (1..7 of `params.changed`, `transport`, `graph.changed`, `status`, `record`, `controllers`, `controls.changed`), optional `allChanges` boolean | `{"accepted":true}` |
-| `graph.get` | omitted or `{}` | staged topology, names/plugin metadata/ports, each node's `enabled` and `ringing` (switched off and still sounding out), connections, mappings, parts, wires (each with `enabled`), `revision`, `staged`, numeric `input`/`output` endpoints |
+| `graph.get` | omitted or `{}` | staged topology, names/plugin metadata/ports, each node's `enabled`, `ringing` (switched off and still sounding out) and `parameterRevision` (another whenever its plugin or that plugin's `params.list` info changes; counted from the clock, so never one an earlier engine gave), connections, mappings, parts, wires (each with `enabled`), `revision`, `staged`, numeric `input`/`output` endpoints |
 | `graph.role` | `node`, `role`: one of `insertion-a`, `insertion-b`, `part-eq`, `reverb`, `variation`, `master-effect`, `master-eq`, `arpeggiator` ([RFC 0016's node roles](rfcs/0016-effects-suite.md#where-the-effects-go)), or `null` for none; `graph.get` gives each node's `role` (or `null`). An edit, saved with the node | `{"accepted":true}`; an unknown role or node is refused |
 | `graph.enable` | `node`, `enabled`: switches a plugin off or on, as scenes do. Off, it takes no new notes and no sound: notes it holds play on until released, its sound rings out and then stops (`ringing` until then). In a part's chain, what reached it passes around it, so an effect off is bypassed. An edit, staged until commit | `{"accepted":true}` |
 | `graph.add` | `path`, optional `name` and `pluginId` | numeric `node` |
@@ -573,7 +573,8 @@ transport and host-status snapshots, sending the requests after the hello at onc
 and mutations use bounded synchronous RPC calls, apart from the live edits below. Call `service()` regularly to update
 snapshots and deliver changes. Its change sequence is local to that adapter's lifetime,
 not the server's sequence. Graph commits and explicit history gaps trigger a snapshot
-refresh. A refresh is `graph.get`, then every node's `params.list`, then the values
+refresh. A refresh is `graph.get`, then the `params.list` of each node whose `parameterRevision` is not
+the one the cache holds (every node at first), then every value
 (`params.get`), with several requests out at once (at most 16, fewer while the longest
 `params.list` reply seen would overfill the server's 1 MiB queue), so it takes a few of the
 server's ticks rather than one per node. One that `service()` starts (a `graph.changed`, a
@@ -600,12 +601,17 @@ stepped, truncated, and returns true; the newest value sent for a parameter stay
 engine's `params.changed` until its reply, which gives the value the engine kept. A refusal
 (the pending command store full) comes through `takeError()`, and the graph and values are
 read again. Recreate the adapter on reconnect. No commands are implicitly retried.
+An adapter can start from another's parameter info (`knownParameters()`, given to the
+constructor): its first read then lists only the nodes whose `parameterRevision` changed since,
+and reads every value as it is now.
 
 The desktop's `--connect SOCKET` mode uses this adapter, polls every 16 ms, and retries
 failed connections about once a second. It displays disconnection status and refreshes
 snapshots when reconnected. Its views' polls and the graph read after an engine change go
 without waiting and arrive at its timer; edits and other calls still run on the UI thread
-and may pause the UI until their deadline if the engine is unresponsive. Audio and physical MIDI remain in
+and may pause the UI until their deadline if the engine is unresponsive. Its background refresh
+(the sound picker and editors, twice a second on a connection of its own) starts each adapter from
+the last one's parameter info, so it lists no plugin's parameters unless they changed. Audio and physical MIDI remain in
 the helper. See [host instructions](../hosts/README.md) for launching the two processes.
 The normal desktop launch now starts or reconnects to a managed helper. Closing the UI
 leaves the helper alive. A stopped managed helper enables a Restart engine button; this

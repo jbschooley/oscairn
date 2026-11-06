@@ -343,6 +343,35 @@ namespace
         for(int i=0;i<10;++i)f.tick();
         check(f.left[0]>.62f,"typed remote client exit leaves audio running");
     }
+    // An adapter given another's parameter info (the desktop's refresh, twice a second, on a fresh
+    // connection) lists only the plugins whose info changed since, and reads every value as it is now.
+    void knownParameters(const char* plugin)
+    {
+        Fixture f(plugin);
+        std::vector<NodeId> effects;for(int i=0;i<5;++i)effects.push_back(f.session.add("effect"+std::to_string(i),plugin));f.session.commit();
+        const auto synth=f.session.nodeId("synth");
+        auto connect=[&]{auto fd=pair();f.server.adopt(fd[0]);auto c=std::make_unique<LocalClient>();c->adopt(fd[1]);return c;};
+        auto started=[](LocalClient& c){const auto id=c.send("transport.get");c.wait(id);return id-1;}; // the requests its start sent
+        auto first=connect(),second=connect(),third=connect();
+        RemoteControl::KnownParameters known;uint64_t all=0,given=0,replaced=0;
+        clientWhileRendering(f,[&]{
+            RemoteControl full(*first);all=started(*first);known=full.knownParameters();
+            RemoteControl seeded(*second,known);given=started(*second);
+            check(known.size()==6 && seeded.knownParameters().size()==6 && seeded.parameters(effects[2]).size()==1 && seeded.parameters(effects[2])[0].name=="Value","each plugin's parameters known from what was given");
+            full.replace(effects[0],plugin,"org.oscairn.test.control");
+            check(full.knownParameters().at(effects[0]).first!=known.at(effects[0]).first && full.knownParameters().at(effects[1]).first==known.at(effects[1]).first,"a plugin replaced has new parameter info, the others the same");
+        });
+        std::cout<<"an adapter's start: "<<all<<" requests reading 6 plugins' parameters, "<<given<<" given their info\n";
+        check(given+6==all,"given their info, no plugin's parameters are listed");
+        check(f.session.setParameter(synth,1,.25),"a value changed after the info was read");
+        for(int i=0;i<10;++i)f.tick(); // the plugin takes it and sends it back as its own
+        clientWhileRendering(f,[&]{
+            RemoteControl again(*third,known);replaced=started(*third);
+            check(again.parameter(synth,1)==.25,"a value changed since shows, its plugin's info unchanged");
+            check(again.parameters(effects[0]).size()==1,"and the plugin replaced is listed again");
+        });
+        check(replaced==given+1,"only the plugin replaced is listed");
+    }
     // A graph another client changed is read again without waiting: service() returns at once,
     // and the cache shows the change, the node and its parameters, once the read's replies are in.
     void graphReadLater(const char* plugin)
@@ -681,7 +710,7 @@ int main(int argc,char** argv)
         if(argc==3 && std::string_view(argv[2])=="--path-policy"){pathPolicy(argv[1]);return 0;}
         if(argc==3 && std::string_view(argv[2])=="--named")return named(argv[1],argv[0]);
         if(argc!=2)return 2;
-        framing(argv[1]);lifetime(argv[1]);slowReader(argv[1]);clientAndReconnect(argv[1]);pressure(argv[1]);clientFailures();typedClient(argv[1]);graphReadLater(argv[1]);pushedDuringRead(argv[1]);editOverOlderRead(argv[1]);connectPipelined(argv[1]);fetches(argv[1]);controllerCrash(argv[1],argv[0]);
+        framing(argv[1]);lifetime(argv[1]);slowReader(argv[1]);clientAndReconnect(argv[1]);pressure(argv[1]);clientFailures();typedClient(argv[1]);knownParameters(argv[1]);graphReadLater(argv[1]);pushedDuringRead(argv[1]);editOverOlderRead(argv[1]);connectPipelined(argv[1]);fetches(argv[1]);controllerCrash(argv[1],argv[0]);
         std::cout<<"ok: real Unix streams, framing, backpressure, notifications, reconnect, continuing audio and client failures\n";
     }
     catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}

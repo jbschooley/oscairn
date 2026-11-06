@@ -231,7 +231,16 @@ namespace oscairn
             std::erase_if(topology.draining, [&](const auto& e) { return gone(e.first) || gone(e.second); });
             std::erase_if(topology.audioRoutes, [&](const auto& r) { return gone(r.from.node) || gone(r.to.node); });
         }
-        return {topology,nodes_,revision_,staged_,parts_,wires_,scenes_,untouched_,scene_,macros_,disabled_,ringing,masterLevel_,masterPan_,roles_};
+        std::map<NodeId,uint64_t> revisions;
+        for(const auto& n : topology.nodes)
+        {
+            const auto host = graph_.node(n.id).host; auto& known = infoRevisions_[n.id];
+            if(known.host.owner_before(host) || host.owner_before(known.host) || known.seen != host->parameterRevision())
+                known = {host, host->parameterRevision(), ++infoRevision_};
+            revisions[n.id] = known.revision;
+        }
+        std::erase_if(infoRevisions_, [&](const auto& k) { return !revisions.count(k.first); });
+        return {topology,nodes_,revision_,staged_,parts_,wires_,scenes_,untouched_,scene_,macros_,disabled_,ringing,masterLevel_,masterPan_,roles_,std::move(revisions)};
     }
 
     void Session::saveState(NodeId node,const std::string& directory)

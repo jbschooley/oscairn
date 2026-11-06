@@ -112,6 +112,7 @@ namespace oscairn
             std::set<NodeId> ringing;  // those of them still sounding out: notes held, a tail
             double masterLevel = 1, masterPan = 0; // the Performance's main output (setMaster)
             std::map<NodeId,std::string> roles; // nodes' roles (setNodeRole); a node without one is not listed
+            std::map<NodeId,uint64_t> parameterRevisions; // each node's parameter info's: another when its plugin or that info changes
         };
         enum class ChangeKind { Value, GestureBegin, GestureEnd, Graph, Resync };
         struct Change

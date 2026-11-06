@@ -977,7 +977,8 @@ namespace oscairn
                         "},\"audioInputs\":" + ports(n.inputs) + ",\"audioOutputs\":" + ports(n.outputs) +
                         ",\"noteInputs\":" + std::to_string(n.noteInputs) + ",\"noteOutputs\":" + std::to_string(n.noteOutputs) +
                         ",\"enabled\":" + (graph.disabled.count(n.id) ? "false" : "true") + ",\"ringing\":" + (graph.ringing.count(n.id) ? "true" : "false") +
-                        ",\"role\":" + (graph.roles.count(n.id) ? quote(graph.roles.at(n.id)) : std::string("null")) + '}');
+                        ",\"role\":" + (graph.roles.count(n.id) ? quote(graph.roles.at(n.id)) : std::string("null")) +
+                        ",\"parameterRevision\":" + std::to_string(graph.parameterRevisions.at(n.id)) + '}');
                 auto edges = [&](const auto& list, const char* kind) {
                     for( const auto& [from,to] : list ) connections.push_back("{\"kind\":" + quote(kind) +
                         ",\"from\":" + std::to_string(from) + ",\"to\":" + std::to_string(to) +

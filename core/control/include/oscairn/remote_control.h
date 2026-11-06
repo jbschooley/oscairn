@@ -15,7 +15,11 @@ namespace oscairn
     class RemoteControl final : public Control
     {
     public:
-        explicit RemoteControl(LocalClient& client);
+        /// Each node's parameter info as read, by its parameterRevision. Given another adapter's, one on a
+        /// fresh connection lists only the nodes whose plugin or info changed since (it reads every value).
+        using KnownParameters = std::map<NodeId,std::pair<uint64_t,std::vector<ParamInfo>>>;
+        explicit RemoteControl(LocalClient& client, const KnownParameters& known = {});
+        KnownParameters knownParameters() const;
         ~RemoteControl() override;
         /// Takes what the engine sent. A graph it changed is read again without waiting (the
         /// graph, then every node's parameters, a few requests at once): true once that read is

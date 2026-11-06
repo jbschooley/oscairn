@@ -6704,6 +6704,11 @@
             }
           ],
           "description": "Its role (graph.role), or null for none"
+        },
+        "parameterRevision": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Its parameter info's revision: another whenever its plugin or that info (params.list) changes, and never one an earlier engine gave"
         }
       },
       "required": [
@@ -6715,7 +6720,8 @@
         "noteInputs",
         "noteOutputs",
         "enabled",
-        "ringing"
+        "ringing",
+        "parameterRevision"
       ],
       "additionalProperties": false
     },
