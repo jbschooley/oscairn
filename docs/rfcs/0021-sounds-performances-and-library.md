@@ -61,7 +61,7 @@ Checked when built and tested; the sections below say how.
 - [x] Engine support for seamless changes: draining note connections, retiring nodes, plugin
       sleep ([status](#seamless-switching)); loading a Sound cuts, by decision
 - [x] Seamless Performance changes: the outgoing Performance rings out beside the new one ([status](#seamless-switching))
-- [ ] Pooled instruments restore a snapshot in the instances they have ([design](#free-instances-across-a-change-and-instances-kept-warm))
+- [x] Pooled instruments restore a snapshot in the instances they have ([design](#free-instances-across-a-change-and-instances-kept-warm))
 - [ ] Free instances taken over across a change ([design](#free-instances-across-a-change-and-instances-kept-warm))
 - [ ] Instances kept warm once rung out, bounded and evicted under pressure ([design](#free-instances-across-a-change-and-instances-kept-warm))
 - [x] Audition of a Sound in a part and of a Performance in place of the open one, put back as
@@ -746,7 +746,8 @@ workers).
 
 **Pools and contexts.** A pooled instrument is taken over whole: restoring a snapshot into a pool
 keeps its plugins, slot by slot, and loads only the slots it lacks, so a fresh pool no longer loads
-a second instance for its first sound. A native-context engine that is free gets the node's
+a second instance for its first sound (built 2026-11-05; `prepared-instances` counts the instances
+a restored pool loads, one per sound, and fails without). A native-context engine that is free gets the node's
 snapshot like any other plugin (its exclusive snapshot replaces its sounds), which is as fast as
 preparing them beside; slice 2, preparing the next sounds in an instance still sounding, still
 needs its contract call and is not built.

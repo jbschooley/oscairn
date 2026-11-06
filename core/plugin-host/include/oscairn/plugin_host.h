@@ -127,6 +127,8 @@ namespace oscairn
     std::shared_ptr<PluginHost> loadPlugin(const std::string& path, const std::string& pluginId,
                                            double sampleRate, uint32_t maxFrames, ProcessingMode mode = ProcessingMode::Realtime, Lv2BufferLimits lv2Buffers = {},
                                            uint64_t memoryRoom = 0); // memoryRoom: as setMemoryRoom, for its first activation
+    // How many times loadPlugin has been asked for an instance in this process (RFC 0021 measures reuse by it).
+    uint64_t pluginInstancesLoaded() noexcept;
     // RFC 0010: a CLAP plugin hosted by the worker executable `program` in its own process,
     // with the effect contexts later created from it. loadPlugin uses it as the placement
     // policy says.

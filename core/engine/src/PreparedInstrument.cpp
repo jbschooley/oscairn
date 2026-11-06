@@ -188,16 +188,20 @@ public:
         std::istringstream in(std::string(data.begin(),data.end()));in.imbue(std::locale::classic());std::string kind;unsigned version;
         if(!(in>>kind>>version) || kind!="pool" || version!=1)throw std::runtime_error("Invalid instrument pool snapshot");
         auto next=std::make_unique<Plan>();
+        // The pool's own instances take the slots in turn, so a pool restored where it was made, or
+        // taken over by another Performance (RFC 0021), loads only the plugins it lacks. Its sounds
+        // are numbered as a fresh pool's.
+        std::vector<std::shared_ptr<PluginHost>> have;for(const auto& s:desired_.instances)if(s)have.push_back(s->host);
+        size_t reused=0;uint32_t context=1;
         for(size_t i=0;i<capacity;++i){unsigned used;std::string name;if(!(in>>used) || used>1)throw std::runtime_error("Invalid pool slot");if(!used)continue;
             if(!(in>>std::quoted(name)) || name.size()>63 || name.find('\0')!=std::string::npos)throw std::runtime_error("Invalid pool sound name");
-            auto h=loadPlugin(base().descriptor().path,base().descriptor().id,rate_,frames_,mode_,limits_,room_);
+            auto h=reused<have.size()?have[reused++]:loadPlugin(base().descriptor().path,base().descriptor().id,rate_,frames_,mode_,limits_,room_);
             h->setMemoryRoom(room_);h->loadSnapshot((std::filesystem::path(directory)/std::to_string(i)).string());h->setMemoryRoom(0);checkLayout(*h);h->service();
-            if(nextContext_==CLAP_INVALID_ID)throw std::runtime_error("Sound IDs exhausted");
-            next->instances[i]=std::make_shared<Instance>(std::move(h),i?nextContext_++:0,std::move(name),frames_);
+            next->instances[i]=std::make_shared<Instance>(std::move(h),i?context++:0,std::move(name),frames_);
         }
         if(!next->instances[0])throw std::runtime_error("Missing default pool sound");
         for(auto& slot:next->selected){unsigned n;if(!(in>>n) || n>=capacity || !next->instances[n])throw std::runtime_error("Invalid pool selection");slot=uint8_t(n);}
-        in>>std::ws;if(!in.eof())throw std::runtime_error("Trailing pool data");publish(std::move(next));
+        in>>std::ws;if(!in.eof())throw std::runtime_error("Trailing pool data");nextContext_=context;publish(std::move(next));
     }
     void service() override {collect();for(const auto& s:desired_.instances)if(s)s->host->service();}
     const kick::clap::Descriptor& descriptor() const noexcept override {return base().descriptor();}

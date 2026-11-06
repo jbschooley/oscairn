@@ -83,6 +83,12 @@ void persistence(const char* path,const char* id,clap_id gain,const std::filesys
     s.host().selectSound(restored);s.one(Event::midi(0x90,64,100));s.level(.75);
     s.one(Event::midi(0x80,60,0));s.level(.25);s.one(Event::midi(0x80,64,0));s.level(0);
     if(gain==0){auto preset=s.host().prepareSound("Preset",{},"","urn:oscairn:test:instrument-preset");s.host().selectSound(preset);s.one(Event::midi(0x90,60,100));s.level(.75);}
+    // A pool restoring its snapshot (as a Performance opening does) loads only the plugins it
+    // lacks: its own instance takes the first sound (RFC 0021). It loaded a second before.
+    const auto snapshot=directory.parent_path()/(directory.filename().string()+"-pool");s.host().saveSnapshot(snapshot.string());
+    const auto before=pluginInstancesLoaded();Instrument t(path,id,gain);t.host().loadSnapshot(snapshot.string());
+    check(pluginInstancesLoaded()-before==t.host().soundContexts().size() && t.host().soundContexts().size()>=2,"a restored pool loads one instance per sound");
+    t.host().selectSound(t.host().soundContexts()[1].id);t.one(Event::midi(0x90,60,100));t.level(.25);
 }
 void bounds(const char* path){
     Instrument s(path,"org.kick.test.midi",7);std::array<uint32_t,7> ids{};for(auto& id:ids)id=s.prepare(.25);

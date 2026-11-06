@@ -3,6 +3,7 @@
 #include "StateFiles.h"
 #include <kick_clap/Discovery.h>
 #include <algorithm>
+#include <atomic>
 #include <filesystem>
 #include <sstream>
 #include <iomanip>
@@ -294,9 +295,12 @@ namespace oscairn
         return presets;
     }
 
+    namespace { std::atomic<uint64_t> instancesLoaded{0}; }
+    uint64_t pluginInstancesLoaded() noexcept { return instancesLoaded.load(std::memory_order_relaxed); }
     std::shared_ptr<PluginHost> loadPlugin(const std::string& path,const std::string& id,double rate,uint32_t frames,ProcessingMode mode,Lv2BufferLimits lv2Buffers,uint64_t memoryRoom)
     {
         (void)lv2Buffers; // LV2-only resource policy.
+        instancesLoaded.fetch_add(1,std::memory_order_relaxed);
         if(path.find('\0')!=std::string::npos || id.find('\0')!=std::string::npos)
             throw std::invalid_argument("Plugin path and ID must not contain NUL bytes");
         auto source=std::filesystem::path(path).lexically_normal();
