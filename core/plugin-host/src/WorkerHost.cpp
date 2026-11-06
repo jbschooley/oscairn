@@ -341,7 +341,7 @@ namespace oscairn
                 noteInputs_ = r.u32(); noteOutputs_ = r.u32();
                 for(uint32_t i = 0; i < noteInputs_; ++i) clapNotes_.push_back(r.u8());
                 state_ = r.u8(); contexts_ = r.u32(); effects_ = r.u8();
-                window_ = r.u8(); snapshots_ = r.u8(); ringOut_ = r.u8();
+                window_ = r.u8(); snapshots_ = r.u8(); ringOut_ = r.u8(); savesSounds_ = r.u8();
                 voiceBudget_ = r.u8(); honorsVolume_ = r.u8();
                 description_ = r.data.substr(at, r.at - at);
 
@@ -630,6 +630,22 @@ namespace oscairn
                 voiceCost = voiceCost_; notes = voiceNotes_.data(); count = voiceNoteCount_; return activeVoices_;
             }
             bool preparesSnapshots() const noexcept override { return snapshots_; }
+            bool savesSounds() const noexcept override { return savesSounds_; }
+            void saveSound(uint32_t id, const std::string& directory) override
+            {
+                const auto i = ids_.find(id);
+                if(!savesSounds_ || i == ids_.end()) throw std::invalid_argument("no such sound to save on its own");
+                request(Op::SaveSound, Writer().u32(i->second).str(directory));
+            }
+            std::vector<oscairn_sound_parameter_t> soundValues(uint32_t id) const override
+            {
+                const auto i = ids_.find(id);
+                if(!savesSounds_ || i == ids_.end()) return {};
+                Reader r = const_cast<WorkerHost*>(this)->request(Op::SoundValues, Writer().u32(i->second));
+                std::vector<oscairn_sound_parameter_t> values(r.u32());
+                for(auto& v : values) { v.id = r.u32(); v.value = r.f64(); }
+                return values;
+            }
             bool ringsOut() const noexcept override { return ringOut_; }
             bool chokeRetiring() override
             {
@@ -1034,7 +1050,7 @@ namespace oscairn
             std::vector<kick::clap::Port> inputs_, outputs_;
             uint32_t noteInputs_ = 0, noteOutputs_ = 0, contexts_ = 0;
             std::vector<uint8_t> clapNotes_;
-            bool state_ = false, effects_ = false, window_ = false, snapshots_ = false, ringOut_ = false, voiceBudget_ = false, honorsVolume_ = false;
+            bool state_ = false, effects_ = false, window_ = false, snapshots_ = false, ringOut_ = false, savesSounds_ = false, voiceBudget_ = false, honorsVolume_ = false;
             std::string windowTitle_; // the window the engine last opened, for a restarted worker; under control
             int shm_ = -1;
             Shared* shared_ = nullptr; size_t bytes_ = 0;

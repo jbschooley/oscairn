@@ -34,6 +34,10 @@
 // ringOut[2..3] (still its own chain), and the newer tail takes ringOut[0..1]. Only the main port
 // rings out (other ports follow the incoming chain), and a note held over 30 s after the change goes
 // back to the main output (RFC 0005, the limits).
+// For draft 4's saveSound and soundValues in that table too (a plugin that may share one instance
+// between parts, RFC 0021), it provides
+//   void alone(Patch&)                                       the patch played on the main output port
+//   uint32_t patchValues(const Patch&, oscairn_sound_parameter_t*, uint32_t capacity)   its parameter values
 // It may provide buildPreset(Context&, std::string& error), called with a preset's or a snapshot's
 // patch in place before the context is published (to build per-sound state; false refuses it),
 // snapshotLoading(bool), called around reading a snapshot's patches, and
@@ -547,6 +551,37 @@ namespace oscairn::contexts
             }
             for(size_t ch = 0; ch < 16; ++ch) selected[ch] = ids[selection[ch]];
             return true;
+        }
+
+        // oscairn.sound-snapshots draft 4: one sound as a whole snapshot of its own, its Default,
+        // selected on every channel and on the main output (rendering excluded, as saveSnapshot).
+        static bool saveSound(const clap_plugin_t* p, uint32_t id, const clap_ostream_t* stream)
+        {
+            auto& s = self(p); s.applySelections(nullptr);
+            const auto c = std::find_if(s.contexts.begin(), s.contexts.end(), [&](const Context& x) { return x.prepared && x.id == id; });
+            if(c == s.contexts.end()) return false;
+            Patch patch = c->patch; s.derived().alone(patch);
+            std::ostringstream out; out.imbue(std::locale::classic()); out << std::setprecision(17) << Derived::stateVersion << "\n1 " << std::quoted(c->name);
+            if(!s.writePatch(out, patch)) return false;
+            out << '\n';
+            for(uint32_t slot = 1; slot < ContextCapacity; ++slot) out << "0\n";
+            for(size_t ch = 0; ch < 16; ++ch) out << "0 ";
+            out << '\n'; const auto data = out.str();
+            for(size_t at = 0; at < data.size();)
+            {
+                const auto n = stream->write(stream, data.data() + at, data.size() - at);
+                if(n <= 0 || size_t(n) > data.size() - at) return false;
+                at += size_t(n);
+            }
+            return true;
+        }
+        // Draft 4: a sound's parameter values while no channel selects it (the audio thread changes
+        // only selected sounds' patches); main thread.
+        static uint32_t soundValues(const clap_plugin_t* p, uint32_t id, oscairn_sound_parameter_t* values, uint32_t capacity)
+        {
+            auto& s = self(p);
+            for(const auto& c : s.contexts) if(c.prepared && c.id == id) return c.selected.load(std::memory_order_acquire) ? 0 : s.derived().patchValues(c.patch, values, capacity);
+            return 0;
         }
 
         // Extension callbacks. Each plugin builds its own tables from these (see sampler.cpp):

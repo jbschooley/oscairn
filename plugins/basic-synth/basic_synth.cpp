@@ -12,7 +12,8 @@
 // Events are applied on their exact sample, and the output does not depend on the
 // host's block size. Its factory presets are listed through CLAP preset discovery and
 // prepared as sound contexts (oscairn.sound-contexts draft 5). Sounds no channel selects any more
-// ring out into the host's ring-out buffer when it gives one (oscairn.sound-snapshots draft 3).
+// ring out into the host's ring-out buffer when it gives one (oscairn.sound-snapshots draft 3). Draft 4 saves one
+// sound on its own and reads a sound's values, so several parts may share one instance (RFC 0021).
 // Within the voices the host gives it (oscairn.voice-budget draft 1) it gives voices up itself,
 // released and quiet ones first, and reports each note's level from its envelope.
 
@@ -144,6 +145,12 @@ namespace
             for(const auto& preset:factoryPresets)if(kind==CLAP_PRESET_DISCOVERY_LOCATION_PLUGIN && key && std::strcmp(key,preset.key)==0)
                 {for(const auto& v:preset.values)if(v.id)patch.values[v.id-1]=v.value;return true;}
             error="no such preset";return false;
+        }
+        void alone(Patch& patch){patch.values[7]=0;} // its Output bus: Main
+        uint32_t patchValues(const Patch& patch,oscairn_sound_parameter_t* out,uint32_t capacity)
+        {
+            for(uint32_t i=0;i<parameters.size() && i<capacity;++i)out[i]={i+1,patch.values[i]};
+            return uint32_t(parameters.size());
         }
         void restored(){for(size_t i=0;i<parameters.size();++i)values[i]=contexts[selected[0]].patch.values[i];}
     };
@@ -401,7 +408,7 @@ namespace
 
     const clap_plugin_state_t snapshot{Synth::saveSnapshot,Synth::loadSnapshot};
     const oscairn_plugin_sound_contexts_t soundContexts{Synth::capacity,Synth::get,Synth::prepare,Synth::select,Synth::discard,&snapshot,Synth::preparePreset};
-    const oscairn_plugin_sound_snapshots_t soundSnapshots{Synth::prepareSnapshot,Synth::setRingOut,Synth::chokeRetiring};
+    const oscairn_plugin_sound_snapshots_t soundSnapshots{Synth::prepareSnapshot,Synth::setRingOut,Synth::chokeRetiring,Synth::saveSound,Synth::soundValues};
     const oscairn_plugin_voice_budget_t voiceBudget{Synth::honorsVolume,Synth::setLimits,Synth::activeVoices,Synth::voiceNotes};
 
     const clap_plugin_t* create()

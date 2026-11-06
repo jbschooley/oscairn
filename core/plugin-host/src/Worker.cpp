@@ -171,7 +171,7 @@ namespace oscairn::worker
             for(uint32_t i = 0; i < host.noteInputPorts(); ++i) w.u8(host.usesClapNotes(i));
             w.u8(host.supportsState()).u32(host.soundContextCapacity()).u8(host.effectResources().has_value());
             w.u8(host.hasWindow());
-            w.u8(host.preparesSnapshots()); w.u8(host.ringsOut());
+            w.u8(host.preparesSnapshots()); w.u8(host.ringsOut()); w.u8(host.savesSounds());
             w.u8(host.voiceBudget()); w.u8(host.honorsVolume());
         }
 
@@ -432,6 +432,14 @@ namespace oscairn::worker
                 case Op::DiscardSound: { const auto id = r.u32(); const bool cut = r.u8(); w.u8(host.discardSound(id, cut)); break; }
                 case Op::ChokeRetiring: w.u8(host.chokeRetiring()); break;
                 case Op::PrepareSnapshot: { for(const auto id : host.prepareSnapshot(r.str())) w.u32(id); n.publish(); break; }
+                case Op::SaveSound: { const auto id = r.u32(); host.saveSound(id, r.str()); break; }
+                case Op::SoundValues:
+                {
+                    const auto values = host.soundValues(r.u32());
+                    w.u32(uint32_t(values.size()));
+                    for(const auto& v : values) w.u32(v.id).f64(v.value);
+                    break;
+                }
                 // Presets are not listed here: the engine's side lists them through the isolated
                 // scan helper, so this worker's control thread never runs a preset provider.
                 case Op::LoadPreset: host.loadPreset(r.str()); n.publish(); break;

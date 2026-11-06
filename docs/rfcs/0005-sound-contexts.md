@@ -32,6 +32,9 @@ Checked when built and tested; the sections below say how.
 - [x] Parts sharing one instance ([RFC 0021, slice 3](0021-sounds-performances-and-library.md#parts-sharing-one-engine)):
       each part's node plays one sound on its own channel and output bus, the plugin naming its
       output bus parameter with oscairn.ui's `OSCAIRN_ROLE_OUTPUT_BUS`
+- [x] One sound saved on its own and a sound's values read (`oscairn.sound-snapshots/draft-4`,
+      [below](#one-sound-on-its-own)), by the SDK and the Basic Synth, for parts to share an instance
+      on their own and a sharing part to save as a Sound
 
 ## Contract
 
@@ -206,7 +209,7 @@ ring-out buffer, which the host routes through the outgoing chain, and let the h
 tail when a second change comes:
 
 ```c
-static const char OSCAIRN_EXT_SOUND_SNAPSHOTS[] = "oscairn.sound-snapshots/draft-3";
+static const char OSCAIRN_EXT_SOUND_SNAPSHOTS[] = "oscairn.sound-snapshots/draft-3"; /* draft 4 adds two calls (below) */
 typedef struct oscairn_plugin_sound_snapshots {
     bool (CLAP_ABI *prepare)(...);                       /* as above */
     void (CLAP_ABI *ring_out)(const clap_plugin_t*, const clap_audio_buffer_t* buffer); /* optional */
@@ -290,6 +293,45 @@ applied, it starts the choke fade (`chokeLeft`/`chokeLength`) on every voice of 
 and marks the context until its last voice ends. An instrument's `render` adds a context's main
 output into the channels `retiring` returns instead of its main port. The table becomes
 `{Engine::prepareSnapshot, Engine::setRingOut, Engine::chokeRetiring}`.
+
+## One sound on its own
+
+Parts sharing one instance ([RFC 0021, slice 3](0021-sounds-performances-and-library.md#parts-sharing-one-engine))
+formed on their own need two things of one sound that the snapshot calls do not
+give: a part's sound saved as a Sound of its own, without the other parts' sounds, and the values
+a part's node shows, which the host otherwise knows only for the sound a whole instance plays.
+Draft 4 of `oscairn.sound-snapshots` adds two calls, optional together:
+
+```c
+static const char OSCAIRN_EXT_SOUND_SNAPSHOTS[] = "oscairn.sound-snapshots/draft-4";
+typedef struct oscairn_plugin_sound_snapshots {
+    bool (CLAP_ABI *prepare)(...);        /* as above */
+    void (CLAP_ABI *ring_out)(...);       /* as above, optional */
+    bool (CLAP_ABI *choke_retiring)(...); /* as above, with ring_out */
+    bool (CLAP_ABI *save_sound)(const clap_plugin_t*, uint32_t id, const clap_ostream_t* stream);
+    uint32_t (CLAP_ABI *sound_values)(const clap_plugin_t*, uint32_t id, oscairn_sound_parameter_t* values, uint32_t capacity);
+} oscairn_plugin_sound_snapshots_t;
+```
+
+**`save_sound`** writes a whole snapshot, as `state->save` writes one, holding only sound `id`:
+what an instance holding that sound alone would save, as its Default, selected on every MIDI
+channel and playing on the main output port (its parameter with oscairn.ui's
+`OSCAIRN_ROLE_OUTPUT_BUS` at 0). Main thread, called only with rendering excluded, as `state->save`
+is for an exclusive snapshot. False for an unknown ID.
+
+**`sound_values`** writes up to `capacity` of sound `id`'s parameter values, every writable
+parameter's, and returns how many it has; 0 for an unknown ID or one a MIDI channel selects. Main
+thread, concurrently with `process()`: the host calls it only for a sound it prepared and has not
+selected since (just prepared, or just prepared beside), whose values the audio thread does not
+change, so nothing needs a lock.
+
+A plugin offering both (with native contexts, their snapshot, notes in and none out, no audio in,
+more than one output port and an output bus parameter) can share one instance between parts. The
+SDK's `Engine::saveSound` and `Engine::soundValues` implement them from two instrument hooks,
+`alone(Patch&)` (the patch on the main output) and `patchValues(const Patch&, ...)`; the table
+becomes `{Engine::prepareSnapshot, Engine::setRingOut, Engine::chokeRetiring, Engine::saveSound,
+Engine::soundValues}`. Draft 3 is gone, replaced outright: a plugin built against it must rebuild.
+In a worker both cross as requests of their own (`Op::SaveSound`, `Op::SoundValues`).
 
 ## Basic Synth and Sampler
 

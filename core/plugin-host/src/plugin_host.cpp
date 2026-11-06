@@ -101,6 +101,17 @@ namespace oscairn
                 if(std::string(id.begin(),id.end())!=host.descriptor().id)throw std::runtime_error("State belongs to a different CLAP plugin");
                 return host.prepareSoundSnapshot(state_files::read(path/"state"/"state.clap",kick::clap::Host::maxStateBytes));
             }
+            bool savesSounds() const noexcept override {return host.savesSounds();}
+            void saveSound(uint32_t id,const std::string& directory) override {
+                state_files::Bundle bundle(directory);
+                const auto bytes=host.saveSoundState(id);const auto& plugin=host.descriptor().id;
+                std::filesystem::create_directory(bundle.temporary.path/"state");
+                state_files::write(bundle.temporary.path/"state"/"plugin.id",plugin.data(),plugin.size());
+                state_files::write(bundle.temporary.path/"state"/"state.clap",bytes.data(),bytes.size());
+                const std::string head="state 1\n";state_files::write(bundle.temporary.path/"snapshot",head.data(),head.size());
+                bundle.publish();
+            }
+            std::vector<oscairn_sound_parameter_t> soundValues(uint32_t id) const override {return host.soundValues(id);}
             bool supportsState() const noexcept override {return host.supportsState();}
             bool hasWindow() const override {return host.hasGui();}
             void showWindow(bool show,const std::string& title) override {if(!show)host.closeGui();else if(!host.showGui(title))throw std::runtime_error(host.error());}

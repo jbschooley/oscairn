@@ -199,6 +199,11 @@ public:
     // the new ID each MIDI channel selects in it; nothing is selected. Main thread, while playing.
     bool preparesSoundSnapshots() const noexcept;
     std::array<uint32_t,16> prepareSoundSnapshot(const std::vector<uint8_t>& bytes);
+    // Draft 4 (RFC 0021): one sound as a whole snapshot of its own, in the state's bytes (rendering
+    // excluded, as a native engine's state save is); and a sound no channel selects, its values.
+    bool savesSounds() const noexcept;
+    std::vector<uint8_t> saveSoundState(uint32_t id);
+    std::vector<oscairn_sound_parameter_t> soundValues(uint32_t id) const;
     // sound-snapshots' ring_out (RFC 0005): process() given four output channels after the ports'
     // passes them to the plugin as its ring-out buffer, where it renders its retiring sounds.
     bool ringsOut() const noexcept;

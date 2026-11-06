@@ -64,6 +64,12 @@ namespace oscairn
         // few free contexts), having added nothing. Control thread.
         virtual bool preparesSnapshots() const noexcept { return false; }
         virtual std::array<uint32_t,16> prepareSnapshot(const std::string& /*directory*/) { throw std::invalid_argument("Plugin cannot prepare a snapshot beside its sounds"); }
+        // RFC 0021 (sound-snapshots draft 4): one sound saved to a NEW directory as saveSnapshot saves
+        // an instance holding it alone; and the values of a sound no channel selects, empty where the
+        // plugin cannot say. Control thread.
+        virtual bool savesSounds() const noexcept { return false; }
+        virtual void saveSound(uint32_t /*id*/, const std::string& /*directory*/) { throw std::invalid_argument("Plugin cannot save one sound on its own"); }
+        virtual std::vector<oscairn_sound_parameter_t> soundValues(uint32_t /*id*/) const { return {}; }
         // RFC 0005: the plugin renders its retiring sounds into a hidden ring-out buffer, four output
         // channels after its ports' that process() passes when the caller gives them (no > the ports').
         virtual bool ringsOut() const noexcept { return false; }

@@ -90,7 +90,8 @@ namespace oscairn::worker
         Window, // the plugin's own window: shown (with its title) or closed
         Reset,
         PrepareSnapshot, // a native snapshot's sounds prepared beside the playing ones (RFC 0021)
-        ChokeRetiring // sound-snapshots' choke_retiring (RFC 0005)
+        ChokeRetiring, // sound-snapshots' choke_retiring (RFC 0005)
+        SaveSound, SoundValues // sound-snapshots draft 4: one sound on its own, a sound's values (RFC 0021)
     };
     // First byte of every message from the worker: a reply, or a request to the engine made while
     // the worker serves one (the plugin resolving a sound asset; a node about to activate, with

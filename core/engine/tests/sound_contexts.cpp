@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #include "oscairn/graph.h"
 #include "AllocationGuard.h"
+#include "../../plugin-host/src/StateFiles.h"
 #include <algorithm>
 #include <array>
 #include <atomic>
@@ -138,5 +139,28 @@ int main(int argc,char** argv){try{
         if(i%10==0){const auto before=blocks.load();while(blocks<=before)std::this_thread::yield();}
     }
     stop=true;audio.join();check(valid && preparedCount>7,"concurrent preparation reuses retired contexts without interrupting rendering");
-    std::cout<<"ok: held sounds, independent parts, note ownership, sustain, capacity, reclamation and concurrent preparation\n";return 0;
+    // sound-snapshots draft 4: a sound's values while no channel selects it, and the sound saved on
+    // its own, which an instance loads as its one sound, on every channel and its main output.
+    {
+        Instrument one(argv[1]),reference(argv[1]);
+        const auto id=one.host().prepareSound("Bright",{{1,.95},{4,2},{8,3}}); // on bus 3
+        const auto values=one.host().soundValues(id);
+        check(values.size()==10 && values[0].id==1 && values[0].value==.95 && values[3].value==2 && values[7].value==3,"an unselected sound's values");
+        check(one.host().selectSound(id),"selected");one.run();
+        check(one.host().soundValues(id).empty(),"none while a channel selects it");
+        state_files::TemporaryDirectory temp;const auto saved=(temp.path/"alone").string();
+        one.host().saveSound(id,saved);
+        Instrument alone(argv[1]);alone.host().loadSnapshot(saved);
+        const auto sounds=alone.host().soundContexts();
+        check(sounds.size()==1 && std::string(sounds[0].name)=="Bright" && sounds[0].selected_channels==0xffff,"saved on its own: one sound, selected on every channel");
+        check(alone.host().parameterValue(1)==.95 && alone.host().parameterValue(8)==0,"its values, on the main output");
+        check(reference.host().selectSound(reference.host().prepareSound("Bright",{{1,.95},{4,2}})),"the reference");
+        alone.one(Event::note(true,60,.8));reference.one(Event::note(true,60,.8));
+        bool same=alone.left==reference.left;double energy=0;
+        for(int i=0;i<10;++i){alone.run();reference.run();same=same && alone.left==reference.left;for(float v:alone.left)energy+=v*v;}
+        check(same && energy>0,"and it plays as that sound prepared in an instance of its own");
+        bool refused=false;try{one.host().saveSound(999,(temp.path/"none").string());}catch(const std::exception&){refused=true;}
+        check(refused,"an unknown sound is refused");
+    }
+    std::cout<<"ok: held sounds, independent parts, note ownership, sustain, capacity, reclamation, concurrent preparation and one sound on its own\n";return 0;
 }catch(const std::exception& e){forbidAllocation=false;std::cerr<<e.what()<<'\n';return 1;}}

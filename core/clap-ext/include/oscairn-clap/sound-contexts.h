@@ -81,12 +81,24 @@ typedef struct oscairn_plugin_sound_contexts {
  * ends; the sounds the selections leave then take channels 0 and 1. False when nothing could be
  * queued.
  * Limits (RFC 0005): only the main port rings out, other output ports follow the incoming chain;
- * and a note held more than 30 s after the change goes back to the main output, the incoming chain. */
-static const char OSCAIRN_EXT_SOUND_SNAPSHOTS[] = "oscairn.sound-snapshots/draft-3";
+ * and a note held more than 30 s after the change goes back to the main output, the incoming chain.
+ * save_sound (draft 4, optional; RFC 0005, "One sound on its own"): writes to stream a whole
+ * snapshot, as state->save writes one, holding only the sound id: what an instance holding that
+ * sound alone would save, as its Default, selected on every MIDI channel and playing on the main
+ * output port (an output bus parameter, oscairn.ui's OSCAIRN_ROLE_OUTPUT_BUS, at 0). Main thread,
+ * called only with rendering excluded, as state->save is. False for an unknown id.
+ * sound_values (draft 4, optional): writes up to capacity of the sound id's parameter values, every
+ * writable parameter's, into values and returns how many it has; 0 for an unknown id or one selected
+ * on a MIDI channel. Main thread, concurrently with process(): the host calls it only for a sound it
+ * has prepared and not selected since, whose values the audio thread does not change.
+ * A plugin offering both may share one instance between several parts (RFC 0021). */
+static const char OSCAIRN_EXT_SOUND_SNAPSHOTS[] = "oscairn.sound-snapshots/draft-4";
 typedef struct oscairn_plugin_sound_snapshots {
     bool (CLAP_ABI *prepare)(const clap_plugin_t*,const clap_istream_t* snapshot,uint32_t* selected,char* message,uint32_t message_capacity);
     void (CLAP_ABI *ring_out)(const clap_plugin_t*,const clap_audio_buffer_t* buffer);
     bool (CLAP_ABI *choke_retiring)(const clap_plugin_t*);
+    bool (CLAP_ABI *save_sound)(const clap_plugin_t*,uint32_t id,const clap_ostream_t* stream);
+    uint32_t (CLAP_ABI *sound_values)(const clap_plugin_t*,uint32_t id,oscairn_sound_parameter_t* values,uint32_t capacity);
 } oscairn_plugin_sound_snapshots_t;
 #ifdef __cplusplus
 }

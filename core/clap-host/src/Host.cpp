@@ -1418,6 +1418,22 @@ std::array<uint32_t,16> Host::prepareSoundSnapshot(const std::vector<uint8_t>& b
     if(!ok)throw std::runtime_error(std::string("Snapshot not prepared beside: ")+(message[0]?message:"refused, or too few free sound contexts"));
     return selected;
 }
+bool Host::savesSounds() const noexcept {return impl->soundSnapshots && impl->soundSnapshots->save_sound && impl->soundSnapshots->sound_values;}
+std::vector<uint8_t> Host::saveSoundState(uint32_t id) {
+    auto& s=*impl;
+    if(!savesSounds() || !s.main())throw std::invalid_argument("Plugin cannot save one sound on its own");
+    Gate guard(s.gate);
+    s.stop();
+    Stream stream;clap_ostream_t output{&stream,Stream::write};
+    if(!s.soundSnapshots->save_sound(s.plugin,id,&output) || stream.failed)throw std::runtime_error("Plugin did not save the sound on its own");
+    return std::move(stream.bytes);
+}
+std::vector<oscairn_sound_parameter_t> Host::soundValues(uint32_t id) const {
+    if(!savesSounds())return {};
+    std::vector<oscairn_sound_parameter_t> values(impl->paramInfo.size());
+    values.resize(std::min<size_t>(values.size(),impl->soundSnapshots->sound_values(impl->plugin,id,values.data(),uint32_t(values.size()))));
+    return values;
+}
 bool Host::discardSound(uint32_t id) {
     if(!impl->sounds)throw std::invalid_argument("Plugin has no native sound contexts");
     return impl->sounds->discard(impl->plugin,id);
