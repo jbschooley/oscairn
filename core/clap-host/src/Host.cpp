@@ -198,7 +198,8 @@ struct Host::Impl {
     double sampleRate = 48000;
     uint32_t maxFrames = 512;
     int64_t steadyTime = 0;
-    bool active = false, sleeping = false;
+    bool active = false;
+    std::atomic<bool> sleeping{false}; // asleep() reads it on the audio thread while service() may stop the plugin
     std::atomic<bool> wantsBeat{false}, wantsHarmony{false}; // the plugin queried oscairn.beat's, oscairn.harmony's event space
     // oscairn.harmony: the last delivered (audio thread), and a copy the main thread reads
     // through the host extension, behind a sequence count that is odd while it is written.
