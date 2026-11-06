@@ -235,7 +235,7 @@ namespace oscairn::contexts
         {
             for(uint32_t slot = 0; slot < ContextCapacity; ++slot)
             {
-                const auto& c = contexts[slot]; if(!c.prepared) continue;
+                const auto& c = contexts[slot]; if(!c.users.load(std::memory_order_acquire)) continue; // pinned, so its id is stable; prepared is the main thread's
                 const auto settings = voiceLimits.of(c.id, c.selected.load(std::memory_order_relaxed) != 0);
                 while(settings.limit && sounding(slot) > settings.limit) { const int i = voiceVictim(oscairn::voices::none, c.id); if(i < 0) break; fadeOut(i); }
             }
