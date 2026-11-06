@@ -557,9 +557,9 @@ namespace oscairn
         };
         // A loaded instance a Performance being read may take over: kept warm (node 0), or a free one
         // of the playing graph (its node), whose state is loaded last.
-        struct Free { NodeId node = 0; std::shared_ptr<PluginHost> host; Loaded loaded; };
+        struct Free { NodeId node = 0; std::shared_ptr<PluginHost> host; Loaded loaded; bool keep = false; }; // keep: a playing one to keep warm, not take, unless it holds the node's state
         std::vector<Free> freeInstances(bool all) const; // all: every one that could be (a cut cuts them anyway)
-        std::unique_ptr<Prepared> readTaking(const std::filesystem::path& root, bool playing, bool all); // read with what it may take over
+        std::unique_ptr<Prepared> readTaking(const std::filesystem::path& root, bool playing, bool all, uint64_t incoming = 0); // read with what it may take over; incoming: its memory estimate
         void keepWarm(NodeId node);                       // ringOut: a node rung out kept loaded, or removed
         uint64_t warmMemory() const;
         std::map<NodeId,Loaded> loaded_;                  // Prepared::loaded of the nodes in graph_

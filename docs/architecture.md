@@ -338,9 +338,10 @@ layers and transitions, not six independently initialized organs.
   the profile/engine evaluation, capability checks and staged SFZ/Yamaha conversion work.
 - Changing setlists keeps resources common to both, prepares missing ones in the
   background and releases the rest when safe.
-- Changing Performances takes over the outgoing one's free instances (silent, no note held)
-  of the same plugin build and placement, loading the new state into them instead of loading
-  new instances; what still sounds rings out ([RFC 0021](rfcs/0021-sounds-performances-and-library.md#free-instances-across-a-change-and-instances-kept-warm)).
+- Changing Performances keeps the outgoing one's free instances (silent, no note held) warm
+  and loads the new one's, and takes them over, loading the new state into them instead of
+  loading new instances, only at a cut or where keeping them warm would not fit the memory
+  budget or the 32-instance bound; what still sounds rings out ([RFC 0021](rfcs/0021-sounds-performances-and-library.md#free-instances-across-a-change-and-instances-kept-warm)).
 
 ### Keeping plugins loaded
 

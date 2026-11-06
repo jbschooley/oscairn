@@ -64,6 +64,7 @@ Checked when built and tested; the sections below say how.
 - [x] Pooled instruments restore a snapshot in the instances they have ([design](#free-instances-across-a-change-and-instances-kept-warm))
 - [x] Free instances taken over across a change ([design](#free-instances-across-a-change-and-instances-kept-warm))
 - [x] Instances kept warm once rung out, bounded and evicted under pressure ([design](#free-instances-across-a-change-and-instances-kept-warm))
+- [x] The middle rule: a playing instance taken over only where keeping it warm would not fit ([design](#free-instances-across-a-change-and-instances-kept-warm))
 - [x] Audition of a Sound in a part and of a Performance in place of the open one, put back as
       it was or kept, from the Library app ([status](#audition))
 - [ ] 5. Seamless loading into a part (part transitions on RFC 0007's chain preparation)
@@ -698,10 +699,11 @@ one.** Free instances come from two places, taken in this order:
    instance whose state is already the node's, byte for byte, goes first (switching back),
    then the least recently used.
 2. **The playing Performance's free instances**, and those of the one before still ringing out,
-   when a Performance is loaded at the cue. Not while one is prepared ahead: it is read while the
-   outgoing one plays, so its instances are not free then; a prepared Performance takes only
-   instances kept warm. Nor while auditioning a Performance: stopping puts back the instances it
-   set aside, as they were.
+   when a Performance is loaded at the cue, only where keeping them warm would not fit (the
+   middle rule, below). Not while one is prepared ahead: it is
+   read while the outgoing one plays, so its instances are not free then; a prepared Performance
+   takes only instances kept warm. Nor while auditioning a Performance: stopping puts back the
+   instances it set aside, as they were.
 
 **The matching rule.** A node may take over an instance when all of these hold:
 
@@ -721,6 +723,51 @@ one.** Free instances come from two places, taken in this order:
   asleep or has been silent (below -100 dB) for three seconds, the ring-out rule without its
   30-second limit, so nothing still sounding is cut; and when every node sending it audio or notes
   is free too, so a held note's chain stays whole: a synth holding a note keeps its effects.
+
+**Keep or take over: the middle rule.** Decided 2026-11-05 (Jacob): a change keeps the outgoing
+Performance's free instances warm and gives the incoming nodes instances kept warm or fresh ones;
+it takes over a playing instance only where keeping it warm would not fit. So switching back and
+forth between two Performances finds each one's instances holding its state, at the cost of both
+Performances' memory and a slower first switch. Precisely, when a Performance is read at the cue:
+
+- **A cut** (the two would not fit together, [RFC 0025](0025-resource-budgets.md)) keeps nothing
+  warm, so it may take over any of the outgoing instances, as before.
+- **Otherwise** the free playing instances are counted in node order. One is kept, not offered to
+  the incoming nodes, while, with those kept before it:
+  - they are at most 32, the warm limit. The instances kept warm already are older and go first
+    (least recently used), so they do not count;
+  - with memory classes, their memory fits the room admission leaves opportunistic data once the
+    change has happened: the device's memory less the system's share, the running apps'
+    reservations, the margin, recording's committed bytes, the incoming Performance at its
+    estimate (full cost, as admission counts it) and the outgoing nodes not free (they still ring
+    out; engines with effect contexts are counted here too). An instance's memory is counted as eviction counts
+    the instances kept warm: a worker's resident memory; one in the engine's process counts
+    none (a shortcut of the eviction, not of this rule). Without memory classes only the warm
+    limit applies.
+- **A kept instance holding a node's state already** (the same Performance opened again) is
+  still taken over by that node: keeping it would only hold a second copy of a state the
+  incoming Performance holds.
+- Every other kept instance rings out with the outgoing Performance at the cue, at once since it
+  is silent, and joins the instances kept warm. The rest are offered after the instances kept
+  warm, as before.
+
+Since a seamless change was admitted with both Performances together, keeping fits whenever the
+estimates hold; the memory test decides only when an instance's resident memory has outgrown its
+estimate.
+
+**Halfway through a switch.** The choice is made once, before the read, from the figures
+admission used to call the change seamless; it is not made again as instances load. Between the
+read and the cue memory holds the outgoing Performance, what still rings out, the incoming one's
+fresh instances and the instances kept warm before: the first three are what seamless admission
+checked, the incoming one at full cost, so the rule adds nothing to the peak that admission did
+not count. The instances kept warm before are opportunistic and are not let go before the read,
+since the incoming Performance may take them. A plugin refused for memory halfway fails the load,
+as any refusal does: the room it is checked against counts the incoming Performance alone, so
+taking over a playing instance instead would not make room. If memory is tighter than the
+estimates said, the end of the change corrects it: admission's eviction runs right after the
+change and again as each outgoing instance rings out and is kept, letting instances kept warm go,
+least recently used first, until they fit, and memory pressure lets all of them go. Switching back
+is then slower, never a failure.
 
 **How it is taken over.** An instance kept warm gets the node's state when the Performance is
 read; nothing plays it. A playing instance is claimed when the Performance is read and added to
@@ -806,13 +853,39 @@ Measured as above: "Sick tines" back to "Where Is My Mind Pno" with its sfizz in
 takes 41–58 ms in workers (25 ms in the engine) instead of 390–455 ms; its 4 sfizz instances held
 their state, the arpeggiators were given theirs.
 
-**For the owner:** taking over the outgoing Performance's free instances (built, as asked) and
-keeping them warm pull against each other. A switch A to B takes A's instances, so B back to A
-finds none holding A's state and loads it again (180–310 ms here) where keeping A warm and loading
-B fresh would make every later switch between the two take about 50 ms, at the cost of both
-Performances' memory and a slower first switch. An alternative rule, not built or measured: take a
-playing instance only when keeping it warm would not fit (memory classes, or the 32-instance
-bound).
+Taking over and keeping warm pulled against each other: a switch A to B took A's instances, so B
+back to A found none holding A's state and loaded it again. The middle rule (above) built the
+same day (`Session::readTaking` marks the playing instances to keep, `Free::keep`; `read` offers
+them only to a node whose state they hold). `control-performance-switch` now checks: A to B keeps
+A's four instruments warm and loads B's (4 loaded, the Delays contexts of A's); B back to A and A
+to B again take the instances kept warm, all four holding their state, nothing loaded, output
+identical to a fresh load; a cut takes over all 8 free playing instances; a note held through a
+change keeps every instance of A, the sounding one included; and past the warm limit, 34 parts
+with one holding a note, 32 of the 33 free instances are kept, one is taken over and the
+sounding one is not. Without the rule the counts fail. The memory test itself is not exercised: with a seamless
+change admitted, keeping fits unless a worker's resident memory has outgrown its estimate.
+
+Measured with the bench on "Where Is My Mind Pno" (A), "NKC Christmas" (B) and "Sick tines" (C),
+Release, M3 Max at a load average of 35 to 85 from other work, so ranges over two or three runs;
+memory is the resident memory of the bench process and its workers (`ps`), once A is open and
+again after five rounds of A to B and back:
+
+| | Before | After |
+| --- | --- | --- |
+| A to B, the first, workers | 420–1120 ms, 3 loaded, 16 reused | 1100–1320 ms, 11 loaded, 8 reused |
+| The same, engine | 320–460 ms | 460–480 ms |
+| B to A, the first, workers | 185–355 ms, 0 loaded, none holding their state | 42–89 ms, 0 loaded, 4 holding theirs |
+| A to B again (median of 4), workers | 340–840 ms, 1 loaded | 67–100 ms, 1 loaded, 5 holding their state |
+| B to A again (median of 4), workers | 185–365 ms | 50–88 ms |
+| The same two, engine | 295–345 ms and 160–185 ms | 36–54 ms and 36–43 ms |
+| Memory, A open, workers | 517–534 MiB | 598–610 MiB |
+| Memory after switching, workers | 1167–1267 MiB, 2 kept warm | 888–898 MiB, 10 kept warm |
+| The same two, engine | 214–241 and 537–883 MiB | 329–345 and 495–516 MiB |
+
+Repeated switches between the two take about 50 ms, as expected, and the first takes longer, its
+instruments loaded fresh. Memory after switching is lower than before, though both
+Performances' instruments are now held. Before, every switch gave the sfizz instances another
+state; that their resident memory grew with each would explain it, but it was not checked.
 
 **Load preset** on a node is seamless where `sounds.prepare` accepts it (native contexts and
 pooled instruments) and an interrupting state load otherwise, as today.

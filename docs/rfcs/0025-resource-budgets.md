@@ -401,7 +401,10 @@ opportunistic data, least likely needed first:
    the outgoing Performance has rung out, out of the graph, for the next change to take over
    ([RFC 0021](0021-sounds-performances-and-library.md#free-instances-across-a-change-and-instances-kept-warm)):
    counted as opportunistic, let go least recently used first when a load or a launch needs the
-   room, and first of all on memory pressure. A change that cuts for want of room keeps none.
+   room, and first of all on memory pressure. A change that cuts for want of room keeps none. A
+   seamless change keeps the outgoing Performance's free instances rather than taking them over
+   while they fit the room this class leaves once the change has happened, the incoming
+   Performance counted at its estimate, and the 32-instance bound (RFC 0021's middle rule).
 3. **Setlist entries prepared beyond the next one**, furthest ahead first.
 4. **A next entry prepared only as opportunistic** (it will cut anyway).
 5. Only under pressure, when the estimates were wrong: **the committed next entry.** The Setlist

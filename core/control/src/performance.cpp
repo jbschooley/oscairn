@@ -560,22 +560,37 @@ void Session::loadPerformance(const std::string& directory) {
     audition_.reset(); // opening a Performance keeps what an audition tried; auditionStart sets its own after
     const auto root=performanceRoot(directory);
     // Over the budget it is refused, saying what does not fit (RFC 0025), keeping what is prepared.
-    bool seamless=true;
-    if(budget_.cpu>0){const auto e=estimate(root.string());if(!e.fits)bad("this Performance "+tooMuch(e));seamless=e.seamless;
+    bool seamless=true;uint64_t incoming=0;
+    if(budget_.cpu>0){const auto e=estimate(root.string());if(!e.fits)bad("this Performance "+tooMuch(e));seamless=e.seamless;incoming=e.memory;
         if(!seamless)std::fprintf(stderr,"oscairn: opened at once: with the last Performance ringing out it would not fit\n");}
     // Prepared ahead (RFC 0021), the cue only publishes it; another one prepared is let go first.
     auto prepared=std::move(prepared_);preparedOpportunistic_=false;
     if(prepared && (prepared->root!=root || prepared->stamp!=stamp(root)))prepared.reset();
-    // Read at the cue, it may take over the playing Performance's free instances (RFC 0021); a cut, any of them.
-    if(!prepared)prepared=readTaking(root,!keepInstances_,!seamless);
+    // Read at the cue, it may take over the playing Performance's free instances where keeping them warm would not fit (RFC 0021); a cut, any of them.
+    if(!prepared)prepared=readTaking(root,!keepInstances_,!seamless,incoming);
     open(*prepared,seamless);
     if(!seamless)warm_.clear(); // it cut for want of room: none kept warm (RFC 0025)
     evictOpportunistic();
 }
 
-std::unique_ptr<Session::Prepared> Session::readTaking(const fs::path& root,bool playing,bool all) {
+std::unique_ptr<Session::Prepared> Session::readTaking(const fs::path& root,bool playing,bool all,uint64_t incoming) {
     auto free=warm_;
-    if(playing){auto more=freeInstances(all);free.insert(free.end(),more.begin(),more.end());}
+    if(playing){auto more=freeInstances(all);
+        // The middle rule (RFC 0021): unless it cuts, a playing instance is kept warm instead of taken
+        // over while keeping it fits the warm limit and, with memory classes, what admission leaves
+        // opportunistic data once this one plays (at its estimate) beside what still rings out. Older
+        // instances kept warm are let go first, as least recently used.
+        if(!all){
+            uint64_t room=UINT64_MAX;
+            if(memoryClasses()){
+                std::set<NodeId> outgoing(leaving_),offered;for(const auto& [n,name]:nodes_)outgoing.insert(n);for(const auto& f:more)offered.insert(f.node);
+                uint64_t used=reservedMemory(false)+budget_.margin+recorder_.committedBytes()+incoming;
+                for(const auto n:outgoing)if(!offered.count(n) && graph_.contains(n))used+=nodeCost(graph_,n).memory; // rings out, or no instance to keep
+                room=used<budget_.device?budget_.device-used:0;}
+            size_t count=0;uint64_t bytes=0;
+            for(auto& f:more){const auto b=f.host->residentBytes(); // as warmMemory counts it
+                if(count<warmLimit && b<=room-bytes){f.keep=true;++count;bytes+=b;}}}
+        free.insert(free.end(),more.begin(),more.end());}
     std::unique_ptr<Prepared> p;
     // Instances kept warm it gave a state to before it failed hold that state now, not the one remembered.
     try{p=read(root,std::move(free));}catch(...){for(auto& w:warm_)w.loaded.source.clear();throw;}
@@ -705,9 +720,10 @@ std::unique_ptr<Session::Prepared> Session::read(const fs::path& root,std::vecto
         const bool worker=format=="clap" && !policy.worker.empty() && (placed==policy.plugins.end()?policy.standard:placed->second)==Placement::Worker;
         auto fits=[&](size_t i){if(!free[i].host)return false;const auto& h=*free[i].host;const auto& p=h.descriptor();
             return p.id==id && p.version==saved && free[i].loaded.build==build && h.inWorker()==worker && (p.path==wanted.string() || fs::equivalent(p.path,wanted,e));};
-        // One that holds this node's state already first (switching back), then kept warm, least recently used first, then playing.
+        // One that holds this node's state already first (switching back), then kept warm, least recently
+        // used first, then a playing one only where keeping it warm would not fit (the middle rule).
         for(size_t i=0;i<free.size();++i)if(free[i].loaded.source==source(key) && fits(i))return i;
-        for(size_t i=0;i<free.size();++i)if(fits(i))return i;
+        for(size_t i=0;i<free.size();++i)if(!free[i].keep && fits(i))return i;
         return std::nullopt;};
     auto restore=[&](NodeId runtime,V node,uint64_t room){
         auto& h=next->host(runtime);const auto key=text(field(node,"key"));

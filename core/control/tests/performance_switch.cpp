@@ -19,7 +19,11 @@
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
+#include <map>
 #include <string>
+#if defined(__unix__) || defined(__APPLE__)
+#include <unistd.h>
+#endif
 
 using namespace oscairn;
 namespace fs = std::filesystem;
@@ -78,6 +82,22 @@ namespace
         s.savePerformance(file.string());
     }
 
+    // `count` plain CLAP instruments, a part of three keys each.
+    void many(const fs::path& file, int variant, const char* instrument, uint32_t count)
+    {
+        Session s(48000, frames);
+        for(uint32_t i = 0; i < count; ++i)
+        {
+            const auto n = s.add("instrument " + std::to_string(i), instrument);
+            PartInput keys; keys.zones = {NoteZone{uint8_t(3 * i), uint8_t(3 * i + 2)}};
+            const auto part = s.addPart("Part " + std::to_string(i), keys);
+            s.insertIntoPart(part, 0, n); s.commit();
+            check(s.setParameter(n, 7, .2 + .3 * variant + .01 * i), "instrument gain");
+        }
+        blocks(s, 2);
+        s.savePerformance(file.string());
+    }
+
     struct Switch { double ms = 0; uint64_t loaded = 0, reused = 0, kept = 0; };
     Switch load(Session& s, const fs::path& to)
     {
@@ -113,16 +133,41 @@ namespace
         check(energy > 1e-3, std::string(what) + ": audible");
     }
 
+    // Resident memory of this process and its plugin workers, in MiB, from ps; 0 where there is none.
+    double resident()
+    {
+#if defined(__unix__) || defined(__APPLE__)
+        std::map<long, std::pair<long, long>> all; // pid: parent, KiB
+        if(FILE* f = popen("ps -A -o pid= -o ppid= -o rss=", "r"))
+        {
+            long pid, parent, kib;
+            while(std::fscanf(f, "%ld %ld %ld", &pid, &parent, &kib) == 3) all[pid] = {parent, kib};
+            pclose(f);
+        }
+        auto ours = [&](long pid) { for(int depth = 0; pid > 1 && depth < 8; ++depth) { if(pid == long(getpid())) return true; const auto it = all.find(pid); if(it == all.end()) return false; pid = it->second.first; } return false; };
+        long kib = 0;
+        for(const auto& [pid, x] : all) if(ours(pid)) kib += x.second;
+        return kib / 1024.0;
+#else
+        return 0;
+#endif
+    }
+    void memory(const char* what, Session& s) { std::printf("%-52s %7.0f MiB resident, %zu instances kept warm\n", what, resident(), s.warmInstances()); }
+
     void timeOnly(Session& s, const std::vector<fs::path>& p)
     {
         // Real Performances (OSCAIRN_SWITCH_PERFORMANCES): A cold, then A and B (sharing plugins) in
         // turn five times, each silent before the change, then C (sharing little) and A again.
         report("real: open A (cold)", load(s, p[0])); quiet(s);
+        memory("real: A open", s);
         std::vector<Switch> ab, ba;
         for(int round = 0; round < 5; ++round) { ab.push_back(load(s, p[1])); quiet(s); ba.push_back(load(s, p[0])); quiet(s); }
+        memory("real: A open after switching with B", s);
         auto median = [](std::vector<Switch> v) { std::sort(v.begin(), v.end(), [](const Switch& x, const Switch& y) { return x.ms < y.ms; }); return v[v.size() / 2]; };
-        report("real: A -> B, A silent (median of 5)", median(ab));
-        report("real: B -> A, B silent (median of 5)", median(ba));
+        report("real: A -> B, the first", ab[0]);
+        report("real: B -> A, the first", ba[0]);
+        report("real: A -> B, A silent (median of the other 4)", median({ab.begin() + 1, ab.end()}));
+        report("real: B -> A, B silent (median of the other 4)", median({ba.begin() + 1, ba.end()}));
         report("real: A -> C (shares little)", load(s, p[2]));
         for(int i = 0; i < int(48000 * 31 / frames) && s.leaving(); ++i) blocks(s, 1);
         report("real: C -> A (A's instruments kept warm)", load(s, p[0]));
@@ -134,6 +179,8 @@ int main(int argc, char** argv)
     if(argc != 5) { std::fprintf(stderr, "usage: %s SYNTH.clap SAMPLER.clap DELAY.clap INSTRUMENT.clap\n", argv[0]); return 2; }
     try
     {
+        state_files::TemporaryDirectory home; // a budget's measurements, not the user's
+        ::setenv("OSCAIRN_DATA_HOME", home.path.c_str(), 1);
         std::printf("plugins in %s\n", placementPolicy().worker.empty() ? "the engine" : "workers");
         state_files::TemporaryDirectory temp;
         const auto samples = temp.path / "samples"; fs::create_directories(samples);
@@ -144,13 +191,28 @@ int main(int argc, char** argv)
         Session s(48000, frames);
         report("open A (cold)", load(s, a));
         blocks(s, 20); s.note(true, 60, 1); blocks(s, 20); s.note(false, 60, 0); quiet(s);
-        // A is silent: its instances are free, and B uses the same plugins.
+        // A is silent and B uses the same plugins. Keeping A's instances warm fits (no budget: the
+        // 32-instance bound alone), so they are kept rather than taken over (RFC 0021's middle rule):
+        // B loads its instruments, and its Delays become contexts of A's (slice 1).
         auto w = load(s, b); report("A -> B, A silent (same plugins)", w);
-        check(w.reused == 8 && w.loaded == 0, "every instance of A taken over by B");
+        check(w.reused == 4 && w.loaded == 4, "A's instruments kept, not taken over, by B");
         compare(s, b, "A -> B"); quiet(s);
-        w = load(s, a); report("B -> A, B silent", w);
-        check(w.reused == 8 && w.loaded == 0, "every instance of B taken over by A");
+        check(s.warmInstances() == 4, "A's instruments kept warm: " + std::to_string(s.warmInstances()));
+        w = load(s, a); report("B -> A, B silent (A's kept warm)", w);
+        check(w.reused == 8 && w.kept == 4 && w.loaded == 0, "A's instruments back, holding their state; B's kept warm");
         compare(s, a, "B -> A"); quiet(s);
+        w = load(s, b); report("A -> B again (B's kept warm)", w);
+        check(w.reused == 8 && w.kept == 4 && w.loaded == 0, "B's instruments back, holding their state");
+        compare(s, b, "A -> B again"); quiet(s);
+        check(s.warmInstances() == 4 && s.memoryPressure() && s.warmInstances() == 0, "A's instruments kept warm, let go on memory pressure");
+        // A cut (the two would not fit together) keeps nothing warm, so it takes over every free
+        // playing instance.
+        s.setBudget({64, 0});
+        s.setBudget({64, s.estimate("").memory + s.estimate(a.string()).memory - 1});
+        check(!s.estimate(a.string()).seamless, "B -> A cuts");
+        w = load(s, a); report("B -> A, a cut", w);
+        check(w.reused == 8 && w.loaded == 0 && w.kept == 0, "a cut takes over every free playing instance");
+        compare(s, a, "cut B -> A"); quiet(s);
         // A document that fails once its plugins are loaded leaves the playing instances alone:
         // they get its state only once all of it has been read.
         {
@@ -163,12 +225,13 @@ int main(int argc, char** argv)
             try { s.loadPerformance(broken.string()); } catch(const std::exception&) { failed = true; }
             check(failed && s.graphState().revision == revision && values() == before, "a failed load changes nothing that plays");
         }
+        s.setBudget({});
         // A note held on the second part through the change: its instrument and Delay ring out on
         // the old instances, so its instrument loads afresh (its Delay becomes a context of the
         // playing engine, slice 1); the other parts' are taken over.
         s.note(true, 60, 1); blocks(s, 10);
         w = load(s, b); report("A -> B, a note held on A's second part", w);
-        check(w.reused == 7 && w.loaded == 1, "the instances still sounding are not taken");
+        check(w.reused == 4 && w.loaded == 4, "A's instances kept, the one still sounding too");
         { Audio audio; bool rang = false; for(int i = 0; i < 50; ++i) { audio.run(s); rang = rang || audio.sounding(); } check(rang, "the held note plays on through the change"); }
         s.note(false, 60, 0);
         for(int i = 0; i < int(48000 * 31 / frames) && s.leaving(); ++i) blocks(s, 1);
@@ -177,16 +240,30 @@ int main(int argc, char** argv)
         w = load(s, c); report("B -> C (no plugin shared)", w);
         check(w.reused == 0 && w.loaded == 4, "nothing to take over");
         for(int i = 0; i < int(48000 * 31 / frames) && s.leaving(); ++i) blocks(s, 1);
-        // B's instruments, rung out, were kept warm, and the one A's held note kept (Delays, engines
-        // with contexts, are not).
-        check(s.warmInstances() == 5, "B's instruments kept warm once rung out: " + std::to_string(s.warmInstances()));
+        // A's and B's instruments, rung out, were kept warm (Delays, engines with contexts, are not).
+        check(s.warmInstances() == 8, "A's and B's instruments kept warm once rung out: " + std::to_string(s.warmInstances()));
         // Back to B: they hold its state already, so they are reset instead of given it again.
         w = load(s, b); report("C -> B (B's instruments kept warm)", w);
-        check(w.reused == 4 && w.kept == 4 && w.loaded == 4 && s.warmInstances() == 1, "the instances kept warm taken over, not given their state again; the Delays loaded");
+        check(w.reused == 4 && w.kept == 4 && w.loaded == 4 && s.warmInstances() == 4, "the instances kept warm taken over, not given their state again; the Delays loaded");
         compare(s, b, "kept warm -> B");
         for(int i = 0; i < int(48000 * 31 / frames) && s.leaving(); ++i) blocks(s, 1);
         // Memory short: what is kept warm goes first (RFC 0025).
-        check(s.warmInstances() == 5 && s.memoryPressure() && s.warmInstances() == 0, "C's Samplers kept warm, let go on memory pressure");
+        check(s.warmInstances() == 8 && s.memoryPressure() && s.warmInstances() == 0, "C's Samplers and A's instruments kept warm, let go on memory pressure");
+
+        // Past the 32-instance bound a playing instance is taken over: 34 parts, one holding a note,
+        // so 33 free; 32 are kept warm and one is taken. The one sounding is never taken.
+        {
+            const auto m = temp.path / "m", n = temp.path / "n";
+            many(m, 0, argv[4], 34); many(n, 1, argv[4], 34);
+            Session t(48000, frames);
+            load(t, m); quiet(t);
+            t.note(true, 1, 1); blocks(t, 10);
+            w = load(t, n); report("34 instruments, one sounding", w);
+            check(w.reused == 1 && w.loaded == 33, "one free instance past the bound taken over, the sounding one not");
+            t.note(false, 1, 0);
+            for(int i = 0; i < int(48000 * 31 / frames) && t.leaving(); ++i) blocks(t, 1);
+            check(t.warmInstances() == 32, "32 kept warm: " + std::to_string(t.warmInstances()));
+        }
 
         if(const char* real = std::getenv("OSCAIRN_SWITCH_PERFORMANCES"); real && *real)
         {

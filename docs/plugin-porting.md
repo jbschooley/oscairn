@@ -367,7 +367,8 @@ stepped, hidden and read-only flags. How the editors use them:
   state instead of the host loading a new instance
   ([RFC 0021](rfcs/0021-sounds-performances-and-library.md#free-instances-across-a-change-and-instances-kept-warm)):
   once it is silent, the host deactivates it, loads the state and activates it, under a new
-  node. It must then sound exactly as a fresh instance given that state, sample for sample (the
+  node. More often it is kept loaded, out of the graph, and later reset and played again with
+  its own state; it is given another's at a cut, or when keeping it would not fit. It must then sound exactly as a fresh instance given that state, sample for sample (the
   host's render comparison checks the bundled plugins for it): clear voices, delay lines, filter
   memory, envelopes, LFO phases and random seeds on `activate` (and on `reset`), and keep nothing
   from the last state that the new one does not set.
