@@ -119,6 +119,7 @@ namespace oscairn
                 if(!host.loadState(bytes))throw std::runtime_error("CLAP state restore failed: "+host.error());
             }
             void service() override { host.service(); }
+            bool reset() override { host.reset(); return true; }
             const kick::clap::Descriptor& descriptor() const noexcept override { return host.descriptor(); }
             const std::vector<kick::clap::Parameter>& parameters() const noexcept override { return host.parameters(); }
             const std::vector<kick::clap::Port>& inputPorts() const noexcept override { return host.inputPorts(); }

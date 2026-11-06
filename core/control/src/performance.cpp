@@ -235,6 +235,17 @@ std::shared_ptr<PluginHost> standIn(V node,const fs::path& snapshot,const std::s
 // A plugin refused before activating because it declared more memory than the budget left
 // (kick::clap::Host's reason, which reaches here as text, also from a worker): not a stand-in.
 bool memoryRefusal(const std::exception& e){return std::string(e.what()).find(" MiB of memory where ")!=std::string::npos;}
+// Two saved snapshots alike, file for file and byte for byte.
+bool sameTree(const fs::path& a,const fs::path& b){
+    std::error_code e;std::map<fs::path,uintmax_t> files;size_t count=0;
+    for(const auto& f:fs::recursive_directory_iterator(a,e))if(f.is_regular_file())files[fs::relative(f.path(),a)]=f.file_size();
+    if(e)return false;
+    for(const auto& f:fs::recursive_directory_iterator(b,e)){if(!f.is_regular_file())continue;++count;
+        const auto it=files.find(fs::relative(f.path(),b));if(it==files.end() || it->second!=f.file_size())return false;}
+    if(e || count!=files.size())return false;
+    for(const auto& [name,size]:files)if(state_files::read(a/name,size)!=state_files::read(b/name,size))return false;
+    return true;
+}
 // A saved node's plugin: the build at its saved path, else the store's, of the saved version;
 // else its stand-in. load adds a build, version reads it, unload removes a mismatched one.
 template<class Load,class Unload,class Version,class Adopt>
@@ -556,8 +567,34 @@ void Session::loadPerformance(const std::string& directory) {
     auto prepared=std::move(prepared_);preparedOpportunistic_=false;
     if(prepared && (prepared->root!=root || prepared->stamp!=stamp(root)))prepared.reset();
     // Read at the cue, it may take over the playing Performance's free instances (RFC 0021); a cut, any of them.
-    if(!prepared)prepared=read(root,keepInstances_?std::vector<Free>{}:freeInstances(!seamless));
+    if(!prepared)prepared=readTaking(root,!keepInstances_,!seamless);
     open(*prepared,seamless);
+    if(!seamless)warm_.clear(); // it cut for want of room: none kept warm (RFC 0025)
+    evictOpportunistic();
+}
+
+std::unique_ptr<Session::Prepared> Session::readTaking(const fs::path& root,bool playing,bool all) {
+    auto free=warm_;
+    if(playing){auto more=freeInstances(all);free.insert(free.end(),more.begin(),more.end());}
+    std::unique_ptr<Prepared> p;
+    // Instances kept warm it gave a state to before it failed hold that state now, not the one remembered.
+    try{p=read(root,std::move(free));}catch(...){for(auto& w:warm_)w.loaded.source.clear();throw;}
+    std::erase_if(warm_,[&](const Free& w){return std::find(p->warm.begin(),p->warm.end(),w.host.get())!=p->warm.end();});
+    return p;
+}
+
+// A node of the last Performance rung out: kept loaded, out of the graph, for a later change to
+// take over (RFC 0021), when it could be; else removed. Not while an audition holds what it set aside.
+void Session::keepWarm(NodeId n) {
+    const auto loaded=loaded_.find(n);
+    if(audition_ || loaded==loaded_.end() || graph_.host(n).effectResources() || !graph_.host(n).failure().empty()){graph_.remove(n);return;}
+    warm_.push_back({0,graph_.release(n),loaded->second});
+    if(warm_.size()>warmLimit)warm_.erase(warm_.begin());
+}
+
+uint64_t Session::warmMemory() const {
+    // shortcut: a plugin in the engine's process reports no memory of its own, so only workers' count; measure in-process plugins by key if they matter.
+    uint64_t n=0;for(const auto& w:warm_)n+=w.host->residentBytes();return n;
 }
 
 std::vector<Session::Free> Session::freeInstances(bool all) const {
@@ -575,11 +612,11 @@ std::vector<Session::Free> Session::freeInstances(bool all) const {
     }
     std::vector<Free> out;
     for(const auto n:outgoing){
-        const auto build=builds_.find(n);if(busy.count(n) || build==builds_.end())continue;
+        const auto loaded=loaded_.find(n);if(busy.count(n) || loaded==loaded_.end())continue;
         auto host=graph_.node(n).host;
         // Engines offering effect contexts go by slice 1; a failed plugin or a stand-in never.
         if(host->effectResources() || !host->failure().empty())continue;
-        out.push_back({n,std::move(host),build->second});
+        out.push_back({n,std::move(host),loaded->second});
     }
     return out;
 }
@@ -598,7 +635,7 @@ bool Session::preparePerformance(const std::string& directory) {
             const auto used=memoryClasses()?reservedMemory(false)+budget_.margin+committedMemory():0;
             if(!memoryClasses() || used+e.memory>budget_.device){std::fprintf(stderr,"oscairn: not prepared: beside the open Performance it would not fit; it opens at the cue\n");return false;}
             opportunistic=true;}}
-    prepared_=read(root);preparedOpportunistic_=opportunistic;
+    prepared_=readTaking(root,false,false);preparedOpportunistic_=opportunistic;
     graph_.reserveIds(*prepared_->next); // so plugins added meanwhile cannot take its IDs
     return !opportunistic;
 }
@@ -654,9 +691,11 @@ std::unique_ptr<Session::Prepared> Session::read(const fs::path& root,std::vecto
     auto refs=parameterRefs(d);
     // RFC 0021: a node alone on its engine takes over a free instance of the same plugin, build and
     // placement instead of loading one.
-    std::vector<NodeId> taken;std::map<NodeId,std::string> builds;uint64_t reused=0;
+    std::vector<NodeId> taken;std::vector<const PluginHost*> warm;std::map<NodeId,Loaded> origins;uint64_t reused=0,kept=0;
     struct Later{NodeId runtime;std::string key;size_t free;};std::vector<Later> later; // playing instances: their state last
-    auto take=[&](V plugin)->std::optional<size_t>{
+    const auto stamped="@"+std::to_string(static_cast<long long>(stamp(root).time_since_epoch().count()));
+    auto source=[&](const std::string& key){return (root/"nodes"/key).string()+stamped;};
+    auto take=[&](V plugin,const std::string& key)->std::optional<size_t>{
         const auto format=text(field(plugin,"format")),id=text(field(plugin,"id")),saved=text(field(plugin,"version"));
         fs::path wanted;std::error_code e;
         for(const auto& candidate:{fs::path(text(field(plugin,"pathHint"))),storedPlugin(format,id,saved)})if(!candidate.empty() && fs::exists(candidate,e)){wanted=candidate;break;}
@@ -664,8 +703,11 @@ std::unique_ptr<Session::Prepared> Session::read(const fs::path& root,std::vecto
         const auto build=buildDigest(wanted.string());if(build.empty())return std::nullopt;
         const auto& policy=placementPolicy();const auto placed=policy.plugins.find(id);
         const bool worker=format=="clap" && !policy.worker.empty() && (placed==policy.plugins.end()?policy.standard:placed->second)==Placement::Worker;
-        for(size_t i=0;i<free.size();++i){if(!free[i].host)continue;const auto& h=*free[i].host;const auto& p=h.descriptor();
-            if(p.id==id && p.version==saved && free[i].build==build && h.inWorker()==worker && (p.path==wanted.string() || fs::equivalent(p.path,wanted,e)))return i;}
+        auto fits=[&](size_t i){if(!free[i].host)return false;const auto& h=*free[i].host;const auto& p=h.descriptor();
+            return p.id==id && p.version==saved && free[i].loaded.build==build && h.inWorker()==worker && (p.path==wanted.string() || fs::equivalent(p.path,wanted,e));};
+        // One that holds this node's state already first (switching back), then kept warm, least recently used first, then playing.
+        for(size_t i=0;i<free.size();++i)if(free[i].loaded.source==source(key) && fits(i))return i;
+        for(size_t i=0;i<free.size();++i)if(fits(i))return i;
         return std::nullopt;};
     auto restore=[&](NodeId runtime,V node,uint64_t room){
         auto& h=next->host(runtime);const auto key=text(field(node,"key"));
@@ -676,10 +718,16 @@ std::unique_ptr<Session::Prepared> Session::read(const fs::path& root,std::vecto
         if(integer(field(node,"noteInputs"),16)!=h.noteInputPorts() || integer(field(node,"noteOutputs"),16)!=h.noteOutputPorts())bad("note port layout changed");};
     // A taken-over instance whose state does not load, or whose ports then differ, is let go for a fresh one.
     auto restoreTaken=[&](NodeId runtime,V node,uint64_t room,size_t f){
+        auto& h=next->host(runtime);const auto key=text(field(node,"key"));
+        // Its state already this node's, byte for byte: reset instead of loading it again.
+        if(free[f].loaded.source==source(key)){
+            state_files::TemporaryDirectory now;h.saveSnapshot((now.path/"now").string());
+            if(sameTree(now.path/"now",root/"nodes"/key) && h.reset()){
+                checkPorts(field(node,"inputs"),h.inputPorts());checkPorts(field(node,"outputs"),h.outputPorts());++kept;return;}}
         try{restore(runtime,node,room);return;}
         catch(const std::exception& e){if(memoryRefusal(e))throw;}
         const auto path=next->host(runtime).descriptor().path;
-        next->reload(runtime,path,text(field(field(node,"plugin"),"id")),room);builds[runtime]=buildDigest(path);--reused;
+        next->reload(runtime,path,text(field(field(node,"plugin"),"id")),room);origins[runtime]={buildDigest(path),source(key)};--reused;
         if(free[f].node)std::erase(taken,free[f].node);
         restore(runtime,node,room);};
     // Roots first; siblings can refer forward to a root, never to an arbitrary chain.
@@ -703,14 +751,14 @@ std::unique_ptr<Session::Prepared> Session::read(const fs::path& root,std::vecto
                     if(memoryRefusal(e))throw;
                     runtime=next->add(standIn(node,root/"nodes"/key,refs[key],std::string("its shared engine is not here: ")+e.what()));}}
             else if(const auto engine=playing(id,path,text(field(plugin,"version")),group[key])){runtime=context(graph_.host(*engine),[&]{return next->addEffectContext(graph_,*engine);});++reused;}
-            else if(const auto f=group[key]==1?take(plugin):std::nullopt){
-                runtime=next->add(free[*f].host);builds[runtime]=free[*f].build;++reused;restored=true;
-                if(free[*f].node){taken.push_back(free[*f].node);later.push_back({runtime,key,*f});}else restoreTaken(runtime,node,room,*f);
+            else if(const auto f=group[key]==1?take(plugin,key):std::nullopt){
+                runtime=next->add(free[*f].host);origins[runtime]={free[*f].loaded.build,source(key)};++reused;restored=true;
+                if(free[*f].node){taken.push_back(free[*f].node);later.push_back({runtime,key,*f});}else{warm.push_back(free[*f].host.get());restoreTaken(runtime,node,room,*f);}
                 free[*f].host.reset();}
             else{runtime=resolvePlugin(node,root/"nodes"/key,refs[key],[&](const std::string& p,const std::string& i){return next->add(p,i,room);},[&](NodeId n){next->remove(n);},
                                        [&](NodeId n){return next->host(n).descriptor().version;},[&](std::shared_ptr<PluginHost> h){return next->add(std::move(h));});
                 // What another Performance may take over later: a plugin of its own, loaded (not a stand-in).
-                if(group[key]==1 && next->host(runtime).failure().empty())builds[runtime]=buildDigest(next->host(runtime).descriptor().path);}
+                if(group[key]==1 && next->host(runtime).failure().empty())origins[runtime]={buildDigest(next->host(runtime).descriptor().path),source(key)};}
             if(!restored)restore(runtime,node,room);
             ids.emplace(key,runtime);names.emplace(runtime,name);
             if(!boolean(field(node,"enabled")))disabled.insert(runtime);
@@ -892,8 +940,7 @@ std::unique_ptr<Session::Prepared> Session::read(const fs::path& root,std::vecto
         catch(const std::exception& e){bad("cannot restore "+text(field(n,"name"))+" ("+text(field(field(n,"plugin"),"id"))+"): "+e.what());}
     }
     auto prepared=std::make_unique<Prepared>(Prepared{root,stamp(root),std::move(next),pads,info,std::move(lock),tempo,clock=="internal"?Transport::ClockSource::Internal:Transport::ClockSource::MidiClock,
-        std::move(disabled),std::move(names),std::move(wires),std::move(parts),nextPart,nextWire,std::move(scenes),std::move(untouched),nextScene,selectedScene,mappingScene,std::move(macros),nextMacro,std::move(assignments),key,master.first,master.second,std::move(roles),std::move(notices)});
-    prepared->taken=std::move(taken);prepared->builds=std::move(builds);prepared->reused=reused;
+        std::move(disabled),std::move(names),std::move(wires),std::move(parts),nextPart,nextWire,std::move(scenes),std::move(untouched),nextScene,selectedScene,mappingScene,std::move(macros),nextMacro,std::move(assignments),key,master.first,master.second,std::move(roles),std::move(notices),std::move(taken),std::move(warm),std::move(origins),reused,kept});
     return prepared;
 }
 
@@ -912,7 +959,7 @@ void Session::open(Prepared& p,bool seamless) {
     // Unless the two together would not fit the budget (RFC 0025): then the change is a cut.
     std::set<NodeId> leaving;
     if(seamless){leaving=leaving_;for(const auto& [id,name]:nodes_)leaving.insert(id);for(const auto n:p.taken)leaving.erase(n);} // taken over: nothing rings on them
-    auto builds=builds_;builds.insert(p.builds.begin(),p.builds.end());
+    auto loaded=loaded_;for(const auto& [n,l]:p.loaded)loaded[n]=l;
     next->carryOver(graph_,leaving);
     compileWires(*next,wires,disabled,disabled,leaving,p.masterLevel,p.masterPan);next->setMidiTaps(midiTaps(*next,p.parts,wires));next->setHarmonies(harmonies(p.parts,p.key));auto rungOut=disabled;
     std::map<Address,double> observed;for(const auto& [id,name]:p.names)for(const auto& q:next->host(id).parameters())observed[{id,q.id}]=next->host(id).parameterValue(q.id);
@@ -923,10 +970,10 @@ void Session::open(Prepared& p,bool seamless) {
     history.push_back({sequence_+1,ChangeKind::Resync,0,0,0,false});
     graph_.publishReplacement(*next,[&]() noexcept {
         nodes_.swap(p.names);observed_.swap(observed);parts_.swap(p.parts);wires_.swap(wires);disabled_.swap(disabled);rungOut_.swap(rungOut);leaving_.swap(leaving);nextPart_=p.nextPart;nextWire_=p.nextWire;padMap_=p.pads;key_=p.key;masterLevel_=p.masterLevel;masterPan_=p.masterPan;roles_.swap(p.roles);notices_.swap(p.notices);heldPads_={};scenes_.swap(p.scenes);untouched_.swap(p.untouched);scene_=p.selectedScene;mappingScene_=p.mappingScene;transition_.reset();pendingScene_.reset();nextScene_=p.nextScene;macros_.swap(p.macros);assignments_.swap(p.assignments);nextMacro_=p.nextMacro;pending_.clear();commandCount_=0;outputDrops_.clear();parameterRevisions_.clear();staged_=false;
-        tempo_.store(p.tempo);clockSource_.store(p.clock);playing_.store(false);builds_.swap(builds);reused_+=p.reused;
+        tempo_.store(p.tempo);clockSource_.store(p.clock);playing_.store(false);loaded_.swap(loaded);reused_+=p.reused;keptStates_+=p.kept;
         ++revision_;++sequence_;history_.swap(history);
     });
-    std::erase_if(builds_,[&](const auto& b){return !graph_.contains(b.first);});
+    std::erase_if(loaded_,[&](const auto& l){return !graph_.contains(l.first);});
     // Its parts' faders as live gains (RFC 0011's instant controls): the wires are built again
     // aside to work out which faders scale each, the wires read from the file keep everything
     // else, and they are compiled again with the slots.

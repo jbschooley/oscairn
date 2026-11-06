@@ -116,6 +116,9 @@ namespace oscairn
         // Whether the plugin runs in a worker process (RFC 0010); a free instance is taken over only
         // where the placement policy would put a fresh one (RFC 0021).
         virtual bool inWorker() const noexcept { return false; }
+        // Control thread, on a host nothing plays: clears what processing left (CLAP reset: buffers,
+        // voices, envelopes, modulation), as a fresh activation would. False where it cannot.
+        virtual bool reset() { return false; }
     };
     // A process's resident memory in bytes (0: this one); 0 when it cannot be read.
     uint64_t residentBytes(long pid = 0);

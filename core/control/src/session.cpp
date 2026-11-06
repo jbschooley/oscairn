@@ -380,6 +380,7 @@ namespace oscairn
     {
         controllers_->service(); // first: what the controls played reaches the model before anything reads it
         graph_.service();
+        for( const auto& w : warm_ ) w.host->service(); // instances kept warm get their main-thread callbacks too
         if( prepared_ ) prepared_->next->service(); // its plugins' main-thread callbacks while it waits
         ringOut();
         meter();

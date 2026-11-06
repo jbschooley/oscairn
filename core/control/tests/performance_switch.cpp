@@ -78,18 +78,18 @@ namespace
         s.savePerformance(file.string());
     }
 
-    struct Switch { double ms = 0; uint64_t loaded = 0, reused = 0; };
+    struct Switch { double ms = 0; uint64_t loaded = 0, reused = 0, kept = 0; };
     Switch load(Session& s, const fs::path& to)
     {
         Switch w;
-        const auto loaded = pluginInstancesLoaded(), reused = s.reusedInstances();
+        const auto loaded = pluginInstancesLoaded(), reused = s.reusedInstances(), kept = s.keptStates();
         const auto start = std::chrono::steady_clock::now();
         s.loadPerformance(to.string());
         w.ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
-        w.loaded = pluginInstancesLoaded() - loaded; w.reused = s.reusedInstances() - reused;
+        w.loaded = pluginInstancesLoaded() - loaded; w.reused = s.reusedInstances() - reused; w.kept = s.keptStates() - kept;
         return w;
     }
-    void report(const char* what, const Switch& w) { std::printf("%-52s %7.1f ms, %2llu instances loaded, %2llu reused\n", what, w.ms, (unsigned long long)w.loaded, (unsigned long long)w.reused); }
+    void report(const char* what, const Switch& w) { std::printf("%-52s %7.1f ms, %2llu instances loaded, %2llu reused (%llu holding their state)\n", what, w.ms, (unsigned long long)w.loaded, (unsigned long long)w.reused, (unsigned long long)w.kept); }
 
     // The same notes into a Session that switched and one that opened `file` fresh: every sample equal.
     void compare(Session& switched, const fs::path& file, const char* what)
@@ -123,8 +123,9 @@ namespace
         auto median = [](std::vector<Switch> v) { std::sort(v.begin(), v.end(), [](const Switch& x, const Switch& y) { return x.ms < y.ms; }); return v[v.size() / 2]; };
         report("real: A -> B, A silent (median of 5)", median(ab));
         report("real: B -> A, B silent (median of 5)", median(ba));
-        report("real: A -> C (shares little)", load(s, p[2])); quiet(s); blocks(s, 50);
-        report("real: C -> A", load(s, p[0]));
+        report("real: A -> C (shares little)", load(s, p[2]));
+        for(int i = 0; i < int(48000 * 31 / frames) && s.leaving(); ++i) blocks(s, 1);
+        report("real: C -> A (A's instruments kept warm)", load(s, p[0]));
     }
 }
 
@@ -176,7 +177,16 @@ int main(int argc, char** argv)
         w = load(s, c); report("B -> C (no plugin shared)", w);
         check(w.reused == 0 && w.loaded == 4, "nothing to take over");
         for(int i = 0; i < int(48000 * 31 / frames) && s.leaving(); ++i) blocks(s, 1);
-        w = load(s, a); report("C -> A", w);
+        // B's instruments, rung out, were kept warm, and the one A's held note kept (Delays, engines
+        // with contexts, are not).
+        check(s.warmInstances() == 5, "B's instruments kept warm once rung out: " + std::to_string(s.warmInstances()));
+        // Back to B: they hold its state already, so they are reset instead of given it again.
+        w = load(s, b); report("C -> B (B's instruments kept warm)", w);
+        check(w.reused == 4 && w.kept == 4 && w.loaded == 4 && s.warmInstances() == 1, "the instances kept warm taken over, not given their state again; the Delays loaded");
+        compare(s, b, "kept warm -> B");
+        for(int i = 0; i < int(48000 * 31 / frames) && s.leaving(); ++i) blocks(s, 1);
+        // Memory short: what is kept warm goes first (RFC 0025).
+        check(s.warmInstances() == 5 && s.memoryPressure() && s.warmInstances() == 0, "C's Samplers kept warm, let go on memory pressure");
 
         if(const char* real = std::getenv("OSCAIRN_SWITCH_PERFORMANCES"); real && *real)
         {

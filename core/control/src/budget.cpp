@@ -222,20 +222,29 @@ namespace oscairn
 
     // Opportunistic data fills what is neither reserved by a running app nor committed, up to the
     // margin; the closed always-available apps' reservations included. Let go least likely needed
-    // first. shortcut: the only opportunistic item built is a next entry prepared to cut (order 4);
-    // the sample file cache is the kernel's, recently used Performances and entries further ahead are not kept yet.
+    // first. shortcut: the opportunistic items built are instances kept warm (order 2) and a next entry
+    // prepared to cut (order 4); the sample file cache is the kernel's, entries further ahead are not kept yet.
     void Session::evictOpportunistic()
     {
-        if(!memoryClasses() || !prepared_ || !preparedOpportunistic_) return;
+        if(!memoryClasses()) return;
         const auto used = reservedMemory(false) + budget_.margin + committedMemory();
         const auto room = used < budget_.device ? budget_.device - used : 0;
-        if(preparedMemory() <= room) return;
+        // Order 2: instances kept warm (RFC 0021), least recently used first.
+        const auto next = prepared_ && preparedOpportunistic_ ? preparedMemory() : 0;
+        while(!warm_.empty() && warmMemory() + next > room) warm_.erase(warm_.begin());
+        if(!next || next + warmMemory() <= room) return;
         std::fprintf(stderr, "oscairn: let go of the next entry prepared to cut: its memory is needed\n");
         prepared_.reset(); preparedOpportunistic_ = false;
     }
 
     bool Session::memoryPressure()
     {
+        if(!warm_.empty())
+        {
+            std::fprintf(stderr, "oscairn: memory short: let go of %zu plugin instances kept warm\n", warm_.size());
+            warm_.clear();
+            return true;
+        }
         if(!prepared_) return false;
         std::fprintf(stderr, preparedOpportunistic_ ? "oscairn: memory short: let go of the next entry prepared to cut\n"
                                                     : "oscairn: memory short, past the estimates: let go of the next entry prepared ahead; it loads when it is cued\n");
@@ -358,7 +367,7 @@ namespace oscairn
         m.reserved = memoryClasses() ? reservedMemory() : 0;
         m.share = memoryCeiling();
         m.committed = committedMemory();
-        m.opportunistic = prepared_ && preparedOpportunistic_ ? preparedMemory() : 0;
+        m.opportunistic = (prepared_ && preparedOpportunistic_ ? preparedMemory() : 0) + warmMemory();
         m.running = running_; m.alwaysAvailable = alwaysAvailable_;
         m.nextPrepared = prepared_ != nullptr; m.nextCommitted = prepared_ && !preparedOpportunistic_;
         return m;

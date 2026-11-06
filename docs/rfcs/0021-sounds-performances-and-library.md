@@ -63,7 +63,7 @@ Checked when built and tested; the sections below say how.
 - [x] Seamless Performance changes: the outgoing Performance rings out beside the new one ([status](#seamless-switching))
 - [x] Pooled instruments restore a snapshot in the instances they have ([design](#free-instances-across-a-change-and-instances-kept-warm))
 - [x] Free instances taken over across a change ([design](#free-instances-across-a-change-and-instances-kept-warm))
-- [ ] Instances kept warm once rung out, bounded and evicted under pressure ([design](#free-instances-across-a-change-and-instances-kept-warm))
+- [x] Instances kept warm once rung out, bounded and evicted under pressure ([design](#free-instances-across-a-change-and-instances-kept-warm))
 - [x] Audition of a Sound in a part and of a Performance in place of the open one, put back as
       it was or kept, from the Library app ([status](#audition))
 - [ ] 5. Seamless loading into a part (part transitions on RFC 0007's chain preparation)
@@ -764,8 +764,8 @@ room. Admission still counts the next Performance's plugins at full cost, as bef
 included) and `pluginInstancesLoaded()` the instances loaded, for the bench.
 
 Taking over the playing Performance's free instances built 2026-11-05 (`Session::freeInstances`,
-`Session::read`; `Graph::silent`, now counted for every node, and `Graph::reload`). Instances kept
-warm are not built yet. `control-performance-switch` (and `-workers`) builds two Performances of
+`Session::read`; `Graph::silent`, now counted for every node, and `Graph::reload`).
+`control-performance-switch` (and `-workers`) builds two Performances of
 four parts on the same plugins (two Basic Synths, two plain CLAP instruments in the pool, each
 through a Delay of its own) and one of four Samplers, and checks: every instance of the silent
 outgoing one taken over (8 of 8, none loaded; the Delays as slice 1's contexts), output identical
@@ -792,6 +792,27 @@ figures are ranges over runs (milliseconds from `loadPerformance` until publishe
 What is left is the state itself: sfizz loading its samples takes 35 to 460 ms per instance,
 whether the instance is new or taken over. Taking over saves the worker start and plugin load,
 about 23 ms per instance, and the memory of a second Performance's instances during the change.
+
+Instances kept warm built the same day (`Session::keepWarm`, from `ringOut`; `Graph::release`;
+`PluginHost::reset`, a request of its own in a worker). An instance that holds the node's state
+already is found by the snapshot it last took (folder and document time) and confirmed by saving
+its snapshot and comparing it with the node's, file for file; it is then reset, not given the
+state. The warm ones get their main-thread callbacks; `memoryState` counts them as opportunistic;
+admission's eviction lets them go least recently used first, and memory pressure lets them all go
+first. `control-performance-switch` checks a Performance's instruments kept warm once rung out
+(Delays, engines with contexts, are not), taken over on the way back with all four holding their
+state (`keptStates`) and output identical to a fresh load, and memory pressure letting them go.
+Measured as above: "Sick tines" back to "Where Is My Mind Pno" with its sfizz instances kept warm
+takes 41–58 ms in workers (25 ms in the engine) instead of 390–455 ms; its 4 sfizz instances held
+their state, the arpeggiators were given theirs.
+
+**For the owner:** taking over the outgoing Performance's free instances (built, as asked) and
+keeping them warm pull against each other. A switch A to B takes A's instances, so B back to A
+finds none holding A's state and loads it again (180–310 ms here) where keeping A warm and loading
+B fresh would make every later switch between the two take about 50 ms, at the cost of both
+Performances' memory and a slower first switch. An alternative rule, not built or measured: take a
+playing instance only when keeping it warm would not fit (memory classes, or the 32-instance
+bound).
 
 **Load preset** on a node is seamless where `sounds.prepare` accepts it (native contexts and
 pooled instruments) and an interrupting state load otherwise, as today.

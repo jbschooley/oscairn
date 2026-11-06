@@ -84,6 +84,9 @@ namespace oscairn
         /// connects what it wants before the commit (the Session moves its wires, RFC 0011).
         void replace(NodeId node,const std::string& path,const std::string& pluginId,const std::string& preset,const std::function<void()>& rewire);
         void   remove( NodeId node );
+        /// As remove, but the caller keeps the plugin (an instance kept warm, RFC 0021); a plan
+        /// still using it holds it too, and its last owner frees it on the main thread.
+        std::shared_ptr<PluginHost> release( NodeId node );
         NodeId addEffectContext(NodeId source);
         /// A host already made, such as a plugin's stand-in when it is not here (RFC 0006).
         NodeId add( std::shared_ptr<PluginHost> host );

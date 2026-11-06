@@ -508,7 +508,7 @@ namespace oscairn
                 process_->exchange(header(Op::LoadPreset).str(uri).data);
                 record(Op::SaveState);
             }
-            // Only on a host not yet playing, so the record can be saved at once.
+            // Only on a host nothing plays (not yet, or no longer: RFC 0021), so the record can be saved at once.
             void loadSnapshot(const std::string& directory) override
             {
                 std::lock_guard lock(controlFor());
@@ -623,6 +623,7 @@ namespace oscairn
             // While down, a panic would reach the restarted worker and drop its first block's events.
             void panic() noexcept override { if(!process_->failed.load()) shared_->panic.store(1, std::memory_order_release); }
             bool inWorker() const noexcept override { return true; }
+            bool reset() override { return request(Op::Reset).u8() != 0; }
             // Its share of the CPU time of this worker and those it replaced, as the supervisor last read it.
             double cpuSeconds() const override
             {

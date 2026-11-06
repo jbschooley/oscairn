@@ -292,6 +292,13 @@ namespace oscairn
         std::erase_if(noteZones_,[&](const auto& edge){return touches(edge.first);});
     }
 
+    std::shared_ptr<PluginHost> Graph::release( NodeId node )
+    {
+        auto host=nodes_.at(node).host;
+        remove(node);removedHosts_.pop_back();
+        return host;
+    }
+
     void Graph::checkSource( NodeId from, bool audio ) const
     {
         if( from == graphInput && (!audio || inputChannels_) )

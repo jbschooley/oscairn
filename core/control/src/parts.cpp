@@ -419,9 +419,10 @@ namespace oscairn
         for(const auto n : disabled_)
             if(!rungOut_.count(n) && graph_.idle(n, quiet, limit)) { rungOut_.insert(n); done = true; }
         for(auto it = leaving_.begin(); it != leaving_.end(); )
-            if(graph_.idle(*it, quiet, limit)) { graph_.remove(*it); it = leaving_.erase(it); done = true; }
+            if(graph_.idle(*it, quiet, limit)) { keepWarm(*it); it = leaving_.erase(it); done = true; }
             else ++it;
         if(!done) return;
+        evictOpportunistic();
         compileWires();
         graph_.commit();
         ++revision_; publish(ChangeKind::Graph);

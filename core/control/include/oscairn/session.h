@@ -261,6 +261,8 @@ namespace oscairn
         double sampleRate() const noexcept { return sampleRate_; }
         size_t leaving() const noexcept { return leaving_.size(); } // the last Performance's plugins still ringing out
         uint64_t reusedInstances() const noexcept { return reused_; } // plugin instances a Performance opened took over instead of loading (RFC 0021)
+        size_t warmInstances() const noexcept { return warm_.size(); }  // instances kept loaded once rung out, for the next change (RFC 0021)
+        uint64_t keptStates() const noexcept { return keptStates_; }      // of those taken over, ones already holding the node's state: reset, not loaded
         // RFC 0025: memory runs short (Linux PSI, polled at each service with memory classes):
         // one more item let go in the eviction order, a next entry prepared to cut, then, since
         // the estimates were wrong, a committed one. False when nothing was left to let go.
@@ -484,6 +486,7 @@ namespace oscairn
         std::set<NodeId> disabled_, rungOut_; // plugins switched off, and those of them done sounding
         std::set<NodeId> leaving_;            // the last Performance's plugins, ringing out after a change; not part of this one
         uint64_t reused_ = 0;                 // reusedInstances()
+        uint64_t keptStates_ = 0;             // keptStates()
         uint32_t nextPart_ = 1, nextWire_ = 1;
         std::vector<Scene> scenes_;
         std::vector<SceneParameter> untouched_; // parameters scenes never touch
@@ -518,6 +521,9 @@ namespace oscairn
         std::string buildDigest(const std::string& path, bool fresh = false) const;
         void lockPlugin(std::vector<LockEntry>& lock, const std::string& format, const std::string& id, const std::string& version, const std::string& path, bool standIn);
         void mergeLock(const std::vector<LockEntry>& more);
+        // What an instance was loaded from (RFC 0021): its bundle's digest, and the snapshot whose state
+        // it took (folder and document time), so a node with that same state may skip loading it.
+        struct Loaded { std::string build, source; };
         // A Performance read and its plugins loaded with their state, not playing yet (RFC 0021).
         struct Prepared
         {
@@ -545,14 +551,20 @@ namespace oscairn
             std::map<NodeId,std::string> roles;
             std::vector<std::string> notices;
             std::vector<NodeId> taken;            // the playing graph's nodes whose instances it took over (RFC 0021)
-            std::map<NodeId,std::string> builds;  // the build digest each instance it may give up again was loaded from
-            uint64_t reused = 0;                  // its nodes opened in an instance already loaded
+            std::vector<const PluginHost*> warm;  // the instances kept warm it took over
+            std::map<NodeId,Loaded> loaded; // what each instance it may give up again was loaded from
+            uint64_t reused = 0, kept = 0;        // its nodes opened in an instance already loaded; of them, holding their state already
         };
-        // A loaded instance a Performance being read may take over (RFC 0021): a free one of the
-        // playing graph (node), its state loaded last; build: its bundle's digest when it loaded.
-        struct Free { NodeId node = 0; std::shared_ptr<PluginHost> host; std::string build; };
+        // A loaded instance a Performance being read may take over: kept warm (node 0), or a free one
+        // of the playing graph (its node), whose state is loaded last.
+        struct Free { NodeId node = 0; std::shared_ptr<PluginHost> host; Loaded loaded; };
         std::vector<Free> freeInstances(bool all) const; // all: every one that could be (a cut cuts them anyway)
-        std::map<NodeId,std::string> builds_;             // Prepared::builds of the nodes in graph_
+        std::unique_ptr<Prepared> readTaking(const std::filesystem::path& root, bool playing, bool all); // read with what it may take over
+        void keepWarm(NodeId node);                       // ringOut: a node rung out kept loaded, or removed
+        uint64_t warmMemory() const;
+        std::map<NodeId,Loaded> loaded_;                  // Prepared::loaded of the nodes in graph_
+        std::vector<Free> warm_;                          // instances kept warm, least recently used first
+        static constexpr size_t warmLimit = 32;
         bool keepInstances_ = false;                      // an audition opening a Performance: take over nothing set aside
         std::unique_ptr<Prepared> read(const std::filesystem::path& root, std::vector<Free> free = {});
         void open(Prepared& prepared, bool seamless);

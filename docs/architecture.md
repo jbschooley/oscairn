@@ -345,7 +345,10 @@ layers and transitions, not six independently initialized organs.
 ### Keeping plugins loaded
 
 Plugins stay loaded once used, so going back to a sound is instant. When loading a sound
-would go over the memory budget, the plugins used longest ago are unloaded first.
+would go over the memory budget, the plugins used longest ago are unloaded first. Built so
+far: the outgoing Performance's instances, once rung out, are kept warm (at most 32, out of the
+graph, opportunistic memory) for a later change to take over, and one already holding the
+state a node needs is only reset ([RFC 0021](rfcs/0021-sounds-performances-and-library.md#free-instances-across-a-change-and-instances-kept-warm)).
 
 - **A budget, not swap.** The budget is the device's RAM minus a reserve for the system and
   the UI. Audio never depends on swap.
