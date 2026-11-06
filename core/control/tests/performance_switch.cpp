@@ -259,10 +259,14 @@ int main(int argc, char** argv)
         // A cut (the two would not fit together) keeps nothing warm, so it takes over every free
         // playing instance.
         s.setBudget({64, 0});
-        s.setBudget({64, s.estimate("").memory + s.estimate(a.string()).memory - 1});
+        const Session::Budget cut{64, s.estimate("").memory + s.estimate(a.string()).memory - 1};
+        s.setBudget(cut);
         check(!s.estimate(a.string()).seamless, "B -> A cuts");
         w = load(s, a); report("B -> A, a cut", w);
         check(w.reused == 8 && w.loaded == 0 && w.kept == 0, "a cut takes over every free playing instance");
+        // Off while this thread renders: a budget measures each block's wall time as its plugins' cost,
+        // and this is no real-time thread, so on a loaded machine a block descheduled would count.
+        s.setBudget({});
         compare(s, a, "cut B -> A"); quiet(s);
         // A document that fails once its plugins are loaded leaves the playing instances alone:
         // they get its state only once all of it has been read.
@@ -274,6 +278,7 @@ int main(int argc, char** argv)
             auto values = [&] { std::vector<double> v; for(const auto& [n, name] : s.graphState().names) for(const auto& p : s.parameters(n)) v.push_back(s.parameter(n, p.id)); return v; };
             auto sounds = [&] { size_t n = 0; for(const auto& [id, name] : s.graphState().names) n += s.sounds(id).contexts.size(); return n; };
             const auto before = values(); const auto revision = s.graphState().revision; const auto held = sounds(); bool failed = false;
+            s.setBudget(cut);
             try { s.loadPerformance(broken.string()); } catch(const std::exception&) { failed = true; }
             check(failed && s.graphState().revision == revision && values() == before, "a failed load changes nothing that plays");
             check(sounds() == held, "a failed load leaves no sound prepared beside: " + std::to_string(held) + " then " + std::to_string(sounds()));
