@@ -181,8 +181,8 @@ namespace oscairn
     {
         if(nextId_>=graphInput)throw std::overflow_error("Graph node IDs exhausted");
         Node node;
-        auto loaded=loadPlugin(path,pluginId,sampleRate_,maxFrames_,mode_,lv2Buffers_,memoryRoom);loaded->setAssets(assets_);
-        node.host = preparedInstrument(std::move(loaded),sampleRate_,maxFrames_,mode_,lv2Buffers_);
+        auto loaded=loadPlugin(path,pluginId,sampleRate_,maxFrames_,mode_,lv2Buffers_,memoryRoom);
+        node.host = preparedInstrument(std::move(loaded),sampleRate_,maxFrames_,mode_,lv2Buffers_);node.host->setAssets(assets_); // a pool passes it on to the instances it loads later
         node.audioInputs=countChannels(node.host->inputPorts());
         node.audioOutputs=countChannels(node.host->outputPorts());
 
@@ -255,7 +255,7 @@ namespace oscairn
         Node next;
         auto loaded=loadPlugin(path,pluginId,sampleRate_,maxFrames_,mode_,lv2Buffers_);loaded->setAssets(assets_);
         if(!preset.empty())loaded->loadPreset(preset);
-        next.host=preparedInstrument(std::move(loaded),sampleRate_,maxFrames_,mode_,lv2Buffers_);
+        next.host=preparedInstrument(std::move(loaded),sampleRate_,maxFrames_,mode_,lv2Buffers_);next.host->setAssets(assets_);
         next.audioInputs=countChannels(next.host->inputPorts());next.audioOutputs=countChannels(next.host->outputPorts());
         const auto routes=audioRoutes_;const auto notes=noteEdges_;const auto zones=noteZones_;
         std::erase_if(audioRoutes_,[&](const auto& e){return e.from.node==id || e.to.node==id;});
@@ -497,8 +497,8 @@ namespace oscairn
     void Graph::reload( NodeId id, const std::string& path, const std::string& pluginId, uint64_t memoryRoom )
     {
         auto& node=nodes_.at(id);
-        auto loaded=loadPlugin(path,pluginId,sampleRate_,maxFrames_,mode_,lv2Buffers_,memoryRoom);loaded->setAssets(assets_);
-        node.host=preparedInstrument(std::move(loaded),sampleRate_,maxFrames_,mode_,lv2Buffers_);
+        auto loaded=loadPlugin(path,pluginId,sampleRate_,maxFrames_,mode_,lv2Buffers_,memoryRoom);
+        node.host=preparedInstrument(std::move(loaded),sampleRate_,maxFrames_,mode_,lv2Buffers_);node.host->setAssets(assets_);
         node.audioInputs=countChannels(node.host->inputPorts());node.audioOutputs=countChannels(node.host->outputPorts());
     }
     bool Graph::idle( NodeId node, uint64_t quietFrames, uint64_t limitFrames ) const

@@ -887,7 +887,7 @@ bool Host::loadEffectContext(const Host& source) {
     try {
         const auto* ext=static_cast<const oscairn_plugin_effect_contexts_t*>(parent.plugin->get_extension(parent.plugin,OSCAIRN_EXT_EFFECT_CONTEXTS));
         if(!ext || !ext->create || !ext->resources)throw std::runtime_error("Plugin has no native effect contexts");
-        s.library=parent.library;s.info=parent.info;s.context=true;s.memoryRoom=parent.memoryRoom;s.offline=parent.offline;
+        s.library=parent.library;s.info=parent.info;s.context=true;s.memoryRoom=parent.memoryRoom;s.offline=parent.offline;s.assets=parent.assets;
         s.plugin=ext->create(parent.plugin,&s.host);
         if(!s.plugin)throw std::runtime_error("Effect context capacity exhausted");
         s.initialize(parent.sampleRate,parent.maxFrames,{});

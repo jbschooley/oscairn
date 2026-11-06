@@ -7,6 +7,7 @@
 #include <atomic>
 #include <cmath>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <span>
 #include <thread>
@@ -90,6 +91,22 @@ void persistence(const char* path,const char* id,clap_id gain,const std::filesys
     check(pluginInstancesLoaded()-before==t.host().soundContexts().size() && t.host().soundContexts().size()>=2,"a restored pool loads one instance per sound");
     t.host().selectSound(t.host().soundContexts()[1].id);t.one(Event::midi(0x90,60,100));t.level(.25);
 }
+// The pool's instances resolve sound assets through the session's store (RFC 0009): a state naming
+// one loads in a sound prepared from it and in a pool restoring its snapshot, as a sampler's must.
+void assetStates(const char* path,const std::filesystem::path& directory){
+    const auto samples=directory/"samples";std::filesystem::create_directories(samples);std::ofstream(samples/"tone.wav")<<"tone";
+    Session s(48000,512);const auto folder=s.registerAssetFolder(samples.string());
+    const auto state=directory/"asset-state";std::filesystem::create_directories(state);
+    {std::ofstream(state/"plugin.id")<<"org.kick.test.midi";const double gain=.5;std::ofstream bytes(state/"state.clap",std::ios::binary);
+     bytes.write(reinterpret_cast<const char*>(&gain),sizeof gain);bytes<<folder.library<<'\0'<<"tone.wav";}
+    const auto n=s.add("pooled",path,"org.kick.test.midi");s.connectNotes(graphInput,n);s.connectAudio(n,graphOutput);s.commit();
+    uint32_t sound=0;try{sound=s.prepareSound(n,"With asset",{},state.string());}catch(const std::exception& e){throw std::runtime_error(std::string("a pooled sound's state naming an asset: ")+e.what());}
+    s.selectSound(n,sound,1);
+    const auto snapshot=directory/"asset-pool";s.savePerformance(snapshot.string());
+    Session t(48000,512);t.registerAssetFolder(samples.string());
+    try{t.loadPerformance(snapshot.string());}catch(const std::exception& e){throw std::runtime_error(std::string("a pool restoring a sound with an asset: ")+e.what());}
+    check(t.sounds(t.nodeId("pooled")).contexts.size()==2,"both sounds restored");
+}
 void bounds(const char* path){
     Instrument s(path,"org.kick.test.midi",7);std::array<uint32_t,7> ids{};for(auto& id:ids)id=s.prepare(.25);
     bool full=false;try{s.prepare(.75);}catch(const std::runtime_error&){full=true;}check(full,"instance budget enforced");
@@ -152,7 +169,7 @@ int main(int argc,char** argv){try{
     if(argc==6 && std::string(argv[1])=="--production"){production(argv[2],argv[3],std::stoul(argv[4]),std::stod(argv[5]));return 0;}
     const auto directory=std::filesystem::temp_directory_path()/("oscairn-prepared-"+std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
     std::filesystem::create_directory(directory);
-    switching(argv[1],"org.kick.test.midi",7);tails(argv[1]);bounds(argv[1]);concurrent(argv[1]);protocol(argv[1]);persistence(argv[1],"org.kick.test.midi",7,directory/"clap");
+    switching(argv[1],"org.kick.test.midi",7);tails(argv[1]);bounds(argv[1]);concurrent(argv[1]);protocol(argv[1]);persistence(argv[1],"org.kick.test.midi",7,directory/"clap");assetStates(argv[1],directory/"assets");
     if(argc>2){pressure(argv[2]);switching(argv[2],"urn:oscairn:test:instrument",0);persistence(argv[2],"urn:oscairn:test:instrument",0,directory/"lv2");}
     std::filesystem::remove_all(directory);std::cout<<"ok: prepared CLAP/LV2 ownership, state, parts, tails, concurrency and protocol\n";
 }catch(const std::exception& e){forbidAllocation=false;std::cerr<<e.what()<<'\n';return 1;}}

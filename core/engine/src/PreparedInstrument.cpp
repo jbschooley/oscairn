@@ -59,6 +59,7 @@ class PreparedInstrument final:public PluginHost {
     ProcessingMode mode_;
     Lv2BufferLimits limits_;
     uint64_t room_=0; // setMemoryRoom: what the next instance may declare (RFC 0025)
+    kick::clap::AssetResolver* assets_=nullptr; // setAssets: where every instance resolves sound assets (RFC 0009)
 
     PluginHost& base() const noexcept {return *desired_.instances[0]->host;}
     PluginHost& selected() const noexcept {return *desired_.instances[desired_.selected[0]]->host;}
@@ -150,7 +151,7 @@ public:
             if(p==parameters.end() || (p->flags&CLAP_PARAM_IS_READONLY) || !std::isfinite(v.value) || v.value<p->minimum || v.value>p->maximum ||
                std::any_of(patch.begin(),patch.begin()+i,[&](const auto& x){return x.id==v.id;}))throw std::invalid_argument("Invalid prepared sound parameter");
         }
-        auto h=loadPlugin(base().descriptor().path,base().descriptor().id,rate_,frames_,mode_,limits_,room_);
+        auto h=loadPlugin(base().descriptor().path,base().descriptor().id,rate_,frames_,mode_,limits_,room_);h->setAssets(assets_);
         if(!state.empty()){h->setMemoryRoom(room_);h->loadState(state);h->setMemoryRoom(0);}
         if(!preset.empty())h->loadPreset(preset);
         checkLayout(*h);
@@ -195,7 +196,7 @@ public:
         size_t reused=0;uint32_t context=1;
         for(size_t i=0;i<capacity;++i){unsigned used;std::string name;if(!(in>>used) || used>1)throw std::runtime_error("Invalid pool slot");if(!used)continue;
             if(!(in>>std::quoted(name)) || name.size()>63 || name.find('\0')!=std::string::npos)throw std::runtime_error("Invalid pool sound name");
-            auto h=reused<have.size()?have[reused++]:loadPlugin(base().descriptor().path,base().descriptor().id,rate_,frames_,mode_,limits_,room_);
+            auto h=reused<have.size()?have[reused++]:loadPlugin(base().descriptor().path,base().descriptor().id,rate_,frames_,mode_,limits_,room_);h->setAssets(assets_);
             h->setMemoryRoom(room_);h->loadSnapshot((std::filesystem::path(directory)/std::to_string(i)).string());h->setMemoryRoom(0);checkLayout(*h);h->service();
             next->instances[i]=std::make_shared<Instance>(std::move(h),i?context++:0,std::move(name),frames_);
         }
@@ -330,6 +331,7 @@ public:
         return sum;
     }
     void setMemoryRoom(uint64_t bytes) override {room_=bytes;}
+    void setAssets(kick::clap::AssetResolver* assets) noexcept override {assets_=assets;for(const auto& s:desired_.instances)if(s)s->host->setAssets(assets);}
     // Its instances' shares of their workers' memory.
     uint64_t residentBytes() const override {uint64_t n=0;for(const auto& s:desired_.instances)if(s)n+=s->host->residentBytes();return n;}
     bool inWorker() const noexcept override {return base().inWorker();}

@@ -14,6 +14,7 @@
 #include <oscairn-clap/ui.h>
 #include <oscairn-clap/memory.h>
 #include <oscairn-clap/effect-contexts.h>
+#include <oscairn-clap/assets.h>
 #include <filesystem>
 #include <fstream>
 #include <string>
@@ -67,6 +68,7 @@ struct Plugin {
     const clap_host_t* host;
     const clap_host_thread_check_t* check;
     int kind;
+    std::string asset; // main thread: a sound asset its state names ("library\0path"), resolved through oscairn.assets
     bool active = false, processing = false, gate = false, held = false, sustain = false;
     // Atomic: CLAP lets the main thread (state save, get_value) read these while
     // the audio thread writes them in process().
@@ -281,6 +283,8 @@ struct Plugin {
                 const double value = get(p).gain;
                 const auto* bytes = reinterpret_cast<const uint8_t*>(&value);
                 for (size_t i = 0; i < sizeof(value); ++i) if (out->write(out, bytes + i, 1) != 1) return false;
+                const auto& asset = get(p).asset;
+                if (!asset.empty() && out->write(out, asset.data(), asset.size()) != int64_t(asset.size())) return false;
                 return !(get(p).kind == 10 && value > .65);
             },
             [](const clap_plugin_t* p, const clap_istream_t* in) {
@@ -289,7 +293,20 @@ struct Plugin {
                 if (const char* once = std::getenv("KICK_FIXTURE_SLOW_LOAD_ONCE")) if (std::remove(once) == 0) std::this_thread::sleep_for(std::chrono::seconds(6));
                 double value = 0;
                 if (in->read(in, &value, sizeof(value)) != sizeof(value) || !std::isfinite(value)) return false;
-                s.gain = value; return true;
+                // After the gain, optionally a sound asset ("library\0path"), which must resolve, as a
+                // sampler's state with a library reference must (RFC 0009).
+                std::string asset; char chunk[256]; int64_t got;
+                while ((got = in->read(in, chunk, sizeof chunk)) > 0) asset.append(chunk, size_t(got));
+                if (!asset.empty()) {
+                    const auto zero = asset.find('\0');
+                    const auto* assets = static_cast<const oscairn_host_assets_t*>(s.host->get_extension(s.host, OSCAIRN_EXT_ASSETS));
+                    if (zero == std::string::npos || !assets) return false;
+                    oscairn_asset_ref_t ref{}; char path[2048], message[256];
+                    std::snprintf(ref.library, sizeof ref.library, "%s", asset.substr(0, zero).c_str());
+                    std::snprintf(ref.path, sizeof ref.path, "%s", asset.substr(zero + 1).c_str());
+                    if (!assets->resolve(s.host, &ref, path, sizeof path, message, sizeof message)) return false;
+                }
+                s.gain = value; s.asset = asset; return true;
             }};
         static const clap_plugin_latency_t latency{[](const clap_plugin_t*) -> uint32_t { return 13; }};
         static const clap_plugin_timer_support_t timers{[](const clap_plugin_t* p, clap_id id) {
