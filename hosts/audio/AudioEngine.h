@@ -8,6 +8,7 @@
 #include <juce_audio_devices/juce_audio_devices.h>
 
 #include <atomic>
+#include <functional>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -35,6 +36,9 @@ namespace oscairn::host
         /// Main-loop work: plugin callbacks, freeing retired graph plans, reopening MIDI
         /// inputs after devices change. Serviced by its own main-thread timer.
         void service();
+        /// Called on the main thread after service() and after a control's move reached the model:
+        /// the engine sends what changed then, not on a timer of its own.
+        void setServiced( std::function<void()> serviced ) { serviced_ = std::move( serviced ); }
 
     private:
         // Audio thread
@@ -46,7 +50,7 @@ namespace oscairn::host
         void handleIncomingMidiMessage( juce::MidiInput*, const juce::MidiMessage& ) override;
 
         uint8_t push( const juce::MidiMessage& message, const juce::MidiInput* input ); // the input's source number
-        void handleAsyncUpdate() override { session_->serviceControllers(); } // a control moved: its model, at once
+        void handleAsyncUpdate() override { session_->serviceControllers(); if( serviced_ ) serviced_(); } // a control moved: its model, at once
         void openMidiInputs();
         void openMidiOutputs();
         void queueMidiOut( uint32_t offset, double seconds ) noexcept; // audio thread: the session's MIDI out, for the sender
@@ -57,6 +61,7 @@ namespace oscairn::host
         static constexpr uint32_t maxFrames  = 512;
 
         std::unique_ptr<Session> session_;
+        std::function<void()> serviced_;
         ChannelMap channelMap_;
         std::string initialDevice_;
         juce::StringArray initialInputs_,initialOutputs_;

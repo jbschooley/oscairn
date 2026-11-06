@@ -9,15 +9,18 @@
 #include <cerrno>
 #include <charconv>
 #include <chrono>
+#include <condition_variable>
 #include <cstdlib>
 #include <cstdio>
 #include <cstring>
 #include <deque>
 #include <filesystem>
 #include <fcntl.h>
+#include <mutex>
 #include <poll.h>
 #include <set>
 #include <stdexcept>
+#include <thread>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/un.h>
@@ -170,9 +173,44 @@ namespace oscairn
         struct Peer { Stream stream; JsonRpc rpc; Peer(int fd,Control& c):stream(fd),rpc(c){} };
         std::vector<std::unique_ptr<Peer>> peers;
         bool everAttached=false,abandoned=false; // abandoned: an attached UI left without releasing
+        // watch(): the watcher waits on `watched` (what poll() left to look at) and the wake pipe,
+        // which poll() writes when that set changed under it. armed: poll() ran since the last wake.
+        struct Watch
+        {
+            std::function<void()> wake;
+            std::mutex mutex;std::condition_variable armedOrStopping;
+            std::vector<pollfd> watched;bool armed=false,stopping=false;
+            int pipe[2]{-1,-1};
+            std::thread thread;
+            void run()
+            {
+                for(;;)
+                {
+                    std::vector<pollfd> fds;
+                    {
+                        std::unique_lock lock(mutex);armedOrStopping.wait(lock,[&]{return armed || stopping;});
+                        if(stopping)return;
+                        fds=watched;
+                    }
+                    fds.push_back({pipe[0],POLLIN,0});
+                    if(::poll(fds.data(),nfds_t(fds.size()),-1)<0)continue; // EINTR
+                    if(fds.back().revents){char drain[64];while(::read(pipe[0],drain,sizeof drain)>0){}continue;} // the set changed: look again
+                    {std::lock_guard lock(mutex);armed=false;}
+                    wake();
+                }
+            }
+            void signal(){const char byte=0;[[maybe_unused]] const auto n=::write(pipe[1],&byte,1);} // a full pipe has a byte to read already
+            ~Watch()
+            {
+                if(thread.joinable()){{std::lock_guard lock(mutex);stopping=true;}armedOrStopping.notify_one();signal();thread.join();}
+                for(int fd:pipe)if(fd>=0)::close(fd);
+            }
+        };
+        std::unique_ptr<Watch> watch;
         explicit Impl(Control& c):control(c){}
         ~Impl()
         {
+            watch.reset(); // before the sockets it watches close
             if(listener>=0)::close(listener);
             struct stat info{};
             if(!path.empty() && lstat(path.c_str(),&info)==0 && S_ISSOCK(info.st_mode) && info.st_dev==device && info.st_ino==inode)
@@ -218,6 +256,17 @@ namespace oscairn
         if(impl_->peers.size()>=maxClients){::close(fd);return false;}
         impl_->peers.push_back(std::make_unique<Impl::Peer>(fd,impl_->control));return true;
     }
+    void LocalServer::watch(std::function<void()> wake)
+    {
+        auto& s=*impl_;
+        if(s.watch)throw std::logic_error("Local server already watched");
+        auto w=std::make_unique<Impl::Watch>();w->wake=std::move(wake);
+        if(::socketpair(AF_UNIX,SOCK_STREAM,0,w->pipe)<0)systemError("socketpair");
+        for(int fd:w->pipe)configure(fd);
+        w->watched.push_back({s.listener,POLLIN,0});w->armed=s.listener>=0;
+        w->thread=std::thread([w=w.get()]{w->run();});
+        s.watch=std::move(w);
+    }
     void LocalServer::poll(uint64_t now)
     {
         auto& s=*impl_;
@@ -252,16 +301,50 @@ namespace oscairn
                     }
                     else if(reads++>=16 || !stream.read(JsonRpc::maxMessageBytes+1))break;
                 }
+            }
+            catch(const std::exception&){stream.close();} // failure isolates this client
+        }
+        // Then what changed, to every client: a request one client made reaches the others in this poll.
+        bool more=false;
+        for(auto& peer:s.peers)
+        {
+            auto& stream=peer->stream;
+            if(stream.fd<0)continue;
+            try
+            {
                 // End of a write-half: finish queued complete requests/responses first.
                 if(!stream.eof)
                     for(auto& notice:peer->rpc.notifications(now))stream.queue(notice);
                 stream.flush();
-                if(stream.eof && stream.input.find('\n')==std::string::npos && stream.output.empty())stream.close();
+                const bool lines=stream.input.find('\n')!=std::string::npos;
+                if(stream.eof && !lines && stream.output.empty())stream.close();
+                more=more || lines; // over this poll's share: the rest at once, not at the next timer
             }
             catch(const std::exception&){stream.close();} // failure isolates this client
         }
         for(const auto& peer:s.peers)if(peer->stream.fd<0 && peer->rpc.attached() && !peer->rpc.released())s.abandoned=true;
         std::erase_if(s.peers,[](const auto& peer){return peer->stream.fd<0;});
+        if(auto* w=s.watch.get())
+        {
+            // What the watcher looks at next: new requests, and room for replies held back.
+            std::vector<pollfd> fds{{s.listener,POLLIN,0}};
+            for(const auto& peer:s.peers)
+            {
+                const auto& stream=peer->stream;
+                const short events=short((stream.eof?0:POLLIN)|(stream.output.empty()?0:POLLOUT));
+                if(events)fds.push_back({stream.fd,events,0});
+            }
+            const auto same=[](const pollfd& a,const pollfd& b){return a.fd==b.fd && a.events==b.events;};
+            bool changed;
+            {
+                std::lock_guard lock(w->mutex);
+                changed=!std::equal(fds.begin(),fds.end(),w->watched.begin(),w->watched.end(),same);
+                w->watched=std::move(fds);w->armed=true;
+            }
+            w->armedOrStopping.notify_one();
+            if(changed)w->signal();
+            if(more)w->wake();
+        }
     }
 
     struct LocalClient::Impl

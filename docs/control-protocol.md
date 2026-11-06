@@ -542,7 +542,21 @@ output per client. A document may contain up to 64 batch members. Method executi
 (including plugin loading and graph commits) remains synchronous on the control thread.
 Oversized frames, I/O failures and full output queues disconnect that client. Malformed
 JSON within a bounded frame receives an RPC error and does not discard later frames.
-A write-half-close drains complete requests and responses before closing.
+A write-half-close drains complete requests and responses before closing. Each `poll()`
+dispatches every client's requests first, then sends each client its notifications, so what
+one client changes reaches the others in the same poll.
+
+`LocalServer::watch(wake)` answers requests as they arrive rather than at the next poll: a
+thread of the server's own waits on the listener and the clients (and on room to write a reply
+a full socket held back) and calls `wake` when one is ready, once, then waits for the next
+`poll()` before it looks again, so nothing spins while the control thread catches up. `wake`
+must get the control thread to call `poll()` (it is called on the watcher's thread); requests
+left over a poll's share call it again at once. The engine's main thread polls when woken and
+after each service tick (about 5 ms), which sends what changed then; it has no socket timer of
+its own. `engine-pump` serves a session exactly so, without an audio device: requests are
+answered in about 0.03 ms (median; 0.1 ms worst) rather than 3 ms (6 ms worst) on the 5 ms
+timer the engine used before, a change another client made is heard in under 0.1 ms, and
+the process stays at about 1% CPU idle.
 
 `LocalClient::call` waits for its matching response while retaining interleaved
 notifications. The default deadline is 1 second. Timeout, malformed response, mismatched

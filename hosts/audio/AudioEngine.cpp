@@ -101,6 +101,7 @@ namespace oscairn::host
         for(size_t i = 0; i < midiInputs_.size(); ++i) status.midiInputs.push_back({MidiEndpoint::Kind::Usb, midiSources_[i], midiInputs_[i]->getName().toStdString()});
         for(size_t i = 0; i < midiOutputs_.size(); ++i) status.midiOutputs.push_back({MidiEndpoint::Kind::Usb, outputNumbers_[i], midiOutputs_[i]->getName().toStdString()});
         session_->setHostStatus(std::move(status));
+        if( serviced_ ) serviced_();
     }
 
     void AudioEngine::openMidiOutputs()

@@ -2,9 +2,9 @@
 #include "../audio/AudioEngine.h"
 #include "oscairn/local_socket.h"
 #include "EngineProcess.h"
+#include "Pump.h"
 #include "oscairn/plugin_host.h"
 #include <juce_events/juce_events.h>
-#include <chrono>
 #include <csignal>
 #include <cstdlib>
 #include <iostream>
@@ -13,26 +13,6 @@
 namespace
 {
     volatile std::sig_atomic_t stopping=0;
-    struct Pump : juce::Timer
-    {
-        oscairn::LocalServer& server;
-        bool managed;
-        int result=0;
-        Pump(oscairn::LocalServer& s,bool m):server(s),managed(m){startTimer(5);}
-        void timerCallback()override
-        {
-            if(stopping){juce::MessageManager::getInstance()->stopDispatchLoop();return;}
-            try
-            {
-                const auto now=std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
-                server.poll(static_cast<uint64_t>(now));
-            }
-            catch(const std::exception& e){std::cerr<<"oscairn-engine: "<<e.what()<<'\n';result=1;juce::MessageManager::getInstance()->stopDispatchLoop();return;}
-            // A managed engine stops when its UIs have quit normally (crashes leave it running),
-            // checked after reading this tick's requests, so a window just opening keeps it.
-            if(managed && server.released()){stopping=1;juce::MessageManager::getInstance()->stopDispatchLoop();}
-        }
-    };
 }
 int main(int argc,char** argv)
 {
@@ -82,12 +62,14 @@ int main(int argc,char** argv)
         if(managed)lease=std::make_unique<oscairn::host::EngineLease>(socket);
         oscairn::host::AudioEngine audio(plugins,std::move(audioConfig));
         oscairn::LocalServer server(audio.control());server.listen(socket);
-        Pump pump(server,managed);
+        oscairn::host::Pump pump(server,managed,stopping);
+        audio.setServiced([&pump]{pump.poll();}); // what changed goes out after each service tick
         std::cout<<"oscairn-engine: listening on "<<socket<<std::endl;
         // On macOS runDispatchLoop() calls [NSApp run], but this console host
         // has no NSApplication. The bounded loop pumps the native run loop too,
         // so JUCE timers and device callbacks stay serviced without a GUI app.
         while(!stopping && juce::MessageManager::getInstance()->runDispatchLoopUntil(50)) {}
+        audio.setServiced({});
         return pump.result;
     }
     catch(const std::exception& e){std::cerr<<"oscairn-engine: "<<e.what()<<'\n';return 1;}

@@ -537,6 +537,17 @@ out (`RemoteControl::reading()`), and the pad map after a load is fetched like t
 engine's answer in ten runs, with no wait on the UI thread (131 to 148 ms from asking, which
 adds the job's own connection and reads, the estimate and the engine's load).
 
+Every request still waited for the engine's 5 ms socket timer, up to a tick each: about 3 ms
+median and 6 ms worst a round trip, and an edit reading the graph back took one tick per window
+of requests. Now the engine answers a request as it arrives (`LocalServer::watch` wakes its main
+thread) and sends what changed after each service tick, with no socket timer
+(`hosts/engine/Pump.h`). `engine-pump` measures 0.03 ms median and 0.1 ms worst a round trip,
+another client's change heard within 0.1 ms, and no rise in idle CPU (about 1% in its process,
+as before). In `ui-waits`, served the same way, a rename (a structural edit, which reads the
+graph and the 20 plugins' parameters back before it returns: 48 waits) waits 2.5 to 2.9 ms in all
+on the UI thread rather than 84 ms, and opening a Performance shows 20 to 28 ms after the engine
+answered (33 to 39 ms from asking) rather than about 50 (120).
+
 #### Engine mapping status
 
 Built 2026-11-02 (`oscairn/controller_input.h`; `controllers.set`, `controllers.view`,

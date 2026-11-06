@@ -137,7 +137,8 @@ can be granted per group.
 changes go through the host's lock-free event queue, graph edits through the graph's plan
 swap, transport changes through atomics, and status comes back through atomics and
 lock-free queues. The socket server runs on that same thread with `poll()`, so requests are
-handled in order and need no locking against each other.
+handled in order and need no locking against each other; a watcher thread only wakes that
+thread when the socket has a request (`LocalServer::watch`), so one is answered as it arrives.
 
 This follows the lesson of norns 3.0, which merged its separate control and audio
 processes: inter-process communication belongs at the UI boundary, not between control

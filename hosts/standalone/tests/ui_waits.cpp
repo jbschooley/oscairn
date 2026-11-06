@@ -2,8 +2,9 @@
 //
 // The desktop's message thread and the engine's socket: a mute, a fader drag and the views'
 // polls never wait on it, and opening a Performance costs the app little once the engine has
-// loaded it. Against a session of 20 plugins served on the engine's real 5 ms timer, without
-// an audio device; it prints what it measured.
+// loaded it. Against a session of 20 plugins served as the engine serves it (requests answered
+// as they arrive, the session serviced every 5 ms), without an audio device; it prints what it
+// measured.
 //   oscairn_ui_waits_test PLUGIN_DIR SCANNER
 #include "../Engine.h"
 #include "../PartsModel.h"
@@ -12,6 +13,7 @@
 #include <juce_gui_extra/juce_gui_extra.h>
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <cstdio>
 #include <filesystem>
 #include <mutex>
@@ -50,11 +52,15 @@ int main(int argc, char** argv)
         Session session(48000, 128);
         build(session, "A");
         check(session.graphState().topology.nodes.size() >= 20, "20 plugins: " + std::to_string(session.graphState().topology.nodes.size()));
-        // Served as the engine serves it: the socket read every 5 ms. When a load is answered.
+        // Served as the engine serves it: the socket read as soon as a request arrives, and the
+        // session serviced every 5 ms, after which what changed is sent. When a load is answered.
         LocalServer server(session);
         server.listen(socket.string());
         std::atomic<bool> running = true;
-        std::mutex mutex;
+        std::mutex mutex, wakeMutex;
+        std::condition_variable woken;
+        bool wake = false;
+        server.watch([&] { { std::lock_guard lock(wakeMutex); wake = true; } woken.notify_one(); });
         std::string shown = session.performanceInfo().name;
         std::optional<Clock::time_point> answered;
         std::thread control([&] {
@@ -64,9 +70,16 @@ int main(int argc, char** argv)
             {
                 server.poll(uint64_t(Clock::now().time_since_epoch().count()));
                 if(const auto name = session.performanceInfo().name; name != shown) { std::lock_guard lock(mutex); shown = name; answered = Clock::now(); }
-                session.service();
-                session.process(nullptr, 0, out, 2, 128);
-                std::this_thread::sleep_until(next += std::chrono::milliseconds(5));
+                if(Clock::now() >= next)
+                {
+                    session.service();
+                    session.process(nullptr, 0, out, 2, 128);
+                    server.poll(uint64_t(Clock::now().time_since_epoch().count()));
+                    next += std::chrono::milliseconds(5);
+                }
+                std::unique_lock lock(wakeMutex);
+                woken.wait_until(lock, next, [&] { return wake; });
+                wake = false;
             }
         });
         {
@@ -101,6 +114,16 @@ int main(int argc, char** argv)
             const auto drag = since(before);
             std::printf("drag: %llu waits, %lld us waiting\n", (unsigned long long)drag.count, drag.micros);
             check(drag.count == 0, "a fader drag never waits on the socket: " + std::to_string(drag.count) + " waits");
+
+            // A structural edit (a rename) reads the graph back before it returns: it waits, for
+            // as long as the engine takes to answer each of its requests.
+            free(); run(100);
+            before = waits();
+            engine.edit([=](Control& c) { c.setPartName(lead, "Renamed"); c.commit(); });
+            const auto rename = since(before);
+            std::printf("structural edit: %llu waits, %lld us waiting\n", (unsigned long long)rename.count, rename.micros);
+            check(engine.graph().parts.front().name == "Renamed", "the rename shows on return");
+            engine.edit([=](Control& c) { c.setPartName(lead, "A0"); c.commit(); });
 
             // Steady state: what the views poll, at their pace, for two seconds, after a round of
             // them (on screen they poll all along; one not asked for in a second is read at once).

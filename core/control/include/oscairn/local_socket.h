@@ -2,6 +2,7 @@
 #pragma once
 #include "oscairn/control.h"
 #include <chrono>
+#include <functional>
 #include <memory>
 #include <string_view>
 #include <system_error>
@@ -34,6 +35,13 @@ namespace oscairn
         /// Takes ownership even on refusal/failure. Also supports socket activation.
         bool adopt(int connectedSocket);
         void poll(uint64_t monotonicNanoseconds);
+        /// Answer as soon as a request arrives: a thread of the server's own waits on the socket
+        /// and calls `wake` (on that thread) when the listener or a client has something for
+        /// poll(), or a reply held back by a full socket can go on. It calls it once, then waits
+        /// for the next poll() before it looks again, so nothing spins; `wake` should get the
+        /// control thread to call poll() soon, and must not call it itself. Call once, after
+        /// listen() and before any poll() it should cover.
+        void watch(std::function<void()> wake);
         size_t clients() const;
         /// A managed engine may stop: a UI attached and every attached UI has released it (quit
         /// normally). One that left without releasing (a crash) keeps the engine for the UI to
