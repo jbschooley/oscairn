@@ -593,7 +593,12 @@ their IDs (`Graph::carryOver`), retiring. Their sound to the outputs and to each
 note connections into them drain through the same note routes, so a note held across the change
 plays on until released, pedal included; nothing else reaches them, and new notes play the new
 Performance. They are hidden from it (`graph.get`, saving, undo, node IDs) and each goes once
-idle, as a scene's: asleep or three seconds of silence, or 30 seconds without a note. Notes
+idle, as a scene's: asleep or three seconds of silence, or 30 seconds after the change, held
+notes or not, so a voice stuck in a plugin or a release lost on the way cannot keep the outgoing
+plugins and their memory forever (one cut short while it still sounds is removed, not kept warm,
+so the stuck voice ends with the instance and cannot come back with a later change); a panic
+(`notes.panic`) ends them all at once. `control-parts` checks a stuck voice, its key held, going
+30 seconds after the change and at once on a panic (the fixture's `KICK_FIXTURE_STUCK`). Notes
 queued at the moment of the change are no longer dropped, so a release reaches the old plugins.
 Changing again while one still rings carries those too. A change that would not fit with both
 Performances in memory and CPU opens as a cut instead, and the desktop says so after opening
@@ -1075,11 +1080,10 @@ change.
 **Limits.** The ring-out buffer carries the retiring sounds' main output only; their other output
 ports (the Basic Synth's sound buses) stay on the instance's ports. One buffer per instance: a
 second change while the first's tail rings moves that tail to the second outgoing chain (RFC 0005).
-A carried-over effect fed only by a ring-out route still goes once 30 seconds pass without a note
-through it (the ring-out rule above, which counts notes through the effect, and it takes none):
-a note held through the change for longer than that loses the outgoing effects, and its tail
-moves back to the main output. A sound the user unselects on the incoming node while a ring-out
-route exists rings out through the outgoing chain too.
+A carried-over effect fed only by a ring-out route goes 30 seconds after the change at the latest
+(the ring-out rule above): a note held through the change for longer than that loses the outgoing
+effects, and its tail moves back to the main output. A sound the user unselects on the incoming
+node while a ring-out route exists rings out through the outgoing chain too.
 
 Built 2026-11-05 (`Graph::ringOutPort`, `Graph::ringOut`, `Graph::dropRingOut`; `Session::open`,
 `Session::retireSounds`; `kick::clap::Host` passing two scratch channels after the ports' as the

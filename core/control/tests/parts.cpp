@@ -1061,6 +1061,32 @@ namespace
         check(s.leaving() == 0, "A goes after three seconds of silence");
     }
 
+    // A voice that never ends (a plugin deaf to releases, a release lost on the way: the key held
+    // here) keeps the last Performance ringing: it is choked and goes 30 s after the change, or at
+    // once on a panic. Uses performanceChange's Performances.
+    void stuckRingOut(const fs::path& root)
+    {
+        ::setenv("KICK_FIXTURE_STUCK", "1", 1);
+        Session s(48000, frames);
+        Audio x;
+        auto change = [&](int key) {
+            s.loadPerformance((root / "change-a").string()); s.note(true, key, 1); x.run(s); x.run(s);
+            s.loadPerformance((root / "change-b").string()); x.run(s); x.run(s);
+        };
+        change(60);
+        check(s.leaving() == 1 && near(x.l[0], .25), "A's stuck voice rings on: " + std::to_string(x.l[0]));
+        for(int i = 0; i < int(48000 * 29 / frames); ++i) x.run(s);
+        check(s.leaving() == 1, "still ringing 29 s after the change");
+        for(int i = 0; i < int(48000 * 1.2 / frames) && s.leaving(); ++i) x.run(s);
+        x.run(s);
+        check(s.leaving() == 0 && near(x.l[0], 0), "gone 30 s after the change: " + std::to_string(x.l[0]));
+        change(61);
+        check(s.leaving() == 2 && near(x.l[0], .25), "a second stuck voice rings on, beside the B it left: " + std::to_string(x.l[0]));
+        s.allNotesOff(); x.run(s); x.run(s);
+        check(s.leaving() == 0 && near(x.l[0], 0), "a panic ends it at once: " + std::to_string(x.l[0]));
+        ::unsetenv("KICK_FIXTURE_STUCK");
+    }
+
     // A plugin that is not here (RFC 0006): the Performance opens, the plugin silent in its place
     // saying why, its state kept byte for byte through a save, and back once it is installed.
     void unavailable(const char* fixture, const fs::path& root)
@@ -2053,6 +2079,7 @@ int main(int argc, char** argv)
         sceneSwitching(argv[1], temp.path);
         onOff(argv[1], temp.path);
         performanceChange(argv[1], temp.path);
+        stuckRingOut(temp.path);
         audition(argv[1], temp.path);
         allNotesOff(argv[1]);
         unavailable(argv[1], temp.path);

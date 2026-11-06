@@ -154,7 +154,8 @@ struct Plugin {
         if (e->type == CLAP_EVENT_NOTE_ON && reinterpret_cast<const clap_event_note_t*>(e)->key == 0) std::abort();
 #endif
         if (e->type == CLAP_EVENT_NOTE_ON) { if (kind == 2) ++threadErrors; gate = true; }
-        if (e->type == CLAP_EVENT_NOTE_OFF || e->type == CLAP_EVENT_NOTE_CHOKE) { if (kind == 2) ++threadErrors; else gate = false; }
+        // KICK_FIXTURE_STUCK: a voice that never ends, deaf to releases and chokes; only a reset stops it.
+        if (e->type == CLAP_EVENT_NOTE_OFF || e->type == CLAP_EVENT_NOTE_CHOKE) { if (kind == 2) ++threadErrors; else if (!std::getenv("KICK_FIXTURE_STUCK")) gate = false; }
         if (e->type == CLAP_EVENT_MIDI) {
             const auto* m = reinterpret_cast<const clap_event_midi_t*>(e);
             const auto kind=m->data[0]&0xf0;

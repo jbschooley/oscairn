@@ -536,8 +536,9 @@ namespace oscairn
     bool Graph::idle( NodeId node, uint64_t quietFrames, uint64_t limitFrames ) const
     {
         const auto& a=*nodes_.at(node).activity;
+        if(a.age.load(std::memory_order_relaxed)>=limitFrames)return true;
         if(a.sounding.load(std::memory_order_relaxed))return false;
-        return a.asleep.load(std::memory_order_relaxed) || a.quiet.load(std::memory_order_relaxed)>=quietFrames || a.free.load(std::memory_order_relaxed)>=limitFrames;
+        return a.asleep.load(std::memory_order_relaxed) || a.quiet.load(std::memory_order_relaxed)>=quietFrames;
     }
 
     void Graph::mapParamTarget( NodeId source, uint32_t lane, NodeId target, clap_id param )
@@ -992,12 +993,11 @@ namespace oscairn
                 {
                     float loudest=0;for(uint32_t c=0;c<step.audioOutputs;++c)for(uint32_t i=0;i<frames;++i)loudest=std::max(loudest,std::abs(step.out[c][i]));
                     a.quiet.store(loudest<1e-5f?a.quiet.load(std::memory_order_relaxed)+frames:0,std::memory_order_relaxed);
-                    a.free.store(sounding?0:a.free.load(std::memory_order_relaxed)+frames,std::memory_order_relaxed);
                     a.asleep.store(step.host->asleep(),std::memory_order_relaxed);
                 }
-                // A block the plugin never rendered (a worker that died and did not restart) is
-                // as good as silence: it counts toward the limit, or such a node is never idle.
-                else a.free.store(sounding?0:a.free.load(std::memory_order_relaxed)+frames,std::memory_order_relaxed);
+                // Every block counts toward the limit, rendered or not (a worker that died and did not
+                // restart) and notes held or not (a lost release), or such a node is never idle.
+                a.age.store(a.age.load(std::memory_order_relaxed)+frames,std::memory_order_relaxed);
             }
             step.paramCount = 0;step.paramDrops=0;step.releaseCount=0;step.releaseOverflow=false;
             uint32_t endedCount=0;const auto* ended=step.host->outputEvents(endedCount);

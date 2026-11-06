@@ -211,7 +211,7 @@ namespace oscairn
         void recordPlay( uint32_t take ) override;
         Recorder& recorder() noexcept { return recorder_; } // its ring length, disk reserve and test hooks
         bool note( bool on, int key, double velocity, int channel = 0 ) override;
-        void allNotesOff() override { panic_.store( true, std::memory_order_release ); } // the queue overflow's emergency release
+        void allNotesOff() override { panic_.store( true, std::memory_order_release ); endRinging_.store( true, std::memory_order_release ); } // the queue overflow's emergency release; ringOut ends the last Performance's
         void ignoreMidiInputs( const std::vector<std::string>& names ) override;
         PadMap padMap() const override { return padMap_; }
         void setPadMap( const PadMap& map ) override;
@@ -634,6 +634,7 @@ namespace oscairn
         std::array<kick::clap::Event, noteQueueCapacity> notes_{};
         std::atomic<size_t> noteHead_{ 0 }, noteTail_{ 0 };
         std::atomic<bool> panic_{ false };
+        std::atomic<bool> endRinging_{ false }; // allNotesOff: ringOut ends the last Performance's plugins at once
         std::atomic<uint64_t> droppedNotes_{ 0 };
         std::vector<std::string> ignoredInputs_;      // control thread
         std::atomic<uint64_t> ignoredSources_{ 0 };   // their sources now, a bit each, for the audio thread

@@ -410,18 +410,26 @@ namespace oscairn
 
     // An off plugin stops sounding once it has rung out: no note sounding through it, and asleep
     // (it said so) or three seconds of silence for plugins that never say, longer than a gap
-    // between echoes (the bundled Delay's longest is two); or 30 seconds without a note, for a
-    // sound that never ends. Not an edit.
-    // The last Performance's plugins go the same way, once rung out (RFC 0021).
+    // between echoes (the bundled Delay's longest is two); or 30 seconds after it was switched
+    // off, whatever it sounds like or holds, for a sound that never ends or a release that never
+    // came. Not an edit.
+    // The last Performance's plugins go the same way, once rung out (RFC 0021), and all at once on
+    // a panic (allNotesOff). One cut short while it still sounds is removed, not kept warm, so its
+    // stuck voice ends with the instance and cannot come back with a later change taking it over.
     void Session::ringOut()
     {
         if(staged_) return;
         bool done = false;
         const auto quiet = uint64_t(sampleRate_ * 3), limit = uint64_t(sampleRate_ * 30);
+        const bool panic = endRinging_.exchange(false, std::memory_order_acquire);
         for(const auto n : disabled_)
             if(!rungOut_.count(n) && graph_.idle(n, quiet, limit)) { rungOut_.insert(n); done = true; }
         for(auto it = leaving_.begin(); it != leaving_.end(); )
-            if(graph_.idle(*it, quiet, limit)) { keepWarm(*it); it = leaving_.erase(it); done = true; }
+            if(panic || graph_.idle(*it, quiet, limit))
+            {
+                if(graph_.silent(*it, quiet)) keepWarm(*it); else graph_.remove(*it);
+                it = leaving_.erase(it); done = true;
+            }
             else ++it;
         if(!done) return;
         evictOpportunistic();
