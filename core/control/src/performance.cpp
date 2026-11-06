@@ -605,15 +605,23 @@ Session::Beside::~Beside() {
 
 // The outgoing sounds of instances taken over with sounds beside: each goes once the plugin lets it
 // (idle: not selected, queued, sounding or ringing); one it no longer lists is forgotten.
+// Then their ring-out routes go, once no unselected sound sounds (the Default may hold a tail too).
 void Session::retireSounds() {
-    std::erase_if(retiringSounds_,[](Retiring& r){
+    if(staged_)return; // committing would publish edits not committed yet
+    bool dropped=false;
+    std::erase_if(retiringSounds_,[&](Retiring& r){
         const auto host=r.host.lock();if(!host)return true;
         try{
             std::erase_if(r.ids,[&](uint32_t id){return host->discardSound(id);});
-            if(!r.ids.empty()){std::set<uint32_t> listed;for(const auto& c:host->soundContexts())listed.insert(c.id);std::erase_if(r.ids,[&](uint32_t id){return !listed.count(id);});}
-        }catch(const std::exception&){return true;}
-        return r.ids.empty();});
+            const auto listed=host->soundContexts();
+            if(!r.ids.empty()){std::set<uint32_t> ids;for(const auto& c:listed)ids.insert(c.id);std::erase_if(r.ids,[&](uint32_t id){return !ids.count(id);});}
+            if(!r.ids.empty() || std::any_of(listed.begin(),listed.end(),[](const auto& c){return !c.selected_channels && !c.idle;}))return false;
+        }catch(const std::exception&){}
+        if(graph_.contains(r.node) && graph_.node(r.node).host==host && graph_.ringOutRoutes(r.node)){graph_.dropRingOut(r.node);dropped=true;}
+        return true;});
+    if(dropped)graph_.commit();
 }
+size_t Session::ringOutRoutes() const { size_t n=0;for(const auto& node:graph_.describe().nodes)n+=graph_.ringOutRoutes(node.id);return n; }
 
 // A node of the last Performance rung out: kept loaded, out of the graph, for a later change to
 // take over (RFC 0021), when it could be; else removed. Not while an audition holds what it set aside.
@@ -1044,7 +1052,8 @@ void Session::open(Prepared& p,bool seamless) {
     compileWires(*next,wires,disabled,disabled,leaving,p.masterLevel,p.masterPan);next->setMidiTaps(midiTaps(*next,p.parts,wires));next->setHarmonies(harmonies(p.parts,p.key));auto rungOut=disabled;
     // An instance whose next sounds were prepared beside (RFC 0021): the notes it holds go on through
     // the incoming node, keeping their sound; a cut releases them.
-    if(seamless)for(const auto& b:p.beside)next->takeNotes(graph_,b->was,b->now);
+    // Its outgoing sounds ring out through the outgoing chain, by the plugin's ring-out buffer.
+    if(seamless)for(const auto& b:p.beside){next->takeNotes(graph_,b->was,b->now);next->ringOut(graph_,b->was,b->now);}
     std::map<Address,double> observed;for(const auto& [id,name]:p.names)for(const auto& q:next->host(id).parameters())observed[{id,q.id}]=next->host(id).parameterValue(q.id);
     // Compilation and all allocating preparation precede publication. The audio thread
     // adopts at one boundary; old plans and their hosts are reclaimed by service().
@@ -1066,7 +1075,7 @@ void Session::open(Prepared& p,bool seamless) {
     });
     std::erase_if(loaded_,[&](const auto& l){return !graph_.contains(l.first);});
     // The outgoing sounds ring out, then go (retireSounds).
-    for(auto& b:p.beside)if(!b->old.empty())retiringSounds_.push_back({b->host,std::move(b->old)});
+    for(auto& b:p.beside)if(!b->old.empty() || graph_.ringOutRoutes(b->now))retiringSounds_.push_back({b->host,std::move(b->old),b->now});
     beside_+=p.beside.size();
     // Its parts' faders as live gains (RFC 0011's instant controls): the wires are built again
     // aside to work out which faders scale each, the wires read from the file keep everything

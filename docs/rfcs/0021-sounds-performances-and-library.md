@@ -68,7 +68,7 @@ Checked when built and tested; the sections below say how.
 - [x] A failed load puts back the state of the playing instances it took over ([design](#free-instances-across-a-change-and-instances-kept-warm))
 - [x] Native sound contexts across a change: the incoming node's sounds prepared beside the
       outgoing ones in the playing instance, selected at the cue ([design](#native-sound-contexts-across-a-change))
-- [ ] The outgoing sounds of a switched native instrument ring out through the outgoing chain ([design](#ringing-out-through-the-outgoing-chain))
+- [x] The outgoing sounds of a switched native instrument ring out through the outgoing chain ([design](#ringing-out-through-the-outgoing-chain))
 - [x] A library click prepares the Performance, then switches to it once it is ready ([design](#native-sound-contexts-across-a-change))
 - [x] Audition of a Sound in a part and of a Performance in place of the open one, put back as
       it was or kept, from the Library app ([status](#audition))
@@ -1069,7 +1069,8 @@ time rings out in the main output as before.
 **Removal.** `Session::retireSounds` already discards the outgoing sounds as each goes idle. Once
 all are discarded and no unselected sound of the instance still sounds (the Default may hold a
 tail), it removes the node's ring-out routes and commits. They also go with the carried-over
-effects when those are removed, and with the node at the next change.
+effects when those are removed, and with the node when it is removed or claimed again at a later
+change.
 
 **Limits.** The ring-out buffer carries the retiring sounds' main output only; their other output
 ports (the Basic Synth's sound buses) stay on the instance's ports. One buffer per instance: a
@@ -1079,6 +1080,37 @@ through it (the ring-out rule above, which counts notes through the effect, and 
 a note held through the change for longer than that loses the outgoing effects, and its tail
 moves back to the main output. A sound the user unselects on the incoming node while a ring-out
 route exists rings out through the outgoing chain too.
+
+Built 2026-11-05 (`Graph::ringOutPort`, `Graph::ringOut`, `Graph::dropRingOut`; `Session::open`,
+`Session::retireSounds`; `kick::clap::Host` passing two scratch channels after the ports' as the
+buffer, `PluginHost::ringsOut`, the worker's shared block; the SDK's `Engine::setRingOut` and
+`Engine::retiring`; the Basic Synth). `control-performance-switch` (and `-workers`) builds G, a
+Basic Synth through a Delay at half level, and H, the same synth dry at full level, and H's copy,
+naming a copy of the synth so nothing is prepared beside. With a note held, G to H prepares H's
+sound beside G's and routes the ring-out into G's Delay (two routes, none in `graph.get`'s
+routing); the note is released, a new one played on H; for five seconds the output equals, sample
+for sample, G to H's copy, where G's instance rings out on its own in its chain; G's Delay still
+echoes after both voices end; once the outgoing sound is discarded its routes are gone; then H
+sounds as a fresh load. Back from H to G with a note held, H's dry tail goes straight to the
+outputs at H's level (two routes, not in `graph.get`), the output equals the reference opening G's
+copy, and those routes go once H's sound is discarded: only `retireSounds` removes them, where the
+Delay's routes also go with the Delay. Every render runs under the allocation guard (engine side;
+a worker's own audio thread is not guarded). Without `Graph::ringOut` the comparison differs from
+the first block after the change; with a plugin that ignores the buffer too; without the worker
+carrying it, in `-workers` only; without `dropRingOut`, the routes to the outputs stay; without
+`describe()` hiding them, the Session's wires remove the routes to the outputs at once.
+
+Measured by that test, Release, M3 Max at a load average of 40 to 50 from other work, two runs,
+the mean render time per block of 128 frames over the first 600 blocks after the change:
+
+| | Engine | Workers |
+| --- | --- | --- |
+| Ringing out through G's chain (H's synth, G's Delay) | 0.022–0.023 ms | 0.070–0.071 ms |
+| G and H in separate instances (the reference) | 0.034–0.036 ms | 0.084–0.086 ms |
+| H alone, the same notes, once the routes went | 0.015–0.019 ms | 0.034–0.037 ms |
+
+So while a tail rings the extra cost is the outgoing effects', less than the separate instance a
+change between unrelated Performances keeps running; once the routes go, none.
 
 **A library click** prepares the Performance first, as the Setlist does ahead
 (`performance.prepare`), and opens it (`library.load`) once that is done, both in the app's job off

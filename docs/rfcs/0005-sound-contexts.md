@@ -24,7 +24,7 @@ Checked when built and tested; the sections below say how.
 - [x] A snapshot's sounds prepared beside the playing ones (`oscairn.sound-snapshots/draft-1`,
       [below](#preparing-a-snapshot-beside)), by the SDK and the Basic Synth, and used across a
       Performance change ([RFC 0021](0021-sounds-performances-and-library.md#native-sound-contexts-across-a-change))
-- [ ] Ringing out through the outgoing chain: the retiring sounds rendered into a hidden ring-out
+- [x] Ringing out through the outgoing chain: the retiring sounds rendered into a hidden ring-out
       buffer (`oscairn.sound-snapshots/draft-2`, [below](#ringing-out-through-the-outgoing-chain)),
       by the SDK and the Basic Synth, routed through the outgoing Performance's effects and level
 - [ ] Parts sharing one instance ([RFC 0021, slice 3](0021-sounds-performances-and-library.md#fewer-instances-reusing-what-is-loaded))
@@ -250,7 +250,8 @@ figures are in [RFC 0021](0021-sounds-performances-and-library.md#native-sound-c
 
 **Overlapping changes.** One ring-out buffer per instance, not one per retiring generation. A
 second change while a first change's tail still rings sends both outgoing sounds through the
-second outgoing chain: the older tail moves from the first chain to the second at the cue. That
+second outgoing chain: the older tail moves from the first chain to the second at the cue, a jump
+in its effects rather than a seamless move. That
 keeps the contract to one buffer; per-generation buffers can come as a draft 3 if it matters.
 
 **In the SDK**, `Engine` keeps the buffer `ring_out` gives (`Engine::ringOut`, cleared when

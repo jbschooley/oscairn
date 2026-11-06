@@ -169,7 +169,7 @@ What the plugin must then do:
 - Ring out into the hidden buffer (`ring_out`, optional; [RFC 0005](rfcs/0005-sound-contexts.md#ringing-out-through-the-outgoing-chain)):
   while `Engine::ringOut` is set, `render` adds the main output of every context for which
   `Engine::retiring(slot)` is true into `ringOut[0]` and `ringOut[1]` instead of the main output
-  port; the host clears it after each `process()`. Other ports are unchanged. A plugin built
+  port; `Engine` clears it when each `process()` returns. Other ports are unchanged. A plugin built
   against draft 1 must be rebuilt against draft 2 (draft 1 is no longer read); leaving
   `ring_out` null keeps today's behavior, its tails playing through the incoming chain.
 

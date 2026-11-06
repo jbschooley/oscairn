@@ -42,6 +42,7 @@ namespace oscairn
             NodeId id = 0;
             std::shared_ptr<std::array<std::atomic<float>,Graph::meterChannels>> peaks; // the node's, shared with every plan
             uint32_t                          audioInputs = 0, audioOutputs = 0;
+            bool ringOut = false; // the last two of audioOutputs are the plugin's ring-out buffer (Graph::ringOutPort)
             std::vector<AudioRoute>           audioSources;
             std::vector<uint32_t> silentInputs;
             struct NoteSource {int step;std::shared_ptr<NoteRoute> route;NoteZones zones;bool draining=false;};
@@ -241,6 +242,21 @@ namespace oscairn
             if(const auto z=current.noteZones_.find(edge);z!=current.noteZones_.end())noteZones_[key]=z->second;
         }
     }
+    void Graph::ringOut(const Graph& current,NodeId from,NodeId node) {
+        const auto it=nodes_.find(node);if(it==nodes_.end() || !it->second.host->ringsOut())return;
+        const auto mains=it->second.host->mainAudioPorts(false);if(mains.empty())return;
+        std::vector<AudioConnection> routes;
+        for(auto r:current.audioRoutes_){
+            if(r.from.node!=from || r.from.port!=mains.front() || r.from.channel>=2)continue;
+            const auto to=nodes_.find(r.to.node);
+            if(r.to.node!=graphOutput && (to==nodes_.end() || !to->second.retiring))return; // not all the outgoing chain: none
+            for(auto& slot:r.live){r.gain*=current.liveGain(slot);slot=0;}
+            r.from={node,ringOutPort,r.from.channel};routes.push_back(r);
+        }
+        connectAudioBatch(routes);
+    }
+    void Graph::dropRingOut(NodeId node) { std::erase_if(audioRoutes_,[&](const auto& r){return r.from.node==node && r.from.port==ringOutPort;}); }
+    size_t Graph::ringOutRoutes(NodeId node) const { return size_t(std::count_if(audioRoutes_.begin(),audioRoutes_.end(),[&](const auto& r){return r.from.node==node && r.from.port==ringOutPort;})); }
     void Graph::publishReplacement(Graph& next,const std::function<void()>& onPublish) {
         if(next.sampleRate_!=sampleRate_ || next.maxFrames_!=maxFrames_ || next.inputChannels_!=inputChannels_ || next.outputChannels_!=outputChannels_)
             throw std::invalid_argument("Replacement device layout mismatch");
@@ -364,6 +380,11 @@ namespace oscairn
             const auto it=nodes_.find(e.node);
             if(it==nodes_.end())throw std::invalid_argument("Unknown audio endpoint node");
             ports=source?&it->second.host->outputPorts():&it->second.host->inputPorts();
+            if(source && e.port==ringOutPort && it->second.host->ringsOut())
+            {
+                if(!count || e.channel>=2 || count>2-e.channel)throw std::invalid_argument("Audio channel range exceeds selected port");
+                return it->second.audioOutputs+e.channel;
+            }
         }
         uint32_t offset=0;
         for(const auto& p:*ports)
@@ -551,7 +572,8 @@ namespace oscairn
         for( const auto& [id,node] : nodes_ )
             result.nodes.push_back({id,node.host->descriptor(),node.host->inputPorts(),node.host->outputPorts(),
                                     node.host->noteInputPorts(),node.host->noteOutputPorts()});
-        result.audioRoutes=audioRoutes_;result.audioLayout=audioLayout_;
+        for(const auto& r:audioRoutes_)if(r.from.port!=ringOutPort)result.audioRoutes.push_back(r); // internal: see ringOutPort
+        result.audioLayout=audioLayout_;
         for(const auto& [edge,state]:noteEdges_)result.notes.push_back(edge);
         result.noteZones=noteZones_;result.draining=draining_;
         for( const auto& [from,to] : paramTargets_ )
@@ -608,6 +630,9 @@ namespace oscairn
             step.activity     = node.activity;
             step.audioInputs  = node.audioInputs;
             step.audioOutputs = node.audioOutputs;
+            // The ring-out buffer's two channels, after the node's own, while it is routed.
+            step.ringOut      = std::any_of(audioRoutes_.begin(),audioRoutes_.end(),[&](const auto& r){return r.from.node==id && r.from.port==ringOutPort;});
+            if(step.ringOut) step.audioOutputs += 2;
             stepOf[id]        = (int)plan->steps.size();
             plan->steps.push_back( std::move( step ) );
         }
@@ -949,7 +974,7 @@ namespace oscairn
             ok &= processed;
             if(listener && processed){uint32_t sent=0;const auto* list=step.host->outputEvents(sent);listener->events(step.id,list,sent,true);}
             if(processed && step.peaks)
-                for(uint32_t c=0;c<std::min(step.audioOutputs,meterChannels);++c)
+                for(uint32_t c=0;c<std::min(step.audioOutputs-(step.ringOut?2u:0u),meterChannels);++c)
                 {
                     float peak=0;
                     for(uint32_t i=0;i<frames;++i)peak=std::max(peak,std::abs(step.out[c][i]));

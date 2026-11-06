@@ -191,8 +191,10 @@ struct Host::Impl {
     std::vector<Port> inputs, outputs;
     std::vector<clap_note_port_info_t> noteInputs, noteOutputs;
     std::vector<clap_audio_buffer_t> inputBuffers, outputBuffers;
-    std::vector<float*> inputPointers, outputPointers;
+    std::vector<float*> inputPointers, outputPointers; // outputs: the ports' channels, then ringOutChannels
     std::vector<float> scratch;
+    uint32_t ringOutChannels = 0; // 2 for a plugin with sound-snapshots' ring_out (RFC 0005)
+    clap_audio_buffer_t ringOutBuffer{};
     double sampleRate = 48000;
     uint32_t maxFrames = 512;
     int64_t steadyTime = 0;
@@ -673,9 +675,12 @@ struct Host::Impl {
         size_t ni = 0, no = 0;
         for (const auto& p : inputs) ni += p.channels;
         for (const auto& p : outputs) no += p.channels;
-        inputPointers.resize(ni); outputPointers.resize(no);
+        // The ring-out buffer is two more scratch channels after the ports', in no port.
+        ringOutChannels = soundSnapshots && soundSnapshots->ring_out ? 2 : 0;
+        inputPointers.resize(ni); outputPointers.resize(no + ringOutChannels);
         inputBuffers.resize(inputs.size()); outputBuffers.resize(outputs.size());
-        scratch.assign((ni + no) * maxFrames, 0.f);
+        scratch.assign((ni + no + ringOutChannels) * maxFrames, 0.f);
+        ringOutBuffer = {}; ringOutBuffer.channel_count = 2; ringOutBuffer.data32 = outputPointers.data() + no;
         size_t offset = 0;
         for (size_t i = 0; i < inputs.size(); ++i) {
             inputBuffers[i] = {}; inputBuffers[i].channel_count = inputs[i].channels;
@@ -1295,6 +1300,8 @@ bool Host::process(const float* const* input, uint32_t ni, float* const* output,
                     position.song_pos_beats += static_cast<clap_beattime>((static_cast<double>(done) / s.sampleRate) * position.tempo / 60. * CLAP_BEATTIME_FACTOR);
                 position.header.time = 0; block.transport = &position;
             }
+            // The caller asks for the ring-out buffer by passing its two channels after the ports'.
+            if (s.ringOutChannels) s.soundSnapshots->ring_out(s.plugin, no >= s.outputPointers.size() ? &s.ringOutBuffer : nullptr);
             const auto status = s.plugin->process(s.plugin, &block);
             if (status < CLAP_PROCESS_CONTINUE || status > CLAP_PROCESS_SLEEP) { s.failed.store(true); s.errors.fetch_add(1); silence(); return false; }
             for (uint32_t c = 0; c < no; ++c) if (output[c]) {
@@ -1365,6 +1372,7 @@ bool Host::selectSound(uint32_t id,int16_t channel) {
     return accepted;
 }
 bool Host::preparesSoundSnapshots() const noexcept {return impl->soundSnapshots!=nullptr;}
+bool Host::ringsOut() const noexcept {return impl->ringOutChannels!=0;}
 std::array<uint32_t,16> Host::prepareSoundSnapshot(const std::vector<uint8_t>& bytes) {
     if(!impl->soundSnapshots)throw std::invalid_argument("Plugin cannot prepare a snapshot's sounds beside the playing ones");
     if(bytes.size()>maxStateBytes)throw std::invalid_argument("Snapshot too large");

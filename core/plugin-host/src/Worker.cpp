@@ -165,7 +165,7 @@ namespace oscairn::worker
             for(uint32_t i = 0; i < host.noteInputPorts(); ++i) w.u8(host.usesClapNotes(i));
             w.u8(host.supportsState()).u32(host.soundContextCapacity()).u8(host.effectResources().has_value());
             w.u8(host.hasWindow());
-            w.u8(host.preparesSnapshots());
+            w.u8(host.preparesSnapshots()); w.u8(host.ringsOut());
         }
 
         // A crashing worker may take longer to exit than the hang limit (sanitizers report first), so
@@ -235,7 +235,7 @@ namespace oscairn::worker
                 if(s.panic.exchange(0, std::memory_order_acq_rel)) host.panic();
                 uint32_t events = 0; // SysEx pointed at this process's mapping of the pool
                 for(uint32_t i = 0; i < std::min(s.eventCount, maxEvents); ++i) if(unshare(s.events[i], s.inputBytes)) s.events[events++] = s.events[i];
-                const bool ok = host.process(in.data(), s.inputChannels, out.data(), s.outputChannels, s.frames,
+                const bool ok = host.process(in.data(), s.inputChannels, out.data(), s.outputChannels - (s.ringOut ? 0 : s.ringOutChannels), s.frames,
                                              events ? s.events : nullptr, events, s.hasTransport ? &s.transport : nullptr);
                 // Values the plugin reported while processing are published with the block, so the
                 // engine reads them right after it, as from a plugin in the engine.

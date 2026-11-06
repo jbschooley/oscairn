@@ -336,6 +336,9 @@ layers and transitions, not six independently initialized organs.
   A Performance change prepares the incoming sounds of an instrument already playing in its
   instance, beside the outgoing ones, which ring out there and are discarded once idle
   (`oscairn.sound-snapshots`, [RFC 0021](rfcs/0021-sounds-performances-and-library.md#native-sound-contexts-across-a-change)).
+  A plugin with its ring-out buffer renders the outgoing sounds into it, and the graph routes that
+  buffer, a hidden port no view shows, through the outgoing Performance's effects and level until
+  they are discarded ([RFC 0021](rfcs/0021-sounds-performances-and-library.md#ringing-out-through-the-outgoing-chain)).
 - The planned native sampler uses an SFZ baseline with documented extensions for proven
   gaps; complete Performances keep their existing container and other engines retain
   their state contracts. [RFC 0008](rfcs/0008-sfz-native-samples-and-conversion.md) defines

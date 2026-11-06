@@ -341,7 +341,7 @@ namespace oscairn
                 noteInputs_ = r.u32(); noteOutputs_ = r.u32();
                 for(uint32_t i = 0; i < noteInputs_; ++i) clapNotes_.push_back(r.u8());
                 state_ = r.u8(); contexts_ = r.u32(); effects_ = r.u8();
-                window_ = r.u8(); snapshots_ = r.u8();
+                window_ = r.u8(); snapshots_ = r.u8(); ringOut_ = r.u8();
                 description_ = r.data.substr(at, r.at - at);
 
                 // Shared block, sized for the ports and maximum block, handed over as a descriptor.
@@ -349,7 +349,8 @@ namespace oscairn
                 // splits them exactly as an in-engine host would. The engine keeps it across restarts.
                 const auto frames = process_->frames;
                 capacity_ = frames * std::max<uint32_t>(1, (8192 + frames - 1) / frames);
-                bytes_ = Shared::bytes(channels(inputs_), channels(outputs_), capacity_);
+                const uint32_t ring = ringOut_ ? 2 : 0; // the ring-out buffer, after the ports' channels
+                bytes_ = Shared::bytes(channels(inputs_), channels(outputs_) + ring, capacity_);
                 const std::string name = "/osc-" + std::to_string(getpid()) + "-" + std::to_string(Process::counter.fetch_add(1));
                 try
                 {
@@ -361,7 +362,7 @@ namespace oscairn
                     void* memory = mmap(nullptr, bytes_, PROT_READ | PROT_WRITE, MAP_SHARED, shm_, 0);
                     if(memory == MAP_FAILED) throw std::runtime_error("Cannot map worker shared memory");
                     shared_ = new(memory) Shared();
-                    shared_->inputChannels = channels(inputs_); shared_->outputChannels = channels(outputs_);
+                    shared_->inputChannels = channels(inputs_); shared_->outputChannels = channels(outputs_) + ring; shared_->ringOutChannels = ring;
                     shared_->maxFrames = capacity_; shared_->sampleRate = process_->rate; shared_->parameterCount = uint32_t(parameters_.size());
                     for(uint32_t i = 0; i < parameters_.size(); ++i) shared_->parameterValues[i].store(parameters_[i].defaultValue);
                     connect();
@@ -612,6 +613,7 @@ namespace oscairn
                 return true;
             }
             bool preparesSnapshots() const noexcept override { return snapshots_; }
+            bool ringsOut() const noexcept override { return ringOut_; }
             std::array<uint32_t, 16> prepareSnapshot(const std::string& directory) override
             {
                 std::lock_guard lock(controlFor());
@@ -867,6 +869,7 @@ namespace oscairn
                     else sysexDrops_.fetch_add(1, std::memory_order_relaxed);
                 }
                 s.frames = frames; s.eventCount = kept; s.hasTransport = transport != nullptr;
+                s.ringOut = s.ringOutChannels && no >= s.outputChannels;
                 if(transport) s.transport = *transport;
                 const auto sent = std::chrono::steady_clock::now();
                 requestedAt_.store(sent.time_since_epoch().count(), std::memory_order_release);
@@ -923,7 +926,7 @@ namespace oscairn
             std::vector<kick::clap::Port> inputs_, outputs_;
             uint32_t noteInputs_ = 0, noteOutputs_ = 0, contexts_ = 0;
             std::vector<uint8_t> clapNotes_;
-            bool state_ = false, effects_ = false, window_ = false, snapshots_ = false;
+            bool state_ = false, effects_ = false, window_ = false, snapshots_ = false, ringOut_ = false;
             std::string windowTitle_; // the window the engine last opened, for a restarted worker; under control
             int shm_ = -1;
             Shared* shared_ = nullptr; size_t bytes_ = 0;

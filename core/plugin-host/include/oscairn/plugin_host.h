@@ -64,6 +64,9 @@ namespace oscairn
         // few free contexts), having added nothing. Control thread.
         virtual bool preparesSnapshots() const noexcept { return false; }
         virtual std::array<uint32_t,16> prepareSnapshot(const std::string& /*directory*/) { throw std::invalid_argument("Plugin cannot prepare a snapshot beside its sounds"); }
+        // RFC 0005: the plugin renders its retiring sounds into a hidden ring-out buffer, two output
+        // channels after its ports' that process() passes when the caller gives them (no > the ports').
+        virtual bool ringsOut() const noexcept { return false; }
         virtual bool supportsState() const noexcept { return false; }
         // The plugin's own window (CLAP gui, RFC 0019), shown by the process hosting the plugin.
         // Control thread. showWindow opens it titled `title`, or titles and raises it; false closes

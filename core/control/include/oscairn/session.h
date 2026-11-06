@@ -264,6 +264,7 @@ namespace oscairn
         size_t warmInstances() const noexcept { return warm_.size(); }  // instances kept loaded once rung out, for the next change (RFC 0021)
         uint64_t keptStates() const noexcept { return keptStates_; }      // of those taken over, ones already holding the node's state: reset, not loaded
         uint64_t besideSounds() const noexcept { return beside_; }        // of those, native instruments whose sounds were prepared beside the playing ones
+        size_t ringOutRoutes() const;                                     // hidden routes ringing their outgoing sounds out through the outgoing chain (RFC 0021), for tests
         // RFC 0025: memory runs short (Linux PSI, polled at each service with memory classes):
         // one more item let go in the eviction order, a next entry prepared to cut, then, since
         // the estimates were wrong, a committed one. False when nothing was left to let go.
@@ -581,7 +582,8 @@ namespace oscairn
         std::vector<Free> warm_;                          // instances kept warm, least recently used first
         // The outgoing sounds of instances taken over with sounds prepared beside (RFC 0021), discarded
         // once idle (service()); weak: an instance gone takes its sounds with it.
-        struct Retiring { std::weak_ptr<PluginHost> host; std::vector<uint32_t> ids; };
+        // node: the incoming node, whose ring-out routes (Graph::ringOut) go once they are gone.
+        struct Retiring { std::weak_ptr<PluginHost> host; std::vector<uint32_t> ids; NodeId node = 0; };
         std::vector<Retiring> retiringSounds_;
         void retireSounds();
         uint64_t beside_ = 0;                             // besideSounds()

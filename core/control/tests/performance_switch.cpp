@@ -117,6 +117,23 @@ namespace
         blocks(s, 2);
         s.savePerformance(file.string());
     }
+    // One Basic Synth part on the whole keyboard playing one sound: with `delay`, through a Delay
+    // (a quarter beat, feedback and wet at half and more), at the part's `level`.
+    void ringing(const fs::path& file, int variant, const char* synth, const char* delay, double level)
+    {
+        Session s(48000, frames);
+        const auto n = s.add("synth", synth);
+        const auto part = s.addPart("Part"); s.insertIntoPart(part, 0, n);
+        if(delay)
+        {
+            const auto fx = s.add("delay", delay); s.insertIntoPart(part, 1, fx); s.commit();
+            check(s.setParameter(fx, 1, .25) && s.setParameter(fx, 2, .5) && s.setParameter(fx, 3, .6), "delay settings");
+        }
+        s.commit(); s.setPartLevel(part, level, false);
+        check(s.selectSound(n, s.prepareSound(n, "Ring " + std::to_string(variant), {{1, .4 + .3 * variant}, {4, double(variant % 3)}})), "select a sound");
+        blocks(s, 2);
+        s.savePerformance(file.string());
+    }
     struct Switch { double ms = 0; uint64_t loaded = 0, reused = 0, kept = 0, beside = 0; };
     Switch load(Session& s, const fs::path& to)
     {
@@ -361,6 +378,95 @@ int main(int argc, char** argv)
                 check(failed && t.besideSounds() == beside, "other ports: not prepared beside, and refused as a fresh load is");
                 check(contexts("synth 1-0").size() + contexts("synth 1-1").size() == held, "other ports: no sound left beside what plays");
             }
+        }
+
+        // The outgoing sounds ring out through the outgoing chain (RFC 0021, "Ringing out through the
+        // outgoing chain"): G is a Basic Synth through a Delay at half level, H the same synth dry at
+        // full level. A note held on G through the change to H: its tail must go through G's Delay and
+        // level, the incoming sound through H's. The reference opens H from a copy of the synth, so
+        // nothing is prepared beside: G's instance rings out on its own, as in a change between
+        // Performances that share nothing. The two must sound the same, sample for sample.
+        {
+            const auto g = temp.path / "g", h = temp.path / "h", hcopy = temp.path / "h-copy";
+            const auto synthCopy = temp.path / ("synth-copy" + fs::path(argv[1]).extension().string());
+            fs::copy(argv[1], synthCopy, fs::copy_options::recursive);
+            ringing(g, 0, argv[1], argv[3], .5); ringing(h, 1, argv[1], nullptr, 1); ringing(hcopy, 1, synthCopy.c_str(), nullptr, 1);
+            Session t(48000, frames), r(48000, frames);
+            load(t, g); load(r, g); quiet(t); quiet(r);
+            t.note(true, 60, .8); r.note(true, 60, .8); blocks(t, 10); blocks(r, 10);
+            const auto wt = load(t, h), wr = load(r, hcopy);
+            report("ring out: G -> H, a note held", wt); report("ring out: G -> H's copy (reference)", wr);
+            check(wt.beside == 1 && wt.loaded == 0, "G's synth given H's sound beside");
+            check(wr.beside == 0 && wr.loaded == 1, "the reference loads H's copy");
+            check(t.ringOutRoutes() == 2, "the held sound's ring-out routed into G's Delay: " + std::to_string(t.ringOutRoutes()) + " routes");
+            {
+                bool hidden = true;
+                for(const auto& x : t.graphState().topology.audioRoutes) hidden = hidden && x.from.port != Graph::ringOutPort;
+                check(hidden, "the ring-out routes are not in the public routing");
+            }
+            Audio x, y; bool same = true; double energy = 0, tail = 0, tms = 0, rms = 0;
+            auto timed = [](Audio& a, Session& s, double& ms) { const auto at = std::chrono::steady_clock::now(); a.run(s); ms += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - at).count(); };
+            for(int block = 0; block < int(48000 * 5 / frames) && same; ++block)
+            {
+                if(block == 20) { t.note(false, 60, 0); r.note(false, 60, 0); }
+                if(block == 30) { t.note(true, 72, .7); r.note(true, 72, .7); } // the incoming sound, through H's chain
+                if(block == 60) { t.note(false, 72, 0); r.note(false, 72, 0); }
+                if(block < 600) { timed(x, t, tms); timed(y, r, rms); } else { x.run(t); y.run(r); }
+                if(x.l != y.l || x.r != y.r) { std::fprintf(stderr, "  ring out: different at block %d\n", block); same = false; }
+                for(auto v : x.l) { energy += v * v; if(block >= 600) tail += v * v; }
+            }
+            check(same, "ring out: the outgoing tail through G's Delay and level, the incoming sound through H's, as in separate instances");
+            check(energy > 1e-3, "ring out: audible");
+            check(tail > 0, "ring out: G's Delay still echoing after both voices ended");
+            quiet(t);
+            {
+                // The same notes once the outgoing chain is gone: H's chain alone.
+                Audio z; double alone = 0;
+                for(int block = 0; block < 600; ++block)
+                {
+                    if(block == 30) t.note(true, 72, .7);
+                    if(block == 60) t.note(false, 72, 0);
+                    timed(z, t, alone);
+                }
+                std::printf("ring out: render per block, the first 600 blocks: %.4f ms ringing out through G's chain, %.4f ms in separate instances, %.4f ms H alone\n", tms / 600, rms / 600, alone / 600);
+                quiet(t);
+            }
+            check(t.ringOutRoutes() == 0, "the ring-out routes go once the outgoing sound is discarded: " + std::to_string(t.ringOutRoutes()));
+            {
+                bool gone = true;
+                for(const auto& c : t.sounds(t.nodeId("synth")).contexts) gone = gone && c.name != "Ring 0";
+                check(gone, "the outgoing sound discarded");
+            }
+            compare(t, h, "ring out: G -> H, then H as a fresh load");
+            // Back from H to G with a note held: H has no effects, so its tail goes straight to the
+            // outputs at H's level, and only retiring its sound removes those routes. The reference
+            // plays H from the synth itself and opens G's copy.
+            const auto gcopy = temp.path / "g-copy";
+            ringing(gcopy, 0, synthCopy.c_str(), argv[3], .5);
+            load(r, h); quiet(r); quiet(t);
+            t.note(true, 60, .8); r.note(true, 60, .8); blocks(t, 10); blocks(r, 10);
+            const auto bt = load(t, g), br = load(r, gcopy);
+            check(bt.beside == 1 && br.beside == 0, "back to G: H's synth given G's sound beside; the reference opens G's copy");
+            check(t.ringOutRoutes() == 2, "H's held sound rings out straight to the outputs: " + std::to_string(t.ringOutRoutes()) + " routes");
+            {
+                bool hidden = true;
+                for(const auto& x : t.graphState().topology.audioRoutes) hidden = hidden && x.from.port != Graph::ringOutPort;
+                check(hidden, "the ring-out routes to the outputs are not in the public routing");
+            }
+            same = true; energy = 0;
+            for(int block = 0; block < 600 && same; ++block)
+            {
+                if(block == 20) { t.note(false, 60, 0); r.note(false, 60, 0); }
+                if(block == 30) { t.note(true, 72, .7); r.note(true, 72, .7); }
+                if(block == 60) { t.note(false, 72, 0); r.note(false, 72, 0); }
+                x.run(t); y.run(r);
+                if(x.l != y.l || x.r != y.r) { std::fprintf(stderr, "  ring out back: different at block %d\n", block); same = false; }
+                for(auto v : x.l) energy += v * v;
+            }
+            check(same, "ring out: H's dry tail at H's level, G's sound through G's Delay, as in separate instances");
+            check(energy > 1e-3, "ring out back: audible");
+            quiet(t);
+            check(t.ringOutRoutes() == 0, "the routes to the outputs go once H's sound is discarded: " + std::to_string(t.ringOutRoutes()));
         }
 
         if(const char* real = std::getenv("OSCAIRN_SWITCH_PERFORMANCES"); real && *real)
