@@ -66,7 +66,7 @@ Checked when built and tested; the sections below say how.
 - [x] Instances kept warm once rung out, bounded and evicted under pressure ([design](#free-instances-across-a-change-and-instances-kept-warm))
 - [x] The middle rule: a playing instance taken over only where keeping it warm would not fit ([design](#free-instances-across-a-change-and-instances-kept-warm))
 - [x] A failed load puts back the state of the playing instances it took over ([design](#free-instances-across-a-change-and-instances-kept-warm))
-- [ ] Native sound contexts across a change: the incoming node's sounds prepared beside the
+- [x] Native sound contexts across a change: the incoming node's sounds prepared beside the
       outgoing ones in the playing instance, selected at the cue ([design](#native-sound-contexts-across-a-change))
 - [ ] A library click prepares the Performance, then switches to it once it is ready ([design](#native-sound-contexts-across-a-change))
 - [x] Audition of a Sound in a part and of a Performance in place of the open one, put back as
@@ -967,8 +967,9 @@ connection to the outgoing node, and those from outgoing nodes ringing out (an a
 on as the incoming node's, the same ledger of held notes, so a held note keeps its voice and its
 sound and still gets its release, expressions and pedal (on a seamless change; a cut releases them,
 as a cut does). Just before the new graph is published each MIDI channel selects its incoming sound
-(all channels at once when they agree, so the plugin reports the new values), at the plugin's next
-block: the cue's block, or in a worker the one after. New notes then play the incoming sounds; the
+(all channels at once when they agree, so the plugin reports the new values), queued for the
+plugin's next block: the cue's, or the last one before it if a block runs between queuing and the
+hand-over; in a worker, as its blocks are exchanged. New notes then play the incoming sounds; the
 outgoing sounds play only the notes they already hold.
 
 **Ringing out and discarding.** The sounds the instance held before the incoming ones were
@@ -997,6 +998,44 @@ Reopened, that file prepares beside an instance as any other.
 **Workers.** The snapshot prepared beside becomes the worker's recovery record (a copy): a worker
 restarted after a crash restores the incoming sounds and selections only. A crash loses its voices
 anyway; one between preparing ahead and the cue restores the incoming sounds early.
+
+Built 2026-11-05 (`Session::read`'s `claim`, `Session::open`, `Session::retireSounds`;
+`Graph::takeNotes`; `PluginHost::prepareSnapshot`, a request of its own in a worker; the SDK's
+`Engine::prepareSnapshot`; the Basic Synth). `Session::besideSounds()` counts the nodes opened this
+way (they count in `reusedInstances()` too). `control-performance-switch` (and `-workers`) builds D
+and E, the same two Basic Synths with other sounds, and checks: D to E with a note held prepares
+E's sounds beside D's, nothing loaded and no state given (2 of 2, no instance loaded); the held
+note keeps its voice in D's sound beside E's two and the Default, and plays on; D's idle sound on
+the other part goes at once and the held one once rung out; output identical, sample for sample,
+to E opened fresh, and again E to D and D to E; F, whose nodes hold eight sounds each, finds no
+room beside (F loaded) and E finds F's instances full (E's kept warm taken over), both identical to
+a fresh load; and a copy of D whose node's note ports differ is refused as a fresh load is, leaving
+no sound beside what plays. In A and B its Basic Synths now go this way (the counts above change:
+A to B loads 2, not 4). A document that fails after its plugins are read leaves no sound prepared
+beside. Without `takeNotes` the held note's voice is choked at the cue (0 voices); without the
+selection at the cue every render comparison differs from block 0 or 3. `worker-recovery` checks
+that a worker restarted after a snapshot was prepared beside comes back with those sounds, their
+IDs and names. In a worker the parameter values published before the crash are not replayed after
+such a record (they follow the selections, and would overwrite every selected sound); edits made
+between that switch and a crash are lost.
+
+Measured with the bench, Release, M3 Max at a load average of 17 to 140 from other work, three
+runs each (milliseconds from `loadPerformance` until published):
+
+| Change, two Basic Synths | Before | After |
+| --- | --- | --- |
+| D to E, a note held, engine | 1.1–1.4 ms, 2 instances loaded | 0.9–1.2 ms, none loaded, 2 beside |
+| E to D, then D to E, silent, engine | 3.1–20 ms, 2 kept warm taken over (a snapshot saved and compared each) | 0.6–1.0 ms, 2 beside |
+| D to E, a note held, workers | 12–25 ms, 2 instances loaded | 2.9–4.7 ms, none loaded |
+| E to D, then D to E, silent, workers | 4.6–10 ms | 2.8–4.6 ms |
+| A to B (4 parts), engine | 3.1 ms, 4 loaded | 3.3–3.6 ms, 2 loaded, 2 beside |
+| A to B (4 parts), workers | 24 ms, 4 loaded | 22–26 ms, 2 loaded, 2 beside |
+
+Memory follows: one instance per Basic Synth node instead of two once switched back and forth.
+Neither sfizz nor Octet offers `oscairn.sound-snapshots` yet, so the real Performances measured
+above are unchanged; each needs the table and `get_extension` line
+([the porting guide](../plugin-porting.md#instant-performance-changes)), and a sfizz that shares
+samples between its contexts to skip loading them again.
 
 **A library click** prepares the Performance first, as the Setlist does ahead
 (`performance.prepare`), and opens it (`library.load`) once that is done, both in the app's job off

@@ -101,6 +101,12 @@ namespace oscairn
         /// held notes are still released; nothing else reaches them. The caller removes each once
         /// idle(). Their IDs are below the replacement's, so none is taken.
         void carryOver( const Graph& current, const std::set<NodeId>& ids );
+        /// On a prepared replacement, after carryOver and its own note connections: `node` holds the
+        /// instance `current`'s `from` holds (a native instrument whose next sounds were prepared in it,
+        /// RFC 0021). The notes `from` holds go on through `node`: its connection from graphInput takes
+        /// over the old one's ledger, so held notes keep their releases and pedal, and connections from
+        /// nodes carried over come along draining.
+        void takeNotes( const Graph& current, NodeId from, NodeId node );
         /// A replacement prepared ahead keeps its node IDs: nodes added here meanwhile take later ones.
         void reserveIds( const Graph& prepared ) { nextId_ = std::max( nextId_, prepared.nextId_ ); }
         // Where plugins added from now on resolve sound assets (RFC 0009); must outlive the graph.

@@ -166,6 +166,7 @@ struct Host::Impl {
     const clap_plugin_state_t* state = nullptr;
     bool exclusiveState=false;
     const oscairn_plugin_sound_contexts_t* sounds = nullptr;
+    const oscairn_plugin_sound_snapshots_t* soundSnapshots = nullptr; // with sounds and their state only
     const oscairn_plugin_asset_dependencies_t* assetDependencies = nullptr;
     bool assetOptional = false; // draft 2: it says which assets are optional
     AssetResolver* assets = nullptr;
@@ -521,6 +522,8 @@ struct Host::Impl {
         s.state = static_cast<const clap_plugin_state_t*>(s.plugin->get_extension(s.plugin, CLAP_EXT_STATE));
         s.exclusiveState=s.sounds && s.sounds->state;
         if(s.exclusiveState)s.state=s.sounds->state;
+        if(s.exclusiveState)s.soundSnapshots = static_cast<const oscairn_plugin_sound_snapshots_t*>(s.plugin->get_extension(s.plugin,OSCAIRN_EXT_SOUND_SNAPSHOTS));
+        if(s.soundSnapshots && !s.soundSnapshots->prepare)throw std::runtime_error("Invalid sound-snapshot interface");
         if(s.state && (!s.state->save || !s.state->load))throw std::runtime_error("Incomplete plugin state interface");
         s.assetDependencies = static_cast<const oscairn_plugin_asset_dependencies_t*>(s.plugin->get_extension(s.plugin, OSCAIRN_EXT_ASSET_DEPENDENCIES));
         s.assetOptional = s.assetDependencies != nullptr;
@@ -1360,6 +1363,17 @@ bool Host::selectSound(uint32_t id,int16_t channel) {
     const bool accepted=impl->sounds->select(impl->plugin,id,channel);
     if(accepted)impl->wake.store(true);
     return accepted;
+}
+bool Host::preparesSoundSnapshots() const noexcept {return impl->soundSnapshots!=nullptr;}
+std::array<uint32_t,16> Host::prepareSoundSnapshot(const std::vector<uint8_t>& bytes) {
+    if(!impl->soundSnapshots)throw std::invalid_argument("Plugin cannot prepare a snapshot's sounds beside the playing ones");
+    if(bytes.size()>maxStateBytes)throw std::invalid_argument("Snapshot too large");
+    Stream stream;stream.bytes=bytes;clap_istream_t input{&stream,Stream::read};
+    std::array<uint32_t,16> selected;selected.fill(CLAP_INVALID_ID);char message[512]{};
+    const bool ok=impl->soundSnapshots->prepare(impl->plugin,&input,selected.data(),message,sizeof(message));
+    message[sizeof(message)-1]=0;
+    if(!ok)throw std::runtime_error(std::string("Snapshot not prepared beside: ")+(message[0]?message:"refused, or too few free sound contexts"));
+    return selected;
 }
 bool Host::discardSound(uint32_t id) {
     if(!impl->sounds)throw std::invalid_argument("Plugin has no native sound contexts");

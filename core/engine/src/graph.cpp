@@ -230,6 +230,17 @@ namespace oscairn
             noteEdges_.emplace(edge,route);draining_.insert(edge);
             if(const auto z=current.noteZones_.find(edge);z!=current.noteZones_.end())noteZones_[edge]=z->second;}
     }
+    void Graph::takeNotes(const Graph& current,NodeId from,NodeId node) {
+        for(const auto& [edge,route]:current.noteEdges_){
+            if(edge.second!=from)continue;
+            const std::pair key{edge.first,node};
+            if(edge.first==graphInput){if(auto it=noteEdges_.find(key);it!=noteEdges_.end())it->second=route;continue;} // with none, they are released
+            const auto source=nodes_.find(edge.first);
+            if(source==nodes_.end() || !source->second.retiring || noteEdges_.contains(key))continue;
+            noteEdges_.emplace(key,route);draining_.insert(key);
+            if(const auto z=current.noteZones_.find(edge);z!=current.noteZones_.end())noteZones_[key]=z->second;
+        }
+    }
     void Graph::publishReplacement(Graph& next,const std::function<void()>& onPublish) {
         if(next.sampleRate_!=sampleRate_ || next.maxFrames_!=maxFrames_ || next.inputChannels_!=inputChannels_ || next.outputChannels_!=outputChannels_)
             throw std::invalid_argument("Replacement device layout mismatch");

@@ -98,18 +98,37 @@ namespace
         s.savePerformance(file.string());
     }
 
-    struct Switch { double ms = 0; uint64_t loaded = 0, reused = 0, kept = 0; };
+    // Two Basic Synth parts, a quarter of the keyboard each, each playing the last of `sounds`
+    // prepared sounds (native contexts beside its Default).
+    void synths(const fs::path& file, int variant, const char* synth, int sounds = 1)
+    {
+        Session s(48000, frames);
+        for(uint32_t i = 0; i < 2; ++i)
+        {
+            const auto name = std::to_string(variant) + "-" + std::to_string(i);
+            const auto n = s.add("synth " + name, synth);
+            PartInput keys; keys.zones = {NoteZone{uint8_t(32 * i), uint8_t(32 * i + 31)}};
+            const auto part = s.addPart("Part " + name, keys);
+            s.insertIntoPart(part, 0, n); s.commit();
+            uint32_t id = 0;
+            for(int k = 0; k < sounds; ++k) id = s.prepareSound(n, "Sound " + name + "-" + std::to_string(k), {{1, .3 + .2 * variant}, {4, double((variant + i + k) % 3)}, {5, double(3 + i + 2 * variant + k)}});
+            check(s.selectSound(n, id), "select a sound");
+        }
+        blocks(s, 2);
+        s.savePerformance(file.string());
+    }
+    struct Switch { double ms = 0; uint64_t loaded = 0, reused = 0, kept = 0, beside = 0; };
     Switch load(Session& s, const fs::path& to)
     {
         Switch w;
-        const auto loaded = pluginInstancesLoaded(), reused = s.reusedInstances(), kept = s.keptStates();
+        const auto loaded = pluginInstancesLoaded(), reused = s.reusedInstances(), kept = s.keptStates(), beside = s.besideSounds();
         const auto start = std::chrono::steady_clock::now();
         s.loadPerformance(to.string());
         w.ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
-        w.loaded = pluginInstancesLoaded() - loaded; w.reused = s.reusedInstances() - reused; w.kept = s.keptStates() - kept;
+        w.loaded = pluginInstancesLoaded() - loaded; w.reused = s.reusedInstances() - reused; w.kept = s.keptStates() - kept; w.beside = s.besideSounds() - beside;
         return w;
     }
-    void report(const char* what, const Switch& w) { std::printf("%-52s %7.1f ms, %2llu instances loaded, %2llu reused (%llu holding their state)\n", what, w.ms, (unsigned long long)w.loaded, (unsigned long long)w.reused, (unsigned long long)w.kept); }
+    void report(const char* what, const Switch& w) { std::printf("%-52s %7.1f ms, %2llu instances loaded, %2llu reused (%llu holding their state, %llu with sounds beside)\n", what, w.ms, (unsigned long long)w.loaded, (unsigned long long)w.reused, (unsigned long long)w.kept, (unsigned long long)w.beside); }
 
     // The same notes into a Session that switched and one that opened `file` fresh: every sample equal.
     void compare(Session& switched, const fs::path& file, const char* what)
@@ -191,20 +210,21 @@ int main(int argc, char** argv)
         Session s(48000, frames);
         report("open A (cold)", load(s, a));
         blocks(s, 20); s.note(true, 60, 1); blocks(s, 20); s.note(false, 60, 0); quiet(s);
-        // A is silent and B uses the same plugins. Keeping A's instances warm fits (no budget: the
-        // 32-instance bound alone), so they are kept rather than taken over (RFC 0021's middle rule):
-        // B loads its instruments, and its Delays become contexts of A's (slice 1).
+        // A is silent and B uses the same plugins. A's Basic Synths get B's sounds beside their own
+        // (slice 2). Keeping A's plain instruments warm fits (no budget: the 32-instance bound alone),
+        // so they are kept rather than taken over (RFC 0021's middle rule): B loads its own, and its
+        // Delays become contexts of A's (slice 1).
         auto w = load(s, b); report("A -> B, A silent (same plugins)", w);
-        check(w.reused == 4 && w.loaded == 4, "A's instruments kept, not taken over, by B");
+        check(w.reused == 6 && w.beside == 2 && w.loaded == 2, "A's synths given B's sounds beside, A's other instruments kept, not taken over, by B");
         compare(s, b, "A -> B"); quiet(s);
-        check(s.warmInstances() == 4, "A's instruments kept warm: " + std::to_string(s.warmInstances()));
+        check(s.warmInstances() == 2, "A's plain instruments kept warm: " + std::to_string(s.warmInstances()));
         w = load(s, a); report("B -> A, B silent (A's kept warm)", w);
-        check(w.reused == 8 && w.kept == 4 && w.loaded == 0, "A's instruments back, holding their state; B's kept warm");
+        check(w.reused == 8 && w.beside == 2 && w.kept == 2 && w.loaded == 0, "A's instruments back, holding their state; the synths given A's sounds beside; B's kept warm");
         compare(s, a, "B -> A"); quiet(s);
         w = load(s, b); report("A -> B again (B's kept warm)", w);
-        check(w.reused == 8 && w.kept == 4 && w.loaded == 0, "B's instruments back, holding their state");
+        check(w.reused == 8 && w.beside == 2 && w.kept == 2 && w.loaded == 0, "B's instruments back, holding their state");
         compare(s, b, "A -> B again"); quiet(s);
-        check(s.warmInstances() == 4 && s.memoryPressure() && s.warmInstances() == 0, "A's instruments kept warm, let go on memory pressure");
+        check(s.warmInstances() == 2 && s.memoryPressure() && s.warmInstances() == 0, "A's plain instruments kept warm, let go on memory pressure");
         // A cut (the two would not fit together) keeps nothing warm, so it takes over every free
         // playing instance.
         s.setBudget({64, 0});
@@ -221,9 +241,11 @@ int main(int argc, char** argv)
             const auto at = text.find("\"scene\":0"); check(at != std::string::npos, "the broken copy's selected scene");
             text.replace(at, 9, "\"scene\":9"); state_files::write(broken / "performance.json", text.data(), text.size());
             auto values = [&] { std::vector<double> v; for(const auto& [n, name] : s.graphState().names) for(const auto& p : s.parameters(n)) v.push_back(s.parameter(n, p.id)); return v; };
-            const auto before = values(); const auto revision = s.graphState().revision; bool failed = false;
+            auto sounds = [&] { size_t n = 0; for(const auto& [id, name] : s.graphState().names) n += s.sounds(id).contexts.size(); return n; };
+            const auto before = values(); const auto revision = s.graphState().revision; const auto held = sounds(); bool failed = false;
             try { s.loadPerformance(broken.string()); } catch(const std::exception&) { failed = true; }
             check(failed && s.graphState().revision == revision && values() == before, "a failed load changes nothing that plays");
+            check(sounds() == held, "a failed load leaves no sound prepared beside: " + std::to_string(held) + " then " + std::to_string(sounds()));
         }
         // A load that fails in that last step, its fourth instrument refusing its state even in a
         // fresh instance, once the first three playing instances it took over were given theirs:
@@ -249,7 +271,7 @@ int main(int argc, char** argv)
         // playing engine, slice 1); the other parts' are taken over.
         s.note(true, 60, 1); blocks(s, 10);
         w = load(s, b); report("A -> B, a note held on A's second part", w);
-        check(w.reused == 4 && w.loaded == 4, "A's instances kept, the one still sounding too");
+        check(w.reused == 6 && w.beside == 2 && w.loaded == 2, "A's instances kept, the one still sounding too; the synths given B's sounds beside");
         { Audio audio; bool rang = false; for(int i = 0; i < 50; ++i) { audio.run(s); rang = rang || audio.sounding(); } check(rang, "the held note plays on through the change"); }
         s.note(false, 60, 0);
         for(int i = 0; i < int(48000 * 31 / frames) && s.leaving(); ++i) blocks(s, 1);
@@ -258,15 +280,17 @@ int main(int argc, char** argv)
         w = load(s, c); report("B -> C (no plugin shared)", w);
         check(w.reused == 0 && w.loaded == 4, "nothing to take over");
         for(int i = 0; i < int(48000 * 31 / frames) && s.leaving(); ++i) blocks(s, 1);
-        // A's and B's instruments, rung out, were kept warm (Delays, engines with contexts, are not).
-        check(s.warmInstances() == 8, "A's and B's instruments kept warm once rung out: " + std::to_string(s.warmInstances()));
-        // Back to B: they hold its state already, so they are reset instead of given it again.
+        // A's and B's plain instruments and B's synths (A's, given B's sounds), rung out, were kept warm
+        // (Delays, engines with contexts, are not).
+        check(s.warmInstances() == 6, "A's and B's instruments kept warm once rung out: " + std::to_string(s.warmInstances()));
+        // Back to B: the plain ones hold its state already, so they are reset instead of given it
+        // again; the synths, holding sounds from before too, are given it.
         w = load(s, b); report("C -> B (B's instruments kept warm)", w);
-        check(w.reused == 4 && w.kept == 4 && w.loaded == 4 && s.warmInstances() == 4, "the instances kept warm taken over, not given their state again; the Delays loaded");
+        check(w.reused == 4 && w.kept == 2 && w.loaded == 4 && s.warmInstances() == 2, "the instances kept warm taken over, the plain ones not given their state again; the Delays loaded");
         compare(s, b, "kept warm -> B");
         for(int i = 0; i < int(48000 * 31 / frames) && s.leaving(); ++i) blocks(s, 1);
         // Memory short: what is kept warm goes first (RFC 0025).
-        check(s.warmInstances() == 8 && s.memoryPressure() && s.warmInstances() == 0, "C's Samplers and A's instruments kept warm, let go on memory pressure");
+        check(s.warmInstances() == 6 && s.memoryPressure() && s.warmInstances() == 0, "C's Samplers and A's plain instruments kept warm, let go on memory pressure");
 
         // Past the 32-instance bound a playing instance is taken over: 34 parts, one holding a note,
         // so 33 free; 32 are kept warm and one is taken. The one sounding is never taken.
@@ -281,6 +305,62 @@ int main(int argc, char** argv)
             t.note(false, 1, 0);
             for(int i = 0; i < int(48000 * 31 / frames) && t.leaving(); ++i) blocks(t, 1);
             check(t.warmInstances() == 32, "32 kept warm: " + std::to_string(t.warmInstances()));
+        }
+
+        // Native sound contexts across a change (RFC 0021, slice 2): D and E are the same two Basic
+        // Synths with other sounds. E's sounds are prepared beside D's in D's instances: nothing is
+        // loaded, no state is given, a note held on D rings out in its own sound, then D's go.
+        {
+            const auto d = temp.path / "d", e = temp.path / "e", f = temp.path / "f";
+            synths(d, 0, argv[1]); synths(e, 1, argv[1]);
+            synths(f, 2, argv[1], 7); // the Default and seven sounds each: never room beside another's
+            Session t(48000, frames);
+            report("synths: open D (cold)", load(t, d)); quiet(t);
+            auto contexts = [&](const char* name) { return t.sounds(t.nodeId(name)).contexts; };
+            t.note(true, 20, 1); blocks(t, 10); // held on D's first part through the change
+            w = load(t, e); report("synths: D -> E, a note held on D's first part", w);
+            check(w.loaded == 0 && w.reused == 2 && w.beside == 2 && w.kept == 0, "D's instances given E's sounds beside: nothing loaded, no state given");
+            blocks(t, 20);
+            {
+                const auto c = contexts("synth 1-0"); uint32_t voices = 0; bool old = false;
+                for(const auto& x : c) if(x.name == "Sound 0-0-0") { old = true; voices = x.activeVoices; }
+                check(c.size() == 4 && old && voices > 0, "D's sound keeps its held voice beside E's two sounds and the Default: " + std::to_string(c.size()) + " sounds, " + std::to_string(voices) + " voices");
+                const auto other = contexts("synth 1-1");
+                check(other.size() == 3, "D's idle sound on the other part discarded at once: " + std::to_string(other.size()));
+                Audio audio; bool rang = false; for(int i = 0; i < 20; ++i) { audio.run(t); rang = rang || audio.sounding(); }
+                check(rang, "the held note plays on through the change");
+            }
+            t.note(false, 20, 0);
+            quiet(t);
+            check(contexts("synth 1-0").size() == 3, "D's sound discarded once rung out: " + std::to_string(contexts("synth 1-0").size()));
+            compare(t, e, "synths D -> E"); quiet(t);
+            w = load(t, d); report("synths: E -> D, E silent", w);
+            check(w.loaded == 0 && w.beside == 2, "back to D: its sounds beside E's");
+            compare(t, d, "synths E -> D"); quiet(t);
+            w = load(t, e); report("synths: D -> E, D silent", w);
+            check(w.loaded == 0 && w.beside == 2, "D -> E again: E's sounds beside D's");
+            compare(t, e, "synths D -> E again"); quiet(t);
+            // No room beside: F's nodes have eight sounds each, so they go by the rules before it
+            // (E's instances kept warm, F's loaded), and back from F, E finds F's instances full.
+            w = load(t, f); report("synths: E -> F, no room beside", w);
+            check(w.beside == 0 && w.loaded == 2, "no sounds prepared beside without room");
+            compare(t, f, "synths E -> F (no room)"); quiet(t);
+            w = load(t, e); report("synths: F -> E, F's instances full", w);
+            check(w.beside == 0 && w.loaded == 0 && w.reused == 2, "E's instances kept warm taken over instead");
+            compare(t, e, "synths F -> E (full)"); quiet(t);
+            // Other ports: a node whose saved note ports differ takes no instance; it fails as a fresh
+            // load would, leaving what plays with no sound added.
+            {
+                const auto odd = temp.path / "odd"; fs::copy(d, odd, fs::copy_options::recursive);
+                auto bytes = state_files::read(odd / "performance.json", 4 << 20); std::string text(bytes.begin(), bytes.end());
+                const auto at = text.find("\"noteInputs\":1"); check(at != std::string::npos, "a synth's note inputs");
+                text.replace(at, 14, "\"noteInputs\":2"); state_files::write(odd / "performance.json", text.data(), text.size());
+                const size_t held = contexts("synth 1-0").size() + contexts("synth 1-1").size(); const auto beside = t.besideSounds();
+                bool failed = false;
+                try { t.loadPerformance(odd.string()); } catch(const std::exception& x) { failed = std::string(x.what()).find("note port layout changed") != std::string::npos; }
+                check(failed && t.besideSounds() == beside, "other ports: not prepared beside, and refused as a fresh load is");
+                check(contexts("synth 1-0").size() + contexts("synth 1-1").size() == held, "other ports: no sound left beside what plays");
+            }
         }
 
         if(const char* real = std::getenv("OSCAIRN_SWITCH_PERFORMANCES"); real && *real)

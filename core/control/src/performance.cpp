@@ -598,6 +598,23 @@ std::unique_ptr<Session::Prepared> Session::readTaking(const fs::path& root,bool
     return p;
 }
 
+Session::Beside::~Beside() {
+    // Prepared and never selected: nothing pins them, so they go at once.
+    for(const auto id:fresh)try{host->discardSound(id);}catch(const std::exception&){}
+}
+
+// The outgoing sounds of instances taken over with sounds beside: each goes once the plugin lets it
+// (idle: not selected, queued, sounding or ringing); one it no longer lists is forgotten.
+void Session::retireSounds() {
+    std::erase_if(retiringSounds_,[](Retiring& r){
+        const auto host=r.host.lock();if(!host)return true;
+        try{
+            std::erase_if(r.ids,[&](uint32_t id){return host->discardSound(id);});
+            if(!r.ids.empty()){std::set<uint32_t> listed;for(const auto& c:host->soundContexts())listed.insert(c.id);std::erase_if(r.ids,[&](uint32_t id){return !listed.count(id);});}
+        }catch(const std::exception&){return true;}
+        return r.ids.empty();});
+}
+
 // A node of the last Performance rung out: kept loaded, out of the graph, for a later change to
 // take over (RFC 0021), when it could be; else removed. Not while an audition holds what it set aside.
 void Session::keepWarm(NodeId n) {
@@ -710,20 +727,51 @@ std::unique_ptr<Session::Prepared> Session::read(const fs::path& root,std::vecto
     struct Later{NodeId runtime;std::string key;size_t free;};std::vector<Later> later; // playing instances: their state last
     const auto stamped="@"+std::to_string(static_cast<long long>(stamp(root).time_since_epoch().count()));
     auto source=[&](const std::string& key){return (root/"nodes"/key).string()+stamped;};
-    auto take=[&](V plugin,const std::string& key)->std::optional<size_t>{
+    // The plugin, build and placement a node would load, which an instance it takes over must be.
+    struct Want{std::string id,version,build;fs::path path;bool worker=false;};
+    auto want=[&](V plugin)->std::optional<Want>{
         const auto format=text(field(plugin,"format")),id=text(field(plugin,"id")),saved=text(field(plugin,"version"));
         fs::path wanted;std::error_code e;
         for(const auto& candidate:{fs::path(text(field(plugin,"pathHint"))),storedPlugin(format,id,saved)})if(!candidate.empty() && fs::exists(candidate,e)){wanted=candidate;break;}
-        if(wanted.empty() || free.empty())return std::nullopt;
+        if(wanted.empty())return std::nullopt;
         const auto build=buildDigest(wanted.string());if(build.empty())return std::nullopt;
         const auto& policy=placementPolicy();const auto placed=policy.plugins.find(id);
         const bool worker=format=="clap" && !policy.worker.empty() && (placed==policy.plugins.end()?policy.standard:placed->second)==Placement::Worker;
-        auto fits=[&](size_t i){if(!free[i].host)return false;const auto& h=*free[i].host;const auto& p=h.descriptor();
-            return p.id==id && p.version==saved && free[i].loaded.build==build && h.inWorker()==worker && (p.path==wanted.string() || fs::equivalent(p.path,wanted,e));};
+        return Want{id,saved,build,wanted,worker};};
+    auto same=[&](const Want& w,const PluginHost& h,const Loaded& l){const auto& p=h.descriptor();std::error_code e;
+        return p.id==w.id && p.version==w.version && l.build==w.build && h.inWorker()==w.worker && (p.path==w.path.string() || fs::equivalent(p.path,w.path,e));};
+    auto take=[&](V plugin,const std::string& key)->std::optional<size_t>{
+        if(free.empty())return std::nullopt;
+        const auto w=want(plugin);if(!w)return std::nullopt;
+        auto fits=[&](size_t i){return free[i].host && same(*w,*free[i].host,free[i].loaded);};
         // One that holds this node's state already first (switching back), then kept warm, least recently
         // used first, then a playing one only where keeping it warm would not fit (the middle rule).
         for(size_t i=0;i<free.size();++i)if(free[i].loaded.source==source(key) && fits(i))return i;
         for(size_t i=0;i<free.size();++i)if(!free[i].keep && fits(i))return i;
+        return std::nullopt;};
+    // RFC 0021: a native instrument of the open Performance with the same plugin, build, placement and
+    // ports has the node's sounds prepared beside its own; the node takes it over at the cue. Not in an
+    // audition, which takes over nothing set aside.
+    std::vector<std::unique_ptr<Beside>> beside;
+    auto claim=[&](V node,V plugin,const std::string& key)->std::optional<NodeId>{
+        if(keepInstances_)return std::nullopt;
+        std::optional<Want> w;
+        for(const auto& [n,name]:nodes_){
+            const auto loaded=loaded_.find(n);if(loaded==loaded_.end() || std::find(taken.begin(),taken.end(),n)!=taken.end())continue;
+            const auto host=graph_.node(n).host;const auto& h=*host;
+            if(!h.preparesSnapshots() || h.effectResources() || !h.failure().empty())continue;
+            if(!w && !(w=want(plugin)))return std::nullopt;
+            if(!same(*w,h,loaded->second) || integer(field(node,"noteInputs"),16)!=h.noteInputPorts() || integer(field(node,"noteOutputs"),16)!=h.noteOutputPorts())continue;
+            try{checkPorts(field(node,"inputs"),h.inputPorts());checkPorts(field(node,"outputs"),h.outputPorts());}catch(const std::exception&){continue;}
+            auto b=std::make_unique<Beside>();b->was=n;b->host=host;
+            for(const auto& c:h.soundContexts())if(c.id)b->old.push_back(c.id);
+            try{b->selected=b->host->prepareSnapshot((root/"nodes"/key).string());}
+            catch(const std::exception& e){std::fprintf(stderr,"oscairn: %s: its sounds not prepared beside %s's: %s\n",text(field(node,"name")).c_str(),name.c_str(),e.what());continue;}
+            for(const auto& c:h.soundContexts())if(c.id && std::find(b->old.begin(),b->old.end(),c.id)==b->old.end())b->fresh.push_back(c.id);
+            b->now=next->add(host);origins[b->now]={loaded->second.build,{}}; // not its snapshot byte for byte: never skips a load
+            for(auto& f:free)if(f.host==host)f.host.reset(); // neither kept warm nor taken over twice
+            taken.push_back(n);beside.push_back(std::move(b));
+            return beside.back()->now;}
         return std::nullopt;};
     auto restore=[&](NodeId runtime,V node,uint64_t room){
         auto& h=next->host(runtime);const auto key=text(field(node,"key"));
@@ -775,6 +823,7 @@ std::unique_ptr<Session::Prepared> Session::read(const fs::path& root,std::vecto
                 catch(const std::exception& e){
                     if(memoryRefusal(e))throw;
                     runtime=next->add(standIn(node,root/"nodes"/key,refs[key],std::string("its shared engine is not here: ")+e.what()));}}
+            else if(const auto b=group[key]==1?claim(node,plugin,key):std::nullopt){runtime=*b;++reused;restored=true;}
             else if(const auto engine=playing(id,path,text(field(plugin,"version")),group[key])){runtime=context(graph_.host(*engine),[&]{return next->addEffectContext(graph_,*engine);});++reused;}
             else if(const auto f=group[key]==1?take(plugin,key):std::nullopt){
                 runtime=next->add(free[*f].host);origins[runtime]={free[*f].loaded.build,source(key)};++reused;restored=true;
@@ -968,7 +1017,8 @@ std::unique_ptr<Session::Prepared> Session::read(const fs::path& root,std::vecto
     }catch(...){for(const auto& s:saved)putBack(s);throw;}
     for(const auto& s:saved)if(std::find(taken.begin(),taken.end(),s.node)==taken.end())putBack(s); // let go for a fresh one: it plays on
     auto prepared=std::make_unique<Prepared>(Prepared{root,stamp(root),std::move(next),pads,info,std::move(lock),tempo,clock=="internal"?Transport::ClockSource::Internal:Transport::ClockSource::MidiClock,
-        std::move(disabled),std::move(names),std::move(wires),std::move(parts),nextPart,nextWire,std::move(scenes),std::move(untouched),nextScene,selectedScene,mappingScene,std::move(macros),nextMacro,std::move(assignments),key,master.first,master.second,std::move(roles),std::move(notices),std::move(taken),std::move(warm),std::move(origins),reused,kept});
+        std::move(disabled),std::move(names),std::move(wires),std::move(parts),nextPart,nextWire,std::move(scenes),std::move(untouched),nextScene,selectedScene,mappingScene,std::move(macros),nextMacro,std::move(assignments),key,master.first,master.second,std::move(roles),std::move(notices),std::move(taken),std::move(warm),std::move(origins),reused,kept,{}});
+    prepared->beside=std::move(beside);
     return prepared;
 }
 
@@ -990,6 +1040,9 @@ void Session::open(Prepared& p,bool seamless) {
     auto loaded=loaded_;for(const auto& [n,l]:p.loaded)loaded[n]=l;
     next->carryOver(graph_,leaving);
     compileWires(*next,wires,disabled,disabled,leaving,p.masterLevel,p.masterPan);next->setMidiTaps(midiTaps(*next,p.parts,wires));next->setHarmonies(harmonies(p.parts,p.key));auto rungOut=disabled;
+    // An instance whose next sounds were prepared beside (RFC 0021): the notes it holds go on through
+    // the incoming node, keeping their sound; a cut releases them.
+    if(seamless)for(const auto& b:p.beside)next->takeNotes(graph_,b->was,b->now);
     std::map<Address,double> observed;for(const auto& [id,name]:p.names)for(const auto& q:next->host(id).parameters())observed[{id,q.id}]=next->host(id).parameterValue(q.id);
     // Compilation and all allocating preparation precede publication. The audio thread
     // adopts at one boundary; old plans and their hosts are reclaimed by service().
@@ -997,11 +1050,22 @@ void Session::open(Prepared& p,bool seamless) {
     if(history.size()==historyCapacity)history.pop_front();
     history.push_back({sequence_+1,ChangeKind::Resync,0,0,0,false});
     graph_.publishReplacement(*next,[&]() noexcept {
+        // Their channels select the incoming sounds, queued for the plugin's next block: the plan's first,
+        // or the last before it if one runs between here and the hand-over.
+        for(auto& b:p.beside){
+            const auto& sel=b->selected;
+            try{if(std::all_of(sel.begin(),sel.end(),[&](uint32_t id){return id==sel[0];}))b->host->selectSound(sel[0],-1);
+                else for(int16_t ch=0;ch<16;++ch)b->host->selectSound(sel[size_t(ch)],ch);}
+            catch(const std::exception& e){std::fprintf(stderr,"oscairn: incoming sounds not selected: %s\n",e.what());}
+            b->fresh.clear();}
         nodes_.swap(p.names);observed_.swap(observed);parts_.swap(p.parts);wires_.swap(wires);disabled_.swap(disabled);rungOut_.swap(rungOut);leaving_.swap(leaving);nextPart_=p.nextPart;nextWire_=p.nextWire;padMap_=p.pads;key_=p.key;masterLevel_=p.masterLevel;masterPan_=p.masterPan;roles_.swap(p.roles);notices_.swap(p.notices);heldPads_={};scenes_.swap(p.scenes);untouched_.swap(p.untouched);scene_=p.selectedScene;mappingScene_=p.mappingScene;transition_.reset();pendingScene_.reset();nextScene_=p.nextScene;macros_.swap(p.macros);assignments_.swap(p.assignments);nextMacro_=p.nextMacro;pending_.clear();commandCount_=0;outputDrops_.clear();parameterRevisions_.clear();staged_=false;
         tempo_.store(p.tempo);clockSource_.store(p.clock);playing_.store(false);loaded_.swap(loaded);reused_+=p.reused;keptStates_+=p.kept;
         ++revision_;++sequence_;history_.swap(history);
     });
     std::erase_if(loaded_,[&](const auto& l){return !graph_.contains(l.first);});
+    // The outgoing sounds ring out, then go (retireSounds).
+    for(auto& b:p.beside)if(!b->old.empty())retiringSounds_.push_back({b->host,std::move(b->old)});
+    beside_+=p.beside.size();
     // Its parts' faders as live gains (RFC 0011's instant controls): the wires are built again
     // aside to work out which faders scale each, the wires read from the file keep everything
     // else, and they are compiled again with the slots.

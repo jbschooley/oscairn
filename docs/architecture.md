@@ -205,6 +205,7 @@ authors from the standard and gain nothing.
 | Voice budget, planned ([RFC 0018](rfcs/0018-voice-budget-and-stealing.md)) | Plugins report their sounding voices and cost, take a voice limit and steal their own voices | **Propose upstream** once built. `clap.voice-info` gives capacity, not use |
 | `oscairn.ui/draft-3` ([RFC 0019](rfcs/0019-adaptive-ui.md)) | A hint per parameter: the control it wants (knob, slider, buttons, switch, list, range), a priority, a group drawn joined, and a role (cutoff, attack, an effect's mix) for the role banks ([RFC 0011](rfcs/0011-performance-ui-and-editors.md)); pages and rich widgets to come | **Propose upstream** once it works on more than one surface; use `clap.remote-controls` where that is enough |
 | `oscairn.sound-contexts/draft-5` ([RFC 0005](rfcs/0005-sound-contexts.md)) | Several prepared patches inside one instance, switched under held notes | Keep. Specific to Oscairn's sound switching |
+| `oscairn.sound-snapshots/draft-1` ([RFC 0005](rfcs/0005-sound-contexts.md#preparing-a-snapshot-beside)) | A saved snapshot's sounds prepared beside the playing ones, so a Performance change reuses the playing instance | Keep, with sound contexts |
 | `oscairn.effect-contexts/draft` ([RFC 0007](rfcs/0007-effect-contexts.md)) | Independent effect instances sharing one engine | Keep, for the same reason |
 | `oscairn.assets/draft-1` and `oscairn.asset-dependencies/draft-2` ([RFC 0009](rfcs/0009-sound-assets-and-dependencies.md)) | Shared libraries of files referenced by hash; plugins declare the files a sound needs | Keep. CLAP's `resource-directory` draft is per instance and copies files, so it stays an adapter only |
 
@@ -332,6 +333,9 @@ layers and transitions, not six independently initialized organs.
   ordinary-plugin pools. Automatic chain preparation/retirement and asset-bearing native
   patches remain to do; the [sample research and first implementation scope](sample-players-and-formats.md)
   describe the next slice. Setlists and the library are saved ([RFC 0021](rfcs/0021-sounds-performances-and-library.md)).
+  A Performance change prepares the incoming sounds of an instrument already playing in its
+  instance, beside the outgoing ones, which ring out there and are discarded once idle
+  (`oscairn.sound-snapshots`, [RFC 0021](rfcs/0021-sounds-performances-and-library.md#native-sound-contexts-across-a-change)).
 - The planned native sampler uses an SFZ baseline with documented extensions for proven
   gaps; complete Performances keep their existing container and other engines retain
   their state contracts. [RFC 0008](rfcs/0008-sfz-native-samples-and-conversion.md) defines

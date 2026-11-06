@@ -24,8 +24,11 @@
 //   bool readPreset(uint32_t kind, const char* location, const char* loadKey, Patch&, std::string& error)
 // which reads the preset its preset discovery listed (preset-discovery-plugin.hpp) into a patch
 // that starts as Patch{}, and sets the table's prepare_preset to Engine::preparePreset.
-// It may provide buildPreset(Context&, std::string& error), called with the preset's patch in
-// place before the context is published (to build per-sound state; false refuses the preset),
+// To prepare a snapshot's sounds beside the playing ones (oscairn.sound-snapshots), it builds an
+// oscairn_plugin_sound_snapshots_t table {Engine::prepareSnapshot}; readPatch then also runs on the
+// main thread while rendering, into a patch not yet published.
+// It may provide buildPreset(Context&, std::string& error), called with a preset's or a snapshot's
+// patch in place before the context is published (to build per-sound state; false refuses it),
 // snapshotLoading(bool), called around reading a snapshot's patches, and
 // voiceFinished(Voice&), called whenever a voice ends: released out, choked, stolen or reset.
 // A snapshot load that succeeds resets every context's pins (users) and ends every voice: in
@@ -347,7 +350,10 @@ namespace oscairn::contexts
             }
             return true;
         }
-        static bool loadSnapshot(const clap_plugin_t* p, const clap_istream_t* stream)
+        struct SavedContext { bool used = false; std::string name; Patch patch{}; };
+        using Saved = std::array<SavedContext, ContextCapacity>;
+        // Reads and validates a whole snapshot without changing anything; `needed`: the sounds in it.
+        bool readSnapshot(const clap_istream_t* stream, Saved& saved, std::array<uint32_t, 16>& selection, uint32_t& needed)
         {
             std::string data; char buffer[1024];
             for(;;)
@@ -359,10 +365,7 @@ namespace oscairn::contexts
             }
             std::istringstream in(data); in.imbue(std::locale::classic()); std::string version;
             if(!(in >> version) || version != Derived::stateVersion) return false;
-            auto& s = self(p);
-            struct Loading { Derived& s; explicit Loading(Derived& d) : s(d) { s.snapshotLoading(true); } ~Loading() { s.snapshotLoading(false); } } loading{s};
-            struct Saved { bool used = false; std::string name; Patch patch{}; };
-            std::array<Saved, ContextCapacity> saved{}; std::array<uint32_t, 16> selection{}; uint32_t needed = 0;
+            needed = 0;
             for(auto& patch : saved)
             {
                 unsigned used; if(!(in >> used) || used > 1) return false;
@@ -370,11 +373,18 @@ namespace oscairn::contexts
                 if(!used) continue;
                 ++needed;
                 if(!(in >> std::quoted(patch.name)) || patch.name.size() > 63 || patch.name.find('\0') != std::string::npos) return false;
-                if(!s.readPatch(in, patch.patch)) return false;
+                if(!derived().readPatch(in, patch.patch)) return false;
             }
             if(!saved[0].used) return false;
             for(auto& slot : selection) if(!(in >> slot) || slot >= saved.size() || !saved[slot].used) return false;
-            in >> std::ws; if(!in.eof()) return false;
+            in >> std::ws; return in.eof();
+        }
+        static bool loadSnapshot(const clap_plugin_t* p, const clap_istream_t* stream)
+        {
+            auto& s = self(p);
+            struct Loading { Derived& s; explicit Loading(Derived& d) : s(d) { s.snapshotLoading(true); } ~Loading() { s.snapshotLoading(false); } } loading{s};
+            Saved saved{}; std::array<uint32_t, 16> selection{}; uint32_t needed = 0;
+            if(!s.readSnapshot(stream, saved, selection, needed)) return false;
             if(needed - 1 > CLAP_INVALID_ID - s.nextContext) return false;
             s.applySelections(nullptr); s.resetVoices();
             for(size_t i = 0; i < saved.size(); ++i)
@@ -388,6 +398,34 @@ namespace oscairn::contexts
             s.selected = selection;
             for(size_t ch = 0; ch < selection.size(); ++ch) { auto& c = s.contexts[selection[ch]]; c.users.fetch_add(1); c.selected.fetch_or(1u << ch); }
             s.restored();
+            return true;
+        }
+        // oscairn.sound-snapshots: every sound of a snapshot prepared as a new context beside the
+        // playing ones, as prepare does (main thread, concurrently with rendering). All or nothing.
+        static bool prepareSnapshot(const clap_plugin_t* p, const clap_istream_t* stream, uint32_t* selected, char* message, uint32_t capacity)
+        {
+            auto fail = [&](const char* why) { if(message && capacity) std::snprintf(message, capacity, "%s", why); return false; };
+            if(!stream || !selected) return fail("invalid arguments");
+            auto& s = self(p);
+            Saved saved{}; std::array<uint32_t, 16> selection{}; uint32_t needed = 0;
+            if(!s.readSnapshot(stream, saved, selection, needed)) return fail("invalid snapshot");
+            uint32_t free = 0;
+            for(uint32_t i = 1; i < ContextCapacity; ++i) free += !s.contexts[i].prepared;
+            if(free < needed || needed > CLAP_INVALID_ID - s.nextContext) return fail("no free sound contexts for the snapshot");
+            std::array<Context*, ContextCapacity> made{}; std::array<uint32_t, ContextCapacity> ids{};
+            for(uint32_t i = 0; i < ContextCapacity; ++i)
+            {
+                if(!saved[i].used) continue;
+                auto* c = s.freeSlot(); c->patch = std::move(saved[i].patch); std::string error;
+                if(!s.buildPreset(*c, error))
+                {
+                    c->patch = Patch{};
+                    for(auto* m : made) if(m) { m->prepared = false; m->patch = Patch{}; s.discarded(*m); } // never selected: no users
+                    return fail(error.empty() ? "sound not built" : error.c_str());
+                }
+                ids[i] = s.publish(*c, saved[i].name.c_str()); made[i] = c;
+            }
+            for(size_t ch = 0; ch < 16; ++ch) selected[ch] = ids[selection[ch]];
             return true;
         }
 

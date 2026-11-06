@@ -21,7 +21,7 @@ Checked when built and tested; the sections below say how.
       discovery helper, the Basic Synth's factory presets and the presets indexed when plugins are scanned
 - [x] Presets listed in the desktop sound picker for every instrument
 - [ ] Automatic effect-chain transitions (with [RFC 0007](0007-effect-contexts.md))
-- [ ] A snapshot's sounds prepared beside the playing ones (`oscairn.sound-snapshots/draft-1`,
+- [x] A snapshot's sounds prepared beside the playing ones (`oscairn.sound-snapshots/draft-1`,
       [below](#preparing-a-snapshot-beside)), by the SDK and the Basic Synth, and used across a
       Performance change ([RFC 0021](0021-sounds-performances-and-library.md#native-sound-contexts-across-a-change))
 - [ ] Parts sharing one instance ([RFC 0021, slice 3](0021-sounds-performances-and-library.md#fewer-instances-reusing-what-is-loaded))

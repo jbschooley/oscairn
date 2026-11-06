@@ -194,6 +194,10 @@ public:
     uint32_t prepareSound(const std::string& name,const Preset& preset);
     bool selectSound(uint32_t id,int16_t channel=-1);
     bool discardSound(uint32_t id);
+    // oscairn.sound-snapshots: a whole snapshot's sounds prepared beside the playing ones, returning
+    // the new ID each MIDI channel selects in it; nothing is selected. Main thread, while playing.
+    bool preparesSoundSnapshots() const noexcept;
+    std::array<uint32_t,16> prepareSoundSnapshot(const std::vector<uint8_t>& bytes);
     bool loaded() const noexcept;
     bool faulted() const noexcept;
     const std::string& error() const noexcept;

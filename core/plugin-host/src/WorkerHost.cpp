@@ -19,6 +19,7 @@
 #include <condition_variable>
 #include <cstdlib>
 #include <map>
+#include <set>
 #include <mutex>
 #include <spawn.h>
 #include <sys/mman.h>
@@ -340,7 +341,7 @@ namespace oscairn
                 noteInputs_ = r.u32(); noteOutputs_ = r.u32();
                 for(uint32_t i = 0; i < noteInputs_; ++i) clapNotes_.push_back(r.u8());
                 state_ = r.u8(); contexts_ = r.u32(); effects_ = r.u8();
-                window_ = r.u8();
+                window_ = r.u8(); snapshots_ = r.u8();
                 description_ = r.data.substr(at, r.at - at);
 
                 // Shared block, sized for the ports and maximum block, handed over as a descriptor.
@@ -424,7 +425,10 @@ namespace oscairn
                     fresh_ = true;
                 }
                 // Only values that differ from what the new worker published, to stay within its event queue.
-                for(size_t i = 0; i < values_.size(); ++i)
+                // None after a snapshot prepared beside: the values then published follow the selections
+                // (the outgoing sound's, or a channel's), and as edits they would overwrite every selected sound.
+                // shortcut: edits made between that switch and a crash are lost; record them apart if that matters.
+                if(!besideRecord_) for(size_t i = 0; i < values_.size(); ++i)
                     if(!(parameters_[i].flags & CLAP_PARAM_IS_READONLY) && shared_->parameterValues[i].load() != values_[i])
                         process_->exchange(header(Op::SetParameter).u32(parameters_[i].id).f64(values_[i]).data);
                 // The plugin's window, as the engine last asked; one that will not open does not stop the restart.
@@ -602,8 +606,48 @@ namespace oscairn
                 if(contexts_ && i == ids_.end()) return false;
                 if(!process_->exchange(header(Op::DiscardSound).u32(contexts_ ? i->second : id).u8(cutTail).data).u8()) return false;
                 ids_.erase(id);
-                if(std::erase_if(prepared_, [&](const auto& p) { return p.id == id; }) == 0) discarded_.push_back(id);
+                // One the recovery record holds is discarded again after a restart; one from before a
+                // snapshot prepared beside became the record is not in it.
+                if(std::erase_if(prepared_, [&](const auto& p) { return p.id == id; }) == 0 && std::find(base_.begin(), base_.end(), id) != base_.end()) discarded_.push_back(id);
                 return true;
+            }
+            bool preparesSnapshots() const noexcept override { return snapshots_; }
+            std::array<uint32_t, 16> prepareSnapshot(const std::string& directory) override
+            {
+                std::lock_guard lock(controlFor());
+                std::set<uint32_t> before;
+                for(const auto& c : contexts()) before.insert(c.id);
+                Reader r = process_->exchange(header(Op::PrepareSnapshot).str(directory).data);
+                std::array<uint32_t, 16> worker{};
+                for(auto& id : worker) id = r.u32();
+                process_->fitLimit();
+                // The new sounds in the order a load of the snapshot lists them, its slots': their IDs ascend.
+                std::vector<uint32_t> fresh;
+                for(const auto& c : contexts()) if(!before.count(c.id)) fresh.push_back(c.id);
+                std::sort(fresh.begin(), fresh.end());
+                std::map<uint32_t, uint32_t> engine; std::vector<uint32_t> base;
+                for(const auto w : fresh) { const auto id = allocate(w); ids_[id] = w; engine[w] = id; base.push_back(id); }
+                std::array<uint32_t, 16> selected{};
+                for(size_t ch = 0; ch < 16; ++ch)
+                {
+                    const auto e = engine.find(worker[ch]);
+                    if(e == engine.end()) throw std::runtime_error("the worker's prepared snapshot selects a sound it did not prepare");
+                    selected[ch] = e->second;
+                }
+                // The recovery record becomes a copy of this snapshot: a restart restores the incoming
+                // sounds, and the outgoing ones are lost with their voices. If the copy fails, the old record stays.
+                try
+                {
+                    const auto next = process_->records / std::to_string(++process_->saves);
+                    std::filesystem::create_directories(next);
+                    std::filesystem::copy(directory, next, std::filesystem::copy_options::recursive);
+                    std::error_code ignored;
+                    if(!record_.empty()) std::filesystem::remove_all(record_, ignored);
+                    record_ = next; snapshotRecord_ = true; base_ = std::move(base); prepared_.clear(); discarded_.clear();
+                    besideRecord_ = true;
+                }
+                catch(const std::exception&) {}
+                return selected;
             }
             void setAssets(kick::clap::AssetResolver* assets) noexcept override { process_->assets.store(assets); }
             std::vector<kick::clap::AssetReference> assetDependencies() const override
@@ -772,7 +816,7 @@ namespace oscairn
                     process_->exchange(header(save).str(next.string()).data);
                     std::error_code ignored;
                     if(!record_.empty()) std::filesystem::remove_all(record_, ignored);
-                    record_ = next; snapshotRecord_ = save == Op::SaveSnapshot;
+                    record_ = next; snapshotRecord_ = save == Op::SaveSnapshot; besideRecord_ = false;
                 }
                 catch(const std::exception&) {}
             }
@@ -879,7 +923,7 @@ namespace oscairn
             std::vector<kick::clap::Port> inputs_, outputs_;
             uint32_t noteInputs_ = 0, noteOutputs_ = 0, contexts_ = 0;
             std::vector<uint8_t> clapNotes_;
-            bool state_ = false, effects_ = false, window_ = false;
+            bool state_ = false, effects_ = false, window_ = false, snapshots_ = false;
             std::string windowTitle_; // the window the engine last opened, for a restarted worker; under control
             int shm_ = -1;
             Shared* shared_ = nullptr; size_t bytes_ = 0;
@@ -894,6 +938,7 @@ namespace oscairn
             std::array<uint32_t, 16> selected_ = [] { std::array<uint32_t, 16> a; a.fill(UINT32_MAX); return a; }();
             uint32_t nextId_ = 1;
             std::vector<double> values_;
+            bool besideRecord_ = false; // the record is a snapshot prepared beside (RFC 0021); under control
             std::atomic<uint64_t> revision_{0}; // moves with each info rescan the worker forwards
             // Audio thread, and what the supervisor reads of it.
             std::atomic<uint32_t> requested_{0};

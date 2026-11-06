@@ -263,6 +263,7 @@ namespace oscairn
         uint64_t reusedInstances() const noexcept { return reused_; } // plugin instances a Performance opened took over instead of loading (RFC 0021)
         size_t warmInstances() const noexcept { return warm_.size(); }  // instances kept loaded once rung out, for the next change (RFC 0021)
         uint64_t keptStates() const noexcept { return keptStates_; }      // of those taken over, ones already holding the node's state: reset, not loaded
+        uint64_t besideSounds() const noexcept { return beside_; }        // of those, native instruments whose sounds were prepared beside the playing ones
         // RFC 0025: memory runs short (Linux PSI, polled at each service with memory classes):
         // one more item let go in the eviction order, a next entry prepared to cut, then, since
         // the estimates were wrong, a committed one. False when nothing was left to let go.
@@ -524,6 +525,19 @@ namespace oscairn
         // What an instance was loaded from (RFC 0021): its bundle's digest, and the snapshot whose state
         // it took (folder and document time), so a node with that same state may skip loading it.
         struct Loaded { std::string build, source; };
+        // RFC 0021: an incoming node's sounds prepared beside the outgoing node's in its playing native
+        // instance, which the incoming node takes over at the cue. Never opened, its sounds are discarded.
+        struct Beside
+        {
+            NodeId was = 0, now = 0;            // the outgoing node, and the incoming one in the replacement
+            std::shared_ptr<PluginHost> host;
+            std::vector<uint32_t> old, fresh;   // its sounds before (the Default aside), and those prepared
+            std::array<uint32_t, 16> selected{}; // the prepared sound each MIDI channel selects at the cue
+            Beside() = default;
+            Beside(const Beside&) = delete;
+            Beside& operator=(const Beside&) = delete;
+            ~Beside();
+        };
         // A Performance read and its plugins loaded with their state, not playing yet (RFC 0021).
         struct Prepared
         {
@@ -554,6 +568,7 @@ namespace oscairn
             std::vector<const PluginHost*> warm;  // the instances kept warm it took over
             std::map<NodeId,Loaded> loaded; // what each instance it may give up again was loaded from
             uint64_t reused = 0, kept = 0;        // its nodes opened in an instance already loaded; of them, holding their state already
+            std::vector<std::unique_ptr<Beside>> beside; // its nodes whose sounds were prepared in a playing instance
         };
         // A loaded instance a Performance being read may take over: kept warm (node 0), or a free one
         // of the playing graph (its node), whose state is loaded last.
@@ -564,6 +579,12 @@ namespace oscairn
         uint64_t warmMemory() const;
         std::map<NodeId,Loaded> loaded_;                  // Prepared::loaded of the nodes in graph_
         std::vector<Free> warm_;                          // instances kept warm, least recently used first
+        // The outgoing sounds of instances taken over with sounds prepared beside (RFC 0021), discarded
+        // once idle (service()); weak: an instance gone takes its sounds with it.
+        struct Retiring { std::weak_ptr<PluginHost> host; std::vector<uint32_t> ids; };
+        std::vector<Retiring> retiringSounds_;
+        void retireSounds();
+        uint64_t beside_ = 0;                             // besideSounds()
         static constexpr size_t warmLimit = 32;
         bool keepInstances_ = false;                      // an audition opening a Performance: take over nothing set aside
         std::unique_ptr<Prepared> read(const std::filesystem::path& root, std::vector<Free> free = {});

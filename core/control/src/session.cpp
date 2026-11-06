@@ -383,6 +383,7 @@ namespace oscairn
         for( const auto& w : warm_ ) w.host->service(); // instances kept warm get their main-thread callbacks too
         if( prepared_ ) prepared_->next->service(); // its plugins' main-thread callbacks while it waits
         ringOut();
+        retireSounds(); // RFC 0021: outgoing sounds beside the incoming ones go once idle
         meter();
         recorder_.service();
         // Each live take's taps follow the wires: a fader moved, a plugin replaced, a Performance

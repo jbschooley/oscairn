@@ -46,7 +46,7 @@ A plugin that fails one of these is refused with the message shown.
 | At most 16 note ports in each direction, each one described | "More than 16 note ports are unsupported", "Invalid CLAP note port" |
 | If it has the params extension: `count`, `get_info`, `get_value` and `flush` (`value_to_text` and `text_to_value` are optional); every parameter with info, a unique ID and a finite minimum ≤ maximum; at most 32,768. A default outside the range is brought into it, and one that is not a number becomes the minimum: it only misplaces a reset | "Incomplete CLAP parameter interface", "Invalid CLAP parameter metadata", "Duplicate CLAP parameter ID", "Plugin advertises too many parameters" |
 | If it has the state or audio-ports extension, all its functions | "Incomplete plugin state interface", "Incomplete CLAP audio-ports interface" |
-| If it has `oscairn.memory`, `oscairn.sound-contexts` or `oscairn.asset-dependencies`, all their functions; at most 256 sound contexts | "Incomplete memory interface", "Invalid sound-context interface", "Incomplete asset-dependency interface" |
+| If it has `oscairn.memory`, `oscairn.sound-contexts`, `oscairn.sound-snapshots` or `oscairn.asset-dependencies`, all their functions; at most 256 sound contexts | "Incomplete memory interface", "Invalid sound-context interface", "Invalid sound-snapshot interface", "Incomplete asset-dependency interface" |
 | With a memory budget, a declared size (`oscairn.memory`) that fits what is left | "Plugin needs N MiB of memory where M MiB is left" |
 | A declared size a worker could hold: its three parts add up without overflowing, and in a worker to at most four times the policy's memory limit (1 TiB with none) | "Plugin's memory declaration is not credible" |
 | Activates at the host's sample rate and maximum block size | "Plugin activation failed" |
@@ -127,8 +127,8 @@ as the Basic Synth and Sampler do. Its optional `voiceFinished(voice)` is called
 voice ends (released out, choked, stolen or reset), so an instrument need not poll its voices.
 A snapshot load that succeeds resets every context's pins and ends every voice: an instrument
 that pins a context itself, as for a ringing tail, forgets those pins in `restored()`, which a
-refused load never calls. `buildPreset(context, error)` runs with a preset's patch in place
-before the context is published, for an instrument that builds per-sound state. A plugin in its own repository vendors the folder at a
+refused load never calls. `buildPreset(context, error)` runs with a preset's or a snapshot's
+patch in place before the context is published, for an instrument that builds per-sound state. A plugin in its own repository vendors the folder at a
 pinned commit. The drafts change without notice during initial development; rebuild against
 the current headers.
 
@@ -137,11 +137,35 @@ the current headers.
 | Editor hints (`ui.h`, `oscairn.ui/draft-3`, [RFC 0019](rfcs/0019-adaptive-ui.md)) | Puts the right parameters first on small screens and on the physical knobs. Details [below](#editor-hints-and-roles). | Basic Synth (cutoff and level), Delay (Wet is its `mix`) |
 | Declared memory (`memory.h`, `oscairn.memory/draft`, [RFC 0025](rfcs/0025-resource-budgets.md#declarations)) | Lets a device near its memory limit refuse the plugin before its large allocation, and sets a tighter worker memory limit. Details [below](#declared-memory). | KICK memory test fixture |
 | Native sound contexts (`sound-contexts.h`, [RFC 0005](rfcs/0005-sound-contexts.md)) | Multitimbral playing: up to 8 prepared sounds in one instance, each MIDI channel choosing one, held notes keeping theirs, without an extra instance per sound. New native Oscairn instruments implement it. | Basic Synth, Sampler |
+| Snapshots prepared beside (`sound-contexts.h`, `oscairn.sound-snapshots/draft-1`, [RFC 0005](rfcs/0005-sound-contexts.md#preparing-a-snapshot-beside)) | Instant Performance changes: the next Performance's sounds for an instrument already playing are prepared in that instance, beside the playing ones, and selected at the cue, instead of loading its whole snapshot into an instance. Without it a native instrument is taken over whole, its snapshot loaded (for a sampler, its samples again). Details [below](#instant-performance-changes). | Basic Synth |
 | Native effect contexts (`effect-contexts.h`, [RFC 0007](rfcs/0007-effect-contexts.md)) | Many independent effect slots sharing one engine's memory, with tails reported. The next Performance's effects become new contexts of an engine already playing while the old ones ring out, so an engine outlives its first context and must refuse `create` past its capacity. Without `oscairn.memory`, the bytes its `resources` call reports are counted toward the memory budget. | Delay |
 | Parameter-target lanes (`param-target.h`, [RFC 0002](rfcs/0002-param-target.md)) | For sequencers and modulators: change other plugins' parameters at an exact sample in the same block (parameter locks). | Step Sequencer |
 | Free-running beat (`beat.h`, event space `oscairn.beat`, [RFC 0032](rfcs/0032-arpeggiator.md#step-3-status)) | For arpeggiators and clocks: a beat position the same for every plugin in a block that runs at the tempo while the transport is stopped, so parts keep time and start together. Query the event space through CLAP's event registry; an event arrives at sample 0 of every block. | Test fixture (`follower_fixture.cpp`) |
 | Harmony (`harmony.h`, event space `oscairn.harmony` and host extension `oscairn.harmony/draft`, [RFC 0033](rfcs/0033-script-block.md#host-side-status)) | For harmonizers, chord memories and scripts: the part's key and scale, and the chord held on the part with its root, type, bass and keys. Query the event space for an event in the first block and at each change, at the sample of the note that made it; read the last on the main thread through the host extension. | Test fixture (`follower_fixture.cpp`) |
 | Sound assets (`assets.h`, [RFC 0009](rfcs/0009-sound-assets-and-dependencies.md)) | For samplers: the host resolves sample files, and Performances list their samples so they can be checked and moved between machines. `oscairn.asset-dependencies/draft-2` adds `optional(index)`: an asset the plugin can do without (a fallback it embeds) does not stop a Performance loading when missing; the plugin's resolve of it fails and the host shows a notice. The host still accepts draft 1, every asset required. | Sampler |
+
+### Instant Performance changes
+
+An instrument with native sound contexts switches Performances without a new instance or a state
+load when it also offers `oscairn.sound-snapshots/draft-1` ([RFC 0021](rfcs/0021-sounds-performances-and-library.md#native-sound-contexts-across-a-change)).
+On `sound-contexts-plugin.hpp` that is one table and one `get_extension` line:
+
+```cpp
+const oscairn_plugin_sound_snapshots_t soundSnapshots{Engine::prepareSnapshot};
+// in get_extension:
+if(std::strcmp(id, OSCAIRN_EXT_SOUND_SNAPSHOTS) == 0) return &soundSnapshots;
+```
+
+What the plugin must then do:
+
+- `readPatch` runs on the main thread while the plugin renders, into a patch not yet published;
+  it must not touch anything a voice uses.
+- `buildPreset(context, error)`, if it has one, builds each prepared sound the same way; to be
+  fast it reuses what other contexts hold (a sample already loaded) instead of loading it again.
+- Enough contexts: the incoming sounds are prepared beside the playing ones (the snapshot's
+  Default counts), and each outgoing sound is discarded only once it is idle. With too few free
+  contexts the change falls back to loading the snapshot into an instance.
+- Report idleness honestly: a sound with a voice or a tail must refuse `discard`, so it rings out.
 
 ### Presets
 

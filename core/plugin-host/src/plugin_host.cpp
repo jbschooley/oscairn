@@ -85,6 +85,16 @@ namespace oscairn
                 if(!state.empty())throw std::invalid_argument("Native contexts accept parameter, SFZ or preset patches only");return host.prepareSound(name,p,sfz,library,directory);}
             bool selectSound(uint32_t id,int16_t channel) override {return host.selectSound(id,channel);}
             bool discardSound(uint32_t id,bool) override {return host.discardSound(id);}
+            bool preparesSnapshots() const noexcept override {return host.preparesSoundSnapshots();}
+            std::array<uint32_t,16> prepareSnapshot(const std::string& directory) override {
+                // What saveSnapshot wrote for a native engine: "state 1" and its state bundle.
+                const auto path=std::filesystem::path(directory);
+                const auto head=state_files::read(path/"snapshot",64);
+                if(std::string(head.begin(),head.end())!="state 1\n")throw std::runtime_error("Not a native sound snapshot");
+                const auto id=state_files::read(path/"state"/"plugin.id",65536);
+                if(std::string(id.begin(),id.end())!=host.descriptor().id)throw std::runtime_error("State belongs to a different CLAP plugin");
+                return host.prepareSoundSnapshot(state_files::read(path/"state"/"state.clap",kick::clap::Host::maxStateBytes));
+            }
             bool supportsState() const noexcept override {return host.supportsState();}
             bool hasWindow() const override {return host.hasGui();}
             void showWindow(bool show,const std::string& title) override {if(!show)host.closeGui();else if(!host.showGui(title))throw std::runtime_error(host.error());}

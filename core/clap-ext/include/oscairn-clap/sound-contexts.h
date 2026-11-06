@@ -56,6 +56,19 @@ typedef struct oscairn_plugin_sound_contexts {
     uint32_t (CLAP_ABI *prepare_preset)(const clap_plugin_t*,const char* name,uint32_t location_kind,const char* location,
                                         const char* load_key,char* message,uint32_t message_capacity);
 } oscairn_plugin_sound_contexts_t;
+
+/* A snapshot's sounds prepared beside the playing ones (RFC 0005, "Preparing a snapshot beside"),
+ * offered only with oscairn.sound-contexts and its state. prepare runs as the prepare above does:
+ * main thread, concurrently with process(), may read files, never touches a playing sound,
+ * selection or voice. snapshot is a whole snapshot as state->save writes it. It validates all of
+ * it, then prepares every sound in it (its Default too) as a new context with a fresh ID; all or
+ * nothing, never stealing. selected[16] receives the new ID each MIDI channel selects in the
+ * snapshot; nothing is selected. On false nothing was added, and the plugin may write a
+ * NUL-terminated diagnostic into message. */
+static const char OSCAIRN_EXT_SOUND_SNAPSHOTS[] = "oscairn.sound-snapshots/draft-1";
+typedef struct oscairn_plugin_sound_snapshots {
+    bool (CLAP_ABI *prepare)(const clap_plugin_t*,const clap_istream_t* snapshot,uint32_t* selected,char* message,uint32_t message_capacity);
+} oscairn_plugin_sound_snapshots_t;
 #ifdef __cplusplus
 }
 #endif

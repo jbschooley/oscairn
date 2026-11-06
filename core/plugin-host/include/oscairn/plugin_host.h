@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #pragma once
 #include <kick_clap/Host.h>
+#include <array>
 #include <map>
 #include <optional>
 #include <stdexcept>
@@ -57,6 +58,12 @@ namespace oscairn
         virtual uint32_t prepareSound(const std::string& /*name*/,const std::vector<oscairn_sound_parameter_t>& /*parameters*/,const std::string& /*state*/ = {},const std::string& /*preset*/ = {},const std::string& /*sfz*/ = {},const std::string& /*library*/ = {},const std::string& /*directory*/ = {}) { throw std::invalid_argument("Plugin has no sound contexts"); }
         virtual bool selectSound(uint32_t,int16_t=-1) { throw std::invalid_argument("Plugin has no sound contexts"); }
         virtual bool discardSound(uint32_t,bool=false) { throw std::invalid_argument("Plugin has no sound contexts"); }
+        // RFC 0021: the native snapshot saveSnapshot wrote to `directory` prepared beside the playing
+        // sounds (oscairn.sound-snapshots), concurrently with rendering; returns the new sound each
+        // MIDI channel selects in it, selecting none. Throws where the plugin cannot or refuses (too
+        // few free contexts), having added nothing. Control thread.
+        virtual bool preparesSnapshots() const noexcept { return false; }
+        virtual std::array<uint32_t,16> prepareSnapshot(const std::string& /*directory*/) { throw std::invalid_argument("Plugin cannot prepare a snapshot beside its sounds"); }
         virtual bool supportsState() const noexcept { return false; }
         // The plugin's own window (CLAP gui, RFC 0019), shown by the process hosting the plugin.
         // Control thread. showWindow opens it titled `title`, or titles and raises it; false closes
