@@ -19,6 +19,20 @@
 
 using namespace oscairn;
 
+// ThreadSanitizer's shadow memory makes a plugin's resident memory about three times what it
+// touches, so a worker that grows into the hundreds of MiB passes its declared limit there.
+#if defined(__SANITIZE_THREAD__)
+constexpr bool shadowed = true;
+#elif defined(__has_feature)
+#if __has_feature(thread_sanitizer)
+constexpr bool shadowed = true;
+#else
+constexpr bool shadowed = false;
+#endif
+#else
+constexpr bool shadowed = false;
+#endif
+
 int main(int argc, char** argv)
 {
     if(argc < 5) return 2;
@@ -140,10 +154,12 @@ int main(int argc, char** argv)
             }
 #endif
         }
+        if(shadowed) std::puts("skipped: the limits of plugins growing to hundreds of MiB (ThreadSanitizer's shadow memory)");
         // RFC 0025: a plugin that restarts itself into a mode holding far more memory must not be
         // killed for its old declaration: the worker tells the engine what it declares before it
         // activates again, and the engine refits the worker's limit before the plugin allocates,
         // however long the allocation takes (here 400 ms, many of the supervisor's samples).
+        if(!shadowed)
         {
             setenv("KICK_FIXTURE_MEMORY_SLOW_MS", "400", 1);
             const auto self = loadPluginInWorker(argv[1], argv[3], "org.kick.test.memory", 48000, frames);
@@ -181,6 +197,7 @@ int main(int argc, char** argv)
         }
         // RFC 0025: an engine's shared bytes count toward its worker's limit while any node of it
         // lives, even after the root node the contexts were made from is removed (effect-contexts.h).
+        if(!shadowed)
         {
             setenv("KICK_FIXTURE_MEMORY_CONTEXTS", "1", 1);
             setenv("KICK_FIXTURE_MEMORY_SHARED_MB", "300", 1);
@@ -202,6 +219,7 @@ int main(int argc, char** argv)
         }
         // RFC 0025: a state load refused before the plugin activates again leaves its node's
         // declaration known, so a sibling context's own restart into a bigger mode is still refit.
+        if(!shadowed)
         {
             setenv("KICK_FIXTURE_MEMORY_CONTEXTS", "1", 1);
             const auto root = loadPluginInWorker(argv[1], argv[3], "org.kick.test.memory", 48000, frames);
