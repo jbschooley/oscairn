@@ -74,6 +74,8 @@ enum oscairn_role
     OSCAIRN_ROLE_LEVEL_8 = 32,
     OSCAIRN_ROLE_MIX = 33,            /* an effect's main control: its mix, or its amount */
     OSCAIRN_ROLE_PAN = 34,
+    OSCAIRN_ROLE_OUTPUT_BUS = 35,     /* stepped, from 0: the output port a sound plays on, by its index (0 the main port); a host
+                                         sharing one instance among parts gives each part's sound its own (RFC 0021) */
 };
 
 typedef struct oscairn_param_hint

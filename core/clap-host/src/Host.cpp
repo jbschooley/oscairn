@@ -617,7 +617,7 @@ struct Host::Impl {
             p.rangeHigh = p.widget == OSCAIRN_WIDGET_RANGE ? hint.range_high : CLAP_INVALID_ID;
             p.priority = hint.priority;
             p.group = hint.group;
-            p.role = hint.role <= OSCAIRN_ROLE_PAN ? hint.role : OSCAIRN_ROLE_NONE; // the last role this host knows
+            p.role = hint.role <= OSCAIRN_ROLE_OUTPUT_BUS ? hint.role : OSCAIRN_ROLE_NONE; // the last role this host knows
         }
     }
     // CLAP_PARAM_RESCAN_INFO: names, modules, the hidden and periodic flags and the editor hints,

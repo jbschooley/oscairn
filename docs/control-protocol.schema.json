@@ -389,7 +389,7 @@
           "enum": ["cutoff", "resonance", "filterEnvelope", "keyTracking", "filterAttack", "filterDecay", "filterSustain", "filterRelease",
                    "attack", "decay", "sustain", "release", "hold", "velocity", "ampKeyTracking", "level",
                    "lowGain", "midGain", "highGain", "midFrequency", "lowFrequency", "highFrequency", "midQ", "eqOutput",
-                   "level1", "level2", "level3", "level4", "level5", "level6", "level7", "level8", "mix", "pan"],
+                   "level1", "level2", "level3", "level4", "level5", "level6", "level7", "level8", "mix", "pan", "outputBus"],
           "description": "The role the plugin declares (oscairn.ui), as the role banks name it; missing when it declares none"
         }
       },

@@ -334,7 +334,9 @@ activation and after an info rescan):
 - **A role** (`enum oscairn_role`): cutoff, resonance, filter envelope amount, key tracking
   and the filter envelope's stages; attack, decay, sustain, release, hold, velocity, amp key
   tracking and level; the EQ's gains, frequencies, mid Q and output; levels 1 to 8 (elements,
-  operators, oscillators); `mix`, an effect's main control; and pan. Roles put a parameter on
+  operators, oscillators); `mix`, an effect's main control; pan; and `OSCAIRN_ROLE_OUTPUT_BUS`,
+  the parameter choosing the output port a sound plays on (a stepped parameter from 0, the port's
+  index), which fills no bank. Roles put a parameter on
   the same knob in every instrument's role banks (Filter, Amp EG, EQ, Levels); a role the
   plugin lacks is a blank knob. Only instruments fill role banks; an effect's `mix` goes to
   the Effects bank. The banks serve every set of physical knobs: a controller profile's knob

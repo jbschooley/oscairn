@@ -59,7 +59,7 @@ namespace
         {"Brightness",1,1,"%",false,OSCAIRN_WIDGET_KNOB,1,0,OSCAIRN_ROLE_CUTOFF}, {"Level",1,1,"%",false,OSCAIRN_WIDGET_KNOB,2,0,OSCAIRN_ROLE_LEVEL}, {"Pressure",1,.5,"%",false,OSCAIRN_WIDGET_KNOB,5},
         {"Oscillator",2,0,"",true,OSCAIRN_WIDGET_BUTTONS,3}, {"Detune",50,7,"cents",false,OSCAIRN_WIDGET_KNOB,4},
         {"Pitch LFO rate",40,0,"Hz",false,OSCAIRN_WIDGET_KNOB,6,1}, {"Pitch LFO depth",200,0,"cents",false,OSCAIRN_WIDGET_KNOB,7,1}, // one LFO: drawn joined
-        {"Output bus",8,0,"",true,OSCAIRN_WIDGET_LIST,0},
+        {"Output bus",8,0,"",true,OSCAIRN_WIDGET_LIST,0,0,OSCAIRN_ROLE_OUTPUT_BUS},
         {"Pitch bend range",24,2,"semitones"}, {"Mod wheel",1,0,"",true,OSCAIRN_WIDGET_BUTTONS,0}
     }};
     constexpr auto defaults=[] {std::array<double,parameters.size()> v{};for(size_t i=0;i<v.size();++i)v[i]=parameters[i].initial;return v;}();
