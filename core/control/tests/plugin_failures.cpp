@@ -246,14 +246,15 @@ int main(int argc, char** argv)
         }
         // RFC 0025 test 4, a wrong declaration: a plugin declaring 9 MiB and holding 200 more is
         // stopped at its worker's limit (the declaration plus the margin, not the policy's 4 GiB),
-        // and nothing else is.
+        // and nothing else is. A restart that succeeds clears its failure, so the liar's restarts
+        // hold the extra too, until it is given up and the reason stays to be read.
         {
+            const auto honest = loadPluginInWorker(argv[1], argv[3], "org.kick.test.memory", 48000, frames);
             setenv("KICK_FIXTURE_MEMORY_EXTRA_MB", "200", 1);
             const auto liar = loadPluginInWorker(argv[1], argv[3], "org.kick.test.memory", 48000, frames);
-            unsetenv("KICK_FIXTURE_MEMORY_EXTRA_MB");
-            const auto honest = loadPluginInWorker(argv[1], argv[3], "org.kick.test.memory", 48000, frames);
             std::string why;
-            for(int i = 0; i < 300 && (why = liar->failure()).empty(); ++i) std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            for(int i = 0; i < 3000 && (why = liar->failure()).find("not restarted") == std::string::npos; ++i) std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            unsetenv("KICK_FIXTURE_MEMORY_EXTRA_MB");
             // In its own cgroup the kernel may stop it first, at memory.max.
             const bool killed = std::getenv("OSCAIRN_CGROUP") && why.find("Plugin worker crashed (signal 9)") != std::string::npos;
             check((why.find("Plugin used too much memory") != std::string::npos && why.find("over its limit of 77 MB") != std::string::npos) || killed,
