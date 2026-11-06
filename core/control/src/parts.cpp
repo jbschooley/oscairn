@@ -1049,17 +1049,31 @@ namespace oscairn
                 for(const auto& w : wires)
                 {
                     if(w.kind != WireKind::Audio || w.owner != WireOwner::Part || w.part != part->id || !w.fader) continue;
-                    if(const auto m = channelsOf(graph_, layout, w.to, w.toPort, true)) tap.channels = std::max(tap.channels, *m);
-                    // Post-fader, a live wire follows its faders' live gains, as the graph plays it.
+                    const auto m = channelsOf(graph_, layout, w.to, w.toPort, true);
+                    if(m) tap.channels = std::max(tap.channels, *m);
+                    // Post-fader, a live wire follows its faders' live gains, and its pan's and send's
+                    // where compileWires gave it them, as the graph plays it.
                     std::array<uint8_t, 4> slots{};
                     bool live = !t.preFader && w.live && w.faders.size() <= slots.size();
                     for(size_t i = 0; live && i < w.faders.size(); ++i) if(const auto s = faderSlots_.find(w.faders[i]); s != faderSlots_.end()) slots[i] = s->second; else live = false;
                     if(!live) slots = {};
+                    const std::array<uint8_t, 2>* pan = nullptr;
+                    uint8_t send = 0;
+                    if(live && !w.send && m == 2u && w.share == 0 && w.faders.size() + 2 <= slots.size() && livePan(part->id)) pan = &panSlots_.at(part->id);
+                    if(live && w.send && w.faders.size() + 2 <= slots.size() && liveSend(part->id, w.send)) send = sendSlots_.at({part->id, w.send});
                     const bool silent = (live ? w.fixedMute : w.mute) || (soloed.count({w.to, w.toPort}) && !w.solo) || !w.enabled || disabled_.count(w.to) || rungOut_.count(w.from);
                     const auto at = first(w.from, w.fromPort, false);
-                    const auto compiled = pairs(graph_, layout, w, live ? w.fixed : w.level);
+                    auto centred = w; if(pan) centred.pan = 0; // the pan is the slots'
+                    const auto compiled = pairs(graph_, layout, centred, live ? (send ? w.unsent : w.fixed) : w.level);
                     if(silent || !at || !compiled) continue;
-                    for(const auto& p : *compiled) gains[{w.from, at->first + p.from, p.to, slots}] += p.gain;
+                    for(const auto& p : *compiled)
+                    {
+                        auto s = slots;
+                        size_t next = w.faders.size();
+                        if(pan) s[next++] = (*pan)[p.to ? 1 : 0];
+                        if(send) s[next] = send;
+                        gains[{w.from, at->first + p.from, p.to, s}] += p.gain;
+                    }
                 }
                 for(const auto& [k, gain] : gains) tap.sources.push_back({std::get<0>(k), std::get<1>(k), std::get<2>(k), float(gain), std::get<3>(k)});
                 if(!tap.channels) tap.channels = 2; // plays nowhere now: silent

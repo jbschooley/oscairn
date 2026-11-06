@@ -226,7 +226,7 @@ namespace
         render.block(block, {kick::clap::Event::note(true, 60, 1, 100)});
         render.block(block, {kick::clap::Event::note(true, 64, .5, 0)});
         for(int i = 0; i < 20; ++i) render.block(block);
-        s.setPartLevel(lead, .25, false); s.commit(); // the fader moves during the take
+        s.setPartLevel(lead, .25, false); s.setPartPan(pad, .4); s.commit(); // a fader and a pan move during the take
         for(int i = 0; i < 20; ++i) render.block(block);
         s.setPartLevel(pad, 1, true); s.commit(); // and a part is muted
         for(int i = 0; i < 9; ++i) render.block(block, i == 8 ? std::vector{kick::clap::Event::note(false, 60, 0, 25)} : std::vector<kick::clap::Event>{});
@@ -239,7 +239,7 @@ namespace
         bool sums = leadPost.samples.size() == main.samples.size() && padPost.samples.size() == main.samples.size();
         // Within one rounding: the graph's mix may fuse its multiply-adds.
         for(size_t i = 0; sums && i < main.samples.size(); ++i) sums = std::abs(leadPost.samples[i] + padPost.samples[i] - main.samples[i]) <= std::abs(main.samples[i]) * 1.2e-7f + 1e-30f;
-        check(sums, "the post-fader taps of the parts playing to Main sum to Main, through a fader move and a mute");
+        check(sums, "the post-fader taps of the parts playing to Main sum to Main, through a fader move, a pan move and a mute");
         bool muted = true; for(size_t i = 2 * 43 * block; i < padPost.samples.size(); ++i) muted = muted && padPost.samples[i] == 0; // the mute ramps across block 42
         check(muted, "a muted part records silence after its fader");
         bool pre = leadPre.samples.size() == main.samples.size(), sound = false;
