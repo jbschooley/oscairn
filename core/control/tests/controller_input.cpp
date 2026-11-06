@@ -274,6 +274,7 @@ namespace
                 heard = l[block - 1]; heardAt = now;
                 blocks.push(l[block - 1], r[block - 1]);
                 next += std::chrono::nanoseconds(int64_t(period * 1e9));
+                if(next < Clock::now()) next = Clock::now(); // late: a device skips the time, it doesn't render a burst to catch up
                 std::this_thread::sleep_until(next);
             }
         });
@@ -311,9 +312,9 @@ namespace
                 std::this_thread::sleep_for(std::chrono::microseconds(40000 + random() % 3000));
                 const uint8_t value = i % 2 ? 0 : 127;
                 const double level = t.start + (t.end - t.start) * t.shape(value / 127.0);
-                const auto from = blocks.count.load(std::memory_order_acquire);
                 const auto sent = Clock::now();
                 cc(s, 1, value);
+                const auto from = blocks.count.load(std::memory_order_acquire); // counted once the engine has it, not while this thread waits to send
                 const auto since = sent.time_since_epoch().count();
                 const auto deadline = sent + std::chrono::seconds(1); // a wait, not a limit
                 bool sound = false, ui = false, rendered = false;
@@ -402,6 +403,7 @@ namespace
                 heardLeft = l[block - 1]; heard = r[block - 1]; heardAt = Clock::now().time_since_epoch().count();
                 blocks.push(l[block - 1], r[block - 1]);
                 next += std::chrono::nanoseconds(int64_t(period * 1e9));
+                if(next < Clock::now()) next = Clock::now(); // late: a device skips the time, it doesn't render a burst to catch up
                 std::this_thread::sleep_until(next);
             }
         });
@@ -419,9 +421,9 @@ namespace
                 std::this_thread::sleep_for(std::chrono::microseconds(40000 + random() % 3000));
                 const uint8_t value = i % 2 ? 0 : 127;
                 const float goal = value ? centre : 0.f; // panned right: full; left: none
-                const auto from = blocks.count.load(std::memory_order_acquire);
                 const auto sent = Clock::now();
                 cc(s, 1, value);
+                const auto from = blocks.count.load(std::memory_order_acquire); // counted once the engine has it, not while this thread waits to send
                 const auto since = sent.time_since_epoch().count();
                 bool sound = false, rendered = false;
                 uint64_t next = 0;
@@ -456,9 +458,9 @@ namespace
             auto channel = [&] { return toRight ? heard.load() : heardLeft.load(); };
             auto other = [&] { return toRight ? heardLeft.load() : heard.load(); };
             const float from = channel();
-            const auto start = blocks.count.load(std::memory_order_acquire);
             const auto sent = Clock::now(); const auto since = sent.time_since_epoch().count();
             s.selectScene(toRight ? right : left);
+            const auto start = blocks.count.load(std::memory_order_acquire);
             bool moved = false, arrived = false;
             uint64_t stepped = 0, ended = 0, next = 0, nextEnd = 0;
             auto in = [&](float l, float r) { return toRight ? r : l; };
