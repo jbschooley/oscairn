@@ -876,7 +876,7 @@ namespace oscairn
             for(uint32_t c=0;c<step.audioOutputs;++c)step.out.push_back(step.outputBuffer.data()+size_t(c)*maxFrames_);
             step.merged.resize( kick::clap::Host::maxProcessEvents ); // maxBlockEvents notes, plus the beat and up to 32 harmony changes
         }
-        plan->keys.reserve( 2 * kick::clap::Host::maxBlockEvents ); // releases, then the beat and harmony, never reallocating
+        plan->keys.reserve( kick::clap::Host::maxProcessEvents ); // as many as merged holds (every other key is capped at its size): never reallocating
         plan->local.resize( plan->steps.size() );
         return plan.release();
     }

@@ -113,9 +113,10 @@ public:
     static constexpr uint32_t maxAudioChannels = 64; // in each direction, across all buses
     static constexpr uint32_t maxBlockEvents = 512; // direct graph events per process() call; queued commands have a separate budget
     // A destination's block also carries the graph's own oscairn.beat event and its part's
-    // harmony changes, which do not count against maxBlockEvents; hosts must accept up to this
-    // many events per process() call.
-    static constexpr uint32_t maxProcessEvents = maxBlockEvents + 1 + 32;
+    // harmony changes, which do not count against maxBlockEvents, and a key's release fans out
+    // to each note the router holds for it (at most maxBlockEvents, the router's ledger); hosts
+    // must accept up to this many events per process() call.
+    static constexpr uint32_t maxProcessEvents = 2 * maxBlockEvents + 1 + 32;
     // The event space this host assigns to oscairn.param-target (oscairn-clap/param-target.h)
     // through CLAP's event-registry. Plugins may send these events; the host passes them
     // to the caller in outputEvents() and never delivers them to a plugin.
