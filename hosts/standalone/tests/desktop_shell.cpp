@@ -297,8 +297,8 @@ int main(int argc, char** argv)
                     play.learn(true); engine.touched("knob:3"); settle();
                     snapshot(frame, "play-learn");
                     Assignment scene; scene.kind = Assignment::Kind::Scene; scene.id = verse;
-                    play.learnTarget(scene); settle();
-                    check(!play.learning() && engine.assignments().size() == 1 && engine.assignments()[0].control == "knob:3", "learn assigns the knob moved to what is touched");
+                    play.learnTarget(scene); // the engine's assignments are read at most four times a second
+                    check(wait([&] { return !play.learning() && engine.assignments().size() == 1 && engine.assignments()[0].control == "knob:3"; }), "learn assigns the knob moved to what is touched");
                     check(wait([&] { return names() == "Brightness,Swell,Verse,"; }) && play.knobSlots()[2].layer == AssignmentLayer::Override, "and the knob plays it: " + names());
                     settle();
                     snapshot(frame, "play-panel");
