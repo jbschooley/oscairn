@@ -1,6 +1,6 @@
 # RFC 0034: Parallel graph rendering
 
-Status: proposed, 2026-11-05. Builds on plugin worker isolation
+Status: in progress, 2026-11-05: step 1 built ([status](#step-1-status)). Builds on plugin worker isolation
 ([RFC 0010](0010-plugin-worker-isolation.md#audio-hand-off)) and resource budgets
 ([RFC 0025](0025-resource-budgets.md)).
 
@@ -8,7 +8,7 @@ Status: proposed, 2026-11-05. Builds on plugin worker isolation
 
 Checked when built and tested; the sections below say how.
 
-- [ ] 1. Waves: independent nodes start together; plugins in workers render at the same time
+- [x] 1. Waves: independent nodes start together; plugins in workers render at the same time ([status](#step-1-status))
 - [ ] 2. Audio helpers: plugins in the engine's process render at the same time, on real-time helper threads
 - [ ] 3. Measured on the target (a four-core KICK-class board): block time and idle CPU
 
@@ -94,6 +94,33 @@ every graph in the process. They run at real-time priority, as workers' audio th
 One graph uses the pool at a time; another graph's audio thread that finds it busy renders its
 own wave alone (try-acquire, never waiting). A wave with fewer than two plugins in the engine
 wakes no helper.
+
+## Step 1 status
+
+Built: waves, the three-part step, `startProcess`/`finishProcess` for plugins in workers,
+`Graph::setParallel` and `OSCAIRN_GRAPH_SERIAL`. The `parallel-render` test passes in the engine
+and in workers (`parallel-render-workers`); it fails when the steps of a wave share one event
+buffer (in the engine) and when the plan is run as a single wave (both). The existing tests
+pass with parallel rendering on, the default (control-controller-input's latency check fails
+intermittently under load, here as on `main`).
+
+`oscairn-graph-bench` (tools/graph-bench) measures a block's time at the real block rate on a
+real-time thread. Measured on an M-series Mac (16 cores) under heavy unrelated load, 128 frames
+at 48 kHz (a block is 2667 us), N parts each a Basic Synth holding a 6-note chord into its own
+Delay, every plugin in its own worker (2N workers, two waves); mean block time:
+
+| Parts | Serial | Parallel |
+| ----- | ------ | -------- |
+| 1     | 65 us  | 64 us    |
+| 2     | 122 us | 69 us    |
+| 4     | 223 us | 82 us    |
+| 8     | 459 us | 135 us   |
+
+With 24 voices a part, four parts took 266 us serially and 97 us in parallel. These plugins are
+light, so this mostly measures the hand-off: serially each worker's wake and reply add up; in
+parallel a wave costs about one. The user's converted Performances load headless through a
+`Session`, but their sfizz parts render silence when in workers there (on `main` too), so they
+are measured in the engine's process under step 2.
 
 ## Alternatives
 

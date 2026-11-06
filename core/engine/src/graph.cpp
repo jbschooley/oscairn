@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
 #include <stdexcept>
 #include <utility>
@@ -70,6 +71,11 @@ namespace oscairn
             std::vector<kick::clap::Event> paramIn; // converted events waiting for this step this block
             uint32_t                       paramCount = 0;
             uint64_t paramDrops = 0;
+            // This block's events in (RFC 0034: each step its own, as steps render at the same time),
+            // and how its rendering went.
+            std::vector<kick::clap::Event> merged;
+            uint32_t mergedCount = 0;
+            bool processed = false, started = false;
         };
 
         struct Key // orders merged notes: by time, then by source and position
@@ -87,8 +93,8 @@ namespace oscairn
         struct Tap { int step; std::shared_ptr<NoteRoute> route; NoteZones zones; uint64_t ports; uint8_t channel; }; // see setMidiTaps; step -1: the input
         std::vector<Tap>               taps;
         std::vector<Step>              steps;
+        std::vector<uint32_t> waves; // RFC 0034: where each wave of steps ends; a wave's steps render at the same time
         std::vector<Key>               keys;
-        std::vector<kick::clap::Event> merged;
     };
 
     // A routed event as a MIDI 1.0 channel message on `channel` (1..16; 0: its own): notes,
@@ -168,6 +174,7 @@ namespace oscairn
         inputChannels_=countChannels(audioLayout_.inputs);outputChannels_=countChannels(audioLayout_.outputs);
         for(auto& g:liveTarget_)g.store(1.f,std::memory_order_relaxed);
         liveFrom_.fill(1.f);liveTo_.fill(1.f);
+        if(const char* serial=std::getenv("OSCAIRN_GRAPH_SERIAL");serial && *serial && *serial!='0')parallel_.store(false); // RFC 0034, for measuring
     }
 
     Graph::~Graph()
@@ -616,6 +623,23 @@ namespace oscairn
                     if( e.first == id && internal( e ) )
                         --indegree[e.second];
         }
+        // RFC 0034: waves. A node's is one past its sources' and those of earlier nodes sharing its
+        // engine (effect contexts never render at the same time); the plan runs wave by wave, in
+        // the same order rendering serially or not, so both route notes identically.
+        std::map<NodeId, uint32_t> wave;
+        for( size_t i = 0; i < order.size(); ++i )
+        {
+            uint32_t w = 0;
+            for( const auto* edges : { &std::as_const(audioDependencies), &std::as_const(noteDependencies), &std::as_const( mappingEdges ) } )
+                for( const auto& e : *edges )
+                    if( e.second == order[i] && internal( e ) )
+                        w = std::max( w, wave.at( e.first ) + 1 );
+            for( size_t j = 0; j < i; ++j )
+                if( nodes_.at( order[j] ).effectGroup == nodes_.at( order[i] ).effectGroup || nodes_.at( order[j] ).host == nodes_.at( order[i] ).host )
+                    w = std::max( w, wave.at( order[j] ) + 1 );
+            wave[order[i]] = w;
+        }
+        std::stable_sort( order.begin(), order.end(), [&]( NodeId a, NodeId b ) { return wave.at( a ) < wave.at( b ); } );
 
         auto plan = std::make_unique<Plan>();
         plan->replacementSerial=replacementSerial_;
@@ -635,8 +659,10 @@ namespace oscairn
             step.ringOut      = std::any_of(audioRoutes_.begin(),audioRoutes_.end(),[&](const auto& r){return r.from.node==id && r.from.port==ringOutPort;});
             if(step.ringOut) step.audioOutputs += 2;
             stepOf[id]        = (int)plan->steps.size();
+            if( !plan->steps.empty() && wave.at( id ) != wave.at( plan->steps.back().id ) ) plan->waves.push_back( uint32_t( plan->steps.size() ) );
             plan->steps.push_back( std::move( step ) );
         }
+        if( !plan->steps.empty() ) plan->waves.push_back( uint32_t( plan->steps.size() ) );
         auto route=[&](NodeId from,uint32_t source,NodeId to,uint32_t dest,float gain,const std::array<uint8_t,4>& live)
         {
             Plan::AudioRoute r{from==graphInput?-1:stepOf.at(from),source,dest,gain};r.now=gain;r.live=live;
@@ -702,9 +728,9 @@ namespace oscairn
             step.outputBuffer.resize(size_t(step.audioOutputs)*maxFrames_);
             for(uint32_t c=0;c<step.audioInputs;++c)step.in.push_back(step.inputBuffer.data()+size_t(c)*maxFrames_);
             for(uint32_t c=0;c<step.audioOutputs;++c)step.out.push_back(step.outputBuffer.data()+size_t(c)*maxFrames_);
+            step.merged.resize( kick::clap::Host::maxProcessEvents ); // maxBlockEvents notes, plus the beat and up to 32 harmony changes
         }
         plan->keys.reserve( 2 * kick::clap::Host::maxBlockEvents ); // releases, then the beat and harmony, never reallocating
-        plan->merged.resize( kick::clap::Host::maxProcessEvents ); // maxBlockEvents notes, plus the beat and up to 32 harmony changes
         return plan.release();
     }
 
@@ -901,7 +927,9 @@ namespace oscairn
                 }
         }
         bool ok = true;
-        for( auto& step : plan->steps )
+        // A step in three parts (RFC 0034): its inputs, mixed and merged, and what it sent, routed
+        // on, stay on this thread in plan order; only the plugin's rendering moves.
+        auto prepare=[&](Plan::Step& step)
         {
             const bool inputRecovery=panicInput && std::any_of(step.noteSources.begin(),step.noteSources.end(),[](const auto& s){return s.step<0;});
             for(auto c:step.silentInputs)std::fill_n(step.inputBuffer.data()+size_t(c)*maxFrames_,frames,0.f);
@@ -922,7 +950,7 @@ namespace oscairn
             // maxProcessEvents): a block that fills all maxBlockEvents note slots still fits.
             for(uint32_t i=0;i<step.releaseCount;++i)plan->keys.push_back({0,order++,&step.releases[i]});
             for( uint32_t i = 0; i < step.paramCount; ++i ) {
-                if(plan->keys.size()<plan->merged.size())
+                if(plan->keys.size()<step.merged.size())
                     plan->keys.push_back( { step.paramIn[i].header()->time, order++, &step.paramIn[i],step.paramNotes[i],step.paramNotes[i]!=nullptr } );
                 else overflow=true;
             }
@@ -937,7 +965,7 @@ namespace oscairn
                     if( list[i].header()->space_id == CLAP_CORE_EVENT_SPACE_ID && list[i].header()->type != CLAP_EVENT_NOTE_END ) // note ends belong to their destination
                     {
                         ++totalEvents;
-                        if(plan->keys.size()<plan->merged.size())
+                        if(plan->keys.size()<step.merged.size())
                             plan->keys.push_back( { list[i].header()->time, order++, &list[i],connection.route.get(),false,&connection.zones,
                                                     source<0 && sources?sources[i]:untaggedSource,connection.draining } );
                         else overflow=true;
@@ -949,7 +977,7 @@ namespace oscairn
                 return a.order<b.order;
             } );
             uint32_t merged=0;
-            auto emit=[&](const auto& e){if(merged==plan->merged.size())return false;plan->merged[merged++]=e;return true;};
+            auto emit=[&](const auto& e){if(merged==step.merged.size())return false;step.merged[merged++]=e;return true;};
             // Stolen notes' fade steps go in among the events, at their times.
             auto fades=[&](uint32_t until){bool ok=true;for(auto& source:step.noteSources)ok=source.route->fade(until,emit) && ok;return ok;};
             if(!overflow)for(const auto& key:plan->keys)
@@ -964,9 +992,14 @@ namespace oscairn
                 merged=0;step.host->panic();
                 for(auto& source:step.noteSources)source.route->clear();
             }
-
-            if(listener)listener->events(step.id,plan->merged.data(),merged,false);
-            const bool processed=step.host->process(step.in.data(),step.audioInputs,step.out.data(),step.audioOutputs,frames,plan->merged.data(),merged,transport);
+            step.mergedCount=merged;
+        };
+        auto start=[&](Plan::Step& step){return step.host->startProcess(step.in.data(),step.audioInputs,step.out.data(),step.audioOutputs,frames,step.merged.data(),step.mergedCount,transport);};
+        auto render=[&](Plan::Step& step){step.processed=step.host->process(step.in.data(),step.audioInputs,step.out.data(),step.audioOutputs,frames,step.merged.data(),step.mergedCount,transport);};
+        auto finish=[&](Plan::Step& step)
+        {
+            if(listener)listener->events(step.id,step.merged.data(),step.mergedCount,false);
+            const bool processed=step.processed;
             if(!processed) {
                 // A busy control gate can discard a release; reset when rendering resumes.
                 step.host->panic();
@@ -1053,6 +1086,18 @@ namespace oscairn
                     }
                 }
             }
+        };
+        if(!parallel_.load(std::memory_order_relaxed))
+            for(auto& step:plan->steps){prepare(step);render(step);finish(step);}
+        else for(uint32_t first=0;const auto end:plan->waves)
+        {
+            // A wave: each plugin in a worker starts as soon as its inputs are ready; the others
+            // render here meanwhile; then every one finishes, in plan order.
+            for(uint32_t i=first;i<end;++i){auto& step=plan->steps[i];prepare(step);step.started=start(step);}
+            for(uint32_t i=first;i<end;++i)if(!plan->steps[i].started)render(plan->steps[i]);
+            for(uint32_t i=first;i<end;++i)if(plan->steps[i].started)plan->steps[i].processed=plan->steps[i].host->finishProcess();
+            for(uint32_t i=first;i<end;++i)finish(plan->steps[i]);
+            first=end;
         }
 
         // MIDI for external outputs (setMidiTaps), from the input or a node's note outputs.

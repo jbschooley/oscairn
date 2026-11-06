@@ -4,6 +4,7 @@
 // cross-process wait/wake, and the control-socket encoding. Internal to oscairn_plugin_host.
 #pragma once
 #include <kick_clap/Host.h>
+#include "oscairn/realtime.h"
 #include <atomic>
 #include <chrono>
 #include <cstring>
@@ -69,11 +70,6 @@ namespace oscairn::worker
         return true;
     }
     static_assert(std::atomic<uint32_t>::is_always_lock_free && std::atomic<double>::is_always_lock_free && std::atomic<uint64_t>::is_always_lock_free);
-
-    // Waits while word == value; false on timeout. Shared between processes.
-    bool waitWhileEqual(std::atomic<uint32_t>& word, uint32_t value, std::chrono::nanoseconds timeout) noexcept;
-    void wake(std::atomic<uint32_t>& word) noexcept;
-    bool makeRealtime(double periodMicroseconds) noexcept;
 
     // Requests. Init and Shutdown concern the worker; every other request is followed by the
     // index of the plugin node it addresses (a worker hosts one plugin and the effect contexts

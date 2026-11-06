@@ -232,7 +232,17 @@ if(UNIX)
     target_link_libraries(oscairn-handoff-bench PRIVATE kick_clap_host)
     add_test(NAME handoff-bench COMMAND oscairn-handoff-bench --check)
     add_test(NAME handoff-bench-plugin COMMAND oscairn-handoff-bench --check --plugin $<TARGET_FILE:oscairn_basic_synth> --id org.oscairn.basic-synth)
+    # RFC 0034: a graph block's time, serial and parallel (tools/graph-bench).
+    add_executable(oscairn-graph-bench ../tools/graph-bench/graph_bench.cpp)
+    target_link_libraries(oscairn-graph-bench PRIVATE oscairn_control)
 endif()
+
+# RFC 0034: parts rendered at the same time render exactly what they render one after another.
+add_executable(oscairn-parallel-render-test engine/tests/parallel_render.cpp)
+target_link_libraries(oscairn-parallel-render-test PRIVATE oscairn_engine)
+target_include_directories(oscairn-parallel-render-test PRIVATE clap-host/tests)
+add_test(NAME parallel-render COMMAND oscairn-parallel-render-test $<TARGET_FILE:oscairn_transpose> $<TARGET_FILE:oscairn_basic_synth> $<TARGET_FILE:oscairn_delay>)
+set_tests_properties(parallel-render PROPERTIES TIMEOUT 60)
 
 add_executable(oscairn-worker-host-test engine/tests/worker_host.cpp)
 target_link_libraries(oscairn-worker-host-test PRIVATE oscairn_plugin_host)
@@ -300,7 +310,8 @@ set(worker_tests
     "graph-lifecycle|oscairn-graph-lifecycle-test|$<TARGET_FILE:oscairn-lifecycle-fixture>"
     "note-routing|oscairn-note-routing-test|$<TARGET_FILE:oscairn_basic_synth>|$<TARGET_FILE:oscairn-lifecycle-fixture>|$<TARGET_FILE:kick-clap-fixture-normal>"
     "prepared-instances|oscairn-prepared-instances-test|$<TARGET_FILE:kick-clap-fixture-normal>"
-    "midi-effects|oscairn-midi-effects-test|$<TARGET_FILE:oscairn_transpose>|$<TARGET_FILE:oscairn_midi_delay>|$<TARGET_FILE:oscairn_basic_synth>|$<TARGET_FILE:oscairn-audio-midi-fixture>")
+    "midi-effects|oscairn-midi-effects-test|$<TARGET_FILE:oscairn_transpose>|$<TARGET_FILE:oscairn_midi_delay>|$<TARGET_FILE:oscairn_basic_synth>|$<TARGET_FILE:oscairn-audio-midi-fixture>"
+    "parallel-render|oscairn-parallel-render-test|$<TARGET_FILE:oscairn_transpose>|$<TARGET_FILE:oscairn_basic_synth>|$<TARGET_FILE:oscairn_delay>")
 foreach(entry IN LISTS worker_tests)
     string(REPLACE "|" ";" parts "${entry}")
     list(POP_FRONT parts name)

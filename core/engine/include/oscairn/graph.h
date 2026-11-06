@@ -312,6 +312,12 @@ namespace oscairn
                       const clap_event_transport_t* transport,
                       const kick::clap::Event* events = nullptr, uint32_t eventCount = 0, bool adopt = true,
                       const uint8_t* sources = nullptr ) noexcept;
+        /// RFC 0034: nodes that do not depend on each other render at the same time (plugins in
+        /// workers each in its own; the rest on the audio helpers), with exactly the result of
+        /// rendering them one after another. False renders them one after another (for tests and
+        /// measurements; OSCAIRN_GRAPH_SERIAL=1 starts every graph so). Any thread; takes effect at
+        /// the next block.
+        void setParallel( bool parallel ) noexcept { parallel_.store( parallel, std::memory_order_relaxed ); }
         void panicInput() noexcept { panicInput_=true; } // audio thread only
         /// Audio thread, after process(): this block's samples of one of a node's audio output
         /// channels (in port order), or of an external input channel for graphInput; null when the
@@ -401,6 +407,7 @@ namespace oscairn
         std::atomic<Plan*> pending_{ nullptr };
         std::atomic<Listener*> listener_{ nullptr };
         bool panicInput_=false;
+        std::atomic<bool> parallel_{ true }; // see setParallel
         double freeBeats_ = 0; // audio thread: oscairn.beat's position at the next block's start
         Plan*              current_ = nullptr; // audio thread only
         Retired            retired_;

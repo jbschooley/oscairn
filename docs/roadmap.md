@@ -281,7 +281,7 @@ in the others.
    - [ ] parallel graph rendering ([RFC 0034](rfcs/0034-parallel-graph-rendering.md#progress)):
      independent parts render at the same time, plugins in workers each in its own process and
      the engine's on real-time helper threads, sample for sample as serial rendering
-     - [ ] waves, with plugins in workers in parallel
+     - [x] waves, with plugins in workers in parallel
      - [ ] audio helpers for plugins in the engine's process
      - [ ] measured on the target
 4. **Sequencers** ([the comparison](sequencer-evaluation.md) of the KICK firmware's sequencer

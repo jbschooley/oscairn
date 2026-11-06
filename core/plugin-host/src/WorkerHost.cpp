@@ -765,6 +765,16 @@ namespace oscairn
                 }
                 return ok;
             }
+            // A block larger than the shared buffer is split, so it is not started: process() renders it.
+            bool startProcess(const float* const* inputs, uint32_t ni, float* const* outputs, uint32_t no, uint32_t frames,
+                              const kick::clap::Event* events, uint32_t count, const clap_event_transport_t* transport) noexcept override
+            {
+                if(!frames || frames > capacity_) return false;
+                outputCount_ = 0; sysexOutput_->used = 0;
+                started_ = start(inputs, ni, outputs, no, frames, events, count, transport, 0);
+                return true;
+            }
+            bool finishProcess() noexcept override { return started_ && finish(); }
 
         private:
             struct Prepared
@@ -842,14 +852,21 @@ namespace oscairn
             bool block(const float* const* inputs, uint32_t ni, float* const* outputs, uint32_t no, uint32_t frames,
                        const kick::clap::Event* events, uint32_t count, const clap_event_transport_t* transport, uint32_t offset) noexcept
             {
+                if(!frames) return true;
+                return start(inputs, ni, outputs, no, frames, events, count, transport, offset) && finish();
+            }
+            // block's halves: start hands the block to the worker (false: silenced, nothing started);
+            // finish waits for it and takes its outputs.
+            bool start(const float* const* inputs, uint32_t ni, float* const* outputs, uint32_t no, uint32_t frames,
+                       const kick::clap::Event* events, uint32_t count, const clap_event_transport_t* transport, uint32_t offset) noexcept
+            {
                 auto silence = [&] {
                     if(outputs) for(uint32_t c = 0; c < no; ++c) if(outputs[c]) std::fill_n(outputs[c], frames, 0.f);
+                    busy_.store(false);
                     return false;
                 };
-                if(!frames) return true;
-                // While busy, a restart waits; it sets failed first, so a block that starts later sees it.
+                // While busy (until finish), a restart waits; it sets failed first, so a block that starts later sees it.
                 busy_.store(true);
-                struct Idle { std::atomic<bool>& busy; ~Idle() { busy.store(false); } } idle{busy_};
                 auto& s = *shared_;
                 if(process_->failed.load() || frames > s.maxFrames || count > maxEvents || (count && !events) || (no && !outputs)) return silence();
                 if(const auto g = process_->generation.load(); g != generation_) { generation_ = g; faded_ = 0; consecutiveMisses_ = 0; } // restarted
@@ -871,19 +888,35 @@ namespace oscairn
                 s.frames = frames; s.eventCount = kept; s.hasTransport = transport != nullptr;
                 s.ringOut = s.ringOutChannels && no >= s.outputChannels;
                 if(transport) s.transport = *transport;
-                const auto sent = std::chrono::steady_clock::now();
-                requestedAt_.store(sent.time_since_epoch().count(), std::memory_order_release);
+                sent_ = std::chrono::steady_clock::now();
+                requestedAt_.store(sent_.time_since_epoch().count(), std::memory_order_release);
                 requested_.store(++sequence_, std::memory_order_release);
                 s.request.store(sequence_, std::memory_order_release);
                 wake(s.request);
+                startedOutputs_ = outputs; startedChannels_ = no; startedFrames_ = frames; startedOffset_ = offset;
+                return true;
+            }
+            bool finish() noexcept
+            {
+                struct Idle { std::atomic<bool>& busy; ~Idle() { busy.store(false); } } idle{busy_};
+                auto& s = *shared_;
+                const auto outputs = startedOutputs_; const auto no = startedChannels_, frames = startedFrames_, offset = startedOffset_; const auto sent = sent_;
+                auto silence = [&] {
+                    if(outputs) for(uint32_t c = 0; c < no; ++c) if(outputs[c]) std::fill_n(outputs[c], frames, 0.f);
+                    return false;
+                };
+                // The budget counts from the request, however long the caller did other work since.
                 const auto budget = process_->budget;
-                if(!waitWhileEqual(s.done, sequence_ - 1, budget) || s.done.load(std::memory_order_acquire) != sequence_)
+                const bool ready = s.done.load(std::memory_order_acquire) == sequence_;
+                const auto left = std::max(std::chrono::nanoseconds(0), std::chrono::nanoseconds(budget) - (std::chrono::steady_clock::now() - sent));
+                if(!ready && (!waitWhileEqual(s.done, sequence_ - 1, left) || s.done.load(std::memory_order_acquire) != sequence_))
                 {
                     missed();
                     return silence();
                 }
-                // Late by the clock counts toward "too slow" even when the wait itself woke late.
-                if(std::chrono::steady_clock::now() - sent > budget) missed();
+                // Late by the clock counts toward "too slow" even when the wait itself woke late; a
+                // block done before the caller came for it was not late.
+                if(!ready && std::chrono::steady_clock::now() - sent > budget) missed();
                 else consecutiveMisses_ = 0;
                 for(uint32_t c = 0; c < no; ++c)
                 {
@@ -949,6 +982,9 @@ namespace oscairn
             std::atomic<bool> tooSlow_{false}, busy_{false};
             std::atomic<uint64_t> workerMisses_{0};
             uint32_t sequence_ = 0, outputCount_ = 0, consecutiveMisses_ = 0, generation_ = 0, faded_ = 0, fadeFrames_ = 0;
+            // The block start handed over, for finish.
+            float* const* startedOutputs_ = nullptr; uint32_t startedChannels_ = 0, startedFrames_ = 0, startedOffset_ = 0; bool started_ = false;
+            std::chrono::steady_clock::time_point sent_{};
             std::array<kick::clap::Event, maxEvents> chunk_{};
             std::vector<kick::clap::Event> output_, pending_;
             std::unique_ptr<kick::clap::SysexPool> sysexOutput_ = std::make_unique<kick::clap::SysexPool>(); // output_'s SysEx bytes

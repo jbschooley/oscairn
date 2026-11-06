@@ -445,8 +445,10 @@ What changes for the plugin:
 
 - **Its main thread is the worker's.** Calls arrive over a socket; audio and events through
   shared memory.
-- **Time limit:** in real time, a block may take half the block's time; a later one is
-  silenced. Missing a quarter second of blocks in a row (at least 8), or leaving one
+- **Time limit:** in real time, a block may take half the block's time, counted from when the
+  engine hands it over; a later one is silenced. Plugins that do not feed each other render at
+  the same time, each in its worker ([RFC 0034](rfcs/0034-parallel-graph-rendering.md)); effect
+  contexts of one instance never do. Missing a quarter second of blocks in a row (at least 8), or leaving one
   unanswered for 250 ms, is a failure. Offline rendering waits instead.
 - **Memory limit:** 4 GiB by default (`OSCAIRN_WORKER_MEMORY_MB` changes it; 0 is none), read
   every 10 ms as the physical footprint on macOS and resident memory on Linux. When every

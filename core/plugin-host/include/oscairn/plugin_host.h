@@ -113,6 +113,13 @@ namespace oscairn
         // is being restarted or was given up); empty while it plays. Any thread.
         virtual std::string failure() const { return {}; }
         virtual bool process(const float* const* inputs, uint32_t ni, float* const* outputs, uint32_t no, uint32_t frames, const kick::clap::Event* events, uint32_t count, const clap_event_transport_t* transport) noexcept = 0;
+        // Audio thread: process() in two halves, for a plugin that renders elsewhere (in a worker),
+        // so the caller renders others meanwhile (RFC 0034). startProcess hands the block over and
+        // returns without waiting; finishProcess waits for it and returns what process() would have.
+        // False from startProcess: nothing started; call process() instead. The outputs must stay
+        // valid until finishProcess; inputs, events and transport are taken at the start.
+        virtual bool startProcess(const float* const*, uint32_t, float* const*, uint32_t, uint32_t, const kick::clap::Event*, uint32_t, const clap_event_transport_t*) noexcept { return false; }
+        virtual bool finishProcess() noexcept { return false; }
         // Audio thread, after process(): the plugin said it makes no more sound until it gets
         // input (CLAP_PROCESS_SLEEP). False where a host cannot tell.
         virtual bool asleep() const noexcept { return false; }
