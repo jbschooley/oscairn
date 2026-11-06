@@ -29,6 +29,9 @@
 // also runs on the main thread while rendering, into a patch not yet published. With setRingOut,
 // render adds the main output of each context retiring(slot) says into ringOut[0..1] (when set)
 // instead of its main port, so the host can ring it out through the outgoing Performance's chain.
+// Only the main port rings out (other ports follow the incoming chain); there is one buffer per
+// instance (a second change mid-tail moves that tail to the second change's outgoing chain); and a
+// note held over 30 s after the change goes back to the main output (RFC 0005, the limits).
 // It may provide buildPreset(Context&, std::string& error), called with a preset's or a snapshot's
 // patch in place before the context is published (to build per-sound state; false refuses it),
 // snapshotLoading(bool), called around reading a snapshot's patches, and
@@ -313,7 +316,8 @@ namespace oscairn::contexts
             self(p).ringOut = buffer && buffer->channel_count >= 2 && buffer->data32 && buffer->data32[0] && buffer->data32[1] ? buffer->data32 : nullptr;
         }
         // Audio thread, while rendering: the context renders into ringOut (selected by no channel; only
-        // contexts with voices are rendered at all). False without a ring-out buffer.
+        // contexts with voices are rendered at all). False without a ring-out buffer. Its main output
+        // only: a retiring context's other ports render to the instance's ports as usual.
         bool retiring(uint32_t slot) const { return ringOut && !contexts[slot].selected.load(std::memory_order_relaxed); }
 
         // Main thread: a free non-default slot, or null. publish() assigns its ID.

@@ -254,6 +254,17 @@ second outgoing chain: the older tail moves from the first chain to the second a
 in its effects rather than a seamless move. That
 keeps the contract to one buffer; per-generation buffers can come as a draft 3 if it matters.
 
+**Limits, for plugin authors** (none needs code in the plugin; all are heard by its users):
+- **One buffer per instance:** a second change while a first change's tail still rings sends
+  both outgoing sounds through the second change's outgoing chain (the Performance playing just
+  before the second change); at the second cue the older tail jumps from its own chain to that one.
+- **Main output only:** only a retiring sound's main output port rings out through the outgoing
+  chain; its other output ports keep playing through the instance's ports, which follow the
+  incoming chain.
+- **30 seconds:** an outgoing effect fed only by a ring-out route goes once 30 seconds pass with
+  no note through it, so a note held through the change for longer loses the outgoing effects and
+  its tail moves back to the main output, through the incoming chain.
+
 **In the SDK**, `Engine` keeps the buffer `ring_out` gives (`Engine::ringOut`, cleared when
 `process()` returns) and `Engine::retiring(context)` says whether a context renders into it; an
 instrument's `render` writes a retiring context's main output to `ringOut` instead of its main

@@ -172,6 +172,17 @@ What the plugin must then do:
   port; `Engine` clears it when each `process()` returns. Other ports are unchanged. A plugin built
   against draft 1 must be rebuilt against draft 2 (draft 1 is no longer read); leaving
   `ring_out` null keeps today's behavior, its tails playing through the incoming chain.
+  With `ring_out`, three limits, which a plugin needs no code for but its users hear:
+  - **One buffer per instance.** A second Performance change while a first change's tail still
+    rings sends both outgoing sounds through the *second* change's outgoing chain (the
+    Performance that was playing just before the second change): at the second cue, the older
+    tail jumps from its own chain to that one.
+  - **Main output only.** Only a retiring sound's main output port rings out through the
+    outgoing chain. Its other output ports (the Basic Synth's sound buses, for example) keep
+    playing through the instance's ports, which follow the incoming Performance's chain.
+  - **30 seconds.** An outgoing effect fed only by the ring-out buffer goes once 30 seconds pass
+    with no note through it. A note held through the change for longer loses the outgoing
+    effects, and its tail moves back to the main output, through the incoming chain.
 
 ### Presets
 

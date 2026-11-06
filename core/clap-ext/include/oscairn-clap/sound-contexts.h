@@ -71,7 +71,11 @@ typedef struct oscairn_plugin_sound_contexts {
  * returns; a process() not preceded by a call has none. During that process() the plugin adds the
  * main-port output of every retiring context (selected by no MIDI channel, with voices or a tail
  * left) into the buffer instead of its main output port. It is not an audio port: the plugin
- * only stores the pointer, without allocating, locking or blocking. */
+ * only stores the pointer, without allocating, locking or blocking.
+ * Limits (RFC 0005): one buffer per instance, so a second Performance change while a tail still
+ * rings sends that tail through the second change's outgoing chain (the Performance playing just
+ * before it); only the main port rings out, other output ports follow the incoming chain; and a
+ * note held more than 30 s after the change goes back to the main output, the incoming chain. */
 static const char OSCAIRN_EXT_SOUND_SNAPSHOTS[] = "oscairn.sound-snapshots/draft-2";
 typedef struct oscairn_plugin_sound_snapshots {
     bool (CLAP_ABI *prepare)(const clap_plugin_t*,const clap_istream_t* snapshot,uint32_t* selected,char* message,uint32_t message_capacity);
