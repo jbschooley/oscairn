@@ -55,6 +55,11 @@ namespace
         check(ok, "render");
         return l[frames - 1];
     }
+    // Before an audio thread starts: the fixture asks for a restart (its gain above .9) once a block
+    // hands it the gain service() sent, and the next service() makes it under the plugin's gate. A
+    // block the audio thread renders meanwhile is silent and resets the plugin (a busy gate can
+    // discard a release), cutting the note held for the whole test: so the restart comes first.
+    void settle(Session& s) { s.service(); render(s); s.service(); }
     void cc(Session& s, uint8_t number, uint8_t value, uint8_t source = smk)
     {
         const uint8_t bytes[3]{0xB0, number, value};
@@ -389,7 +394,7 @@ namespace
         check(socketpair(AF_UNIX, SOCK_STREAM, 0, fds.data()) == 0, "socketpair");
         for(auto fd : fds) fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK);
         server.adopt(fds[0]);
-        s.note(true, 60, 1);
+        s.note(true, 60, 1); settle(s);
 
         // Audio thread: a block every period, its last sample kept with when it was rendered.
         std::atomic<float> heard{0};
@@ -522,7 +527,7 @@ namespace
         s.setPartPan(pa, 0); s.commit(); s.service();
         std::atomic<bool> woken{false}, stop{false};
         s.setControllerWake([&] { woken = true; });
-        s.note(true, 60, 1);
+        s.note(true, 60, 1); settle(s);
         std::atomic<float> heard{0}, heardLeft{0};
         std::atomic<int64_t> heardAt{0};
         Blocks blocks;
