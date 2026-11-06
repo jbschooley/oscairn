@@ -245,6 +245,27 @@ namespace
             p.play({Event::note(true, 60, .8, 0, 0), Event::note(true, 67, .8, 0, 1)});
             for(int i = 0; i < 20; ++i) { p.play(); for(uint32_t f = 0; f < frames; ++f) energy += std::abs(p.l[f]); }
             check(energy > 0, "Basic Synth: the restored sounds play");
+            // oscairn.voice-budget names sounds by the engine's IDs, which the restored worker gives
+            // other IDs of its own: within one voice, channel 1's held key, its sound marked mono,
+            // outlasts channel 2's louder ones.
+            p.play({Event::note(true, 70, 1, 0, 1), Event::note(true, 72, 1, 0, 1), Event::note(true, 74, 1, 0, 1)});
+            const oscairn_voice_budget_context_t mono{selected[0], 0, 0, 0, OSCAIRN_VOICE_BUDGET_MONO};
+            host.setVoiceLimits(1, &mono, 1);
+            auto voices = [&] {
+                uint32_t first = 0, second = 0;
+                for(const auto& c : host.soundContexts()) { if(c.id == selected[0]) first = c.active_voices; if(c.id == selected[1]) second = c.active_voices; }
+                return std::to_string(first) + " and " + std::to_string(second);
+            };
+            // Until the fades end; a loaded machine misses blocks, which then render no fade.
+            auto settle = [&] { for(int i = 0; i < 400 && voices() != "1 and 0"; ++i) p.play(); };
+            settle();
+            check(voices() == "1 and 0", "Basic Synth: a voice limit after the restart keeps the mono sound's key: " + voices());
+            // A worker restarted again is given the limits again.
+            killWorkers();
+            awaitRestart(p, [&] { return host.statistics().restarts >= 2; });
+            p.play({Event::note(true, 60, .5, 0, 0), Event::note(true, 70, 1, 0, 1), Event::note(true, 72, 1, 0, 1), Event::note(true, 74, 1, 0, 1)});
+            settle();
+            check(voices() == "1 and 0", "Basic Synth: the limits outlast a restart: " + voices());
         }
         { // Sampler: a sound whose sample resolves through the asset store, again after the restart.
             oscairn::assets::Store store(directory / "assets");

@@ -71,7 +71,7 @@ namespace oscairn
         // sounds retiring then fade out over the choke time into the buffer's last two channels. Control thread.
         virtual bool chokeRetiring() { return false; }
         // oscairn.voice-budget (RFC 0018): the plugin gives up its own voices within a limit; the
-        // calls as kick::clap::Host's. A host without it (a plugin in a worker, LV2) has none.
+        // calls as kick::clap::Host's. A host without it (LV2) has none.
         virtual bool voiceBudget() const noexcept { return false; }
         virtual bool honorsVolume() const noexcept { return false; }
         virtual void setVoiceLimits(uint32_t, const oscairn_voice_budget_context_t*, uint32_t) noexcept {}

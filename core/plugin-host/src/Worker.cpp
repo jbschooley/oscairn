@@ -135,6 +135,10 @@ namespace oscairn::worker
         return fd;
     }
 
+#ifdef OSCAIRN_HOSTILE_WORKER
+    void hostileReport(Shared& s) noexcept; // a test's worker only: overwrites what the plugin reported
+#endif
+
     namespace
     {
         uint32_t channels(const std::vector<kick::clap::Port>& ports) { uint32_t n = 0; for(const auto& p : ports) n += p.channels; return n; }
@@ -168,6 +172,7 @@ namespace oscairn::worker
             w.u8(host.supportsState()).u32(host.soundContextCapacity()).u8(host.effectResources().has_value());
             w.u8(host.hasWindow());
             w.u8(host.preparesSnapshots()); w.u8(host.ringsOut());
+            w.u8(host.voiceBudget()); w.u8(host.honorsVolume());
         }
 
         // A crashing worker may take longer to exit than the hang limit (sanitizers report first), so
@@ -234,6 +239,8 @@ namespace oscairn::worker
                 if(next == seen) continue;
                 seen = next;
                 if(s.panic.exchange(0, std::memory_order_acq_rel)) host.panic();
+                // oscairn.voice-budget: the engine's new limits, before the block, as kick::clap::Host takes them.
+                if(s.setLimits) host.setVoiceLimits(s.voiceLimit, s.voiceContexts, std::min(s.voiceContextCount, OSCAIRN_VOICE_BUDGET_MAX_CONTEXTS));
                 uint32_t events = 0; // SysEx pointed at this process's mapping of the pool
                 for(uint32_t i = 0; i < std::min(s.eventCount, maxEvents); ++i) if(unshare(s.events[i], s.inputBytes)) s.events[events++] = s.events[i];
                 const bool ok = host.process(in.data(), s.inputChannels, out.data(), s.outputChannels - (s.ringOut ? 0 : s.ringOutChannels), s.frames,
@@ -260,6 +267,15 @@ namespace oscairn::worker
                 s.deadlineMisses.store(st.deadlineMisses); s.controlSilences.store(st.controlSilences); s.idleBlocks.store(st.idleBlocks);
                 s.lastMicroseconds.store(st.lastMicroseconds); s.maximumMicroseconds.store(st.maximumMicroseconds);
                 s.asleep.store(host.asleep() ? 1 : 0, std::memory_order_relaxed);
+                {
+                    double cost = 0; const oscairn_voice_budget_note_t* notes = nullptr; uint32_t noteCount = 0;
+                    s.activeVoices = host.voiceReport(cost, notes, noteCount); s.voiceCost = cost;
+                    s.voiceNoteCount = notes ? std::min(noteCount, maxVoiceNotes) : 0;
+                    std::copy_n(notes, s.voiceNoteCount, s.voiceNotes);
+                }
+#ifdef OSCAIRN_HOSTILE_WORKER
+                hostileReport(s);
+#endif
                 s.done.store(seen, std::memory_order_release);
                 wake(s.done);
             }

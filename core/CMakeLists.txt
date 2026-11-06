@@ -308,6 +308,13 @@ target_include_directories(oscairn-voice-extension-test PRIVATE clap-host/tests)
 add_dependencies(oscairn-voice-extension-test oscairn-voice-fixture)
 add_test(NAME voice-extension COMMAND oscairn-voice-extension-test $<TARGET_FILE:oscairn_basic_synth> $<TARGET_FILE:oscairn-voice-fixture>)
 set_tests_properties(voice-extension PROPERTIES TIMEOUT 120)
+# The worker is untrusted: one writing an out-of-range voice report is bounded by the engine.
+add_executable(oscairn-hostile-worker plugin-host/src/worker_main.cpp plugin-host/src/Worker.cpp engine/tests/hostile_worker.cpp)
+target_compile_definitions(oscairn-hostile-worker PRIVATE OSCAIRN_HOSTILE_WORKER)
+target_include_directories(oscairn-hostile-worker PRIVATE plugin-host/src)
+target_link_libraries(oscairn-hostile-worker PRIVATE oscairn_plugin_host)
+add_test(NAME voice-extension-hostile COMMAND oscairn-voice-extension-test $<TARGET_FILE:oscairn_basic_synth> $<TARGET_FILE:oscairn-voice-fixture> $<TARGET_FILE:oscairn-hostile-worker>)
+set_tests_properties(voice-extension-hostile PROPERTIES TIMEOUT 60 ENVIRONMENT "OSCAIRN_WORKER_BUDGET_US=50000")
 
 # Sanitizers slow rendering several times over; there the test checks containment, not timing.
 # CI's virtual machines cannot keep real time either (GitHub sets CI).
@@ -343,7 +350,9 @@ set(worker_tests
     "note-routing|oscairn-note-routing-test|$<TARGET_FILE:oscairn_basic_synth>|$<TARGET_FILE:oscairn-lifecycle-fixture>|$<TARGET_FILE:kick-clap-fixture-normal>"
     "prepared-instances|oscairn-prepared-instances-test|$<TARGET_FILE:kick-clap-fixture-normal>"
     "midi-effects|oscairn-midi-effects-test|$<TARGET_FILE:oscairn_transpose>|$<TARGET_FILE:oscairn_midi_delay>|$<TARGET_FILE:oscairn_basic_synth>|$<TARGET_FILE:oscairn-audio-midi-fixture>"
-    "parallel-render|oscairn-parallel-render-test|$<TARGET_FILE:oscairn_transpose>|$<TARGET_FILE:oscairn_basic_synth>|$<TARGET_FILE:oscairn_delay>")
+    "parallel-render|oscairn-parallel-render-test|$<TARGET_FILE:oscairn_transpose>|$<TARGET_FILE:oscairn_basic_synth>|$<TARGET_FILE:oscairn_delay>"
+    "voice-extension|oscairn-voice-extension-test|$<TARGET_FILE:oscairn_basic_synth>|$<TARGET_FILE:oscairn-voice-fixture>"
+    "shared-engine|oscairn-shared-engine-test|$<TARGET_FILE:oscairn_basic_synth>")
 foreach(entry IN LISTS worker_tests)
     string(REPLACE "|" ";" parts "${entry}")
     list(POP_FRONT parts name)

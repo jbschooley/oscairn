@@ -17,6 +17,7 @@ namespace oscairn::worker
     constexpr uint32_t maxEvents = kick::clap::Host::maxProcessEvents; // a graph block's notes plus its beat and harmony (see maxProcessEvents)
     constexpr uint32_t maxOutputEvents = 1024;
     constexpr uint32_t maxParameters = 4096;
+    constexpr uint32_t maxVoiceNotes = kick::clap::Host::maxBlockEvents; // the notes a voice-budget report holds, as kick::clap::Host's
 
     // Header of the shared block; audio follows it. request/done carry block sequence
     // numbers; the engine writes everything before request, the worker after done.
@@ -34,6 +35,13 @@ namespace oscairn::worker
         uint32_t ringOutChannels = 0, ringOut = 0;
         double sampleRate = 48000;
         clap_event_transport_t transport{};
+        // oscairn.voice-budget (RFC 0018). The engine's: when setLimits, the limits the plugin takes
+        // before this block. The worker's: what the plugin reported after it, which the engine bounds.
+        uint32_t setLimits = 0, voiceLimit = 0, voiceContextCount = 0;
+        oscairn_voice_budget_context_t voiceContexts[OSCAIRN_VOICE_BUDGET_MAX_CONTEXTS]{};
+        uint32_t activeVoices = 0, voiceNoteCount = 0;
+        double voiceCost = 0;
+        oscairn_voice_budget_note_t voiceNotes[maxVoiceNotes]{};
         std::atomic<uint64_t> outputDrops{0}, blocks{0}, droppedEvents{0}, processErrors{0}, deadlineMisses{0}, controlSilences{0}, idleBlocks{0};
         std::atomic<double> lastMicroseconds{0}, maximumMicroseconds{0};
         kick::clap::Event events[maxEvents];

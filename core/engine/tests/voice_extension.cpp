@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// RFC 0018 step 4: oscairn.voice-budget, rendered offline. Usage: basic-synth voice-fixture.
+// RFC 0018 step 4: oscairn.voice-budget, rendered offline. Usage: basic-synth voice-fixture
+// [hostile-worker]; with voice-extension-workers, in workers (the limits and the report cross the
+// worker's shared block).
 //
 // One pool, several sounds (the SDK helper, in the Basic Synth): today's case is a Performance
 // change, the outgoing sound ringing out beside the incoming one in one instance (RFC 0021). With
@@ -12,9 +14,13 @@
 // before, as an AWM2-class sound's elements, through the SDK's voice-budget-plugin.hpp): under the
 // shared budget the host limits its voices, and it drops its quietest elements, so every note
 // still sounds, and the host gives up none of its notes.
+//
+// With a hostile worker (one writing out-of-range counts, costs and levels after each block) only:
+// the engine bounds what it reads, and the budget goes on with it.
 #include "oscairn/graph.h"
 #include "AllocationGuard.h"
 #include <array>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <iostream>
@@ -26,9 +32,34 @@ using kick::clap::Event;
 static void check(bool ok,const std::string& why){if(!ok)throw std::runtime_error(why);}
 
 int main(int argc,char** argv){try{
-    if(argc!=3)return 2;
+    if(argc!=3 && argc!=4)return 2;
     constexpr uint32_t frames=64;
     std::array<float,frames> left{},right{};float* out[]{left.data(),right.data()};
+    if(argc==4){
+        PlacementPolicy policy;policy.worker=argv[3];setPlacementPolicy(policy);
+        Graph g(48000,frames);const auto s=g.add(argv[1]);
+        g.connectNotes(graphInput,s);g.connectAudio(s,graphOutput);g.commit();
+        g.setVoiceBudget(600);
+        auto& synth=g.host(s);
+        check(synth.inWorker() && synth.voiceBudget(),"the Basic Synth in the hostile worker, with the extension");
+        std::array<oscairn_voice_budget_context_t,OSCAIRN_VOICE_BUDGET_MAX_CONTEXTS+4> many{};
+        synth.setVoiceLimits(4,many.data(),uint32_t(many.size())); // more contexts than the block holds
+        bool clamped=false;
+        for(int i=0;i<40;++i){
+            const auto e=Event::note(true,48+i,.8);
+            forbidAllocation=true;g.process(out,frames,nullptr,&e,1);forbidAllocation=false;
+            double cost;const oscairn_voice_budget_note_t* notes;uint32_t count;
+            const uint32_t voices=synth.voiceReport(cost,notes,count);
+            check(voices<=(1u<<16) && count<=kick::clap::Host::maxBlockEvents,"counts bounded: "+std::to_string(voices)+" voices, "+std::to_string(count)+" notes");
+            check(std::isfinite(cost) && cost>=0 && cost<=1e6,"a cost in range: "+std::to_string(cost));
+            for(uint32_t n=0;n<count;++n)check(std::isfinite(notes[n].loudness) && notes[n].loudness>=0,"a level in range: "+std::to_string(notes[n].loudness));
+            clamped=clamped || (voices==(1u<<16) && count==kick::clap::Host::maxBlockEvents);
+        }
+        check(clamped,"the worker's out-of-range report arrived, bounded");
+        check(synth.failure().empty(),"the worker kept running: "+synth.failure());
+        std::puts("ok: a hostile worker's voice report bounded");
+        return 0;
+    }
     {
         Graph g(48000,frames);const auto s=g.add(argv[1]);
         g.connectNotes(graphInput,s);g.connectAudio(s,graphOutput);g.commit();

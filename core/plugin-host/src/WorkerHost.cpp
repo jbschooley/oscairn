@@ -342,6 +342,7 @@ namespace oscairn
                 for(uint32_t i = 0; i < noteInputs_; ++i) clapNotes_.push_back(r.u8());
                 state_ = r.u8(); contexts_ = r.u32(); effects_ = r.u8();
                 window_ = r.u8(); snapshots_ = r.u8(); ringOut_ = r.u8();
+                voiceBudget_ = r.u8(); honorsVolume_ = r.u8();
                 description_ = r.data.substr(at, r.at - at);
 
                 // Shared block, sized for the ports and maximum block, handed over as a descriptor.
@@ -371,6 +372,7 @@ namespace oscairn
                     fadeFrames_ = faded_ = uint32_t(process_->rate * .01);
                     // The sounds present from the start keep their IDs.
                     if(contexts_) for(const auto& c : contexts()) remember(c, c.id);
+                    publishIds();
                 }
                 catch(...) { release(); throw; }
                 std::lock_guard lock(process_->nodesMutex);
@@ -420,7 +422,7 @@ namespace oscairn
                         map[p.id] = worker;
                     }
                     for(const auto id : discarded_) map.erase(id);
-                    ids_ = map;
+                    ids_ = map; publishIds();
                     for(int16_t c = 0; c < 16; ++c) if(auto i = ids_.find(selected_[c]); i != ids_.end())
                         process_->exchange(header(Op::SelectSound).u32(i->second).u32(uint32_t(c)).data);
                     fresh_ = true;
@@ -587,7 +589,7 @@ namespace oscairn
                 Prepared p{0, name, values, state, preset, sfz, library, directory};
                 const auto worker = prepare(p);
                 if(!contexts_ || worker == CLAP_INVALID_ID) return worker;
-                p.id = allocate(worker); ids_[p.id] = worker;
+                p.id = allocate(worker); ids_[p.id] = worker; publishIds();
                 prepared_.push_back(std::move(p));
                 return prepared_.back().id;
             }
@@ -606,11 +608,26 @@ namespace oscairn
                 const auto i = ids_.find(id);
                 if(contexts_ && i == ids_.end()) return false;
                 if(!process_->exchange(header(Op::DiscardSound).u32(contexts_ ? i->second : id).u8(cutTail).data).u8()) return false;
-                ids_.erase(id);
+                ids_.erase(id); publishIds();
                 // One the recovery record holds is discarded again after a restart; one from before a
                 // snapshot prepared beside became the record is not in it.
                 if(std::erase_if(prepared_, [&](const auto& p) { return p.id == id; }) == 0 && std::find(base_.begin(), base_.end(), id) != base_.end()) discarded_.push_back(id);
                 return true;
+            }
+            // oscairn.voice-budget (RFC 0018): the limits ride the next block's request, the report
+            // its answer, as kick::clap::Host takes and gives them. Audio thread.
+            bool voiceBudget() const noexcept override { return voiceBudget_; }
+            bool honorsVolume() const noexcept override { return honorsVolume_; }
+            void setVoiceLimits(uint32_t limit, const oscairn_voice_budget_context_t* contexts, uint32_t count) noexcept override
+            {
+                if(!voiceBudget_) return;
+                voiceLimit_ = limit; voiceContextCount_ = contexts ? std::min(count, OSCAIRN_VOICE_BUDGET_MAX_CONTEXTS) : 0;
+                std::copy_n(contexts, voiceContextCount_, voiceContexts_.begin());
+                limitsWaiting_ = true;
+            }
+            uint32_t voiceReport(double& voiceCost, const oscairn_voice_budget_note_t*& notes, uint32_t& count) const noexcept override
+            {
+                voiceCost = voiceCost_; notes = voiceNotes_.data(); count = voiceNoteCount_; return activeVoices_;
             }
             bool preparesSnapshots() const noexcept override { return snapshots_; }
             bool ringsOut() const noexcept override { return ringOut_; }
@@ -634,6 +651,7 @@ namespace oscairn
                 std::sort(fresh.begin(), fresh.end());
                 std::map<uint32_t, uint32_t> engine; std::vector<uint32_t> base;
                 for(const auto w : fresh) { const auto id = allocate(w); ids_[id] = w; engine[w] = id; base.push_back(id); }
+                publishIds();
                 std::array<uint32_t, 16> selected{};
                 for(size_t ch = 0; ch < 16; ++ch)
                 {
@@ -874,7 +892,7 @@ namespace oscairn
                 busy_.store(true);
                 auto& s = *shared_;
                 if(process_->failed.load() || frames > s.maxFrames || count > maxEvents || (count && !events) || (no && !outputs)) return silence();
-                if(const auto g = process_->generation.load(); g != generation_) { generation_ = g; faded_ = 0; consecutiveMisses_ = 0; } // restarted
+                if(const auto g = process_->generation.load(); g != generation_) { generation_ = g; faded_ = 0; consecutiveMisses_ = 0; limitsWaiting_ = voiceBudget_; } // restarted
                 // A block the worker has not finished yet: stay silent rather than queue another.
                 if(s.done.load(std::memory_order_acquire) != sequence_) { workerMisses_.fetch_add(1, std::memory_order_relaxed); return silence(); }
                 for(uint32_t c = 0; c < s.inputChannels; ++c)
@@ -891,6 +909,8 @@ namespace oscairn
                     else sysexDrops_.fetch_add(1, std::memory_order_relaxed);
                 }
                 s.frames = frames; s.eventCount = kept; s.hasTransport = transport != nullptr;
+                s.setLimits = limitsWaiting_ && shareLimits(s);
+                if(s.setLimits) limitsWaiting_ = false;
                 s.ringOut = s.ringOutChannels && no >= s.outputChannels;
                 if(transport) s.transport = *transport;
                 sent_ = std::chrono::steady_clock::now();
@@ -941,7 +961,57 @@ namespace oscairn
                     reinterpret_cast<clap_event_header_t*>(e.bytes.data())->time += offset;
                     ++outputCount_;
                 }
+                // The worker's voice report, copied and bounded: the worker may write anything.
+                if(voiceBudget_)
+                {
+                    activeVoices_ = std::min<uint32_t>(s.activeVoices, maxVoices);
+                    const double cost = s.voiceCost;
+                    voiceCost_ = std::isfinite(cost) && cost > 0 ? std::min(cost, 1e6) : 0;
+                    voiceNoteCount_ = std::min<uint32_t>(s.voiceNoteCount, maxVoiceNotes);
+                    for(uint32_t i = 0; i < voiceNoteCount_; ++i)
+                    {
+                        auto& n = voiceNotes_[i] = s.voiceNotes[i];
+                        if(!(std::isfinite(n.loudness) && n.loudness > 0)) n.loudness = 0;
+                    }
+                }
                 return s.ok;
+            }
+
+            // The waiting limits into the block, each context under the worker's ID for it; false
+            // while the IDs are being republished, to try again at the next block. A context the
+            // worker does not know is left out. Audio thread.
+            bool shareLimits(Shared& s) noexcept
+            {
+                const auto version = idVersion_.load(std::memory_order_acquire);
+                if(version & 1) return false;
+                const auto known = std::min<uint32_t>(idCount_.load(std::memory_order_relaxed), maxIds);
+                uint32_t n = 0;
+                for(uint32_t i = 0; i < voiceContextCount_; ++i)
+                {
+                    auto c = voiceContexts_[i];
+                    if(contexts_ && c.context != OSCAIRN_VOICE_BUDGET_SELECTED)
+                    {
+                        uint32_t j = 0;
+                        while(j < known && uint32_t(idTable_[j].load(std::memory_order_relaxed) >> 32) != c.context) ++j;
+                        if(j == known) continue;
+                        c.context = uint32_t(idTable_[j].load(std::memory_order_relaxed));
+                    }
+                    s.voiceContexts[n++] = c;
+                }
+                std::atomic_thread_fence(std::memory_order_acquire);
+                if(idVersion_.load(std::memory_order_relaxed) != version) return false;
+                s.voiceLimit = voiceLimit_; s.voiceContextCount = n;
+                return true;
+            }
+            // ids_ for the audio thread, under a count that is odd while it changes. Under control.
+            void publishIds() noexcept
+            {
+                idVersion_.fetch_add(1, std::memory_order_relaxed);
+                std::atomic_thread_fence(std::memory_order_release);
+                uint32_t n = 0;
+                for(const auto& [engine, worker] : ids_) if(n < maxIds) idTable_[n++].store(uint64_t(engine) << 32 | worker, std::memory_order_relaxed);
+                idCount_.store(n, std::memory_order_relaxed);
+                idVersion_.fetch_add(1, std::memory_order_release);
             }
 
             // A block that ran out of budget. Only these count toward "too slow"; a block the
@@ -964,7 +1034,7 @@ namespace oscairn
             std::vector<kick::clap::Port> inputs_, outputs_;
             uint32_t noteInputs_ = 0, noteOutputs_ = 0, contexts_ = 0;
             std::vector<uint8_t> clapNotes_;
-            bool state_ = false, effects_ = false, window_ = false, snapshots_ = false, ringOut_ = false;
+            bool state_ = false, effects_ = false, window_ = false, snapshots_ = false, ringOut_ = false, voiceBudget_ = false, honorsVolume_ = false;
             std::string windowTitle_; // the window the engine last opened, for a restarted worker; under control
             int shm_ = -1;
             Shared* shared_ = nullptr; size_t bytes_ = 0;
@@ -994,6 +1064,19 @@ namespace oscairn
             std::vector<kick::clap::Event> output_, pending_;
             std::unique_ptr<kick::clap::SysexPool> sysexOutput_ = std::make_unique<kick::clap::SysexPool>(); // output_'s SysEx bytes
             std::atomic<uint64_t> sysexDrops_{0}; // SysEx that did not fit a block's pool on the way in or out
+            // oscairn.voice-budget, audio thread: the limits waiting for the next block (the engine's
+            // sound IDs), and the worker's last report, bounded. Voices past maxVoices are not credible.
+            static constexpr uint32_t maxVoices = 1u << 16;
+            bool limitsWaiting_ = false;
+            uint32_t voiceLimit_ = 0, voiceContextCount_ = 0, activeVoices_ = 0, voiceNoteCount_ = 0;
+            std::array<oscairn_voice_budget_context_t, OSCAIRN_VOICE_BUDGET_MAX_CONTEXTS> voiceContexts_{};
+            double voiceCost_ = 0;
+            std::array<oscairn_voice_budget_note_t, maxVoiceNotes> voiceNotes_{};
+            // Engine sound ID << 32 | the worker's, as ids_ last had them (publishIds).
+            // shortcut: sounds past maxIds are left out of voice limits; raise it if an instance holds more.
+            static constexpr uint32_t maxIds = 64;
+            std::array<std::atomic<uint64_t>, maxIds> idTable_{};
+            std::atomic<uint32_t> idCount_{0}, idVersion_{0};
             size_t next_ = 0;
         };
 

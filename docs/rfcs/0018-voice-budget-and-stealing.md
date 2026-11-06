@@ -335,8 +335,19 @@ plugin implements.
   reported loudness in place of its velocity for ordering notes. It does not fade or choke that
   plugin's notes while the plugin keeps within its limit; after 16 blocks running over it, its
   notes go as any plugin's. A held note of a plugin that says it honors volume expressions is
-  faded before one of a plugin that does not. A plugin in a worker process is budgeted as one
-  without the extension (the worker protocol does not carry it yet), and so is an LV2 plugin.
+  faded before one of a plugin that does not. A plugin in a worker process gets the same
+  (below); an LV2 plugin is budgeted as one without the extension.
+- **In a worker process** ([RFC 0010](0010-plugin-worker-isolation.md#audio-hand-off), built
+  2026-11-06): the worker describes the plugin with whether it has the extension and honors
+  volume expressions, read once at load. The limits ride the next block's shared block (a flag,
+  the limit and up to 16 contexts), which the worker gives the plugin before that block, and
+  the report comes back in the same block (the voices, the cost per voice and up to 512 notes).
+  The engine names sounds by its own IDs and translates them to the worker's, which differ
+  after a restart; a restarted worker is given the last limits again. No request crosses the
+  socket per block, and nothing allocates. The worker is untrusted, so the engine copies the
+  report out and bounds it: at most 512 notes and 65,536 voices, a cost of 0 to 1 s (0 when
+  not finite), and a level of 0 when not finite or below 0. The worker takes at most 16
+  contexts whatever the block says.
 - **Parts sharing one instance** ([RFC 0021's slice 3](0021-sounds-performances-and-library.md#parts-sharing-one-engine)):
   the host sends an entry per part, naming the sound its channel selects, with that part's
   reserve and priority, so one pool across parts keeps each part's reserve (built 2026-11-06).
@@ -379,12 +390,27 @@ held mono key stays: 0 and 4"; without released-first and own-sound-first, "the 
 released voices gave way ...: 4"; with oldest in place of quietest, "every note still sounds:
 5"; with the graph sending no limit, the host choked four of its notes and four sounded.
 
+In workers: `voice-extension-workers` and `shared-engine-workers` run the same checks with the
+plugin in a worker, and `voice-budget-workers` still passes. Without the worker carrying the
+extension they fail "the Basic Synth offers oscairn.voice-budget" and "an entry per part: 0";
+with the capability but no limits in the block, "the outgoing sound's released voices gave
+way, its held mono key did not: 4"; with no report, "four notes reported, a voice each".
+`worker-recovery` sets a limit after a restart that renumbered the worker's sounds, marking one
+sound mono, and its held key outlasts another sound's louder ones; then the worker is killed
+again and the limit still holds. Without the ID translation it fails "...keeps the mono sound's
+key: 0 and 1"; without sending the limits again after a restart, "the limits outlast a restart:
+1 and 3". `voice-extension-hostile` runs the Basic Synth in a test build of the worker
+(`oscairn-hostile-worker`) that overwrites each report with counts at their largest or one past
+the bounds, NaN, negative and infinite costs and levels: every report the engine gives is in
+range, and the worker keeps running. Without the voice bound it fails "counts bounded:
+4294967295 voices"; without the note bound the engine crashes.
+
 Not yet: the Sampler, which lives in its own repository (`oscairn/sampler`) and needs its
 `get_extension` to return the Engine's table and its own `loudness`; the gate, a layered
 AWM2-class sound under pressure dropping quiet elements before whole notes, is **unverified**
 (RFC 0013's engine is not started; the fixture imitates its layers, and the converter session's
-sfizz-based sampler in the forks is to test it); carrying the extension through a worker
-process; and part modes (mono, legato) to send.
+sfizz-based sampler in the forks is to test it); LV2 plugins; and part modes (mono, legato)
+to send.
 
 ## Build order and gates
 

@@ -204,8 +204,10 @@ keeps each part's reserve. An instance one part plays alone gets one entry, for 
 contexts, which also covers a Performance change (the outgoing sounds ringing out beside the
 incoming ones). No entry carries a limit of its own (the host keeps a part's note limit itself)
 or mode flags (parts have no mono or legato mode yet). The host supports the extension
-for plugins in the engine's process; a plugin in a worker process (RFC 0010) is budgeted as one
-without it.
+for plugins in the engine's process and in a worker process (RFC 0010) alike: in a worker,
+`honors_volume` is asked once at load, and the limits and the report ride each block's shared
+memory, with the same threads and timing. The engine keeps at most 512 notes of a report and
+65,536 voices.
 
 ### Instant Performance changes
 

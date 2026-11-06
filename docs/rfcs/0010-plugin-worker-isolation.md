@@ -82,6 +82,11 @@ block the engine's graph pass:
 3. the engine waits, bounded by that node's share of the block's deadline, then reads outputs
    and events and continues the graph.
 
+The block also carries `oscairn.voice-budget`
+([RFC 0018](0018-voice-budget-and-stealing.md#step-4-status)): the limits the plugin takes before
+it, and the voices and notes it reports after it, which the engine bounds, as it bounds every
+count of output events the worker writes.
+
 This keeps same-block, sample-accurate routing with no added latency, at the cost of one wake
 and one completion per worker per block. Independent graph branches in different workers can
 run in parallel on separate cores. A one-block-delay mode, where a worker computes the next
