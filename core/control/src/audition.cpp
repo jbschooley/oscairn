@@ -27,7 +27,10 @@ namespace oscairn
             if(budget_.cpu > 0)
                 if(const auto e = estimate(found.path); e.fits && !e.seamless)
                     throw std::runtime_error("auditioning " + found.name + " needs room for it and the open Performance together, more than this device allows");
-            loadPerformance(found.path); // as opening it, but not marked used
+            // As opening it, but not marked used, and taking over none of the instances set aside,
+            // which stopping puts back as they were (RFC 0021).
+            struct Keeping { bool& keep; ~Keeping() { keep = false; } } keeping{keepInstances_ = true};
+            loadPerformance(found.path);
         }
         audition_ = std::move(a);
     }

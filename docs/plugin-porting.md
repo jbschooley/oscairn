@@ -363,6 +363,14 @@ stepped, hidden and read-only flags. How the editors use them:
   fit the device's budget, the change is a cut instead. A setlist prepares its next
   Performance while one plays: that one's plugins are created, activated and given their saved
   state, and get their main-thread callbacks, perhaps minutes before they first process.
+- **Expect a second life:** an instance that has played may be given another Performance's
+  state instead of the host loading a new instance
+  ([RFC 0021](rfcs/0021-sounds-performances-and-library.md#free-instances-across-a-change-and-instances-kept-warm)):
+  once it is silent, the host deactivates it, loads the state and activates it, under a new
+  node. It must then sound exactly as a fresh instance given that state, sample for sample (the
+  host's render comparison checks the bundled plugins for it): clear voices, delay lines, filter
+  memory, envelopes, LFO phases and random seeds on `activate` (and on `reset`), and keep nothing
+  from the last state that the new one does not set.
 - **Keep your cost steady:** the host measures each plugin's CPU per block and its memory on
   the device, by plugin ID, version and build, and refuses a Performance, or
   an added plugin, that would go over the device's budget, saying why

@@ -260,6 +260,7 @@ namespace oscairn
         uint64_t droppedNotes() const noexcept { return droppedNotes_.load(); }
         double sampleRate() const noexcept { return sampleRate_; }
         size_t leaving() const noexcept { return leaving_.size(); } // the last Performance's plugins still ringing out
+        uint64_t reusedInstances() const noexcept { return reused_; } // plugin instances a Performance opened took over instead of loading (RFC 0021)
         // RFC 0025: memory runs short (Linux PSI, polled at each service with memory classes):
         // one more item let go in the eviction order, a next entry prepared to cut, then, since
         // the estimates were wrong, a committed one. False when nothing was left to let go.
@@ -482,6 +483,7 @@ namespace oscairn
         std::vector<Wire> wires_;
         std::set<NodeId> disabled_, rungOut_; // plugins switched off, and those of them done sounding
         std::set<NodeId> leaving_;            // the last Performance's plugins, ringing out after a change; not part of this one
+        uint64_t reused_ = 0;                 // reusedInstances()
         uint32_t nextPart_ = 1, nextWire_ = 1;
         std::vector<Scene> scenes_;
         std::vector<SceneParameter> untouched_; // parameters scenes never touch
@@ -542,8 +544,17 @@ namespace oscairn
             double masterLevel = 1, masterPan = 0;
             std::map<NodeId,std::string> roles;
             std::vector<std::string> notices;
+            std::vector<NodeId> taken;            // the playing graph's nodes whose instances it took over (RFC 0021)
+            std::map<NodeId,std::string> builds;  // the build digest each instance it may give up again was loaded from
+            uint64_t reused = 0;                  // its nodes opened in an instance already loaded
         };
-        std::unique_ptr<Prepared> read(const std::filesystem::path& root);
+        // A loaded instance a Performance being read may take over (RFC 0021): a free one of the
+        // playing graph (node), its state loaded last; build: its bundle's digest when it loaded.
+        struct Free { NodeId node = 0; std::shared_ptr<PluginHost> host; std::string build; };
+        std::vector<Free> freeInstances(bool all) const; // all: every one that could be (a cut cuts them anyway)
+        std::map<NodeId,std::string> builds_;             // Prepared::builds of the nodes in graph_
+        bool keepInstances_ = false;                      // an audition opening a Performance: take over nothing set aside
+        std::unique_ptr<Prepared> read(const std::filesystem::path& root, std::vector<Free> free = {});
         void open(Prepared& prepared, bool seamless);
         std::unique_ptr<Prepared> prepared_; // the next one, prepared ahead; after graph_, so it goes first
         std::set<NodeId> nodesOf(const Part& part) const;

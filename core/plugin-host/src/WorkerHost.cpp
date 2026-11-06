@@ -622,6 +622,7 @@ namespace oscairn
             bool usesClapNotes(uint32_t port) const noexcept override { return port < clapNotes_.size() && clapNotes_[port]; }
             // While down, a panic would reach the restarted worker and drop its first block's events.
             void panic() noexcept override { if(!process_->failed.load()) shared_->panic.store(1, std::memory_order_release); }
+            bool inWorker() const noexcept override { return true; }
             // Its share of the CPU time of this worker and those it replaced, as the supervisor last read it.
             double cpuSeconds() const override
             {

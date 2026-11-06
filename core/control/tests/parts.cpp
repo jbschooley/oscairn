@@ -1168,6 +1168,14 @@ namespace
         s.note(true, 62, 1); x.run(s); x.run(s);
         check(near(x.l[0], .25), "A plays new notes: " + std::to_string(x.l[0]));
         s.note(false, 62, 0); x.run(s);
+        // A opened from its file and silent, so its synth could be taken over (RFC 0021): an
+        // audition takes over nothing it sets aside, and stopping puts back A's own sound.
+        s.savePerformance((root / "audition-a").string()); s.loadPerformance((root / "audition-a").string()); ring();
+        for(int i = 0; i < int(48000 * 3.2 / frames); ++i) x.run(s);
+        s.auditionStart(b); s.auditionStop(); x.run(s); x.run(s);
+        s.note(true, 62, 1); x.run(s); x.run(s);
+        check(near(x.l[0], .25), "a silent A auditioned over plays its own sound again: " + std::to_string(x.l[0]));
+        s.note(false, 62, 0); x.run(s); ring();
         // Kept: B is the Performance, A rings out and goes.
         s.auditionStart(b); s.auditionStop(true); ring();
         check(s.performanceInfo().name == "B" && s.leaving() == 0 && s.graphState().topology.nodes.size() == 1 && s.audition().id.empty(), "kept, B is open and A gone");

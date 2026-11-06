@@ -332,6 +332,7 @@ public:
     void setMemoryRoom(uint64_t bytes) override {room_=bytes;}
     // Its instances' shares of their workers' memory.
     uint64_t residentBytes() const override {uint64_t n=0;for(const auto& s:desired_.instances)if(s)n+=s->host->residentBytes();return n;}
+    bool inWorker() const noexcept override {return base().inWorker();}
     double cpuSeconds() const override {double n=0;for(const auto& s:desired_.instances)if(s)n+=s->host->cpuSeconds();return n;}
 };
 }

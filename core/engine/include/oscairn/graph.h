@@ -128,6 +128,12 @@ namespace oscairn
         /// like. Takes effect at commit().
         void setRetiring( NodeId node, bool retiring );
         bool idle( NodeId node, uint64_t quietFrames, uint64_t limitFrames ) const;
+        /// Retiring or not: no note sounding through it, and asleep or silent for quietFrames
+        /// (free to be taken over by the next Performance, RFC 0021).
+        bool silent( NodeId node, uint64_t quietFrames ) const;
+        /// A replacement not yet published: the node gets a freshly loaded plugin in place of its
+        /// host, keeping its ID and connections (a node whose taken-over instance refused its state).
+        void reload( NodeId node, const std::string& path, const std::string& pluginId = {}, uint64_t memoryRoom = 0 );
         /// The notes sounding through a node's note connections at its last block (held, or
         /// sustained by the pedal), for measuring its cost per voice (RFC 0025); 0 for a node that
         /// takes no notes, UINT32_MAX for one just set retiring and not yet counted.

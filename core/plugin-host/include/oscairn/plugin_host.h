@@ -113,6 +113,9 @@ namespace oscairn
         // Control thread: the CPU time, in seconds, a plugin in its own worker has used (its share of
         // the worker's, restarts included); 0 for a plugin in the engine's process.
         virtual double cpuSeconds() const { return 0; }
+        // Whether the plugin runs in a worker process (RFC 0010); a free instance is taken over only
+        // where the placement policy would put a fresh one (RFC 0021).
+        virtual bool inWorker() const noexcept { return false; }
     };
     // A process's resident memory in bytes (0: this one); 0 when it cannot be read.
     uint64_t residentBytes(long pid = 0);

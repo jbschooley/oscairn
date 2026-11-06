@@ -62,7 +62,7 @@ Checked when built and tested; the sections below say how.
       sleep ([status](#seamless-switching)); loading a Sound cuts, by decision
 - [x] Seamless Performance changes: the outgoing Performance rings out beside the new one ([status](#seamless-switching))
 - [x] Pooled instruments restore a snapshot in the instances they have ([design](#free-instances-across-a-change-and-instances-kept-warm))
-- [ ] Free instances taken over across a change ([design](#free-instances-across-a-change-and-instances-kept-warm))
+- [x] Free instances taken over across a change ([design](#free-instances-across-a-change-and-instances-kept-warm))
 - [ ] Instances kept warm once rung out, bounded and evicted under pressure ([design](#free-instances-across-a-change-and-instances-kept-warm))
 - [x] Audition of a Sound in a part and of a Performance in place of the open one, put back as
       it was or kept, from the Library app ([status](#audition))
@@ -700,7 +700,8 @@ one.** Free instances come from two places, taken in this order:
 2. **The playing Performance's free instances**, and those of the one before still ringing out,
    when a Performance is loaded at the cue. Not while one is prepared ahead: it is read while the
    outgoing one plays, so its instances are not free then; a prepared Performance takes only
-   instances kept warm.
+   instances kept warm. Nor while auditioning a Performance: stopping puts back the instances it
+   set aside, as they were.
 
 **The matching rule.** A node may take over an instance when all of these hold:
 
@@ -761,6 +762,36 @@ room. Admission still counts the next Performance's plugins at full cost, as bef
 
 `Session::reusedInstances()` counts nodes opened in an instance already loaded (slice 1's contexts
 included) and `pluginInstancesLoaded()` the instances loaded, for the bench.
+
+Taking over the playing Performance's free instances built 2026-11-05 (`Session::freeInstances`,
+`Session::read`; `Graph::silent`, now counted for every node, and `Graph::reload`). Instances kept
+warm are not built yet. `control-performance-switch` (and `-workers`) builds two Performances of
+four parts on the same plugins (two Basic Synths, two plain CLAP instruments in the pool, each
+through a Delay of its own) and one of four Samplers, and checks: every instance of the silent
+outgoing one taken over (8 of 8, none loaded; the Delays as slice 1's contexts), output identical
+sample for sample to the same Performance opened fresh, in both directions; a note held on one part
+through the change keeping that part's instrument, which rings out, while the rest are taken over;
+nothing taken where nothing is shared; and a document that fails after its plugins are loaded
+leaving every parameter of what plays unchanged. Without the change the counts fail; with the
+taken-over instances not given their state, the render comparison fails at block 0.
+`control-parts` auditions a Performance over a silent one opened from its file and checks the one
+put back plays its own sound; taking over during an audition fails it.
+
+Measured the same day, Release, M3 Max at a load average of 30 to 55 from other builds, so the
+figures are ranges over runs (milliseconds from `loadPerformance` until published):
+
+| Change | Before | After |
+| --- | --- | --- |
+| Bench, workers, A to B, both silent | 31–39 ms, 6 instances loaded | 10–33 ms, 0 loaded, 8 reused |
+| Bench, engine, A to B | 2.8–4.1 ms, 6 loaded | 2.1–3.4 ms, 0 loaded |
+| "Where Is My Mind Pno" cold, workers | 420–680 ms, 24 loaded | 340–720 ms, 20 loaded |
+| It to "NKC Christmas" (median of 5), workers | 650–780 ms, 16 loaded | 360–800 ms, 2–3 loaded, 16 reused |
+| "NKC Christmas" back to it (median of 5), workers | 425–460 ms, 12 loaded | 180–310 ms, 0 loaded, 20 reused |
+| The same, plugins in the engine | 170 ms, 12 loaded | 160–195 ms, 0 loaded |
+
+What is left is the state itself: sfizz loading its samples takes 35 to 460 ms per instance,
+whether the instance is new or taken over. Taking over saves the worker start and plugin load,
+about 23 ms per instance, and the memory of a second Performance's instances during the change.
 
 **Load preset** on a node is seamless where `sounds.prepare` accepts it (native contexts and
 pooled instruments) and an interrupting state load otherwise, as today.

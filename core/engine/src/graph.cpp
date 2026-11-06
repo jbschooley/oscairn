@@ -237,9 +237,11 @@ namespace oscairn
         std::unique_ptr<Plan> plan(next.compile());
         ++plansCompiled_;
         removedHosts_.reserve(removedHosts_.size()+nodes_.size());
-        onPublish(); // caller supplies a nonthrowing metadata/transport commit
         // A host carried over stays in use; listing it here too would keep it alive forever (collect() frees at one owner).
-        for(const auto& [id,node]:nodes_)if(const auto kept=next.nodes_.find(id);kept==next.nodes_.end() || kept->second.host!=node.host)removedHosts_.push_back(node.host);
+        // So is one taken over under another ID (RFC 0021).
+        std::set<const PluginHost*> staying;for(const auto& [id,node]:next.nodes_)staying.insert(node.host.get());
+        onPublish(); // caller supplies a nonthrowing metadata/transport commit
+        for(const auto& [id,node]:nodes_)if(!staying.count(node.host.get()))removedHosts_.push_back(node.host);
         nodes_.swap(next.nodes_);audioRoutes_.swap(next.audioRoutes_);noteEdges_.swap(next.noteEdges_);noteZones_.swap(next.noteZones_);draining_.swap(next.draining_);paramTargets_.swap(next.paramTargets_);taps_.swap(next.taps_);harmonies_.swap(next.harmonies_);
         nextId_=next.nextId_;replacementSerial_=next.replacementSerial_;
         delete pending_.exchange(plan.release(),std::memory_order_acq_rel);
@@ -479,6 +481,18 @@ namespace oscairn
     {
         const auto it=nodes_.find(node);
         return it==nodes_.end() || !it->second.activity ? UINT32_MAX : it->second.activity->sounding.load(std::memory_order_relaxed);
+    }
+    bool Graph::silent( NodeId node, uint64_t quietFrames ) const
+    {
+        const auto& a=*nodes_.at(node).activity;
+        return !a.sounding.load(std::memory_order_relaxed) && (a.asleep.load(std::memory_order_relaxed) || a.quiet.load(std::memory_order_relaxed)>=quietFrames);
+    }
+    void Graph::reload( NodeId id, const std::string& path, const std::string& pluginId, uint64_t memoryRoom )
+    {
+        auto& node=nodes_.at(id);
+        auto loaded=loadPlugin(path,pluginId,sampleRate_,maxFrames_,mode_,lv2Buffers_,memoryRoom);loaded->setAssets(assets_);
+        node.host=preparedInstrument(std::move(loaded),sampleRate_,maxFrames_,mode_,lv2Buffers_);
+        node.audioInputs=countChannels(node.host->inputPorts());node.audioOutputs=countChannels(node.host->outputPorts());
     }
     bool Graph::idle( NodeId node, uint64_t quietFrames, uint64_t limitFrames ) const
     {
@@ -924,15 +938,10 @@ namespace oscairn
                     auto& held=(*step.peaks)[c];
                     for(float seen=held.load(std::memory_order_relaxed);peak>seen && !held.compare_exchange_weak(seen,peak,std::memory_order_relaxed););
                 }
-            // Any node taking notes: how many sound through it, for its cost per voice (RFC 0025).
-            if(processed && !step.retiring && step.activity && !step.noteSources.empty())
+            // Every node: the notes sounding through it (for its cost per voice, RFC 0025), and how
+            // long it has been silent, so a retiring node may go and a free one be taken over (RFC 0021).
+            if(step.activity)
             {
-                uint32_t sounding=0;for(const auto& source:step.noteSources)sounding+=source.route->sounding();
-                step.activity->sounding.store(sounding,std::memory_order_relaxed);
-            }
-            if(step.retiring && step.activity)
-            {
-                // A retiring node: its notes still sounding, and how long it has been silent.
                 uint32_t sounding=0;for(const auto& source:step.noteSources)sounding+=source.route->sounding();
                 auto& a=*step.activity;
                 a.sounding.store(sounding,std::memory_order_relaxed);

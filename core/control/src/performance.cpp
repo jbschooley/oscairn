@@ -555,8 +555,33 @@ void Session::loadPerformance(const std::string& directory) {
     // Prepared ahead (RFC 0021), the cue only publishes it; another one prepared is let go first.
     auto prepared=std::move(prepared_);preparedOpportunistic_=false;
     if(prepared && (prepared->root!=root || prepared->stamp!=stamp(root)))prepared.reset();
-    if(!prepared)prepared=read(root);
+    // Read at the cue, it may take over the playing Performance's free instances (RFC 0021); a cut, any of them.
+    if(!prepared)prepared=read(root,keepInstances_?std::vector<Free>{}:freeInstances(!seamless));
     open(*prepared,seamless);
+}
+
+std::vector<Session::Free> Session::freeInstances(bool all) const {
+    std::set<NodeId> outgoing(leaving_);for(const auto& [n,name]:nodes_)outgoing.insert(n);
+    std::set<NodeId> busy;
+    if(!all){
+        // Free: nothing sounding through it, and asleep or three seconds silent (ringOut's rule
+        // without its limit); and nothing busy sending to it, so a held note's chain stays whole.
+        const auto quiet=uint64_t(sampleRate_*3);
+        for(const auto n:outgoing)if(!graph_.silent(n,quiet))busy.insert(n);
+        const auto t=graph_.describe();
+        for(bool more=true;more;){more=false;
+            for(const auto& r:t.audioRoutes)if(busy.count(r.from.node) && r.to.node!=graphOutput && busy.insert(r.to.node).second)more=true;
+            for(const auto& e:t.notes)if(busy.count(e.first) && e.second!=graphOutput && busy.insert(e.second).second)more=true;}
+    }
+    std::vector<Free> out;
+    for(const auto n:outgoing){
+        const auto build=builds_.find(n);if(busy.count(n) || build==builds_.end())continue;
+        auto host=graph_.node(n).host;
+        // Engines offering effect contexts go by slice 1; a failed plugin or a stand-in never.
+        if(host->effectResources() || !host->failure().empty())continue;
+        out.push_back({n,std::move(host),build->second});
+    }
+    return out;
 }
 
 // Plays a Performance prepared ahead at the next loadPerformance of the same folder. One that
@@ -580,7 +605,7 @@ bool Session::preparePerformance(const std::string& directory) {
 
 // Reads a Performance and loads its plugins with their state into a replacement graph, without
 // touching what plays. Throws, leaving nothing behind, on anything it cannot restore.
-std::unique_ptr<Session::Prepared> Session::read(const fs::path& root) {
+std::unique_ptr<Session::Prepared> Session::read(const fs::path& root,std::vector<Free> free) {
     validateTree(root);const auto doc=document(root);V d=doc.get();
     fields(d,{"format","version","info","libraries","transport","audioInputs","audioOutputs","nodes","wires","parts","mappings","pads","key","master","scenes","sceneUntouched","scene","controls","assignments","lock"});
     const auto pads=padsFrom(field(d,"pads"));const auto key=keyFrom(field(d,"key"));const auto master=masterFrom(field(d,"master"));
@@ -627,13 +652,43 @@ std::unique_ptr<Session::Prepared> Session::read(const fs::path& root) {
             if(r && r->capacity>=r->prepared+taken+count){taken+=count;return n;}}
         return std::nullopt;};
     auto refs=parameterRefs(d);
+    // RFC 0021: a node alone on its engine takes over a free instance of the same plugin, build and
+    // placement instead of loading one.
+    std::vector<NodeId> taken;std::map<NodeId,std::string> builds;uint64_t reused=0;
+    struct Later{NodeId runtime;std::string key;size_t free;};std::vector<Later> later; // playing instances: their state last
+    auto take=[&](V plugin)->std::optional<size_t>{
+        const auto format=text(field(plugin,"format")),id=text(field(plugin,"id")),saved=text(field(plugin,"version"));
+        fs::path wanted;std::error_code e;
+        for(const auto& candidate:{fs::path(text(field(plugin,"pathHint"))),storedPlugin(format,id,saved)})if(!candidate.empty() && fs::exists(candidate,e)){wanted=candidate;break;}
+        if(wanted.empty() || free.empty())return std::nullopt;
+        const auto build=buildDigest(wanted.string());if(build.empty())return std::nullopt;
+        const auto& policy=placementPolicy();const auto placed=policy.plugins.find(id);
+        const bool worker=format=="clap" && !policy.worker.empty() && (placed==policy.plugins.end()?policy.standard:placed->second)==Placement::Worker;
+        for(size_t i=0;i<free.size();++i){if(!free[i].host)continue;const auto& h=*free[i].host;const auto& p=h.descriptor();
+            if(p.id==id && p.version==saved && free[i].build==build && h.inWorker()==worker && (p.path==wanted.string() || fs::equivalent(p.path,wanted,e)))return i;}
+        return std::nullopt;};
+    auto restore=[&](NodeId runtime,V node,uint64_t room){
+        auto& h=next->host(runtime);const auto key=text(field(node,"key"));
+        if(room)h.setMemoryRoom(room);
+        h.loadSnapshot((root/"nodes"/key).string());
+        if(room)h.setMemoryRoom(0);
+        checkPorts(field(node,"inputs"),h.inputPorts());checkPorts(field(node,"outputs"),h.outputPorts());
+        if(integer(field(node,"noteInputs"),16)!=h.noteInputPorts() || integer(field(node,"noteOutputs"),16)!=h.noteOutputPorts())bad("note port layout changed");};
+    // A taken-over instance whose state does not load, or whose ports then differ, is let go for a fresh one.
+    auto restoreTaken=[&](NodeId runtime,V node,uint64_t room,size_t f){
+        try{restore(runtime,node,room);return;}
+        catch(const std::exception& e){if(memoryRefusal(e))throw;}
+        const auto path=next->host(runtime).descriptor().path;
+        next->reload(runtime,path,text(field(field(node,"plugin"),"id")),room);builds[runtime]=buildDigest(path);--reused;
+        if(free[f].node)std::erase(taken,free[f].node);
+        restore(runtime,node,room);};
     // Roots first; siblings can refer forward to a root, never to an arbitrary chain.
     for(bool siblings:{false,true})for(auto node:nodes){const auto key=text(field(node,"key")),engine=text(field(node,"engine"));if((key!=engine)!=siblings)continue;
         const auto plugin=field(node,"plugin");fields(plugin,{"format","id","version","pathHint"});const auto format=text(field(plugin,"format")),id=text(field(plugin,"id")),path=text(field(plugin,"pathHint"));
         if((format!="clap" && format!="lv2") || id.empty() || path.empty() || (lv2Path(path)!=(format=="lv2")))bad("invalid plugin identity or format");
         const auto name=text(field(node,"name"));
         try {
-            NodeId runtime;
+            NodeId runtime;bool restored=false; // a taken-over instance gets its state its own way
             // RFC 0025: each plugin may declare what the memory budget leaves beside those loaded
             // before it (the Performance alone, as its estimate was checked); more is refused before it activates.
             std::vector<NodeId> loaded;for(const auto& [n,x]:names)loaded.push_back(n);
@@ -647,15 +702,16 @@ std::unique_ptr<Session::Prepared> Session::read(const fs::path& root) {
                 catch(const std::exception& e){
                     if(memoryRefusal(e))throw;
                     runtime=next->add(standIn(node,root/"nodes"/key,refs[key],std::string("its shared engine is not here: ")+e.what()));}}
-            else if(const auto engine=playing(id,path,text(field(plugin,"version")),group[key]))runtime=context(graph_.host(*engine),[&]{return next->addEffectContext(graph_,*engine);});
-            else runtime=resolvePlugin(node,root/"nodes"/key,refs[key],[&](const std::string& p,const std::string& i){return next->add(p,i,room);},[&](NodeId n){next->remove(n);},
+            else if(const auto engine=playing(id,path,text(field(plugin,"version")),group[key])){runtime=context(graph_.host(*engine),[&]{return next->addEffectContext(graph_,*engine);});++reused;}
+            else if(const auto f=group[key]==1?take(plugin):std::nullopt){
+                runtime=next->add(free[*f].host);builds[runtime]=free[*f].build;++reused;restored=true;
+                if(free[*f].node){taken.push_back(free[*f].node);later.push_back({runtime,key,*f});}else restoreTaken(runtime,node,room,*f);
+                free[*f].host.reset();}
+            else{runtime=resolvePlugin(node,root/"nodes"/key,refs[key],[&](const std::string& p,const std::string& i){return next->add(p,i,room);},[&](NodeId n){next->remove(n);},
                                        [&](NodeId n){return next->host(n).descriptor().version;},[&](std::shared_ptr<PluginHost> h){return next->add(std::move(h));});
-            auto& h=next->host(runtime);
-            if(room)h.setMemoryRoom(room);
-            h.loadSnapshot((root/"nodes"/key).string());
-            if(room)h.setMemoryRoom(0);
-            checkPorts(field(node,"inputs"),h.inputPorts());checkPorts(field(node,"outputs"),h.outputPorts());
-            if(integer(field(node,"noteInputs"),16)!=h.noteInputPorts() || integer(field(node,"noteOutputs"),16)!=h.noteOutputPorts())bad("note port layout changed");
+                // What another Performance may take over later: a plugin of its own, loaded (not a stand-in).
+                if(group[key]==1 && next->host(runtime).failure().empty())builds[runtime]=buildDigest(next->host(runtime).descriptor().path);}
+            if(!restored)restore(runtime,node,room);
             ids.emplace(key,runtime);names.emplace(runtime,name);
             if(!boolean(field(node,"enabled")))disabled.insert(runtime);
             if(const auto role=roleFrom(node);!role.empty())roles[runtime]=role;
@@ -828,8 +884,17 @@ std::unique_ptr<Session::Prepared> Session::read(const fs::path& root) {
     }
     std::set<std::pair<NodeId,uint32_t>> mappings;
     for(auto m:array(field(d,"mappings"),4096)){fields(m,{"from","lane","to","param"});const auto from=node(field(m,"from")),lane=integer(field(m,"lane"));if(!mappings.emplace(from,lane).second)bad("duplicate parameter mapping");next->mapParamTarget(from,lane,node(field(m,"to")),integer(field(m,"param")));}
-    return std::make_unique<Prepared>(Prepared{root,stamp(root),std::move(next),pads,info,std::move(lock),tempo,clock=="internal"?Transport::ClockSource::Internal:Transport::ClockSource::MidiClock,
+    // Last, once the whole document has been read: the playing instances taken over get their state.
+    for(const auto& l:later){
+        const V n=definitions.at(l.key);
+        std::vector<NodeId> loaded;for(const auto& [id,x]:names)if(id!=l.runtime)loaded.push_back(id);
+        try{restoreTaken(l.runtime,n,memoryRoom(*next,loaded),l.free);}
+        catch(const std::exception& e){bad("cannot restore "+text(field(n,"name"))+" ("+text(field(field(n,"plugin"),"id"))+"): "+e.what());}
+    }
+    auto prepared=std::make_unique<Prepared>(Prepared{root,stamp(root),std::move(next),pads,info,std::move(lock),tempo,clock=="internal"?Transport::ClockSource::Internal:Transport::ClockSource::MidiClock,
         std::move(disabled),std::move(names),std::move(wires),std::move(parts),nextPart,nextWire,std::move(scenes),std::move(untouched),nextScene,selectedScene,mappingScene,std::move(macros),nextMacro,std::move(assignments),key,master.first,master.second,std::move(roles),std::move(notices)});
+    prepared->taken=std::move(taken);prepared->builds=std::move(builds);prepared->reused=reused;
+    return prepared;
 }
 
 // Publishes a read Performance in place of the open one.
@@ -846,7 +911,8 @@ void Session::open(Prepared& p,bool seamless) {
     // new notes go to the new Performance.
     // Unless the two together would not fit the budget (RFC 0025): then the change is a cut.
     std::set<NodeId> leaving;
-    if(seamless){leaving=leaving_;for(const auto& [id,name]:nodes_)leaving.insert(id);}
+    if(seamless){leaving=leaving_;for(const auto& [id,name]:nodes_)leaving.insert(id);for(const auto n:p.taken)leaving.erase(n);} // taken over: nothing rings on them
+    auto builds=builds_;builds.insert(p.builds.begin(),p.builds.end());
     next->carryOver(graph_,leaving);
     compileWires(*next,wires,disabled,disabled,leaving,p.masterLevel,p.masterPan);next->setMidiTaps(midiTaps(*next,p.parts,wires));next->setHarmonies(harmonies(p.parts,p.key));auto rungOut=disabled;
     std::map<Address,double> observed;for(const auto& [id,name]:p.names)for(const auto& q:next->host(id).parameters())observed[{id,q.id}]=next->host(id).parameterValue(q.id);
@@ -857,9 +923,10 @@ void Session::open(Prepared& p,bool seamless) {
     history.push_back({sequence_+1,ChangeKind::Resync,0,0,0,false});
     graph_.publishReplacement(*next,[&]() noexcept {
         nodes_.swap(p.names);observed_.swap(observed);parts_.swap(p.parts);wires_.swap(wires);disabled_.swap(disabled);rungOut_.swap(rungOut);leaving_.swap(leaving);nextPart_=p.nextPart;nextWire_=p.nextWire;padMap_=p.pads;key_=p.key;masterLevel_=p.masterLevel;masterPan_=p.masterPan;roles_.swap(p.roles);notices_.swap(p.notices);heldPads_={};scenes_.swap(p.scenes);untouched_.swap(p.untouched);scene_=p.selectedScene;mappingScene_=p.mappingScene;transition_.reset();pendingScene_.reset();nextScene_=p.nextScene;macros_.swap(p.macros);assignments_.swap(p.assignments);nextMacro_=p.nextMacro;pending_.clear();commandCount_=0;outputDrops_.clear();parameterRevisions_.clear();staged_=false;
-        tempo_.store(p.tempo);clockSource_.store(p.clock);playing_.store(false);
+        tempo_.store(p.tempo);clockSource_.store(p.clock);playing_.store(false);builds_.swap(builds);reused_+=p.reused;
         ++revision_;++sequence_;history_.swap(history);
     });
+    std::erase_if(builds_,[&](const auto& b){return !graph_.contains(b.first);});
     // Its parts' faders as live gains (RFC 0011's instant controls): the wires are built again
     // aside to work out which faders scale each, the wires read from the file keep everything
     // else, and they are compiled again with the slots.
