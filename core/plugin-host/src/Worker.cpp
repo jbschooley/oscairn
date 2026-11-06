@@ -213,15 +213,14 @@ namespace oscairn::worker
             }
         };
 
-        // The worker's audio thread: one plugin block per request.
-        void audio(PluginHost& host, Shared& s, uint32_t blockFrames)
+        // The worker's audio thread: one plugin block per request. The parameter IDs are read
+        // before it starts, as the main thread may re-read the plugin's parameters meanwhile.
+        void audio(PluginHost& host, Shared& s, uint32_t blockFrames, std::vector<clap_id> ids)
         {
             std::vector<const float*> in(s.inputChannels);
             std::vector<float*> out(s.outputChannels);
             for(uint32_t c = 0; c < s.inputChannels; ++c) in[c] = s.input(c);
             for(uint32_t c = 0; c < s.outputChannels; ++c) out[c] = s.output(c);
-            std::vector<clap_id> ids(s.parameterCount);
-            for(uint32_t i = 0; i < s.parameterCount; ++i) ids[i] = host.parameters()[i].id;
             uint64_t reported = host.parameterReports();
             makeRealtime(1e6 * blockFrames / s.sampleRate); // the block period, not the larger shared buffer
             uint32_t seen = s.done.load(std::memory_order_acquire); // a request may already be waiting
@@ -323,7 +322,9 @@ namespace oscairn::worker
                 n->shared = static_cast<Shared*>(memory);
                 if(nodes.size() < maxNodes) mapped[nodes.size()].store(n->shared);
                 n->publish();
-                n->audio = std::thread(audio, std::ref(*n->host), std::ref(*n->shared), frames);
+                std::vector<clap_id> ids(n->shared->parameterCount);
+                for(uint32_t i = 0; i < n->shared->parameterCount; ++i) ids[i] = n->host->parameters()[i].id;
+                n->audio = std::thread(audio, std::ref(*n->host), std::ref(*n->shared), frames, std::move(ids));
             }
             nodes.push_back(std::move(n));
             reply(socket, Writer{});
