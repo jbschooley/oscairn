@@ -1132,6 +1132,9 @@ void Session::open(Prepared& p,bool seamless) {
     for(auto& b:p.beside)if(b->chokes)for(auto& r:retiringSounds_)if(r.node==b->was){if(r.older)r.node=0;else{r.node=b->now;r.older=true;}}
     for(auto& b:p.beside)if(!b->old.empty() || graph_.ringOutRoutes(b->now))retiringSounds_.push_back({b->host,std::move(b->old),b->now});
     beside_+=p.beside.size();
+    // Its levels start at its own, as in a new Session, not ramp from the last Performance's (whose
+    // routes ringing out have theirs frozen): every slot given afresh, the master's too.
+    faderSlots_.clear();panSlots_.clear();sendSlots_.clear();freshSlots_.insert(std::begin(masterSlots),std::end(masterSlots));
     // Its parts' faders as live gains (RFC 0011's instant controls): the wires are built again
     // aside to work out which faders scale each, the wires read from the file keep everything
     // else, and they are compiled again with the slots.

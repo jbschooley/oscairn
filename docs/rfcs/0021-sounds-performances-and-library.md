@@ -914,7 +914,10 @@ the node's is not given it again but only reset, so switching back costs no stat
 sample load. Plugins must make these sound alike; [the porting guide](../plugin-porting.md) says so. A
 render comparison, the same notes into a Session that switched and one that opened the same
 Performance fresh, checks every sample (`control-performance-switch`, in the engine and in
-workers).
+workers). Its levels are the incoming Performance's from the first block: its parts' and the
+master's live gains start at their values instead of ramping from the outgoing Performance's
+([RFC 0011](0011-performance-ui-and-editors.md#instant-controls); fixed 2026-11-06: in the
+converted library a Performance's first block after a change ramped from the last one's levels).
 
 **Pools and contexts.** A pooled instrument is taken over whole: restoring a snapshot into a pool
 keeps its plugins, slot by slot, and loads only the slots it lacks, so a fresh pool no longer loads

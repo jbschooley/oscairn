@@ -98,13 +98,14 @@ namespace
         s.savePerformance(file.string());
     }
 
-    // One plain CLAP instrument on the whole keyboard at `gain`.
-    void single(const fs::path& file, const char* instrument, double gain)
+    // One plain CLAP instrument on the whole keyboard at `gain`, its part at `level` and the master at `master`.
+    void single(const fs::path& file, const char* instrument, double gain, double level = 1, double master = 1)
     {
         Session s(48000, frames);
         const auto n = s.add("instrument", instrument);
         const auto part = s.addPart("Part"); s.insertIntoPart(part, 0, n); s.commit();
         check(s.setParameter(n, 7, gain), "instrument gain");
+        s.setPartLevel(part, level, false); s.setMaster(master, 0);
         blocks(s, 2);
         s.savePerformance(file.string());
     }
@@ -160,7 +161,8 @@ namespace
     void report(const char* what, const Switch& w) { std::printf("%-52s %7.1f ms, %2llu instances loaded, %2llu reused (%llu holding their state, %llu with sounds beside)\n", what, w.ms, (unsigned long long)w.loaded, (unsigned long long)w.reused, (unsigned long long)w.kept, (unsigned long long)w.beside); }
 
     // The same notes into a Session that switched and one that opened `file` fresh: every sample equal.
-    void compare(Session& switched, const fs::path& file, const char* what)
+    // The first notes at block `start`; 0 plays one in the block the change is heard in.
+    void compare(Session& switched, const fs::path& file, const char* what, int start = 3)
     {
         Session fresh(48000, frames);
         fresh.loadPerformance(file.string());
@@ -170,7 +172,7 @@ namespace
             // A note for each part: they have a quarter of the keyboard each.
             for(const int key : {20, 60, 70, 100})
             {
-                if(block == 3 + key % 7) { switched.note(true, key, .8); fresh.note(true, key, .8); }
+                if(block == start + key % 7) { switched.note(true, key, .8); fresh.note(true, key, .8); }
                 if(block == 150 + key % 5) { switched.note(false, key, 0); fresh.note(false, key, 0); }
             }
             x.run(switched); y.run(fresh);
@@ -352,6 +354,17 @@ int main(int argc, char** argv)
             check(w.reused == 1 && w.kept == 0 && w.loaded == 0, "Q takes over P's instance kept warm");
             compare(t, q, "stuck: P's instance kept warm, then Q's");
             ::unsetenv("KICK_FIXTURE_STUCK");
+        }
+
+        // A Performance's levels start at its own, as when it opens in a new Session, not ramp from
+        // the last one's in the block the change is heard in: L's part and master are low, M's full.
+        {
+            const auto l = temp.path / "levels-l", m = temp.path / "levels-m";
+            single(l, argv[4], .5, .25, .5); single(m, argv[4], .5);
+            Session t(48000, frames);
+            load(t, l); blocks(t, 10);
+            load(t, m); compare(t, m, "levels: L -> M", 0); quiet(t);
+            load(t, l); compare(t, l, "levels: M -> L", 0);
         }
 
         // Native sound contexts across a change (RFC 0021, slice 2): D and E are the same two Basic

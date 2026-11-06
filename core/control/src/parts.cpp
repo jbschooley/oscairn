@@ -342,8 +342,8 @@ namespace oscairn
     {
         const auto& outputs = graph_.audioLayout().outputs;
         const bool stereo = !outputs.empty() && outputs.front().channels == 2;
-        graph_.setLiveGain(masterSlots[0], float(masterLevel_ * (stereo ? std::min(1.0, 1 - masterPan_) : 1)));
-        graph_.setLiveGain(masterSlots[1], float(masterLevel_ * std::min(1.0, 1 + masterPan_)));
+        graph_.setLiveGain(masterSlots[0], float(masterLevel_ * (stereo ? std::min(1.0, 1 - masterPan_) : 1)), !freshSlots_.count(masterSlots[0]));
+        graph_.setLiveGain(masterSlots[1], float(masterLevel_ * std::min(1.0, 1 + masterPan_)), !freshSlots_.count(masterSlots[1]));
         for(const auto& p : parts_)
         {
             if(const auto s = faderSlots_.find(p.id); s != faderSlots_.end()) graph_.setLiveGain(s->second, p.mute ? 0.f : float(p.level), !freshSlots_.count(s->second));

@@ -484,7 +484,10 @@ Built 2026-11-02 (`Graph::setLiveGain`, `AudioConnection::live`; the Session's `
 `Wire::faders`, `fixed` and `live`). Moving a part's fader (`parts.level`), muting it, the master
 (`master.set`) and a control whose targets are part levels or mutes write live gains and compile
 no plan; `graph.commit` after them compiles none unless other edits are staged. A slot just given
-to a part starts at its value rather than ramping to it. A recording's post-fader tap follows the
+to a part starts at its value rather than ramping to it. A Performance opened gives every slot
+afresh, the master's too, so its levels start at its own, as in a new Session, rather than
+ramping in its first block from the last Performance's (whose routes ringing out keep theirs
+frozen). A recording's post-fader tap follows the
 same ramp (`Recorder::Source::live`), so the parts' taps still sum to Main. A Performance loaded
 works out its wires' faders from them built again aside, keeping the wires read, so saving it
 again gives the same file. `control-parts` (`liveGains`) checks a logarithmic control on a part's
