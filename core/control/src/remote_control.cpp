@@ -12,6 +12,7 @@
 #include <locale>
 #include <map>
 #include <optional>
+#include <set>
 #include <sstream>
 #include <stdexcept>
 
@@ -172,9 +173,9 @@ namespace oscairn
                 for(auto e:array(field(v,key)))
                     list->push_back({MidiEndpoint::Kind(named(endpointKinds,string(field(e,"kind")))),uint8_t(integer(field(e,"source"))),string(field(e,"name")),static_cast<uint32_t>(integer(field(e,"port")))});
         }
-        void refresh()
+        static GraphState readGraph(V root)
         {
-            auto doc=call("graph.get");auto root=field(doc.get(),"result");GraphState next;
+            GraphState next;
             next.revision=integer(field(root,"revision"));next.staged=boolean(field(root,"staged"));
             auto ports=[](V v){std::vector<kick::clap::Port> result;for(auto p:array(v))result.push_back({static_cast<uint32_t>(integer(field(p,"id"))),string(field(p,"name")),static_cast<uint32_t>(integer(field(p,"channels"))),static_cast<uint32_t>(integer(field(p,"flags")))});return result;};
             next.topology.audioLayout.inputs=ports(field(root,"audioInputs"));
@@ -301,24 +302,96 @@ namespace oscairn
                 next.macros.push_back(std::move(macro));
             }
             for(auto m:array(field(root,"mappings")))next.topology.mappings.push_back({static_cast<NodeId>(integer(field(m,"from"))),static_cast<uint32_t>(integer(field(m,"lane"))),static_cast<NodeId>(integer(field(m,"to"))),static_cast<uint32_t>(integer(field(m,"param")))});
-            std::map<NodeId,std::vector<ParamInfo>> metadata;std::map<std::pair<NodeId,uint32_t>,double> snapshot;
-            std::string batch;size_t count=0;
-            auto flush=[&]{if(!count)return;auto reply=call("params.get","{\"values\":["+batch+"]}");for(auto value:array(field(field(reply.get(),"result"),"values")))snapshot[{static_cast<NodeId>(integer(field(value,"node"))),static_cast<uint32_t>(integer(field(value,"param")))}]=number(field(value,"value"));batch.clear();count=0;};
-            for(const auto& n:next.topology.nodes)
+            return next;
+        }
+        // A read of the graph and every node's parameters: graph.get, then each node's params.list,
+        // then the values, several requests out at once (the engine answers up to 16 a client each
+        // tick of its timer), so a read takes a few ticks rather than one per node.
+        struct GraphRead
+        {
+            enum class Step { Graph, List, Values };
+            std::deque<std::tuple<Step,std::string,std::string>> queued{{Step::Graph,"graph.get","{}"}}; // not sent yet
+            std::deque<std::pair<uint64_t,Step>> sent;                                                     // in the order they are answered
+            GraphState next;std::map<NodeId,std::vector<ParamInfo>> metadata;std::map<std::pair<NodeId,uint32_t>,double> snapshot;
+            std::vector<NodeId> nodes;size_t listed=0;std::string batch;size_t count=0;
+            bool done()const{return queued.empty() && sent.empty();}
+            void values(){if(count)queued.push_back({Step::Values,"params.get","{\"values\":["+batch+"]}"});batch.clear();count=0;}
+        };
+        size_t largest=0;                 // the longest params.list reply seen: how many fit in the engine's 1 MB queue at once
+        std::optional<GraphRead> reading; // the read service() started, taken as its replies come
+        bool again=false;                 // the graph changed again while it was out
+        std::set<uint64_t> dropped;       // replies to a read given up, which nobody takes
+        void send(GraphRead& r)
+        {
+            const size_t window=largest?std::clamp<size_t>(LocalServer::maxQueuedBytes/2/largest,1,LocalServer::maxRequestsPerTick):4;
+            while(!r.queued.empty() && r.sent.size()<window)
             {
-                auto reply=call("params.list","{\"node\":"+std::to_string(n.id)+'}');
-                for(auto p:array(field(field(reply.get(),"result"),"parameters")))
+                const auto& [step,method,params]=r.queued.front();
+                r.sent.emplace_back(client.send(method,params),step);r.queued.pop_front();
+            }
+        }
+        void take(GraphRead& r,GraphRead::Step step,V result,size_t bytes)
+        {
+            using Step=GraphRead::Step;
+            if(step==Step::Graph)
+            {
+                r.next=readGraph(result);
+                for(const auto& n:r.next.topology.nodes){r.nodes.push_back(n.id);r.queued.push_back({Step::List,"params.list","{\"node\":"+std::to_string(n.id)+'}'});}
+            }
+            else if(step==Step::List)
+            {
+                largest=std::max(largest,bytes);
+                const auto node=r.nodes.at(r.listed++);auto& list=r.metadata[node];
+                for(auto p:array(field(result,"parameters")))
                 {
                     ParamInfo param{static_cast<uint32_t>(integer(field(p,"id"))),string(field(p,"name")),number(field(p,"minimum")),number(field(p,"maximum")),number(field(p,"defaultValue")),boolean(field(p,"stepped")),static_cast<uint32_t>(integer(field(p,"flags"))),string(field(p,"module")),
                                     widgetNamed(std::string(string(field(p,"widget")))),static_cast<uint32_t>(integer(field(p,"priority")))};
                     if(param.widget==OSCAIRN_WIDGET_RANGE)param.rangeHigh=static_cast<uint32_t>(integer(field(p,"rangeHigh")));
                     param.group=static_cast<uint32_t>(integer(field(p,"group")));
                     if(V role=detail::member(p,"role"))param.role=roleNamed(string(role));
-                    metadata[n.id].push_back(param);if(count)batch+=',';batch+='{'+address(n.id,param.id)+'}';if(++count==128)flush();
+                    list.push_back(param);if(r.count)r.batch+=',';r.batch+='{'+address(node,param.id)+'}';if(++r.count==128)r.values();
                 }
-                metadata.try_emplace(n.id);
+                if(r.listed==r.nodes.size())r.values();
             }
-            flush();graph=std::move(next);info=std::move(metadata);values=std::move(snapshot);
+            else for(auto value:array(field(result,"values")))r.snapshot[{static_cast<NodeId>(integer(field(value,"node"))),static_cast<uint32_t>(integer(field(value,"param")))}]=number(field(value,"value"));
+        }
+        void apply(GraphRead& r){graph=std::move(r.next);info=std::move(r.metadata);values=std::move(r.snapshot);overlay();}
+        void drop(){if(reading)for(const auto& s:reading->sent)dropped.insert(s.first);reading.reset();again=false;}
+        // Waits for the whole read: an edit's caller reads the state it made on return.
+        void refresh()
+        {
+            drop(); // older than this one
+            GraphRead r;
+            try
+            {
+                send(r);
+                while(!r.sent.empty())
+                {
+                    const auto [id,step]=r.sent.front();r.sent.pop_front();
+                    const auto reply=client.wait(id,1000);auto doc=parse(reply);answered(id);check(doc);
+                    take(r,step,field(doc.get(),"result"),reply.size());send(r);
+                }
+            }
+            catch(...){for(const auto& s:r.sent)dropped.insert(s.first);throw;}
+            apply(r);
+        }
+        // Sends the read and returns: service() takes its replies as they come.
+        void refreshLater(){if(reading){again=true;return;}reading.emplace();send(*reading);}
+        // A reply to the read out: true once the read is done and the cache holds it.
+        bool reply(const Doc& doc,size_t bytes)
+        {
+            const auto step=reading->sent.front().second;reading->sent.pop_front();
+            try{check(doc);take(*reading,step,field(doc.get(),"result"),bytes);send(*reading);}
+            catch(const std::exception&)
+            {
+                // A node removed between the graph and its parameters: the change that removed
+                // it is on its way, and read once it comes. Anything else is said, as before.
+                const bool newer=again;drop();if(!newer)throw;refreshLater();return false;
+            }
+            if(!reading->done())return false;
+            apply(*reading);reading.reset();
+            if(std::exchange(again,false))refreshLater();
+            return true;
         }
         void audioEdge(std::string_view method,const AudioConnection& r)
         {
@@ -968,17 +1041,19 @@ namespace oscairn
     uint64_t RemoteControl::changeSequence()const{return impl_->sequence;}
     Control::Changes RemoteControl::changesAfter(uint64_t seq)const
     {Changes result{impl_->sequence,seq>impl_->sequence||(!impl_->history.empty()&&seq<impl_->history.front().sequence-1),{}};for(const auto& event:impl_->history)if(event.sequence>seq)result.events.push_back(event);return result;}
-    void RemoteControl::service()
+    bool RemoteControl::service()
     {
-        impl_->client.poll();bool refresh=false,resync=false;
+        impl_->client.poll();bool refresh=false,resync=false,read=false;
         for(const auto& message:impl_->client.takeNotifications())
         {
             auto doc=parse(message);
             if(const auto id=detail::member(doc.get(),"id"))
             {
+                const auto n=integer(id);impl_->answered(n);
+                if(impl_->dropped.erase(n))continue;
+                if(impl_->reading && !impl_->reading->sent.empty() && impl_->reading->sent.front().first==n){read=impl_->reply(doc,message.size()) || read;continue;}
                 // The reply to a live edit sent without waiting: a refusal is said, and the
                 // engine's state read again in place of what the cache showed.
-                impl_->answered(integer(id));
                 try{Impl::check(doc);}catch(const std::exception& e){impl_->failure=e.what();refresh=true;}
                 continue;
             }
@@ -1007,7 +1082,8 @@ namespace oscairn
                 impl_->publish(change);
             }
         }
-        if(refresh)impl_->refresh();
+        // Read without waiting: the cache shows the graph read once all its replies are in.
+        if(refresh)impl_->refreshLater();
         if(resync)
         {
             // Transport and status notifications are sent only on change; reread any that were lost.
@@ -1015,5 +1091,6 @@ namespace oscairn
             auto status=impl_->call("session.status");impl_->readStatus(field(status.get(),"result"));
             auto controllers=impl_->call("controllers.get");impl_->readControllers(field(controllers.get(),"result"));
         }
+        return read;
     }
 }

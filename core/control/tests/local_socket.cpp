@@ -343,6 +343,21 @@ namespace
         for(int i=0;i<10;++i)f.tick();
         check(f.left[0]>.62f,"typed remote client exit leaves audio running");
     }
+    // A graph another client changed is read again without waiting: service() returns at once,
+    // and the cache shows the change, the node and its parameters, once the read's replies are in.
+    void graphReadLater(const char* plugin)
+    {
+        Fixture f(plugin);auto fd=pair(),other=pair();f.server.adopt(fd[0]);f.server.adopt(other[0]);
+        clientWhileRendering(f,[&]{
+            LocalClient client;client.adopt(fd[1]);RemoteControl remote(client);
+            LocalClient second;second.adopt(other[1]);RemoteControl editor(second);
+            const auto effect=editor.add("effect",plugin);editor.commit();
+            const auto before=client.waits().count;bool read=false;
+            for(int i=0;i<2000 && !read;++i){read=remote.service();if(!read)std::this_thread::sleep_for(std::chrono::milliseconds(1));}
+            check(client.waits().count==before,"a graph changed elsewhere is read without waiting");
+            check(read && remote.hasNode(effect) && remote.hasParameter(effect,1) && remote.parameters(effect).size()==remote.parameters(remote.nodeId("synth")).size(),"and shows the node and its parameters once read");
+        });
+    }
     void effectClient(const char* synth,const char* delay)
     {
         Fixture f(synth);auto fd=pair();f.server.adopt(fd[0]);
@@ -589,7 +604,7 @@ int main(int argc,char** argv)
         if(argc==3 && std::string_view(argv[2])=="--path-policy"){pathPolicy(argv[1]);return 0;}
         if(argc==3 && std::string_view(argv[2])=="--named")return named(argv[1],argv[0]);
         if(argc!=2)return 2;
-        framing(argv[1]);lifetime(argv[1]);slowReader(argv[1]);clientAndReconnect(argv[1]);pressure(argv[1]);clientFailures();typedClient(argv[1]);controllerCrash(argv[1],argv[0]);
+        framing(argv[1]);lifetime(argv[1]);slowReader(argv[1]);clientAndReconnect(argv[1]);pressure(argv[1]);clientFailures();typedClient(argv[1]);graphReadLater(argv[1]);controllerCrash(argv[1],argv[0]);
         std::cout<<"ok: real Unix streams, framing, backpressure, notifications, reconnect, continuing audio and client failures\n";
     }
     catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}

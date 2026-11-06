@@ -14,7 +14,10 @@ namespace oscairn
     public:
         explicit RemoteControl(LocalClient& client);
         ~RemoteControl() override;
-        void service();
+        /// Takes what the engine sent. A graph it changed is read again without waiting (the
+        /// graph, then every node's parameters, a few requests at once): true once that read is
+        /// done and the cache shows it. Edits made here read the graph back before they return.
+        bool service();
         /// A live edit (part level or mute, master) the engine refused since the last ask, or
         /// empty: those are sent without waiting, so a refusal arrives with service().
         std::string takeError();

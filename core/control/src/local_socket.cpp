@@ -271,6 +271,7 @@ namespace oscairn
         std::deque<std::string> messages;
         size_t messageBytes=0,notices=0; // notices: the notifications among messages
         std::set<uint64_t> unanswered;   // requests sent whose replies have not arrived
+        Waits waits;
         static uint64_t idOf(const json_value_s* id)
         {
             if(id->type!=json_type_number)throw std::runtime_error("Unexpected RPC response ID");
@@ -313,6 +314,7 @@ namespace oscairn
     LocalClient::LocalClient():impl_(std::make_unique<Impl>()){}
     LocalClient::~LocalClient()=default;
     void LocalClient::disconnect()noexcept{impl_->stream.reset();impl_->messages.clear();impl_->messageBytes=impl_->notices=0;impl_->unanswered.clear();}
+    LocalClient::Waits LocalClient::waits()const{return impl_->waits;}
     bool LocalClient::connected()const{return impl_->stream && !impl_->stream->eof;}
     void LocalClient::adopt(int fd){disconnect();impl_->stream=std::make_unique<Stream>(fd);}
     void LocalClient::connect(const std::string& path,unsigned timeoutMs)
@@ -374,7 +376,8 @@ namespace oscairn
     std::string LocalClient::wait(uint64_t id,unsigned timeoutMs)
     {
         if(!impl_->stream)throw std::runtime_error("Local RPC is not connected");
-        const auto deadline=Clock::now()+std::chrono::milliseconds(timeoutMs);
+        const auto began=Clock::now(),deadline=began+std::chrono::milliseconds(timeoutMs);
+        struct Count{Waits& w;Clock::time_point began;~Count(){++w.count;w.time+=std::chrono::duration_cast<std::chrono::microseconds>(Clock::now()-began);}}count{impl_->waits,began};
         try
         {
             for(;;)

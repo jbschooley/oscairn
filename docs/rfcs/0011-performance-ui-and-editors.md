@@ -502,8 +502,18 @@ state 16 to 24 µs after the edit, the engine's `controls.changed` 0.3 to 1.7 ms
 desktop's parts list, drawn off screen, shows a mute made elsewhere within 5 ms of message
 loop, four times running (`Engine` is a `juce::ChangeBroadcaster`; `DesktopShell`, `PartsView`
 and `PlayView` listen). The Mixer and Play listen only while on screen, which no headless test
-reaches, so their redraw is unchecked. Not yet: a mute's `graph.changed` still reads the whole graph and every plugin's parameters on the
-UI thread, after the mute shows.
+reaches, so their redraw is unchecked.
+
+A mute's `graph.changed` read the whole graph and every plugin's parameters again on the UI
+thread after the mute showed: one blocking round trip per node, 23 waits and 126 ms on a
+Performance of 20 plugins served on the engine's 5 ms timer. Now `RemoteControl::service()`
+starts that read and returns: `graph.get`, then the nodes' `params.list` and the values, several
+requests out at once, their replies taken by later calls, and the cache swapped for the read
+once it is all in (`Engine` then broadcasts a change). An edit's own read back waits as before,
+sent the same way, so it takes a few of the engine's ticks rather than one per node.
+`control-local-stream` checks a graph changed by another client is read with no wait and shows
+the node and its parameters; `ui-waits` (the 20 plugins, the server polled every 5 ms) measures
+a mute and a drag of 60 fader moves at 0 waits on the UI thread.
 
 #### Engine mapping status
 

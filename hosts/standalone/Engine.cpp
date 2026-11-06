@@ -587,9 +587,9 @@ namespace oscairn::standalone
             try
             {
                 const auto values=remote_->liveValues();const auto revision=remote_->graphState().revision;
-                remote_->service();
+                const bool read=remote_->service(); // a graph the engine changed is read without waiting
                 if(auto refused=remote_->takeError();!refused.empty())editError_=std::move(refused);
-                if(remote_->liveValues()!=values || remote_->graphState().revision!=revision)sendChangeMessage();
+                if(read || remote_->liveValues()!=values || remote_->graphState().revision!=revision)sendChangeMessage();
             }
             catch(const std::exception& e){failed(e.what());}
             if(failure_.empty() && ++soundTicks_>=30){soundTicks_=0;refreshSounds();}

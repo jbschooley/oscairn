@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #pragma once
 #include "oscairn/control.h"
+#include <chrono>
 #include <memory>
 #include <string_view>
 #include <system_error>
@@ -66,6 +67,10 @@ namespace oscairn
         /// takeNotifications() with the notifications, in the order it arrived.
         uint64_t send(std::string_view method, std::string_view params = "{}", unsigned timeoutMs = 1000);
         std::string wait(uint64_t id, unsigned timeoutMs = 1000);
+        /// The waits so far (call() and wait(), each one), and the time spent in them: what a UI
+        /// thread using this client has sat in the socket.
+        struct Waits { uint64_t count = 0; std::chrono::microseconds time{}; };
+        Waits waits() const;
         /// Receive subscribed notifications without waiting. A bounded notification
         /// queue overflows by disconnecting, never by silently dropping updates.
         void poll();

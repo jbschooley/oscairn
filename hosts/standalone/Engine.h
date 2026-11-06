@@ -125,6 +125,8 @@ namespace oscairn::standalone
         }
         int trackChannel()const;
         bool connected()const{return failure_.empty();}
+        // What this thread has waited on the engine's socket so far (none in process).
+        LocalClient::Waits socketWaits()const{return client_?client_->waits():LocalClient::Waits{};}
         bool canRestart()const{return recoveryAvailable_;}
         // Restart starts the managed engine off the message thread (it may wait seconds for it);
         // the engine is used once it answers, and restarting() is true until then.
