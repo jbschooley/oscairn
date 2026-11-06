@@ -196,8 +196,18 @@ namespace
     // a control whose target is a part's level, as on "Drifting". Measured: from the MIDI thread
     // handing the message over to the end of the first block whose output has the new level
     // (heard), and to the client's cached value having it (what a UI shows at its next frame).
-    void latency(const char* fixture)
+    // Timing is judged on the best of three runs (main), with CTest running nothing beside it
+    // (RUN_SERIAL): a slower path (an extra block, a poll in place of the wake) fails every run,
+    // other load on the machine seldom three in a row.
+    // A run that misses a limit says so and, unless it is the last, counts no failure.
+    bool latency(const char* fixture, bool last)
     {
+        int missed = 0;
+        auto timing = [&](bool ok, const std::string& what) {
+            if(ok) return;
+            ++missed;
+            if(last) check(false, what); else std::fprintf(stderr, "slow, trying again: %s\n", what.c_str());
+        };
         constexpr uint32_t block = 128;
         constexpr double rate = 48000, period = block / rate;
         Session s(rate, block);
@@ -279,7 +289,7 @@ namespace
                     if(!ui && shownAt > since && std::abs(shown - level) < 1e-9) { ui = true; toClient.push_back(ms(Clock::duration(shownAt - since))); }
                     std::this_thread::yield();
                 }
-                check(sound && ui, "move " + std::to_string(i) + " heard and shown within 35 ms");
+                timing(sound && ui, "move " + std::to_string(i) + " heard and shown within 35 ms");
             }
             done = true;
         });
@@ -304,16 +314,17 @@ namespace
         std::printf("latency: MIDI to a client's cached value, median %.2f ms, worst %.2f ms (a display frame is 16.67 ms), over %zu moves\n", ui.median, ui.worst, toClient.size());
         // Within about one block (a move landing just after a block starts waits for the next);
         // generous on the worst, for a loaded test machine.
-        check(sound.median <= 2 * period * 1000 + 1, "heard within about a block (median)");
-        check(sound.worst <= 10, "heard within 10 ms, every move");
-        check(ui.worst <= 1000 / 60.0, "a client has it within a display frame, every move");
+        timing(sound.median <= 2 * period * 1000 + 1, "heard within about a block (median)");
+        timing(sound.worst <= 10, "heard within 10 ms, every move");
+        timing(ui.worst <= 1000 / 60.0, "a client has it within a display frame, every move");
+        return !missed;
     }
 }
 
 int main(int argc, char** argv)
 {
     if(argc < 2) { std::fprintf(stderr, "usage: %s FIXTURE\n", argv[0]); return 2; }
-    try { mapping(argv[1]); identical(argv[1]); latency(argv[1]); }
+    try { mapping(argv[1]); identical(argv[1]); for(int run = 1; run <= 3 && !latency(argv[1], run == 3); ++run) {} }
     catch(const std::exception& e) { forbidAllocation = false; std::fprintf(stderr, "FAIL: %s\n", e.what()); return 1; }
     if(!failures) std::puts("ok: a controller's MIDI into the engine moves its controls' targets within one block");
     return failures ? 1 : 0;

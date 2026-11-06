@@ -149,6 +149,8 @@ namespace
         bool sound = false; for(auto v : render.main) sound = sound || v != 0;
         check(sound, "the synth played");
         check(fs::exists(fs::path(t.folder) / "take.json") && slurp(fs::path(t.folder) / "take.json").find("\"state\":\"done\"") != std::string::npos, "take.json records the take");
+        // "done" is published a moment before the writer thread ends and service() may free its rings.
+        for(int i = 0; i < 400 && s.recorder().committedBytes(); ++i) { s.service(); std::this_thread::sleep_for(std::chrono::milliseconds(5)); }
         check(s.recorder().committedBytes() == 0, "the rings are freed once the take is written");
     }
 
@@ -379,6 +381,7 @@ namespace
         check(midi.size() == 2 && midi[1].size() == expected, "the notes played in the last 2 seconds: " + std::to_string(midi.size() == 2 ? midi[1].size() : 0) + " of " + std::to_string(expected));
         for(size_t i = 0; midi.size() == 2 && i < midi[1].size() && i < ticks.size(); ++i)
             check(midi[1][i].tick == ticks[i].first && midi[1][i].bytes[0] == ticks[i].second, "note event " + std::to_string(i) + " at tick " + std::to_string(midi[1][i].tick));
+        for(int i = 0; i < 400 && s.recorder().committedBytes() > rings; ++i) { s.service(); std::this_thread::sleep_for(std::chrono::milliseconds(5)); } // as above
         check(s.recorder().committedBytes() == rings, "after the capture, only the rings");
         // More than the buffer holds: as much as it holds, less what the writer needs to begin.
         Control::RecordWhen all; all.from = Control::RecordWhen::From::SecondsAgo; all.seconds = 60;
