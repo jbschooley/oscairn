@@ -11,7 +11,8 @@
 // Pitch bend range; the mod wheel adds vibrato through the pitch LFO unless the sound turns it off.
 // Events are applied on their exact sample, and the output does not depend on the
 // host's block size. Its factory presets are listed through CLAP preset discovery and
-// prepared as sound contexts (oscairn.sound-contexts draft 5).
+// prepared as sound contexts (oscairn.sound-contexts draft 5). Sounds no channel selects any more
+// ring out into the host's ring-out buffer when it gives one (oscairn.sound-snapshots draft 2).
 
 #include <clap/clap.h>
 #include <oscairn-clap/preset-discovery-plugin.hpp>
@@ -193,10 +194,10 @@ namespace
         // the control thread may reclaim its slot; the rest of this span uses copies.
         std::array<std::array<double,parameters.size()>,Synth::contextCapacity> settings{};
         std::array<double,Synth::contextCapacity> detune{};
-        std::array<bool,Synth::contextCapacity> copied{};
+        std::array<bool,Synth::contextCapacity> copied{},retiring{}; // retiring: its main output goes to the ring-out buffer
         for(const auto& v:s.voices)if(v.active && !copied[v.context])
         {
-            copied[v.context]=true;const auto& c=s.contexts[v.context].patch;
+            copied[v.context]=true;retiring[v.context]=s.retiring(v.context);const auto& c=s.contexts[v.context].patch;
             for(size_t p=0;p<parameters.size();++p)settings[v.context][p]=std::clamp(c.values[p]+c.modulation[p],0.0,parameters[p].maximum);
             detune[v.context]=settings[v.context][3]==1?std::pow(2.0,settings[v.context][4]/1200.0):1;
         }
@@ -272,9 +273,10 @@ namespace
                 mix[v.context][v.outputBus] += v.low2 * v.level * v.velocity * 0.35 * amplitude(v, i - from); // volume expression and choke fade
             }
             for(uint32_t bus=0;bus<std::min(9u,process->audio_outputs_count);++bus) {
-                double sum=0;for(size_t c=0;c<mix.size();++c)if(mix[c][bus]!=0)sum+=std::tanh(mix[c][bus]*levels[c]);
+                double sum=0,ring=0;for(size_t c=0;c<mix.size();++c)if(mix[c][bus]!=0)(bus==0 && retiring[c]?ring:sum)+=std::tanh(mix[c][bus]*levels[c]);
                 auto& out=process->audio_outputs[bus];
                 if(out.channel_count>=2 && out.data32 && out.data32[0] && out.data32[1])out.data32[0][i]=out.data32[1][i]=static_cast<float>(sum);
+                if(bus==0 && s.ringOut){s.ringOut[0][i]+=static_cast<float>(ring);s.ringOut[1][i]+=static_cast<float>(ring);}
             }
         }
     }
@@ -392,7 +394,7 @@ namespace
 
     const clap_plugin_state_t snapshot{Synth::saveSnapshot,Synth::loadSnapshot};
     const oscairn_plugin_sound_contexts_t soundContexts{Synth::capacity,Synth::get,Synth::prepare,Synth::select,Synth::discard,&snapshot,Synth::preparePreset};
-    const oscairn_plugin_sound_snapshots_t soundSnapshots{Synth::prepareSnapshot};
+    const oscairn_plugin_sound_snapshots_t soundSnapshots{Synth::prepareSnapshot,Synth::setRingOut};
 
     const clap_plugin_t* create()
     {
