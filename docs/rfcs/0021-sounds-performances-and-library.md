@@ -1049,19 +1049,31 @@ Proposed 2026-11-05. The problem: a switched instance has one output, so the out
 played through the incoming Performance's effects and part level, a dry tail suddenly wet or the
 other way round. Decided by the owner: a hidden ring-out buffer. The plugin renders its retiring
 sounds into it ([RFC 0005](0005-sound-contexts.md#ringing-out-through-the-outgoing-chain):
-`oscairn.sound-snapshots/draft-2`'s `ring_out`, how the buffer is passed, what counts as retiring,
-and why the move is click-free), and the host routes it through the outgoing chain.
+`oscairn.sound-snapshots/draft-3`'s `ring_out`, how the buffer is passed, what counts as retiring,
+and why the move is click-free), and the host routes it through the outgoing chain. Only one
+change's tail carries over: a second change cuts the first one's (below).
 
-**In the graph** the buffer is a hidden output port of the node, `Graph::ringOutPort`, two
-channels after the plugin's own, present only for a plugin that offers `ring_out`. At the cue,
-on the prepared replacement after `carryOver` and `takeNotes`, `Graph::ringOut(current, was, now)`
-copies the outgoing graph's routes from the outgoing node's main output port as routes from the
-incoming node's ring-out port: to the outgoing Performance's nodes carried over (its effects,
+**In the graph** the buffer is a hidden output port of the node, `Graph::ringOutPort`, four
+channels after the plugin's own (`Graph::ringOutChannels`), present only for a plugin that offers
+`ring_out`. At the cue, on the prepared replacement after `carryOver` and `takeNotes`,
+`Graph::ringOut(current, was, now)` copies the outgoing graph's routes from the outgoing node's
+main output port as routes from the incoming node's ring-out channels 0 and 1: to the outgoing Performance's nodes carried over (its effects,
 ringing out as in any seamless change) and to the outputs, with their live gains frozen as
 `carryOver` freezes the carried routes' (the part's level as it was at the cue). An outgoing part
 with no effects therefore has its tail go straight to where it played, at its level. All or
 nothing: when a route goes to a node the incoming Performance took over (it is no longer the
 outgoing chain), none is made and the tail plays as before. A cut makes none either.
+
+**A second change while a tail rings.** Decided by the owner: only one tail carries over. When the
+outgoing node itself has ring-out routes (a first change's tail still rings), `Graph::ringOut` also
+copies those, from its channels 0 and 1, as routes from the incoming node's channels 2 and 3, to
+the same places (the first outgoing chain, carried over again, or the outputs), and
+`Session::open` calls `PluginHost::chokeRetiring` in the publish, just before it selects the
+incoming sounds. The plugin queues it before those selections, so in the same block the first
+change's sounds start their choke fade and move to channels 2 and 3, through their own chain, and
+the second change's become retiring in channels 0 and 1, through theirs. Nothing on the audio
+thread changes: the request crosses as a selection does (in a worker, as one more control message,
+`Op::ChokeRetiring`), and the plan carries the extra routes as any other.
 
 These routes are internal. They live among the graph's routes so that compiling, carrying over,
 removing a node and the next change treat them as any route, but `Graph::describe()` leaves them
@@ -1073,13 +1085,18 @@ time rings out in the main output as before.
 
 **Removal.** `Session::retireSounds` already discards the outgoing sounds as each goes idle. Once
 all are discarded and no unselected sound of the instance still sounds (the Default may hold a
-tail), it removes the node's ring-out routes and commits. They also go with the carried-over
+tail), it removes the node's ring-out routes and commits. At a second change the first change's
+entry moves to the incoming node, marked older: once its own sounds are discarded and the Default
+is silent, which the choke makes a few milliseconds after the cue, only the routes from channels 2
+and 3 go (`Graph::dropRingOut(node, true)`). An entry already older at a third change keeps no
+routes; that change made none for it. They also go with the carried-over
 effects when those are removed, and with the node when it is removed or claimed again at a later
 change.
 
 **Limits.** The ring-out buffer carries the retiring sounds' main output only; their other output
-ports (the Basic Synth's sound buses) stay on the instance's ports. One buffer per instance: a
-second change while the first's tail rings moves that tail to the second outgoing chain (RFC 0005).
+ports (the Basic Synth's sound buses) stay on the instance's ports. One tail carries over: a
+second change while the first's tail rings cuts it with the 3 ms choke fade (RFC 0005); a third
+change within that fade sends the rest of the fade through the second chain.
 A carried-over effect fed only by a ring-out route goes 30 seconds after the change at the latest
 (the ring-out rule above): a note held through the change for longer than that loses the outgoing
 effects, and its tail moves back to the main output. A sound the user unselects on the incoming
@@ -1098,7 +1115,17 @@ echoes after both voices end; once the outgoing sound is discarded its routes ar
 sounds as a fresh load. Back from H to G with a note held, H's dry tail goes straight to the
 outputs at H's level (two routes, not in `graph.get`), the output equals the reference opening G's
 copy, and those routes go once H's sound is discarded: only `retireSounds` removes them, where the
-Delay's routes also go with the Delay. Every render runs under the allocation guard (engine side;
+Delay's routes also go with the Delay. A second change while a tail rings: A, a dark synth sound
+dry at full level, to B, the synth through a Delay at half level, with a note held, then a note
+held on B and on to C, the synth dry at 0.8, while both ring; the reference plays B fresh and opens
+C's copy, so before the second change the difference between the two is A's tail alone. After
+it, four ring-out routes, two once A's sound is discarded (by the third block), none once B's is;
+A's tail is gone 144 samples (3 ms) after the cue; its largest sample-to-sample step in the fade is
+below 1.5 times the largest in the ten blocks before (0.0006 against 0.0013); and from then on the
+output equals the reference sample for sample, B's tail in B's Delay and C's notes in C's chain.
+With the code before this change the routes stay two, the tail is still there (0.015), the step is
+0.0062 and the comparison differs; without `chokeRetiring` the tail goes on into B's Delay; without
+the routes from channels 2 and 3 the fade is cut, a click; without dropping them they stay. Every render runs under the allocation guard (engine side;
 a worker's own audio thread is not guarded). Without `Graph::ringOut` the comparison differs from
 the first block after the change; with a plugin that ignores the buffer too; without the worker
 carrying it, in `-workers` only; without `dropRingOut`, the routes to the outputs stay; without

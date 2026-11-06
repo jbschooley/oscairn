@@ -143,7 +143,7 @@ the current headers.
 | Editor hints (`ui.h`, `oscairn.ui/draft-3`, [RFC 0019](rfcs/0019-adaptive-ui.md)) | Puts the right parameters first on small screens and on the physical knobs. Details [below](#editor-hints-and-roles). | Basic Synth (cutoff and level), Delay (Wet is its `mix`) |
 | Declared memory (`memory.h`, `oscairn.memory/draft`, [RFC 0025](rfcs/0025-resource-budgets.md#declarations)) | Lets a device near its memory limit refuse the plugin before its large allocation, and sets a tighter worker memory limit. Details [below](#declared-memory). | KICK memory test fixture |
 | Native sound contexts (`sound-contexts.h`, [RFC 0005](rfcs/0005-sound-contexts.md)) | Multitimbral playing: up to 8 prepared sounds in one instance, each MIDI channel choosing one, held notes keeping theirs, without an extra instance per sound. New native Oscairn instruments implement it. | Basic Synth, Sampler |
-| Snapshots prepared beside (`sound-contexts.h`, `oscairn.sound-snapshots/draft-2`, [RFC 0005](rfcs/0005-sound-contexts.md#preparing-a-snapshot-beside)) | Instant Performance changes: the next Performance's sounds for an instrument already playing are prepared in that instance, beside the playing ones, and selected at the cue, instead of loading its whole snapshot into an instance. Without it a native instrument is taken over whole, its snapshot loaded (for a sampler, its samples again). With its optional `ring_out`, the outgoing sounds ring out through the outgoing Performance's effects and level instead of the incoming one's. Details [below](#instant-performance-changes). | Basic Synth |
+| Snapshots prepared beside (`sound-contexts.h`, `oscairn.sound-snapshots/draft-3`, [RFC 0005](rfcs/0005-sound-contexts.md#preparing-a-snapshot-beside)) | Instant Performance changes: the next Performance's sounds for an instrument already playing are prepared in that instance, beside the playing ones, and selected at the cue, instead of loading its whole snapshot into an instance. Without it a native instrument is taken over whole, its snapshot loaded (for a sampler, its samples again). With its optional `ring_out` and `choke_retiring`, the outgoing sounds ring out through the outgoing Performance's effects and level instead of the incoming one's. Details [below](#instant-performance-changes). | Basic Synth |
 | Native effect contexts (`effect-contexts.h`, [RFC 0007](rfcs/0007-effect-contexts.md)) | Many independent effect slots sharing one engine's memory, with tails reported. The next Performance's effects become new contexts of an engine already playing while the old ones ring out, so an engine outlives its first context and must refuse `create` past its capacity. Without `oscairn.memory`, the bytes its `resources` call reports are counted toward the memory budget. | Delay |
 | Parameter-target lanes (`param-target.h`, [RFC 0002](rfcs/0002-param-target.md)) | For sequencers and modulators: change other plugins' parameters at an exact sample in the same block (parameter locks). | Step Sequencer |
 | Free-running beat (`beat.h`, event space `oscairn.beat`, [RFC 0032](rfcs/0032-arpeggiator.md#step-3-status)) | For arpeggiators and clocks: a beat position the same for every plugin in a block that runs at the tempo while the transport is stopped, so parts keep time and start together. Query the event space through CLAP's event registry; an event arrives at sample 0 of every block. | Test fixture (`follower_fixture.cpp`) |
@@ -153,11 +153,11 @@ the current headers.
 ### Instant Performance changes
 
 An instrument with native sound contexts switches Performances without a new instance or a state
-load when it also offers `oscairn.sound-snapshots/draft-2` ([RFC 0021](rfcs/0021-sounds-performances-and-library.md#native-sound-contexts-across-a-change)).
+load when it also offers `oscairn.sound-snapshots/draft-3` ([RFC 0021](rfcs/0021-sounds-performances-and-library.md#native-sound-contexts-across-a-change)).
 On `sound-contexts-plugin.hpp` that is one table and one `get_extension` line:
 
 ```cpp
-const oscairn_plugin_sound_snapshots_t soundSnapshots{Engine::prepareSnapshot, Engine::setRingOut};
+const oscairn_plugin_sound_snapshots_t soundSnapshots{Engine::prepareSnapshot, Engine::setRingOut, Engine::chokeRetiring};
 // in get_extension:
 if(std::strcmp(id, OSCAIRN_EXT_SOUND_SNAPSHOTS) == 0) return &soundSnapshots;
 ```
@@ -172,17 +172,25 @@ What the plugin must then do:
   Default counts), and each outgoing sound is discarded only once it is idle. With too few free
   contexts the change falls back to loading the snapshot into an instance.
 - Report idleness honestly: a sound with a voice or a tail must refuse `discard`, so it rings out.
-- Ring out into the hidden buffer (`ring_out`, optional; [RFC 0005](rfcs/0005-sound-contexts.md#ringing-out-through-the-outgoing-chain)):
+- Ring out into the hidden buffer (`ring_out` with `choke_retiring`, optional together; [RFC 0005](rfcs/0005-sound-contexts.md#ringing-out-through-the-outgoing-chain)):
   while `Engine::ringOut` is set, `render` adds the main output of every context for which
-  `Engine::retiring(slot)` is true into `ringOut[0]` and `ringOut[1]` instead of the main output
+  `Engine::retiring(slot)` returns two channels into those channels instead of the main output
   port; `Engine` clears it when each `process()` returns. Other ports are unchanged. A plugin built
-  against draft 1 must be rebuilt against draft 2 (draft 1 is no longer read); leaving
-  `ring_out` null keeps today's behavior, its tails playing through the incoming chain.
-  With `ring_out`, three limits, which a plugin needs no code for but its users hear:
-  - **One buffer per instance.** A second Performance change while a first change's tail still
-    rings sends both outgoing sounds through the *second* change's outgoing chain (the
-    Performance that was playing just before the second change): at the second cue, the older
-    tail jumps from its own chain to that one.
+  against draft 1 or 2 must be rebuilt against draft 3 (neither is read any more): add
+  `Engine::chokeRetiring` to the table, and take the channels from `retiring(slot)`, which
+  returns a pointer (null when not retiring) instead of a bool, rather than always writing
+  `ringOut[0]` and `ringOut[1]`. Leaving both calls null keeps today's behavior, its tails
+  playing through the incoming chain.
+  With `ring_out`, three limits, which a plugin needs no code for beyond the SDK's but its users hear:
+  - **One tail carries over.** A second Performance change while a first change's tail still
+    rings cuts that tail: the host calls `choke_retiring` just before selecting the incoming
+    sounds, and the SDK chokes every voice of a sound retiring then, with the 3 ms choke fade,
+    rendering the fade into `ringOut[2]` and `ringOut[3]`, which the host still routes through
+    the first change's chain. The second change's outgoing sounds take `ringOut[0]` and
+    `ringOut[1]` and ring out through theirs. So no tail jumps to another chain, and no click,
+    but a long tail (a held pad, an instrument's own delay) ends at the second cue. A plugin
+    with tails outside its voices, which the SDK cannot choke, fades them itself in that
+    context while `retiring(slot)` returns `ringOut + 2`.
   - **Main output only.** Only a retiring sound's main output port rings out through the
     outgoing chain. Its other output ports (the Basic Synth's sound buses, for example) keep
     playing through the instance's ports, which follow the incoming Performance's chain.

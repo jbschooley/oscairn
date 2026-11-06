@@ -27,6 +27,8 @@ Checked when built and tested; the sections below say how.
 - [x] Ringing out through the outgoing chain: the retiring sounds rendered into a hidden ring-out
       buffer (`oscairn.sound-snapshots/draft-2`, [below](#ringing-out-through-the-outgoing-chain)),
       by the SDK and the Basic Synth, routed through the outgoing Performance's effects and level
+- [x] Only one change's tail carries over: at a second change the older tail is choked, fading out
+      through its own chain, and the buffer goes to the newer one (`oscairn.sound-snapshots/draft-3`)
 - [ ] Parts sharing one instance ([RFC 0021, slice 3](0021-sounds-performances-and-library.md#fewer-instances-reusing-what-is-loaded))
 
 ## Contract
@@ -196,33 +198,36 @@ beside needs two free.
 ## Ringing out through the outgoing chain
 
 A switched instance has one output and one place in the graph, so without more the outgoing
-sounds' tails play through the incoming Performance's effects and part level. Draft 2 of
-`oscairn.sound-snapshots` adds a second, optional call that gives the plugin a hidden ring-out
-buffer, which the host routes through the outgoing chain:
+sounds' tails play through the incoming Performance's effects and part level. Draft 3 of
+`oscairn.sound-snapshots` adds two calls, optional together, that give the plugin a hidden
+ring-out buffer, which the host routes through the outgoing chain, and let the host cut an older
+tail when a second change comes:
 
 ```c
-static const char OSCAIRN_EXT_SOUND_SNAPSHOTS[] = "oscairn.sound-snapshots/draft-2";
+static const char OSCAIRN_EXT_SOUND_SNAPSHOTS[] = "oscairn.sound-snapshots/draft-3";
 typedef struct oscairn_plugin_sound_snapshots {
     bool (CLAP_ABI *prepare)(...);                       /* as above */
     void (CLAP_ABI *ring_out)(const clap_plugin_t*, const clap_audio_buffer_t* buffer); /* optional */
+    bool (CLAP_ABI *choke_retiring)(const clap_plugin_t*); /* with ring_out */
 } oscairn_plugin_sound_snapshots_t;
 ```
 
 **How the buffer is passed.** The host calls `ring_out` on the audio thread immediately before
-every `process()` call, with a stereo buffer (two `data32` channels) of that call's
-`frames_count`, already zeroed, or with null when there is no ring-out for that call. The pointer
+every `process()` call, with a buffer of four `data32` channels of that call's `frames_count`,
+already zeroed, or with null when there is no ring-out for that call. The pointer
 is valid only until that `process()` returns; a `process()` not preceded by a call has none. The
 plugin only stores the pointer: nothing allocates, locks or blocks. It is not a CLAP audio port:
 the plugin's ports, the host's Routing and Mixer, and saved Performances never show it. The host
 gives a buffer only while it routes it somewhere; otherwise the plugin renders as before.
-`ring_out` may be null, and draft 1 is gone (formats are replaced outright): a plugin built
-against draft 1 must rebuild against draft 2, and without `ring_out` its tails play through the
-incoming chain as before.
+`ring_out` and `choke_retiring` may both be null (one without the other is refused), and drafts 1
+and 2 are gone (formats are replaced outright): a plugin built against either must rebuild against
+draft 3, and without `ring_out` its tails play through the incoming chain as before.
 
 **What goes into it.** A context is *retiring* while no MIDI channel selects it and it still has
 voices or a tail. During a `process()` given a buffer, the plugin renders every retiring
-context's main-port output into the buffer, adding to it, instead of into its main output port;
-everything else, and retiring contexts' other ports, as usual. Selections apply at the start of a
+context's main-port output into channels 0 and 1, adding to them, instead of into its main output
+port, and a retiring context `choke_retiring` is fading into channels 2 and 3 (below); everything
+else, and retiring contexts' other ports, as usual. Selections apply at the start of a
 `process()` call, before its notes, so the outgoing sound becomes retiring at sample 0 of the
 block whose selection leaves it unselected: the move from main to ring-out is sample-accurate,
 at a block boundary.
@@ -236,28 +241,38 @@ no buffer and the main output still feeds the outgoing chain, and the next block
 ring-out buffer, into the same chain. Either way the tail's samples reach the same inputs without
 a gap or a step.
 
-**In a worker** the shared block holds two more output channels after the plugin's, sized when
+**In a worker** the shared block holds four more output channels after the plugin's, sized when
 the worker is set up for a plugin that offers `ring_out`, and a per-block flag saying whether the
 engine wants them; the worker's host then calls `ring_out` with them, as in the engine. Nothing
 else crosses: the buffer is part of the block's audio, like the outputs.
 
-**Cost.** Memory: two channels of the maximum block in the plugin host's scratch, for every
-instance whose plugin offers `ring_out` (8 KB at 1024 frames), two in a worker's shared block, and
-two in the plan for a node with a ring-out route. CPU: while a tail rings, the outgoing chain's
+**Cost.** Memory: four channels of the maximum block in the plugin host's scratch, for every
+instance whose plugin offers `ring_out` (16 KB at 1024 frames), four in a worker's shared block,
+and four in the plan for a node with a ring-out route. CPU: while a tail rings, the outgoing chain's
 effects run, as in a seamless change between Performances that share nothing, where the whole
 outgoing instance runs as well; the instrument renders no more voices than before. The bench
 figures are in [RFC 0021](0021-sounds-performances-and-library.md#native-sound-contexts-across-a-change).
 
-**Overlapping changes.** One ring-out buffer per instance, not one per retiring generation. A
-second change while a first change's tail still rings sends both outgoing sounds through the
-second outgoing chain: the older tail moves from the first chain to the second at the cue, a jump
-in its effects rather than a seamless move. That
-keeps the contract to one buffer; per-generation buffers can come as a draft 3 if it matters.
+**Overlapping changes: only one tail carries over.** Decided by the owner. At a second change
+while the first change's tail still rings, the older tail is cut with a short fade and the buffer
+goes to the second change's outgoing sounds, so every tail that remains plays through its own
+Performance's chain. The host calls `choke_retiring` on the main thread just before it queues the
+incoming selections. It is queued like `select`: at that `process()` boundary, before those
+selections, the plugin chokes every context retiring then (the first change's sounds, and the
+Default if it holds a tail of theirs), with the fade a CLAP choke gets (the SDK's 3 ms), and renders
+them into channels 2 and 3 until they end; the selections then leave the second change's sounds
+retiring, in channels 0 and 1. The host routes channels 2 and 3 where channels 0 and 1 went before
+the change, through the first chain, so the fade is heard where the tail was, without a jump or a
+click; once those sounds are discarded it removes that route. It returns false when nothing could
+be queued (the selection queue is full); the older tail then moves to the second chain, as before
+draft 3. A third change within the fade sends the rest of the fade through the second chain.
 
-**Limits, for plugin authors** (none needs code in the plugin; all are heard by its users):
-- **One buffer per instance:** a second change while a first change's tail still rings sends
-  both outgoing sounds through the second change's outgoing chain (the Performance playing just
-  before the second change); at the second cue the older tail jumps from its own chain to that one.
+**Limits, for plugin authors** (none needs code in the plugin beyond the SDK's; all are heard by
+its users):
+- **One tail carries over:** a second change while a first change's tail still rings cuts that
+  tail with the choke fade (3 ms in the SDK), through its own chain; only the second change's
+  outgoing sounds ring on, through theirs. A long tail, a held pad or a delay's feedback in the
+  instrument, ends at the second cue.
 - **Main output only:** only a retiring sound's main output port rings out through the outgoing
   chain; its other output ports keep playing through the instance's ports, which follow the
   incoming chain.
@@ -266,9 +281,13 @@ keeps the contract to one buffer; per-generation buffers can come as a draft 3 i
   its tail moves back to the main output, through the incoming chain.
 
 **In the SDK**, `Engine` keeps the buffer `ring_out` gives (`Engine::ringOut`, cleared when
-`process()` returns) and `Engine::retiring(context)` says whether a context renders into it; an
-instrument's `render` writes a retiring context's main output to `ringOut` instead of its main
-port. The table becomes `{Engine::prepareSnapshot, Engine::setRingOut}`.
+`process()` returns), and `Engine::retiring(context)` returns the two channels a context renders
+its main output into, or null: `ringOut` for a retiring context, `ringOut + 2` for one
+`Engine::chokeRetiring` is fading. `chokeRetiring` queues the request in the selection queue;
+applied, it starts the choke fade (`chokeLeft`/`chokeLength`) on every voice of a retiring context
+and marks the context until its last voice ends. An instrument's `render` adds a context's main
+output into the channels `retiring` returns instead of its main port. The table becomes
+`{Engine::prepareSnapshot, Engine::setRingOut, Engine::chokeRetiring}`.
 
 ## Basic Synth and Sampler
 
