@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
-// The desktop's message thread and the engine's socket: a mute, a fader drag and the views'
+// The desktop's message thread and the engine's socket: a mute, a fader drag, a plugin knob drag and the views'
 // polls never wait on it, and opening a Performance costs the app little once the engine has
 // loaded it. Against a session of 20 plugins served as the engine serves it (requests answered
 // as they arrive, the session serviced every 5 ms), without an audio device; it prints what it
@@ -13,6 +13,7 @@
 #include <juce_gui_extra/juce_gui_extra.h>
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <condition_variable>
 #include <cstdio>
 #include <filesystem>
@@ -115,6 +116,27 @@ int main(int argc, char** argv)
             std::printf("drag: %llu waits, %lld us waiting\n", (unsigned long long)drag.count, drag.micros);
             check(drag.count == 0, "a fader drag never waits on the socket: " + std::to_string(drag.count) + " waits");
 
+            // A plugin knob dragged: 60 moves, one a frame, each value's text shown as a slider shows it.
+            free(); run(100);
+            {
+                const auto node = engine.graph().topology.nodes.front();
+                const auto name = engine.graph().names.at(node.id);
+                uint32_t knob = 0; double low = 0, high = 1;
+                for(const auto& p : engine.parameters(node.id))
+                    if(!(p.flags & (CLAP_PARAM_IS_READONLY | CLAP_PARAM_IS_STEPPED)) && p.maximum > p.minimum) { knob = p.id; low = p.minimum; high = p.maximum; break; }
+                before = waits();
+                double last = 0;
+                for(int i = 0; i < 60; ++i) { last = low + (high - low) * i / 60.0; engine.setParam(name, knob, last); engine.paramText(name, knob, last); run(16); }
+                run(300);
+                const auto knobDrag = since(before);
+                std::printf("knob drag: %llu waits, %lld us waiting\n", (unsigned long long)knobDrag.count, knobDrag.micros);
+                check(knobDrag.count == 0, "a plugin knob drag never waits on the socket: " + std::to_string(knobDrag.count) + " waits");
+                // The engine's own value and text, asked on a connection of this test's.
+                LocalClient asked; asked.connect(socket.string());
+                RemoteControl direct(asked);
+                check(std::abs(engine.param(name, knob) - last) < 1e-9 && std::abs(direct.parameter(node.id, knob) - last) < 1e-9, "and ends where it was left");
+                check(engine.paramText(name, knob, last) == standalone::tidyNumber(direct.parameterText(node.id, knob, last)), "with the engine's text for its value");
+            }
             // A structural edit (a rename) reads the graph back before it returns: it waits, for
             // as long as the engine takes to answer each of its requests.
             free(); run(100);

@@ -8,8 +8,9 @@ namespace oscairn
     /// Cached Control client. Construct after connecting LocalClient; service regularly
     /// on the same UI/control thread. Reads use snapshots except plugin text formatting.
     /// Mutations use bounded RPC calls and never retry implicitly after a disconnect. Live
-    /// edits (setPartLevel, setMaster, and a commit after only those) are sent without waiting:
-    /// the cache shows them at once and the engine's pushes confirm them; the rest read back.
+    /// edits (setPartLevel, setMaster, setParameter, and a commit after only those) are sent
+    /// without waiting: the cache shows them at once and the engine's pushes confirm them; the
+    /// rest read back. setParameter so returns true; a refusal comes through takeError().
     class RemoteControl final : public Control
     {
     public:
@@ -36,6 +37,8 @@ namespace oscairn
         bool fetchAudition(std::function<void(Audition)> done);
         bool fetchPluginWindow(NodeId node, std::function<void(bool)> done);
         bool fetchPadMap(std::function<void(PadMap)> done);
+        /// A plugin parameter's text for a value, read the same way; one out per parameter.
+        bool fetchParameterText(NodeId node, uint32_t param, double value, std::function<void(std::string)> done);
         void forgetFetches();
         void savePerformance(const std::string& directory) override;
         void setBudget(const Budget& budget) override;

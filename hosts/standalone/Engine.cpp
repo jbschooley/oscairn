@@ -160,6 +160,14 @@ namespace oscairn::standalone
         if(const auto it=textCache_.find(key);it!=textCache_.end())
             if(const auto at=it->second.find(bits);at!=it->second.end())return at->second;
         if(soundJob_.valid() && soundJobKind_!=SoundAction::Refresh)return std::to_string(v);
+        // From the engine: asked without waiting, the text shown last meanwhile (a knob dragged
+        // shows its new value's text at the next timer, when the reply has come).
+        if(remote_)
+        {
+            try{textWanted_[key]=v;askText(key,v);}catch(const std::exception&){return std::to_string(v);}
+            const auto shown=textShown_.find(key);
+            return shown!=textShown_.end()?shown->second:tidyNumber(std::to_string(v));
+        }
         try
         {
             auto text=tidyNumber(control_->parameterText(control_->nodeId(n),p,v));
@@ -168,6 +176,18 @@ namespace oscairn::standalone
             values[bits]=text;return text;
         }
         catch(const std::exception&){return std::to_string(v);}
+    }
+    void Engine::askText(const std::pair<std::string,uint32_t>& key,double v)const
+    {
+        if(!connected())return;
+        remote_->fetchParameterText(control_->nodeId(key.first),key.second,v,[this,key,v](std::string text){
+            auto& values=textCache_[key];
+            if(values.size()>=256)values.clear(); // a continuous knob dragged asks for a new value every move
+            textShown_[key]=values[std::bit_cast<uint64_t>(v)]=tidyNumber(text);textArrived_=true;
+            // Moved on while this was out: the latest value's text next (one out per parameter).
+            if(const auto w=textWanted_.find(key);w!=textWanted_.end() && !values.contains(std::bit_cast<uint64_t>(w->second)))
+                try{askText(key,w->second);}catch(const std::exception&){}
+        });
     }
     void Engine::setParam(const std::string& n,uint32_t p,double v)
     {command([this,n,p,v]{if(!control_->setParameter(control_->nodeId(n),p,v))std::fprintf(stderr,"oscairn: parameter command refused\n");});}
@@ -596,7 +616,7 @@ namespace oscairn::standalone
         {
             auto client=restarting_.get();
             auto fresh=std::make_unique<RemoteControl>(*client);
-            remote_=std::move(fresh);client_=std::move(client);control_=remote_.get();failure_.clear();textCache_.clear();refreshPads();
+            remote_=std::move(fresh);client_=std::move(client);control_=remote_.get();failure_.clear();textCache_.clear();textShown_.clear();textWanted_.clear();refreshPads();
             attach(); // resends the ignored inputs and Capture, as any reconnect
         }
         catch(const std::exception& e){failed(e.what());recoveryAvailable_=true;}
@@ -615,7 +635,7 @@ namespace oscairn::standalone
                 const auto values=remote_->liveValues();const auto revision=remote_->graphState().revision;
                 const bool read=remote_->service(); // a graph the engine changed is read without waiting
                 if(auto refused=remote_->takeError();!refused.empty())editError_=std::move(refused);
-                if(read || std::exchange(windowsChanged_,false) || remote_->liveValues()!=values || remote_->graphState().revision!=revision)sendChangeMessage();
+                if(read || std::exchange(windowsChanged_,false) || std::exchange(textArrived_,false) || remote_->liveValues()!=values || remote_->graphState().revision!=revision)sendChangeMessage();
             }
             catch(const std::exception& e){failed(e.what());}
         }
@@ -644,7 +664,7 @@ namespace oscairn::standalone
             {
                 client_->connect(socketPath_,100);
                 auto fresh=std::make_unique<RemoteControl>(*client_);
-                remote_=std::move(fresh);control_=remote_.get();failure_.clear();textCache_.clear();recoveryAvailable_=false;refreshPads();
+                remote_=std::move(fresh);control_=remote_.get();failure_.clear();textCache_.clear();textShown_.clear();textWanted_.clear();recoveryAvailable_=false;refreshPads();
                 attach();
             }
             catch(const std::exception&)

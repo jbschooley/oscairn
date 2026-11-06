@@ -273,6 +273,12 @@ namespace oscairn::standalone
         mutable std::map<NodeId,bool> windowCache_; mutable uint32_t windowsRead_=0;
         double captureSeconds_=0;
         mutable std::map<std::pair<std::string,uint32_t>,std::map<uint64_t,std::string>> textCache_;
+        // Texts read from the engine without waiting: the value wanted last and the text shown
+        // last for each parameter, and whether one arrived since the timer last broadcast.
+        mutable std::map<std::pair<std::string,uint32_t>,double> textWanted_;
+        mutable std::map<std::pair<std::string,uint32_t>,std::string> textShown_;
+        mutable bool textArrived_=false;
+        void askText(const std::pair<std::string,uint32_t>& key,double value)const;
         mutable std::vector<AssignmentOverride> assignments_; mutable uint32_t assignmentsRead_=0;
         mutable std::optional<Control::Audition> audition_; mutable uint32_t auditionRead_=0;
         mutable bool windowsChanged_=false; // a plugin window's reply differed from what was shown

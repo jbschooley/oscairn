@@ -569,7 +569,7 @@ Call these APIs from one UI/control thread, never from audio or MIDI callbacks.
 
 `RemoteControl` checks protocol version 1, subscribes, and reads graph, parameter,
 transport and host-status snapshots, sending the requests after the hello at once. Most getters use that cache; plugin text formatting
-and mutations use bounded synchronous RPC calls. Call `service()` regularly to update
+and mutations use bounded synchronous RPC calls, apart from the live edits below. Call `service()` regularly to update
 snapshots and deliver changes. Its change sequence is local to that adapter's lifetime,
 not the server's sequence. Graph commits and explicit history gaps trigger a snapshot
 refresh. A refresh is `graph.get`, then every node's `params.list`, then the values
@@ -584,10 +584,16 @@ returns. Snapshots span several requests and are not atomic across concurrent cl
 interleaved notifications are retained to bring the cache up to date. After a gap the
 transport, status and controller snapshots are read the same way, without waiting. The
 `fetch...` methods (meters, wire meters, undo names, assignments, takes, the open
-Performance, the audition, a plugin window's availability, the pad map) send a read without waiting,
+Performance, the audition, a plugin window's availability, the pad map, a parameter's text for
+a value, one out per parameter) send a read without waiting,
 unless the same read is already out, and `service()` hands the reply to a callback;
 `forgetFetches()` drops those out, so a read asked afterwards reflects what came before it.
-Recreate the adapter on reconnect. No commands are implicitly retried.
+`setParameter` is sent without waiting too: it checks the address and that the parameter is
+writable at once (throwing as the engine would), shows the value in the cache clamped and, if
+stepped, truncated, and returns true; the newest value sent for a parameter stays over the
+engine's `params.changed` until its reply, which gives the value the engine kept. A refusal
+(the pending command store full) comes through `takeError()`, and the graph and values are
+read again. Recreate the adapter on reconnect. No commands are implicitly retried.
 
 The desktop's `--connect SOCKET` mode uses this adapter, polls every 16 ms, and retries
 failed connections about once a second. It displays disconnection status and refreshes

@@ -548,6 +548,15 @@ graph and the 20 plugins' parameters back before it returns: 48 waits) waits 2.5
 on the UI thread rather than 84 ms, and opening a Performance shows 20 to 28 ms after the engine
 answered (33 to 39 ms from asking) rather than about 50 (120).
 
+A plugin knob dragged still waited on every move: `params.set`, and `params.text` for each new
+value's text (120 waits and 31 to 43 ms on the UI thread for a drag of 60 moves in `ui-waits`).
+Now `RemoteControl::setParameter` is a live edit like a fader (the cache shows the value at
+once, the newest sent stays over the engine's pushes until answered, a refusal comes through
+`takeError()`), and `Engine::paramText` asks the engine for a text it has not cached without
+waiting (`RemoteControl::fetchParameterText`, one out per parameter, the latest value asked next),
+showing the parameter's last text until it comes and broadcasting a change then. `ui-waits`
+measures the drag at 0 waits, ending at the value left and the engine's text for it.
+
 #### Engine mapping status
 
 Built 2026-11-02 (`oscairn/controller_input.h`; `controllers.set`, `controllers.view`,

@@ -467,7 +467,8 @@ int main(int argc, char** argv)
                 const auto began = juce::Time::getMillisecondCounter();
                 for(int i = 0; i < 60; ++i) { engine.setParam(node, 4, i % 3); engine.meters(); engine.wireMeters(); engine.history(); }
                 const int allowed = int((juce::Time::getMillisecondCounter() - began) / 50) + 1;
-                check(tap.count("params.set") == 60, "the drag's 60 edits sent: " + std::to_string(tap.count("params.set")));
+                // Sent without waiting: the tap has them once its thread has read them.
+                check(wait([&] { return tap.count("params.set") == 60; }), "the drag's 60 edits sent: " + std::to_string(tap.count("params.set")));
                 check(tap.count("parts.meters") <= allowed && tap.count("wires.meters") <= allowed && tap.count("edit.history") <= allowed,
                       "the meters and undo names read at their own pace, not per edit: " + std::to_string(tap.count("parts.meters")) + " " + std::to_string(tap.count("wires.meters")) + " " +
                       std::to_string(tap.count("edit.history")) + " of at most " + std::to_string(allowed));
@@ -479,7 +480,7 @@ int main(int argc, char** argv)
                 check(engine.jobRunning(), "a refresh runs");
                 tap.reset();
                 engine.setParam(node, 4, 1); engine.note(true, 60, 1.f); engine.note(false, 60, 0);
-                check(tap.count("params.set") == 1 && tap.count("notes.send") == 2, "a fader move and a note go at once during a refresh: " + std::to_string(tap.count("params.set")) + " " + std::to_string(tap.count("notes.send")));
+                check(engine.jobRunning() && tap.count("notes.send") == 2 && wait([&] { return tap.count("params.set") == 1; }), "a fader move and a note go at once during a refresh: " + std::to_string(tap.count("params.set")) + " " + std::to_string(tap.count("notes.send")));
                 // The overrides of the physical controls are read at most four times a second, as Play and a controller ask.
                 check(wait([&] { return !engine.jobRunning(); }), "the refresh finished");
                 engine.assignments(); tap.reset();
@@ -706,8 +707,10 @@ int main(int argc, char** argv)
                 const auto node = engine.graph().names.at(synth);
                 check(synth != 0, "the Lead's Basic Synth node");
                 check(wait([&] { return !engine.soundBusy(); }), "the engine is free to read texts");
-                const auto saw = engine.paramText(node, 4, 0), detuned = engine.paramText(node, 4, 1), square = engine.paramText(node, 4, 2);
-                check(saw == "Saw" && detuned == "Detuned saws" && square == "Square", "the oscillator names read once, every value kept");
+                // Asked without waiting: each shows once its reply has come.
+                std::string saw, detuned, square;
+                wait([&] { saw = engine.paramText(node, 4, 0); detuned = engine.paramText(node, 4, 1); square = engine.paramText(node, 4, 2); return saw == "Saw" && detuned == "Detuned saws" && square == "Square"; });
+                check(saw == "Saw" && detuned == "Detuned saws" && square == "Square", "the oscillator names read, every value kept");
                 wait([&] { return !engine.jobRunning(); }); // a refresh held too would time out: the job held is the one asked
                 holdRequests = true;
                 standalone::SoundAction prepare; prepare.kind = standalone::SoundAction::Prepare; prepare.directory = data.getChildFile("nothing").getFullPathName().toStdString();
@@ -719,10 +722,13 @@ int main(int argc, char** argv)
                 check(wait([&] { return !engine.soundBusy() && !jobHeld.load() && engine.connected(); }), "the job finished");
                 // A continuous knob dragged asks for a new value's text on every move: a
                 // parameter keeps a few hundred, then starts again, so the first is asked anew.
-                for(int i = 0; i < 300; ++i) engine.paramText(node, 4, i / 1000.0);
+                // One out at a time, the latest value asked next: each value asked once its turn comes.
+                tap.reset();
+                for(int i = 1; i <= 300; ++i) { engine.paramText(node, 4, i / 1000.0); wait([&] { return tap.count("params.text") >= i; }); }
+                settle();
                 tap.reset();
                 engine.paramText(node, 4, 0);
-                check(tap.count("params.text") == 1, "a parameter's texts are capped, the oldest asked for again: " + std::to_string(tap.count("params.text")));
+                check(wait([&] { return tap.count("params.text") >= 1; }) && tap.count("params.text") == 1, "a parameter's texts are capped, the oldest asked for again: " + std::to_string(tap.count("params.text")));
             }
             // A setlist marks entries "not in the library" once the mixed Sound+Performance read
             // of 1000 items passes them: entries are Performances, and the read asks for that

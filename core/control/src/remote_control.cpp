@@ -109,6 +109,11 @@ namespace oscairn
         // Those answered while a graph read is out: its graph may be older than them, so they go
         // over it when it comes in, unless the engine pushed the value since or refused them.
         std::map<uint32_t,Sent> confirmedParts; std::optional<Sent> confirmedMaster;
+        // Plugin parameters set without waiting (a knob dragged): the cache shows the value at once,
+        // and the newest sent for an address stays over the engine's pushes until its reply, which
+        // gives the value the engine kept (clamped, stepped).
+        std::map<std::pair<NodeId,uint32_t>,std::pair<uint64_t,double>> sentValues; // address: newest request, its value
+        std::map<uint64_t,std::pair<NodeId,uint32_t>> valueReplies;                 // request: its address
         void answered(uint64_t id)    // every request up to id is answered
         {
             for(auto s=sentParts.begin();s!=sentParts.end();)
@@ -368,6 +373,7 @@ namespace oscairn
         {
             overlay(r.next,confirmedParts,confirmedMaster);confirmedParts.clear();confirmedMaster.reset();
             graph=std::move(r.next);info=std::move(r.metadata);values=std::move(r.snapshot);overlay();
+            for(const auto& [key,sent]:sentValues)if(values.contains(key))values[key]=sent.second;
         }
         void drop(){if(reading)for(const auto& s:reading->sent)dropped.insert(s.first);reading.reset();again=false;confirmedParts.clear();confirmedMaster.reset();}
         // Waits for the whole read: an edit's caller reads the state it made on return.
@@ -693,11 +699,24 @@ namespace oscairn
     {const auto it=impl_->values.find({n,p});if(it==impl_->values.end())throw std::invalid_argument("Unknown parameter");return it->second;}
     std::string RemoteControl::parameterText(NodeId n,uint32_t p,double value)const
     {auto doc=impl_->call("params.text",'{'+address(n,p)+",\"value\":"+encode(value)+'}');return string(field(field(doc.get(),"result"),"text"));}
+    // Live (RFC 0011's instant controls): shown in the cache at once, sent without waiting. A
+    // refusal (the pending store full, a read-only parameter) arrives with service(), as the
+    // edit's error, and the engine's values are read again.
     bool RemoteControl::setParameter(NodeId n,uint32_t p,double value)
     {
-        try{auto doc=impl_->call("params.set","{\"values\":[{"+address(n,p)+",\"value\":"+encode(value)+"}]}");impl_->values[{n,p}]=number(field(array(field(field(doc.get(),"result"),"values")).at(0),"value"));return true;}
-        catch(const RpcError& e){if(e.code==-32005)return false;throw;}
+        const std::pair key{n,p};
+        if(!impl_->values.contains(key))throw std::invalid_argument("Unknown parameter"); // as the engine would say, at once
+        const auto info=parameterInfo(n,p);
+        if(info.flags&CLAP_PARAM_IS_READONLY)throw std::invalid_argument("Parameter is read-only");
+        if(!std::isfinite(value))throw std::invalid_argument("Invalid parameter value");
+        const auto id=impl_->client.send("params.set","{\"values\":[{"+address(n,p)+",\"value\":"+encode(value)+"}]}");
+        // Shown as the engine keeps it: clamped to the range, a stepped value truncated.
+        auto kept=std::clamp(value,info.minimum,info.maximum);if(info.stepped)kept=std::trunc(kept);
+        impl_->sentValues[key]={id,kept};impl_->valueReplies[id]=key;impl_->values[key]=kept;
+        return true;
     }
+    bool RemoteControl::fetchParameterText(NodeId n,uint32_t p,double value,std::function<void(std::string)> done)
+    {return impl_->fetch("params.text"+address(n,p),"params.text",'{'+address(n,p)+",\"value\":"+encode(value)+'}',[done=std::move(done)](V r){done(string(field(r,"text")));});}
     bool RemoteControl::parameterGesture(NodeId n,uint32_t p,bool begin)
     {try{impl_->call("params.gesture",'{'+address(n,p)+",\"begin\":"+(begin?"true":"false")+'}');return true;}catch(const RpcError& e){if(e.code==-32005)return false;throw;}}
     void RemoteControl::allNotesOff() { impl_->call("notes.panic"); }
@@ -1100,6 +1119,19 @@ namespace oscairn
                     try{Impl::check(doc);fetched.read(field(doc.get(),"result"));}catch(const std::exception&){}
                     continue;
                 }
+                if(const auto v=impl_->valueReplies.find(n);v!=impl_->valueReplies.end())
+                {
+                    const auto key=v->second;impl_->valueReplies.erase(v);
+                    const auto sent=impl_->sentValues.find(key);const bool newest=sent!=impl_->sentValues.end() && sent->second.first==n;
+                    if(newest)impl_->sentValues.erase(sent);
+                    try
+                    {
+                        Impl::check(doc);
+                        if(newest && impl_->values.contains(key))impl_->values[key]=number(field(array(field(field(doc.get(),"result"),"values")).at(0),"value"));
+                    }
+                    catch(const std::exception& e){impl_->failure=e.what();refresh=true;}
+                    continue;
+                }
                 // The reply to a live edit sent without waiting: a refusal is said, and the
                 // engine's state read again in place of what the cache showed.
                 try{Impl::check(doc);}catch(const std::exception& e){impl_->failure=e.what();impl_->refused(n);refresh=true;}
@@ -1134,7 +1166,7 @@ namespace oscairn
                 if(change.kind==ChangeKind::Value)
                 {
                     change.value=number(field(c,"value"));const std::pair key{change.node,change.param};
-                    if(impl_->values.contains(key))impl_->values[key]=change.value;
+                    if(impl_->values.contains(key) && !impl_->sentValues.contains(key))impl_->values[key]=change.value; // a newer one sent stays
                     // A read out that has this value already read it before the change.
                     if(impl_->reading)if(const auto at=impl_->reading->snapshot.find(key);at!=impl_->reading->snapshot.end())at->second=change.value;
                 }
