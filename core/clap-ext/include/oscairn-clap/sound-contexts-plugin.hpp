@@ -570,7 +570,7 @@ namespace oscairn::contexts
             for(uint32_t i = 0; i < ContextCapacity; ++i)
             {
                 auto& c = s.contexts[i]; if(!c.prepared || c.id != id) continue;
-                c.users.fetch_add(1, std::memory_order_relaxed); s.selections[head % selectionCapacity] = {i, channel};
+                c.users.fetch_add(1, std::memory_order_release); s.selections[head % selectionCapacity] = {i, channel}; // release: the audio thread reads the id once it sees the pin
                 s.selectionHead.store(head + 1, std::memory_order_release); return true;
             }
             return false;
