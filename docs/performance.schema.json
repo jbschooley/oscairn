@@ -798,6 +798,18 @@
               "minimum": 0,
               "maximum": 128,
               "description": "Notes at once (RFC 0018); past it, the oldest released note is choked, then the oldest held one. 0: no limit"
+            },
+            "reserve": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 128,
+              "description": "Notes the shared budget leaves the part when it steals across parts (RFC 0018), within maxNotes"
+            },
+            "priority": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 10,
+              "description": "Under the shared budget (RFC 0018), a part of lower priority gives way first"
             }
           },
           "required": [
@@ -805,7 +817,9 @@
             "port",
             "zones",
             "devices",
-            "maxNotes"
+            "maxNotes",
+            "reserve",
+            "priority"
           ],
           "additionalProperties": false
         },

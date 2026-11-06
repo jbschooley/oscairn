@@ -827,6 +827,28 @@ namespace oscairn::standalone
                     limit->setBounds(r.removeFromLeft(160).reduced(2)); addAndMakeVisible(*limit); controls_.push_back(std::move(limit));
                     break;
                 }
+                case K::Reserve:
+                {
+                    // When the shared budget steals across parts, it leaves this part this many notes.
+                    auto reserve = std::make_unique<juce::ComboBox>("Reserved notes");
+                    reserve->addItem("None", 1);
+                    for(const int n : {1, 2, 3, 4, 5, 6, 7, 8, 10, 12, 16, 24, 32, 64}) if(!p->maxNotes || n <= p->maxNotes) reserve->addItem(juce::String(n), n + 1);
+                    reserve->setSelectedId(p->reserve + 1, juce::dontSendNotification);
+                    reserve->setTooltip("Notes kept for this part when the processor is full and other parts give notes up (CLAP instruments)");
+                    reserve->onChange = [this, id, raw = reserve.get()] { const int n = raw->getSelectedId() - 1; edit([id, n](Control& c) { setReserve(c, id, n); }); };
+                    reserve->setBounds(r.removeFromLeft(160).reduced(2)); addAndMakeVisible(*reserve); controls_.push_back(std::move(reserve));
+                    break;
+                }
+                case K::Priority:
+                {
+                    auto priority = std::make_unique<juce::ComboBox>("Priority");
+                    for(int n = 0; n <= 10; ++n) priority->addItem(n == 0 ? juce::String("0 (gives way first)") : n == 10 ? juce::String("10 (gives way last)") : juce::String(n), n + 1);
+                    priority->setSelectedId(p->priority + 1, juce::dontSendNotification);
+                    priority->setTooltip("When the processor is full, parts of lower priority give their notes up first");
+                    priority->onChange = [this, id, raw = priority.get()] { const int n = raw->getSelectedId() - 1; edit([id, n](Control& c) { setPriority(c, id, n); }); };
+                    priority->setBounds(r.removeFromLeft(200).reduced(2)); addAndMakeVisible(*priority); controls_.push_back(std::move(priority));
+                    break;
+                }
                 case K::Zone:
                     zoneEditor(r, [this, id] {
                         const auto* q = part(id);

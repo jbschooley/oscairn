@@ -1,6 +1,6 @@
 # RFC 0018: Voice budget and stealing
 
-Status: proposed, 2026-10-31. Step 1 and step 2's note limits implemented (below). When a Performance asks for more than the
+Status: proposed, 2026-10-31. Steps 1 and 2 implemented (below). When a Performance asks for more than the
 processor can play, Oscairn gives up the least audible notes across every part, without
 clicks, rather than missing the audio deadline. The host does this with notes (option B),
 and plugins that opt in do it with their own voices (option C).
@@ -10,7 +10,7 @@ and plugins that opt in do it with their own voices (option C).
 Checked when built and tested; the sections below say how.
 
 - [x] 1. Fade and choke ([status](#step-1-status))
-- [ ] 2. Part limits: note limits done ([status](#step-2-status)); reserve and priority remain
+- [x] 2. Part limits ([status](#step-2-status))
 - [ ] 3. Shared budget
 - [ ] 4. The `oscairn.voice-budget` extension
 
@@ -196,8 +196,20 @@ limited, since MIDI cannot choke one note. With lanes, each lane's instrument ha
 melody spared), the stolen note's release going nowhere, and no limit; `control-parts` the
 Session and saving it.
 
-Not yet: reserves and priority (with step 3's shared budget), and one count across a part's
-lanes.
+Reserve, priority and one count across lanes, 2026-11-06: a part's input also has `reserve`
+(0 to 128, within `maxNotes` when it has one) and `priority` (0 to 10, lower giving way first),
+saved, in the protocol and on the Part page as **Reserved notes** and **Priority**; a lower
+note limit brings the reserve down to it. They take effect with step 3's shared budget, as
+stealing across parts; within one part the note limit alone decides. The note limit is now one
+count for the whole part: its input wires' zones carry the part's ID (`NoteZone::part`), and
+the graph gives each such connection the others of its part, so a note past the limit in one
+lane may take another lane's note. That note's fade starts at the beginning of its
+instrument's block, this one or, when its instrument was already given this block's events,
+the next. `note-routing` checks two instruments split at middle C under a part limit of two:
+a third note in the upper lane leaves one note in each (without the shared count, two and one);
+`control-parts` that the limit's zone names the part, the reserve and priority refused past
+their ranges and round-tripping through a saved Performance; `parts-model` the Part page's
+setters; the socket test reads them back over the protocol.
 
 ## Build order and gates
 

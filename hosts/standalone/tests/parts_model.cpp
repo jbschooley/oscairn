@@ -109,7 +109,7 @@ int main(int argc, char** argv)
             const auto state = readParts(s.graphState());
             std::vector<std::string> labels;
             for(const auto& f : partFields(state.parts[1], state)) labels.push_back(f.label + (f.span ? "" : " (row)"));
-            const std::vector<std::string> expected{"Plays from", "Notes at once", "Keys and velocity (row)", "Transpose", "Plays to", "MIDI out", "Level", "Send to Room"};
+            const std::vector<std::string> expected{"Plays from", "Notes at once", "Reserved notes", "Priority", "Keys and velocity (row)", "Transpose", "Plays to", "MIDI out", "Level", "Send to Room"};
             check(labels == expected, "a part's fields, in order");
             const auto busFields = partFields(state.buses[0], state);
             check(busFields.size() == 2 && busFields[0].kind == PartField::Kind::Output && busFields[1].kind == PartField::Kind::Level, "a bus: where it plays and its level, no send to itself");
@@ -119,7 +119,11 @@ int main(int argc, char** argv)
         check(roleOf({0, {}, {}, {}, 0, 1}) == "Sequencer", "a node with only note outputs is a sequencer");
         setMaxNotes(s, lead, 8);
         check(s.parts()[1].input.maxNotes == 8 && readParts(s.graphState()).parts[1].maxNotes == 8, "a part's note limit set from the Part page");
-        setMaxNotes(s, lead, 0);
+        setReserve(s, lead, 6); setPriority(s, lead, 7);
+        check(readParts(s.graphState()).parts[1].reserve == 6 && readParts(s.graphState()).parts[1].priority == 7, "a part's reserve and priority set from the Part page");
+        setMaxNotes(s, lead, 4);
+        check(s.parts()[1].input.reserve == 4, "a lower note limit brings the reserve down to it");
+        setMaxNotes(s, lead, 0); setReserve(s, lead, 0); setPriority(s, lead, 0);
         // Solo: the other parts read as silenced, which dims them in the Parts list and Mixer.
         s.setPartSolo(lead, true); s.commit();
         auto soloed = readParts(s.graphState());

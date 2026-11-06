@@ -305,7 +305,7 @@ in the others.
      per-note volume; the host's 5 ms volume fade before it chokes a stolen note
    - [x] per-part note limits that steal released notes first and spare the bass and melody
      ([step 2](rfcs/0018-voice-budget-and-stealing.md#step-2-status))
-   - [ ] reserves and priority per part
+   - [x] reserves and priority per part, and one note count across a part's lanes
    - [ ] step 3's shared budget
    - [ ] step 4's extension for plugins that steal their own voices
 7. **Sounds, Performances and the library**

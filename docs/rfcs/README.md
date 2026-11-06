@@ -26,7 +26,7 @@ tests it, with a note on what remains of a step that is partly done. The
 | [0015](0015-analog-modeling-engine.md) | An analog-modeling engine | proposed |
 | [0016](0016-effects-suite.md) | An effects suite covering the MODX M platform | proposed |
 | [0017](0017-host-tuning.md) | Host-level tuning | proposed |
-| [0018](0018-voice-budget-and-stealing.md) | Voice budget and stealing | in progress: step 1 and part note limits implemented |
+| [0018](0018-voice-budget-and-stealing.md) | Voice budget and stealing | in progress: steps 1 and 2 implemented |
 | [0019](0019-adaptive-ui.md) | One UI across desktop, touch panel and small screens | in progress: step 1 done, steps 2, 3 and 5 started |
 | [0020](0020-recording.md) | Recording | proposed |
 | [0021](0021-sounds-performances-and-library.md) | Sounds, Performances and the library | in progress |

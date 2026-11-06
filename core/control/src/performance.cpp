@@ -464,7 +464,7 @@ Control::PerformanceInfo Session::writeDocument(const std::string& directory,Per
     if(!sound)for(const auto& p:parts_){
         const char* kind=p.input.kind==PartInput::Kind::Notes?"notes":p.input.kind==PartInput::Kind::Audio?"audio":p.input.kind==PartInput::Kind::Bus?"bus":"none";
         std::vector<std::string> sends;for(const auto& s:p.sends)sends.push_back("{\"bus\":"+std::to_string(s.bus)+",\"level\":"+numeric(s.level)+'}');
-        parts.push_back("{\"id\":"+std::to_string(p.id)+",\"name\":"+quote(p.name)+",\"input\":{\"kind\":\""+kind+"\",\"port\":"+std::to_string(p.input.port)+",\"zones\":"+zonesText(p.input.zones)+",\"devices\":"+devicesText(p.input.devices)+",\"maxNotes\":"+std::to_string(p.input.maxNotes)+"},\"chain\":"+chainText(p.chain)+",\"splits\":"+splitsText(p)+",\"output\":"+std::to_string(p.output)+",\"level\":"+numeric(p.level)+",\"pan\":"+numeric(p.pan)+",\"mute\":"+(p.mute?"true":"false")+",\"solo\":"+(p.solo?"true":"false")+",\"bus\":"+std::to_string(p.bus)+",\"sends\":"+join(sends)+",\"midiOut\":"+midiOutText(p.midiOut)+",\"key\":"+(p.key?keyText(*p.key):std::string("null"))
+        parts.push_back("{\"id\":"+std::to_string(p.id)+",\"name\":"+quote(p.name)+",\"input\":{\"kind\":\""+kind+"\",\"port\":"+std::to_string(p.input.port)+",\"zones\":"+zonesText(p.input.zones)+",\"devices\":"+devicesText(p.input.devices)+",\"maxNotes\":"+std::to_string(p.input.maxNotes)+",\"reserve\":"+std::to_string(p.input.reserve)+",\"priority\":"+std::to_string(p.input.priority)+"},\"chain\":"+chainText(p.chain)+",\"splits\":"+splitsText(p)+",\"output\":"+std::to_string(p.output)+",\"level\":"+numeric(p.level)+",\"pan\":"+numeric(p.pan)+",\"mute\":"+(p.mute?"true":"false")+",\"solo\":"+(p.solo?"true":"false")+",\"bus\":"+std::to_string(p.bus)+",\"sends\":"+join(sends)+",\"midiOut\":"+midiOutText(p.midiOut)+",\"key\":"+(p.key?keyText(*p.key):std::string("null"))
             +",\"from\":"+(p.from.sound.empty()?std::string("null"):"{\"sound\":"+quote(p.from.sound)+",\"revision\":"+quote(p.from.revision)+",\"name\":"+quote(p.from.name)+",\"modified\":"+(p.from.modified?"true":"false")+'}')+'}');
     }
     for(const auto& m:graph.mappings)if(kept(m.source) && kept(m.target))mappings.push_back("{\"from\":"+quote(keys.at(m.source))+",\"lane\":"+std::to_string(m.lane)+",\"to\":"+quote(keys.at(m.target))+",\"param\":"+std::to_string(m.param)+'}');
@@ -863,9 +863,9 @@ std::unique_ptr<Session::Prepared> Session::read(const fs::path& root,std::vecto
                 part.from={text(field(from,"sound")),text(field(from,"revision")),text(field(from,"name")),boolean(field(from,"modified"))};
                 if(part.from.sound.empty())bad("a part's source names no Sound");}
             if(!part.id || !partIds.insert(part.id).second)bad("invalid or duplicate part");
-            const auto input=field(p,"input");fields(input,{"kind","port","zones","devices","maxNotes"});const auto kind=text(field(input,"kind"));
+            const auto input=field(p,"input");fields(input,{"kind","port","zones","devices","maxNotes","reserve","priority"});const auto kind=text(field(input,"kind"));
             part.input.kind=kind=="notes"?PartInput::Kind::Notes:kind=="audio"?PartInput::Kind::Audio:kind=="none"?PartInput::Kind::None:kind=="bus"?PartInput::Kind::Bus:(bad("invalid part input"),PartInput::Kind::None);
-            part.input.port=integer(field(input,"port"));part.input.zones=zonesFrom(field(input,"zones"));part.input.devices=devicesFrom(field(input,"devices"));part.input.maxNotes=uint16_t(integer(field(input,"maxNotes"),128));part.output=integer(field(p,"output"));part.midiOut=midiOutFrom(field(p,"midiOut"));if(const V k=field(p,"key");k->type!=json_type_null)part.key=keyFrom(k);
+            part.input.port=integer(field(input,"port"));part.input.zones=zonesFrom(field(input,"zones"));part.input.devices=devicesFrom(field(input,"devices"));part.input.maxNotes=uint16_t(integer(field(input,"maxNotes"),128));part.input.reserve=uint16_t(integer(field(input,"reserve"),128));part.input.priority=uint8_t(integer(field(input,"priority"),10));part.output=integer(field(p,"output"));part.midiOut=midiOutFrom(field(p,"midiOut"));if(const V k=field(p,"key");k->type!=json_type_null)part.key=keyFrom(k);
             // Chains hold node keys and split entries; every node and split appears once in the part, and each split is reached from the part's own chain.
             std::set<NodeId> seen;
             auto chain=[&](V list){std::vector<NodeId> out;for(auto n:array(list,256)){
@@ -1041,9 +1041,9 @@ void Session::open(Prepared& p,bool seamless) {
     // A part's input wires hear the devices its selector chooses here (RFC 0012); files keep selectors, not sources.
     for(auto& w:wires)if(w.owner==WireOwner::Part && w.kind==WireKind::Notes && w.from==graphInput)
         for(const auto& part:p.parts)if(part.id==w.part && (!part.input.devices.empty() || part.input.maxNotes)){
-            // The file's zones (a lane's included) with this machine's sources and the part's note limit.
+            // The file's zones (a lane's included) with this machine's sources and the part's note limit, one count across its lanes.
             if(w.zones.empty())w.zones.emplace_back();
-            const auto mask=resolveDevices(part.input.devices,hostStatus_.midiInputs);for(auto& z:w.zones){z.sources=mask;z.maxNotes=part.input.maxNotes;}}
+            const auto mask=resolveDevices(part.input.devices,hostStatus_.midiInputs);for(auto& z:w.zones){z.sources=mask;z.maxNotes=part.input.maxNotes;z.part=part.input.maxNotes?part.id:0;}}
     // Seamless (RFC 0021): this Performance's plugins, and any still ringing out from the one
     // before, come along retiring: held notes play on until released and tails ring out, while
     // new notes go to the new Performance.
@@ -1467,9 +1467,9 @@ Control::Imported Session::importPerformance(const std::string& directory,const 
             const auto fileId=integer(field(p,"id"));if(!taking.count(fileId))continue;
             fields(p,{"id","name","input","chain","splits","output","bus","sends","level","pan","mute","solo","midiOut","key","from"});
             Part part;part.id=partIds.at(fileId);part.name=text(field(p,"name"));
-            const auto input=field(p,"input");fields(input,{"kind","port","zones","devices","maxNotes"});const auto kind=text(field(input,"kind"));
+            const auto input=field(p,"input");fields(input,{"kind","port","zones","devices","maxNotes","reserve","priority"});const auto kind=text(field(input,"kind"));
             part.input.kind=kind=="notes"?PartInput::Kind::Notes:kind=="audio"?PartInput::Kind::Audio:kind=="none"?PartInput::Kind::None:kind=="bus"?PartInput::Kind::Bus:(bad("invalid part input"),PartInput::Kind::None);
-            part.input.port=integer(field(input,"port"));part.input.zones=zonesFrom(field(input,"zones"));part.input.devices=devicesFrom(field(input,"devices"));part.input.maxNotes=uint16_t(integer(field(input,"maxNotes"),128));part.midiOut=midiOutFrom(field(p,"midiOut"));if(const V k=field(p,"key");k->type!=json_type_null)part.key=keyFrom(k);
+            part.input.port=integer(field(input,"port"));part.input.zones=zonesFrom(field(input,"zones"));part.input.devices=devicesFrom(field(input,"devices"));part.input.maxNotes=uint16_t(integer(field(input,"maxNotes"),128));part.input.reserve=uint16_t(integer(field(input,"reserve"),128));part.input.priority=uint8_t(integer(field(input,"priority"),10));part.midiOut=midiOutFrom(field(p,"midiOut"));if(const V k=field(p,"key");k->type!=json_type_null)part.key=keyFrom(k);
             if(part.input.kind==PartInput::Kind::Audio && !onPort(layout.inputs,part.input.port)){
                 if(layout.inputs.empty())bad(part.name+" listens to an audio input this device does not have");
                 part.input.port=layout.inputs.front().id;notes.push_back(part.name+" listens to the first audio input: this device has no input "+std::to_string(integer(field(input,"port"))));}

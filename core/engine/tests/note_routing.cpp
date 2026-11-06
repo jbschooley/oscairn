@@ -165,6 +165,21 @@ int main(int argc,char** argv){try{
         for(int i=0;i<4;++i)block(); // the choke, then the synth's own 3 ms choke fade
         check(playing()==1,"and is choked after it");
     }
+    {
+        // A part's lanes share one count (RFC 0018 step 2): two instruments split at middle C, a
+        // limit of two for the part. A third note in the upper lane chokes the lower lane's oldest.
+        Graph lanes(48000,64);const auto low=lanes.add(argv[1]),high=lanes.add(argv[1]);
+        NoteZone below;below.highKey=59;below.maxNotes=2;below.part=7;
+        NoteZone above=below;above.lowKey=60;above.highKey=127;
+        lanes.connectNotes(graphInput,low,{below});lanes.connectNotes(graphInput,high,{above});
+        lanes.connectAudio(low,graphOutput);lanes.connectAudio(high,graphOutput);lanes.commit();
+        auto block=[&](std::span<const Event> events={}){forbidAllocation=true;const bool ok=lanes.process(out,64,nullptr,events.data(),events.size());forbidAllocation=false;check(ok,"allocation-free lanes");};
+        auto voices=[&](NodeId n){return lanes.host(n).soundContexts().front().active_voices;};
+        const auto c3=Event::note(true,48,1),d3=Event::note(true,50,1),c5=Event::note(true,72,1);
+        block({&c3,1});block({&d3,1});block({&c5,1});
+        for(int i=0;i<12;++i)block();
+        check(voices(low)==1 && voices(high)==1,"two notes across the lanes, the oldest choked: "+std::to_string(voices(low))+" and "+std::to_string(voices(high)));
+    }
     // Draining and retiring (for seamless scene and Performance changes): a draining connection
     // takes no new note while the notes it holds still release, sustain included; a retiring
     // node is idle once nothing sounds through it and it has been silent long enough.

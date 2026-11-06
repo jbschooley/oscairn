@@ -700,10 +700,16 @@ namespace
         const auto synth = s.add("synth", fixture, "org.kick.test.synth");
         const auto keys = s.addPart("Keys");
         s.insertIntoPart(keys, 0, synth);
-        PartInput limited; limited.maxNotes = 4;
+        PartInput limited; limited.maxNotes = 4; limited.reserve = 2; limited.priority = 3;
         s.setPartInput(keys, limited); s.commit();
         auto zones = wire(s, graphInput, synth, WireKind::Notes).zones;
         check(zones.size() == 1 && zones[0].maxNotes == 4 && zones[0] .lowKey == 0 && zones[0].highKey == 127, "the limit rides on a zone passing every note");
+        check(zones[0].part == keys, "counted for the whole part, across its lanes");
+        for(auto bad : {PartInput{.maxNotes = 4, .reserve = 5}, PartInput{.reserve = 129}, PartInput{.priority = 11}})
+        {
+            bool no = false; try { s.setPartInput(keys, bad); } catch(const std::invalid_argument&) { no = true; }
+            check(no, "a reserve past the limit or 128, or a priority past 10, is refused");
+        }
         bool refused = false; PartInput tooMany; tooMany.maxNotes = 129;
         try { s.setPartInput(keys, tooMany); } catch(const std::invalid_argument&) { refused = true; }
         check(refused, "more than 128 notes at once is refused");
@@ -711,6 +717,8 @@ namespace
         s.savePerformance(saved.string());
         Session t(48000, frames); t.loadPerformance(saved.string());
         check(t.parts()[0].input.maxNotes == 4 && wire(t, graphInput, t.parts()[0].chain[0], WireKind::Notes).zones.at(0).maxNotes == 4, "the limit round-trips onto the wire");
+        check(t.parts()[0].input.reserve == 2 && t.parts()[0].input.priority == 3, "the reserve and priority round-trip");
+        check(wire(t, graphInput, t.parts()[0].chain[0], WireKind::Notes).zones.at(0).part == t.parts()[0].id, "and the part's one count");
         s.setPartInput(keys, {}); s.commit();
         check(wire(s, graphInput, synth, WireKind::Notes).zones.empty(), "no limit: no zone needed");
     }

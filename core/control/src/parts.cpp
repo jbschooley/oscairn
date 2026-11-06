@@ -122,13 +122,13 @@ namespace oscairn
         return mask;
     }
 
-    std::vector<NoteZone> inputZones(const PartInput& input, const std::vector<MidiEndpoint>& endpoints)
+    std::vector<NoteZone> inputZones(const PartInput& input, const std::vector<MidiEndpoint>& endpoints, uint32_t part)
     {
         auto zones = input.zones;
         if(input.devices.empty() && !input.maxNotes) return zones;
         if(zones.empty()) zones.emplace_back(); // a zone passing every note, to carry the devices and limit
         const auto mask = resolveDevices(input.devices, endpoints);
-        for(auto& z : zones) { z.sources = mask; z.maxNotes = input.maxNotes; }
+        for(auto& z : zones) { z.sources = mask; z.maxNotes = input.maxNotes; z.part = input.maxNotes ? part : 0; }
         return zones;
     }
 
@@ -717,7 +717,7 @@ namespace oscairn
             return ends;
         };
         End input; input.audio = part.input.kind == PartInput::Kind::Audio; input.notes = part.input.kind == PartInput::Kind::Notes; input.zoned = true;
-        input.port = part.input.port; input.zones = inputZones(part.input, hostStatus_.midiInputs);
+        input.port = part.input.port; input.zones = inputZones(part.input, hostStatus_.midiInputs, part.id);
         // A wire into a bus's lane also takes that lane's Mix.
         // pan: the part's, which its fader wires carry, for the empty buses' meters on the way.
         // fixed: its level apart from the faders (a send's own level), for the live gains.
@@ -808,6 +808,8 @@ namespace oscairn
             if(input.devices.size() > 16 || std::any_of(input.devices.begin(), input.devices.end(), [](const DeviceRule& r) { return !r.valid(); }))
                 throw std::invalid_argument("invalid or too many device rules");
             if(input.maxNotes > 128) throw std::invalid_argument("a part plays at most 128 notes at once");
+            if(input.reserve > 128 || (input.maxNotes && input.reserve > input.maxNotes)) throw std::invalid_argument("a part's reserve is at most 128 notes and within its note limit");
+            if(input.priority > 10) throw std::invalid_argument("a part's priority is 0 to 10");
         }
     }
 

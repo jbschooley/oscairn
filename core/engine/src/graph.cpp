@@ -48,7 +48,7 @@ namespace oscairn
             bool ringOut = false; // the last four of audioOutputs are the plugin's ring-out buffer (Graph::ringOutPort)
             std::vector<AudioRoute>           audioSources;
             std::vector<uint32_t> silentInputs;
-            struct NoteSource {int step;std::shared_ptr<NoteRoute> route;NoteZones zones;bool draining=false;};
+            struct NoteSource {int step;std::shared_ptr<NoteRoute> route;NoteZones zones;bool draining=false;std::vector<NoteRoute*> peers;}; // peers: the routes sharing its part's note limit (NoteZone::part), itself included
             bool retiring=false;std::shared_ptr<Graph::Activity> activity; // see Graph::setRetiring
             int harmony=-1; // the part's harmony it gets, in Plan::harmonies
             std::vector<NoteSource> noteSources;
@@ -91,6 +91,7 @@ namespace oscairn
             const NoteZones* zones=nullptr;
             uint8_t source=untaggedSource;
             bool draining=false;
+            std::span<NoteRoute* const> peers;
         };
 
         struct Tap { int step; std::shared_ptr<NoteRoute> route; NoteZones zones; uint64_t ports; uint8_t channel; }; // see setMidiTaps; step -1: the input
@@ -692,6 +693,10 @@ namespace oscairn
             if(const auto z=noteZones_.find(edge);z!=noteZones_.end()){zones.count=z->second.size();std::copy(z->second.begin(),z->second.end(),zones.zones.begin());}
             plan->steps[(size_t)stepOf[to]].noteSources.push_back({from == graphInput ? -1 : stepOf[from],state,zones,draining_.count(edge)!=0});
         }
+        // A part's connections share its note limit: each knows the others (none draining).
+        for(auto& step:plan->steps)for(auto& source:step.noteSources)if(source.zones.count && source.zones.zones[0].part && !source.draining)
+            for(const auto& other:plan->steps)for(const auto& o:other.noteSources)
+                if(o.zones.count && o.zones.zones[0].part==source.zones.zones[0].part && !o.draining)source.peers.push_back(o.route.get());
 
         for(const auto& [tap,route]:taps_)
         {
@@ -1004,7 +1009,7 @@ namespace oscairn
                         ++totalEvents;
                         if(plan->keys.size()<step.merged.size())
                             plan->keys.push_back( { list[i].header()->time, order++, &list[i],connection.route.get(),false,&connection.zones,
-                                                    source<0 && sources?sources[i]:untaggedSource,connection.draining } );
+                                                    source<0 && sources?sources[i]:untaggedSource,connection.draining,connection.peers } );
                         else overflow=true;
                     }
             }
@@ -1019,7 +1024,7 @@ namespace oscairn
             auto fades=[&](uint32_t until){bool ok=true;for(auto& source:step.noteSources)ok=source.route->fade(until,emit) && ok;return ok;};
             if(!overflow)for(const auto& key:plan->keys)
                 if(!fades(std::min(key.time,frames)) ||
-                   !(key.route && key.time<frames?key.route->route(*key.event,nextNoteId_,emit,key.zones,key.source,key.draining):emit(*key.event))){overflow=true;break;}
+                   !(key.route && key.time<frames?key.route->route(*key.event,nextNoteId_,emit,key.zones,key.source,key.draining,key.peers):emit(*key.event))){overflow=true;break;}
             if(!overflow && !fades(frames))overflow=true;
             for(auto& source:step.noteSources)source.route->advance(frames);
             if(overflow)

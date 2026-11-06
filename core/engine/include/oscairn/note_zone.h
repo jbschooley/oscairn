@@ -30,6 +30,9 @@ namespace oscairn
         // no limit. A note past it fades out and chokes the oldest released note, else the oldest
         // held one.
         uint16_t maxNotes = 0;
+        // The part whose connections share that limit, one count across its lanes' instruments, the
+        // first zone's; 0: the connection counts alone.
+        uint32_t part = 0;
         bool operator==(const NoteZone&) const = default;
 
         bool valid() const

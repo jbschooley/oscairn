@@ -6,6 +6,7 @@
 #include <array>
 #include <algorithm>
 #include <climits>
+#include <span>
 
 namespace oscairn
 {
@@ -78,6 +79,9 @@ struct NoteRoute
         }
         return ok;
     }
+    // Gives a note up from elsewhere (a peer's note limit): it fades from `at`, or is choked there.
+    void steal(Note& n,uint32_t at) noexcept
+    {n.stolen=true;n.held=false;n.fadeAt=int32_t(at);n.faded=fadeFrames?0:fadeSteps;++fading;}
     // A block of `frames` done: fades carry on from the next block's start.
     void advance(uint32_t frames) noexcept
     {if(fading)for(auto& n:notes)if(n.used && n.fadeAt>=0)n.fadeAt=std::max(0,n.fadeAt-int32_t(frames));}
@@ -96,13 +100,14 @@ struct NoteRoute
         }
         clear();return ok;
     }
-    template<class Emit> bool route(Event e,uint32_t& nextId,Emit&& emit,const NoteZones* zones=nullptr,uint8_t source=untaggedSource,bool draining=false) noexcept
-    {return route(e,nextId,emit,[](const Note&,uint32_t){},zones,source,draining);}
+    template<class Emit> bool route(Event e,uint32_t& nextId,Emit&& emit,const NoteZones* zones=nullptr,uint8_t source=untaggedSource,bool draining=false,std::span<NoteRoute* const> peers={}) noexcept
+    {return route(e,nextId,emit,[](const Note&,uint32_t){},zones,source,draining,peers);}
     // zones, when given, decide which notes pass and how they change (note_zone.h); each zone
     // that accepts a note plays its own copy. source: where the event entered the graph.
     // draining: a connection being retired (RFC 0021's seamless switching) takes no new notes;
-    // releases, expressions and the pedal still reach the notes it holds.
-    template<class Emit,class End> bool route(Event e,uint32_t& nextId,Emit&& emit,End&& end,const NoteZones* zones=nullptr,uint8_t source=untaggedSource,bool draining=false) noexcept
+    // releases, expressions and the pedal still reach the notes it holds. peers: the routes sharing
+    // the note limit (a part's lanes), this one included; none: this one alone.
+    template<class Emit,class End> bool route(Event e,uint32_t& nextId,Emit&& emit,End&& end,const NoteZones* zones=nullptr,uint8_t source=untaggedSource,bool draining=false,std::span<NoteRoute* const> peers={}) noexcept
     {
         if(!e.valid())return emit(e);
         const auto* h=e.header();
@@ -127,12 +132,12 @@ struct NoteRoute
             } else if(kind==0xb0 && (m.data[1]==120 || m.data[1]==123)) {
                 auto n=Event::note(false,-1,0,h->time,channel,m.port_index);
                 if(m.data[1]==120)reinterpret_cast<clap_event_header_t*>(n.bytes.data())->type=CLAP_EVENT_NOTE_CHOKE;
-                return route(n,nextId,emit,end,zones,source,draining);
+                return route(n,nextId,emit,end,zones,source,draining,peers);
             } else if(kind==0xa0 || kind==0xd0) {
                 Event pressure;
                 if(!midiToClap(m.data,kind==0xd0?2:3,h->time,pressure))return emit(e);
                 reinterpret_cast<clap_event_note_expression_t*>(pressure.bytes.data())->port_index=m.port_index;
-                return route(pressure,nextId,emit,end,zones,source,draining);
+                return route(pressure,nextId,emit,end,zones,source,draining,peers);
             } else return emit(e);
         }
         if(h->type==CLAP_EVENT_NOTE_ON && h->size==sizeof(clap_event_note_t))
@@ -142,21 +147,24 @@ struct NoteRoute
             if(n.port_index>=16 || static_cast<uint32_t>(n.port_index)>=ports)return emit(e);
             // A note limit: before a note past it, the oldest released note goes, else the oldest
             // held one, sparing the highest and lowest held keys (melody and bass) while another
-            // can go; it fades, then is choked. Only where the plugin takes CLAP notes: MIDI cannot
-            // choke one note.
+            // can go; it fades, then is choked. Counted across the peers, the notes they can choke:
+            // only where the plugin takes CLAP notes, as MIDI cannot choke one note.
             const uint16_t limit=zones && zones->count && clap[n.port_index]?zones->zones[0].maxNotes:0;
+            NoteRoute* const self[]{this};
+            const auto routes=peers.empty()?std::span<NoteRoute* const>(self):peers;
             auto makeRoom=[&]()->bool {
                 if(!limit)return true;
                 for(;;) {
-                    Note* victim=nullptr;size_t playing=0,held=0;int16_t low=INT16_MAX,high=-1;
-                    for(const auto& slot:notes)if(slot.used && !slot.stolen && slot.held){++held;low=std::min(low,slot.key);high=std::max(high,slot.key);}
+                    Note* victim=nullptr;NoteRoute* owner=nullptr;size_t playing=0,held=0;int16_t low=INT16_MAX,high=-1;
+                    for(const auto* r:routes)for(const auto& slot:r->notes)if(slot.used && !slot.stolen && r->clap[slot.address.port_index] && slot.held){++held;low=std::min(low,slot.key);high=std::max(high,slot.key);}
                     auto spared=[&](const Note& n){return n.held && held>2 && (n.key==low || n.key==high);};
-                    for(auto& slot:notes)if(slot.used && !slot.stolen) {
+                    for(auto* r:routes)for(auto& slot:r->notes)if(slot.used && !slot.stolen && r->clap[slot.address.port_index]) {
                         ++playing;
                         if(!victim || (spared(*victim) && !spared(slot)) || (spared(*victim)==spared(slot) &&
-                           ((victim->held && !slot.held) || (victim->held==slot.held && slot.id<victim->id))))victim=&slot;
+                           ((victim->held && !slot.held) || (victim->held==slot.held && slot.id<victim->id)))){victim=&slot;owner=r;}
                     }
                     if(playing<limit || !victim)return true;
+                    if(owner!=this){owner->steal(*victim,0);continue;} // its step sends the fade, from its block's start
                     victim->stolen=true;victim->held=false;
                     if(fadeFrames){victim->fadeAt=int32_t(h->time);++fading;}
                     else if(!emit(release(*victim,h->time,true)))return false;

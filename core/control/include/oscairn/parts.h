@@ -103,11 +103,13 @@ namespace oscairn
         std::vector<NoteZone> zones;                               // notes: the part's zones (splits, layers, curves)
         std::vector<DeviceRule> devices;                           // notes: which inputs play it; none: all
         uint16_t maxNotes = 0;                                     // notes at once (RFC 0018), 0..128; 0: no limit
+        uint16_t reserve = 0;                                      // notes the shared budget leaves it (RFC 0018), 0..128, within maxNotes
+        uint8_t priority = 0;                                      // 0..10: under the shared budget, lower gives way first
         bool operator==(const PartInput&) const = default;
     };
     // The zones a part's input wire carries: its own, each hearing only its selected devices,
-    // with its note limit.
-    std::vector<NoteZone> inputZones(const PartInput& input, const std::vector<MidiEndpoint>& endpoints);
+    // with its note limit, counted across the part's (`part`) lanes.
+    std::vector<NoteZone> inputZones(const PartInput& input, const std::vector<MidiEndpoint>& endpoints, uint32_t part = 0);
 
     // RFC 0012 step 1: a part's MIDI to hardware outputs: the outputs its selector chooses (none:
     // no output; rules as for inputs, matched against the host's MIDI outputs), on `channel` (1 to
