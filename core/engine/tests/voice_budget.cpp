@@ -9,6 +9,7 @@
 // the budget being the plugins at rest and that share of what the notes add (default .5); the voice fixture
 // (OSCAIRN_FIXTURE_VOICE_US) costs a fixed time per voice, a real instrument what it costs.
 #include "oscairn/graph.h"
+#include "oscairn/realtime.h"
 #include "AllocationGuard.h"
 #include <algorithm>
 #include <array>
@@ -19,6 +20,7 @@
 #include <span>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <vector>
 using namespace oscairn;
 using kick::clap::Event;
@@ -94,13 +96,21 @@ void play(const char* plugin,uint32_t n,double budget,Run& run){
 int main(int argc,char** argv){try{
     if(argc<2)return 2;
     const uint32_t n=argc>2?uint32_t(std::atoi(argv[2])):8;
-    Run open;play(argv[1],n,0,open);
+    // On a real-time thread, as the engine renders: on another a loaded machine holds blocks up,
+    // which the budget counts as the plugins' cost (the parallel variant's helpers and the workers
+    // variant's plugins are on real-time threads already).
+    auto render=[&](double b,Run& r){
+        std::exception_ptr error;
+        std::thread([&]{worker::makeRealtime(frames/48000.0*1e6);try{play(argv[1],n,b,r);}catch(...){error=std::current_exception();}}).join();
+        if(error)std::rethrow_exception(error);
+    };
+    Run open;render(0,open);
     // The plugins at rest, and a share of what the chart's notes add, by the median block (a loaded
     // machine's spikes aside).
     auto median=[](std::vector<float> v){std::sort(v.begin(),v.end());return v[v.size()/2];};
     const float mean=median(open.totals),rest=median(open.resting);
     const double share=argc>3?std::atof(argv[3]):.5,budget=rest+(mean-rest)*share;
-    Run held;play(argv[1],n,budget,held);
+    Run held;render(budget,held);
     auto over=[&](const Run& r){size_t k=0;for(const auto t:r.totals)k+=t>budget;return k;};
     const double block=frames/48000.0*1e6;
     auto late=[&](const Run& r){size_t k=0;for(const auto t:r.totals)k+=t>block;return k;};
