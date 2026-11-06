@@ -131,7 +131,7 @@ namespace oscairn::standalone
         view.setViewedComponent(&list, false);
         view.setScrollBarsShown(true, false);
         for(auto* c : std::initializer_list<juce::Component*>{&own, &locked, &view, &go, &cancel}) addAndMakeVisible(c);
-        setSize(420, std::min(630, int(a.items.size()) * 30 + headings.size() * 26 + 186 + codeLines_ * 18));
+        setSize(420, std::min(630, int(a.items.size()) * 30 + headings.size() * 26 + std::max(0, headings.size() - 1) * 4 + 186 + codeLines_ * 18));
     }
 
     void InstallChoices::resized()
@@ -144,10 +144,11 @@ namespace oscairn::standalone
         if(codeLines_) { area.removeFromBottom(6); code.setBounds(area.removeFromBottom(codeLines_ * 18)); }
         go.setBounds(bar.removeFromRight(120)); bar.removeFromRight(8); cancel.setBounds(bar.removeFromRight(100));
         view.setBounds(area);
-        const int tall = items.size() * 30 + headings.size() * 26;
+        const int tall = items.size() * 30 + headings.size() * 26 + std::max(0, headings.size() - 1) * 4;
         list.setSize(area.getWidth() - (tall > area.getHeight() ? view.getScrollBarThickness() : 0), tall);
         auto rows = list.getLocalBounds();
-        for(auto* c : list.getChildren()) c->setBounds(rows.removeFromTop(headings.contains(dynamic_cast<juce::Label*>(c)) ? 26 : 30)); // headings and items, in order
+        bool firstHeading = true; // headings and items, in order; 4 px above each heading after the first
+        for(auto* c : list.getChildren()) { const bool heading = headings.contains(dynamic_cast<juce::Label*>(c)); if(heading) { if(!firstHeading) rows.removeFromTop(4); firstHeading = false; } c->setBounds(rows.removeFromTop(heading ? 26 : 30)); }
     }
 
     void InstallChoices::paint(juce::Graphics& g)
