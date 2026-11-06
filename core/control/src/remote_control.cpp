@@ -771,9 +771,9 @@ namespace oscairn
     {
         impl_->call("assignments.set","{\"control\":"+quote(control)+",\"kind\":\""+assignmentKinds[size_t(t.kind)]+"\",\"node\":"+std::to_string(t.node)+",\"param\":"+std::to_string(t.param)+",\"id\":"+std::to_string(t.id)+",\"part\":"+std::to_string(part)+'}');impl_->refresh();
     }
-    PadMap RemoteControl::padMap() const
+    namespace { PadMap padMapFrom(V root)
     {
-        auto doc=impl_->call("pads.get");auto root=field(doc.get(),"result");PadMap map;
+        PadMap map;
         map.bank=uint8_t(integer(field(root,"bank")));
         const auto banks=array(field(root,"banks"));if(banks.size()!=PadMap::banks)throw std::runtime_error("Invalid pad map");
         for(size_t b=0;b<PadMap::banks;++b){
@@ -785,7 +785,9 @@ namespace oscairn
             }
         }
         return map;
-    }
+    } }
+    PadMap RemoteControl::padMap() const {auto doc=impl_->call("pads.get");return padMapFrom(field(doc.get(),"result"));}
+    bool RemoteControl::fetchPadMap(std::function<void(PadMap)> done){return impl_->fetch("pads.get","pads.get","{}",[done=std::move(done)](V r){done(padMapFrom(r));});}
     void RemoteControl::setPadMap(const PadMap& map)
     {
         std::string banks="[";

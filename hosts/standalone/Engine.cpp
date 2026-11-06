@@ -342,7 +342,13 @@ namespace oscairn::standalone
             return;
         }
         // Replay deferred releases on failure; successful replacement discarded their voices.
-        if(loaded && result.error.empty()){pendingControls_.clear();padChannels_.fill(0);refreshPads();}
+        if(loaded && result.error.empty())
+        {
+            pendingControls_.clear();padChannels_.fill(0);
+            // Read without waiting: the timer takes it, as it takes the graph the load changed.
+            if(!remote_)refreshPads();
+            else try{remote_->fetchPadMap([this](PadMap map){padMap_=std::move(map);});}catch(const std::exception& e){std::fprintf(stderr,"oscairn: pad map: %s\n",e.what());}
+        }
         auto pending=std::move(pendingControls_);pendingControls_.clear();
         for(auto& action:pending)command(std::move(action));
         if(!pendingSounds_.empty() && connected())
@@ -611,6 +617,9 @@ namespace oscairn::standalone
             }
             catch(const std::exception& e){failed(e.what());}
         }
+        // A graph read takes several replies, each taken here: look every 2 ms while one is out,
+        // so it shows a few of the engine's ticks after the change, not a frame per reply.
+        if(const int interval=remote_ && failure_.empty() && remote_->reading()?2:16;getTimerInterval()!=interval)startTimer(interval);
         if(soundJob_.valid())
         {
             if(soundJob_.wait_for(std::chrono::seconds(0))!=std::future_status::ready)return;
@@ -619,12 +628,12 @@ namespace oscairn::standalone
         }
         if(!remote_)
         {
-            if(++soundTicks_>=30){soundTicks_=0;refreshSounds();}
+            if((soundTicks_+=uint32_t(getTimerInterval()))>=480){soundTicks_=0;refreshSounds();}
             return;
         }
         if(failure_.empty())
         {
-            if(++soundTicks_>=30){soundTicks_=0;refreshSounds();}
+            if((soundTicks_+=uint32_t(getTimerInterval()))>=480){soundTicks_=0;refreshSounds();} // every half second
         }
         else if(!restarting_.valid() && ++reconnectTicks_>=60)
         {

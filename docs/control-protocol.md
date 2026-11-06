@@ -570,7 +570,7 @@ returns. Snapshots span several requests and are not atomic across concurrent cl
 interleaved notifications are retained to bring the cache up to date. After a gap the
 transport, status and controller snapshots are read the same way, without waiting. The
 `fetch...` methods (meters, wire meters, undo names, assignments, takes, the open
-Performance, the audition, a plugin window's availability) send a read without waiting,
+Performance, the audition, a plugin window's availability, the pad map) send a read without waiting,
 unless the same read is already out, and `service()` hands the reply to a callback;
 `forgetFetches()` drops those out, so a read asked afterwards reflects what came before it.
 Recreate the adapter on reconnect. No commands are implicitly retried.

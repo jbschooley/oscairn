@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // The desktop's message thread and the engine's socket: a mute, a fader drag and the views'
-// polls never wait on it. Against a session of 20 plugins served on the engine's real 5 ms
-// timer, without an audio device; it prints what it measured.
+// polls never wait on it, and opening a Performance costs the app little once the engine has
+// loaded it. Against a session of 20 plugins served on the engine's real 5 ms timer, without
+// an audio device; it prints what it measured.
 //   oscairn_ui_waits_test PLUGIN_DIR SCANNER
 #include "../Engine.h"
 #include "../PartsModel.h"
@@ -122,6 +123,32 @@ int main(int argc, char** argv)
             std::printf("steady state, 2 s: %llu waits, %lld us waiting\n", (unsigned long long)steady.count, steady.micros);
             check(steady.count == 0, "the views' polls never wait on the socket: " + std::to_string(steady.count) + " waits, " + std::to_string(steady.micros) + " us");
             check(engine.meters().size() == 10 && engine.performanceInfo() && engine.performanceInfo()->name == "A" && engine.audition(), "and they show the engine's answers");
+
+            // Opening the other Performance: the app's time from the engine's answer to showing it.
+            for(const char* name : {"B", "A"})
+            {
+                free();
+                { std::lock_guard lock(mutex); answered.reset(); }
+                before = waits();
+                standalone::SoundAction open; open.kind = standalone::SoundAction::LoadPerformance; open.directory = (folder / name).string();
+                const auto asked = Clock::now();
+                engine.soundAction(std::move(open));
+                auto opened = [&] {
+                    const auto g = engine.graph(); const auto info = engine.performanceInfo();
+                    return !engine.soundBusy() && !g.parts.empty() && g.parts.front().name == std::string(name) + "0" && info && info->name == name;
+                };
+                bool done = false;
+                for(int i = 0; i < 5000 && !(done = opened()); ++i) run(1);
+                const auto end = Clock::now();
+                std::optional<Clock::time_point> at; { std::lock_guard lock(mutex); at = answered; }
+                check(done && at.has_value(), std::string("Performance ") + name + " shows");
+                const auto app = at ? std::chrono::duration_cast<std::chrono::milliseconds>(end - *at).count() : -1;
+                const auto total = std::chrono::duration_cast<std::chrono::milliseconds>(end - asked).count();
+                const auto load = since(before);
+                std::printf("open %s: %lld ms from asking, %lld ms after the engine answered; %llu waits, %lld us waiting\n", name, (long long)total, (long long)app, (unsigned long long)load.count, load.micros);
+                check(app >= 0 && app < 100, std::string("the app shows ") + name + " soon after the engine loaded it: " + std::to_string(app) + " ms");
+                check(load.count == 0, std::string("and opening ") + name + " never waits on the socket: " + std::to_string(load.count) + " waits");
+            }
         }
         running = false; control.join();
     }

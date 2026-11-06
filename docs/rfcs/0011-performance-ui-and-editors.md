@@ -527,6 +527,16 @@ A plugin window found later broadcasts a change and the Parts view builds again 
 `control-local-stream` checks reads sent and taken without a wait, one of a kind out at a time
 and a forgotten one never given; `ui-waits` measures two seconds of the views' polls at 0 waits.
 
+Opening a Performance cost the app 289 ms after the engine's answer on the 20 plugins (from
+the load's reply to `Engine` showing the new graph and name, with no job left), 28 waits and
+150 ms of them on the UI thread: the job's read back, then the UI's own read of every node, one
+round trip each, and the pad map. With the reads above it was about 150 ms: each step of the UI's
+read waited for the next 16 ms timer tick. Now `Engine` looks every 2 ms while a graph read is
+out (`RemoteControl::reading()`), and the pad map after a load is fetched like the polls.
+`ui-waits` opens one Performance of the 20 plugins and then the other: 45 to 63 ms after the
+engine's answer in ten runs, with no wait on the UI thread (131 to 148 ms from asking, which
+adds the job's own connection and reads, the estimate and the engine's load).
+
 #### Engine mapping status
 
 Built 2026-11-02 (`oscairn/controller_input.h`; `controllers.set`, `controllers.view`,

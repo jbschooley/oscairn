@@ -35,6 +35,7 @@ namespace oscairn
         bool fetchPerformanceInfo(std::function<void(PerformanceInfo)> done);
         bool fetchAudition(std::function<void(Audition)> done);
         bool fetchPluginWindow(NodeId node, std::function<void(bool)> done);
+        bool fetchPadMap(std::function<void(PadMap)> done);
         void forgetFetches();
         void savePerformance(const std::string& directory) override;
         void setBudget(const Budget& budget) override;
