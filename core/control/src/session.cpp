@@ -433,13 +433,15 @@ namespace oscairn
                 }
             }
             // Rescans may update a value without emitting an event.
+            // One lookup a parameter: this runs every tick over every parameter of every node.
             for( const auto& p : host.parameters() )
             {
-                const Address address{node,p.id};
                 const auto value = host.parameterValue(p.id);
-                if( !observed_.contains(address) || observed_[address] != value )
+                if( const auto [seen,added] = observed_.try_emplace(Address{node,p.id},value); added || seen->second != value )
+                {
                     publish(ChangeKind::Value,node,p.id,value,true);
-                observed_[address] = value;
+                    seen->second = value;
+                }
             }
         }
         sendParameters();

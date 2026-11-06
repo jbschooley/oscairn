@@ -160,6 +160,32 @@ the noise: "Drifting" in workers 5.3%, 5.7% and 5.6% of a core (and its workers 
 the engine's process 2.3% all three. Idle, a whole block in the engine's process took under
 30 us ("Drifting" 13 us, "Sick tines" 24 us), so no wave was worth the helpers and they slept.
 
+## Where idle CPU goes
+
+The engine's idle CPU (about 10% of a core in the app) is mostly not the audio path. Measured
+with `oscairn-graph-bench --idle`, which services the session every 5 ms as the app's
+`AudioEngine` timer does (`--service-ms 0`: never), on the Mac above:
+
+- **The control tick, `Session::service`, 200 times a second.** For "Sick tines" in the engine's
+  process: 12.2–12.5% of a core with it, 1.7–2.5% without; the audio thread itself 1.3–2.0%.
+  Timing its parts, almost all of it was the scan that compares every parameter of every node
+  with the value last published (3,633 parameters here, so the sfizz parts' hundreds each):
+  about 390 us a tick, with three map lookups a parameter. One lookup halves it (178 us a
+  tick, measured alternately in one run); that change is built. Next in size: `record()`, which
+  copies and compares the whole model every tick to find undo steps (47–140 us), and `meter()`
+  (7–33 us).
+- **Plugins in workers.** Each tick also asks every worker for its plugin's main-thread work and
+  output over its socket, a round trip a worker every 5 ms; and each worker's supervisor reads its
+  memory every 10 ms. For "Drifting" (four workers) the session's service was 0.8–1.5% of a core
+  in the engine and 0.3–0.5% in the workers; for "Sick tines" (16 workers) about 6–7% in the
+  engine. The audio thread itself used 1–2.3%.
+- **Parallel rendering** does not change idle CPU (above): no helper wakes at idle.
+
+What is left: scanning only nodes whose values may have changed (a counter every host moves on
+any value change, which none has yet: `parameterReports` counts only values the plugin reports
+while processing), finding undo steps without copying the model each tick, and servicing idle
+workers less often. Each changes more than the engine's audio path and is not done here.
+
 ## Alternatives
 
 - **Dynamic dataflow** (each node starts when its last source finishes, not when its wave does)
