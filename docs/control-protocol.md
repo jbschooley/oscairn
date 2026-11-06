@@ -806,7 +806,8 @@ Performance is read and its plugins loaded with their state while the open one p
 next `performance.load` (or `library.load`) of that folder only publishes it. It returns
 `{"prepared":false}` without loading anything when it would not fit the budget beside what plays
 now (budgets below); its load is then a cut. One Performance is prepared at a time: preparing
-another, loading a different one, or an empty `directory` lets it go. A folder saved over
+another, loading a different one, or an empty `directory` lets it go; preparing the one already
+prepared, unchanged since, keeps it and returns as it did. A folder saved over
 since it was prepared is read again at the load. Preparing takes as long as a load and blocks
 other control calls meanwhile; only the load gets faster.
 The current note/tail audio is not saved. Resource/state/format failures use `-32005`;

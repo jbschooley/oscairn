@@ -103,8 +103,11 @@ namespace oscairn::standalone
         if(action.kind == SoundAction::SaveToLibrary){control.savePerformanceToLibrary(action.choice.name,action.asNew);return {};}
         if(action.kind == SoundAction::LoadFromLibrary){
             Control::LibraryQuery one; one.id = action.libraryId; one.kind = "performance";
-            bool seamless = true;
-            for(const auto& item : control.libraryQuery(one).items) seamless = control.estimate(item.path).seamless;
+            bool seamless = true; std::string path;
+            for(const auto& item : control.libraryQuery(one).items) { seamless = control.estimate(item.path).seamless; path = item.path; }
+            // Prepared first while this one plays, as the Setlist prepares ahead (RFC 0021), so the
+            // open only publishes it; one that would not fit beside it opens as a cut instead.
+            if(seamless && !path.empty()) control.preparePerformance(path);
             control.loadPerformanceFromLibrary(action.libraryId);
             return seamless ? std::string() : cut;
         }

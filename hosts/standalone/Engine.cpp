@@ -257,6 +257,8 @@ namespace oscairn::standalone
         {
             // Anything asked replaces a preparation still waiting: the latest is the one wanted.
             std::erase_if(pendingSounds_,[](const SoundAction& a){return a.kind==SoundAction::PrepareFromLibrary;});
+            // A Performance opened from the library replaces one waiting to open: the last chosen is the one opened.
+            if(action.kind==SoundAction::LoadFromLibrary)std::erase_if(pendingSounds_,[](const SoundAction& a){return a.kind==SoundAction::LoadFromLibrary;});
             pendingSounds_.push_back(std::move(action));return;
         }
         refreshSounds(std::move(action));

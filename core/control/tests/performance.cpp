@@ -65,6 +65,7 @@ static void native(const char* synth,const char* delay,const char* seq,const fs:
     // Prepared ahead while the old one plays (RFC 0021): the cue only publishes it. A plugin added
     // meanwhile takes an ID after the prepared ones and goes with the old Performance.
     a.note(true,100,1);reset.run(a);check(a.preparePerformance(file.string()),"prepared ahead");reset.run(a);
+    {const auto loads=pluginInstancesLoaded();check(a.preparePerformance(file.string()) && pluginInstancesLoaded()==loads,"preparing the one prepared keeps it, loading nothing");}
     const auto between=a.add("between",synth);a.commit();reset.run(a);a.service();a.loadPerformance(file.string());
     check(a.nodeId("synth")!=old && !a.hasNode(old) && !a.hasNode(between) && a.nodeId("synth")<between,"old node IDs must become invalid");
     reset.run(a);reset.run(b); // adopt and flush parameter-only sequencer state

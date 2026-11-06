@@ -656,6 +656,8 @@ std::vector<Session::Free> Session::freeInstances(bool all) const {
 // Plays a Performance prepared ahead at the next loadPerformance of the same folder. One that
 // would not fit beside what plays now is not prepared (false): it loads at the cue, as a cut.
 bool Session::preparePerformance(const std::string& directory) {
+    // The one prepared already, unchanged since, is kept: preparing it again would only read it again.
+    if(prepared_ && !directory.empty() && prepared_->root==performanceRoot(directory) && prepared_->stamp==stamp(prepared_->root))return !preparedOpportunistic_;
     prepared_.reset();preparedOpportunistic_=false;
     if(directory.empty())return false;
     const auto root=performanceRoot(directory);

@@ -68,7 +68,7 @@ Checked when built and tested; the sections below say how.
 - [x] A failed load puts back the state of the playing instances it took over ([design](#free-instances-across-a-change-and-instances-kept-warm))
 - [x] Native sound contexts across a change: the incoming node's sounds prepared beside the
       outgoing ones in the playing instance, selected at the cue ([design](#native-sound-contexts-across-a-change))
-- [ ] A library click prepares the Performance, then switches to it once it is ready ([design](#native-sound-contexts-across-a-change))
+- [x] A library click prepares the Performance, then switches to it once it is ready ([design](#native-sound-contexts-across-a-change))
 - [x] Audition of a Sound in a part and of a Performance in place of the open one, put back as
       it was or kept, from the Library app ([status](#audition))
 - [ ] 5. Seamless loading into a part (part transitions on RFC 0007's chain preparation)
@@ -1045,6 +1045,17 @@ clicked is the one opened. A Performance that would not fit beside the open one 
 first: it opens at the cue as a cut, as before. No protocol change: the two calls exist. The
 engine's control thread is still held while it reads a Performance; with native contexts that read
 loads no plugin and no state.
+
+Built the same day (`applySoundAction`'s `LoadFromLibrary`, `Engine::soundAction`). What it found
+first: the click already ran off the interface thread, a `library.load` in the app's job on a client
+of its own, and `library.load` was `performance.load` of the item's folder, which publishes a
+Performance prepared ahead when there is one; so the difference is the order, and the last click
+winning (before, every click waiting behind a job was opened in turn). Preparing the Performance
+already prepared, unchanged, now keeps it (`performance.prepare`), so the Setlist's
+prepare-ahead is not read again when it opens that entry. Prepared first, a Performance takes over
+only instances kept warm and playing native instruments' (above), not the playing Performance's
+free instances the middle rule would hand over past the warm limit. `control-performance`
+checks that preparing the one prepared keeps it.
 
 ### Desktop
 
