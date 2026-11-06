@@ -242,7 +242,7 @@ namespace
         play(false, 62, 7); play(true, 62, 5); check(near(x.l[0], 0), "its old number no longer does");
         play(false, 62, 5);
         // With edits staged, the new devices wait for their commit.
-        s.setPartLevel(ext, .5, false); s.setPartPan(ext, 0); // the level is live; the pan is an edit to commit
+        s.setPartLevel(ext, .5, false); s.setPartSolo(ext, false); // the level is live; the solo is an edit to commit
         status.midiInputs = {{E::Usb, 8, "Arturia KeyLab 61"}}; s.setHostStatus(status);
         check(s.graphState().staged, "staged edits stay staged");
         s.commit(); play(true, 62, 8); check(near(x.l[frames - 1], .25), "committed together: source 8 at half level");
@@ -669,14 +669,14 @@ namespace
         check(fader.channels.size() == 2 && std::abs(fader.peak - .125) < 1e-6, "the bus's fader wire meters both channels: " + std::to_string(fader.channels.size()));
         // Pan: A hard left takes it out of the right channel; its send keeps its own image.
         s.setPartPan(a, -1); s.commit(); x.run(s);
-        check(near(x.l[0], .875) && near(x.r[0], .5 + .125), "A panned left: " + std::to_string(x.l[0]) + " " + std::to_string(x.r[0]));
+        check(near(x.l[frames - 1], .875) && near(x.r[frames - 1], .5 + .125), "A panned left (a live gain, by the block's end): " + std::to_string(x.l[frames - 1]) + " " + std::to_string(x.r[frames - 1]));
         check(s.history().undo == "A pan", "the pan is an edit: " + s.history().undo);
         s.setPartPan(a, 0); s.commit();
         bool refusedPan = false; try { s.setPartPan(a, 2); } catch(const std::invalid_argument&) { refusedPan = true; }
         check(refusedPan, "pan beyond -1..1 is refused");
         s.setPartPan(b, .25); s.commit();
         s.setPartSolo(b, true); s.commit(); x.run(s);
-        check(near(x.l[0], .5 * .75), "B soloed: A and its send are silent: " + std::to_string(x.l[0]));
+        check(near(x.l[frames - 1], .5 * .75), "B soloed: A and its send are silent: " + std::to_string(x.l[frames - 1]));
         s.setPartSolo(b, false); s.setPartSolo(a, true); s.commit(); x.run(s);
         check(near(x.l[0], .25 + .125), "A soloed: the bus it sends to stays, B is silent: " + std::to_string(x.l[0]));
         s.setPartSolo(a, false); s.setPartSolo(room, true); s.commit(); x.run(s);
@@ -1913,7 +1913,7 @@ namespace
     // Live gains (RFC 0011's instant controls): a control playing a part's level (as "Drifting"'s
     // mod wheel does), a fader, a mute, the master and an empty bus's fader reach the sound in the
     // next block, ramped across it, and compile no plan; an edit of the structure still does.
-    void liveGains(const char* fixture, const fs::path& root)
+    void liveGains(const char* fixture, const char* audio, const fs::path& root)
     {
         Session s(48000, frames);
         const auto a = s.add("a", fixture, "org.kick.test.synth"); s.setParameter(a, 7, .5);
@@ -1947,8 +1947,36 @@ namespace
         check(near(x.l[frames - 1], .25), "unmuted, the master at half: " + std::to_string(x.l[frames - 1]));
         check(s.plansCompiled() == plans, "none of them compiled a plan");
         for(const auto& w : s.wires()) if(w.fader) check(w.level == 1 && !w.mute, "the fader wire shows the level, for the views");
-        s.setPartPan(part, -.5); s.commit();
-        check(s.plansCompiled() == plans + 1, "a pan, an edit of the structure, compiles one");
+        // A pan, a send's level and a scene's glide are live gains too.
+        s.setPartPan(part, -.5); s.commit(); x.run(s);
+        check(near(x.l[frames - 1], .25) && near(x.r[frames - 1], .125), "a pan, heard by the end of the next block: " + std::to_string(x.l[frames - 1]) + " " + std::to_string(x.r[frames - 1]));
+        check(s.plansCompiled() == plans, "and no plan compiled for it: " + std::to_string(s.plansCompiled() - plans));
+        check(s.liveValues().parts[0].pan == -.5, "the pan among the live values clients are sent");
+        s.setPartPan(part, 0); s.commit(); x.run(s);
+        // A send into a bus with a box (passing its sound on): routes of its own, so a live gain of its own.
+        const auto room = s.addPart("Room", {PartInput::Kind::Bus}), thru = s.add("thru", audio, "org.oscairn.test.audio-ports");
+        s.insertIntoPart(room, 0, thru); s.setSend(part, room, .5); s.commit(); x.run(s); x.run(s);
+        check(near(x.l[frames - 1], .375), "a send into the bus, with the part: " + std::to_string(x.l[frames - 1]));
+        const auto sending = s.plansCompiled();
+        s.setSend(part, room, .25); s.commit(); x.run(s);
+        check(near(x.l[frames - 1], .3125) && s.plansCompiled() == sending, "a send's level moved, heard at the next block, no plan: " + std::to_string(x.l[frames - 1]));
+        s.setSend(part, room, {}); s.removePart(room); s.remove(thru); s.commit(); x.run(s);
+        // A scene's glide: every step a live gain, from the last block's value to the next.
+        const auto centre = s.addScene("Centre");
+        s.setPartPan(part, -1); s.setPartLevel(part, .5, false); s.commit();
+        const auto left = s.addScene("Left");
+        s.setSceneTransition(left, 40, Scene::Curve::Linear, Scene::Launch::Now);
+        s.selectScene(centre); x.run(s); s.service(); x.run(s);
+        check(near(x.r[frames - 1], .25), "the centre scene: " + std::to_string(x.r[frames - 1]));
+        const auto gliding = s.plansCompiled();
+        s.selectScene(left);
+        std::vector<float> right;
+        for(int i = 0; i < 60; ++i) { x.run(s); s.service(); right.push_back(x.r[frames - 1]); }
+        x.run(s);
+        const bool between = std::any_of(right.begin(), right.end(), [](float v) { return v > .01 && v < .24; });
+        check(between && near(x.r[frames - 1], 0) && near(x.l[frames - 1], .125), "the glide moves through the values between to the scene's: " + std::to_string(x.l[frames - 1]) + " " + std::to_string(x.r[frames - 1]));
+        check(s.plansCompiled() == gliding, "its steps compile no plan: " + std::to_string(s.plansCompiled() - gliding));
+        s.removeScene(centre); s.removeScene(left); s.setPartPan(part, 0); s.setPartLevel(part, 1, false); s.commit(); x.run(s);
         // Through an empty bus: its fader is a live gain too, multiplied with the part's.
         const auto bus = s.addPart("Bus", {PartInput::Kind::Bus}); s.setPartOutput(part, bus); s.commit(); x.run(s);
         const auto through = s.plansCompiled();
@@ -2094,7 +2122,7 @@ int main(int argc, char** argv)
         roles(argv[1], temp.path);
         optionalAssets(argv[1], temp.path);
         levelCurves(argv[1], temp.path);
-        liveGains(argv[1], temp.path);
+        liveGains(argv[1], argv[2], temp.path);
         persistence(argv[1], argv[2], argv[3], temp.path);
     }
     catch(const std::exception& e) { forbidAllocation = false; std::fprintf(stderr, "FAIL: %s\n", e.what()); return 1; }

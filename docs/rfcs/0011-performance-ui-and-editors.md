@@ -18,7 +18,7 @@ Checked when built and tested; the sections below say how.
       generated editors ([status](#step-5-status)); what modulates each knob and the Modular
       grid remain
 - [ ] 6. Physical controls: default layers, overrides, learn, banks (layers, banks, overrides saved, learn on a panel's knobs, plugin roles and screen knobs following the editor page done; [status](#step-6-status))
-  - [x] [instant controls](#instant-controls): live gains for part levels, mutes and the master ([status](#live-gains-status))
+  - [x] [instant controls](#instant-controls): live gains for part levels, mutes, pans, send levels, the master and scene glides ([status](#live-gains-status))
   - [x] the controller-mapping service in the engine, on its MIDI input threads ([status](#engine-mapping-status))
   - [x] the latency measured in a test, against one block ([status](#latency-status))
   - [x] values pushed to clients (`controls.changed`), so the UI and devices follow without reading the graph ([status](#latency-status))
@@ -484,9 +484,34 @@ level (as "Drifting"'s mod wheel) reaching the level by the end of the next bloc
 moves, each block's samples ramping from the last level to the new one, the model's level for
 the views, a fader, a mute and the master through the control API, an empty bus's fader
 multiplied with the part's, a loaded Performance's faders, all with no plan compiled
-(`Graph::plansCompiled`), and a pan compiling one. Checks elsewhere that read a level right
-after a move now read the block's last sample, since the move ramps across the block. Not yet:
-scene glides still compile a plan per step; a part's pan and a send's level are not live.
+(`Graph::plansCompiled`). Checks elsewhere that read a level right after a move now read the
+block's last sample, since the move ramps across the block.
+
+A part's pan, a send's level and a scene's glide followed (2026-11-05). Each part has two more
+slots, its pan's left and right balance (`panSlots_`), and each send one (`sendSlots_`); a part's
+fader wire into a stereo input takes the pan slot for its channel beside its faders and the
+master's, and its own send wire the send's slot, with `Wire::unsent` its level apart from the
+send. A pan is live where the wire's pan is the part's alone (no lane's or empty bus's added to
+it); a send where its routes are its own (a send into an empty bus whose routes merge with the
+part's own, or an empty bus's send, stays baked); the pans and sends of an empty bus on another
+wire's way stay baked, as the slots run out past 253 do. `parts.pan` and a send's level moved
+then write their slots and compile no plan, and `controls.changed` carries each part's pan. A
+scene's edit (`Session::editMix`) checks what changed: when only live levels, mutes, pans, send
+levels and the master did, as in each step of a glide or a morph, it writes the slots and
+compiles nothing; a plugin switched on or off, a solo, a lane or a user wire compiles as before.
+`control-parts` (`liveGains`) checks a pan heard by the end of the next block and among the live
+values, a send's level into a bus with a box, and a 40 ms glide moving through the values between
+to the scene's, with no plan compiled (before: one for the pan, one for the send, 61 for the
+glide's 60 steps). `control-controller-input` (`panLatency`) measures a morph control moving the
+pan between two scenes and a scene's 20 ms glide on one part, under heavy load on the
+development Mac (load average about 95): the morph's pan heard 2 to 5.5 ms median and about 10 ms
+worst after the move (2.3 to 8.2 and 13 ms before); a glide's first step heard 4.5 to 4.8 ms
+median and 7 to 9.5 ms worst (4.6 to 4.8 and 10 to 13 ms before), its end 24 ms median after the
+select (25.3 before). With one part the plan compiles quickly, so most of what remains is the
+service tick a glide step waits for and the block. Not yet: a parameter target played by a
+controller still waits for the control thread, which a load can hold up: the MIDI thread would
+have to enqueue to the plugin's host itself, whose queue has one producer, whose parameter list
+the main thread may rewrite, and which for a plugin in a worker is a request to the worker.
 
 #### Screen edits status
 

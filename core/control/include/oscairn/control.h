@@ -512,7 +512,7 @@ namespace oscairn
         // them back to devices; the `controls.changed` topic pushes what changes.
         struct LiveValues
         {
-            struct Fader { uint32_t part = 0; double level = 1; bool mute = false; bool operator==( const Fader& ) const = default; };
+            struct Fader { uint32_t part = 0; double level = 1; bool mute = false; double pan = 0; bool operator==( const Fader& ) const = default; };
             std::vector<std::pair<uint32_t, double>> controls; // control, value
             std::vector<Fader> parts;
             double masterLevel = 1, masterPan = 0;

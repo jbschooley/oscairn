@@ -7201,12 +7201,18 @@
                       },
                       "mute": {
                         "type": "boolean"
+                      },
+                      "pan": {
+                        "type": "number",
+                        "minimum": -1,
+                        "maximum": 1
                       }
                     },
                     "required": [
                       "part",
                       "level",
-                      "mute"
+                      "mute",
+                      "pan"
                     ],
                     "additionalProperties": false
                   }

@@ -1641,7 +1641,7 @@ namespace oscairn
                     controls.push_back("{\"control\":" + std::to_string(id) + ",\"value\":" + encode(value) + '}');
             for( const auto& f : v.parts )
                 if( !was || std::find(was->parts.begin(), was->parts.end(), f) == was->parts.end() )
-                    parts.push_back("{\"part\":" + std::to_string(f.part) + ",\"level\":" + encode(f.level) + ",\"mute\":" + (f.mute ? "true" : "false") + '}');
+                    parts.push_back("{\"part\":" + std::to_string(f.part) + ",\"level\":" + encode(f.level) + ",\"mute\":" + (f.mute ? "true" : "false") + ",\"pan\":" + encode(f.pan) + '}');
             const bool master = !was || was->masterLevel != v.masterLevel || was->masterPan != v.masterPan;
             // The interval runs from the last one sent, so a move after a pause goes at the next poll.
             if( !controls.empty() || !parts.empty() || master )

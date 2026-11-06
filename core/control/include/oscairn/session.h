@@ -279,7 +279,17 @@ namespace oscairn
         // leaving: the last Performance's plugins ringing out (RFC 0021); their routes are left alone.
         // live: the parts' live gain slots (faderSlots_), and what could not be live, out; null: every
         // gain baked into the routes, as for a Performance not yet open.
-        struct Live { const std::map<uint32_t, uint8_t>* slots = nullptr; std::set<uint32_t> staticFaders; bool staticMaster = false; };
+        // pans: each part's left and right slots; sends: each part's send's (part, bus). passed: empty
+        // buses wires pass, whose pans and sends are in those wires' fixed gains.
+        struct Live
+        {
+            const std::map<uint32_t, uint8_t>* slots = nullptr;
+            const std::map<uint32_t, std::array<uint8_t, 2>>* pans = nullptr;
+            const std::map<std::pair<uint32_t, uint32_t>, uint8_t>* sends = nullptr;
+            std::set<uint32_t> staticFaders, staticPans, passed;
+            std::set<std::pair<uint32_t, uint32_t>> staticSends;
+            bool staticMaster = false;
+        };
         static void compileWires(Graph& graph, std::vector<Wire>& wires, const std::set<NodeId>& off, const std::set<NodeId>& rungOut, const std::set<NodeId>& leaving, double masterLevel, double masterPan, Live* live = nullptr);
         void compileWires(); // the open Performance's, live
         // Live gains (RFC 0011's instant controls): each part's slot in the graph's table (from
@@ -289,11 +299,22 @@ namespace oscairn
         std::map<uint32_t, uint8_t> faderSlots_;
         std::set<uint8_t> freshSlots_;           // given since they were last written: they start at their value, not ramp to it
         std::set<uint32_t> staticFaders_;
+        // A part's pan (left and right slots, the balance of its fader wires) and each send's level.
+        std::map<uint32_t, std::array<uint8_t, 2>> panSlots_;
+        std::map<std::pair<uint32_t, uint32_t>, uint8_t> sendSlots_;
+        std::set<uint32_t> staticPans_;
+        std::set<std::pair<uint32_t, uint32_t>> staticSends_;
         bool staticMaster_ = true, liveEdit_ = false, liveMute_ = false; // liveMute_: a live edit changed a mute (the views' wires show it)
         void assignSlots();
         void writeLiveGains();                   // the slots from the parts' levels and mutes and the master
         bool liveFader(uint32_t part) const { return faderSlots_.count(part) && !staticFaders_.count(part); }
+        bool livePan(uint32_t part) const { return panSlots_.count(part) && !staticPans_.count(part); }
+        bool liveSend(uint32_t part, uint32_t bus) const { return sendSlots_.count({part, bus}) && !staticSends_.count({part, bus}); }
         template<class Edit> void editFaders(Edit&& edit, bool live = true); // levels and mutes only: the wires the views read, and the slots (live)
+        // A scene's edit: live gains alone when only live levels, mutes, pans, send levels and the
+        // master changed (a glide's step), otherwise (or with compile) as editWires.
+        template<class Edit> void editMix(bool compile, Edit&& edit);
+        bool liveOnly(const std::vector<Part>& before, const std::vector<Wire>& wiresBefore, double masterLevel, double masterPan) const;
         void enable(NodeId node, bool enabled);  // the flags and the graph's retiring count; wires are the caller's
         void ringOut();                          // service(): an off plugin that has rung out stops sounding
         bool enqueue(const kick::clap::Event& event);

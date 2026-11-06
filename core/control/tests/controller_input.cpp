@@ -319,12 +319,123 @@ namespace
         timing(ui.worst <= 1000 / 60.0, "a client has it within a display frame, every move");
         return !missed;
     }
+
+    // A part's pan, played two ways with the engine's threads as above: the mod wheel moving a
+    // morph control between a scene panned left and one panned right (the control thread, woken
+    // at once, blends the scenes), and a scene with a 20 ms glide selected on the control thread
+    // as a scene button's move is. Measured: from the move to the first block with the new
+    // right-channel level (the morph), and to the glide's first step heard and its end.
+    void panLatency(const char* fixture)
+    {
+        constexpr uint32_t block = 128;
+        constexpr double rate = 48000, period = block / rate;
+        Session s(rate, block);
+        const auto a = s.add("a", fixture, "org.kick.test.synth"); s.setParameter(a, 7, 1);
+        const auto pa = s.addPart("A"); s.insertIntoPart(pa, 0, a); s.commit();
+        s.setPartPan(pa, -1); s.commit(); const auto left = s.addScene("Left");
+        s.setPartPan(pa, 1); s.commit(); const auto right = s.addScene("Right");
+        const auto morph = s.addMacro("Morph");
+        MacroTarget t; t.kind = MacroTarget::Kind::Morph; t.sceneFrom = left; t.sceneTo = right;
+        s.setMacroTargets(morph, {t});
+        s.assign("wheel:1", {Assignment::Kind::Control, 0, 0, morph});
+        Control::SessionStatus status; status.midiInputs = {{MidiEndpoint::Kind::Usb, smk, "SMK-37 Elite -Master"}};
+        s.setHostStatus(status);
+        auto mod = group(Role::Assign, "wheels", 1, {1}); mod.functions = {"modulation"};
+        s.setControllers({mod}, {{"SMK-37 Elite -Master", "smk", 1}});
+        s.setPartPan(pa, 0); s.commit(); s.service();
+        std::atomic<bool> woken{false}, stop{false};
+        s.setControllerWake([&] { woken = true; });
+        s.note(true, 60, 1);
+        std::atomic<float> heard{0}, heardLeft{0};
+        std::atomic<int64_t> heardAt{0};
+        std::thread audio([&] {
+            std::array<float, block> l{}, r{};
+            float* out[2]{l.data(), r.data()};
+            auto next = Clock::now();
+            while(!stop)
+            {
+                forbidAllocation = true;
+                s.process(nullptr, 0, out, 2, block);
+                forbidAllocation = false;
+                heardLeft = l[block - 1]; heard = r[block - 1]; heardAt = Clock::now().time_since_epoch().count();
+                next += std::chrono::nanoseconds(int64_t(period * 1e9));
+                std::this_thread::sleep_until(next);
+            }
+        });
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        const float centre = heard; // pan 0: the right channel at full
+        std::vector<double> toSound, firstStep, glideEnd;
+        std::atomic<bool> done{false};
+        std::thread midi([&] {
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            cc(s, 1, 0); std::this_thread::sleep_for(std::chrono::milliseconds(50)); // picked up
+            std::mt19937 random(7);
+            for(int i = 0; i < 40; ++i)
+            {
+                std::this_thread::sleep_for(std::chrono::microseconds(40000 + random() % 3000));
+                const uint8_t value = i % 2 ? 0 : 127;
+                const float goal = value ? centre : 0.f; // panned right: full; left: none
+                const auto sent = Clock::now();
+                cc(s, 1, value);
+                const auto since = sent.time_since_epoch().count();
+                bool sound = false;
+                while(Clock::now() < sent + std::chrono::milliseconds(35) && !sound)
+                {
+                    if(heardAt > since && std::abs(heard - goal) < 1e-4) { sound = true; toSound.push_back(ms(Clock::duration(heardAt - since))); }
+                    std::this_thread::yield();
+                }
+                check(sound, "morph move " + std::to_string(i) + " heard within 35 ms");
+            }
+            done = true;
+        });
+        auto tick = Clock::now();
+        auto serve = [&] {
+            if(woken.exchange(false)) s.serviceControllers();
+            if(Clock::now() >= tick) { s.service(); tick += std::chrono::milliseconds(5); }
+            std::this_thread::sleep_for(std::chrono::microseconds(100));
+        };
+        while(!done) serve();
+        midi.join();
+        // The glides, from the control thread, as a scene button's move is applied there. Each is
+        // watched on the channel it fades in, for its first step (the balance moves the other only
+        // past the centre), and the one it fades out, for its end.
+        s.setSceneTransition(left, 20, Scene::Curve::Linear, Scene::Launch::Now);
+        s.setSceneTransition(right, 20, Scene::Curve::Linear, Scene::Launch::Now);
+        for(int i = 0; i < 20; ++i)
+        {
+            const auto until = Clock::now() + std::chrono::milliseconds(30);
+            while(Clock::now() < until) serve();
+            const bool toRight = i % 2 == 0;
+            auto channel = [&] { return toRight ? heard.load() : heardLeft.load(); };
+            auto other = [&] { return toRight ? heardLeft.load() : heard.load(); };
+            const float from = channel();
+            const auto sent = Clock::now(); const auto since = sent.time_since_epoch().count();
+            s.selectScene(toRight ? right : left);
+            bool moved = false, arrived = false;
+            while(Clock::now() < sent + std::chrono::milliseconds(80) && !arrived)
+            {
+                serve();
+                if(!moved && heardAt > since && std::abs(channel() - from) > 1e-3) { moved = true; firstStep.push_back(ms(Clock::duration(heardAt - since))); }
+                if(moved && std::abs(other()) < 1e-4) { arrived = true; glideEnd.push_back(ms(Clock::duration(heardAt - since))); }
+            }
+            check(arrived, "glide " + std::to_string(i) + " arrives within 80 ms");
+        }
+        stop = true;
+        audio.join();
+        s.setControllerWake({});
+        const auto sound = spread(toSound), step = spread(firstStep), end = spread(glideEnd);
+        std::printf("pan latency: MIDI to a morph's pan heard, median %.2f ms, worst %.2f ms (a block is %.2f ms), over %zu moves\n", sound.median, sound.worst, period * 1000, toSound.size());
+        std::printf("pan latency: a scene's 20 ms glide, first step heard median %.2f ms, worst %.2f ms; its end median %.2f ms, worst %.2f ms, over %zu glides\n", step.median, step.worst, end.median, end.worst, firstStep.size());
+        // Within a service tick and a block or two; generous on the worst, for a loaded test machine.
+        check(sound.worst <= 20, "a morph's pan heard within 20 ms, every move");
+        check(step.worst <= 20, "a glide's first step heard within 20 ms, every glide");
+    }
 }
 
 int main(int argc, char** argv)
 {
     if(argc < 2) { std::fprintf(stderr, "usage: %s FIXTURE\n", argv[0]); return 2; }
-    try { mapping(argv[1]); identical(argv[1]); for(int run = 1; run <= 3 && !latency(argv[1], run == 3); ++run) {} }
+    try { mapping(argv[1]); identical(argv[1]); for(int run = 1; run <= 3 && !latency(argv[1], run == 3); ++run) {} panLatency(argv[1]); }
     catch(const std::exception& e) { forbidAllocation = false; std::fprintf(stderr, "FAIL: %s\n", e.what()); return 1; }
     if(!failures) std::puts("ok: a controller's MIDI into the engine moves its controls' targets within one block");
     return failures ? 1 : 0;

@@ -141,10 +141,10 @@ request members.
 | `harmony.get` | omitted or `{}` | the Performance's `key`, each part's own (`parts`: `{"part","key"}`, `key` null when it follows the Performance's), and the named `scales`. A key is `root` (0 = C .. 11 = B), `scale` (its pitch classes in semitones above the root, from 0) and `name` (the scale's, when it is one of the pad editor's; else null) ([RFC 0033](rfcs/0033-script-block.md#the-parts-scale-and-chord)) |
 | `harmony.set` | `key`: `root` and `scale`, a name from `scales` or pitch classes including 0; with `part`, that part's own key, or null to follow the Performance's again | `{"accepted":true}`; an edit, staged until commit. Plugins in a part read its key and the chord held on it through `oscairn.harmony` |
 | `parts.output` | `part`, and `bus` (play through that bus) or optional `port` (a graph output) | `{"accepted":true}` |
-| `parts.send` | `part`, `bus`, optional `level` (without one, the send is removed) | `{"accepted":true}` |
+| `parts.send` | `part`, `bus`, optional `level` (without one, the send is removed) | `{"accepted":true}`: a new level for an existing send is a live gain like `parts.level`'s (followed by `graph.changed`, for the views' wires), unless its routes share another wire's into a bus with no box, or come from an empty bus's send; adding or removing a send is an edit to commit |
 | `parts.level` | `part`, `level`, `mute`: its fader; sends are post-fader | `{"accepted":true}`: a live gain ([RFC 0011](rfcs/0011-performance-ui-and-editors.md#instant-controls)): heard from the next block, ramped across it, with no plan compiled (`graph.commit` after it compiles none unless other edits are staged); a fader whose wires cannot be live stages an edit as before |
 | `parts.name` | `part`, `name` | `{"accepted":true}` |
-| `parts.pan` | `part`, `pan` (-1 left .. 1 right): where it plays; its sends keep their own | `{"accepted":true}` |
+| `parts.pan` | `part`, `pan` (-1 left .. 1 right): where it plays; its sends keep their own | `{"accepted":true}`: a live gain like `parts.level`'s (each of the part's fader wires into a stereo input scaled by the part's left or right slot), unless a wire's pan also has a lane's or an empty bus's in it, or its wires cannot be live; then an edit to commit |
 | `master.set` | `level` (0..2, a gain) and `pan` (-1 left .. 1 right): the Performance's level and pan on its main output, after every part, bus and user wire playing there; `graph.get` gives them as `master`, and each scene its own | `{"accepted":true}`; a live gain like `parts.level`'s; an edit, undone with `edit.undo`, stored by scenes with the mix |
 | `parts.solo` | `part`, `solo`: while any part is soloed, only soloed parts, the parts feeding them and the buses they feed are heard | `{"accepted":true}` |
 | `edit.undo`, `edit.redo` | omitted or `{}`: undoes the last edit, or redoes the last undone | `undo`, `redo`: what each would now do (empty: nothing) |
@@ -410,11 +410,12 @@ the first poll. Re-subscribing does not discard already unread changes.
   row button, a page), at most 60 times per second.
 - `controls.changed` carries the values controls and faders play, only those that changed
   since the last one: `controls` (each `{control, value}`), `parts` (each `{part, level,
-  mute}`) and, when it changed, `master` (`{level, pan}`); everything on the first after
+  mute, pan}`) and, when it changed, `master` (`{level, pan}`); everything on the first after
   subscribing. At most 60 times per second, the interval counted from the last one sent, so
-  a move after a pause goes out at the next poll. A part's level or the master moved live
-  ([RFC 0011](rfcs/0011-performance-ui-and-editors.md#instant-controls): `parts.level`,
-  `master.set`, a control or a controller) reaches clients only this way: it is no
+  a move after a pause goes out at the next poll. A part's level or pan or the master moved
+  live ([RFC 0011](rfcs/0011-performance-ui-and-editors.md#instant-controls): `parts.level`,
+  `parts.pan`, `master.set`, a control, a controller or a scene's glide) reaches clients only
+  this way: it is no
   `graph.changed`, so a client keeping values up to date needs this topic, and reads no graph
   for a move. A mute changed live is a `graph.changed` as well (the views' wires show it).
 - `status` carries the `session.status` shape when it changes, at most 4 times per second.

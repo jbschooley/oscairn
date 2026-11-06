@@ -368,7 +368,7 @@ namespace oscairn
     {
         LiveValues v;
         for( const auto& m : macros_ ) v.controls.push_back( {m.id, m.value} );
-        for( const auto& p : parts_ ) v.parts.push_back( {p.id, p.level, p.mute} );
+        for( const auto& p : parts_ ) v.parts.push_back( {p.id, p.level, p.mute, p.pan} );
         v.masterLevel = masterLevel_; v.masterPan = masterPan_;
         return v;
     }

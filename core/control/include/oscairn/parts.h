@@ -56,8 +56,9 @@ namespace oscairn
         // fader and send wires, then the empty buses it passes), and its level and mute with those
         // faders at unity and unmuted. live: those hold (false for two ways through different
         // buses merged into one wire, whose faders then move it by compiling a plan).
+        // unsent: a part's own send wire's fixed without the send's level, which is then its live gain.
         std::vector<uint32_t> faders;
-        double fixed = 1;
+        double fixed = 1, unsent = 1;
         bool fixedMute = false, live = false;
         bool operator==(const Wire&) const = default;
     };

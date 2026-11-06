@@ -772,7 +772,7 @@ namespace oscairn
     {
         LiveValues v;const auto& g=impl_->graph;
         for(const auto& m:g.macros)v.controls.push_back({m.id,m.value});
-        for(const auto& p:g.parts)v.parts.push_back({p.id,p.level,p.mute});
+        for(const auto& p:g.parts)v.parts.push_back({p.id,p.level,p.mute,p.pan});
         v.masterLevel=g.masterLevel;v.masterPan=g.masterPan;
         return v;
     }
@@ -1155,11 +1155,11 @@ namespace oscairn
                 // so does a read out whose graph came before them, or it would show older ones.
                 auto take=[&](GraphState& g){
                     for(auto c:array(field(params,"controls"))){const auto id=static_cast<uint32_t>(integer(field(c,"control")));for(auto& m:g.macros)if(m.id==id)m.value=number(field(c,"value"));}
-                    for(auto f:array(field(params,"parts"))){const auto id=static_cast<uint32_t>(integer(field(f,"part")));for(auto& p:g.parts)if(p.id==id){p.level=number(field(f,"level"));p.mute=boolean(field(f,"mute"));}}
+                    for(auto f:array(field(params,"parts"))){const auto id=static_cast<uint32_t>(integer(field(f,"part")));for(auto& p:g.parts)if(p.id==id){p.level=number(field(f,"level"));p.mute=boolean(field(f,"mute"));p.pan=number(field(f,"pan"));}}
                     V master=nullptr;try{master=field(params,"master");}catch(const std::runtime_error&){}
                     if(master){g.masterLevel=number(field(master,"level"));g.masterPan=number(field(master,"pan"));}
                 };
-                for(auto f:array(field(params,"parts")))impl_->pushed("level:"+std::to_string(integer(field(f,"part"))));
+                for(auto f:array(field(params,"parts"))){const auto part=std::to_string(integer(field(f,"part")));impl_->pushed("level:"+part);impl_->pushed("pan:"+part);}
                 if(detail::member(params,"master"))impl_->pushed("master");
                 take(impl_->graph);if(impl_->reading && impl_->reading->graphRead)take(impl_->reading->next);
                 impl_->overlay();
