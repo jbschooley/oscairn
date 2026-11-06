@@ -439,8 +439,8 @@ int main(int argc, char** argv)
                 const auto saved = standalone::readSetlist(standalone::setlistFile(folder, "Friday"));
                 check(saved.name == "Friday" && saved.entries.size() == 2 && saved.entries[1].name == "Verse Keys", "the setlist was saved");
                 // Played in order: each opens its Performance, here while a refresh is running, as
-                // the engine starts one every half second.
-                engine.soundAction({});
+                // the engine starts one every half second, and another waits its turn.
+                engine.soundAction({}); engine.soundAction({});
                 setlist->go(0);
                 check(wait([&] { return !engine.soundBusy() && engine.performanceInfo() && engine.performanceInfo()->name == "Bass Split"; }), "the first entry opened");
                 // The next is prepared meanwhile (RFC 0021); done, it said nothing over the opening.

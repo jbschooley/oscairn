@@ -153,7 +153,8 @@ namespace oscairn::standalone
         // Any job, including a refresh.
         bool jobRunning() const { return soundJob_.valid(); }
         // Preparing the next Performance ahead is not busy: anything asked meanwhile waits for it, or replaces it while it waits.
-        bool soundBusy() const { return std::any_of(pendingSounds_.begin(),pendingSounds_.end(),[](const SoundAction& a){return a.kind!=SoundAction::PrepareFromLibrary;}) || (soundJob_.valid() && soundJobKind_!=SoundAction::Refresh && soundJobKind_!=SoundAction::PrepareFromLibrary); }
+        // Nor is a refresh, running or waiting its turn.
+        bool soundBusy() const { return std::any_of(pendingSounds_.begin(),pendingSounds_.end(),[](const SoundAction& a){return a.kind!=SoundAction::PrepareFromLibrary && a.kind!=SoundAction::Refresh;}) || (soundJob_.valid() && soundJobKind_!=SoundAction::Refresh && soundJobKind_!=SoundAction::PrepareFromLibrary); }
         // Why a load, save or export asked now would be refused (the engine busy or gone), or empty.
         std::string refusal() const { return !connected() ? "The engine is not running." : soundBusy() ? "The engine is busy; try again in a moment." : std::string(); }
         bool canPrepareSounds() const { return !socketPath_.empty(); }
