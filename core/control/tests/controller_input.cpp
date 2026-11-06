@@ -3,9 +3,9 @@
 // RFC 0011's instant controls: a controller's MIDI into the engine moves what its control plays
 // within one block, with no control thread, socket or plan compile on the way; and pickup,
 // latching and momentary buttons, relative encoders and groups' rows behave as the app's
-// mapping did; and, measured against the clock, how long a move takes to be heard (MIDI to the
-// rendered level, paced like an audio device) and to reach a client's cached values over the
-// socket (what a UI shows), with the engine's threads as they run.
+// mapping did; and, with the engine's threads as they run, how long a move takes to be heard
+// (MIDI to the rendered level, paced like an audio device, judged in blocks rendered) and to
+// reach a client's cached values over the socket (what a UI shows, judged against the clock).
 #include "oscairn/session.h"
 #include "oscairn/local_socket.h"
 #include "oscairn/remote_control.h"
@@ -190,15 +190,43 @@ namespace
     struct Spread { double median = 0, worst = 0; };
     Spread spread(std::vector<double> v) { std::sort(v.begin(), v.end()); return v.empty() ? Spread{} : Spread{v[v.size() / 2], v.back()}; }
 
+    // Each block's last samples, as the audio thread renders them, kept by block number. Latency
+    // is judged in blocks, not milliseconds: a machine that stops running the audio thread (a
+    // CI runner's 35 ms gaps) renders no blocks meanwhile, while a move held up in the engine
+    // lets blocks go by without it.
+    struct Blocks
+    {
+        static constexpr size_t size = 4096; // about 11 s at 128 frames; a waiter reads within 1 s
+        std::array<std::atomic<float>, size> left{}, right{};
+        std::atomic<uint64_t> count{0};
+        void push(float l, float r)
+        {
+            const auto n = count.load(std::memory_order_relaxed);
+            left[n % size].store(l, std::memory_order_relaxed); right[n % size].store(r, std::memory_order_relaxed);
+            count.store(n + 1, std::memory_order_release);
+        }
+        // From block `from` on: how many blocks until the first whose last samples pass `ok`
+        // (1: the first block to end after `from` was read), or 0 while none has.
+        template<typename F> uint64_t until(uint64_t from, uint64_t& next, F ok) const
+        {
+            if(next < from) next = from;
+            for(const auto n = count.load(std::memory_order_acquire); next < n; ++next)
+                if(ok(left[next % size].load(std::memory_order_relaxed), right[next % size].load(std::memory_order_relaxed))) return next - from + 1;
+            return 0;
+        }
+    };
+    std::string worstOf(const std::vector<uint64_t>& v) { return std::to_string(v.empty() ? 0 : *std::max_element(v.begin(), v.end())); }
+    uint64_t medianOf(std::vector<uint64_t> v) { std::sort(v.begin(), v.end()); return v.empty() ? 0 : v[v.size() / 2]; }
+
     // The engine's threads as they run, with an audio device's pacing (128 frames at 48 kHz),
     // its control thread (the socket polled and service() every 5 ms, woken at once by a
     // control's move), a MIDI thread and a client over the socket. A move of the mod wheel plays
     // a control whose target is a part's level, as on "Drifting". Measured: from the MIDI thread
-    // handing the message over to the end of the first block whose output has the new level
-    // (heard), and to the client's cached value having it (what a UI shows at its next frame).
-    // Timing is judged on the best of three runs (main), with CTest running nothing beside it
-    // (RUN_SERIAL): a slower path (an extra block, a poll in place of the wake) fails every run,
-    // other load on the machine seldom three in a row.
+    // handing the message over to the first block whose output has the new level (heard, in
+    // blocks rendered; its milliseconds are printed), and to the client's cached value having it
+    // (what a UI shows at its next frame, against the clock). Timing is judged on the best of
+    // three runs (main), with CTest running nothing beside it (RUN_SERIAL): a slower path (an
+    // extra block) fails every run, other load on the machine seldom three in a row.
     // A run that misses a limit says so and, unless it is the last, counts no failure.
     bool latency(const char* fixture, bool last)
     {
@@ -231,6 +259,7 @@ namespace
         // Audio thread: a block every period, its last sample kept with when it was rendered.
         std::atomic<float> heard{0};
         std::atomic<int64_t> heardAt{0}, longestGap{0}; // the longest time between two blocks' ends
+        Blocks blocks;
         std::thread audio([&] {
             std::array<float, block> l{}, r{};
             float* out[2]{l.data(), r.data()};
@@ -243,6 +272,7 @@ namespace
                 const auto now = Clock::now().time_since_epoch().count();
                 if(heardAt) longestGap = std::max<int64_t>(longestGap, now - heardAt);
                 heard = l[block - 1]; heardAt = now;
+                blocks.push(l[block - 1], r[block - 1]);
                 next += std::chrono::nanoseconds(int64_t(period * 1e9));
                 std::this_thread::sleep_until(next);
             }
@@ -269,6 +299,7 @@ namespace
         });
         // The MIDI thread: moves a while apart, at times that fall anywhere in a block.
         std::vector<double> toSound, toClient;
+        std::vector<uint64_t> blocksToSound;
         std::atomic<bool> done{false};
         std::thread midi([&] {
             while(!ready) std::this_thread::yield();
@@ -280,18 +311,21 @@ namespace
                 std::this_thread::sleep_for(std::chrono::microseconds(40000 + random() % 3000));
                 const uint8_t value = i % 2 ? 0 : 127;
                 const double level = t.start + (t.end - t.start) * t.shape(value / 127.0);
+                const auto from = blocks.count.load(std::memory_order_acquire);
                 const auto sent = Clock::now();
                 cc(s, 1, value);
                 const auto since = sent.time_since_epoch().count();
-                const auto deadline = sent + std::chrono::milliseconds(35);
-                bool sound = false, ui = false;
-                while(Clock::now() < deadline && (!sound || !ui))
+                const auto deadline = sent + std::chrono::seconds(1); // a wait, not a limit
+                bool sound = false, ui = false, rendered = false;
+                uint64_t next = 0;
+                while(Clock::now() < deadline && (!sound || !ui || !rendered))
                 {
+                    if(!rendered) if(const auto n = blocks.until(from, next, [&](float l, float) { return std::abs(l - level) < 1e-4; })) { rendered = true; blocksToSound.push_back(n); }
                     if(!sound && heardAt > since && std::abs(heard - level) < 1e-4) { sound = true; toSound.push_back(ms(Clock::duration(heardAt - since))); }
                     if(!ui && shownAt > since && std::abs(shown - level) < 1e-9) { ui = true; toClient.push_back(ms(Clock::duration(shownAt - since))); }
                     std::this_thread::yield();
                 }
-                timing(sound && ui, "move " + std::to_string(i) + " heard and shown within 35 ms");
+                timing(rendered && ui, "move " + std::to_string(i) + " heard and shown within 1 s");
             }
             done = true;
         });
@@ -312,15 +346,16 @@ namespace
         midi.join(); client.join(); audio.join();
         s.setControllerWake({});
         const auto sound = spread(toSound), ui = spread(toClient);
-        std::printf("latency: MIDI to the rendered level, median %.2f ms, worst %.2f ms (a block is %.2f ms), over %zu moves\n", sound.median, sound.worst, period * 1000, toSound.size());
+        std::printf("latency: MIDI to the rendered level, median %llu blocks, worst %s (a block is %.2f ms); median %.2f ms, worst %.2f ms, over %zu moves\n",
+                    (unsigned long long)medianOf(blocksToSound), worstOf(blocksToSound).c_str(), period * 1000, sound.median, sound.worst, toSound.size());
         std::string slow;
-        for(size_t i = 0; i < toSound.size(); ++i) if(toSound[i] > 10) { char x[32]; std::snprintf(x, sizeof x, " %zu: %.2f ms;", i, toSound[i]); slow += x; }
-        std::printf("latency: the longest time between blocks %.2f ms; heard after 10 ms:%s\n", ms(Clock::duration(longestGap.load())), slow.empty() ? " none" : slow.c_str());
+        for(size_t i = 0; i < blocksToSound.size(); ++i) if(blocksToSound[i] > 2) slow += " " + std::to_string(i) + ": " + std::to_string(blocksToSound[i]) + ";";
+        std::printf("latency: the longest time between blocks %.2f ms; heard after 2 blocks:%s\n", ms(Clock::duration(longestGap.load())), slow.empty() ? " none" : slow.c_str());
         std::printf("latency: MIDI to a client's cached value, median %.2f ms, worst %.2f ms (a display frame is 16.67 ms), over %zu moves\n", ui.median, ui.worst, toClient.size());
         // Within about one block (a move landing just after a block starts waits for the next);
-        // generous on the worst, for a loaded test machine.
-        timing(sound.median <= 2 * period * 1000 + 1, "heard within about a block (median)");
-        timing(sound.worst <= 10, "heard within 10 ms, every move");
+        // generous on the worst, for a loaded test machine (3 blocks: the 10 ms this once was).
+        timing(medianOf(blocksToSound) <= 2, "heard within about a block (median): " + std::to_string(medianOf(blocksToSound)));
+        timing(blocksToSound.size() == 60 && std::stoull(worstOf(blocksToSound)) <= 3, "heard within 3 blocks, every move: " + worstOf(blocksToSound));
         timing(ui.worst <= 1000 / 60.0, "a client has it within a display frame, every move");
         return !missed;
     }
@@ -328,8 +363,9 @@ namespace
     // A part's pan, played two ways with the engine's threads as above: the mod wheel moving a
     // morph control between a scene panned left and one panned right (the control thread, woken
     // at once, blends the scenes), and a scene with a 20 ms glide selected on the control thread
-    // as a scene button's move is. Measured: from the move to the first block with the new
-    // right-channel level (the morph), and to the glide's first step heard and its end.
+    // as a scene button's move is. Measured in blocks rendered, as above: from the move to the
+    // first block with the new right-channel level (the morph), and to the glide's first step
+    // heard and its end.
     void panLatency(const char* fixture)
     {
         constexpr uint32_t block = 128;
@@ -353,6 +389,7 @@ namespace
         s.note(true, 60, 1);
         std::atomic<float> heard{0}, heardLeft{0};
         std::atomic<int64_t> heardAt{0};
+        Blocks blocks;
         std::thread audio([&] {
             std::array<float, block> l{}, r{};
             float* out[2]{l.data(), r.data()};
@@ -363,6 +400,7 @@ namespace
                 s.process(nullptr, 0, out, 2, block);
                 forbidAllocation = false;
                 heardLeft = l[block - 1]; heard = r[block - 1]; heardAt = Clock::now().time_since_epoch().count();
+                blocks.push(l[block - 1], r[block - 1]);
                 next += std::chrono::nanoseconds(int64_t(period * 1e9));
                 std::this_thread::sleep_until(next);
             }
@@ -370,6 +408,7 @@ namespace
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
         const float centre = heard; // pan 0: the right channel at full
         std::vector<double> toSound, firstStep, glideEnd;
+        std::vector<uint64_t> blocksToSound, blocksToStep, blocksToEnd;
         std::atomic<bool> done{false};
         std::thread midi([&] {
             std::this_thread::sleep_for(std::chrono::milliseconds(50));
@@ -380,16 +419,19 @@ namespace
                 std::this_thread::sleep_for(std::chrono::microseconds(40000 + random() % 3000));
                 const uint8_t value = i % 2 ? 0 : 127;
                 const float goal = value ? centre : 0.f; // panned right: full; left: none
+                const auto from = blocks.count.load(std::memory_order_acquire);
                 const auto sent = Clock::now();
                 cc(s, 1, value);
                 const auto since = sent.time_since_epoch().count();
-                bool sound = false;
-                while(Clock::now() < sent + std::chrono::milliseconds(35) && !sound)
+                bool sound = false, rendered = false;
+                uint64_t next = 0;
+                while(Clock::now() < sent + std::chrono::seconds(1) && !rendered)
                 {
-                    if(heardAt > since && std::abs(heard - goal) < 1e-4) { sound = true; toSound.push_back(ms(Clock::duration(heardAt - since))); }
+                    if(const auto n = blocks.until(from, next, [&](float, float r) { return std::abs(r - goal) < 1e-4; })) { rendered = true; blocksToSound.push_back(n); }
+                    if(!sound && heardAt > since && std::abs(heard - goal) < 1e-4) { sound = true; toSound.push_back(ms(Clock::duration(heardAt - since))); }
                     std::this_thread::yield();
                 }
-                check(sound, "morph move " + std::to_string(i) + " heard within 35 ms");
+                check(rendered, "morph move " + std::to_string(i) + " heard within 1 s");
             }
             done = true;
         });
@@ -414,26 +456,38 @@ namespace
             auto channel = [&] { return toRight ? heard.load() : heardLeft.load(); };
             auto other = [&] { return toRight ? heardLeft.load() : heard.load(); };
             const float from = channel();
+            const auto start = blocks.count.load(std::memory_order_acquire);
             const auto sent = Clock::now(); const auto since = sent.time_since_epoch().count();
             s.selectScene(toRight ? right : left);
             bool moved = false, arrived = false;
-            while(Clock::now() < sent + std::chrono::milliseconds(80) && !arrived)
+            uint64_t stepped = 0, ended = 0, next = 0, nextEnd = 0;
+            auto in = [&](float l, float r) { return toRight ? r : l; };
+            auto out = [&](float l, float r) { return toRight ? l : r; };
+            while(Clock::now() < sent + std::chrono::seconds(1) && !ended)
             {
                 serve();
+                if(!stepped) stepped = blocks.until(start, next, [&](float l, float r) { return std::abs(in(l, r) - from) > 1e-3; });
+                if(stepped) ended = blocks.until(start + stepped - 1, nextEnd, [&](float l, float r) { return std::abs(out(l, r)) < 1e-4; });
                 if(!moved && heardAt > since && std::abs(channel() - from) > 1e-3) { moved = true; firstStep.push_back(ms(Clock::duration(heardAt - since))); }
-                if(moved && std::abs(other()) < 1e-4) { arrived = true; glideEnd.push_back(ms(Clock::duration(heardAt - since))); }
+                if(moved && !arrived && std::abs(other()) < 1e-4) { arrived = true; glideEnd.push_back(ms(Clock::duration(heardAt - since))); }
             }
-            check(arrived, "glide " + std::to_string(i) + " arrives within 80 ms");
+            if(stepped) blocksToStep.push_back(stepped);
+            if(ended) blocksToEnd.push_back(stepped - 1 + ended);
+            check(ended, "glide " + std::to_string(i) + " arrives within 1 s");
         }
         stop = true;
         audio.join();
         s.setControllerWake({});
         const auto sound = spread(toSound), step = spread(firstStep), end = spread(glideEnd);
-        std::printf("pan latency: MIDI to a morph's pan heard, median %.2f ms, worst %.2f ms (a block is %.2f ms), over %zu moves\n", sound.median, sound.worst, period * 1000, toSound.size());
-        std::printf("pan latency: a scene's 20 ms glide, first step heard median %.2f ms, worst %.2f ms; its end median %.2f ms, worst %.2f ms, over %zu glides\n", step.median, step.worst, end.median, end.worst, firstStep.size());
-        // Within a service tick and a block or two; generous on the worst, for a loaded test machine.
-        check(sound.worst <= 20, "a morph's pan heard within 20 ms, every move");
-        check(step.worst <= 20, "a glide's first step heard within 20 ms, every glide");
+        std::printf("pan latency: MIDI to a morph's pan heard, median %llu blocks, worst %s (a block is %.2f ms); median %.2f ms, worst %.2f ms, over %zu moves\n",
+                    (unsigned long long)medianOf(blocksToSound), worstOf(blocksToSound).c_str(), period * 1000, sound.median, sound.worst, toSound.size());
+        std::printf("pan latency: a scene's 20 ms glide, first step heard median %llu blocks, worst %s; its end median %llu, worst %s; in ms: first step median %.2f, worst %.2f; end median %.2f, worst %.2f, over %zu glides\n",
+                    (unsigned long long)medianOf(blocksToStep), worstOf(blocksToStep).c_str(), (unsigned long long)medianOf(blocksToEnd), worstOf(blocksToEnd).c_str(), step.median, step.worst, end.median, end.worst, firstStep.size());
+        // Within a service tick and a block or two; generous on the worst, for a loaded test machine
+        // (7 blocks: the 20 ms this once was).
+        check(blocksToSound.size() == 40 && std::stoull(worstOf(blocksToSound)) <= 7, "a morph's pan heard within 7 blocks, every move: " + worstOf(blocksToSound));
+        check(blocksToStep.size() == 20 && std::stoull(worstOf(blocksToStep)) <= 7, "a glide's first step heard within 7 blocks, every glide: " + worstOf(blocksToStep));
+        check(blocksToEnd.size() == 20 && std::stoull(worstOf(blocksToEnd)) <= 30, "a glide's end heard within 30 blocks (the 80 ms this once was), every glide: " + worstOf(blocksToEnd));
     }
 }
 

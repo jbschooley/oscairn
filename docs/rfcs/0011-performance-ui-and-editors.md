@@ -629,9 +629,13 @@ once by a move, a MIDI thread, and a `RemoteControl` client over a socket pair),
 mod wheel 40 to 43 ms apart, each playing a control whose target is a part's level
 (logarithmic, .707 to .0021, as on "Drifting"). From the MIDI thread handing the message over:
 to the end of the first block whose output has the new level, median 1.45 ms, worst 3.20 ms (a
-block is 2.67 ms); to the client's cached value, median 2.90 ms, worst 5.21 ms. The test fails
-past a median of two blocks or a worst of 10 ms for the sound, and past one display frame for
-the client. Before this work the same move took 28 to 70 ms to be heard in the running app.
+block is 2.67 ms); to the client's cached value, median 2.90 ms, worst 5.21 ms. The test judges
+the sound in blocks rendered, not milliseconds, so a machine that stops running the audio
+thread (a CI runner's 35 ms gaps) does not fail it while a move held up in the engine does: it
+fails past a median of two blocks or a worst of three for the sound (the morph's pan and a
+glide's first step past seven, a glide's end past 30), and past one display frame for the
+client. On the development Mac at a load average of about 140 (2026-11-06) the sound came at a
+median of one block and a worst of two, while the clock said up to 14 ms. Before this work the same move took 28 to 70 ms to be heard in the running app.
 The figures leave out the MIDI driver before the engine and the audio device's output latency
 after the block; they vary run to run with the machine's load (an earlier run: 1.62 and 3.05
 ms). `Engine::liveValues` gives the app the pushed values; Play checks them each 16 ms tick and
