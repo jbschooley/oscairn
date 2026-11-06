@@ -60,8 +60,9 @@ namespace oscairn::standalone
         bool hasPluginWindow(NodeId node) const;
         void openPluginWindow(NodeId node,std::string title){command([this,node,title]{control_->showPluginWindow(node,true,title);});}
         // Meters, the routing wires' meters, and the undo/redo names: read at most twenty and
-        // four times a second (the views poll faster) and kept while the engine is busy, so the
-        // message thread does not sit in socket waits between paints.
+        // four times a second (the views poll faster) and kept while the engine is busy. An
+        // engine's are sent without waiting and arrive at the timer, so the message thread never
+        // sits in a socket wait for them.
         std::vector<PartMeter> meters() const;
         std::vector<WireMeter> wireMeters() const;
         Control::History history() const;
@@ -273,5 +274,8 @@ namespace oscairn::standalone
         double captureSeconds_=0;
         mutable std::map<std::pair<std::string,uint32_t>,std::map<uint64_t,std::string>> textCache_;
         mutable std::vector<AssignmentOverride> assignments_; mutable uint32_t assignmentsRead_=0;
+        mutable std::optional<Control::Audition> audition_; mutable uint32_t auditionRead_=0;
+        mutable bool windowsChanged_=false; // a plugin window's reply differed from what was shown
+        template<class T,class Fetch,class Read> void poll(T& value,uint32_t& read,uint32_t every,Fetch fetch,Read direct,uint32_t late) const;
     };
 }

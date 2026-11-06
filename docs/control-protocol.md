@@ -565,13 +565,19 @@ server's ticks rather than one per node. One that `service()` starts (a `graph.c
 gap) waits on nothing: `service()` takes its replies as they come and returns true once the
 cache shows it. An edit's own refresh waits, so `graphState()` is current when the edit
 returns. Snapshots span several requests and are not atomic across concurrent clients;
-interleaved notifications are retained to bring the cache up to date. Recreate the
-adapter on reconnect. No commands are implicitly retried.
+interleaved notifications are retained to bring the cache up to date. After a gap the
+transport, status and controller snapshots are read the same way, without waiting. The
+`fetch...` methods (meters, wire meters, undo names, assignments, takes, the open
+Performance, the audition, a plugin window's availability) send a read without waiting,
+unless the same read is already out, and `service()` hands the reply to a callback;
+`forgetFetches()` drops those out, so a read asked afterwards reflects what came before it.
+Recreate the adapter on reconnect. No commands are implicitly retried.
 
 The desktop's `--connect SOCKET` mode uses this adapter, polls every 16 ms, and retries
 failed connections about once a second. It displays disconnection status and refreshes
-snapshots when reconnected. Calls currently run on the UI thread and may pause the UI
-until their deadline if the engine is unresponsive. Audio and physical MIDI remain in
+snapshots when reconnected. Its views' polls and the graph read after an engine change go
+without waiting and arrive at its timer; edits and other calls still run on the UI thread
+and may pause the UI until their deadline if the engine is unresponsive. Audio and physical MIDI remain in
 the helper. See [host instructions](../hosts/README.md) for launching the two processes.
 The normal desktop launch now starts or reconnects to a managed helper. Closing the UI
 leaves the helper alive. A stopped managed helper enables a Restart engine button; this

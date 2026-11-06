@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #pragma once
 #include "oscairn/local_socket.h"
+#include <functional>
 
 namespace oscairn
 {
@@ -21,6 +22,19 @@ namespace oscairn
         /// A live edit (part level or mute, master) the engine refused since the last ask, or
         /// empty: those are sent without waiting, so a refusal arrives with service().
         std::string takeError();
+        /// The views' polls, sent without waiting: each sends its read unless the same one is out
+        /// (false then), and service() gives the reply to done, on this thread; a read the engine
+        /// refuses gives nothing. forgetFetches() drops those out (their replies are not given):
+        /// a read asked afterwards goes at once.
+        bool fetchPartMeters(std::function<void(std::vector<PartMeter>)> done);
+        bool fetchWireMeters(std::function<void(std::vector<WireMeter>)> done);
+        bool fetchHistory(std::function<void(History)> done);
+        bool fetchAssignments(std::function<void(std::vector<AssignmentOverride>)> done);
+        bool fetchTakes(std::function<void(std::vector<Take>)> done);
+        bool fetchPerformanceInfo(std::function<void(PerformanceInfo)> done);
+        bool fetchAudition(std::function<void(Audition)> done);
+        bool fetchPluginWindow(NodeId node, std::function<void(bool)> done);
+        void forgetFetches();
         void savePerformance(const std::string& directory) override;
         void setBudget(const Budget& budget) override;
         void setAlwaysAvailable(const std::vector<AppMemory>& apps) override;

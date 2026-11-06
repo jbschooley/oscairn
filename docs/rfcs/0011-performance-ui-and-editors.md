@@ -515,6 +515,18 @@ sent the same way, so it takes a few of the engine's ticks rather than one per n
 the node and its parameters; `ui-waits` (the 20 plugins, the server polled every 5 ms) measures
 a mute and a drag of 60 fader moves at 0 waits on the UI thread.
 
+The views' polls still waited when their cache expired: the meters twenty times a second, the
+undo names, the assignments, the takes and the open Performance four times, and a plugin
+window's availability when a view was built (280 waits and 1.3 s of every 2 s on the 20
+plugins). Now `Engine` answers them from what the engine last said and asks again without
+waiting (`RemoteControl::fetchPartMeters` and the like, taken by `service()` at its timer, which
+now runs while a job does too, as nothing in it waits). One not asked for in a second (no view
+polls it) is still read at once, so a caller asking once is not shown an old value; after a job
+the reads it may have changed are asked afresh and the replies to those sent before it dropped.
+A plugin window found later broadcasts a change and the Parts view builds again with its button.
+`control-local-stream` checks reads sent and taken without a wait, one of a kind out at a time
+and a forgotten one never given; `ui-waits` measures two seconds of the views' polls at 0 waits.
+
 #### Engine mapping status
 
 Built 2026-11-02 (`oscairn/controller_input.h`; `controllers.set`, `controllers.view`,

@@ -9,6 +9,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <deque>
+#include <functional>
 #include <locale>
 #include <map>
 #include <optional>
@@ -377,6 +378,15 @@ namespace oscairn
         }
         // Sends the read and returns: service() takes its replies as they come.
         void refreshLater(){if(reading){again=true;return;}reading.emplace();send(*reading);}
+        // Reads sent without waiting (the views' polls, a gap's snapshots): service() hands each
+        // reply's result to its reader. One read of a kind is out at a time.
+        struct Fetch { std::string key; std::function<void(V)> read; };
+        std::map<uint64_t,Fetch> fetches;std::set<std::string> fetching;
+        bool fetch(std::string key,std::string_view method,const std::string& params,std::function<void(V)> read)
+        {
+            if(fetching.contains(key))return false;
+            const auto id=client.send(method,params);fetching.insert(key);fetches[id]={std::move(key),std::move(read)};return true;
+        }
         // A reply to the read out: true once the read is done and the cache holds it.
         bool reply(const Doc& doc,size_t bytes)
         {
@@ -466,9 +476,9 @@ namespace oscairn
         auto d=impl_->call("performance.export","{\"file\":"+quote(file)+",\"editedSounds\":"+(editedSounds?"true":"false")+signing(sign)+'}',120000);
         return strings(field(field(d.get(),"result"),"notes"));
     }
+    namespace { Control::PerformanceInfo performanceFrom(V r){return {string(field(r,"id")),string(field(r,"name")),string(field(r,"description")),strings(field(r,"tags")),string(field(r,"color"))};} }
     Control::PerformanceInfo RemoteControl::performanceInfo() const {
-        auto d=impl_->call("performance.info");auto r=field(d.get(),"result");
-        return {string(field(r,"id")),string(field(r,"name")),string(field(r,"description")),strings(field(r,"tags")),string(field(r,"color"))};
+        auto d=impl_->call("performance.info");return performanceFrom(field(d.get(),"result"));
     }
     void RemoteControl::setPerformanceInfo(const PerformanceInfo& info) {
         impl_->call("performance.setInfo","{\"name\":"+quote(info.name)+",\"description\":"+quote(info.description)+",\"tags\":"+quoted(info.tags)+",\"color\":"+quote(info.color)+'}');
@@ -534,9 +544,9 @@ namespace oscairn
         impl_->call("audition.start","{\"id\":"+quote(id)+",\"part\":"+std::to_string(part)+'}',120000);
     }
     void RemoteControl::auditionStop(bool keep) { impl_->call("audition.stop",std::string("{\"keep\":")+(keep?"true":"false")+'}',30000); }
+    namespace { Control::Audition auditionFrom(V r){return {string(field(r,"id")),string(field(r,"kind")),static_cast<uint32_t>(integer(field(r,"part")))};} }
     Control::Audition RemoteControl::audition() const {
-        auto d=impl_->call("audition.get");auto r=field(d.get(),"result");
-        return {string(field(r,"id")),string(field(r,"kind")),static_cast<uint32_t>(integer(field(r,"part")))};
+        auto d=impl_->call("audition.get");return auditionFrom(field(d.get(),"result"));
     }
     std::vector<std::string> RemoteControl::exportLibraryItem(const std::string& id,const std::string& file,bool editedSounds,const ExportSigning& sign) {
         auto d=impl_->call("library.export","{\"id\":"+quote(id)+",\"file\":"+quote(file)+",\"editedSounds\":"+(editedSounds?"true":"false")+signing(sign)+'}',120000);
@@ -731,16 +741,17 @@ namespace oscairn
     }
     bool RemoteControl::note(bool on,int key,double velocity,int channel)
     {try{impl_->call("notes.send",std::string("{\"on\":")+(on?"true":"false")+",\"key\":"+std::to_string(key)+",\"velocity\":"+encode(velocity)+",\"channel\":"+std::to_string(channel)+'}');return true;}catch(const RpcError& e){if(e.code==-32005)return false;throw;}}
-    std::vector<AssignmentOverride> RemoteControl::assignments() const
+    namespace { std::vector<AssignmentOverride> assignmentsFrom(V r)
     {
-        auto doc=impl_->call("assignments.get");std::vector<AssignmentOverride> out;
-        for(auto a:array(field(field(doc.get(),"result"),"assignments"))){
+        std::vector<AssignmentOverride> out;
+        for(auto a:array(field(r,"assignments"))){
             AssignmentOverride o;o.control=string(field(a,"control"));const auto kind=string(field(a,"kind"));
             for(size_t k=0;k<assignmentKinds.size();++k)if(kind==assignmentKinds[k])o.target.kind=Assignment::Kind(k);
             o.target.node=static_cast<NodeId>(integer(field(a,"node")));o.target.param=static_cast<uint32_t>(integer(field(a,"param")));o.target.id=static_cast<uint32_t>(integer(field(a,"id")));o.part=static_cast<uint32_t>(integer(field(a,"part")));
             out.push_back(std::move(o));}
         return out;
-    }
+    } }
+    std::vector<AssignmentOverride> RemoteControl::assignments() const {auto doc=impl_->call("assignments.get");return assignmentsFrom(field(doc.get(),"result"));}
     void RemoteControl::assign(const std::string& control,const Assignment& t,uint32_t part)
     {
         impl_->call("assignments.set","{\"control\":"+quote(control)+",\"kind\":\""+assignmentKinds[size_t(t.kind)]+"\",\"node\":"+std::to_string(t.node)+",\"param\":"+std::to_string(t.param)+",\"id\":"+std::to_string(t.id)+",\"part\":"+std::to_string(part)+'}');impl_->refresh();
@@ -943,12 +954,12 @@ namespace oscairn
     void RemoteControl::recordRename(uint32_t take,const std::string& name){impl_->call("record.rename","{\"take\":"+std::to_string(take)+",\"name\":"+quote(name)+'}',30000);}
     void RemoteControl::recordPlay(uint32_t take){impl_->call("record.play","{\"take\":"+std::to_string(take)+'}',30000);}
     void RemoteControl::recordStop(uint32_t take){impl_->call("record.stop","{\"take\":"+std::to_string(take)+'}');}
-    std::vector<Control::Take> RemoteControl::recordTakes() const
+    namespace { std::vector<Control::Take> takesFrom(V r)
     {
-        auto d=impl_->call("record.takes");std::vector<Take> out;
-        for(auto v:array(field(field(d.get(),"result"),"takes")))
+        std::vector<Control::Take> out;
+        for(auto v:array(field(r,"takes")))
         {
-            Take t{static_cast<uint32_t>(integer(field(v,"take"))),string(field(v,"state")),string(field(v,"folder")),string(field(v,"error")),{},
+            Control::Take t{static_cast<uint32_t>(integer(field(v,"take"))),string(field(v,"state")),string(field(v,"folder")),string(field(v,"error")),{},
                    integer(field(v,"start")),integer(field(v,"frames")),{},integer(field(v,"droppedNotes")),number(field(v,"sampleRate")),boolean(field(v,"behind")),boolean(field(v,"playing"))};
             for(auto f:array(field(v,"files")))t.files.push_back(string(f));
             for(auto o:array(field(v,"overruns")))t.overruns.push_back({integer(field(o,"start")),integer(field(o,"frames"))});
@@ -956,11 +967,9 @@ namespace oscairn
         }
         return out;
     }
-    Control::History RemoteControl::history() const
-    {
-        auto reply=impl_->call("edit.history");auto r=field(reply.get(),"result");
-        return {string(field(r,"undo")),string(field(r,"redo"))};
-    }
+    Control::History historyFrom(V r){return {string(field(r,"undo")),string(field(r,"redo"))};} }
+    std::vector<Control::Take> RemoteControl::recordTakes() const {auto d=impl_->call("record.takes");return takesFrom(field(d.get(),"result"));}
+    Control::History RemoteControl::history() const {auto reply=impl_->call("edit.history");return historyFrom(field(reply.get(),"result"));}
     bool RemoteControl::undo(){const bool any=!history().undo.empty();impl_->call("edit.undo");impl_->refresh();return any;}
     bool RemoteControl::redo(){const bool any=!history().redo.empty();impl_->call("edit.redo");impl_->refresh();return any;}
     void RemoteControl::setNodeRole(NodeId node,const std::string& role){impl_->call("graph.role","{\"node\":"+std::to_string(node)+",\"role\":"+(role.empty()?std::string("null"):quote(role))+'}');impl_->refresh();}
@@ -971,10 +980,10 @@ namespace oscairn
     }
     void RemoteControl::setPartPan(uint32_t part,double pan){impl_->call("parts.pan","{\"part\":"+std::to_string(part)+",\"pan\":"+encode(pan)+'}');impl_->refresh();}
     void RemoteControl::setPartSolo(uint32_t part,bool solo){impl_->call("parts.solo","{\"part\":"+std::to_string(part)+",\"solo\":"+(solo?"true":"false")+'}');impl_->refresh();}
-    std::vector<PartMeter> RemoteControl::partMeters() const
+    namespace { std::vector<PartMeter> partMetersFrom(V r)
     {
-        auto reply=impl_->call("parts.meters");std::vector<PartMeter> out;
-        for(auto m:array(field(field(reply.get(),"result"),"meters")))
+        std::vector<PartMeter> out;
+        for(auto m:array(field(r,"meters")))
         {
             PartMeter meter{static_cast<uint32_t>(integer(field(m,"part"))),number(field(m,"peak")),{}};
             for(auto v:array(field(m,"channels")))meter.channels.push_back(number(v));
@@ -982,18 +991,29 @@ namespace oscairn
         }
         return out;
     }
-
-    std::vector<WireMeter> RemoteControl::wireMeters() const
+    std::vector<WireMeter> wireMetersFrom(V r)
     {
-        auto reply=impl_->call("wires.meters");std::vector<WireMeter> out;
-        for(auto m:array(field(field(reply.get(),"result"),"meters")))
+        std::vector<WireMeter> out;
+        for(auto m:array(field(r,"meters")))
         {
             WireMeter meter{static_cast<uint32_t>(integer(field(m,"wire"))),number(field(m,"peak")),{}};
             for(auto v:array(field(m,"channels")))meter.channels.push_back(number(v));
             out.push_back(std::move(meter));
         }
         return out;
-    }
+    } }
+    std::vector<PartMeter> RemoteControl::partMeters() const {auto reply=impl_->call("parts.meters");return partMetersFrom(field(reply.get(),"result"));}
+    std::vector<WireMeter> RemoteControl::wireMeters() const {auto reply=impl_->call("wires.meters");return wireMetersFrom(field(reply.get(),"result"));}
+    bool RemoteControl::fetchPartMeters(std::function<void(std::vector<PartMeter>)> done){return impl_->fetch("parts.meters","parts.meters","{}",[done=std::move(done)](V r){done(partMetersFrom(r));});}
+    bool RemoteControl::fetchWireMeters(std::function<void(std::vector<WireMeter>)> done){return impl_->fetch("wires.meters","wires.meters","{}",[done=std::move(done)](V r){done(wireMetersFrom(r));});}
+    bool RemoteControl::fetchHistory(std::function<void(History)> done){return impl_->fetch("edit.history","edit.history","{}",[done=std::move(done)](V r){done(historyFrom(r));});}
+    bool RemoteControl::fetchAssignments(std::function<void(std::vector<AssignmentOverride>)> done){return impl_->fetch("assignments.get","assignments.get","{}",[done=std::move(done)](V r){done(assignmentsFrom(r));});}
+    bool RemoteControl::fetchTakes(std::function<void(std::vector<Take>)> done){return impl_->fetch("record.takes","record.takes","{}",[done=std::move(done)](V r){done(takesFrom(r));});}
+    bool RemoteControl::fetchPerformanceInfo(std::function<void(PerformanceInfo)> done){return impl_->fetch("performance.info","performance.info","{}",[done=std::move(done)](V r){done(performanceFrom(r));});}
+    bool RemoteControl::fetchAudition(std::function<void(Audition)> done){return impl_->fetch("audition.get","audition.get","{}",[done=std::move(done)](V r){done(auditionFrom(r));});}
+    bool RemoteControl::fetchPluginWindow(NodeId node,std::function<void(bool)> done)
+    {const auto params="{\"node\":"+std::to_string(node)+'}';return impl_->fetch("window.info"+params,"window.info",params,[done=std::move(done)](V r){done(boolean(field(r,"available")));});}
+    void RemoteControl::forgetFetches(){auto& i=*impl_;for(const auto& [id,f]:i.fetches)i.dropped.insert(id);i.fetches.clear();i.fetching.clear();}
     void RemoteControl::removeLane(uint32_t part,uint32_t split,uint32_t lane){impl_->call("parts.removeLane","{\"part\":"+std::to_string(part)+",\"split\":"+std::to_string(split)+",\"lane\":"+std::to_string(lane)+'}');impl_->refresh();}
     void RemoteControl::setLane(uint32_t part,uint32_t split,uint32_t lane,const Lane& l)
     {
@@ -1052,6 +1072,13 @@ namespace oscairn
                 const auto n=integer(id);impl_->answered(n);
                 if(impl_->dropped.erase(n))continue;
                 if(impl_->reading && !impl_->reading->sent.empty() && impl_->reading->sent.front().first==n){read=impl_->reply(doc,message.size()) || read;continue;}
+                if(const auto f=impl_->fetches.find(n);f!=impl_->fetches.end())
+                {
+                    auto fetched=std::move(f->second);impl_->fetches.erase(f);impl_->fetching.erase(fetched.key);
+                    // A read refused, or a reply not understood, gives nothing: the view keeps what it showed, as when a call failed.
+                    try{Impl::check(doc);fetched.read(field(doc.get(),"result"));}catch(const std::exception&){}
+                    continue;
+                }
                 // The reply to a live edit sent without waiting: a refusal is said, and the
                 // engine's state read again in place of what the cache showed.
                 try{Impl::check(doc);}catch(const std::exception& e){impl_->failure=e.what();refresh=true;}
@@ -1087,9 +1114,10 @@ namespace oscairn
         if(resync)
         {
             // Transport and status notifications are sent only on change; reread any that were lost.
-            auto state=impl_->call("transport.get");impl_->readTransport(field(state.get(),"result"));
-            auto status=impl_->call("session.status");impl_->readStatus(field(status.get(),"result"));
-            auto controllers=impl_->call("controllers.get");impl_->readControllers(field(controllers.get(),"result"));
+            auto& i=*impl_;
+            i.fetch("transport.get","transport.get","{}",[&i](V r){i.readTransport(r);});
+            i.fetch("session.status","session.status","{}",[&i](V r){i.readStatus(r);});
+            i.fetch("controllers.get","controllers.get","{}",[&i](V r){i.readControllers(r);});
         }
         return read;
     }

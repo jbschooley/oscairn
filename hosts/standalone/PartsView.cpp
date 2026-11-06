@@ -145,6 +145,8 @@ namespace oscairn::standalone
             for(const auto& n : routing_.nodes) shape += "," + std::to_string(n.node) + ":" + std::to_string(n.port) + ":" + n.name;
             for(const auto& w : routing_.wires) shape += ";" + std::to_string(w.id) + ":" + std::to_string(w.from) + ">" + std::to_string(w.to);
         }
+        // A plugin window found after the controls were built (the engine's reply comes later).
+        shape += "|window:" + std::to_string(selected_ && engine_.hasPluginWindow(selected_)) + std::to_string(page_ == routingPage && routed_ && engine_.hasPluginWindow(routed_));
         shape += "|off:";
         for(const auto n : graph_.disabled) shape += std::to_string(n) + ",";
         if(page_ == routingPage) for(const auto& w : graph_.wires) if(!w.enabled) shape += "w" + std::to_string(w.id) + ",";

@@ -149,7 +149,7 @@ target_compile_definitions(oscairn_desktop_gaps_test PRIVATE JUCE_WEB_BROWSER=0 
 add_dependencies(oscairn_desktop_gaps_test oscairn_basic_synth oscairn-plugin-scan oscairn-plugin-worker)
 add_test(NAME desktop-gaps COMMAND oscairn_desktop_gaps_test "$<TARGET_FILE_DIR:oscairn_step_sequencer>" $<TARGET_FILE:oscairn-plugin-scan> "${CMAKE_CURRENT_SOURCE_DIR}/themes")
 set_tests_properties(desktop-gaps PROPERTIES TIMEOUT 60 ENVIRONMENT "${worker_environment}")
-# The message thread never waits on the engine's socket for a mute or a fader drag.
+# The message thread never waits on the engine's socket for a mute, a fader drag or the views' polls.
 juce_add_console_app(oscairn_ui_waits_test PRODUCT_NAME "Oscairn UI Waits Test")
 target_sources(oscairn_ui_waits_test PRIVATE tests/ui_waits.cpp PartsModel.cpp Engine.cpp SoundPickerModel.cpp)
 target_link_libraries(oscairn_ui_waits_test PRIVATE oscairn_audio_host oscairn_host_process oscairn_control_socket juce::juce_audio_utils juce::juce_gui_extra juce::juce_recommended_config_flags)

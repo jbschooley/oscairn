@@ -288,9 +288,6 @@ namespace oscairn::standalone
                 action.directory=exportWritten_=folder.getChildFile(target.getFileName()).getFullPathName().toStdString(); // the same name: an unnamed Performance is named after it
             }
         }
-        // What a job can change (the open Performance, the parts, the plugins' windows) reads
-        // fresh once it is done; until then the reads answer from the cache above.
-        takesRead_=metersRead_=wireMetersRead_=historyRead_=performanceRead_=windowsRead_=assignmentsRead_=0;
         soundJob_=std::async(std::launch::async,[socket=socketPath_,request=std::move(action)] {
             SoundResult result;LocalClient client;
             try
@@ -323,6 +320,14 @@ namespace oscairn::standalone
             if(old==editors_.end() || old->second.id!=editor.id || old->second.path!=editor.path)textCache_.clear();
         }
         soundPicker_=std::move(result.state);editors_=std::move(result.editors);
+        // What a job can change (the open Performance, the parts, the plugins' windows) is read
+        // fresh once it is done, not from replies to reads sent before it; until then the reads
+        // answer from the cache above. A refresh changes nothing.
+        if(soundJobKind_!=SoundAction::Refresh)
+        {
+            if(remote_)remote_->forgetFetches();
+            takesRead_=metersRead_=wireMetersRead_=historyRead_=performanceRead_=windowsRead_=assignmentsRead_=auditionRead_=0;audition_.reset();performance_.reset(); // the open Performance and an audition show once read
+        }
         const bool loaded=soundJobKind_==SoundAction::LoadPerformance || soundJobKind_==SoundAction::LoadFromLibrary || soundJobKind_==SoundAction::AuditionStart || soundJobKind_==SoundAction::AuditionStop;
         if(soundJobKind_==SoundAction::Replace || loaded)textCache_.clear();
         if(result.error.empty() && (soundJobKind_==SoundAction::SavePerformance || soundJobKind_==SoundAction::SaveToLibrary))soundMessage_="Performance saved.";
@@ -369,47 +374,66 @@ namespace oscairn::standalone
         if(!connected() || !controlReady()) return {};
         try{return control_->libraries();}catch(const std::exception& e){std::fprintf(stderr,"oscairn: libraries: %s\n",e.what());return {};}
     }
+    // The views' polls: answered from the last reply, and asked again at most every `every` ms
+    // while the engine is free. An engine's are sent without waiting and their replies taken by
+    // the timer (service()), so the message thread never sits in a socket wait for them; in
+    // process, read at once. One not asked for in `late` ms (no view polls it) is read at once
+    // too, so a caller asking once is not shown what was read long ago.
+    template<class T,class Fetch,class Read> void Engine::poll(T& value,uint32_t& read,uint32_t every,Fetch fetch,Read direct,uint32_t late) const
+    {
+        const auto now=juce::Time::getMillisecondCounter();
+        if(!connected() || !controlReady() || (read && now-read<every))return;
+        const bool wait=!remote_ || (late && read && now-read>=late);
+        read=std::max(1u,now);
+        if(!wait)try{fetch([&value](auto v){value=std::move(v);});}catch(const std::exception&){} // a send that fails is the timer's to say
+        else try{value=direct();}catch(const std::exception&){}
+    }
     const std::vector<Control::Take>& Engine::takes() const
     {
-        const auto now=juce::Time::getMillisecondCounter();
-        if(connected() && controlReady() && (!takesRead_ || now-takesRead_>=250))
-            try{takes_=control_->recordTakes();takesRead_=std::max(1u,now);}catch(const std::exception& e){std::fprintf(stderr,"oscairn: takes: %s\n",e.what());}
+        poll(takes_,takesRead_,250,[&](auto done){remote_->fetchTakes(done);},[&]{return control_->recordTakes();},1000);
         return takes_;
     }
-    // Read at most twenty times a second and kept while the engine is busy: several views poll
-    // every 50 ms, and each round trip waits on the engine's own timer, so the message thread
-    // would spend much of every second in the socket.
+    // Several views poll every 50 ms: twenty times a second at most.
     std::vector<PartMeter> Engine::meters() const
     {
-        const auto now=juce::Time::getMillisecondCounter();
-        if(connected() && controlReady() && (!metersRead_ || now-metersRead_>=50))
-            try{meters_=control_->partMeters();metersRead_=std::max(1u,now);}catch(const std::exception&){}
+        poll(meters_,metersRead_,50,[&](auto done){remote_->fetchPartMeters(done);},[&]{return control_->partMeters();},0);
         return meters_;
     }
     std::vector<WireMeter> Engine::wireMeters() const
     {
-        const auto now=juce::Time::getMillisecondCounter();
-        if(connected() && controlReady() && (!wireMetersRead_ || now-wireMetersRead_>=50))
-            try{wireMeters_=control_->wireMeters();wireMetersRead_=std::max(1u,now);}catch(const std::exception&){}
+        poll(wireMeters_,wireMetersRead_,50,[&](auto done){remote_->fetchWireMeters(done);},[&]{return control_->wireMeters();},0);
         return wireMeters_;
     }
     Control::History Engine::history() const
     {
-        const auto now=juce::Time::getMillisecondCounter();
-        if(connected() && controlReady() && (!historyRead_ || now-historyRead_>=250))
-            try{history_=control_->history();historyRead_=std::max(1u,now);}catch(const std::exception&){}
+        poll(history_,historyRead_,250,[&](auto done){remote_->fetchHistory(done);},[&]{return control_->history();},1000);
         return history_;
     }
     bool Engine::hasPluginWindow(NodeId node) const
     {
         const auto now=juce::Time::getMillisecondCounter();
-        if(connected() && controlReady() && (!windowsRead_ || now-windowsRead_>=250)) { windowCache_.clear(); windowsRead_=std::max(1u,now); }
-        const auto at=windowCache_.find(node);
-        if(at!=windowCache_.end())return at->second;
-        if(!connected() || !controlReady())return false; // not kept: asked again once the engine is free
-        bool found=false;
-        try{found=control_->hasPluginWindow(node);}catch(const std::exception&){}
-        windowCache_[node]=found;return found;
+        if(!connected() || !controlReady())
+        {
+            const auto at=windowCache_.find(node);
+            return at!=windowCache_.end() && at->second; // not read while busy: asked again once the engine is free
+        }
+        const bool stale=!windowsRead_ || now-windowsRead_>=250;
+        if(stale)windowsRead_=std::max(1u,now);
+        if(!remote_)
+        {
+            if(stale)windowCache_.clear();
+            const auto at=windowCache_.find(node);
+            if(at!=windowCache_.end())return at->second;
+            bool found=false;
+            try{found=control_->hasPluginWindow(node);}catch(const std::exception&){}
+            return windowCache_[node]=found;
+        }
+        // Asked for when a view is built: an engine's are read without waiting. A node not read
+        // yet shows none until its reply, which broadcasts a change so the views build again.
+        auto ask=[this](NodeId n){try{remote_->fetchPluginWindow(n,[this,n](bool found){if(std::exchange(windowCache_[n],found)!=found)windowsChanged_=true;});}catch(const std::exception&){}};
+        if(stale)for(const auto& [n,known]:windowCache_)ask(n);
+        if(windowCache_.try_emplace(node,false).second)ask(node);
+        return windowCache_[node];
     }
     uint32_t Engine::recordingTake() const
     {
@@ -429,7 +453,12 @@ namespace oscairn::standalone
     {
         const auto take=on?0:recordingTake();
         auto error=recordCall(connected() && controlReady(),[&]{if(on)control_->recordStart();else if(take)control_->recordStop(take);});
-        refreshTakes();return error;
+        // The button shows the take at once: read with the click, not by the poll, and not
+        // replaced by a poll's reply sent before it.
+        refreshTakes();
+        if(connected() && controlReady())
+            try{if(remote_)remote_->forgetFetches();takes_=control_->recordTakes();takesRead_=std::max(1u,juce::Time::getMillisecondCounter());}catch(const std::exception&){}
+        return error;
     }
     std::string Engine::capture(double seconds)
     {
@@ -513,22 +542,20 @@ namespace oscairn::standalone
     std::optional<Control::Audition> Engine::audition() const
     {
         if(!connected() || !controlReady()) return {};
-        try{return control_->audition();}catch(const std::exception&){return {};}
+        // The Library asks on its timer while one plays: read at most four times a second.
+        poll(audition_,auditionRead_,250,[&](auto done){remote_->fetchAudition(done);},[&]{return std::optional(control_->audition());},0);
+        return audition_;
     }
     std::optional<Control::PerformanceInfo> Engine::performanceInfo() const
     {
         // Read at most four times a second and kept while the engine is busy, as several views ask.
-        const auto now=juce::Time::getMillisecondCounter();
-        if(connected() && controlReady() && (!performanceRead_ || now-performanceRead_>=250))
-            try{performance_=control_->performanceInfo();performanceRead_=std::max(1u,now);}catch(const std::exception&){}
+        poll(performance_,performanceRead_,250,[&](auto done){remote_->fetchPerformanceInfo(done);},[&]{return std::optional(control_->performanceInfo());},1000);
         return performance_;
     }
     const std::vector<AssignmentOverride>& Engine::assignments() const
     {
         // Read at most four times a second and kept while the engine is busy: Play and a controller ask several times a second.
-        const auto now=juce::Time::getMillisecondCounter();
-        if(connected() && controlReady() && (!assignmentsRead_ || now-assignmentsRead_>=250))
-            try{assignments_=control_->assignments();assignmentsRead_=std::max(1u,now);}catch(const std::exception&){}
+        poll(assignments_,assignmentsRead_,250,[&](auto done){remote_->fetchAssignments(done);},[&]{return control_->assignments();},1000);
         return assignments_;
     }
     Engine::Status Engine::status()const
@@ -542,8 +569,8 @@ namespace oscairn::standalone
         pendingControls_.clear();
         pendingSounds_.clear();
         // Nothing read before the drop shows as if live: meters at their last level, undo names.
-        meters_.clear();wireMeters_.clear();history_={};takes_.clear();windowCache_.clear();performance_.reset();assignments_.clear();
-        metersRead_=wireMetersRead_=historyRead_=performanceRead_=takesRead_=windowsRead_=assignmentsRead_=0;
+        meters_.clear();wireMeters_.clear();history_={};takes_.clear();windowCache_.clear();performance_.reset();assignments_.clear();audition_.reset();
+        metersRead_=wireMetersRead_=historyRead_=performanceRead_=takesRead_=windowsRead_=assignmentsRead_=auditionRead_=0;
         failure_=message;std::fprintf(stderr,"oscairn: control connection: %s\n",message.c_str());
         if(client_)client_->disconnect();
     }
@@ -571,6 +598,19 @@ namespace oscairn::standalone
         try{if(connected())macros_=control_->graphState().macros;}catch(const std::exception&){}
         readControllers();
         if(restarting_.valid() && restarting_.wait_for(std::chrono::seconds(0))==std::future_status::ready)restarted();
+        // The engine's pushes and the replies to reads sent without waiting, while a job runs too:
+        // nothing in service() waits on the socket.
+        if(remote_ && failure_.empty())
+        {
+            try
+            {
+                const auto values=remote_->liveValues();const auto revision=remote_->graphState().revision;
+                const bool read=remote_->service(); // a graph the engine changed is read without waiting
+                if(auto refused=remote_->takeError();!refused.empty())editError_=std::move(refused);
+                if(read || std::exchange(windowsChanged_,false) || remote_->liveValues()!=values || remote_->graphState().revision!=revision)sendChangeMessage();
+            }
+            catch(const std::exception& e){failed(e.what());}
+        }
         if(soundJob_.valid())
         {
             if(soundJob_.wait_for(std::chrono::seconds(0))!=std::future_status::ready)return;
@@ -584,15 +624,7 @@ namespace oscairn::standalone
         }
         if(failure_.empty())
         {
-            try
-            {
-                const auto values=remote_->liveValues();const auto revision=remote_->graphState().revision;
-                const bool read=remote_->service(); // a graph the engine changed is read without waiting
-                if(auto refused=remote_->takeError();!refused.empty())editError_=std::move(refused);
-                if(read || remote_->liveValues()!=values || remote_->graphState().revision!=revision)sendChangeMessage();
-            }
-            catch(const std::exception& e){failed(e.what());}
-            if(failure_.empty() && ++soundTicks_>=30){soundTicks_=0;refreshSounds();}
+            if(++soundTicks_>=30){soundTicks_=0;refreshSounds();}
         }
         else if(!restarting_.valid() && ++reconnectTicks_>=60)
         {

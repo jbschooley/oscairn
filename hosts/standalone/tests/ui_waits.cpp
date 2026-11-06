@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
-// The desktop's message thread and the engine's socket: a mute and a fader drag never wait on
-// it. Against a session of 20 plugins served on the engine's real 5 ms timer, without an audio
-// device; it prints what it measured.
+// The desktop's message thread and the engine's socket: a mute, a fader drag and the views'
+// polls never wait on it. Against a session of 20 plugins served on the engine's real 5 ms
+// timer, without an audio device; it prints what it measured.
 //   oscairn_ui_waits_test PLUGIN_DIR SCANNER
 #include "../Engine.h"
 #include "../PartsModel.h"
@@ -100,6 +100,28 @@ int main(int argc, char** argv)
             const auto drag = since(before);
             std::printf("drag: %llu waits, %lld us waiting\n", (unsigned long long)drag.count, drag.micros);
             check(drag.count == 0, "a fader drag never waits on the socket: " + std::to_string(drag.count) + " waits");
+
+            // Steady state: what the views poll, at their pace, for two seconds, after a round of
+            // them (on screen they poll all along; one not asked for in a second is read at once).
+            free();
+            const auto nodes = engine.graph().topology.nodes;
+            engine.history(); engine.assignments(); engine.takes(); engine.performanceInfo();
+            run(300);
+            before = waits();
+            for(int tick = 0; tick < 40; ++tick)
+            {
+                engine.meters(); engine.wireMeters();
+                if(tick % 5 == 0)
+                {
+                    engine.history(); engine.assignments(); engine.takes(); engine.performanceInfo(); engine.audition();
+                    for(const auto& n : nodes) engine.hasPluginWindow(n.id);
+                }
+                run(50);
+            }
+            const auto steady = since(before);
+            std::printf("steady state, 2 s: %llu waits, %lld us waiting\n", (unsigned long long)steady.count, steady.micros);
+            check(steady.count == 0, "the views' polls never wait on the socket: " + std::to_string(steady.count) + " waits, " + std::to_string(steady.micros) + " us");
+            check(engine.meters().size() == 10 && engine.performanceInfo() && engine.performanceInfo()->name == "A" && engine.audition(), "and they show the engine's answers");
         }
         running = false; control.join();
     }

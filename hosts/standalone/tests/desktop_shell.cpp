@@ -219,7 +219,10 @@ int main(int argc, char** argv)
                     check(wait([&] { engine.refreshTakes(); const auto& t = engine.takes(); return t.size() >= 2 && t.back().state == "done"; }), "the take and the capture are listed once written");
                     const auto recordings = juce::File(data.getFullPathName()).getChildFile("recordings");
                     const auto earlier = recordings.getChildFile("2026-10-31 20-15-00 Yesterday");
-                    check(juce::File(juce::String::fromUTF8(engine.takes().front().folder.c_str())).copyDirectoryTo(earlier), "an earlier run's take is put in recordings/");
+                    // Moved in whole: the engine scans recordings/ again only when it changes, and
+                    // a read still on its way may arrive while a copy is half made.
+                    const auto copying = data.getChildFile("Yesterday copying");
+                    check(juce::File(juce::String::fromUTF8(engine.takes().front().folder.c_str())).copyDirectoryTo(copying) && copying.moveFileTo(earlier), "an earlier run's take is put in recordings/");
                     standalone::RecordingsPane pane(engine, configuration);
                     standalone::setDesktopMode(pane, 1); pane.setSize(760, 600);
                     pane.setVisible(true); pane.addToDesktop(juce::ComponentPeer::windowIsTemporary);
@@ -384,7 +387,8 @@ int main(int argc, char** argv)
                 check(wait([&] { return library.items().size() == 3; }), "back to three");
                 // Audition: a Performance tried in place of the open one, then put back.
                 check(wait([&] { return !engine.soundBusy(); }), "the engine free before auditioning");
-                std::string openName; { std::optional<Control::PerformanceInfo> i; wait([&] { return (i = engine.performanceInfo()).has_value(); }); openName = i ? i->name : "?"; }
+                // The open one is the last saved; the reads show it within a poll.
+                std::string openName; { std::optional<Control::PerformanceInfo> i; wait([&] { return (i = engine.performanceInfo()) && i->name == "Bass Split"; }); openName = i ? i->name : "?"; }
                 library.startAudition(1);
                 check(!library.auditioning().id.empty(), "the audition asked for: " + library.message().toStdString());
                 const auto tried = library.items()[1];
@@ -1079,8 +1083,12 @@ int main(int argc, char** argv)
                 standalone::setDesktopMode(view, 1); view.setEmbedded(true); view.setSize(1180, 820);
                 auto windowButton = [&]() -> juce::Button* { for(auto* c : view.getChildren()) if(auto* b = dynamic_cast<juce::TextButton*>(c); b && b->getButtonText() == "Open plugin window") return b; return nullptr; };
                 view.showPart(piano); view.selectBox(synth);
+                for(int i = 0; i < 20; ++i) { juce::MessageManager::getInstance()->runDispatchLoopUntil(10); view.refresh(); } // its reply in
                 check(synth && !windowButton(), "no plugin window for the Basic Synth");
                 view.showPart(part); view.selectBox(effect);
+                // Read without waiting: the view builds again with the button once the engine says
+                // (on screen at the change the Engine broadcasts; off screen here, so asked to).
+                for(int i = 0; i < 100 && !windowButton(); ++i) { juce::MessageManager::getInstance()->runDispatchLoopUntil(10); view.refresh(); }
                 auto* open = windowButton();
                 check(effect && open, "Open plugin window for the effect");
                 if(open) { open->triggerClick(); for(int i = 0; i < 20; ++i) juce::MessageManager::getInstance()->runDispatchLoopUntil(10); }
