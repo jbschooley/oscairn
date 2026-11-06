@@ -841,7 +841,9 @@ std::unique_ptr<Session::Prepared> Session::read(const fs::path& root,std::vecto
         bool savable=true;
         if(free[f].node)try{saved.push_back({free[f].node,graph_.node(free[f].node).host,std::make_unique<state_files::TemporaryDirectory>()});h.saveSnapshot((saved.back().folder->path/"was").string());}
             catch(const std::exception&){saved.pop_back();savable=false;}
-        if(savable)try{restore(runtime,node,room);return;}
+        // Cleared first, as a fresh instance starts (CLAP reset: buffers, voices, envelopes, modulation),
+        // which a state load alone need not do.
+        if(savable)try{h.reset();restore(runtime,node,room);return;}
         catch(const std::exception& e){if(memoryRefusal(e))throw;}
         const auto path=next->host(runtime).descriptor().path;
         next->reload(runtime,path,text(field(field(node,"plugin"),"id")),room);origins[runtime]={buildDigest(path),source(key)};--reused;

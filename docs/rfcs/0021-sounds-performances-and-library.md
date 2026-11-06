@@ -906,10 +906,12 @@ saved. An instance kept warm is not saved either: nothing plays it, and a failed
 marked as holding no known state, so it is never mistaken for one holding its old state.
 
 **Never a different sound.** A fresh instance is activated, deactivated, given the state and
-activated again. A reused one is deactivated, given the state and activated, as every state load
-does. One whose state already equals the node's is not given it again but reset (CLAP `reset`:
-buffers, voices, envelopes, modulation), so switching back costs no state load and no sample
-load. Plugins must make these sound alike; [the porting guide](../plugin-porting.md) says so. A
+activated again. A reused one is reset (CLAP `reset`: buffers, voices, envelopes, modulation),
+then deactivated, given the state and activated, as every state load does: a state load alone
+need not clear what processing left (in the converted library an FM instrument taken over
+rendered differently from a fresh load until the reset was added, 2026-11-06). One whose state already equals
+the node's is not given it again but only reset, so switching back costs no state load and no
+sample load. Plugins must make these sound alike; [the porting guide](../plugin-porting.md) says so. A
 render comparison, the same notes into a Session that switched and one that opened the same
 Performance fresh, checks every sample (`control-performance-switch`, in the engine and in
 workers).

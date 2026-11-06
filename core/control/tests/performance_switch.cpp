@@ -98,6 +98,17 @@ namespace
         s.savePerformance(file.string());
     }
 
+    // One plain CLAP instrument on the whole keyboard at `gain`.
+    void single(const fs::path& file, const char* instrument, double gain)
+    {
+        Session s(48000, frames);
+        const auto n = s.add("instrument", instrument);
+        const auto part = s.addPart("Part"); s.insertIntoPart(part, 0, n); s.commit();
+        check(s.setParameter(n, 7, gain), "instrument gain");
+        blocks(s, 2);
+        s.savePerformance(file.string());
+    }
+
     // Two Basic Synth parts, a quarter of the keyboard each, each playing the last of `sounds`
     // prepared sounds (native contexts beside its Default).
     void synths(const fs::path& file, int variant, const char* synth, int sounds = 1)
@@ -323,6 +334,24 @@ int main(int argc, char** argv)
             t.note(false, 1, 0);
             for(int i = 0; i < int(48000 * 31 / frames) && t.leaving(); ++i) blocks(t, 1);
             check(t.warmInstances() == 32, "32 kept warm: " + std::to_string(t.warmInstances()));
+        }
+
+        // A taken-over instance plays as a fresh load of its state would: what the outgoing Performance
+        // left in it is cleared (CLAP reset), as a state load alone need not. P leaves a voice in its
+        // instrument below the silence a takeover waits for (the fixture's KICK_FIXTURE_STUCK: a voice
+        // no release or state load ends): it must not sound in Q, which takes P's instance kept warm.
+        {
+            const auto p = temp.path / "stuck-p", q = temp.path / "stuck-q";
+            single(p, argv[4], 1e-6); single(q, argv[4], .5);
+            ::setenv("KICK_FIXTURE_STUCK", "1", 1);
+            Session t(48000, frames);
+            load(t, p); t.note(true, 60, 1); blocks(t, 10); t.note(false, 60, 0); quiet(t);
+            load(t, c); // shares nothing: P's instance rings out and is kept warm
+            for(int i = 0; i < int(48000 * 31 / frames) && t.leaving(); ++i) blocks(t, 1);
+            w = load(t, q); report("stuck: C -> Q (P's instance kept warm)", w);
+            check(w.reused == 1 && w.kept == 0 && w.loaded == 0, "Q takes over P's instance kept warm");
+            compare(t, q, "stuck: P's instance kept warm, then Q's");
+            ::unsetenv("KICK_FIXTURE_STUCK");
         }
 
         // Native sound contexts across a change (RFC 0021, slice 2): D and E are the same two Basic

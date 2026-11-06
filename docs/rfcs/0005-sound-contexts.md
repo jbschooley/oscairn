@@ -180,8 +180,8 @@ bool prepare(const clap_plugin_t*, const clap_istream_t* snapshot, uint32_t* sel
   snapshot. It selects nothing; the host selects them when it wants (at the cue).
 
 It is a separate extension, not a draft 6 of `oscairn.sound-contexts`, so draft-5 instruments
-built before it keep working unchanged; they are taken over whole instead (their snapshot loaded
-into a free instance). A plugin offers it only beside `oscairn.sound-contexts` with its `state`.
+built before it keep working unchanged; they are taken over whole instead (a free instance reset and
+given their snapshot). A plugin offers it only beside `oscairn.sound-contexts` with its `state`.
 The host retires the outgoing contexts afterwards with `discard`, which succeeds once each is idle.
 
 **In the SDK**, `sound-contexts-plugin.hpp`'s `Engine::prepareSnapshot` implements the call from
