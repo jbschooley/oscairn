@@ -2093,6 +2093,48 @@ namespace
         check(near(y.l[frames - 1], .125) && u.plansCompiled() == loaded, "and its faders move without a plan: " + std::to_string(y.l[frames - 1]));
     }
 
+    // A solo undone, committed and saved: the same file as before it, playing the same. Each part
+    // soloed and heard (a muted one unmuted), then put back as it was: a copy of the parts, since
+    // parts() is the live model and the edits change it.
+    void soloRoundTrip(const char* fixture, const char* delay, const fs::path& root)
+    {
+        Session s(48000, frames);
+        const auto low = s.add("low", fixture, "org.kick.test.synth"), high = s.add("high", fixture, "org.kick.test.synth"), third = s.add("third", fixture, "org.kick.test.synth");
+        s.setParameter(low, 7, .25); s.setParameter(high, 7, .5); s.setParameter(third, 7, .125);
+        const auto a = s.addPart("A"), b = s.addPart("B"), c = s.addPart("C"), room = s.addPart("Room", {PartInput::Kind::Bus});
+        s.insertIntoPart(a, 0, low); s.insertIntoPart(b, 0, high); s.insertIntoPart(c, 0, third);
+        const auto dry = s.add("dry", delay); s.setParameter(dry, 3, 0);
+        s.insertIntoPart(room, 0, dry);
+        s.setSend(a, room, .5); s.setPartPan(b, .25); s.setPartLevel(a, .75, false); s.setPartLevel(c, .5, true); s.commit();
+        Audio x; x.run(s); x.run(s);
+        const auto before = root / "solo-before", after = root / "solo-after";
+        s.savePerformance(before.string());
+        for(const auto& part : std::vector<Part>(s.parts()))
+        {
+            s.setPartSolo(part.id, true); s.setPartLevel(part.id, part.level, false); s.commit(); x.run(s);
+            s.setPartSolo(part.id, false); s.setPartLevel(part.id, part.level, part.mute); s.commit(); x.run(s);
+        }
+        s.savePerformance(after.string());
+        auto manifest = [](const fs::path& dir) {
+            const auto bytes = state_files::read(dir / "performance.json", 1 << 22);
+            return std::regex_replace(std::string(bytes.begin(), bytes.end()), std::regex(R"re(,"revision":"([0-9a-f]*)","parent":"([0-9a-f]*)")re"), "");
+        };
+        const auto m1 = manifest(before), m2 = manifest(after);
+        check(m1 == m2, "a solo undone saves the same Performance:\n" + m1 + "\n" + m2);
+        Session t(48000, frames), u(48000, frames);
+        t.loadPerformance(before.string()); u.loadPerformance(after.string());
+        Audio y, z; s.note(true, 60, 1); t.note(true, 60, 1); u.note(true, 60, 1);
+        bool same = true, live = true; double energy = 0;
+        for(int i = 0; i < 20; ++i)
+        {
+            x.run(s); y.run(t); z.run(u);
+            same = same && y.l == z.l && y.r == z.r; live = live && x.l == y.l && x.r == y.r;
+            for(float v : y.l) energy += std::abs(v);
+        }
+        check(same && energy > 0, "and the two play the same: " + std::to_string(y.l[frames - 1]) + " " + std::to_string(z.l[frames - 1]));
+        check(live, "as the Session that saved them: " + std::to_string(x.l[frames - 1]) + " " + std::to_string(y.l[frames - 1]));
+    }
+
     // Parts, wires with owners and Mix settings, and flagged wires survive save and load, and play
     // the same; an earlier format version is refused.
     void persistence(const char* fixture, const char* audio, const char* delay, const fs::path& root)
@@ -2223,6 +2265,7 @@ int main(int argc, char** argv)
         optionalAssets(argv[1], temp.path);
         levelCurves(argv[1], temp.path);
         liveGains(argv[1], argv[2], temp.path);
+        soloRoundTrip(argv[1], argv[3], temp.path);
         persistence(argv[1], argv[2], argv[3], temp.path);
     }
     catch(const std::exception& e) { forbidAllocation = false; std::fprintf(stderr, "FAIL: %s\n", e.what()); return 1; }
