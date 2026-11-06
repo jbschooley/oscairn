@@ -323,13 +323,41 @@ int main(int argc, char** argv)
                     const auto view = install.view.getBoundsInParent(), go = install.go.getBoundsInParent(), cancel = install.cancel.getBoundsInParent(), code = install.code.getBoundsInParent();
                     bool inList = install.items.size() == 40, fullRows = true;
                     for(auto* b : install.items) { inList = inList && b->getParentComponent() == &install.list; fullRows = fullRows && b->getHeight() == 30; }
-                    check(install.getHeight() <= 630 && install.view.getViewedComponent() == &install.list && inList && fullRows && install.list.getHeight() == 40 * 30 && view.getHeight() < install.list.getHeight(),
+                    check(install.getHeight() <= 630 && install.view.getViewedComponent() == &install.list && inList && fullRows && install.list.getHeight() == 26 + 40 * 30 && view.getHeight() < install.list.getHeight(),
                           "the items scroll in a viewport, every row full height");
                     check(install.getLocalBounds().contains(go) && install.getLocalBounds().contains(cancel) && view.getBottom() <= code.getY() && code.getBottom() <= go.getY() && install.go.getButtonText() == "Install anyway",
                           "the warning and the buttons stay in view below the items");
                     const auto image = install.createComponentSnapshot(install.getLocalBounds());
                     check(image.getPixelAt(2, 2) == standalone::ink(standalone::Ink::Background), "the dialog paints the theme's background");
                     snapshot(install, "install-many");
+                }
+                // An archive of both kinds, mixed: its Performances under one heading, then its
+                // Sounds under another, in the archive's order, no kind after a name; still all ticked.
+                {
+                    Control::Archive mixed = signedArchive;
+                    mixed.items.clear(); mixed.code.clear();
+                    for(const auto& [kind, name] : std::vector<std::pair<std::string, std::string>>{{"sound", "Bass"}, {"performance", "Set A"}, {"sound", "Keys"}, {"performance", "Set B"}, {"sound", "Pad"}})
+                    {
+                        Control::LibraryItem item; item.id = name; item.kind = kind; item.name = name; mixed.items.push_back(item);
+                    }
+                    standalone::InstallChoices install(mixed);
+                    standalone::setDesktopMode(install, 1); install.resized();
+                    std::vector<std::string> shown, focus;
+                    bool ticked = true, idsInOrder = true;
+                    for(auto* c : install.list.getChildren())
+                    {
+                        if(auto* l = dynamic_cast<juce::Label*>(c)) shown.push_back("# " + l->getText().toStdString());
+                        if(auto* b = dynamic_cast<juce::ToggleButton*>(c)) { shown.push_back(b->getButtonText().toStdString()); ticked = ticked && b->getToggleState(); }
+                    }
+                    for(auto* c : install.createFocusTraverser()->getAllComponents(&install))
+                        if(c->getParentComponent() == &install.list) focus.push_back(dynamic_cast<juce::Label*>(c) ? "# " + dynamic_cast<juce::Label*>(c)->getText().toStdString() : dynamic_cast<juce::Button*>(c)->getButtonText().toStdString());
+                    const std::vector<std::string> want{"# Performances", "Set A", "Set B", "# Sounds", "Bass", "Keys", "Pad"};
+                    for(size_t i = 0; i < install.ids.size() && i < 5; ++i) idsInOrder = idsInOrder && install.ids[i] == std::vector<std::string>{"Set A", "Set B", "Bass", "Keys", "Pad"}[i];
+                    check(shown == want && ticked && install.ids.size() == 5 && idsInOrder, "the install items under a heading for each kind, Performances first, no suffixes");
+                    std::vector<juce::Component*> keys, toggles(install.items.begin(), install.items.end());
+                    for(auto* c : juce::KeyboardFocusTraverser().getAllComponents(&install)) if(c->getParentComponent() == &install.list) keys.push_back(c);
+                    check(focus == want && keys == toggles, "Tab goes down the items in order, and a screen reader reads each heading before its items");
+                    snapshot(install, "install-mixed");
                 }
                 // A Performance with many parts and scenes to import from: the dialog no taller than
                 // the screen, the headings and toggles scrolling in a viewport, the buttons below it.

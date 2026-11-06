@@ -31,17 +31,19 @@ namespace oscairn::standalone
     };
     /// The export's choices in a dialog over `over`; `start` gets them when Export is pressed.
     void showExport(Engine& engine, juce::Component* over, const juce::String& title, bool performance, std::function<void(bool editedSounds, const std::string& key)> start);
-    /// An archive's install choices: locked or as the user's own, and which items, all ticked; who
-    /// signed it and any plugin builds from an unknown source or a revoked key (RFC 0006). The
-    /// items scroll; the options above and the buttons below stay in view.
+    /// An archive's install choices: locked or as the user's own, and which items, all ticked,
+    /// under a heading for each kind there is (Performances, then Sounds); who signed it and any
+    /// plugin builds from an unknown source or a revoked key (RFC 0006). The items scroll; the
+    /// options above and the buttons below stay in view.
     class InstallChoices : public juce::Component
     {
     public:
         explicit InstallChoices(const Control::Archive& archive);
         juce::ToggleButton own{"Into my Sounds and Performances, to edit"}, locked{"As a locked library"};
-        juce::Label heading{{}, "Items"}, code; // code: plugin builds from an unknown source or a revoked key
+        juce::Label code;                       // plugin builds from an unknown source or a revoked key
         juce::Viewport view;                    // holds list, the items' column
         juce::Component list;
+        juce::OwnedArray<juce::Label> headings; // in list, over each kind's items
         juce::OwnedArray<juce::ToggleButton> items;
         std::vector<std::string> ids;
         juce::TextButton go{"Install"}, cancel{"Cancel"};

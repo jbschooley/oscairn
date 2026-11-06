@@ -117,15 +117,21 @@ namespace oscairn::standalone
         signer_ = describeSigner(a.signer);
         own.setRadioGroupId(1); locked.setRadioGroupId(1);
         (a.kind == "library" ? locked : own).setToggleState(true, juce::dontSendNotification);
-        for(const auto& i : a.items)
+        for(const bool sound : {false, true})
         {
-            auto* b = items.add(new juce::ToggleButton(text(i.name.empty() ? "Untitled" : i.name) + (i.kind == "sound" ? "  (Sound)" : "  (Performance)")));
-            b->setToggleState(true, juce::dontSendNotification); list.addAndMakeVisible(b); ids.push_back(i.id);
+            bool headed = false;
+            for(const auto& i : a.items)
+            {
+                if((i.kind == "sound") != sound) continue;
+                if(!headed) { list.addAndMakeVisible(headings.add(new juce::Label({}, sound ? "Sounds" : "Performances"))); headed = true; }
+                auto* b = items.add(new juce::ToggleButton(text(i.name.empty() ? "Untitled" : i.name)));
+                b->setToggleState(true, juce::dontSendNotification); list.addAndMakeVisible(b); ids.push_back(i.id);
+            }
         }
         view.setViewedComponent(&list, false);
         view.setScrollBarsShown(true, false);
-        for(auto* c : std::initializer_list<juce::Component*>{&own, &locked, &heading, &view, &go, &cancel}) addAndMakeVisible(c);
-        setSize(420, std::min(630, int(a.items.size()) * 30 + 210 + codeLines_ * 18));
+        for(auto* c : std::initializer_list<juce::Component*>{&own, &locked, &view, &go, &cancel}) addAndMakeVisible(c);
+        setSize(420, std::min(630, int(a.items.size()) * 30 + headings.size() * 26 + 186 + codeLines_ * 18));
     }
 
     void InstallChoices::resized()
@@ -133,14 +139,15 @@ namespace oscairn::standalone
         auto area = getLocalBounds().reduced(16, 12);
         signerArea_ = area.removeFromTop(30);
         own.setBounds(area.removeFromTop(30)); locked.setBounds(area.removeFromTop(30));
-        area.removeFromTop(6); heading.setBounds(area.removeFromTop(24));
+        area.removeFromTop(6);
         auto bar = area.removeFromBottom(30);
         if(codeLines_) { area.removeFromBottom(6); code.setBounds(area.removeFromBottom(codeLines_ * 18)); }
         go.setBounds(bar.removeFromRight(120)); bar.removeFromRight(8); cancel.setBounds(bar.removeFromRight(100));
         view.setBounds(area);
-        const bool scrolls = items.size() * 30 > area.getHeight();
-        list.setSize(area.getWidth() - (scrolls ? view.getScrollBarThickness() : 0), items.size() * 30);
-        for(int i = 0; i < items.size(); ++i) items[i]->setBounds(0, i * 30, list.getWidth(), 30);
+        const int tall = items.size() * 30 + headings.size() * 26;
+        list.setSize(area.getWidth() - (tall > area.getHeight() ? view.getScrollBarThickness() : 0), tall);
+        auto rows = list.getLocalBounds();
+        for(auto* c : list.getChildren()) c->setBounds(rows.removeFromTop(headings.contains(dynamic_cast<juce::Label*>(c)) ? 26 : 30)); // headings and items, in order
     }
 
     void InstallChoices::paint(juce::Graphics& g)
