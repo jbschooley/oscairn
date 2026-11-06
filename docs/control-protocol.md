@@ -564,7 +564,8 @@ refresh. A refresh is `graph.get`, then every node's `params.list`, then the val
 server's ticks rather than one per node. One that `service()` starts (a `graph.changed`, a
 gap) waits on nothing: `service()` takes its replies as they come and returns true once the
 cache shows it, keeping the values pushed while it was out (`controls.changed`,
-`params.changed`) over the older ones it read. An edit's own refresh waits, so `graphState()` is current when the edit
+`params.changed`) and the live edits answered meanwhile (`parts.level`, `master.set`, unless
+refused or pushed since) over the older ones it read. An edit's own refresh waits, so `graphState()` is current when the edit
 returns. Snapshots span several requests and are not atomic across concurrent clients;
 interleaved notifications are retained to bring the cache up to date. After a gap the
 transport, status and controller snapshots are read the same way, without waiting. The

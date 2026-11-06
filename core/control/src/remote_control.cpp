@@ -106,16 +106,26 @@ namespace oscairn
         std::map<uint32_t,Sent> sentParts; std::optional<Sent> sentMaster;
         bool live=false;              // a live edit sent since the last commit
         std::string failure;          // a live edit the engine refused, for takeError()
+        // Those answered while a graph read is out: its graph may be older than them, so they go
+        // over it when it comes in, unless the engine pushed the value since or refused them.
+        std::map<uint32_t,Sent> confirmedParts; std::optional<Sent> confirmedMaster;
         void answered(uint64_t id)    // every request up to id is answered
         {
-            std::erase_if(sentParts,[&](const auto& s){return s.second.id<=id;});
-            if(sentMaster && sentMaster->id<=id)sentMaster.reset();
+            for(auto s=sentParts.begin();s!=sentParts.end();)
+                if(s->second.id<=id){if(reading)confirmedParts[s->first]=s->second;s=sentParts.erase(s);}else ++s;
+            if(sentMaster && sentMaster->id<=id){if(reading)confirmedMaster=sentMaster;sentMaster.reset();}
         }
-        void overlay()
+        void refused(uint64_t id)
         {
-            for(const auto& [id,s]:sentParts)for(auto& p:graph.parts)if(p.id==id){p.level=s.level;p.mute=s.mute;}
-            if(sentMaster){graph.masterLevel=sentMaster->level;graph.masterPan=sentMaster->pan;}
+            std::erase_if(confirmedParts,[&](const auto& s){return s.second.id==id;});
+            if(confirmedMaster && confirmedMaster->id==id)confirmedMaster.reset();
         }
+        static void overlay(GraphState& g,const std::map<uint32_t,Sent>& parts,const std::optional<Sent>& master)
+        {
+            for(const auto& [id,s]:parts)for(auto& p:g.parts)if(p.id==id){p.level=s.level;p.mute=s.mute;}
+            if(master){g.masterLevel=master->level;g.masterPan=master->pan;}
+        }
+        void overlay(){overlay(graph,sentParts,sentMaster);}
         static void check(const Doc& doc)
         {
             V error=nullptr;try{error=field(doc.get(),"error");}catch(const std::runtime_error&){}
@@ -357,8 +367,12 @@ namespace oscairn
             }
             else for(auto value:array(field(result,"values")))r.snapshot[{static_cast<NodeId>(integer(field(value,"node"))),static_cast<uint32_t>(integer(field(value,"param")))}]=number(field(value,"value"));
         }
-        void apply(GraphRead& r){graph=std::move(r.next);info=std::move(r.metadata);values=std::move(r.snapshot);overlay();}
-        void drop(){if(reading)for(const auto& s:reading->sent)dropped.insert(s.first);reading.reset();again=false;}
+        void apply(GraphRead& r)
+        {
+            overlay(r.next,confirmedParts,confirmedMaster);confirmedParts.clear();confirmedMaster.reset();
+            graph=std::move(r.next);info=std::move(r.metadata);values=std::move(r.snapshot);overlay();
+        }
+        void drop(){if(reading)for(const auto& s:reading->sent)dropped.insert(s.first);reading.reset();again=false;confirmedParts.clear();confirmedMaster.reset();}
         // Waits for the whole read: an edit's caller reads the state it made on return.
         void refresh()
         {
@@ -1083,7 +1097,7 @@ namespace oscairn
                 }
                 // The reply to a live edit sent without waiting: a refusal is said, and the
                 // engine's state read again in place of what the cache showed.
-                try{Impl::check(doc);}catch(const std::exception& e){impl_->failure=e.what();refresh=true;}
+                try{Impl::check(doc);}catch(const std::exception& e){impl_->failure=e.what();impl_->refused(n);refresh=true;}
                 continue;
             }
             const auto method=string(field(doc.get(),"method"));auto params=field(doc.get(),"params");
@@ -1100,6 +1114,8 @@ namespace oscairn
                     V master=nullptr;try{master=field(params,"master");}catch(const std::runtime_error&){}
                     if(master){g.masterLevel=number(field(master,"level"));g.masterPan=number(field(master,"pan"));}
                 };
+                for(auto f:array(field(params,"parts")))impl_->confirmedParts.erase(static_cast<uint32_t>(integer(field(f,"part"))));
+                if(detail::member(params,"master"))impl_->confirmedMaster.reset();
                 take(impl_->graph);if(impl_->reading && impl_->reading->graphRead)take(impl_->reading->next);
                 impl_->overlay();
             }
