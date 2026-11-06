@@ -283,8 +283,9 @@ namespace
             std::vector<kick::clap::Event> events;
             if(b == 0) events.push_back(kick::clap::Event::note(true, 60, 1, 0));
             forbidAllocation = true;
-            check(s.process(in, 1, out, 2, 64, events), "render with an input");
+            const bool ok = s.process(in, 1, out, 2, 64, events);
             forbidAllocation = false;
+            check(ok, "render with an input"); // its message is a heap string past libstdc++'s 15-character SSO
         }
         const auto t = finish(s, take);
         std::string names; for(const auto& f : t.files) names += f + ";";
