@@ -88,7 +88,7 @@ An `oscairn.ui` extension without `param_hint` is ignored, not refused.
   events from the graph per block.
 - **Parameter values** set by Oscairn (on screen, by a control or a scene) arrive while the
   plugin processes as `CLAP_EVENT_PARAM_VALUE` events at sample 0 of a block. One played on a hardware controller
-  (on its own, by a control or by a control's morph between scenes) arrives at the next block and may arrive again, the same value, a block or so later: take a
+  (on its own, by a control, by a control's morph between scenes or by a scene button) arrives at the next block and may arrive again, the same value, a block or so later: take a
   repeated value as no change.
 - **Render mode:** a plugin that offers CLAP's `clap.render` is told the mode with `set` once
   it is initialized, before it activates, on the main thread, at every load (a worker restart

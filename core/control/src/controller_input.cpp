@@ -235,7 +235,17 @@ namespace oscairn
         case Assignment::Kind::Parameter: values_[key(target)] = v; unapplied_.insert(key(target)); send(key(target)); break;
         case Assignment::Kind::Control: drive(target.id, v); unapplied_.insert(key(target)); break;
         case Assignment::Kind::Panic: session_.allNotesOff(); break; // here on the MIDI thread: two atomic flags, heard at the next block
-        case Assignment::Kind::Scene: case Assignment::Kind::None: break;
+        case Assignment::Kind::Scene:
+            // Selected at once (no beat to wait for) with nothing to switch or glide: heard at the next block.
+            if(const auto scene = std::find_if(scenes_.begin(), scenes_.end(), [&](const Scene& s) { return s.id == target.id; });
+               scene != scenes_.end() && liveScenes_.count(scene->id) && (scene->launch == Scene::Launch::Now || !session_.statusPlaying_.load()))
+            {
+                if(scene->scope & Scene::Mappings) mappingScene_ = scene->id;
+                scene_ = scene->id;
+                blend(*scene, *scene, 1, scene->scope);
+            }
+            break;
+        case Assignment::Kind::None: break;
         }
         played_.push_back({target, v});
     }
@@ -293,6 +303,52 @@ namespace oscairn
         }
     }
 
+    // Whether selecting the scene now changes only what blend() plays (Session::editMix's
+    // liveOnly, with no plugin or wire switched and no graph edit staged) and at once.
+    bool ControllerInput::liveScene(const Scene& s) const
+    {
+        const auto& x = session_;
+        if(s.glide || x.staged_) return false;
+        const auto has = [&](Scene::Kind kind) { return (s.scope & kind) != 0; };
+        if(has(Scene::Enabled))
+        {
+            for(const auto& [node, name] : x.nodes_) if((std::find(s.off.begin(), s.off.end(), node) != s.off.end()) != (x.disabled_.count(node) != 0)) return false;
+            for(const auto& w : x.wires_) if(w.enabled == (std::find(s.offWires.begin(), s.offWires.end(), WireRef::of(w)) != s.offWires.end())) return false;
+        }
+        if(has(Scene::Mix) && (s.masterLevel != x.masterLevel_ || s.masterPan != x.masterPan_) && x.staticMaster_) return false;
+        for(const auto& state : s.parts)
+            for(const auto& p : x.parts_)
+            {
+                if(p.id != state.part) continue;
+                if(has(Scene::Mutes) && (state.solo != p.solo || (state.mute != p.mute && !x.liveFader(p.id)))) return false;
+                if(!has(Scene::Mix)) continue;
+                if((state.level != p.level && !x.liveFader(p.id)) || (state.pan != p.pan && !x.livePan(p.id))) return false;
+                for(const auto& send : p.sends)
+                    for(const auto& was : state.sends) if(was.bus == send.bus && was.level != send.level && !x.liveSend(p.id, send.bus)) return false;
+                for(const auto& sp : p.splits)
+                    for(const auto& lane : state.lanes)
+                        if(lane.split == sp.id && lane.lane < sp.lanes.size() && !(Scene::LaneState{lane.split, lane.lane, sp.lanes[lane.lane].level, sp.lanes[lane.lane].pan, sp.lanes[lane.lane].mute, sp.lanes[lane.lane].solo} == lane)) return false;
+            }
+        if(has(Scene::Mix))
+            for(const auto& w : x.wires_)
+                if(w.owner == WireOwner::User)
+                    for(const auto& m : s.wires) if(m.wire == WireRef::of(w) && !(Scene::WireMix{m.wire, w.level, w.pan, w.mute, w.solo} == m)) return false;
+        // A control the scene moves drives its targets: each must play live too.
+        std::function<bool(uint32_t)> live = [&](uint32_t id) {
+            for(const auto& m : x.macros_)
+                if(m.id == id)
+                    return std::all_of(m.targets.begin(), m.targets.end(), [&](const MacroTarget& t) {
+                        return t.kind == MacroTarget::Kind::Parameter || t.kind == MacroTarget::Kind::Morph || (t.kind == MacroTarget::Kind::Macro ? live(t.macro) : x.liveFader(t.part));
+                    });
+            return true;
+        };
+        if(has(Scene::Parameters))
+            for(const auto& [id, value] : s.macros)
+                for(const auto& m : x.macros_)
+                    if(m.id == id && m.value != value && std::none_of(m.targets.begin(), m.targets.end(), [](const MacroTarget& t) { return t.kind == MacroTarget::Kind::Morph; }) && !live(id)) return false;
+        return true;
+    }
+
     // The snapshot: compiled again when the Session, the inputs or the groups changed.
     void ControllerInput::refresh(bool moved)
     {
@@ -326,8 +382,10 @@ namespace oscairn
         std::map<std::pair<uint32_t, uint32_t>, uint8_t> sends;
         for(const auto& [send, slot] : session_.sendSlots_) if(session_.liveSend(send.first, send.second)) sends[send] = slot;
         const auto& outputs = session_.graph_.audioLayout().outputs;
-        // shortcut: every scene copied at each compile (as Session::model() copies them for undo); copy only those morphs reach if this shows in the control thread's load.
+        // shortcut: every scene copied and checked at each compile (as Session::model() copies them for undo); only those morphs and buttons reach if this shows in the control thread's load.
         auto scenes = session_.scenes_;
+        std::set<uint32_t> liveScenes;
+        for(const auto& scene : scenes) if(liveScene(scene)) liveScenes.insert(scene.id);
         std::map<uint8_t, std::vector<std::pair<std::string, uint32_t>>> bindings;
         for(const auto& input : inputs)
             for(const auto& port : ports) if(port.input == input.name) bindings[input.source].push_back({port.device, port.port});
@@ -346,7 +404,7 @@ namespace oscairn
         mappingScene_ = session_.mappingScene_; scene_ = session_.scene_;
         slots_ = std::move(slots); pans_ = std::move(pans); sends_ = std::move(sends);
         master_ = !session_.staticMaster_; stereo_ = !outputs.empty() && outputs.front().channels == 2;
-        scenes_ = std::move(scenes);
+        scenes_ = std::move(scenes); liveScenes_ = std::move(liveScenes);
         ranges_ = std::move(ranges);
         bindings_ = std::move(bindings);
         positions_.resize(groups_.size());

@@ -21,7 +21,7 @@ Checked when built and tested; the sections below say how.
   - [x] [instant controls](#instant-controls): live gains for part levels, mutes, pans, send levels, the master and scene glides ([status](#live-gains-status))
   - [x] a plugin's parameters played by a controller heard without the control thread ([status](#live-gains-status))
   - [x] morphs played by a controller heard without the control thread, what plays live ([status](#live-gains-status))
-  - [ ] scene buttons played by a controller heard without the control thread
+  - [x] scene buttons played by a controller heard without the control thread, for a scene that changes only what plays live, at once ([status](#live-gains-status))
   - [x] the controller-mapping service in the engine, on its MIDI input threads ([status](#engine-mapping-status))
   - [x] the latency measured in a test, against one block ([status](#latency-status))
   - [x] values pushed to clients (`controls.changed`), so the UI and devices follow without reading the graph ([status](#latency-status))
@@ -421,11 +421,12 @@ now also runs the controller-mapping service on its MIDI input threads:
   gain slot, which the audio thread reads at its next block; a plugin's parameter (on its own or
   as a control's target) goes to the graph's queue of parameter values, which the audio thread
   hands the plugin as an event at the next block; a control morphing between two scenes blends
-  the scenes, kept in the snapshot, into the same slots and queue. The MIDI thread evaluates a
+  the scenes, kept in the snapshot, into the same slots and queue, and a scene button applies a
+  scene that changes only those, at once, there too. The MIDI thread evaluates a
   control's targets with the same summing rule the Session uses, from the snapshot.
 - Everything else waits for the control thread, which the MIDI thread wakes at once rather
-  than at its next tick: scenes, what a morph switches or moves that is not live, and faders
-  that are not live. These skip the UI and the socket, but not the control thread.
+  than at its next tick: the other scenes, what a morph switches or moves that is not live, and
+  faders that are not live. These skip the UI and the socket, but not the control thread.
 - The control thread then applies the moves to the Session's model, as the latest value per
   target: control values, part levels and mutes (for the views, scenes, saving and undo, as
   playing a control is today), without writing the live slots again (a newer move may be on its
@@ -559,11 +560,25 @@ Not yet: a newer move that comes while the control thread applies older ones cha
 the snapshot's mapping follows (`mappingScene_`) back to the model's until the next service, and
 no test shows the live gains written again in that case.
 
-Not yet: scene buttons played by a controller still wait for the control thread, which a
-Performance load holds for the whole read; a scene button selects a scene, which may wait for the
-beat, starts a glide stepped on the control thread, or switches plugins, solos and wires, which
-compiles a plan. Taking it off the control thread means the MIDI thread applying a scene that
-changes only what plays live, at once, from the scenes kept in the snapshot.
+Scene buttons followed (2026-11-06), for a scene that changes only what plays live, at once. At
+each compile the snapshot marks the scenes whose selection now would change nothing but live
+faders, pans, sends and the master and parameter values (`ControllerInput::liveScene`, as
+`Session::editMix`'s check): no glide, no graph edit staged, no plugin or wire switched, no solo,
+lane or user wire changed, and each control the scene moves driving only parameters, live faders
+and controls like it. A scene button on one of them, with no beat to wait for (launched at once,
+or the transport stopped), applies it on the MIDI thread as a morph's end does, and marks it
+selected in the snapshot; the control thread then selects it as before, compiling nothing. Any
+other scene (a glide, a launch on the beat while the transport plays, something to switch)
+waits for the control thread as before: a glide's steps and a beat's wait are its, and applying
+a switching scene's levels before its plugins and wires would split it. `control-controller-input`
+(`sceneButtons`) checks two such scenes' buttons heard at the next block with the control thread
+not run, the scene selected in the model once it runs, and no plan compiled; without the change
+neither is heard before the control thread runs. It also checks that a scene switching a plugin
+off, and one that glides, are not applied on the MIDI thread (marking every scene without a glide
+live fails the first). Not yet, as the code reads (no test shows it): a glide step the control thread takes between the press and its
+next service writes the glide's gains over the scene's until then, and the scene the snapshot
+shows selected goes back to the model's if a newer press comes while the control thread applies
+older moves.
 
 The wires follow over the socket (2026-11-06). The Routing view's Mix rows showed a part's
 fader wires as the last graph read left them, since a live move reaches clients as

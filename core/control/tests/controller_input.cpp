@@ -235,6 +235,53 @@ namespace
         check(s.plansCompiled() == plans, "no plan compiled for any of it: " + std::to_string(s.plansCompiled() - plans));
     }
 
+    // Scene buttons: a scene that changes only live levels, pans and parameters, at once, heard
+    // at the next block with the control thread not run and no plan compiled; one that switches a
+    // plugin off, or glides, waits for the control thread.
+    void sceneButtons(const char* fixture)
+    {
+        Session s(48000, frames);
+        const auto a = s.add("a", fixture, "org.kick.test.synth"), b = s.add("b", fixture, "org.kick.test.synth");
+        s.setParameter(a, 7, .5); s.setParameter(b, 7, .25);
+        const auto pa = s.addPart("A"), pb = s.addPart("B");
+        s.insertIntoPart(pa, 0, a); s.insertIntoPart(pb, 0, b); s.commit();
+        s.setPartLevel(pa, .2, false); s.commit(); const auto quiet = s.addScene("Quiet");
+        s.setPartLevel(pa, .8, false); s.setPartPan(pa, .5); s.setPartLevel(pb, .5, false); s.setParameter(b, 7, .75); s.commit(); s.service();
+        const auto loud = s.addScene("Loud");
+        const auto off = s.addScene("Off"); s.setSceneScope(off, Scene::Enabled | Scene::Mix);
+        s.setNodeEnabled(b, false); s.commit(); s.storeScene(off); s.setNodeEnabled(b, true); s.commit();
+        const auto glide = s.addScene("Glide"); s.setSceneTransition(glide, 1000, Scene::Curve::Linear, Scene::Launch::Now);
+        auto buttons = group(Role::Assign, "buttons", 4, {30, 31, 32, 33}); buttons.scenes = true; // the scenes in order
+        s.setControllers({buttons}, {{"SMK-37 Elite -Master", "smk", 1}});
+        Control::SessionStatus status; status.midiInputs = {{MidiEndpoint::Kind::Usb, smk, "SMK-37 Elite -Master"}};
+        s.setHostStatus(status);
+        s.selectScene(quiet); s.commit(); s.service();
+        s.note(true, 60, 1); render(s); render(s);
+        check(near(render(s), .5 * .2 + .25), "scene Quiet: A at .2, B at 1");
+        const auto plans = s.plansCompiled();
+
+        const double loudLevel = .5 * .8 * .5 + .5 * .75;
+        cc(s, 31, 127); cc(s, 31, 0);
+        check(near(render(s), loudLevel), "Loud's button heard within one block, the control thread not run: " + std::to_string(render(s)));
+        check(s.graphState().scene == quiet && s.parts()[0].level == .2, "with no control thread on the way: the model has not seen it yet");
+        s.service();
+        check(s.graphState().scene == loud && near(s.parts()[0].level, .8) && near(s.parameter(b, 7), .75), "then the control thread selects it");
+        check(near(render(s), loudLevel) && near(render(s), loudLevel), "and what it sends is the same");
+        cc(s, 30, 127); cc(s, 30, 0);
+        check(near(render(s), .5 * .2 + .25), "and Quiet's, back: " + std::to_string(render(s)));
+        s.service(); render(s);
+        check(s.plansCompiled() == plans, "no plan compiled for either: " + std::to_string(s.plansCompiled() - plans));
+
+        // A plugin switched off, and a glide: left to the control thread.
+        cc(s, 32, 127); cc(s, 32, 0);
+        check(near(render(s), .5 * .2 + .25), "Off's button waits for the control thread");
+        s.service();
+        check(s.graphState().scene == off && s.graphState().disabled.count(b), "which switches B off (it rings out while the note is held)");
+        s.selectScene(quiet); s.commit(); s.service(); render(s); render(s);
+        cc(s, 33, 127); cc(s, 33, 0);
+        check(near(render(s), .5 * .2 + .25), "a scene that glides waits for the control thread too");
+    }
+
     // Identical controllers (RFC 0024): two inputs with one name are both the controller's port and
     // both play; set to another channel, the second is a profile of its own, with controls of its
     // own (numbered on) and so assignments of its own.
@@ -584,7 +631,7 @@ namespace
 int main(int argc, char** argv)
 {
     if(argc < 2) { std::fprintf(stderr, "usage: %s FIXTURE\n", argv[0]); return 2; }
-    try { mapping(argv[1]); parameters(argv[1]); morphs(argv[1]); identical(argv[1]); for(int run = 1; run <= 3 && !latency(argv[1], run == 3); ++run) {} panLatency(argv[1]); }
+    try { mapping(argv[1]); parameters(argv[1]); morphs(argv[1]); sceneButtons(argv[1]); identical(argv[1]); for(int run = 1; run <= 3 && !latency(argv[1], run == 3); ++run) {} panLatency(argv[1]); }
     catch(const std::exception& e) { forbidAllocation = false; std::fprintf(stderr, "FAIL: %s\n", e.what()); return 1; }
     if(!failures) std::puts("ok: a controller's MIDI into the engine moves its controls' targets within one block");
     return failures ? 1 : 0;

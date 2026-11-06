@@ -24,10 +24,11 @@ namespace oscairn
     // own or as a control's target) goes straight to the part's live gain (Graph::setLiveGain),
     // which the audio thread reads at its next block, and a plugin's parameter to the graph's
     // queue for its next block (Graph::queueParameter). A control that morphs between scenes
-    // blends the two, kept in the snapshot, into the same live gains and queue. Everything it
+    // blends the two, kept in the snapshot, into the same live gains and queue, and a scene
+    // button selecting a scene that changes only those, at once, applies it there. Everything it
     // plays is also queued for the control thread, which applies it to the Session's model (and
-    // selects scenes, switches what a morph switches halfway and moves faders that are not
-    // live), woken at once.
+    // selects the other scenes, switches what a morph switches halfway and moves faders that are
+    // not live), woken at once.
     class ControllerInput
     {
     public:
@@ -68,6 +69,7 @@ namespace oscairn
         // Control thread.
         void apply(const Played& played);
         void refresh(bool rebuild);
+        bool liveScene(const Scene& scene) const;
 
         Session& session_;
         mutable std::mutex lock_;
@@ -89,7 +91,8 @@ namespace oscairn
         std::map<uint32_t, std::array<uint8_t, 2>> pans_;           // each live pan's slots
         std::map<std::pair<uint32_t, uint32_t>, uint8_t> sends_;    // each live send's, by part and bus
         bool master_ = false, stereo_ = false;                      // whether the master is live, and its pan a balance
-        std::vector<Scene> scenes_;             // for morphs
+        std::vector<Scene> scenes_;             // for morphs and scene buttons
+        std::set<uint32_t> liveScenes_;         // those selecting changes only live gains and parameters in, at once (liveScene)
         bool blending_ = false;                 // a control a blend drives does not morph meanwhile (Session::applyingScene_)
         struct Range { double minimum = 0, maximum = 0; bool stepped = false; };
         std::map<Key, Range> ranges_;           // each writable parameter's, for its plain value
