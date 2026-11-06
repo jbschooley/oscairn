@@ -138,11 +138,8 @@ namespace oscairn
             }
             field(doc.get(),"result");
         }
-        Doc call(std::string_view method,std::string_view params="{}",unsigned timeout=1000)
-        {
-            const auto id=client.send(method,params,timeout);
-            auto doc=parse(client.wait(id,timeout));answered(id);check(doc);return doc;
-        }
+        Doc call(std::string_view method,std::string_view params="{}",unsigned timeout=1000){return reply(client.send(method,params,timeout),timeout);}
+        Doc reply(uint64_t id,unsigned timeout=1000){auto doc=parse(client.wait(id,timeout));answered(id);check(doc);return doc;}
         void publish(Change change)
         {
             if(history.size()==4096)history.pop_front();change.sequence=++sequence;history.push_back(change);
@@ -431,10 +428,16 @@ namespace oscairn
     RemoteControl::RemoteControl(LocalClient& client):impl_(std::make_unique<Impl>(client))
     {
         auto hello=impl_->call("session.hello");if(integer(field(field(hello.get(),"result"),"protocolVersion"))!=1)throw std::runtime_error("Unsupported control protocol version");
-        impl_->call("subscribe",R"({"topics":["params.changed","transport","graph.changed","status","controllers","controls.changed"],"allChanges":true})");
-        {auto state=impl_->call("controllers.get");impl_->readControllers(field(state.get(),"result"));}
-        impl_->refresh();auto state=impl_->call("transport.get");impl_->readTransport(field(state.get(),"result"));
-        auto status=impl_->call("session.status");impl_->readStatus(field(status.get(),"result"));
+        // The rest at once, the graph read behind them: the server answers in order, so the
+        // snapshots are read after subscribing, and the reads take a few ticks, not one each.
+        auto& c=impl_->client;
+        const auto subscribed=c.send("subscribe",R"({"topics":["params.changed","transport","graph.changed","status","controllers","controls.changed"],"allChanges":true})");
+        const auto controllers=c.send("controllers.get"),transport=c.send("transport.get"),status=c.send("session.status");
+        impl_->refresh();
+        impl_->reply(subscribed);
+        {auto state=impl_->reply(controllers);impl_->readControllers(field(state.get(),"result"));}
+        {auto state=impl_->reply(transport);impl_->readTransport(field(state.get(),"result"));}
+        {auto state=impl_->reply(status);impl_->readStatus(field(state.get(),"result"));}
         // Keep interleaved notifications: another client may have changed a value
         // after its snapshot was read. service() drains them in server order.
     }

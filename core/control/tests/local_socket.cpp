@@ -399,6 +399,18 @@ namespace
         bool muted=false;for(const auto& p:remote->graphState().parts)if(p.id==part)muted=p.mute;
         check(read && muted,"the read in shows the mute sent after its graph");
     }
+    // Connecting reads its snapshots a few at once: on a server polled every 5 ms, as the engine
+    // is, it takes five polls here (the hello; the rest and the graph; the parameters; the values;
+    // and the one before the hello is sent), where it took nine, one per request.
+    void connectPipelined(const char* plugin)
+    {
+        Fixture f(plugin);auto fd=pair();f.server.adopt(fd[0]);
+        std::atomic<bool> done=false;int polls=0;
+        std::thread connecting([&]{LocalClient client;client.adopt(fd[1]);RemoteControl remote(client);done=true;});
+        while(!done && polls<100){f.tick();++polls;std::this_thread::sleep_for(std::chrono::milliseconds(5));}
+        connecting.join();
+        check(polls<=6,("connecting takes a few polls, not one per request: "+std::to_string(polls)).c_str());
+    }
     // The views' polls go without waiting: service() gives each its reply, one of a kind out at
     // a time; a read forgotten is never given, and the next goes at once.
     void fetches(const char* plugin)
@@ -666,7 +678,7 @@ int main(int argc,char** argv)
         if(argc==3 && std::string_view(argv[2])=="--path-policy"){pathPolicy(argv[1]);return 0;}
         if(argc==3 && std::string_view(argv[2])=="--named")return named(argv[1],argv[0]);
         if(argc!=2)return 2;
-        framing(argv[1]);lifetime(argv[1]);slowReader(argv[1]);clientAndReconnect(argv[1]);pressure(argv[1]);clientFailures();typedClient(argv[1]);graphReadLater(argv[1]);pushedDuringRead(argv[1]);editOverOlderRead(argv[1]);fetches(argv[1]);controllerCrash(argv[1],argv[0]);
+        framing(argv[1]);lifetime(argv[1]);slowReader(argv[1]);clientAndReconnect(argv[1]);pressure(argv[1]);clientFailures();typedClient(argv[1]);graphReadLater(argv[1]);pushedDuringRead(argv[1]);editOverOlderRead(argv[1]);connectPipelined(argv[1]);fetches(argv[1]);controllerCrash(argv[1],argv[0]);
         std::cout<<"ok: real Unix streams, framing, backpressure, notifications, reconnect, continuing audio and client failures\n";
     }
     catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}

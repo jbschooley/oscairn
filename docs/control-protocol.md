@@ -554,7 +554,7 @@ queued documents and 1 MiB; overflow disconnects rather than silently losing upd
 Call these APIs from one UI/control thread, never from audio or MIDI callbacks.
 
 `RemoteControl` checks protocol version 1, subscribes, and reads graph, parameter,
-transport and host-status snapshots. Most getters use that cache; plugin text formatting
+transport and host-status snapshots, sending the requests after the hello at once. Most getters use that cache; plugin text formatting
 and mutations use bounded synchronous RPC calls. Call `service()` regularly to update
 snapshots and deliver changes. Its change sequence is local to that adapter's lifetime,
 not the server's sequence. Graph commits and explicit history gaps trigger a snapshot
