@@ -278,6 +278,12 @@ in the others.
      [results](rfcs/0010-plugin-worker-isolation.md#step-1-measurements))
    - [x] workers reporting CLAP sleep, so a seamless change can retire a plugin in a worker as
      soon as it is done, not after a silence window
+   - [ ] parallel graph rendering ([RFC 0034](rfcs/0034-parallel-graph-rendering.md#progress)):
+     independent parts render at the same time, plugins in workers each in its own process and
+     the engine's on real-time helper threads, sample for sample as serial rendering
+     - [ ] waves, with plugins in workers in parallel
+     - [ ] audio helpers for plugins in the engine's process
+     - [ ] measured on the target
 4. **Sequencers** ([the comparison](sequencer-evaluation.md) of the KICK firmware's sequencer
    with chillbeast's work, zynseq and hosted plugins)
    - [x] the evaluation, recommending the KICK model and workflow with sample-accurate

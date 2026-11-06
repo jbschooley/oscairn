@@ -42,3 +42,4 @@ tests it, with a note on what remains of a step that is partly done. The
 | [0031](0031-package-repository-and-distribution.md) | The package repository and distribution | proposed |
 | [0032](0032-arpeggiator.md) | The arpeggiator | proposed |
 | [0033](0033-script-block.md) | The script block | proposed |
+| [0034](0034-parallel-graph-rendering.md) | Parallel graph rendering | proposed |
