@@ -481,10 +481,13 @@ namespace
         const auto start = render.main.size() / 2;
         const auto capture = s.recordStart({}, "Spans the change", cap);
         bool settled = false; // the writer has fixed its start, so its end is set
+        // It shows frames once it writes its first chunk, a second from the start: rendered, then waited for.
+        while(render.main.size() / 2 < start - 4800 + 48000 + block) render.block(block);
         for(int i = 0; i < 400 && !settled; ++i)
         {
-            render.block(block);
+            s.service();
             for(const auto& t : s.recordTakes()) if(t.take == capture && t.frames > 0) settled = true;
+            if(!settled) std::this_thread::sleep_for(std::chrono::milliseconds(5));
         }
         check(settled, "the capture's writer fixed its start");
         bool refused = false;
