@@ -5,6 +5,7 @@
 #include "oscairn/session.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 
 namespace oscairn
@@ -77,6 +78,17 @@ namespace oscairn
             session_.graph_.setLiveGain(slot->second, values_[m] >= .5 ? 0.f : float(values_[l]));
     }
 
+    // A parameter heard at the next block, its plain value as Session::applyParameter makes it.
+    void ControllerInput::send(const Key& k)
+    {
+        const auto range = ranges_.find(k);
+        if(range == ranges_.end()) return;
+        const auto& r = range->second;
+        double v = std::clamp(r.minimum + values_[k] * (r.maximum - r.minimum), r.minimum, r.maximum);
+        if(r.stepped) v = std::trunc(v);
+        session_.graph_.queueParameter(std::get<1>(k), std::get<2>(k), v); // full: the control thread's value follows
+    }
+
     void ControllerInput::play(const ControllerMapping::Action& action)
     {
         if(!action.control.empty()) { touched_ = action.control; ++touches_; }
@@ -87,11 +99,11 @@ namespace oscairn
         {
         case Assignment::Kind::PartLevel: setFader(target.id, v, {}); break;
         case Assignment::Kind::PartMute: setFader(target.id, {}, v >= .5); break;
-        case Assignment::Kind::Parameter: values_[key(target)] = v; unapplied_.insert(key(target)); break;
+        case Assignment::Kind::Parameter: values_[key(target)] = v; unapplied_.insert(key(target)); send(key(target)); break;
         case Assignment::Kind::Control:
         {
-            // Its targets by the summing rule, as the Session drives them: part levels and mutes
-            // now; parameters and morphs when the control thread drives the control again.
+            // Its targets by the summing rule, as the Session drives them: part levels, mutes and
+            // parameters now; morphs when the control thread drives the control again.
             auto current = [&](const MacroTarget& m) -> std::optional<double> {
                 switch(m.kind)
                 {
@@ -106,7 +118,7 @@ namespace oscairn
             auto apply = [&](const MacroTarget& m, double x) {
                 switch(m.kind)
                 {
-                case MacroTarget::Kind::Parameter: { const Key k{int(Assignment::Kind::Parameter), m.node, m.param, 0}; if(values_.count(k)) { values_[k] = x; unapplied_.insert(k); } break; }
+                case MacroTarget::Kind::Parameter: { const Key k{int(Assignment::Kind::Parameter), m.node, m.param, 0}; if(values_.count(k)) { values_[k] = x; unapplied_.insert(k); send(k); } break; }
                 case MacroTarget::Kind::PartLevel: setFader(m.part, x, {}); break;
                 case MacroTarget::Kind::PartMute: setFader(m.part, {}, x >= .5); break;
                 case MacroTarget::Kind::Macro: case MacroTarget::Kind::Morph: break;
@@ -142,6 +154,14 @@ namespace oscairn
             if(moves_ == moves) session_.writeLiveGains();
         }
         refresh(!played.empty());
+    }
+
+    void ControllerInput::resend()
+    {
+        std::lock_guard lock(lock_);
+        for(const auto& k : unapplied_)
+            // A value still waiting in the Session is replaced by this one at the next service().
+            if(std::get<0>(k) == int(Assignment::Kind::Parameter) && !session_.pending_.count({std::get<1>(k), std::get<2>(k)})) send(k);
     }
 
     void ControllerInput::apply(const Played& p)
@@ -183,11 +203,13 @@ namespace oscairn
             values[{int(Assignment::Kind::PartLevel), 0, 0, p.id}] = p.level;
             values[{int(Assignment::Kind::PartMute), 0, 0, p.id}] = p.mute ? 1 : 0;
         }
+        std::map<Key, Range> ranges;
         for(const auto& [id, node] : source.nodes)
             for(const auto& param : node.params)
             {
                 const auto info = session_.parameterInfo(id, param.id);
                 values[{int(Assignment::Kind::Parameter), id, param.id, 0}] = info.maximum > info.minimum ? (session_.parameter(id, param.id) - info.minimum) / (info.maximum - info.minimum) : 0;
+                if(!(info.flags & CLAP_PARAM_IS_READONLY)) ranges[{int(Assignment::Kind::Parameter), id, param.id, 0}] = {info.minimum, info.maximum, info.stepped};
             }
         std::map<uint32_t, uint8_t> slots;
         for(const auto& [part, slot] : session_.faderSlots_) if(session_.liveFader(part)) slots[part] = slot;
@@ -208,6 +230,7 @@ namespace oscairn
         written_ = session_.written_;
         mappingScene_ = session_.mappingScene_; scene_ = session_.scene_;
         slots_ = std::move(slots);
+        ranges_ = std::move(ranges);
         bindings_ = std::move(bindings);
         positions_.resize(groups_.size());
         sequence_ = session_.sequence_; revision_ = session_.revision_; inputs_ = inputs; dirty_ = false;

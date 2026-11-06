@@ -11,6 +11,7 @@
 #include <set>
 #include <span>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <functional>
 #include <string>
@@ -286,6 +287,15 @@ namespace oscairn
         float liveGainFrom( uint32_t slot ) const noexcept { return slot < liveGains ? liveFrom_[slot] : 1.f; }
         float liveGainTo( uint32_t slot ) const noexcept { return slot < liveGains ? liveTo_[slot] : 1.f; }
 
+        /// A parameter's new value, plain and within its range, for the node's plugin at sample 0
+        /// of the next block, among the events the graph hands it (as parameter-target lanes'
+        /// are), not through its host's command queue: a controller's move from a MIDI thread
+        /// while the control thread is busy. Dropped when the node is not in the plan then. Any
+        /// thread but the audio thread; senders take a lock the audio thread never does. False
+        /// when the queue is full.
+        static constexpr uint32_t queuedParameters = 256;
+        bool queueParameter( NodeId node, uint32_t param, double value ) noexcept;
+
         /// Frees plans the audio thread has finished with.
         void collect();
         /// Removed plugins not freed yet: those an audio plan or undo still owns (control thread).
@@ -423,5 +433,11 @@ namespace oscairn
         std::array<std::atomic<float>, liveGains> liveTarget_; // see setLiveGain; set to 1 by the constructor
         std::array<std::atomic<bool>, liveGains> liveJump_{};  // see setLiveGain's ramp
         std::array<float, liveGains> liveFrom_{}, liveTo_{};    // audio thread: each slot at the last block's start and this one's
+        struct QueuedParameter { NodeId node = 0; uint32_t param = 0; double value = 0; }; // see queueParameter
+        std::mutex queueLock_; // the senders'
+        std::array<QueuedParameter, queuedParameters> queued_{};
+        std::atomic<uint32_t> queueHead_{ 0 }, queueTail_{ 0 };
+        std::array<std::pair<NodeId, kick::clap::Event>, queuedParameters> blockParameters_{}; // audio thread: this block's
+        uint32_t blockParameterCount_ = 0;
     };
 }

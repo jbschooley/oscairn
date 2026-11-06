@@ -487,6 +487,7 @@ namespace oscairn
             }
             it = commands.empty() ? pending_.erase(it) : std::next(it);
         }
+        controllers_->resend();
     }
 
     // RFC 0012 step 2: clock out from this block's transport. While it plays, a clock at each

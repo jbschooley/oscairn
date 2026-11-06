@@ -21,9 +21,10 @@ namespace oscairn
     // snapshot the control thread compiles from the Session, under a lock only the MIDI threads
     // and the control thread take, never the audio thread. A part's level or mute it plays (on its
     // own or as a control's target) goes straight to the part's live gain (Graph::setLiveGain),
-    // which the audio thread reads at its next block; everything it plays is also queued for the
-    // control thread, which applies it to the Session's model (and sets parameters, selects
-    // scenes and moves faders that are not live), woken at once.
+    // which the audio thread reads at its next block, and a plugin's parameter to the graph's
+    // queue for its next block (Graph::queueParameter); everything it plays is also queued for
+    // the control thread, which applies it to the Session's model (and selects scenes, morphs
+    // and moves faders that are not live), woken at once.
     class ControllerInput
     {
     public:
@@ -37,6 +38,10 @@ namespace oscairn
         // Applies what the MIDI threads played to the model, then compiles the snapshot again
         // where what it reads has changed.
         void service();
+        // After the Session sent its waiting parameter values to the plugins: a parameter a MIDI
+        // thread moved since service() took the moves goes to the graph again, so the older value
+        // just sent is not the last the plugin hears.
+        void resend();
 
         // A MIDI input thread: a message from the input numbered `source` (the session status's
         // midiInputs). Any number of threads; never called on the audio thread.
@@ -50,6 +55,7 @@ namespace oscairn
         double value(const Assignment& target) const;
         void play(const ControllerMapping::Action& action);
         void setFader(uint32_t part, std::optional<double> level, std::optional<bool> mute);
+        void send(const Key& parameter);
         // Control thread.
         void apply(const Played& played);
         void refresh(bool rebuild);
@@ -71,6 +77,8 @@ namespace oscairn
         std::map<std::tuple<int, NodeId, uint32_t, uint32_t>, double> written_; // as Session::written_
         uint32_t mappingScene_ = 0, scene_ = 0;
         std::map<uint32_t, uint8_t> slots_;     // each live part's gain slot
+        struct Range { double minimum = 0, maximum = 0; bool stepped = false; };
+        std::map<Key, Range> ranges_;           // each writable parameter's, for its plain value
         std::vector<Played> played_;            // for the control thread, in order
         uint64_t moves_ = 0;                    // counted, so the control thread knows whether more came
         std::string touched_;

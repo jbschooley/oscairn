@@ -19,6 +19,8 @@ Checked when built and tested; the sections below say how.
       grid remain
 - [ ] 6. Physical controls: default layers, overrides, learn, banks (layers, banks, overrides saved, learn on a panel's knobs, plugin roles and screen knobs following the editor page done; [status](#step-6-status))
   - [x] [instant controls](#instant-controls): live gains for part levels, mutes, pans, send levels, the master and scene glides ([status](#live-gains-status))
+  - [x] a plugin's parameters played by a controller heard without the control thread ([status](#live-gains-status))
+  - [ ] morphs and scene buttons played by a controller heard without the control thread
   - [x] the controller-mapping service in the engine, on its MIDI input threads ([status](#engine-mapping-status))
   - [x] the latency measured in a test, against one block ([status](#latency-status))
   - [x] values pushed to clients (`controls.changed`), so the UI and devices follow without reading the graph ([status](#latency-status))
@@ -415,12 +417,13 @@ now also runs the controller-mapping service on its MIDI input threads:
   and the control thread's short snapshot swaps take, never the audio thread.
 - What a message plays is applied at once where that is lock-free: a part's level or mute (on
   its own, or as a control's target, as the mod wheel's control above) is written to the live
-  gain slot, which the audio thread reads at its next block. The MIDI thread evaluates a
-  control's targets with the same summing rule the Session uses, from the snapshot.
+  gain slot, which the audio thread reads at its next block; a plugin's parameter (on its own or
+  as a control's target) goes to the graph's queue of parameter values, which the audio thread
+  hands the plugin as an event at the next block. The MIDI thread evaluates a control's targets
+  with the same summing rule the Session uses, from the snapshot.
 - Everything else waits for the control thread, which the MIDI thread wakes at once rather
-  than at its next tick: parameter targets (a plugin's parameters are set on the control thread,
-  through its host, which for a plugin in a worker is a request to the worker), scenes, morphs,
-  and faders that are not live. These skip the UI and the socket, but not the control thread.
+  than at its next tick: scenes, morphs, and faders that are not live. These skip the UI and the
+  socket, but not the control thread.
 - The control thread then applies the moves to the Session's model, as the latest value per
   target: control values, part levels and mutes (for the views, scenes, saving and undo, as
   playing a control is today), without writing the live slots again (a newer move may be on its
@@ -510,10 +513,34 @@ development Mac (load average about 95): the morph's pan heard 2 to 5.5 ms media
 worst after the move (2.3 to 8.2 and 13 ms before); a glide's first step heard 4.5 to 4.8 ms
 median and 7 to 9.5 ms worst (4.6 to 4.8 and 10 to 13 ms before), its end 24 ms median after the
 select (25.3 before). With one part the plan compiles quickly, so most of what remains is the
-service tick a glide step waits for and the block. Not yet: a parameter target played by a
-controller still waits for the control thread, which a load can hold up: the MIDI thread would
-have to enqueue to the plugin's host itself, whose queue has one producer, whose parameter list
-the main thread may rewrite, and which for a plugin in a worker is a request to the worker.
+service tick a glide step waits for and the block.
+
+A parameter played by a controller followed (2026-11-06), on its own or as a control's target.
+The MIDI thread does not go through the plugin's host (its command queue has one producer, its
+parameter list is the main thread's, and for a plugin in a worker a value set is a request to the
+worker): it puts the plain value, from the range kept in the snapshot, in the graph's own queue
+(`Graph::queueParameter`, a ring whose senders take a lock the audio thread never does), and the
+audio thread hands it to the node's plugin at sample 0 of its next block among the events it
+merges for it, as parameter-target lanes' are, in the engine or a worker alike. The control
+thread then sets the model's value as before, which sends the plugin the same value through its
+host. A move that comes after the control thread took the moves is newer than the value it
+sends: in one block the host's queued values go before the graph's events, and after it sends
+its values the controller input puts each parameter moved since in the graph's queue again
+(`ControllerInput::resend`), so the older value is never the last the plugin hears; one still
+waiting in the Session is replaced by the newer at the next service. `control-controller-input`
+(`parameters`) checks a knob on a plugin's gain and the mod wheel's control on another's heard at
+the next block with the control thread not run, the model's values once it runs, and a move made
+after it took the last heard over the older value it sent in the same block; without the queue
+the first two are heard only once the control thread runs, and the third hears the older value.
+
+Not yet: morphs and scene buttons played by a controller still wait for the control thread, which
+a Performance load holds for the whole read. A morph blends every part's, lane's and user wire's
+level, pan, mute and sends, every parameter the scenes touch, and the controls the scenes hold
+(each driving targets of its own), switching plugins and wires on or off halfway, which compiles a
+plan; a scene button selects a scene, which may wait for the beat, starts a glide stepped on the
+control thread, or switches plugins, solos and wires, which compiles one. Taking either off the
+control thread means the MIDI thread blending scenes kept in the snapshot into live slots and
+parameter values, with what needs a plan left to the control thread, and a glide stepped off it.
 
 The wires follow over the socket (2026-11-06). The Routing view's Mix rows showed a part's
 fader wires as the last graph read left them, since a live move reaches clients as

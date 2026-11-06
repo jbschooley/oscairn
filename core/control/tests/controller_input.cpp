@@ -147,6 +147,51 @@ namespace
         check(refused, "a group that is not there is refused");
     }
 
+    // A plugin's parameter played by a controller, on its own and as a control's target: heard at
+    // the next block with the control thread not run at all (as while it reads a Performance),
+    // then in the model once it runs, and not undone by the older value it sends the plugin.
+    void parameters(const char* fixture)
+    {
+        Session s(48000, frames);
+        const auto a = s.add("a", fixture, "org.kick.test.synth"), b = s.add("b", fixture, "org.kick.test.synth");
+        s.setParameter(a, 7, .5); s.setParameter(b, 7, .25);
+        const auto pa = s.addPart("A"), pb = s.addPart("B");
+        s.insertIntoPart(pa, 0, a); s.insertIntoPart(pb, 0, b); s.commit();
+        // The fixture's gain is its level: past .9 it asks for a restart, so the control stops at .8.
+        const auto control = s.addMacro("Gain");
+        MacroTarget t; t.kind = MacroTarget::Kind::Parameter; t.node = b; t.param = 7; t.start = 0; t.end = .8;
+        s.setMacroTargets(control, {t});
+        s.assign("knob:1", {Assignment::Kind::Parameter, a, 7, 0});
+        s.assign("wheel:1", {Assignment::Kind::Control, 0, 0, control});
+        auto mod = group(Role::Assign, "wheels", 1, {1}); mod.functions = {"modulation"};
+        s.setControllers({group(Role::Assign, "knobs", 1, {48}), mod}, {{"SMK-37 Elite -Master", "smk", 1}});
+        Control::SessionStatus status; status.midiInputs = {{MidiEndpoint::Kind::Usb, smk, "SMK-37 Elite -Master"}};
+        s.setHostStatus(status);
+        s.service();
+        s.note(true, 60, 1); render(s); render(s);
+        check(near(render(s), .75), "both parts sound: A .5, B .25");
+
+        // The knob picked up at A's gain, then turned: heard at the next block.
+        cc(s, 48, 60); cc(s, 48, 70); cc(s, 48, 32); // crossing .5, not past .9
+        const double knob = 32 / 127.0;
+        check(near(render(s), knob + .25), "a knob on A's gain heard within one block, the control thread not run: " + std::to_string(render(s)));
+        // The wheel's control on B's gain.
+        cc(s, 1, 0); cc(s, 1, 64);
+        const double wheel = .8 * 64 / 127.0;
+        check(near(render(s), knob + wheel), "the wheel's control sets B's gain within one block: " + std::to_string(render(s)));
+        auto controlValue = [&] { for(const auto& m : s.graphState().macros) if(m.id == control) return m.value; return -1.0; };
+        check(controlValue() == 0, "with no control thread on the way: the model's control has not moved yet");
+        s.service();
+        check(near(s.parameter(a, 7), knob) && near(s.parameter(b, 7), wheel) && near(controlValue(), 64 / 127.0), "then the control thread brings the model up to date");
+        check(near(render(s), knob + wheel) && near(render(s), knob + wheel), "and its values sent to the plugins are the same");
+        // A move after the control thread took the last: the older value it sends in the same block
+        // goes before the newer one.
+        cc(s, 48, 40); s.service(); cc(s, 48, 50);
+        check(near(render(s), 50 / 127.0 + wheel) && near(render(s), 50 / 127.0 + wheel), "the newer move is the one heard: " + std::to_string(render(s)));
+        s.service();
+        check(near(s.parameter(a, 7), 50 / 127.0) && near(render(s), 50 / 127.0 + wheel), "and the model's");
+    }
+
     // Identical controllers (RFC 0024): two inputs with one name are both the controller's port and
     // both play; set to another channel, the second is a profile of its own, with controls of its
     // own (numbered on) and so assignments of its own.
@@ -496,7 +541,7 @@ namespace
 int main(int argc, char** argv)
 {
     if(argc < 2) { std::fprintf(stderr, "usage: %s FIXTURE\n", argv[0]); return 2; }
-    try { mapping(argv[1]); identical(argv[1]); for(int run = 1; run <= 3 && !latency(argv[1], run == 3); ++run) {} panLatency(argv[1]); }
+    try { mapping(argv[1]); parameters(argv[1]); identical(argv[1]); for(int run = 1; run <= 3 && !latency(argv[1], run == 3); ++run) {} panLatency(argv[1]); }
     catch(const std::exception& e) { forbidAllocation = false; std::fprintf(stderr, "FAIL: %s\n", e.what()); return 1; }
     if(!failures) std::puts("ok: a controller's MIDI into the engine moves its controls' targets within one block");
     return failures ? 1 : 0;

@@ -821,6 +821,16 @@ namespace oscairn
         return {};
     }
 
+    bool Graph::queueParameter( NodeId node, uint32_t param, double value ) noexcept
+    {
+        std::lock_guard lock( queueLock_ );
+        const auto head = queueHead_.load( std::memory_order_relaxed );
+        if( head - queueTail_.load( std::memory_order_acquire ) == queued_.size() ) return false;
+        queued_[head % queued_.size()] = { node, param, value };
+        queueHead_.store( head + 1, std::memory_order_release );
+        return true;
+    }
+
     Graph::Peaks Graph::takePeaks( NodeId node ) noexcept
     {
         Peaks out{};
@@ -853,6 +863,17 @@ namespace oscairn
             const bool jump=liveJump_[i].load(std::memory_order_relaxed) && liveJump_[i].exchange(false,std::memory_order_acquire);
             const float to=liveTarget_[i].load(std::memory_order_relaxed);
             liveFrom_[i]=jump?to:liveTo_[i];liveTo_[i]=to;
+        }
+        // Parameter values queued since the last block (queueParameter), for their nodes' steps.
+        blockParameterCount_=0;
+        for(auto tail=queueTail_.load(std::memory_order_relaxed),head=queueHead_.load(std::memory_order_acquire);tail!=head;++tail)
+        {
+            const auto& q=queued_[tail%queued_.size()];
+            clap_event_param_value_t v{};
+            v.header={sizeof(v),0,CLAP_CORE_EVENT_SPACE_ID,CLAP_EVENT_PARAM_VALUE,CLAP_EVENT_IS_LIVE};
+            v.param_id=q.param;v.note_id=-1;v.port_index=v.channel=v.key=-1;v.value=q.value;
+            blockParameters_[blockParameterCount_++]={q.node,kick::clap::Event::from(v)};
+            queueTail_.store(tail+1,std::memory_order_release);
         }
         Plan* plan = current_;
         if(!plan){clear();return true;}
@@ -959,6 +980,12 @@ namespace oscairn
             // The beat and the part's harmony ride with the notes in their own room (see
             // maxProcessEvents): a block that fills all maxBlockEvents note slots still fits.
             for(uint32_t i=0;i<step.releaseCount;++i)plan->keys.push_back({0,order++,&step.releases[i]});
+            for(uint32_t i=0;i<blockParameterCount_;++i)if(blockParameters_[i].first==step.id)
+            {
+                ++totalEvents;
+                if(plan->keys.size()<step.merged.size())plan->keys.push_back({0,order++,&blockParameters_[i].second});
+                else overflow=true;
+            }
             for( uint32_t i = 0; i < step.paramCount; ++i ) {
                 if(plan->keys.size()<step.merged.size())
                     plan->keys.push_back( { step.paramIn[i].header()->time, order++, &step.paramIn[i],step.paramNotes[i],step.paramNotes[i]!=nullptr } );
