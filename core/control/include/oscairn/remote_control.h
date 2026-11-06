@@ -19,6 +19,7 @@ namespace oscairn
         /// graph, then every node's parameters, a few requests at once): true once that read is
         /// done and the cache shows it. Edits made here read the graph back before they return.
         bool service();
+        bool reading() const; // a graph read service() started is out
         /// A live edit (part level or mute, master) the engine refused since the last ask, or
         /// empty: those are sent without waiting, so a refusal arrives with service().
         std::string takeError();

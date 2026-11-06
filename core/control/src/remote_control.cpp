@@ -315,6 +315,7 @@ namespace oscairn
             std::deque<std::pair<uint64_t,Step>> sent;                                                     // in the order they are answered
             GraphState next;std::map<NodeId,std::vector<ParamInfo>> metadata;std::map<std::pair<NodeId,uint32_t>,double> snapshot;
             std::vector<NodeId> nodes;size_t listed=0;std::string batch;size_t count=0;
+            bool graphRead=false; // its graph.get answered: values pushed after it are newer than it
             bool done()const{return queued.empty() && sent.empty();}
             void values(){if(count)queued.push_back({Step::Values,"params.get","{\"values\":["+batch+"]}"});batch.clear();count=0;}
         };
@@ -336,7 +337,7 @@ namespace oscairn
             using Step=GraphRead::Step;
             if(step==Step::Graph)
             {
-                r.next=readGraph(result);
+                r.next=readGraph(result);r.graphRead=true;
                 for(const auto& n:r.next.topology.nodes){r.nodes.push_back(n.id);r.queued.push_back({Step::List,"params.list","{\"node\":"+std::to_string(n.id)+'}'});}
             }
             else if(step==Step::List)
@@ -1013,6 +1014,7 @@ namespace oscairn
     bool RemoteControl::fetchAudition(std::function<void(Audition)> done){return impl_->fetch("audition.get","audition.get","{}",[done=std::move(done)](V r){done(auditionFrom(r));});}
     bool RemoteControl::fetchPluginWindow(NodeId node,std::function<void(bool)> done)
     {const auto params="{\"node\":"+std::to_string(node)+'}';return impl_->fetch("window.info"+params,"window.info",params,[done=std::move(done)](V r){done(boolean(field(r,"available")));});}
+    bool RemoteControl::reading()const{return impl_->reading.has_value();}
     void RemoteControl::forgetFetches(){auto& i=*impl_;for(const auto& [id,f]:i.fetches)i.dropped.insert(id);i.fetches.clear();i.fetching.clear();}
     void RemoteControl::removeLane(uint32_t part,uint32_t split,uint32_t lane){impl_->call("parts.removeLane","{\"part\":"+std::to_string(part)+",\"split\":"+std::to_string(split)+",\"lane\":"+std::to_string(lane)+'}');impl_->refresh();}
     void RemoteControl::setLane(uint32_t part,uint32_t split,uint32_t lane,const Lane& l)
@@ -1090,12 +1092,15 @@ namespace oscairn
             else if(method=="controllers")impl_->readControllers(params);
             else if(method=="controls.changed")
             {
-                // Values pushed as they change: the cached graph takes them, with no graph read.
-                auto& g=impl_->graph;
-                for(auto c:array(field(params,"controls"))){const auto id=static_cast<uint32_t>(integer(field(c,"control")));for(auto& m:g.macros)if(m.id==id)m.value=number(field(c,"value"));}
-                for(auto f:array(field(params,"parts"))){const auto id=static_cast<uint32_t>(integer(field(f,"part")));for(auto& p:g.parts)if(p.id==id){p.level=number(field(f,"level"));p.mute=boolean(field(f,"mute"));}}
-                V master=nullptr;try{master=field(params,"master");}catch(const std::runtime_error&){}
-                if(master){g.masterLevel=number(field(master,"level"));g.masterPan=number(field(master,"pan"));}
+                // Values pushed as they change: the cached graph takes them, with no graph read, and
+                // so does a read out whose graph came before them, or it would show older ones.
+                auto take=[&](GraphState& g){
+                    for(auto c:array(field(params,"controls"))){const auto id=static_cast<uint32_t>(integer(field(c,"control")));for(auto& m:g.macros)if(m.id==id)m.value=number(field(c,"value"));}
+                    for(auto f:array(field(params,"parts"))){const auto id=static_cast<uint32_t>(integer(field(f,"part")));for(auto& p:g.parts)if(p.id==id){p.level=number(field(f,"level"));p.mute=boolean(field(f,"mute"));}}
+                    V master=nullptr;try{master=field(params,"master");}catch(const std::runtime_error&){}
+                    if(master){g.masterLevel=number(field(master,"level"));g.masterPan=number(field(master,"pan"));}
+                };
+                take(impl_->graph);if(impl_->reading && impl_->reading->graphRead)take(impl_->reading->next);
                 impl_->overlay();
             }
             else if(method=="graph.changed"){refresh=true;impl_->publish({0,ChangeKind::Graph});}
@@ -1105,7 +1110,13 @@ namespace oscairn
                 Change change;change.node=static_cast<NodeId>(integer(field(c,"node")));change.param=static_cast<uint32_t>(integer(field(c,"param")));
                 const auto kind=string(field(c,"kind"));change.kind=kind=="value"?ChangeKind::Value:kind=="begin"?ChangeKind::GestureBegin:ChangeKind::GestureEnd;
                 change.plugin=string(field(c,"source"))=="plugin";
-                if(change.kind==ChangeKind::Value){change.value=number(field(c,"value"));if(impl_->values.contains({change.node,change.param}))impl_->values[{change.node,change.param}]=change.value;}
+                if(change.kind==ChangeKind::Value)
+                {
+                    change.value=number(field(c,"value"));const std::pair key{change.node,change.param};
+                    if(impl_->values.contains(key))impl_->values[key]=change.value;
+                    // A read out that has this value already read it before the change.
+                    if(impl_->reading)if(const auto at=impl_->reading->snapshot.find(key);at!=impl_->reading->snapshot.end())at->second=change.value;
+                }
                 impl_->publish(change);
             }
         }
