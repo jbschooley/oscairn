@@ -175,6 +175,9 @@ target_link_libraries(oscairn-performance-test PRIVATE oscairn_control)
 add_test(NAME control-performance COMMAND oscairn-performance-test
     $<TARGET_FILE:oscairn_basic_synth> $<TARGET_FILE:oscairn_delay> $<TARGET_FILE:oscairn_step_sequencer> $<TARGET_FILE:kick-clap-fixture-normal>)
 set_tests_properties(control-performance PROPERTIES TIMEOUT 60)
+if(CMAKE_CXX_FLAGS MATCHES "-fsanitize")
+    set_tests_properties(control-performance PROPERTIES TIMEOUT 600) # 58 to 59 s in CI's ThreadSanitizer job
+endif()
 # The Performance-switch tests load and render many instances; a sanitizer slows that several
 # times over (control-performance-switch-workers took 183 s in a local ThreadSanitizer build).
 set(switch_timeout 120)
