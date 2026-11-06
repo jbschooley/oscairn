@@ -150,6 +150,42 @@ namespace oscairn::standalone
         drawInked(g, signer_, signerArea_, juce::Font(juce::FontOptions(textSize(TextRole::Body, std::max(1, desktopMode(*this))))));
     }
 
+    ImportChoices::ImportChoices(const Control::PerformanceContents& held, int maxHeight)
+    {
+        for(const auto& p : held.parts) { auto* b = parts.add(new juce::ToggleButton(text(p.name) + (p.bus ? " (bus)" : ""))); b->setToggleState(true, juce::dontSendNotification); partIds.push_back(p.id); }
+        for(const auto& s : held.scenes) { auto* b = scenes.add(new juce::ToggleButton(text(s.name))); b->setToggleState(true, juce::dontSendNotification); sceneIds.push_back(s.id); }
+        list.addAndMakeVisible(partsHeading);
+        for(auto* b : parts) list.addAndMakeVisible(b);
+        if(!held.scenes.empty()) list.addAndMakeVisible(scenesHeading);
+        for(auto* b : scenes) list.addAndMakeVisible(b);
+        view.setViewedComponent(&list, false);
+        view.setScrollBarsShown(true, false);
+        for(auto* c : std::initializer_list<juce::Component*>{&view, &import, &cancel}) addAndMakeVisible(c);
+        setSize(360, std::min(maxHeight, int(held.parts.size() + held.scenes.size()) * 30 + (held.scenes.empty() ? 100 : 130)));
+    }
+
+    void ImportChoices::resized()
+    {
+        auto area = getLocalBounds().reduced(16, 12);
+        auto bar = area.removeFromBottom(30);
+        import.setBounds(bar.removeFromRight(100)); bar.removeFromRight(8); cancel.setBounds(bar.removeFromRight(100));
+        area.removeFromBottom(20);
+        view.setBounds(area);
+        const int tall = 26 + parts.size() * 30 + (scenes.isEmpty() ? 0 : 30 + scenes.size() * 30);
+        list.setSize(area.getWidth() - (tall > area.getHeight() ? view.getScrollBarThickness() : 0), tall);
+        auto rows = list.getLocalBounds();
+        partsHeading.setBounds(rows.removeFromTop(26));
+        for(auto* b : parts) b->setBounds(rows.removeFromTop(30));
+        if(!scenes.isEmpty()) { rows.removeFromTop(4); scenesHeading.setBounds(rows.removeFromTop(26)); }
+        for(auto* b : scenes) b->setBounds(rows.removeFromTop(30));
+    }
+
+    std::vector<uint32_t> ImportChoices::ticked(const juce::OwnedArray<juce::ToggleButton>& boxes, const std::vector<uint32_t>& ids)
+    {
+        std::vector<uint32_t> out; for(int i = 0; i < boxes.size(); ++i) if(boxes[i]->getToggleState()) out.push_back(ids[size_t(i)]);
+        return out;
+    }
+
     juce::String describeSigner(const Control::Signer& s)
     {
         const auto who = s.keyName.empty() ? "key " + fingerprint(s.key) : text(s.keyName) + " (" + fingerprint(s.key) + ")";

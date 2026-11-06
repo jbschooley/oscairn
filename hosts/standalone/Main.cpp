@@ -561,36 +561,9 @@ namespace oscairn::standalone
                 if(!item || item->id.empty())return;
                 const auto held=safe->engine_.performanceContents(item->path);
                 if(!held)return;
-                struct Choose : juce::Component
-                {
-                    juce::OwnedArray<juce::ToggleButton> parts,scenes;juce::Label partsHeading{{},"Parts"},scenesHeading{{},"Scenes"};
-                    juce::TextButton import{"Import"},cancel{"Cancel"};
-                    std::vector<uint32_t> partIds,sceneIds;
-                    explicit Choose(const Control::PerformanceContents& held)
-                    {
-                        for(const auto& p:held.parts){auto* b=parts.add(new juce::ToggleButton(juce::String::fromUTF8(p.name.c_str())+(p.bus?" (bus)":"")));b->setToggleState(true,juce::dontSendNotification);addAndMakeVisible(b);partIds.push_back(p.id);}
-                        for(const auto& s:held.scenes){auto* b=scenes.add(new juce::ToggleButton(juce::String::fromUTF8(s.name.c_str())));b->setToggleState(true,juce::dontSendNotification);addAndMakeVisible(b);sceneIds.push_back(s.id);}
-                        for(auto* c:std::initializer_list<juce::Component*>{&partsHeading,&import,&cancel})addAndMakeVisible(c);
-                        if(!held.scenes.empty())addAndMakeVisible(scenesHeading);
-                        setSize(360,int(held.parts.size()+held.scenes.size())*30+(held.scenes.empty()?100:130));
-                    }
-                    void resized() override
-                    {
-                        auto area=getLocalBounds().reduced(16,12);
-                        partsHeading.setBounds(area.removeFromTop(26));
-                        for(auto* b:parts)b->setBounds(area.removeFromTop(30));
-                        if(!scenes.isEmpty()){area.removeFromTop(4);scenesHeading.setBounds(area.removeFromTop(26));}
-                        for(auto* b:scenes)b->setBounds(area.removeFromTop(30));
-                        auto bar=area.removeFromBottom(30);
-                        import.setBounds(bar.removeFromRight(100));bar.removeFromRight(8);cancel.setBounds(bar.removeFromRight(100));
-                    }
-                    static std::vector<uint32_t> ticked(const juce::OwnedArray<juce::ToggleButton>& boxes,const std::vector<uint32_t>& ids)
-                    {
-                        std::vector<uint32_t> out;for(int i=0;i<boxes.size();++i)if(boxes[i]->getToggleState())out.push_back(ids[size_t(i)]);
-                        return out;
-                    }
-                };
-                auto* content=new Choose(*held);
+                // No taller than the screen it opens on, less its title bar; the list scrolls past that.
+                const auto* display=juce::Desktop::getInstance().getDisplays().getDisplayForRect(safe->getScreenBounds());
+                auto* content=new ImportChoices(*held,(display?int(display->userBounds.getHeight()):630)-60);
                 juce::DialogWindow::LaunchOptions options;
                 options.dialogTitle="Import from "+juce::String::fromUTF8(item->name.c_str());
                 options.content.setOwned(content);options.componentToCentreAround=safe.getComponent();options.useNativeTitleBar=true;options.resizable=false;
@@ -598,7 +571,7 @@ namespace oscairn::standalone
                 auto* dialog=options.launchAsync();
                 content->cancel.onClick=[dialog]{dialog->exitModalState(0);};
                 content->import.onClick=[safe,dialog,content,path=item->path]{
-                    auto parts=Choose::ticked(content->parts,content->partIds),scenes=Choose::ticked(content->scenes,content->sceneIds);
+                    auto parts=ImportChoices::ticked(content->parts,content->partIds),scenes=ImportChoices::ticked(content->scenes,content->sceneIds);
                     const bool all=parts.size()==content->partIds.size() && scenes.size()==content->sceneIds.size();
                     // A partial import takes a part and, when there are any, a scene.
                     if(!all && (parts.empty() || (scenes.empty() && !content->sceneIds.empty()))){

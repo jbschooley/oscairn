@@ -331,6 +331,46 @@ int main(int argc, char** argv)
                     check(image.getPixelAt(2, 2) == standalone::ink(standalone::Ink::Background), "the dialog paints the theme's background");
                     snapshot(install, "install-many");
                 }
+                // A Performance with many parts and scenes to import from: the dialog no taller than
+                // the screen, the headings and toggles scrolling in a viewport, the buttons below it.
+                {
+                    Control::PerformanceContents held;
+                    for(uint32_t i = 1; i <= 30; ++i) held.parts.push_back({i, "Part " + std::to_string(i), i == 30});
+                    for(uint32_t i = 1; i <= 20; ++i) held.scenes.push_back({i, "Scene " + std::to_string(i)});
+                    standalone::ImportChoices choose(held, 600);
+                    standalone::setDesktopMode(choose, 1); choose.resized();
+                    const auto view = choose.view.getBoundsInParent(), import = choose.import.getBoundsInParent(), cancel = choose.cancel.getBoundsInParent();
+                    bool inList = choose.partsHeading.getParentComponent() == &choose.list && choose.scenesHeading.getParentComponent() == &choose.list;
+                    for(auto* b : choose.parts) inList = inList && b->getParentComponent() == &choose.list;
+                    for(auto* b : choose.scenes) inList = inList && b->getParentComponent() == &choose.list;
+                    check(choose.getHeight() <= 600 && choose.view.getViewedComponent() == &choose.list && inList && choose.list.getHeight() == 26 + 30 * 30 + 30 + 20 * 30 && view.getHeight() < choose.list.getHeight(),
+                          "the import list scrolls in a viewport, the dialog within the screen: " + std::to_string(choose.getHeight()));
+                    check(choose.getLocalBounds().contains(import) && choose.getLocalBounds().contains(cancel) && import.getBottom() <= 600 && !view.isEmpty() && view.getBottom() <= import.getY() && choose.import.isVisible() && choose.cancel.isVisible(),
+                          "the import buttons stay on the screen, below the list");
+                    // Tab goes down the toggles in order, then Cancel and Import; a screen reader
+                    // reads each heading before its toggles.
+                    std::vector<juce::Component*> keys, read{&choose.partsHeading};
+                    for(auto* b : choose.parts) { keys.push_back(b); read.push_back(b); }
+                    read.push_back(&choose.scenesHeading);
+                    for(auto* b : choose.scenes) { keys.push_back(b); read.push_back(b); }
+                    for(auto* b : {&choose.cancel, &choose.import}) { keys.push_back(b); read.push_back(b); }
+                    auto mine = [&](std::vector<juce::Component*> all) { std::erase_if(all, [&](auto* c) { return std::find(read.begin(), read.end(), c) == read.end(); }); return all; };
+                    check(mine(juce::KeyboardFocusTraverser().getAllComponents(&choose)) == keys && mine(choose.createFocusTraverser()->getAllComponents(&choose)) == read,
+                          "the import toggles and buttons take focus in order, each heading read before its toggles");
+                    Control::PerformanceContents few; few.parts = {{1, "Lead", false}, {2, "Pad", false}};
+                    standalone::ImportChoices small(few, 600);
+                    check(small.getHeight() == 2 * 30 + 100 && !small.scenesHeading.isVisible(), "a short import list is as tall as it needs");
+                    for(const auto* name : {"import-many", "import-many-scrolled"})
+                    {
+                        if(argc < 5) break;
+                        juce::Image image(juce::Image::ARGB, choose.getWidth(), choose.getHeight(), true);
+                        juce::Graphics g(image); g.fillAll(standalone::ink(standalone::Ink::Background)); // the dialog's background
+                        choose.paintEntireComponent(g, true);
+                        const juce::File out{juce::String(argv[4]) + "-" + name + ".png"};
+                        out.deleteFile(); juce::FileOutputStream stream(out); juce::PNGImageFormat().writeImageToStream(image, stream);
+                        choose.view.setViewPosition(0, choose.scenesHeading.getY() - 120); // the last parts and the Scenes heading
+                    }
+                }
                 // The keys in Settings: names and fingerprints, never a private key.
                 standalone::Settings settings(engine);
                 standalone::setDesktopMode(settings, 1); settings.setSize(640, 560);

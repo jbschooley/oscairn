@@ -55,6 +55,21 @@ namespace oscairn::standalone
     };
     /// Who signed an archive (RFC 0006), as the install dialog says it.
     juce::String describeSigner(const Control::Signer& signer);
+    /// Another Performance's parts and scenes to import (RFC 0021), all ticked, under headings.
+    /// The dialog is no taller than `maxHeight`; past that the list scrolls, the buttons in view.
+    class ImportChoices : public juce::Component
+    {
+    public:
+        ImportChoices(const Control::PerformanceContents& held, int maxHeight);
+        juce::OwnedArray<juce::ToggleButton> parts, scenes;
+        juce::Label partsHeading{{}, "Parts"}, scenesHeading{{}, "Scenes"};
+        juce::Viewport view; // holds list, the headings and the toggles
+        juce::Component list;
+        juce::TextButton import{"Import"}, cancel{"Cancel"};
+        std::vector<uint32_t> partIds, sceneIds;
+        static std::vector<uint32_t> ticked(const juce::OwnedArray<juce::ToggleButton>& boxes, const std::vector<uint32_t>& ids);
+        void resized() override;
+    };
 
     /// The Library app (RFC 0021): the saved Performances and Sounds, found by typing, by where
     /// they are from (the user's own or an installed library) and by tags in the column on the
