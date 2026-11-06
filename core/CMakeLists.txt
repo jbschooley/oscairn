@@ -353,11 +353,17 @@ set(worker_tests
     "parallel-render|oscairn-parallel-render-test|$<TARGET_FILE:oscairn_transpose>|$<TARGET_FILE:oscairn_basic_synth>|$<TARGET_FILE:oscairn_delay>"
     "voice-extension|oscairn-voice-extension-test|$<TARGET_FILE:oscairn_basic_synth>|$<TARGET_FILE:oscairn-voice-fixture>"
     "shared-engine|oscairn-shared-engine-test|$<TARGET_FILE:oscairn_basic_synth>")
+# A sanitizer slows rendering several times over: a full 512-frame block of 128 Basic Synth voices
+# in a worker passed 50 ms in a local ThreadSanitizer build.
+set(worker_budget 50000)
+if(CMAKE_CXX_FLAGS MATCHES "-fsanitize")
+    set(worker_budget 500000)
+endif()
 foreach(entry IN LISTS worker_tests)
     string(REPLACE "|" ";" parts "${entry}")
     list(POP_FRONT parts name)
     add_test(NAME ${name}-workers COMMAND ${parts})
     # These check identical results, not timing; they render faster than real time on ordinary
-    # threads, so each worker block may take up to 50 ms before it counts as missed.
-    set_tests_properties(${name}-workers PROPERTIES TIMEOUT 120 ENVIRONMENT "OSCAIRN_PLUGIN_WORKER=$<TARGET_FILE:oscairn-plugin-worker>;OSCAIRN_PLUGIN_SCAN=$<TARGET_FILE:oscairn-plugin-scan>;OSCAIRN_WORKER_BUDGET_US=50000")
+    # threads, so each worker block may take up to worker_budget before it counts as missed.
+    set_tests_properties(${name}-workers PROPERTIES TIMEOUT 120 ENVIRONMENT "OSCAIRN_PLUGIN_WORKER=$<TARGET_FILE:oscairn-plugin-worker>;OSCAIRN_PLUGIN_SCAN=$<TARGET_FILE:oscairn-plugin-scan>;OSCAIRN_WORKER_BUDGET_US=${worker_budget}")
 endforeach()

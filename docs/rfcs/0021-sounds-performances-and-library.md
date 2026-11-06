@@ -764,8 +764,8 @@ built since is in [Formed on their own](#formed-on-their-own):
 - **Per part, under a shared instance:** a part's harmony (RFC 0033) reaches the instance once,
   the last part's (the Basic Synth reads no harmony); notes the budget gave up and its cost per
   note count on the instance, so the Mixer's stolen counts show none for those parts; the parts
-  share the instance's voice pool (the Basic Synth's sixteen), so many notes across them steal
-  sooner than separate instances would. RFC 0025's estimates still count each shared node as an
+  share the instance's voice pool (the Basic Synth's 128; the shared voice budget, RFC 0018,
+  limits notes before the pool does). RFC 0025's estimates still count each shared node as an
   instance of its own (an overestimate), and the instance's figures (deadline misses, a worker's
   memory and CPU) are reported once, on its node with the lowest channel.
 - **A removed shared node's sound** stays prepared in the instance (its channel and bus held

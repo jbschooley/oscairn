@@ -95,7 +95,7 @@ namespace oscairn::contexts
         uint64_t started = 0;
     };
 
-    template<class Derived, class Voice, class Patch, uint32_t ContextCapacity = 8, size_t VoiceCount = 16>
+    template<class Derived, class Voice, class Patch, uint32_t ContextCapacity = 8, size_t VoiceCount = 128>
     struct Engine
     {
         static constexpr uint32_t contextCapacity = ContextCapacity, selectionCapacity = 32;

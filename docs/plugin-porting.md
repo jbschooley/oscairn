@@ -288,7 +288,7 @@ that. The Basic Synth (eight sounds, its Default one of them; eight sound buses 
 output) does all of it; the Sampler has one output, so each Sampler part keeps its own instance,
 as every plugin without native contexts does. Per-part voice budgets follow ([above](#voice-budget)).
 What its users hear differently: the parts sharing an instance share its voice pool (the Basic
-Synth's sixteen), so many notes across them steal sooner than separate instances would; a plugin
+Synth's 128, which the shared voice budget rather than the pool limits in practice); a plugin
 meant to share should have a pool sized for several parts.
 
 ### Presets

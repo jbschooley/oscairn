@@ -341,10 +341,11 @@ except parameters, which the Sampler does not have. A Sampler note outside its r
 key or velocity range starts no voice and reports `NOTE_END` immediately.
 
 The Basic Synth has eight context slots including a protected Default context (ID 0),
-a shared pool of 16 voices, and a 32-entry selection queue. Context capacity is fixed
+a shared pool of 128 voices, and a 32-entry selection queue. Context capacity is fixed
 for an instance. Preparation uses preallocated slots; rendering and selection allocate
-nothing and never wait for the control thread. At 16 active voices, the existing oldest
-voice stealing policy applies across the instrument. Context preparation itself never
+nothing and never wait for the control thread. With all 128 voices active, the
+voice stealing policy applies across the instrument; the shared voice budget (RFC 0018)
+usually steals well before that. Context preparation itself never
 steals a voice.
 
 A voice keeps its owning context, key, channel and CLAP note ID through a sound change.
