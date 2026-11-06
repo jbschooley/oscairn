@@ -1230,7 +1230,8 @@ does not brush). It is shown by default. The rule for hiding it is RFC 0030's fo
 buttons: the bar leaves out what a button provides. While a button or footswitch of the device
 or a connected controller plays Panic (its profile's default or the Performance's override,
 `panicOnHardware`), the bar leaves Panic out; unplug the controller or remove the override and it
-is back. There is no separate setting.
+is back. There is no separate setting. A device screen's top bar (RFC 0030's `TopBar`) leaves
+out its held All notes off by the same rule, and also where the panel layout binds `panic`.
 
 `control-physical-controls` checks a group playing Panic by default, a switch overridden to it,
 a knob refused, every press of a momentary switch and each message of a latching button, the
@@ -1238,7 +1239,7 @@ override round-tripping with the Performance, and `panicOnHardware`. `control-pa
 switch assigned Panic over the engine's MIDI path ending a held note, and a profile-default
 Panic button ending a stuck voice ringing out after a change, on each press. `desktop-shell`
 checks the bar's Panic: shown, focusable, calling the engine's panic, and hidden while a
-controller's button plays Panic.
+controller's button plays Panic; and a device screen's All notes off hidden the same way.
 
 Not yet: name matching beyond exact names (per-oscillator levels, other spellings); the
 Sampler's roles; no panel layout binds faders, buttons or a row-switching group, so

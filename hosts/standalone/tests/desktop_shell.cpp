@@ -172,6 +172,21 @@ int main(int argc, char** argv)
                     check(shown == 2 + 3 + 1, "three actions and the menu for the fourth: " + std::to_string(shown));
                     snapshot(bar, "top-bar");
                 }
+                // All notes off: left out while a controller's button plays Panic (RFC 0030), and
+                // back once none does.
+                {
+                    standalone::TopBar::Shell shell; shell.notesOff = [] {};
+                    standalone::TopBar bar(engine, "Library", shell);
+                    standalone::setDesktopMode(bar, 2); bar.setSize(1024, 48);
+                    bar.setVisible(true); bar.addToDesktop(juce::ComponentPeer::windowIsTemporary); // showing: the bar asks nothing while hidden
+                    auto notesOff = [&] { for(auto* c : bar.getChildren()) if(c->getTitle() == "All notes off") return c->isVisible(); return false; };
+                    check(notesOff(), "All notes off is in the bar");
+                    ControlGroup pad; pad.kind = "buttons"; pad.count = 1; pad.panic = true;
+                    engine.setControllers({pad}, {});
+                    check(wait([&] { return !notesOff(); }), "a controller's button playing Panic: the bar leaves All notes off out");
+                    engine.setControllers({}, {});
+                    check(wait(notesOff), "and shows it again once none does");
+                }
                 // The running apps, each a card with its Close.
                 {
                     standalone::AppSwitcher switcher(engine, {{"Performance", "piano"}, {"Library", "library-big"}}, [](int) {}, [](int) {}, {});

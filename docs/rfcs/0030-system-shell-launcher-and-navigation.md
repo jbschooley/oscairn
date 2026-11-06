@@ -17,7 +17,9 @@ Checked when built and tested; the sections below say how.
       button to `home` or `back`, where the musician is, the open Performance and its scene (a
       tap: Save, Save As New), Record and Capture beside the tempo ([RFC 0020](0020-recording.md#step-4-status)),
       the tempo and the engine's load, and All notes off (held half a
-      second; `notes.panic`) unless a button is bound to `panic`. Apps on a panel keep running
+      second; `notes.panic`) unless a button is bound to `panic` or a button of the device or a
+      connected controller plays Panic ([RFC 0011](0011-performance-ui-and-editors.md#physical-controls),
+      `panicOnHardware`). Apps on a panel keep running
       with their state; the switcher brings one forward or closes it. Back goes Home for now.
       Not yet: apps putting their own actions in the bar, the clock, MIDI activity, quick
       settings, banners)

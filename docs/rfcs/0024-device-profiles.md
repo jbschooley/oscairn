@@ -173,8 +173,8 @@ assigns one something else; a Performance may also assign Panic to a switch or f
 button the real panel has for it. The MODX M profiles give none (decided 2026-11-05): their
 panels list no such button, and ASSIGN 1 and 2 are the musician's switches, so a MODX player
 who wants one assigns Panic to a switch or to the assignable footswitch. While any button plays
-Panic, the desktop's top bar leaves its own Panic out (RFC 0011's desktop rule, RFC 0030's for
-the shell's buttons).
+Panic, the desktop's top bar leaves its own Panic out and a device screen's top bar its All
+notes off (RFC 0011's desktop rule, RFC 0030's for the shell's buttons).
 
 `target` is only on assign groups and only with a value its kind allows. `functions` on an
 assign group names standard controllers only; a `fixed` group keeps free names (`volume`,

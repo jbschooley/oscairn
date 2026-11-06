@@ -30,7 +30,6 @@ namespace oscairn::standalone
         notesOff_.getProperties().set("danger", true);
         notesOff_.onHeld = shell_.notesOff;
         addChildComponent(notesOff_);
-        notesOff_.setVisible(shell_.notesOff != nullptr);
         if(shell_.record) { record_ = std::make_unique<RecordButtons>(engine_); addAndMakeVisible(*record_); }
         timerCallback();
         startTimerHz(4);
@@ -63,6 +62,8 @@ namespace oscairn::standalone
         const auto status = engine_.status();
         status_ = juce::String(status.tempo, 1) + " BPM   " + juce::String(juce::roundToInt(status.load * 100)) + "%";
         load_ = status.load >= .9 ? ink(Ink::Danger) : status.load >= .75 ? meterYellow : ink(Ink::Muted);
+        // A hardware button playing Panic (the device's or a controller's profile, or the Performance) replaces it (RFC 0030).
+        notesOff_.setVisible(shell_.notesOff != nullptr && !panicOnHardware(engine_.controlGroups(), engine_.assignments()));
         resized();
         repaint();
     }
