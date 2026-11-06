@@ -594,6 +594,7 @@ namespace oscairn::standalone
                 juce::DialogWindow::LaunchOptions options;
                 options.dialogTitle="Import from "+juce::String::fromUTF8(item->name.c_str());
                 options.content.setOwned(content);options.componentToCentreAround=safe.getComponent();options.useNativeTitleBar=true;options.resizable=false;
+                options.dialogBackgroundColour=ink(Ink::Background); // JUCE's default is light grey, under the theme's text
                 auto* dialog=options.launchAsync();
                 content->cancel.onClick=[dialog]{dialog->exitModalState(0);};
                 content->import.onClick=[safe,dialog,content,path=item->path]{
