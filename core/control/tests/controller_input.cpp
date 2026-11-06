@@ -192,6 +192,49 @@ namespace
         check(near(s.parameter(a, 7), 50 / 127.0) && near(render(s), 50 / 127.0 + wheel), "and the model's");
     }
 
+    // A control morphing between two scenes, played by a controller: the parts' levels, a pan and
+    // a plugin's parameter at the blend heard at the next block with the control thread not run,
+    // and no plan compiled; then the model's, the same.
+    void morphs(const char* fixture)
+    {
+        Session s(48000, frames);
+        const auto a = s.add("a", fixture, "org.kick.test.synth"), b = s.add("b", fixture, "org.kick.test.synth");
+        s.setParameter(a, 7, .5); s.setParameter(b, 7, .25);
+        const auto pa = s.addPart("A"), pb = s.addPart("B");
+        s.insertIntoPart(pa, 0, a); s.insertIntoPart(pb, 0, b); s.commit();
+        s.setPartLevel(pa, .2, false); s.commit(); const auto one = s.addScene("One");
+        s.setPartLevel(pa, .8, false); s.setPartPan(pa, .5); s.setPartLevel(pb, .5, false); s.setParameter(b, 7, .75); s.commit(); s.service();
+        const auto two = s.addScene("Two");
+        const auto control = s.addMacro("Morph");
+        MacroTarget t; t.kind = MacroTarget::Kind::Morph; t.sceneFrom = one; t.sceneTo = two;
+        s.setMacroTargets(control, {t});
+        s.assign("wheel:1", {Assignment::Kind::Control, 0, 0, control});
+        auto mod = group(Role::Assign, "wheels", 1, {1}); mod.functions = {"modulation"};
+        s.setControllers({mod}, {{"SMK-37 Elite -Master", "smk", 1}});
+        Control::SessionStatus status; status.midiInputs = {{MidiEndpoint::Kind::Usb, smk, "SMK-37 Elite -Master"}};
+        s.setHostStatus(status);
+        s.selectScene(one); s.service();
+        s.note(true, 60, 1); render(s); render(s);
+        check(near(render(s), .5 * .2 + .25), "scene One: A at .2, B at 1");
+        const auto plans = s.plansCompiled();
+
+        // The wheel picked up at 0, then halfway: A's level and pan, B's level and gain, blended.
+        cc(s, 1, 0); cc(s, 1, 64);
+        const double x = 64 / 127.0, level = .2 + .6 * x, pan = .5 * x, other = 1 - .5 * x, gain = .25 + .5 * x;
+        const double heard = .5 * level * (1 - pan) + other * gain;
+        check(near(render(s), heard), "the morph heard within one block, the control thread not run: " + std::to_string(render(s)) + ", not " + std::to_string(heard));
+        check(s.parts()[0].level == .2, "with no control thread on the way: the model has not seen it yet");
+        s.service();
+        check(near(s.parts()[0].level, level) && near(s.parts()[0].pan, pan) && near(s.parts()[1].level, other) && near(s.parameter(b, 7), gain), "then the control thread brings the model up to date");
+        check(near(render(s), heard) && near(render(s), heard), "and what it sends is the same");
+        // All the way: scene Two as it is.
+        cc(s, 1, 127);
+        check(near(render(s), .5 * .8 * .5 + .5 * .75), "the morph's end heard within one block: " + std::to_string(render(s)));
+        s.service();
+        check(near(render(s), .5 * .8 * .5 + .5 * .75), "and the model's");
+        check(s.plansCompiled() == plans, "no plan compiled for any of it: " + std::to_string(s.plansCompiled() - plans));
+    }
+
     // Identical controllers (RFC 0024): two inputs with one name are both the controller's port and
     // both play; set to another channel, the second is a profile of its own, with controls of its
     // own (numbered on) and so assignments of its own.
@@ -541,7 +584,7 @@ namespace
 int main(int argc, char** argv)
 {
     if(argc < 2) { std::fprintf(stderr, "usage: %s FIXTURE\n", argv[0]); return 2; }
-    try { mapping(argv[1]); parameters(argv[1]); identical(argv[1]); for(int run = 1; run <= 3 && !latency(argv[1], run == 3); ++run) {} panLatency(argv[1]); }
+    try { mapping(argv[1]); parameters(argv[1]); morphs(argv[1]); identical(argv[1]); for(int run = 1; run <= 3 && !latency(argv[1], run == 3); ++run) {} panLatency(argv[1]); }
     catch(const std::exception& e) { forbidAllocation = false; std::fprintf(stderr, "FAIL: %s\n", e.what()); return 1; }
     if(!failures) std::puts("ok: a controller's MIDI into the engine moves its controls' targets within one block");
     return failures ? 1 : 0;

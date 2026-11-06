@@ -3,6 +3,7 @@
 
 #include "oscairn/physical_controls.h"
 
+#include <array>
 #include <cstdint>
 #include <functional>
 #include <map>
@@ -22,9 +23,11 @@ namespace oscairn
     // and the control thread take, never the audio thread. A part's level or mute it plays (on its
     // own or as a control's target) goes straight to the part's live gain (Graph::setLiveGain),
     // which the audio thread reads at its next block, and a plugin's parameter to the graph's
-    // queue for its next block (Graph::queueParameter); everything it plays is also queued for
-    // the control thread, which applies it to the Session's model (and selects scenes, morphs
-    // and moves faders that are not live), woken at once.
+    // queue for its next block (Graph::queueParameter). A control that morphs between scenes
+    // blends the two, kept in the snapshot, into the same live gains and queue. Everything it
+    // plays is also queued for the control thread, which applies it to the Session's model (and
+    // selects scenes, switches what a morph switches halfway and moves faders that are not
+    // live), woken at once.
     class ControllerInput
     {
     public:
@@ -56,6 +59,12 @@ namespace oscairn
         void play(const ControllerMapping::Action& action);
         void setFader(uint32_t part, std::optional<double> level, std::optional<bool> mute);
         void send(const Key& parameter);
+        void queue(const Key& parameter, double plain);
+        void setPlain(const Key& parameter, double plain); // a scene's value: queued if it is not the value now
+        void write(uint8_t slot, double gain);
+        void drive(uint32_t control, double value);
+        void morph(uint32_t from, uint32_t to, double t);
+        void blend(const Scene& from, const Scene& to, double t, uint32_t scope);
         // Control thread.
         void apply(const Played& played);
         void refresh(bool rebuild);
@@ -77,9 +86,16 @@ namespace oscairn
         std::map<std::tuple<int, NodeId, uint32_t, uint32_t>, double> written_; // as Session::written_
         uint32_t mappingScene_ = 0, scene_ = 0;
         std::map<uint32_t, uint8_t> slots_;     // each live part's gain slot
+        std::map<uint32_t, std::array<uint8_t, 2>> pans_;           // each live pan's slots
+        std::map<std::pair<uint32_t, uint32_t>, uint8_t> sends_;    // each live send's, by part and bus
+        bool master_ = false, stereo_ = false;                      // whether the master is live, and its pan a balance
+        std::vector<Scene> scenes_;             // for morphs
+        bool blending_ = false;                 // a control a blend drives does not morph meanwhile (Session::applyingScene_)
         struct Range { double minimum = 0, maximum = 0; bool stepped = false; };
         std::map<Key, Range> ranges_;           // each writable parameter's, for its plain value
         std::vector<Played> played_;            // for the control thread, in order
+        std::map<Key, double> sent_;            // each parameter's plain value queued since the control thread took the moves
+        std::map<uint8_t, float> gains_;        // each live gain written since then
         uint64_t moves_ = 0;                    // counted, so the control thread knows whether more came
         std::string touched_;
         uint64_t touches_ = 0;
