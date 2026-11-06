@@ -397,7 +397,11 @@ opportunistic data, least likely needed first:
 1. **The sample file cache.** Kept in the kernel's page cache (files read, not copied into the
    heap), so the kernel reclaims it by itself and nothing has to ask.
 2. **Recently used Performances and Sounds** kept loaded, least recently used first. This is the
-   roadmap's "keeping plugins loaded".
+   roadmap's "keeping plugins loaded". Proposed 2026-11-05 as plugin instances kept warm once
+   the outgoing Performance has rung out, out of the graph, for the next change to take over
+   ([RFC 0021](0021-sounds-performances-and-library.md#free-instances-across-a-change-and-instances-kept-warm)):
+   counted as opportunistic, let go least recently used first when a load or a launch needs the
+   room, and first of all on memory pressure. A change that cuts for want of room keeps none.
 3. **Setlist entries prepared beyond the next one**, furthest ahead first.
 4. **A next entry prepared only as opportunistic** (it will cut anyway).
 5. Only under pressure, when the estimates were wrong: **the committed next entry.** The Setlist

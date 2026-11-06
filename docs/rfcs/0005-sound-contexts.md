@@ -23,6 +23,8 @@ Checked when built and tested; the sections below say how.
 - [ ] Automatic effect-chain transitions (with [RFC 0007](0007-effect-contexts.md))
 - [ ] Sounds prepared in a playing instance across a Performance change, and parts sharing one
       instance ([RFC 0021, slices 2 and 3](0021-sounds-performances-and-library.md#fewer-instances-reusing-what-is-loaded))
+      (a free instance of a native engine is taken over whole, its snapshot loaded:
+      [RFC 0021](0021-sounds-performances-and-library.md#free-instances-across-a-change-and-instances-kept-warm))
 
 ## Contract
 

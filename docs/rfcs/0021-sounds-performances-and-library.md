@@ -61,6 +61,9 @@ Checked when built and tested; the sections below say how.
 - [x] Engine support for seamless changes: draining note connections, retiring nodes, plugin
       sleep ([status](#seamless-switching)); loading a Sound cuts, by decision
 - [x] Seamless Performance changes: the outgoing Performance rings out beside the new one ([status](#seamless-switching))
+- [ ] Pooled instruments restore a snapshot in the instances they have ([design](#free-instances-across-a-change-and-instances-kept-warm))
+- [ ] Free instances taken over across a change ([design](#free-instances-across-a-change-and-instances-kept-warm))
+- [ ] Instances kept warm once rung out, bounded and evicted under pressure ([design](#free-instances-across-a-change-and-instances-kept-warm))
 - [x] Audition of a Sound in a part and of a Performance in place of the open one, put back as
       it was or kept, from the Library app ([status](#audition))
 - [ ] 5. Seamless loading into a part (part transitions on RFC 0007's chain preparation)
@@ -675,6 +678,88 @@ output identical to a fresh load once the old ones have gone, and an engine with
 contexts spilling the group to a new instance. The saving is the engine instance: for the Delay
 little memory in the engine's process (RFC 0007 measured 24 bytes between two contexts and two
 engines), more when plugins run in workers, where each instance is a process.
+
+#### Free instances across a change, and instances kept warm
+
+Proposed 2026-11-05. Measured first: opening "Where Is My Mind Pno" (20 nodes: 4 sfizz, 4
+arpeggiators, 12 EQs) in workers loads 24 instances, one worker process each, and every later
+change loads all-new instances again even when the next Performance uses the same plugins; only
+the EQs went into the playing engines (slice 1). Each pooled instrument (sfizz here) loaded
+twice: the pool restoring its snapshot loaded a second instance for its first sound and
+discarded the one it was made with. Per sfizz node about 23 ms start a worker and load the
+plugin, 23 ms again for the second instance, then 35 to 460 ms for its state, its samples.
+
+A fourth slice, for every plugin, with or without contexts: **a node of the next Performance
+takes over a loaded instance that is free, loading its state into it, instead of loading a new
+one.** Free instances come from two places, taken in this order:
+
+1. **Instances kept warm.** Once an instance of an outgoing Performance has rung out it is
+   kept loaded, out of the graph, so it costs no CPU, instead of being destroyed. An
+   instance whose state is already the node's, byte for byte, goes first (switching back),
+   then the least recently used.
+2. **The playing Performance's free instances**, and those of the one before still ringing out,
+   when a Performance is loaded at the cue. Not while one is prepared ahead: it is read while the
+   outgoing one plays, so its instances are not free then; a prepared Performance takes only
+   instances kept warm.
+
+**The matching rule.** A node may take over an instance when all of these hold:
+
+- The node is its own engine's only node (its saved `engine` is itself and no other node names
+  it); groups of nodes sharing an engine go by slice 1.
+- The instance is a plugin instance of its own: not an effect context, no contexts made from it,
+  not a stand-in, not failed.
+- The same plugin: format, ID and version, at the path the node would load (its saved path when
+  that exists, else the store's build of that version), **and the same build**: the bundle's
+  digest now is the digest it had when the instance was loaded. A plugin rebuilt since is never
+  reused.
+- The same placement: in a worker when the placement policy puts that plugin in a worker now,
+  in the engine when it does not.
+- The same ports: after its state loads, its audio and note ports must be the node's saved ones,
+  the check a fresh load gets. One that differs is let go and the node loads a fresh instance.
+- Free. An instance kept warm is. A playing one is free when no note sounds through it and it is
+  asleep or has been silent (below -100 dB) for three seconds, the ring-out rule without its
+  30-second limit, so nothing still sounding is cut; and when every node sending it audio or notes
+  is free too, so a held note's chain stays whole: a synth holding a note keeps its effects.
+
+**How it is taken over.** An instance kept warm gets the node's state when the Performance is
+read; nothing plays it. A playing instance is claimed when the Performance is read and added to
+the replacement graph under a new node ID; its state is loaded last, after everything else in the
+document has been read and checked, so a document that fails leaves it as it was. At the cue it
+leaves the outgoing graph instead of being carried over: nothing rings out on it, since nothing
+did. If its state does not load, the node loads a fresh instance instead. A note played on that
+part between the check and the cue reaches the instance as before and is released at the cue (the
+graph releases the notes of routes that go); a note played during the load on a part whose
+instance is taken over does not ring out. A failure in the last step itself (a plugin refusing the
+state even in a fresh instance) fails the load with the outgoing Performance playing on, but the
+instances that already took the new state keep it; they were silent, so nothing sounding changes,
+but their next notes play the new state. Saving each instance's state before taking it over would
+avoid that at the cost of a state save per instance; not done, for the owner to decide.
+
+**Never a different sound.** A fresh instance is activated, deactivated, given the state and
+activated again. A reused one is deactivated, given the state and activated, as every state load
+does. One whose state already equals the node's is not given it again but reset (CLAP `reset`:
+buffers, voices, envelopes, modulation), so switching back costs no state load and no sample
+load. Plugins must make these sound alike; [the porting guide](../plugin-porting.md) says so. A
+render comparison, the same notes into a Session that switched and one that opened the same
+Performance fresh, checks every sample (`control-performance-switch`, in the engine and in
+workers).
+
+**Pools and contexts.** A pooled instrument is taken over whole: restoring a snapshot into a pool
+keeps its plugins, slot by slot, and loads only the slots it lacks, so a fresh pool no longer loads
+a second instance for its first sound. A native-context engine that is free gets the node's
+snapshot like any other plugin (its exclusive snapshot replaces its sounds), which is as fast as
+preparing them beside; slice 2, preparing the next sounds in an instance still sounding, still
+needs its contract call and is not built.
+
+**Kept warm, and bounded.** An instance that has rung out is kept only when it could be taken
+over (the rule above, without the ports); at most 32, the least recently used let go first. With
+memory classes they are opportunistic data ([RFC 0025](0025-resource-budgets.md#the-order-of-eviction),
+order 2): let go when admission needs the room, on memory pressure before anything else, and
+counted in what the device holds. A change that opens as a cut keeps none, since it cut for want of
+room. Admission still counts the next Performance's plugins at full cost, as before.
+
+`Session::reusedInstances()` counts nodes opened in an instance already loaded (slice 1's contexts
+included) and `pluginInstancesLoaded()` the instances loaded, for the bench.
 
 **Load preset** on a node is seamless where `sounds.prepare` accepts it (native contexts and
 pooled instruments) and an interrupting state load otherwise, as today.

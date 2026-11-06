@@ -431,6 +431,58 @@ Parts view shows "Crashing is silent: …". On macOS the desktop suite passes, 9
 verified: `oscairn-engine` itself finding the worker at start (the tests host the session
 in-process; running the engine opens an audio device).
 
+## One worker per part: the trade-off (decision needed)
+
+Asked 2026-11-05: run a part's instrument and its effects in one worker instead of one each. Not
+built; this is the case for deciding.
+
+**What it would save.** Measured on the M3 Max with "Where Is My Mind Pno" (5 parts, 20 nodes,
+20 workers): a worker holding an EQ or an arpeggiator has a footprint of 3.7 to 4.9 MiB, nearly
+all of it the process itself; the sfizz workers hold 41 to 49 MiB, mostly samples. One worker per
+part would save about 15 processes and 60 MiB for this Performance, twice that while the outgoing
+one rings out beside the next, and 15 process starts (3 to 5 ms each for these plugins) when it
+loads cold. On a device with 1 to 2 GiB that is real. It would **not** by itself save hand-off
+time: the graph hands every node to its worker separately, one wake and one completion per node
+per block (step 1: about 20 µs each in a chain), even for effect contexts that already share a
+worker. Running a part's chain in one hand-off needs the worker to run the chain itself, a larger
+change to the graph pass.
+
+**What it would cost**, against this RFC's guarantees:
+
+- **Failure scope.** The outcome above: a plugin that crashes never stops other sounds. With a
+  worker per part, any plugin's crash silences the whole part and restarts every plugin in it: an
+  EQ crashing reloads the piano's samples, hundreds of milliseconds more of silence on a part
+  whose instrument did nothing wrong. Plugins of different vendors would share a process, so one
+  plugin's memory corruption can damage another's state before anything notices. A part is one
+  sound, so the guarantee could be restated per part; that is a change to the guarantee, not
+  something the design already permits for third-party plugins ("one plugin per worker: the
+  default for third-party plugins").
+- **Memory limits.** `fitLimit` holds a worker to its plugins' declarations plus half again only
+  when every plugin in it declares (`oscairn.memory`); one plugin that does not leaves the whole
+  part at the flat 4 GiB. A plugin over the limit kills the whole part.
+- **Measurement.** A node's memory is its share of its worker's footprint. With several plugins in
+  one worker the split is a guess, so the per-plugin measurements RFC 0025's estimates learn from
+  would mix plugins and mislead later loads of the same plugins grouped differently.
+- **Recovery.** A worker is built around one root plugin and the contexts made from it; a restart
+  loads that plugin and replays its contexts. Several roots need the start, the restart and the
+  recovery record to carry each of them. Effect contexts sharing one worker work today because they
+  are one engine.
+
+**Options:**
+
+1. One plugin per worker, as now, with reuse and instances kept warm
+   ([RFC 0021](0021-sounds-performances-and-library.md#free-instances-across-a-change-and-instances-kept-warm))
+   taking the process starts out of most changes.
+2. A worker per part for first-party plugins (and signed ones) that declare their memory, as a
+   placement policy; third-party plugins stay one per worker. Keeps the memory limit tight and the
+   vendors apart; saves most of the processes in Performances made of Oscairn's own engines,
+   which the converted libraries are.
+3. A worker per part for every plugin, restating the failure guarantee per part.
+
+**Recommendation:** 1 now; measure a worker's base footprint on the KICK-class target, then
+decide on 2. Owner's decision: whether the failure guarantee may become per part, and for which
+plugins.
+
 ## Open questions
 
 - Default grouping on the device, which depends on step 1's measurements and memory per worker.
