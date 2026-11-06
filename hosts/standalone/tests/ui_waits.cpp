@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
-// The desktop's message thread and the engine's socket: a mute, a fader drag, a plugin knob drag and the views'
-// polls never wait on it, and opening a Performance costs the app little once the engine has
-// loaded it. Against a session of 20 plugins served as the engine serves it (requests answered
+// The desktop's message thread and the engine's socket: a mute, a fader drag, a plugin knob
+// drag, a pan, a solo, a scene selected and the views' polls never wait on it, and opening a
+// Performance costs the app little once the engine has loaded it. Against a session of 20 plugins served as the engine serves it (requests answered
 // as they arrive, the session serviced every 5 ms), without an audio device; it prints what it
 // measured.
 //   oscairn_ui_waits_test PLUGIN_DIR SCANNER
@@ -46,6 +46,7 @@ int main(int argc, char** argv)
                 standalone::insertPlugin(s, part, 0, plugin("Basic Synth"));
                 standalone::insertPlugin(s, part, 1, plugin("Delay"));
             }
+            s.addScene("one"); s.addScene("two");
             auto info = s.performanceInfo(); info.name = name; s.setPerformanceInfo(info);
             s.savePerformance((folder / name).string());
         };
@@ -137,6 +138,25 @@ int main(int argc, char** argv)
                 check(std::abs(engine.param(name, knob) - last) < 1e-9 && std::abs(direct.parameter(node.id, knob) - last) < 1e-9, "and ends where it was left");
                 check(engine.paramText(name, knob, last) == standalone::tidyNumber(direct.parameterText(node.id, knob, last)), "with the engine's text for its value");
             }
+            // Pan, solo and a scene: shown at once, the engine's push confirming them.
+            auto part = [&] { for(const auto& p : engine.graph().parts) if(p.id == lead) return p; return Part{}; };
+            auto measure = [&](const char* what, auto change, auto shown) {
+                free(); run(100);
+                const auto began = waits();
+                engine.edit(change);
+                const bool atOnce = shown();
+                run(300);
+                const auto spent = since(began);
+                std::printf("%s: %llu waits, %lld us waiting\n", what, (unsigned long long)spent.count, spent.micros);
+                check(spent.count == 0 && atOnce, std::string(what) + " shows at once and never waits on the socket: " + std::to_string(spent.count) + " waits");
+                check(shown(), std::string(what) + " stays after the engine answers");
+            };
+            measure("pan", [=](Control& c) { c.setPartPan(lead, -.5); c.commit(); }, [&] { return part().pan == -.5; });
+            measure("solo", [=](Control& c) { c.setPartSolo(lead, true); c.commit(); }, [&] { return part().solo; });
+            engine.edit([=](Control& c) { c.setPartSolo(lead, false); c.commit(); }); run(300);
+            const auto scene = engine.graph().scenes.back().id;
+            measure("scene select", [=](Control& c) { c.selectScene(scene); }, [&] { return engine.graph().scene == scene; });
+
             // A structural edit (a rename) reads the graph back before it returns: it waits, for
             // as long as the engine takes to answer each of its requests.
             free(); run(100);

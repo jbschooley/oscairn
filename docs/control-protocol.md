@@ -588,6 +588,11 @@ Performance, the audition, a plugin window's availability, the pad map, a parame
 a value, one out per parameter) send a read without waiting,
 unless the same read is already out, and `service()` hands the reply to a callback;
 `forgetFetches()` drops those out, so a read asked afterwards reflects what came before it.
+A part's pan and solo and a scene selected (`setPartPan`, `setPartSolo`, `selectScene`) are
+live edits as a part's level is: shown in the cache at once, sent without waiting, kept over the
+cache until answered, a refusal said through `takeError()` with the graph read again; the
+engine's `graph.changed` (or `controls.changed`) confirms them. A `selectScene` is committed by
+the engine, so it does not make the next `commit()` one sent without waiting.
 `setParameter` is sent without waiting too: it checks the address and that the parameter is
 writable at once (throwing as the engine would), shows the value in the cache clamped and, if
 stepped, truncated, and returns true; the newest value sent for a parameter stays over the

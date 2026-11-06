@@ -8,9 +8,10 @@ namespace oscairn
     /// Cached Control client. Construct after connecting LocalClient; service regularly
     /// on the same UI/control thread. Reads use snapshots except plugin text formatting.
     /// Mutations use bounded RPC calls and never retry implicitly after a disconnect. Live
-    /// edits (setPartLevel, setMaster, setParameter, and a commit after only those) are sent
-    /// without waiting: the cache shows them at once and the engine's pushes confirm them; the
-    /// rest read back. setParameter so returns true; a refusal comes through takeError().
+    /// edits (setPartLevel, setPartPan, setPartSolo, setMaster, selectScene, setParameter, and a
+    /// commit after only those) are sent without waiting: the cache shows them at once and the
+    /// engine's pushes confirm them; the rest read back. setParameter so returns true; a
+    /// refusal comes through takeError().
     class RemoteControl final : public Control
     {
     public:

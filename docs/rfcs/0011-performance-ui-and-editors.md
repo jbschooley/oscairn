@@ -557,6 +557,14 @@ waiting (`RemoteControl::fetchParameterText`, one out per parameter, the latest 
 showing the parameter's last text until it comes and broadcasting a change then. `ui-waits`
 measures the drag at 0 waits, ending at the value left and the engine's text for it.
 
+A pan, a solo and a scene selected each waited for their edit's reply and a read of the graph
+and the 20 plugins' parameters back (48, 48 and 24 waits; 6 to 8, 6 to 7 and about 4 ms on the
+UI thread in `ui-waits`). Now they are live edits too (`RemoteControl::setPartPan`,
+`setPartSolo`, `selectScene`): the cache shows them at once and keeps them until the engine has
+answered, and the engine's `graph.changed` read confirms them. `ui-waits` measures each at 0
+waits, shown on return and still after the engine's answer. Structural edits keep reading the
+graph back before they return, now at the engine's round trip rather than its timer (above).
+
 #### Engine mapping status
 
 Built 2026-11-02 (`oscairn/controller_input.h`; `controllers.set`, `controllers.view`,

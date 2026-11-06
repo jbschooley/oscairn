@@ -596,6 +596,9 @@ void partsClient(const char* plugin,const char* delay)
         remote.setSend(part,room,std::nullopt);remote.setPartOutput(part,0);remote.removePart(room);
         const auto verse=remote.addScene("Verse");remote.setPartLevel(part,.5,true);const auto chorus=remote.addScene("Chorus");
         remote.selectScene(verse);
+        check(remote.graphState().scene==verse,"a scene selected shows at once, sent without waiting");
+        // The engine's graph.changed is read without waiting: the fader the verse restores shows once it is in.
+        for(int i=0;i<500 && !(remote.graphState().parts[0].level==1 && !remote.graphState().parts[0].mute);++i){remote.service();std::this_thread::sleep_for(std::chrono::milliseconds(1));}
         check(remote.graphState().scene==verse && remote.graphState().scenes.size()==2 && remote.graphState().parts[0].level==1 && !remote.graphState().parts[0].mute,"scenes over the socket: the verse restores the part's fader");
         remote.removeScene(chorus);remote.removeScene(verse);
         const auto knob=remote.addMacro("Super");MacroTarget level;level.kind=MacroTarget::Kind::PartLevel;level.part=part;level.start=1;level.end=0;level.curve=MacroTarget::Curve::SCurve;
