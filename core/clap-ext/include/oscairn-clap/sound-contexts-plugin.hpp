@@ -25,8 +25,10 @@
 // which reads the preset its preset discovery listed (preset-discovery-plugin.hpp) into a patch
 // that starts as Patch{}, and sets the table's prepare_preset to Engine::preparePreset.
 // To prepare a snapshot's sounds beside the playing ones (oscairn.sound-snapshots), it builds an
-// oscairn_plugin_sound_snapshots_t table {Engine::prepareSnapshot}; readPatch then also runs on the
-// main thread while rendering, into a patch not yet published.
+// oscairn_plugin_sound_snapshots_t table {Engine::prepareSnapshot, Engine::setRingOut}; readPatch then
+// also runs on the main thread while rendering, into a patch not yet published. With setRingOut,
+// render adds the main output of each context retiring(slot) says into ringOut[0..1] (when set)
+// instead of its main port, so the host can ring it out through the outgoing Performance's chain.
 // It may provide buildPreset(Context&, std::string& error), called with a preset's or a snapshot's
 // patch in place before the context is published (to build per-sound state; false refuses it),
 // snapshotLoading(bool), called around reading a snapshot's patches, and
@@ -89,6 +91,7 @@ namespace oscairn::contexts
 
         clap_plugin_t plugin{};
         const clap_output_events_t* output = nullptr;
+        float* const* ringOut = nullptr; // audio thread: the ring-out buffer's two channels for this process(), or null
         uint32_t eventTime = 0;
         std::array<Voice, VoiceCount> voices{};
         uint64_t notesStarted = 0;
@@ -276,7 +279,7 @@ namespace oscairn::contexts
             if(process->audio_outputs_count < 1 || process->audio_outputs[0].channel_count < 2)
                 return CLAP_PROCESS_ERROR;
             s.output = process->out_events; s.eventTime = 0;
-            struct ClearOutput { Engine& s; ~ClearOutput() { s.output = nullptr; } } clearOutput{s};
+            struct ClearOutput { Engine& s; ~ClearOutput() { s.output = nullptr; s.ringOut = nullptr; } } clearOutput{s}; // ring_out gives one process() its buffer
             s.applySelections(process->out_events);
             const uint32_t frames = process->frames_count;
             const uint32_t count = process->in_events->size(process->in_events);
@@ -303,6 +306,15 @@ namespace oscairn::contexts
             s.renderSegment(process, done, frames);
             return CLAP_PROCESS_CONTINUE;
         }
+
+        // oscairn.sound-snapshots draft 2: the ring-out buffer for the next process(), or none.
+        static void setRingOut(const clap_plugin_t* p, const clap_audio_buffer_t* buffer)
+        {
+            self(p).ringOut = buffer && buffer->channel_count >= 2 && buffer->data32 && buffer->data32[0] && buffer->data32[1] ? buffer->data32 : nullptr;
+        }
+        // Audio thread, while rendering: the context renders into ringOut (selected by no channel; only
+        // contexts with voices are rendered at all). False without a ring-out buffer.
+        bool retiring(uint32_t slot) const { return ringOut && !contexts[slot].selected.load(std::memory_order_relaxed); }
 
         // Main thread: a free non-default slot, or null. publish() assigns its ID.
         Context* freeSlot()

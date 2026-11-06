@@ -64,10 +64,18 @@ typedef struct oscairn_plugin_sound_contexts {
  * it, then prepares every sound in it (its Default too) as a new context with a fresh ID; all or
  * nothing, never stealing. selected[16] receives the new ID each MIDI channel selects in the
  * snapshot; nothing is selected. On false nothing was added, and the plugin may write a
- * NUL-terminated diagnostic into message. */
-static const char OSCAIRN_EXT_SOUND_SNAPSHOTS[] = "oscairn.sound-snapshots/draft-1";
+ * NUL-terminated diagnostic into message.
+ * ring_out (draft 2, optional; RFC 0005, "Ringing out through the outgoing chain"): called on the
+ * audio thread immediately before every process() call, with a zeroed stereo buffer (two data32
+ * channels) of that call's frames_count, or null for none. Valid only until that process()
+ * returns; a process() not preceded by a call has none. During that process() the plugin adds the
+ * main-port output of every retiring context (selected by no MIDI channel, with voices or a tail
+ * left) into the buffer instead of its main output port. It is not an audio port: the plugin
+ * only stores the pointer, without allocating, locking or blocking. */
+static const char OSCAIRN_EXT_SOUND_SNAPSHOTS[] = "oscairn.sound-snapshots/draft-2";
 typedef struct oscairn_plugin_sound_snapshots {
     bool (CLAP_ABI *prepare)(const clap_plugin_t*,const clap_istream_t* snapshot,uint32_t* selected,char* message,uint32_t message_capacity);
+    void (CLAP_ABI *ring_out)(const clap_plugin_t*,const clap_audio_buffer_t* buffer);
 } oscairn_plugin_sound_snapshots_t;
 #ifdef __cplusplus
 }
