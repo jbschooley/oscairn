@@ -198,6 +198,12 @@ What the plugin must then do:
     with no note through it. A note held through the change for longer loses the outgoing
     effects, and its tail moves back to the main output, through the incoming chain.
 
+A plugin carried over whole into a Performance change (one the next Performance does not take
+over) rings out until it is idle, but no longer than 30 seconds after the change with no note
+held through it, or 2 minutes with one held; a panic ends it at once
+([RFC 0021](rfcs/0021-sounds-performances-and-library.md)). A voice it never ends is cut there,
+with the instance.
+
 ### Presets
 
 Publish presets through CLAP preset discovery, and Oscairn lists them where sounds are picked

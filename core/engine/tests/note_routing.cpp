@@ -180,12 +180,12 @@ int main(int argc,char** argv){try{
         play({&on,1});check(held()==1,"a note held before draining");
         d.setDraining(graphInput,s,true);d.setRetiring(s,true);d.commit();play();
         play({&other,1});check(held()==1,"a draining connection takes no new note");
-        check(!d.idle(s,0,UINT64_MAX),"a held note keeps a retiring node busy");
-        play({&down,1});play({&off,1});play();check(!d.idle(s,0,UINT64_MAX),"so does a note the pedal sustains");
+        check(!d.idle(s,0,UINT64_MAX,UINT64_MAX),"a held note keeps a retiring node busy");
+        play({&down,1});play({&off,1});play();check(!d.idle(s,0,UINT64_MAX,UINT64_MAX),"so does a note the pedal sustains");
         play({&pedalUp,1});for(int i=0;i<120;++i)play();
         check(held()==0,"the held note still released through the draining connection");
-        check(d.idle(s,512*4,UINT64_MAX),"then idle once silent");
-        check(!d.idle(s,uint64_t(48000)*60,UINT64_MAX),"but not before the silence asked for");
+        check(d.idle(s,512*4,UINT64_MAX,UINT64_MAX),"then idle once silent");
+        check(!d.idle(s,uint64_t(48000)*60,UINT64_MAX,UINT64_MAX),"but not before the silence asked for");
         d.setDraining(graphInput,s,false);d.commit();play({&other,1});check(held()==1,"undrained, it takes notes again");
     }
     {
@@ -197,9 +197,9 @@ int main(int argc,char** argv){try{
         const auto down=Event::note(true,60,1),up=Event::note(false,60,0);
         play({&down,1});
         g.setDraining(graphInput,s,true);g.setRetiring(s,true);g.commit();play();
-        check(!g.idle(s,UINT64_MAX,UINT64_MAX),"busy while its note is held");
+        check(!g.idle(s,UINT64_MAX,UINT64_MAX,UINT64_MAX),"busy while its note is held");
         play({&up,1});play();play();
-        check(g.idle(s,UINT64_MAX,UINT64_MAX),"asleep once released: idle without waiting for silence");
+        check(g.idle(s,UINT64_MAX,UINT64_MAX,UINT64_MAX),"asleep once released: idle without waiting for silence");
     }
     {
         // Moving a part's MIDI out (ports or channel) while a key is down: the held note's

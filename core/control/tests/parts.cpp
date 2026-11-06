@@ -1061,9 +1061,10 @@ namespace
         check(s.leaving() == 0, "A goes after three seconds of silence");
     }
 
-    // A voice that never ends (a plugin deaf to releases, a release lost on the way: the key held
-    // here) keeps the last Performance ringing: it is choked and goes 30 s after the change, or at
-    // once on a panic. Uses performanceChange's Performances.
+    // A voice that never ends (a plugin deaf to releases, a release lost on the way) keeps the last
+    // Performance ringing: with a key held through the change (or a lost release) it goes 2 minutes
+    // after the change; with every key up, 30 s after; at once on a panic. Uses performanceChange's
+    // Performances.
     void stuckRingOut(const fs::path& root)
     {
         ::setenv("KICK_FIXTURE_STUCK", "1", 1);
@@ -1073,15 +1074,25 @@ namespace
             s.loadPerformance((root / "change-a").string()); s.note(true, key, 1); x.run(s); x.run(s);
             s.loadPerformance((root / "change-b").string()); x.run(s); x.run(s);
         };
+        auto seconds = [&](double t) { for(int i = 0; i < int(48000 * t / frames); ++i) x.run(s); };
         change(60);
         check(s.leaving() == 1 && near(x.l[0], .25), "A's stuck voice rings on: " + std::to_string(x.l[0]));
-        for(int i = 0; i < int(48000 * 29 / frames); ++i) x.run(s);
-        check(s.leaving() == 1, "still ringing 29 s after the change");
+        seconds(60);
+        check(s.leaving() == 1 && near(x.l[0], .25), "a key held through the change still sounds 60 s after it: " + std::to_string(x.l[0]));
+        seconds(59);
+        check(s.leaving() == 1, "and 119 s after");
         for(int i = 0; i < int(48000 * 1.2 / frames) && s.leaving(); ++i) x.run(s);
         x.run(s);
-        check(s.leaving() == 0 && near(x.l[0], 0), "gone 30 s after the change: " + std::to_string(x.l[0]));
-        change(61);
-        check(s.leaving() == 2 && near(x.l[0], .25), "a second stuck voice rings on, beside the B it left: " + std::to_string(x.l[0]));
+        check(s.leaving() == 0 && near(x.l[0], 0), "gone 2 minutes after the change: " + std::to_string(x.l[0]));
+        change(61); s.note(false, 61, 0); x.run(s);
+        check(s.leaving() >= 1 && near(x.l[0], .25), "a released key's stuck voice rings on: " + std::to_string(x.l[0]));
+        seconds(29);
+        check(s.leaving() >= 1 && near(x.l[0], .25), "still ringing 29 s after the change: " + std::to_string(x.l[0]));
+        for(int i = 0; i < int(48000 * 1.2 / frames) && s.leaving(); ++i) x.run(s);
+        x.run(s);
+        check(s.leaving() == 0 && near(x.l[0], 0), "with no key held, gone 30 s after the change: " + std::to_string(x.l[0]));
+        change(62);
+        check(s.leaving() == 2 && near(x.l[0], .25), "a third stuck voice rings on, beside the B it left: " + std::to_string(x.l[0]));
         s.allNotesOff(); x.run(s); x.run(s);
         check(s.leaving() == 0 && near(x.l[0], 0), "a panic ends it at once: " + std::to_string(x.l[0]));
         ::unsetenv("KICK_FIXTURE_STUCK");

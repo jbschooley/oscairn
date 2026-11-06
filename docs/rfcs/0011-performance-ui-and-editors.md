@@ -889,8 +889,10 @@ Built, with the scope, as the status below says; the desktop's controls for it a
 `setWireEnabled`; `graph.enable`, `wires.enable`). An off plugin's note connections drain:
 notes it holds play on until released, with their releases and pedal, and new notes go only to
 what is on. Sound into it stops; its own sound goes on (a tail rings out) until it is idle, by
-the engine's retiring count: no note sounding, and asleep or three seconds of silence, or 30
-seconds without a note. In a part's chain, what reached an off plugin also passes around it to
+the engine's retiring count: no note sounding, and asleep or three seconds of silence; or, with
+no note held, 30 seconds after it was switched off, whatever it sounds like; or two minutes after,
+notes held or not (the limits of [RFC 0021](0021-sounds-performances-and-library.md)'s
+Performance changes). In a part's chain, what reached an off plugin also passes around it to
 what follows, so an effect off is bypassed and an instrument off lets the notes go on. An off
 note wire takes no new notes; an off audio wire is silent at once. Switching is an edit (undo
 says "Turn off ..."), saved in the Performance and Sound (format version 4: `enabled` on nodes

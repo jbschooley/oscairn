@@ -468,8 +468,9 @@ namespace oscairn
 
     // An off plugin stops sounding once it has rung out: no note sounding through it, and asleep
     // (it said so) or three seconds of silence for plugins that never say, longer than a gap
-    // between echoes (the bundled Delay's longest is two); or 30 seconds after it was switched
-    // off, whatever it sounds like or holds, for a sound that never ends or a release that never
+    // between echoes (the bundled Delay's longest is two); or, with no note held, 30 seconds after
+    // it was switched off, whatever it sounds like, for a sound that never ends; or two minutes
+    // after, notes held or not, for a key held long through the change or a release that never
     // came. Not an edit.
     // The last Performance's plugins go the same way, once rung out (RFC 0021), and all at once on
     // a panic (allNotesOff). One cut short while it still sounds is removed, not kept warm, so its
@@ -478,12 +479,12 @@ namespace oscairn
     {
         if(staged_) return;
         bool done = false;
-        const auto quiet = uint64_t(sampleRate_ * 3), limit = uint64_t(sampleRate_ * 30);
+        const auto quiet = uint64_t(sampleRate_ * 3), limit = uint64_t(sampleRate_ * 30), held = uint64_t(sampleRate_ * 120);
         const bool panic = endRinging_.exchange(false, std::memory_order_acquire);
         for(const auto n : disabled_)
-            if(!rungOut_.count(n) && graph_.idle(n, quiet, limit)) { rungOut_.insert(n); done = true; }
+            if(!rungOut_.count(n) && graph_.idle(n, quiet, limit, held)) { rungOut_.insert(n); done = true; }
         for(auto it = leaving_.begin(); it != leaving_.end(); )
-            if(panic || graph_.idle(*it, quiet, limit))
+            if(panic || graph_.idle(*it, quiet, limit, held))
             {
                 if(graph_.silent(*it, quiet)) keepWarm(*it); else graph_.remove(*it);
                 it = leaving_.erase(it); done = true;

@@ -31,8 +31,8 @@ int main(int argc,char** argv){try{
         g.connectNotes(graphInput,s);g.connectAudio(s,graphOutput);g.commit();Audio a;
         g.setRetiring(s,true);g.host(s).setParameter(1,4);g.commit();
         for(int i=0;i<10;++i)check(!a.run(g),"a plugin that errs refuses every block");
-        check(!g.idle(s,UINT64_MAX,uint64_t(64)*11),"not idle before its limit has passed");
-        check(g.idle(s,UINT64_MAX,64*8),"an unrendered block counts toward the limit as silence does");
+        check(!g.idle(s,UINT64_MAX,uint64_t(64)*11,UINT64_MAX),"not idle before its limit has passed");
+        check(g.idle(s,UINT64_MAX,64*8,UINT64_MAX),"an unrendered block counts toward the limit as silence does");
     }
     Session s(48000,64);auto removed=s.add("removed",argv[1]);s.connectAudio(removed,graphOutput);s.commit();Audio a;
     check(a.run(s) && a.right[0]==0,"initial callback request");

@@ -152,10 +152,11 @@ namespace oscairn
         /// A retiring node is being switched away from: the audio thread counts the notes still
         /// sounding through its connections, how long its output has been silent (below -100 dB)
         /// and whether the plugin said it is asleep. idle() says when it may go: no note sounding,
-        /// and asleep or silent for quietFrames; or limitFrames since it began retiring, whatever
-        /// it sounds like or holds (a stuck voice or a lost release). Takes effect at commit().
+        /// and asleep or silent for quietFrames; or, with no note held, limitFrames since it began
+        /// retiring, whatever it sounds like (a voice that never ends); or heldLimitFrames since,
+        /// notes held or not (a stuck key or a lost release). Takes effect at commit().
         void setRetiring( NodeId node, bool retiring );
-        bool idle( NodeId node, uint64_t quietFrames, uint64_t limitFrames ) const;
+        bool idle( NodeId node, uint64_t quietFrames, uint64_t limitFrames, uint64_t heldLimitFrames ) const;
         /// Retiring or not: no note sounding through it, and asleep or silent for quietFrames
         /// (free to be taken over by the next Performance, RFC 0021).
         bool silent( NodeId node, uint64_t quietFrames ) const;

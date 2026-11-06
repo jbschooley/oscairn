@@ -593,12 +593,17 @@ their IDs (`Graph::carryOver`), retiring. Their sound to the outputs and to each
 note connections into them drain through the same note routes, so a note held across the change
 plays on until released, pedal included; nothing else reaches them, and new notes play the new
 Performance. They are hidden from it (`graph.get`, saving, undo, node IDs) and each goes once
-idle, as a scene's: asleep or three seconds of silence, or 30 seconds after the change, held
-notes or not, so a voice stuck in a plugin or a release lost on the way cannot keep the outgoing
-plugins and their memory forever (one cut short while it still sounds is removed, not kept warm,
-so the stuck voice ends with the instance and cannot come back with a later change); a panic
-(`notes.panic`) ends them all at once. `control-parts` checks a stuck voice, its key held, going
-30 seconds after the change and at once on a panic (the fixture's `KICK_FIXTURE_STUCK`). Notes
+idle, as a scene's: asleep or three seconds of silence, with no note sounding. Two limits end
+it sooner, so a voice stuck in a plugin or a release lost on the way cannot keep the outgoing
+plugins and their memory forever. Decided 2026-11-05 (Jacob): with no note held through it (no
+key down, none sustained by the pedal), it goes 30 seconds after the change, whatever it sounds
+like; with a note still held, it may ring on, but goes two minutes after the change at the
+latest, held or not, so a stuck key or lost release ends there. A note released after the
+30 seconds ends at its release. One cut short while it still sounds is removed, not kept warm, so
+the stuck voice ends with the instance and cannot come back with a later change; a panic
+(`notes.panic`) ends them all at once. `control-parts` checks a stuck voice: its key held, still
+sounding 60 seconds after the change and gone by two minutes; its key released, gone 30 seconds
+after; and gone at once on a panic (the fixture's `KICK_FIXTURE_STUCK`). Notes
 queued at the moment of the change are no longer dropped, so a release reaches the old plugins.
 Changing again while one still rings carries those too. A change that would not fit with both
 Performances in memory and CPU opens as a cut instead, and the desktop says so after opening
@@ -1098,7 +1103,7 @@ ports (the Basic Synth's sound buses) stay on the instance's ports. One tail car
 second change while the first's tail rings cuts it with the 3 ms choke fade (RFC 0005); a third
 change within that fade sends the rest of the fade through the second chain.
 A carried-over effect fed only by a ring-out route goes 30 seconds after the change at the latest
-(the ring-out rule above): a note held through the change for longer than that loses the outgoing
+(the ring-out rule above; it takes no notes, so it never counts as holding one): a note held through the change for longer than that loses the outgoing
 effects, and its tail moves back to the main output. A sound the user unselects on the incoming
 node while a ring-out route exists rings out through the outgoing chain too.
 

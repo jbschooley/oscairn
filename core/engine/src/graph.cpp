@@ -548,12 +548,13 @@ namespace oscairn
         node.host=preparedInstrument(std::move(loaded),sampleRate_,maxFrames_,mode_,lv2Buffers_);node.host->setAssets(assets_);
         node.audioInputs=countChannels(node.host->inputPorts());node.audioOutputs=countChannels(node.host->outputPorts());
     }
-    bool Graph::idle( NodeId node, uint64_t quietFrames, uint64_t limitFrames ) const
+    bool Graph::idle( NodeId node, uint64_t quietFrames, uint64_t limitFrames, uint64_t heldLimitFrames ) const
     {
         const auto& a=*nodes_.at(node).activity;
-        if(a.age.load(std::memory_order_relaxed)>=limitFrames)return true;
+        const auto age=a.age.load(std::memory_order_relaxed);
+        if(age>=heldLimitFrames)return true;
         if(a.sounding.load(std::memory_order_relaxed))return false;
-        return a.asleep.load(std::memory_order_relaxed) || a.quiet.load(std::memory_order_relaxed)>=quietFrames;
+        return a.asleep.load(std::memory_order_relaxed) || a.quiet.load(std::memory_order_relaxed)>=quietFrames || age>=limitFrames;
     }
 
     void Graph::mapParamTarget( NodeId source, uint32_t lane, NodeId target, clap_id param )
