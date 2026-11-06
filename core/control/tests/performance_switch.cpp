@@ -225,6 +225,24 @@ int main(int argc, char** argv)
             try { s.loadPerformance(broken.string()); } catch(const std::exception&) { failed = true; }
             check(failed && s.graphState().revision == revision && values() == before, "a failed load changes nothing that plays");
         }
+        // A load that fails in that last step, its fourth instrument refusing its state even in a
+        // fresh instance, once the first three playing instances it took over were given theirs:
+        // they get their own back, so A sounds exactly as before the attempt.
+        {
+            const auto refusing = temp.path / "refusing"; fs::copy(b, refusing, fs::copy_options::recursive);
+            const auto bytes = state_files::read(refusing / "performance.json", 4 << 20); const std::string text(bytes.begin(), bytes.end());
+            const auto name = text.find("\"name\":\"instrument 1-3\""), key = text.rfind("\"key\":\"", name);
+            check(name != std::string::npos && key != std::string::npos, "the fourth instrument's key");
+            const auto node = text.substr(key + 7, text.find('"', key + 7) - key - 7);
+            const std::string bad = "state 1\nnot a snapshot";
+            state_files::write(refusing / "nodes" / node / "snapshot", bad.data(), bad.size());
+            s.setBudget({64, s.estimate("").memory + s.estimate(refusing.string()).memory - 1}); // a cut: it takes every free instance
+            check(!s.estimate(refusing.string()).seamless, "A -> the refusing copy cuts");
+            bool failed = false;
+            try { s.loadPerformance(refusing.string()); } catch(const std::exception& e) { failed = std::string(e.what()).find("instrument 1-3") != std::string::npos; }
+            check(failed, "the load fails on the fourth instrument");
+            compare(s, a, "a load refused after taking instances over"); quiet(s);
+        }
         s.setBudget({});
         // A note held on the second part through the change: its instrument and Delay ring out on
         // the old instances, so its instrument loads afresh (its Delay becomes a context of the

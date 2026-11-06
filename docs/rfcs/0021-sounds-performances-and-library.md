@@ -65,6 +65,7 @@ Checked when built and tested; the sections below say how.
 - [x] Free instances taken over across a change ([design](#free-instances-across-a-change-and-instances-kept-warm))
 - [x] Instances kept warm once rung out, bounded and evicted under pressure ([design](#free-instances-across-a-change-and-instances-kept-warm))
 - [x] The middle rule: a playing instance taken over only where keeping it warm would not fit ([design](#free-instances-across-a-change-and-instances-kept-warm))
+- [x] A failed load puts back the state of the playing instances it took over ([design](#free-instances-across-a-change-and-instances-kept-warm))
 - [x] Audition of a Sound in a part and of a Performance in place of the open one, put back as
       it was or kept, from the Library app ([status](#audition))
 - [ ] 5. Seamless loading into a part (part transitions on RFC 0007's chain preparation)
@@ -778,10 +779,15 @@ did. If its state does not load, the node loads a fresh instance instead. A note
 part between the check and the cue reaches the instance as before and is released at the cue (the
 graph releases the notes of routes that go); a note played during the load on a part whose
 instance is taken over does not ring out. A failure in the last step itself (a plugin refusing the
-state even in a fresh instance) fails the load with the outgoing Performance playing on, but the
-instances that already took the new state keep it; they were silent, so nothing sounding changes,
-but their next notes play the new state. Saving each instance's state before taking it over would
-avoid that at the cost of a state save per instance; not done, for the owner to decide.
+state even in a fresh instance) fails the load with the outgoing Performance playing on, and
+leaves it sounding exactly as before: each playing instance's own state is saved just before it is
+given the new one (decided 2026-11-05, Jacob; one state save per instance taken over), and put
+back when the load fails, into every instance given a state so far, the one refusing included.
+An instance let go for a fresh one gets its own state back too, since it plays on in the outgoing
+Performance; one whose own state cannot be saved is not taken over but let go for a fresh one.
+One that already held the node's state was only reset, which changes no state, so it is not
+saved. An instance kept warm is not saved either: nothing plays it, and a failed load leaves it
+marked as holding no known state, so it is never mistaken for one holding its old state.
 
 **Never a different sound.** A fresh instance is activated, deactivated, given the state and
 activated again. A reused one is deactivated, given the state and activated, as every state load
@@ -886,6 +892,13 @@ Repeated switches between the two take about 50 ms, as expected, and the first t
 instruments loaded fresh. Memory after switching is lower than before, though both
 Performances' instruments are now held. Before, every switch gave the sfizz instances another
 state; that their resident memory grew with each would explain it, but it was not checked.
+
+Saving each playing instance's state before it is taken over built the same day (`read`'s
+`saved`, put back on failure). `control-performance-switch` makes a load fail in that last step:
+a cut takes over A's four instruments, and B's fourth instrument's snapshot is unreadable, so it
+is refused in the taken instance and in a fresh one after the first three took B's state. A then
+plays the same notes as A opened fresh, sample for sample; without the change it differs from
+block 3.
 
 **Load preset** on a node is seamless where `sounds.prepare` accepts it (native contexts and
 pooled instruments) and an interrupting state load otherwise, as today.

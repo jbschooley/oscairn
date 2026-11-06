@@ -732,7 +732,13 @@ std::unique_ptr<Session::Prepared> Session::read(const fs::path& root,std::vecto
         if(room)h.setMemoryRoom(0);
         checkPorts(field(node,"inputs"),h.inputPorts());checkPorts(field(node,"outputs"),h.outputPorts());
         if(integer(field(node,"noteInputs"),16)!=h.noteInputPorts() || integer(field(node,"noteOutputs"),16)!=h.noteOutputPorts())bad("note port layout changed");};
-    // A taken-over instance whose state does not load, or whose ports then differ, is let go for a fresh one.
+    // A playing instance's own state, saved before it is given another: put back if the load fails,
+    // or if it is let go for a fresh one, so it plays on as before (RFC 0021).
+    struct Saved{NodeId node;std::shared_ptr<PluginHost> host;std::unique_ptr<state_files::TemporaryDirectory> folder;};std::vector<Saved> saved;
+    auto putBack=[&](const Saved& s){try{s.host->loadSnapshot((s.folder->path/"was").string());}
+        catch(const std::exception& e){std::fprintf(stderr,"oscairn: %s not given its own state back: %s\n",s.host->descriptor().id.c_str(),e.what());}};
+    // A taken-over instance whose state does not load, or whose ports then differ, or (playing) whose
+    // own state cannot be saved, is let go for a fresh one.
     auto restoreTaken=[&](NodeId runtime,V node,uint64_t room,size_t f){
         auto& h=next->host(runtime);const auto key=text(field(node,"key"));
         // Its state already this node's, byte for byte: reset instead of loading it again.
@@ -740,7 +746,10 @@ std::unique_ptr<Session::Prepared> Session::read(const fs::path& root,std::vecto
             state_files::TemporaryDirectory now;h.saveSnapshot((now.path/"now").string());
             if(sameTree(now.path/"now",root/"nodes"/key) && h.reset()){
                 checkPorts(field(node,"inputs"),h.inputPorts());checkPorts(field(node,"outputs"),h.outputPorts());++kept;return;}}
-        try{restore(runtime,node,room);return;}
+        bool savable=true;
+        if(free[f].node)try{saved.push_back({free[f].node,graph_.node(free[f].node).host,std::make_unique<state_files::TemporaryDirectory>()});h.saveSnapshot((saved.back().folder->path/"was").string());}
+            catch(const std::exception&){saved.pop_back();savable=false;}
+        if(savable)try{restore(runtime,node,room);return;}
         catch(const std::exception& e){if(memoryRefusal(e))throw;}
         const auto path=next->host(runtime).descriptor().path;
         next->reload(runtime,path,text(field(field(node,"plugin"),"id")),room);origins[runtime]={buildDigest(path),source(key)};--reused;
@@ -949,12 +958,15 @@ std::unique_ptr<Session::Prepared> Session::read(const fs::path& root,std::vecto
     std::set<std::pair<NodeId,uint32_t>> mappings;
     for(auto m:array(field(d,"mappings"),4096)){fields(m,{"from","lane","to","param"});const auto from=node(field(m,"from")),lane=integer(field(m,"lane"));if(!mappings.emplace(from,lane).second)bad("duplicate parameter mapping");next->mapParamTarget(from,lane,node(field(m,"to")),integer(field(m,"param")));}
     // Last, once the whole document has been read: the playing instances taken over get their state.
-    for(const auto& l:later){
-        const V n=definitions.at(l.key);
-        std::vector<NodeId> loaded;for(const auto& [id,x]:names)if(id!=l.runtime)loaded.push_back(id);
-        try{restoreTaken(l.runtime,n,memoryRoom(*next,loaded),l.free);}
-        catch(const std::exception& e){bad("cannot restore "+text(field(n,"name"))+" ("+text(field(field(n,"plugin"),"id"))+"): "+e.what());}
-    }
+    try{
+        for(const auto& l:later){
+            const V n=definitions.at(l.key);
+            std::vector<NodeId> loaded;for(const auto& [id,x]:names)if(id!=l.runtime)loaded.push_back(id);
+            try{restoreTaken(l.runtime,n,memoryRoom(*next,loaded),l.free);}
+            catch(const std::exception& e){bad("cannot restore "+text(field(n,"name"))+" ("+text(field(field(n,"plugin"),"id"))+"): "+e.what());}
+        }
+    }catch(...){for(const auto& s:saved)putBack(s);throw;}
+    for(const auto& s:saved)if(std::find(taken.begin(),taken.end(),s.node)==taken.end())putBack(s); // let go for a fresh one: it plays on
     auto prepared=std::make_unique<Prepared>(Prepared{root,stamp(root),std::move(next),pads,info,std::move(lock),tempo,clock=="internal"?Transport::ClockSource::Internal:Transport::ClockSource::MidiClock,
         std::move(disabled),std::move(names),std::move(wires),std::move(parts),nextPart,nextWire,std::move(scenes),std::move(untouched),nextScene,selectedScene,mappingScene,std::move(macros),nextMacro,std::move(assignments),key,master.first,master.second,std::move(roles),std::move(notices),std::move(taken),std::move(warm),std::move(origins),reused,kept});
     return prepared;

@@ -371,7 +371,9 @@ stepped, hidden and read-only flags. How the editors use them:
   its own state; it is given another's at a cut, or when keeping it would not fit. It must then sound exactly as a fresh instance given that state, sample for sample (the
   host's render comparison checks the bundled plugins for it): clear voices, delay lines, filter
   memory, envelopes, LFO phases and random seeds on `activate` (and on `reset`), and keep nothing
-  from the last state that the new one does not set.
+  from the last state that the new one does not set. Before giving it the new state the host
+  saves its own, and loads that back if the change fails, so saving state must work on an
+  instance that has played, and loading it back must restore its sound.
 - **Keep your cost steady:** the host measures each plugin's CPU per block and its memory on
   the device, by plugin ID, version and build, and refuses a Performance, or
   an added plugin, that would go over the device's budget, saying why
