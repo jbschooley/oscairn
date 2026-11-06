@@ -236,9 +236,10 @@
               "partLevels",
               "partMutes",
               "scenes",
-              "switches"
+              "switches",
+              "panic"
             ],
-            "description": "An assign group's default target: banks for knobs and encoders, partLevels for faders, partMutes (the default), scenes or switches (assignable switches, button:1 up, nothing until assigned) for buttons"
+            "description": "An assign group's default target: banks for knobs and encoders, partLevels for faders, partMutes (the default), scenes, switches (assignable switches, button:1 up, nothing until assigned) or panic (all notes off on every press) for buttons"
           },
           "midi": {
             "type": "object",

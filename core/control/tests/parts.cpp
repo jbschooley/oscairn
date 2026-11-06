@@ -1098,6 +1098,55 @@ namespace
         ::unsetenv("KICK_FIXTURE_STUCK");
     }
 
+    // Panic on a hardware button (RFC 0011's panic assignment), over the engine's MIDI path with
+    // no app on the way: a switch the Performance assigns ends a held note; a button whose
+    // profile group plays Panic ends a stuck voice ringing out after a change, on every press.
+    void hardwarePanic(const char* fixture, const fs::path& root)
+    {
+        auto controller = [](Session& s) {
+            ControlGroup switches{ControlGroup::Role::Assign, "buttons", 1}; switches.switches = true;
+            switches.midi.device = "pad"; switches.midi.numbers = {20};
+            ControlGroup panic{ControlGroup::Role::Assign, "buttons", 1}; panic.panic = true;
+            panic.midi.device = "pad"; panic.midi.numbers = {21}; panic.midi.latch = true;
+            s.setControllers({switches, panic}, {{"Pad", "pad", 1}});
+            Control::SessionStatus status; status.midiInputs = {{MidiEndpoint::Kind::Usb, 5, "Pad"}}; s.setHostStatus(status);
+            s.service();
+        };
+        auto press = [](Session& s, uint8_t cc, uint8_t value) { const uint8_t bytes[3]{0xB0, cc, value}; s.controllerMidi(5, bytes, 3); };
+        {
+            Session s(48000, frames);
+            const auto synth = s.add("synth", fixture, "org.kick.test.synth"); s.setParameter(synth, 7, .5);
+            const auto part = s.addPart("Part"); s.insertIntoPart(part, 0, synth); s.commit();
+            bool refused = false; try { s.assign("knob:1", {Assignment::Kind::Panic}); } catch(const std::invalid_argument&) { refused = true; }
+            check(refused, "Panic is a button's or footswitch's, not a knob's");
+            s.assign("button:1", {Assignment::Kind::Panic});
+            controller(s);
+            Audio x;
+            s.note(true, 60, 1); x.run(s); x.run(s);
+            check(near(x.l[0], .5), "a held note plays: " + std::to_string(x.l[0]));
+            press(s, 20, 127); x.run(s); x.run(s);
+            check(near(x.l[0], 0), "a switch assigned Panic ends it: " + std::to_string(x.l[0]));
+            press(s, 20, 0); s.note(true, 62, 1); x.run(s); x.run(s);
+            check(near(x.l[0], .5), "its release does nothing, and the next note plays: " + std::to_string(x.l[0]));
+            press(s, 20, 127); x.run(s); x.run(s);
+            check(near(x.l[0], 0), "and the next press ends that too: " + std::to_string(x.l[0]));
+            press(s, 20, 0);
+        }
+        ::setenv("KICK_FIXTURE_STUCK", "1", 1);
+        Session s(48000, frames);
+        Audio x;
+        controller(s);
+        for(const uint8_t value : {127, 0}) // a latching button: each message is a press
+        {
+            s.loadPerformance((root / "change-a").string()); s.note(true, 60, 1); x.run(s); x.run(s);
+            s.loadPerformance((root / "change-b").string()); x.run(s); x.run(s);
+            check(s.leaving() >= 1 && near(x.l[0], .25), "a stuck voice rings out after the change: " + std::to_string(x.l[0]));
+            press(s, 21, value); x.run(s); x.run(s);
+            check(s.leaving() == 0 && near(x.l[0], 0), "a button whose group plays Panic ends it at once: " + std::to_string(x.l[0]));
+        }
+        ::unsetenv("KICK_FIXTURE_STUCK");
+    }
+
     // A plugin that is not here (RFC 0006): the Performance opens, the plugin silent in its place
     // saying why, its state kept byte for byte through a save, and back once it is installed.
     void unavailable(const char* fixture, const fs::path& root)
@@ -2119,6 +2168,7 @@ int main(int argc, char** argv)
         onOff(argv[1], temp.path);
         performanceChange(argv[1], temp.path);
         stuckRingOut(temp.path);
+        hardwarePanic(argv[1], temp.path);
         audition(argv[1], temp.path);
         allNotesOff(argv[1]);
         unavailable(argv[1], temp.path);

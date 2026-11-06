@@ -167,8 +167,8 @@ namespace oscairn::standalone
                     for(const auto& f : c.functions) require(standardControllers.contains(juce::String(f)), "an assign group's function is a standard controller: " + f);
                 }
                 if(!c.target.empty())
-                    require(assign && ((knobs && c.target == "banks") || (c.kind == "faders" && c.target == "partLevels") || (c.kind == "buttons" && (c.target == "partMutes" || c.target == "scenes" || c.target == "switches"))),
-                            "target is banks for knobs, partLevels for faders, partMutes, scenes or switches for buttons, in an assign group");
+                    require(assign && ((knobs && c.target == "banks") || (c.kind == "faders" && c.target == "partLevels") || (c.kind == "buttons" && (c.target == "partMutes" || c.target == "scenes" || c.target == "switches" || c.target == "panic"))),
+                            "target is banks for knobs, partLevels for faders, partMutes, scenes, switches or panic for buttons, in an assign group");
                 if(const auto m = o.getProperty("midi"); !m.isVoid())
                 {
                     require(controller, "only a controller's controls say how they talk MIDI");

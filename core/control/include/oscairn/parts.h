@@ -250,12 +250,14 @@ namespace oscairn
     // identity, "knob:1", "fader:3" or "button:12" (physical_controls.h), and is saved with it.
     struct Assignment
     {
-        enum class Kind { None, Parameter, Control, PartLevel, PartMute, Scene } kind = Kind::None;
+        // Panic: all notes off (Control::allNotesOff), on every press of a button or footswitch.
+        enum class Kind { None, Parameter, Control, PartLevel, PartMute, Scene, Panic } kind = Kind::None;
         NodeId node = 0; uint32_t param = 0; // Parameter
         uint32_t id = 0;                     // Control, PartLevel, PartMute, Scene: the control, part or scene
         bool operator==(const Assignment&) const = default;
     };
-    inline constexpr std::array<const char*, 6> assignmentKinds{"none", "parameter", "control", "partLevel", "partMute", "scene"};
+    inline constexpr std::array<const char*, 7> assignmentKinds{"none", "parameter", "control", "partLevel", "partMute", "scene", "panic"};
+    inline bool pressControl(const std::string& control) { return control.starts_with("button:") || control.starts_with("footswitch:"); } // what Panic may be assigned to
     struct AssignmentOverride { std::string control; Assignment target; uint32_t part = 0; bool operator==(const AssignmentOverride&) const = default; }; // part: a part's Sound's own; 0 the Performance's
     bool validPhysicalControl(const std::string& control); // knob, fader, button, wheel, strip, jog, pedal or footswitch, then a colon and 1 to 999
 

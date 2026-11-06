@@ -207,7 +207,7 @@ namespace oscairn::standalone
         case Assignment::Kind::PartLevel: for(const auto& p : graph_.parts) if(p.id == t.id) return p.level; return 0;
         case Assignment::Kind::PartMute: for(const auto& p : graph_.parts) if(p.id == t.id) return p.mute ? 1 : 0; return 0;
         case Assignment::Kind::Scene: return graph_.scene == t.id ? 1 : 0;
-        case Assignment::Kind::None: break;
+        case Assignment::Kind::None: case Assignment::Kind::Panic: break;
         }
         return 0;
     }
@@ -239,6 +239,7 @@ namespace oscairn::standalone
             break;
         }
         case Assignment::Kind::Scene: { const auto id = t.id; engine_.edit([id](Control& c) { c.selectScene(id); }); break; }
+        case Assignment::Kind::Panic: engine_.edit([](Control& c) { c.allNotesOff(); }); break;
         case Assignment::Kind::None: break;
         }
     }

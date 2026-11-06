@@ -101,6 +101,9 @@ namespace oscairn
     // selected, and for a control with a function, in that part whenever it moves.
     inline constexpr uint32_t firstConventionButton = 101;
     std::vector<ResolvedControl> resolveControls(const AssignmentSource&, const std::vector<ControlGroup>&, uint32_t part, const GroupPositions& = {});
+    // Whether a button or footswitch of these groups plays Panic, by its group's default or an
+    // override: the desktop's top bar then leaves its own Panic out (RFC 0011).
+    bool panicOnHardware(const std::vector<ControlGroup>&, const std::vector<AssignmentOverride>&);
     // How many positions a group has: its pages, rows or modes (1 for the rest).
     uint32_t groupPositions(const AssignmentSource&, const ControlGroup&, uint32_t part);
     // RFC 0011's controller-mapping service: a MIDI message from a controller's port to values

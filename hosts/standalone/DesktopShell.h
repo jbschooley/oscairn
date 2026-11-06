@@ -59,6 +59,7 @@ namespace oscairn::standalone
         void showTab(Tab tab);
         uint32_t selectedPart() const { return selected_; } // the part the Part tab shows
         PlayView& play() { return play_; }
+        juce::Button& panicButton() { return panic_; } // shown unless a hardware button plays Panic
         EngineRecovery& recovery() { return recovery_; } // the engine's disconnect notice (RFC 0030)
         void detach(Tab tab); // the tab's view in a window of its own, beside this one
         static bool tabNamed(const juce::String& name, Tab& tab);
@@ -99,6 +100,7 @@ namespace oscairn::standalone
         juce::ComboBox sceneBox_;
         juce::TextButton storeScene_{"Store"};
         juce::Label status_;
+        IconButton panic_{IconButton::Glyph::Panic, "Panic"}; // all notes off (notes.panic), at the right end
         // The tabs and what they show.
         std::unique_ptr<TabStrip> tabs_;
         std::unique_ptr<PartList> list_;

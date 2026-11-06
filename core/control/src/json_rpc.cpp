@@ -104,7 +104,7 @@ namespace oscairn
         }
         ControlGroup controlGroup( Value v )
         {
-            fields( v, {"role","kind","count","rows","modes","functions","scenes","paged","switches","midi"} );
+            fields( v, {"role","kind","count","rows","modes","functions","scenes","paged","switches","panic","midi"} );
             ControlGroup g;
             static constexpr std::array<const char*, 4> roles{"notes","screen","assign","fixed"};
             g.role = ControlGroup::Role( named( roles, string( member( v, "role" ) ), "a group's role is notes, screen, assign or fixed" ) );
@@ -117,6 +117,7 @@ namespace oscairn
             g.scenes = member( v, "scenes" ) && boolean( member( v, "scenes" ) );
             g.paged = member( v, "paged" ) && boolean( member( v, "paged" ) );
             g.switches = member( v, "switches" ) && boolean( member( v, "switches" ) );
+            g.panic = member( v, "panic" ) && boolean( member( v, "panic" ) );
             if( const auto m = member( v, "midi" ) )
             {
                 fields( m, {"device","port","channel","channels","message","numbers","encodings","steps","latch","feedback"} );
@@ -1110,10 +1111,10 @@ namespace oscairn
                 Assignment t;
                 const auto kind = string(member(p,"kind"));
                 const auto at = std::find_if(assignmentKinds.begin(), assignmentKinds.end(), [&](const char* k) { return kind == k; });
-                if( at == assignmentKinds.end() ) invalid("kind is none, parameter, control, partLevel, partMute or scene");
+                if( at == assignmentKinds.end() ) invalid("kind is none, parameter, control, partLevel, partMute, scene or panic");
                 t.kind = Assignment::Kind(at - assignmentKinds.begin());
                 if( t.kind == Assignment::Kind::Parameter ) { t.node = node(c,member(p,"node")); t.param = integer(member(p,"param")); }
-                else if( t.kind != Assignment::Kind::None ) t.id = integer(member(p,"id"));
+                else if( t.kind != Assignment::Kind::None && t.kind != Assignment::Kind::Panic ) t.id = integer(member(p,"id"));
                 try { c.assign(std::string(string(member(p,"control"))),t,member(p,"part") ? integer(member(p,"part")) : 0); }
                 catch( const std::invalid_argument& e ) { throw Failure{-32003,e.what()}; }
                 return R"({"accepted":true})";

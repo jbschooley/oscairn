@@ -23,7 +23,7 @@ namespace oscairn
     // Faders may have modes: part (part levels), element (the part's Levels bank) and audio (the
     // levels of parts playing audio inputs).
     // Buttons play part mutes, or with `scenes` the scenes in order, or with `switches` nothing
-    // until assigned (assignable switches, numbered apart). A group with `functions`
+    // until assigned (assignable switches, numbered apart), or with `panic` all notes off. A group with `functions`
     // (wheels, pedals, a ribbon, aftertouch, breath: standard controllers such as "modulation") passes each control's
     // controller to every part unless something is assigned to it. Other kinds than knobs and
     // encoders play banks only when `paged` or with rows; else nothing until assigned.
@@ -39,7 +39,7 @@ namespace oscairn
         struct Row { std::string name; BankKind bank = BankKind::Assign; };
         std::vector<Row> rows;
         std::vector<std::string> modes;
-        bool scenes = false, paged = false, switches = false;
+        bool scenes = false, paged = false, switches = false, panic = false;
         std::vector<std::string> functions;
         struct Midi
         {

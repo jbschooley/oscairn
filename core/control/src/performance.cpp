@@ -534,6 +534,7 @@ Control::PerformanceInfo Session::writeDocument(const std::string& directory,Per
             if(t.kind==Assignment::Kind::Parameter){if(keys.count(t.node))assigned.push_back("{\"control\":"+quote(o.control)+",\"kind\":\"parameter\",\"node\":"+quote(keys.at(t.node))+",\"param\":"+std::to_string(t.param)+part+'}');continue;}
             const bool here=t.kind==Assignment::Kind::Control?std::any_of(macros_.begin(),macros_.end(),[&](const Macro& m){return m.id==t.id;})
                            :t.kind==Assignment::Kind::Scene?std::any_of(scenes_.begin(),scenes_.end(),[&](const Scene& x){return x.id==t.id;})
+                           :t.kind==Assignment::Kind::Panic?true
                            :std::any_of(parts_.begin(),parts_.end(),[&](const Part& p){return p.id==t.id;});
             if(here)assigned.push_back("{\"control\":"+quote(o.control)+",\"kind\":"+quote(assignmentKinds[size_t(t.kind)])+",\"id\":"+std::to_string(t.id)+part+'}');}
         for(const auto& at:untouched_)if(keys.count(at.node))parameters.push_back("{\"node\":"+quote(keys.at(at.node))+",\"param\":"+std::to_string(at.param)+'}');
@@ -1012,6 +1013,7 @@ std::unique_ptr<Session::Prepared> Session::read(const fs::path& root,std::vecto
             if(kind=="control"){o.target.kind=Assignment::Kind::Control;if(std::none_of(macros.begin(),macros.end(),[&](const Macro& m){return m.id==o.target.id;}))bad("an assignment to an unknown control");}
             else if(kind=="partLevel" || kind=="partMute"){o.target.kind=kind=="partLevel"?Assignment::Kind::PartLevel:Assignment::Kind::PartMute;if(std::none_of(parts.begin(),parts.end(),[&](const Part& p){return p.id==o.target.id;}))bad("an assignment to an unknown part");}
             else if(kind=="scene"){o.target.kind=Assignment::Kind::Scene;if(!sceneIds.count(o.target.id))bad("an assignment to an unknown scene");}
+            else if(kind=="panic"){o.target.kind=Assignment::Kind::Panic;if(o.target.id || !pressControl(o.control))bad("panic is a button's or footswitch's, with id 0");}
             else bad("invalid assignment kind");}
         assignments.push_back(std::move(o));
     }

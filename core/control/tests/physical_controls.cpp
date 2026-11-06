@@ -325,6 +325,43 @@ namespace
             s.assign("aftertouch:1", {}); s.assign("breath:1", {}); s.assign("button:1", {}); run(s);
         }
 
+        // Panic (all notes off) on a button: a group's default (a profile's `target: panic`) or a
+        // switch the Performance assigns it to; on every press, momentary or latching; saved with
+        // the Performance; and while a button plays it, the desktop's top bar leaves its own out.
+        {
+            ControlGroup switches{Role::Assign, "buttons", 2}; switches.switches = true; switches = midi(switches, "smk", Message::CC, {86, 87});
+            ControlGroup panic{Role::Assign, "buttons", 1}; panic.panic = true; panic = midi(panic, "smk", Message::CC, {88});
+            const std::vector<ControlGroup> both{switches, panic};
+            auto r = resolveControls(source(), both, keys, {});
+            check(find(r, "button:101").target.kind == Assignment::Kind::Panic && find(r, "button:101").label == "Panic" && find(r, "button:1").target.kind == Assignment::Kind::None,
+                  "a group playing Panic by default; the switches nothing until assigned");
+            check(panicOnHardware(both, {}) && !panicOnHardware({switches}, {}), "a Panic button is on the hardware with that group, not without it");
+            bool refused = false; try { s.assign("knob:1", target(Assignment::Kind::Panic, 0)); } catch(const std::invalid_argument&) { refused = true; }
+            check(refused, "a knob cannot play Panic");
+            s.assign("button:2", target(Assignment::Kind::Panic, 0)); run(s);
+            check(find(resolveControls(source(), {switches}, keys, {}), "button:2").target.kind == Assignment::Kind::Panic && panicOnHardware({switches}, s.assignments()) &&
+                  !panicOnHardware({scenes}, s.assignments()), "a switch the Performance assigns Panic plays it; one the device lacks does not count");
+            ControllerMapping m; GroupPositions at;
+            auto play = [&](const std::vector<ControlGroup>& g, std::vector<uint8_t> bytes) { return m.handle(source(), g, keys, at, "smk", 1, bytes.data(), bytes.size(), value); };
+            bool every = true;
+            for(int i = 0; i < 2; ++i)
+            {
+                const auto on = play(both, {0xB0, 87, 127}), off = play(both, {0xB0, 87, 0});
+                every = every && on.size() == 1 && on[0].target.kind == Assignment::Kind::Panic && on[0].control == "button:2" && off.empty();
+            }
+            check(every, "a momentary switch plays Panic on every press, not on the release");
+            auto latching = both; latching[1].midi.latch = true;
+            const auto on = play(latching, {0xB0, 88, 127}), off = play(latching, {0xB0, 88, 0});
+            check(on.size() == 1 && off.size() == 1 && off[0].target.kind == Assignment::Kind::Panic, "a latching button plays it on each message, each a press");
+            s.savePerformance((root / "panic").string());
+            Session e(48000, frames, {}, stereoIn);
+            e.loadPerformance((root / "panic").string());
+            const auto saved = e.assignments();
+            check(std::any_of(saved.begin(), saved.end(), [](const AssignmentOverride& a) { return a.control == "button:2" && a.target.kind == Assignment::Kind::Panic; }),
+                  "a Panic override round-trips with the Performance");
+            s.assign("button:2", {}); run(s);
+        }
+
         // A footswitch is a momentary button (RFC 0011): its scene or mute fires on each press,
         // not on the release.
         {

@@ -229,6 +229,11 @@ int main()
         check(refused(replaced(usbJson, "\"pressure\": true", "\"pitchBend\": true")), "pitch bend from an aftertouch group");
         check(refused(replaced(smkJson, "\"pitchBend\": true }", "\"pressure\": true }")), "pressure from a wheel");
         check(refused(replaced(usbJson, "\"target\": \"switches\"", "\"target\": \"banks\"")), "a buttons group's target is never banks");
+        {
+            const auto panic = Profile::parse(replaced(usbJson, "\"target\": \"switches\"", "\"target\": \"panic\""));
+            check(panic.controls[9].target == "panic", "a buttons group may play Panic by default");
+            check(refused(replaced(usbJson, "\"target\": \"partLevels\"", "\"target\": \"panic\"")), "faders cannot play Panic");
+        }
         check(refused(replaced(smkJson, "{ \"increment\": 69, \"decrement\": 1 }] }", "{ \"increment\": 69, \"decrement\": 1 }], \"feedback\": true }")), "feedback on knobs that step");
         check(refused(replaced(smkJson, "\"pitchBend\": true }", "\"pitchBend\": true, \"feedback\": true }")), "feedback on pitch bend");
         check(Profile::parse(replaced(smkJson, "\"protocol\": \"mackie\"", "\"protocol\": \"mackie\", \"display\": true")).midi.ports[2].display, "a Mackie port with a display");

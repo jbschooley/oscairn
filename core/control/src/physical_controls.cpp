@@ -166,6 +166,7 @@ namespace oscairn
         case Assignment::Kind::PartLevel: if(const auto* p = partOf(s, a.id)) return p->name + " level"; return {};
         case Assignment::Kind::PartMute: if(const auto* p = partOf(s, a.id)) return p->name + " mute"; return {};
         case Assignment::Kind::Scene: for(const auto& [id, name] : s.scenes) if(id == a.id) return name; return {};
+        case Assignment::Kind::Panic: return "Panic";
         }
         return {};
     }
@@ -255,6 +256,11 @@ namespace oscairn
                 b.layer = AssignmentLayer::Convention;
             }
             else if(group.kind == "buttons" && group.switches) {} // assignable switches: nothing until assigned
+            else if(group.kind == "buttons" && group.panic)
+            {
+                for(size_t i = 0; i < group.count; ++i) std::tie(b.slots[i], b.labels[i]) = of(Assignment::Kind::Panic, 0, "Panic");
+                b.layer = AssignmentLayer::Convention;
+            }
             else if(group.kind == "buttons") levels(order, Assignment::Kind::PartMute, " mute");
             else if(!group.functions.empty() || (group.rows.empty() && !group.paged && group.kind != "knobs" && group.kind != "encoders")) {} // passed through, or nothing until assigned
             else if(!group.rows.empty())
@@ -280,6 +286,13 @@ namespace oscairn
             }
         }
         return out;
+    }
+
+    bool panicOnHardware(const std::vector<ControlGroup>& groups, const std::vector<AssignmentOverride>& overrides)
+    {
+        AssignmentSource s; s.overrides = overrides; // Panic needs nothing else of the Performance
+        const auto resolved = resolveControls(s, groups, 0);
+        return std::any_of(resolved.begin(), resolved.end(), [](const ResolvedControl& r) { return r.target.kind == Assignment::Kind::Panic; });
     }
 
     std::string roleFromName(const std::string& name, const std::string& module)
@@ -364,6 +377,7 @@ namespace oscairn
         case Assignment::Kind::Control: findMacro(target.id); break;
         case Assignment::Kind::PartLevel: case Assignment::Kind::PartMute: findPart(target.id); break;
         case Assignment::Kind::Scene: if(std::none_of(scenes_.begin(), scenes_.end(), [&](const Scene& s) { return s.id == target.id; })) throw std::invalid_argument("unknown scene"); break;
+        case Assignment::Kind::Panic: if(!pressControl(control)) throw std::invalid_argument("panic is a button's or footswitch's"); break;
         }
         std::erase_if(assignments_, [&](const AssignmentOverride& o) { return o.control == control && o.part == part; });
         if(target.kind != Assignment::Kind::None) assignments_.push_back({control, target, part});

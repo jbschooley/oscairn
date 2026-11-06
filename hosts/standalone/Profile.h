@@ -38,7 +38,7 @@ namespace oscairn::standalone
             bool feedback = false; // the controller takes each control's value back on its CC (absolute CCs only); off unless confirmed
             int channelOf(size_t control) const { return control < channels.size() ? channels[control] : channel; }
         };
-        // `target`: what an assign group plays by default (banks, partLevels, partMutes, scenes;
+        // `target`: what an assign group plays by default (banks, partLevels, partMutes, scenes, switches, panic;
         // empty: its kind's default). `functions` on an assign group: standard controllers passed
         // to every part (pitchBend, modulation, sustain...).
         struct Control

@@ -738,7 +738,7 @@ namespace oscairn
             text+=(text.empty()?"":",")+std::string("{\"role\":")+quote(roles[size_t(g.role)])+",\"kind\":"+quote(g.kind)+",\"count\":"+std::to_string(g.count)
                 +",\"rows\":"+list(g.rows,[](const ControlGroup::Row& r){return "{\"name\":"+quote(r.name)+",\"bank\":"+quote(bankKinds[size_t(r.bank)])+'}';})
                 +",\"modes\":"+list(g.modes,quote)+",\"functions\":"+list(g.functions,quote)
-                +",\"scenes\":"+(g.scenes?"true":"false")+",\"paged\":"+(g.paged?"true":"false")+",\"switches\":"+(g.switches?"true":"false");
+                +",\"scenes\":"+(g.scenes?"true":"false")+",\"paged\":"+(g.paged?"true":"false")+",\"switches\":"+(g.switches?"true":"false")+",\"panic\":"+(g.panic?"true":"false");
             if(!m.device.empty())
                 text+=",\"midi\":{\"device\":"+quote(m.device)+",\"port\":"+std::to_string(m.port)+",\"channel\":"+std::to_string(m.channel)+",\"channels\":"+list(m.channels,number)
                     +",\"message\":"+quote(messages[size_t(m.message)])+",\"numbers\":"+list(m.numbers,[](uint8_t n){return std::to_string(n);})

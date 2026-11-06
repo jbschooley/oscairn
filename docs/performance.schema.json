@@ -326,6 +326,32 @@
               "part"
             ],
             "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "description": "Panic: all notes off on every press, a button's or footswitch's, the Performance's own",
+            "properties": {
+              "control": {
+                "type": "string",
+                "pattern": "^(button|footswitch):([1-9]|[1-9][0-9]|[1-9][0-9][0-9])$"
+              },
+              "kind": {
+                "const": "panic"
+              },
+              "id": {
+                "const": 0
+              },
+              "part": {
+                "const": 0
+              }
+            },
+            "required": [
+              "control",
+              "kind",
+              "id",
+              "part"
+            ],
+            "additionalProperties": false
           }
         ]
       }

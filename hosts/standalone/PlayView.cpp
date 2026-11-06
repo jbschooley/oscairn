@@ -58,7 +58,7 @@ namespace oscairn::standalone
             slot_ = slot;
             const bool any = slot.target.kind != Assignment::Kind::None;
             slider_.setVisible(any);
-            slider_.setEnabled(slot.target.kind != Assignment::Kind::Scene);
+            slider_.setEnabled(slot.target.kind != Assignment::Kind::Scene && slot.target.kind != Assignment::Kind::Panic);
             if(any && !slider_.isMouseButtonDown()) slider_.setValue(view_.valueOf(slot.target), juce::dontSendNotification);
             repaint();
         }
@@ -260,7 +260,7 @@ namespace oscairn::standalone
             for(const auto& r : c.rows)
                 for(size_t k = 0; k < bankKinds.size(); ++k) if(r.bank == bankKinds[k]) g.rows.push_back({r.name, BankKind(k)});
             // Its default target, and a controller's MIDI (RFC 0024).
-            g.scenes = c.target == "scenes"; g.switches = c.target == "switches"; g.paged = !c.paging.empty();
+            g.scenes = c.target == "scenes"; g.switches = c.target == "switches"; g.panic = c.target == "panic"; g.paged = !c.paging.empty();
             if(c.role != "fixed") g.functions = c.functions;
             if(profile.controller() && c.midi.channel)
             {
@@ -405,7 +405,7 @@ namespace oscairn::standalone
         case Assignment::Kind::PartLevel: if(const auto* p = partRow(t.id)) return p->level; return 0.0;
         case Assignment::Kind::PartMute: if(const auto* p = partRow(t.id)) return p->mute ? 1.0 : 0.0; return 0.0;
         case Assignment::Kind::Scene: return graph_.scene == t.id ? 1.0 : 0.0;
-        case Assignment::Kind::None: break;
+        case Assignment::Kind::None: case Assignment::Kind::Panic: break;
         }
         return 0.0;
     }
@@ -418,7 +418,7 @@ namespace oscairn::standalone
         case Assignment::Kind::Control: engine_.setControl(t.id, v); break;
         case Assignment::Kind::PartLevel: { const auto* p = partRow(t.id); const bool m = p && p->mute; const auto id = t.id; engine_.edit([id, v, m](Control& c) { c.setPartLevel(id, v, m); c.commit(); }); break; }
         case Assignment::Kind::PartMute: { const auto* p = partRow(t.id); const double level = p ? p->level : 1; const auto id = t.id; const bool m = v >= .5; engine_.edit([id, level, m](Control& c) { c.setPartLevel(id, level, m); c.commit(); }); break; }
-        case Assignment::Kind::Scene: case Assignment::Kind::None: break;
+        case Assignment::Kind::Scene: case Assignment::Kind::None: case Assignment::Kind::Panic: break;
         }
     }
 
@@ -436,6 +436,7 @@ namespace oscairn::standalone
         case Assignment::Kind::PartLevel: return v > 0 ? juce::String(20 * std::log10(v), 1) + " dB" : juce::String::fromUTF8("−∞ dB");
         case Assignment::Kind::PartMute: return v >= .5 ? "Muted" : "On";
         case Assignment::Kind::Scene: return graph_.scene == t.id ? "Playing" : "Scene";
+        case Assignment::Kind::Panic: return "All notes off";
         case Assignment::Kind::None: break;
         }
         return {};

@@ -62,7 +62,7 @@ namespace oscairn
         {
         case Assignment::Kind::Control: for(const auto& m : macros_) if(m.id == a.id) return m.value; return 0;
         case Assignment::Kind::Scene: return scene_ == a.id ? 1 : 0;
-        case Assignment::Kind::None: return 0;
+        case Assignment::Kind::None: case Assignment::Kind::Panic: return 0;
         default: { const auto it = values_.find(key(a)); return it == values_.end() ? 0 : it->second; }
         }
     }
@@ -116,6 +116,7 @@ namespace oscairn
             unapplied_.insert(key(target));
             break;
         }
+        case Assignment::Kind::Panic: session_.allNotesOff(); break; // here on the MIDI thread: two atomic flags, heard at the next block
         case Assignment::Kind::Scene: case Assignment::Kind::None: break;
         }
         played_.push_back({target, v});
@@ -160,7 +161,7 @@ namespace oscairn
         case Assignment::Kind::PartLevel: if(const auto* x = part(t.id)) session_.playPartLevel(t.id, p.value, x->mute); break;
         case Assignment::Kind::PartMute: if(const auto* x = part(t.id)) session_.playPartLevel(t.id, x->level, p.value >= .5); break;
         case Assignment::Kind::Scene: session_.selectScene(t.id); break;
-        case Assignment::Kind::None: break;
+        case Assignment::Kind::None: case Assignment::Kind::Panic: break; // a panic was played at once
         }
     }
 

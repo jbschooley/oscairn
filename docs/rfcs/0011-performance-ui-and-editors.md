@@ -315,7 +315,7 @@ Assignments resolve in layers. Each layer fills only what the layers above it le
    declared roles get Assign banks from their first parameters until someone maps them.
 4. **Performance conventions:**
    - faders control part levels (in their part mode);
-   - buttons control part mute, or scenes, as their group's `target` says;
+   - buttons control part mute, or scenes, or Panic (all notes off), as their group's `target` says;
    - knobs follow the selected part's banks;
    - the mod wheel, pedals and aftertouch are sent to every part as standard controllers,
      as their group's `functions` say.
@@ -354,6 +354,8 @@ What turns a moved control into a value at its target, the same for a panel and 
   with acceleration, to the target's current value: no pickup is needed.
 - **Buttons and footswitches:** a momentary one toggles a mute or selects a scene on each press; a latching
   one sets the mute from its state, or selects a scene on each change (each press, on or off).
+  Panic (all notes off) fires as a scene does: on every press of a momentary one, on each change
+  of a latching one.
 - **Passed through:** a control with a standard-controller function and nothing assigned does
   nothing in the service: its message reaches every part on its own as that controller.
 
@@ -1120,7 +1122,8 @@ each filling only what the ones above left empty:
    has, and play nothing until assigned; the scene and mute buttons count on from `button:101`.
    On a device with fewer switches, an override of `button:N` beyond them plays nothing and is
    kept, so it plays again on a device or controller that has that switch. Each sets a
-   parameter, a control, a part's level or mute, or a scene. Screen knobs are not overridden.
+   parameter, a control, a part's level or mute, or a scene, or plays **Panic** (a button's or
+   footswitch's only). Screen knobs are not overridden.
    An override whose target is gone falls through to the defaults and is left out at save.
    Assigning is an edit, undone like any other.
 2. **The sound's own assignments**: assignments with a `part`, saved with the Performance and
@@ -1138,7 +1141,8 @@ each filling only what the ones above left empty:
    declared ones. With no role bank filled and no controls, two Assign banks from the part's
    instrument's first parameters in `oscairn.ui` priority order.
 4. **Conventions**: faders play part levels (parts, then buses), the Levels bank or the audio
-   parts' levels by their mode; assign buttons play part mutes, or scenes (`target: scenes`);
+   parts' levels by their mode; assign buttons play part mutes, or scenes (`target: scenes`),
+   or Panic (`target: panic`);
    controls with `functions` (wheels, pedals) pass their standard controller to every part;
    with no part selected the knobs follow the Performance's own controls.
 5. **The effects bank**: each effect's main control (its `mix` role, else its first parameter
@@ -1201,6 +1205,36 @@ breath passing through with nothing assigned, switches numbered `button:1` and `
 scene buttons from `button:101`, a device without switches having no `button:1`, channel pressure
 (two bytes), CC 2 and a switch playing their overrides, and those overrides round-tripping. The
 `modx-m` and `modx-m-usb` profiles gain the keys' aftertouch and the ASSIGN 1 and 2 switches.
+
+**Panic on a button**, 2026-11-05 (decided by Jacob): `panic` is an assignment kind
+(`Assignment::Kind::Panic`), all notes off (`Control::allNotesOff`, as `notes.panic`), which also
+ends every Performance still ringing out after a change
+([RFC 0021](0021-sounds-performances-and-library.md)). Only a button or footswitch takes it
+(`button:N`, `footswitch:N`; a knob's is refused), as a Performance override or as a buttons
+group's default from its profile (`target: panic`, [RFC 0024](0024-device-profiles.md#default-targets));
+a Sound's own assignments do not. It fires as a scene button does, on every press. The engine
+acts on it on its MIDI input thread as the controller's message arrives (`ControllerInput::play`
+sets the panic flags the next block reads), with no app or control thread on the way; the app
+plays it the same way for a surface it reads itself. Saved in the Performance as
+`{"control":"button:2","kind":"panic","id":0,"part":0}` (still version 11, as the other kinds
+added since it).
+
+**The desktop's Panic.** The desktop's top bar (`DesktopShell`) has a Panic button at its right
+end, before Undo and Redo: the octagon icon in the danger color, named Panic with a tooltip,
+reached by Tab and pressed with Space or Return like any button, a click (not a hold: a mouse
+does not brush). It is shown by default. The rule for hiding it is RFC 0030's for the shell's
+buttons: the bar leaves out what a button provides. While a button or footswitch of the device
+or a connected controller plays Panic (its profile's default or the Performance's override,
+`panicOnHardware`), the bar leaves Panic out; unplug the controller or remove the override and it
+is back. There is no separate setting.
+
+`control-physical-controls` checks a group playing Panic by default, a switch overridden to it,
+a knob refused, every press of a momentary switch and each message of a latching button, the
+override round-tripping with the Performance, and `panicOnHardware`. `control-parts` checks a
+switch assigned Panic over the engine's MIDI path ending a held note, and a profile-default
+Panic button ending a stuck voice ringing out after a change, on each press. `desktop-shell`
+checks the bar's Panic: shown, focusable, calling the engine's panic, and hidden while a
+controller's button plays Panic.
 
 Not yet: name matching beyond exact names (per-oscillator levels, other spellings); the
 Sampler's roles; no panel layout binds faders, buttons or a row-switching group, so

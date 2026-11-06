@@ -234,6 +234,11 @@ namespace oscairn::standalone
         setDesktopMode(*this, modeNumber(mode));
         undo_.setTooltip("Undo"); redo_.setTooltip("Redo");
         home_.setTooltip("Home: the apps");
+        // Panic: every note off, and what still rings from the last Performance ends. In the danger
+        // color, as the top bar's All notes off; a click or the keyboard, so no hold.
+        panic_.setTooltip("Panic: all notes off, ending anything still ringing out");
+        panic_.getProperties().set("danger", true);
+        panic_.onClick = [this] { engine_.edit([](Control& c) { c.allNotesOff(); }); };
         save_.setTooltip("Save the Performance to the library");
         save_.onClick = [this] { if(onSave) onSave(); };
         performance_.setTooltip("The open Performance");
@@ -269,7 +274,7 @@ namespace oscairn::standalone
         status_.setJustificationType(juce::Justification::centredRight);
         addPart_.onClick = [this] { const auto n = state_.parts.size() + 1; engine_.edit([n](Control& c) { addPart(c, "Part " + std::to_string(n), false); }); };
         addBus_.onClick = [this] { const auto n = state_.buses.size(); engine_.edit([n](Control& c) { addPart(c, std::string("Bus ") + char('A' + n % 26), true); }); };
-        for(auto* c : std::initializer_list<juce::Component*>{&undo_, &redo_, &tempoLabel_, &tempo_, &record_, &sceneLabel_, &sceneBox_, &storeScene_, &status_, tabs_.get(), list_.get(), &addPart_, &addBus_})
+        for(auto* c : std::initializer_list<juce::Component*>{&panic_, &undo_, &redo_, &tempoLabel_, &tempo_, &record_, &sceneLabel_, &sceneBox_, &storeScene_, &status_, tabs_.get(), list_.get(), &addPart_, &addBus_})
             addAndMakeVisible(c);
         addAndMakeVisible(parts_);
         parts_.setEmbedded(true);
@@ -411,6 +416,8 @@ namespace oscairn::standalone
         undo_.setEnabled(!history.undo.empty()); redo_.setEnabled(!history.redo.empty());
         undo_.setTooltip(history.undo.empty() ? juce::String("Nothing to undo") : "Undo " + text(history.undo));
         redo_.setTooltip(history.redo.empty() ? juce::String("Nothing to redo") : "Redo " + text(history.redo));
+        // A hardware button playing Panic (the controller's profile or the Performance) replaces it (RFC 0011).
+        if(const bool shown = !panicOnHardware(engine_.controlGroups(), engine_.assignments()); shown != panic_.isVisible()) { panic_.setVisible(shown); resized(); }
     }
 
     void DesktopShell::paint(juce::Graphics& g)
@@ -434,7 +441,8 @@ namespace oscairn::standalone
         recovery_.setBounds(area.removeFromTop(m.control + 2 * m.gap).reduced(m.gap * 2, m.gap).removeFromRight(getWidth() / 2 + 100));
         area = getLocalBounds();
         auto bar = area.removeFromTop(m.control + 2 * m.gap).reduced(m.gap * 2, m.gap);
-        // Undo and Redo first, so a narrow window shortens the status, never them.
+        // Panic, Undo and Redo first, so a narrow window shortens the status, never them.
+        if(panic_.isVisible()) { panic_.setBounds(bar.removeFromRight(m.control)); bar.removeFromRight(m.gap * 2); }
         redo_.setBounds(bar.removeFromRight(m.control)); bar.removeFromRight(4);
         undo_.setBounds(bar.removeFromRight(m.control)); bar.removeFromRight(m.gap * 2);
         home_.setVisible(onHome != nullptr);

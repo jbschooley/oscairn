@@ -585,6 +585,30 @@ int main(int argc, char** argv)
                 }
                 configuration.getChildFile("routing-view.txt").deleteFile();
             }
+            // The top bar's Panic: shown by default at the bar's right end, named, reached by the
+            // keyboard, and ending the notes held; left out while a controller's
+            // button plays Panic (RFC 0011), and back once it does not.
+            {
+                standalone::DesktopShell shell(engine, argv[2], standalone::InputMode::Mouse);
+                shell.setSize(1440, 900);
+                auto settle = [&] { for(int i = 0; i < 30; ++i) juce::MessageManager::getInstance()->runDispatchLoopUntil(10); };
+                auto wait = [&](auto done) { for(int i = 0; i < 1000 && !done(); ++i) juce::MessageManager::getInstance()->runDispatchLoopUntil(10); return done(); };
+                settle();
+                auto& panic = shell.panicButton();
+                check(panic.isVisible() && panic.getRight() > 1300 && panic.getY() < 40 && !panic.getBounds().isEmpty(), "Panic is in the top bar, at its right end");
+                check(panic.getTitle() == "Panic" && panic.getTooltip().isNotEmpty() && panic.getWantsKeyboardFocus() && panic.isAccessible(),
+                      "named, with a tooltip, and reached by the keyboard and accessibility");
+                auto sounding = [&] { for(const auto& m : engine.meters()) if(m.peak > 1e-4) return true; return false; };
+                engine.edit([](Control& c) { for(const int key : {48, 72}) c.note(true, key, .8); });
+                check(wait(sounding), "notes held from the keys sound");
+                static_cast<juce::Component&>(panic).keyPressed(juce::KeyPress(juce::KeyPress::returnKey)); // as Return on the focused button
+                check(wait([&] { return !sounding(); }), "Return on Panic ends it: all notes off");
+                ControlGroup pad; pad.kind = "buttons"; pad.count = 1; pad.panic = true;
+                engine.setControllers({pad}, {});
+                check(wait([&] { return !panic.isVisible(); }), "a controller's button playing Panic: the bar leaves its own out");
+                engine.setControllers({}, {});
+                check(wait([&] { return panic.isVisible(); }), "and shows it again once none does");
+            }
             // Envelopes recognized from their parameters' names.
             {
                 const auto adsr = standalone::envelopeOf({"Attack Shape", "Attack", "Decay", "Sustain", "Release"});

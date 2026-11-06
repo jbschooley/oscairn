@@ -153,7 +153,7 @@ Every group can say what it does by default (below), so a stage keyboard needs n
 | --- | --- | --- |
 | knobs, encoders | the banks (rows or pages, as above) | `target`: `banks` (the default) |
 | faders | part levels, parts then buses; their `modes` add element and audio levels | `target`: `partLevels` (the default) |
-| buttons | part mutes, or scenes (button N selects scene N), or nothing until assigned (assignable switches) | `target`: `partMutes` (the default), `scenes` or `switches` |
+| buttons | part mutes, or scenes (button N selects scene N), or nothing until assigned (assignable switches), or Panic (all notes off, on every press) | `target`: `partMutes` (the default), `scenes`, `switches` or `panic` |
 | wheels, touchstrip, pedal, expression, footswitches, jog, aftertouch, breath | a standard controller each, sent to every part, so each part's plugin does its own thing with it (the mod wheel's vibrato) | `functions`, one per control: `pitchBend`, `modulation` (CC 1), `breath` (CC 2), `foot` (CC 4), `expression` (CC 11), `sustain` (CC 64), `portamento` (CC 65), `sostenuto` (CC 66), `soft` (CC 67), `aftertouch` (channel pressure) |
 
 **Control identities** (what overrides name, [RFC 0011](0011-performance-ui-and-editors.md#step-6-status)):
@@ -165,6 +165,16 @@ number never depends on the other buttons: assignable switches (`target: switche
 fewer switches than an override names leaves that override unplayed and keeps it. Aftertouch is
 usually the keys' channel pressure, given as a group of its own (`kind: aftertouch`, a group of
 one); a breath controller is `kind: breath`, sending CC 2.
+
+**Panic.** A buttons group with `target: panic` plays all notes off on every press of each of
+its buttons (numbered from `button:101` with the scene and mute buttons), unless the Performance
+assigns one something else; a Performance may also assign Panic to a switch or footswitch
+([RFC 0011](0011-performance-ui-and-editors.md#physical-controls)). A profile gives it only to a
+button the real panel has for it. The MODX M profiles give none (decided 2026-11-05): their
+panels list no such button, and ASSIGN 1 and 2 are the musician's switches, so a MODX player
+who wants one assigns Panic to a switch or to the assignable footswitch. While any button plays
+Panic, the desktop's top bar leaves its own Panic out (RFC 0011's desktop rule, RFC 0030's for
+the shell's buttons).
 
 `target` is only on assign groups and only with a value its kind allows. `functions` on an
 assign group names standard controllers only; a `fixed` group keeps free names (`volume`,

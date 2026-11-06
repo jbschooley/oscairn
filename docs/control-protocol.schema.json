@@ -100,6 +100,10 @@
         "switches": {
           "type": "boolean"
         },
+        "panic": {
+          "type": "boolean",
+          "description": "Buttons: each plays Panic (all notes off) unless something is assigned to it"
+        },
         "midi": {
           "type": "object",
           "properties": {
@@ -5228,7 +5232,8 @@
                     "control",
                     "partLevel",
                     "partMute",
-                    "scene"
+                    "scene",
+                    "panic"
                   ]
                 },
                 "node": {

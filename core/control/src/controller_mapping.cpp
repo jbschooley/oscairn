@@ -98,11 +98,12 @@ namespace oscairn
             {
                 const bool on = message == Message::Note ? kind == 0x90 && d2 > 0 : d2 >= 64;
                 // A latching switch changes state on every press, so each message is a press.
-                if(t.kind == Assignment::Kind::Scene) { if(on || group.midi.latch) out.push_back({r->control, t, 1}); continue; }
+                if(t.kind == Assignment::Kind::Scene || t.kind == Assignment::Kind::Panic) { if(on || group.midi.latch) out.push_back({r->control, t, 1}); continue; }
                 if(group.midi.latch) out.push_back({r->control, t, on ? 1.0 : 0.0});
                 else if(on) out.push_back({r->control, t, now >= .5 ? 0.0 : 1.0});
                 continue;
             }
+            if(t.kind == Assignment::Kind::Panic) continue; // a button's only
             if(encoding != Encoding::Absolute)
             {
                 const auto steps = index < group.midi.steps.size() ? group.midi.steps[index] : std::array<uint8_t, 2>{};
