@@ -93,6 +93,7 @@ namespace oscairn::standalone
         std::vector<juce::Rectangle<int>> tiles_; // the Part page's settings on the desktop, a tile each
         std::unique_ptr<class ParameterGrid> grid_; // the selected plugin's parameters, on the desktop
         std::map<uint32_t, std::vector<double>> peaks_; // the parts' meters per channel, read at each tick while the Mixer shows
+        std::map<uint32_t, std::pair<uint64_t, uint64_t>> givenUp_; // per part, notes faded out and choked by the shared budget (RFC 0018), read while the parts list shows
         // Routing: the graph laid out by signal flow (layoutRouting), drawn at routingOrigin_ and
         // routingScale_; the plugin or part chosen; whether parts are collapsed (the user's
         // preference, kept beside the theme's) and which are expanded meanwhile.

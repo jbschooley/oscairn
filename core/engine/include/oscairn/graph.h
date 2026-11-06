@@ -4,6 +4,7 @@
 #include "oscairn/plugin_host.h"
 #include "oscairn/note_zone.h"
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <cstdint>
@@ -168,6 +169,18 @@ namespace oscairn
         /// sustained by the pedal), for measuring its cost per voice (RFC 0025); 0 for a node that
         /// takes no notes, UINT32_MAX for one just set retiring and not yet counted.
         uint32_t sounding( NodeId node ) const;
+        /// RFC 0018's shared budget (option B): the microseconds a block the plugins may take in
+        /// all, the hard limit; 0, the default, for none. Stealing starts at 85% of it: before a
+        /// note passes on, the least audible notes across every part fade out, by each node's
+        /// measured cost per note; past it, notes are choked at once (counted), and a block that
+        /// measured past it chokes more from the next block's start. Any thread.
+        void setVoiceBudget( double microseconds ) noexcept { voiceBudget_.store( float( std::max( 0.0, microseconds ) ), std::memory_order_relaxed ); }
+        /// A node's cost at rest and per note (microseconds a block), from RFC 0025's measurements,
+        /// until the audio thread has measured its own. Main thread.
+        void seedNoteCost( NodeId node, double rest, double perNote );
+        /// A node's cost as the budget sees it, and the notes it gave up so far (-1: not measured).
+        struct NoteCost { double rest = -1, perNote = -1; uint64_t stolen = 0, hardChokes = 0; };
+        NoteCost noteCost( NodeId node ) const;
         void disconnectAudio( NodeId from, NodeId to );
         void disconnectNotes( NodeId from, NodeId to );
 
@@ -354,7 +367,31 @@ namespace oscairn
 
         /// A node as the graph holds it. A copy keeps the plugin alive, with its state, so a
         /// removed or replaced node can be restored under its ID (for undo).
-        struct Activity { std::atomic<uint32_t> sounding{0}; std::atomic<uint64_t> quiet{0}, age{0}; std::atomic<bool> asleep{false}; }; // see setRetiring
+        struct Activity // see setRetiring
+        {
+            std::atomic<uint32_t> sounding{0}; std::atomic<uint64_t> quiet{0}, age{0}; std::atomic<bool> asleep{false};
+            // RFC 0018's shared budget: the node's cost in microseconds a block, at rest and per live
+            // note, smoothed by the audio thread (-1 until measured; RFC 0025's measurements, seeded,
+            // stand in until then), and the notes it gave up: faded out, and choked at the hard limit.
+            std::atomic<float> rest{-1}, perNote{-1}, seedRest{-1}, seedNote{-1};
+            std::atomic<uint64_t> stolen{0}, hardChokes{0};
+            float restNow() const noexcept { const float r = rest.load(std::memory_order_relaxed); return r >= 0 ? r : std::max(0.f, seedRest.load(std::memory_order_relaxed)); }
+            float noteNow() const noexcept { const float n = perNote.load(std::memory_order_relaxed); return n >= 0 ? n : std::max(0.f, seedNote.load(std::memory_order_relaxed)); }
+            // A block took `microseconds` with `notes` live: with none, its cost at rest; with some,
+            // the time above rest shared among them. A block held up from outside (the thread
+            // preempted) says nothing of the plugin: a sample counts at most four times the
+            // estimate, and an estimate falls faster than it rises, so one such block soon passes.
+            void observe(float microseconds, uint32_t notes) noexcept
+            {
+                auto follow = [](std::atomic<float>& value, float sample, float rise, float fall) {
+                    const float v = value.load(std::memory_order_relaxed);
+                    if(v > 0) sample = std::min(sample, 4 * v);
+                    value.store(v < 0 ? sample : v + (sample > v ? rise : fall) * (sample - v), std::memory_order_relaxed);
+                };
+                if(!notes) follow(rest, microseconds, .05f, .5f);
+                else follow(perNote, std::max(0.f, microseconds - restNow()) / float(notes), .1f, .3f);
+            }
+        };
         struct Node
         {
             std::shared_ptr<PluginHost> host;
@@ -425,6 +462,7 @@ namespace oscairn
         std::atomic<Listener*> listener_{ nullptr };
         bool panicInput_=false;
         std::atomic<bool> parallel_{ true }; // see setParallel
+        std::atomic<float> voiceBudget_{ 0 }; // see setVoiceBudget
         AudioHelpers* helpers_ = nullptr; // RFC 0034: renders a wave's plugins in this process
         double freeBeats_ = 0; // audio thread: oscairn.beat's position at the next block's start
         Plan*              current_ = nullptr; // audio thread only

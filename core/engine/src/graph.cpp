@@ -79,6 +79,7 @@ namespace oscairn
             uint32_t mergedCount = 0;
             bool processed = false, started = false;
             float cost = 0; // the microseconds its last rendering took in this process (whether a wave is worth the helpers)
+            bool budgeted = false; // its notes are in the shared budget (VoiceBudget), which measures its cost per note
         };
 
         struct Key // orders merged notes: by time, then by source and position
@@ -100,6 +101,7 @@ namespace oscairn
         std::vector<uint32_t> waves; // RFC 0034: where each wave of steps ends; a wave's steps render at the same time
         std::vector<uint32_t> local; // audio thread: the wave's steps rendering in this process
         std::vector<Key>               keys;
+        VoiceBudget budget; // see Graph::setVoiceBudget
     };
 
     // A routed event as a MIDI 1.0 channel message on `channel` (1..16; 0: its own): notes,
@@ -532,6 +534,18 @@ namespace oscairn
         n.activity->sounding.store(UINT32_MAX,std::memory_order_relaxed); // not idle until it has been counted
     }
 
+    void Graph::seedNoteCost( NodeId node, double rest, double perNote )
+    {
+        auto& a=*nodes_.at(node).activity;
+        a.seedRest.store(float(rest),std::memory_order_relaxed);a.seedNote.store(float(perNote),std::memory_order_relaxed);
+    }
+    Graph::NoteCost Graph::noteCost( NodeId node ) const
+    {
+        const auto it=nodes_.find(node);
+        if(it==nodes_.end() || !it->second.activity)return {};
+        const auto& a=*it->second.activity;
+        return {a.rest.load(std::memory_order_relaxed),a.perNote.load(std::memory_order_relaxed),a.stolen.load(std::memory_order_relaxed),a.hardChokes.load(std::memory_order_relaxed)};
+    }
     uint32_t Graph::sounding( NodeId node ) const
     {
         const auto it=nodes_.find(node);
@@ -697,6 +711,23 @@ namespace oscairn
         for(auto& step:plan->steps)for(auto& source:step.noteSources)if(source.zones.count && source.zones.zones[0].part && !source.draining)
             for(const auto& other:plan->steps)for(const auto& o:other.noteSources)
                 if(o.zones.count && o.zones.zones[0].part==source.zones.zones[0].part && !o.draining)source.peers.push_back(o.route.get());
+        // The shared budget: every connection into a plugin taking CLAP notes, grouped by part.
+        for(auto& step:plan->steps)if(step.activity)for(auto& source:step.noteSources)
+            if(std::any_of(source.route->clap.begin(),source.route->clap.end(),[](bool c){return c;}))
+            {
+                auto& entries=plan->budget.entries;
+                const uint32_t part=source.zones.count?source.zones.zones[0].part:0;
+                uint32_t group=uint32_t(entries.size());bool rest=true;
+                for(size_t i=0;i<entries.size();++i)
+                {
+                    const auto* z=entries[i].zones;
+                    if(part && group==entries.size() && z->count && z->zones[0].part==part && entries[i].draining==source.draining)group=entries[i].group;
+                    if(entries[i].cost==step.activity.get())rest=false;
+                }
+                entries.push_back({source.route.get(),&source.zones,step.activity.get(),group,rest,source.draining});
+                step.budgeted=true;
+            }
+        plan->budget.groups.resize(plan->budget.entries.size());
 
         for(const auto& [tap,route]:taps_)
         {
@@ -1024,7 +1055,7 @@ namespace oscairn
             auto fades=[&](uint32_t until){bool ok=true;for(auto& source:step.noteSources)ok=source.route->fade(until,emit) && ok;return ok;};
             if(!overflow)for(const auto& key:plan->keys)
                 if(!fades(std::min(key.time,frames)) ||
-                   !(key.route && key.time<frames?key.route->route(*key.event,nextNoteId_,emit,key.zones,key.source,key.draining,key.peers):emit(*key.event))){overflow=true;break;}
+                   !(key.route && key.time<frames?key.route->route(*key.event,nextNoteId_,emit,key.zones,key.source,key.draining,key.peers,key.zones?&plan->budget:nullptr):emit(*key.event))){overflow=true;break;}
             if(!overflow && !fades(frames))overflow=true;
             for(auto& source:step.noteSources)source.route->advance(frames);
             if(overflow)
@@ -1038,6 +1069,9 @@ namespace oscairn
         };
         auto start=[&](Plan::Step& step){return step.host->startProcess(step.in.data(),step.audioInputs,step.out.data(),step.audioOutputs,frames,step.merged.data(),step.mergedCount,transport);};
         auto render=[&](Plan::Step& step){step.processed=step.host->process(step.in.data(),step.audioInputs,step.out.data(),step.audioOutputs,frames,step.merged.data(),step.mergedCount,transport);};
+        // The shared budget (RFC 0018): its limit for this block, and what the plugins took.
+        plan->budget.limit=voiceBudget_.load(std::memory_order_relaxed);
+        float budgetTotal=0,budgetOthers=0;
         auto finish=[&](Plan::Step& step)
         {
             if(listener)listener->events(step.id,step.merged.data(),step.mergedCount,false);
@@ -1073,6 +1107,13 @@ namespace oscairn
                 // Every block counts toward the limit, rendered or not (a worker that died and did not
                 // restart) and notes held or not (a lost release), or such a node is never idle.
                 a.age.store(a.age.load(std::memory_order_relaxed)+frames,std::memory_order_relaxed);
+            }
+            if(plan->budget.limit>0)
+            {
+                const float took=float(step.host->statistics().lastMicroseconds);
+                budgetTotal+=took;
+                if(!step.budgeted)budgetOthers+=took;
+                else if(processed){uint32_t live=0;for(const auto& source:step.noteSources)live+=source.route->live();step.activity->observe(took,live);}
             }
             step.paramCount = 0;step.paramDrops=0;step.releaseCount=0;step.releaseOverflow=false;
             uint32_t endedCount=0;const auto* ended=step.host->outputEvents(endedCount);
@@ -1173,6 +1214,7 @@ namespace oscairn
                     tap.route->route(list[i],nextNoteId_,emit,&tap.zones,tap.step<0 && sources?sources[i]:untaggedSource);
         }
         for(const auto& r:plan->outputRoutes)mix(r,outputs[r.to]);
+        if(plan->budget.limit>0){plan->budget.others=budgetOthers;plan->budget.measured(budgetTotal);}
         return ok;
     }
 

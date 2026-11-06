@@ -108,7 +108,7 @@ namespace oscairn
         bool operator==(const PartInput&) const = default;
     };
     // The zones a part's input wire carries: its own, each hearing only its selected devices,
-    // with its note limit, counted across the part's (`part`) lanes.
+    // with its note limit, counted across the part's (`part`) lanes, and its reserve and priority.
     std::vector<NoteZone> inputZones(const PartInput& input, const std::vector<MidiEndpoint>& endpoints, uint32_t part = 0);
 
     // RFC 0012 step 1: a part's MIDI to hardware outputs: the outputs its selector chooses (none:
@@ -202,8 +202,9 @@ namespace oscairn
     };
     // A part's meter, after its fader and pan, linear: one value per channel of its sound (its last
     // plugin's main audio output as wired to where it plays: one for mono, two for stereo, more
-    // for surround), and the largest of them.
-    struct PartMeter { uint32_t part = 0; double peak = 0; std::vector<double> channels; };
+    // for surround), and the largest of them. stolen, hardChokes: the notes its plugins gave up to
+    // the shared budget since they loaded (RFC 0018), faded out, and choked at the hard limit.
+    struct PartMeter { uint32_t part = 0; double peak = 0; std::vector<double> channels; uint64_t stolen = 0, hardChokes = 0; };
     // An audio wire's meter, after its level and pan, linear: one value per channel its source's
     // port sends, and the largest of them.
     struct WireMeter { uint32_t wire = 0; double peak = 0; std::vector<double> channels; };

@@ -379,10 +379,12 @@ namespace oscairn
     // shortcut: one sample a tick misses blocks in between, so a rare spike may not count; time every block on the audio thread if admission must be exact.
     void Session::measure()
     {
-        if(budget_.cpu <= 0) return;
+        if(budget_.cpu <= 0) { graph_.setVoiceBudget(0); return; }
         const auto frames = blockFrames_.load(std::memory_order_relaxed);
         if(!frames) return;
         const double blockMicroseconds = frames / sampleRate_ * 1e6;
+        // RFC 0018's shared budget steals notes within the same CPU budget, from these measurements.
+        graph_.setVoiceBudget(budget_.cpu * blockMicroseconds);
         const bool memoryNow = ++measureTicks_ % 200 == 0;
         auto sample = [&](NodeId node) {
             const auto& host = graph_.host(node);
@@ -400,6 +402,7 @@ namespace oscairn
                 m.voice = std::max(std::max(0.0, share - m.rest) / voices, m.voice * decay);
                 m.voices = std::max(m.voices, voices);
             }
+            if(m.voices) graph_.seedNoteCost(node, m.rest * blockMicroseconds, m.voice * blockMicroseconds);
             if(std::abs(m.rest - wasRest) > 1e-4 || std::abs(m.voice - wasVoice) > 1e-5) measurementsChanged_ = true;
             if(memoryNow)
             {

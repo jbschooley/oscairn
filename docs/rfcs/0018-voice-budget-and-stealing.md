@@ -1,6 +1,6 @@
 # RFC 0018: Voice budget and stealing
 
-Status: proposed, 2026-10-31. Steps 1 and 2 implemented (below). When a Performance asks for more than the
+Status: proposed, 2026-10-31. Steps 1 to 3 implemented (below; step 3's device gate unverified). When a Performance asks for more than the
 processor can play, Oscairn gives up the least audible notes across every part, without
 clicks, rather than missing the audio deadline. The host does this with notes (option B),
 and plugins that opt in do it with their own voices (option C).
@@ -11,7 +11,7 @@ Checked when built and tested; the sections below say how.
 
 - [x] 1. Fade and choke ([status](#step-1-status))
 - [x] 2. Part limits ([status](#step-2-status))
-- [ ] 3. Shared budget
+- [x] 3. Shared budget ([status](#step-3-status); the gate on the device unverified)
 - [ ] 4. The `oscairn.voice-budget` extension
 
 ## Problem
@@ -210,6 +210,94 @@ a third note in the upper lane leaves one note in each (without the shared count
 `control-parts` that the limit's zone names the part, the reserve and priority refused past
 their ranges and round-tripping through a saved Performance; `parts-model` the Part page's
 setters; the socket test reads them back over the protocol.
+
+## Step 3 status
+
+The shared budget, 2026-11-06 (`VoiceBudget` in `core/engine/src/NoteRoute.h`;
+`Graph::setVoiceBudget`). It is RFC 0025's CPU budget, not a second one: with `budget.set`'s
+`cpu` set, the hard limit is that share of the block's time for all the plugins, and the soft
+limit 85% of it. Until a budget is set, nothing is stolen.
+
+- **Cost per note:** after each block the graph reads each plugin's last `process` time
+  (`Statistics::lastMicroseconds`, the worker's own for a plugin in one) and the notes its
+  connections hold in the routing ledger until their `NOTE_END`, released and fading ones
+  included. With none, the time updates the node's cost at rest; with some, the time above rest
+  shared among them updates its cost per note, both smoothed: rising by a twentieth and a tenth
+  of each block's difference, falling by a half and three tenths. A block's sample counts at
+  most four times the estimate, so a thread held up from outside does not make every note look
+  dear (before this, one such block while resting made a part's cost at rest 100 µs, and a
+  reserve was choked, on this loaded Mac). Until a node has its own figures, RFC 0025's
+  measurements of its plugin (rest and per voice) stand in, given by `Session::measure` each
+  service tick. A plugin taking no CLAP notes (an effect) counts at its last block's time and
+  gives way to nothing.
+- **Stealing at note-on:** before a note passes on, its node's cost per note is added to the
+  estimate (every node at rest, plus every note not given up at its node's cost). Past the soft
+  limit, notes fade out (the 5 ms ramp, then the choke) until it fits. Including the notes still
+  fading, past the hard limit, notes are choked at once: those fading first, then in the order
+  below. After a block, when the measured total passed the hard limit in this block and the one
+  before, notes are choked from the next block's start until the estimate, scaled to the
+  measurement (at most 1.25 times), fits; that path never takes a reserve.
+- **The order:** released notes; then held notes beyond their part's reserve, the part's
+  highest and lowest held keys last; within each, the part of lower priority first, then the
+  lowest velocity, then the oldest. A reserve gives way only at the hard limit at note-on,
+  when the plugins at rest and every part's reserved held notes alone pass it. Only CLAP notes of nodes whose notes have a measured cost are
+  taken. A part is its input wires' zones' part (step 2), so its lanes are one part; a
+  connection without zones is a part of its own.
+- **Across threads:** routing (the note-on decision) and reading each step's time both run on
+  the graph's own thread, in plan order, also when plugins render in waves on the audio helpers
+  (RFC 0034) or in workers, so the budget's state is that thread's alone; the per-node counters
+  and costs are atomics, read by the control thread. The ledger is the fixed array it was;
+  choosing a victim is a scan of it, with no allocation.
+- **Counted:** each node counts the notes it gave up, faded and hard-choked; `parts.meters`
+  sums them per part (`stolen`, `hardChokes`), and the desktop's Parts list shows them after the
+  part's instrument ("12 stolen, 1 cut").
+- A stolen note in another node's connection fades from that node's block start: this block's,
+  or the next when that node already had this block's events.
+
+Tests: `voice-budget` (offline, one node after another; `-parallel` on three audio helpers;
+`-workers` in worker processes) plays a chart on three instances of a fixture whose every voice
+costs 30 µs a 64-frame block: B's sixteen loud notes first (priority 5, reserving 8), then A's
+bass and melody, eight notes A releases (each a block after it starts), eight quiet ones and
+eight loud ones, and C's sixteen, a note every other block. Released notes are newer and as loud as held ones, so neither age nor
+velocity alone puts them first. The budget is the plugins at rest plus half what the notes add,
+by the median block of a run without it. It checks that without the budget at least 80% of the
+measured blocks pass it, with it at most a quarter as many, no released or quiet note that was
+sounding when a loud held one was given up given up after it, and B losing the fewest and never
+its reserve; it allocates
+nothing while rendering. Without `setVoiceBudget` taking effect it fails ("with the budget the
+plugins stay under it"); without the order's released-first rank and priority, "released and
+quiet notes before any loud held note (of those sounding then)"; without priority alone, "the part of higher priority
+loses the fewest". `control-parts` sets a CPU budget on a Session with two such parts, B giving
+way first but reserving four of its six notes, and checks the parts' meters: A gives notes up,
+B keeps its reserve (the first failed with the budget never set, both with reserves ignored). The three `voice-budget` runs pass under ThreadSanitizer with no reports.
+
+Mac measurements, 2026-11-06 (development Mac, load average about 50 to 120 from other work;
+offline rendering, 64-frame blocks at 48 kHz, a block's deadline 1333 µs; no audio device):
+`oscairn-voice-budget-test`'s chart, the budget from a run without it. "Over" counts the
+81 measured blocks whose plugins' times summed past the budget; "late", past the block's time (a
+serial engine's deadline); a plugin deadline miss is one plugin's block past it.
+
+| Run | Budget (at rest) | Without: over, late, misses | With: over, late, misses | Cost per note (A, B, C) | Stolen; hard chokes (A, B, C) |
+| --- | --- | --- | --- | --- | --- |
+| Fixture, 30 µs a voice, in the engine | 871 µs (1) | 81, 81, 15 | 2, 2, 11 | 36.6, 30.0, 30.0 µs | 23, 0, 12; 10, 7, 0 |
+| Fixture, in workers | 872 µs (2) | 81, 81, 0 | 0, 0, 0 | 30.0, 30.0, 30.0 µs | 22, 0, 10; 7, 0, 1 |
+| Basic Synth (4 per group, budget at rest + 75% of the notes), in the engine | 37 µs (13) | 81, 0, 0 | 9, 0, 0 | 2.1, 1.3, 2.5 µs | 14, 0, 3; 2, 0, 5 |
+| Basic Synth, in workers | 41 µs (15) | 81, 0, 0 | 0, 0, 0 | 2.9, 1.2, 1.4 µs | 13, 0, 2; 1, 0, 0 |
+
+With the fixture, the first sixteen notes given up were A's released and quiet ones, then loud
+held ones of A and C; B (priority 5) lost none to fades, and in the engine run seven of its sixteen
+to hard chokes at the end, once A's and C's were gone, keeping its reserve of eight. Plugin deadline
+misses count the whole run, the chart's start included, on a machine whose other work held the
+thread up. The Basic Synth costs about 1 to 3 µs a note against about 4 to 5 µs at rest per
+instance, and with 16 voices it cannot reach a real budget, so its budget here is set low on
+purpose; its notes given up followed the same order (a note A releases may go in the block it
+starts, before its release). No run had audio-device deadlines, which offline rendering does
+not have.
+
+The gate (a Performance that misses deadlines without the budget plays a stress chart on the
+device with none, stealing only quiet or released notes) is **unverified**: it needs the
+device. Not yet: the plugin's own voice count refining the estimate (step 4's extension),
+splitting a note's cost by key or velocity, and effects' tails giving way.
 
 ## Build order and gates
 

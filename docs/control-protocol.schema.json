@@ -9669,12 +9669,24 @@
                   "type": "number",
                   "minimum": 0
                 }
+              },
+              "stolen": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Notes its plugins faded out for the shared budget since they loaded (RFC 0018)"
+              },
+              "hardChokes": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Notes its plugins had choked without a fade, at the shared budget's hard limit, since they loaded (RFC 0018)"
               }
             },
             "required": [
               "part",
               "peak",
-              "channels"
+              "channels",
+              "stolen",
+              "hardChokes"
             ],
             "additionalProperties": false
           }

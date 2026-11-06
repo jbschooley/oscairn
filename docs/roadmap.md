@@ -306,7 +306,7 @@ in the others.
    - [x] per-part note limits that steal released notes first and spare the bass and melody
      ([step 2](rfcs/0018-voice-budget-and-stealing.md#step-2-status))
    - [x] reserves and priority per part, and one note count across a part's lanes
-   - [ ] step 3's shared budget
+   - [x] step 3's shared budget: stealing across parts by measured cost at note-on, counted on the Parts list (the device gate unverified)
    - [ ] step 4's extension for plugins that steal their own voices
 7. **Sounds, Performances and the library**
    ([RFC 0021](rfcs/0021-sounds-performances-and-library.md#progress)) and apps that ask each

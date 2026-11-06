@@ -78,6 +78,12 @@ namespace oscairn::standalone
         if(scan_.valid() && scan_.wait_for(std::chrono::seconds(0)) == std::future_status::ready) plugins_ = scan_.get();
         // The Mixer's meters move at 20 frames a second; the other pages refresh more slowly.
         if(page_ == mixerPage) { peaks_.clear(); for(const auto& m : engine_.meters()) peaks_[m.part] = m.channels; }
+        if(page_ == 0)
+        {
+            std::map<uint32_t, std::pair<uint64_t, uint64_t>> given;
+            for(const auto& m : engine_.meters()) if(m.stolen || m.hardChokes) given[m.part] = {m.stolen, m.hardChokes};
+            if(given != givenUp_) { givenUp_ = std::move(given); repaint(); }
+        }
         const bool metering = page_ == routingPage && wireMeters_;
         if(metering) { wirePeaks_.clear(); for(const auto& m : engine_.wireMeters()) wirePeaks_[m.wire] = m.peak; repaint(); }
         const int interval = page_ == mixerPage || metering ? 50 : 200;
@@ -1421,7 +1427,11 @@ namespace oscairn::standalone
                     g.setColour(ink(Ink::Text)); g.setFont(juce::FontOptions(16.0f * scale, juce::Font::bold));
                     g.drawText(text(p.name), name.removeFromTop(name.getHeight() / 2), juce::Justification::bottomLeft, true);
                     g.setColour(ink(Ink::Muted)); g.setFont(juce::FontOptions(12.0f * scale));
-                    g.drawText(p.bus ? juce::String("Shared bus") : text(p.sound.empty() ? "No instrument yet" : p.sound), name, juce::Justification::topLeft, true);
+                    // The notes the shared budget took from it (RFC 0018), so a part that loses too many can be fixed.
+                    auto sound = p.bus ? juce::String("Shared bus") : text(p.sound.empty() ? "No instrument yet" : p.sound);
+                    if(const auto given = givenUp_.find(p.id); given != givenUp_.end())
+                        sound << " · " << juce::String(given->second.first) << " stolen" << (given->second.second ? ", " + juce::String(given->second.second) + " cut" : juce::String());
+                    g.drawText(sound, name, juce::Justification::topLeft, true);
                     auto from = rr.removeFromLeft(fromWidth);
                     g.setColour(ink(Ink::Text)); g.setFont(juce::FontOptions(13.0f * scale));
                     g.drawText(text(p.input), from.removeFromTop(from.getHeight() / 2 + 4), juce::Justification::bottomLeft, true);

@@ -33,6 +33,11 @@ namespace oscairn
         // The part whose connections share that limit, one count across its lanes' instruments, the
         // first zone's; 0: the connection counts alone.
         uint32_t part = 0;
+        // The part's settings for the shared budget (RFC 0018 step 3), the first zone's: the held
+        // notes it keeps when parts give notes up to each other, and its priority, 0..10, lower
+        // giving way first.
+        uint16_t reserve = 0;
+        uint8_t priority = 0;
         bool operator==(const NoteZone&) const = default;
 
         bool valid() const

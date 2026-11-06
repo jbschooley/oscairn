@@ -1222,12 +1222,12 @@ namespace oscairn
                     if( method == "parts.meters" || method == "wires.meters" )
                     {
                         std::vector<std::string> meters;
-                        auto add = [&](const char* key, uint32_t id, double peak, const std::vector<double>& values) {
+                        auto add = [&](const char* key, uint32_t id, double peak, const std::vector<double>& values, std::string more = {}) {
                             std::vector<std::string> channels;
                             for( const auto v : values ) channels.push_back( encode( v ) );
-                            meters.push_back("{\"" + std::string(key) + "\":" + std::to_string(id) + ",\"peak\":" + encode(peak) + ",\"channels\":" + join(channels) + '}');
+                            meters.push_back("{\"" + std::string(key) + "\":" + std::to_string(id) + ",\"peak\":" + encode(peak) + ",\"channels\":" + join(channels) + more + '}');
                         };
-                        if( method == "parts.meters" ) for( const auto& m : c.partMeters() ) add("part", m.part, m.peak, m.channels);
+                        if( method == "parts.meters" ) for( const auto& m : c.partMeters() ) add("part", m.part, m.peak, m.channels, ",\"stolen\":" + std::to_string(m.stolen) + ",\"hardChokes\":" + std::to_string(m.hardChokes));
                         else for( const auto& m : c.wireMeters() ) add("wire", m.wire, m.peak, m.channels);
                         return "{\"meters\":" + join(meters) + '}';
                     }

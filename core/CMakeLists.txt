@@ -278,6 +278,23 @@ add_dependencies(oscairn-harmony-test oscairn-follower-fixture oscairn-plugin-wo
 add_test(NAME harmony COMMAND oscairn-harmony-test $<TARGET_FILE:oscairn-plugin-worker> $<TARGET_FILE:oscairn-follower-fixture>)
 set_tests_properties(harmony PROPERTIES TIMEOUT 60 ENVIRONMENT OSCAIRN_WORKER_BUDGET_US=50000)
 
+# RFC 0018 step 3: the shared budget keeps a chart that passes it under it, offline, rendering
+# one node after another, on the audio helpers and in workers. Each voice of the fixture costs 60 us a
+# 128-frame block.
+add_library(oscairn-voice-fixture MODULE engine/tests/voice_fixture.cpp)
+target_link_libraries(oscairn-voice-fixture PRIVATE oscairn_clap_headers)
+set_target_properties(oscairn-voice-fixture PROPERTIES PREFIX "" SUFFIX ".clap")
+add_executable(oscairn-voice-budget-test engine/tests/voice_budget.cpp)
+target_link_libraries(oscairn-voice-budget-test PRIVATE oscairn_engine)
+target_include_directories(oscairn-voice-budget-test PRIVATE clap-host/tests)
+add_dependencies(oscairn-voice-budget-test oscairn-voice-fixture)
+add_test(NAME voice-budget COMMAND oscairn-voice-budget-test $<TARGET_FILE:oscairn-voice-fixture>)
+set_tests_properties(voice-budget PROPERTIES TIMEOUT 120 ENVIRONMENT "OSCAIRN_FIXTURE_VOICE_US=60;OSCAIRN_GRAPH_SERIAL=1")
+add_test(NAME voice-budget-parallel COMMAND oscairn-voice-budget-test $<TARGET_FILE:oscairn-voice-fixture>)
+set_tests_properties(voice-budget-parallel PROPERTIES TIMEOUT 120 ENVIRONMENT "OSCAIRN_FIXTURE_VOICE_US=60;OSCAIRN_AUDIO_HELPERS=3;OSCAIRN_HELPERS_WORTH_US=0")
+add_test(NAME voice-budget-workers COMMAND oscairn-voice-budget-test $<TARGET_FILE:oscairn-voice-fixture>)
+set_tests_properties(voice-budget-workers PROPERTIES TIMEOUT 120 ENVIRONMENT "OSCAIRN_FIXTURE_VOICE_US=60;OSCAIRN_PLUGIN_WORKER=$<TARGET_FILE:oscairn-plugin-worker>;OSCAIRN_WORKER_BUDGET_US=50000")
+
 # Sanitizers slow rendering several times over; there the test checks containment, not timing.
 # CI's virtual machines cannot keep real time either (GitHub sets CI).
 if(KICK_CLAP_SANITIZE OR CMAKE_CXX_FLAGS MATCHES "-fsanitize" OR DEFINED ENV{CI})

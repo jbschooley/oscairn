@@ -149,7 +149,7 @@ request members.
 | `parts.solo` | `part`, `solo`: while any part is soloed, only soloed parts, the parts feeding them and the buses they feed are heard | `{"accepted":true}` |
 | `edit.undo`, `edit.redo` | omitted or `{}`: undoes the last edit, or redoes the last undone | `undo`, `redo`: what each would now do (empty: nothing) |
 | `edit.history` | omitted or `{}` | `undo`, `redo` labels, as above |
-| `parts.meters` | omitted or `{}` | `meters`: each part's and bus's recent peak after its fader and pan (linear), held and falling: `peak`, and `channels` with one value per channel of its sound (its last plugin's main audio output as wired to where it plays: one for mono, two for stereo, more for surround) |
+| `parts.meters` | omitted or `{}` | `meters`: each part's and bus's recent peak after its fader and pan (linear), held and falling: `peak`, and `channels` with one value per channel of its sound (its last plugin's main audio output as wired to where it plays: one for mono, two for stereo, more for surround); and `stolen` and `hardChokes`, the notes its plugins gave up to the shared budget since they loaded, faded out and choked at the hard limit ([RFC 0018](rfcs/0018-voice-budget-and-stealing.md#step-3-status)) |
 | `wires.meters` | omitted or `{}` | `meters`: each audio wire's recent peak after its level and pan (linear), held and falling: `wire`, `peak`, and `channels` with one value per channel its source's port sends. A muted wire shows 0 |
 | `wires.connect` | `kind`, `from`, `to`; for audio `fromPort`, `toPort`, optional `channels` pairs; optional `level`, `pan` | numeric `wire` |
 | `wires.disconnect` | `wire` | `{"accepted":true}` |
@@ -1001,6 +1001,8 @@ fader or name in the Performance, nor wires to or from the rest of the graph.
   or adding a plugin that would take the open one over it, fails saying what does not fit; one
   that fits only alone opens as a cut, without the last ringing out. A plugin whose
   `oscairn.memory` declaration exceeds what the memory budget leaves is refused before it activates.
+  While playing, `cpu` is also the shared voice budget's hard limit ([RFC 0018](rfcs/0018-voice-budget-and-stealing.md#step-3-status)):
+  past 85% of it the least audible notes fade out to make room for new ones, and `parts.meters` counts them.
   `budget.set` also takes optional memory classes in bytes ([RFC 0025](rfcs/0025-resource-budgets.md#memory-reserved-committed-and-opportunistic)):
   `device`, `system` (the OS, the engine's base and the shell), `floor` (the Performances' floor)
   and `margin`; with `device` the memory ceiling is the committed share (device less `system`,

@@ -120,7 +120,7 @@ add_executable(oscairn-parts-test tests/parts.cpp)
 target_include_directories(oscairn-parts-test PRIVATE ../clap-host/tests)
 target_link_libraries(oscairn-parts-test PRIVATE oscairn_control)
 add_test(NAME control-parts COMMAND oscairn-parts-test
-    $<TARGET_FILE:kick-clap-fixture-normal> $<TARGET_FILE:oscairn-audio-fixture> $<TARGET_FILE:oscairn_delay> $<TARGET_FILE:oscairn_splitters> $<TARGET_FILE:oscairn_transpose> $<TARGET_FILE:oscairn-follower-fixture>)
+    $<TARGET_FILE:kick-clap-fixture-normal> $<TARGET_FILE:oscairn-audio-fixture> $<TARGET_FILE:oscairn_delay> $<TARGET_FILE:oscairn_splitters> $<TARGET_FILE:oscairn_transpose> $<TARGET_FILE:oscairn-follower-fixture> $<TARGET_FILE:oscairn-voice-fixture>)
 set_tests_properties(control-parts PROPERTIES TIMEOUT 60)
 if(CMAKE_CXX_FLAGS MATCHES "-fsanitize")
     set_tests_properties(control-parts PROPERTIES TIMEOUT 600) # 330 s under a local ThreadSanitizer build

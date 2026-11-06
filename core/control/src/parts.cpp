@@ -125,10 +125,10 @@ namespace oscairn
     std::vector<NoteZone> inputZones(const PartInput& input, const std::vector<MidiEndpoint>& endpoints, uint32_t part)
     {
         auto zones = input.zones;
-        if(input.devices.empty() && !input.maxNotes) return zones;
-        if(zones.empty()) zones.emplace_back(); // a zone passing every note, to carry the devices and limit
+        if(input.devices.empty() && !input.maxNotes && !input.reserve && !input.priority) return zones;
+        if(zones.empty()) zones.emplace_back(); // a zone passing every note, to carry the devices, limit, reserve and priority
         const auto mask = resolveDevices(input.devices, endpoints);
-        for(auto& z : zones) { z.sources = mask; z.maxNotes = input.maxNotes; z.part = input.maxNotes ? part : 0; }
+        for(auto& z : zones) { z.sources = mask; z.maxNotes = input.maxNotes; z.part = part; z.reserve = input.reserve; z.priority = input.priority; }
         return zones;
     }
 
@@ -1104,7 +1104,12 @@ namespace oscairn
     std::vector<PartMeter> Session::partMeters() const
     {
         std::vector<PartMeter> out;
-        for(const auto& [part, channels] : meters_) out.push_back({part, channels.empty() ? 0.0 : *std::max_element(channels.begin(), channels.end()), channels});
+        for(const auto& [part, channels] : meters_)
+        {
+            out.push_back({part, channels.empty() ? 0.0 : *std::max_element(channels.begin(), channels.end()), channels});
+            const auto p = std::find_if(parts_.begin(), parts_.end(), [&](const Part& q) { return q.id == part; });
+            if(p != parts_.end()) for(const auto n : nodesOf(*p)) { const auto c = graph_.noteCost(n); out.back().stolen += c.stolen; out.back().hardChokes += c.hardChokes; }
+        }
         return out;
     }
 

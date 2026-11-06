@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #pragma once
+#include "oscairn/graph.h"
 #include "oscairn/plugin_host.h"
 #include "oscairn/midi_input.h"
 #include "oscairn/note_zone.h"
@@ -10,6 +11,43 @@
 
 namespace oscairn
 {
+struct NoteRoute;
+// RFC 0018's shared budget (option B), one per plan: every note connection into a plugin that
+// takes CLAP notes, with the node it plays and that node's cost (Graph::Activity). Audio thread
+// only: notes are routed, and each step's cost read, on the graph's own thread in plan order,
+// while only the plugins' rendering moves to helper threads (RFC 0034); the counters it keeps
+// are atomics, read elsewhere. Fixed in size: choosing what to steal scans the ledgers.
+struct VoiceBudget
+{
+    // group: the first entry of its part (its zones' part; draining connections apart, being
+    // another Performance's), else itself; rest: the first entry into its node, which counts the
+    // node's cost at rest.
+    struct Entry { NoteRoute* route; const NoteZones* zones; Graph::Activity* cost; uint32_t group; bool rest,draining; };
+    struct Group { uint32_t held=0; int16_t low=INT16_MAX,high=-1; float cost=0; }; // cost: of its held notes
+    std::vector<Entry> entries;
+    std::vector<Group> groups; // scratch, one per entry
+    // limit: this block's hard limit in microseconds, 0 for none; others: the last block's cost of
+    // the plugins taking no CLAP notes (effects), which give way to nothing but count.
+    float limit=0,others=0;
+    bool over=false; // the last block measured past the limit
+    static constexpr float soft=.85f; // stealing starts here, so fades have time
+    // Before a note into `self` at `time` passes on: under the soft limit, notes fade to make room
+    // for it; past the hard limit, they are choked.
+    void admit(NoteRoute& self,uint32_t time) noexcept;
+    // After a block that took `measured` microseconds in all: past the hard limit in this block and
+    // the one before, notes are choked from the next block's start until the estimate, scaled to
+    // the measurement, fits.
+    void measured(float measured) noexcept;
+private:
+    struct Victim { const Entry* entry=nullptr; size_t slot=0; };
+    enum Counting { Kept, Fading, Ending }; // the notes counted: not given up; and those fading; and those choked, until they end
+    float estimate(Counting counting) const noexcept;
+    Victim choose(bool reserved) noexcept;
+    Victim fadingNote() const noexcept;
+    float reserves() noexcept;
+    void choke(float scale,float extra,const NoteRoute* self,uint32_t time,bool reserved) noexcept;
+};
+
 // One audio-thread ledger per connection; shared by successive compiled plans.
 // Destination IDs separate otherwise identical notes from different graph sources.
 struct NoteRoute
@@ -23,7 +61,8 @@ struct NoteRoute
     // is due in this block, or -1; faded: the steps sent.
     struct Note { clap_event_note_t address{}; int32_t id=-1; bool used=false,held=false,midi=false,stolen=false; int16_t key=-1; int8_t zone=-1; uint8_t source=untaggedSource;
         double volume=1; int32_t fadeAt=-1; uint8_t faded=0;
-        bool voiceEnded=false; }; // its voice ended (NOTE_END) while the key was held
+        bool voiceEnded=false; // its voice ended (NOTE_END) while the key was held
+        float velocity=0; }; // as it was sent on, for the budget's quietest first
     static constexpr uint8_t fadeSteps=8;
     std::array<Note,kick::clap::Host::maxBlockEvents> notes{};
     std::array<std::array<uint8_t,16>,16> pedal{};
@@ -79,6 +118,15 @@ struct NoteRoute
         }
         return ok;
     }
+    // The notes it holds until their plugin ends them, released and fading ones included.
+    uint32_t live() const noexcept {uint32_t count=0;for(const auto& n:notes)count+=n.used;return count;}
+    // Chokes a note at `at` without (more of) a fade, at the budget's hard limit.
+    void choke(Note& n,uint32_t at) noexcept
+    {
+        if(n.stolen && n.fadeAt>=0)n.fadeAt=std::min(n.fadeAt,int32_t(at));
+        else {n.stolen=true;n.held=false;n.fadeAt=int32_t(at);++fading;}
+        n.faded=fadeSteps;
+    }
     // Gives a note up from elsewhere (a peer's note limit): it fades from `at`, or is choked there.
     void steal(Note& n,uint32_t at) noexcept
     {n.stolen=true;n.held=false;n.fadeAt=int32_t(at);n.faded=fadeFrames?0:fadeSteps;++fading;}
@@ -100,14 +148,15 @@ struct NoteRoute
         }
         clear();return ok;
     }
-    template<class Emit> bool route(Event e,uint32_t& nextId,Emit&& emit,const NoteZones* zones=nullptr,uint8_t source=untaggedSource,bool draining=false,std::span<NoteRoute* const> peers={}) noexcept
-    {return route(e,nextId,emit,[](const Note&,uint32_t){},zones,source,draining,peers);}
+    template<class Emit> bool route(Event e,uint32_t& nextId,Emit&& emit,const NoteZones* zones=nullptr,uint8_t source=untaggedSource,bool draining=false,std::span<NoteRoute* const> peers={},VoiceBudget* budget=nullptr) noexcept
+    {return route(e,nextId,emit,[](const Note&,uint32_t){},zones,source,draining,peers,budget);}
     // zones, when given, decide which notes pass and how they change (note_zone.h); each zone
     // that accepts a note plays its own copy. source: where the event entered the graph.
     // draining: a connection being retired (RFC 0021's seamless switching) takes no new notes;
     // releases, expressions and the pedal still reach the notes it holds. peers: the routes sharing
-    // the note limit (a part's lanes), this one included; none: this one alone.
-    template<class Emit,class End> bool route(Event e,uint32_t& nextId,Emit&& emit,End&& end,const NoteZones* zones=nullptr,uint8_t source=untaggedSource,bool draining=false,std::span<NoteRoute* const> peers={}) noexcept
+    // the note limit (a part's lanes), this one included; none: this one alone. budget: the plan's
+    // shared budget, which makes room for each new note across every part.
+    template<class Emit,class End> bool route(Event e,uint32_t& nextId,Emit&& emit,End&& end,const NoteZones* zones=nullptr,uint8_t source=untaggedSource,bool draining=false,std::span<NoteRoute* const> peers={},VoiceBudget* budget=nullptr) noexcept
     {
         if(!e.valid())return emit(e);
         const auto* h=e.header();
@@ -132,12 +181,12 @@ struct NoteRoute
             } else if(kind==0xb0 && (m.data[1]==120 || m.data[1]==123)) {
                 auto n=Event::note(false,-1,0,h->time,channel,m.port_index);
                 if(m.data[1]==120)reinterpret_cast<clap_event_header_t*>(n.bytes.data())->type=CLAP_EVENT_NOTE_CHOKE;
-                return route(n,nextId,emit,end,zones,source,draining,peers);
+                return route(n,nextId,emit,end,zones,source,draining,peers,budget);
             } else if(kind==0xa0 || kind==0xd0) {
                 Event pressure;
                 if(!midiToClap(m.data,kind==0xd0?2:3,h->time,pressure))return emit(e);
                 reinterpret_cast<clap_event_note_expression_t*>(pressure.bytes.data())->port_index=m.port_index;
-                return route(pressure,nextId,emit,end,zones,source,draining,peers);
+                return route(pressure,nextId,emit,end,zones,source,draining,peers,budget);
             } else return emit(e);
         }
         if(h->type==CLAP_EVENT_NOTE_ON && h->size==sizeof(clap_event_note_t))
@@ -172,12 +221,13 @@ struct NoteRoute
             };
             auto play=[&](int8_t zone,int16_t key,double velocity) {
                 if(!makeRoom())return false;
+                if(budget)budget->admit(*this,h->time);
                 // Full: a held note whose voice already ended gives its slot up, as before NOTE_END kept it.
                 if(std::none_of(notes.begin(),notes.end(),[](const Note& x){return !x.used;}))
                     for(auto& slot:notes)if(slot.used && slot.voiceEnded){slot.used=false;break;}
                 for(auto& slot:notes)if(!slot.used) {
                     if(nextId>INT32_MAX)return false;
-                    slot={n,static_cast<int32_t>(nextId++),true,true,midi,false,key,zone,source};
+                    slot={n,static_cast<int32_t>(nextId++),true,true,midi,false,key,zone,source};slot.velocity=float(velocity);
                     auto copy=n;copy.key=key;copy.velocity=velocity;copy.note_id=clap[n.port_index]?slot.id:-1;return emit(Event::from(copy));
                 }
                 return false;
@@ -244,4 +294,120 @@ struct NoteRoute
         return emit(e);
     }
 };
+// What the plan's plugins are estimated to cost now: at rest, and their notes at each node's cost
+// per note, counting the notes kept, or those and the ones fading out, or every note until it ends.
+inline float VoiceBudget::estimate(Counting counting) const noexcept
+{
+    float total=others;
+    for(const auto& e:entries)
+    {
+        if(e.rest)total+=e.cost->restNow();
+        uint32_t n=0;
+        for(const auto& slot:e.route->notes)
+            if(slot.used && (!slot.stolen || counting==Ending || (counting==Fading && slot.fadeAt>=0 && slot.faded<NoteRoute::fadeSteps)))++n;
+        total+=float(n)*e.cost->noteNow();
+    }
+    return total;
+}
+// The next note to give up, in RFC 0018's order: released notes, then held notes beyond their
+// part's reserve, its highest and lowest held keys last; within each, the part of lower priority
+// first, then the quietest, then the oldest. reserved: held notes within a reserve may go too.
+// Only notes the plugin takes as CLAP notes, which a choke can address, of nodes whose notes cost.
+inline VoiceBudget::Victim VoiceBudget::choose(bool reserved) noexcept
+{
+    for(auto& g:groups)g={};
+    for(const auto& e:entries)for(const auto& slot:e.route->notes)if(slot.used && !slot.stolen && slot.held)
+    {auto& g=groups[e.group];++g.held;g.low=std::min(g.low,slot.key);g.high=std::max(g.high,slot.key);}
+    Victim best;int bestRank=0;uint8_t bestPriority=0;const NoteRoute::Note* chosen=nullptr;
+    for(const auto& e:entries)
+    {
+        if(e.cost->noteNow()<=0)continue; // giving its notes up frees nothing measured
+        const auto& g=groups[e.group];
+        const NoteZone* z=e.zones && e.zones->count?&e.zones->zones[0]:nullptr;
+        const uint16_t reserve=z?z->reserve:0;const uint8_t priority=z?z->priority:0;
+        for(size_t i=0;i<e.route->notes.size();++i)
+        {
+            const auto& slot=e.route->notes[i];
+            if(!slot.used || slot.stolen || !e.route->clap[slot.address.port_index&15])continue;
+            int rank=0;
+            if(slot.held)
+            {
+                if(!reserved && g.held<=reserve)continue;
+                rank=g.held>2 && (slot.key==g.low || slot.key==g.high)?2:1;
+            }
+            const bool better=!chosen || (rank!=bestRank?rank<bestRank:priority!=bestPriority?priority<bestPriority:
+                slot.velocity!=chosen->velocity?slot.velocity<chosen->velocity:slot.id<chosen->id);
+            if(better){best={&e,i};chosen=&slot;bestRank=rank;bestPriority=priority;}
+        }
+    }
+    return best;
+}
+// The plugins at rest and each part's reserved held notes alone (a part's held notes' cost, in
+// proportion to the part's reserve).
+inline float VoiceBudget::reserves() noexcept
+{
+    for(auto& g:groups)g={};
+    float total=others;
+    for(const auto& e:entries)
+    {
+        if(e.rest)total+=e.cost->restNow();
+        for(const auto& slot:e.route->notes)if(slot.used && !slot.stolen && slot.held){auto& g=groups[e.group];++g.held;g.cost+=e.cost->noteNow();}
+    }
+    for(size_t i=0;i<entries.size();++i)if(const auto& g=groups[i];g.held)
+    {
+        const auto* z=entries[i].zones;const uint16_t reserve=z && z->count?z->zones[0].reserve:0;
+        total+=g.cost*float(std::min<uint32_t>(g.held,reserve))/float(g.held);
+    }
+    return total;
+}
+// The oldest note still fading out, which a choke finishes.
+inline VoiceBudget::Victim VoiceBudget::fadingNote() const noexcept
+{
+    Victim best;const NoteRoute::Note* chosen=nullptr;
+    for(const auto& e:entries)if(e.cost->noteNow()>0)for(size_t i=0;i<e.route->notes.size();++i)
+    {
+        const auto& slot=e.route->notes[i];
+        if(slot.used && slot.stolen && slot.fadeAt>=0 && slot.faded<NoteRoute::fadeSteps && (!chosen || slot.id<chosen->id)){best={&e,i};chosen=&slot;}
+    }
+    return best;
+}
+// Past the hard limit: notes choked without a fade, fading ones first, counted.
+inline void VoiceBudget::choke(float scale,float extra,const NoteRoute* self,uint32_t time,bool reserved) noexcept
+{
+    while(estimate(Fading)*scale+extra>limit)
+    {
+        auto v=fadingNote();
+        if(!v.entry)v=choose(false);
+        if(!v.entry && reserved && reserves()*scale+extra>limit)v=choose(true); // reserves alone pass the hard limit
+        if(!v.entry)return;
+        v.entry->route->choke(v.entry->route->notes[v.slot],v.entry->route==self?time:0);
+        v.entry->cost->hardChokes.fetch_add(1,std::memory_order_relaxed);
+    }
+}
+inline void VoiceBudget::admit(NoteRoute& self,uint32_t time) noexcept
+{
+    if(limit<=0)return;
+    const Entry* mine=nullptr;
+    for(const auto& e:entries)if(e.route==&self){mine=&e;break;}
+    if(!mine)return;
+    const float cost=mine->cost->noteNow();
+    while(estimate(Kept)+cost>soft*limit)
+    {
+        const auto v=choose(false);
+        if(!v.entry)break;
+        v.entry->route->steal(v.entry->route->notes[v.slot],v.entry->route==&self?time:0);
+        v.entry->cost->stolen.fetch_add(1,std::memory_order_relaxed);
+    }
+    choke(1,cost,&self,time,true);
+}
+inline void VoiceBudget::measured(float total) noexcept
+{
+    // Twice running: one block over may be the thread held up from outside, or a burst admitted.
+    const bool again=std::exchange(over,total>limit);
+    if(limit<=0 || total<=limit || !again)return;
+    // The measurement covers every note still ending; what is left once they end must fit. At most
+    // a quarter over the estimate a block, and never a reserve: a block's time also has the
+    // machine's in it, and the estimate follows the measurement within blocks anyway.
+    if(const float e=estimate(Ending);e>0)choke(std::min(total/e,1.25f),0,nullptr,0,false);
+}
 }

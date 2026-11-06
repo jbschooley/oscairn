@@ -2,7 +2,7 @@
 //
 // RFC 0011 step 1: parts and wire ownership, implicit Mixes, port-level routes with channel
 // rules, plugin replacement and Performance persistence.
-//   oscairn-parts-test FIXTURE.clap AUDIO_FIXTURE.clap DELAY.clap SPLITTERS.clap TRANSPOSE.clap FOLLOWER.clap
+//   oscairn-parts-test FIXTURE.clap AUDIO_FIXTURE.clap DELAY.clap SPLITTERS.clap TRANSPOSE.clap FOLLOWER.clap VOICES.clap
 #include "oscairn/session.h"
 #include "oscairn/package.h"
 #include <oscairn-clap/harmony.h>
@@ -705,6 +705,7 @@ namespace
         auto zones = wire(s, graphInput, synth, WireKind::Notes).zones;
         check(zones.size() == 1 && zones[0].maxNotes == 4 && zones[0] .lowKey == 0 && zones[0].highKey == 127, "the limit rides on a zone passing every note");
         check(zones[0].part == keys, "counted for the whole part, across its lanes");
+        check(zones[0].reserve == 2 && zones[0].priority == 3, "the reserve and priority ride on the zone for the shared budget");
         for(auto bad : {PartInput{.maxNotes = 4, .reserve = 5}, PartInput{.reserve = 129}, PartInput{.priority = 11}})
         {
             bool no = false; try { s.setPartInput(keys, bad); } catch(const std::invalid_argument&) { no = true; }
@@ -721,6 +722,35 @@ namespace
         check(wire(t, graphInput, t.parts()[0].chain[0], WireKind::Notes).zones.at(0).part == t.parts()[0].id, "and the part's one count");
         s.setPartInput(keys, {}); s.commit();
         check(wire(s, graphInput, synth, WireKind::Notes).zones.empty(), "no limit: no zone needed");
+    }
+
+    // RFC 0018 step 3: with a CPU budget set, the shared budget steals notes across parts while
+    // they play, and each part's meter counts them. Two parts on instruments whose voices cost
+    // 30 us a block each, under a budget of 266 us: twelve notes are more than it holds. B gives
+    // way first, but reserves four of its six.
+    void voiceBudget(const char* voices, const fs::path& root)
+    {
+        ::setenv("OSCAIRN_DATA_HOME", (root / "voice-budget-home").c_str(), 1);
+        fs::create_directories(root / "voice-budget-home");
+        ::setenv("OSCAIRN_FIXTURE_VOICE_US", "60", 1);
+        Session s(48000, frames);
+        s.setBudget({.2, 0});
+        const auto a = s.addPart("A"), b = s.addPart("B");
+        s.insertIntoPart(a, 0, s.add("a", voices, "org.oscairn.test.voices"));
+        s.insertIntoPart(b, 0, s.add("b", voices, "org.oscairn.test.voices"));
+        NoteZone first; first.channels = 1;
+        NoteZone second; second.channels = 2;
+        s.setPartInput(a, {.zones = {first}, .priority = 5}); s.setPartInput(b, {.zones = {second}, .reserve = 4}); s.commit();
+        Audio x;
+        for(int i = 0; i < 40; ++i) x.run(s); // measured at rest
+        for(int channel : {1, 0}) for(int i = 0; i < 6; ++i) { s.note(true, 60 + i, 1, channel); x.run(s); x.run(s); }
+        for(int i = 0; i < 40; ++i) x.run(s);
+        uint64_t stolenA = 0, stolenB = 0;
+        for(const auto& m : s.partMeters()) { if(m.part == a) stolenA = m.stolen + m.hardChokes; if(m.part == b) stolenB = m.stolen + m.hardChokes; }
+        check(stolenA > 0, "past B's reserve, A gives notes up too: " + std::to_string(stolenA));
+        check(stolenB <= 2, "B, playing six, keeps its reserve of four: " + std::to_string(stolenB));
+        s.setBudget({0, 0}); x.run(s);
+        ::unsetenv("OSCAIRN_FIXTURE_VOICE_US");
     }
 
     // RFC 0011 step 2's gate: a two-layer split and a shared reverb (a delay here) built with part
@@ -2152,7 +2182,7 @@ namespace
 
 int main(int argc, char** argv)
 {
-    if(argc < 7) { std::fprintf(stderr, "usage: %s FIXTURE AUDIO_FIXTURE DELAY SPLITTERS TRANSPOSE FOLLOWER\n", argv[0]); return 2; }
+    if(argc < 8) { std::fprintf(stderr, "usage: %s FIXTURE AUDIO_FIXTURE DELAY SPLITTERS TRANSPOSE FOLLOWER VOICES\n", argv[0]); return 2; }
     try
     {
         state_files::TemporaryDirectory temp;
@@ -2168,6 +2198,7 @@ int main(int argc, char** argv)
         soundSplits(argv[3], argv[4], temp.path);
         mixer(argv[1], argv[3], temp.path);
         noteLimits(argv[1], temp.path);
+        voiceBudget(argv[7], temp.path);
         buses(argv[1], argv[3]);
         emptyBus(argv[1]);
         innerZones(argv[1], argv[5], argv[3], temp.path);

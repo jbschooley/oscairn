@@ -1040,10 +1040,10 @@ void Session::open(Prepared& p,bool seamless) {
     auto& next=p.next;auto& wires=p.wires;auto& disabled=p.disabled;
     // A part's input wires hear the devices its selector chooses here (RFC 0012); files keep selectors, not sources.
     for(auto& w:wires)if(w.owner==WireOwner::Part && w.kind==WireKind::Notes && w.from==graphInput)
-        for(const auto& part:p.parts)if(part.id==w.part && (!part.input.devices.empty() || part.input.maxNotes)){
-            // The file's zones (a lane's included) with this machine's sources and the part's note limit, one count across its lanes.
+        for(const auto& part:p.parts)if(part.id==w.part && (!part.input.devices.empty() || part.input.maxNotes || part.input.reserve || part.input.priority)){
+            // The file's zones (a lane's included) with this machine's sources and the part's note limit, one count across its lanes, reserve and priority.
             if(w.zones.empty())w.zones.emplace_back();
-            const auto mask=resolveDevices(part.input.devices,hostStatus_.midiInputs);for(auto& z:w.zones){z.sources=mask;z.maxNotes=part.input.maxNotes;z.part=part.input.maxNotes?part.id:0;}}
+            const auto mask=resolveDevices(part.input.devices,hostStatus_.midiInputs);for(auto& z:w.zones){z.sources=mask;z.maxNotes=part.input.maxNotes;z.part=part.id;z.reserve=part.input.reserve;z.priority=part.input.priority;}}
     // Seamless (RFC 0021): this Performance's plugins, and any still ringing out from the one
     // before, come along retiring: held notes play on until released and tails ring out, while
     // new notes go to the new Performance.

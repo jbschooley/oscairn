@@ -1056,7 +1056,7 @@ namespace oscairn
         std::vector<PartMeter> out;
         for(auto m:array(field(r,"meters")))
         {
-            PartMeter meter{static_cast<uint32_t>(integer(field(m,"part"))),number(field(m,"peak")),{}};
+            PartMeter meter{static_cast<uint32_t>(integer(field(m,"part"))),number(field(m,"peak")),{},uint64_t(integer(field(m,"stolen"))),uint64_t(integer(field(m,"hardChokes")))};
             for(auto v:array(field(m,"channels")))meter.channels.push_back(number(v));
             out.push_back(std::move(meter));
         }
