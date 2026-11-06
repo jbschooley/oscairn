@@ -7,10 +7,11 @@
 //   oscairn-graph-bench [--seconds S] [--frames F] [--parts N] [--voices V] SYNTH.clap DELAY.clap
 //       N parts, each a synth playing a held chord of V notes (6) into its own delay. Serial and parallel
 //       alternate every half second on the same graph.
-//   oscairn-graph-bench [--seconds S] [--frames F] [--warm S] [--idle] --performance DIR
+//   oscairn-graph-bench [--seconds S] [--frames F] [--warm S] [--service-ms MS] [--idle] --performance DIR
 //       A saved Performance, through a Session, with a chord held on every channel (none with
 //       --idle). One mode per run: OSCAIRN_GRAPH_SERIAL=1 renders serially. Prints the
-//       engine process's CPU use too.
+//       engine process's CPU use and its workers' too. The session is serviced every --service-ms
+//       (5, as the app does; 0: never).
 //
 // OSCAIRN_PLUGIN_WORKER puts every plugin in a worker, as in the app.
 #include "oscairn/graph.h"
@@ -25,6 +26,7 @@
 #include <thread>
 #include <vector>
 #include <sys/resource.h>
+#include <time.h>
 
 namespace
 {
@@ -38,6 +40,7 @@ namespace
         auto at = [&](double q) { return s.us[std::min(s.us.size() - 1, size_t(q * double(s.us.size())))]; };
         std::printf("%-10s blocks %6zu  mean %7.1f us  p50 %7.1f  p95 %7.1f  p99 %7.1f  max %7.1f\n", name, s.us.size(), sum / double(s.us.size()), at(.5), at(.95), at(.99), s.us.back());
     }
+    double threadSeconds() { timespec t{}; clock_gettime(CLOCK_THREAD_CPUTIME_ID, &t); return double(t.tv_sec) + double(t.tv_nsec) * 1e-9; }
     double cpuSeconds()
     {
         rusage u{}; getrusage(RUSAGE_SELF, &u);
@@ -47,7 +50,7 @@ namespace
 
 int main(int argc, char** argv)
 {
-    double seconds = 10, rate = 48000, warmSeconds = 1; uint32_t frames = 128, parts = 4, voices = 6; bool idle = false;
+    double seconds = 10, rate = 48000, warmSeconds = 1, serviceMs = 5; uint32_t frames = 128, parts = 4, voices = 6; bool idle = false;
     std::string performance; std::vector<std::string> plugins;
     for(int i = 1; i < argc; ++i)
     {
@@ -59,6 +62,7 @@ int main(int argc, char** argv)
         else if(a == "--voices") voices = uint32_t(std::atoi(value()));
         else if(a == "--idle") idle = true;
         else if(a == "--warm") warmSeconds = std::atof(value());
+        else if(a == "--service-ms") serviceMs = std::atof(value());
         else if(a == "--performance") performance = value();
         else plugins.push_back(a);
     }
@@ -73,10 +77,12 @@ int main(int argc, char** argv)
         std::vector<kick::clap::Event> chord;
         if(!idle) for(int c = 0; c < 16; ++c) for(int k : {48, 55, 60, 64}) chord.push_back(kick::clap::Event::note(true, k, .7, 0, c));
         Stats s; float level = 0;
+        auto workerSeconds = [&] { double t = 0; for(const auto& w : session.sessionStatus().workers) t += w.cpu; return t; };
+        const double workersBefore = workerSeconds();
         std::thread audio([&] {
             oscairn::worker::makeRealtime(1e6 * period.count());
             auto next = Clock::now(); const auto blocks = uint64_t(seconds / period.count());
-            const double cpu = cpuSeconds(); const auto began = Clock::now();
+            const double cpu = cpuSeconds(), own = threadSeconds(); const auto began = Clock::now();
             for(uint64_t b = 0; b < blocks; ++b)
             {
                 std::this_thread::sleep_until(next); next += std::chrono::duration_cast<Clock::duration>(period);
@@ -90,11 +96,16 @@ int main(int argc, char** argv)
                 for(uint32_t i = 0; i < frames; ++i) level = std::max(level, std::abs(left[i]));
             }
             const double wall = std::chrono::duration<double>(Clock::now() - began).count();
-            std::printf("engine process CPU: %.1f%% of one core over %.1f s\n", 100 * (cpuSeconds() - cpu) / wall, wall);
+            std::printf("engine process CPU: %.1f%% of one core over %.1f s, its audio thread %.1f%%\n", 100 * (cpuSeconds() - cpu) / wall, wall, 100 * (threadSeconds() - own) / wall);
         });
-        // The main thread services the session as the app's does, at its 5 ms pace.
-        for(auto until = Clock::now() + std::chrono::duration<double>(seconds); Clock::now() < until;) { session.service(); std::this_thread::sleep_for(std::chrono::milliseconds(5)); }
+        // The main thread services the session as the app's does, every 5 ms (--service-ms).
+        for(auto until = Clock::now() + std::chrono::duration<double>(seconds); Clock::now() < until;)
+        {
+            if(serviceMs > 0) session.service();
+            std::this_thread::sleep_for(std::chrono::duration<double, std::milli>(serviceMs > 0 ? serviceMs : 5));
+        }
         audio.join();
+        std::printf("workers' CPU: %.1f%% of one core\n", 100 * (workerSeconds() - workersBefore) / seconds);
         const auto state = session.graphState();
         for(const auto& n : state.topology.nodes) std::printf("node %u %s (%s)\n", n.id, state.names.count(n.id) ? state.names.at(n.id).c_str() : "", n.plugin.id.c_str());
         const auto status = session.sessionStatus();

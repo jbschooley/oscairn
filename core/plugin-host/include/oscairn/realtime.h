@@ -6,13 +6,15 @@
 #pragma once
 #include <atomic>
 #include <chrono>
+#include <climits>
 #include <cstdint>
 
 namespace oscairn::worker
 {
     // Waits while word == value; false on timeout. Shared between processes.
     bool waitWhileEqual(std::atomic<uint32_t>& word, uint32_t value, std::chrono::nanoseconds timeout) noexcept;
-    void wake(std::atomic<uint32_t>& word) noexcept;
+    // Wakes up to `waiters` threads waiting on word (every one by default).
+    void wake(std::atomic<uint32_t>& word, int waiters = INT_MAX) noexcept;
     // The calling thread at real-time priority: a time constraint of the period on macOS, SCHED_FIFO on Linux.
     bool makeRealtime(double periodMicroseconds) noexcept;
 }

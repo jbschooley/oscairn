@@ -1,6 +1,6 @@
 # RFC 0034: Parallel graph rendering
 
-Status: in progress, 2026-11-05: step 1 built ([status](#step-1-status)). Builds on plugin worker isolation
+Status: in progress, 2026-11-05: steps 1 and 2 built ([step 1](#step-1-status), [step 2](#step-2-status)). Builds on plugin worker isolation
 ([RFC 0010](0010-plugin-worker-isolation.md#audio-hand-off)) and resource budgets
 ([RFC 0025](0025-resource-budgets.md)).
 
@@ -9,7 +9,7 @@ Status: in progress, 2026-11-05: step 1 built ([status](#step-1-status)). Builds
 Checked when built and tested; the sections below say how.
 
 - [x] 1. Waves: independent nodes start together; plugins in workers render at the same time ([status](#step-1-status))
-- [ ] 2. Audio helpers: plugins in the engine's process render at the same time, on real-time helper threads
+- [x] 2. Audio helpers: plugins in the engine's process render at the same time, on real-time helper threads ([status](#step-2-status))
 - [ ] 3. Measured on the target (a four-core KICK-class board): block time and idle CPU
 
 ## Problem
@@ -93,7 +93,13 @@ every graph in the process. They run at real-time priority, as workers' audio th
 
 One graph uses the pool at a time; another graph's audio thread that finds it busy renders its
 own wave alone (try-acquire, never waiting). A wave with fewer than two plugins in the engine
-wakes no helper.
+wakes no helper, and neither does one whose plugins, by the time each took in the last block,
+would move less than 30 us off the audio thread besides the largest (`OSCAIRN_HELPERS_WORTH_US`):
+dispatching every wave made light Performances 5–20 us a block slower, as waking cost more than
+their waves took. Helpers run
+each job in the dispatching thread's floating-point environment (rounding, flushing denormals),
+so where a plugin renders never changes what it renders. `OSCAIRN_AUDIO_HELPERS` sets how many
+helpers there are (0: none).
 
 ## Step 1 status
 
@@ -121,6 +127,38 @@ light, so this mostly measures the hand-off: serially each worker's wake and rep
 parallel a wave costs about one. The user's converted Performances load headless through a
 `Session`, but their sfizz parts render silence when in workers there (on `main` too), so they
 are measured in the engine's process under step 2.
+
+## Step 2 status
+
+Built: `AudioHelpers` (core/engine/src/AudioHelpers.cpp), used by every wave's plugins in the
+engine's process. `parallel-render` runs with three helpers dispatched on every wave; it fails
+when the audio thread does not wait for the helpers' jobs. The suites pass (109 tests in the
+modular build, 117 in the desktop build; control-controller-input failed in some runs, as on
+`main`).
+
+Measured as in step 1, plugins in the engine's process, mean block time:
+
+| Graph | Serial | Parallel |
+| ----- | ------ | -------- |
+| 4 parts, Basic Synth (24 voices) into Delay | 193 us | 91 us |
+| "Sick tines" (16 nodes: five sfizz parts with EQs), a chord held on every channel | 427–500 us | 190–217 us |
+| "Drifting" (two sfizz parts with EQs) | 499–590 us | 401–595 us |
+
+"Drifting" gains little: one of its two sfizz parts takes nearly the whole block, and a block
+cannot be shorter than its slowest part. Performances whose parts were silent here (their
+inputs did not hear the chord) took 20–40 us either way, within the noise.
+
+**Spinning or sleeping.** With "Sick tines" playing, helpers that spin 100 us after each dispatch
+before sleeping used about 10% more of a core for no consistent gain (133–155 us against
+139–140 us); helpers spinning until the next block used over 200% of a core and made blocks
+slower and erratic (mean 506–566 us, worst over 15 ms) as they competed with the audio thread.
+Helpers sleep.
+
+**Idle CPU.** Idle (a Performance loaded, nothing playing), with the session serviced every 5 ms
+as the app does, the engine process used the same CPU on `main`, serially and in parallel, within
+the noise: "Drifting" in workers 5.3%, 5.7% and 5.6% of a core (and its workers 2.8–2.9%), in
+the engine's process 2.3% all three. Idle, a whole block in the engine's process took under
+30 us ("Drifting" 13 us, "Sick tines" 24 us), so no wave was worth the helpers and they slept.
 
 ## Alternatives
 

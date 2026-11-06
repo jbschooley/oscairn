@@ -32,6 +32,7 @@ target_include_directories(oscairn_clap_headers INTERFACE clap-host/third_party/
 add_library(oscairn_engine STATIC
     engine/src/chain.cpp
     engine/src/graph.cpp
+    engine/src/AudioHelpers.cpp
     engine/src/harmony.cpp
     engine/src/PreparedInstrument.cpp
     engine/src/midi_input.cpp
@@ -242,7 +243,7 @@ add_executable(oscairn-parallel-render-test engine/tests/parallel_render.cpp)
 target_link_libraries(oscairn-parallel-render-test PRIVATE oscairn_engine)
 target_include_directories(oscairn-parallel-render-test PRIVATE clap-host/tests)
 add_test(NAME parallel-render COMMAND oscairn-parallel-render-test $<TARGET_FILE:oscairn_transpose> $<TARGET_FILE:oscairn_basic_synth> $<TARGET_FILE:oscairn_delay>)
-set_tests_properties(parallel-render PROPERTIES TIMEOUT 60)
+set_tests_properties(parallel-render PROPERTIES TIMEOUT 60 ENVIRONMENT "OSCAIRN_AUDIO_HELPERS=3;OSCAIRN_HELPERS_WORTH_US=0") # every wave on the helpers
 
 add_executable(oscairn-worker-host-test engine/tests/worker_host.cpp)
 target_link_libraries(oscairn-worker-host-test PRIVATE oscairn_plugin_host)

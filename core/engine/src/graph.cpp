@@ -2,12 +2,14 @@
 #include "oscairn/graph.h"
 #include "NoteRoute.h"
 #include "PreparedInstrument.h"
+#include "AudioHelpers.h"
 
 #include "oscairn/harmony.h"
 #include <oscairn-clap/beat.h>
 #include <oscairn-clap/param-target.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
@@ -76,6 +78,7 @@ namespace oscairn
             std::vector<kick::clap::Event> merged;
             uint32_t mergedCount = 0;
             bool processed = false, started = false;
+            float cost = 0; // the microseconds its last rendering took in this process (whether a wave is worth the helpers)
         };
 
         struct Key // orders merged notes: by time, then by source and position
@@ -94,6 +97,7 @@ namespace oscairn
         std::vector<Tap>               taps;
         std::vector<Step>              steps;
         std::vector<uint32_t> waves; // RFC 0034: where each wave of steps ends; a wave's steps render at the same time
+        std::vector<uint32_t> local; // audio thread: the wave's steps rendering in this process
         std::vector<Key>               keys;
     };
 
@@ -175,6 +179,7 @@ namespace oscairn
         for(auto& g:liveTarget_)g.store(1.f,std::memory_order_relaxed);
         liveFrom_.fill(1.f);liveTo_.fill(1.f);
         if(const char* serial=std::getenv("OSCAIRN_GRAPH_SERIAL");serial && *serial && *serial!='0')parallel_.store(false); // RFC 0034, for measuring
+        helpers_=&AudioHelpers::shared(1e6*maxFrames/sampleRate);
     }
 
     Graph::~Graph()
@@ -731,6 +736,7 @@ namespace oscairn
             step.merged.resize( kick::clap::Host::maxProcessEvents ); // maxBlockEvents notes, plus the beat and up to 32 harmony changes
         }
         plan->keys.reserve( 2 * kick::clap::Host::maxBlockEvents ); // releases, then the beat and harmony, never reallocating
+        plan->local.resize( plan->steps.size() );
         return plan.release();
     }
 
@@ -1092,9 +1098,26 @@ namespace oscairn
         else for(uint32_t first=0;const auto end:plan->waves)
         {
             // A wave: each plugin in a worker starts as soon as its inputs are ready; the others
-            // render here meanwhile; then every one finishes, in plan order.
-            for(uint32_t i=first;i<end;++i){auto& step=plan->steps[i];prepare(step);step.started=start(step);}
-            for(uint32_t i=first;i<end;++i)if(!plan->steps[i].started)render(plan->steps[i]);
+            // render meanwhile, here and on the audio helpers; then every one finishes, in plan order.
+            uint32_t locals=0;
+            for(uint32_t i=first;i<end;++i){auto& step=plan->steps[i];prepare(step);step.started=start(step);if(!step.started)plan->local[locals++]=i;}
+            struct Job
+            {
+                Plan* plan;uint32_t frames;const clap_event_transport_t* transport;
+                static void render(void* context,uint32_t i) noexcept
+                {
+                    const auto& j=*static_cast<Job*>(context);auto& step=j.plan->steps[j.plan->local[i]];
+                    const auto began=std::chrono::steady_clock::now();
+                    step.processed=step.host->process(step.in.data(),step.audioInputs,step.out.data(),step.audioOutputs,j.frames,step.merged.data(),step.mergedCount,j.transport);
+                    step.cost=std::chrono::duration<float,std::micro>(std::chrono::steady_clock::now()-began).count();
+                }
+            } job{plan,frames,transport};
+            // The helpers only when, by the last block, the wave leaves enough besides its largest
+            // plugin to pay for waking them; otherwise all here.
+            float total=0,largest=0;
+            for(uint32_t k=0;k<locals;++k){const float c=plan->steps[plan->local[k]].cost;total+=c;largest=std::max(largest,c);}
+            if(total-largest>=helpers_->worth())helpers_->run(locals,&Job::render,&job);
+            else for(uint32_t k=0;k<locals;++k)Job::render(&job,k);
             for(uint32_t i=first;i<end;++i)if(plan->steps[i].started)plan->steps[i].processed=plan->steps[i].host->finishProcess();
             for(uint32_t i=first;i<end;++i)finish(plan->steps[i]);
             first=end;

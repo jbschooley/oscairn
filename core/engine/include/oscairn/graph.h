@@ -20,6 +20,7 @@
 namespace oscairn
 {
     struct NoteRoute;
+    class AudioHelpers;
     using NodeId = uint32_t;
 
     /// The graph's own endpoints: external audio and note events (keyboard, pads, MIDI) enter
@@ -408,6 +409,7 @@ namespace oscairn
         std::atomic<Listener*> listener_{ nullptr };
         bool panicInput_=false;
         std::atomic<bool> parallel_{ true }; // see setParallel
+        AudioHelpers* helpers_ = nullptr; // RFC 0034: renders a wave's plugins in this process
         double freeBeats_ = 0; // audio thread: oscairn.beat's position at the next block's start
         Plan*              current_ = nullptr; // audio thread only
         Retired            retired_;

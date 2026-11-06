@@ -45,12 +45,14 @@ namespace oscairn::worker
         return true;
     }
 
-    void wake(std::atomic<uint32_t>& word) noexcept
+    void wake(std::atomic<uint32_t>& word, int waiters) noexcept
     {
 #ifdef __APPLE__
-        os_sync_wake_by_address_any(&word, sizeof(uint32_t), OS_SYNC_WAKE_BY_ADDRESS_SHARED);
+        if(waiters == INT_MAX) { os_sync_wake_by_address_all(&word, sizeof(uint32_t), OS_SYNC_WAKE_BY_ADDRESS_SHARED); return; }
+        for(int i = 0; i < waiters; ++i)
+            if(os_sync_wake_by_address_any(&word, sizeof(uint32_t), OS_SYNC_WAKE_BY_ADDRESS_SHARED) != 0) break; // none left waiting
 #else
-        syscall(SYS_futex, reinterpret_cast<uint32_t*>(&word), FUTEX_WAKE, INT_MAX, nullptr, nullptr, 0);
+        syscall(SYS_futex, reinterpret_cast<uint32_t*>(&word), FUTEX_WAKE, waiters, nullptr, nullptr, 0);
 #endif
     }
 

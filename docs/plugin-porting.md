@@ -93,6 +93,12 @@ An `oscairn.ui` extension without `param_hint` is ignored, not refused.
   app, `Session`, `oscairn-plugin-check`), in the engine or a worker. A plugin whose
   `has_hard_realtime_requirement` returns true is told `CLAP_RENDER_REALTIME` in offline renders
   too, and still renders faster than real time. The mode does not change while a plugin is loaded.
+- **Audio threads:** plugins that do not feed each other render at the same time
+  ([RFC 0034](rfcs/0034-parallel-graph-rendering.md)): in the engine's process, `process` may
+  run on the audio device's thread or on one of the engine's real-time helper threads, block to
+  block, while other plugins render on the others; thread-check's `is_audio_thread` is true on
+  each. One instance is never processed on two threads at once, and neither are effect contexts
+  made from one instance. Keep nothing per process in globals shared between instances.
 - **Host extensions:** thread-check, timer support, POSIX file descriptors, tail, log,
   latency, event registry, params, state, audio ports, note ports, preset-load,
   `oscairn.assets` and `oscairn.harmony`.
