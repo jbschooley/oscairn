@@ -3,7 +3,7 @@
 // RFC 0010 steps 4-5: a prepared sound whose worker crashes comes back with its state and
 // parameters, faded in, while the node's other sound keeps playing; a plugin that keeps
 // crashing is restarted a bounded number of times and then stays silent and reported. Native
-// engines come back whole: Basic Synth with its prepared sounds and selections, the Sampler with
+// engines come back whole: Basic Synth with its prepared sounds and selections, the Legacy Sampler with
 // a sound whose files resolve through the asset store, Delay with an effect context.
 //   oscairn-worker-recovery-test WORKER NOTE_CRASH.clap PROCESS_CRASH.clap BASIC_SYNTH.clap SAMPLER.clap DELAY.clap
 #include <oscairn/assets.h>
@@ -267,7 +267,7 @@ namespace
             settle();
             check(voices() == "1 and 0", "Basic Synth: the limits outlast a restart: " + voices());
         }
-        { // Sampler: a sound whose sample resolves through the asset store, again after the restart.
+        { // Legacy Sampler: a sound whose sample resolves through the asset store, again after the restart.
             oscairn::assets::Store store(directory / "assets");
             const auto folder = directory / "samples"; std::filesystem::create_directories(folder);
             std::vector<float> tone(24000); for(size_t i = 0; i < tone.size(); ++i) tone[i] = float(.5 * std::sin(2 * M_PI * 220 * double(i) / rate));

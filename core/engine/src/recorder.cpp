@@ -419,7 +419,7 @@ namespace oscairn
                     const auto at = in.tellg();
                     in.seekg(0, std::ios::end);
                     const auto bytes = std::min<uint64_t>(size, uint64_t(in.tellg() - at)); // sizes saturate past 4 GiB
-                    // shortcut: the whole file in memory, as the Sampler loads one (RFC 0020): for captures of seconds to minutes.
+                    // shortcut: the whole file in memory, as the Legacy Sampler loads one (RFC 0020): for captures of seconds to minutes.
                     if(bytes > (1ull << 30)) throw std::invalid_argument("too long to play back here: " + file.filename().string());
                     std::vector<float> samples(size_t(bytes / 4 / channels * channels));
                     in.seekg(at);

@@ -848,7 +848,7 @@ that instance has no free sound, channel or bus, the node goes on another instan
 this Performance shares that has room, else on a new one (the spill), the first node of an engine
 of its own. Only a plugin with native sound contexts, their snapshot, oscairn.sound-snapshots'
 draft 4 (one sound saved on its own, a sound's values) and a stepped parameter with oscairn.ui's
-`outputBus` role (the Basic Synth's Output bus; not the Sampler, which has one output) can share;
+`outputBus` role (the Basic Synth's Output bus; not the Legacy Sampler, which has one output) can share;
 others return -32004. `graph.get` lists each such node's `shared`: `engine`, the engine's first
 node, and its `channel` and `bus`; a saved Performance keeps them
 ([format](performance-format.md)). Undo takes a share back like any added node; one that made

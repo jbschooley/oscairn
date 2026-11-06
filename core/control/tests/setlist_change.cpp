@@ -24,7 +24,7 @@ namespace
     int failures = 0;
     void check(bool ok, const std::string& what) { if(!ok) { std::fprintf(stderr, "FAIL: %s\n", what.c_str()); ++failures; } }
     constexpr uint32_t frames = 128, parts = 8;
-    constexpr size_t sampleFrames = 4u << 20; // 16 MiB of float audio per Sampler part
+    constexpr size_t sampleFrames = 4u << 20; // 16 MiB of float audio per Legacy Sampler part
 
     struct Audio
     {

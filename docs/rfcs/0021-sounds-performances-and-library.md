@@ -117,7 +117,7 @@ There is also no library. The architecture plans one:
 
 What exists is narrower. `SoundPickerModel` finds the node named `synth`, offers five
 hard-coded Basic Synth patches ("Warm", "Bright" …), the presets `presets.list` returns for
-other instruments, or a `.wav`/`.sfz` import for the Sampler, and prepares, selects and
+other instruments, or a `.wav`/`.sfz` import for the Legacy Sampler, and prepares, selects and
 discards contexts on that one node. `PluginBrowser` scans plugins, replaces the instrument or
 effect slot, and reloads it with a chosen preset through `graph.replace`, which cuts the
 slot's notes and tails. The desktop's **Performance** menu saves and opens whole
@@ -401,7 +401,7 @@ filed as one or the other.
   device suggests the tags of its preloaded content and the list grows with use. There is no
   separate vocabulary fixed in the host or added by packages.
 - **Facets the host works out**, never stored as tags:
-  - *Engine:* the plugins a Sound uses (Basic Synth, Sampler, FM engine, analog engine,
+  - *Engine:* the plugins a Sound uses (Basic Synth, Legacy Sampler, FM engine, analog engine,
     Delay …), from its nodes;
   - *Kind:* Sound, Performance, Preset;
   - *Seamless:* whether every plugin in it supports prepared switching, so it can load
@@ -656,7 +656,7 @@ error, and going to it.
 Preparing ahead moves the load off the cue but still holds two Performances' instances while
 the old one rings out, and each part has its own instance even when several use one engine
 with native contexts. Engines with native contexts can do with fewer: the Basic Synth and the
-Sampler hold several sounds in one instance ([RFC 0005](0005-sound-contexts.md); the Sampler
+Legacy Sampler hold several sounds in one instance ([RFC 0005](0005-sound-contexts.md); the Legacy Sampler
 keeps audio that several sounds use once), the Delay several effects
 ([RFC 0007](0007-effect-contexts.md)). Three slices, each on its own:
 
@@ -678,9 +678,9 @@ keeps audio that several sounds use once), the Delay several effects
    snapshot without loading another instance: a contract call that prepares a snapshot's
    contexts beside the live ones, not replacing them, with IDs of the instance's choosing; and
    per-sound output buses where the two Performances' chains after the instrument differ (the
-   Basic Synth's eight; the Sampler has none yet), else that instrument loads as today. It
+   Basic Synth's eight; the Legacy Sampler has none yet), else that instrument loads as today. It
    spills the same way, to a new instance, when the free slots (Basic Synth: seven beside
-   Default) are too few. Where the Sampler's sounds use the same samples, the change holds
+   Default) are too few. Where the Legacy Sampler's sounds use the same samples, the change holds
    them once instead of twice.
 3. **Parts sharing one engine.** Within a Performance, parts whose instruments are the same
    native-context plugin share one instance: each part its own sound, MIDI channel and output
@@ -733,7 +733,7 @@ each the sound the node's channel selects, with its part's reserve and priority.
 no audio input and no note output, and a stepped parameter whose value is the output port a sound
 plays on, tagged with oscairn.ui's new `OSCAIRN_ROLE_OUTPUT_BUS`; the host sets it on each sound,
 on the node's channel. The Basic Synth tags its Output bus (eight sound buses beside Main, eight
-sounds with its Default). The Sampler has one output, so its parts keep an instance each, as do
+sounds with its Default). The Legacy Sampler has one output, so its parts keep an instance each, as do
 ordinary CLAP instruments (no native contexts). An instance takes as many nodes as it has free
 sounds, output ports (up to the bus parameter's maximum) and channels; a fresh Basic Synth holds
 its own sound and seven more.

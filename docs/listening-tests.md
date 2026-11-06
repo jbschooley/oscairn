@@ -51,7 +51,7 @@ behind it, not the JUCE menu, file chooser or button state.
   enabled and offers **Import sample or SFZ...** only. *October 30: works from the default
   graph. After the shared-effects setup, replace refuses with "Incompatible audio buses;
   explicit routing is required" because the synth's routed sound buses have no
-  counterpart on the Sampler.*
+  counterpart on the Legacy Sampler.*
 - [x] Import a mono or stereo WAV (at most 64 MiB decoded). It appears named after the
   file. **Use sound**, then play: middle C (60) is the recorded pitch, other keys are
   transposed, and a released note fades out quickly (default `ampeg_release` 1 ms).
@@ -73,7 +73,7 @@ behind it, not the JUCE menu, file chooser or button state.
   open reported `sample not found: tone.wav (in …/Oscairn sampler test)` and left the
   graph revision unchanged.
 
-Level note: the Sampler matches liquidsfz's default level, 7.2 dB below the sample's own
+Level note: the Legacy Sampler matches liquidsfz's default level, 7.2 dB below the sample's own
 level (default CC7 volume and center pan law; see RFC 0008 step 2 status). Judge whether
 that sounds right next to the Basic Synth.
 

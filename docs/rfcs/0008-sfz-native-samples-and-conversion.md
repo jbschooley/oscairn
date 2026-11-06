@@ -285,7 +285,7 @@ acceptance has not happened** and is queued with the other listening tests.
 
 - [Oscairn Legacy Sampler](https://github.com/oscairn/sampler) (its own repository since 2026-10-31) plays the baseline
   profile over preloaded mono/stereo WAV with libsndfile; behavior and limits are in
-  [its README](https://github.com/oscairn/sampler#what-it-plays). Basic Synth and Sampler share
+  [its README](https://github.com/oscairn/sampler#what-it-plays). Basic Synth and Legacy Sampler share
   [one context implementation](../../core/clap-ext/include/oscairn-clap/sound-contexts-plugin.hpp).
 - `sounds.prepare` takes `sfz` with an asset `library` and `directory` (RFC 0009) through typed, JSON and remote controls; the
   desktop picker imports a `.wav` or `.sfz` file through the same model code.
@@ -301,7 +301,7 @@ acceptance has not happened** and is queued with the other listening tests.
   [results](../sample-players-and-formats.md#reference-renders-against-liquidsfz)): after
   matching level, pitch, transposition, tuning, volume, velocity and release agree within
   0.34% RMS. The release uses liquidsfz's exponential curve, and (Jacob, 2026-10-30) the
-  Sampler adopts liquidsfz's default level: CC7 volume 100 on its squared curve and the
+  Legacy Sampler adopts liquidsfz's default level: CC7 volume 100 on its squared curve and the
   sine pan law at center, together −7.2 dB. Levels now agree within 0.05 dB; the remaining
   0.6% is not in liquidsfz's gain path and is unexplained. CC7 and CC10 changes are not
   implemented yet; only their default values are matched.

@@ -515,7 +515,7 @@ Kept to the minimum:
 
 - **Audition** a short capture by playing it through the Sampler as a one-region sound, the
   path imported WAV files already take
-  ([RFC 0009](0009-sound-assets-and-dependencies.md#implementation-status)). The Sampler
+  ([RFC 0009](0009-sound-assets-and-dependencies.md#implementation-status)). The Legacy Sampler
   loads whole files into memory today, so this is for captures of seconds to a few minutes.
   Whether it reads 32-bit float WAV was not checked (it lives in its own repository); if
   not, step 4 adds it.

@@ -129,7 +129,7 @@ plugin's own data folder read-write (RFC 0006, 0009).
 | 1. Measure | A minimal hand-off: one CLAP plugin in a child process, shared memory and futex or semaphore wake-up | Round-trip time per block (median and 99.9th percentile) for 1, 8 and 32 workers on macOS, Linux x86 and the aarch64 target. Decides default grouping and whether parallel branches are needed. |
 | 2. One isolated plugin | Worker shim hosting a CLAP plugin as a graph node, with sample-accurate events, transport and parameters | Renders identical to in-process for the reference plugins; no allocation on the audio path; the existing graph tests pass with workers. |
 | 3. Contain failure | Crash, hang and deadline handling | The `process_crash`, `process_hang` and `slow` fixtures stop only their own node; other sounds continue without dropouts. |
-| 4. Recover | Supervisor, recovery record, restart and fade-in | A crashed Basic Synth and Sampler return with their prepared sounds; bounded retries. |
+| 4. Recover | Supervisor, recovery record, restart and fade-in | A crashed Basic Synth and Legacy Sampler return with their prepared sounds; bounded retries. |
 | 5. Policies | Grouping, native contexts in one worker, per-plugin overrides | Contexts, effect tails and sound assets work unchanged across the boundary. |
 | 6. Limits | Memory and CPU limits, then sandboxing | A plugin exceeding its limit is stopped and reported; others continue. |
 | 7. LV2 | LV2 plugins and their Worker extension inside workers | Upstream LV2 tests pass in workers. |
@@ -222,7 +222,7 @@ Implemented 2026-10-30 in `core/plugin-host` (`Worker.*`, `WorkerHost.cpp`) and 
   text, state save and load, and `service`. The plugin is serviced only when the engine
   calls `service`, as in the engine; the worker refreshes parameter values every 10 ms.
 - **Stayed in the engine:** plugins with native sound or effect contexts (Basic Synth,
-  Sampler, Delay), until step 5 moved them into workers. Preset listings are answered by
+  Legacy Sampler, Delay), until step 5 moved them into workers. Preset listings are answered by
   the engine from the isolated scan helper since 2026-11-02 (RFC 0005), so a provider that
   hangs cannot restart a playing worker; a preset load is still forwarded, and it also
   refreshes the recovery record. Properties are not yet.
@@ -317,7 +317,7 @@ of 15 under AddressSanitizer and ThreadSanitizer. Not yet run on Linux or the de
 Implemented 2026-10-30 in `WorkerHost.cpp`, `Worker.cpp` and `plugin_host.cpp`:
 
 - **Native engines in workers:** every CLAP plugin can now run in a worker, Basic Synth,
-  Sampler and Delay included. A worker hosts one plugin and the effect contexts created from
+  Legacy Sampler and Delay included. A worker hosts one plugin and the effect contexts created from
   it, which share its engine as in the engine (the "shared by engine" group). Each is a graph
   node with its own shared block and audio thread in the worker, and every request names its
   node. Destroying the originating node keeps its contexts' engine alive, as the extension
@@ -330,7 +330,7 @@ Implemented 2026-10-30 in `WorkerHost.cpp`, `Worker.cpp` and `plugin_host.cpp`:
   discarded since and each channel's selection, or a snapshot saved when one is loaded. A
   restarted worker re-creates the effect contexts from a fresh engine and replays the
   record. The engine keeps its own sound IDs, mapped to the worker's, so IDs stay the same
-  across a restart; new ones are never reused. Sampler sounds re-resolve their files from
+  across a restart; new ones are never reused. Legacy Sampler sounds re-resolve their files from
   the supervisor thread, which the store's own lock allows.
 - **Parameter values** a plugin reports while processing (the sequencer's active pattern)
   and values set from the engine are published with the block or the request, so they read
@@ -349,7 +349,7 @@ Verification: the graph, pressure, sound-context, sampler and effect-context tes
 control JSON-RPC, native sounds and effects and Performance save/restore tests, run again
 with every plugin in a worker (`*-workers`); a run with a missing worker program fails each
 of them, so they do use workers. `worker-recovery` kills the workers of Basic Synth (two
-sounds on two channels), the Sampler (a sound from an asset library) and Delay (a root and a
+sounds on two channels), the Legacy Sampler (a sound from an asset library) and Delay (a root and a
 context): each comes back with the same sound IDs and plays exactly as a fresh reference, and
 a placement override starts a worker or not as set. On macOS all 75 tests pass, the worker
 tests 10 of 10 times; under AddressSanitizer and ThreadSanitizer the suites pass. With four

@@ -9,7 +9,7 @@ leaves as "the planned host asset API" and "assets must be declared by the plugi
 Checked when built and tested; the sections below say how.
 
 - [x] 1. Store index, library manifest, registered folders, `resolve` and `import` ([status](#implementation-status))
-- [x] 2. `oscairn.assets` and `oscairn.asset-dependencies`, used by the Sampler; preflight with a missing-asset report
+- [x] 2. `oscairn.assets` and `oscairn.asset-dependencies`, used by the Legacy Sampler; preflight with a missing-asset report
 - [ ] 3. LV2 path mapping onto the store; `create` for user-library files
 - [ ] 4. Libraries as RFC 0006 packages, with redistribution checks and garbage collection
 
@@ -56,14 +56,14 @@ must already satisfy, and the export reports it.
 
 ## Files used by several plugins
 
-Assets belong to the host and are not tied to any plugin. Our Sampler, sfizz, a drum
+Assets belong to the host and are not tied to any plugin. Our Legacy Sampler, sfizz, a drum
 machine and a granular plugin can all reference the same library, and its files are on
 disk once. Which plugins can use a file is a plugin capability (accepted media types and
 patch formats), not something the library records.
 
 Disk is shared; memory is not automatically shared. Each plugin decodes into its own
 memory unless a later host service hands out shared, read-only decoded buffers. Today the
-Sampler shares decoded audio only between its own contexts.
+Legacy Sampler shares decoded audio only between its own contexts.
 
 Plugin-specific derived data, such as decoded PCM, wavetable mipmaps, compiled patches or
 neural-model caches, is a disposable cache keyed by asset hash plus plugin ID and version.
@@ -148,7 +148,7 @@ library root, and the binding to a library lives in the sound's asset references
 
 ## Changes to what exists
 
-- **Sampler snapshot:** today it stores an absolute directory and a 64-bit FNV hash of the
+- **Legacy Sampler snapshot:** today it stores an absolute directory and a 64-bit FNV hash of the
   decoded audio. Replace these with asset references (SHA-256 of file bytes). Keep the
   in-memory FNV hash only for deduplicating decoded audio within one instance.
 - **`prepare`:** `directory` becomes a base asset reference.
@@ -162,7 +162,7 @@ library root, and the binding to a library lives in the sound's asset references
 
 1. Store index, library manifest and registered folders; hashing with an index; host-side
    `resolve`/`import` behind the control API.
-2. The `oscairn.assets` and `oscairn.asset-dependencies` extensions, used by the Sampler;
+2. The `oscairn.assets` and `oscairn.asset-dependencies` extensions, used by the Legacy Sampler;
    manifest dependency list; transactional preflight with a precise missing-asset report.
 3. LV2 path mapping onto the store; `create` for user-library files (first use: Yamaha
    user waveform conversion).
@@ -188,7 +188,7 @@ so later cleaning up the original folder cannot break a sound. A registered fold
 in place and never moved or deleted by Oscairn.
 
 **No shared decoded-audio service for now.** Disk storage is shared; each plugin decodes into
-its own memory, and the Sampler shares decoded audio only between its own contexts.
+its own memory, and the Legacy Sampler shares decoded audio only between its own contexts.
 Streaming large libraries (RFC 0008 step 3) reduces memory per plugin more than sharing
 would, and a cross-plugin service would face differing sample formats, cross-plugin
 lifetime tracking, worker-process isolation, and plugins that would not use it. Revisit

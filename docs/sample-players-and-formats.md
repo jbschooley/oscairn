@@ -55,7 +55,7 @@ not establish cross-process sharing, arbitrary SFZ correctness or real-time safe
 library paths. The existing allocation guard covers C++ allocation, not every C allocator,
 deallocation, lock or page fault.
 
-Reproduce with the commands in the Sampler repository's [research README](https://github.com/oscairn/sampler/blob/main/research/README.md).
+Reproduce with the commands in the Legacy Sampler repository's [research README](https://github.com/oscairn/sampler/blob/main/research/README.md).
 
 This deliberately compiles a research executable, not a supported production packaging
 configuration. The generated WAV/SFZ files remain in the chosen directory for inspection.
@@ -95,14 +95,14 @@ same one-region patches (2026-10-30, liquidsfz `4cc901d1`, macOS arm64):
 | `volume=-6 tune=30` | 1.006 | 0.27% |
 | `ampeg_release=0.1`, released at 0.25 s | 1.006 | 0.01% |
 
-The level ratio was 2.295 (+7.2 dB) before the Sampler adopted liquidsfz's default level
+The level ratio was 2.295 (+7.2 dB) before the Legacy Sampler adopted liquidsfz's default level
 from `lib/voice.cc`: a CC7 volume of 100 through its squared volume curve (about −4.2 dB)
 and the sine pan law at center (1/√2 per channel, −3 dB). The remaining 0.6% is not in
-that gain path and is unexplained. The release row was 16% before the Sampler adopted
+that gain path and is unexplained. The release row was 16% before the Legacy Sampler adopted
 liquidsfz's exponential release (`lib/envelope.hh`: −60 dB at the release time, then
 silence). Velocity follows the same squared curve in both.
 
-Reproduce with the commands in the Sampler repository's [research README](https://github.com/oscairn/sampler/blob/main/research/README.md).
+Reproduce with the commands in the Legacy Sampler repository's [research README](https://github.com/oscairn/sampler/blob/main/research/README.md).
 
 This compares rendered numbers, not listening. It does not cover stereo samples,
 sample-rate conversion, sustain pedal or simultaneous voices.

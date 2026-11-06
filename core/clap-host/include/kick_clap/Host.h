@@ -190,7 +190,7 @@ public:
     bool declaresAssets() const noexcept;
     uint32_t soundContextCapacity() const noexcept;
     std::vector<oscairn_sound_context_info_t> soundContexts() const;
-    // patch: instrument-defined text (SFZ for the Sampler) whose files are in directory of asset library.
+    // patch: instrument-defined text (SFZ for the Legacy Sampler) whose files are in directory of asset library.
     uint32_t prepareSound(const std::string& name,const std::vector<oscairn_sound_parameter_t>& parameters,const std::string& patch={},const std::string& library={},const std::string& directory={});
     // A native context from one of presets() (draft 5's prepare_preset).
     uint32_t prepareSound(const std::string& name,const Preset& preset);

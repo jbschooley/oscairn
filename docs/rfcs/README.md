@@ -13,10 +13,10 @@ tests it, with a note on what remains of a step that is partly done. The
 | [0002](0002-param-target.md) | Parameter changes between plugins (oscairn.param-target) | draft, implemented |
 | [0003](0003-control-api.md) | Control API | partially implemented; local JSON-RPC transport and explicit engine/UI separation |
 | [0004](0004-hardware-services.md) | Hardware services, event timing and engine backends | proposed |
-| [0005](0005-sound-contexts.md) | Native prepared sound contexts | instrument contexts and full snapshots implemented; SFZ patches via the Sampler; effects covered by 0007 |
+| [0005](0005-sound-contexts.md) | Native prepared sound contexts | instrument contexts and full snapshots implemented; SFZ patches via the Legacy Sampler; effects covered by 0007 |
 | [0006](0006-packages-and-portability.md) | Packages and cross-device portability | proposed |
 | [0007](0007-effect-contexts.md) | Independent effects on shared native engines | implemented Delay/bus foundation; automatic chain management planned |
-| [0008](0008-sfz-native-samples-and-conversion.md) | SFZ-based native samples and Yamaha conversion | one-region Sampler implemented; multisample, extensions and converters planned |
+| [0008](0008-sfz-native-samples-and-conversion.md) | SFZ-based native samples and Yamaha conversion | one-region Legacy Sampler implemented; multisample, extensions and converters planned |
 | [0009](0009-sound-assets-and-dependencies.md) | Sound assets and dependencies | steps 1–2 implemented; LV2 mapping and packages planned |
 | [0010](0010-plugin-worker-isolation.md) | Plugin worker isolation | in progress: steps 1–5 implemented on macOS |
 | [0011](0011-performance-ui-and-editors.md) | Performance UI, routing views and plugin editors | in progress: steps 1–4 and undo implemented |
@@ -26,7 +26,7 @@ tests it, with a note on what remains of a step that is partly done. The
 | [0015](0015-analog-modeling-engine.md) | An analog-modeling engine | proposed |
 | [0016](0016-effects-suite.md) | An effects suite covering the MODX M platform | proposed |
 | [0017](0017-host-tuning.md) | Host-level tuning | proposed |
-| [0018](0018-voice-budget-and-stealing.md) | Voice budget and stealing | in progress: steps 1 to 4 implemented (the Sampler's extension and both device gates not yet) |
+| [0018](0018-voice-budget-and-stealing.md) | Voice budget and stealing | in progress: steps 1 to 4 implemented (the Legacy Sampler's extension and both device gates not yet) |
 | [0019](0019-adaptive-ui.md) | One UI across desktop, touch panel and small screens | in progress: step 1 done, steps 2, 3 and 5 started |
 | [0020](0020-recording.md) | Recording | proposed |
 | [0021](0021-sounds-performances-and-library.md) | Sounds, Performances and the library | in progress |

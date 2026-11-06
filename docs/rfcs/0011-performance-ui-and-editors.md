@@ -856,7 +856,7 @@ override it could not apply.
 | 2. Parts and Part views | Parts list, chain, zones, scenes; desktop and device | A two-layer split and a shared reverb built without opening Routing |
 | 3. Split, join, buses | Split and join nodes, Mix with mute and solo, shared buses, Mixer | Rendering identical to the same graph wired by hand |
 | 4. Routing view | Nodes and wires, part wires shown and hidable, user wires, badges | Every structure from steps 2–3 appears; wiring a second source creates a shared row |
-| 5. Editors | Knob pages for every plugin, structured-editor description draft, Modular grid as the first case | Basic Synth, Sampler and one third-party plugin editable on the device without a plugin window |
+| 5. Editors | Knob pages for every plugin, structured-editor description draft, Modular grid as the first case | Basic Synth, Legacy Sampler and one third-party plugin editable on the device without a plugin window |
 | 6. Physical controls | Default layers, overrides, learn, banks per control group | A new performance with three sounds has working knobs, faders and buttons with no programming |
 | 7. Groups, pedal view, move/copy/share | | |
 
@@ -1179,11 +1179,11 @@ large plugin without any, from its names), drawn as tiles with the control each 
 Desktop and on a device's Panel, where the device's knobs play the line selected on screen,
 and as lists for four encoders on the Compact test layout. A mode that hides controls redraws
 the pages. `desktop-shell` checks the gate's plugins on all three: the Basic Synth, the
-Sampler (which has no parameters yet, so nothing to edit there) and Odin 2 (258 parameters, 26
+Legacy Sampler (which has no parameters yet, so nothing to edit there) and Odin 2 (258 parameters, 26
 pages, checked where it is built beside the checkout); the bundled Delay, Transpose and Step
 Sequencer were rendered and looked at. Two-valued parameters written 0 and 1 are switches
 labeled Off and On. Not yet: what modulates each knob (parameter lanes, aftertouch), the
-structured-editor description beyond `oscairn.ui`'s hints, and the Modular grid; the Sampler's
+structured-editor description beyond `oscairn.ui`'s hints, and the Modular grid; the Legacy Sampler's
 zones, sounds and envelope wait on its parameters and RFC 0019 step 5.
 
 ## Step 6 status
@@ -1277,7 +1277,7 @@ were looked at.
 
 Roles and the editor page's screen knobs, 2026-11-01: the Basic Synth declares Brightness as
 its cutoff and Level as its level, and the Delay its Wet as `mix`; Split, Join, Transpose and the
-Step Sequencer have no parameter that fits a role, and the Sampler (its own repository) has
+Step Sequencer have no parameter that fits a role, and the Legacy Sampler (its own repository) has
 none yet to declare. A panel layout's own `row:N` knobs still play the line selected in an
 editor (the first by default, which is its top parameters in priority order), as before.
 
@@ -1319,7 +1319,7 @@ checks the bar's Panic: shown, focusable, calling the engine's panic, and hidden
 controller's button plays Panic; and a device screen's All notes off hidden the same way.
 
 Not yet: name matching beyond exact names (per-oscillator levels, other spellings); the
-Sampler's roles; no panel layout binds faders, buttons or a row-switching group, so
+Legacy Sampler's roles; no panel layout binds faders, buttons or a row-switching group, so
 those resolve but are not yet played, and row buttons have no layout binding; targets for
 sends, bypass and the transport; overrides in a Performance import; MIDI CC learn; reporting
 overrides a device could not apply.

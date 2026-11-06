@@ -233,7 +233,7 @@ in the others.
      rebuilding, so held notes and tails already carry on
      ([RFC 0011](rfcs/0011-performance-ui-and-editors.md))
 2. **Native sample patches** ([sample players and formats](sample-players-and-formats.md),
-   [ESP observations](yamaha-esp-samples-research.md)). The Sampler lives in its own
+   [ESP observations](yamaha-esp-samples-research.md)). The Legacy Sampler lives in its own
    repository, [oscairn/sampler](https://github.com/oscairn/sampler), since October 31, 2026
    (like the FM and analog engines' forks), fetched at a pinned commit.
    - [x] first slice: one-region SFZ patches over preloaded WAV with shared PCM, held-note
@@ -265,7 +265,7 @@ in the others.
      ([status](rfcs/0010-plugin-worker-isolation.md#step-3-status))
    - [x] step 4: a failed plugin restarted with its prepared sounds' state and parameters
      ([status](rfcs/0010-plugin-worker-isolation.md#step-4-status))
-   - [x] step 5: native engines (Basic Synth, Sampler, Delay with its effect contexts) in
+   - [x] step 5: native engines (Basic Synth, Legacy Sampler, Delay with its effect contexts) in
      workers, with sound assets across the boundary and a placement policy with per-plugin
      overrides ([status](rfcs/0010-plugin-worker-isolation.md#step-5-status))
    - [ ] step 6: memory and CPU limits, sandboxing (limits done, with CPU time and memory per
@@ -301,13 +301,13 @@ in the others.
 6. **Voice budget** ([RFC 0018](rfcs/0018-voice-budget-and-stealing.md#progress)): stealing
    the least audible notes across parts, fading them first, with per-part note limits,
    reserves and priority; later, plugins that opt in steal their own voices.
-   - [x] a choke fades a voice over 3 ms in the SDK helper (Basic Synth and Sampler);
+   - [x] a choke fades a voice over 3 ms in the SDK helper (Basic Synth and Legacy Sampler);
      per-note volume; the host's 5 ms volume fade before it chokes a stolen note
    - [x] per-part note limits that steal released notes first and spare the bass and melody
      ([step 2](rfcs/0018-voice-budget-and-stealing.md#step-2-status))
    - [x] reserves and priority per part, and one note count across a part's lanes
    - [x] step 3's shared budget: stealing across parts by measured cost at note-on, counted on the Parts list (the device gate unverified)
-   - [x] step 4's extension for plugins that steal their own voices (`oscairn.voice-budget/draft-1`, the Basic Synth; the Sampler and the AWM2-class gate not yet)
+   - [x] step 4's extension for plugins that steal their own voices (`oscairn.voice-budget/draft-1`, the Basic Synth; the AWM2-class gate not yet; the deprecated Legacy Sampler won't get it)
 7. **Sounds, Performances and the library**
    ([RFC 0021](rfcs/0021-sounds-performances-and-library.md#progress)) and apps that ask each
    other for them ([RFC 0022](rfcs/0022-apps-and-requests.md#progress))
@@ -394,7 +394,7 @@ Also open:
   instance of a native instrument, each its own sound, channel and output bus, formed on their own
   as a Performance is read or a plugin added, spilling to another instance when it is full, and
   claimed across a change (the next Performance's sounds prepared beside in the playing shared
-  instance and selected at the cue). The Sampler, with one output, keeps an instance per part
+  instance and selected at the cue). The Legacy Sampler, with one output, keeps an instance per part
 - [ ] automatic Sound/effect-chain preparation and retirement, and asset-bearing native
   patches (Setlist and library persistence are done: item 7)
 - [ ] stable format/plugin identities and state provenance in persistent library data,

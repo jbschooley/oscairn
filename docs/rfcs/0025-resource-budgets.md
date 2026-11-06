@@ -555,8 +555,8 @@ typedef struct oscairn_plugin_memory {
   `context_bytes`, not a new instance. Admission counts the context alone, from its declaration
   or, without one, from its effect contexts' `resources` (built, step 7).
 - **Samplers (RFC 0008, 0009, 0013):** decoded samples are committed while their Performance is
-  open. The Sampler's 256 MiB budget per instance (RFC 0008) stays as a bound of its own. Audio
-  shared between a Sampler's contexts is counted once, in `shared_bytes`.
+  open. The Legacy Sampler's 256 MiB budget per instance (RFC 0008) stays as a bound of its own. Audio
+  shared between a Legacy Sampler's contexts is counted once, in `shared_bytes`.
 
 ### What the musician sees
 

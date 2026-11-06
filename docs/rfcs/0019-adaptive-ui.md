@@ -14,7 +14,7 @@ Checked when built and tested; the sections below say how.
       panes with a saved arrangement, the inspector and shortcuts remain
 - [ ] 3. Generated editors: parameter pages from module paths, `oscairn.ui` draft hints, panel
       row knobs, the Compact test layout and the gate's checks done (Odin 2 on Desktop, Panel
-      and Compact); the Sampler has no parameters to edit yet
+      and Compact); the Legacy Sampler has no parameters to edit yet
 - [ ] 4. Plugin windows: built on macOS, from workers, reopened after a restart
       ([status](#step-4-status)); the gate's editing while audio plays, Linux and an engine-placed
       plugin remain
@@ -245,7 +245,7 @@ load. If it fails, Panel's renderer changes, and the view models and description
 | --- | --- | --- |
 | 1. Surfaces and view models | The surface a layout names; the input mode preference; the Parts, Part and Mixer views on view models, drawn for Desktop and Panel | The view models' tests run without drawing; each view renders in Desktop (both input modes) and in Panel at 1024 × 600 |
 | 2. Desktop shell | Menu bar and shortcuts, dockable panes with a saved arrangement, the inspector, a second window | Parts, Mixer and an editor open side by side and edit one Performance; the arrangement survives a restart |
-| 3. Generated editors and the description | `oscairn.ui` header and generated descriptions; Desktop, Panel and a Compact test layout drawing them; Basic Synth and Sampler descriptions | Basic Synth, Sampler and one third-party plugin editable on Desktop and Panel without a plugin window; the Compact test layout reaches each one's top parameters with four encoders |
+| 3. Generated editors and the description | `oscairn.ui` header and generated descriptions; Desktop, Panel and a Compact test layout drawing them; Basic Synth and Legacy Sampler descriptions | Basic Synth, Legacy Sampler and one third-party plugin editable on Desktop and Panel without a plugin window; the Compact test layout reaches each one's top parameters with four encoders |
 | 4. Plugin windows | CLAP GUI on the desktop: floating windows, embedded where supported, and from worker processes | A third-party plugin's window opens, edits and closes without stopping audio, also when its worker restarts |
 | 5. Rich widgets | Envelope, key and velocity map, waveform, step lane; then the Modular grid (RFC 0011 step 5) | The Sampler's zones and envelope edited by touch on Panel and by mouse on Desktop |
 | 6. Front panels | User-placed controls bound to any parameter, saved with the Performance, on Desktop | A panel of controls for three plugins, built and played without the plugins' editors |
@@ -354,11 +354,11 @@ stepped, else a hundredth of the range) and pressing encoder 4 shows the next fo
 encoder 1 goes back. It draws the same description as Desktop and Panel: the pages and
 priority order come from one function (`editorPages`, `byPriority`) that `ParameterGrid` uses
 too. `desktop-shell` runs step 3's Compact gate on `layouts/compact.json`, with the encoders
-alone: for the Basic Synth, the Sampler and, where `OSCAIRN_THIRD_PARTY_CLAP` names one (the
+alone: for the Basic Synth, the Legacy Sampler and, where `OSCAIRN_THIRD_PARTY_CLAP` names one (the
 build sets it to Odin 2 beside the checkout when it is there; the test says when it skips),
 a third-party plugin, it chooses the plugin from the list, checks that every page's encoders
 hold its top four parameters, turns each and sees the value change, and pages on with encoder
-4. Checked with Odin 2 (258 parameters, one page). The Sampler has no parameters yet (it is
+4. Checked with Odin 2 (258 parameters, one page). The Legacy Sampler has no parameters yet (it is
 edited through its sounds and the Part page's zones), so its part of the gate shows it as
 having none. Loading Odin 2 needed a host fix: the CLAP host checked the plugin's functions
 before `init`, which plugins built on clap-helpers only fill in during `init`, and then

@@ -12,7 +12,7 @@ Checked when built and tested; the sections below say how.
 - [x] 1. Fade and choke ([status](#step-1-status))
 - [x] 2. Part limits ([status](#step-2-status))
 - [x] 3. Shared budget ([status](#step-3-status); the gate on the device unverified)
-- [x] 4. The `oscairn.voice-budget` extension ([status](#step-4-status); the Sampler, and the gate on an AWM2-class sound, not yet)
+- [x] 4. The `oscairn.voice-budget` extension ([status](#step-4-status); the gate on an AWM2-class sound not yet)
 
 ## Problem
 
@@ -169,8 +169,8 @@ fade and choke. They are listed here so they are built once:
 The plugin side, 2026-10-31: the SDK's sound-contexts helper fades a choked voice over 3 ms,
 then ends it (and its note), and applies `CLAP_NOTE_EXPRESSION_VOLUME` per voice; an
 instrument multiplies each voice's samples by `amplitude(voice, offset)`, and a voice that
-does not still ends when its fade would have. The Basic Synth and the Sampler do; the
-`sampler` test checks the Sampler's fade sample by sample. `choke-fade` checks a
+does not still ends when its fade would have. The Basic Synth and the Legacy Sampler do; the
+`sampler` test checks the Legacy Sampler's fade sample by sample. `choke-fade` checks a
 choked note against the same note left alone: most of its level in the first millisecond,
 less than 60% in the second half of the fade, silence and `NOTE_END` after 3 ms, and per-note
 volume halving it; a cut, or a fade that ignored the ramp, fails it.
@@ -405,8 +405,8 @@ the bounds, NaN, negative and infinite costs and levels: every report the engine
 range, and the worker keeps running. Without the voice bound it fails "counts bounded:
 4294967295 voices"; without the note bound the engine crashes.
 
-Not yet: the Sampler, which lives in its own repository (`oscairn/sampler`) and needs its
-`get_extension` to return the Engine's table and its own `loudness`; the gate, a layered
+Not planned: the Legacy Sampler (`oscairn/sampler`), deprecated in favor of the sfizz-based
+Oscairn Sampler, does not offer the extension. Not yet: the gate, a layered
 AWM2-class sound under pressure dropping quiet elements before whole notes, is **unverified**
 (RFC 0013's engine is not started; the fixture imitates its layers, and the converter session's
 sfizz-based sampler in the forks is to test it); LV2 plugins; and part modes (mono, legato)
@@ -416,7 +416,7 @@ to send.
 
 | Step | Deliverable | Gate |
 | --- | --- | --- |
-| 1. Fade and choke | The two-stage steal of one note in `NoteRoute`; the porting guide's choke and volume-expression advice; the Basic Synth and Sampler honor both | A stolen note in the rendered output has no step larger than a reference fade; no allocation |
+| 1. Fade and choke | The two-stage steal of one note in `NoteRoute`; the porting guide's choke and volume-expression advice; the Basic Synth and Legacy Sampler honor both | A stolen note in the rendered output has no step larger than a reference fade; no allocation |
 | 2. Part limits | Note limit, reserve and priority per part, stealing within the part; persisted and in the protocol; Part page fields | A part limited to 4 notes plays 8 keys without clicks, keeping the newest 4 and the protected keys |
 | 3. Shared budget | Cost per note from measurement, stealing across parts at note-on, soft and hard limits, counts on the Parts list | A Performance that misses deadlines without the budget plays a stress chart on the device with no deadline misses, and only quiet or released notes stolen |
 | 4. Extension | `oscairn.voice-budget` header, host support, the native instruments implementing it | A layered AWM2-class sound under pressure drops quiet elements before whole notes |

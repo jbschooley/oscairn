@@ -3,7 +3,7 @@
 Status: first instrument implementation. The Basic Synth and its typed/JSON/remote
 controls implement this contract. Ordinary CLAP/LV2 instruments also have a host-owned instance pool, documented in the
 [control protocol](../control-protocol.md#prepared-sounds); it does not implement this
-plugin extension. The Sampler prepares SFZ patches through draft 3. Automatic effect-chain transitions
+plugin extension. The Legacy Sampler prepares SFZ patches through draft 3. Automatic effect-chain transitions
 remain to do; [sample research and implementation scope](../sample-players-and-formats.md)
 cover the next asset milestone. Performance persistence is implemented in the
 [versioned folder format](../performance-format.md). The desktop sound picker is implemented; native effect contexts
@@ -15,7 +15,7 @@ Checked when built and tested; the sections below say how.
 
 - [x] The `oscairn.sound-contexts` contract, implemented by the Basic Synth with typed, JSON and remote controls
 - [x] A host-owned instance pool for ordinary CLAP and LV2 instruments
-- [x] The Sampler preparing SFZ patches
+- [x] The Legacy Sampler preparing SFZ patches
 - [x] Prepared sounds saved in Performances; the desktop sound picker
 - [x] Native contexts prepared from the plugin's CLAP presets ([draft 5](#presets)), with the SDK's
       discovery helper, the Basic Synth's factory presets and the presets indexed when plugins are scanned
@@ -49,7 +49,7 @@ Each prepared context has an instance-local ID, name, independent patch values a
 state. IDs are never reused within that plugin instance, even after a slot is reclaimed.
 Preparing from numeric values starts with the plugin's defaults and applies the supplied
 values; it is not a snapshot of whatever happens to be playing. Draft 3 added an optional
-patch text for engines that define one (the Sampler takes SFZ) and a message buffer the
+patch text for engines that define one (the Legacy Sampler takes SFZ) and a message buffer the
 plugin fills with a diagnostic when it rejects a patch. Draft 4 gives the patch a base asset
 reference, a library folder whose files the plugin resolves through `oscairn.assets`
 ([RFC 0009](0009-sound-assets-and-dependencies.md)), instead of an absolute directory. Draft 5
@@ -96,11 +96,11 @@ it rather than an encoding in `prepare`'s patch text, because:
 
 - the provider's load keys and the loader are then one scheme, the one `preset-load` already
   uses, so a plugin that loads presets in other hosts reuses its parser unchanged;
-- patch text is the engine's own language (SFZ for the Sampler) with an asset base; a
+- patch text is the engine's own language (SFZ for the Legacy Sampler) with an asset base; a
   reserved prefix inside it would need escaping rules, could collide with a patch language,
   and would leave the base meaningless;
 - appended after `state`, it stays null in a draft-4 table, so an instrument without presets
-  (the Sampler) builds unchanged and simply prepares none.
+  (the Legacy Sampler) builds unchanged and simply prepares none.
 
 A preset is the whole patch: it starts from the plugin's defaults, and takes no parameter
 overrides (edit the prepared sound afterwards). A native instrument without `prepare_preset`
@@ -333,11 +333,11 @@ becomes `{Engine::prepareSnapshot, Engine::setRingOut, Engine::chokeRetiring, En
 Engine::soundValues}`. Draft 3 is gone, replaced outright: a plugin built against it must rebuild.
 In a worker both cross as requests of their own (`Op::SaveSound`, `Op::SoundValues`).
 
-## Basic Synth and Sampler
+## Basic Synth and Legacy Sampler
 
 Both instruments use one shared implementation of this contract,
 [sound-contexts-plugin.hpp](../../core/clap-ext/include/oscairn-clap/sound-contexts-plugin.hpp); the rules below apply to both,
-except parameters, which the Sampler does not have. A Sampler note outside its region's
+except parameters, which the Legacy Sampler does not have. A Legacy Sampler note outside its region's
 key or velocity range starts no voice and reports `NOTE_END` immediately.
 
 The Basic Synth has eight context slots including a protected Default context (ID 0),
