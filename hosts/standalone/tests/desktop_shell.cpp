@@ -952,10 +952,10 @@ int main(int argc, char** argv)
                 check(row.size() >= 3 && row[0] == "Brightness" && row[1] == "Level" && row[2] == "Oscillator", "the first row, left to right");
             }
             // RFC 0019 step 3's gate on the Compact test layout (layouts/compact.json, 320 × 240 and
-            // four encoders): the Basic Synth, the Sampler and a third-party plugin, each chosen
+            // four encoders): the Basic Synth, the Legacy Sampler and a third-party plugin, each chosen
             // from the plugin list and every page's top parameters turned, with the encoders alone.
             {
-                std::vector<standalone::PluginChoice> gate{plugin("Basic Synth"), plugin("Sampler")};
+                std::vector<standalone::PluginChoice> gate{plugin("Basic Synth"), plugin("Legacy Sampler")};
                 if(const char* third = std::getenv("OSCAIRN_THIRD_PARTY_CLAP"); third && std::filesystem::exists(third))
                 {
                     const auto found = scanPlugins({std::filesystem::path(third).parent_path()}, argv[2]).plugins; // its folder: a bundle is a folder itself
@@ -1009,7 +1009,7 @@ int main(int argc, char** argv)
                     for(const auto& [id, n] : engine.graph().names) if(n == name) node = id;
                     const auto params = standalone::editorParameters(engine.parameters(node));
                     const auto pages = standalone::editorPages(params);
-                    // A plugin with no parameters (the Sampler, so far) says so.
+                    // A plugin with no parameters (the Legacy Sampler, so far) says so.
                     check(pages.empty() ? compact->level() == Level::Pages && compact->listShown().empty() : compact->level() == (pages.size() > 1 ? Level::Pages : Level::Parameters),
                           name + ": its pages, or its one page's parameters");
                     size_t turned = 0;

@@ -47,7 +47,7 @@ Earlier automated/live telemetry checks are not a substitute for this response.
 Also the first interactive run of the desktop import; automated tests cover the model code
 behind it, not the JUCE menu, file chooser or button state.
 
-- [x] Replace the synth with **Oscairn Sampler** in the plugin browser. **Prepare...** is
+- [x] Replace the synth with **Oscairn Legacy Sampler** in the plugin browser. **Prepare...** is
   enabled and offers **Import sample or SFZ...** only. *October 30: works from the default
   graph. After the shared-effects setup, replace refuses with "Incompatible audio buses;
   explicit routing is required" because the synth's routed sound buses have no

@@ -2,15 +2,20 @@
 
 Status: in progress, 2026-10-29. This records the agreed direction to build on SFZ and
 extend it where necessary. The [step 1 decision](#step-1-decision-baseline-profile-and-engine)
-is recorded; step 2 is implemented as the Oscairn Sampler with the baseline profile (see
+is recorded; step 2 is implemented as the Oscairn Legacy Sampler with the baseline profile (see
 [Step 2 status](#step-2-status)). Extension syntax is not defined.
+
+Note, 2026-11-06: the Sampler built in step 2 is now the Oscairn Legacy Sampler
+(`org.oscairn.legacy-sampler`), deprecated in favor of the sfizz-based Oscairn Sampler
+(`org.oscairn.sampler`). The later steps are unchanged here; which engine they build on is
+not yet decided.
 
 ## Progress
 
 Checked when built and tested; the sections below say how.
 
 - [x] 1. Profile and engine decision ([decision](#step-1-decision-baseline-profile-and-engine))
-- [x] 2. Native WAV/SFZ slice: the Oscairn Sampler ([status](#step-2-status))
+- [x] 2. Native WAV/SFZ slice: the Oscairn Legacy Sampler ([status](#step-2-status))
 - [ ] 3. Multisample baseline and ordinary-SFZ conversion
 - [ ] 4. Demonstrated Oscairn extensions
 - [ ] 5. MODX M migration
@@ -278,7 +283,7 @@ implementation. Therefore:
 Implemented 2026-10-29 and checked by the automated tests named below; **audible
 acceptance has not happened** and is queued with the other listening tests.
 
-- [Oscairn Sampler](https://github.com/oscairn/sampler) (its own repository since 2026-10-31) plays the baseline
+- [Oscairn Legacy Sampler](https://github.com/oscairn/sampler) (its own repository since 2026-10-31) plays the baseline
   profile over preloaded mono/stereo WAV with libsndfile; behavior and limits are in
   [its README](https://github.com/oscairn/sampler#what-it-plays). Basic Synth and Sampler share
   [one context implementation](../../core/clap-ext/include/oscairn-clap/sound-contexts-plugin.hpp).

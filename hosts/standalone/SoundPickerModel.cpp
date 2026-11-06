@@ -21,7 +21,8 @@ namespace oscairn::standalone
                 result.instrument = node.plugin.name;
             }
         result.sounds = control.sounds(result.node);
-        if(result.pluginId == "org.oscairn.sampler")
+        // The sfizz-based Oscairn Sampler (org.oscairn.sampler) can be added here if it supports the same prepare.
+        if(result.pluginId == "org.oscairn.legacy-sampler")
             result.importsSamples = true;
         else if(result.sounds.capacity)
         {

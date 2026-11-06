@@ -659,7 +659,7 @@ sustain follows the channel across switches. `accepted` means queued, not applie
 
 `sfz` goes only to native engines that define patch text, together with the asset `library`
 holding its files and the patch's `directory` inside that library (empty for the root): the
-Oscairn Sampler takes an SFZ patch whose `sample=` paths are relative to that folder and may
+Oscairn Legacy Sampler takes an SFZ patch whose `sample=` paths are relative to that folder and may
 use `../` without leaving the library. The engine resolves and reads those files on its
 control thread; a rejected patch returns `-32005` with the plugin's diagnostic, such as
 `line 2: unsupported opcode pan`. The whole request must fit the 64 KiB message limit.

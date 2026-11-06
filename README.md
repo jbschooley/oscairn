@@ -22,10 +22,10 @@ Oscairn sets out to solve both. How, and how much of it is built today:
   Sound contexts are a CLAP extension (`oscairn.sound-contexts`, a draft whose
   [header](core/clap-ext/include/oscairn-clap/sound-contexts.h) any plugin can implement), so
   third-party instruments can be built to do it too; today only Oscairn's own Basic Synth,
-  Sampler and Delay do. A third-party plugin without it still switches instantly, through a
+  Legacy Sampler and Delay do. A third-party plugin without it still switches instantly, through a
   spare instance per prepared sound, each with its own memory.
 
-  How many sounds one instance holds is the plugin's to say: the Basic Synth and the Sampler
+  How many sounds one instance holds is the plugin's to say: the Basic Synth and the Legacy Sampler
   have eight slots (one is the default sound), fixed so that switching and playing never
   allocate memory on the audio thread; the pool for other plugins also has eight. This limit
   is per instance, not per Performance: each part has its own instance today, so a Performance

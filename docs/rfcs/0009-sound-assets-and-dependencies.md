@@ -210,7 +210,7 @@ Steps 1 and 2 are implemented and tested (`assets`, `sampler`, `desktop-sound-pi
 - Single-file imports go to the `user` library as `<first 16 hex digits of SHA-256>/<name>`.
 - The host extension `oscairn.assets/draft-1` and plugin extension
   `oscairn.asset-dependencies/draft-2` (draft 1 still accepted) are in [`oscairn-clap/assets.h`](../../core/clap-ext/include/oscairn-clap/assets.h);
-  `oscairn.sound-contexts/draft-4` passes the patch's base reference. The Oscairn Sampler
+  `oscairn.sound-contexts/draft-4` passes the patch's base reference. The Oscairn Legacy Sampler
   uses both and no longer reads directories itself.
 - Control: `assets.register`, `assets.import`, `assets.libraries`, and `sounds.prepare` with
   `library`/`directory`. The desktop picker copies an imported WAV into the user library and

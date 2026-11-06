@@ -9,7 +9,7 @@ for build commands and the contracts for a new plugin.
 | Basic Synth | [basic_synth.cpp](basic-synth/basic_synth.cpp) | Polyphonic instrument, sample-timed parameters/expression, native sound contexts, channel parts and per-voice output buses, pitch bend and the mod wheel, `oscairn.ui` hints with roles |
 | Step Sequencer | [step_sequencer.cpp](step-sequencer/step_sequencer.cpp) | Note-only source, transport timing, editable steps and parameter-lock lanes |
 | Delay | [delay.cpp](delay/delay.cpp) | Independent native effect contexts, parameter/state APIs, tails and tempo glide, a `mix` role |
-| Sampler | [oscairn/sampler](https://github.com/oscairn/sampler), its own repository, fetched at a pinned commit | One-region SFZ patches over preloaded WAV audio shared between sound contexts, with portable saved assets |
+| Legacy Sampler | [oscairn/sampler](https://github.com/oscairn/sampler), its own repository, fetched at a pinned commit | One-region SFZ patches over preloaded WAV audio shared between sound contexts, with portable saved assets |
 | Modular | [modular.cpp](modular/src/modular.cpp), [README](modular/README.md) | chillbeast's patchable grid synth (imported engine) wrapped as a CLAP instrument; links JUCE, built with `OSCAIRN_MODULAR` or the desktop |
 | Split / Join | [splitters.cpp](splitters/splitters.cpp) | The nodes at either end of a part's left/right, mid/side and band lanes (RFC 0011 step 3): two plugins in one bundle, fixed ports, the mode a parameter; Linkwitz-Riley crossovers whose bands sum flat |
 | Transpose / MIDI Delay | [midi_effect.cpp](midi-effects/midi_effect.cpp), [behavior](midi-effects/README.md) | Held-note mapping, pressure/sustain, bounded sample-timed event queues and portable state |
@@ -18,13 +18,15 @@ There is no arpeggiator in the current tree. Automatic Sound/effect-chain manage
 not implemented; explicit routing supports independent chains and preserved tails. These small plugins are executable references, not a complete production
 synth/preset library. Keep stable IDs and license notices when adapting their source.
 
-Basic Synth and Sampler share one implementation of native context ownership, voice
+Basic Synth and the Legacy Sampler share one implementation of native context ownership, voice
 release rules and snapshots: [sound-contexts-plugin.hpp](../core/clap-ext/include/oscairn-clap/sound-contexts-plugin.hpp),
 part of the MIT plugin SDK beside the extension headers.
 
-## Sampler sounds
+## Legacy Sampler sounds
 
-The Sampler moved to [its own repository](https://github.com/oscairn/sampler) on 2026-10-31, with its history; what it plays
+The Oscairn Legacy Sampler (`org.oscairn.legacy-sampler`, `oscairn-legacy-sampler.clap`) was the
+Oscairn Sampler until 2026-11-06, and is deprecated in favor of the sfizz-based Oscairn Sampler
+(`org.oscairn.sampler`). It moved to [its own repository](https://github.com/oscairn/sampler) on 2026-10-31, with its history; what it plays
 and its limits are in its README. The build fetches it at the commit pinned in
 [CMakeLists.txt](CMakeLists.txt), and its tests stay here, in `core/engine/tests/sampler.cpp`,
 since they drive it through Oscairn's host.

@@ -83,7 +83,7 @@ Checked at liquidsfz `4cc901d18b316cd377276f7eb6b8c325329b9860` for the
 ### Reference renders against liquidsfz
 
 [`liquidsfz_compare.cpp`](https://github.com/oscairn/sampler/blob/main/research/liquidsfz_compare.cpp) renders one
-second of a generated mono 48 kHz tone through liquidsfz and the Oscairn Sampler with the
+second of a generated mono 48 kHz tone through liquidsfz and the Oscairn Legacy Sampler with the
 same one-region patches (2026-10-30, liquidsfz `4cc901d1`, macOS arm64):
 
 | Case | Oscairn / liquidsfz RMS | Residual after matching level |

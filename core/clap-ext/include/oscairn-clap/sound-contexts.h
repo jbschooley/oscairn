@@ -12,7 +12,7 @@ extern "C" {
  * Capacity is constant for the instance lifetime; Oscairn refuses a plugin reporting more
  * than 256 or missing any function but state. Telemetry may change while read.
  * prepare builds an independent patch from plugin defaults plus supplied values, or
- * from patch text when the plugin defines one (the Oscairn Sampler takes SFZ). Asset
+ * from patch text when the plugin defines one (the Oscairn Legacy Sampler takes SFZ). Asset
  * paths in that text are relative to base, a library folder whose files the plugin
  * resolves through the host's oscairn.assets extension (base->sha256 is unused). Both
  * are null for parameter-only patches. Preparation may read files.

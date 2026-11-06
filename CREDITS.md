@@ -80,8 +80,8 @@ authoritative.
 
 - **libsndfile:** Erik de Castro Lopo and the libsndfile contributors
   ([project](https://libsndfile.github.io/libsndfile/), LGPL-2.1-or-later). The Oscairn
-  Sampler links it dynamically to decode WAV samples; it is an external build dependency,
-  not vendored source. Retain its notices in any distributed binary/image. The Sampler
+  Legacy Sampler links it dynamically to decode WAV samples; it is an external build dependency,
+  not vendored source. Retain its notices in any distributed binary/image. The Legacy Sampler
   itself (AGPL-3.0-or-later) is in its own repository,
   [oscairn/sampler](https://github.com/oscairn/sampler), which Oscairn builds at a pinned
   commit.

@@ -42,7 +42,7 @@ LV2 state directories contain `state.ttl` and materialized assets. CLAP state is
 as supplied by the plugin; the host cannot discover external sample paths hidden inside
 an arbitrary CLAP state blob. A plugin whose state is not self-contained may still require
 its original sample library. Plugins that declare their files through
-`oscairn.asset-dependencies`, such as the Oscairn Sampler, store asset references instead
+`oscairn.asset-dependencies`, such as the Oscairn Legacy Sampler, store asset references instead
 ([RFC 0009](rfcs/0009-sound-assets-and-dependencies.md)): the files stay in their libraries.
 Package-managed dependency resolution remains planned in [RFC 0006](rfcs/0006-packages-and-portability.md).
 
@@ -120,7 +120,7 @@ installing the plugin later restores it. A document that is malformed is still r
   with a message per sound and library such as `Piano: 641 of 641 files from library
   'Salamander' unavailable, e.g. …`. Moving the Performance folder does not move the samples;
   registering the same folder on another device is enough.
-- The Sampler's `oscairn-sampler-2` snapshot stores every prepared SFZ patch (normalized) with
+- The Legacy Sampler's `oscairn-sampler-2` snapshot stores every prepared SFZ patch (normalized) with
   its library, folder and the sample's SHA-256.
 - Hosted instrument pools snapshot every prepared instance and the selected slot per
   channel. Restoring a pool checks every instance against the plugin's layout/parameters.
