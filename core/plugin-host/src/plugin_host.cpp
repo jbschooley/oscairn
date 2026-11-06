@@ -87,6 +87,7 @@ namespace oscairn
             bool discardSound(uint32_t id,bool) override {return host.discardSound(id);}
             bool preparesSnapshots() const noexcept override {return host.preparesSoundSnapshots();}
             bool ringsOut() const noexcept override {return host.ringsOut();}
+            bool chokeRetiring() override {return host.chokeRetiringSounds();}
             std::array<uint32_t,16> prepareSnapshot(const std::string& directory) override {
                 // What saveSnapshot wrote for a native engine: "state 1" and its state bundle.
                 const auto path=std::filesystem::path(directory);

@@ -349,7 +349,7 @@ namespace oscairn
                 // splits them exactly as an in-engine host would. The engine keeps it across restarts.
                 const auto frames = process_->frames;
                 capacity_ = frames * std::max<uint32_t>(1, (8192 + frames - 1) / frames);
-                const uint32_t ring = ringOut_ ? 2 : 0; // the ring-out buffer, after the ports' channels
+                const uint32_t ring = ringOut_ ? 4 : 0; // the ring-out buffer, after the ports' channels
                 bytes_ = Shared::bytes(channels(inputs_), channels(outputs_) + ring, capacity_);
                 const std::string name = "/osc-" + std::to_string(getpid()) + "-" + std::to_string(Process::counter.fetch_add(1));
                 try
@@ -614,6 +614,11 @@ namespace oscairn
             }
             bool preparesSnapshots() const noexcept override { return snapshots_; }
             bool ringsOut() const noexcept override { return ringOut_; }
+            bool chokeRetiring() override
+            {
+                std::lock_guard lock(controlFor());
+                return ringOut_ && process_->exchange(header(Op::ChokeRetiring).data).u8();
+            }
             std::array<uint32_t, 16> prepareSnapshot(const std::string& directory) override
             {
                 std::lock_guard lock(controlFor());

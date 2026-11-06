@@ -25,13 +25,15 @@
 // which reads the preset its preset discovery listed (preset-discovery-plugin.hpp) into a patch
 // that starts as Patch{}, and sets the table's prepare_preset to Engine::preparePreset.
 // To prepare a snapshot's sounds beside the playing ones (oscairn.sound-snapshots), it builds an
-// oscairn_plugin_sound_snapshots_t table {Engine::prepareSnapshot, Engine::setRingOut}; readPatch then
-// also runs on the main thread while rendering, into a patch not yet published. With setRingOut,
-// render adds the main output of each context retiring(slot) says into ringOut[0..1] (when set)
-// instead of its main port, so the host can ring it out through the outgoing Performance's chain.
-// Only the main port rings out (other ports follow the incoming chain); there is one buffer per
-// instance (a second change mid-tail moves that tail to the second change's outgoing chain); and a
-// note held over 30 s after the change goes back to the main output (RFC 0005, the limits).
+// oscairn_plugin_sound_snapshots_t table {Engine::prepareSnapshot, Engine::setRingOut,
+// Engine::chokeRetiring}; readPatch then also runs on the main thread while rendering, into a patch
+// not yet published. With setRingOut, render adds the main output of each context into the two
+// ring-out channels retiring(slot) returns (when not null) instead of its main port, so the host can
+// ring it out through the outgoing Performance's chain. Only one change's tail carries over: at a
+// second change while one rings, chokeRetiring fades the older tail out over the choke time, through
+// ringOut[2..3] (still its own chain), and the newer tail takes ringOut[0..1]. Only the main port
+// rings out (other ports follow the incoming chain), and a note held over 30 s after the change goes
+// back to the main output (RFC 0005, the limits).
 // It may provide buildPreset(Context&, std::string& error), called with a preset's or a snapshot's
 // patch in place before the context is published (to build per-sound state; false refuses it),
 // snapshotLoading(bool), called around reading a snapshot's patches, and
@@ -94,7 +96,7 @@ namespace oscairn::contexts
 
         clap_plugin_t plugin{};
         const clap_output_events_t* output = nullptr;
-        float* const* ringOut = nullptr; // audio thread: the ring-out buffer's two channels for this process(), or null
+        float* const* ringOut = nullptr; // audio thread: the ring-out buffer's four channels for this process(), or null
         uint32_t eventTime = 0;
         std::array<Voice, VoiceCount> voices{};
         uint64_t notesStarted = 0;
@@ -104,7 +106,9 @@ namespace oscairn::contexts
         // Per channel. MPE-style per-note bend (CLAP_NOTE_EXPRESSION_TUNING) is not applied.
         std::array<double, 16> channelBend{}, channelModWheel{};
         struct Selection { uint32_t slot; int16_t channel; };
-        std::array<Selection, selectionCapacity> selections{};
+        std::array<Selection, selectionCapacity> selections{}; // channel chokeMark: chokeRetiring's request
+        static constexpr int16_t chokeMark = -2;
+        std::array<bool, ContextCapacity> fading{}; // audio thread: choked by chokeRetiring, rendering into ringOut[2..3] until its voices end
         std::atomic<uint32_t> selectionHead{0}, selectionTail{0};
         uint32_t nextContext = 1; // main thread, never reuse IDs
         uint32_t chokeFrames = 144; // 3 ms at 48 kHz; setSampleRate keeps it 3 ms
@@ -155,7 +159,7 @@ namespace oscairn::contexts
             endNote(v.noteId, v.channel, v.key);
             v.active = false;
             auto& c = contexts[v.context];
-            c.voices.fetch_sub(1, std::memory_order_relaxed);
+            if(c.voices.fetch_sub(1, std::memory_order_relaxed) == 1) fading[v.context] = false;
             // Last access to this context before releasing its lifetime pin.
             c.users.fetch_sub(1, std::memory_order_release);
         }
@@ -262,6 +266,13 @@ namespace oscairn::contexts
             while(tail != head)
             {
                 const auto selection = selections[tail % selectionCapacity]; auto& next = contexts[selection.slot];
+                if(selection.channel == chokeMark)
+                {
+                    // Every retiring context, before the selections queued after the request: its voices fade out.
+                    for(auto& v : voices) if(v.active && !contexts[v.context].selected.load(std::memory_order_relaxed))
+                    { fading[v.context] = true; v.held = false; if(!v.chokeLength) v.chokeLength = v.chokeLeft = chokeFrames; }
+                    ++tail; continue;
+                }
                 for(int ch = 0; ch < 16; ++ch) if(selection.channel < 0 || selection.channel == ch)
                 {
                     const auto old = selected[ch]; if(old == selection.slot) continue;
@@ -310,15 +321,33 @@ namespace oscairn::contexts
             return CLAP_PROCESS_CONTINUE;
         }
 
-        // oscairn.sound-snapshots draft 2: the ring-out buffer for the next process(), or none.
+        // oscairn.sound-snapshots draft 3: the ring-out buffer for the next process(), or none.
         static void setRingOut(const clap_plugin_t* p, const clap_audio_buffer_t* buffer)
         {
-            self(p).ringOut = buffer && buffer->channel_count >= 2 && buffer->data32 && buffer->data32[0] && buffer->data32[1] ? buffer->data32 : nullptr;
+            const bool valid = buffer && buffer->channel_count >= 4 && buffer->data32 && buffer->data32[0] && buffer->data32[1] && buffer->data32[2] && buffer->data32[3];
+            self(p).ringOut = valid ? buffer->data32 : nullptr;
         }
-        // Audio thread, while rendering: the context renders into ringOut (selected by no channel; only
-        // contexts with voices are rendered at all). False without a ring-out buffer. Its main output
-        // only: a retiring context's other ports render to the instance's ports as usual.
-        bool retiring(uint32_t slot) const { return ringOut && !contexts[slot].selected.load(std::memory_order_relaxed); }
+        // Main thread, draft 3: queued like select. At that boundary, before the selections queued after
+        // it, every retiring context's voices are choked (the choke fade) and render into ringOut[2..3]
+        // until they end. False when the selection queue is full.
+        static bool chokeRetiring(const clap_plugin_t* p)
+        {
+            auto& s = self(p);
+            const auto head = s.selectionHead.load(std::memory_order_relaxed);
+            if(head - s.selectionTail.load(std::memory_order_acquire) == selectionCapacity) return false;
+            s.selections[head % selectionCapacity] = {0, chokeMark};
+            s.selectionHead.store(head + 1, std::memory_order_release); return true;
+        }
+        // Audio thread, while rendering: the two ring-out channels the context adds its main output into
+        // instead of its main port, or null. A retiring context (selected by no channel; only contexts
+        // with voices are rendered at all) takes ringOut[0..1], one chokeRetiring is fading ringOut[2..3].
+        // Null without a ring-out buffer. Its main output only: a retiring context's other ports render
+        // to the instance's ports as usual.
+        float* const* retiring(uint32_t slot) const
+        {
+            if(!ringOut || contexts[slot].selected.load(std::memory_order_relaxed)) return nullptr;
+            return fading[slot] ? ringOut + 2 : ringOut;
+        }
 
         // Main thread: a free non-default slot, or null. publish() assigns its ID.
         Context* freeSlot()

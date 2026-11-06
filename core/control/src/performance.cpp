@@ -605,7 +605,8 @@ Session::Beside::~Beside() {
 
 // The outgoing sounds of instances taken over with sounds beside: each goes once the plugin lets it
 // (idle: not selected, queued, sounding or ringing); one it no longer lists is forgotten.
-// Then their ring-out routes go, once no unselected sound sounds (the Default may hold a tail too).
+// Then their ring-out routes go, once no unselected sound sounds (the Default may hold a tail too);
+// for a change's sounds a later change choked, its own routes once they and the Default are silent.
 void Session::retireSounds() {
     if(staged_)return; // committing would publish edits not committed yet
     bool dropped=false;
@@ -615,9 +616,9 @@ void Session::retireSounds() {
             std::erase_if(r.ids,[&](uint32_t id){return host->discardSound(id);});
             const auto listed=host->soundContexts();
             if(!r.ids.empty()){std::set<uint32_t> ids;for(const auto& c:listed)ids.insert(c.id);std::erase_if(r.ids,[&](uint32_t id){return !ids.count(id);});}
-            if(!r.ids.empty() || std::any_of(listed.begin(),listed.end(),[](const auto& c){return !c.selected_channels && !c.idle;}))return false;
+            if(!r.ids.empty() || std::any_of(listed.begin(),listed.end(),[&](const auto& c){return !c.selected_channels && !c.idle && (!r.older || !c.id);}))return false;
         }catch(const std::exception&){}
-        if(graph_.contains(r.node) && graph_.node(r.node).host==host && graph_.ringOutRoutes(r.node)){graph_.dropRingOut(r.node);dropped=true;}
+        if(graph_.contains(r.node) && graph_.node(r.node).host==host && graph_.ringOutRoutes(r.node)){graph_.dropRingOut(r.node,r.older);dropped=true;}
         return true;});
     if(dropped)graph_.commit();
 }
@@ -1053,7 +1054,8 @@ void Session::open(Prepared& p,bool seamless) {
     // An instance whose next sounds were prepared beside (RFC 0021): the notes it holds go on through
     // the incoming node, keeping their sound; a cut releases them.
     // Its outgoing sounds ring out through the outgoing chain, by the plugin's ring-out buffer.
-    if(seamless)for(const auto& b:p.beside){next->takeNotes(graph_,b->was,b->now);next->ringOut(graph_,b->was,b->now);}
+    // Only one change's tail carries over: one still ringing out of it is cut at the cue (chokes).
+    if(seamless)for(const auto& b:p.beside){next->takeNotes(graph_,b->was,b->now);next->ringOut(graph_,b->was,b->now);b->chokes=graph_.ringOutRoutes(b->was)!=0;}
     std::map<Address,double> observed;for(const auto& [id,name]:p.names)for(const auto& q:next->host(id).parameters())observed[{id,q.id}]=next->host(id).parameterValue(q.id);
     // Compilation and all allocating preparation precede publication. The audio thread
     // adopts at one boundary; old plans and their hosts are reclaimed by service().
@@ -1065,6 +1067,7 @@ void Session::open(Prepared& p,bool seamless) {
         // or the last before it if one runs between here and the hand-over.
         for(auto& b:p.beside){
             const auto& sel=b->selected;
+            if(b->chokes)try{b->host->chokeRetiring();}catch(const std::exception&){} // before the selections: the sounds retiring now fade out
             try{if(std::all_of(sel.begin(),sel.end(),[&](uint32_t id){return id==sel[0];}))b->host->selectSound(sel[0],-1);
                 else for(int16_t ch=0;ch<16;++ch)b->host->selectSound(sel[size_t(ch)],ch);}
             catch(const std::exception& e){std::fprintf(stderr,"oscairn: incoming sounds not selected: %s\n",e.what());}
@@ -1075,6 +1078,8 @@ void Session::open(Prepared& p,bool seamless) {
     });
     std::erase_if(loaded_,[&](const auto& l){return !graph_.contains(l.first);});
     // The outgoing sounds ring out, then go (retireSounds).
+    // Those an earlier change left keep their routes, now the incoming node's from channels 2 and 3.
+    for(auto& b:p.beside)if(b->chokes)for(auto& r:retiringSounds_)if(r.node==b->was){if(r.older)r.node=0;else{r.node=b->now;r.older=true;}}
     for(auto& b:p.beside)if(!b->old.empty() || graph_.ringOutRoutes(b->now))retiringSounds_.push_back({b->host,std::move(b->old),b->now});
     beside_+=p.beside.size();
     // Its parts' faders as live gains (RFC 0011's instant controls): the wires are built again

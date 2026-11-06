@@ -534,6 +534,7 @@ namespace oscairn
             std::shared_ptr<PluginHost> host;
             std::vector<uint32_t> old, fresh;   // its sounds before (the Default aside), and those prepared
             std::array<uint32_t, 16> selected{}; // the prepared sound each MIDI channel selects at the cue
+            bool chokes = false;                // an earlier change's tail rings out of it: cut at the cue (RFC 0005)
             Beside() = default;
             Beside(const Beside&) = delete;
             Beside& operator=(const Beside&) = delete;
@@ -582,8 +583,9 @@ namespace oscairn
         std::vector<Free> warm_;                          // instances kept warm, least recently used first
         // The outgoing sounds of instances taken over with sounds prepared beside (RFC 0021), discarded
         // once idle (service()); weak: an instance gone takes its sounds with it.
-        // node: the incoming node, whose ring-out routes (Graph::ringOut) go once they are gone.
-        struct Retiring { std::weak_ptr<PluginHost> host; std::vector<uint32_t> ids; NodeId node = 0; };
+        // node: the incoming node, whose ring-out routes (Graph::ringOut) go once they are gone; older:
+        // a later change choked them, and only node's routes from the buffer's channels 2 and 3 go.
+        struct Retiring { std::weak_ptr<PluginHost> host; std::vector<uint32_t> ids; NodeId node = 0; bool older = false; };
         std::vector<Retiring> retiringSounds_;
         void retireSounds();
         uint64_t beside_ = 0;                             // besideSounds()

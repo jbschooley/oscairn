@@ -413,6 +413,7 @@ namespace oscairn::worker
                 }
                 case Op::SelectSound: { const auto id = r.u32(); const auto channel = int16_t(r.u32()); w.u8(host.selectSound(id, channel)); break; }
                 case Op::DiscardSound: { const auto id = r.u32(); const bool cut = r.u8(); w.u8(host.discardSound(id, cut)); break; }
+                case Op::ChokeRetiring: w.u8(host.chokeRetiring()); break;
                 case Op::PrepareSnapshot: { for(const auto id : host.prepareSnapshot(r.str())) w.u32(id); n.publish(); break; }
                 // Presets are not listed here: the engine's side lists them through the isolated
                 // scan helper, so this worker's control thread never runs a preset provider.

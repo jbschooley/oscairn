@@ -65,21 +65,28 @@ typedef struct oscairn_plugin_sound_contexts {
  * nothing, never stealing. selected[16] receives the new ID each MIDI channel selects in the
  * snapshot; nothing is selected. On false nothing was added, and the plugin may write a
  * NUL-terminated diagnostic into message.
- * ring_out (draft 2, optional; RFC 0005, "Ringing out through the outgoing chain"): called on the
- * audio thread immediately before every process() call, with a zeroed stereo buffer (two data32
- * channels) of that call's frames_count, or null for none. Valid only until that process()
+ * ring_out (draft 3, optional; RFC 0005, "Ringing out through the outgoing chain"): called on the
+ * audio thread immediately before every process() call, with a zeroed buffer of four data32
+ * channels of that call's frames_count, or null for none. Valid only until that process()
  * returns; a process() not preceded by a call has none. During that process() the plugin adds the
  * main-port output of every retiring context (selected by no MIDI channel, with voices or a tail
- * left) into the buffer instead of its main output port. It is not an audio port: the plugin
- * only stores the pointer, without allocating, locking or blocking.
- * Limits (RFC 0005): one buffer per instance, so a second Performance change while a tail still
- * rings sends that tail through the second change's outgoing chain (the Performance playing just
- * before it); only the main port rings out, other output ports follow the incoming chain; and a
- * note held more than 30 s after the change goes back to the main output, the incoming chain. */
-static const char OSCAIRN_EXT_SOUND_SNAPSHOTS[] = "oscairn.sound-snapshots/draft-2";
+ * left) into channels 0 and 1 instead of its main output port, and that of a retiring context
+ * choke_retiring is fading into channels 2 and 3. It is not an audio port: the plugin only stores
+ * the pointer, without allocating, locking or blocking.
+ * choke_retiring (draft 3, required with ring_out): only one change's tail carries over. At a
+ * second Performance change while the first change's tail still rings, the host calls it on the
+ * main thread just before selecting the incoming sounds. It is queued like select: at that process
+ * boundary, before the selections queued after it, the plugin chokes every context retiring then
+ * (a short fade, as a CLAP choke, no click), whose main output goes into channels 2 and 3 until it
+ * ends; the sounds the selections leave then take channels 0 and 1. False when nothing could be
+ * queued.
+ * Limits (RFC 0005): only the main port rings out, other output ports follow the incoming chain;
+ * and a note held more than 30 s after the change goes back to the main output, the incoming chain. */
+static const char OSCAIRN_EXT_SOUND_SNAPSHOTS[] = "oscairn.sound-snapshots/draft-3";
 typedef struct oscairn_plugin_sound_snapshots {
     bool (CLAP_ABI *prepare)(const clap_plugin_t*,const clap_istream_t* snapshot,uint32_t* selected,char* message,uint32_t message_capacity);
     void (CLAP_ABI *ring_out)(const clap_plugin_t*,const clap_audio_buffer_t* buffer);
+    bool (CLAP_ABI *choke_retiring)(const clap_plugin_t*);
 } oscairn_plugin_sound_snapshots_t;
 #ifdef __cplusplus
 }

@@ -45,7 +45,7 @@ namespace oscairn
             NodeId id = 0;
             std::shared_ptr<std::array<std::atomic<float>,Graph::meterChannels>> peaks; // the node's, shared with every plan
             uint32_t                          audioInputs = 0, audioOutputs = 0;
-            bool ringOut = false; // the last two of audioOutputs are the plugin's ring-out buffer (Graph::ringOutPort)
+            bool ringOut = false; // the last four of audioOutputs are the plugin's ring-out buffer (Graph::ringOutPort)
             std::vector<AudioRoute>           audioSources;
             std::vector<uint32_t> silentInputs;
             struct NoteSource {int step;std::shared_ptr<NoteRoute> route;NoteZones zones;bool draining=false;};
@@ -265,9 +265,12 @@ namespace oscairn
             for(auto& slot:r.live){r.gain*=current.liveGain(slot);slot=0;}
             r.from={node,ringOutPort,r.from.channel};routes.push_back(r);
         }
+        for(auto r:current.audioRoutes_) // the earlier tail, fading out through its own chain
+            if(r.from.node==from && r.from.port==ringOutPort && r.from.channel<2 && (r.to.node==graphOutput || nodes_.contains(r.to.node)))
+                {r.from={node,ringOutPort,r.from.channel+2};routes.push_back(r);}
         connectAudioBatch(routes);
     }
-    void Graph::dropRingOut(NodeId node) { std::erase_if(audioRoutes_,[&](const auto& r){return r.from.node==node && r.from.port==ringOutPort;}); }
+    void Graph::dropRingOut(NodeId node,bool older) { std::erase_if(audioRoutes_,[&](const auto& r){return r.from.node==node && r.from.port==ringOutPort && (!older || r.from.channel>=2);}); }
     size_t Graph::ringOutRoutes(NodeId node) const { return size_t(std::count_if(audioRoutes_.begin(),audioRoutes_.end(),[&](const auto& r){return r.from.node==node && r.from.port==ringOutPort;})); }
     void Graph::publishReplacement(Graph& next,const std::function<void()>& onPublish) {
         if(next.sampleRate_!=sampleRate_ || next.maxFrames_!=maxFrames_ || next.inputChannels_!=inputChannels_ || next.outputChannels_!=outputChannels_)
@@ -394,7 +397,7 @@ namespace oscairn
             ports=source?&it->second.host->outputPorts():&it->second.host->inputPorts();
             if(source && e.port==ringOutPort && it->second.host->ringsOut())
             {
-                if(!count || e.channel>=2 || count>2-e.channel)throw std::invalid_argument("Audio channel range exceeds selected port");
+                if(!count || e.channel>=ringOutChannels || count>ringOutChannels-e.channel)throw std::invalid_argument("Audio channel range exceeds selected port");
                 return it->second.audioOutputs+e.channel;
             }
         }
@@ -660,9 +663,9 @@ namespace oscairn
             step.activity     = node.activity;
             step.audioInputs  = node.audioInputs;
             step.audioOutputs = node.audioOutputs;
-            // The ring-out buffer's two channels, after the node's own, while it is routed.
+            // The ring-out buffer's four channels, after the node's own, while it is routed.
             step.ringOut      = std::any_of(audioRoutes_.begin(),audioRoutes_.end(),[&](const auto& r){return r.from.node==id && r.from.port==ringOutPort;});
-            if(step.ringOut) step.audioOutputs += 2;
+            if(step.ringOut) step.audioOutputs += ringOutChannels;
             stepOf[id]        = (int)plan->steps.size();
             if( !plan->steps.empty() && wave.at( id ) != wave.at( plan->steps.back().id ) ) plan->waves.push_back( uint32_t( plan->steps.size() ) );
             plan->steps.push_back( std::move( step ) );
@@ -1014,7 +1017,7 @@ namespace oscairn
             ok &= processed;
             if(listener && processed){uint32_t sent=0;const auto* list=step.host->outputEvents(sent);listener->events(step.id,list,sent,true);}
             if(processed && step.peaks)
-                for(uint32_t c=0;c<std::min(step.audioOutputs-(step.ringOut?2u:0u),meterChannels);++c)
+                for(uint32_t c=0;c<std::min(step.audioOutputs-(step.ringOut?Graph::ringOutChannels:0u),meterChannels);++c)
                 {
                     float peak=0;
                     for(uint32_t i=0;i<frames;++i)peak=std::max(peak,std::abs(step.out[c][i]));

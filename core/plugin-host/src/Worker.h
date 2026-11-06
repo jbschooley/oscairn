@@ -29,7 +29,7 @@ namespace oscairn::worker
         std::atomic<uint32_t> asleep{0};  // the plugin said, in the last block, that it is asleep (CLAP_PROCESS_SLEEP)
         uint32_t frames = 0, eventCount = 0, hasTransport = 0, ok = 0, outputCount = 0;
         uint32_t inputChannels = 0, outputChannels = 0, maxFrames = 0, parameterCount = 0;
-        // outputChannels ends with ringOutChannels (2 for a plugin with a ring-out buffer, RFC 0005, else
+        // outputChannels ends with ringOutChannels (4 for a plugin with a ring-out buffer, RFC 0005, else
         // 0); ringOut: this block's caller asked for them.
         uint32_t ringOutChannels = 0, ringOut = 0;
         double sampleRate = 48000;
@@ -81,7 +81,8 @@ namespace oscairn::worker
         DiscardSound, SaveSnapshot, LoadSnapshot, AssetDependencies, LoadPreset, Memory, SetMemoryRoom,
         Window, // the plugin's own window: shown (with its title) or closed
         Reset,
-        PrepareSnapshot // a native snapshot's sounds prepared beside the playing ones (RFC 0021)
+        PrepareSnapshot, // a native snapshot's sounds prepared beside the playing ones (RFC 0021)
+        ChokeRetiring // sound-snapshots' choke_retiring (RFC 0005)
     };
     // First byte of every message from the worker: a reply, or a request to the engine made while
     // the worker serves one (the plugin resolving a sound asset; a node about to activate, with

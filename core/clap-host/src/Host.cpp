@@ -193,7 +193,7 @@ struct Host::Impl {
     std::vector<clap_audio_buffer_t> inputBuffers, outputBuffers;
     std::vector<float*> inputPointers, outputPointers; // outputs: the ports' channels, then ringOutChannels
     std::vector<float> scratch;
-    uint32_t ringOutChannels = 0; // 2 for a plugin with sound-snapshots' ring_out (RFC 0005)
+    uint32_t ringOutChannels = 0; // 4 for a plugin with sound-snapshots' ring_out (RFC 0005)
     clap_audio_buffer_t ringOutBuffer{};
     double sampleRate = 48000;
     uint32_t maxFrames = 512;
@@ -525,7 +525,7 @@ struct Host::Impl {
         s.exclusiveState=s.sounds && s.sounds->state;
         if(s.exclusiveState)s.state=s.sounds->state;
         if(s.exclusiveState)s.soundSnapshots = static_cast<const oscairn_plugin_sound_snapshots_t*>(s.plugin->get_extension(s.plugin,OSCAIRN_EXT_SOUND_SNAPSHOTS));
-        if(s.soundSnapshots && !s.soundSnapshots->prepare)throw std::runtime_error("Invalid sound-snapshot interface");
+        if(s.soundSnapshots && (!s.soundSnapshots->prepare || !s.soundSnapshots->ring_out!=!s.soundSnapshots->choke_retiring))throw std::runtime_error("Invalid sound-snapshot interface");
         if(s.state && (!s.state->save || !s.state->load))throw std::runtime_error("Incomplete plugin state interface");
         s.assetDependencies = static_cast<const oscairn_plugin_asset_dependencies_t*>(s.plugin->get_extension(s.plugin, OSCAIRN_EXT_ASSET_DEPENDENCIES));
         s.assetOptional = s.assetDependencies != nullptr;
@@ -675,12 +675,12 @@ struct Host::Impl {
         size_t ni = 0, no = 0;
         for (const auto& p : inputs) ni += p.channels;
         for (const auto& p : outputs) no += p.channels;
-        // The ring-out buffer is two more scratch channels after the ports', in no port.
-        ringOutChannels = soundSnapshots && soundSnapshots->ring_out ? 2 : 0;
+        // The ring-out buffer is four more scratch channels after the ports', in no port.
+        ringOutChannels = soundSnapshots && soundSnapshots->ring_out ? 4 : 0;
         inputPointers.resize(ni); outputPointers.resize(no + ringOutChannels);
         inputBuffers.resize(inputs.size()); outputBuffers.resize(outputs.size());
         scratch.assign((ni + no + ringOutChannels) * maxFrames, 0.f);
-        ringOutBuffer = {}; ringOutBuffer.channel_count = 2; ringOutBuffer.data32 = outputPointers.data() + no;
+        ringOutBuffer = {}; ringOutBuffer.channel_count = ringOutChannels; ringOutBuffer.data32 = outputPointers.data() + no;
         size_t offset = 0;
         for (size_t i = 0; i < inputs.size(); ++i) {
             inputBuffers[i] = {}; inputBuffers[i].channel_count = inputs[i].channels;
@@ -1300,7 +1300,7 @@ bool Host::process(const float* const* input, uint32_t ni, float* const* output,
                     position.song_pos_beats += static_cast<clap_beattime>((static_cast<double>(done) / s.sampleRate) * position.tempo / 60. * CLAP_BEATTIME_FACTOR);
                 position.header.time = 0; block.transport = &position;
             }
-            // The caller asks for the ring-out buffer by passing its two channels after the ports'.
+            // The caller asks for the ring-out buffer by passing its channels after the ports'.
             if (s.ringOutChannels) s.soundSnapshots->ring_out(s.plugin, no >= s.outputPointers.size() ? &s.ringOutBuffer : nullptr);
             const auto status = s.plugin->process(s.plugin, &block);
             if (status < CLAP_PROCESS_CONTINUE || status > CLAP_PROCESS_SLEEP) { s.failed.store(true); s.errors.fetch_add(1); silence(); return false; }
@@ -1373,6 +1373,12 @@ bool Host::selectSound(uint32_t id,int16_t channel) {
 }
 bool Host::preparesSoundSnapshots() const noexcept {return impl->soundSnapshots!=nullptr;}
 bool Host::ringsOut() const noexcept {return impl->ringOutChannels!=0;}
+bool Host::chokeRetiringSounds() {
+    if(!impl->ringOutChannels)return false;
+    const bool queued=impl->soundSnapshots->choke_retiring(impl->plugin);
+    if(queued)impl->wake.store(true);
+    return queued;
+}
 std::array<uint32_t,16> Host::prepareSoundSnapshot(const std::vector<uint8_t>& bytes) {
     if(!impl->soundSnapshots)throw std::invalid_argument("Plugin cannot prepare a snapshot's sounds beside the playing ones");
     if(bytes.size()>maxStateBytes)throw std::invalid_argument("Snapshot too large");

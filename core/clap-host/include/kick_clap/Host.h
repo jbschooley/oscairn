@@ -198,9 +198,12 @@ public:
     // the new ID each MIDI channel selects in it; nothing is selected. Main thread, while playing.
     bool preparesSoundSnapshots() const noexcept;
     std::array<uint32_t,16> prepareSoundSnapshot(const std::vector<uint8_t>& bytes);
-    // sound-snapshots' ring_out (RFC 0005): process() given two output channels after the ports'
+    // sound-snapshots' ring_out (RFC 0005): process() given four output channels after the ports'
     // passes them to the plugin as its ring-out buffer, where it renders its retiring sounds.
     bool ringsOut() const noexcept;
+    // Its choke_retiring, queued before the selections made after it: the sounds retiring then fade
+    // out into the buffer's last two channels. False when the plugin does not ring out or its queue is full.
+    bool chokeRetiringSounds();
     bool loaded() const noexcept;
     bool faulted() const noexcept;
     const std::string& error() const noexcept;

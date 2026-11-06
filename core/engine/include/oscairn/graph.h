@@ -108,18 +108,23 @@ namespace oscairn
         /// over the old one's ledger, so held notes keep their releases and pedal, and connections from
         /// nodes carried over come along draining.
         void takeNotes( const Graph& current, NodeId from, NodeId node );
-        /// A plugin's hidden ring-out output (PluginHost::ringsOut, RFC 0005): the port ID of its two
-        /// channels, after its own. Routes from it are internal: describe() leaves them out, so the
-        /// Session's wires, graph.get and saved Performances never see them. A step gets the two
-        /// channels, and the plugin its ring-out buffer, only while it has such a route.
+        /// A plugin's hidden ring-out output (PluginHost::ringsOut, RFC 0005): the port ID of its four
+        /// channels, after its own: 0 and 1 the retiring sounds, 2 and 3 the older ones fading out.
+        /// Routes from it are internal: describe() leaves them out, so the Session's wires, graph.get
+        /// and saved Performances never see them. A step gets the four channels, and the plugin its
+        /// ring-out buffer, only while it has such a route.
         static constexpr uint32_t ringOutPort = 0xFFFFFFFEu;
+        static constexpr uint32_t ringOutChannels = 4;
         /// After takeNotes, on the same replacement (RFC 0021): `current`'s routes from `from`'s main
         /// output to nodes carried over (retiring) or to the outputs become routes from `node`'s
-        /// ring-out port, live gains frozen as carryOver freezes them, so its retiring sounds ring out
-        /// through the outgoing chain. None when any goes elsewhere, or `node` does not ring out.
+        /// ring-out channels 0 and 1, live gains frozen as carryOver freezes them, so its retiring
+        /// sounds ring out through the outgoing chain; `from`'s own from channels 0 and 1 (an earlier
+        /// change's tail, which the plugin chokes) come along from channels 2 and 3. None when any
+        /// goes elsewhere, or `node` does not ring out.
         void ringOut( const Graph& current, NodeId from, NodeId node );
-        /// Removes `node`'s ring-out routes (once its retiring sounds are gone); takes effect at commit().
-        void dropRingOut( NodeId node );
+        /// Removes `node`'s ring-out routes (once its retiring sounds are gone), or with `older` only
+        /// those from channels 2 and 3 (once the older tail has faded); takes effect at commit().
+        void dropRingOut( NodeId node, bool older = false );
         size_t ringOutRoutes( NodeId node ) const; // the routes ringOut made from `node` and not dropped
         /// A replacement prepared ahead keeps its node IDs: nodes added here meanwhile take later ones.
         void reserveIds( const Graph& prepared ) { nextId_ = std::max( nextId_, prepared.nextId_ ); }

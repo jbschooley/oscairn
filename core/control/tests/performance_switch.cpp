@@ -118,8 +118,9 @@ namespace
         s.savePerformance(file.string());
     }
     // One Basic Synth part on the whole keyboard playing one sound: with `delay`, through a Delay
-    // (a quarter beat, feedback and wet at half and more), at the part's `level`.
-    void ringing(const fs::path& file, int variant, const char* synth, const char* delay, double level)
+    // (a quarter beat, feedback and wet at half and more), at the part's `level`; `brightness`, or
+    // one from the variant.
+    void ringing(const fs::path& file, int variant, const char* synth, const char* delay, double level, double brightness = -1)
     {
         Session s(48000, frames);
         const auto n = s.add("synth", synth);
@@ -130,7 +131,7 @@ namespace
             check(s.setParameter(fx, 1, .25) && s.setParameter(fx, 2, .5) && s.setParameter(fx, 3, .6), "delay settings");
         }
         s.commit(); s.setPartLevel(part, level, false);
-        check(s.selectSound(n, s.prepareSound(n, "Ring " + std::to_string(variant), {{1, .4 + .3 * variant}, {4, double(variant % 3)}})), "select a sound");
+        check(s.selectSound(n, s.prepareSound(n, "Ring " + std::to_string(variant), {{1, brightness < 0 ? .4 + .3 * variant : brightness}, {4, double(variant % 3)}})), "select a sound");
         blocks(s, 2);
         s.savePerformance(file.string());
     }
@@ -467,6 +468,68 @@ int main(int argc, char** argv)
             check(energy > 1e-3, "ring out back: audible");
             quiet(t);
             check(t.ringOutRoutes() == 0, "the routes to the outputs go once H's sound is discarded: " + std::to_string(t.ringOutRoutes()));
+        }
+
+        // Only one change's tail carries over (RFC 0005, "Ringing out through the outgoing chain"): A is
+        // a dark Basic Synth sound, dry at full level, B the synth through a Delay at half level, C the
+        // synth dry at another level. A note held on A through the change to B rings out at A's level;
+        // a second note is held on B; then the change to C. A's tail must fade out within the choke
+        // time without a click, and B's go on through B's Delay. The reference plays B fresh and opens
+        // C's copy: where A's tail has ended the two must sound the same, sample for sample, and before,
+        // the difference is A's tail alone.
+        {
+            const auto a = temp.path / "older-a", b = temp.path / "older-b", c = temp.path / "older-c", ccopy = temp.path / "older-c-copy";
+            const auto synthCopy = temp.path / ("synth-copy" + fs::path(argv[1]).extension().string());
+            ringing(a, 3, argv[1], nullptr, 1, 0); ringing(b, 0, argv[1], argv[3], .5);
+            ringing(c, 2, argv[1], nullptr, .8); ringing(ccopy, 2, synthCopy.c_str(), nullptr, .8);
+            Session t(48000, frames), r(48000, frames);
+            load(t, a); quiet(t);
+            t.note(true, 60, .8); blocks(t, 10);
+            check(load(t, b).beside == 1, "older tail: A's synth given B's sound beside");
+            load(r, b);
+            blocks(t, 5); blocks(r, 5);
+            t.note(true, 72, .7); r.note(true, 72, .7);
+            Audio x, y; float last = 0, peak = 0, slope = 0; // A's tail before the second change: t less r
+            for(int block = 0; block < 10; ++block)
+            {
+                x.run(t); y.run(r);
+                for(uint32_t i = 0; i < frames; ++i)
+                {
+                    const float d = x.l[i] - y.l[i];
+                    if(block) slope = std::max(slope, std::abs(d - last));
+                    peak = std::max(peak, std::abs(d)); last = d;
+                }
+            }
+            check(peak > .01f, "older tail: A's tail sounds before the second change: " + std::to_string(peak));
+            const auto wt = load(t, c), wr = load(r, ccopy);
+            check(wt.beside == 1 && wr.loaded == 1, "older tail: B's synth given C's sound beside; the reference loads C's copy");
+            check(t.ringOutRoutes() == 4, "older tail: B's sound rings out into B's Delay, A's to the outputs: " + std::to_string(t.ringOutRoutes()) + " routes");
+            const uint32_t choke = 144; // the SDK's choke fade, 3 ms at 48 kHz
+            float step = 0, after = 0; bool same = true; double energy = 0;
+            for(int block = 0; block < 600; ++block)
+            {
+                if(block == 5) { t.note(false, 72, 0); r.note(false, 72, 0); }
+                if(block == 10) { t.note(true, 64, .7); r.note(true, 64, .7); } // the incoming sound, through C's chain
+                if(block == 40) { t.note(false, 64, 0); r.note(false, 64, 0); }
+                if(block == 3) check(t.ringOutRoutes() == 2, "older tail: A's routes go once its sound has faded and is discarded: " + std::to_string(t.ringOutRoutes()));
+                x.run(t); y.run(r);
+                for(uint32_t i = 0; i < frames; ++i)
+                {
+                    const uint32_t at = uint32_t(block) * frames + i;
+                    const float d = x.l[i] - y.l[i];
+                    if(at <= choke) step = std::max(step, std::abs(d - last));
+                    else { after = std::max(after, std::abs(d)); same = same && x.l[i] == y.l[i] && x.r[i] == y.r[i]; }
+                    last = d;
+                }
+                for(auto v : x.l) energy += v * v;
+            }
+            std::printf("older tail: A's tail peak %.4f, its largest step %.5f before the second change, %.5f in the fade\n", peak, slope, step);
+            check(after < 1e-6f, "older tail: A's tail gone within the choke time: " + std::to_string(after));
+            check(step < 1.5f * slope, "older tail: faded without a click: a step of " + std::to_string(step) + " against " + std::to_string(slope));
+            check(same, "older tail: B's tail through B's Delay and level, C's sound through C's, as in separate instances");
+            check(energy > 1e-3, "older tail: audible");
+            quiet(t);
+            check(t.ringOutRoutes() == 0, "older tail: the ring-out routes go once B's sound is discarded: " + std::to_string(t.ringOutRoutes()));
         }
 
         if(const char* real = std::getenv("OSCAIRN_SWITCH_PERFORMANCES"); real && *real)
