@@ -27,6 +27,7 @@
 #include <cstdio>
 #include <chrono>
 #include <cmath>
+#include <set>
 #include <thread>
 #ifndef _WIN32
 #include <poll.h>
@@ -726,9 +727,7 @@ struct Host::Impl {
                 if (part > UINT64_MAX - bytes) throw std::runtime_error("Plugin's memory declaration is not credible"); // a sum that wraps
                 bytes += part;
             }
-            if (memoryRoom && bytes > memoryRoom)
-                throw std::runtime_error("Plugin needs " + std::to_string((bytes + (1 << 20) - 1) >> 20) + " MiB of memory where " +
-                                         std::to_string(memoryRoom >> 20) + " MiB is left");
+            if (memoryRoom && bytes > memoryRoom) refuse(bytes);
         }
         if (activationObserver) activationObserver(activationContext, hasDeclared ? &declared : nullptr);
         if (!plugin->activate(plugin, sampleRate, 1, maxFrames)) throw std::runtime_error("Plugin activation failed");
@@ -736,6 +735,18 @@ struct Host::Impl {
         transportObserved = false; haveHarmony = false;
         latencyFrames.store(pluginLatency && pluginLatency->get ? pluginLatency->get(plugin) : 0);
         return true;
+    }
+    [[noreturn]] void refuse(uint64_t bytes) const {
+        throw std::runtime_error("Plugin needs " + std::to_string((bytes + (1 << 20) - 1) >> 20) + " MiB of memory where " +
+                                 std::to_string(memoryRoom >> 20) + " MiB is left");
+    }
+    // RFC 0025: each sound context prepared on the running engine costs the context bytes the
+    // plugin declared at its last activation (memory.h); more than the memory room is refused.
+    void admitSounds(uint64_t count) const {
+        uint64_t bytes = 0;
+        if (!hasDeclared || !memoryRoom) return;
+        if (__builtin_mul_overflow(declared.context_bytes, count, &bytes)) throw std::runtime_error("Plugin's memory declaration is not credible");
+        if (bytes > memoryRoom) refuse(bytes);
     }
     void fail(const std::string& why) { message = why; failed.store(true); }
     static uint32_t CLAP_ABI eventCount(const clap_input_events_t* list) { return static_cast<Impl*>(list->ctx)->chunkCount; }
@@ -1369,6 +1380,7 @@ uint32_t Host::prepareSound(const std::string& name,const std::vector<oscairn_so
             throw std::invalid_argument("Invalid sound parameter");
         for(size_t j=0;j<i;++j)if(parameters[j].id==v.id)throw std::invalid_argument("Duplicate sound parameter");
     }
+    impl->admitSounds(1);
     char message[512]{};oscairn_asset_ref_t base{};
     std::memcpy(base.library,library.c_str(),library.size()+1);std::memcpy(base.path,directory.c_str(),directory.size()+1);
     const auto id=impl->sounds->prepare(impl->plugin,name.c_str(),parameters.data(),static_cast<uint32_t>(parameters.size()),
@@ -1384,6 +1396,7 @@ uint32_t Host::prepareSound(const std::string& name,const Preset& preset) {
        (preset.kind==CLAP_PRESET_DISCOVERY_LOCATION_PLUGIN)!=preset.location.empty() || preset.location.size()>maxPresetLocationBytes ||
        preset.loadKey.size()>maxPresetLocationBytes || preset.location.find('\0')!=std::string::npos || preset.loadKey.find('\0')!=std::string::npos)
         throw std::invalid_argument("Invalid sound preset");
+    impl->admitSounds(1);
     char message[512]{};
     const auto id=impl->sounds->prepare_preset(impl->plugin,name.c_str(),preset.kind,preset.location.empty()?nullptr:preset.location.c_str(),
         preset.loadKey.empty()?nullptr:preset.loadKey.c_str(),message,sizeof(message));
@@ -1422,9 +1435,15 @@ std::array<uint32_t,16> Host::prepareSoundSnapshot(const std::vector<uint8_t>& b
     if(bytes.size()>maxStateBytes)throw std::invalid_argument("Snapshot too large");
     Stream stream;stream.bytes=bytes;clap_istream_t input{&stream,Stream::read};
     std::array<uint32_t,16> selected;selected.fill(CLAP_INVALID_ID);char message[512]{};
+    // Its sound count is the plugin's to read: at least its Default before, all of them after, its
+    // sounds discarded again when they do not fit (RFC 0025).
+    impl->admitSounds(1);
+    std::set<uint32_t> before;for(const auto& c:soundContexts())before.insert(c.id);
     const bool ok=impl->soundSnapshots->prepare(impl->plugin,&input,selected.data(),message,sizeof(message));
     message[sizeof(message)-1]=0;
     if(!ok)throw std::runtime_error(std::string("Snapshot not prepared beside: ")+(message[0]?message:"refused, or too few free sound contexts"));
+    std::vector<uint32_t> fresh;for(const auto& c:soundContexts())if(!before.count(c.id))fresh.push_back(c.id);
+    try{impl->admitSounds(fresh.size());}catch(...){for(const auto id:fresh)impl->sounds->discard(impl->plugin,id);throw;}
     return selected;
 }
 bool Host::savesSounds() const noexcept {return impl->soundSnapshots && impl->soundSnapshots->save_sound && impl->soundSnapshots->sound_values;}

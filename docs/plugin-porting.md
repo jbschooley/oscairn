@@ -393,7 +393,11 @@ other:
   bytes (once per instance or engine), bytes per context (an instance without contexts is
   one) and decoded asset bytes for the current state. A new effect context costs its context
   and asset bytes. With a memory budget, the host refuses to activate a plugin declaring more
-  than the budget leaves, saying how much it needs.
+  than the budget leaves, saying how much it needs. With native sound contexts, the estimate
+  covers every sound the state holds, and each sound prepared after activating (`prepare`,
+  `prepare_preset`, or a snapshot's sounds prepared beside) costs its context bytes, so report
+  one sound's memory as `context_bytes` (the Oscairn Analog counts the state's other sounds in
+  `shared_bytes`).
 - `current`, after activating, says what the plugin holds. The host requires it but does not
   use it for budgets yet; it counts its own measurement.
 
@@ -574,8 +578,11 @@ What changes for the plugin:
   plus half again and 64 MiB. Before each activation the worker sends the engine the new
   declaration and waits while the engine raises the limit, so a mode that needs more (a restart
   the plugin asked for included) is allowed it before it allocates. A smaller mode lowers it
-  after the operation, no further than what the worker then holds plus 64 MiB. A declaration over four
-  times the flat limit (1 TiB with none) is refused before the plugin activates. Past the
+  after the operation, no further than what the worker then holds plus 64 MiB. Each sound
+  context prepared after activating adds its declared context bytes to the declaration, and the
+  limit is raised for it before the plugin prepares it (for a snapshot prepared beside, for
+  every free context until the plugin has said how many it made). A declaration over four
+  times the flat limit (1 TiB with none), its sounds included, is refused before the plugin activates or prepares. Past the
   limit the worker is stopped like a crash. On Linux the worker also sets `RLIMIT_AS` to four times the flat limit, and with `OSCAIRN_CGROUP` the
   limit is the worker's cgroup `memory.max`.
 - **Restart:** after a crash, hang, too many misses or too much memory, the worker is

@@ -174,6 +174,15 @@ target_link_libraries(oscairn-plugin-failures-test PRIVATE oscairn_control_json)
 add_test(NAME control-plugin-failures COMMAND oscairn-plugin-failures-test $<TARGET_FILE:oscairn-plugin-worker> $<TARGET_FILE:kick-clap-fixture-process_crash> $<TARGET_FILE:kick-clap-fixture-normal> $<TARGET_FILE:oscairn-plugin-scan>)
 set_tests_properties(control-plugin-failures PROPERTIES TIMEOUT 120) # a hung preset provider takes the scan helper's 15 s
 
+# The Basic Synth holding and declaring 16 MiB a sound, as the Oscairn Analog does (RFC 0025).
+add_library(oscairn-growing-synth MODULE tests/growing_synth.cpp)
+target_link_libraries(oscairn-growing-synth PRIVATE oscairn_clap_headers)
+set_target_properties(oscairn-growing-synth PROPERTIES PREFIX "" SUFFIX ".clap" CXX_VISIBILITY_PRESET hidden VISIBILITY_INLINES_HIDDEN ON)
+add_executable(oscairn-worker-sound-memory-test tests/worker_sound_memory.cpp)
+target_link_libraries(oscairn-worker-sound-memory-test PRIVATE oscairn_control)
+add_test(NAME control-worker-sound-memory COMMAND oscairn-worker-sound-memory-test $<TARGET_FILE:oscairn-plugin-worker> $<TARGET_FILE:oscairn-growing-synth>)
+set_tests_properties(control-worker-sound-memory PROPERTIES TIMEOUT 60)
+
 add_executable(oscairn-undo-test tests/undo.cpp)
 target_include_directories(oscairn-undo-test PRIVATE ../clap-host/tests)
 target_link_libraries(oscairn-undo-test PRIVATE oscairn_control)

@@ -24,7 +24,14 @@ extern "C" {
  * offers oscairn.effect-contexts reports the same shared and context bytes through both. Every
  * node of an engine, the originating interface and each effect context made from it, reports
  * the engine's shared_bytes, the same value: a host counts it once, and keeps counting it while
- * any node lives, after the originating interface is destroyed too. */
+ * any node lives, after the originating interface is destroyed too.
+ *
+ * With oscairn.sound-contexts, estimate covers every sound the state holds; each sound context
+ * prepared after activating (prepare, prepare_preset, or a snapshot's sounds prepared beside)
+ * costs context_bytes more, and a discarded one that much less, until the next activation's
+ * estimate. (Oscairn: a prepare is refused before the plugin's call when the context bytes are
+ * more than the memory left, and a snapshot's sounds once prepared, discarded again, when theirs
+ * are; a worker's limit is raised by them before the plugin prepares.) */
 static const char OSCAIRN_EXT_MEMORY[] = "oscairn.memory/draft";
 typedef struct oscairn_memory {
     uint64_t shared_bytes;

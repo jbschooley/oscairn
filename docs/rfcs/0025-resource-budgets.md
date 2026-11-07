@@ -195,7 +195,25 @@ declarations at once; a restart the plugin asked for into a smaller mode keeps t
 until the next such operation. A declaration no worker could hold (over four times the policy's
 limit, which is the worker's address space on Linux, or over 1 TiB without one, or one whose
 sum overflows) is not taken as the limit: the engine answers "Plugin's memory declaration is
-not credible" and the plugin is not activated. With `OSCAIRN_RELIABILITY`
+not credible" and the plugin is not activated. **Sounds prepared after activating** (built
+2026-11-07): a native sound context costs the declared `context_bytes` (`memory.h`), so each
+one prepared on a running instance adds them to its declaration until the next activation's
+estimate, which covers every sound the state holds; a discarded one takes them off. The engine
+raises the worker's limit for a prepare before sending it, for one sound, or for every free
+context for a snapshot's sounds prepared beside (the plugin alone reads how many it holds),
+then refits to the sounds made; the same credibility cap applies with them counted. Before
+this, the limit stayed at what activation set, and a shared Oscairn Analog instance filling
+with sounds (RFC 0021 slice 3) was stopped at its 9th. With a memory room set, the CLAP host
+refuses a prepare whose context bytes do not fit before calling the plugin, and a snapshot
+whose prepared sounds' bytes do not, discarding them, with activation's reason ("Plugin needs
+96 MiB of memory where 40 MiB is left"); the worker plays on. Not built: the session sets no
+room around preparing sounds yet, and a snapshot's sounds are checked against the room only
+once prepared, since only the plugin can count them. `control-worker-sound-memory` checks it
+with a test build of the Basic Synth holding and declaring 16 MiB a sound, in workers: seven
+sounds and a six-sound snapshot prepared where activation set the limit for one (both stopped
+at 89 MB without the change), a sound and a snapshot past the room refused and the worker
+alive, a plugin holding 100 MiB more per sound than it declares still stopped, and eight parts
+sharing one instance. With `OSCAIRN_RELIABILITY`
 `instrument` or `pass-through` (the app sets it from its profile; workers inherit it), the engine
 and every worker call `mlockall(MCL_CURRENT | MCL_FUTURE)` at start (`MCL_FUTURE` only under
 an unlimited `RLIMIT_MEMLOCK`; see "Locking") and set `oom_score_adj`:

@@ -266,6 +266,7 @@ namespace oscairn
             // declares nothing; ask: query a node whose declaration is not known (else none). Under control.
             std::optional<uint64_t> fitted(bool ask, const oscairn_memory_t* extra = nullptr);
             void reserve(Reader&); // a node about to activate, with what it declares; under control
+            void raise();          // nodes about to prepare sounds, counted in their grown(); under control
             void credible(const oscairn_memory_t&) const; // throws for a declaration no worker could hold
             static uint64_t sum(uint64_t, uint64_t);      // throws on overflow, as a declaration not credible
 
@@ -396,6 +397,7 @@ namespace oscairn
             {
                 node_ = reply.u32();
                 if(reply.data.substr(reply.at) != description_) throw std::runtime_error("the plugin changed");
+                grown_ = 0; // restore counts the sounds it prepares again
                 auto& s = *shared_;
                 s.stop.store(0); s.panic.store(0); s.crashed.store(0);
                 s.request.store(requested_.load()); s.done.store(requested_.load());
@@ -567,7 +569,8 @@ namespace oscairn
             }
             // The declaration as known without asking the worker; null where it is not. Under control.
             const std::optional<oscairn_memory_t>* knownDeclaration() const { return declared_ ? &*declared_ : nullptr; }
-            void declare(std::optional<oscairn_memory_t> m) { declared_ = m; } // under control
+            void declare(std::optional<oscairn_memory_t> m) { declared_ = m; grown_ = 0; } // under control; an estimate counts the sounds it has
+            uint32_t grown() const { return grown_; }                          // under control
             void forget() { declared_.reset(); }                                // under control
             uint32_t workerNode() const { return node_; }                      // under control
             void setMemoryRoom(uint64_t bytes) override { request(Op::SetMemoryRoom, Writer().u64(bytes)); }
@@ -608,6 +611,7 @@ namespace oscairn
                 const auto i = ids_.find(id);
                 if(contexts_ && i == ids_.end()) return false;
                 if(!process_->exchange(header(Op::DiscardSound).u32(contexts_ ? i->second : id).u8(cutTail).data).u8()) return false;
+                if(contexts_ && grown_) { --grown_; process_->fitLimit(); }
                 ids_.erase(id); publishIds();
                 // One the recovery record holds is discarded again after a restart; one from before a
                 // snapshot prepared beside became the record is not in it.
@@ -657,13 +661,16 @@ namespace oscairn
                 std::lock_guard lock(controlFor());
                 std::set<uint32_t> before;
                 for(const auto& c : contexts()) before.insert(c.id);
-                Reader r = process_->exchange(header(Op::PrepareSnapshot).str(directory).data);
+                // How many sounds the snapshot holds is the plugin's to read: room for every free context until it says.
+                const auto free = contexts_ - uint32_t(before.size());
+                Reader r = growing(free, [&] { return process_->exchange(header(Op::PrepareSnapshot).str(directory).data); });
                 std::array<uint32_t, 16> worker{};
                 for(auto& id : worker) id = r.u32();
-                process_->fitLimit();
                 // The new sounds in the order a load of the snapshot lists them, its slots': their IDs ascend.
                 std::vector<uint32_t> fresh;
                 for(const auto& c : contexts()) if(!before.count(c.id)) fresh.push_back(c.id);
+                grown_ = grown_ - free + uint32_t(fresh.size());
+                process_->fitLimit();
                 std::sort(fresh.begin(), fresh.end());
                 std::map<uint32_t, uint32_t> engine; std::vector<uint32_t> base;
                 for(const auto w : fresh) { const auto id = allocate(w); ids_[id] = w; engine[w] = id; base.push_back(id); }
@@ -849,7 +856,20 @@ namespace oscairn
                 Writer w = header(Op::PrepareSound); w.str(p.name).u32(uint32_t(p.values.size()));
                 for(const auto& v : p.values) w.u32(v.id).f64(v.value);
                 w.str(p.state).str(p.preset).str(p.sfz).str(p.library).str(p.directory);
-                return process_->exchange(w.data).u32();
+                if(!contexts_) return process_->exchange(w.data).u32();
+                const auto id = growing(1, [&] { return process_->exchange(w.data); }).u32();
+                if(id == CLAP_INVALID_ID) --grown_;
+                process_->fitLimit();
+                return id;
+            }
+            // RFC 0025: a sound context prepared on the running engine costs the context bytes the
+            // plugin declared (memory.h), so its worker's limit is raised for `most` more before the
+            // plugin allocates; the caller counts those it made and refits. Under control.
+            template<class F> Reader growing(uint32_t most, F prepare)
+            {
+                grown_ += most;
+                try { process_->raise(); return prepare(); }
+                catch(...) { grown_ -= most; try { process_->fitLimit(); } catch(const std::exception&) {} throw; }
             }
             // Engine sound IDs: the worker's own until a restart, then new ones; never reused.
             uint32_t allocate(uint32_t worker) { const auto id = fresh_ ? nextId_ : worker; nextId_ = std::max(nextId_, id + 1); return id; }
@@ -1044,6 +1064,7 @@ namespace oscairn
             std::shared_ptr<Process> process_;
             mutable std::atomic<uint64_t> resident_{0}; // the last reading of residentBytes
             mutable std::optional<std::optional<oscairn_memory_t>> declared_; // what it declared at its last activation, as far as known
+            uint32_t grown_ = 0; // sound contexts prepared since then, each costing its declared context bytes (RFC 0025)
             bool root_;
             uint32_t node_ = 0; // the worker's index for this node; under control
             std::string description_;
@@ -1109,10 +1130,13 @@ namespace oscairn
             const auto list = [&] { std::lock_guard nodesLock(nodesMutex); return nodes; }(); // nodes change only under control
             if(list.empty() && !extra) return {};
             uint64_t declared = 0, shared = 0;
-            auto add = [&](const oscairn_memory_t& m) {
+            auto add = [&](oscairn_memory_t m, uint32_t grown = 0) {
                 // Every node of one engine reports the same shared bytes (memory.h), so the largest
                 // is the engine's: counted once even when its root node is gone and only its effect
-                // contexts remain, still holding those bytes.
+                // contexts remain, still holding those bytes. Sounds prepared since its declaration
+                // count its context bytes each (at most 256 of credible bytes: no overflow).
+                credible(m);
+                m.context_bytes += m.context_bytes * grown;
                 credible(m);
                 declared = sum(declared, m.context_bytes + m.asset_bytes);
                 shared = std::max(shared, m.shared_bytes);
@@ -1121,7 +1145,7 @@ namespace oscairn
             {
                 const auto* m = ask ? &n->declaredLocked() : n->knownDeclaration();
                 if(!m || !*m) return {};
-                add(**m);
+                add(**m, n->grown());
             }
             if(extra) add(*extra);
             declared = sum(declared, shared);
@@ -1169,6 +1193,12 @@ namespace oscairn
             if(known) known->declare(m);
             if(!known && !m) return;
             if(const auto limit = known ? fitted(false) : fitted(false, &*m); limit && *limit > memoryLimit.load()) { memoryLimit.store(*limit); limitCgroup(); }
+        }
+
+        // Before sounds are prepared on a running engine: raised for them, if they need it, never lowered.
+        void Process::raise()
+        {
+            if(const auto limit = fitted(true); limit && *limit > memoryLimit.load()) { memoryLimit.store(*limit); limitCgroup(); }
         }
 
         // Watches the worker: a crash, a block left unanswered past the hang limit, too many missed
