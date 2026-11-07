@@ -164,11 +164,7 @@ namespace oscairn
         text += "}}\n";
         try
         {
-            const auto file = measurementsFile();
-            fs::create_directories(file.parent_path());
-            const auto temporary = file.parent_path() / ".measurements.json.tmp";
-            { std::ofstream out(temporary, std::ios::binary | std::ios::trunc); out << text; if(!out) return; }
-            fs::rename(temporary, file);
+            writeAtomically(measurementsFile(), text);
             measurementsChanged_ = false;
         }
         catch(const std::exception& e) { std::fprintf(stderr, "oscairn: measurements not saved: %s\n", e.what()); }

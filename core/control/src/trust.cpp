@@ -48,10 +48,7 @@ void writeTrust(const std::vector<Control::TrustedKey>& keys){
         out+=(i?",":"")+std::string("\n  {\"key\":")+detail::quote(keys[i].key)+",\"name\":"+detail::quote(keys[i].name)+",\"scope\":["+scope+"],\"revoked\":"+(keys[i].revoked?"true":"false")+'}';
     }
     out+="\n]}\n";
-    fs::create_directories(dataHome());
-    const auto partial=dataHome()/".trust.json.partial";
-    {std::ofstream o(partial,std::ios::binary|std::ios::trunc);o<<out;if(!o)bad("cannot write trust.json");}
-    fs::rename(partial,trustFile());
+    writeAtomically(trustFile(),out);
 }
 }
 

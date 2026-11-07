@@ -87,9 +87,10 @@ What is built, as of 2026-11-07:
   | `.install-*`, `.export-*` | Staging for installs and exports; a download's `.install-<sha256>.partial`, kept to resume | Installs; folders left by a crash are removed after a day |
 
   Planned: `Apps/` and `AppData/<id>/` (RFC 0022), with `Logs/apps/<id>.log` under it.
-- **Atomic saves:** the library writes beside, `fsync`s the file and renames it into place;
-  `measurements.json` and the trust store are renamed into place without an `fsync`. Nothing syncs
-  the folder after a rename.
+- **Atomic saves:** the library, `measurements.json` and the trust store write beside, `fsync`
+  the file, rename it into place and `fsync` the folder (`writeAtomically`,
+  `core/control/src/library.cpp`). `repositories.json`, packages' signature files, installs and
+  Performance folders are still renamed into place without either `fsync`.
 - **Installs from drives:** `library.contents`, `library.install`, `packages.list` and
   `packages.install` take an absolute path (or an address) on the engine's file system. An archive
   is read in place; an unpacked package folder is copied file by file and hashed as it is copied;

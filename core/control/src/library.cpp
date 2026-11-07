@@ -86,6 +86,8 @@ namespace oscairn
         std::error_code error;
         if(ok) fs::rename(temporary, file, error);
         if(!ok || error) { std::error_code ignored; fs::remove(temporary, ignored); throw std::runtime_error("cannot write " + file.string()); }
+        // The folder too, so the rename itself survives a power cut (RFC 0037).
+        if(const int fd = ::open(file.parent_path().c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC); fd >= 0) { ::fsync(fd); ::close(fd); }
     }
 
     fs::path dataHome()
